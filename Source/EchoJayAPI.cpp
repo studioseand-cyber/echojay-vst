@@ -1,4 +1,6 @@
 #include "EchoJayAPI.h"
+#include "EJStreamFraming.h" // SSE byte-to-frame splitter (spec step 2)
+#include "EJReplyBlocks.h"   // the whole-reply block strip (moved verbatim, spec step 3)
 #include "ChainHost.h"    // buildCurrentChainInjection reads the live rack
 #include "LinkShm.h"      // RackSidecar — targeted [CURRENT CHAIN] (Phase R)
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics
@@ -917,55 +919,16 @@ void EchoJayAPI::refreshUserInfo(std::function<void(bool success)> onComplete)
 
 // ============ Chat ============
 
-void EchoJayAPI::sendChat(const juce::StringArray& roles,
-                           const juce::StringArray& contents,
-                           const juce::String& systemPrompt,
-                           std::function<void(const juce::String& reply, bool success)> onComplete,
-                           const juce::String& meterJsonBlob)
+// ============ Chat request body (shared by sendChat + streamChat) ============
+// Moved VERBATIM out of sendChat (spec step 2) so the streaming variant
+// sends the identical request bytes. CONSUMES the staged per-turn state
+// (nextChat*, dial flags, classifier binding) exactly as the inline code
+// did — call once per send, after the limit gate. See the header note.
+juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
+                                              const juce::StringArray& contents,
+                                              const juce::String& systemPrompt,
+                                              const juce::String& meterJsonBlob)
 {
-    // FREE V2: the gate is LANE-AWARE — the staged turnType decides whether
-    // this send draws the daily chat pool or the monthly premium pool, so a
-    // spent premium pool never blocks plain chat and vice versa.
-    const juce::String gateTurnType = nextChatTurnType_;
-    if (!canSendTurn(gateTurnType))
-    {
-        // AUTH CACHE REFRESH — local cache says we're over limit, but the user may have
-        // upgraded tier or credits since the last server sync. Refresh from /api/me first,
-        // and only show "limit reached" if the server ALSO agrees we're at the limit.
-        // This is the self-healing path for users who upgrade mid-session.
-        auto aliveFlag = alive;
-        refreshUserInfo([this, roles, contents, systemPrompt, onComplete, aliveFlag, meterJsonBlob, gateTurnType](bool refreshSuccess)
-        {
-            if (!aliveFlag->load()) return;
-
-            if (refreshSuccess && canSendTurn(gateTurnType))
-            {
-                // Refresh revealed we actually CAN send (tier upgraded, credits added, new day, etc).
-                // Retry the send as if the limit error never happened.
-                sendChat(roles, contents, systemPrompt, onComplete, meterJsonBlob);
-                return;
-            }
-
-            // Server confirms we're at the limit (or refresh failed — fall back to cached state).
-            // Drop ALL staged per-turn state: a blocked capture's payload
-            // must not leak onto the next plain chat send.
-            if (nextChatMeters_.isNotEmpty() || nextChatIsExplicitCapture_)
-                EchoJay_NSLog("EJChat: staged capture payload dropped (limit reached)");
-            nextChatMeters_.clear();
-            nextChatTurnType_.clear();
-            nextChatBusCount_ = 0;
-            nextChatIsExplicitCapture_ = false;
-            // The classifier binding dies with the turn it was minted for:
-            // the token is bound to THIS message's typed portion, so letting
-            // it ride the next send would assert an intent for text it was
-            // never issued against.
-            nextClassifyIntent_.clear();
-            nextClassifyToken_.clear();
-            onComplete(getLimitReachedMessage(gateTurnType), false);
-        });
-        return;
-    }
-    
     // Build messages JSON
     // Limit history to the last N messages to prevent stale captures from old
     // sessions confusing the AI. Captures persist in plugin state across DAW
@@ -1170,6 +1133,63 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
                            + " (" + juce::String((int) body.getNumBytesAsUTF8()) + "b total)").toRawUTF8());
         }
     }
+
+    return body;
+}
+
+void EchoJayAPI::sendChat(const juce::StringArray& roles,
+                           const juce::StringArray& contents,
+                           const juce::String& systemPrompt,
+                           std::function<void(const juce::String& reply, bool success)> onComplete,
+                           const juce::String& meterJsonBlob)
+{
+    // FREE V2: the gate is LANE-AWARE — the staged turnType decides whether
+    // this send draws the daily chat pool or the monthly premium pool, so a
+    // spent premium pool never blocks plain chat and vice versa.
+    const juce::String gateTurnType = nextChatTurnType_;
+    if (!canSendTurn(gateTurnType))
+    {
+        // AUTH CACHE REFRESH — local cache says we're over limit, but the user may have
+        // upgraded tier or credits since the last server sync. Refresh from /api/me first,
+        // and only show "limit reached" if the server ALSO agrees we're at the limit.
+        // This is the self-healing path for users who upgrade mid-session.
+        auto aliveFlag = alive;
+        refreshUserInfo([this, roles, contents, systemPrompt, onComplete, aliveFlag, meterJsonBlob, gateTurnType](bool refreshSuccess)
+        {
+            if (!aliveFlag->load()) return;
+
+            if (refreshSuccess && canSendTurn(gateTurnType))
+            {
+                // Refresh revealed we actually CAN send (tier upgraded, credits added, new day, etc).
+                // Retry the send as if the limit error never happened.
+                sendChat(roles, contents, systemPrompt, onComplete, meterJsonBlob);
+                return;
+            }
+
+            // Server confirms we're at the limit (or refresh failed — fall back to cached state).
+            // Drop ALL staged per-turn state: a blocked capture's payload
+            // must not leak onto the next plain chat send.
+            if (nextChatMeters_.isNotEmpty() || nextChatIsExplicitCapture_)
+                EchoJay_NSLog("EJChat: staged capture payload dropped (limit reached)");
+            nextChatMeters_.clear();
+            nextChatTurnType_.clear();
+            nextChatBusCount_ = 0;
+            nextChatIsExplicitCapture_ = false;
+            // The classifier binding dies with the turn it was minted for:
+            // the token is bound to THIS message's typed portion, so letting
+            // it ride the next send would assert an intent for text it was
+            // never issued against.
+            nextClassifyIntent_.clear();
+            nextClassifyToken_.clear();
+            onComplete(getLimitReachedMessage(gateTurnType), false);
+        });
+        return;
+    }
+    
+    // Body build moved VERBATIM to buildChatRequestBody (spec step 2) so
+    // the streaming variant sends the identical request. Staged per-turn
+    // state is consumed in there, exactly as it was inline here.
+    juce::String body = buildChatRequestBody(roles, contents, systemPrompt, meterJsonBlob);
 
     postJSON("/api/chat", body, [this, onComplete](const juce::var& json, int statusCode)
     {
@@ -1378,6 +1398,289 @@ namespace
         });
         return latch;
     }
+}
+
+// ============ Streaming chat (spec step 2 — Feature A transport) ============
+
+void ChatStreamHandle::cancel()
+{
+    cancelled.store (true);
+    const std::lock_guard<std::mutex> sl (streamLock);
+    if (active != nullptr)
+        active->cancel();   // unblocks a read sitting on a quiet socket
+}
+
+void ChatStreamHandle::attach (juce::WebInputStream* s)
+{
+    const std::lock_guard<std::mutex> sl (streamLock);
+    active = s;
+    // cancel() that landed before the stream existed still applies: the
+    // read loop would notice the flag eventually, but a connect in progress
+    // would block until timeout without this.
+    if (cancelled.load() && s != nullptr)
+        s->cancel();
+}
+
+void ChatStreamHandle::detach()
+{
+    const std::lock_guard<std::mutex> sl (streamLock);
+    active = nullptr;
+}
+
+std::shared_ptr<ChatStreamHandle> EchoJayAPI::streamChat(const juce::StringArray& roles,
+                                                         const juce::StringArray& contents,
+                                                         const juce::String& systemPrompt,
+                                                         ChatStreamEvents events,
+                                                         const juce::String& meterJsonBlob)
+{
+    auto handle = std::make_shared<ChatStreamHandle>();
+    streamChatInternal (handle, roles, contents, systemPrompt, std::move (events), meterJsonBlob, false);
+    return handle;
+}
+
+// The gate + build half. Mirrors sendChat's limit gate INCLUDING the
+// refresh-then-retry self-heal, with one structural difference: the retry
+// re-enters HERE with the caller's original handle, so a cancel() issued
+// while the refresh round-trip was in flight still kills the send.
+void EchoJayAPI::streamChatInternal(std::shared_ptr<ChatStreamHandle> handle,
+                                    const juce::StringArray& roles,
+                                    const juce::StringArray& contents,
+                                    const juce::String& systemPrompt,
+                                    ChatStreamEvents events,
+                                    const juce::String& meterJsonBlob,
+                                    bool isRetryAfterRefresh)
+{
+    const juce::String gateTurnType = nextChatTurnType_;
+    if (! canSendTurn (gateTurnType))
+    {
+        if (isRetryAfterRefresh)
+        {
+            // Refresh already ran and the server agrees we are blocked. Drop
+            // ALL staged per-turn state — same discipline as sendChat: a
+            // blocked capture's payload must not leak onto the next send.
+            if (nextChatMeters_.isNotEmpty() || nextChatIsExplicitCapture_)
+                EchoJay_NSLog ("EJStream: staged capture payload dropped (limit reached)");
+            clearStagedTurn();
+            if (events.onError)
+                events.onError (getLimitReachedMessage (gateTurnType), 429);
+            return;
+        }
+        auto aliveFlag = alive;
+        auto ev = std::make_shared<ChatStreamEvents> (std::move (events));
+        refreshUserInfo ([this, roles, contents, systemPrompt, ev, aliveFlag, meterJsonBlob, handle] (bool)
+        {
+            // refreshUserInfo calls back on the message thread through its
+            // own guarded path; re-check both teardown levers regardless.
+            if (! aliveFlag->load() || handle->isCancelled()) return;
+            streamChatInternal (handle, roles, contents, systemPrompt, std::move (*ev), meterJsonBlob, true);
+        });
+        return;
+    }
+
+    startChatStream (handle, buildChatRequestBody (roles, contents, systemPrompt, meterJsonBlob), std::move (events));
+}
+
+// The socket half. Worker-thread read loop with the postJSON teardown
+// discipline extended to every delta (spec 2.2):
+//   - alive AND handle->cancelled checked between chunks; abandoning
+//     returns from the loop, which destroys the worker-owned stream —
+//     abandon CLOSES the socket, it never leaks it
+//   - a blocked read is unblocked by ChatStreamHandle::cancel() calling
+//     WebInputStream::cancel() from the cancelling thread
+//   - every dispatch to the message thread checks both flags BEFORE posting
+//     the callAsync and AGAIN inside it, so a callback can never fire into
+//     a torn-down editor or a host pumping its queue after removal
+void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
+                                 const juce::String& body,
+                                 ChatStreamEvents eventsIn)
+{
+    auto endpoint = apiEndpoint;
+    auto token = authToken;
+    auto aliveFlag = alive;
+    auto ev = std::make_shared<ChatStreamEvents> (std::move (eventsIn));
+
+    juce::Thread::launch ([this, endpoint, token, aliveFlag, handle, body, ev]()
+    {
+        // The per-delta guard: both teardown levers, checked on both sides
+        // of the queue hop. `this` is only touched inside dispatched
+        // lambdas, where aliveFlag has already vouched for it (postJSON's
+        // contract: alive flips false in the destructor, before members go).
+        auto dispatch = [aliveFlag, handle] (std::function<void()> fn)
+        {
+            if (! aliveFlag->load() || handle->isCancelled()) return;
+            juce::MessageManager::callAsync ([aliveFlag, handle, fn]
+            {
+                if (! aliveFlag->load() || handle->isCancelled()) return;
+                fn();
+            });
+        };
+
+        // Connection-phase retry only (postJSON's rule): these attempts
+        // never reached the server. Anything after the stream opens is
+        // never retried — a silent restart would replay deltas the caller
+        // already rendered.
+        constexpr int kMaxAttempts = 3;
+        constexpr int kConnectTimeoutMs = 60000;   // connect phase ONLY — JUCE's
+        // withConnectionTimeout does not bound the read loop, so the open
+        // stream can outlive 60s without tripping it (spec section 6's
+        // timeout question, resolved: the 60s figure was always connect-only).
+
+        for (int attempt = 1; attempt <= kMaxAttempts; ++attempt)
+        {
+            if (! aliveFlag->load() || handle->isCancelled()) return;
+
+            juce::URL url (transportEndpoint (endpoint) + "/api/chat-stream");
+            url = url.withPOSTData (body);
+
+            juce::String headers = "Content-Type: application/json\r\n";
+            if (token.isNotEmpty())
+                headers += "Authorization: Bearer " + token + "\r\n";
+            headers += transportHeaders();   // empty in a release build
+
+            juce::WebInputStream ws (url, true);
+            ws.withExtraHeaders (headers).withConnectionTimeout (kConnectTimeoutMs);
+
+            handle->attach (&ws);
+            const bool connected = ws.connect (nullptr);
+            const int statusCode = connected ? ws.getStatusCode() : 0;
+
+            if (! connected || statusCode == 0)
+            {
+                handle->detach();
+                if (! aliveFlag->load() || handle->isCancelled()) return;
+                DBG ("[EchoJay] streamChat connection failed (attempt " << attempt
+                     << "/" << kMaxAttempts << ")");
+                if (attempt < kMaxAttempts)
+                {
+                    juce::Thread::sleep (attempt * 1000);   // 1s, then 2s backoff
+                    if (! aliveFlag->load() || handle->isCancelled()) return;
+                    continue;
+                }
+                dispatch ([ev] { if (ev->onError) ev->onError ("Connection failed. Please check your internet connection.", 0); });
+                return;
+            }
+
+            if (statusCode != 200)
+            {
+                // Pre-stream failure: plain JSON error body (spec 3.1), small
+                // by construction — read it whole, exactly like postJSON.
+                juce::MemoryBlock mb;
+                ws.readIntoMemoryBlock (mb);
+                handle->detach();
+                if (! aliveFlag->load() || handle->isCancelled()) return;
+                auto json = juce::JSON::parse (juce::String::fromUTF8 ((const char*) mb.getData(), (int) mb.getSize()));
+                juce::String msg = "Something went wrong. Please try again.";
+                if (auto* o = json.getDynamicObject())
+                    if (o->hasProperty ("error"))
+                        msg = o->getProperty ("error").toString();
+                dispatch ([ev, msg, statusCode] { if (ev->onError) ev->onError (msg, statusCode); });
+                return;   // a real HTTP answer is not retried
+            }
+
+            // 200: the SSE stream is open. From here on, never retry.
+            EJStreamFraming framing;
+            char buf[8192];
+            bool gotDone = false, gotErrorFrame = false;
+            juce::var doneFrame;
+            juce::String errorFrameMsg;
+
+            while (! ws.isExhausted())
+            {
+                // The alive check between chunks (spec 2.2): abandon rather
+                // than finish. Returning destroys ws -> the socket closes.
+                if (! aliveFlag->load() || handle->isCancelled())
+                {
+                    handle->detach();
+                    ejTeardownLog ("[stream] abandoned mid-read (teardown/cancel)");
+                    return;
+                }
+
+                const int n = ws.read (buf, (int) sizeof (buf));
+                if (n <= 0)
+                    break;   // EOF or error — settled below by gotDone
+
+                for (auto& payload : framing.appendChunk (buf, n))
+                {
+                    auto frame = juce::JSON::parse (juce::String::fromUTF8 (payload.c_str(), (int) payload.size()));
+                    auto* obj = frame.getDynamicObject();
+                    if (obj == nullptr)
+                        continue;   // malformed frame: skip, the done reply is authoritative
+
+                    const auto type = obj->getProperty ("type").toString();
+
+                    if (type == "delta")
+                    {
+                        // Feature A: text only. Thinking deltas (Feature B,
+                        // off) and future block types are ignored, per the
+                        // contract's forward-compatibility rule.
+                        if (obj->getProperty ("block").toString() == "text")
+                        {
+                            auto text = obj->getProperty ("text").toString();
+                            dispatch ([ev, text] { if (ev->onTextDelta) ev->onTextDelta (text); });
+                        }
+                    }
+                    else if (type == "done")
+                    {
+                        gotDone = true;
+                        doneFrame = frame;
+                    }
+                    else if (type == "error")
+                    {
+                        gotErrorFrame = true;
+                        errorFrameMsg = obj->getProperty ("error").toString();
+                    }
+                    // start / block_start / block_stop / unknown: ignored.
+                }
+
+                if (gotDone || gotErrorFrame)
+                    break;
+            }
+
+            handle->detach();
+            if (! aliveFlag->load() || handle->isCancelled()) return;
+
+            if (gotErrorFrame)
+            {
+                // In-band server-side interruption (spec 3.1): no done frame
+                // means nothing happened; the caller drops every delta.
+                dispatch ([ev, errorFrameMsg] {
+                    if (ev->onError) ev->onError (errorFrameMsg.isNotEmpty() ? errorFrameMsg
+                                                                             : juce::String ("AI service error"), 200);
+                });
+                return;
+            }
+
+            if (! gotDone)
+            {
+                // The connection died mid-stream with no error frame — same
+                // contract shape: no done, deliver nothing, caller drops all.
+                DBG ("[EchoJay] streamChat ended without done frame");
+                dispatch ([ev] { if (ev->onError) ev->onError ("Connection lost. Please try again.", 0); });
+                return;
+            }
+
+            // done is the authoritative record (spec 3.1). Mirror sendChat's
+            // member bookkeeping on the message thread (aliveFlag vouches
+            // for `this` inside the guarded lambda). Account-usage counters
+            // are deliberately NOT touched: metering is build-order step 6,
+            // and the stream's done frame carries token usage, not the
+            // account usage object /api/chat returns.
+            dispatch ([this, ev, doneFrame]
+            {
+                if (auto* obj = doneFrame.getDynamicObject())
+                {
+                    auto mn = obj->getProperty ("modelName").toString().trim();
+                    if (mn.isNotEmpty()) lastChatModelName_ = mn;
+                    lastResolvedTurnType_ = obj->getProperty ("resolvedTurnType").toString().trim();
+                    EchoJay_NSLog (("EJStream: done resolvedTurnType=" + lastResolvedTurnType_
+                                    + " chainBlock=" + obj->getProperty ("chainBlock").toString()
+                                    + " stopReason=" + obj->getProperty ("stopReason").toString()).toRawUTF8());
+                }
+                if (ev->onDone) ev->onDone (doneFrame);
+            });
+            return;
+        }
+    });
 }
 
 void EchoJayAPI::classify(const ClassifyRequest& req,
@@ -2349,87 +2652,23 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& 
     return block;
 }
 
+// The four block extractors moved VERBATIM to EJReplyBlocks.h (8 Aug 2026,
+// spec step 3) so the incremental stream parser's read-back test runs the
+// REAL strip rather than a copy that could drift — the buildChatRequestBody
+// pattern again. These delegates keep every call site untouched.
 bool EchoJayAPI::extractChainBlock(juce::String& replyInOut, juce::String& chainJsonOut)
 {
-    const juce::String kOpen  = "<<<ECHOJAY_CHAIN>>>";
-    const juce::String kClose = "<<<END_CHAIN>>>";
-
-    int start = replyInOut.indexOf(kOpen);
-    if (start < 0) return false;
-
-    int jsonStart = start + (int)kOpen.length();
-    int end = replyInOut.indexOf(start, kClose);
-
-    if (end >= 0)
-    {
-        // Complete block — extract JSON and strip entire block including delimiters
-        chainJsonOut = replyInOut.substring(jsonStart, end).trim();
-        replyInOut   = replyInOut.substring(0, start).trimEnd()
-                     + replyInOut.substring(end + (int)kClose.length());
-    }
-    else
-    {
-        // Truncated: opening delimiter found but no closing tag.
-        // ALWAYS strip everything from <<<ECHOJAY_CHAIN>>> to end of reply so
-        // raw JSON never leaks into the visible chat message.
-        chainJsonOut = replyInOut.substring(jsonStart).trim();
-        replyInOut   = replyInOut.substring(0, start).trimEnd();
-    }
-    return true;
+    return EJReplyBlocks::extractChainBlock(replyInOut, chainJsonOut);
 }
 
 bool EchoJayAPI::extractGainBlock(juce::String& replyInOut, juce::String& gainJsonOut)
 {
-    const juce::String kOpen  = "<<<ECHOJAY_GAIN>>>";
-    const juce::String kClose = "<<<END_GAIN>>>";
-
-    int start = replyInOut.indexOf(kOpen);
-    if (start < 0) return false;
-
-    int jsonStart = start + (int)kOpen.length();
-    int end = replyInOut.indexOf(start, kClose);
-
-    if (end >= 0)
-    {
-        gainJsonOut = replyInOut.substring(jsonStart, end).trim();
-        replyInOut  = replyInOut.substring(0, start).trimEnd()
-                    + replyInOut.substring(end + (int)kClose.length());
-    }
-    else
-    {
-        gainJsonOut = replyInOut.substring(jsonStart).trim();
-        replyInOut  = replyInOut.substring(0, start).trimEnd();
-    }
-    return true;
+    return EJReplyBlocks::extractGainBlock(replyInOut, gainJsonOut);
 }
 
-// CHAIN_EDIT ops block (CHAIN_AI_BUILD_SPEC Phase 1c). Same tolerant
-// truncation semantics as the other extractors. Delimiters: keep in sync
-// with api/_blocks.js BLOCK_TYPES.chain_edit (canonical) and
-// extractChainEditBlockWeb in public/app.html.
 bool EchoJayAPI::extractChainEditBlock(juce::String& replyInOut, juce::String& editJsonOut)
 {
-    const juce::String kOpen  = "<<<ECHOJAY_CHAIN_EDIT>>>";
-    const juce::String kClose = "<<<END_CHAIN_EDIT>>>";
-
-    int start = replyInOut.indexOf(kOpen);
-    if (start < 0) return false;
-
-    int jsonStart = start + (int)kOpen.length();
-    int end = replyInOut.indexOf(start, kClose);
-
-    if (end >= 0)
-    {
-        editJsonOut = replyInOut.substring(jsonStart, end).trim();
-        replyInOut  = replyInOut.substring(0, start).trimEnd()
-                    + replyInOut.substring(end + (int)kClose.length());
-    }
-    else
-    {
-        editJsonOut = replyInOut.substring(jsonStart).trim();
-        replyInOut  = replyInOut.substring(0, start).trimEnd();
-    }
-    return true;
+    return EJReplyBlocks::extractChainEditBlock(replyInOut, editJsonOut);
 }
 
 // ASK question/choices block (CHAIN_AI_BUILD_SPEC Phase 1b). Same tolerant
@@ -2438,31 +2677,8 @@ bool EchoJayAPI::extractChainEditBlock(juce::String& replyInOut, juce::String& e
 // extractAskBlockWeb in public/app.html.
 bool EchoJayAPI::extractAskBlock(juce::String& replyInOut, juce::String& askJsonOut)
 {
-    const juce::String kOpen  = "<<<ECHOJAY_ASK>>>";
-    const juce::String kClose = "<<<END_ASK>>>";
-
-    int start = replyInOut.indexOf(kOpen);
-    if (start < 0) return false;
-
-    int jsonStart = start + (int)kOpen.length();
-    int end = replyInOut.indexOf(start, kClose);
-
-    if (end >= 0)
-    {
-        askJsonOut = replyInOut.substring(jsonStart, end).trim();
-        replyInOut = replyInOut.substring(0, start).trimEnd()
-                   + replyInOut.substring(end + (int)kClose.length());
-    }
-    else
-    {
-        // Truncated: strip from the opening delimiter so raw JSON never
-        // shows in chat; the (partial) payload may still parse.
-        askJsonOut = replyInOut.substring(jsonStart).trim();
-        replyInOut = replyInOut.substring(0, start).trimEnd();
-    }
-    return true;
+    return EJReplyBlocks::extractAskBlock(replyInOut, askJsonOut);
 }
-
 juce::String EchoJayAPI::salvagePartialChain(const juce::String& partial)
 {
     // Find the chain array opening

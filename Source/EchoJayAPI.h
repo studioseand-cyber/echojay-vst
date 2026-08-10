@@ -4,6 +4,7 @@
 #include <memory>
 #include <atomic>
 #include <map>
+#include <mutex>
 
 class ChainHost;   // buildCurrentChainInjection reads the live rack
 namespace LinkShm { struct RackSidecar; }   // Phase R: targeted-injection overload
@@ -93,6 +94,42 @@ struct UserSettings {
     static UserSettings fromJSON(const juce::var& json);
 };
 
+// ===========================================================================
+// Cancellation handle for one /api/chat-stream request (spec step 2).
+//
+// The stream holds three things the editor can vanish under: an open socket,
+// a detached worker thread, and pending callAsyncs (spec section 2.2). The
+// handle is the abandon lever for the first two; the per-delta callAsync
+// guard covers the third. cancel() is safe from any thread and does two
+// things: flips the cancelled flag the read loop checks between chunks, and
+// calls WebInputStream::cancel() on the live stream — which UNBLOCKS a read
+// that is sitting on a quiet socket. Without that second half, "check a
+// flag between chunks" is not enough: a stalled read on a closed editor is
+// a thread that never exits. Closing happens on the worker (the stream is
+// worker-owned and destroyed when the read loop returns); cancel just makes
+// sure the loop gets control back to do it.
+//
+// The attach/detach pair brackets the stream's lifetime under the same lock
+// cancel takes, so cancel either reaches a live stream or a nullptr — never
+// a destroyed one. A cancel that lands before attach still works: attach
+// re-checks the flag and cancels the fresh stream immediately.
+// ===========================================================================
+class ChatStreamHandle
+{
+public:
+    void cancel();
+    bool isCancelled() const noexcept { return cancelled.load(); }
+
+private:
+    friend class EchoJayAPI;
+    void attach (juce::WebInputStream* s);
+    void detach();
+
+    std::atomic<bool> cancelled { false };
+    std::mutex streamLock;
+    juce::WebInputStream* active = nullptr;   // worker-owned; guarded by streamLock
+};
+
 class EchoJayAPI
 {
 public:
@@ -174,6 +211,57 @@ public:
                   std::function<void(const juce::String& reply, bool success)> onComplete,
                   const juce::String& meterJsonBlob = juce::String());
 
+    // ============ Streaming chat (spec step 2 — Feature A transport) ============
+    //
+    // The streaming VARIANT of sendChat, not a replacement (spec 2.3): same
+    // limit gate, same staged-state consumption, same request body byte for
+    // byte (both build through buildChatRequestBody), but the reply arrives
+    // as SSE frames from /api/chat-stream instead of one JSON body.
+    //
+    // Feature A contract (spec 3.1): only TEXT deltas are forwarded —
+    // thinking frames are absent on the wire with thinking off, and ignored
+    // here if Feature B ever turns them on. start/block_start/block_stop
+    // and unknown frame types are ignored (forward compatibility).
+    //
+    // Callbacks — ALL on the message thread, ALL behind the teardown guard
+    // (alive flag AND handle->cancelled checked both before posting and
+    // inside the posted lambda, the postJSON discipline extended to every
+    // delta):
+    //   onTextDelta(text)      zero or more times, in wire order. PROVISIONAL
+    //                          rendering only — never persisted (spec 3.1).
+    //   onDone(doneFrame)      at most once, last. The frame's `reply` is the
+    //                          assembled, scrubbed, AUTHORITATIVE string; it
+    //                          replaces every accumulated delta. Also carries
+    //                          stopReason, usage, costUsd, chainBlock.
+    //   onError(msg, status)   terminal instead of onDone. A stream that dies
+    //                          mid-flight lands here: NO onDone means the
+    //                          caller drops all partial state (spec section
+    //                          5/6 — only a finished reply is ever persisted).
+    //   After cancel(), NOTHING fires. A cancelled stream delivers no result.
+    //
+    // Retry policy — postJSON's, adapted to a stream: connection-phase
+    // failures (connect refused / timed out, nothing reached the server)
+    // retry up to 3 attempts with 1s/2s backoff, alive+cancel checked before
+    // and after each sleep. A real HTTP status is answered, not retried. And
+    // once the SSE stream has opened, NEVER retried: a half-delivered stream
+    // that silently restarted would replay deltas the caller already
+    // rendered.
+    //
+    // Returns the cancellation handle. The caller owning UI (the editor)
+    // MUST cancel() it in its teardown path; the handle outliving the
+    // stream is fine (cancel on a finished stream is a no-op).
+    struct ChatStreamEvents
+    {
+        std::function<void(const juce::String& textDelta)> onTextDelta;
+        std::function<void(const juce::var& doneFrame)> onDone;
+        std::function<void(const juce::String& error, int statusCode)> onError;
+    };
+    std::shared_ptr<ChatStreamHandle> streamChat(const juce::StringArray& roles,
+                                                 const juce::StringArray& contents,
+                                                 const juce::String& systemPrompt,
+                                                 ChatStreamEvents events,
+                                                 const juce::String& meterJsonBlob = juce::String());
+
     // Stage the meter blob for the NEXT sendChat call (consumed when the
     // request body is built, so it also survives the limit-refresh retry).
     // Alternative to passing meterJsonBlob directly.
@@ -195,6 +283,18 @@ public:
     // without the field ignores it.
     void setNextChatMapFps(const juce::String& jsonObject)
     { nextChatMapFps_ = (jsonObject == "{}" ? juce::String() : jsonObject); }
+
+    // Step-5 selection signal (STREAMING_REASONING_SPEC section 7): does
+    // the staged state say the NEXT send is a chain build? True when the
+    // classifier bound intent "chain_generate", or the client staged that
+    // turnType label. READ-ONLY — consumption stays at body build, and the
+    // server still reclassifies for itself (a turn it downgrades to chat
+    // simply streams a chat reply, which is harmless).
+    bool nextTurnIsChainBuild() const
+    {
+        return nextClassifyIntent_ == "chain_generate"
+            || nextChatTurnType_  == "chain_generate";
+    }
 
     // THE ONLY WAY meter/band data reaches /api/chat: the explicit-capture
     // flag is set here (Capture button flow) and cleared after EVERY send —
@@ -859,6 +959,31 @@ private:
     void postJSON(const juce::String& endpoint, const juce::String& body,
                   std::function<void(const juce::var& json, int statusCode)> onComplete,
                   int maxAttempts = 3, int connectTimeoutMs = 60000);
+
+    // The /api/chat request body, byte for byte what sendChat has always
+    // sent — factored out (spec step 2) so sendChat and streamChat cannot
+    // drift. CONSUMES the staged per-turn state (nextChat*, dial flags,
+    // classifier binding) exactly as the inline code did; call it once per
+    // send, after the limit gate.
+    juce::String buildChatRequestBody(const juce::StringArray& roles,
+                                      const juce::StringArray& contents,
+                                      const juce::String& systemPrompt,
+                                      const juce::String& meterJsonBlob);
+
+    // streamChat's internals: the gate+build half (shared with the
+    // limit-refresh retry, which must reuse the SAME handle so a cancel
+    // issued during the refresh still lands), and the worker that owns the
+    // socket and the read loop.
+    void streamChatInternal(std::shared_ptr<ChatStreamHandle> handle,
+                            const juce::StringArray& roles,
+                            const juce::StringArray& contents,
+                            const juce::String& systemPrompt,
+                            ChatStreamEvents events,
+                            const juce::String& meterJsonBlob,
+                            bool isRetryAfterRefresh);
+    void startChatStream(std::shared_ptr<ChatStreamHandle> handle,
+                         const juce::String& body,
+                         ChatStreamEvents events);
 
     // Classifier gate, latched for the process. Once the server has answered
     // mode:"off" there is nothing to re-ask: the allowlist is keyed on the
