@@ -1685,7 +1685,7 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
             identityToFp_[ik] = slots_[(size_t)newSlotIdx].fp;
             saveParamMapsToDisk();
         }
-        applyStructuredIfReady(newSlotIdx);
+        applyStructuredIfReady(newSlotIdx, DialTrigger::slotLoaded);
     }
 
     // Hosted settings cache. No-op unless enabled (it is not in EchoJay
@@ -1717,7 +1717,7 @@ void ChainHost::setSlotStructuredSettings(int i, const juce::var& structured)
 
     slots_[(size_t)i].structuredSettings = structured;
     slots_[(size_t)i].structuredApplied  = false;
-    applyStructuredIfReady(i);
+    applyStructuredIfReady(i, DialTrigger::settingsAttached);
 
     // Map not cached yet (first-ever encounter of this plugin): fetch just
     // this fingerprint; storeParamMaps applies the pending slot on arrival.
@@ -1787,7 +1787,7 @@ void ChainHost::storeParamMaps(const juce::var& mapsObj)
     for (int i = 0; i < (int)slots_.size(); ++i)
     {
         const bool wasApplied = slots_[(size_t)i].structuredApplied;
-        applyStructuredIfReady(i);
+        applyStructuredIfReady(i, DialTrigger::mapArrived);
         if (!wasApplied && slots_[(size_t)i].structuredApplied) changed = true;
     }
     if (changed && onSlotSettingsChanged) onSlotSettingsChanged();
@@ -1831,7 +1831,7 @@ void ChainHost::mergeBootstrapMaps()
         for (int i = 0; i < (int)slots_.size(); ++i)
         {
             const bool wasApplied = slots_[(size_t)i].structuredApplied;
-            applyStructuredIfReady(i);
+            applyStructuredIfReady(i, DialTrigger::mapArrived);
             if (!wasApplied && slots_[(size_t)i].structuredApplied) changed = true;
         }
         if (changed && onSlotSettingsChanged) onSlotSettingsChanged();
@@ -1987,7 +1987,80 @@ juce::String ChainHost::applyStructuredToBuiltinSlot(int slotIndex, const juce::
     return device->applyStructured(structured, appliedOut, skippedOut);
 }
 
-void ChainHost::applyStructuredIfReady(int slotIndex)
+// The terminal per-slot verdict. Everything the per-call lines cannot say,
+// because each of those is a snapshot taken mid-sequence while the benign
+// cases outnumber the real one. Here every slot has had its chance, so
+// "nothing dialled" is a fact that can be read off rather than inferred.
+//
+// Prints for EVERY slot, including the ones that worked, because a summary
+// that only lists failures cannot distinguish "all fine" from "never ran" --
+// the silent-success trap the register already carries.
+void ChainHost::logDialSummary(const juce::String& reason) const
+{
+    const auto statusName = [] (DialStatus st) -> const char*
+    {
+        switch (st)
+        {
+            case DialStatus::none:        return "none";
+            case DialStatus::pending:     return "pending";
+            case DialStatus::applied:     return "applied";
+            case DialStatus::partial:     return "partial";
+            case DialStatus::noMap:       return "noMap";
+            case DialStatus::unusableMap: return "unusableMap";
+        }
+        return "?";
+    };
+
+    int dialled = 0, noSettings = 0;
+    EchoJay_NSLog(("EJDialSummary: " + reason + ", " + juce::String((int) slots_.size())
+                   + " slot(s)").toRawUTF8());
+    for (int i = 0; i < (int) slots_.size(); ++i)
+    {
+        const auto& s = slots_[(size_t) i];
+        const bool hasSettings = ! s.structuredSettings.isVoid();
+        const bool builtin = isBuiltinSlot(i);
+        if (! hasSettings) ++noSettings;
+        if (s.dialAppliedCount > 0) ++dialled;
+
+        // requested = what the model asked for on this slot. Compared against
+        // applied, it is the difference between "asked for nothing" and
+        // "asked and got nothing", which is the whole question.
+        int requested = 0;
+        if (auto* o = s.structuredSettings.getDynamicObject())
+            requested = o->getProperties().size();
+        else if (s.structuredSettings.isArray())
+            requested = s.structuredSettings.size();
+
+        EchoJay_NSLog(("EJDialSummary:   slot " + juce::String(i)
+                       + " (\"" + s.desc.name + "\")"
+                       + (builtin ? " builtin" : "")
+                       + "  settings=" + (hasSettings ? "y" : "n")
+                       + "  requested=" + juce::String(requested)
+                       + "  applied=" + juce::String(s.dialAppliedCount)
+                       + "  manual=" + juce::String(s.dialManual.size())
+                       + "  status=" + statusName(s.dialStatus)
+                       + "  fp=" + (s.fp.isEmpty() ? juce::String("(none)") : s.fp.substring(0, 12))
+                       + "  map=" + (s.fp.isNotEmpty() && paramMaps_.find(s.fp) != paramMaps_.end() ? "y" : "n")).toRawUTF8());
+    }
+    // The headline, so the common question is answered without reading rows.
+    EchoJay_NSLog(("EJDialSummary: " + juce::String(dialled) + "/"
+                   + juce::String((int) slots_.size()) + " slot(s) dialled something"
+                   + (noSettings > 0 ? ("; " + juce::String(noSettings)
+                                        + " carried NO settings from the server") : juce::String())).toRawUTF8());
+}
+
+const char* ChainHost::dialTriggerName(DialTrigger t)
+{
+    switch (t)
+    {
+        case DialTrigger::slotLoaded:       return "slot-loaded";
+        case DialTrigger::settingsAttached: return "settings-attached";
+        case DialTrigger::mapArrived:       return "map-arrived";
+    }
+    return "?";
+}
+
+void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
 {
     if (slotIndex < 0 || slotIndex >= (int)slots_.size()) return;
     auto& s = slots_[(size_t)slotIndex];
@@ -2005,23 +2078,41 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
     // to, the slot has no fingerprint, the map is not here.
     if (s.structuredSettings.isVoid())
     {
-        // THE MOST VALUABLE OF THESE LINES, because "chose not to" and "was
-        // never offered" look the same and the difference is a release gate,
-        // not a prompt. The server withholds the set op, the controls block and
-        // bands from any client below a minimum version, reading the
-        // appVersion this binary declares (EchoJayAPI.cpp: JucePlugin_Version-
-        // String). A gated client is never taught that `set` exists, so the
-        // model reaches for `replace` -- which is the exact defect the set op
-        // was added to fix, still in force because the gate has not moved.
+        // THIS LINE USED TO CLAIM A FAULT ON EVERY HEALTHY BUILD (corrected 10
+        // Aug 2026). It fired unconditionally, and both routine callers reach
+        // it with void settings by design:
+        //   - slot-loaded: completeLoad and the built-in add run BEFORE the
+        //     caller attaches settings in the load callback. Every slot of
+        //     every build passes through here exactly once, void, always.
+        //   - map-arrived: the storeParamMaps sweeps walk EVERY slot, so a
+        //     slot that legitimately carries no settings is re-reported once
+        //     per map that arrives for some other plugin.
+        // Read as a fault, that produced "NO SETTINGS prints for every slot"
+        // on a build that may have dialled perfectly, and it cost a whole
+        // diagnosis pass. An instrument that cannot be wrong is worth less
+        // than no instrument, because it is believed.
         //
-        // The client cannot know the server's threshold, so it prints the
-        // version the gate is judging. That is the number to compare against
-        // *_MIN_PLUGIN_VERSION in api/chat.js when this line appears.
+        // So the trigger decides the verdict. Only settings-attached can be a
+        // genuine void here, and that one is unreachable (setSlotStructured-
+        // Settings returns early on void), which is asserted rather than
+        // assumed. The real "never dialled" question is terminal, not
+        // per-call: logDialSummary answers it once the build is done.
+        if (trigger == DialTrigger::slotLoaded || trigger == DialTrigger::mapArrived)
+        {
+            EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+                           + "\") no settings yet [" + dialTriggerName(trigger)
+                           + "] -- EXPECTED ORDERING, not a fault. Settings are attached "
+                             "after load; see the EJDialSummary line for what actually dialled.")
+                              .toRawUTF8());
+            return;
+        }
+
+        // settings-attached with nothing attached: a real contradiction.
+        jassertfalse;
         EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
-                       + "\") NO SETTINGS -- nothing was asked of the map."
-                         "  appVersion=" + juce::String(JucePlugin_VersionString)
-                       + "  (if this is below the server's *_MIN_PLUGIN_VERSION the model "
-                         "was never offered the set op, and `replace` is all it had)")
+                       + "\") NO SETTINGS at dial time [" + dialTriggerName(trigger)
+                       + "] -- settings were attached and are not here. This IS the fault."
+                         "  appVersion=" + juce::String(JucePlugin_VersionString))
                           .toRawUTF8());
         return;
     }
@@ -2459,7 +2550,7 @@ juce::String ChainHost::loadBuiltinNow(const juce::PluginDescription& desc)
     // Deliberately NO fingerprint and no identity/param-map registration. A
     // built-in is dialled by direct typed writes; giving it a fingerprint
     // would invite the anchor-table path this device exists to bypass.
-    applyStructuredIfReady(idx);
+    applyStructuredIfReady(idx, DialTrigger::slotLoaded);
 
     if (stateCacheEnabled_)
     {

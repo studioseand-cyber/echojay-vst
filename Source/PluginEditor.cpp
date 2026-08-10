@@ -19053,6 +19053,12 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
         return;
     }
 
+    // The other terminal path (see logDialMissesWhenSettled): these two are
+    // alternatives at the call site, so the summary has to sit in BOTH or a
+    // whole class of build reports nothing at all.
+    ch.logDialSummary(ch.dialStateSettled() ? "dial settled"
+                                            : "dial NOT settled, retry budget exhausted");
+
     // Partial slots state the POSITIVE first: with richer maps partial is
     // the common case, and "X (ratio by hand) needs hand-dialing" read as a
     // failure when threshold, attack, release, freq and gain all landed.
@@ -19404,6 +19410,12 @@ void EchoJayEditor::logDialMissesWhenSettled(int attemptsLeft)
         });
         return;
     }
+    // Terminal state reached (or the retry budget ran out): this is the only
+    // moment at which "nothing dialled" is a readable fact rather than an
+    // inference from mid-sequence lines. Logged whether or not anything is
+    // wrong, so a healthy build and a build that never ran look different.
+    ch.logDialSummary(ch.dialStateSettled() ? "dial settled"
+                                            : "dial NOT settled, retry budget exhausted");
     for (const auto& di : ch.getDialInfos())
     {
         if (di.status == ChainHost::DialStatus::noMap)

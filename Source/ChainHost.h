@@ -107,6 +107,12 @@ public:
         int               appliedCount = 0;
     };
     std::vector<SlotDialInfo> getDialInfos() const;
+    // One line per slot, at the END of a build, saying what actually dialled.
+    // The per-call lines cannot answer "nothing dials" because each is a
+    // snapshot mid-sequence and the benign ones outnumber the real ones; this
+    // is the terminal state, when every slot has had its chance. Call it when
+    // a chain build finishes loading.
+    void logDialSummary (const juce::String& reason) const;
     // True when no slot is DialStatus::pending (bubble may compose).
     bool dialStateSettled() const;
     // Recommendable display names whose local map passes the dial-signals
@@ -691,7 +697,26 @@ private:
     std::shared_ptr<int>                 life_ { std::make_shared<int>(0) }; // weak-guard for deferred callbacks
     bool mapFresh (const juce::String& fp) const;
     void refetchStale (const juce::String& fp);
-    void applyStructuredIfReady (int slotIndex);
+    // WHY THIS TAKES A TRIGGER (10 Aug 2026). The NO SETTINGS line was read as
+    // the cause of "nothing dials" and it is not evidence of anything: this
+    // function is called at LOAD completion (completeLoad, and the built-in
+    // add), while the caller attaches settings in the load callback AFTERWARDS.
+    // So every slot of every healthy build passes through here once with void
+    // settings and printed the failure line. The two map-arrival sweeps call it
+    // for EVERY slot including ones that never had settings, printing it again.
+    //
+    // A void is only interesting if it is not one of those. The trigger says
+    // which call this is, so the log can tell "not attached YET" (ordering,
+    // expected, benign) from "settings never arrived for a slot that is ready
+    // to take them" (the real fault).
+    enum class DialTrigger
+    {
+        slotLoaded,        // completeLoad / built-in add: settings come next
+        settingsAttached,  // setSlotStructuredSettings: settings are here now
+        mapArrived,        // storeParamMaps sweep: indiscriminate over slots
+    };
+    static const char* dialTriggerName (DialTrigger t);
+    void applyStructuredIfReady (int slotIndex, DialTrigger trigger);
     // Construct + append a built-in node synchronously. Returns an error
     // string, empty on success. Called only from loadPluginAsync.
     juce::String loadBuiltinNow (const juce::PluginDescription& desc);
