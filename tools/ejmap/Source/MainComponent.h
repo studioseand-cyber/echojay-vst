@@ -7871,7 +7871,7 @@ public:
         }
     };
 
-    Worklist collectWorklist()
+    Worklist collectWorklist() const
     {
         // Parked: a session on disk. plugin_id is written by persistSession, so
         // this needs no fingerprint and therefore no load.
@@ -8033,6 +8033,16 @@ public:
         // relaunch looked like no progress and the run stopped at the ceiling.
         sweep.progressBase = juce::jmax (0, ejmap::sweepProgressCount (ledger.getRoot()));
 
+        {
+            const auto wl = collectWorklist();
+            sweepSay ("SWEEP will open " + juce::String (sweep.work.size()) + " plugin(s): "
+                        + juce::String (wl.toSweep.size()) + " unmapped, "
+                        + juce::String (wl.toFinish.size()) + " parked, "
+                        + juce::String (wl.unqueried.size()) + " unqueried; skipping "
+                        + juce::String (wl.nMapped) + " already mapped, "
+                        + juce::String (wl.nUnmappable) + " unmappable, "
+                        + juce::String (wl.flagged.size()) + " flagged");
+        }
         sweepSay ("SWEEP over " + juce::String (sweep.work.size()) + " worklist row(s), "
                     + juce::String ((int) sweep.cats.size()) + " categorised product(s)"
                     + (dryRun ? "   [DRY RUN: nothing is loaded or written]" : "")
@@ -9815,6 +9825,18 @@ private:
         if (cacheDropped > 0)
             m << "; " << cacheDropped << " no longer installed, dropped";
         m << ". Scan to refresh.";
+
+        // WHAT --worklist PRINTS, ON SCREEN (10 Aug 2026). The buckets lived
+        // only on stdout, and the app is single-instance, so answering "will
+        // the sweep redo work I have already done?" meant QUITTING the app to
+        // run a CLI flag. A mapper cannot do that, and it is the one question
+        // worth asking before pressing Sweep All.
+        const auto w = collectWorklist();
+        m << "  |  SWEEP WOULD OPEN " << w.ordered().size()
+          << " (" << w.toSweep.size() << " unmapped, " << w.toFinish.size() << " parked, "
+          << w.unqueried.size() << " unqueried)"
+          << ", skipping " << w.nMapped << " already mapped, "
+          << w.nUnmappable << " unmappable, " << w.flagged.size() << " flagged";
         return m;
     }
 
