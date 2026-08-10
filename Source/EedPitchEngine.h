@@ -34,11 +34,20 @@
     OCTAVE ERRORS ARE THE ENEMY (spec, verbatim). YIN halves and doubles under
     vibrato and on breathy onsets. The guard here is the spec's: a short median
     over recent estimates plus a continuity bias toward the previous f0 —
-    implemented as candidate re-scoring (tau, tau/2, tau*2, each descended to
-    its local d' minimum, penalised by octave distance from the recent f0),
-    then a median-of-3 over the survivors. Every hop where the guard changes
-    the raw YIN answer increments guardFires: if it fires constantly the
-    WINDOW is wrong for the material (wrong voice_type), not the guard.
+    implemented as candidate re-scoring over a HARMONIC LATTICE (tau/3, tau/2,
+    tau*2/3, tau, tau*3/2, tau*2, tau*3, each descended to its local d'
+    minimum, penalised by octave distance from the recent f0), then a
+    median-of-3 over the survivors. The lattice is wider than octaves because
+    measured on real singing the third-harmonic confusion is as common as the
+    octave one; see the block above kGuardLattice. Every hop where the guard
+    changes the raw YIN answer increments guardFires: if it fires constantly
+    the WINDOW is wrong for the material (wrong voice_type), not the guard.
+
+    WHAT THE GUARD CANNOT REACH. About 4-7% of the surviving >600 cent errors
+    are high-confidence and mid-phrase (PITCH_P0_VALIDATION.md §2). That is the
+    detector's floor, roughly one every 12-18 seconds, and no threshold removes
+    it. Anything downstream that hears a glitch at that rate should suspect
+    detection before it suspects itself.
 
     THREADING. process() is audio-thread only: no allocation, no locks, no
     logging; all buffers are pre-allocated in prepare() at the worst case any
@@ -112,9 +121,40 @@ public:
         return table[type < 0 ? 0 : (type >= kNumVoiceTypes ? kNumVoiceTypes - 1 : type)];
     }
 
-    // ---- tuning constants (fixed for P0; `tracking` arrives in P3) --------
+    // ---- tracking: how strict the detector is before it calls a frame pitched
+    // Order mirrors the ParamSchema's choices list exactly.
+    enum Tracking { kRelaxed = 0, kNormal, kTight, kNumTracking };
+
+    // Minimum CONFIDENCE (1 - aperiodicity) for a frame to be tracked. These
+    // three numbers are the taste decision made dialable, and each is measured
+    // rather than chosen (PITCH_P0_VALIDATION.md §5.3, §6):
+    //
+    //   relaxed 0.60 - the pre-gate behaviour. Keeps every frame P0 shipped
+    //                  with, for breathy or quiet sources where losing frames
+    //                  costs more than the occasional bad one.
+    //   normal  0.75 - the knee. Removes 77% / 64% of residual >600 cent jumps
+    //                  on the male take at alto_tenor / low_male for 13% of
+    //                  tracked frames; 0.70->0.75 buys 11 points of reduction
+    //                  for 4.6 of tracking, 0.75->0.80 buys 8 for 6.
+    //   tight   0.80 - the CEILING SET BY GAP LENGTH, not by residual. It is
+    //                  the highest threshold at which fewer than 2% of
+    //                  mid-phrase gaps exceed 100 ms (1.6% / 1.1% / 0%, p95 =
+    //                  59 / 55 / 24 ms). At 0.82 that doubles to ~2.7%, which
+    //                  starts handing the retune envelope holes it has to
+    //                  reason about.
+    static constexpr float kTrackingConfidence[kNumTracking] = { 0.60f, 0.75f, 0.80f };
+
+    static float trackingConfidence (int t) noexcept
+    {
+        return kTrackingConfidence[t < 0 ? 0 : (t >= kNumTracking ? kNumTracking - 1 : t)];
+    }
+
+    // ---- tuning constants --------------------------------------------------
     static constexpr float kYinThreshold        = 0.15f;  // the absolute-threshold dip
-    static constexpr float kVoicedAperiodicity  = 0.40f;  // above this = unvoiced
+    // Structural floor: below this a frame is not periodic enough to analyse,
+    // whatever `tracking` says. Equal to the relaxed floor by construction, so
+    // relaxed reproduces the pre-gate behaviour exactly.
+    static constexpr float kMaxAperiodicity     = 0.40f;
     static constexpr float kSilenceGateDb       = -55.0f; // frame RMS under this = unvoiced
     static constexpr float kOctaveBiasPerOct    = 0.12f;  // d' handicap per octave away from recent f0
     static constexpr float kSubMultipleEvidence = 0.02f;  // d' advantage a DOWNWARD claim must show
@@ -158,6 +198,17 @@ public:
                              std::memory_order_relaxed);
     }
     int getVoiceType() const noexcept { return voiceTypeReq_.load (std::memory_order_relaxed); }
+
+    void setTracking (int t) noexcept
+    {
+        trackingReq_.store (t < 0 ? 0 : (t >= kNumTracking ? kNumTracking - 1 : t),
+                            std::memory_order_relaxed);
+    }
+    int getTracking() const noexcept { return trackingReq_.load (std::memory_order_relaxed); }
+
+    // The confidence a frame must reach RIGHT NOW to be tracked - published so
+    // the debug readout can show the gate next to the value being gated.
+    float trackingFloor() const noexcept { return trackingConfidence (getTracking()); }
 
     // Zero the guard/frame counters (the debug readout's RESET, and the AI's
     // way to start a clean octave-error measurement pass).
@@ -379,7 +430,29 @@ private:
                 if (cmndf_[(size_t) tau] < best) { best = cmndf_[(size_t) tau]; rawTau = tau; }
         }
 
-        if (cmndf_[(size_t) rawTau] > kVoicedAperiodicity) { onUnvoiced (rmsDb); return; }
+        // TWO SEPARATE THRESHOLDS, and keeping them separate matters.
+        //
+        //   kMaxAperiodicity is structural: below this nothing is periodic
+        //   enough to be worth analysing at all. It never moves.
+        //
+        //   apLimit is the `tracking` gate - the taste decision of where to
+        //   stop trusting a frame, made dialable because it is a taste
+        //   decision rather than a fact. Measured on real vocals
+        //   (PITCH_P0_VALIDATION.md §5), residual >600 cent jumps concentrate
+        //   in the narrow confidence band immediately above it: 49.5% sit in
+        //   0.60-0.70 against 8.1% of voiced frames.
+        //
+        // The gate decides WHETHER TO PUBLISH, never WHICH CANDIDATE WINS, so
+        // it is applied at the END. Wiring it to the entry check instead makes
+        // a tighter setting quietly DISABLE guard corrections - the guard's
+        // pick gets rejected for being less periodic than the gate allows and
+        // the known-wrong rawTau is published in its place, which is worse at
+        // every setting. Measured: that wiring gave 1.96/3.06 residual per
+        // 1000 where this one gives the numbers in §6.
+        const float apLimit = 1.0f - trackingConfidence (
+            trackingReq_.load (std::memory_order_relaxed));
+
+        if (cmndf_[(size_t) rawTau] > kMaxAperiodicity) { onUnvoiced (rmsDb); return; }
 
         // 4. the harmonic guard: re-score tau against a LATTICE of harmonically
         //    related lags, each descended to its own local minimum, with a
@@ -445,7 +518,13 @@ private:
         }
 
         // A guard choice still has to look periodic on its own.
-        if (cmndf_[(size_t) chosen] > kVoicedAperiodicity) { chosen = rawTau; guardFired = false; }
+        if (cmndf_[(size_t) chosen] > kMaxAperiodicity) { chosen = rawTau; guardFired = false; }
+
+        // The tracking gate, applied to what we actually believe. If the
+        // guard has decided the true period is a sub-multiple whose
+        // aperiodicity we do not trust, the honest answer is "untracked" -
+        // NOT the raw answer we already believe to be wrong.
+        if (cmndf_[(size_t) chosen] > apLimit) { onUnvoiced (rmsDb); return; }
 
         // 5. parabolic interpolation of d' around the chosen lag.
         const float tauF = refineTau (chosen);
@@ -619,6 +698,7 @@ private:
 
     // ---- parameters / published results -----------------------------------
     std::atomic<int>   voiceTypeReq_ { kAltoTenor };
+    std::atomic<int>   trackingReq_  { kNormal };
 
     std::atomic<bool>  outVoiced_ { false };
     std::atomic<float> outF0_     { 0.0f };

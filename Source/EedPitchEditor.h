@@ -40,7 +40,7 @@ private:
 
     EedPitchProcessor& proc_;
 
-    juce::ComboBox   voiceBox_;
+    juce::ComboBox   voiceBox_, trackBox_;
     juce::TextButton resetBtn_ { "RESET" };
 
     juce::Rectangle<int> notePanel_, numbersPanel_, guardPanel_;

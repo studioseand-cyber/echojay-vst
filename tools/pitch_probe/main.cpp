@@ -84,11 +84,12 @@ struct Summary
 // frames (which publish nothing) without special-casing them.
 // ---------------------------------------------------------------------------
 std::vector<Hop> runFile (const juce::AudioBuffer<float>& audio, double fs,
-                          int voiceType, Summary& sumOut)
+                          int voiceType, int tracking, Summary& sumOut)
 {
     PitchEngine engine;
     engine.prepare (fs, 4096);
     engine.setVoiceType (voiceType);
+    engine.setTracking (tracking);
 
     const int hopSamples = std::max (1, engine.inputHopLength (voiceType));
     const int numCh      = audio.getNumChannels();
@@ -226,6 +227,7 @@ int usage()
         "  EchoJayPitchProbe <audio-file> [options]\n\n"
         "    --voice-type <id>   soprano | alto_tenor | low_male | instrument | bass\n"
         "                        (default: alto_tenor)\n"
+        "    --tracking <id>     relaxed | normal | tight   (default: normal)\n"
         "    --all               run the file through all five voice types\n"
         "    --summary-only      suppress the per-hop table\n"
         "    --csv               per-hop table as CSV\n\n"
@@ -239,6 +241,7 @@ int main (int argc, char* argv[])
 {
     juce::String path;
     int  voiceType   = PitchEngine::kAltoTenor;
+    int  tracking    = PitchEngine::kNormal;
     bool allTypes    = false, summaryOnly = false, csv = false;
 
     for (int i = 1; i < argc; ++i)
@@ -261,6 +264,17 @@ int main (int argc, char* argv[])
                 return usage();
             }
             voiceType = found;
+        }
+        else if (a == "--tracking")
+        {
+            if (++i >= argc) return usage();
+            const juce::String want (argv[i]);
+            int found = -1;
+            const char* ids[] = { "relaxed", "normal", "tight" };
+            for (int t = 0; t < PitchEngine::kNumTracking; ++t)
+                if (want.equalsIgnoreCase (ids[t])) found = t;
+            if (found < 0) { std::printf ("unknown tracking: %s\n", want.toRawUTF8()); return usage(); }
+            tracking = found;
         }
         else if (a.startsWith ("-")) return usage();
         else path = a;
@@ -296,6 +310,11 @@ int main (int argc, char* argv[])
     std::printf ("rate      : %.0f Hz (handled natively, not resampled)\n", fs);
     std::printf ("channels  : %d%s\n", numC, numC > 1 ? " (analysed as the mid sum)" : "");
     std::printf ("length    : %.2f s\n", (double) numS / fs);
+    {
+        const char* ids[] = { "relaxed", "normal", "tight" };
+        std::printf ("tracking  : %s (confidence floor %.2f)\n",
+                     ids[tracking], PitchEngine::trackingConfidence (tracking));
+    }
 
     const int first = allTypes ? 0 : voiceType;
     const int last  = allTypes ? PitchEngine::kNumVoiceTypes - 1 : voiceType;
@@ -307,7 +326,7 @@ int main (int argc, char* argv[])
         std::printf ("voice_type: %-11s search %.0f-%.0f Hz\n", vr.id, vr.fMinHz, vr.fMaxHz);
 
         Summary s;
-        const std::vector<Hop> hops = runFile (audio, fs, t, s);
+        const std::vector<Hop> hops = runFile (audio, fs, t, tracking, s);
         if (! summaryOnly) printHops (hops, csv);
         printSummary (vr.id, s);
     }

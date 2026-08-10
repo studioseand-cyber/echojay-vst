@@ -12,6 +12,41 @@ numbers do not need the names to be reproducible.
 
 ---
 
+## 0. THE DETECTION FLOOR — read this before debugging a P1 artefact
+
+**At the shipped default (`tracking = normal`) the detector emits a wrong pitch
+roughly every 1.5 to 2.6 seconds of tracked singing.** Measured on a real solo
+male acapella, all figures per 1000 tracked hops:
+
+| at `tracking = normal` | residual >600 ¢ | one every | of which HIGH-confidence + mid-phrase |
+|---|---|---|---|
+| `alto_tenor` | **1.81** | ~2.6 s | 0.06 (1 event in 118 s) |
+| `low_male` | **2.92** | ~1.6 s | 0.30 (5 events in 118 s) |
+
+Two different numbers, and the distinction is the whole point:
+
+- **The total rate** is what you will actually hear — roughly one glitch every
+  two seconds. Most of it is at consonants and phrase edges, where a corrector
+  should be doing little anyway.
+- **The high-confidence mid-phrase subset** is the irreducible part: frames that
+  look perfectly healthy — confident, mid-phrase, steady-state — and are simply
+  wrong. It runs 10–30× rarer than the total, about one every 20–120 seconds. No
+  threshold reaches it, because by construction those frames are confident.
+
+**Why this is written down as a number.** During P1 someone will hear a wrong
+note every couple of seconds, reach for the shifter, and spend a day inside
+PSOLA. That day is the entire reason P0 was gated separately. Before debugging
+any downstream artefact, check the detector first: `tools/pitch_probe --csv`
+runs the same engine the plugin does and shows exactly which frame was
+mistracked, with its confidence.
+
+**The rule of thumb:** an artefact at roughly one per two seconds, clustered at
+consonants and phrase edges, is presumed **detection** until proven otherwise.
+An artefact that is denser than that, or that lands mid-vowel on confident
+frames, is **downstream**.
+
+---
+
 ## 1. Why this exists — the synthetic suite was not enough
 
 `test/pitch_engine_test.cpp` reports **0.0% octave-guard fires on all five
@@ -289,8 +324,9 @@ will reach them.
 
 ### 5.3 Proposed threshold, and what it costs
 
-Simulated by gating and **recomputing adjacency** (not by subtracting counts),
-so the projected benefit is what would actually be observed:
+Simulated by gating an existing run and recomputing adjacency. **These numbers
+turned out to be optimistic — see the correction in §6.3.** They are kept
+because the methodological lesson is worth more than the estimate was:
 
 | gate | alto_tenor residual /1000 | vs now | low_male residual /1000 | vs now | frames tracked before that become passthrough |
 |---|---|---|---|---|---|
@@ -300,8 +336,7 @@ so the projected benefit is what would actually be observed:
 | 0.80 | 0.51 | −85% | 0.87 | −81% | 18.7% / 20.5% |
 | 0.85 | 0.33 | −90% | 0.70 | −85% | 26.4% / 28.7% |
 
-**Proposal: confidence ≥ 0.75, i.e. `kVoicedAperiodicity` 0.40 → 0.25.** That
-is the knee — 0.70→0.75 buys 11 points of reduction for 4.6 points of
+**Proposal: confidence ≥ 0.75.** That is the knee — 0.70→0.75 buys 11 points of reduction for 4.6 points of
 tracking, while 0.75→0.80 buys 8 points for 6. The voiced share of all hops
 falls from 66.3% to 57.9% (`alto_tenor`).
 
@@ -322,6 +357,95 @@ median 11 ms that is well inside every `retune_speed_ms` in the spec's table,
 so it should be a non-event — but it is an envelope requirement, not an
 automatic consequence.
 
-**This is not implemented.** It is a detector-threshold change whose real cost
-is measured in how correction behaves, so it belongs with the P1/P2 work that
-can hear it, not ahead of it.
+---
+
+## 6. `tracking` — the gate, made dialable
+
+The threshold is not hardcoded. It is the `tracking` parameter of §5 of the
+spec, and all three settings are **measured rather than chosen**:
+
+| `tracking` | confidence floor | what it is |
+|---|---|---|
+| `relaxed` | 0.60 | the pre-gate behaviour, unchanged. For breathy or quiet sources where losing frames costs more than the odd bad one. |
+| **`normal`** (default) | **0.75** | the knee of §5.3 — 77% / 64% of residual removed for ~13% of tracked frames. |
+| `tight` | 0.80 | the ceiling set by **gap length**, not by residual. |
+
+### 6.1 Why `tight` is 0.80 and not a rounder, higher number
+
+`tight` is bounded by what the retune envelope can be asked to bridge, so it was
+picked against a measured ceiling: **the highest threshold at which fewer than
+2% of mid-phrase gaps exceed 100 ms.** Gap = a run of frames that were voiced
+but are dropped by the gate, bounded on both sides by tracked frames — exactly
+what the envelope must hold its target across.
+
+| gate | >100 ms gaps: alto_tenor / low_male / female | p95 gap (ms) |
+|---|---|---|
+| 0.75 | 0% / 0.6% / 0% | 40 / 45 / 8 |
+| **0.80** | **1.6% / 1.1% / 0%** | **59 / 55 / 24** |
+| 0.82 | 2.8% / 2.6% / 0% | 72 / 68 / 40 |
+| 0.85 | 2.2% / 5.6% / 0% | 80 / 111 / 48 |
+
+(Gap figures are simulated, and safe to simulate: the gating DECISIONS match
+the live engine to within 0.07% — 25,473 predicted against 25,456 actual
+tracked frames. What simulation gets wrong is the f0 VALUES, which is §6.3.)
+
+0.82 is where the >100 ms share doubles past 2%, and by 0.85 the `low_male` p95
+gap itself breaks 100 ms. The residual gain beyond 0.80 is small and buys gaps
+the envelope then has to reason about, so 0.80 is the stop.
+
+A note on the statistic: on a **maximum**-gap reading no threshold above 0.60
+qualifies — even `normal` has a single 142 ms outlier. The ceiling is therefore
+applied to the distribution (p95, and the share over 100 ms), and the worst
+observed case is carried into the spec's §2.3 envelope requirement explicitly
+rather than being averaged away.
+
+### 6.2 What this buys P1 — MEASURED, on the shipped engine
+
+| `tracking` | alto_tenor: tracked / residual | low_male: tracked / residual |
+|---|---|---|
+| `relaxed` | 66.3% / 3.39 | 67.5% / 4.56 |
+| **`normal`** | **57.8% / 1.81** (−47%) | **58.2% / 2.92** (−36%) |
+| `tight` | 53.9% / 1.73 (−49%) | 53.6% / 2.12 (−54%) |
+
+`relaxed` reproduces the pre-gate numbers exactly (3.39 / 4.56), which is the
+check that the structural floor and the relaxed floor really are the same line.
+
+P1 therefore develops against roughly **one detection glitch every 1.6–2.6
+seconds** instead of one every 1.2 seconds. A real improvement, and about half
+what the §5.3 simulation promised.
+
+### 6.3 Why the simulation over-promised — a methodological correction
+
+§5.3 predicted 0.79 / 1.65. The shipped engine delivers 1.81 / 2.92. The
+simulation was wrong by roughly 2×, and the reason is worth recording because
+it will recur:
+
+**Simulate-by-deletion assumes the estimator is stateless. It is not.** Deleting
+low-confidence frames from a completed run only removes those frames. Gating
+them in the live engine also changes what the estimator produces *afterwards*,
+because two pieces of state advance only on tracked frames — the median-of-3
+history and the continuity reference the guard scores candidates against.
+
+Measured directly, comparing the `relaxed` and `normal` runs hop by hop:
+
+- 25,456 hops are voiced in both runs (the gating decisions agree),
+- but **306 of them (1.20%) carry a different f0**, and **57 differ by more
+  than 20%**.
+
+Those 57 are more than enough to account for the gap between 20 predicted jumps
+and 46 actual ones. The lesson: a gate on a stateful estimator has to be
+measured end to end, never simulated from a prior run's output.
+
+A second, smaller correction came out of the same measurement. The gate was
+first wired to the *entry* check, which shares its threshold with the guard's
+candidate-sanity test — so tightening `tracking` quietly **disabled guard
+corrections**, rejecting a good sub-multiple candidate for being less periodic
+than the gate allowed and publishing the known-wrong raw answer in its place
+(1.96 / 3.06). The gate now decides **whether to publish**, applied to the final
+chosen candidate, while the guard keeps a fixed structural bound
+(`kMaxAperiodicity`). A frame whose corrected value is not trusted is reported
+untracked rather than reported wrong.
+
+**The §5.3 proposal is now implemented as `tracking`.** What remains unimplemented
+is the median-based outlier rejection of §4.6, which is still a P2 envelope
+question.

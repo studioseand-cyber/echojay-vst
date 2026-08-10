@@ -324,6 +324,62 @@ int main()
         check (std::string (buf) == "C4" && std::fabs (cents) < 1.0f, "261.63 -> C4");
     }
 
+    std::printf ("== tracking: the voicing gate is dialable, and ordered ==\n");
+    {
+        check (std::fabs (PitchEngine::trackingConfidence (PitchEngine::kRelaxed) - 0.60f) < 1e-6f,
+               "relaxed floor is 0.60 - the pre-gate behaviour, unchanged");
+        check (std::fabs (PitchEngine::trackingConfidence (PitchEngine::kNormal) - 0.75f) < 1e-6f,
+               "normal floor is 0.75 - the measured knee");
+        check (std::fabs (PitchEngine::trackingConfidence (PitchEngine::kTight) - 0.80f) < 1e-6f,
+               "tight floor is 0.80 - the gap-length ceiling");
+
+        // The gate has a SHARP knee, so a fixed noise level sits on a knife
+        // edge and tests nothing (measured: at 0.3 all three agree, at 0.5
+        // relaxed keeps 445 frames and the other two keep none). Ramping the
+        // breath through the take sweeps confidence across the whole band
+        // instead, which is what makes the ordering meaningful rather than
+        // an accident of the level chosen.
+        std::vector<float> breathy = saw (48000.0, 220.0, 2.0, 0.4f);
+        {
+            std::mt19937 rng (4242);
+            std::uniform_real_distribution<float> d (-1.0f, 1.0f);
+            for (size_t i = 0; i < breathy.size(); ++i)
+                breathy[i] += (0.02f + 0.45f * (float) i / (float) breathy.size()) * d (rng);
+        }
+
+        int voicedAt[PitchEngine::kNumTracking] = {};
+        for (int t = 0; t < PitchEngine::kNumTracking; ++t)
+        {
+            PitchEngine e; initEngine (e, PitchEngine::kAltoTenor);
+            e.setTracking (t);
+            run (e, breathy);
+            voicedAt[t] = (int) e.getReading().voicedHops;
+        }
+        char msg[160];
+        std::snprintf (msg, sizeof (msg),
+                       "voiced hops fall as the gate tightens: relaxed %d >= normal %d >= tight %d",
+                       voicedAt[0], voicedAt[1], voicedAt[2]);
+        check (voicedAt[0] >= voicedAt[1] && voicedAt[1] >= voicedAt[2], msg);
+        check (voicedAt[0] > voicedAt[2], "the gate demonstrably bites on breathy material");
+
+        // A clean tone is far above every floor, so tracking must NOT change it -
+        // the gate may only ever remove frames that were marginal.
+        int cleanAt[PitchEngine::kNumTracking] = {};
+        for (int t = 0; t < PitchEngine::kNumTracking; ++t)
+        {
+            PitchEngine e; initEngine (e, PitchEngine::kAltoTenor);
+            e.setTracking (t);
+            run (e, sine (48000.0, 220.0, 1.0));
+            cleanAt[t] = (int) e.getReading().voicedHops;
+        }
+        check (cleanAt[0] == cleanAt[1] && cleanAt[1] == cleanAt[2],
+               "a clean in-range tone is tracked identically at all three settings");
+
+        // The default is normal: P1 develops against clean detection.
+        PitchEngine def;
+        check (def.getTracking() == PitchEngine::kNormal, "default tracking is normal");
+    }
+
     // ---- the reported f0 may never leave the ACTIVE voice type's range ----
     // This is a dialability contract, not only a DSP one: voice_type
     // advertises its range in the ParamSchema and the model reasons against

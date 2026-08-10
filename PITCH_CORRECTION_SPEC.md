@@ -100,6 +100,24 @@ of a one-pole toward the target, with two refinements that matter:
   *correction* still tracks the fast f0. Without this, wide vibrato on a semitone boundary
   chatters between two notes — an unmistakable artefact.
 
+- **The envelope must HOLD across untracked gaps, not reset.** The detector does not produce
+  an f0 for every frame: `tracking` gates out frames whose pitch is genuinely ambiguous, and
+  at the `normal` default that is ~13% of otherwise-voiced frames on real material. Measured
+  (`PITCH_P0_VALIDATION.md` §5.3) those gaps are **median 11 ms**, p95 ~59 ms, with a
+  worst observed case of **142 ms**. Across such a gap the envelope must freeze its target and
+  its current position and resume from there, so correction is continuous through a consonant
+  or a breath rather than restarting after every one.
+
+  **This is the same code path as note-change reset, and that is the trap.** §2.3's reset
+  fires on "a cents-jump threshold plus a re-onset", and a gap resume looks exactly like a
+  re-onset. If the resume is treated as a note change, the envelope re-glides from the wrong
+  place on every consonant — audible as a scoop into the back half of every word, and easy to
+  misread as a PSOLA artefact. **Distinguish them by gap duration**: a resume within roughly
+  200 ms of the last tracked frame continues the existing note; longer than that, or with a
+  target that has moved by more than the note-change threshold, is a genuine new note. The
+  142 ms worst case sits under that line deliberately, and `tight` was chosen (0.80, not
+  higher) to keep it there — see `PitchEngine::kTrackingConfidence`.
+
 At `retune_speed_ms = 0` with `flex = 0` and a tight scale you get the hard-tuned effect. At
 120 ms with flex and humanize up you get transparent correction. **This is where the two
 characters actually live** — see §4.

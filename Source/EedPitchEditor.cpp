@@ -41,6 +41,23 @@ EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
     };
     addAndMakeVisible (voiceBox_);
 
+    styleCombo (trackBox_);
+    if (const auto* spec = EedPitchProcessor::schema().find (EedPitchProcessor::kTracking))
+    {
+        for (std::size_t i = 0; i < spec->choices.size(); ++i)
+            trackBox_.addItem (juce::String (spec->choices[i]).toUpperCase(), (int) i + 1);
+        trackBox_.setSelectedId (
+            (int) proc_.getParamValue (EedPitchProcessor::kTracking) + 1,
+            juce::dontSendNotification);
+    }
+    trackBox_.onChange = [this]
+    {
+        if (! suppressCallbacks_ && trackBox_.getSelectedId() > 0)
+            proc_.setParamValue (EedPitchProcessor::kTracking,
+                                 (double) (trackBox_.getSelectedId() - 1));
+    };
+    addAndMakeVisible (trackBox_);
+
     // Momentary action, driven THROUGH the schema path like an AI move.
     styleButton (resetBtn_, false);
     resetBtn_.onClick = [this]
@@ -62,6 +79,9 @@ void EedPitchEditor::layoutHeaderLeading (juce::Rectangle<int>& bar)
 {
     const int w = juce::jmin (110, bar.getWidth());
     voiceBox_.setBounds (bar.removeFromRight (w).reduced (0, 3));
+    bar.removeFromRight (6);
+    const int tw = juce::jmin (84, bar.getWidth());
+    trackBox_.setBounds (bar.removeFromRight (tw).reduced (0, 3));
     bar.removeFromRight (6);
 }
 
@@ -162,8 +182,14 @@ void EedPitchEditor::paintNumbers (juce::Graphics& g, juce::Rectangle<int> area,
 
     row ("F0", r.voiced ? juce::String (r.f0Hz, 2) + " Hz" : "-",
          r.voiced ? C::text : C::text3);
-    row ("CONF", juce::String (r.confidence, 2),
-         r.confidence >= 0.7f ? C::green : r.confidence >= 0.4f ? C::amber : C::text3);
+    // The gate is shown next to the number it gates: during P1 the question
+    // "was this frame even tracked?" is asked constantly, and it should be
+    // answerable from the readout rather than from the source.
+    const float floorConf = proc_.engine().trackingFloor();
+    row ("CONF", juce::String (r.confidence, 2)
+                   + "  >=" + juce::String (floorConf, 2),
+         ! r.voiced ? C::text3
+         : r.confidence >= floorConf + 0.10f ? C::green : C::amber);
     row ("STATE", r.voiced ? "VOICED" : "UNVOICED", r.voiced ? C::blue2 : C::text3);
     row ("IN", r.rmsDb <= -119.0f ? juce::String ("-inf dB")
                                   : juce::String (r.rmsDb, 1) + " dB", C::text2);
@@ -203,12 +229,15 @@ void EedPitchEditor::paintGuardPanel (juce::Graphics& g, juce::Rectangle<int> ar
 // ---------------------------------------------------------------------------
 void EedPitchEditor::syncFromProcessor()
 {
+    const juce::ScopedValueSetter<bool> guard (suppressCallbacks_, true);
+
     const int want = (int) proc_.getParamValue (EedPitchProcessor::kVoiceType) + 1;
     if (voiceBox_.getSelectedId() != want)
-    {
-        const juce::ScopedValueSetter<bool> guard (suppressCallbacks_, true);
         voiceBox_.setSelectedId (want, juce::dontSendNotification);
-    }
+
+    const int wantTrk = (int) proc_.getParamValue (EedPitchProcessor::kTracking) + 1;
+    if (trackBox_.getSelectedId() != wantTrk)
+        trackBox_.setSelectedId (wantTrk, juce::dontSendNotification);
 }
 
 void EedPitchEditor::timerCallback()

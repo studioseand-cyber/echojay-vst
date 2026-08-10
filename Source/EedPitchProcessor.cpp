@@ -26,6 +26,16 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           // Mirrors PitchEngine::VoiceType order exactly.
           { "soprano", "alto_tenor", "low_male", "instrument", "bass" } },
 
+        { EedPitchProcessor::kTracking, "",
+          0.0, (double) (PitchEngine::kNumTracking - 1), (double) PitchEngine::kNormal,
+          "how strict the detector is before it calls a frame pitched; "
+          "relaxed keeps breathy and quiet frames at the cost of occasional "
+          "wrong readings, tight only trusts clearly periodic frames and "
+          "leaves more of the take untracked",
+          false,
+          // Mirrors PitchEngine::Tracking order exactly.
+          { "relaxed", "normal", "tight" } },
+
         { EedPitchProcessor::kResetStats, "", 0.0, 1.0, 0.0,
           "set 1 to zero the octave-guard and frame counters before a "
           "detection measurement pass; always reads 0", true },
@@ -38,6 +48,11 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
     if (id == kVoiceType)
     {
         engine_.setVoiceType ((int) std::lround (value));
+        return true;
+    }
+    if (id == kTracking)
+    {
+        engine_.setTracking ((int) std::lround (value));
         return true;
     }
     if (id == kResetStats)
@@ -54,6 +69,7 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
 double EedPitchProcessor::getParamValue (const juce::String& id) const
 {
     if (id == kVoiceType)  return (double) engine_.getVoiceType();
+    if (id == kTracking)   return (double) engine_.getTracking();
     if (id == kResetStats) return 0.0;
     return 0.0;
 }

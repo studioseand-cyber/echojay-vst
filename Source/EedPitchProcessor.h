@@ -39,6 +39,7 @@ public:
     // Canonical ids in one place, so schema, apply path and editor cannot
     // drift apart through a typo.
     static constexpr const char* kVoiceType  = "voice_type";
+    static constexpr const char* kTracking   = "tracking";
     static constexpr const char* kResetStats = "reset_stats";
 
     echojay::PitchEngine&       engine() noexcept       { return engine_; }
