@@ -42,6 +42,7 @@ private:
 
     juce::ComboBox   voiceBox_, trackBox_;
     juce::TextButton resetBtn_ { "RESET" };
+    echojay::device::EchoJayDeviceKnob targetKnob_;
 
     juce::Rectangle<int> notePanel_, numbersPanel_, guardPanel_;
 

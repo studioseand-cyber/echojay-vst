@@ -12,14 +12,14 @@ namespace
 {
     // The size the rack opens at. layoutContent must still survive being given
     // less than this — that is the inline-hosting contract.
-    constexpr int kDefaultW = 460;
+    constexpr int kDefaultW = 540;
     constexpr int kDefaultH = 170;
 }
 
 EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
     : DeviceEditorBase (p, "PITCH", kDefaultW, kDefaultH), proc_ (p)
 {
-    setHeaderHint ("P0 detection readout - no correction yet");
+    setHeaderHint ("P1 - fixed-target shift; TARGET 0 is passthrough");
 
     // voice_type items ARE the schema's choices, in the schema's order.
     styleCombo (voiceBox_);
@@ -58,6 +58,21 @@ EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
     };
     addAndMakeVisible (trackBox_);
 
+    // The P1 target. Range comes from the SCHEMA, never re-typed, so the dial
+    // physically cannot travel somewhere the AI is not allowed to dial.
+    if (const auto* spec = EedPitchProcessor::schema().find (EedPitchProcessor::kTargetHz))
+    {
+        targetKnob_.setSpec (spec->min, spec->max, 400.0, 1, " Hz", "TARGET", spec->def);
+        targetKnob_.setRealValue (proc_.getParamValue (EedPitchProcessor::kTargetHz));
+        targetKnob_.onValueChange = [this]
+        {
+            if (! suppressCallbacks_)
+                proc_.setParamValue (EedPitchProcessor::kTargetHz,
+                                     targetKnob_.getRealValue());
+        };
+        addAndMakeVisible (targetKnob_);
+    }
+
     // Momentary action, driven THROUGH the schema path like an AI move.
     styleButton (resetBtn_, false);
     resetBtn_.onClick = [this]
@@ -91,6 +106,12 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
 
     content.reduce (juce::jmin (kPad, content.getWidth() / 4),
                     juce::jmin (6, content.getHeight() / 4));
+
+    // The target dial sits hard right; the readout columns share the rest.
+    targetKnob_.setBounds (content.removeFromRight (
+        juce::jmin (kKnobW, content.getWidth()))
+            .withHeight (juce::jmin (kKnobH, content.getHeight())));
+    content.removeFromRight (juce::jmin (6, content.getWidth()));
 
     // Three columns: note + tuner bar | numbers | guard log.
     notePanel_    = content.removeFromLeft (content.getWidth() * 2 / 5);
@@ -238,6 +259,10 @@ void EedPitchEditor::syncFromProcessor()
     const int wantTrk = (int) proc_.getParamValue (EedPitchProcessor::kTracking) + 1;
     if (trackBox_.getSelectedId() != wantTrk)
         trackBox_.setSelectedId (wantTrk, juce::dontSendNotification);
+
+    const double wantHz = proc_.getParamValue (EedPitchProcessor::kTargetHz);
+    if (std::abs (wantHz - targetKnob_.getRealValue()) > 1.0e-4)
+        targetKnob_.setRealValue (wantHz);
 }
 
 void EedPitchEditor::timerCallback()

@@ -266,6 +266,7 @@ target_sources(EchoJay PRIVATE
     Source/EedPitchEngine.h
     Source/EedPitchProcessor.cpp
     Source/EedPitchProcessor.h
+    Source/EedPsolaEngine.h
     Source/EedReverbEditor.cpp
     Source/EedReverbEditor.h
     Source/EedReverbEngine.h
@@ -582,6 +583,7 @@ target_sources(EchoJayLink PRIVATE
     Source/EedPitchEngine.h
     Source/EedPitchProcessor.cpp
     Source/EedPitchProcessor.h
+    Source/EedPsolaEngine.h
     Source/EedReverbEditor.cpp
     Source/EedReverbEditor.h
     Source/EedReverbEngine.h

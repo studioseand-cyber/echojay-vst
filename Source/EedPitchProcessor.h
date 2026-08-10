@@ -17,6 +17,7 @@
 
 #include "EedDeviceProcessor.h"
 #include "EedPitchEngine.h"
+#include "EedPsolaEngine.h"
 
 class EedPitchProcessor : public EedDeviceProcessor
 {
@@ -40,13 +41,26 @@ public:
     // drift apart through a typo.
     static constexpr const char* kVoiceType  = "voice_type";
     static constexpr const char* kTracking   = "tracking";
+    static constexpr const char* kTargetHz   = "target_hz";
     static constexpr const char* kResetStats = "reset_stats";
 
     echojay::PitchEngine&       engine() noexcept       { return engine_; }
     const echojay::PitchEngine& engine() const noexcept { return engine_; }
 
+    echojay::PsolaEngine&       shifter() noexcept       { return psola_; }
+    const echojay::PsolaEngine& shifter() const noexcept { return psola_; }
+
 private:
+    // Latency depends on voice_type (the lowest pitch the window must
+    // represent), so it is recomputed whenever that changes and the host is
+    // told. Reported honestly per spec §2.4 - a corrector that silently
+    // misaligns a vocal against the track is worse than a slower one.
+    void refreshLatency();
+
     echojay::PitchEngine engine_;
+    echojay::PsolaEngine psola_;
+    double               sampleRate_ = 48000.0;
+    int                  latencyVoiceType_ = -1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedPitchProcessor)
 };
