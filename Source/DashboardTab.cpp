@@ -712,11 +712,12 @@ void DashboardView::drawTile (juce::Graphics& g, const DashProject& p,
     if (p.chains > 0)
         counts << (counts.isEmpty() ? "" : dot) << p.chains
                << " chain" << (p.chains == 1 ? "" : "s");
-    // "Nothing yet", not "empty": a bare word sitting where "19 chats · 3
-    // chains" sits on every neighbour reads as a missing value rather than a
-    // state. Not "No chats yet" either, since this appears only when chats
-    // AND captures AND chains are all zero.
-    if (counts.isEmpty()) counts = "Nothing yet";
+    // "No chats yet", never a bare "empty": a lone word sitting where
+    // "19 chats - 3 chains" sits on every neighbour reads as a missing value
+    // rather than as a state. It appears only when chats AND captures AND
+    // chains are all zero, so it names the count a fresh project is most
+    // likely waiting on rather than listing all three.
+    if (counts.isEmpty()) counts = "No chats yet";
     g.setColour (C::text3);
     g.setFont (juce::Font (juce::FontOptions (9.5f)));
     g.drawText (counts, square.getX(), square.getBottom() + 21, edge, 12,
