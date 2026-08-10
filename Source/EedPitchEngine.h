@@ -208,10 +208,24 @@ public:
         return o;
     }
 
-    // Introspection for tests and the readout.
+    // Introspection for tests and the readout. These read the ACTIVE config,
+    // so they are only meaningful once process() has run at least once (the
+    // first block is what applies a pending voice_type).
     double analysisRate() const noexcept { return fsA_; }
     int    windowLength() const noexcept { return W_; }
     int    hopLength()    const noexcept { return hopA_; }
+
+    // The INPUT-domain hop for a voice type at the prepared sample rate, so
+    // an offline driver can feed exactly one analysis hop per call and attach
+    // a timestamp to each published reading. Derived from the same
+    // deriveConfig() the audio path uses rather than recomputed, so a probe
+    // cannot drift from the engine it is measuring. Valid straight after
+    // prepare(), with no dummy processing needed to force a config.
+    int inputHopLength (int voiceType) const noexcept
+    {
+        const Config c = deriveConfig (voiceType);
+        return c.hopA * c.decim;
+    }
 
     // ---- note formatting (shared by editor and tests) ---------------------
     static float hzToMidi (float hz) noexcept

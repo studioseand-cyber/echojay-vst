@@ -832,6 +832,41 @@ target_link_libraries(EchoJayBuiltinRegistryTest PRIVATE
 
 set_target_properties(EchoJayBuiltinRegistryTest PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
+# ============================================================================
+# pitch_probe — offline validation harness for the P0 pitch detector
+# (PITCH_CORRECTION_SPEC.md §2.1 / §9).
+#
+# Runs EedPitchEngine over a real audio file and reports the number the spec
+# gates P0 on: octave-guard fires as a percentage of voiced hops. The g++ suite
+# proves the estimator on SYNTHETIC material; this is what proves it on
+# singing, which has consonants, breath, creak and a room under it.
+#
+# Its own target, EXCLUDE_FROM_ALL, and deliberately NOT linked into or
+# depended on by either plugin target — a validation tool must not be able to
+# break or slow a shipping build. The engine is header-only, so this needs no
+# device sources at all.
+#
+#   cmake --build build --target EchoJayPitchProbe
+#   ./build/EchoJayPitchProbe_artefacts/Debug/EchoJayPitchProbe vocal.wav --all
+# ============================================================================
+juce_add_console_app(EchoJayPitchProbe PRODUCT_NAME "EchoJayPitchProbe")
+juce_generate_juce_header(EchoJayPitchProbe)
+
+target_sources(EchoJayPitchProbe PRIVATE tools/pitch_probe/main.cpp)
+target_include_directories(EchoJayPitchProbe PRIVATE Source)
+target_compile_features(EchoJayPitchProbe PRIVATE cxx_std_17)
+
+target_compile_definitions(EchoJayPitchProbe PRIVATE
+    JUCE_USE_CURL=0
+    JUCE_WEB_BROWSER=0
+    JUCE_STANDALONE_APPLICATION=1)
+
+target_link_libraries(EchoJayPitchProbe PRIVATE
+    juce::juce_audio_formats
+    juce::juce_recommended_config_flags)
+
+set_target_properties(EchoJayPitchProbe PROPERTIES EXCLUDE_FROM_ALL TRUE)
+
 # ============ Streaming parser test runner (spec step 3) ============
 # Console app, juce_core only — runs the read-back suite that holds the
 # incremental block parser byte-identical to the whole-reply strip
