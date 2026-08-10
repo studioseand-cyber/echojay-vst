@@ -55,6 +55,23 @@ public:
     static constexpr const char* kReferenceHz  = "reference_hz";
     static constexpr const char* kTranspose    = "transpose";
     static constexpr const char* kIgnoreVib    = "targeting_ignores_vibrato";
+    static constexpr const char* kMode         = "correction_mode";
+    static constexpr const char* kMix          = "mix";
+    static constexpr const char* kOutputDb     = "output_db";
+
+    // correction_mode indices. `custom` is LAST and is what the display falls
+    // to the moment any of the params a mode writes is moved by hand.
+    enum Mode { kNatural = 0, kBalanced, kTuned, kHard, kCustom, kNumModes };
+
+    // Index of `custom` in the scale choices - a DISPLAY state reached by
+    // editing a degree, never a mask to write.
+    static constexpr int kScaleCustom = 10;
+
+    // The pitch_scale array move (spec §5.1). MERGE semantics keyed on
+    // `semitone`: an omitted degree keeps its current state.
+    juce::String applyStructured (const juce::var& structured,
+                                  int* appliedOut = nullptr,
+                                  int* skippedOut = nullptr) override;
 
     // The two lookahead settings, in periods of the active voice_type's floor.
     // PUBLIC because the editor prints the latency each one causes - the number
@@ -94,6 +111,28 @@ private:
     // afterwards would move `scale` to custom - the same visible-state rule the
     // spec sets for correction_mode.
     void applyScale (int index);
+
+    // Writes the six visible params a mode stands for, and reports what it
+    // moved - a mode that changes behaviour without moving knobs is undialable
+    // by definition, and one that moves six knobs under a single line saying
+    // "mode = natural" is the same failure wearing a different hat.
+    juce::String applyMode (int mode);
+
+    juce::String applyPitchScale (const juce::var& arr, int* applied, int* skipped);
+
+    // Set while a mode is writing its params, so the writes do not each knock
+    // the display to custom.
+    // Knocks the mode display to custom, unless a mode is doing the writing.
+    void toCustomMode() { if (! applyingMode_) modeIndex_.store (kCustom); }
+
+    // applyMode/applyScale run inside setParamValue, whose caller builds its
+    // own summary from id/value pairs and would report "correction_mode hard"
+    // over six knobs that silently moved. They leave their detail here so
+    // applyStructured can put it back into the applied line.
+    juce::String pendingModeSummary_, pendingScaleSummary_;
+
+    bool applyingMode_ = false;
+    std::atomic<int> modeIndex_ { kCustom };
     double               sampleRate_ = 48000.0;
     int                  latencyVoiceType_ = -1;
 

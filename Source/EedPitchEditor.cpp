@@ -13,7 +13,7 @@ namespace
     // The size the rack opens at. layoutContent must still survive being given
     // less than this — that is the inline-hosting contract.
     constexpr int kDefaultW = 620;
-    constexpr int kDefaultH = 270;
+    constexpr int kDefaultH = 290;
 }
 
 EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
@@ -134,6 +134,8 @@ EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
         };
         addAndMakeVisible (b);
     };
+    // correction_mode is the headline control, so it leads the row.
+    setupCombo (modeBox_,  EedPitchProcessor::kMode,    "");
     setupCombo (keyBox_,   EedPitchProcessor::kKeyRoot, "KEY ");
     setupCombo (scaleBox_, EedPitchProcessor::kScale,   "");
 
@@ -241,7 +243,8 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
         dial (retuneKnob_); dial (flexKnob_); dial (humanKnob_);
         row.removeFromLeft (juce::jmin (6, row.getWidth()));
 
-        auto col = row.removeFromLeft (juce::jmin (104, row.getWidth()));
+        auto col = row.removeFromLeft (juce::jmin (116, row.getWidth()));
+        modeBox_.setBounds (col.removeFromTop (juce::jmin (kRowH, col.getHeight())).reduced (1));
         keyBox_.setBounds (col.removeFromTop (juce::jmin (kRowH, col.getHeight())).reduced (1));
         scaleBox_.setBounds (col.removeFromTop (juce::jmin (kRowH, col.getHeight())).reduced (1));
 
@@ -451,6 +454,9 @@ void EedPitchEditor::syncFromProcessor()
         const int want = (int) proc_.getParamValue (id) + 1;
         if (b.getSelectedId() != want) b.setSelectedId (want, juce::dontSendNotification);
     };
+    // The mode display follows the params, so a hand-turned knob shows custom
+    // here without anything else having to notice.
+    syncBox (modeBox_,  EedPitchProcessor::kMode);
     syncBox (keyBox_,   EedPitchProcessor::kKeyRoot);
     syncBox (scaleBox_, EedPitchProcessor::kScale);
 

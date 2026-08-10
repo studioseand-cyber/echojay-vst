@@ -213,6 +213,20 @@ public:
     // emitted. So lag <= latency, and with frameLen = 3.5 periods the lag is
     // 1.75 periods - which puts a hard floor of ~1.75 periods on the lookahead
     // that has nothing to do with PSOLA's own needs.
+    // Wet/dry blend and final trim. Both live here because the DRY signal at
+    // the right delay only exists inside this engine.
+    //
+    // At mix 100 and 0 dB both are exact no-ops - no multiply happens at all -
+    // so the bit-identical unvoiced guarantee of spec §8 survives them.
+    void  setMixPercent (float pct) noexcept { mix_.store (std::clamp (pct, 0.0f, 100.0f) * 0.01f); }
+    float getMixPercent() const noexcept     { return mix_.load() * 100.0f; }
+    void  setOutputDb (float db) noexcept
+    {
+        outGain_.store (std::fabs (db) < 1.0e-6f ? 1.0f : std::pow (10.0f, db / 20.0f));
+        outDb_.store (db);
+    }
+    float getOutputDb() const noexcept       { return outDb_.load(); }
+
     void setPitchLagSamples (int lag) noexcept { pitchLag_ = std::max (0, lag); }
     int  getPitchLagSamples() const noexcept   { return pitchLag_; }
 
@@ -275,7 +289,8 @@ private:
             const int64_t p = base + (int64_t) i;
             if (p < 0) { out[i] = 0.0f; continue; }      // latency warm-up
             const uint32_t idx = (uint32_t) (uint64_t) p & mask_;
-            out[i] = in_[(size_t) idx];
+            const float og = outGain_.load (std::memory_order_relaxed);
+            out[i] = og == 1.0f ? in_[(size_t) idx] : in_[(size_t) idx] * og;
             // Clear the accumulators as we pass, so a later switch back to
             // shifting does not read stale grain content.
             acc_[(size_t) idx] = 0.0f;
@@ -313,7 +328,15 @@ private:
             // near the seam fade between wet and dry so the join is smooth,
             // and that fade lives entirely on the voiced side.
             const float g = seamGain ((uint64_t) p);
-            out[i] = g <= 0.0f ? dry : (g >= 1.0f ? wet : dry + g * (wet - dry));
+            float y = g <= 0.0f ? dry : (g >= 1.0f ? wet : dry + g * (wet - dry));
+
+            // Blend against the delay-matched dry, then trim. Skipped entirely
+            // at the defaults so nothing is multiplied that need not be.
+            const float m = mix_.load (std::memory_order_relaxed);
+            if (m < 1.0f) y = dry + m * (y - dry);
+            const float og = outGain_.load (std::memory_order_relaxed);
+            if (og != 1.0f) y *= og;
+            out[i] = y;
 
             acc_[(size_t) idx] = 0.0f;
             win_[(size_t) idx] = 0.0f;
@@ -581,6 +604,9 @@ private:
 
     std::atomic<float> targetHz_ { 0.0f };
     std::atomic<int>   formantMode_ { kFormantPreserve };
+    std::atomic<float> mix_     { 1.0f };
+    std::atomic<float> outGain_ { 1.0f };
+    std::atomic<float> outDb_   { 0.0f };
 };
 
 } // namespace echojay

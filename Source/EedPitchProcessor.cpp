@@ -20,6 +20,94 @@ using echojay::PitchCorrect;
 const echojay::ParamSchema& EedPitchProcessor::schema()
 {
     static const echojay::ParamSchema s ({
+        { EedPitchProcessor::kMode, "",
+          0.0, (double) (EedPitchProcessor::kNumModes - 1), (double) EedPitchProcessor::kNatural,
+          "the CHARACTER of the correction, and the fastest way to get one. "
+          "natural is transparent - the tuning is tidied but the performance "
+          "survives, and on a good take it is hard to hear; use it when the "
+          "brief is 'tune it but keep it sounding natural'. balanced is "
+          "audibly corrected but still human. tuned is the modern pop sound. "
+          "hard is the unmistakable effect where every note snaps instantly - "
+          "reach for hard when the brief is 'make it obviously tuned', "
+          "'autotuned', 'robotic' or 'T-Pain'. Selecting a mode WRITES the "
+          "individual params below (retune_speed_ms, flex, humanize, "
+          "targeting_ignores_vibrato) so you can see what it did and adjust "
+          "from there; moving any of them by hand shows custom",
+          false,
+          { "natural", "balanced", "tuned", "hard", "custom" } },
+
+        // ---- P2: the musical layer ------------------------------------
+        { EedPitchProcessor::kCorrect, "", 0.0, 1.0, 1.0,
+          "correction on/off. ON by default - adding this device to a chain "
+          "corrects. Turn it OFF to A/B against the untouched signal without "
+          "removing the device; bypass and mix 0 do the same thing with the "
+          "same reported latency",
+          true },
+
+        { EedPitchProcessor::kRetuneMs, "ms",
+          (double) PitchCorrect::kMinRetuneMs, (double) PitchCorrect::kMaxRetuneMs,
+          (double) PitchCorrect::kDefRetuneMs,
+          "how fast pitch is pulled to the target; 0 is the hard tuned effect "
+          "where every note snaps instantly, 100+ is transparent and keeps the "
+          "singer's own movement between notes",
+          false },
+
+        { EedPitchProcessor::kFlex, "%", 0.0, 100.0, 55.0,
+          "how much expressive drift is left alone before correction engages; "
+          "high keeps slides, scoops and deliberate blue notes, 0 corrects "
+          "every deviation however small",
+          false },
+
+        { EedPitchProcessor::kHumanize, "%", 0.0, 100.0, 60.0,
+          "relaxes correction on SUSTAINED notes while keeping onsets tight, so "
+          "long notes do not sound frozen. Sustain is judged from how long the "
+          "pitch has been steady, not from how loud it is",
+          false },
+
+        { EedPitchProcessor::kIgnoreVib, "", 0.0, 1.0, 1.0,
+          "stops a wide vibrato flipping the target between neighbouring notes. "
+          "Target selection uses a slow-smoothed pitch while the correction "
+          "still follows the fast one, so the vibrato survives and the note "
+          "does not chatter",
+          true },
+
+        { EedPitchProcessor::kKeyRoot, "", 0.0, 11.0, 0.0,
+          "the root the scale is built on. IGNORED while scale is chromatic, "
+          "which is the default - so setting this alone changes nothing. Only "
+          "meaningful once the user has told you the key and you have set a "
+          "named scale to match",
+          false,
+          { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" } },
+
+        { EedPitchProcessor::kScale, "", 0.0, 10.0, 9.0,
+          "which notes correction is allowed to choose. DEFAULT TO CHROMATIC "
+          "UNLESS THE USER STATES A KEY: this device does not detect the key "
+          "yet, and forcing a scale the song is not actually in is measurably "
+          "WORSE THAN NOT CORRECTING AT ALL - a take left 13 cents from the "
+          "nearest note on average was pushed to 29 cents by correcting it to "
+          "a wrong key, because partial correction toward foreign notes lands "
+          "between semitones. Chromatic still tunes every note and cannot "
+          "force a wrong one. Set a named scale only when the user names the "
+          "key, or when they ask for the tighter, more obviously-tuned sound "
+          "and have told you what key the song is in",
+          false,
+          { "major", "minor", "harmonic_minor", "dorian", "mixolydian",
+            "major_pentatonic", "minor_pentatonic", "blues", "whole_tone",
+            "chromatic", "custom" } },
+
+        { EedPitchProcessor::kReferenceHz, "Hz",
+          (double) PitchCorrect::kMinReferenceHz, (double) PitchCorrect::kMaxReferenceHz,
+          440.0,
+          "concert pitch reference. Set it to the track's actual tuning - a "
+          "vocal corrected to 440 against a band at 441.3 sits subtly wrong "
+          "against everything",
+          false },
+
+        { EedPitchProcessor::kTranspose, "st",
+          (double) PitchCorrect::kMinTranspose, (double) PitchCorrect::kMaxTranspose, 0.0,
+          "shifts the corrected result in semitones, after correction",
+          false },
+
         { EedPitchProcessor::kVoiceType, "",
           0.0, (double) (PitchEngine::kNumVoiceTypes - 1), (double) PitchEngine::kAltoTenor,
           "pitch search range of the detector; match it to the source - a "
@@ -37,14 +125,6 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           false,
           // Mirrors PitchEngine::Tracking order exactly.
           { "relaxed", "normal", "tight" } },
-
-        { EedPitchProcessor::kTargetHz, "Hz",
-          0.0, (double) PsolaEngine::kMaxTargetHz, 0.0,
-          "P1 development control: when non-zero EVERY voiced frame is shifted "
-          "to this one fixed pitch, formants preserved. 0 leaves the audio "
-          "untouched. Musical target selection - scale, key, retune speed - "
-          "arrives in a later phase; this is not yet a pitch corrector",
-          false },
 
         { EedPitchProcessor::kFormantMode, "",
           0.0, (double) (PsolaEngine::kNumFormantModes - 1),
@@ -68,66 +148,25 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "enough that monitoring is not practical either way",
           true },
 
-        // ---- P2: the musical layer ------------------------------------
-        { EedPitchProcessor::kCorrect, "", 0.0, 1.0, 0.0,
-          "turn ON to actually correct pitch to the key and scale. OFF leaves "
-          "the audio untouched (target_hz still works as a fixed-target lab "
-          "control). This is the switch that turns the device into a corrector",
-          true },
-
-        { EedPitchProcessor::kRetuneMs, "ms",
-          (double) PitchCorrect::kMinRetuneMs, (double) PitchCorrect::kMaxRetuneMs,
-          (double) PitchCorrect::kDefRetuneMs,
-          "how fast pitch is pulled to the target; 0 is the hard tuned effect "
-          "where every note snaps instantly, 100+ is transparent and keeps the "
-          "singer's own movement between notes",
+        // ---- the headline control -------------------------------------
+        { EedPitchProcessor::kMix, "%", 0.0, 100.0, 100.0,
+          "blend against the untouched signal. 100 is fully corrected; below "
+          "that the original sits underneath, which thickens a lead and hides "
+          "correction artefacts. 40-70 is the parallel-tuning trick for a take "
+          "that only needs help in places",
           false },
 
-        { EedPitchProcessor::kFlex, "%", 0.0, 100.0, 55.0,
-          "how much expressive drift is left alone before correction engages; "
-          "high keeps slides, scoops and deliberate blue notes, 0 corrects "
-          "every deviation however small",
+        { EedPitchProcessor::kOutputDb, "dB", -24.0, 24.0, 0.0,
+          "final output trim, after everything else", false },
+
+        { EedPitchProcessor::kTargetHz, "Hz",
+          0.0, (double) PsolaEngine::kMaxTargetHz, 0.0,
+          "DIAGNOSTIC, not a musical control: forces every voiced frame to one "
+          "fixed pitch, ignoring key, scale and retune speed. Useful for "
+          "checking the shifter in isolation or for a deliberate monotone "
+          "effect. Leave at 0 for normal correction - to tune a vocal, use "
+          "correction_mode with correct on, never this",
           false },
-
-        { EedPitchProcessor::kHumanize, "%", 0.0, 100.0, 60.0,
-          "relaxes correction on SUSTAINED notes while keeping onsets tight, so "
-          "long notes do not sound frozen. Sustain is judged from how long the "
-          "pitch has been steady, not from how loud it is",
-          false },
-
-        { EedPitchProcessor::kKeyRoot, "", 0.0, 11.0, 0.0,
-          "the key the scale is built on",
-          false,
-          { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" } },
-
-        { EedPitchProcessor::kScale, "", 0.0, 9.0, 9.0,
-          "which notes correction is allowed to choose. chromatic is the safe "
-          "default - it still tunes and cannot force a note that is wrong for "
-          "the song; a named scale is tighter and more obviously tuned",
-          false,
-          { "major", "minor", "harmonic_minor", "dorian", "mixolydian",
-            "major_pentatonic", "minor_pentatonic", "blues", "whole_tone",
-            "chromatic" } },
-
-        { EedPitchProcessor::kReferenceHz, "Hz",
-          (double) PitchCorrect::kMinReferenceHz, (double) PitchCorrect::kMaxReferenceHz,
-          440.0,
-          "concert pitch reference. Set it to the track's actual tuning - a "
-          "vocal corrected to 440 against a band at 441.3 sits subtly wrong "
-          "against everything",
-          false },
-
-        { EedPitchProcessor::kTranspose, "st",
-          (double) PitchCorrect::kMinTranspose, (double) PitchCorrect::kMaxTranspose, 0.0,
-          "shifts the corrected result in semitones, after correction",
-          false },
-
-        { EedPitchProcessor::kIgnoreVib, "", 0.0, 1.0, 1.0,
-          "stops a wide vibrato flipping the target between neighbouring notes. "
-          "Target selection uses a slow-smoothed pitch while the correction "
-          "still follows the fast one, so the vibrato survives and the note "
-          "does not chatter",
-          true },
 
         { EedPitchProcessor::kResetStats, "", 0.0, 1.0, 0.0,
           "set 1 to zero the octave-guard and frame counters before a "
@@ -165,15 +204,20 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
         refreshLatency();
         return true;
     }
+    if (id == kMode)        { applyMode ((int) std::lround (value)); return true; }
+    if (id == kMix)         { psola_.setMixPercent ((float) value);  return true; }
+    if (id == kOutputDb)    { psola_.setOutputDb ((float) value);    return true; }
     if (id == kCorrect)     { correctOn_.store (value >= 0.5); return true; }
-    if (id == kRetuneMs)    { correct_.setRetuneMs ((float) value);   return true; }
-    if (id == kFlex)        { correct_.setFlex ((float) value);       return true; }
-    if (id == kHumanize)    { correct_.setHumanize ((float) value);   return true; }
+    // These four are what a mode writes, so moving one by hand means the
+    // display no longer honestly names the state.
+    if (id == kRetuneMs)    { correct_.setRetuneMs ((float) value); toCustomMode(); return true; }
+    if (id == kFlex)        { correct_.setFlex ((float) value);     toCustomMode(); return true; }
+    if (id == kHumanize)    { correct_.setHumanize ((float) value); toCustomMode(); return true; }
     if (id == kKeyRoot)     { correct_.setKeyRoot ((int) std::lround (value)); return true; }
     if (id == kScale)       { applyScale ((int) std::lround (value)); return true; }
     if (id == kReferenceHz) { correct_.setReferenceHz ((float) value); return true; }
     if (id == kTranspose)   { correct_.setTranspose ((float) value);   return true; }
-    if (id == kIgnoreVib)   { correct_.setIgnoreVibrato (value >= 0.5); return true; }
+    if (id == kIgnoreVib)   { correct_.setIgnoreVibrato (value >= 0.5); toCustomMode(); return true; }
     if (id == kResetStats)
     {
         // Momentary action dressed as a switch (the shape the schema can
@@ -193,6 +237,9 @@ double EedPitchProcessor::getParamValue (const juce::String& id) const
     if (id == kFormantMode) return (double) psola_.getFormantMode();
     if (id == kLowLatency)  return psola_.getLookaheadPeriods() <= kLookaheadTracking + 0.01f
                                  ? 1.0 : 0.0;
+    if (id == kMode)        return (double) modeIndex_.load();
+    if (id == kMix)         return (double) psola_.getMixPercent();
+    if (id == kOutputDb)    return (double) psola_.getOutputDb();
     if (id == kCorrect)     return correctOn_.load() ? 1.0 : 0.0;
     if (id == kRetuneMs)    return (double) correct_.getRetuneMs();
     if (id == kFlex)        return (double) correct_.getFlex();
@@ -204,6 +251,136 @@ double EedPitchProcessor::getParamValue (const juce::String& id) const
     if (id == kIgnoreVib)   return correct_.getIgnoreVibrato() ? 1.0 : 0.0;
     if (id == kResetStats) return 0.0;
     return 0.0;
+}
+
+// ---------------------------------------------------------------------------
+// correction_mode — a named point in the parameter space, not a hidden branch
+// ---------------------------------------------------------------------------
+// Spec §4: selecting a mode WRITES the visible params. It does not switch to a
+// different algorithm and it does not hide anything. That is what makes the
+// mode dialable by a model AND adjustable by a human from the same state - and
+// it is why the summary below names every value it wrote rather than saying
+// "mode = natural" over six knobs that silently moved.
+juce::String EedPitchProcessor::applyMode (int mode)
+{
+    const int m = juce::jlimit (0, (int) kNumModes - 1, mode);
+    modeIndex_.store (m);
+    if (m == kCustom) { pendingModeSummary_ = {}; return "correction_mode custom"; }
+
+    struct Preset { float retune, flex, humanize; bool ignoreVib; };
+    static const Preset kPresets[4] = {
+        { 120.0f, 55.0f, 60.0f, true  },   // natural
+        {  40.0f, 25.0f, 30.0f, true  },   // balanced
+        {   8.0f,  0.0f,  0.0f, false },   // tuned
+        {   0.0f,  0.0f,  0.0f, false },   // hard
+    };
+    const Preset& p = kPresets[m];
+
+    const juce::ScopedValueSetter<bool> guard (applyingMode_, true);
+    correct_.setRetuneMs (p.retune);
+    correct_.setFlex (p.flex);
+    correct_.setHumanize (p.humanize);
+    correct_.setIgnoreVibrato (p.ignoreVib);
+
+    // Every mode preserves formants: the character is retune speed and how much
+    // deviation survives, never whether it still sounds like the singer.
+    psola_.setFormantMode (echojay::PsolaEngine::kFormantPreserve);
+
+    const auto* spec = schema().find (kMode);
+    juce::String name = spec != nullptr ? juce::String (spec->choiceLabel (m)) : juce::String (m);
+
+    pendingModeSummary_ = "which set retune_speed_ms " + juce::String (p.retune, 0)
+         + ", flex " + juce::String (p.flex, 0)
+         + ", humanize " + juce::String (p.humanize, 0)
+         + ", targeting_ignores_vibrato " + juce::String (p.ignoreVib ? "on" : "off")
+         + ", formant_mode preserve";
+
+    return "correction_mode " + name
+         + " (retune_speed_ms " + juce::String (p.retune, 0)
+         + ", flex " + juce::String (p.flex, 0)
+         + ", humanize " + juce::String (p.humanize, 0)
+         + ", targeting_ignores_vibrato " + juce::String (p.ignoreVib ? "on" : "off")
+         + ", formant_mode preserve)";
+}
+
+// ---------------------------------------------------------------------------
+// pitch_scale — the array move, MERGE semantics (spec §5.1)
+// ---------------------------------------------------------------------------
+juce::String EedPitchProcessor::applyPitchScale (const juce::var& arr,
+                                                 int* applied, int* skipped)
+{
+    if (! arr.isArray()) return {};
+
+    juce::StringArray touched;
+    for (const auto& entry : *arr.getArray())
+    {
+        if (! entry.isObject()) { if (skipped) ++*skipped; continue; }
+
+        // `semitone` is the KEY. Without it there is nothing to merge against,
+        // so the entry is skipped rather than guessed at.
+        if (! entry.hasProperty ("semitone")) { if (skipped) ++*skipped; continue; }
+        const int st = (int) entry.getProperty ("semitone", -1);
+        if (st < 0 || st > 11) { if (skipped) ++*skipped; continue; }
+
+        // MERGE: a field the caller omitted keeps its current value. This is
+        // the opposite of eq_bands, which replaces.
+        bool  en   = correct_.degreeEnabled (st);
+        float bias = correct_.degreeBias (st);
+        if (entry.hasProperty ("enabled"))    en   = (bool) entry.getProperty ("enabled", en);
+        if (entry.hasProperty ("bias_cents")) bias = (float) (double) entry.getProperty ("bias_cents", bias);
+
+        correct_.setDegree (st, en, bias);
+        if (applied) ++*applied;
+
+        static const char* kNames[12] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
+        juce::String one (kNames[st]);
+        one << (en ? " on" : " off");
+        if (std::abs (bias) > 0.01f) one << " " << juce::String (bias, 0) << "c";
+        touched.add (one);
+    }
+
+    if (touched.isEmpty()) return {};
+
+    // Editing a degree moves the scale display to custom - same visible-state
+    // rule as correction_mode.
+    scaleIndex_.store (kScaleCustom);
+    return "pitch_scale " + touched.joinIntoString (", ") + " (scale custom)";
+}
+
+juce::String EedPitchProcessor::applyStructured (const juce::var& structured,
+                                                 int* appliedOut, int* skippedOut)
+{
+    if (appliedOut != nullptr) *appliedOut = 0;
+    if (skippedOut != nullptr) *skippedOut = 0;
+    if (! structured.isObject()) return EedDeviceProcessor::applyStructured (structured, appliedOut, skippedOut);
+
+    juce::StringArray parts;
+    pendingModeSummary_ = {};
+    pendingScaleSummary_ = {};
+
+    // The flat params first, so a move that sets `scale` AND edits a degree
+    // ends with the degree edit winning - which is what the caller wrote.
+    if (structured.hasProperty ("params"))
+    {
+        const auto p = applyParams (structured.getProperty ("params", juce::var()),
+                                    appliedOut, skippedOut);
+        if (p.isNotEmpty()) parts.add (p);
+
+        // Put back what a mode or a named scale actually DID. Six knobs moving
+        // under one line saying "correction_mode = natural" is the same failure
+        // as a mode that hides its behaviour entirely.
+        if (pendingModeSummary_.isNotEmpty())  parts.add (pendingModeSummary_);
+        if (pendingScaleSummary_.isNotEmpty()) parts.add (pendingScaleSummary_);
+    }
+
+    if (structured.hasProperty ("pitch_scale"))
+    {
+        const auto p = applyPitchScale (structured.getProperty ("pitch_scale", juce::var()),
+                                        appliedOut, skippedOut);
+        if (p.isNotEmpty()) parts.add (p);
+    }
+
+    return parts.joinIntoString ("; ");
 }
 
 // ---------------------------------------------------------------------------
@@ -224,12 +401,26 @@ void EedPitchProcessor::applyScale (int index)
         0b010101010101,   // whole tone
         0b111111111111,   // chromatic
     };
+    // `custom` is a DISPLAY state reached by editing a degree, not a mask to
+    // write. Selecting it explicitly leaves the degrees exactly as they are.
+    if (index >= kScaleCustom) { scaleIndex_.store (kScaleCustom); return; }
     const int n = (int) (sizeof (kMasks) / sizeof (kMasks[0]));
     const int i = juce::jlimit (0, n - 1, index);
     scaleIndex_.store (i);
 
+    juce::StringArray on;
+    static const char* kNames[12] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
     for (int s = 0; s < 12; ++s)
-        correct_.setDegree (s, (kMasks[i] >> s) & 1, correct_.degreeBias (s));
+    {
+        const bool en = (kMasks[i] >> s) & 1;
+        correct_.setDegree (s, en, correct_.degreeBias (s));
+        if (en) on.add (kNames[s]);
+    }
+
+    const auto* spec = schema().find (kScale);
+    (void) spec;
+    pendingScaleSummary_ = "rewriting all 12 degrees, allowing "
+                         + on.joinIntoString (" ");
 }
 
 // ---------------------------------------------------------------------------
@@ -357,15 +548,26 @@ namespace
         // ASCII ONLY (see the template's warning about mojibake in the feed).
         // The summary must not promise correction that P0 does not do.
         d.summary         = "Real-time pitch correction for ONE monophonic voice "
-                            "or lead instrument. Set correct:1, then key_root "
-                            "and scale, and dial the character with "
-                            "retune_speed_ms: 0 with flex 0 is the hard tuned "
-                            "effect, 120 with flex and humanize up is "
-                            "transparent. Formants are preserved so a corrected "
-                            "voice still sounds like the same singer, and "
-                            "unvoiced frames pass through untouched. Key and "
-                            "scale are set by hand - it does not follow the "
-                            "track's key yet. Not for polyphonic material.";
+                            "or lead instrument - a vocal, or a single-note "
+                            "lead. Set correct:1 and pick correction_mode: "
+                            "natural when the brief is 'tune it but keep it "
+                            "natural', hard when it is 'make it obviously "
+                            "tuned' or 'autotuned'. A mode writes the "
+                            "individual knobs so you can see and adjust what "
+                            "it did. IT DOES NOT KNOW THE SONG'S KEY: leave "
+                            "scale on chromatic unless the user tells you the "
+                            "key, because correcting to a WRONG key measures "
+                            "worse than not correcting at all. Formants are "
+                            "preserved so a corrected voice still sounds like "
+                            "the same singer; unvoiced frames pass through "
+                            "untouched. Not for chords or polyphonic material. "
+                            "To allow or forbid individual notes, send a "
+                            "pitch_scale array of {semitone, enabled, "
+                            "bias_cents} - it MERGES on semitone, so a degree "
+                            "you omit KEEPS its current state and you only send "
+                            "the ones you are changing. (Note this differs from "
+                            "eq_bands, which REPLACES.) Editing any degree "
+                            "moves scale to custom.";
 
         // Frozen once shipped (saved chain XML carries both).
         d.identifier      = "echojay:builtin:pitch";

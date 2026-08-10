@@ -904,6 +904,36 @@ target_link_libraries(EchoJayPitchRender PRIVATE
 
 set_target_properties(EchoJayPitchRender PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
+# ============================================================================
+# pitch_mode_test — the P3 dialable contract: correction_mode writing the
+# visible params, and the pitch_scale array move's MERGE semantics. Needs JUCE
+# (it goes through applyStructured, the same funnel the chain uses), so it
+# cannot live in the g++ suite. EXCLUDE_FROM_ALL, like every other test target.
+# ============================================================================
+juce_add_console_app(EchoJayPitchModeTest PRODUCT_NAME "EchoJayPitchModeTest")
+juce_generate_juce_header(EchoJayPitchModeTest)
+
+target_sources(EchoJayPitchModeTest PRIVATE
+    tools/pitch_mode_test/main.cpp
+    Source/DeviceEditorBase.cpp
+    Source/EchoJayDeviceLookAndFeel.cpp
+    Source/EedDeviceProcessor.cpp
+    Source/EedDeviceRegistry.cpp
+    Source/EedPitchEditor.cpp
+    Source/EedPitchProcessor.cpp
+    Source/viz/DwellGlow.cpp
+    Source/viz/VizView.cpp)
+target_include_directories(EchoJayPitchModeTest PRIVATE Source)
+target_compile_features(EchoJayPitchModeTest PRIVATE cxx_std_17)
+target_compile_definitions(EchoJayPitchModeTest PRIVATE
+    JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0 JUCE_STANDALONE_APPLICATION=1)
+target_link_libraries(EchoJayPitchModeTest PRIVATE
+    juce::juce_audio_processors
+    juce::juce_audio_utils
+    juce::juce_gui_extra
+    juce::juce_recommended_config_flags)
+set_target_properties(EchoJayPitchModeTest PROPERTIES EXCLUDE_FROM_ALL TRUE)
+
 # ============ Streaming parser test runner (spec step 3) ============
 # Console app, juce_core only — runs the read-back suite that holds the
 # incremental block parser byte-identical to the whole-reply strip

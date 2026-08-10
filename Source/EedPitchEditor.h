@@ -40,7 +40,7 @@ private:
 
     EedPitchProcessor& proc_;
 
-    juce::ComboBox   voiceBox_, trackBox_, formantBox_, keyBox_, scaleBox_;
+    juce::ComboBox   voiceBox_, trackBox_, formantBox_, keyBox_, scaleBox_, modeBox_;
     juce::TextButton correctBtn_ { "CORRECT" };
     juce::TextButton vibBtn_     { "IGN VIB" };
 
