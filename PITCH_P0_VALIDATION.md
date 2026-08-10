@@ -548,3 +548,113 @@ difference between unusable and still unusable.
 Recommendation: decide the use case now rather than at P5. If monitoring is in
 scope, the cheap half (the multiplier) should land with P2 while the shifter is
 still being listened to, since that is when a regression would be caught.
+
+---
+
+## 8. `low_latency`: measuring the thing at risk, not the thing that is easy
+
+§7.2 swept the lookahead on **pitch accuracy** and found it flat from 3.0 down
+to 1.1 periods. That measurement could not see the risk. A shorter lookahead
+threatens **onset transients**, and pitch accuracy is blind to smearing.
+
+So the measurement was redone on what is actually at stake: at each of 308 real
+voiced onsets in the acapella, the **10%→90% attack rise time** and the
+**peak-to-RMS over the first 20 ms**, processed against dry, while shifting up
+a semitone.
+
+| lookahead | Δ rise vs dry | Δ crest vs dry |
+|---|---|---|
+| 3.00 T (shipped) | +0.837 ms | +0.17 dB |
+| 2.50 T | +0.916 | +0.19 |
+| 2.00 T | +1.039 | +0.18 |
+| 1.75 T | +1.120 | +0.20 |
+| 1.50 T | +1.419 | +0.30 |
+| 1.25 T | +1.600 | +0.56 |
+| 1.10 T | +2.119 | +0.99 |
+
+Degradation is monotonic and the knee is around **1.5**, not 1.1 — the pitch
+sweep was measuring the wrong thing.
+
+### 8.1 The tracking-lag fix turned out to matter more than the multiplier
+
+The same harness, with the §7.1 timestamp compensation switched on:
+
+| lookahead | Δ rise vs dry | Δ crest vs dry |
+|---|---|---|
+| **3.00 T** | **−0.248 ms** | **+0.00 dB** |
+| 2.50 T | +0.171 | +0.26 |
+| **2.00 T** | **−0.238** | **+0.63** |
+| 1.75 T | +0.685 | +1.30 |
+| 1.50 T | +0.660 | +1.50 |
+
+At the shipped lookahead, aligning the f0 to the audio it describes takes onset
+crest to **exactly the dry value** and the attack rise to slightly *faster* than
+dry. The onset smearing attributed to PSOLA was mostly the shifter cutting
+grains with a **stale period**, not the windowing.
+
+It also confirms the floor from a second direction. The compensation is
+1.75 periods, and it must land ahead of the shifter's read point, so
+**lookahead ≥ ~1.75 periods** or the compensation gets truncated — which is
+exactly where crest starts diverging (+1.30 dB at 1.75, +1.50 at 1.50). Two
+independent constraints, the same answer.
+
+### 8.2 What shipped
+
+`low_latency` moves the multiplier only, 3.0 → **2.0 periods**: rise stays
+better than dry (−0.238 ms) and crest gives up 0.63 dB. 1.75 was rejected — it
+sits on the compensation floor with no margin.
+
+| `voice_type` | MIXING (3T) | TRACKING (2T) |
+|---|---|---|
+| soprano | 16.7 ms | **11.1 ms** |
+| alto_tenor | 37.5 ms | **25.0 ms** |
+| low_male | 54.6 ms | **36.4 ms** |
+| instrument | 60.0 ms | **40.0 ms** |
+| bass | 120.0 ms | **80.0 ms** |
+
+The search-floor lever is **not** touched — it changes what the detector can
+represent and interacts with the creak finding of §5.1, and only one lever moves
+while a listening loop is open.
+
+It is a **mode button**, labelled MIXING/TRACKING with the resulting latency for
+the current `voice_type` printed on it, and the cost stated beside it. It is
+**manual by construction**: nothing auto-switches it from transport or
+record-arm state, because changing reported latency forces the host to rebuild
+delay compensation, and doing that at the instant record engages is the worst
+possible moment for it.
+
+---
+
+## 9. P2 correction, measured
+
+The corrector is measured **in isolation from the shifter**, feeding the real
+take's detected f0 through `PitchCorrect` and comparing distance to the nearest
+enabled degree, in against out:
+
+| setting | input | output |
+|---|---|---|
+| hard, chromatic (retune 0, flex 0) | 13.0 ¢ | **0.0 ¢** |
+| natural, chromatic (120 / 55 / 60) | 13.0 ¢ | **9.5 ¢** |
+| hard, forced to C minor | 81.9 ¢ | **0.0 ¢** |
+| natural, forced to C minor | 81.9 ¢ | 46.4 ¢ |
+
+Measured at the rendered **audio** instead, the hard character reads 7.5 ¢ mean
+deviation rather than 0. That gap is the **shifter's** own accuracy on real
+material, not the corrector's — which is precisely why the two are measured
+separately.
+
+| render | mean dev | within 5 ¢ |
+|---|---|---|
+| dry | 13.0 ¢ | 35.3% |
+| **hard tuned** | **7.5 ¢** | **60.6%** |
+| **natural** | **11.8 ¢** | 34.5% |
+| wrong key (C minor forced) | 29.7 ¢ | 4.9% |
+
+`natural` sitting close to the dry signal is the point of it, not a failure:
+transparent correction should tidy pitch without flattening the performance.
+
+**The wrong-key row is kept deliberately.** Forcing a scale the take is not in
+makes correction measure *worse* than doing nothing, because partial correction
+toward foreign degrees lands between semitones. Until the key auto-map exists,
+**chromatic is the honest default** — it still tunes and it cannot force a note
+that is wrong for the song.

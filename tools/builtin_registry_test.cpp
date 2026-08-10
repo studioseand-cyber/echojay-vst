@@ -167,7 +167,7 @@ int main()
         check (names.indexOf ("EchoJay 4-Band Compressor") < names.indexOf ("EchoJay Compressor"),
                "within Dynamics, alphabetical: 4-Band before Compressor");
 
-        check (registry.categories().joinIntoString (",") == "EQ,Dynamics,Utility,Stereo,Modulation,Harmonic,Time,Analysis",
+        check (registry.categories().joinIntoString (",") == "EQ,Dynamics,Utility,Stereo,Modulation,Harmonic,Time,Pitch,Analysis",
                "categories in canonical order: " + registry.categories().joinIntoString (","));
 
         // Analysis is the last category, so the reader sorts after every writer.

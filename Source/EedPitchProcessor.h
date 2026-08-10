@@ -18,6 +18,7 @@
 #include "EedDeviceProcessor.h"
 #include "EedPitchEngine.h"
 #include "EedPsolaEngine.h"
+#include "EedPitchCorrect.h"
 
 class EedPitchProcessor : public EedDeviceProcessor
 {
@@ -43,10 +44,35 @@ public:
     static constexpr const char* kTracking   = "tracking";
     static constexpr const char* kTargetHz   = "target_hz";
     static constexpr const char* kFormantMode = "formant_mode";
+    static constexpr const char* kLowLatency  = "low_latency";
+    // P2: the musical layer.
+    static constexpr const char* kCorrect      = "correct";
+    static constexpr const char* kRetuneMs     = "retune_speed_ms";
+    static constexpr const char* kFlex         = "flex";
+    static constexpr const char* kHumanize     = "humanize";
+    static constexpr const char* kKeyRoot      = "key_root";
+    static constexpr const char* kScale        = "scale";
+    static constexpr const char* kReferenceHz  = "reference_hz";
+    static constexpr const char* kTranspose    = "transpose";
+    static constexpr const char* kIgnoreVib    = "targeting_ignores_vibrato";
+
+    // The two lookahead settings, in periods of the active voice_type's floor.
+    // PUBLIC because the editor prints the latency each one causes - the number
+    // is the whole point of the control, so the control has to be able to ask.
+    //
+    // Both are measured rather than chosen (PITCH_P0_VALIDATION.md §8): at 3.0
+    // periods onset crest matches the dry signal exactly (+0.00 dB), at 2.0 it
+    // is +0.63 dB, and by 1.75 the tracking-lag compensation starts being
+    // truncated and crest diverges past +1.3 dB.
+    static constexpr float kLookaheadMixing   = 3.0f;
+    static constexpr float kLookaheadTracking = 2.0f;
     static constexpr const char* kResetStats = "reset_stats";
 
     echojay::PitchEngine&       engine() noexcept       { return engine_; }
     const echojay::PitchEngine& engine() const noexcept { return engine_; }
+
+    echojay::PitchCorrect&       corrector() noexcept       { return correct_; }
+    const echojay::PitchCorrect& corrector() const noexcept { return correct_; }
 
     echojay::PsolaEngine&       shifter() noexcept       { return psola_; }
     const echojay::PsolaEngine& shifter() const noexcept { return psola_; }
@@ -59,7 +85,15 @@ private:
     void refreshLatency();
 
     echojay::PitchEngine engine_;
-    echojay::PsolaEngine psola_;
+    echojay::PsolaEngine  psola_;
+    echojay::PitchCorrect correct_;
+    std::atomic<bool>     correctOn_ { false };
+    std::atomic<int>      scaleIndex_ { 0 };
+
+    // Writing a named scale rewrites all twelve degrees. Touching one degree
+    // afterwards would move `scale` to custom - the same visible-state rule the
+    // spec sets for correction_mode.
+    void applyScale (int index);
     double               sampleRate_ = 48000.0;
     int                  latencyVoiceType_ = -1;
 

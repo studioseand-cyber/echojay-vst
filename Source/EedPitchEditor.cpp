@@ -13,13 +13,13 @@ namespace
     // The size the rack opens at. layoutContent must still survive being given
     // less than this — that is the inline-hosting contract.
     constexpr int kDefaultW = 620;
-    constexpr int kDefaultH = 170;
+    constexpr int kDefaultH = 270;
 }
 
 EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
     : DeviceEditorBase (p, "PITCH", kDefaultW, kDefaultH), proc_ (p)
 {
-    setHeaderHint ("P1 - fixed-target shift; TARGET 0 is passthrough");
+    setHeaderHint ("set CORRECT, pick KEY and SCALE, dial RETUNE for character");
 
     // voice_type items ARE the schema's choices, in the schema's order.
     styleCombo (voiceBox_);
@@ -97,6 +97,82 @@ EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
     { proc_.setParamValue (EedPitchProcessor::kResetStats, 1.0); };
     addAndMakeVisible (resetBtn_);
 
+    // ---- P2 controls ------------------------------------------------------
+    auto setupKnob = [this] (echojay::device::EchoJayDeviceKnob& k, const char* id,
+                             double skew, int dp, const char* suffix, const char* cap)
+    {
+        if (const auto* spec = EedPitchProcessor::schema().find (id))
+        {
+            k.setSpec (spec->min, spec->max, skew, dp, suffix, cap, spec->def);
+            k.setRealValue (proc_.getParamValue (id));
+            k.onValueChange = [this, &k, id]
+            {
+                if (! suppressCallbacks_) proc_.setParamValue (id, k.getRealValue());
+            };
+            addAndMakeVisible (k);
+        }
+    };
+    setupKnob (retuneKnob_, EedPitchProcessor::kRetuneMs, 80.0, 0, " ms", "RETUNE");
+    setupKnob (flexKnob_,   EedPitchProcessor::kFlex,      0.0, 0, " %",  "FLEX");
+    setupKnob (humanKnob_,  EedPitchProcessor::kHumanize,  0.0, 0, " %",  "HUMAN");
+
+    auto setupCombo = [this] (juce::ComboBox& b, const char* id, const char* prefix)
+    {
+        styleCombo (b);
+        if (const auto* spec = EedPitchProcessor::schema().find (id))
+        {
+            for (std::size_t i = 0; i < spec->choices.size(); ++i)
+                b.addItem (juce::String (prefix) + juce::String (spec->choices[i]).toUpperCase()
+                               .replaceCharacter ('_', ' '),
+                           (int) i + 1);
+            b.setSelectedId ((int) proc_.getParamValue (id) + 1, juce::dontSendNotification);
+        }
+        b.onChange = [this, &b, id]
+        {
+            if (! suppressCallbacks_ && b.getSelectedId() > 0)
+                proc_.setParamValue (id, (double) (b.getSelectedId() - 1));
+        };
+        addAndMakeVisible (b);
+    };
+    setupCombo (keyBox_,   EedPitchProcessor::kKeyRoot, "KEY ");
+    setupCombo (scaleBox_, EedPitchProcessor::kScale,   "");
+
+    auto setupToggle = [this] (juce::TextButton& b, const char* id)
+    {
+        styleButton (b, true);
+        b.setToggleState (proc_.getParamValue (id) >= 0.5, juce::dontSendNotification);
+        b.onClick = [this, &b, id]
+        {
+            if (! suppressCallbacks_)
+                proc_.setParamValue (id, b.getToggleState() ? 1.0 : 0.0);
+        };
+        addAndMakeVisible (b);
+    };
+    setupToggle (correctBtn_, EedPitchProcessor::kCorrect);
+    setupToggle (vibBtn_,     EedPitchProcessor::kIgnoreVib);
+
+    // THE LATENCY MODE. Deliberately a mode button rather than a checkbox: the
+    // user is choosing between two WORKFLOWS, and the number it costs is the
+    // whole point of the choice, so it is printed on the control.
+    //
+    // It is also deliberately MANUAL. Auto-switching from transport or
+    // record-arm state would change the reported latency at the moment record
+    // engages, forcing the host to rebuild delay compensation exactly when
+    // that is most audible and least expected.
+    styleButton (latencyBtn_, true);
+    latencyBtn_.setToggleState (proc_.getParamValue (EedPitchProcessor::kLowLatency) >= 0.5,
+                                juce::dontSendNotification);
+    latencyBtn_.onClick = [this]
+    {
+        if (suppressCallbacks_) return;
+        proc_.setParamValue (EedPitchProcessor::kLowLatency,
+                             latencyBtn_.getToggleState() ? 1.0 : 0.0);
+        refreshLatencyButton();
+        repaint();
+    };
+    addAndMakeVisible (latencyBtn_);
+    refreshLatencyButton();
+
     // 30 Hz: the readout is live data, and the poll keeps the combo honest
     // while the AI dials it.
     startTimerHz (30);
@@ -121,12 +197,59 @@ void EedPitchEditor::layoutHeaderLeading (juce::Rectangle<int>& bar)
     bar.removeFromRight (6);
 }
 
+int EedPitchEditor::currentLatencyMs (bool lowLatency) const
+{
+    const auto& vr = echojay::PitchEngine::voiceRange (
+        (int) proc_.getParamValue (EedPitchProcessor::kVoiceType));
+    const double fs = proc_.getSampleRate() > 0.0 ? proc_.getSampleRate() : 48000.0;
+    const int smp = echojay::PsolaEngine::latencyFor (fs, vr.fMinHz,
+        lowLatency ? EedPitchProcessor::kLookaheadTracking
+                   : EedPitchProcessor::kLookaheadMixing);
+    return (int) std::lround (1000.0 * smp / fs);
+}
+
+void EedPitchEditor::refreshLatencyButton()
+{
+    const bool low = latencyBtn_.getToggleState();
+    latencyBtn_.setButtonText ((low ? "TRACKING  " : "MIXING  ")
+                                 + juce::String (currentLatencyMs (low)) + " ms");
+}
+
 void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
 {
     if (content.isEmpty()) return;
 
     content.reduce (juce::jmin (kPad, content.getWidth() / 4),
                     juce::jmin (6, content.getHeight() / 4));
+
+    // The latency MODE gets its own band, full width, because it is a
+    // workflow decision rather than a tweak.
+    {
+        auto band = content.removeFromBottom (juce::jmin (34, content.getHeight() / 3));
+        latencyBounds_ = band;
+        latencyBtn_.setBounds (band.removeFromLeft (juce::jmin (150, band.getWidth()))
+                                   .reduced (2, 5));
+    }
+
+    // P2 controls: dials, then key/scale, then the two switches.
+    {
+        auto row = content.removeFromBottom (juce::jmin (kKnobH, content.getHeight() / 2));
+        auto dial = [&row] (echojay::device::EchoJayDeviceKnob& k)
+        {
+            k.setBounds (row.removeFromLeft (juce::jmin (kKnobW, row.getWidth())));
+        };
+        dial (retuneKnob_); dial (flexKnob_); dial (humanKnob_);
+        row.removeFromLeft (juce::jmin (6, row.getWidth()));
+
+        auto col = row.removeFromLeft (juce::jmin (104, row.getWidth()));
+        keyBox_.setBounds (col.removeFromTop (juce::jmin (kRowH, col.getHeight())).reduced (1));
+        scaleBox_.setBounds (col.removeFromTop (juce::jmin (kRowH, col.getHeight())).reduced (1));
+
+        row.removeFromLeft (juce::jmin (6, row.getWidth()));
+        auto sw = row.removeFromLeft (juce::jmin (80, row.getWidth()));
+        correctBtn_.setBounds (sw.removeFromTop (juce::jmin (kRowH, sw.getHeight())).reduced (1));
+        vibBtn_.setBounds (sw.removeFromTop (juce::jmin (kRowH, sw.getHeight())).reduced (1));
+    }
 
     // The target dial sits hard right; the readout columns share the rest.
     targetKnob_.setBounds (content.removeFromRight (
@@ -156,6 +279,7 @@ void EedPitchEditor::paintContent (juce::Graphics& g)
     if (! notePanel_.isEmpty())    paintNotePanel  (g, notePanel_, r);
     if (! numbersPanel_.isEmpty()) paintNumbers    (g, numbersPanel_, r);
     if (! guardPanel_.isEmpty())   paintGuardPanel (g, guardPanel_, r);
+    if (! latencyBounds_.isEmpty()) paintLatencyMode (g, latencyBounds_);
 
     g.setOpacity (1.0f);
 }
@@ -268,6 +392,30 @@ void EedPitchEditor::paintGuardPanel (juce::Graphics& g, juce::Rectangle<int> ar
                 area.removeFromTop (rowH), juce::Justification::centredLeft);
 }
 
+void EedPitchEditor::paintLatencyMode (juce::Graphics& g, juce::Rectangle<int> area)
+{
+    auto text = area;
+    text.removeFromLeft (juce::jmin (156, text.getWidth()));
+    if (text.getWidth() < 40) return;
+
+    const bool low = latencyBtn_.getToggleState();
+
+    // The COST, stated where the choice is made. A control that hides what it
+    // trades is a control the user cannot reason about.
+    g.setColour (low ? C::amber : C::text3);
+    g.setFont (uiFont (9.0f, low));
+    g.drawText (low ? "shorter lookahead - trades transient accuracy at onsets"
+                    : "full lookahead - host compensates the delay",
+                text.removeFromTop (text.getHeight() / 2),
+                juce::Justification::centredLeft);
+
+    g.setColour (C::text3);
+    g.setFont (uiFont (9.0f));
+    g.drawText (low ? "for a singer monitoring through the plugin"
+                    : "for mixing; switch to TRACKING if someone is singing through it",
+                text, juce::Justification::centredLeft);
+}
+
 // ---------------------------------------------------------------------------
 void EedPitchEditor::syncFromProcessor()
 {
@@ -288,6 +436,38 @@ void EedPitchEditor::syncFromProcessor()
     const double wantHz = proc_.getParamValue (EedPitchProcessor::kTargetHz);
     if (std::abs (wantHz - targetKnob_.getRealValue()) > 1.0e-4)
         targetKnob_.setRealValue (wantHz);
+
+    auto syncKnob = [this] (echojay::device::EchoJayDeviceKnob& k, const char* id)
+    {
+        const double v = proc_.getParamValue (id);
+        if (std::abs (v - k.getRealValue()) > 1.0e-4) k.setRealValue (v);
+    };
+    syncKnob (retuneKnob_, EedPitchProcessor::kRetuneMs);
+    syncKnob (flexKnob_,   EedPitchProcessor::kFlex);
+    syncKnob (humanKnob_,  EedPitchProcessor::kHumanize);
+
+    auto syncBox = [this] (juce::ComboBox& b, const char* id)
+    {
+        const int want = (int) proc_.getParamValue (id) + 1;
+        if (b.getSelectedId() != want) b.setSelectedId (want, juce::dontSendNotification);
+    };
+    syncBox (keyBox_,   EedPitchProcessor::kKeyRoot);
+    syncBox (scaleBox_, EedPitchProcessor::kScale);
+
+    auto syncToggle = [this] (juce::TextButton& b, const char* id)
+    {
+        const bool want = proc_.getParamValue (id) >= 0.5;
+        if (b.getToggleState() != want) b.setToggleState (want, juce::dontSendNotification);
+    };
+    syncToggle (correctBtn_, EedPitchProcessor::kCorrect);
+    syncToggle (vibBtn_,     EedPitchProcessor::kIgnoreVib);
+
+    // The AI can move low_latency and voice_type, and both change the number
+    // printed on the mode button.
+    const bool wantLow = proc_.getParamValue (EedPitchProcessor::kLowLatency) >= 0.5;
+    if (latencyBtn_.getToggleState() != wantLow)
+        latencyBtn_.setToggleState (wantLow, juce::dontSendNotification);
+    refreshLatencyButton();
 }
 
 void EedPitchEditor::timerCallback()

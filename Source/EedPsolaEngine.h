@@ -158,12 +158,35 @@ public:
     {
         const double period = fs_ / (double) std::max (10.0f, hz);
         curPeriod_ = (int) std::ceil (period);
-        // One grain of lookahead either side, plus a period of epoch search.
-        latency_    = kGrainPeriods * curPeriod_ + curPeriod_;
-        maxLatency_ = std::max (maxLatency_, kGrainPeriods * maxPeriod_ + maxPeriod_);
+        recomputeLatency();
     }
 
+    // Lookahead in PERIODS of the active floor. This is the whole of the
+    // signal-path latency (PITCH_P0_VALIDATION.md §7): the detector's window is
+    // a look-back and costs nothing, so this multiplier times the period of
+    // fMin IS the delay.
+    static constexpr float kLookaheadDefault = 3.0f;
+    static constexpr float kLookaheadMin     = 1.0f;
+    static constexpr float kLookaheadMax     = 4.0f;
+
+    void setLookaheadPeriods (float periods) noexcept
+    {
+        lookahead_ = std::clamp (periods, kLookaheadMin, kLookaheadMax);
+        recomputeLatency();
+    }
+    float getLookaheadPeriods() const noexcept { return lookahead_; }
+
     int latencySamples() const noexcept { return latency_; }
+
+    // What the latency WOULD be for a given floor and multiplier, without
+    // touching the engine - so an editor can print the number a control is
+    // about to cause before the user commits to it.
+    static int latencyFor (double sampleRate, float lowestF0Hz, float periods) noexcept
+    {
+        const double period = sampleRate / (double) std::max (10.0f, lowestF0Hz);
+        return (int) (std::clamp (periods, kLookaheadMin, kLookaheadMax)
+                      * (float) std::ceil (period));
+    }
 
     // ---- parameters (message thread) --------------------------------------
     void  setTargetHz (float hz) noexcept
@@ -173,6 +196,25 @@ public:
                          std::memory_order_relaxed);
     }
     float getTargetHz() const noexcept { return targetHz_.load (std::memory_order_relaxed); }
+
+    // TRACKING-LAG COMPENSATION (PITCH_P0_VALIDATION.md §7.1).
+    //
+    // A YIN frame spanning [p - frameLen, p] produces an estimate that best
+    // describes the MIDDLE of that span, not its end - so an f0 published at
+    // p actually characterises audio around p - frameLen/2. Attributing it to
+    // p makes every estimate half a window stale on a moving pitch: 15 ms at
+    // alto_tenor, 70 ms at bass. That is a correctness problem, not a latency
+    // one, and it is fixed by back-dating the attribution rather than by
+    // waiting.
+    //
+    // THE CONSTRAINT THIS CREATES, which matters for low_latency: the f0 is
+    // written `lag` samples behind the input head, and it must land AHEAD of
+    // the shifter's read point or the sample it describes has already been
+    // emitted. So lag <= latency, and with frameLen = 3.5 periods the lag is
+    // 1.75 periods - which puts a hard floor of ~1.75 periods on the lookahead
+    // that has nothing to do with PSOLA's own needs.
+    void setPitchLagSamples (int lag) noexcept { pitchLag_ = std::max (0, lag); }
+    int  getPitchLagSamples() const noexcept   { return pitchLag_; }
 
     // ---- audio thread ------------------------------------------------------
     // Push n input samples with the detector's CURRENT reading, and pull the n
@@ -185,8 +227,19 @@ public:
         for (int i = 0; i < n; ++i)
         {
             in_[(size_t) ((uint32_t) write_ & mask_)] = in[i];
-            f0_[(size_t) ((uint32_t) write_ & mask_)] = track;
             ++write_;
+        }
+
+        // Attribute the estimate to the audio it actually describes. Clamped
+        // so it can never reach behind what has already been emitted - if the
+        // lag exceeds the lookahead the compensation is simply reduced rather
+        // than corrupting the past.
+        const int lag = std::min (pitchLag_, std::max (0, latency_ - 1));
+        for (int i = 0; i < n; ++i)
+        {
+            const int64_t at = (int64_t) write_ - (int64_t) n + i - (int64_t) lag;
+            if (at < 0 || at < emitted_) continue;
+            f0_[(size_t) ((uint32_t) (uint64_t) at & mask_)] = track;
         }
 
         const float target = targetHz_.load (std::memory_order_relaxed);
@@ -355,13 +408,14 @@ private:
         if (upToSigned < 0) return;
         const uint64_t upTo = (uint64_t) upToSigned;
 
-        // Never read input that has not arrived, and leave two periods of
-        // margin so epoch search never runs off the end. The margin uses the
-        // ACTIVE period, not the worst case: latency_ is 3 active periods, so
-        // a worst-case margin would sit BEHIND the emit point and synthesis
-        // could never catch up.
-        const uint64_t safeLimit = write_ > (uint64_t) (2 * curPeriod_)
-                                 ? write_ - (uint64_t) (2 * curPeriod_) : 0;
+        // Never read input that has not arrived, and leave a period of margin
+        // beyond the emit point so epoch search never runs off the end. The
+        // margin uses the ACTIVE period, not the worst case: latency_ is a few
+        // active periods, so a worst-case margin would sit BEHIND the emit
+        // point and synthesis could never catch up.
+        const int marginSmp = std::max (curPeriod_, latency_ - curPeriod_);
+        const uint64_t safeLimit = write_ > (uint64_t) marginSmp
+                                 ? write_ - (uint64_t) marginSmp : 0;
 
         if (! haveSynth_ || nextSynth_ + (uint64_t) (4 * curPeriod_) < (uint64_t) std::max<int64_t> (base, 0))
         {
@@ -496,8 +550,17 @@ private:
         placedTo_ = std::max (placedTo_, synthEpoch + (uint64_t) half);
     }
 
+    void recomputeLatency() noexcept
+    {
+        latency_    = std::max (curPeriod_, (int) (lookahead_ * (float) curPeriod_));
+        maxLatency_ = std::max (maxLatency_,
+                                (int) (kLookaheadMax * (float) maxPeriod_) + maxPeriod_);
+    }
+
     // ---- state -------------------------------------------------------------
     double fs_ = 48000.0;
+    float  lookahead_ = kLookaheadDefault;
+    int    pitchLag_  = 0;
     int    maxPeriod_  = 2048;
     int    curPeriod_  = 600;
     int    latency_    = 1800;

@@ -29,6 +29,7 @@
 
 #include "EedPitchEngine.h"
 #include "EedPsolaEngine.h"
+#include "EedPitchCorrect.h"
 
 #include <cmath>
 #include <cstdio>
@@ -37,6 +38,7 @@
 using echojay::PitchEngine;
 using echojay::PitchReading;
 using echojay::PsolaEngine;
+using echojay::PitchCorrect;
 
 namespace
 {
@@ -48,6 +50,15 @@ struct RenderOpts
     int   formantMode = PsolaEngine::kFormantPreserve;
     float semitones   = 0.0f;    // relative shift; ignored when targetHz > 0
     float targetHz    = 0.0f;    // absolute fixed target
+
+    // P2: when correct is on, the musical layer picks the target instead.
+    bool  correct     = false;
+    float retuneMs    = 120.0f;
+    float flex        = 55.0f;
+    float humanize    = 60.0f;
+    int   keyRoot     = 0;
+    int   scaleMask   = 0b111111111111;   // chromatic
+    bool  ignoreVib   = true;
 };
 
 // One render pass. Returns the processed audio, already latency-COMPENSATED so
@@ -84,6 +95,18 @@ juce::AudioBuffer<float> renderOne (const juce::AudioBuffer<float>& src, double 
     juce::AudioBuffer<float> out (numCh, numS);
     out.clear();
 
+    PitchCorrect corr;
+    corr.prepare (fs, det.inputHopLength (o.voiceType));
+    corr.initDegrees();
+    for (int sdeg = 0; sdeg < 12; ++sdeg)
+        corr.setDegree (sdeg, (o.scaleMask >> sdeg) & 1, 0.0f);
+    corr.setKeyRoot (o.keyRoot);
+    corr.setRetuneMs (o.retuneMs);
+    corr.setFlex (o.flex);
+    corr.setHumanize (o.humanize);
+    corr.setIgnoreVibrato (o.ignoreVib);
+    corr.reset();
+
     const float ratio = std::pow (2.0f, o.semitones / 12.0f);
 
     constexpr int kBlock = 256;
@@ -103,9 +126,11 @@ juce::AudioBuffer<float> renderOne (const juce::AudioBuffer<float>& src, double 
         // A SEMITONE shift is relative, so the target has to follow the
         // detected pitch. A fixed target does not. Both drive the identical
         // engine path; only where the number comes from differs.
-        const float target = o.targetHz > 0.0f
-                           ? o.targetHz
-                           : (r.voiced && r.f0Hz > 0.0f ? r.f0Hz * ratio : 0.0f);
+        const float target = o.correct
+                           ? corr.process (r.f0Hz, r.voiced)
+                           : (o.targetHz > 0.0f
+                                ? o.targetHz
+                                : (r.voiced && r.f0Hz > 0.0f ? r.f0Hz * ratio : 0.0f));
 
         for (int ch = 0; ch < numCh; ++ch)
         {
@@ -295,6 +320,40 @@ int main (int argc, char* argv[])
                << (st > 0 ? "+" : "-") << juce::String (std::abs (st)).paddedLeft ('0', 2)
                << "st (formants preserved).wav";
             jobs.push_back ({ nm, o });
+        }
+
+        // ---- P2: THE TWO CHARACTERS, side by side ---------------------
+        // The spec's headline claim is that these are the same machine at two
+        // points in its parameter space, not two algorithms. Rendering them
+        // from one code path with only the numbers changed is what makes that
+        // checkable by ear.
+        {
+            // BOTH characters run CHROMATIC, and that is deliberate. The thing
+            // being compared is retune speed, flex and humanize - so the scale
+            // has to be held constant, and chromatic is the honest constant
+            // when the take's key is not known. Forcing a scale the singer is
+            // not in makes `natural` measure WORSE than the dry signal (46
+            // cents from a degree against 13), because partial correction
+            // toward foreign notes lands between semitones. That is the
+            // corrector working, and the wrong scale being asked for.
+            RenderOpts hard = base;
+            hard.correct = true; hard.retuneMs = 0.0f; hard.flex = 0.0f;
+            hard.humanize = 0.0f; hard.ignoreVib = false;
+            hard.scaleMask = 0b111111111111;
+            jobs.push_back ({ "30 CHARACTER A - hard tuned (retune 0, flex 0, chromatic).wav", hard });
+
+            RenderOpts nat = base;
+            nat.correct = true; nat.retuneMs = 120.0f; nat.flex = 55.0f;
+            nat.humanize = 60.0f; nat.ignoreVib = true;
+            nat.scaleMask = 0b111111111111;
+            jobs.push_back ({ "31 CHARACTER B - natural (retune 120, flex 55, human 60, chromatic).wav", nat });
+
+            // What forcing a scale the take is NOT in actually sounds like -
+            // kept because it is the failure mode a user will hit first, and
+            // hearing it is the fastest way to learn to check the key.
+            RenderOpts wrongKey = nat;
+            wrongKey.scaleMask = 0b010110101101;      // C natural minor
+            jobs.push_back ({ "32 WRONG KEY demo - natural forced to C minor.wav", wrongKey });
         }
 
         // The formant A/B, at the shift where it is most audible.

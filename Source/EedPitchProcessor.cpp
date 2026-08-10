@@ -8,6 +8,7 @@
 
 using echojay::PitchEngine;
 using echojay::PsolaEngine;
+using echojay::PitchCorrect;
 
 // ---------------------------------------------------------------------------
 // the dialable contract — P0's surface, deliberately small
@@ -57,6 +58,77 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           // envelope warping) is a later phase and becomes index 2.
           { "off", "preserve" } },
 
+        { EedPitchProcessor::kLowLatency, "", 0.0, 1.0, 0.0,
+          "turn ON when the singer is TRACKING through this plugin and needs "
+          "to monitor themselves - it shortens the shifter's lookahead and "
+          "cuts the reported latency by a third. Leave OFF when this is a MIX: "
+          "the extra delay is compensated by the host and costs nothing, while "
+          "the shorter lookahead trades a little transient accuracy on note "
+          "onsets. Latency depends on voice_type - a bass setting is long "
+          "enough that monitoring is not practical either way",
+          true },
+
+        // ---- P2: the musical layer ------------------------------------
+        { EedPitchProcessor::kCorrect, "", 0.0, 1.0, 0.0,
+          "turn ON to actually correct pitch to the key and scale. OFF leaves "
+          "the audio untouched (target_hz still works as a fixed-target lab "
+          "control). This is the switch that turns the device into a corrector",
+          true },
+
+        { EedPitchProcessor::kRetuneMs, "ms",
+          (double) PitchCorrect::kMinRetuneMs, (double) PitchCorrect::kMaxRetuneMs,
+          (double) PitchCorrect::kDefRetuneMs,
+          "how fast pitch is pulled to the target; 0 is the hard tuned effect "
+          "where every note snaps instantly, 100+ is transparent and keeps the "
+          "singer's own movement between notes",
+          false },
+
+        { EedPitchProcessor::kFlex, "%", 0.0, 100.0, 55.0,
+          "how much expressive drift is left alone before correction engages; "
+          "high keeps slides, scoops and deliberate blue notes, 0 corrects "
+          "every deviation however small",
+          false },
+
+        { EedPitchProcessor::kHumanize, "%", 0.0, 100.0, 60.0,
+          "relaxes correction on SUSTAINED notes while keeping onsets tight, so "
+          "long notes do not sound frozen. Sustain is judged from how long the "
+          "pitch has been steady, not from how loud it is",
+          false },
+
+        { EedPitchProcessor::kKeyRoot, "", 0.0, 11.0, 0.0,
+          "the key the scale is built on",
+          false,
+          { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" } },
+
+        { EedPitchProcessor::kScale, "", 0.0, 9.0, 9.0,
+          "which notes correction is allowed to choose. chromatic is the safe "
+          "default - it still tunes and cannot force a note that is wrong for "
+          "the song; a named scale is tighter and more obviously tuned",
+          false,
+          { "major", "minor", "harmonic_minor", "dorian", "mixolydian",
+            "major_pentatonic", "minor_pentatonic", "blues", "whole_tone",
+            "chromatic" } },
+
+        { EedPitchProcessor::kReferenceHz, "Hz",
+          (double) PitchCorrect::kMinReferenceHz, (double) PitchCorrect::kMaxReferenceHz,
+          440.0,
+          "concert pitch reference. Set it to the track's actual tuning - a "
+          "vocal corrected to 440 against a band at 441.3 sits subtly wrong "
+          "against everything",
+          false },
+
+        { EedPitchProcessor::kTranspose, "st",
+          (double) PitchCorrect::kMinTranspose, (double) PitchCorrect::kMaxTranspose, 0.0,
+          "shifts the corrected result in semitones, after correction",
+          false },
+
+        { EedPitchProcessor::kIgnoreVib, "", 0.0, 1.0, 1.0,
+          "stops a wide vibrato flipping the target between neighbouring notes. "
+          "Target selection uses a slow-smoothed pitch while the correction "
+          "still follows the fast one, so the vibrato survives and the note "
+          "does not chatter",
+          true },
+
         { EedPitchProcessor::kResetStats, "", 0.0, 1.0, 0.0,
           "set 1 to zero the octave-guard and frame counters before a "
           "detection measurement pass; always reads 0", true },
@@ -86,6 +158,22 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
         psola_.setFormantMode ((int) std::lround (value));
         return true;
     }
+    if (id == kLowLatency)
+    {
+        psola_.setLookaheadPeriods (value >= 0.5 ? kLookaheadTracking : kLookaheadMixing);
+        latencyVoiceType_ = -1;          // force the host to be told
+        refreshLatency();
+        return true;
+    }
+    if (id == kCorrect)     { correctOn_.store (value >= 0.5); return true; }
+    if (id == kRetuneMs)    { correct_.setRetuneMs ((float) value);   return true; }
+    if (id == kFlex)        { correct_.setFlex ((float) value);       return true; }
+    if (id == kHumanize)    { correct_.setHumanize ((float) value);   return true; }
+    if (id == kKeyRoot)     { correct_.setKeyRoot ((int) std::lround (value)); return true; }
+    if (id == kScale)       { applyScale ((int) std::lround (value)); return true; }
+    if (id == kReferenceHz) { correct_.setReferenceHz ((float) value); return true; }
+    if (id == kTranspose)   { correct_.setTranspose ((float) value);   return true; }
+    if (id == kIgnoreVib)   { correct_.setIgnoreVibrato (value >= 0.5); return true; }
     if (id == kResetStats)
     {
         // Momentary action dressed as a switch (the shape the schema can
@@ -103,8 +191,45 @@ double EedPitchProcessor::getParamValue (const juce::String& id) const
     if (id == kTracking)   return (double) engine_.getTracking();
     if (id == kTargetHz)   return (double) psola_.getTargetHz();
     if (id == kFormantMode) return (double) psola_.getFormantMode();
+    if (id == kLowLatency)  return psola_.getLookaheadPeriods() <= kLookaheadTracking + 0.01f
+                                 ? 1.0 : 0.0;
+    if (id == kCorrect)     return correctOn_.load() ? 1.0 : 0.0;
+    if (id == kRetuneMs)    return (double) correct_.getRetuneMs();
+    if (id == kFlex)        return (double) correct_.getFlex();
+    if (id == kHumanize)    return (double) correct_.getHumanize();
+    if (id == kKeyRoot)     return (double) correct_.getKeyRoot();
+    if (id == kScale)       return (double) scaleIndex_.load();
+    if (id == kReferenceHz) return (double) correct_.getReferenceHz();
+    if (id == kTranspose)   return (double) correct_.getTranspose();
+    if (id == kIgnoreVib)   return correct_.getIgnoreVibrato() ? 1.0 : 0.0;
     if (id == kResetStats) return 0.0;
     return 0.0;
+}
+
+// ---------------------------------------------------------------------------
+// scales
+// ---------------------------------------------------------------------------
+// Semitone masks relative to key_root. Order MIRRORS the schema's choices list.
+void EedPitchProcessor::applyScale (int index)
+{
+    static const uint16_t kMasks[] = {
+        0b101010110101,   // major            C D E F G A B
+        0b010110101101,   // minor (natural)
+        0b100110101101,   // harmonic minor
+        0b010101101101,   // dorian
+        0b011010110101,   // mixolydian
+        0b001010010101,   // major pentatonic
+        0b010010101001,   // minor pentatonic
+        0b010011001001,   // blues
+        0b010101010101,   // whole tone
+        0b111111111111,   // chromatic
+    };
+    const int n = (int) (sizeof (kMasks) / sizeof (kMasks[0]));
+    const int i = juce::jlimit (0, n - 1, index);
+    scaleIndex_.store (i);
+
+    for (int s = 0; s < 12; ++s)
+        correct_.setDegree (s, (kMasks[i] >> s) & 1, correct_.degreeBias (s));
 }
 
 // ---------------------------------------------------------------------------
@@ -117,6 +242,12 @@ void EedPitchProcessor::refreshLatency()
     latencyVoiceType_ = vt;
 
     psola_.setLowestF0 (PitchEngine::voiceRange (vt).fMinHz);
+
+    // Correctness, not latency: align the f0 to the audio it describes. Always
+    // on - a stale estimate makes note-change detection fire late, which P2's
+    // envelope would then act on from the wrong place.
+    psola_.setPitchLagSamples (engine_.pitchLagFor (vt));
+
     setLatencySamples (psola_.latencySamples());
 }
 
@@ -133,6 +264,12 @@ void EedPitchProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
     psola_.prepare (sampleRate, samplesPerBlock,
                     PitchEngine::voiceRange (engine_.getVoiceType()).fMinHz, worst);
+
+    // The corrector runs once per DETECTOR HOP, so it needs that cadence to
+    // convert its millisecond time constants.
+    correct_.prepare (sampleRate, engine_.inputHopLength (engine_.getVoiceType()));
+    correct_.initDegrees();
+    applyScale (scaleIndex_.load());
 
     latencyVoiceType_ = -1;
     refreshLatency();
@@ -175,6 +312,19 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     const echojay::PitchReading r = engine_.getReading();
 
+    // P2: the musical layer decides WHERE the note should be. It runs on the
+    // detector's reading and produces a target the shifter aims at, so a
+    // detection error and a correction error stay separable.
+    float target = 0.0f;
+    if (correctOn_.load())
+    {
+        // This runs once per BLOCK, not once per detector hop, so it must be
+        // told how much time the call represents.
+        target = correct_.process (r.f0Hz, r.voiced,
+                                   1000.0f * (float) n / (float) getSampleRate());
+        psola_.setTargetHz (target);
+    }
+
     // The shifter delays unconditionally, including at target 0 and when
     // bypassed, so the reported latency is the SAME in every state and
     // bypassing never shifts the track's timing (spec §8).
@@ -197,22 +347,25 @@ namespace
     {
         BuiltinDevice d;
         d.name            = "EchoJay Pitch";
-        d.category        = "Analysis";      // still honest at P1: without a
-                                             // scale or a retune envelope this
-                                             // is a lab instrument, not an
-                                             // effect anyone reaches for
-                                             // musically. Moves when P2 lands.
-        d.descriptiveName = "EchoJay pitch shifter (built in, phase P1)";
+        d.category        = "Pitch";         // P2: it has a scale, a key and a
+                                             // retune envelope, so it is an
+                                             // effect now rather than the lab
+                                             // instrument P0/P1 filed under
+                                             // Analysis.
+        d.descriptiveName = "EchoJay pitch corrector (built in)";
 
         // ASCII ONLY (see the template's warning about mojibake in the feed).
         // The summary must not promise correction that P0 does not do.
-        d.summary         = "BUILD PHASE P1: detects the pitch of a monophonic "
-                            "voice or instrument, and shifts every voiced frame "
-                            "to ONE fixed target_hz with formants preserved. "
-                            "Unvoiced frames pass through untouched. It has no "
-                            "scale, no key and no retune speed yet, so it is "
-                            "NOT a pitch corrector - do not reach for it to tune "
-                            "a vocal musically. target_hz 0 is pure passthrough.";
+        d.summary         = "Real-time pitch correction for ONE monophonic voice "
+                            "or lead instrument. Set correct:1, then key_root "
+                            "and scale, and dial the character with "
+                            "retune_speed_ms: 0 with flex 0 is the hard tuned "
+                            "effect, 120 with flex and humanize up is "
+                            "transparent. Formants are preserved so a corrected "
+                            "voice still sounds like the same singer, and "
+                            "unvoiced frames pass through untouched. Key and "
+                            "scale are set by hand - it does not follow the "
+                            "track's key yet. Not for polyphonic material.";
 
         // Frozen once shipped (saved chain XML carries both).
         d.identifier      = "echojay:builtin:pitch";

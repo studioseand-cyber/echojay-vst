@@ -40,9 +40,19 @@ private:
 
     EedPitchProcessor& proc_;
 
-    juce::ComboBox   voiceBox_, trackBox_, formantBox_;
+    juce::ComboBox   voiceBox_, trackBox_, formantBox_, keyBox_, scaleBox_;
+    juce::TextButton correctBtn_ { "CORRECT" };
+    juce::TextButton vibBtn_     { "IGN VIB" };
+
+    // low_latency is a WORKFLOW choice (tracking vs mixing), so it reads as a
+    // mode rather than a checkbox, and carries the number it costs.
+    juce::TextButton latencyBtn_;
+    juce::Rectangle<int> latencyBounds_;
+    void paintLatencyMode (juce::Graphics& g, juce::Rectangle<int> area);
+    void refreshLatencyButton();
+    int  currentLatencyMs (bool lowLatency) const;
     juce::TextButton resetBtn_ { "RESET" };
-    echojay::device::EchoJayDeviceKnob targetKnob_;
+    echojay::device::EchoJayDeviceKnob targetKnob_, retuneKnob_, flexKnob_, humanKnob_;
 
     juce::Rectangle<int> notePanel_, numbersPanel_, guardPanel_;
 

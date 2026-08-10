@@ -261,6 +261,7 @@ target_sources(EchoJay PRIVATE
     Source/EedPhaserEngine.h
     Source/EedPhaserProcessor.cpp
     Source/EedPhaserProcessor.h
+    Source/EedPitchCorrect.h
     Source/EedPitchEditor.cpp
     Source/EedPitchEditor.h
     Source/EedPitchEngine.h
@@ -578,6 +579,7 @@ target_sources(EchoJayLink PRIVATE
     Source/EedPhaserEngine.h
     Source/EedPhaserProcessor.cpp
     Source/EedPhaserProcessor.h
+    Source/EedPitchCorrect.h
     Source/EedPitchEditor.cpp
     Source/EedPitchEditor.h
     Source/EedPitchEngine.h

@@ -267,6 +267,23 @@ public:
     int    windowLength() const noexcept { return W_; }
     int    hopLength()    const noexcept { return hopA_; }
 
+    // How far BEHIND the current input head this engine's estimate actually
+    // sits, in INPUT samples. A YIN frame spanning [p - frameLen, p] describes
+    // the middle of that span, so the estimate published at p characterises
+    // audio around p - frameLen/2. A consumer that wants the f0 aligned to the
+    // audio it describes - the shifter, and P2's note-change detector - must
+    // back-date by this much. See PITCH_P0_VALIDATION.md §7.1.
+    // Derived from deriveConfig, not from the ACTIVE state, so it is valid
+    // straight after prepare() - the active fields are only populated once a
+    // block has been processed, and a consumer that asks at prepareToPlay
+    // would otherwise silently get zero.
+    int pitchLagFor (int voiceType) const noexcept
+    {
+        const Config c = deriveConfig (voiceType);
+        return (c.frameLen / 2) * c.decim;
+    }
+    int pitchLagSamples() const noexcept { return pitchLagFor (getVoiceType()); }
+
     // The INPUT-domain hop for a voice type at the prepared sample rate, so
     // an offline driver can feed exactly one analysis hop per call and attach
     // a timestamp to each published reading. Derived from the same
