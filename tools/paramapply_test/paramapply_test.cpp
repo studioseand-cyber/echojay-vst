@@ -111,6 +111,40 @@ int main()
                "the override does not loosen the tolerance: a wrong landing still refuses");
     }
 
+    // The stepped-anchor corpus class (10 Aug 2026, pre-beta pin). The 9 Aug
+    // re-sweep put 197 stepped-anchor controls on the server; Kiive XTComp's
+    // Left/Right Ratio are the class-defining tables, verbatim from the
+    // served map (plateau-midpoint norms, 8 rungs 1:1..8:1). The ladder
+    // filing's failure - an off-rung request whose snapped landing reverts a
+    // correct write - must be impossible here, and a landing on a NON-rung,
+    // or the wrong rung, must still revert.
+    {
+        juce::Array<juce::Array<float>> ratio;
+        for (auto p : { std::pair<float,float>{ 1.0f, 0.0f },  { 2.0f, 0.15f },
+                        { 3.0f, 0.30f }, { 4.0f, 0.40f }, { 5.0f, 0.55f },
+                        { 6.0f, 0.70f }, { 7.0f, 0.85f }, { 8.0f, 0.95f } })
+        { juce::Array<float> a; a.add (p.first); a.add (p.second); ratio.add (a); }
+
+        // Off-rung request between 3:1 and 4:1: either bracketing rung is the
+        // plugin doing its job, and neither may revert.
+        check (echojay::typedReadbackMatch ("Left Ratio", 3.5f, "4.0", ratio) == +1,
+               "XTComp ratio 3.5 snapping up to \"4.0\" is a match, not a revert");
+        check (echojay::typedReadbackMatch ("Left Ratio", 3.5f, "3.0", ratio) == +1,
+               "XTComp ratio 3.5 snapping down to \"3.0\" is a match");
+        // Ratio-styled display text parses the same way.
+        check (echojay::typedReadbackMatch ("Left Ratio", 3.5f, "4:1", ratio) == +1,
+               "a \"4:1\" display verifies the same landing");
+        // Genuinely wrong writes still revert: a non-bracket rung and a
+        // value off the ladder entirely.
+        check (echojay::typedReadbackMatch ("Left Ratio", 3.5f, "6.0", ratio) == -1,
+               "XTComp ratio 3.5 landing \"6.0\" (non-bracket rung) still reverts");
+        check (echojay::typedReadbackMatch ("Left Ratio", 2.0f, "8.0", ratio) == -1,
+               "XTComp ratio 2 landing \"8.0\" (far end) still reverts");
+        // Exact-rung ask, exact-rung landing: the trivial case stays trivial.
+        check (echojay::typedReadbackMatch ("Left Ratio", 4.0f, "4.0", ratio) == +1,
+               "exact rung ask landing on its own rung matches");
+    }
+
     // Band reach (the AMEK 8 kHz incident): ingestGroups dropped freq_range
     // from every stored map, "no range" read as reachable, and a 15-780 Hz
     // band took an 8 kHz request as a verified clamp to 780. The reach
