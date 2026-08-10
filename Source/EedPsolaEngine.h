@@ -81,14 +81,30 @@ public:
     // period either side.
     static constexpr int   kGrainPeriods = 2;
 
+    // ---- formant_mode (spec §2.4) ------------------------------------------
+    // Order matches the spec's list, and is APPEND-ONLY: `shift` (LPC envelope
+    // warping) is P5 and will be index 2, so these indices never move.
+    enum FormantMode { kFormantOff = 0, kFormantPreserve = 1, kNumFormantModes };
+
+    void setFormantMode (int m) noexcept
+    {
+        formantMode_.store (m == kFormantOff ? kFormantOff : kFormantPreserve,
+                            std::memory_order_relaxed);
+    }
+    int getFormantMode() const noexcept { return formantMode_.load (std::memory_order_relaxed); }
+
     // Fade applied on the VOICED side of a voiced/unvoiced seam. Short enough
     // to be inaudible as a level move, long enough to stop a step edge.
     static constexpr float kSeamFadeMs = 1.5f;
 
-    // Safety ceiling on the overlap-add window sum: only ever attenuates, and
-    // only once the accumulated window is far past what any sane ratio
-    // produces. Never boosts, so it cannot resurrect a thin patch as noise.
+    // Safety ceiling on the overlap-add window sum (PRESERVE): only ever
+    // attenuates, and only once the accumulated window is far past what any
+    // sane ratio produces. Never boosts.
     static constexpr float kWindowCeil = 0.5f;
+
+    // Divisor floor for OFF's abutting windows: lifts the joins back to flat
+    // without amplifying a genuine gap into noise.
+    static constexpr float kWindowFloor = 0.35f;
 
     // ---- lifecycle (audio stopped) ----------------------------------------
     // `lowestF0Hz` is the floor of the active voice_type: it sets the longest
@@ -217,6 +233,8 @@ private:
 
     void emitMixed (float* out, int n, int64_t base) noexcept
     {
+        const bool preserve = formantMode_.load (std::memory_order_relaxed) != kFormantOff;
+
         for (int i = 0; i < n; ++i)
         {
             const int64_t p = base + (int64_t) i;
@@ -232,11 +250,11 @@ private:
             // as unshifted. Flooring the divisor instead lets the thin patch
             // come out quiet, which is what a truncated vocal-tract ring
             // actually sounds like, rather than wrong.
-            // No per-sample normalisation - see placeGrain. win_ is still
-            // accumulated and used only as a SAFETY ceiling, so a pathological
-            // pile-up of grains cannot run away; it never boosts.
+            // See placeGrain for why the two modes normalise differently.
             const float w   = win_[(size_t) idx];
-            const float wet = acc_[(size_t) idx] / std::max (1.0f, w * kWindowCeil);
+            const float wet = preserve
+                ? acc_[(size_t) idx] / std::max (1.0f, w * kWindowCeil)
+                : acc_[(size_t) idx] / std::max (w, kWindowFloor);
 
             // UNVOICED IS SACRED: the dry sample, untouched. Voiced samples
             // near the seam fade between wet and dry so the join is smooth,
@@ -400,8 +418,29 @@ private:
     void placeGrain (uint64_t analysisEpoch, uint64_t synthEpoch, int Ta, int Ts,
                      int64_t emitFloor) noexcept
     {
-        const int half = std::min (Ta, maxPeriod_);
+        const bool preserve = formantMode_.load (std::memory_order_relaxed) != kFormantOff;
+
+        // PRESERVE: the grain is copied at 1:1, so the pulse keeps its own
+        // duration and therefore its own spectral envelope. Re-spacing changes
+        // only how OFTEN pulses arrive. Formants stay put - the whole point.
+        //
+        // OFF: the grain is RESAMPLED by the pitch ratio as it is placed, so
+        // the pulse is compressed or stretched along with the pitch and the
+        // envelope moves with it. This is the chipmunk/resampler behaviour,
+        // kept because it is occasionally exactly what someone wants - and
+        // because having both makes the formant work audible rather than a
+        // claim in a comment.
+        // OFF reads exactly ONE input period per grain (+/- Ta/2, which after
+        // resampling is +/- Ts/2 of output). Measured: any wider span pulls in
+        // a second pulse and the output lands 314 cents sharp - Ts, Ta/2 and Ta
+        // all read 359.7 Hz where 300 was asked for, while Ts/2 reads 300.02.
+        const int half = preserve ? std::min (Ta, maxPeriod_)
+                                  : std::max (2, std::min (Ts / 2, maxPeriod_));
         const int len  = 2 * half + 1;
+
+        // Input samples consumed per output sample. 1 when preserving; the
+        // pitch ratio when not, which is what drags the envelope along.
+        const double step = preserve ? 1.0 : (double) Ta / (double) std::max (1, Ts);
 
         // Level is an ENERGY problem, not an amplitude one, and getting that
         // wrong is worth 3 dB. The output is a pulse train: each grain carries
@@ -417,21 +456,41 @@ private:
         // per-sample window-sum division. Dividing instantaneously AVERAGES
         // overlapping copies of the same pulse instead of adding them, which
         // smears the pulse train - and the pulse train is the signal.
-        const float gain = std::clamp (std::sqrt ((float) Ts / (float) Ta), 0.25f, 4.0f);
+        // OFF's windows are Ts long and spaced Ts, so they ABUT rather than
+        // overlap and their sum dips to zero at each join. That is exactly the
+        // case instantaneous normalisation handles correctly, so OFF is
+        // normalised at emit and needs no open-loop gain here. PRESERVE is the
+        // opposite: variable overlap of DUPLICATED pulses, where instantaneous
+        // normalisation averages copies instead of adding them and smears the
+        // pulse train. Two different windowing regimes, two different rules.
+        const float gain = preserve
+            ? std::clamp (std::sqrt ((float) Ts / (float) Ta), 0.25f, 4.0f)
+            : 1.0f;
 
         for (int k = -half; k <= half; ++k)
         {
-            const uint64_t src = analysisEpoch + (uint64_t) (int64_t) k;
-            const int64_t  dst = (int64_t) synthEpoch + k;
+            const int64_t dst = (int64_t) synthEpoch + k;
             if (dst < emitFloor) continue;                 // already emitted
-            if (src >= write_) continue;
+
+            const double srcPos = (double) (int64_t) analysisEpoch + (double) k * step;
+            if (srcPos < 0.0) continue;
+            const int64_t s0 = (int64_t) std::floor (srcPos);
+            if ((uint64_t) s0 + 1 >= write_) continue;
+
+            // Linear interpolation: only ever used when OFF is resampling the
+            // grain (step == 1 lands exactly on s0), so it costs nothing in the
+            // mode that matters for quality.
+            const float frac = (float) (srcPos - (double) s0);
+            const float a0 = in_[(size_t) ((uint32_t) (uint64_t) s0 & mask_)];
+            const float a1 = in_[(size_t) ((uint32_t) (uint64_t) (s0 + 1) & mask_)];
+            const float x  = a0 + frac * (a1 - a0);
 
             // Hann across the grain.
             const float ph = (float) (k + half) / (float) (len - 1);
             const float w  = 0.5f - 0.5f * std::cos (6.283185307179586f * ph);
 
             const uint32_t di = (uint32_t) (uint64_t) dst & mask_;
-            acc_[(size_t) di] += gain * w * in_[(size_t) ((uint32_t) src & mask_)];
+            acc_[(size_t) di] += gain * w * x;
             win_[(size_t) di] += w;
         }
         placedTo_ = std::max (placedTo_, synthEpoch + (uint64_t) half);
@@ -458,6 +517,7 @@ private:
     bool     haveSynth_ = false;
 
     std::atomic<float> targetHz_ { 0.0f };
+    std::atomic<int>   formantMode_ { kFormantPreserve };
 };
 
 } // namespace echojay

@@ -12,7 +12,7 @@ namespace
 {
     // The size the rack opens at. layoutContent must still survive being given
     // less than this — that is the inline-hosting contract.
-    constexpr int kDefaultW = 540;
+    constexpr int kDefaultW = 620;
     constexpr int kDefaultH = 170;
 }
 
@@ -58,6 +58,24 @@ EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
     };
     addAndMakeVisible (trackBox_);
 
+    styleCombo (formantBox_);
+    if (const auto* spec = EedPitchProcessor::schema().find (EedPitchProcessor::kFormantMode))
+    {
+        for (std::size_t i = 0; i < spec->choices.size(); ++i)
+            formantBox_.addItem ("FORM " + juce::String (spec->choices[i]).toUpperCase(),
+                                 (int) i + 1);
+        formantBox_.setSelectedId (
+            (int) proc_.getParamValue (EedPitchProcessor::kFormantMode) + 1,
+            juce::dontSendNotification);
+    }
+    formantBox_.onChange = [this]
+    {
+        if (! suppressCallbacks_ && formantBox_.getSelectedId() > 0)
+            proc_.setParamValue (EedPitchProcessor::kFormantMode,
+                                 (double) (formantBox_.getSelectedId() - 1));
+    };
+    addAndMakeVisible (formantBox_);
+
     // The P1 target. Range comes from the SCHEMA, never re-typed, so the dial
     // physically cannot travel somewhere the AI is not allowed to dial.
     if (const auto* spec = EedPitchProcessor::schema().find (EedPitchProcessor::kTargetHz))
@@ -97,6 +115,9 @@ void EedPitchEditor::layoutHeaderLeading (juce::Rectangle<int>& bar)
     bar.removeFromRight (6);
     const int tw = juce::jmin (84, bar.getWidth());
     trackBox_.setBounds (bar.removeFromRight (tw).reduced (0, 3));
+    bar.removeFromRight (6);
+    const int fw = juce::jmin (108, bar.getWidth());
+    formantBox_.setBounds (bar.removeFromRight (fw).reduced (0, 3));
     bar.removeFromRight (6);
 }
 
@@ -259,6 +280,10 @@ void EedPitchEditor::syncFromProcessor()
     const int wantTrk = (int) proc_.getParamValue (EedPitchProcessor::kTracking) + 1;
     if (trackBox_.getSelectedId() != wantTrk)
         trackBox_.setSelectedId (wantTrk, juce::dontSendNotification);
+
+    const int wantFm = (int) proc_.getParamValue (EedPitchProcessor::kFormantMode) + 1;
+    if (formantBox_.getSelectedId() != wantFm)
+        formantBox_.setSelectedId (wantFm, juce::dontSendNotification);
 
     const double wantHz = proc_.getParamValue (EedPitchProcessor::kTargetHz);
     if (std::abs (wantHz - targetKnob_.getRealValue()) > 1.0e-4)

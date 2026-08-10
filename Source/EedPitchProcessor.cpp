@@ -45,6 +45,18 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "arrives in a later phase; this is not yet a pitch corrector",
           false },
 
+        { EedPitchProcessor::kFormantMode, "",
+          0.0, (double) (PsolaEngine::kNumFormantModes - 1),
+          (double) PsolaEngine::kFormantPreserve,
+          "what happens to the vocal character when pitch moves: preserve "
+          "keeps the formants where they are so a shifted voice still sounds "
+          "like the same singer, off lets them move with the pitch for the "
+          "chipmunk/resampler effect",
+          false,
+          // Mirrors PsolaEngine::FormantMode, and APPEND-ONLY: `shift` (LPC
+          // envelope warping) is a later phase and becomes index 2.
+          { "off", "preserve" } },
+
         { EedPitchProcessor::kResetStats, "", 0.0, 1.0, 0.0,
           "set 1 to zero the octave-guard and frame counters before a "
           "detection measurement pass; always reads 0", true },
@@ -69,6 +81,11 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
         psola_.setTargetHz ((float) value);
         return true;
     }
+    if (id == kFormantMode)
+    {
+        psola_.setFormantMode ((int) std::lround (value));
+        return true;
+    }
     if (id == kResetStats)
     {
         // Momentary action dressed as a switch (the shape the schema can
@@ -85,6 +102,7 @@ double EedPitchProcessor::getParamValue (const juce::String& id) const
     if (id == kVoiceType)  return (double) engine_.getVoiceType();
     if (id == kTracking)   return (double) engine_.getTracking();
     if (id == kTargetHz)   return (double) psola_.getTargetHz();
+    if (id == kFormantMode) return (double) psola_.getFormantMode();
     if (id == kResetStats) return 0.0;
     return 0.0;
 }

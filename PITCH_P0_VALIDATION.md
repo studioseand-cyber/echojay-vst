@@ -1,4 +1,4 @@
-# EchoJay Pitch — P0 detection: validation on real vocals, and the two repairs
+# EchoJay Pitch — the measurement record (P0 detection, P1 shifting)
 
 `PITCH_CORRECTION_SPEC.md` §9 gates P0 on proving the detector "on real vocals
 across all five `voice_type` settings" and logging the octave-error rate. This
@@ -449,3 +449,102 @@ untracked rather than reported wrong.
 **The §5.3 proposal is now implemented as `tracking`.** What remains unimplemented
 is the median-based outlier rejection of §4.6, which is still a P2 envelope
 question.
+
+
+---
+
+## 7. P1 latency budget — and the part that is physics
+
+`120 ms` at `bass` is a long way past "a few ms slower", so here is where it
+actually goes.
+
+### 7.1 The breakdown is simpler than expected: it is ALL shifter
+
+| stage | contributes to LATENCY? | why |
+|---|---|---|
+| detector analysis window (2.5 periods + one more for `tauMax`) | **none** | It is a look-BACK. The window ends at the current sample, so the estimate for sample *p* is available at *p*. Nothing waits on it. |
+| PSOLA lookahead | **all of it** | A grain is centred on an epoch and reaches one period FORWARD, and the epoch itself has to be found before the grain can be cut. That is future audio, and future audio is latency. |
+
+So the analysis window costs nothing in delay. What it does cost is **tracking
+lag**: the f0 attached to sample *p* describes the 3.5 periods *ending* at *p*,
+so on a moving pitch it is roughly half a window stale — 15 ms at `alto_tenor`,
+70 ms at `bass`. That is a P2 retune-envelope problem, not a monitoring one,
+but it is the other half of the same window and worth naming before P2 meets it.
+
+### 7.2 Current, and what is actually reachable (48 kHz)
+
+Latency is `lookahead x period(fMin)`. The shipped lookahead is **3 periods**,
+which measurement says is conservative:
+
+| `voice_type` | fMin | period | **shipped (3T)** | at 2T | at 1.25T |
+|---|---|---|---|---|---|
+| soprano | 180 Hz | 267 | **16.7 ms** | 11.1 ms | 7.0 ms |
+| alto_tenor | 80 Hz | 600 | **37.5 ms** | 25.0 ms | 15.6 ms |
+| low_male | 55 Hz | 873 | **54.6 ms** | 36.4 ms | 22.7 ms |
+| instrument | 50 Hz | 960 | **60.0 ms** | 40.0 ms | 25.0 ms |
+| bass | 25 Hz | 1920 | **120.0 ms** | 80.0 ms | 50.0 ms |
+
+The reduction was measured, not assumed. Sweeping the lookahead with the
+shipped margin structure, the 30-check PSOLA suite passes at every setting from
+3.0 down to 1.1 periods, and on the **real 118 s acapella** shifted to a fixed
+220 Hz the output barely moves:
+
+| lookahead | detected median | 5–95 spread |
+|---|---|---|
+| 3.00 T (shipped) | +0.8 ¢ | 48.3 ¢ |
+| 2.00 T | +0.7 ¢ | 48.5 ¢ |
+| 1.50 T | +0.8 ¢ | 52.2 ¢ |
+| 1.25 T | +0.7 ¢ | 47.1 ¢ |
+| 1.10 T | +0.8 ¢ | 45.8 ¢ |
+
+**Caveat that matters:** these are pitch-accuracy measures. They would not
+catch transient smearing at onsets, which is exactly what a shorter lookahead
+threatens. Cutting the shipped 3T is therefore a change to make *after* a
+listen, not before one — the numbers say it is available, not that it is free.
+
+### 7.3 The physics, and what it means for `low_latency`
+
+**PSOLA lookahead is proportional to the period of the lowest pitch the window
+must represent.** That is not an implementation detail that can be optimised
+away: you cannot window one period of a 25 Hz tone without holding 40 ms of
+audio, because the period *is* 40 ms. `low_latency` therefore has exactly two
+levers, and only one of them is free:
+
+1. **Shorten the lookahead multiplier** (3T → ~1.25T). Costs nothing measurable
+   so far; needs a listen.
+2. **Raise the search floor**, which is what the spec already describes as
+   trading low-note accuracy for delay. Raising `bass` from 25 Hz to 40 Hz
+   nearly halves its period.
+
+Both together, the best case per type:
+
+| `voice_type` | shipped | `low_latency` best case | monitorable? |
+|---|---|---|---|
+| soprano | 16.7 ms | **7.0 ms** | yes |
+| alto_tenor | 37.5 ms | **12.5 ms** (floor 100 Hz) | marginal |
+| low_male | 54.6 ms | **15.0 ms** (floor 80 Hz) | marginal |
+| instrument | 60.0 ms | **18.8 ms** (floor 80 Hz) | marginal |
+| bass | 120.0 ms | **31.3 ms** (floor 40 Hz) | **no** |
+
+Singers monitoring themselves are less tolerant of delay than instrumentalists,
+because they also hear their own voice by bone conduction and the two combine —
+roughly 10 ms is comfortable and past ~20 ms it interferes with performing.
+
+**The conclusion, stated plainly: a bass singer cannot monitor through this
+device, and no amount of engineering changes that** — a 25 Hz floor means a
+40 ms period, and one period is the floor of what epoch-synchronous windowing
+can work with. The upper three types *can* be brought into or near monitoring
+range, and only by doing both levers at once.
+
+### 7.4 So does `low_latency` move up the plan?
+
+**It moves up if tracking vocals through the plugin is a target use case, and
+stays at P5 if it is not.** The spec's §9 ordering assumes mixing, where 37 ms
+of reported, compensated latency is a non-event. The moment someone wants to
+sing through it, `low_latency` stops being a nicety and becomes the difference
+between usable and not — for four of the five voice types. For `bass` it is the
+difference between unusable and still unusable.
+
+Recommendation: decide the use case now rather than at P5. If monitoring is in
+scope, the cheap half (the multiplier) should land with P2 while the shifter is
+still being listened to, since that is when a regression would be caught.

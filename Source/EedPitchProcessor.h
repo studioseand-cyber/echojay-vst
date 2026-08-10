@@ -42,6 +42,7 @@ public:
     static constexpr const char* kVoiceType  = "voice_type";
     static constexpr const char* kTracking   = "tracking";
     static constexpr const char* kTargetHz   = "target_hz";
+    static constexpr const char* kFormantMode = "formant_mode";
     static constexpr const char* kResetStats = "reset_stats";
 
     echojay::PitchEngine&       engine() noexcept       { return engine_; }

@@ -151,11 +151,13 @@ struct ShiftResult { std::vector<float> out; int latency = 0; };
 
 static ShiftResult shift (const std::vector<float>& in, double fs,
                           float sourceF0, float targetHz, bool voiced = true,
-                          float lowestF0 = 80.0f)
+                          float lowestF0 = 80.0f,
+                          int formantMode = PsolaEngine::kFormantPreserve)
 {
     PsolaEngine e;
     e.prepare (fs, 512, lowestF0, 25.0f);
     e.setTargetHz (targetHz);
+    e.setFormantMode (formantMode);
 
     ShiftResult r;
     r.latency = e.latencySamples();
@@ -290,6 +292,38 @@ int main()
                "the resampler drags it up with the pitch - the two are clearly different");
         check (resPeak > psolaPeak * 1.5,
                "...and the gap between them is unambiguous");
+    }
+
+    std::printf ("== formant_mode OFF moves the formant; PRESERVE does not ==\n");
+    {
+        // The A/B that makes the formant work audible rather than a claim.
+        // Same source, same target, one switch.
+        const double f0 = 150.0, formant = 900.0;
+        const auto in = vowel (fs, f0, formant, 1.5);
+        const size_t from = (size_t) (fs * 0.6), len = (size_t) (fs * 0.5);
+
+        const ShiftResult keep = shift (in, fs, (float) f0, (float) (f0 * 2.0), true,
+                                        80.0f, PsolaEngine::kFormantPreserve);
+        const ShiftResult moveIt = shift (in, fs, (float) f0, (float) (f0 * 2.0), true,
+                                          80.0f, PsolaEngine::kFormantOff);
+
+        const double keepPeak = peakHz (keep.out,   fs, 300.0, 3000.0, from, len);
+        const double offPeak  = peakHz (moveIt.out, fs, 300.0, 3000.0, from, len);
+        char msg[200];
+        std::snprintf (msg, sizeof (msg),
+                       "preserve keeps it at %.0f Hz, off moves it to %.0f Hz",
+                       keepPeak, offPeak);
+        std::printf ("  %s\n", msg);
+        check (std::fabs (keepPeak / formant - 1.0) < 0.25,
+               "preserve leaves the formant near 900 Hz");
+        check (offPeak > keepPeak * 1.5,
+               "off drags the formant up with the pitch - the modes are audibly different");
+
+        // Both modes must still hit the target PITCH; only the envelope differs.
+        const float gotOff = detect (moveIt.out, fs, PitchEngine::kAltoTenor,
+                                     (size_t) (fs * 0.3));
+        std::snprintf (msg, sizeof (msg), "off still lands on pitch: %.1f Hz (want 300)", gotOff);
+        check (std::fabs (PitchEngine::centsBetween (gotOff, 300.0f)) < 40.0f, msg);
     }
 
     std::printf ("== the shift is stable, not just correct on average ==\n");

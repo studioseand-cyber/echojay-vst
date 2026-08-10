@@ -869,6 +869,39 @@ target_link_libraries(EchoJayPitchProbe PRIVATE
 
 set_target_properties(EchoJayPitchProbe PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
+# ============================================================================
+# pitch_render — offline render harness for the P1 shifter.
+#
+# Every P1 number is measured; none of it has been LISTENED to. This worktree
+# must never install to the system plug-in folders (PARALLEL_SESSIONS.md), so a
+# DAW is not available to audition through and an offline render is the only
+# honest way to hear the shift.
+#
+# Own target, EXCLUDE_FROM_ALL, not a dependency of any plugin target — same
+# rule as pitch_probe. Both engines are header-only, so it needs no device
+# sources.
+#
+#   cmake --build build --target EchoJayPitchRender
+#   ./build/EchoJayPitchRender_artefacts/Debug/EchoJayPitchRender vocal.wav --set
+# ============================================================================
+juce_add_console_app(EchoJayPitchRender PRODUCT_NAME "EchoJayPitchRender")
+juce_generate_juce_header(EchoJayPitchRender)
+
+target_sources(EchoJayPitchRender PRIVATE tools/pitch_render/main.cpp)
+target_include_directories(EchoJayPitchRender PRIVATE Source)
+target_compile_features(EchoJayPitchRender PRIVATE cxx_std_17)
+
+target_compile_definitions(EchoJayPitchRender PRIVATE
+    JUCE_USE_CURL=0
+    JUCE_WEB_BROWSER=0
+    JUCE_STANDALONE_APPLICATION=1)
+
+target_link_libraries(EchoJayPitchRender PRIVATE
+    juce::juce_audio_formats
+    juce::juce_recommended_config_flags)
+
+set_target_properties(EchoJayPitchRender PROPERTIES EXCLUDE_FROM_ALL TRUE)
+
 # ============ Streaming parser test runner (spec step 3) ============
 # Console app, juce_core only — runs the read-back suite that holds the
 # incremental block parser byte-identical to the whole-reply strip

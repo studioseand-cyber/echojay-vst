@@ -40,7 +40,7 @@ private:
 
     EedPitchProcessor& proc_;
 
-    juce::ComboBox   voiceBox_, trackBox_;
+    juce::ComboBox   voiceBox_, trackBox_, formantBox_;
     juce::TextButton resetBtn_ { "RESET" };
     echojay::device::EchoJayDeviceKnob targetKnob_;
 
