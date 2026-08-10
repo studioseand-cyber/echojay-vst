@@ -73,6 +73,14 @@ public:
         // models on the operator's budget, so the number is on the button and
         // the press is the consent. A machine whose products are all known
         // shows nothing to press.
+        // A FINISHED SWEEP IS NOT A FINISHED JOB. Maps land on this machine
+        // and reach nobody until they are sent; --send-pending was CLI-only
+        // and per-map Submit is a thousand clicks, so a mapper could spend a
+        // night and have their work go nowhere with nothing saying so.
+        addAndMakeVisible (sendAllButton);
+        sendAllButton.setButtonText ("Send All");
+        sendAllButton.onClick = [this] { sendPendingMaps (false, true); };
+
         addAndMakeVisible (categoriseButton);
         categoriseButton.setButtonText ("Categorise");
         categoriseButton.onClick = [this] { runCategorise(); refreshCategoriseButton(); };
@@ -6981,6 +6989,7 @@ public:
         top.removeFromLeft (6);
         sweepAllButton.setBounds (top.removeFromLeft (96));
         categoriseButton.setBounds (top.removeFromLeft (150));
+        sendAllButton.setBounds (top.removeFromLeft (120));
         top.removeFromLeft (6);
         sweepCapturesToggle.setBounds (top.removeFromLeft (86));
         top.removeFromLeft (6);
@@ -7328,7 +7337,7 @@ public:
         return true;
     }
 
-    void sendPendingMaps (bool dryRun)
+    void sendPendingMaps (bool dryRun, bool fromGui = false)
     {
         if (! dryRun && refuseUnlessSignedIn ("send-pending"))
             return;
@@ -7377,6 +7386,7 @@ public:
                   << std::endl;
 
         int sent = 0, refused = 0;
+        juce::StringArray refusedLines;
         for (const auto& f : pending)
         {
             const auto fp = f.getFileNameWithoutExtension();
@@ -7389,10 +7399,19 @@ public:
 
             auto printLine = [&] (const juce::String& outcome, const juce::String& why)
             {
-                std::cout << "  " << (outcome == "sent" ? "SENT    " : "REFUSED ")
-                          << fp.substring (0, 12) << "  " << name.paddedRight (' ', 32).substring (0, 32)
-                          << "  " << why << std::endl;
+                const auto line = juce::String (outcome == "sent" ? "SENT    " : "REFUSED ")
+                                + fp.substring (0, 12) + "  "
+                                + name.paddedRight (' ', 32).substring (0, 32) + "  " + why;
+                std::cout << "  " << line << std::endl;
                 std::cout.flush();
+                // ON SCREEN, PER MAP (10 Aug 2026). A mapper watching Send All
+                // must see the same thing --send-pending prints: a summary
+                // buries the refusals, and a refusal is the only line that
+                // needs acting on.
+                sweepSay ("[" + juce::String (sent + refused + 1) + "/"
+                            + juce::String (pending.size()) + "] " + line);
+                if (outcome != "sent") refusedLines.add (name + ": " + why);
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (1);
             };
 
             // THE SAME GATE THE CARD RUNS. One implementation, not a second
@@ -7473,7 +7492,44 @@ public:
         std::cout << "SENDPENDING: " << sent << " sent, " << refused << " refused | backlog now: "
                   << backlogLine() << std::endl;
         std::cout.flush();
+
+        if (fromGui)
+        {
+            // THE REFUSALS ARE THE PART THAT NEEDS ACTING ON, so they are
+            // listed rather than counted. queue.json holds the durable record
+            // of every one, with its reason, whatever fits on screen here.
+            juce::String block;
+            block << "SEND ALL: " << sent << " sent, " << refused << " refused.";
+            if (! refusedLines.isEmpty())
+            {
+                block << "\nREFUSED:";
+                for (int i = 0; i < juce::jmin (12, refusedLines.size()); ++i)
+                    block << "\n  " << refusedLines[i];
+                if (refusedLines.size() > 12)
+                    block << "\n  ...and " << (refusedLines.size() - 12)
+                          << " more (every one is in queue.json with its reason)";
+            }
+            captureReadout.setText (block, juce::dontSendNotification);
+            sweepSay (refusedLines.isEmpty()
+                        ? "SEND ALL: " + juce::String (sent) + " sent, none refused."
+                        : "SEND ALL: " + juce::String (sent) + " sent, "
+                            + juce::String (refused) + " REFUSED (listed above; all in queue.json)");
+            updateBacklogLabel();
+            refreshSendAllButton();
+            return;
+        }
         quitNow();
+    }
+
+    /** Enabled only when there is something to send, and it SAYS how many, so
+        a finished sweep cannot look like a finished job when the maps are
+        still sitting on this machine. */
+    void refreshSendAllButton()
+    {
+        const auto b = computeBacklog();
+        const int waiting = juce::jmax (0, b.neverOffered + b.rejected);
+        sendAllButton.setButtonText (waiting > 0 ? "Send All " + juce::String (waiting) : "Send All");
+        sendAllButton.setEnabled (waiting > 0 && ! sweep.running);
     }
 
     /** EDITOR FIT: load one plugin, attach its editor, print the geometry
@@ -8030,7 +8086,53 @@ public:
         // force-quit, and there is no operator.
         ledger.setUnattended (true);
 
-        sweep.work    = buildWorklist();
+        // THE CASCADE RUNS ONCE PER RUN, HERE, and what survives is the
+        // openable subset. See SweepItem: the loop used to re-derive the same
+        // declines on every restart.
+        //
+        // The declines go to a SNAPSHOT, not to the run log. They are a
+        // property of the worklist at a moment, not events that happened --
+        // appending them per run is what produced re-seen ratios of 7.4x on
+        // the skip classes and buried the plugins that were genuinely
+        // looping. The run log now holds attempts only, so its numbers mean
+        // what a reader takes them to mean.
+        {
+            juce::Array<juce::var> declined;
+            sweep.work.clearQuick();
+            sweep.forecast = SweepForecast{};
+
+            for (const auto& sp : collectWorklist().ordered())
+            {
+                ++sweep.forecast.worklistRows;
+                const auto d = decideSweep (sp, sweep.cats);
+                if (d.willOpen())
+                {
+                    sweep.work.add ({ sp, d.category, d.hedged });
+                    ++sweep.forecast.wouldOpen;
+                }
+                else
+                {
+                    ++sweep.forecast.skipped[d.outcome];
+                    auto* o = new juce::DynamicObject();
+                    o->setProperty ("plugin_id", sp.pluginId());
+                    o->setProperty ("name", sp.desc.name);
+                    o->setProperty ("vendor", sp.desc.manufacturerName);
+                    o->setProperty ("outcome", d.outcome);
+                    o->setProperty ("detail", d.detail);
+                    declined.add (juce::var (o));
+                }
+            }
+
+            auto* snap = new juce::DynamicObject();
+            snap->setProperty ("run_id", ledger.currentRunId());
+            snap->setProperty ("at", juce::Time::getCurrentTime().toISO8601 (true));
+            snap->setProperty ("worklist_rows", sweep.forecast.worklistRows);
+            snap->setProperty ("would_open", sweep.forecast.wouldOpen);
+            snap->setProperty ("declined", declined);
+            ledger.getRoot().getChildFile ("sweep-declines.json")
+                  .replaceWithText (juce::JSON::toString (juce::var (snap), true));
+        }
+
         sweep.limit   = limit;
         sweep.dryRun  = dryRun;
         sweep.running = true;
@@ -8051,7 +8153,6 @@ public:
         // anything.
         {
             const auto wl = collectWorklist();
-            sweep.forecast = forecastSweep (sweep.cats);
             sweepSay ("SWEEP will open " + juce::String (sweep.forecast.wouldOpen)
                         + " of " + juce::String (sweep.forecast.worklistRows)
                         + " worklist row(s): " + juce::String (wl.toSweep.size()) + " unmapped, "
@@ -8078,8 +8179,8 @@ public:
         if (! resweepTargets.isEmpty())
         {
             juce::StringArray matched;
-            for (const auto& sp : sweep.work)
-                matched.addIfNotAlreadyThere (sp.desc.name.trim().toLowerCase());
+            for (const auto& it : sweep.work)
+                matched.addIfNotAlreadyThere (it.sp.desc.name.trim().toLowerCase());
             juce::StringArray missing;
             for (const auto& t : resweepTargets)
                 if (! matched.contains (t)) missing.add (t);
@@ -8218,6 +8319,25 @@ public:
 
     SweepForecast forecastSweep() const { return forecastSweep (loadCategories()); }
 
+    /** One row the sweep WILL open, with the decision already made.
+
+        THE LOOP ITERATES THESE, not the worklist. Before 10 Aug 2026 the run
+        walked all 1,460 worklist rows and re-derived the same 783 declines on
+        every restart -- 47 times over one night, because a crash rebuilds the
+        list and starts at row 0. Each individual check was trivial (2.2 ms)
+        and the aggregate was most of the wall time between restarts.
+
+        The decision is taken ONCE, in beginSweep, and what survives is the
+        openable subset. A declined row then costs nothing on a later pass
+        because there is no later pass over it.
+    */
+    struct SweepItem
+    {
+        ScannedPlugin sp;
+        juce::String  category;
+        bool hedged = false;
+    };
+
     /** ONE plugin. Returns false when the run is over.
 
         The unit of work is one plugin because that is the unit the crash path,
@@ -8232,20 +8352,24 @@ public:
         if (sweep.index >= sweep.work.size()) return false;
         if (sweep.limit > 0 && sweep.done >= sweep.limit) return false;
 
-        const auto sp = sweep.work.getReference (sweep.index++);
+        const auto item     = sweep.work.getReference (sweep.index++);
+        const auto sp       = item.sp;
+        const auto category = item.category;
+        const bool hedged   = item.hedged;
+        juce::String detail;
 
-        const auto decision = decideSweep (sp, sweep.cats);
-        const auto outcome  = decision.outcome;
-        const auto category = decision.category;
-        const bool hedged   = decision.hedged;
-        auto detail         = decision.detail;
-
-        if (outcome.isNotEmpty())
+        // THE ONE PART OF THE CASCADE THAT STILL RUNS PER ROW, because it is
+        // the only part that can change while the run is walking: a binary
+        // withdrawn by its own failures ten plugins ago must not be opened
+        // now. It is an in-memory check against a StringArray, not a
+        // re-derivation, and it is the reason the precompute is safe.
+        if (ledger.isQuarantined (sp.pluginId()))
         {
             ++sweep.skipped;
-            ++sweep.byOutcome[outcome];
-            appendSweepRow (sweep.log, sp, category, outcome, detail, 0, {});
-            return true;                       // skips cost nothing: keep going
+            ++sweep.byOutcome["skipped_quarantined"];
+            sweepSay ("  [-] " + sp.desc.name
+                        + "  withdrawn since this run started; not opening it");
+            return true;
         }
 
         // AN ATTEMPT RECORD THE SWEEP OWNS, written BEFORE the plugin is
@@ -8262,6 +8386,19 @@ public:
         // staked. It says: this run was about to open X and never said what
         // happened. Three of those is a plugin that kills the process.
         noteAttemptStarted (sp);
+
+        // THE ATTEMPT IS IN THE LOG BEFORE IT CAN KILL US.
+        //
+        // Added 10 Aug 2026 beyond the three items asked for, because without
+        // it the previous night was undiagnosable and would have been again.
+        // appendSweepRow runs AFTER sweepOne returns, so a plugin that takes
+        // the process down leaves NO row: seventeen Mac 2 runs logged "45
+        // declined rows and then nothing", and the plugin that actually
+        // killed each of them was invisible in every artefact the run wrote.
+        //
+        // This row is superseded by the outcome row a moment later. A
+        // dangling `opening` with no outcome after it IS the finding.
+        appendSweepRow (sweep.log, sp, category, "opening", "about to open this plugin", 0, {});
 
         ++sweep.done;
         sweep.current = sp.desc.name;
@@ -8303,6 +8440,18 @@ public:
         // loop with a different reason attached.
         if (res == "submit_refused" || res == "no_controls_row" || res == "stale_controls")
             flagForReview (sp, res + ": " + detail);
+
+        // A WITHDRAWAL IS SAID AT THE MOMENT IT HAPPENS, not discovered in a
+        // report afterwards. The cascade cleared this plugin at the start of
+        // the run, so if it is quarantined now the failure just recorded is
+        // what withdrew it -- and naming it here is the difference between a
+        // mapper seeing the run make progress and seeing it repeat.
+        if (ledger.isQuarantined (sp.pluginId()))
+        {
+            ++sweep.withdrawn;
+            sweepSay ("      WITHDRAWN from the worklist: enough recorded failures. "
+                      "It will not be offered again.");
+        }
 
         appendSweepRow (sweep.log, sp, category, res, detail, nControls, cap);
         noteAttemptFinished();
@@ -8493,15 +8642,30 @@ public:
         progressLabel.setVisible (show);
         if (! show) { resized(); return; }
 
+        // THE DENOMINATOR IS THE WORK, NOT THE WORKLIST.
+        //
+        // It read `/1460` on Mac 2 and never moved, through seventeen runs and
+        // an hour, while the run would only ever open 677 of those rows. A
+        // denominator that counts rows the sweep has already decided not to
+        // open cannot show progress, and the operator correctly read a
+        // motionless number as a stuck run -- twice, and killed it.
+        //
+        // sweep.work is now the openable set, so this is the real total and
+        // it SHRINKS between runs as plugins are banked or withdrawn. That
+        // shrink is the only honest evidence that a restart was progress
+        // rather than a reset, so it is on screen rather than in a report.
         const int total = sweep.limit > 0 ? sweep.limit : sweep.work.size();
-        // The strip already has one value and one bar. A second variable would
-        // be a second source of truth for the same pixels.
         scanProgress = total > 0 ? juce::jlimit (0.0, 1.0, (double) sweep.index / total) : 0.0;
-        progressLabel.setText (juce::String (sweep.done) + " / " + juce::String (total)
-                                 + (sweep.current.isNotEmpty() ? "   " + sweep.current : juce::String())
-                                 + "   ·   " + juce::String (sweep.mapped) + " mapped, "
-                                 + juce::String (sweep.sweptNothing + sweep.died) + " to review",
-                               juce::dontSendNotification);
+
+        juce::String t;
+        t << sweep.done << " / " << total << " to open";
+        if (sweep.forecast.totalSkipped() > 0)
+            t << "  (" << sweep.forecast.totalSkipped() << " declined before the run started)";
+        if (sweep.current.isNotEmpty()) t << "   " << sweep.current;
+        t << "   ·   " << sweep.mapped << " mapped, "
+          << (sweep.sweptNothing + sweep.died) << " to review";
+        if (sweep.withdrawn > 0) t << ", " << sweep.withdrawn << " withdrawn";
+        progressLabel.setText (t, juce::dontSendNotification);
         resized();
     }
 
@@ -8579,27 +8743,63 @@ public:
             // was forecast. sweep.done counts what was opened (a skip returns
             // before it) and sweep.skipped counts what was declined, which is
             // the same pair the cascade decides between.
-            const int opened  = sweep.done;
-            const int skipped = sweep.skipped;
+            // RECONCILED AGAINST WHAT THE RUN NOW ACTUALLY DOES.
+            //
+            // The declines are decided before the first plugin opens and are
+            // never walked, so "actual declined" is not a thing that can be
+            // observed any more -- the first version of this line compared
+            // against it and reported 706 forecast against 0 actual on a run
+            // that behaved perfectly. What is still worth checking is the
+            // OPENABLE set: every row in it either opened or was withdrawn
+            // while the run was walking, and anything else is unexplained.
+            const int opened      = sweep.done;
+            const int withdrawnMid = sweep.skipped;
 
             t << "\n  THE FORECAST, CHECKED\n";
-            t << "     forecast " << sweep.forecast.wouldOpen << " to open, "
-              << sweep.forecast.totalSkipped() << " to decline"
-              << "  |  actual " << opened << " opened, " << skipped << " declined";
+            t << "     " << sweep.forecast.wouldOpen << " openable, "
+              << sweep.forecast.totalSkipped() << " declined before the run started"
+              << "  |  " << opened << " opened, " << withdrawnMid
+              << " withdrawn while walking";
 
             const bool ranOut = sweep.stopped || sweep.tripped
-                             || (sweep.limit > 0 && sweep.done >= sweep.limit);
+                             || (sweep.limit > 0 && sweep.done >= sweep.limit)
+                             || sweep.index < sweep.work.size();
             if (ranOut)
-                t << "   (the run did not reach the end of the worklist, so a "
-                     "shortfall here is expected)";
-            else if (opened != sweep.forecast.wouldOpen || skipped != sweep.forecast.totalSkipped())
-                t << "\n     THE RUN AND THE FORECAST DISAGREE. Both used the same "
-                     "cascade, so something changed underneath it while the run "
-                     "walked: a binary quarantined by its own failures, or a "
-                     "categories.json written mid-run. Worth one look at the log.";
+                t << "\n     (the run did not reach the end of the openable list, so a "
+                     "shortfall is expected: " << (sweep.work.size() - sweep.index)
+                  << " row(s) never reached)";
+            else if (opened + withdrawnMid != sweep.forecast.wouldOpen)
+                t << "\n     THE RUN AND THE FORECAST DISAGREE: " << sweep.forecast.wouldOpen
+                  << " openable, " << (opened + withdrawnMid) << " accounted for. Every "
+                     "openable row should have opened or been withdrawn. Worth one look "
+                     "at the log.";
             else
-                t << "   (agree)";
+                t << "   (every openable row accounted for)";
             t << "\n";
+        }
+
+        // A FINISHED SWEEP IS NOT A FINISHED JOB, and the mapper should not
+        // have to know that to find out. Maps land on this machine and reach
+        // nobody until they are sent; a mapper who has just watched an hour of
+        // crashes is the least likely person to go looking for a second
+        // button.
+        //
+        // IT OFFERS, IT DOES NOT SEND. Sending publishes to the server, and
+        // the rule this project already applies to Categorise is that the
+        // press is the consent -- a sweep left running overnight consented to
+        // sweeping, not to uploading whatever it happened to produce. The
+        // count is on the button so it cannot be missed, and the line below
+        // says it in words.
+        {
+            const auto b = computeBacklog();
+            const int waiting = juce::jmax (0, b.neverOffered + b.rejected);
+            if (waiting > 0)
+                t << "\n  " << waiting << " MAP(S) ARE ON THIS MACHINE AND HAVE REACHED "
+                     "NOBODY.\n     Press \"Send All " << waiting << "\" to deliver them. "
+                     "Every map is reported one line each,\n     because a refusal is the only "
+                     "line worth acting on and a count would bury it.\n";
+            else if (b.mapped > 0)
+                t << "\n  All " << b.mapped << " map(s) on this machine have been sent.\n";
         }
 
         t << "\n  THIS RUN ONLY: " << ledger.currentRunId()
@@ -8775,11 +8975,19 @@ private:
     struct SweepRun
     {
         std::map<juce::String, SweepCategory> cats;
-        juce::Array<ScannedPlugin> work;
+
+        /** ONLY THE ROWS THAT WILL OPEN. See SweepItem. */
+        juce::Array<SweepItem> work;
         juce::File   log;
         juce::String current, breakerClass;
         int index = 0, done = 0, limit = 0, progressBase = 0;
         int mapped = 0, sweptNothing = 0, died = 0, skipped = 0, consecutive = 0;
+
+        /** Plugins this run withdrew by failing enough times. Counted so the
+            progress strip can say a restart was progress: a withdrawal and a
+            crash-and-start-over present identically otherwise, which is what
+            got a working run killed twice. */
+        int withdrawn = 0;
 
         /** EVERY outcome by name, so the morning summary distinguishes a bad
             night from a normal one without anyone opening the jsonl. `died` and
@@ -10053,6 +10261,7 @@ private:
 
         applyFilter();
         refreshCategoriseButton();
+        refreshSendAllButton();
         logColumns ("cache restored");
         return true;
     }
@@ -13627,7 +13836,7 @@ private:
     juce::Array<int>           visibleRows; // indices into rows, what the list shows
     juce::String crashedId;
 
-    juce::TextButton sweepAllButton, signInButton, categoriseButton;
+    juce::TextButton sweepAllButton, signInButton, categoriseButton, sendAllButton;
     juce::ToggleButton sweepCapturesToggle;
     juce::TextButton scanButton, loadButton, releaseButton, summaryButton, armButton, sweepButton, typeButton, assignButton, uploadButton, restartButton;
     juce::ToggleButton deepToggle;
