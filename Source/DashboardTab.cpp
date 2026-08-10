@@ -613,44 +613,78 @@ void DashboardView::drawTile (juce::Graphics& g, const DashProject& p,
 {
     const int edge = square.getWidth();
 
-    // V0 stack: two tinted edges peeking above the ONE tile, coloured from
-    // the seed's hue anchor. A decorative offset of the same card, never a
-    // second image: a project has one artwork. derive() returns a stable
-    // fallback for a malformed seed, so this cannot take down a paint pass.
+    // THE COVER IS RESOLVED FIRST, because the stack behind the tile has to
+    // show the same thing the tile does. Layers tinted from the seed sitting
+    // behind an uploaded photo read as a rendering fault rather than as a
+    // stack, so this lookup cannot happen after the stack is drawn.
+    const juce::Image* cover = nullptr;
+    if (p.artKind != "procedural" && p.artUrl.isNotEmpty())
+    {
+        auto it = artImages_.find (p.artUrl);
+        if (it != artImages_.end() && it->second.isValid()) cover = &it->second;
+    }
+
+    // V0 stack: two edges peeking above the ONE tile, showing WHAT THE TILE
+    // SHOWS. With a cover, each layer draws that image as though it were a
+    // full tile anchored at the layer's own top, so what protrudes is the top
+    // slice of the cover, which is what a card behind this one would show.
+    // Without one, they are flat tints from the seed's hue anchor. Still one
+    // artwork per project either way: this is an offset of the same image,
+    // never a second one. derive() returns a stable fallback for a malformed
+    // seed, so this cannot take down a paint pass.
     {
         const auto pr = ProjectArt::derive (p.artSeed);
         const auto backT  = ProjectArt::hslToColour ((float) pr.hueAnchor, 0.35f, 0.21f);
         const auto frontT = ProjectArt::hslToColour ((float) pr.hueAnchor, 0.40f, 0.30f);
-        g.setColour (backT);
-        g.fillRoundedRectangle ((float) (square.getX() + 16), (float) (square.getY() - 9),
-                                (float) (edge - 32), 14.0f, 6.0f);
-        g.setColour (frontT);
-        g.fillRoundedRectangle ((float) (square.getX() + 8), (float) (square.getY() - 5),
-                                (float) (edge - 16), 14.0f, 7.0f);
+
+        auto layer = [&] (juce::Rectangle<int> strip, float radius,
+                          juce::Colour tint, float dim)
+        {
+            if (cover == nullptr)
+            {
+                g.setColour (tint);
+                g.fillRoundedRectangle (strip.toFloat(), radius);
+                return;
+            }
+            juce::Path clip;
+            clip.addRoundedRectangle (strip.toFloat(), radius);
+            juce::Graphics::ScopedSaveState save (g);
+            g.reduceClipRegion (clip);
+            // Full-tile geometry anchored at this strip's top edge: the clip
+            // is what turns it into a sliver, so the slice matches the tile.
+            g.drawImage (*cover,
+                         juce::Rectangle<int> (strip.getX(), strip.getY(),
+                                               strip.getWidth(), edge).toFloat(),
+                         juce::RectanglePlacement (juce::RectanglePlacement::centred
+                                                 | juce::RectanglePlacement::fillDestination));
+            if (dim > 0.0f)
+            {
+                g.setColour (juce::Colours::black.withAlpha (dim));
+                g.fillRect (strip);
+            }
+        };
+
+        // Back layer first, then front over it. The back one is darkened so
+        // depth survives whether the layer is a photo or a tint.
+        layer ({ square.getX() + 16, square.getY() - 9, edge - 32, 14 }, 6.0f, backT, 0.30f);
+        layer ({ square.getX() + 8,  square.getY() - 5, edge - 16, 14 }, 7.0f, frontT, 0.0f);
     }
 
     // An uploaded image draws INSTEAD of the procedural art, cover cropped so
     // an album cover is never letterboxed or squashed. Until it arrives (and
     // forever, if the fetch failed) the seed art draws, which is why art.seed
     // is sent for uploads too.
-    bool drewUpload = false;
-    if (p.artKind != "procedural" && p.artUrl.isNotEmpty())
+    if (cover != nullptr)
     {
-        auto it = artImages_.find (p.artUrl);
-        if (it != artImages_.end() && it->second.isValid())
-        {
-            juce::Path clip;
-            clip.addRoundedRectangle (square.toFloat(), 10.0f);
-            juce::Graphics::ScopedSaveState save (g);
-            g.reduceClipRegion (clip);
-            g.drawImage (it->second, square.toFloat(),
-                         juce::RectanglePlacement (juce::RectanglePlacement::centred
-                                                 | juce::RectanglePlacement::fillDestination));
-            drewUpload = true;
-        }
+        juce::Path clip;
+        clip.addRoundedRectangle (square.toFloat(), 10.0f);
+        juce::Graphics::ScopedSaveState save (g);
+        g.reduceClipRegion (clip);
+        g.drawImage (*cover, square.toFloat(),
+                     juce::RectanglePlacement (juce::RectanglePlacement::centred
+                                             | juce::RectanglePlacement::fillDestination));
     }
-
-    if (! drewUpload)
+    else
     {
         const auto img = ProjectArt::getCached (p.artSeed, edge);
         if (img.isValid()) g.drawImageAt (img, square.getX(), square.getY());
@@ -665,8 +699,9 @@ void DashboardView::drawTile (juce::Graphics& g, const DashProject& p,
     g.drawText (p.name, square.getX(), square.getBottom() + 6, edge, 15,
                 juce::Justification::topLeft, true);
 
-    // All three counts, nonzero only, "empty" when none: canonical caption
-    // (spec section 15), matching the web's bits.join behaviour exactly.
+    // All three counts, nonzero only: canonical caption (spec section 15),
+    // matching the web's bits.join behaviour exactly, including the wording
+    // when there is nothing to count.
     juce::String counts;
     const auto dot = juce::String::fromUTF8 ("  \xc2\xb7  ");
     if (p.chats > 0)
@@ -677,7 +712,11 @@ void DashboardView::drawTile (juce::Graphics& g, const DashProject& p,
     if (p.chains > 0)
         counts << (counts.isEmpty() ? "" : dot) << p.chains
                << " chain" << (p.chains == 1 ? "" : "s");
-    if (counts.isEmpty()) counts = "empty";
+    // "Nothing yet", not "empty": a bare word sitting where "19 chats · 3
+    // chains" sits on every neighbour reads as a missing value rather than a
+    // state. Not "No chats yet" either, since this appears only when chats
+    // AND captures AND chains are all zero.
+    if (counts.isEmpty()) counts = "Nothing yet";
     g.setColour (C::text3);
     g.setFont (juce::Font (juce::FontOptions (9.5f)));
     g.drawText (counts, square.getX(), square.getBottom() + 21, edge, 12,
