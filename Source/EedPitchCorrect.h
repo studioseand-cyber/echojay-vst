@@ -115,6 +115,7 @@ public:
         curCents_ = 0.0f; targetCents_ = 0.0f; noteRefCents_ = 0.0f;
         slowCents_ = 0.0f; haveSlow_ = false;
         gapMs_ = 0.0f; stableMs_ = 0.0f; confirmMs_ = 0.0f;
+        vibPhase_ = 0.0f; vibNow_ = 0.0f; noteMs_ = 0.0f;
         pendingCents_ = 0.0f; havePending_ = false;
         noteChanges_ = 0; gapResumes_ = 0;
     }
@@ -220,6 +221,7 @@ public:
             curCents_ = inCents;               // start AT the note, not behind it
             noteRefCents_ = inCents;
             stableMs_ = 0.0f; confirmMs_ = 0.0f; havePending_ = false;
+            noteMs_ = 0.0f; vibPhase_ = 0.0f;
         }
         else
         {
@@ -250,6 +252,7 @@ public:
                         slowCents_ = inCents;
                         noteRefCents_ = inCents;
                         stableMs_ = 0.0f;
+                        noteMs_ = 0.0f; vibPhase_ = 0.0f;
                         havePending_ = false;
                         ++noteChanges_;
                     }
@@ -264,16 +267,33 @@ public:
         // that is fading is still held.
         if (std::fabs (inCents - noteRefCents_) <= kStableCents) stableMs_ += stepMs_;
         else                                                     stableMs_ = 0.0f;
+        noteMs_ += stepMs_;
 
         // ---- 1..2: nearest enabled degree, plus its bias -------------------
         const float selectCents = ignoreVibrato_.load() ? slowCents_ : inCents;
         const float degreeCents = nearestDegreeCents (selectCents);
 
+        // The NOTE and the WOBBLE are separated here, and everything below
+        // acts on the note. slowCents_ is where the note is; osc is the
+        // singer's oscillation around it.
+        //
+        // This matters for natural_vibrato: correction applied to the LIVE
+        // pitch removes the wobble along with the error, so a control that
+        // then scales "whatever survived" comes out symmetric about 100 rather
+        // than monotonic - measured, 0% and 200% both produced 27 cents of
+        // swing where 100% produced none. Correcting the NOTE and adding the
+        // wobble back at the chosen amount is what makes 0 / 100 / 200 mean
+        // what they say. It also makes flex judge whether the NOTE is off
+        // rather than whether the vibrato is, which is the more defensible
+        // reading of it.
+        const float osc = haveSlow_ ? (inCents - slowCents_) : 0.0f;
+        const float noteCents = haveSlow_ ? slowCents_ : inCents;
+
         // ---- 3: flex -------------------------------------------------------
         // Below the flex threshold correction scales toward zero, so small
         // expressive deviation survives; beyond it, full correction. At flex 0
         // everything is corrected, at 100 only gross errors are.
-        float wanted = degreeCents - inCents;
+        float wanted = degreeCents - noteCents;
         const float flexPct = flex_.load();
         if (flexPct > 0.0f)
         {
@@ -290,15 +310,79 @@ public:
             wanted *= 1.0f - 0.01f * humanPct;
 
         // ---- the envelope --------------------------------------------------
-        const float aimCents = inCents + wanted;
+        // The corrected NOTE, plus however much of the singer's own vibrato is
+        // wanted on top of it: 100 keeps it as sung, 0 gives a dead-still note,
+        // 200 exaggerates.
+        const float aimCents = noteCents + wanted + osc * (natVib_.load() * 0.01f);
         const float coeff = onePole (retuneMs_.load());
         curCents_ = aimCents + (curCents_ - aimCents) * coeff;
 
+        // ---- ADDED vibrato, after correction (spec §3) ---------------------
+        vibNow_ = 0.0f;
+        const float depth = vibDepth_.load();
+        if (depth > 0.0f)
+        {
+            vibPhase_ += 6.283185307179586f * vibRate_.load() * stepMs_ * 0.001f;
+            while (vibPhase_ > 6.283185307179586f) vibPhase_ -= 6.283185307179586f;
+
+            float w = 0.0f;
+            switch (vibShape_.load())
+            {
+                case kVibTriangle:
+                    w = 2.0f * std::abs (2.0f * (vibPhase_ / 6.283185307179586f) - 1.0f) - 1.0f;
+                    break;
+                case kVibRamp:
+                    w = 2.0f * (vibPhase_ / 6.283185307179586f) - 1.0f;
+                    break;
+                default:
+                    w = std::sin (vibPhase_);
+                    break;
+            }
+
+            // Onset delay, measured from the START OF THE NOTE, so it fades in
+            // the way a singer does rather than restarting on every hop.
+            const float onset = vibOnset_.load();
+            float fade = 1.0f;
+            if (onset > 0.0f) fade = std::clamp (noteMs_ / onset, 0.0f, 1.0f);
+
+            vibNow_ = depth * w * fade;
+        }
+
         // ---- 5: transpose --------------------------------------------------
-        targetCents_ = curCents_ + 100.0f * transpose_.load();
+        targetCents_ = curCents_ + vibNow_ + 100.0f * transpose_.load();
 
         return ref * std::pow (2.0f, targetCents_ / 1200.0f);
     }
+
+    // ---- P5: vibrato ------------------------------------------------------
+    // ADDED vibrato is applied AFTER correction (spec §3): correcting a note
+    // and then adding vibrato is coherent, whereas adding it first just gives
+    // the corrector something to fight.
+    //
+    // NATURAL vibrato is the singer's own, and it is not a generator at all -
+    // it is how much of the deviation the correction is allowed to remove. 100
+    // keeps it, 0 removes it, above 100 exaggerates it, by scaling the part of
+    // the pitch that oscillates around the note rather than the note itself.
+    static constexpr float kMinVibRateHz = 0.1f,  kMaxVibRateHz = 10.0f;
+    static constexpr float kMaxVibDepthCents = 100.0f;
+    static constexpr float kMaxVibOnsetMs = 3000.0f;
+
+    enum VibShape { kVibSine = 0, kVibTriangle, kVibRamp, kNumVibShapes };
+
+    void setVibDepthCents (float c) noexcept { vibDepth_.store (std::clamp (c, 0.0f, kMaxVibDepthCents)); }
+    float getVibDepthCents() const noexcept  { return vibDepth_.load(); }
+    void setVibRateHz (float hz) noexcept    { vibRate_.store (std::clamp (hz, kMinVibRateHz, kMaxVibRateHz)); }
+    float getVibRateHz() const noexcept      { return vibRate_.load(); }
+    void setVibShape (int sh) noexcept       { vibShape_.store (std::clamp (sh, 0, (int) kNumVibShapes - 1)); }
+    int  getVibShape() const noexcept        { return vibShape_.load(); }
+    void setVibOnsetMs (float ms) noexcept   { vibOnset_.store (std::clamp (ms, 0.0f, kMaxVibOnsetMs)); }
+    float getVibOnsetMs() const noexcept     { return vibOnset_.load(); }
+    void setNaturalVibrato (float pct) noexcept { natVib_.store (std::clamp (pct, 0.0f, 200.0f)); }
+    float getNaturalVibrato() const noexcept    { return natVib_.load(); }
+
+    // How much the ADDED vibrato is currently displacing the note, in cents -
+    // published so the viz can draw the corrected trace including it.
+    float vibratoCents() const noexcept { return vibNow_; }
 
     // ---- introspection (readout and tests) --------------------------------
     uint32_t noteChanges() const noexcept { return noteChanges_; }
@@ -378,6 +462,13 @@ private:
     std::array<std::atomic<bool>, 12>  prevEnabled_ {};
     std::array<std::atomic<float>, 12> prevBias_ {};
     std::atomic<float> xfade_ { 1.0f };      // 1 = settled on the current set
+
+    std::atomic<float> vibDepth_ { 0.0f };
+    std::atomic<float> vibRate_  { 5.5f };
+    std::atomic<int>   vibShape_ { kVibSine };
+    std::atomic<float> vibOnset_ { 300.0f };
+    std::atomic<float> natVib_   { 100.0f };
+    float vibPhase_ = 0.0f, vibNow_ = 0.0f, noteMs_ = 0.0f;
 
     bool  haveNote_ = false, haveSlow_ = false, havePending_ = false;
     float curCents_ = 0.0f, targetCents_ = 0.0f, noteRefCents_ = 0.0f;

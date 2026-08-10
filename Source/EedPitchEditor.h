@@ -55,7 +55,7 @@ private:
     juce::TextButton resetBtn_ { "RESET" };
     echojay::device::EchoJayDeviceKnob targetKnob_, retuneKnob_, flexKnob_, humanKnob_;
 
-    juce::Rectangle<int> notePanel_, numbersPanel_, guardPanel_;
+    juce::Rectangle<int> notePanel_, numbersPanel_, guardPanel_, ribbonBounds_;
 
     bool suppressCallbacks_ = false;
 

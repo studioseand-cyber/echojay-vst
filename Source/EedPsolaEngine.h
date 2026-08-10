@@ -88,10 +88,24 @@ public:
 
     void setFormantMode (int m) noexcept
     {
-        formantMode_.store (m == kFormantOff ? kFormantOff : kFormantPreserve,
+        formantMode_.store (std::clamp (m, 0, (int) kNumFormantModes - 1),
                             std::memory_order_relaxed);
     }
     int getFormantMode() const noexcept { return formantMode_.load (std::memory_order_relaxed); }
+
+    // formant_shift IS NOT IMPLEMENTED, deliberately - see
+    // PITCH_P0_VALIDATION.md §11. The cheap version (resample each grain by a
+    // user-chosen ratio, sharing the code path with `off`) was built and
+    // MEASURED, and it does not do what the control claims: the envelope is
+    // inert from -9 to +3 semitones and jumps in ~600 Hz steps outside that,
+    // because overlap-adding grains at the pitch period reconstructs an
+    // envelope that barely follows the per-grain resampling. Shipping it would
+    // have been a knob that lies.
+    //
+    // The spec's own prescription is the answer and it is a different piece of
+    // work: estimate the spectral envelope (LPC, order ~ 2 + fs/1000, or
+    // cepstral liftering), FLATTEN, shift, then re-apply the envelope warped
+    // by the control.
 
     // Fade applied on the VOICED side of a voiced/unvoiced seam. Short enough
     // to be inaudible as a level move, long enough to stop a step edge.
@@ -124,7 +138,9 @@ public:
         // Ring must hold: the lookahead, the longest grain either side of it,
         // one block, and slack for epoch search. Rounded to a power of two so
         // wrapping is a mask.
-        const int need = maxLatency_ + 4 * maxPeriod_ + std::max (64, maxBlockSize) + 64;
+        // 8x maxPeriod, not 4: a downward formant_shift stretches a grain to
+        // as much as 2x the analysis period either side of its epoch.
+        const int need = maxLatency_ + 8 * maxPeriod_ + std::max (64, maxBlockSize) + 64;
         int bits = 1;
         while ((1 << bits) < need) ++bits;
         mask_ = (uint32_t) ((1 << bits) - 1);
@@ -301,7 +317,12 @@ private:
 
     void emitMixed (float* out, int n, int64_t base) noexcept
     {
-        const bool preserve = formantMode_.load (std::memory_order_relaxed) != kFormantOff;
+        // Normalisation follows the WINDOWING regime, not the mode's name: a
+        // resampled grain (off, or a non-zero shift) has abutting windows that
+        // dip to zero at the joins, which is what instantaneous normalisation
+        // is for. A 1:1 grain has variable overlap of duplicated pulses, where
+        // the same division smears the pulse train.
+        const bool flat = formantMode_.load (std::memory_order_relaxed) == kFormantPreserve;
 
         for (int i = 0; i < n; ++i)
         {
@@ -320,7 +341,7 @@ private:
             // actually sounds like, rather than wrong.
             // See placeGrain for why the two modes normalise differently.
             const float w   = win_[(size_t) idx];
-            const float wet = preserve
+            const float wet = flat
                 ? acc_[(size_t) idx] / std::max (1.0f, w * kWindowCeil)
                 : acc_[(size_t) idx] / std::max (w, kWindowFloor);
 
@@ -511,13 +532,15 @@ private:
         // resampling is +/- Ts/2 of output). Measured: any wider span pulls in
         // a second pulse and the output lands 314 cents sharp - Ts, Ta/2 and Ta
         // all read 359.7 Hz where 300 was asked for, while Ts/2 reads 300.02.
+        // PRESERVE reads +/-Ta at 1:1 - two periods, the standard TD-PSOLA
+        // grain. OFF reads +/-Ta/2, ONE period, resampled by the pitch ratio:
+        // measured in P1, a wider span pulls in a second pulse and the output
+        // lands 314 cents sharp.
         const int half = preserve ? std::min (Ta, maxPeriod_)
                                   : std::max (2, std::min (Ts / 2, maxPeriod_));
-        const int len  = 2 * half + 1;
-
-        // Input samples consumed per output sample. 1 when preserving; the
-        // pitch ratio when not, which is what drags the envelope along.
         const double step = preserve ? 1.0 : (double) Ta / (double) std::max (1, Ts);
+
+        const int len = 2 * half + 1;
 
         // Level is an ENERGY problem, not an amplitude one, and getting that
         // wrong is worth 3 dB. The output is a pulse train: each grain carries

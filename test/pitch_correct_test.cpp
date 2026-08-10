@@ -132,9 +132,14 @@ int main()
         check (std::fabs (smallTight - 900.0f) < 1.0f
                  && std::fabs (smallLoose - 915.0f) < 8.0f, msg);
 
-        // A gross error is still corrected at high flex.
-        const float grossLoose = settle (loose, hz (960.0f), 4);   // 60 cents sharp
-        std::snprintf (msg, sizeof (msg), "60 cents sharp at flex 60 -> %.1f", grossLoose);
+        // A gross error is still corrected at high flex - but give it time.
+        // Since the note and the wobble are now separated, a NEW deviation is
+        // treated as movement WITHIN the note until the slow pitch catches up
+        // (~140 ms), and only then judged as the note being off. That is a real
+        // and deliberate property: it stops the corrector chasing a scoop, at
+        // the cost of engaging slightly later on a genuine drift.
+        const float grossLoose = settle (loose, hz (960.0f), 150);   // ~400 ms
+        std::snprintf (msg, sizeof (msg), "60 cents sharp at flex 60 settles to %.1f", grossLoose);
         check (std::fabs (grossLoose - 900.0f) < 20.0f, msg);
     }
 
@@ -274,6 +279,78 @@ int main()
                        "target flips across the boundary: guard off %d, guard on %d",
                        flipsOff, flipsOn);
         check (flipsOff > flipsOn, msg);
+    }
+
+    std::printf ("== ADDED vibrato: off by default, and fades in from the note start ==\n");
+    {
+        PitchCorrect c; makeMajor (c, 0.0f, 0.0f, 0.0f);
+        check (c.getVibDepthCents() == 0.0f, "added vibrato is OFF by default");
+
+        settle (c, hz (900.0f), 200);
+        check (std::abs (c.vibratoCents()) < 0.01f, "...and adds nothing while off");
+
+        PitchCorrect v; makeMajor (v, 0.0f, 0.0f, 0.0f);
+        v.setVibDepthCents (50.0f);
+        v.setVibRateHz (5.5f);
+        v.setVibOnsetMs (300.0f);
+
+        // At the attack the onset fade holds it near zero.
+        v.process (hz (900.0f), true);
+        v.process (hz (900.0f), true);
+        check (std::abs (v.vibratoCents()) < 8.0f, "at the onset it is still nearly silent");
+
+        // Once the note has been held past the onset, it is present and moving.
+        float lo = 1e9f, hi = -1e9f;
+        for (int i = 0; i < 400; ++i)
+        {
+            v.process (hz (900.0f), true);
+            if (i > 200) { lo = std::min (lo, v.vibratoCents()); hi = std::max (hi, v.vibratoCents()); }
+        }
+        char msg[160];
+        std::snprintf (msg, sizeof (msg), "after the onset it swings %.0f cents peak to peak (want ~100)", hi - lo);
+        check (hi - lo > 70.0f && hi - lo < 130.0f, msg);
+    }
+
+    std::printf ("== natural_vibrato scales the SINGER'S movement, not a generator ==\n");
+    {
+        // A note held dead straight has no vibrato to scale, so the control
+        // must do nothing at all - that is what makes it different from the
+        // added-vibrato generator.
+        PitchCorrect flat0; makeMajor (flat0, 0.0f, 0.0f, 0.0f);
+        flat0.setNaturalVibrato (0.0f);
+        const float straight = settle (flat0, hz (900.0f), 200);
+        check (std::abs (straight - 900.0f) < 2.0f,
+               "on a dead-straight note, natural_vibrato 0 changes nothing");
+
+        // On a note that IS wobbling, 0 should flatten it and 200 exaggerate.
+        // Measured at a REALISTIC setting. natural_vibrato scales the
+        // oscillation in the pitch the corrector aims at, so it only has
+        // meaning where correction is not total - at retune 0 with flex 0 the
+        // vibrato is gone by definition and the control has nothing to scale.
+        // Using flex here instead would confound the two: flex ALSO decides how
+        // much deviation survives, and the test could not say which acted.
+        auto swing = [] (float natPct)
+        {
+            PitchCorrect c; makeMajor (c, 120.0f, 0.0f, 0.0f);   // transparent retune
+            c.setNaturalVibrato (natPct);
+            c.setIgnoreVibrato (true);
+            float lo = 1e9f, hi = -1e9f;
+            for (int i = 0; i < 500; ++i)
+            {
+                const float dev = 60.0f * std::sin (2.0 * M_PI * 5.5 * i * 0.00267);
+                const float out = c.process (hz (900.0f + dev), true);
+                if (i > 250) { const float t = cents (out); lo = std::min (lo, t); hi = std::max (hi, t); }
+            }
+            return hi - lo;
+        };
+        const float kept = swing (100.0f);
+        const float gone = swing (0.0f);
+        const float more = swing (200.0f);
+        char msg[180];
+        std::snprintf (msg, sizeof (msg),
+                       "peak-to-peak: 0%% -> %.0f c, 100%% -> %.0f c, 200%% -> %.0f c",
+                       gone, kept, more);
+        check (gone < kept * 0.6f && more > kept * 1.4f, msg);
     }
 
     std::printf ("== unvoiced returns 0: the caller must leave the frame alone ==\n");

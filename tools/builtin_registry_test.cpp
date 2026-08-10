@@ -4115,6 +4115,77 @@ int main()
         }
     }
 
+    // -----------------------------------------------------------------
+    // ADVERTISED DEFAULTS vs CONSTRUCTED VALUES, every device.
+    //
+    // The advertisement is what the model reasons against. If a device
+    // CONSTRUCTS differently from what it ADVERTISES, the model's picture of a
+    // fresh insert is wrong - and the error hides itself the moment any state
+    // is restored, because restore writes the schema defaults. So only the very
+    // first instance is ever wrong, which is the hardest kind of bug to notice
+    // and the easiest kind to catch here.
+    std::printf ("\n== advertised defaults match constructed values (all devices) ==\n");
+    {
+        int totalMismatch = 0;
+        for (const auto& d : registry.all())
+        {
+            if (! d.create) continue;
+            auto proc = d.create();
+            if (proc == nullptr) continue;
+            auto* dev = dynamic_cast<EedDeviceProcessor*> (proc.get());
+            if (dev == nullptr) continue;
+
+            dev->setRateAndBufferSizeDetails (48000.0, 512);
+            dev->prepareToPlay (48000.0, 512);
+
+            juce::StringArray bad;
+            for (const auto& sp : dev->paramSchema().params())
+            {
+                const juce::String id (sp.id);
+                const double got = dev->getParamValue (id);
+                if (std::abs (got - sp.def) <= 1.0e-4) continue;
+
+                // A MOMENTARY action (analyse, reset, reset_stats) is a switch
+                // by schema shape only: it fires on 1 and always reads back its
+                // resting state. Deliberate, documented, not a mismatch.
+                if (sp.boolean && std::abs (sp.def) < 1.0e-9 && std::abs (got) < 1.0e-9)
+                    continue;
+
+                bad.add (id + " advertised " + juce::String (sp.def, 3)
+                            + ", constructed " + juce::String (got, 3));
+            }
+            if (! bad.isEmpty())
+            {
+                totalMismatch += bad.size();
+                std::printf ("  %-28s %s\n", d.name.toRawUTF8(),
+                             bad.joinIntoString ("; ").toRawUTF8());
+            }
+        }
+        // PRE-EXISTING, and deliberately NOT fixed here. All four are
+        // Modulation devices sharing one LFO core whose members construct at
+        // the core's generic 1 Hz / 50%, while each device advertises its own
+        // musically-chosen default. A fresh Chorus therefore RUNS at 1 Hz /
+        // 50% while the model believes it is at 0.6 Hz / 40%.
+        //
+        // The fix is one line and it is not a Pitch change: have the registry
+        // factory call resetParamsToDefaults() on a newly constructed device,
+        // which writes every schema default through setParamValue and closes
+        // the whole class of bug for all 22 at once. That alters what a fresh
+        // insert of four shipping devices sounds like, so it belongs to
+        // whoever owns those devices rather than to this session.
+        //
+        // Listed here so the debt is VISIBLE and, more importantly, so any NEW
+        // mismatch fails immediately instead of joining a silent pile.
+        static const char* const kKnownDefaultDebt[] = {
+            "EchoJay Auto Pan", "EchoJay Chorus", "EchoJay Phaser", "EchoJay Tremolo"
+        };
+        (void) kKnownDefaultDebt;
+        check (totalMismatch == 7,
+               "advertised-vs-constructed defaults: exactly the 7 KNOWN "
+               "pre-existing mismatches, no new ones (got "
+                 + juce::String (totalMismatch) + ")");
+    }
+
     std::printf ("\n%s (%d failures)\n", g_fail ? "FAILURES" : "ALL PASS", g_fail);
     return g_fail ? 1 : 0;
 }

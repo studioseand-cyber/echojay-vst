@@ -81,13 +81,6 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "names which source the key came from",
           false, { "auto", "manual" } },
 
-        { EedPitchProcessor::kRefSource, "", 0.0, 1.0, 0.0,
-          "where concert pitch comes from. auto follows the TUNING EchoJay "
-          "detected in the music, so a track cut at 441.3 Hz is corrected to "
-          "441.3 rather than dragged to 440 and left sitting subtly wrong "
-          "against everything else. manual uses reference_hz as set",
-          false, { "auto", "manual" } },
-
         { EedPitchProcessor::kKeyRoot, "", 0.0, 11.0, 0.0,
           "the root the scale is built on. IGNORED while scale is chromatic, "
           "which is the default - so setting this alone changes nothing. Only "
@@ -112,6 +105,13 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
             "major_pentatonic", "minor_pentatonic", "blues", "whole_tone",
             "chromatic", "custom" } },
 
+        { EedPitchProcessor::kRefSource, "", 0.0, 1.0, 0.0,
+          "where concert pitch comes from. auto follows the TUNING EchoJay "
+          "detected in the music, so a track cut at 441.3 Hz is corrected to "
+          "441.3 rather than dragged to 440 and left sitting subtly wrong "
+          "against everything else. manual uses reference_hz as set",
+          false, { "auto", "manual" } },
+
         { EedPitchProcessor::kReferenceHz, "Hz",
           (double) PitchCorrect::kMinReferenceHz, (double) PitchCorrect::kMaxReferenceHz,
           440.0,
@@ -123,6 +123,36 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
         { EedPitchProcessor::kTranspose, "st",
           (double) PitchCorrect::kMinTranspose, (double) PitchCorrect::kMaxTranspose, 0.0,
           "shifts the corrected result in semitones, after correction",
+          false },
+
+        { EedPitchProcessor::kNaturalVib, "%", 0.0, 200.0, 100.0,
+          "how much of the SINGER'S OWN vibrato survives correction. 100 keeps "
+          "it exactly as sung, 0 flattens it out for a dead-still note, above "
+          "100 exaggerates what is already there. This is not a generator - it "
+          "only scales movement the singer actually made, so it does nothing "
+          "on a note held straight",
+          false },
+
+        { EedPitchProcessor::kVibDepth, "c", 0.0, 100.0, 0.0,
+          "depth of ADDED vibrato, in cents. 0 is off and is the default - "
+          "this generates movement that was never sung, so reach for it only "
+          "when asked for vibrato that is not there, not to fix a flat take",
+          false },
+
+        { EedPitchProcessor::kVibRate, "Hz", 0.1, 10.0, 5.5,
+          "rate of the ADDED vibrato. 5-7 Hz is a natural singing rate; slower "
+          "reads as a swell, much faster as an effect",
+          false },
+
+        { EedPitchProcessor::kVibShape, "", 0.0, 2.0, 0.0,
+          "waveform of the added vibrato: sine is the natural one, triangle is "
+          "more even and slightly mechanical, ramp is a repeated scoop",
+          false, { "sine", "triangle", "ramp" } },
+
+        { EedPitchProcessor::kVibOnset, "ms", 0.0, 3000.0, 300.0,
+          "how long a note is held before the ADDED vibrato fades in, so it "
+          "starts the way a singer would rather than arriving fully formed on "
+          "the attack. Measured from the start of each note",
           false },
 
         { EedPitchProcessor::kVoiceType, "",
@@ -231,6 +261,11 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
     }
     if (id == kRefSource)   { refAuto_.store (value < 0.5); lastAutoTuning_ = 0.0f; return true; }
     if (id == kMode)        { applyMode ((int) std::lround (value)); return true; }
+    if (id == kNaturalVib)  { correct_.setNaturalVibrato ((float) value); return true; }
+    if (id == kVibDepth)    { correct_.setVibDepthCents ((float) value);  return true; }
+    if (id == kVibRate)     { correct_.setVibRateHz ((float) value);      return true; }
+    if (id == kVibShape)    { correct_.setVibShape ((int) std::lround (value)); return true; }
+    if (id == kVibOnset)    { correct_.setVibOnsetMs ((float) value);     return true; }
     if (id == kMix)         { psola_.setMixPercent ((float) value);  return true; }
     if (id == kOutputDb)    { psola_.setOutputDb ((float) value);    return true; }
     if (id == kCorrect)     { correctOn_.store (value >= 0.5); return true; }
@@ -273,6 +308,11 @@ double EedPitchProcessor::getParamValue (const juce::String& id) const
     if (id == kKeySource)   return keyAuto_.load() ? 0.0 : 1.0;
     if (id == kRefSource)   return refAuto_.load() ? 0.0 : 1.0;
     if (id == kMode)        return (double) modeIndex_.load();
+    if (id == kNaturalVib)  return (double) correct_.getNaturalVibrato();
+    if (id == kVibDepth)    return (double) correct_.getVibDepthCents();
+    if (id == kVibRate)     return (double) correct_.getVibRateHz();
+    if (id == kVibShape)    return (double) correct_.getVibShape();
+    if (id == kVibOnset)    return (double) correct_.getVibOnsetMs();
     if (id == kMix)         return (double) psola_.getMixPercent();
     if (id == kOutputDb)    return (double) psola_.getOutputDb();
     if (id == kCorrect)     return correctOn_.load() ? 1.0 : 0.0;
@@ -621,8 +661,10 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     // detector's reading and produces a target the shifter aims at, so a
     // detection error and a correction error stay separable.
     float target = 0.0f;
+    bool  correcting = false;
     if (correctOn_.load())
     {
+        correcting = true;
         // This runs once per BLOCK, not once per detector hop, so it must be
         // told how much time the call represents.
         // sampleRate_, not getSampleRate(): the latter is set by the HOST via
@@ -632,7 +674,16 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         target = correct_.process (r.f0Hz, r.voiced,
                                    1000.0f * (float) n / (float) sampleRate_);
         psola_.setTargetHz (target);
+        if (target <= 0.0f) correcting = false;
     }
+
+    // Feed the ribbon here rather than from the editor's timer, so the trace
+    // is the audio thread's ACTUAL decisions rather than a resampled guess at
+    // them - and so it keeps its shape whether or not an editor is open.
+    ribbon_.push (r.voiced,
+                  r.voiced && r.f0Hz > 0.0f ? echojay::PitchEngine::hzToMidi (r.f0Hz) : 0.0f,
+                  target > 0.0f ? echojay::PitchEngine::hzToMidi (target) : 0.0f,
+                  correcting && r.voiced);
 
     // The shifter delays unconditionally, including at target 0 and when
     // bypassed, so the reported latency is the SAME in every state and

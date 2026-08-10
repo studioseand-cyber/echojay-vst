@@ -20,6 +20,7 @@
 #include "EedPsolaEngine.h"
 #include "EedPitchCorrect.h"
 #include "EedKeyFeed.h"
+#include "viz/PitchRibbonView.h"
 
 class EedPitchProcessor : public EedDeviceProcessor
 {
@@ -61,6 +62,12 @@ public:
     static constexpr const char* kOutputDb     = "output_db";
     static constexpr const char* kKeySource    = "key_source";
     static constexpr const char* kRefSource    = "reference_source";
+    // P5: vibrato.
+    static constexpr const char* kNaturalVib   = "natural_vibrato";
+    static constexpr const char* kVibDepth     = "vib_depth_cents";
+    static constexpr const char* kVibRate      = "vib_rate_hz";
+    static constexpr const char* kVibShape     = "vib_shape";
+    static constexpr const char* kVibOnset     = "vib_onset_ms";
 
     // What the auto-map resolved to, for the editor's attribution line. A
     // wrong reading is only diagnosable when the user can see where it came
@@ -77,6 +84,10 @@ public:
         juce::String sourceName;
     };
     AutoKeyState autoKeyState() const;
+
+    // The ribbon's frame store. Written on the audio thread once per block and
+    // read by paint; a torn column is one pixel and not worth a lock.
+    echojay::viz::PitchRibbonView& ribbon() noexcept { return ribbon_; }
 
     // correction_mode indices. `custom` is LAST and is what the display falls
     // to the moment any of the params a mode writes is moved by hand.
@@ -125,6 +136,7 @@ private:
     echojay::PitchEngine engine_;
     echojay::PsolaEngine  psola_;
     echojay::PitchCorrect correct_;
+    echojay::viz::PitchRibbonView ribbon_;
     // These three MUST match their schema defaults. They did not: correct
     // advertised on but constructed off, correction_mode advertised natural
     // but displayed custom, and scale advertised chromatic but constructed

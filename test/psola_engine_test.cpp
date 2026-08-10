@@ -118,19 +118,29 @@ static std::vector<float> resampleShift (const std::vector<float>& x, double rat
 // ---------------------------------------------------------------------------
 // Goertzel magnitude at one frequency - enough to trace a spectral envelope
 // without dragging in an FFT.
+// Magnitude at one frequency by DIRECT correlation at an exact bin.
+//
+// This was a Goertzel, and it was wrong twice over: the magnitude identity
+// assumes the probe sits on an integer bin (off-bin it is ill-conditioned), and
+// the recursion loses precision badly over a 24000-sample window. Together they
+// had peakHz reporting 749 Hz for a spectrum whose real peak was 900, and then
+// 2400 Hz once the bin was snapped. A direct sum is the same O(N) cost, exact,
+// and cannot drift - and a measurement tool that lies is worse than none,
+// because it gets believed.
 static double magAt (const std::vector<float>& x, double fs, double f,
                      size_t from, size_t len)
 {
     if (from + len > x.size()) return 0.0;
-    const double w = 2.0 * M_PI * f / fs;
-    const double c = 2.0 * std::cos (w);
-    double s0 = 0.0, s1 = 0.0, s2 = 0.0;
+    const double k = std::max (1.0, std::round (f * (double) len / fs));
+    const double w = 2.0 * M_PI * k / (double) len;
+    double re = 0.0, im = 0.0;
     for (size_t i = 0; i < len; ++i)
     {
-        s0 = (double) x[from + i] + c * s1 - s2;
-        s2 = s1; s1 = s0;
+        const double a = w * (double) i;
+        re += (double) x[from + i] * std::cos (a);
+        im += (double) x[from + i] * std::sin (a);
     }
-    return std::sqrt (s1 * s1 + s2 * s2 - c * s1 * s2) / (double) len;
+    return std::sqrt (re * re + im * im) / (double) len;
 }
 
 // Where is the spectral peak, searching a band? This is the formant tracker.
@@ -138,10 +148,11 @@ static double peakHz (const std::vector<float>& x, double fs,
                       double lo, double hi, size_t from, size_t len)
 {
     double bestF = lo, bestM = -1.0;
-    for (double f = lo; f <= hi; f *= 1.01)
+    const double binHz = fs / (double) len;
+    for (double f = lo; f <= hi; f += binHz * 4.0)
     {
         const double m = magAt (x, fs, f, from, len);
-        if (m > bestM) { bestM = m; bestF = f; }
+        if (m > bestM) { bestM = m; bestF = std::round (f / binHz) * binHz; }
     }
     return bestF;
 }

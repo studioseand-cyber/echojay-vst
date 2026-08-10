@@ -790,3 +790,92 @@ that name this device or plainly ask for tuning. No second prompt was written:
 Tier 1 still adds a Key Detector to an existing bus Link itself, and Tier 2 —
 the only thing a user must do, placing a Link — remains the server
 classifier's.
+
+---
+
+## 11. Defaults across the whole suite, and what P5 rejected
+
+### 11.1 Advertised vs constructed defaults — all 22 devices
+
+The Pitch defaults bug of §10.3 was not device-specific, so the check was
+generalised: construct every registered built-in through the same factory the
+chain uses and compare each `ParamSpec.def` against `getParamValue`.
+
+**Seven mismatches, across four devices, all in Modulation:**
+
+| device | mismatch |
+|---|---|
+| EchoJay Auto Pan | `rate_hz` advertised 0.5, constructs 1.0; `depth` advertised 70, constructs 50 |
+| EchoJay Chorus | `rate_hz` advertised 0.6, constructs 1.0; `depth` advertised 40, constructs 50 |
+| EchoJay Phaser | `rate_hz` advertised 0.3, constructs 1.0; `depth` advertised 70, constructs 50 |
+| EchoJay Tremolo | `rate_hz` advertised 4.0, constructs 1.0 |
+
+One cause: they share an LFO core whose members construct at the core's generic
+1 Hz / 50%, while each device advertises its own musically-chosen default. So a
+freshly inserted Chorus **runs** at 1 Hz / 50% while the model believes it is at
+0.6 Hz / 40%, and any dialling relative to "the default" starts from a false
+premise. The error then hides itself: a state restore writes the schema
+defaults, so only the very first instance is ever wrong.
+
+**Not fixed here, deliberately** — these are four shipping devices and changing
+what a fresh insert sounds like is not this session's call. **The fix I would
+make** is one line and closes the class permanently: have the registry factory
+call `resetParamsToDefaults()` on a newly constructed device, which writes every
+schema default through `setParamValue` for all 22 at once. The alternative
+(fixing four sets of member initialisers) leaves the trap open for device 23.
+
+The check is now pinned at exactly those seven, so a **new** mismatch fails
+immediately rather than joining a silent pile.
+
+### 11.2 A note on the Meters gating fix
+
+§10.1's change — collecting key sources regardless of which view is open —
+improves the **existing** key feature, not only Pitch. `[DETECTED KEY]` is built
+from `keySources_`, so with collection gated on the Meters view the AI feed's
+key block was equally starved whenever the user was on any other screen. That
+was a live bug in a shipped feature; Pitch only made it visible.
+
+### 11.3 formant_shift was built, measured, and REJECTED
+
+The cheap implementation — resample each grain by a user-chosen ratio, sharing
+the code path with `formant_mode = off` — does not do what the control claims.
+Measured on a 900 Hz resonance with the pitch held fixed:
+
+| shift | expected | measured |
+|---|---|---|
+| −12 st | 450 Hz | 300 Hz |
+| −9 … −3 st | 535–757 Hz | **900 Hz (inert)** |
+| 0 st | 900 Hz | 900 Hz |
+| +3 st | 1070 Hz | **900 Hz (inert)** |
+| +5 … +9 st | 1201–1514 Hz | 1500 Hz |
+| +12 st | 1800 Hz | 2100 Hz |
+
+Inert across half its range, quantised in ~600 Hz steps over the rest, and
+non-monotonic at the bottom. Overlap-adding grains at the pitch period
+reconstructs an envelope that barely follows the per-grain resampling, so the
+control cannot work this way however the geometry is tuned. **It is not
+shipped** — a knob that lies is worse than a missing one, and the spec's own
+prescription (LPC or cepstral envelope: flatten, shift, re-apply warped) is a
+different and larger piece of work.
+
+**A measurement bug fell out of this and is worth recording.** The formant
+tracker was a Goertzel, which is ill-conditioned off-bin and loses precision
+badly over a 24,000-sample window. It had been reporting the source formant at
+**749 Hz when it is exactly 900**, and P1's "PSOLA 905 vs resampler 1799" was
+measured with it. Replaced with a direct DFT at a snapped bin: the source now
+measures 900 exactly, PSOLA **900**, resampler **1804**. The P1 conclusion was
+right; its numbers were not.
+
+### 11.4 natural_vibrato: the first implementation was symmetric, not monotonic
+
+Scaling "whatever vibrato survives correction" is the obvious reading and it is
+wrong: correction removes the wobble along with the error, so 0% and 200% both
+measured 27 ¢ of swing where 100% measured none. The control has to separate
+the **note** from the **wobble** — correct the note, then add the singer's
+oscillation back at the chosen amount. Measured after: **0% → 0 ¢, 100% → 27 ¢,
+200% → 55 ¢**.
+
+That split has a real consequence worth knowing: a *new* deviation is treated as
+movement within the note until the slow pitch catches up (~140 ms), and only
+then judged as the note being off. It stops the corrector chasing a scoop, at
+the cost of engaging slightly later on a genuine drift.

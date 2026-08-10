@@ -13,7 +13,7 @@ namespace
     // The size the rack opens at. layoutContent must still survive being given
     // less than this — that is the inline-hosting contract.
     constexpr int kDefaultW = 620;
-    constexpr int kDefaultH = 290;
+    constexpr int kDefaultH = 400;
 }
 
 EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
@@ -224,6 +224,11 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
     content.reduce (juce::jmin (kPad, content.getWidth() / 4),
                     juce::jmin (6, content.getHeight() / 4));
 
+    // THE RIBBON gets the top half of the content: it is the signature view,
+    // and the numbers are supporting detail rather than the point.
+    ribbonBounds_ = content.removeFromTop (juce::jmax (0, content.getHeight() / 2));
+    content.removeFromTop (juce::jmin (4, content.getHeight()));
+
     // The key ATTRIBUTION line, directly under the readout: where the key
     // came from is what makes a wrong key diagnosable.
     keyAttrBounds_ = content.removeFromBottom (juce::jmin (16, content.getHeight() / 5));
@@ -282,6 +287,14 @@ void EedPitchEditor::paintContent (juce::Graphics& g)
     const echojay::PitchReading r = proc_.engine().getReading();
     const float dim = proc_.isBypassed() ? 0.4f : 1.0f;
     g.setOpacity (dim);
+
+    if (! ribbonBounds_.isEmpty())
+    {
+        std::array<bool, 12> degs {};
+        for (int i = 0; i < 12; ++i) degs[(size_t) i] = proc_.corrector().degreeEnabled (i);
+        proc_.ribbon().paint (g, ribbonBounds_, degs,
+                              proc_.corrector().getKeyRoot(), proc_.isBypassed());
+    }
 
     if (! notePanel_.isEmpty())    paintNotePanel  (g, notePanel_, r);
     if (! numbersPanel_.isEmpty()) paintNumbers    (g, numbersPanel_, r);
