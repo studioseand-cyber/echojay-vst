@@ -1967,17 +1967,27 @@ juce::String ChainHost::devApplyEqJson(int slotIndex, const juce::String& json)
 }
 
 juce::String ChainHost::applyStructuredToBuiltinSlot(int slotIndex, const juce::var& structured,
-                                                     int* appliedOut, int* skippedOut)
+                                                     int* appliedOut, int* skippedOut,
+                                                     bool* deviceMissingOut)
 {
     if (appliedOut != nullptr) *appliedOut = 0;
     if (skippedOut != nullptr) *skippedOut = 0;
-    if (slotIndex < 0 || slotIndex >= (int)slots_.size()) return {};
+    if (deviceMissingOut != nullptr) *deviceMissingOut = false;
+    if (slotIndex < 0 || slotIndex >= (int)slots_.size())
+    {
+        if (deviceMissingOut != nullptr) *deviceMissingOut = true;
+        return {};
+    }
 
     // ANY built-in, not just the EQ. The cast is to the shared device base, so
     // this one call site serves all 19 devices and a Wave 1 session adds nothing
     // here (BUILTIN_SUITE_PLAN.md §1).
     auto* device = dynamic_cast<EedDeviceProcessor*>(getSlotProcessor(slotIndex));
-    if (device == nullptr) return {};
+    if (device == nullptr)
+    {
+        if (deviceMissingOut != nullptr) *deviceMissingOut = true;
+        return {};
+    }
 
     // One call, whole value. The chain deliberately does NOT reach in for
     // .eq_bands or .params: which keys exist and in what order they resolve is
@@ -2037,7 +2047,16 @@ void ChainHost::logDialSummary(const juce::String& reason) const
                        + "  settings=" + (hasSettings ? "y" : "n")
                        + "  requested=" + juce::String(requested)
                        + "  applied=" + juce::String(s.dialAppliedCount)
+                       // manual and readbackMiss TOGETHER, because manual alone
+                       // conflates two opposite failures: a semantic the map
+                       // never carried (readbackMiss 0 -> the map is the gap)
+                       // and one that was written and disagreed on read-back so
+                       // the value was reverted (readbackMiss > 0 -> the map is
+                       // wrong, or the plugin cannot be read in-stack). The
+                       // fixes point in different directions and the counts are
+                       // the only thing that separates them.
                        + "  manual=" + juce::String(s.dialManual.size())
+                       + "  readbackMiss=" + juce::String(s.dialReadbackMiss.size())
                        + "  status=" + statusName(s.dialStatus)
                        + "  fp=" + (s.fp.isEmpty() ? juce::String("(none)") : s.fp.substring(0, 12))
                        + "  map=" + (s.fp.isNotEmpty() && paramMaps_.find(s.fp) != paramMaps_.end() ? "y" : "n")).toRawUTF8());
@@ -2126,10 +2145,28 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
     if (isBuiltinSlot(slotIndex))
     {
         int applied = 0, skipped = 0;
+        bool deviceMissing = false;
         const auto summary = applyStructuredToBuiltinSlot(slotIndex, s.structuredSettings,
-                                                          &applied, &skipped);
+                                                          &applied, &skipped, &deviceMissing);
         s.structuredApplied = true;
         s.dialAppliedCount  = applied;
+
+        // The cast failure gets its OWN line and its own status. Previously it
+        // returned the same empty summary as an unrecognised payload and was
+        // reported as unusableMap -- a slot that is a built-in by isBuiltinSlot
+        // but holds no EedDeviceProcessor is a routing bug, and reporting it as
+        // "the device did not understand the settings" points every reader at
+        // the payload, which would be intact.
+        if (deviceMissing)
+        {
+            s.dialStatus = DialStatus::none;
+            EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+                           + "\") BUILT-IN WITH NO DEVICE -- isBuiltinSlot is true but the slot "
+                             "holds no EedDeviceProcessor. This is a routing fault, NOT a payload "
+                             "one; the settings were never offered to anything.").toRawUTF8());
+            if (onSlotSettingsChanged) onSlotSettingsChanged();
+            return;
+        }
 
         // The summary, not the applied count, is the verdict. A move can be
         // entirely device-global ({"eq_settings":{"auto_gain":true}}) — it
@@ -2144,9 +2181,23 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         }
         else
         {
-            // Structured settings arrived but carried nothing this device
-            // understands, so flat semantics are ignored.
+            // The device exists and resolved neither of its two accepted
+            // shapes. Name the keys it was actually handed, because the whole
+            // failure is a shape mismatch and the keys ARE the diagnosis: a
+            // flat semantic bag ({"low_cut_freq_hz":80,...}) is the anchor-path
+            // shape and the device wants {"params":{...}} or its array form.
             s.dialStatus = DialStatus::unusableMap;
+            juce::StringArray got;
+            if (auto* o = s.structuredSettings.getDynamicObject())
+                for (auto& kv : o->getProperties()) got.add(kv.name.toString());
+            else if (s.structuredSettings.isArray())
+                got.add("(bare array)");
+            EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+                           + "\") BUILT-IN PAYLOAD NOT UNDERSTOOD -- device present, resolved "
+                             "neither accepted shape. got keys: [" + got.joinIntoString(", ")
+                           + "]  wanted: \"params\":{...}" + (isBuiltinSlot(slotIndex)
+                               ? juce::String(" (or the device's own array form, e.g. \"eq_bands\")")
+                               : juce::String())).toRawUTF8());
         }
 
         EchoJay_NSLog(("EJParamApply: slot " + juce::String(slotIndex)

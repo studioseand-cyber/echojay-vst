@@ -727,9 +727,16 @@ private:
     // device understands. appliedOut/skippedOut count whatever the device counts
     // (bands, or params) — a settings-only move legitimately applies zero of
     // them and still returns a summary.
+    // deviceMissingOut separates the two ways this returns an empty string
+    // (10 Aug 2026). Both read as "the device understood nothing", and they
+    // are opposite faults: no EedDeviceProcessor on the slot at all is a
+    // ROUTING/cast failure, while a device that resolved neither of its two
+    // accepted shapes is a PAYLOAD failure. Without this the cast failure
+    // hides behind the payload one.
     juce::String applyStructuredToBuiltinSlot (int slotIndex, const juce::var& structured,
                                                int* appliedOut = nullptr,
-                                               int* skippedOut = nullptr);
+                                               int* skippedOut = nullptr,
+                                               bool* deviceMissingOut = nullptr);
     void loadParamMapsFromDisk();
     void saveParamMapsToDisk();
     // Read-only merge of the opt-in background mapper's output file
