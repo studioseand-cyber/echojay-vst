@@ -207,6 +207,14 @@ void printSummary (const char* voiceId, const Summary& s)
                  s.largestJumpCents, s.largestJumpAtS);
     std::printf ("     jumps over 600 c    : %d  (adjacent voiced hops; octave-error proxy)\n",
                  s.nearOctaveJumps);
+
+    // The headline regression number. Normalised per 1000 voiced hops so runs
+    // over different files and different voice types (which voice a different
+    // number of hops) compare directly - a raw count would make a setting look
+    // better simply for having found less pitch.
+    const double per1000 = s.voicedHops > 0 ? 1000.0 * s.nearOctaveJumps / s.voicedHops : 0.0;
+    std::printf ("     RESIDUAL            : %.2f jumps > 600 c per 1000 voiced hops\n",
+                 per1000);
 }
 
 int usage()

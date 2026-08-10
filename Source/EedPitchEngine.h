@@ -117,7 +117,8 @@ public:
     static constexpr float kVoicedAperiodicity  = 0.40f;  // above this = unvoiced
     static constexpr float kSilenceGateDb       = -55.0f; // frame RMS under this = unvoiced
     static constexpr float kOctaveBiasPerOct    = 0.12f;  // d' handicap per octave away from recent f0
-    static constexpr float kSubOctaveEvidence   = 0.02f;  // d' advantage a sub-octave claim must show
+    static constexpr float kSubMultipleEvidence = 0.02f;  // d' advantage a DOWNWARD claim must show
+    static constexpr float kUpClaimMargin       = 0.01f;  // d' advantage an UPWARD claim must show
     static constexpr float kWindowPeriods       = 2.5f;   // of fMin (spec: 2-3)
     static constexpr float kHopSeconds          = 128.0f / 48000.0f;  // spec: 128 @ 48k
     static constexpr float kContinuityMaxS      = 0.25f;  // recent-f0 bias goes stale after this
@@ -252,6 +253,22 @@ public:
     }
 
 private:
+    // ---- the guard's candidate lattice ------------------------------------
+    // tau * num / den. den > num shortens the lag (reports a HIGHER f0, an
+    // "up" claim); num > den lengthens it (reports a LOWER f0, a "down" claim
+    // that must show evidence). Ordered low-tau to high-tau purely for
+    // readability; the search takes the best accepted candidate, not the first.
+    struct GuardCandidate { int num, den; };
+
+    static constexpr GuardCandidate kGuardLattice[] = {
+        { 1, 3 },   // tau/3     -> 3x f0     up   (recovers a 3rd-harmonic lock)
+        { 1, 2 },   // tau/2     -> 2x f0     up   (recovers an octave lock)
+        { 2, 3 },   // tau*2/3   -> 1.5x f0   up   (recovers a fifth lock)
+        { 3, 2 },   // tau*3/2   -> f0 / 1.5  down (needs evidence)
+        { 2, 1 },   // tau*2     -> f0 / 2    down (needs evidence)
+        { 3, 1 },   // tau*3     -> f0 / 3    down (needs evidence)
+    };
+
     // ---- per-voice-type configuration -------------------------------------
     struct Config
     {
@@ -364,37 +381,67 @@ private:
 
         if (cmndf_[(size_t) rawTau] > kVoicedAperiodicity) { onUnvoiced (rmsDb); return; }
 
-        // 4. the octave guard: re-score tau against its half and double, each
-        //    descended to its own local minimum, with a continuity handicap
-        //    toward the recent f0. The two directions are deliberately
-        //    ASYMMETRIC. Any signal periodic at T is also periodic at 2T, so
-        //    the sub-octave lag always TIES on aperiodicity — a sub-octave
-        //    switch therefore needs real CMNDF evidence (a present-but-weak
-        //    fundamental, the classic doubling trap), or continuity would lock
-        //    every pure tone onto its half after any transient. The octave-up
-        //    switch has no such tie (the half lag of a true period reads
-        //    strongly aperiodic), so continuity alone may decide it — which is
-        //    what recovers YIN's halving error under vibrato and breathy
-        //    onsets without fighting a genuine downward octave jump.
-        const float fRef = continuityRef();
+        // 4. the harmonic guard: re-score tau against a LATTICE of harmonically
+        //    related lags, each descended to its own local minimum, with a
+        //    continuity handicap toward the recent f0.
+        //
+        //    WHY A LATTICE AND NOT JUST OCTAVES. Measured on real singing
+        //    (PITCH_P0_VALIDATION.md §3.1), third-harmonic confusions are as
+        //    frequent as octave ones: grouping every >600 cent single-frame
+        //    jump on a clean solo take at its correct voice_type gave 21 at x2
+        //    and 24 at x3. A guard whose candidates are only {tau/2, tau*2} is
+        //    structurally blind to all of them.
+        //
+        //    WHY THE DIRECTIONS ARE TREATED DIFFERENTLY. A LARGER tau reports a
+        //    LOWER f0. Any signal periodic at T is also periodic at 2T and 3T,
+        //    so every sub-multiple lag TIES on aperiodicity — which means a
+        //    downward claim must show real CMNDF evidence of a present-but-weak
+        //    fundamental (the classic doubling trap) or continuity would lock
+        //    every clean tone onto a sub-harmonic after any transient. An
+        //    upward claim has no such tie (the shorter lag of a true period
+        //    reads strongly aperiodic), so continuity alone may decide it, and
+        //    that is what recovers a harmonic lock. Applying one rule to both
+        //    directions would either reintroduce the sub-harmonic lock or leave
+        //    the harmonic lock uncaught.
+        //
+        //    Measured direction split on the same take: outliers reporting too
+        //    HIGH outnumber too-low ones 324 to 160, so the correction that
+        //    matters most moves the estimate DOWN — the evidence-gated
+        //    direction, which is the safe one to widen.
+        const float fRef    = continuityRef();
         const float costRaw = candidateCost (rawTau, fRef);
-        int  chosen = rawTau;
-        bool guardFired = false;
+        int   chosen     = rawTau;
+        float chosenCost = costRaw;
+        bool  guardFired = false;
 
-        if (const int up = rawTau / 2; up >= tauMin_)
+        for (const auto& cand : kGuardLattice)
         {
-            const int t = descendToLocalMin (up);
-            if (candidateCost (t, fRef) + 0.01f < costRaw) { chosen = t; guardFired = true; }
-        }
-        if (! guardFired)
-        {
-            if (const int down = rawTau * 2; down <= tauMax_)
+            // Rounded tau * num / den.
+            const long nominal = ((long) rawTau * cand.num + cand.den / 2) / cand.den;
+            if (nominal < tauMin_ || nominal > tauMax_) continue;
+
+            const bool movesDown = cand.num > cand.den;   // larger tau = lower f0
+            const int  t = descendToLocalMin ((int) nominal);
+
+            // The descent must not carry the candidate across the lag it is
+            // being compared against, or the direction rule stops applying to
+            // the claim actually being made.
+            if (movesDown ? (t <= rawTau) : (t >= rawTau)) continue;
+
+            const float cost = candidateCost (t, fRef);
+
+            if (movesDown)
             {
-                const int t = descendToLocalMin (down);
-                if (cmndf_[(size_t) t] + kSubOctaveEvidence < cmndf_[(size_t) rawTau]
-                    && candidateCost (t, fRef) < costRaw)
-                { chosen = t; guardFired = true; }
+                if (! (cmndf_[(size_t) t] + kSubMultipleEvidence < cmndf_[(size_t) rawTau]))
+                    continue;
+                if (! (cost < costRaw)) continue;
             }
+            else
+            {
+                if (! (cost + kUpClaimMargin < costRaw)) continue;
+            }
+
+            if (cost < chosenCost) { chosenCost = cost; chosen = t; guardFired = true; }
         }
 
         // A guard choice still has to look periodic on its own.
@@ -403,6 +450,16 @@ private:
         // 5. parabolic interpolation of d' around the chosen lag.
         const float tauF = refineTau (chosen);
         float f0 = (float) (fsA_ / (double) tauF);
+
+        // The lag grid is integer, so tauMin/tauMax straddle the advertised
+        // range by a fraction of a bin (a few cents). Clamp the published
+        // value so the range the ParamSchema advertises is EXACTLY the range
+        // this device can report — the contract holds to the number, not to
+        // within a rounding error.
+        {
+            const VoiceRange& vr = voiceRange (curType_);
+            f0 = std::clamp (f0, vr.fMinHz, vr.fMaxHz);
+        }
 
         // 6. short median over recent estimates (spec §2.1). Median-of-3
         //    swallows a single-hop octave spike the candidate pass missed.
@@ -479,7 +536,15 @@ private:
         const float denom = a - 2.0f * b + c;
         if (std::fabs (denom) < 1.0e-12f) return (float) t;
         const float delta = std::clamp (0.5f * (a - c) / denom, -1.0f, 1.0f);
-        return (float) t + delta;
+
+        // Clamp back INTO the search range. Without this, a lag pinned at
+        // tauMin can be refined BELOW it and report an f0 above the voice
+        // type's advertised ceiling — measured at 99 hops (0.24%) reaching
+        // 521 Hz on a low_male run whose ceiling is 500. That is a dialability
+        // bug as much as a DSP one: voice_type's range is a number the model
+        // reasons against, and a device that reports outside its own
+        // advertised range breaks the contract the whole suite runs on.
+        return std::clamp ((float) t + delta, (float) tauMin_, (float) tauMax_);
     }
 
     float medianOf3() const noexcept

@@ -324,9 +324,72 @@ int main()
         check (std::string (buf) == "C4" && std::fabs (cents) < 1.0f, "261.63 -> C4");
     }
 
-    // The P0 log the spec asks for: octave-guard rate per voice type on
+    // ---- the reported f0 may never leave the ACTIVE voice type's range ----
+    // This is a dialability contract, not only a DSP one: voice_type
+    // advertises its range in the ParamSchema and the model reasons against
+    // those numbers, so a device that reports outside its own advertised range
+    // breaks the contract the whole suite runs on. Driven with material
+    // deliberately OUTSIDE each range, which is what pins the estimator to a
+    // search boundary and used to let parabolic refinement escape it.
+    std::printf ("== reported f0 never escapes the active voice type's range ==\n");
+    for (int t = 0; t < PitchEngine::kNumVoiceTypes; ++t)
+    {
+        const auto& vr = PitchEngine::voiceRange (t);
+        bool  escaped = false;
+        float worstHz = 0.0f, worstExcess = 1.0f;
+
+        // Well above the ceiling, well below the floor, and a rich source at
+        // each boundary - every way a lag gets pinned to an end of the search.
+        const double probes[] = { vr.fMaxHz * 3.0, vr.fMinHz / 3.0,
+                                  vr.fMaxHz * 0.995, vr.fMinHz * 1.005 };
+        for (double pf : probes)
+        {
+            if (pf < 20.0 || pf > 18000.0) continue;
+            for (int rich = 0; rich < 2; ++rich)
+            {
+                PitchEngine e; initEngine (e, t);
+                const auto sig = rich ? saw (48000.0, pf, 0.6) : sine (48000.0, pf, 0.6);
+
+                constexpr int kBlock = 256;
+                for (size_t pos = 0; pos + kBlock <= sig.size(); pos += kBlock)
+                {
+                    e.process (sig.data() + pos, nullptr, kBlock);
+                    const PitchReading r = e.getReading();
+                    if (! r.voiced) continue;
+                    if (r.f0Hz < vr.fMinHz || r.f0Hz > vr.fMaxHz)
+                    {
+                        escaped = true;
+                        // Rank escapes by how far OUTSIDE they are as a ratio,
+                        // so the message names the genuinely worst offender
+                        // whichever end of the range it left by.
+                        const float excess = r.f0Hz > vr.fMaxHz
+                                           ? r.f0Hz / vr.fMaxHz
+                                           : vr.fMinHz / std::max (r.f0Hz, 1.0e-6f);
+                        if (excess > worstExcess) { worstExcess = excess; worstHz = r.f0Hz; }
+                    }
+                }
+            }
+        }
+        char msg[160];
+        std::snprintf (msg, sizeof (msg),
+                       "%s stays inside %.0f-%.0f Hz under out-of-range drive%s",
+                       vr.id, vr.fMinHz, vr.fMaxHz,
+                       escaped ? "" : " (no escape)");
+        if (escaped)
+            std::snprintf (msg, sizeof (msg),
+                           "%s ESCAPED %.0f-%.0f Hz: reported %.2f Hz",
+                           vr.id, vr.fMinHz, vr.fMaxHz, worstHz);
+        check (! escaped, msg);
+    }
+
+    // The P0 log the spec asks for: harmonic-guard rate per voice type on
     // vibrato material (fires-constantly means the WINDOW is wrong).
-    std::printf ("== octave-guard fire-rate log (vibrato saw, per voice type) ==\n");
+    //
+    // The bar here is EXACTLY ZERO, not merely low. A guard that buys real-
+    // vocal accuracy by firing on clean in-range tones is a regression, not a
+    // fix - it would be corrupting the material the estimator already handles
+    // correctly. This is the guard that holds the candidate lattice honest.
+    std::printf ("== harmonic-guard fire-rate log (vibrato saw, per voice type) ==\n");
     for (int t = 0; t < PitchEngine::kNumVoiceTypes; ++t)
     {
         const auto& vr = PitchEngine::voiceRange (t);
@@ -335,9 +398,10 @@ int main()
         run (e, vibratoSine (48000.0, f, 1.5, 40.0, 5.5), (float) f);
         const PitchReading r = e.getReading();
         const double rate = r.voicedHops > 0 ? 100.0 * r.guardFires / r.voicedHops : 0.0;
-        std::printf ("  %-11s mid %6.1f Hz: %u fires / %u voiced hops (%.1f%%)\n",
+        std::printf ("  %-11s mid %6.1f Hz: %u fires / %u voiced hops (%.2f%%)\n",
                      vr.id, f, r.guardFires, r.voicedHops, rate);
-        check (rate < 10.0, std::string (vr.id) + " guard rate under 10% on in-range material");
+        check (r.guardFires == 0,
+               std::string (vr.id) + " guard fires ZERO times on clean in-range material");
     }
 
     std::printf ("\n%s (%d failure%s)\n", g_fail == 0 ? "ALL PASS" : "FAILURES",
