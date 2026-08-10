@@ -2035,16 +2035,31 @@ void ChainHost::logDialSummary(const juce::String& reason) const
         // requested = what the model asked for on this slot. Compared against
         // applied, it is the difference between "asked for nothing" and
         // "asked and got nothing", which is the whole question.
+        // The KEYS VERBATIM, not just a count. `settings` (the display string
+        // on the card) and `settings_structured` (the dial payload) are
+        // different fields, and a card full of settings says nothing about
+        // whether the dialable ones arrived -- that confusion cost a whole
+        // diagnosis pass. Printing the keys also makes a wrong-shape payload
+        // self-evident, since flat keys and a "params" wrapper are otherwise
+        // the same words.
         int requested = 0;
+        juce::StringArray keys;
         if (auto* o = s.structuredSettings.getDynamicObject())
+        {
             requested = o->getProperties().size();
+            for (auto& kv : o->getProperties()) keys.add(kv.name.toString());
+        }
         else if (s.structuredSettings.isArray())
+        {
             requested = s.structuredSettings.size();
+            keys.add("(bare array of " + juce::String(requested) + ")");
+        }
 
         EchoJay_NSLog(("EJDialSummary:   slot " + juce::String(i)
                        + " (\"" + s.desc.name + "\")"
                        + (builtin ? " builtin" : "")
-                       + "  settings=" + (hasSettings ? "y" : "n")
+                       + "  settings_structured=" + (hasSettings ? "y" : "n")
+                       + "  keys=[" + keys.joinIntoString(", ") + "]"
                        + "  requested=" + juce::String(requested)
                        + "  applied=" + juce::String(s.dialAppliedCount)
                        // manual and readbackMiss TOGETHER, because manual alone

@@ -19043,6 +19043,9 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                                                      int attemptsLeft)
 {
     auto& ch = processorRef.getChainHost();
+    EchoJay_NSLog(("EJDialSummary: settle[finish] entered, attemptsLeft="
+                   + juce::String(attemptsLeft) + " settled="
+                   + (ch.dialStateSettled() ? "y" : "n")).toRawUTF8());
     if (!ch.dialStateSettled() && attemptsLeft > 0)
     {
         auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
@@ -19401,6 +19404,9 @@ juce::String EchoJayEditor::consumeSuggestionSetsAtReceipt(const juce::String& e
 void EchoJayEditor::logDialMissesWhenSettled(int attemptsLeft)
 {
     auto& ch = processorRef.getChainHost();
+    EchoJay_NSLog(("EJDialSummary: settle[misses] entered, attemptsLeft="
+                   + juce::String(attemptsLeft) + " settled="
+                   + (ch.dialStateSettled() ? "y" : "n")).toRawUTF8());
     if (!ch.dialStateSettled() && attemptsLeft > 0)
     {
         auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
@@ -24783,6 +24789,21 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
     {
         if (safeThis == nullptr) return;
 
+        // WATCHDOG (10 Aug 2026). The summary MUST NOT depend on which settle
+        // path runs. An all-built-in chain of four devices produced four
+        // slot-loaded lines and NO summary at all: the build reached the rack
+        // while every reporting route stayed silent, which is the one failure
+        // an instrument may never have. The settle paths still emit their own
+        // richer line first and this one is redundant on a healthy build --
+        // that is the point. It is armed HERE, at the moment the build is
+        // committed to, so the only way to get no summary is to never start.
+        // Each line carries its reason, so the log says which route arrived.
+        juce::Timer::callAfterDelay(6000, [safeThis]
+        {
+            if (safeThis == nullptr) return;
+            safeThis->processorRef.getChainHost().logDialSummary("WATCHDOG 6s after build start");
+        });
+
         // Close any open hosted editor FIRST; the rack is cleared a runloop
         // turn later (see onRemoveSlot — destroying a plugin's processor in
         // the same tick as its editor lets a final UI timer fire into freed
@@ -24841,6 +24862,15 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                     // deferred path below waits for dial state to settle
                     // and only relays the model line on a clean FULL dial.
                     const bool cleanLoad = skipped->isEmpty() && ch3.getNumSlots() > 0;
+                    // Reached the end of the load loop. Logged because "no
+                    // summary" has two very different causes and they must not
+                    // look alike: the loop never finished, or it finished and
+                    // the settle path it chose went quiet.
+                    EchoJay_NSLog(("EJDialSummary: load loop complete, "
+                                   + juce::String(ch3.getNumSlots()) + " slot(s) racked, "
+                                   + juce::String((int) slots.size()) + " requested, cleanLoad="
+                                   + (cleanLoad ? "y -> finishChainBubbleWhenDialSettled"
+                                                : "n -> logDialMissesWhenSettled")).toRawUTF8());
                     juce::String resultBubble;
                     if (cleanLoad)
                         resultBubble.clear();   // composed by finishChainBubbleWhenDialSettled
@@ -24984,8 +25014,35 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                             // settings; ChainHost dials the plugin now if
                             // its map is cached, or on fetch completion.
                             // No structured settings -> prose only, as-is.
+                            // The SILENT SKIP that closed the loop on this bug
+                            // (10 Aug 2026). A slot whose block carried no
+                            // settings_structured never reaches
+                            // setSlotStructuredSettings, so it produces no
+                            // settings-attached line, no dial and no complaint:
+                            // indistinguishable from a dial that was attempted
+                            // and failed. The prose `settings` string is set
+                            // just above and shows on the card either way,
+                            // which is why "the settings appear in the card"
+                            // does not mean the dialable ones arrived.
                             if (structured.getDynamicObject() != nullptr)
+                            {
+                                EchoJay_NSLog(("EJDial: attaching settings_structured to \""
+                                               + name + "\", keys=["
+                                               + [&]{ juce::StringArray k;
+                                                      if (auto* o = structured.getDynamicObject())
+                                                          for (auto& kv : o->getProperties()) k.add(kv.name.toString());
+                                                      return k.joinIntoString(", "); }()
+                                               + "]").toRawUTF8());
                                 ch4.setSlotStructuredSettings(ch4.getNumSlots() - 1, structured);
+                            }
+                            else
+                            {
+                                EchoJay_NSLog(("EJDial: \"" + name + "\" carried NO "
+                                               "settings_structured in the chain block, so "
+                                               "nothing was ever offered to the dial path. "
+                                               "This is a SERVER/model-side gap, not a dial "
+                                               "failure.").toRawUTF8());
+                            }
                             // Progressive: the rack grows a row per loaded slot
                             safeThis->chainListPanel.rebuild(ch4.getAllSlotInfos(), -1);
                         }
