@@ -22231,8 +22231,11 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
         juce::String chainJson;   // set the moment the chain block completes
         int provisionalId = 0;    // the bubble's identity; created on first content
         bool sawFirstContent = false;
-        // Feature B: the reasoning tail, live only. See onThinkingDelta.
+        // Feature B, live only, never persisted. reasoningTail is the
+        // IN-PROGRESS unit (invisible); shownUnit is the last COMPLETED one
+        // (what the stage row displays). See onThinkingDelta.
         juce::String reasoningTail;
+        juce::String shownUnit;
     };
     auto st = std::make_shared<StreamTurn>();
     st->provisionalId = provisionalId;
@@ -22327,25 +22330,56 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
         if (st->sawFirstContent) return;
 
         st->reasoningTail += t;
-        // Show the newest thought UNIT, and keep only that in memory — this
-        // is a ticker, not a transcript. A unit ends at a newline or a
-        // sentence end: the 10 Aug capture came in short lines ("Signal
-        // flow: subtractive EQ -> de-ess -> ..."), but reasoning style
-        // varies per turn, and on a single-paragraph turn a newline-only
-        // rule would leave the row showing the same ellipsized opening for
-        // the whole wait — a ticker that looks frozen, which reads as a
-        // hang. Sentence ends keep it moving on either style.
-        int cut = -1;
-        for (const auto* end : { "\n", ". ", "? ", "! " })
+
+        // COMPLETED UNITS ONLY (10 Aug 2026 fix). The row shows the newest
+        // unit that has actually finished; the in-progress remainder stays
+        // buffered and invisible until its boundary arrives.
+        //
+        // The first version repainted on every delta with the growing
+        // partial, which put raw stream state on screen: "I'd rout" and
+        // then "I'd route the de-esser...", changing mid-word under the
+        // shimmer sweep so it read as a rendering fault. Four to six
+        // settled states per turn is the trade this ticker was designed
+        // for — fewer, later, and each one readable.
+        //
+        // A unit ends at a newline or a sentence end. Reasoning style
+        // varies per turn (the 10 Aug capture came in short lines, but a
+        // single-paragraph turn is equally legal), and a newline-only rule
+        // would leave one ellipsized opening on screen for the whole wait,
+        // which reads as a hang.
+        //
+        // Boundaries are consumed EARLIEST-first in a loop, because one
+        // delta can carry several, and comparison is between like
+        // quantities: `e` and `endAt` are both END indices of a delimiter.
+        // The previous code compared a raw start index against an adjusted
+        // end index, so a later ". " could lose to an earlier "\n" and the
+        // wrong unit won — wrong regardless of what it looked like.
+        bool promoted = false;
+        for (;;)
         {
-            const int p = st->reasoningTail.lastIndexOf (juce::String (end));
-            if (p > cut) cut = p + (int) juce::String (end).length() - 1;
+            int endAt = -1;
+            for (const auto* d : { "\n", ". ", "? ", "! " })
+            {
+                const juce::String delim (d);
+                const int p = st->reasoningTail.indexOf (delim);
+                if (p < 0) continue;
+                const int e = p + delim.length() - 1;      // END index of this delimiter
+                if (endAt < 0 || e < endAt) endAt = e;      // earliest complete unit wins
+            }
+            if (endAt < 0) break;                          // nothing finished yet: show nothing new
+            const auto unit = st->reasoningTail.substring (0, endAt + 1).trim();
+            st->reasoningTail = st->reasoningTail.substring (endAt + 1);
+            if (unit.isNotEmpty() && unit != st->shownUnit)
+            {
+                st->shownUnit = unit;
+                promoted = true;
+            }
         }
-        if (cut >= 0 && st->reasoningTail.substring (cut + 1).trim().isNotEmpty())
-            st->reasoningTail = st->reasoningTail.substring (cut + 1);
-        auto line = st->reasoningTail.trim();
-        if (line.isNotEmpty())
-            ed->setStageStatus (line);
+        // Until the first unit completes the row keeps its default
+        // "Thinking..." copy, which is the honest state: the model is
+        // thinking and has not finished a thought worth showing.
+        if (promoted)
+            ed->setStageStatus (st->shownUnit);
     };
     ev.onDone = [safeThis, st, activeChatId, turnTargetUid, turnTargetName] (const juce::var& done)
     {
@@ -22370,9 +22404,21 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
             ed->chatLoading = false;
             ed->clearStageStatus();
             ed->dropProvisional (st->provisionalId);
+            // ASCII ONLY, and not merely as a style preference (10 Aug
+            // 2026). These are bare const char* literals, and
+            // juce::String(const char*) parses through CharPointer_ASCII —
+            // one byte, one character. A UTF-8 em dash (e2 80 94) therefore
+            // arrived as three characters and rendered as mojibake in a
+            // user's chat. JUCE has an assertion for exactly this and it
+            // does NOT fire in a release build, so it degrades silently in
+            // the only builds users have. The em dash also violated the
+            // standing no-em-dash rule for output copy, so it goes rather
+            // than gets encoded. Any non-ASCII here must use
+            // juce::String::fromUTF8("\xe2\x80\xa6") like the rest of this
+            // file, or not exist.
             const juce::String msg = chainBlock == "truncated"
-                ? "That build didn't finish — the reply was cut off before the chain completed, so there's nothing safe to build. Ask again and I'll rebuild it fresh."
-                : "That turn should have delivered a buildable chain but didn't produce one. Nothing was built — ask again to retry.";
+                ? "That build didn't finish. The reply was cut off before the chain completed, so there's nothing safe to build. Ask again and I'll rebuild it fresh."
+                : "That turn should have delivered a buildable chain but didn't produce one. Nothing was built. Ask again to retry.";
             ed->chatMessages.push_back ({ "assistant", msg });
             ed->processorRef.chatHistory.push_back ({ "assistant", msg });
             ed->resized();
