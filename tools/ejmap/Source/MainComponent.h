@@ -12567,20 +12567,22 @@ private:
         server has not confirmed is "local, not submitted". Checked first so an
         offline session still distinguishes work done from work not done.
     */
+    /** THE INDEX, NOT THE DIRECTORY (10 Aug 2026). This used to open and
+        JSON-parse EVERY file in maps/ on every call: 1,108 files, 74 MB,
+        including multi-megabyte surfaces like TH-U Slate. ingestMapStateResponse
+        calls it per identity, so a 25-identity batch parsed ~1.8 GB of JSON and
+        took 5-8 seconds -- against a 0.38 s request. The whole scan therefore
+        looked like a slow server and was neither the server nor the network.
+
+        localMapIdentities is built by refreshLocalMapIdentities from the same
+        files with the SAME key (format|uid|version), so this is the identical
+        question asked of an index instead of a directory walk. fetchMapStates
+        populates it before ingesting, so an empty set can never be mistaken
+        for "no local maps".
+    */
     bool haveLocalMapFor (const juce::String& identityKey) const
     {
-        auto dir = ledger.getRoot().getChildFile ("maps");
-        for (const auto& e : juce::RangedDirectoryIterator (dir, false, "*.json"))
-        {
-            auto id = juce::JSON::parse (e.getFile().loadFileAsString())
-                          .getProperty ("identity", juce::var());
-            if (! id.isObject()) continue;
-            const auto k = id.getProperty ("format", "").toString() + "|"
-                         + id.getProperty ("uid", "").toString() + "|"
-                         + id.getProperty ("version", "").toString();
-            if (k == identityKey) return true;
-        }
-        return false;
+        return localMapIdentities.count (identityKey) > 0;
     }
 
     /** M toggles hide-mapped; ? lists every fingerprint this product has.
@@ -12720,6 +12722,31 @@ private:
                 row.probed = pr.isObject();
                 break;
             }
+
+            // A LEAN ANSWER STILL ANSWERS THE QUESTION (10 Aug 2026). The loop
+            // above resolves state from the map BODY, and lean=1 does not send
+            // bodies -- so every fp fell through `continue`, and the fallback
+            // below then called a server-mapped plugin "unmapped". On a fresh
+            // machine, where no local map can rescue it, that hands the whole
+            // mapped catalogue to the sweep as work: the exact failure the
+            // fetch exists to prevent, reintroduced by the optimisation that
+            // made the fetch fast. Found before shipping, on the measurement.
+            //
+            // The identity index IS the existence answer: a non-empty fp list
+            // means the server holds a map for this product. Attribution uses
+            // the same local-evidence rule as above, and the fields the body
+            // would have carried (schema, param count, timestamp) stay EMPTY
+            // rather than invented -- mapStateDetail prints what it has.
+            if (row.state == MapState::unknown && ! fpArr->isEmpty())
+            {
+                const bool mine = haveLocalMapFor (identity);
+                row.state = mine ? MapState::submittedByYou : MapState::submittedByOther;
+                row.by = mine ? testerName() + " (from a local map; this response carried no bodies)"
+                              : "not this machine (this response carried no bodies)";
+                auto pr = probed.getProperty (fpArr->getFirst().toString(), juce::var());
+                row.probed = pr.isObject();
+            }
+
             if (row.state == MapState::unknown)
                 row.state = haveLocalMapFor (identity) ? MapState::localOnly
                                                        : MapState::unmapped;
@@ -12741,6 +12768,10 @@ private:
         if (identities.isEmpty()) return;
 
         const auto endpoint = mapsEndpoint();
+        // The local-map index is what ingestMapStateResponse asks per
+        // identity; build it ONCE here rather than letting an empty set read
+        // as "nothing is mapped locally".
+        if (localMapIdentities.empty()) refreshLocalMapIdentities();
         mapStateByIdentity.clear();
         mapStateFailure.clear();
         int batches = 0, ok = 0;
@@ -12820,6 +12851,7 @@ private:
                                 .withParameter ("lean", "1");
             juce::String text;
             int status = 0;
+            const auto tReq0 = juce::Time::getMillisecondCounter();
             {
                 // 60 s, not 15: the answer carries map bodies and a slow
                 // link or a cold start must not be recorded as "no response".
@@ -12853,6 +12885,8 @@ private:
                 saveMapStateCache();
                 return;
             }
+            const auto tReq = juce::Time::getMillisecondCounter() - tReq0;
+            const auto tIng0 = juce::Time::getMillisecondCounter();
             auto body = juce::JSON::parse (text);
             if (! body.isObject())
             {
@@ -12863,6 +12897,9 @@ private:
                 return;
             }
             ingestMapStateResponse (body);
+            std::cout << "  batch " << batches << ": request " << tReq << " ms, parse+ingest "
+                      << (juce::Time::getMillisecondCounter() - tIng0) << " ms, "
+                      << text.length() << " bytes" << std::endl;
             ++ok;
         }
         mapStateFetchedAt = juce::Time::getCurrentTime();
