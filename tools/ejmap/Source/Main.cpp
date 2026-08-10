@@ -59,7 +59,7 @@ public:
         juce::String mbandsTestId, mbandsMode;
         juce::String conlyTestId, conlyCat;
         bool worklist = false, worklistNext = false, categoriseOnly = false;
-        bool sweepReport = false, sweepReportPerRun = false;
+        bool sweepReport = false, sweepReportPerRun = false, sweepReportByVendor = false;
         bool sweep = false, sweepDry = false, sweepCaptures = false; int sweepLimit = 0;
         juce::String resweepTargetsPath;
         bool sendPending = false, sendPendingDry = false;
@@ -125,6 +125,8 @@ public:
                 sweepReport = true;
             else if (args[i] == "--all")
                 sweepReportPerRun = true;
+            else if (args[i] == "--by-vendor")
+                sweepReportByVendor = true;
             else if (args[i] == "--categorise")
                 categoriseOnly = true;
             else if (args[i] == "--next")
@@ -393,9 +395,10 @@ public:
             // no server: a report about runs that already happened must not
             // depend on anything that could fail today.
             auto* m = mainWindow->getMain(); const bool per = sweepReportPerRun;
-            juce::MessageManager::callAsync ([m, per]
+            const bool bv = sweepReportByVendor;
+            juce::MessageManager::callAsync ([m, per, bv]
             {
-                m->reportSweepRuns (per);
+                m->reportSweepRuns (per, bv);
                 juce::JUCEApplication::quit();
             });
         }

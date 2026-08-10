@@ -8837,8 +8837,115 @@ public:
 
         Reads the logs, opens nothing, asserts nothing.
     */
-    void reportSweepRuns (bool perRun) const
+    /** WITHDRAWALS AND FAILURES BY VENDOR — the number that decides whether one
+        family is the problem or whether the problem is general.
+
+        Asked for on Mac 2 after 47 withdrawals in a night, and it could not be
+        answered: quarantine.json records plugin_id, reason and stage but NOT
+        vendor, so the withdrawal list alone cannot be grouped. The vendor comes
+        from the ledger rows for the same binary, which is why this joins the
+        two rather than reading one.
+    */
+    void reportByVendor() const
     {
+        // plugin_id -> vendor, from whatever recorded it. The ledger is the
+        // broadest source: it has a row for everything ever touched.
+        std::map<juce::String, juce::String> vendorOf;
+        std::map<juce::String, juce::String> nameOf;
+        {
+            juce::StringArray lines;
+            lines.addLines (ledger.getRoot().getChildFile ("ledger.json").loadFileAsString());
+            for (const auto& line : lines)
+            {
+                if (line.trim().isEmpty()) continue;
+                auto v = juce::JSON::parse (line);
+                const auto pid = v.getProperty ("plugin_id", "").toString();
+                if (pid.isEmpty()) continue;
+                const auto ven = v.getProperty ("vendor", "").toString();
+                if (ven.isNotEmpty()) vendorOf[pid] = ven;
+                const auto nm = v.getProperty ("name", "").toString();
+                if (nm.isNotEmpty()) nameOf[pid] = nm;
+            }
+        }
+
+        struct VendorTally { int withdrawn = 0, failedRows = 0, mapped = 0, attempts = 0; };
+        std::map<juce::String, VendorTally> byVendor;
+        auto vendorFor = [&] (const juce::String& pid)
+        {
+            auto it = vendorOf.find (pid);
+            return it != vendorOf.end() && it->second.isNotEmpty() ? it->second
+                                                                   : juce::String ("(vendor unrecorded)");
+        };
+
+        for (const auto& e : ledger.getQuarantineEntries())
+            ++byVendor[vendorFor (e.pluginId)].withdrawn;
+
+        for (const auto& f : ledger.getRoot().findChildFiles (juce::File::findFiles, false,
+                                                              "sweep-*.jsonl"))
+            for (const auto& line : juce::StringArray::fromLines (f.loadFileAsString()))
+            {
+                if (line.trim().isEmpty()) continue;
+                auto v = juce::JSON::parse (line);
+                const auto pid = v.getProperty ("plugin_id", "").toString();
+                if (pid.isEmpty()) continue;
+                const auto out = v.getProperty ("outcome", "").toString();
+                if (out.startsWith ("skipped_")) continue;      // declines are not attempts
+
+                auto& t = byVendor[vendorFor (pid)];
+                ++t.attempts;
+                if (out == "mapped")        ++t.mapped;
+                else if (out != "opening")  ++t.failedRows;
+            }
+
+        std::vector<std::pair<juce::String, VendorTally>> rows (byVendor.begin(), byVendor.end());
+        std::sort (rows.begin(), rows.end(), [] (const auto& a, const auto& b)
+        {
+            if (a.second.withdrawn != b.second.withdrawn) return a.second.withdrawn > b.second.withdrawn;
+            return a.second.failedRows > b.second.failedRows;
+        });
+
+        int totalW = 0;
+        for (const auto& r : rows) totalW += r.second.withdrawn;
+
+        std::cout << "\n  BY VENDOR -- withdrawals are the deciding column. One family at the\n"
+                     "  top and nothing else is a vendor problem; spread evenly is a general one.\n\n"
+                  << "     " << juce::String ("vendor").paddedRight (' ', 30)
+                  << juce::String ("withdrawn").paddedLeft (' ', 11)
+                  << juce::String ("failed").paddedLeft (' ', 8)
+                  << juce::String ("mapped").paddedLeft (' ', 8)
+                  << juce::String ("attempts").paddedLeft (' ', 10) << std::endl;
+
+        for (const auto& r : rows)
+        {
+            if (r.second.withdrawn == 0 && r.second.attempts == 0) continue;
+            std::cout << "     " << r.first.substring (0, 29).paddedRight (' ', 30)
+                      << juce::String (r.second.withdrawn).paddedLeft (' ', 11)
+                      << juce::String (r.second.failedRows).paddedLeft (' ', 8)
+                      << juce::String (r.second.mapped).paddedLeft (' ', 8)
+                      << juce::String (r.second.attempts).paddedLeft (' ', 10) << std::endl;
+        }
+
+        if (totalW == 0)
+        {
+            std::cout << "\n  No withdrawals on this machine, so this table cannot decide "
+                         "anything about\n  which vendor is costly. That is an ABSENCE OF "
+                         "EVIDENCE, not a clean bill." << std::endl;
+            return;
+        }
+
+        const auto& top = rows.front();
+        const double share = 100.0 * top.second.withdrawn / totalW;
+        std::cout << "\n  " << top.first << " is " << juce::String (share, 1)
+                  << "% of withdrawals (" << top.second.withdrawn << " of " << totalW << "). ";
+        std::cout << (share >= 70.0
+                        ? "One family dominates: a vendor-level decision is the right shape."
+                        : "Spread across families: a vendor exclusion would not fix this.")
+                  << std::endl;
+    }
+
+    void reportSweepRuns (bool perRun, bool byVendor = false) const
+    {
+        if (byVendor) { reportByVendor(); return; }
         auto logs = ledger.getRoot().findChildFiles (juce::File::findFiles, false, "sweep-*.jsonl");
         logs.sort();
 
