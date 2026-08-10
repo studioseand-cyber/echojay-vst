@@ -58,7 +58,7 @@ public:
         juce::String fitTestId; int fitHoldSeconds = 0;
         juce::String mbandsTestId, mbandsMode;
         juce::String conlyTestId, conlyCat;
-        bool worklist = false, worklistNext = false;
+        bool worklist = false, worklistNext = false, categoriseOnly = false;
         bool sweep = false, sweepDry = false, sweepCaptures = false; int sweepLimit = 0;
         juce::String resweepTargetsPath;
         bool sendPending = false, sendPendingDry = false;
@@ -120,6 +120,8 @@ public:
             { sendPending = true; sendPendingDry = true; }
             else if (args[i] == "--worklist")
                 worklist = true;
+            else if (args[i] == "--categorise")
+                categoriseOnly = true;
             else if (args[i] == "--next")
                 worklistNext = true;
             else if (args[i] == "--sweep")
@@ -364,6 +366,15 @@ public:
                 if (rt.isNotEmpty() && ! m->setResweepTargets (rt))
                 { std::cout << "SWEEP: --resweep-targets file not readable or empty: " << rt << std::endl; juce::JUCEApplication::quit(); return; }
                 m->runSweep (lim, dry, caps);
+            });
+        }
+        else if (categoriseOnly && mainWindow->getMain() != nullptr)
+        {
+            auto* m2 = mainWindow->getMain();
+            juce::MessageManager::callAsync ([m2]
+            {
+                m2->categoriseFromCli();
+                juce::JUCEApplication::quit();
             });
         }
         else if (worklist && mainWindow->getMain() != nullptr)

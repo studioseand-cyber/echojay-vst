@@ -69,6 +69,14 @@ public:
         sweepAllButton.setButtonText ("Sweep All");
         sweepAllButton.onClick = [this] { toggleSweepAll(); };
 
+        // COUNT AND BUTTON, NEVER SILENT SPENDING. Categorising calls two
+        // models on the operator's budget, so the number is on the button and
+        // the press is the consent. A machine whose products are all known
+        // shows nothing to press.
+        addAndMakeVisible (categoriseButton);
+        categoriseButton.setButtonText ("Categorise");
+        categoriseButton.onClick = [this] { runCategorise(); refreshCategoriseButton(); };
+
         // Sign in once. The button SAYS which state it is in, because "am I
         // signed in" is a question a mapper will otherwise answer by trying to
         // submit and being refused.
@@ -6972,6 +6980,7 @@ public:
         scanButton.setBounds (top.removeFromLeft (90));
         top.removeFromLeft (6);
         sweepAllButton.setBounds (top.removeFromLeft (96));
+        categoriseButton.setBounds (top.removeFromLeft (150));
         top.removeFromLeft (6);
         sweepCapturesToggle.setBounds (top.removeFromLeft (86));
         top.removeFromLeft (6);
@@ -9008,6 +9017,15 @@ private:
 
 public:
 
+    /** --categorise: the same path the button drives, so the CLI proof and the
+        mapper's press cannot diverge. */
+    void categoriseFromCli()
+    {
+        std::cout << "CATEGORISE (before): " << categoriseLine() << std::endl;
+        runCategorise();
+        std::cout << "CATEGORISE (after):  " << categoriseLine() << std::endl;
+    }
+
     void printWorklist (bool loadFirst)
     {
         auto w = collectWorklist();
@@ -9761,6 +9779,7 @@ private:
         loadMapStateCache();
 
         applyFilter();
+        refreshCategoriseButton();
         logColumns ("cache restored");
         return true;
     }
@@ -9831,6 +9850,10 @@ private:
         // the sweep redo work I have already done?" meant QUITTING the app to
         // run a CLI flag. A mapper cannot do that, and it is the one question
         // worth asking before pressing Sweep All.
+        const auto pendingCats = uncategorisedWorklistProducts().size();
+        if (pendingCats > 0)
+            m << "  |  " << pendingCats << " product(s) NEED CATEGORISING (press Categorise; "
+              << "the sweep skips what has no category)";
         const auto w = collectWorklist();
         m << "  |  SWEEP WOULD OPEN " << w.ordered().size()
           << " (" << w.toSweep.size() << " unmapped, " << w.toFinish.size() << " parked, "
@@ -12632,6 +12655,207 @@ private:
         return false;      // everything else belongs to the ListBox
     }
 
+    // ---- CATEGORISE (10 Aug 2026) -------------------------------------
+    // A category is part of knowing what a plugin IS, so the scan asks for
+    // one. It used to come from a Python batch on the author's machine with
+    // his API keys, which a mapper cannot run -- so the sweep on any other
+    // machine skipped everything uncategorised and there was no way out of
+    // that from inside the app.
+    //
+    // The server holds the credentials and the cache; the client sends
+    // name/vendor/format for the products the WORKLIST would open and that
+    // have no category yet. Nothing is sent for plugins nobody will sweep,
+    // and a cached product costs nothing.
+    //
+    // WARN, NEVER BLOCK. A failed categorise makes the sweep do LESS (it
+    // skips what it could not categorise), unlike a failed map-state fetch
+    // which makes it do MORE and therefore refuses to start.
+    enum class CategoriseState { neverAsked, ok, failed };
+    CategoriseState categoriseState = CategoriseState::neverAsked;
+    juce::String categoriseFailure;      // empty unless state == failed
+    int categorisedLastRun = 0;
+
+    juce::String categoriseEndpoint() const
+    {
+        auto explicitUrl = juce::SystemStats::getEnvironmentVariable ("EJMAP_CATEGORIES_URL", "");
+        if (explicitUrl.isNotEmpty()) return explicitUrl;
+        auto up = juce::SystemStats::getEnvironmentVariable ("EJMAP_UPLOAD_URL", "");
+        if (up.isNotEmpty())
+            return up.endsWith ("/ejmap") ? up.dropLastCharacters (5) + "categories"
+                                          : up.upToLastOccurrenceOf ("/", true, false) + "categories";
+        auto cfg = ejmap::Mouth::resolveEndpoint (ledger.getRoot());
+        if (cfg.url.isNotEmpty() && cfg.url.contains ("/api/params/"))
+            return cfg.url.upToLastOccurrenceOf ("/", true, false) + "categories";
+        return "https://www.echojay.ai/api/params/categories";
+    }
+
+    /** The products a sweep would open that have no category. The worklist is
+        the trigger, not the catalogue: a product nobody will sweep is not
+        worth asking about, and asking is what costs. */
+    struct UncategorisedProduct
+    {
+        juce::String key, name, vendor, format;
+    };
+    juce::Array<UncategorisedProduct> uncategorisedWorklistProducts() const
+    {
+        const auto cats = const_cast<MainComponent*> (this)->loadCategories();
+        juce::Array<UncategorisedProduct> out;
+        juce::StringArray seenKeys;
+        for (const auto& sp : collectWorklist().ordered())
+        {
+            const auto key = categoryKeyFor (sp.desc);
+            if (key.isEmpty() || cats.count (key) > 0) continue;
+            if (seenKeys.contains (key)) continue;      // (m)/(s) collapse to one ask
+            seenKeys.add (key);
+            out.add ({ key, sp.desc.name.trim(), sp.desc.manufacturerName.trim(),
+                       sp.desc.pluginFormatName });
+        }
+        return out;
+    }
+
+    /** One line, three states, never a bare "none": the same rule the
+        map-state line now follows. */
+    juce::String categoriseLine() const
+    {
+        const int pending = uncategorisedWorklistProducts().size();
+        switch (categoriseState)
+        {
+            case CategoriseState::failed:
+                return "CATEGORIES FAILED: " + categoriseFailure + " -- "
+                     + juce::String (pending) + " product(s) will be skipped as uncategorised";
+            case CategoriseState::ok:
+                return pending == 0
+                    ? "categories: all " + juce::String ((int) const_cast<MainComponent*> (this)->loadCategories().size())
+                        + " known"
+                    : "categories: " + juce::String (pending) + " still unknown";
+            case CategoriseState::neverAsked:
+            default:
+                return pending == 0 ? juce::String ("categories: nothing to ask about")
+                                    : juce::String (pending) + " product(s) need categorising";
+        }
+    }
+
+    void refreshCategoriseButton()
+    {
+        const int pending = rows.isEmpty() ? 0 : uncategorisedWorklistProducts().size();
+        categoriseButton.setButtonText (pending > 0 ? "Categorise " + juce::String (pending)
+                                                    : "Categorise");
+        categoriseButton.setEnabled (pending > 0 && ! sweep.running);
+        categoriseButton.setVisible (pending > 0);
+    }
+
+    /** Ask the server. Synchronous like the map-state fetch, pumped per batch
+        so a minutes-long step is visibly moving rather than frozen. */
+    void runCategorise()
+    {
+        auto todo = uncategorisedWorklistProducts();
+        if (todo.isEmpty())
+        { sweepSay ("Nothing to categorise: every product the sweep would open already has one."); return; }
+
+        const auto mapper = ejmap::Mouth::resolveMapper (ledger.getRoot());
+        if (! mapper.signedIn())
+        {
+            categoriseState = CategoriseState::failed;
+            categoriseFailure = "not signed in (categorisation is metered per mapper)";
+            sweepSay ("CATEGORISE REFUSED: " + categoriseFailure);
+            return;
+        }
+
+        const auto endpoint = categoriseEndpoint();
+        const int kPerRequest = 200;
+        int gotTotal = 0, modelledTotal = 0;
+        categoriseFailure.clear();
+
+        for (int i = 0; i < todo.size(); i += kPerRequest)
+        {
+            juce::Array<juce::var> arr;
+            for (int j = i; j < juce::jmin (i + kPerRequest, todo.size()); ++j)
+            {
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("name", todo[j].name);
+                o->setProperty ("vendor", todo[j].vendor);
+                juce::Array<juce::var> fmts; fmts.add (todo[j].format);
+                o->setProperty ("formats", juce::var (fmts));
+                o->setProperty ("declared", "");
+                arr.add (juce::var (o));
+            }
+            auto* body = new juce::DynamicObject();
+            body->setProperty ("products", juce::var (arr));
+
+            const int batchNo = 1 + i / kPerRequest;
+            const int batches = (todo.size() + kPerRequest - 1) / kPerRequest;
+            sweepSay ("Categorising " + juce::String (todo.size()) + " product(s): batch "
+                        + juce::String (batchNo) + "/" + juce::String (batches));
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (1);
+
+            int status = 0;
+            juce::String text;
+            {
+                juce::URL url (endpoint);
+                url = url.withPOSTData (juce::JSON::toString (juce::var (body), true));
+                auto opts = juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inPostData)
+                                .withConnectionTimeoutMs (180000)
+                                .withStatusCode (&status)
+                                .withExtraHeaders ("Content-Type: application/json\r\n"
+                                                   "X-EJMap-Token: " + mapper.token);
+                std::unique_ptr<juce::InputStream> in (url.createInputStream (opts));
+                if (in != nullptr) text = in->readEntireStreamAsString();
+            }
+
+            if (text.isEmpty() || status < 200 || status >= 300)
+            {
+                auto why = juce::JSON::parse (text).getProperty ("detail", "").toString();
+                if (why.isEmpty()) why = juce::JSON::parse (text).getProperty ("error", "").toString();
+                categoriseState = CategoriseState::failed;
+                categoriseFailure = (status != 0 ? "HTTP " + juce::String (status) : juce::String ("no response"))
+                                  + (why.isNotEmpty() ? ": " + why : juce::String());
+                sweepSay ("CATEGORISE FAILED (" + categoriseFailure + "). "
+                          "The sweep will still run; uncategorised products are skipped.");
+                return;
+            }
+
+            auto reply = juce::JSON::parse (text);
+            modelledTotal += (int) reply.getProperty ("modelled", 0);
+            gotTotal += mergeCategories (reply.getProperty ("categories", juce::var()));
+        }
+
+        categoriseState = CategoriseState::ok;
+        categorisedLastRun = gotTotal;
+        sweepSay ("Categorised " + juce::String (gotTotal) + " product(s) ("
+                    + juce::String (modelledTotal) + " newly answered, the rest from the server's cache). "
+                    + categoriseLine());
+        updateBacklogLabel();
+        applyFilter();
+    }
+
+    /** Merge served entries into categories.json, the file the sweep reads.
+        Server answers are additive: a locally reviewed product is never
+        overwritten by a fresh machine answer. */
+    int mergeCategories (const juce::var& served)
+    {
+        auto* obj = served.getDynamicObject();
+        if (obj == nullptr) return 0;
+        auto f = ledger.getRoot().getChildFile ("categories.json");
+        auto doc = f.existsAsFile() ? juce::JSON::parse (f.loadFileAsString()) : juce::var();
+        auto* docObj = doc.getDynamicObject();
+        if (docObj == nullptr) { docObj = new juce::DynamicObject(); doc = juce::var (docObj); }
+        auto prods = doc.getProperty ("products", juce::var());
+        auto* prodObj = prods.getDynamicObject();
+        if (prodObj == nullptr) { prodObj = new juce::DynamicObject(); docObj->setProperty ("products", juce::var (prodObj)); }
+        int n = 0;
+        for (const auto& kv : obj->getProperties())
+            if (! prodObj->hasProperty (kv.name))
+            { prodObj->setProperty (kv.name, kv.value); ++n; }
+        if (! docObj->hasProperty ("run"))
+        {
+            auto* run = new juce::DynamicObject();
+            run->setProperty ("tool", "categorise-endpoint/1");
+            docObj->setProperty ("run", juce::var (run));
+        }
+        f.replaceWithText (juce::JSON::toString (doc, false));
+        return n;
+    }
+
     /** THE MAP-STATE FETCH (feature 2). GET /api/params/maps?identities=...
         at scan time, batched to the endpoint's 500-identity cap.
 
@@ -13112,7 +13336,7 @@ private:
     juce::Array<int>           visibleRows; // indices into rows, what the list shows
     juce::String crashedId;
 
-    juce::TextButton sweepAllButton, signInButton;
+    juce::TextButton sweepAllButton, signInButton, categoriseButton;
     juce::ToggleButton sweepCapturesToggle;
     juce::TextButton scanButton, loadButton, releaseButton, summaryButton, armButton, sweepButton, typeButton, assignButton, uploadButton, restartButton;
     juce::ToggleButton deepToggle;
