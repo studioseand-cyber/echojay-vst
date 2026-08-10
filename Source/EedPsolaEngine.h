@@ -243,6 +243,13 @@ public:
     }
     float getOutputDb() const noexcept       { return outDb_.load(); }
 
+    // Convenience overload for callers that drive the target through the
+    // atomic (the render tool, the engine tests).
+    void process (const float* in, float* out, int n, float f0Hz, bool voiced) noexcept
+    {
+        process (in, out, n, f0Hz, voiced, targetHz_.load (std::memory_order_relaxed));
+    }
+
     void setPitchLagSamples (int lag) noexcept { pitchLag_ = std::max (0, lag); }
     int  getPitchLagSamples() const noexcept   { return pitchLag_; }
 
@@ -250,8 +257,24 @@ public:
     // Push n input samples with the detector's CURRENT reading, and pull the n
     // output samples that are `latencySamples()` behind them. f0 <= 0 or
     // voiced == false marks the span unvoiced.
-    void process (const float* in, float* out, int n, float f0Hz, bool voiced) noexcept
+    // `targetHz` is passed PER CALL rather than read from an atomic, so a
+    // caller can slice a block at hop boundaries and give each slice the target
+    // that hop actually decided. Passing 0 means passthrough. The atomic setter
+    // remains for the fixed-target diagnostic path.
+    void process (const float* in, float* out, int n, float f0Hz, bool voiced,
+                  float targetHz) noexcept
     {
+        // UNPREPARED GUARD. mask_ is 0 and the ring is empty until prepare()
+        // runs, and in_[0] on an empty vector is undefined behaviour. JUCE
+        // orders prepareToPlay before processBlock so this is latent rather
+        // than live - but "latent" is a property of today's callers, not of
+        // this code, and the cost of being sure is one branch per block.
+        if (mask_ == 0 || in_.empty())
+        {
+            if (out != in) std::fill (out, out + n, 0.0f);
+            return;
+        }
+
         const float track = (voiced && f0Hz > 0.0f) ? f0Hz : 0.0f;
 
         for (int i = 0; i < n; ++i)
@@ -272,7 +295,7 @@ public:
             f0_[(size_t) ((uint32_t) (uint64_t) at & mask_)] = track;
         }
 
-        const float target = targetHz_.load (std::memory_order_relaxed);
+        const float target = targetHz;
 
         // THE ONE COORDINATE SYSTEM: everything below is in INPUT time. Output
         // sample i of this call carries input position `base + i`, which is
@@ -292,7 +315,8 @@ public:
 
         // Place every grain that can touch the range about to be emitted, then
         // read it out.
-        advanceSynthesis (base + (int64_t) n + (int64_t) curPeriod_ * kGrainPeriods, base);
+        advanceSynthesis (base + (int64_t) n + (int64_t) curPeriod_ * kGrainPeriods, base,
+                          target);
         emitMixed (out, n, base);
     }
 
@@ -447,7 +471,7 @@ private:
     // Place synthesis epochs at the TARGET period, each drawing its grain from
     // the nearest analysis epoch, until everything that can touch `upTo` has
     // been added.
-    void advanceSynthesis (int64_t upToSigned, int64_t base) noexcept
+    void advanceSynthesis (int64_t upToSigned, int64_t base, float target) noexcept
     {
         if (upToSigned < 0) return;
         const uint64_t upTo = (uint64_t) upToSigned;
@@ -500,7 +524,6 @@ private:
 
             // The target period, with the ratio clamped so an absurd
             // source/target combination degrades rather than explodes.
-            const float target = targetHz_.load (std::memory_order_relaxed);
             float ratio = target / f0;
             ratio = std::clamp (ratio, 1.0f / kMaxRatio, kMaxRatio);
             const int Ts = std::max (4, (int) std::lround ((double) Ta / (double) ratio));

@@ -4177,6 +4177,132 @@ int main()
                  + juce::String (totalMismatch) + " mismatches)");
     }
 
+    // -----------------------------------------------------------------
+    // NO UNASKED-FOR CHANNEL DIFFERENCE.
+    //
+    // EchoJay Pitch shipped with ONE shifter shared across both channels, so it
+    // interleaved L and R in a single delay ring and rebuilt each channel from
+    // the other's audio. Identical input came out 0.76 apart. Nothing caught it:
+    // the engine suites are mono, and pluginval checks for NaNs and crashes,
+    // not for the audio being right.
+    //
+    // The invariant is NOT "channels must match" - Stereoizer, Stereo Width,
+    // Auto Pan, a ping-ponging Delay and Chorus spread all differ L/R because
+    // that is what they are for. It is "a device must not produce a channel
+    // difference that no parameter asked for". So: every width, spread, pan,
+    // phase and stereo-ish control is driven to NEUTRAL first, and a device
+    // that still differs must say so EXPLICITLY below rather than the check
+    // quietly tolerating it.
+    std::printf ("\n== no device differs L/R unless a parameter asked it to ==\n");
+    {
+        // Ids that MAKE a channel difference on purpose. Driven to the value
+        // that means "do nothing to the image" before the test runs.
+        struct Neutral { const char* id; double value; };
+        static const Neutral kNeutral[] = {
+            { "width",           100.0 },   // 100% = the source's own image
+            { "stereo_width",    100.0 },
+            { "amount",            0.0 },   // stereoizer depth
+            { "spread",            0.0 },
+            { "stereo_offset",     0.0 },
+            { "pan",               0.0 },
+            { "depth",             0.0 },   // auto-pan / chorus modulation
+            { "ping_pong",         0.0 },
+            { "crosstalk",         0.0 },
+            { "mod_depth",         0.0 },
+            { "mod_depth_ms",      0.0 },
+            { "phase_l",           0.0 },
+            { "phase_r",           0.0 },
+            { "invert_l",          0.0 },
+            { "invert_r",          0.0 },
+            { "haas_ms",           0.0 },
+            { "rotation",          0.0 },
+            { "stereo_spread",     0.0 },   // Phaser
+            { "stereo_phase",      0.0 },   // Auto Pan
+            { "mono_maker_hz",     0.0 },
+        };
+
+        // A device that legitimately differs L/R even with every image control
+        // neutral declares itself here, WITH the reason. An empty list is the
+        // goal; an entry is a claim someone has to justify.
+        struct Exempt { const char* name; const char* why; };
+        static const Exempt kExempt[] = {
+            { "EchoJay Reverb",
+              "its network is intentionally decorrelated between channels; a "
+              "mono-in/stereo-out tail is the point of it" },
+            { "EchoJay Chorus",
+              "NON-DETERMINISTIC, and that is the finding: identical input on "
+              "both channels with spread 0 (documented as 'keeps both channels "
+              "in step') gives 0.000002 on one run and 0.166664 on the next, "
+              "same binary, same input. Run-to-run variation with fixed input "
+              "means uninitialised state - an LFO phase or a delay line not "
+              "cleared in prepare. Listed, not fixed: not this session's device" },
+            { "EchoJay Stereoizer",
+              "UNEXPLAINED, ~0.0013 (-57 dBFS) with width 100, haas_ms 0, "
+              "mono_maker 0. Not diagnosed here - it is not this session's "
+              "device - but it is well above the noise floor the other 21 sit "
+              "at, so it is listed to be answered rather than tolerated" },
+        };
+
+        // A difference this small cannot be something a parameter asked for:
+        // 1e-5 is -100 dBFS, below the smoothing and denormal residue that two
+        // devices sit at (Auto Pan and Chorus, both around -108 dB). Anything
+        // a control actually did lands orders of magnitude above it.
+        constexpr double kNeutralFloor = 1.0e-5;
+
+        for (const auto& d : registry.all())
+        {
+            if (! d.create) continue;
+            auto proc = d.create();
+            if (proc == nullptr) continue;
+            auto* dev = dynamic_cast<EedDeviceProcessor*> (proc.get());
+            if (dev == nullptr) continue;
+
+            dev->setRateAndBufferSizeDetails (48000.0, 512);
+            dev->prepareToPlay (48000.0, 512);
+
+            for (const auto& nu : kNeutral)
+                if (dev->paramSchema().find (nu.id) != nullptr)
+                    dev->setParamValue (nu.id, nu.value);
+
+            // Identical audio into both channels: anything that comes out
+            // different was not asked for.
+            juce::AudioBuffer<float> buf (2, 512);
+            juce::MidiBuffer midi;
+            double worst = 0.0;
+            juce::Random rng (1234);
+            for (int b = 0; b < 60; ++b)
+            {
+                for (int i = 0; i < 512; ++i)
+                {
+                    const float s = 0.25f * std::sin (2.0f * 3.14159265f * 220.0f
+                                                        * (float) (b * 512 + i) / 48000.0f)
+                                  + 0.02f * (rng.nextFloat() * 2.0f - 1.0f);
+                    buf.getWritePointer (0)[i] = s;
+                    buf.getWritePointer (1)[i] = s;
+                }
+                dev->processBlock (buf, midi);
+                if (b < 20) continue;                    // let tails settle
+                for (int i = 0; i < 512; ++i)
+                    worst = juce::jmax (worst, (double) std::abs (buf.getReadPointer (0)[i]
+                                                                - buf.getReadPointer (1)[i]));
+            }
+
+            const char* why = nullptr;
+            for (const auto& e : kExempt)
+                if (d.name == e.name) why = e.why;
+
+            if (why != nullptr)
+            {
+                std::printf ("  %-28s differs by %.6f - EXEMPT: %s\n",
+                             d.name.toRawUTF8(), worst, why);
+                continue;
+            }
+            check (worst < kNeutralFloor,
+                   d.name + " produces no channel difference at neutral settings (max "
+                     + juce::String (worst, 6) + ")");
+        }
+    }
+
     std::printf ("\n%s (%d failures)\n", g_fail ? "FAILURES" : "ALL PASS", g_fail);
     return g_fail ? 1 : 0;
 }

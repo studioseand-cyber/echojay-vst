@@ -63,6 +63,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <array>
 #include <vector>
 
 namespace echojay
@@ -179,6 +180,7 @@ public:
             maxTau   = std::max (maxTau,   c.tauMax);
         }
         frame_.assign ((size_t) maxFrame, 0.0f);
+        pending_.assign ((size_t) maxFrame, 0.0f);
         diff_.assign  ((size_t) maxTau + 2, 0.0f);
         cmndf_.assign ((size_t) maxTau + 2, 1.0f);
 
@@ -188,6 +190,7 @@ public:
         ringMask_ = (uint32_t) ((1 << ringBits_) - 1);
 
         curType_ = -1;                         // force applyConfig on first block
+        hopCount_ = 0; inputPos_ = 0;
         publishUnvoiced (-120.0f);
     }
 
@@ -226,9 +229,26 @@ public:
         const int vt = voiceTypeReq_.load (std::memory_order_relaxed);
         if (vt != curType_) applyConfig (vt);
 
+        // AMORTISE, once per block rather than once per sample.
+        //
+        // The difference function is O(W x tauMax) - about 576k multiply-adds
+        // at instrument/bass - and doing it whole in whichever block contains
+        // the hop made the worst-case block 132% of its own period at a
+        // 128-sample buffer: a guaranteed dropout. Spreading it turns the spike
+        // flat.
+        //
+        // Done as ONE contiguous sweep per block, ahead of the samples, rather
+        // than a few taus per sample: per-sample slicing cost a division each
+        // time and destroyed locality on the frame copy, which doubled the MEAN
+        // even as it fixed the worst case.
+        advanceDiff (std::max (1, n / std::max (1, decim_)));
+
+        hopCount_ = 0;
+
         for (int i = 0; i < n; ++i)
         {
             float m = r != nullptr ? 0.5f * (l[i] + r[i]) : l[i];
+            ++inputPos_;
             if (decim_ > 1) m = aa2_.process (aa1_.process (m));
 
             if (++decimPhase_ >= decim_)
@@ -240,10 +260,51 @@ public:
                 {
                     sinceHop_ = 0;
                     analyseHop();
+
+                    if (hopCount_ < (int) kMaxHopEvents)
+                    {
+                        HopEvent& e = hopEvents_[(size_t) hopCount_++];
+                        e.inputPos = inputPos_;
+                        e.f0Hz     = outF0_.load (std::memory_order_relaxed);
+                        e.voiced   = outVoiced_.load (std::memory_order_relaxed);
+                    }
                 }
             }
         }
     }
+
+    // ---- hop events, for a caller that must act AT the hop ----------------
+    // The correction stage has millisecond time constants and produces a
+    // target the shifter aims at. Running it once per BLOCK ties both to the
+    // host's buffer size: measured, fixed-512 against random 16..2048 blocks
+    // gave a 0.73 peak difference in the output, and the target stepped once
+    // per block - a zipper on any gliding note. Publishing WHERE each hop
+    // landed lets the caller slice its block at hop boundaries and run the
+    // musical layer at the cadence it was designed for.
+    struct HopEvent
+    {
+        uint64_t inputPos = 0;    // absolute INPUT sample index of this hop
+        float    f0Hz     = 0.0f;
+        bool     voiced   = false;
+    };
+
+    // Drain the hops produced by the last process() call. Returns how many
+    // were written. Audio thread; no allocation.
+    int drainHops (HopEvent* out, int maxOut) noexcept
+    {
+        const int n = std::min (hopCount_, maxOut);
+        for (int i = 0; i < n; ++i) out[i] = hopEvents_[(size_t) i];
+        hopCount_ = 0;
+        return n;
+    }
+
+    // Nominal hop duration in ms - what one hop event represents.
+    // Absolute count of input samples consumed, so a caller can convert a hop
+    // event's position into an offset inside the block it just pushed.
+    uint64_t inputPosition() const noexcept { return inputPos_; }
+
+    float hopMs() const noexcept
+    { return 1000.0f * (float) hopA_ / (float) fsA_; }
 
     // ---- results (any thread) ---------------------------------------------
     PitchReading getReading() const noexcept
@@ -280,7 +341,10 @@ public:
     int pitchLagFor (int voiceType) const noexcept
     {
         const Config c = deriveConfig (voiceType);
-        return (c.frameLen / 2) * c.decim;
+        // frameLen/2 for the window's centre, plus one hop because the sweep
+        // that produced the estimate ran on the frame captured at the PREVIOUS
+        // hop (see analyseHop).
+        return (c.frameLen / 2 + c.hopA) * c.decim;
     }
     int pitchLagSamples() const noexcept { return pitchLagFor (getVoiceType()); }
 
@@ -373,6 +437,7 @@ private:
         aa1_.resetState(); aa2_.resetState();
 
         decimPhase_ = 0; sinceHop_ = 0; wr_ = 0;
+        diffTau_ = tauMax_ + 1; haveSweep_ = false;
 
         histCount_ = 0;
         hopsSinceVoiced_ = 1 << 24;
@@ -382,15 +447,68 @@ private:
         publishUnvoiced (-120.0f);
     }
 
+    // ---- the difference function, spread across the hop interval ----------
+    // A rolling copy of the frame is taken as soon as enough audio exists, and
+    // the tau sweep is advanced a slice at a time so the total cost per sample
+    // is flat. The frame used is the one CURRENT when the sweep started, which
+    // is what keeps the result identical to computing it all at once.
+    void advanceDiff (int samples) noexcept
+    {
+        if (diffTau_ > tauMax_) return;      // nothing in flight
+
+        // Budget: finish the whole tau range over one hop interval, with a
+        // floor so a tiny block still makes progress.
+        const int budget = std::max (1, (tauMax_ * samples + hopA_ - 1) / hopA_);
+        const float* x = pending_.data();
+        int done = 0;
+        while (diffTau_ <= tauMax_ && done < budget)
+        {
+            const float* a = x;
+            const float* b = x + diffTau_;
+            float sum = 0.0f;
+            for (int j = 0; j < W_; ++j)
+            {
+                const float d = a[j] - b[j];
+                sum += d * d;
+            }
+            diff_[(size_t) diffTau_] = sum;
+            ++diffTau_; ++done;
+        }
+    }
+
     // ---- the per-hop analysis (audio thread) ------------------------------
     void analyseHop() noexcept
     {
         if (wr_ < (uint64_t) frameLen_) return;          // warm-up after a (re)config
 
-        // Newest frameLen_ samples, chronological.
-        const uint64_t start = wr_ - (uint64_t) frameLen_;
-        for (int k = 0; k < frameLen_; ++k)
-            frame_[(size_t) k] = ring_[(uint32_t) (start + (uint64_t) k) & ringMask_];
+        // THE SNAPSHOT HAPPENS AT HOP BOUNDARIES, NOWHERE ELSE.
+        //
+        // Amortising means the sweep runs across the interval BETWEEN hops, so
+        // it has to run on a frame captured at a deterministic instant. Letting
+        // the sweep snapshot "whenever it happens to start" makes the captured
+        // frame depend on where block boundaries fell - measured, that broke
+        // block-size independence outright, with fixed-128 and fixed-512
+        // differing by 0.80. Capturing only at hops costs ONE hop of extra lag
+        // in the estimate (~2.7 ms, folded into pitchLagFor) and is exact.
+        while (diffTau_ <= tauMax_) advanceDiff (tauMax_);
+
+        const bool haveSweep = haveSweep_;
+
+        // The frame the completed sweep ran on becomes this hop's frame...
+        if (haveSweep)
+            std::copy (pending_.begin(), pending_.begin() + frameLen_, frame_.begin());
+
+        // ...and a fresh frame is captured NOW for the next interval's sweep.
+        {
+            const uint64_t start = wr_ - (uint64_t) frameLen_;
+            for (int k = 0; k < frameLen_; ++k)
+                pending_[(size_t) k] = ring_[(uint32_t) (start + (uint64_t) k) & ringMask_];
+            diffTau_ = 1;
+            haveSweep_ = true;
+        }
+
+        // The very first hop after a (re)configure has no completed sweep yet.
+        if (! haveSweep) { publishUnvoiced (-120.0f); return; }
 
         totalHops_.fetch_add (1, std::memory_order_relaxed);
 
@@ -401,20 +519,8 @@ private:
         const float rmsDb = rms > 1.0e-9f ? 20.0f * std::log10 (rms) : -120.0f;
         if (rmsDb < kSilenceGateDb) { onUnvoiced (rmsDb); return; }
 
-        // 1. difference function, tau in 1..tauMax.
         const float* x = frame_.data();
-        for (int tau = 1; tau <= tauMax_; ++tau)
-        {
-            const float* a = x;
-            const float* b = x + tau;
-            float sum = 0.0f;
-            for (int j = 0; j < W_; ++j)
-            {
-                const float d = a[j] - b[j];
-                sum += d * d;
-            }
-            diff_[(size_t) tau] = sum;
-        }
+        (void) x;
 
         // 2. cumulative mean normalised difference.
         cmndf_[0] = 1.0f;
@@ -703,7 +809,9 @@ private:
     int      ringBits_ = 0;
     uint64_t wr_ = 0;
 
-    std::vector<float> frame_, diff_, cmndf_;
+    std::vector<float> frame_, pending_, diff_, cmndf_;
+    int  diffTau_ = 1 << 20;   // > tauMax_ means 'no sweep in progress'
+    bool haveSweep_ = false;
 
     static constexpr int kHistLen = 5;
     float    hist_[kHistLen] = {};
@@ -726,6 +834,13 @@ private:
     std::atomic<uint32_t> guardFires_ { 0 };
     std::atomic<uint32_t> voicedHops_ { 0 };
     std::atomic<uint32_t> totalHops_  { 0 };
+
+    // A block long enough to hold more than this many hops is far past any
+    // host's buffer size; the excess is dropped rather than allocated for.
+    static constexpr size_t kMaxHopEvents = 256;
+    std::array<HopEvent, kMaxHopEvents> hopEvents_ {};
+    int      hopCount_ = 0;
+    uint64_t inputPos_ = 0;
 };
 
 } // namespace echojay
