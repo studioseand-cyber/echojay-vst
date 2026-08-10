@@ -7990,12 +7990,15 @@ public:
         // productive one. A sweep starts only on a server ANSWER. A
         // successful answer of zero maps still passes: failure is a
         // statement about the transport, never about the count.
-        if (mapStateFetchedAt == juce::Time() && ! rows.isEmpty())
+        if ((mapStateFetchedAt == juce::Time() || mapStateFailure.isNotEmpty())
+             && ! rows.isEmpty())
         {
             // Self-healing, not just refusing: the fetch is synchronous and
             // the scanned rows are in hand, so a sweep started before any
-            // fetch ran (the CLI path) asks now rather than telling the
-            // operator to.
+            // fetch ran -- OR one whose last answer was a FAILURE, which is
+            // now loaded from the cache and would otherwise refuse forever
+            // with no retry -- asks now rather than telling the operator to.
+            // The refusal below then speaks only for a FRESH attempt.
             sweepSay ("Asking the server which plugins are already mapped...");
             fetchMapStates (rows);
         }
@@ -9735,6 +9738,17 @@ private:
         // cache load", which is why enumerating the calls beat reading about
         // them.
         refreshLocalMapIdentities();
+
+        // THE PERSISTED SERVER ANSWER, ACTUALLY READ (10 Aug 2026). Until
+        // now loadMapStateCache had exactly ONE call site and it was inside a
+        // self-test fixture: the cache was written by five paths and read by
+        // none, so every launch began with an empty state and column 3 read
+        // "?" for every row. Worse for the diagnostics, an empty state prints
+        // "fetchFailure none" -- indistinguishable from a fetch that
+        // SUCCEEDED, which is how a machine that had never asked the server
+        // looked identical to one that had. No network here: the answer was
+        // already paid for, and re-asking is the Scan button's job.
+        loadMapStateCache();
 
         applyFilter();
         logColumns ("cache restored");
@@ -12456,8 +12470,17 @@ private:
                   << " | localMaps " << (int) localMapIdentities.size()
                   << " sentIds " << (int) sentIdentities.size()
                   << " serverIds " << (int) mapStateByIdentity.size()
-                  << " | fetchFailure " << (mapStateFailure.isEmpty() ? "none"
-                                                                      : mapStateFailure)
+                  // NEVER ASKED is not the same fact as ASKED AND FINE, and
+                  // "none" said both. The age comes with it: a stale answer
+                  // is still an answer, and a reader must be able to tell.
+                  << " | mapState " << (mapStateFetchedAt == juce::Time()
+                                          ? juce::String ("NEVER ASKED")
+                                          : mapStateFailure.isNotEmpty()
+                                              ? "FAILED: " + mapStateFailure
+                                              : "ok, asked "
+                                                  + juce::String ((int) (juce::Time::getCurrentTime()
+                                                                         - mapStateFetchedAt).inHours())
+                                                  + "h ago")
                   << std::endl;
         if (focus.isNotEmpty())
         {
