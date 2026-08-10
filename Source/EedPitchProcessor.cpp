@@ -261,7 +261,7 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
     }
     if (id == kRefSource)   { refAuto_.store (value < 0.5); lastAutoTuning_ = 0.0f; return true; }
     if (id == kMode)        { applyMode ((int) std::lround (value)); return true; }
-    if (id == kNaturalVib)  { correct_.setNaturalVibrato ((float) value); return true; }
+    if (id == kNaturalVib)  { correct_.setNaturalVibrato ((float) value); toCustomMode(); return true; }
     if (id == kVibDepth)    { correct_.setVibDepthCents ((float) value);  return true; }
     if (id == kVibRate)     { correct_.setVibRateHz ((float) value);      return true; }
     if (id == kVibShape)    { correct_.setVibShape ((int) std::lround (value)); return true; }
@@ -279,11 +279,13 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
         // Setting the key by hand IS choosing manual - otherwise the next
         // block silently overwrites it and the control looks broken.
         correct_.setKeyRoot ((int) std::lround (value));
-        keyAuto_.store (false);
+        if (! writingDefaults_) keyAuto_.store (false);
         return true;
     }
-    if (id == kScale)       { applyScale ((int) std::lround (value)); keyAuto_.store (false); return true; }
-    if (id == kReferenceHz) { correct_.setReferenceHz ((float) value); refAuto_.store (false); return true; }
+    if (id == kScale)       { applyScale ((int) std::lround (value));
+                              if (! writingDefaults_) keyAuto_.store (false); return true; }
+    if (id == kReferenceHz) { correct_.setReferenceHz ((float) value);
+                              if (! writingDefaults_) refAuto_.store (false); return true; }
     if (id == kTranspose)   { correct_.setTranspose ((float) value);   return true; }
     if (id == kIgnoreVib)   { correct_.setIgnoreVibrato (value >= 0.5); toCustomMode(); return true; }
     if (id == kResetStats)
@@ -342,12 +344,18 @@ juce::String EedPitchProcessor::applyMode (int mode)
     modeIndex_.store (m);
     if (m == kCustom) { pendingModeSummary_ = {}; return "correction_mode custom"; }
 
-    struct Preset { float retune, flex, humanize; bool ignoreVib; };
+    // Spec §4's table, in full. natural_vibrato is part of it and MUST be
+    // written: since the corrector separates the note from the wobble and adds
+    // the wobble back at natural_vibrato, a mode that snaps the note but leaves
+    // the wobble at 100% is not hard-tuned at all. Measured when this was
+    // missing: hard tune came out at 15.7 cents mean deviation against 13.0 for
+    // the untouched signal - i.e. WORSE than not correcting.
+    struct Preset { float retune, flex, humanize, naturalVib; bool ignoreVib; };
     static const Preset kPresets[4] = {
-        { 120.0f, 55.0f, 60.0f, true  },   // natural
-        {  40.0f, 25.0f, 30.0f, true  },   // balanced
-        {   8.0f,  0.0f,  0.0f, false },   // tuned
-        {   0.0f,  0.0f,  0.0f, false },   // hard
+        { 120.0f, 55.0f, 60.0f, 100.0f, true  },   // natural
+        {  40.0f, 25.0f, 30.0f, 100.0f, true  },   // balanced
+        {   8.0f,  0.0f,  0.0f,  40.0f, false },   // tuned
+        {   0.0f,  0.0f,  0.0f,   0.0f, false },   // hard
     };
     const Preset& p = kPresets[m];
 
@@ -356,6 +364,7 @@ juce::String EedPitchProcessor::applyMode (int mode)
     correct_.setFlex (p.flex);
     correct_.setHumanize (p.humanize);
     correct_.setIgnoreVibrato (p.ignoreVib);
+    correct_.setNaturalVibrato (p.naturalVib);
 
     // Every mode preserves formants: the character is retune speed and how much
     // deviation survives, never whether it still sounds like the singer.
@@ -367,6 +376,7 @@ juce::String EedPitchProcessor::applyMode (int mode)
     pendingModeSummary_ = "which set retune_speed_ms " + juce::String (p.retune, 0)
          + ", flex " + juce::String (p.flex, 0)
          + ", humanize " + juce::String (p.humanize, 0)
+         + ", natural_vibrato " + juce::String (p.naturalVib, 0)
          + ", targeting_ignores_vibrato " + juce::String (p.ignoreVib ? "on" : "off")
          + ", formant_mode preserve";
 
@@ -374,6 +384,7 @@ juce::String EedPitchProcessor::applyMode (int mode)
          + " (retune_speed_ms " + juce::String (p.retune, 0)
          + ", flex " + juce::String (p.flex, 0)
          + ", humanize " + juce::String (p.humanize, 0)
+         + ", natural_vibrato " + juce::String (p.naturalVib, 0)
          + ", targeting_ignores_vibrato " + juce::String (p.ignoreVib ? "on" : "off")
          + ", formant_mode preserve)";
 }
@@ -528,6 +539,12 @@ void EedPitchProcessor::refreshAutoKey()
     autoState_.conf       = f.confidence;
     autoState_.tuningHz   = f.tuningHz;
     autoState_.sourceName = juce::String (juce::CharPointer_ASCII (f.sourceName));
+}
+
+void EedPitchProcessor::resetParamsToDefaults()
+{
+    const juce::ScopedValueSetter<bool> guard (writingDefaults_, true);
+    EedDeviceProcessor::resetParamsToDefaults();
 }
 
 EedPitchProcessor::AutoKeyState EedPitchProcessor::autoKeyState() const

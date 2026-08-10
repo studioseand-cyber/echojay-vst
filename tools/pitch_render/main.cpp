@@ -59,6 +59,7 @@ struct RenderOpts
     int   keyRoot     = 0;
     int   scaleMask   = 0b111111111111;   // chromatic
     bool  ignoreVib   = true;
+    float naturalVib  = 100.0f;
 };
 
 // One render pass. Returns the processed audio, already latency-COMPENSATED so
@@ -105,6 +106,7 @@ juce::AudioBuffer<float> renderOne (const juce::AudioBuffer<float>& src, double 
     corr.setFlex (o.flex);
     corr.setHumanize (o.humanize);
     corr.setIgnoreVibrato (o.ignoreVib);
+    corr.setNaturalVibrato (o.naturalVib);
     corr.reset();
 
     const float ratio = std::pow (2.0f, o.semitones / 12.0f);
@@ -338,13 +340,13 @@ int main (int argc, char* argv[])
             // corrector working, and the wrong scale being asked for.
             RenderOpts hard = base;
             hard.correct = true; hard.retuneMs = 0.0f; hard.flex = 0.0f;
-            hard.humanize = 0.0f; hard.ignoreVib = false;
+            hard.humanize = 0.0f; hard.ignoreVib = false; hard.naturalVib = 0.0f;
             hard.scaleMask = 0b111111111111;
             jobs.push_back ({ "30 CHARACTER A - hard tuned (retune 0, flex 0, chromatic).wav", hard });
 
             RenderOpts nat = base;
             nat.correct = true; nat.retuneMs = 120.0f; nat.flex = 55.0f;
-            nat.humanize = 60.0f; nat.ignoreVib = true;
+            nat.humanize = 60.0f; nat.ignoreVib = true; nat.naturalVib = 100.0f;
             nat.scaleMask = 0b111111111111;
             jobs.push_back ({ "31 CHARACTER B - natural (retune 120, flex 55, human 60, chromatic).wav", nat });
 

@@ -85,6 +85,11 @@ public:
     };
     AutoKeyState autoKeyState() const;
 
+    // Writing the schema defaults must not be mistaken for the user reaching
+    // for key_root or scale, which would leave key_source on manual and
+    // silently contradict its own advertised default of auto.
+    void resetParamsToDefaults() override;
+
     // The ribbon's frame store. Written on the audio thread once per block and
     // read by paint; a torn column is one pixel and not worth a lock.
     echojay::viz::PitchRibbonView& ribbon() noexcept { return ribbon_; }
@@ -175,7 +180,12 @@ private:
     // Set while a mode is writing its params, so the writes do not each knock
     // the display to custom.
     // Knocks the mode display to custom, unless a mode is doing the writing.
-    void toCustomMode() { if (! applyingMode_) modeIndex_.store (kCustom); }
+    // A defaults write is not a hand on a knob either: writing the schema
+    // defaults touches retune/flex/humanize/ignore_vibrato in turn, and each
+    // would otherwise knock the display to custom - leaving correction_mode
+    // contradicting its own advertised default of natural.
+    void toCustomMode()
+    { if (! applyingMode_ && ! writingDefaults_) modeIndex_.store (kCustom); }
 
     // applyMode/applyScale run inside setParamValue, whose caller builds its
     // own summary from id/value pairs and would report "correction_mode hard"
@@ -184,6 +194,8 @@ private:
     juce::String pendingModeSummary_, pendingScaleSummary_;
 
     bool applyingMode_ = false;
+    bool writingDefaults_ = false;
+
     std::atomic<int> modeIndex_ { kNatural };
     double               sampleRate_ = 48000.0;
     int                  latencyVoiceType_ = -1;

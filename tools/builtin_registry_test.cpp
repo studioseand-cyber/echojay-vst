@@ -4161,29 +4161,20 @@ int main()
                              bad.joinIntoString ("; ").toRawUTF8());
             }
         }
-        // PRE-EXISTING, and deliberately NOT fixed here. All four are
-        // Modulation devices sharing one LFO core whose members construct at
-        // the core's generic 1 Hz / 50%, while each device advertises its own
-        // musically-chosen default. A fresh Chorus therefore RUNS at 1 Hz /
-        // 50% while the model believes it is at 0.6 Hz / 40%.
+        // ZERO. The registry factory now constructs every device at its
+        // ADVERTISED defaults (BuiltinDeviceRegistry::add wraps every create
+        // with resetParamsToDefaults), so a mismatch here is a real regression
+        // from now on: either a getParamValue that does not round-trip what
+        // setParamValue was handed, or a schema default outside its own range.
         //
-        // The fix is one line and it is not a Pitch change: have the registry
-        // factory call resetParamsToDefaults() on a newly constructed device,
-        // which writes every schema default through setParamValue and closes
-        // the whole class of bug for all 22 at once. That alters what a fresh
-        // insert of four shipping devices sounds like, so it belongs to
-        // whoever owns those devices rather than to this session.
-        //
-        // Listed here so the debt is VISIBLE and, more importantly, so any NEW
-        // mismatch fails immediately instead of joining a silent pile.
-        static const char* const kKnownDefaultDebt[] = {
-            "EchoJay Auto Pan", "EchoJay Chorus", "EchoJay Phaser", "EchoJay Tremolo"
-        };
-        (void) kKnownDefaultDebt;
-        check (totalMismatch == 7,
-               "advertised-vs-constructed defaults: exactly the 7 KNOWN "
-               "pre-existing mismatches, no new ones (got "
-                 + juce::String (totalMismatch) + ")");
+        // This replaced a pinned list of SEVEN known mismatches across Auto
+        // Pan, Chorus, Phaser and Tremolo - four devices sharing an LFO core
+        // that constructed at its own generic 1 Hz / 50% while each advertised
+        // its own rate and depth. Closing it at the funnel rather than in four
+        // sets of member initialisers is what stops device 23 reintroducing it.
+        check (totalMismatch == 0,
+               "every device constructs at its advertised defaults ("
+                 + juce::String (totalMismatch) + " mismatches)");
     }
 
     std::printf ("\n%s (%d failures)\n", g_fail ? "FAILURES" : "ALL PASS", g_fail);

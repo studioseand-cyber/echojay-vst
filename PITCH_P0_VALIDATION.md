@@ -817,15 +817,19 @@ freshly inserted Chorus **runs** at 1 Hz / 50% while the model believes it is at
 premise. The error then hides itself: a state restore writes the schema
 defaults, so only the very first instance is ever wrong.
 
-**Not fixed here, deliberately** — these are four shipping devices and changing
-what a fresh insert sounds like is not this session's call. **The fix I would
-make** is one line and closes the class permanently: have the registry factory
-call `resetParamsToDefaults()` on a newly constructed device, which writes every
-schema default through `setParamValue` for all 22 at once. The alternative
-(fixing four sets of member initialisers) leaves the trap open for device 23.
+**FIXED**, at the funnel: `BuiltinDeviceRegistry::add` now wraps every device's
+`create` so a newly constructed device gets `resetParamsToDefaults()`, writing
+every schema default through `setParamValue` for all 22 at once. Fixing four
+sets of member initialisers instead would have left the trap open for device 23.
+All 22 now construct at their advertised defaults and the check is pinned at
+**zero**, so any mismatch is a regression from here.
 
-The check is now pinned at exactly those seven, so a **new** mismatch fails
-immediately rather than joining a silent pile.
+Two side effects had to be guarded, and both were the same shape: a defaults
+write is not a user's hand on a knob. `resetParamsToDefaults` is now virtual so
+EchoJay Pitch can suppress the rules that flip `key_source` to manual when
+`key_root`/`scale` is set, and that knock `correction_mode` to custom when
+retune/flex/humanize move — otherwise writing the defaults left two params
+contradicting their own advertised defaults.
 
 ### 11.2 A note on the Meters gating fix
 
@@ -879,3 +883,31 @@ That split has a real consequence worth knowing: a *new* deviation is treated as
 movement within the note until the slow pitch catches up (~140 ms), and only
 then judged as the note being off. It stops the corrector chasing a scoop, at
 the cost of engaging slightly later on a genuine drift.
+
+---
+
+## 12. One more regression the re-render caught
+
+Re-rendering the character set after P5 showed **hard tune measuring worse than
+the dry signal** — 15.7 ¢ mean deviation against 13.0 ¢, where before P5 it had
+been 7.5 ¢.
+
+Cause: §11.4's note/wobble split adds the singer's oscillation back at
+`natural_vibrato`, and `correction_mode` never wrote that param — it did not
+exist when the mode table was built at P3. So `hard` snapped the note and then
+re-added the full wobble on top. Spec §4's table always specified it
+(natural 100, balanced 100, tuned 40, **hard 0**); the implementation was simply
+missing a column.
+
+Fixed by completing the table. Hard tune returns to exactly its pre-P5 numbers:
+
+| render | mean dev | median | within 5 ¢ |
+|---|---|---|---|
+| dry | 13.0 ¢ | 8.3 | 35.3% |
+| hard tuned | **7.5 ¢** | **3.6** | **60.6%** |
+| natural | 13.0 ¢ | 9.1 | 32.5% |
+
+The lesson is worth keeping: **a mode is only as honest as its table is
+complete.** Adding a character-bearing param without adding it to
+`correction_mode` leaves the modes quietly wrong, and nothing but a re-measure
+catches it — the suite was green throughout.
