@@ -61,6 +61,7 @@ struct Hop
     float  f0Hz       = 0.0f;
     float  cents      = 0.0f;   // deviation from the nearest equal-tempered note
     float  confidence = 0.0f;
+    float  rmsDb      = -120.0f;
     bool   guardFired = false;
     char   note[8]    = { '-', 0 };
 };
@@ -113,6 +114,7 @@ std::vector<Hop> runFile (const juce::AudioBuffer<float>& audio, double fs,
         h.voiced     = rd.voiced;
         h.f0Hz       = rd.f0Hz;
         h.confidence = rd.confidence;
+        h.rmsDb      = rd.rmsDb;
         h.guardFired = rd.guardFires > prevFires;
         if (rd.voiced)
             PitchEngine::noteName (rd.f0Hz, h.note, sizeof (h.note), &h.cents);
@@ -165,11 +167,11 @@ void printHops (const std::vector<Hop>& hops, bool csv)
 {
     if (csv)
     {
-        std::printf ("time_s,f0_hz,note,cents,confidence,voiced,guard\n");
+        std::printf ("time_s,f0_hz,note,cents,confidence,voiced,guard,rms_db\n");
         for (const auto& h : hops)
-            std::printf ("%.4f,%.3f,%s,%.1f,%.3f,%d,%d\n",
+            std::printf ("%.4f,%.3f,%s,%.1f,%.3f,%d,%d,%.2f\n",
                          h.timeS, h.f0Hz, h.note, h.cents, h.confidence,
-                         h.voiced ? 1 : 0, h.guardFired ? 1 : 0);
+                         h.voiced ? 1 : 0, h.guardFired ? 1 : 0, h.rmsDb);
         return;
     }
 

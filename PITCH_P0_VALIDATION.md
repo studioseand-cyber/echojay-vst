@@ -215,3 +215,113 @@ spikes but not the 3–5 hop runs in §2.3, and a longer median trades tracking
 latency for stability — that is a retune-envelope question (P2), not a detector
 one, and it should be decided with the envelope in front of us rather than
 guessed at now.
+
+---
+
+## 5. What the REMAINING residuals actually are
+
+Before widening the candidate set any further, the residual was characterised
+rather than attacked. The question is whether the surviving jumps are
+mis-estimates (fixable by better candidate search) or genuinely ambiguous
+frames (fixable only by declining to trust them).
+
+Method: on the male take at `alto_tenor` and `low_male`, every remaining >600 ¢
+adjacent-hop jump was logged with its own confidence, the mean confidence of
+the five frames either side, its input RMS, and whether it sits within 50 ms of
+a voiced onset or offset. Every figure is quoted **against the base rate over
+all voiced frames**, because "most jumps are low-confidence" means nothing if
+most frames are low-confidence.
+
+### 5.1 The distribution
+
+| | jump frames | all voiced | |
+|---|---|---|---|
+| **alto_tenor** — median confidence | 0.701 | 0.935 | −0.234 |
+| local confidence (5 either side) | 0.756 | 0.932 | −0.175 |
+| input RMS | −16.6 dB | −13.1 dB | −3.5 dB |
+| within 50 ms of onset/offset | **85.9%** | 26.4% | **3.25×** |
+| **low_male** — median confidence | 0.701 | 0.931 | −0.230 |
+| local confidence (5 either side) | 0.736 | 0.928 | −0.192 |
+| input RMS | −15.3 dB | −13.2 dB | −2.1 dB |
+| within 50 ms of onset/offset | **76.8%** | 25.1% | **3.06×** |
+
+Confidence-band enrichment (`alto_tenor`; `low_male` is within a point of it):
+
+| confidence | share of jumps | share of voiced | enrichment |
+|---|---|---|---|
+| 0.60–0.70 | **49.5%** | 8.1% | **6.11×** |
+| 0.70–0.80 | 35.4% | 10.6% | 3.33× |
+| 0.80–0.90 | 9.1% | 19.3% | 0.47× |
+| 0.90–0.95 | 5.1% | 18.6% | 0.27× |
+| 0.95–1.00 | 1.0% | 43.4% | 0.02× |
+
+Nothing appears below 0.60 because the current voiced gate already sits there
+(`kVoicedAperiodicity = 0.40` ⇒ confidence ≥ 0.60). **The residuals pile up in
+the narrow band immediately above the existing gate.**
+
+Creak shows up exactly where the search range can represent it: with an f0
+below 0.6× the take's median, creak-like frames are **14.5% of jumps against a
+1.8% base rate at `low_male`** (8×), and **0.0% at `alto_tenor`** — whose 80 Hz
+floor cannot represent creak at all, so those frames simply read unvoiced.
+
+### 5.2 The hypothesis holds — with a residue that does not
+
+Classifying every jump by confidence (<0.85), boundary proximity, and creak:
+
+| class | alto_tenor | low_male |
+|---|---|---|
+| low-confidence, at a boundary | 82.8% | 73.1% |
+| low-confidence, mid-phrase | 10.1% | 16.0% |
+| **high-confidence, mid-phrase** | **4.0%** | **7.3%** |
+| high-confidence, at a boundary | 3.0% | 3.6% |
+
+**Roughly 93% (alto_tenor) and 89% (low_male) of residuals are low-confidence,
+and 77–86% sit within 50 ms of an onset or offset.** The hypothesis is
+confirmed: these are frames where the pitch is genuinely ambiguous, not frames
+the estimator got wrong.
+
+The honest residue: **4.0% and 7.3% are high-confidence and mid-phrase.** Their
+rate among high-confidence mid-phrase non-creak frames is **0.22 and 0.37 per
+1000**, against overall rates of 3.39 and 4.56 — **12–16× lower**. So it is not
+a flat distribution hiding behind an average, but it is not zero either: a
+handful of genuine mid-phrase mis-estimates survive, and no confidence gate
+will reach them.
+
+### 5.3 Proposed threshold, and what it costs
+
+Simulated by gating and **recomputing adjacency** (not by subtracting counts),
+so the projected benefit is what would actually be observed:
+
+| gate | alto_tenor residual /1000 | vs now | low_male residual /1000 | vs now | frames tracked before that become passthrough |
+|---|---|---|---|---|---|
+| 0.60 (current) | 3.39 | — | 4.56 | — | — |
+| 0.70 | 1.16 | −66% | 2.13 | −53% | 8.1% / 8.5% |
+| **0.75** | **0.79** | **−77%** | **1.65** | **−64%** | **12.7% / 13.8%** |
+| 0.80 | 0.51 | −85% | 0.87 | −81% | 18.7% / 20.5% |
+| 0.85 | 0.33 | −90% | 0.70 | −85% | 26.4% / 28.7% |
+
+**Proposal: confidence ≥ 0.75, i.e. `kVoicedAperiodicity` 0.40 → 0.25.** That
+is the knee — 0.70→0.75 buys 11 points of reduction for 4.6 points of
+tracking, while 0.75→0.80 buys 8 points for 6. The voiced share of all hops
+falls from 66.3% to 57.9% (`alto_tenor`).
+
+**And the cost really is close to nothing**, which is worth showing rather than
+asserting. Of the frames a 0.75 gate drops, **80% (alto_tenor) and 76%
+(low_male) are within 50 ms of a boundary** — consonants, breath and release
+tails, where a corrector should not be acting anyway. The mid-phrase gaps it
+opens are **median 11 ms**, and the longest is 59 ms at `alto_tenor`. At
+`low_male` there is exactly **one** mid-phrase gap over 100 ms (142 ms), which
+is the only case a P2 retune envelope would have to bridge deliberately.
+
+One qualification on "gating costs nothing": it is free for *correctness* —
+a frame we decline to trust never drives correction, and unvoiced frames pass
+through untouched by design. It is not quite free for *continuity*, because
+13% of currently-tracked frames stop being corrected, and at P2 the retune
+envelope must hold its target across those gaps rather than resetting. At a
+median 11 ms that is well inside every `retune_speed_ms` in the spec's table,
+so it should be a non-event — but it is an envelope requirement, not an
+automatic consequence.
+
+**This is not implemented.** It is a detector-threshold change whose real cost
+is measured in how correction behaves, so it belongs with the P1/P2 work that
+can hear it, not ahead of it.
