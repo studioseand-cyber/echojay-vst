@@ -4110,6 +4110,59 @@ int main()
         }
     }
 
+    // -----------------------------------------------------------------------
+    // DETACHED EDITORS (10 Aug 2026). Remote plugin editing opens a device's
+    // editor on an instance that is prepared but in NO graph: nothing calls
+    // addNode, nothing connects it. Devices are written to be hosted as
+    // ChainHost slots, so "does an editor open detached" was the one unknown
+    // in that feature and is cheaper to test than to reason about. It is a
+    // device-suite invariant, not a remote-editing one, so it lives here.
+    //
+    // A zero-sized editor counts as a FAILURE: it opens as an invisible
+    // window, which is a different defect wearing success's clothes.
+    std::printf ("\n== every device opens an editor DETACHED from any graph ==\n");
+    {
+        int made = 0;
+        for (const auto& n : registry.names())
+        {
+            auto proc = makeByName (n);
+            if (proc == nullptr) { check (false, n + ": factory returned null"); continue; }
+            ++made;
+            proc->prepareToPlay (44100.0, 512);
+
+            juce::AudioProcessorEditor* ed = nullptr;
+            try { ed = proc->createEditor(); } catch (...) {}
+            check (ed != nullptr, n + ": createEditor detached");
+            if (ed != nullptr)
+            {
+                check (ed->getWidth() > 0 && ed->getHeight() > 0,
+                       n + ": detached editor has a real size");
+                delete ed;
+            }
+
+            // The same instance must also round-trip its own state, because
+            // the remote path pulls state, seeds a copy with it and commits
+            // it back. An empty blob would seed nothing, silently.
+            juce::MemoryBlock mb;
+            bool sOk = false;
+            try { proc->getStateInformation (mb); sOk = mb.getSize() > 0; } catch (...) {}
+            check (sOk, n + ": getStateInformation returns bytes");
+            if (sOk)
+            {
+                bool setOk = true;
+                try { proc->setStateInformation (mb.getData(), (int) mb.getSize()); }
+                catch (...) { setOk = false; }
+                check (setOk, n + ": setStateInformation accepts its own blob");
+            }
+            proc->releaseResources();
+        }
+        // Assert on CONTENT, not completion: a loop that made nothing would
+        // otherwise report a clean pass having tested nothing at all.
+        check (made == kExpectedDevices,
+               "detached pass covered every device (made " + juce::String (made)
+               + " of " + juce::String (kExpectedDevices) + ")");
+    }
+
     std::printf ("\n%s (%d failures)\n", g_fail ? "FAILURES" : "ALL PASS", g_fail);
     return g_fail ? 1 : 0;
 }
