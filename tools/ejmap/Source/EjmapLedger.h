@@ -303,8 +303,36 @@ struct RetryEvidence
         This field is why `bloom` is now counted. Its eighteen init_failed rows
         were on disk the whole time and every counter in this struct was
         looking at deaths.
+
+        CUMULATIVE, for the record. The DECISION uses the field below.
     */
     int otherFailures = 0;
+
+    /** Non-death failures since the last SUCCESS at this stage -- and this is
+        the one the quarantine rule measures.
+
+        MEASURED 10 Aug 2026, and it is the difference between a rule and a
+        slow fault. H-EQ (s) has four load failures on 4 Aug (the Waves -10875
+        stream, which clears in a fresh process) and SIX successful loads on
+        9 Aug. A lifetime count reads 4 against a threshold of 3 and withdraws
+        a plugin that demonstrably works -- and since the ledger only grows,
+        every plugin in the catalogue eventually reaches three failures and is
+        withdrawn for having been used.
+
+        A SUCCESS SETTLES A NON-DEATH FAILURE. init_failed, a hang, no_params:
+        the process survived each one to report it, and a later successful load
+        at the same stage is direct evidence that whatever caused it is not a
+        permanent property of the binary.
+
+        DEATHS ARE DELIBERATELY NOT RESET, and that asymmetry is the signed
+        rule this one is built beside: `retryEvidenceFor`'s own proof holds
+        that "three deaths still quarantine even with a success between them",
+        because three separate launches dying is a fact about hosting this
+        plugin in this tool whoever's fault it is. A death is a claim of a
+        different order from a refusal to instantiate, and the nightly
+        non-deterministic re-test is the escape built for it.
+    */
+    int otherFailuresSinceOk = 0;
 
     /** Unattributed deaths that no human could have caused. See
         Ledger::setUnattended: the discount exists for the force-quit, and a
@@ -344,7 +372,7 @@ struct RetryEvidence
     {
         return corroboratedFailures
              + (wasUnattended ? unattendedFailuresN : 0)
-             + otherFailures;
+             + otherFailuresSinceOk;
     }
 
     /** The note that goes in the quarantine row when prior successes exist. It
@@ -374,6 +402,7 @@ struct RetryEvidence
         o->setProperty ("unattributed_failures", unattributedFailures);
         o->setProperty ("unattended_failures", unattendedFailuresN);
         o->setProperty ("other_failures", otherFailures);
+        o->setProperty ("other_failures_since_ok", otherFailuresSinceOk);
         o->setProperty ("prior_ok_in_ledger", priorOkInLedger);
         o->setProperty ("prior_ok_this_session", priorOkThisSession);
 
@@ -1182,6 +1211,7 @@ private:
                 // eighteen of them went uncounted for three days while every
                 // counter here was looking only at deaths.
                 ++e.otherFailures;
+                ++e.otherFailuresSinceOk;
             }
             else if (outcome == "ok")
             {
@@ -1189,6 +1219,13 @@ private:
                 if (sessionRunId.isNotEmpty()
                      && v.getProperty ("run_id", "").toString() == sessionRunId)
                     ++e.priorOkThisSession;
+
+                // A SUCCESS SETTLES THE NON-DEATH FAILURES BEFORE IT. Rows are
+                // read in ledger order, which is chronological, so "since"
+                // needs no timestamps -- only the reset in the right place.
+                // The cumulative count above is untouched: the history is
+                // still readable, it has simply stopped being evidence.
+                e.otherFailuresSinceOk = 0;
             }
         }
         return e;
@@ -1268,6 +1305,19 @@ private:
         bool quarantineNow = false;
         int  counted = 0, threshold = 0;
 
+        // A SUCCESSFUL LOAD SETTLES THE NON-DEATH FAILURES BEFORE IT, and it
+        // does so for FREE. If no failure has been recorded this launch the
+        // tally is not loaded, and this must not load it -- a full pass is
+        // 720 ms and 140,468 of the ledger's rows are `ok`. Nothing is lost by
+        // skipping it: the row is on disk, so the pass that a later failure
+        // triggers reads this success along with everything else.
+        if (r.pluginId.isNotEmpty() && outcome == toString (LoadOutcome::ok) && failureTallyLoaded)
+        {
+            auto it = failureTally.find (tallyKey (r.pluginId, r.stage));
+            if (it != failureTally.end())
+                it->second.otherFailuresSinceOk = 0;
+        }
+
         if (r.pluginId.isNotEmpty() && isCountedFailureOutcome (outcome))
         {
             ensureFailureTallyLocked();
@@ -1288,11 +1338,11 @@ private:
                 }
                 else ++t.corroboratedDeaths;
             }
-            else ++t.otherFailures;
+            else ++t.otherFailuresSinceOk;
 
             counted   = t.corroboratedDeaths
                       + (r.unattended ? t.unattendedDeaths : 0)
-                      + t.otherFailures;
+                      + t.otherFailuresSinceOk;
             threshold = quarantineThresholdFor (r.stage, outcome);
 
             const bool already = isQuarantinedLocked (r.pluginId);
@@ -1379,7 +1429,13 @@ private:
     struct FailureTally
     {
         int corroboratedDeaths = 0, unattributedDeaths = 0, unattendedDeaths = 0;
-        int otherFailures = 0;
+
+        /** SINCE THE LAST SUCCESS at this stage, not for all time. A success
+            settles the non-death failures before it; a death is never settled.
+            See RetryEvidence::otherFailuresSinceOk for the measurement that
+            forced the distinction (H-EQ (s): four failures, then six
+            successful loads, and a lifetime count would withdraw it). */
+        int otherFailuresSinceOk = 0;
     };
 
     static juce::String tallyKey (const juce::String& pluginId, const juce::String& stage)
@@ -1406,12 +1462,19 @@ private:
             auto v = juce::JSON::parse (line);
 
             const auto outcome = v.getProperty ("outcome", "").toString();
-            if (! isCountedFailureOutcome (outcome)) continue;
+            const bool isOk    = outcome == toString (LoadOutcome::ok);
+            if (! isOk && ! isCountedFailureOutcome (outcome)) continue;
 
             const auto pid = v.getProperty ("plugin_id", "").toString();
             if (pid.isEmpty()) continue;
 
             auto& t = failureTally[tallyKey (pid, v.getProperty ("stage", "load").toString())];
+
+            // A SUCCESS SETTLES THE NON-DEATH FAILURES BEFORE IT. Read in
+            // ledger order, which is chronological, so "since the last
+            // success" is a reset rather than a comparison.
+            if (isOk) { t.otherFailuresSinceOk = 0; continue; }
+
             if (isDeathOutcome (outcome))
             {
                 if (v.getProperty ("certainty", "").toString() == "unattributed")
@@ -1421,7 +1484,7 @@ private:
                 }
                 else ++t.corroboratedDeaths;
             }
-            else ++t.otherFailures;
+            else ++t.otherFailuresSinceOk;
         }
     }
 

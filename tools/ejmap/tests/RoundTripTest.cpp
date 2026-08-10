@@ -2356,6 +2356,121 @@ void testRecordedIsCounted()
     mixedRoot.deleteRecursively();
 
     //==========================================================================
+    // A SUCCESS SETTLES THE NON-DEATH FAILURES BEFORE IT.
+    //
+    // FOUND BY MEASURING, after the rest of this was already built and green,
+    // while working out what to do about the plugins the live ledger has
+    // already pushed past the threshold. H-EQ (s) has four load failures on
+    // 4 Aug -- the Waves -10875 stream, which clears in a fresh process -- and
+    // SIX successful loads on 9 Aug. A lifetime count reads 4 against a
+    // threshold of 3 and withdraws a plugin that demonstrably works.
+    //
+    // And it does not stop at one plugin. The ledger only grows and nothing
+    // ever reset the count, so every binary in the catalogue would eventually
+    // accumulate three failures and be withdrawn for having been used. With
+    // deaths alone (13 rows in 144,911) that never bit; counting ordinary
+    // failures is what turned it into a slow fault.
+    auto settleRoot = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                          .getChildFile ("ejmap-settle-test-" + juce::Uuid().toDashedString());
+    settleRoot.createDirectory();
+    {
+        const juce::String heq = "AudioUnit:Effects/aufx,HEQS,ksWV";      // H-EQ (s)
+
+        auto attempt = [&] (ejmap::LoadOutcome o)
+        {
+            ejmap::Ledger l (settleRoot);
+            l.beginLoad (heq, "H-EQ (s)", "Waves", "AudioUnit", "14.0",
+                         "load", "PluginHost::load");
+            ejmap::LedgerRecord r;
+            r.pluginId = heq; r.name = "H-EQ (s)"; r.format = "AudioUnit";
+            r.stage = "load"; r.outcome = o;
+            r.detail = o == ejmap::LoadOutcome::ok
+                         ? "loaded without opening the editor"
+                         : "An OS error occurred during initialisation of the plug-in (-10875)";
+            l.endLoad (r);
+        };
+        auto isQ = [&] { ejmap::Ledger l (settleRoot); return l.isQuarantined (heq); };
+
+        attempt (ejmap::LoadOutcome::timeout);
+        attempt (ejmap::LoadOutcome::initFailed);
+        check (! isQ(), "settles: two failures, not yet a verdict");
+
+        attempt (ejmap::LoadOutcome::ok);
+        check (! isQ(), "settles: and it loaded");
+
+        attempt (ejmap::LoadOutcome::initFailed);
+        attempt (ejmap::LoadOutcome::initFailed);
+        check (! isQ(),
+               "settles: FOUR LIFETIME FAILURES AND IT IS NOT WITHDRAWN -- a "
+               "successful load settled the two before it, so the count since is two");
+
+        {
+            ejmap::Ledger l (settleRoot);
+            auto ev = l.retryEvidenceFor (heq, "load");
+            check (ev.otherFailures == 4,
+                   "settles: the lifetime count is still on the record, unaltered");
+            check (ev.otherFailuresSinceOk == 2,
+                   "settles: and the DECISION reads the count since the success");
+        }
+
+        attempt (ejmap::LoadOutcome::initFailed);
+        check (isQ(),
+               "settles: three failures SINCE the success do withdraw it -- a success "
+               "settles the past, it does not buy immunity");
+    }
+    settleRoot.deleteRecursively();
+
+    //==========================================================================
+    // A DEATH IS NEVER SETTLED, and the asymmetry is deliberate.
+    //
+    // This is the signed rule from the retry work -- "three deaths still
+    // quarantine even with a success between them", because three separate
+    // launches dying is a fact about hosting this plugin whoever's fault it
+    // is. Asserted again HERE, beside the rule that would most plausibly be
+    // "tidied" into it: the obvious simplification is to let a success reset
+    // everything, and that would silently repeal a decision made on measured
+    // evidence with a nightly re-test built around it.
+    auto deathRoot = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                         .getChildFile ("ejmap-death-test-" + juce::Uuid().toDashedString());
+    deathRoot.createDirectory();
+    {
+        const juce::String au = "AudioUnit:Effects/aufx,0yow,SfTb";       // Drawmer 1973
+        ejmap::Ledger::TestCrashOverride corroborated { true, "plugin" };
+        ejmap::Ledger::testOnlyCrashOverride() = &corroborated;
+
+        auto die = [&]
+        {
+            ejmap::Ledger l (deathRoot);
+            l.recoverFromCrash();
+            l.beginLoad (au, "Drawmer 1973", "Softube", "AudioUnit", "2.5.62",
+                         "load", "createPluginInstance");
+        };
+        auto succeed = [&]
+        {
+            ejmap::Ledger l (deathRoot);
+            l.recoverFromCrash();
+            l.beginLoad (au, "Drawmer 1973", "Softube", "AudioUnit", "2.5.62",
+                         "load", "createPluginInstance");
+            ejmap::LedgerRecord r;
+            r.pluginId = au; r.name = "Drawmer 1973"; r.format = "AudioUnit";
+            r.stage = "load"; r.outcome = ejmap::LoadOutcome::ok;
+            l.endLoad (r);
+        };
+
+        die(); succeed(); die(); die();
+        {
+            ejmap::Ledger l (deathRoot);
+            l.recoverFromCrash();
+            check (l.isQuarantined (au),
+                   "settles: A SUCCESS DOES NOT SETTLE A DEATH -- three deaths with a "
+                   "success among them still withdraw the binary, which is the signed "
+                   "rule and must not be tidied away");
+        }
+        ejmap::Ledger::testOnlyCrashOverride() = nullptr;
+    }
+    deathRoot.deleteRecursively();
+
+    //==========================================================================
     // AND THE EXCLUSIONS, EACH TESTED BY ATTEMPTING THE THING IT REFUSES.
     //
     // These matter more than the positive cases. "Count every failure" is one

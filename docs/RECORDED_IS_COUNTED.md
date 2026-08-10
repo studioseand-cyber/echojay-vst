@@ -133,6 +133,35 @@ quarantined by a deadline that was too tight); everything else is
 `[attempt 1 of 1 at stage scan: quarantined]` and — new, and free — its
 quarantine entry carries full `RetryEvidence`, which it never did before.
 
+### A SUCCESS SETTLES A NON-DEATH FAILURE — found after the above was green
+
+Found while working out what to do about the plugins already past the
+threshold, which is the only reason it was found at all. **H-EQ (s) has four
+load failures on 4 Aug and SIX successful loads on 9 Aug.** The count was
+cumulative over the ledger's whole life and nothing ever reset it, so a working
+plugin sat at 4 against a threshold of 3 and would have been withdrawn on its
+next failure.
+
+It does not stop at one plugin. The ledger only grows. Every binary in the
+catalogue would eventually accumulate three failures and be withdrawn for
+having been used. With deaths alone (13 rows in 144,911) it never bit;
+**counting ordinary failures is what turned a dormant flaw into a slow fault**,
+and shipping the fix without this would have been a worse defect than the one
+it fixed.
+
+The rule now: **non-death failures count only since the last SUCCESS at that
+stage.** The process survived each one to report it, and a later successful
+load is direct evidence that the cause is not a permanent property of the
+binary. `otherFailures` keeps the lifetime figure for the record;
+`otherFailuresSinceOk` is what the decision reads.
+
+**A death is deliberately NOT settled.** That is the signed rule from the retry
+work — "three deaths still quarantine even with a success between them" — and
+the nightly non-deterministic re-test is the escape built for it. The obvious
+tidy-up is to let a success reset everything; that would silently repeal a
+decision made on measured evidence, so both directions are pinned by tests and
+both were broken on purpose to prove the gate holds them.
+
 ### NOT retroactive, and this is deliberate
 
 Quarantine happens on an append, not at startup. bloom sits at 19 counted
@@ -140,8 +169,29 @@ failures against a threshold of 3 and is **still not quarantined**; it is
 withdrawn the next time it fails. The alternative — sweeping the ledger at
 launch and withdrawing everything already over the bar — would apply a rule
 written today to 144,911 rows written under other rules, without a human
-seeing it happen. On Mac 1 this costs one more attempt each for five plugins.
-On a fresh Mac 2 ledger it costs nothing.
+seeing it happen. On a fresh Mac 2 ledger it costs nothing.
+
+### The Mac 1 plugins already past the bar, measured one at a time
+
+Five looked past the threshold. After the settle rule and after counting real
+events rather than rows, **two are**:
+
+| plugin | rows | real events | counted now | reading |
+|---|---|---|---|---|
+| bloom | 20 | 20 | **19** | 0 successes ever; 18 init_failed, one death that took the process down. Genuine. |
+| Weiss Deess | 9 | 9 | **8** | 0 successes ever; 5 hangs + 3 init_failed across 2/7/10 Aug, incl. a sweep death. Genuine. |
+| H-EQ (s) | 4 | 2 | **0** | six successful loads on 9 Aug settled it. Nothing to do. |
+| Bass Rider (m) | 4 | **2** | 4 | two events written twice, 1 ms apart. Waves -10875, clears on restart. |
+| SPL HawkEye | 3 | **2** | 3 | one duplicated pair. `no_params` — nothing on it to map. |
+
+**The duplicate inflation is real and is NOT corrected.** `endLoad` has
+de-duplicated same-plugin/same-outcome closes since 5 Aug, but the historic
+rows remain and the pairs are 1 ms apart, not identical — so there is no
+reliable discriminator recoverable from a row alone, and inventing a
+near-timestamp heuristic to rewrite how history is counted would be a worse
+trade than the two plugins it protects. Recorded here instead: **Bass Rider (m)
+and SPL HawkEye will be withdrawn one real failure earlier than the rule
+intends.** Release is one command and the reason string will name the count.
 
 ---
 
