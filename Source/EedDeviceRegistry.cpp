@@ -3,6 +3,7 @@
 */
 
 #include "EedDeviceRegistry.h"
+#include "EedDeviceProcessor.h"
 
 #include <algorithm>
 #include <iterator>     // std::size
@@ -16,7 +17,7 @@ namespace
 {
     const char* const kCategoryOrder[] = {
         "EQ", "Dynamics", "Utility", "Stereo", "Modulation", "Harmonic", "Time",
-        "Analysis"
+        "Pitch", "Analysis"
     };
 }
 
@@ -60,6 +61,32 @@ void BuiltinDeviceRegistry::add (BuiltinDevice d)
             jassertfalse;   // two devices claiming the same identity
             return;
         }
+    }
+
+    // EVERY device is constructed at its ADVERTISED defaults.
+    //
+    // The advertisement is what the model reasons against, so a device whose
+    // members initialise differently from its ParamSpec defaults makes the
+    // model's picture of a fresh insert wrong - and the error hides itself the
+    // moment any state is restored, because restore writes the schema defaults.
+    // Only the very first instance is ever wrong, which is the hardest kind of
+    // bug to notice.
+    //
+    // Measured before this wrapper: seven mismatches across Auto Pan, Chorus,
+    // Phaser and Tremolo, all sharing an LFO core that constructs at its own
+    // generic 1 Hz / 50% while each device advertises its own rate and depth.
+    //
+    // Fixed HERE rather than in four sets of member initialisers, because the
+    // funnel closes the class permanently: device 23 cannot reintroduce it.
+    if (d.create)
+    {
+        d.create = [inner = std::move (d.create)]() -> std::unique_ptr<juce::AudioProcessor>
+        {
+            auto p = inner();
+            if (auto* dev = dynamic_cast<EedDeviceProcessor*> (p.get()))
+                dev->resetParamsToDefaults();
+            return p;
+        };
     }
 
     devices_.push_back (std::move (d));

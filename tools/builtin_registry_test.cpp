@@ -55,10 +55,11 @@
 #include <memory>
 
 // EQ + Gain + Phase Invert (Wave 0) + the six Dynamics faces (Wave 1) + the
-// rest of the suite + the Key Detector (the first Analysis reader). A count
-// rather than a >= so that a device silently failing to register is a FAILURE
-// and not a test that quietly still passes.
-static constexpr int kExpectedDevices = 21;
+// rest of the suite + the Key Detector (the first Analysis reader) + Pitch
+// (device #22, at P0 detection-only). A count rather than a >= so that a
+// device silently failing to register is a FAILURE and not a test that
+// quietly still passes.
+static constexpr int kExpectedDevices = 22;
 
 static int g_fail = 0;
 
@@ -129,6 +130,10 @@ int main()
     // The first Analysis reader (KEY_DETECTOR_SPEC.md).
     check (registry.findByName ("EchoJay Key Detector")      != nullptr, "EchoJay Key Detector registered");
 
+    // Device #22 (PITCH_CORRECTION_SPEC.md), at build phase P0: a detection-
+    // only reader until the corrector phases land.
+    check (registry.findByName ("EchoJay Pitch")             != nullptr, "EchoJay Pitch registered");
+
     check (registry.all().size() == kExpectedDevices,
            "exactly " + juce::String (kExpectedDevices) + " devices registered (got "
            + juce::String ((int) registry.all().size()) + ")");
@@ -162,7 +167,7 @@ int main()
         check (names.indexOf ("EchoJay 4-Band Compressor") < names.indexOf ("EchoJay Compressor"),
                "within Dynamics, alphabetical: 4-Band before Compressor");
 
-        check (registry.categories().joinIntoString (",") == "EQ,Dynamics,Utility,Stereo,Modulation,Harmonic,Time,Analysis",
+        check (registry.categories().joinIntoString (",") == "EQ,Dynamics,Utility,Stereo,Modulation,Harmonic,Time,Pitch,Analysis",
                "categories in canonical order: " + registry.categories().joinIntoString (","));
 
         // Analysis is the last category, so the reader sorts after every writer.
@@ -4108,6 +4113,68 @@ int main()
             for (const auto& p : d.schema.params())
                 std::printf ("    %s\n", echojay::ParamSchema::describeLine (p).c_str());
         }
+    }
+
+    // -----------------------------------------------------------------
+    // ADVERTISED DEFAULTS vs CONSTRUCTED VALUES, every device.
+    //
+    // The advertisement is what the model reasons against. If a device
+    // CONSTRUCTS differently from what it ADVERTISES, the model's picture of a
+    // fresh insert is wrong - and the error hides itself the moment any state
+    // is restored, because restore writes the schema defaults. So only the very
+    // first instance is ever wrong, which is the hardest kind of bug to notice
+    // and the easiest kind to catch here.
+    std::printf ("\n== advertised defaults match constructed values (all devices) ==\n");
+    {
+        int totalMismatch = 0;
+        for (const auto& d : registry.all())
+        {
+            if (! d.create) continue;
+            auto proc = d.create();
+            if (proc == nullptr) continue;
+            auto* dev = dynamic_cast<EedDeviceProcessor*> (proc.get());
+            if (dev == nullptr) continue;
+
+            dev->setRateAndBufferSizeDetails (48000.0, 512);
+            dev->prepareToPlay (48000.0, 512);
+
+            juce::StringArray bad;
+            for (const auto& sp : dev->paramSchema().params())
+            {
+                const juce::String id (sp.id);
+                const double got = dev->getParamValue (id);
+                if (std::abs (got - sp.def) <= 1.0e-4) continue;
+
+                // A MOMENTARY action (analyse, reset, reset_stats) is a switch
+                // by schema shape only: it fires on 1 and always reads back its
+                // resting state. Deliberate, documented, not a mismatch.
+                if (sp.boolean && std::abs (sp.def) < 1.0e-9 && std::abs (got) < 1.0e-9)
+                    continue;
+
+                bad.add (id + " advertised " + juce::String (sp.def, 3)
+                            + ", constructed " + juce::String (got, 3));
+            }
+            if (! bad.isEmpty())
+            {
+                totalMismatch += bad.size();
+                std::printf ("  %-28s %s\n", d.name.toRawUTF8(),
+                             bad.joinIntoString ("; ").toRawUTF8());
+            }
+        }
+        // ZERO. The registry factory now constructs every device at its
+        // ADVERTISED defaults (BuiltinDeviceRegistry::add wraps every create
+        // with resetParamsToDefaults), so a mismatch here is a real regression
+        // from now on: either a getParamValue that does not round-trip what
+        // setParamValue was handed, or a schema default outside its own range.
+        //
+        // This replaced a pinned list of SEVEN known mismatches across Auto
+        // Pan, Chorus, Phaser and Tremolo - four devices sharing an LFO core
+        // that constructed at its own generic 1 Hz / 50% while each advertised
+        // its own rate and depth. Closing it at the funnel rather than in four
+        // sets of member initialisers is what stops device 23 reintroducing it.
+        check (totalMismatch == 0,
+               "every device constructs at its advertised defaults ("
+                 + juce::String (totalMismatch) + " mismatches)");
     }
 
     std::printf ("\n%s (%d failures)\n", g_fail ? "FAILURES" : "ALL PASS", g_fail);
