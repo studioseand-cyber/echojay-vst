@@ -55,10 +55,11 @@
 #include <memory>
 
 // EQ + Gain + Phase Invert (Wave 0) + the six Dynamics faces (Wave 1) + the
-// rest of the suite + the Key Detector (the first Analysis reader). A count
-// rather than a >= so that a device silently failing to register is a FAILURE
-// and not a test that quietly still passes.
-static constexpr int kExpectedDevices = 21;
+// rest of the suite + the Key Detector (the first Analysis reader) + Pitch
+// (device #22, at P0 detection-only). A count rather than a >= so that a
+// device silently failing to register is a FAILURE and not a test that
+// quietly still passes.
+static constexpr int kExpectedDevices = 22;
 
 static int g_fail = 0;
 
@@ -128,6 +129,10 @@ int main()
 
     // The first Analysis reader (KEY_DETECTOR_SPEC.md).
     check (registry.findByName ("EchoJay Key Detector")      != nullptr, "EchoJay Key Detector registered");
+
+    // Device #22 (PITCH_CORRECTION_SPEC.md), at build phase P0: a detection-
+    // only reader until the corrector phases land.
+    check (registry.findByName ("EchoJay Pitch")             != nullptr, "EchoJay Pitch registered");
 
     check (registry.all().size() == kExpectedDevices,
            "exactly " + juce::String (kExpectedDevices) + " devices registered (got "

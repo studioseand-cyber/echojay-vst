@@ -261,6 +261,11 @@ target_sources(EchoJay PRIVATE
     Source/EedPhaserEngine.h
     Source/EedPhaserProcessor.cpp
     Source/EedPhaserProcessor.h
+    Source/EedPitchEditor.cpp
+    Source/EedPitchEditor.h
+    Source/EedPitchEngine.h
+    Source/EedPitchProcessor.cpp
+    Source/EedPitchProcessor.h
     Source/EedReverbEditor.cpp
     Source/EedReverbEditor.h
     Source/EedReverbEngine.h
@@ -572,6 +577,11 @@ target_sources(EchoJayLink PRIVATE
     Source/EedPhaserEngine.h
     Source/EedPhaserProcessor.cpp
     Source/EedPhaserProcessor.h
+    Source/EedPitchEditor.cpp
+    Source/EedPitchEditor.h
+    Source/EedPitchEngine.h
+    Source/EedPitchProcessor.cpp
+    Source/EedPitchProcessor.h
     Source/EedReverbEditor.cpp
     Source/EedReverbEditor.h
     Source/EedReverbEngine.h
@@ -774,6 +784,8 @@ target_sources(EchoJayBuiltinRegistryTest PRIVATE
     Source/EedPhaseInvertProcessor.cpp
     Source/EedPhaserEditor.cpp
     Source/EedPhaserProcessor.cpp
+    Source/EedPitchEditor.cpp
+    Source/EedPitchProcessor.cpp
     Source/EedReverbEditor.cpp
     Source/EedReverbProcessor.cpp
     Source/EedSaturationEditor.cpp
