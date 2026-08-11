@@ -2841,6 +2841,12 @@ void EchoJayEditor::cancelBrowserPairing()
 void EchoJayEditor::handleLogout()
 {
     api.logout();
+    // Clear-site instrumentation (11 Aug 2026): names WHICH site emptied
+    // the wire history, so "cleared between turns" is falsifiable rather
+    // than argued from reading. timerCallback is the one that can fire
+    // BETWEEN sends without any user action.
+    EchoJay_NSLog(("EJStores: chatRoles.clear() in handleLogout, had "
+                   + juce::String(processorRef.chatRoles.size()) + " entries").toRawUTF8());
     chatMessages.clear(); processorRef.chatHistory.clear(); processorRef.chatRoles.clear(); processorRef.chatContents.clear();
     showLoginScreen();
 }
@@ -11147,6 +11153,12 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
         resized();
         chatMessages.clear();
         processorRef.chatHistory.clear();
+        // Clear-site instrumentation (11 Aug 2026): names WHICH site emptied
+        // the wire history, so "cleared between turns" is falsifiable rather
+        // than argued from reading. timerCallback is the one that can fire
+        // BETWEEN sends without any user action.
+        EchoJay_NSLog(("EJStores: chatRoles.clear() in loadChatFromWorkspace, had "
+                       + juce::String(processorRef.chatRoles.size()) + " entries").toRawUTF8());
         processorRef.chatRoles.clear();
         processorRef.chatContents.clear();
 
@@ -11442,6 +11454,12 @@ void EchoJayEditor::createNewChat()
     refreshChannelBannerCache();              // new chat = main: clears the banner
     chatMessages.clear();
     processorRef.chatHistory.clear();
+    // Clear-site instrumentation (11 Aug 2026): names WHICH site emptied
+    // the wire history, so "cleared between turns" is falsifiable rather
+    // than argued from reading. timerCallback is the one that can fire
+    // BETWEEN sends without any user action.
+    EchoJay_NSLog(("EJStores: chatRoles.clear() in createNewChat, had "
+                   + juce::String(processorRef.chatRoles.size()) + " entries").toRawUTF8());
     processorRef.chatRoles.clear();
     processorRef.chatContents.clear();
     sidebarDebugText = "";
@@ -11737,6 +11755,12 @@ void EchoJayEditor::showMoveToAlbumMenu(const juce::String& chatId)
                             safeThis->refreshChannelBannerCache();   // deactivation clears the banner
                             safeThis->chatMessages.clear();
                             safeThis->processorRef.chatHistory.clear();
+                            // Clear-site instrumentation (11 Aug 2026): names WHICH site emptied
+                            // the wire history, so "cleared between turns" is falsifiable rather
+                            // than argued from reading. timerCallback is the one that can fire
+                            // BETWEEN sends without any user action.
+                            EchoJay_NSLog(("EJStores: chatRoles.clear() in showMoveToAlbumMenu, had "
+                                           + juce::String(safeThis->processorRef.chatRoles.size()) + " entries").toRawUTF8());
                             safeThis->processorRef.chatRoles.clear();
                             safeThis->processorRef.chatContents.clear();
                         }
@@ -18208,6 +18232,12 @@ void EchoJayEditor::timerCallback()
                 processorRef.activeChatId = nc.id;
                 chatMessages.clear();
                 processorRef.chatHistory.clear();
+                // Clear-site instrumentation (11 Aug 2026): names WHICH site emptied
+                // the wire history, so "cleared between turns" is falsifiable rather
+                // than argued from reading. timerCallback is the one that can fire
+                // BETWEEN sends without any user action.
+                EchoJay_NSLog(("EJStores: chatRoles.clear() in timerCallback, had "
+                               + juce::String(processorRef.chatRoles.size()) + " entries").toRawUTF8());
                 processorRef.chatRoles.clear();
                 processorRef.chatContents.clear();
                 if (sidebarModel)
@@ -20262,6 +20292,12 @@ void EchoJayEditor::resetToMainContext()
     processorRef.chatTargetLinkName.clear();
     chatMessages.clear();
     processorRef.chatHistory.clear();
+    // Clear-site instrumentation (11 Aug 2026): names WHICH site emptied
+    // the wire history, so "cleared between turns" is falsifiable rather
+    // than argued from reading. timerCallback is the one that can fire
+    // BETWEEN sends without any user action.
+    EchoJay_NSLog(("EJStores: chatRoles.clear() in resetToMainContext, had "
+                   + juce::String(processorRef.chatRoles.size()) + " entries").toRawUTF8());
     processorRef.chatRoles.clear();
     processorRef.chatContents.clear();
     refreshChannelBannerCache();
@@ -20352,6 +20388,12 @@ void EchoJayEditor::openChannelByUid(const juce::String& uid)
     processorRef.chatTargetLinkName.clear();
     chatMessages.clear();
     processorRef.chatHistory.clear();
+    // Clear-site instrumentation (11 Aug 2026): names WHICH site emptied
+    // the wire history, so "cleared between turns" is falsifiable rather
+    // than argued from reading. timerCallback is the one that can fire
+    // BETWEEN sends without any user action.
+    EchoJay_NSLog(("EJStores: chatRoles.clear() in openChannelByUid, had "
+                   + juce::String(processorRef.chatRoles.size()) + " entries").toRawUTF8());
     processorRef.chatRoles.clear();
     processorRef.chatContents.clear();
     refreshChannelBannerCache();
@@ -21810,6 +21852,26 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     // The quota decision (recorded in EchoJayAPI.cpp): this call is NOT
     // pre-gated, and a short-circuited turn is not billed. The send gate
     // above still stands in front of the MAIN call.
+    // STORE INSTRUMENTATION (11 Aug 2026). history=0b(0 msgs) on every turn,
+    // and the four stores are the only way to tell WHICH one is empty:
+    //   chatMessages          the UI list, and what priorAssistantForClassify reads
+    //   chatRoles/chatContents what becomes messages[] on the wire -- the HISTORY
+    // They can disagree, and if they do the consequence is precise: the server
+    // derives priorAssistantRaw by scanning messages[], so an empty
+    // chatRoles means CHAIN_OFFER_RE matches an EMPTY STRING no matter how the
+    // offer was worded, while /api/classify still receives a prior reply
+    // because the client sends it explicitly from chatMessages.
+    {
+        const auto pa = priorAssistantForClassify();
+        EchoJay_NSLog(("EJStores: send  chatMessages=" + juce::String((int) chatMessages.size())
+                       + " chatRoles=" + juce::String(processorRef.chatRoles.size())
+                       + " chatContents=" + juce::String(processorRef.chatContents.size())
+                       + " chatHistory=" + juce::String((int) processorRef.chatHistory.size())
+                       + "  priorAssistantForClassify=" + juce::String(pa.length()) + "ch"
+                       + (pa.isEmpty() ? juce::String(" EMPTY <- the offer regex has no input")
+                                       : juce::String(" \"") + pa.substring(juce::jmax(0, pa.length() - 60)).replace("\n", " ") + "\"")).toRawUTF8());
+    }
+
     EchoJayAPI::ClassifyRequest creq;
     creq.message        = userContent;          // full, unstripped
     creq.channel        = channelName;
@@ -22146,6 +22208,11 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
         processorRef.chatHistory.push_back({"assistant", visibleReply});
         processorRef.chatRoles.add("assistant");
         processorRef.chatContents.add(visibleReply);
+        // The ONLY place an assistant turn joins the wire history. If this
+        // never logs, history can never be non-empty on the next send, and
+        // "cleared between turns" is ruled out without reading clear sites.
+        EchoJay_NSLog(("EJStores: handleChatReply SUCCESS branch, appended assistant; "
+                       "chatRoles now " + juce::String(processorRef.chatRoles.size())).toRawUTF8());
     } else {
         // DROP PATH 2 of 2: every failure, INCLUDING the
         // limit-reached copy, which arrives here as an ordinary
