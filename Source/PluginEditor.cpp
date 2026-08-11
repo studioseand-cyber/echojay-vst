@@ -22067,6 +22067,31 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
         }
     }
 
+    // WHAT EXTRACTION ACTUALLY PRODUCED, before anything downstream can rewrite
+    // it (11 Aug 2026). The server can report chainBlock=ok while the client
+    // ends up building from a synthesised, settings-free block, and nothing
+    // said which of the two the Build button would send. Counting the slots
+    // that carry settings_structured HERE separates "the model did not emit
+    // it" from "the client lost it" in one line, on the turn it happened.
+    if (success)
+    {
+        int slots = 0, withStructured = 0;
+        auto pv = juce::JSON::parse(chainJson);
+        if (auto* po = pv.getDynamicObject())
+            if (auto* carr = po->getProperty("chain").getArray())
+                for (auto& ev : *carr)
+                    if (auto* eo = ev.getDynamicObject())
+                    {
+                        ++slots;
+                        if (! eo->getProperty("settings_structured").isVoid()) ++withStructured;
+                    }
+        EchoJay_NSLog(("EJChain: extracted block -- " + juce::String(chainJson.length())
+                       + " ch, " + juce::String(slots) + " slot(s), "
+                       + juce::String(withStructured) + " with settings_structured"
+                       + (slots > 0 && withStructured == 0
+                            ? "  <- names only: nothing here can dial" : "")).toRawUTF8());
+    }
+
     // If extractChainBlock returned partial/truncated JSON, try bracket-depth salvage
     // before falling through to the name-scan fallback.
     if (!chainJson.isEmpty() && success)
@@ -22075,8 +22100,10 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
         if (!parsed.isObject())
         {
             juce::String salvaged = EchoJayAPI::salvagePartialChain(chainJson);
-            if (salvaged.isNotEmpty())
-                DBG("EchoJay chain salvage: recovered partial block");
+            EchoJay_NSLog(("EJChain: extract produced UNPARSEABLE json ("
+                           + juce::String(chainJson.length()) + " ch); salvage "
+                           + (salvaged.isNotEmpty() ? "recovered a partial block"
+                                                    : "recovered nothing -> name-scan next")).toRawUTF8());
             chainJson = salvaged; // empty if nothing recoverable → falls to name-scan
         }
     }
@@ -22132,7 +22159,19 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
                 arr += "{\"name\":\"" + mentions[i].name + "\",\"role\":\"from reply\"}";
             }
             chainJson = "{\"chain\":[" + arr + "],\"explanation\":\"Chain extracted from reply text\"}";
-            DBG("EchoJay chain fallback: synthesised block from " + juce::String(mentions.size()) + " mentions");
+            // LOUD, not DBG (11 Aug 2026). This path synthesises slots that
+            // carry ONLY name and role -- no settings, no settings_structured
+            // -- so a build from it dials NOTHING while looking like a normal
+            // chain. That is precisely the shape of a live report where every
+            // slot came back settings_structured=n requested=0, and DBG is
+            // compiled out of Release, so the one line that would have named
+            // the cause could never appear in the logs being read.
+            EchoJay_NSLog(("EJChain: NAME-SCAN FALLBACK fired -- synthesised "
+                           + juce::String((int) mentions.size())
+                           + " slots from prose. These carry NO settings and NO "
+                             "settings_structured, so a build from this block "
+                             "cannot dial. The real block was missing or "
+                             "unparseable.").toRawUTF8());
         }
     }
 
