@@ -1037,6 +1037,11 @@ void LinkProcessor::updateShmState()
     LinkShm::setSlotGain(regMap, regSlotIdx, gainDb_.load(std::memory_order_relaxed));
     LinkShm::setSlotPlacement(regMap, regSlotIdx,
                               (uint8_t) placement_.load(std::memory_order_relaxed));
+    // THIS binary reads settings_structured and applies it (see
+    // buildChainFromSpec), so it may say so. Published beside gain and
+    // placement because it is the same kind of claim: a fact about this
+    // writer, asserted by the writer, never inferred by the reader.
+    LinkShm::setSlotDialCapable(regMap, regSlotIdx, true);
 
     if (on)
     {
@@ -1575,13 +1580,14 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
 
         juce::String stateB64 = item.stateBase64;
         bool wantBypass = item.bypassed;
+        juce::var structuredForSlot = item.structured;
         // Format preference applies to NEW instantiation only: restores
         // (stateBase64 present) keep the format their state was saved with —
         // AU and VST3 state blobs are not interchangeable.
         if (stateB64.isEmpty())
             desc = self->chainHost.preferInlineHostableDesc(desc);
         self->chainHost.loadPluginAsync(desc,
-            [self, results, addDetail, slot, stateB64, wantBypass, stepPtr,
+            [self, results, addDetail, slot, stateB64, wantBypass, structuredForSlot, stepPtr,
              name = item.name, resolvedName = desc.name]
             (const juce::String& err) mutable
         {
@@ -1597,6 +1603,13 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
                 int hostIdx = self->chainHost.getNumSlots() - 1;
                 slot.hostIdx = hostIdx;
                 self->chainHost.setSlotSettings(hostIdx, slot.settings);
+                // Auto-apply, the same three lines the LOCAL build path has had
+                // since the dial work shipped (PluginEditor loadChainFromJson).
+                // setSlotStructuredSettings ignores a void/non-object, so a
+                // prose-only slot is unchanged.
+                if (structuredForSlot.getDynamicObject() != nullptr
+                    || structuredForSlot.isArray())
+                    self->chainHost.setSlotStructuredSettings(hostIdx, structuredForSlot);
                 self->chainHost.setSlotWet(hostIdx, slot.wet);
                 if (wantBypass)
                     self->chainHost.setSlotBypassed(hostIdx, true);
@@ -1770,6 +1783,7 @@ void LinkProcessor::restoreChainFromVar(const juce::var& v)
         ChainBuildItem item;
         item.name        = o->getProperty("name").toString();
         item.settings    = o->getProperty("settings").toString();
+        item.structured  = o->getProperty("settings_structured");
         item.bypassed    = (bool)o->getProperty("bypassed");
         item.wet         = o->hasProperty("wet")
                              ? juce::jlimit(0.0f, 1.0f, (float)(double)o->getProperty("wet"))

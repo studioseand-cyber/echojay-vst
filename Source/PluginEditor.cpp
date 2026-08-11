@@ -2289,6 +2289,16 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             // rack. The old target menu (which pre-ticked "Build here"
             // even inside channel chats) is deleted, not conditioned.
             const juce::String uid = effectiveChannelUid();
+            // THE ROUTER LINE (11 Aug 2026). Two build paths that looked
+            // identical in the log is what let a whole class of failure sit
+            // undiagnosed: every dial instrument lives in loadChainFromJson,
+            // so a channel build produced total silence and the silence was
+            // read as "the summary is broken" rather than "the summary is on
+            // the other path". Never infer which one ran again.
+            EchoJay_NSLog(("EJChain: build target uid=" + (uid.isEmpty() ? juce::String("(local rack)") : uid)
+                           + "  path=" + (uid.isEmpty() ? "loadChainFromJson" : "sendChainToLink")
+                           + "  dialCapable=" + (uid.isEmpty() ? "n/a (local)"
+                                                              : (linkUidDialCapable(uid) ? "y" : "n -> prose only"))).toRawUTF8());
             if (uid.isEmpty()) { loadChainFromJson(chainBuildJsons[(size_t)i]); return; }
             if (!linkUidLive(uid))
             {
@@ -20131,6 +20141,18 @@ bool EchoJayEditor::linkUidLive(const juce::String& uid) const
     if (uid.isEmpty()) return false;
     for (const auto& e : processorRef.getLinkDisplayList())
         if (e.info.uid == uid) return e.info.connected;
+    return false;
+}
+
+// Does the Link at this uid APPLY settings_structured? Capability, not
+// version: false for every Link that does not say otherwise, forever. An old
+// Link cannot announce anything, so the absence of a claim is the answer and
+// not a prompt to go looking for a version number.
+bool EchoJayEditor::linkUidDialCapable(const juce::String& uid) const
+{
+    if (uid.isEmpty()) return false;
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (e.info.uid == uid) return e.info.dialCapable;
     return false;
 }
 

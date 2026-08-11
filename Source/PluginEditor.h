@@ -1318,6 +1318,8 @@ private:
     juce::String effectiveChannelUid() const;    // active chat's, else pending
     juce::String findChannelChatId(const juce::String& linkUid) const; // "" = none
     bool linkUidLive(const juce::String& uid) const;
+    // Capability, not version. False for every Link that does not claim it.
+    bool linkUidDialCapable(const juce::String& uid) const;
     juce::String channelDisplayLabel(const juce::String& uid) const;
     juce::String findOrCreateChannelChatId(const juce::String& linkUid,
                                            const juce::String& linkNameNow);
