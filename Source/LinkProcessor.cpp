@@ -1902,10 +1902,34 @@ void LinkProcessor::pollChainCommand()
                 ChainBuildItem item;
                 item.name     = eo->getProperty("name").toString().trim();
                 item.settings = eo->getProperty("settings").toString();
+                // THE COMMAND PATH, and the one that matters (11 Aug 2026).
+                // There are TWO parses of a chain array in this file and the
+                // first fix went to the wrong one: restoreChainFromVar is
+                // SESSION RESTORE, while THIS is what reads
+                // chain-cmd-<uid>.json -- the file a Build button writes. The
+                // payload arrived correct end to end (1370 ch, 5 slots, 5 with
+                // settings_structured, confirmed on disk) and was dropped
+                // here, one function away from the fix.
+                item.structured = eo->getProperty("settings_structured");
                 if (item.name.isNotEmpty())
                     spec.push_back(std::move(item));
             }
         }
+    }
+
+    // RECEIVE SIDE, mirroring the sender's line so the hop is closed at both
+    // ends. The main plugin logs "sending to Link -- N slots, N with
+    // settings_structured"; this says what arrived. Two numbers that disagree
+    // localise the loss to the file or the parse without another round of
+    // reasoning about which of them it must be.
+    {
+        int withStructured = 0;
+        for (const auto& it : spec)
+            if (it.structured.getDynamicObject() != nullptr || it.structured.isArray())
+                ++withStructured;
+        EchoJay_NSLog(("EJChain(Link): parsed command -- " + juce::String((int) spec.size())
+                       + " slot(s), " + juce::String(withStructured)
+                       + " with settings_structured").toRawUTF8());
     }
 
     buildChainFromSpec(std::move(spec),
