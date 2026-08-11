@@ -416,6 +416,60 @@ public:
         that a quarantine applied AFTER the scan shows up on the restored list
         without a rescan.
     */
+    /** --selftest-mapindex : what one sweep step pays for its bookkeeping.
+
+        THE NUMBER, NOT THE FEELING. "It feels smoother" is not evidence, and
+        the two costs here are the ones a mapped plugin actually pays on the
+        message thread. Run it against a real ledger root; it loads no plugin
+        and writes nothing.
+    */
+    void selfTestMapIndexCost()
+    {
+        const int nMaps = ledger.getRoot().getChildFile ("maps")
+                              .findChildFiles (juce::File::findFiles, false, "*.json").size();
+        std::cout << "MAP-INDEX COST at " << nMaps << " map(s), "
+                  << (int) mapStateByIdentity.size() << " identity row(s)\n" << std::endl;
+
+        // What the map save USED to do: relearn every identity from disk.
+        auto t0 = juce::Time::getHighResolutionTicks();
+        refreshLocalMapIdentities();
+        const double fullMs = juce::Time::highResolutionTicksToSeconds
+                                (juce::Time::getHighResolutionTicks() - t0) * 1000.0;
+
+        // What it does now: add the one key the caller already holds.
+        const juce::String key ("AudioUnit|deadbeef|9.9.9");
+        t0 = juce::Time::getHighResolutionTicks();
+        localMapIdentities.insert (key);
+        const double insMs = juce::Time::highResolutionTicksToSeconds
+                               (juce::Time::getHighResolutionTicks() - t0) * 1000.0;
+        localMapIdentities.erase (key);
+
+        // The status line, before and after: two computeBacklog walks vs one.
+        t0 = juce::Time::getHighResolutionTicks();
+        { const auto a = computeBacklog(); const auto b = computeBacklog(); (void) a; (void) b; }
+        const double twoMs = juce::Time::highResolutionTicksToSeconds
+                               (juce::Time::getHighResolutionTicks() - t0) * 1000.0;
+        t0 = juce::Time::getHighResolutionTicks();
+        { const auto b = computeBacklog(); (void) b; }
+        const double oneMs = juce::Time::highResolutionTicksToSeconds
+                               (juce::Time::getHighResolutionTicks() - t0) * 1000.0;
+
+        auto line = [] (const char* what, double ms)
+        { std::cout << "  " << juce::String (what).paddedRight (' ', 46)
+                    << juce::String (ms, 2).paddedLeft (' ', 9) << " ms" << std::endl; };
+
+        line ("index rebuild  (was: every map save)", fullMs);
+        line ("index insert   (now: every map save)", insMs);
+        line ("backlog x2     (was: every label update)", twoMs);
+        line ("backlog x1     (now: every label update)", oneMs);
+        std::cout << "\n  PER MAPPED PLUGIN: was "
+                  << juce::String (fullMs + twoMs, 1) << " ms, now "
+                  << juce::String (insMs + oneMs, 1) << " ms  (saved "
+                  << juce::String (fullMs + twoMs - insMs - oneMs, 1) << " ms)" << std::endl;
+        std::cout.flush();
+        quitNow();
+    }
+
     void selfTestScanCache()
     {
         lastScan = PluginScanner::Result();
@@ -10537,10 +10591,16 @@ private:
         return b;
     }
 
-    /** One line, always visible, never a dot. */
-    juce::String backlogLine() const
+    /** One line, always visible, never a dot.
+
+        COMPUTED ONCE PER CALLER. The text and the colour are two questions
+        about ONE backlog, and asking twice walked maps/ and parsed queue.json
+        twice for a single label update -- correct both times, and half of it
+        wasted. Same class as the index rebuild above it, one order of
+        magnitude down.
+    */
+    static juce::String backlogLineFrom (const SendBacklog& b)
     {
-        const auto b = computeBacklog();
         juce::String t;
         t << b.mapped << " mapped, " << b.sent << " sent";
         if (b.rejected > 0)     t << ", " << b.rejected << " REJECTED";
@@ -10548,10 +10608,12 @@ private:
         return t;
     }
 
+    juce::String backlogLine() const { return backlogLineFrom (computeBacklog()); }
+
     void updateBacklogLabel()
     {
-        backlogLabel.setText (backlogLine(), juce::dontSendNotification);
-        const auto b = computeBacklog();
+        const auto b = computeBacklog();          // once, for both questions
+        backlogLabel.setText (backlogLineFrom (b), juce::dontSendNotification);
         backlogLabel.setColour (juce::Label::textColourId,
                                 (b.neverOffered > 0 || b.rejected > 0)
                                   ? juce::Colour (0xffe0c060)      // amber: work is waiting
@@ -11855,7 +11917,26 @@ private:
         // none of which is "the wizard wrote a map", which is exactly when
         // column 1 becomes true.
         updateBacklogLabel();
-        refreshLocalMapIdentities();
+
+        // ONE IDENTITY, NOT ONE THOUSAND ONE HUNDRED AND EIGHT.
+        //
+        // This used to call refreshLocalMapIdentities(), which opens and
+        // JSON-parses EVERY file in maps/ to relearn a key the caller already
+        // holds. Measured at this corpus: 1,108 files, 74.9 MB -- directory
+        // walk 2.7 ms, read 186.9 ms, parse 344.4 ms. On the message thread,
+        // once per mapped plugin, which at a ~2 s plugin cadence is the
+        // beachball-recover-beachball rhythm reported from the GUI. The CLI
+        // paid it too and simply had no window to freeze.
+        //
+        // Same shape as 490745f, which introduced this index precisely to stop
+        // haveLocalMapFor walking the directory: the index landed, the REFRESH
+        // kept the full walk, and nobody asked what it cost per plugin. The
+        // work was never wrong, only repeated -- see the 783-decline re-walk in
+        // 73ee64a for the third instance of the same class.
+        //
+        // The full rebuild still runs where it must: cache restore, post-scan,
+        // and the lazy fill in fetchMapStates. Those happen once.
+        localMapIdentities.insert (echojay::identityKeyForDescription (loadedDesc));
 
         // AND THE STATE THE WORKLIST READS, WRITTEN WHEN THE MAP IS.
         //
@@ -11993,7 +12074,11 @@ private:
             row.mapsForIdentity = juce::jmax (1, mapStateByIdentity.count (key) > 0
                                                    ? mapStateByIdentity[key].mapsForIdentity : 1);
             mapStateByIdentity[key] = row;
-            refreshLocalMapIdentities();
+            // The same key, already computed above. A full reparse of maps/ here
+            // cost ~344 ms per accepted map -- roughly 96 seconds across the
+            // 279-map send on Mac 2, spent relearning identities it had just
+            // written. See the note at the map-save site.
+            localMapIdentities.insert (key);
             refreshSentIdentities();
             saveMapStateCache();
             applyFilter();

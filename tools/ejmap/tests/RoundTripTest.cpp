@@ -3326,6 +3326,81 @@ void testUnsetEndpointNotDerived()
     }
 }
 
+/** CORRECT WORK, REPEATED. The aggregate is the cost.
+
+    Measured in the shipped binary (--selftest-mapindex) at 1,108 maps / 1,799
+    identity rows:
+
+      index rebuild  (was: every map save)   493.55 ms
+      index insert   (now)                     0.00 ms
+      backlog x2     (was: every label)       57.49 ms
+      backlog x1     (now)                    27.64 ms
+      -> per mapped plugin: 551.0 ms -> 27.6 ms
+
+    refreshLocalMapIdentities opens and JSON-parses every file in maps/ to
+    relearn a key the caller already holds. On the message thread, once per
+    mapped plugin, that is the beachball-recover rhythm reported from the GUI --
+    and the CLI paid it identically with no window to freeze, so it read as a
+    GUI-only problem and was not one.
+
+    updateBacklogLabel asked computeBacklog twice for one label: the text and
+    the colour are two questions about ONE backlog.
+
+    Third instance of this class: 490745f (a directory walk per identity),
+    73ee64a (783 declines re-derived per restart), this. Nothing is wrong with
+    the work; only with how often it runs.
+*/
+void testPerStepWorkIsNotRepeated()
+{
+    auto src = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/MainComponent.h")
+                   .loadFileAsString();
+
+    {
+        // The map-save site: insert the known key, do not relearn the corpus.
+        auto save = src.fromFirstOccurrenceOf ("// ONE IDENTITY, NOT ONE THOUSAND", false, false)
+                       .upToFirstOccurrenceOf ("applyFilter();", false, false);
+        check (save.contains ("localMapIdentities.insert "
+                              "(echojay::identityKeyForDescription (loadedDesc));"),
+               "PER-STEP: the map save adds the ONE identity it just wrote");
+        check (! save.contains ("refreshLocalMapIdentities();"),
+               "PER-STEP: ...and does not re-parse all 1,108 maps to learn it (493 ms)");
+    }
+    {
+        // The send site: same key, already in hand as `key`.
+        auto send = src.fromFirstOccurrenceOf ("mapStateByIdentity[key] = row;", false, false)
+                       .upToFirstOccurrenceOf ("logColumns (\"send accepted\"", false, false);
+        check (send.contains ("localMapIdentities.insert (key);"),
+               "PER-STEP: an accepted send adds its own key -- 279 sends paid ~96 s of "
+               "re-parsing before this");
+        check (! send.contains ("refreshLocalMapIdentities();"),
+               "PER-STEP: ...and no longer rebuilds the whole index per accepted map");
+    }
+    {
+        auto lab = src.fromFirstOccurrenceOf ("void updateBacklogLabel()", false, false)
+                      .upToFirstOccurrenceOf ("\n    void ", false, false);
+        check (lab.contains ("const auto b = computeBacklog();          // once, for both"),
+               "PER-STEP: the backlog is computed ONCE for the text and the colour");
+        check (! lab.contains ("backlogLabel.setText (backlogLine()"),
+               "PER-STEP: ...not once via backlogLine() and again for the colour");
+    }
+    {
+        // The measurement must stay runnable, or the next person re-argues this
+        // from feel. "It feels smoother" is what a reader reports; it is not evidence.
+        check (src.contains ("void selfTestMapIndexCost()"),
+               "PER-STEP: --selftest-mapindex keeps the before/after measurable in the "
+               "shipped binary");
+        check (src.contains ("index rebuild  (was: every map save)"),
+               "PER-STEP: ...and prints the rebuild cost it replaced, not just the new one");
+    }
+    {
+        // The full rebuild must survive where it is genuinely needed: a restored
+        // cache and a completed scan learn identities nobody has in hand.
+        check (src.contains ("refreshLocalMapIdentities();"),
+               "PER-STEP: the full rebuild still exists for cache restore, scan and the "
+               "lazy fill -- the fix is frequency, not deletion");
+    }
+}
+
 void testEmptyControlNameRejected()
 {
     using ejmap::Mouth;
@@ -3591,6 +3666,7 @@ int main (int, char**)
     testEmptyControlNameRejected();
     testLocalMapOutranksCachedNonConfirmation();
     testUnsetEndpointNotDerived();
+    testPerStepWorkIsNotRepeated();
     testUnfinishedAttemptRule();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;

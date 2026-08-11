@@ -51,7 +51,7 @@ public:
             a = a.unquoted();
         juce::File ledgerRoot;
         juce::String selfTestId;
-        bool cacheTest = false, progressTest = false;
+        bool cacheTest = false, progressTest = false, mapIndexCost = false;
         juce::String attributeReport, afterExit, captureTestId, maskTestId, stallId, promoSuppressId;
         juce::String sweepTestId, sweepTestParam, typedTestId, typedTestParam, assignTestId;
         juce::String bandTestId, bandTestMembers, bandTestImposter, catTestId, dupTestId;
@@ -85,6 +85,8 @@ public:
                 selfTestId = args[++i];
             else if (args[i] == "--selftest-cache")
                 cacheTest = true;
+            else if (args[i] == "--selftest-mapindex")
+                mapIndexCost = true;
             else if (args[i] == "--selftest-progress")
                 progressTest = true;
             else if (args[i] == "--selftest-capture" && i + 1 < args.size())
@@ -431,6 +433,8 @@ public:
         }
         else if (progressTest && mainWindow->getMain() != nullptr)
             mainWindow->getMain()->selfTestProgressAndRelease();
+        else if (mapIndexCost && mainWindow->getMain() != nullptr)
+            mainWindow->getMain()->selfTestMapIndexCost();
         else if (cacheTest && mainWindow->getMain() != nullptr)
             mainWindow->getMain()->selfTestScanCache();
         else if (selfTestId.isNotEmpty() && mainWindow->getMain() != nullptr)
