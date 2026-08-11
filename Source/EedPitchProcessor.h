@@ -128,8 +128,14 @@ public:
     echojay::PitchCorrect&       corrector() noexcept       { return correct_; }
     const echojay::PitchCorrect& corrector() const noexcept { return correct_; }
 
-    echojay::PsolaEngine&       shifter() noexcept       { return psola_; }
-    const echojay::PsolaEngine& shifter() const noexcept { return psola_; }
+    // ONE SHIFTER PER CHANNEL. A PsolaEngine holds a delay ring and a write
+    // cursor, so sharing one across channels interleaves L and R in the same
+    // ring and reconstructs each channel from the other's audio. Measured
+    // before this was split: with identical input on both channels the outputs
+    // differed by 0.76 peak, and passthrough was not even the delayed input.
+    static constexpr int kMaxChannels = 2;
+    echojay::PsolaEngine&       shifter (int ch = 0) noexcept       { return psola_[(size_t) juce::jlimit (0, kMaxChannels - 1, ch)]; }
+    const echojay::PsolaEngine& shifter (int ch = 0) const noexcept { return psola_[(size_t) juce::jlimit (0, kMaxChannels - 1, ch)]; }
 
 private:
     // Latency depends on voice_type (the lowest pitch the window must
@@ -138,8 +144,13 @@ private:
     // misaligns a vocal against the track is worse than a slower one.
     void refreshLatency();
 
+    // Apply a setting to every channel's shifter. They must stay identical in
+    // configuration - only their audio differs.
+    template <typename Fn> void forEachShifter (Fn&& fn)
+    { for (auto& p : psola_) fn (p); }
+
     echojay::PitchEngine engine_;
-    echojay::PsolaEngine  psola_;
+    std::array<echojay::PsolaEngine, kMaxChannels> psola_;
     echojay::PitchCorrect correct_;
     echojay::viz::PitchRibbonView ribbon_;
     // These three MUST match their schema defaults. They did not: correct
@@ -162,6 +173,16 @@ private:
 
     std::atomic<bool> keyAuto_ { true };
     std::atomic<bool> refAuto_ { true };
+    // Carried ACROSS blocks. The slice before the first hop of a block
+    // continues whatever the last hop of the previous block decided - resetting
+    // these per block would make the first slice of every block use a stale or
+    // zero target, which is a block-rate artefact of exactly the kind the
+    // slicing exists to remove.
+    float lastTarget_  = 0.0f;
+    float lastHopF0_   = 0.0f;
+    bool  lastHopVoiced_ = false;
+    bool  lastCorrecting_ = false;
+
     int   lastAutoRoot_  = -1;
     bool  lastAutoMinor_ = false;
     bool  lastAutoFellBack_ = false;

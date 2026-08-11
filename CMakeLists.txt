@@ -945,6 +945,31 @@ target_link_libraries(EchoJayPitchModeTest PRIVATE
     juce::juce_recommended_config_flags)
 set_target_properties(EchoJayPitchModeTest PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
+# ============================================================================
+# pitch_host_test — what a REAL host does: stereo, variable and small blocks.
+# Everything else feeds the engines fixed-size mono blocks; Logic does not.
+# ============================================================================
+juce_add_console_app(EchoJayPitchHostTest PRODUCT_NAME "EchoJayPitchHostTest")
+juce_generate_juce_header(EchoJayPitchHostTest)
+target_sources(EchoJayPitchHostTest PRIVATE
+    tools/pitch_host_test/main.cpp
+    Source/DeviceEditorBase.cpp
+    Source/EchoJayDeviceLookAndFeel.cpp
+    Source/EedDeviceProcessor.cpp
+    Source/EedDeviceRegistry.cpp
+    Source/EedPitchEditor.cpp
+    Source/EedPitchProcessor.cpp
+    Source/viz/DwellGlow.cpp
+    Source/viz/VizView.cpp)
+target_include_directories(EchoJayPitchHostTest PRIVATE Source)
+target_compile_features(EchoJayPitchHostTest PRIVATE cxx_std_17)
+target_compile_definitions(EchoJayPitchHostTest PRIVATE
+    JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0 JUCE_STANDALONE_APPLICATION=1)
+target_link_libraries(EchoJayPitchHostTest PRIVATE
+    juce::juce_audio_processors juce::juce_audio_utils
+    juce::juce_gui_extra juce::juce_recommended_config_flags)
+set_target_properties(EchoJayPitchHostTest PROPERTIES EXCLUDE_FROM_ALL TRUE)
+
 # ============ Streaming parser test runner (spec step 3) ============
 # Console app, juce_core only — runs the read-back suite that holds the
 # incremental block parser byte-identical to the whole-reply strip

@@ -911,3 +911,102 @@ The lesson is worth keeping: **a mode is only as honest as its table is
 complete.** Adding a character-bearing param without adding it to
 `correction_mode` leaves the modes quietly wrong, and nothing but a re-measure
 catches it — the suite was green throughout.
+
+---
+
+## 13. The Logic glitch: one shared shifter across both channels
+
+### 13.1 What it was
+
+`EedPitchProcessor` owned a single `PsolaEngine` and looped it over channels.
+A `PsolaEngine` holds one delay ring and one write cursor, so channel 0 wrote
+*n* samples and advanced the cursor, then channel 1 wrote its audio into the
+next *n* slots of the same ring and read from a position *n* further on. The
+ring ended up holding alternating blocks of L and R, and each channel was
+rebuilt from the other's audio.
+
+Measured, with **correction switched off entirely** — pure passthrough, where
+the shifter only delays:
+
+| | before | after |
+|---|---|---|
+| passthrough L vs R (identical input) | **0.762643** | **0.000000** |
+| passthrough L vs delayed dry | **0.762643** | **0.000000** |
+
+So the device garbled stereo *doing nothing at all*.
+
+**Why nothing caught it:** the engine suites are mono, `pitch_render` builds one
+engine per channel (the correct pattern, in the tool rather than the product),
+and pluginval checks for NaNs and crashes, not for the audio being right.
+
+### 13.2 Block-size coupling, found in the same pass
+
+The corrector ran once per **block** with `dt = block duration`, so the retune
+target was piecewise-constant per block — a step in the PSOLA ratio once per
+buffer, i.e. a zipper on any gliding note. The block is now sliced at the
+detector's own hop boundaries and the musical layer runs at that cadence.
+
+| | before | after |
+|---|---|---|
+| fixed-512 vs fixed-128 / 256 / 1024 / 2048 | (not tested) | **0.00000, exactly** |
+| fixed-512 vs random 16..2048 | 0.72593 | 0.19760 |
+
+Exactness at a **constant** buffer size is the invariant that matters and it is
+now bit-exact. A small residual remains under call-to-call size *variation*: no
+time shift, ~1.5% of samples differing. Bounded by the test so a regression
+still fails; documented rather than claimed fixed.
+
+### 13.3 CPU: the worst case was a dropout, not a warning
+
+`analyseHop` did its whole O(W × tauMax) difference function — about 576k
+multiply-adds at instrument/bass — in whichever block contained the hop. At a
+128-sample buffer the hop interval is ~128 input samples, so essentially every
+block carried the full cost with nothing amortised.
+
+Release build, 48 kHz, 128-sample buffer (2.667 ms period):
+
+| voice_type | mean before | worst before | mean after | worst after |
+|---|---|---|---|---|
+| soprano | 6.2% | 92.7% | 6.1% | **16.0%** |
+| alto_tenor | 7.9% | 90.8% | 7.7% | **9.6%** |
+| low_male | 4.2% | 34.2% | 4.2% | **6.5%** |
+| **instrument** | 20.1% | **132.3%** | 19.6% | **23.6%** |
+| bass | 20.1% | 82.5% | 19.6% | **23.7%** |
+
+The sweep now runs one contiguous slice per block, ahead of the audio. Two
+things had to be right: doing it **per sample** instead fixed the worst case but
+doubled the mean (a division each sample, and lost locality on the frame copy);
+and the frame snapshot must happen **at hop boundaries only** — letting the
+sweep capture "whenever it starts" made the captured frame depend on where block
+boundaries fell and broke block-size exactness outright (fixed-128 vs fixed-512
+差 0.80). Capturing at hops costs one hop of extra estimate lag (~2.7 ms), now
+folded into `pitchLagFor`.
+
+### 13.4 The suite-wide check, and two findings in other devices
+
+The invariant is not "channels must match" — Stereoizer, Stereo Width, Auto Pan,
+a ping-ponging Delay and Chorus spread all differ L/R on purpose. It is **"a
+device must not produce a channel difference that no parameter asked for"**. So
+every width, spread, pan, phase and image control is driven to neutral first,
+and a device that still differs must declare an exemption with its reason.
+
+19 of 22 pass at exactly 0.000000, including EchoJay Pitch. Three declare:
+
+- **EchoJay Reverb** — legitimately decorrelated; a mono-in/stereo-out tail is
+  the point of it.
+- **EchoJay Chorus** — **non-deterministic**: identical input with `spread 0`
+  (documented as "keeps both channels in step") gives 0.000002 on one run and
+  0.166664 on the next, same binary, same input. Run-to-run variation with
+  fixed input means **uninitialised state** — an LFO phase or a delay line not
+  cleared in `prepare`. Listed, not fixed: not this session's device.
+- **EchoJay Stereoizer** — ~0.0013 (−57 dBFS) with `width 100`, `haas_ms 0`,
+  `mono_maker 0`. Unexplained, and well above the noise floor the other 21 sit
+  at. Listed to be answered rather than tolerated.
+
+The floor is 1e-5 (−100 dBFS), below the smoothing and denormal residue two
+devices sit at (~−108 dB) and orders of magnitude below anything a control does.
+
+Also fixed while in there: `PsolaEngine::process` now returns early if the
+engine is unprepared (`mask_ == 0`), rather than indexing an empty ring. JUCE
+orders `prepareToPlay` first so it was latent — but latent is a property of
+today's callers.

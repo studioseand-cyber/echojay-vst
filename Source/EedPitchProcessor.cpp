@@ -236,17 +236,17 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
     }
     if (id == kTargetHz)
     {
-        psola_.setTargetHz ((float) value);
+        forEachShifter ([&] (auto& e) { e.setTargetHz ((float) value); });
         return true;
     }
     if (id == kFormantMode)
     {
-        psola_.setFormantMode ((int) std::lround (value));
+        forEachShifter ([&] (auto& e) { e.setFormantMode ((int) std::lround (value)); });
         return true;
     }
     if (id == kLowLatency)
     {
-        psola_.setLookaheadPeriods (value >= 0.5 ? kLookaheadTracking : kLookaheadMixing);
+        forEachShifter ([&] (auto& e) { e.setLookaheadPeriods (value >= 0.5 ? kLookaheadTracking : kLookaheadMixing); });
         latencyVoiceType_ = -1;          // force the host to be told
         refreshLatency();
         return true;
@@ -266,8 +266,8 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
     if (id == kVibRate)     { correct_.setVibRateHz ((float) value);      return true; }
     if (id == kVibShape)    { correct_.setVibShape ((int) std::lround (value)); return true; }
     if (id == kVibOnset)    { correct_.setVibOnsetMs ((float) value);     return true; }
-    if (id == kMix)         { psola_.setMixPercent ((float) value);  return true; }
-    if (id == kOutputDb)    { psola_.setOutputDb ((float) value);    return true; }
+    if (id == kMix)         { forEachShifter ([&] (auto& e) { e.setMixPercent ((float) value); });  return true; }
+    if (id == kOutputDb)    { forEachShifter ([&] (auto& e) { e.setOutputDb ((float) value); });    return true; }
     if (id == kCorrect)     { correctOn_.store (value >= 0.5); return true; }
     // These four are what a mode writes, so moving one by hand means the
     // display no longer honestly names the state.
@@ -303,9 +303,9 @@ double EedPitchProcessor::getParamValue (const juce::String& id) const
 {
     if (id == kVoiceType)  return (double) engine_.getVoiceType();
     if (id == kTracking)   return (double) engine_.getTracking();
-    if (id == kTargetHz)   return (double) psola_.getTargetHz();
-    if (id == kFormantMode) return (double) psola_.getFormantMode();
-    if (id == kLowLatency)  return psola_.getLookaheadPeriods() <= kLookaheadTracking + 0.01f
+    if (id == kTargetHz)   return (double) shifter().getTargetHz();
+    if (id == kFormantMode) return (double) shifter().getFormantMode();
+    if (id == kLowLatency)  return shifter().getLookaheadPeriods() <= kLookaheadTracking + 0.01f
                                  ? 1.0 : 0.0;
     if (id == kKeySource)   return keyAuto_.load() ? 0.0 : 1.0;
     if (id == kRefSource)   return refAuto_.load() ? 0.0 : 1.0;
@@ -315,8 +315,8 @@ double EedPitchProcessor::getParamValue (const juce::String& id) const
     if (id == kVibRate)     return (double) correct_.getVibRateHz();
     if (id == kVibShape)    return (double) correct_.getVibShape();
     if (id == kVibOnset)    return (double) correct_.getVibOnsetMs();
-    if (id == kMix)         return (double) psola_.getMixPercent();
-    if (id == kOutputDb)    return (double) psola_.getOutputDb();
+    if (id == kMix)         return (double) shifter().getMixPercent();
+    if (id == kOutputDb)    return (double) shifter().getOutputDb();
     if (id == kCorrect)     return correctOn_.load() ? 1.0 : 0.0;
     if (id == kRetuneMs)    return (double) correct_.getRetuneMs();
     if (id == kFlex)        return (double) correct_.getFlex();
@@ -368,7 +368,7 @@ juce::String EedPitchProcessor::applyMode (int mode)
 
     // Every mode preserves formants: the character is retune speed and how much
     // deviation survives, never whether it still sounds like the singer.
-    psola_.setFormantMode (echojay::PsolaEngine::kFormantPreserve);
+    forEachShifter ([&] (auto& e) { e.setFormantMode (echojay::PsolaEngine::kFormantPreserve); });
 
     const auto* spec = schema().find (kMode);
     juce::String name = spec != nullptr ? juce::String (spec->choiceLabel (m)) : juce::String (m);
@@ -602,14 +602,14 @@ void EedPitchProcessor::refreshLatency()
     if (vt == latencyVoiceType_) return;
     latencyVoiceType_ = vt;
 
-    psola_.setLowestF0 (PitchEngine::voiceRange (vt).fMinHz);
+    forEachShifter ([&] (auto& e) { e.setLowestF0 (PitchEngine::voiceRange (vt).fMinHz); });
 
     // Correctness, not latency: align the f0 to the audio it describes. Always
     // on - a stale estimate makes note-change detection fire late, which P2's
     // envelope would then act on from the wrong place.
-    psola_.setPitchLagSamples (engine_.pitchLagFor (vt));
+    forEachShifter ([&] (auto& e) { e.setPitchLagSamples (engine_.pitchLagFor (vt)); });
 
-    setLatencySamples (psola_.latencySamples());
+    setLatencySamples (shifter().latencySamples());
 }
 
 void EedPitchProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
@@ -623,8 +623,8 @@ void EedPitchProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     for (int t = 1; t < PitchEngine::kNumVoiceTypes; ++t)
         worst = juce::jmin (worst, PitchEngine::voiceRange (t).fMinHz);
 
-    psola_.prepare (sampleRate, samplesPerBlock,
-                    PitchEngine::voiceRange (engine_.getVoiceType()).fMinHz, worst);
+    forEachShifter ([&] (auto& e) { e.prepare (sampleRate, samplesPerBlock,
+                    PitchEngine::voiceRange (engine_.getVoiceType()).fMinHz, worst); });
 
     // The corrector runs once per DETECTOR HOP, so it needs that cadence to
     // convert its millisecond time constants.
@@ -652,12 +652,10 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     // you hear without changing WHEN you hear it.
     if (isBypassed())
     {
-        const float held = psola_.getTargetHz();
-        psola_.setTargetHz (0.0f);
+        // Target 0 passed per call, so nothing has to be saved and restored.
         for (int ch = 0; ch < numCh; ++ch)
-            psola_.process (buffer.getReadPointer (ch), buffer.getWritePointer (ch),
-                            buffer.getNumSamples(), 0.0f, false);
-        psola_.setTargetHz (held);
+            shifter (ch).process (buffer.getReadPointer (ch), buffer.getWritePointer (ch),
+                                  buffer.getNumSamples(), 0.0f, false, 0.0f);
         return;
     }
 
@@ -674,25 +672,79 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     const echojay::PitchReading r = engine_.getReading();
 
-    // P2: the musical layer decides WHERE the note should be. It runs on the
-    // detector's reading and produces a target the shifter aims at, so a
-    // detection error and a correction error stay separable.
-    float target = 0.0f;
-    bool  correcting = false;
-    if (correctOn_.load())
+    // THE BLOCK IS SLICED AT HOP BOUNDARIES.
+    //
+    // The musical layer has millisecond time constants and produces the target
+    // the shifter aims at. Running it once per BLOCK tied both to the host's
+    // buffer size: measured, fixed-512 against random 16..2048 blocks differed
+    // by 0.73 peak, and the target stepped once per block - a zipper on any
+    // gliding note. Slicing at the detector's own hops runs it at the cadence
+    // it was designed for, and makes the output independent of buffer size.
+    echojay::PitchEngine::HopEvent hops[64];
+    const int numHops = engine_.drainHops (hops, 64);
+    const float hopMs = engine_.hopMs();
+
+    const uint64_t blockStart = engine_.inputPosition() - (uint64_t) n;
+
+    float target     = lastTarget_;
+    float sliceF0    = lastHopF0_;
+    bool  sliceVoiced = lastHopVoiced_;
+    bool  correcting = lastCorrecting_;
+
+    int cursor = 0;
+    for (int h = 0; h <= numHops; ++h)
     {
-        correcting = true;
-        // This runs once per BLOCK, not once per detector hop, so it must be
-        // told how much time the call represents.
-        // sampleRate_, not getSampleRate(): the latter is set by the HOST via
-        // setRateAndBufferSizeDetails, so it can be 0 in any path that calls
-        // prepareToPlay directly - and 1000*n/0 is infinity, which silently
-        // completes every time constant in the corrector on its first block.
-        target = correct_.process (r.f0Hz, r.voiced,
-                                   1000.0f * (float) n / (float) sampleRate_);
-        psola_.setTargetHz (target);
-        if (target <= 0.0f) correcting = false;
+        // The slice runs to this hop, or to the end of the block after the last.
+        int sliceEnd = n;
+        if (h < numHops)
+        {
+            const int64_t rel = (int64_t) hops[h].inputPos - (int64_t) blockStart;
+            sliceEnd = (int) juce::jlimit ((int64_t) cursor, (int64_t) n, rel);
+        }
+
+        if (sliceEnd > cursor)
+        {
+            const int len = sliceEnd - cursor;
+            for (int ch = 0; ch < numCh; ++ch)
+                shifter (ch).process (buffer.getReadPointer (ch) + cursor,
+                                      buffer.getWritePointer (ch) + cursor, len,
+                                      sliceF0, sliceVoiced, target);
+            cursor = sliceEnd;
+        }
+
+        // At the hop itself, the musical layer decides the next target.
+        if (h < numHops)
+        {
+            // The f0 the SHIFTER uses is the hop's own, not the block's last
+            // reading - otherwise every slice in a block shares one value and
+            // the result depends on where the block boundaries fell.
+            sliceF0     = hops[h].f0Hz;
+            sliceVoiced = hops[h].voiced;
+
+            if (correctOn_.load())
+            {
+                correcting = true;
+                target = correct_.process (hops[h].f0Hz, hops[h].voiced, hopMs);
+                if (target <= 0.0f) correcting = false;
+            }
+            else
+            {
+                // Not correcting: the fixed-target diagnostic still applies.
+                target = shifter().getTargetHz();
+                correcting = false;
+            }
+        }
     }
+
+    // A block with no hop in it still has to be emitted.
+    if (cursor < n)
+        for (int ch = 0; ch < numCh; ++ch)
+            shifter (ch).process (buffer.getReadPointer (ch) + cursor,
+                                  buffer.getWritePointer (ch) + cursor, n - cursor,
+                                  sliceF0, sliceVoiced, target);
+
+    lastTarget_ = target; lastHopF0_ = sliceF0;
+    lastHopVoiced_ = sliceVoiced; lastCorrecting_ = correcting;
 
     // Feed the ribbon here rather than from the editor's timer, so the trace
     // is the audio thread's ACTUAL decisions rather than a resampled guess at
@@ -702,12 +754,6 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
                   target > 0.0f ? echojay::PitchEngine::hzToMidi (target) : 0.0f,
                   correcting && r.voiced);
 
-    // The shifter delays unconditionally, including at target 0 and when
-    // bypassed, so the reported latency is the SAME in every state and
-    // bypassing never shifts the track's timing (spec §8).
-    for (int ch = 0; ch < numCh; ++ch)
-        psola_.process (buffer.getReadPointer (ch), buffer.getWritePointer (ch), n,
-                        r.f0Hz, r.voiced);
 }
 
 juce::AudioProcessorEditor* EedPitchProcessor::createEditor()
