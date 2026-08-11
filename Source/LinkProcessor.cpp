@@ -1529,6 +1529,11 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
             self->chainBuilding = false;
             self->updateChainLatency();
             self->notifyChainModel();
+            // The Link reports its own dial outcome now. Before this, a
+            // channel build produced no dial line anywhere: the summary was
+            // wired into the main plugin's editor, which this binary does not
+            // compile, so a whole build path was unobservable by construction.
+            self->chainHost.reportDialWhenSettled("EJDialSummary(Link): channel build");
             if (onDone) onDone(*results, juce::var(*detail));
             return;
         }

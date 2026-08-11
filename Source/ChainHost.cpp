@@ -2005,6 +2005,25 @@ juce::String ChainHost::applyStructuredToBuiltinSlot(int slotIndex, const juce::
 // Prints for EVERY slot, including the ones that worked, because a summary
 // that only lists failures cannot distinguish "all fine" from "never ran" --
 // the silent-success trap the register already carries.
+// Poll until no slot is still pending (a map fetch in flight), then report
+// once. Bounded, and the terminal line says WHICH it was, so an exhausted
+// budget never reads as a settled build.
+void ChainHost::reportDialWhenSettled(const juce::String& reason, int attemptsLeft)
+{
+    if (!dialStateSettled() && attemptsLeft > 0)
+    {
+        auto life = life_;   // weak guard: the host may go away mid-poll
+        juce::Timer::callAfterDelay(250, [this, life, reason, attemptsLeft]
+        {
+            if (life.use_count() <= 1) return;   // owner destroyed
+            reportDialWhenSettled(reason, attemptsLeft - 1);
+        });
+        return;
+    }
+    logDialSummary(reason + (dialStateSettled() ? ", dial settled"
+                                                : ", dial NOT settled (retry budget exhausted)"));
+}
+
 void ChainHost::logDialSummary(const juce::String& reason) const
 {
     const auto statusName = [] (DialStatus st) -> const char*

@@ -113,6 +113,12 @@ public:
     // is the terminal state, when every slot has had its chance. Call it when
     // a chain build finishes loading.
     void logDialSummary (const juce::String& reason) const;
+    // Settle, then report -- and it lives HERE, not in an editor, because
+    // ChainHost.cpp is compiled into BOTH binaries while PluginEditor.cpp is
+    // not. Every dial instrument used to hang off the main plugin's editor, so
+    // a Link-side build dialled (or failed to) in total silence. A report that
+    // exists on one of two paths is not a report.
+    void reportDialWhenSettled (const juce::String& reason, int attemptsLeft = 8);
     // True when no slot is DialStatus::pending (bubble may compose).
     bool dialStateSettled() const;
     // Recommendable display names whose local map passes the dial-signals
