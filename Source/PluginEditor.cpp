@@ -16069,6 +16069,21 @@ void EchoJayEditor::paint(juce::Graphics& g)
                 if (hasChainBtn && activeChainBuildBtns < kMaxChainBuildBtns)
                 {
                     int btnIdx = activeChainBuildBtns++;
+                    // BUTTON -> CARD MAPPING (11 Aug 2026). These indices are
+                    // assigned during PAINT, in visible order, and rebuilt on
+                    // every repaint -- so which chain a given button sends is
+                    // not fixed by the card, it is fixed by paint order at the
+                    // moment of the click. If a 5-slot card is on screen and
+                    // the button sends a 3-slot chain, this is where to look.
+                    // Logged only when the payload for an index CHANGES, so a
+                    // repaint storm does not flood the log.
+                    if (chainBuildJsons[(size_t)btnIdx] != msg.chainData)
+                    {
+                        EchoJay_NSLog(("EJChain: build button " + juce::String(btnIdx)
+                                       + " now points at a " + juce::String(msg.chainData.length())
+                                       + " ch block (was " + juce::String(chainBuildJsons[(size_t)btnIdx].length())
+                                       + " ch)").toRawUTF8());
+                    }
                     chainBuildJsons[(size_t)btnIdx] = msg.chainData;
                     int btnX = bubbleX + 10;
                     int btnY = drawY + bubbleH + 4 + chainLinesH;
@@ -23178,6 +23193,28 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
     auto* o = v.getDynamicObject();
     if (o == nullptr || !o->hasProperty("chain")) return;
 
+    // WHAT IS ACTUALLY BEING SENT (11 Aug 2026). Extraction logged 5 slots all
+    // carrying settings_structured; the Link received 3 carrying none. Since
+    // the array is passed through verbatim below, a changed COUNT means the
+    // json handed to this function is not the block that was extracted -- so
+    // the string arriving here is the thing to measure, not the code path.
+    // Logged BEFORE the write, with the same shape as the extraction line so
+    // the two can be diffed directly on one turn.
+    {
+        int slots = 0, withStructured = 0;
+        if (auto* carr = o->getProperty("chain").getArray())
+            for (auto& ev : *carr)
+                if (auto* eo = ev.getDynamicObject())
+                {
+                    ++slots;
+                    if (! eo->getProperty("settings_structured").isVoid()) ++withStructured;
+                }
+        EchoJay_NSLog(("EJChain: sending to Link -- " + juce::String(chainJson.length())
+                       + " ch, " + juce::String(slots) + " slot(s), "
+                       + juce::String(withStructured) + " with settings_structured"
+                       + "  uid=" + id).toRawUTF8());
+    }
+
     // Chain entries pass through as-is (name/role/settings) — the Link
     // resolves names and applies plugin_disabled.json on its side.
     int seq = (int)(juce::Time::currentTimeMillis() / 1000);
@@ -23187,9 +23224,14 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
     cmd->setProperty("chain",      o->getProperty("chain"));
     cmd->setProperty("sourceNote", "EchoJay V2 chat build");
 
+    const juce::String payload = juce::JSON::toString(juce::var(cmd), true);
     juce::File(dir + "chain-ack-" + id + ".json").deleteFile();   // stale ack
-    juce::File(dir + "chain-cmd-" + id + ".json")
-        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+    juce::File(dir + "chain-cmd-" + id + ".json").replaceWithText(payload);
+    // A COPY THAT SURVIVES. The Link consumes and deletes chain-cmd, so after a
+    // build there is nothing left to inspect and the payload can only be
+    // reasoned about. This one is overwritten each send and is never read by
+    // anything, so it costs one file and settles the question directly.
+    juce::File(dir + "chain-cmd-last-sent.json").replaceWithText(payload);
 
     pollLinkChainAck(id, seq, 20, chainJson);   // 20 x 250ms = ~5s timeout; id = uid
 }
