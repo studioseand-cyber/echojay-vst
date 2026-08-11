@@ -3176,6 +3176,88 @@ void testSweepDeadline()
     plugin re-sweeps every launch. Found live on bx_XL V2, whose parameters
     58-60+ have empty names.
 */
+/** A CACHED "unmapped" IS A STATEMENT ABOUT THE SERVER AT FETCH TIME; a map on
+    this disk is a fact about now.
+
+    Measured on Mac 2, 10-11 Aug 2026. The map-state fetch ran at 15:49 with
+    maps/ empty, so 1,458 identities were cached `unmapped` -- 234 of them UAD
+    11.8.0, which the server had never held (this machine's corpus was 11.2.0).
+    beginSweep does not refetch while mapStateFetchedAt is set, so every launch
+    replayed that answer. mapStateFor returned the cached row BEFORE consulting
+    localMapIdentities, and `unmapped` is offerable. UAD Korg SDD-3000 was swept
+    twelve times under one fingerprint, seven of them inside 90 seconds; the map
+    was written correctly every time and the index that knew it was never asked.
+
+    Same family as testEmptyControlNameRejected above -- that one un-registered
+    a plugin from localMapIdentities, this one never consults it -- and the
+    symptom is identical, which is why it took two days to tell apart.
+
+    Source checks, for the reason testSweepDeadline gives: this file cannot
+    instantiate MainComponent, and the ordering is a handful of lines inside one
+    function with no seam to assert on from here.
+*/
+void testLocalMapOutranksCachedNonConfirmation()
+{
+    auto src = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/MainComponent.h")
+                   .loadFileAsString();
+
+    {
+        auto body = src.fromFirstOccurrenceOf ("MapStateRow mapStateFor (", false, false)
+                       .upToFirstOccurrenceOf ("\n    /** The detail line.", false, false);
+
+        check (body.contains ("const bool haveLocal = localMapIdentities.count (key) > 0;"),
+               "PRECEDENCE: mapStateFor reads the local index BEFORE it decides what the "
+               "cached row is worth");
+        check (body.contains ("MapState::unmapped")
+                 && body.contains ("MapState::unknown")
+                 && body.contains ("cachedSaysNothing"),
+               "PRECEDENCE: a cached unmapped/unknown is named as a NON-CONFIRMATION "
+               "rather than treated as an answer");
+        check (body.contains ("if (! (haveLocal && cachedSaysNothing))"),
+               "PRECEDENCE: the cached row is returned only when it is NOT contradicted "
+               "by a map on this disk -- the unconditional return is the defect");
+        // The positive server answers must still win, or a local write would
+        // quietly downgrade evidence the server actually gave us.
+        check (! body.contains ("it->second.state == MapState::submittedByYou"),
+               "PRECEDENCE: submittedByYou/submittedByOther are NOT in the yielding set");
+    }
+
+    {
+        auto body = src.fromFirstOccurrenceOf ("MAP SAVED (local only", false, false);
+        (void) body;
+        // The write sits just above the MAP SAVED banner, so anchor on the
+        // save site itself rather than on the banner that follows it.
+        auto save = src.fromFirstOccurrenceOf ("// AND THE STATE THE WORKLIST READS", false, false)
+                       .upToFirstOccurrenceOf ("applyFilter();", false, false);
+        check (save.contains ("srow.state        = MapState::localOnly;"),
+               "MAP SAVE: writing a map writes the state the worklist reads -- the send "
+               "path did this from its 200 and the save path did not, and --send-pending "
+               "never writes map state at all");
+        check (save.contains ("srow.fromLocalMap = true;"),
+               "MAP SAVE: recorded as the THIRD provenance, not as a server answer");
+        check (save.contains ("!= MapState::submittedByYou")
+                 && save.contains ("!= MapState::submittedByOther"),
+               "MAP SAVE: a server confirmation is not downgraded by a local write");
+        check (save.contains ("saveMapStateCache();"),
+               "MAP SAVE: and it is persisted, or the next launch replays the stale row");
+    }
+
+    {
+        // The state 279 maps were in for two days. A status line that cannot
+        // say it is how the operator ended up unsure whether the work existed.
+        check (src.contains ("bool fromLocalMap = false;"),
+               "PROVENANCE: 'mapped here, not yet sent' is a field, distinct from "
+               "fromServer and fromLocalSubmit");
+        check (src.contains ("e->setProperty (\"from_local_map\", kv.second.fromLocalMap);"),
+               "PROVENANCE: persisted, or the distinction dies at the next launch");
+        check (src.contains ("kv.value.getProperty (\"from_local_map\", false)"),
+               "PROVENANCE: and restored");
+        check (src.contains ("mapped here and NOT SENT"),
+               "PROVENANCE: the status line COUNTS it and names it -- the line could "
+               "previously only report what the server had not confirmed");
+    }
+}
+
 void testEmptyControlNameRejected()
 {
     using ejmap::Mouth;
@@ -3439,6 +3521,7 @@ int main (int, char**)
     testStaleControlsRefused();
     testSweepDeadline();
     testEmptyControlNameRejected();
+    testLocalMapOutranksCachedNonConfirmation();
     testUnfinishedAttemptRule();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;

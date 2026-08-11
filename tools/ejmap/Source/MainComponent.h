@@ -11833,6 +11833,34 @@ private:
         // column 1 becomes true.
         updateBacklogLabel();
         refreshLocalMapIdentities();
+
+        // AND THE STATE THE WORKLIST READS, WRITTEN WHEN THE MAP IS.
+        //
+        // The send path already does this from its 200 (sendResolvedArtefact).
+        // The map save did not, and the two events are not the same one: a map
+        // is written minutes or days before it is sent, and --send-pending
+        // never writes map state at all. So a mapped-but-unsent plugin kept a
+        // cached row saying `unmapped` -- offerable -- with nothing to rewrite
+        // it. mapStateFor now refuses to let that cached row win, and this
+        // makes the row correct in the first place rather than corrected on
+        // every read.
+        {
+            const auto stateKey = echojay::identityKeyForDescription (loadedDesc);
+            auto& srow = mapStateByIdentity[stateKey];
+            // A SERVER CONFIRMATION IS NOT DOWNGRADED BY A LOCAL WRITE. If the
+            // server already holds this build, writing the file again does not
+            // make that less true.
+            if (srow.state != MapState::submittedByYou
+                 && srow.state != MapState::submittedByOther)
+            {
+                srow.state        = MapState::localOnly;
+                srow.fromServer   = false;
+                srow.fromLocalMap = true;
+                srow.at           = juce::Time::getCurrentTime().toISO8601 (true);
+            }
+            saveMapStateCache();
+        }
+
         applyFilter();
         logColumns ("map saved", echojay::identityKeyForDescription (loadedDesc));
 
@@ -13046,6 +13074,19 @@ private:
             server was never asked again. */
         bool fromServer = false;
         bool fromLocalSubmit = false;
+
+        /** THE THIRD PROVENANCE: mapped on this machine, NOT yet sent.
+
+            It was missing, and its absence was not cosmetic. 279 maps sat in
+            exactly this state on Mac 2 for two days while every surface could
+            only say "the server has not confirmed it" -- so the operator could
+            not tell whether the work existed. A status line that cannot
+            express a state the corpus is actually in is how you end up
+            re-doing work you already hold.
+
+            Distinct from fromLocalSubmit, which means a 200 came back. This
+            one means the file is on disk and nobody has been told. */
+        bool fromLocalMap = false;
     };
 
     /** Identities with a map on THIS machine. Cached because mapStateFor runs
@@ -13773,17 +13814,52 @@ private:
     MapStateRow mapStateFor (const ScannedPlugin& sp) const
     {
         const auto key = echojay::identityKeyForDescription (sp.desc);
+        const bool haveLocal = localMapIdentities.count (key) > 0;
+
         auto it = mapStateByIdentity.find (key);
-        if (it != mapStateByIdentity.end()) return it->second;
+        if (it != mapStateByIdentity.end())
+        {
+            // A CACHED NON-CONFIRMATION IS A STATEMENT ABOUT THE SERVER AT
+            // FETCH TIME. A map on this disk is a fact about now, and now wins.
+            //
+            // This lookup used to return unconditionally, and the local check
+            // below was therefore unreachable for any identity the fetch had
+            // ever covered. Measured on Mac 2, 10-11 Aug 2026: the fetch ran at
+            // 15:49 with maps/ empty, so 1,458 identities were cached
+            // `unmapped` -- 234 of them UAD 11.8.0. beginSweep does not refetch
+            // while mapStateFetchedAt is set, so every launch replayed that
+            // answer, mapStateFor returned it before consulting the local
+            // index, and `unmapped` is offerable. One plugin was re-swept
+            // twelve times, seven of them inside 90 seconds. The map was
+            // written correctly every time and the index that knew it was
+            // never asked.
+            //
+            // ONLY NON-CONFIRMATIONS YIELD. submittedByYou/submittedByOther are
+            // positive server evidence and a local write does not weaken them;
+            // differentBuild is decided on the loaded-plugin path where the fp
+            // is known, and is not second-guessed from an index.
+            const bool cachedSaysNothing = it->second.state == MapState::unmapped
+                                        || it->second.state == MapState::unknown;
+            if (! (haveLocal && cachedSaysNothing))
+                return it->second;
+
+            MapStateRow r = it->second;
+            r.state           = MapState::localOnly;
+            r.fromServer      = false;   // this is no longer the server's answer
+            r.fromLocalMap    = true;
+            return r;
+        }
+
         MapStateRow r;
         // A LOCAL MAP IS A FACT WE HOLD, and it outranks not knowing. A scan
         // that reports only what the SERVER has tells the mapper nothing about
         // what they have already done, and working through 1,376 rows that is
         // half the question. Checked before the unknown/unmapped fork, so a
         // mapped-but-unsubmitted plugin reads as localOnly even offline.
-        if (localMapIdentities.count (key) > 0)
+        if (haveLocal)
         {
             r.state = MapState::localOnly;
+            r.fromLocalMap = true;
             return r;
         }
         // No server answer and no local map: an unqueried row is UNKNOWN,
@@ -13852,6 +13928,7 @@ private:
             // marked here would come back looking like a server answer.
             e->setProperty ("from_server", kv.second.fromServer);
             e->setProperty ("from_local_submit", kv.second.fromLocalSubmit);
+            e->setProperty ("from_local_map", kv.second.fromLocalMap);
             by->setProperty (kv.first, juce::var (e));
         }
         o->setProperty ("identities", juce::var (by));
@@ -13883,6 +13960,11 @@ private:
                 // happened.
                 r.fromServer      = (bool) kv.value.getProperty ("from_server", true);
                 r.fromLocalSubmit = (bool) kv.value.getProperty ("from_local_submit", false);
+                // Absent in caches written before 11 Aug 2026. Defaulting false
+                // is right: those rows predate the flag, so nothing claims a
+                // local map that was never recorded. mapStateFor recomputes it
+                // from localMapIdentities on read anyway.
+                r.fromLocalMap    = (bool) kv.value.getProperty ("from_local_map", false);
                 mapStateByIdentity[kv.name.toString()] = r;
             }
     }
@@ -13902,16 +13984,24 @@ private:
         // apart and named apart: "3 marked here since" is a claim about what
         // this machine did, and the server has not been asked about those rows
         // since they were marked.
-        int fetched = 0, local = 0;
+        // MAPPED HERE AND NOT SENT IS A STATE THE LINE MUST BE ABLE TO SAY.
+        // 279 maps were in it for two days on Mac 2 while every surface could
+        // only report what the server had not confirmed, and the operator could
+        // not tell from any screen whether the work existed. Counted and named
+        // separately from both a server answer and a completed submit.
+        int fetched = 0, local = 0, hereUnsent = 0;
         for (const auto& kv : mapStateByIdentity)
         {
             if (kv.second.fromLocalSubmit) ++local;
+            else if (kv.second.fromLocalMap) ++hereUnsent;
             else if (kv.second.fromServer) ++fetched;
         }
         juce::String t = "map state from " + mapStateCacheAge() + " ("
                        + juce::String (fetched) + " from the server";
         if (local > 0)
             t << ", " + juce::String (local) + " marked here on submit since -- not re-queried";
+        if (hereUnsent > 0)
+            t << ", " << juce::String (hereUnsent) << " mapped here and NOT SENT";
         t << ")";
         if (! localMapIdentities.empty())
             t << "; " << (int) localMapIdentities.size() << " map(s) on this machine";
