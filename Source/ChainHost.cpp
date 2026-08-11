@@ -2024,6 +2024,80 @@ void ChainHost::reportDialWhenSettled(const juce::String& reason, int attemptsLe
                                                 : ", dial NOT settled (retry budget exhausted)"));
 }
 
+// requested, counted in the SAME UNIT as applied (11 Aug 2026).
+//
+// EchoJay Reverb reported requested=1 applied=7, which is not a near miss, it
+// is two different units side by side. `requested` counted TOP-LEVEL KEYS of
+// settings_structured, and every payload the model actually sends is a single
+// WRAPPER: built-ins get {"params":{...}}, third-party slots get
+// {"controls":{...}}, the EQ gets {"eq_bands":[...]}. So requested was almost
+// always 1 no matter how much was asked for, and applied>requested read as a
+// counting bug on exactly the slots that worked.
+//
+// A wrapper is a container, not a request. Count what is inside it, name the
+// SHAPE, and print the leaf names, because the top-level key alone cannot tell
+// a correct payload from a wrong-shaped one -- which is the confusion this
+// whole line exists to end.
+static int countRequestedSettings (const juce::var& structured,
+                                   juce::StringArray& keys,
+                                   juce::String& shape)
+{
+    shape = "none";
+    if (structured.isVoid()) return 0;
+
+    if (structured.isArray())
+    {
+        // A bare array is the EQ's band form arriving without its wrapper.
+        shape = "array";
+        const int n = structured.size();
+        keys.add("(bare array of " + juce::String(n) + ")");
+        return n;
+    }
+
+    auto* obj = structured.getDynamicObject();
+    if (obj == nullptr) { shape = "scalar"; return 0; }
+
+    const auto& props = obj->getProperties();
+    if (props.size() == 0) { shape = "empty"; return 0; }
+
+    int requested = 0, wrappers = 0, flat = 0;
+    for (const auto& kv : props)
+    {
+        const juce::String key = kv.name.toString();
+        const juce::var& val  = kv.value;
+
+        if ((key == "params" || key == "controls") && val.getDynamicObject() != nullptr)
+        {
+            ++wrappers;
+            juce::StringArray inner;
+            for (const auto& leaf : val.getDynamicObject()->getProperties())
+                inner.add(leaf.name.toString());
+            requested += inner.size();
+            keys.add(key + "{" + inner.joinIntoString(", ") + "}");
+        }
+        else if (val.isArray())
+        {
+            ++wrappers;
+            requested += val.size();
+            keys.add(key + "[" + juce::String(val.size()) + "]");
+        }
+        else
+        {
+            // A flat semantic key at the top level. Legitimate on the
+            // third-party path and the ONLY shape an old prompt produced, so
+            // it stays countable rather than being treated as malformed.
+            ++flat;
+            ++requested;
+            keys.add(key);
+        }
+    }
+
+    shape = (wrappers > 0 && flat > 0) ? "mixed"
+          : (wrappers > 0)             ? "wrapped"
+                                       : "flat";
+    return requested;
+}
+
 void ChainHost::logDialSummary(const juce::String& reason) const
 {
     const auto statusName = [] (DialStatus st) -> const char*
@@ -2061,23 +2135,15 @@ void ChainHost::logDialSummary(const juce::String& reason) const
         // diagnosis pass. Printing the keys also makes a wrong-shape payload
         // self-evident, since flat keys and a "params" wrapper are otherwise
         // the same words.
-        int requested = 0;
         juce::StringArray keys;
-        if (auto* o = s.structuredSettings.getDynamicObject())
-        {
-            requested = o->getProperties().size();
-            for (auto& kv : o->getProperties()) keys.add(kv.name.toString());
-        }
-        else if (s.structuredSettings.isArray())
-        {
-            requested = s.structuredSettings.size();
-            keys.add("(bare array of " + juce::String(requested) + ")");
-        }
+        juce::String shape;
+        const int requested = countRequestedSettings(s.structuredSettings, keys, shape);
 
         EchoJay_NSLog(("EJDialSummary:   slot " + juce::String(i)
                        + " (\"" + s.desc.name + "\")"
                        + (builtin ? " builtin" : "")
                        + "  settings_structured=" + (hasSettings ? "y" : "n")
+                       + "  shape=" + shape
                        + "  keys=[" + keys.joinIntoString(", ") + "]"
                        + "  requested=" + juce::String(requested)
                        + "  applied=" + juce::String(s.dialAppliedCount)
