@@ -22432,9 +22432,12 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
         juce::String reasoningTail;
         juce::String shownUnit;
         // STAGED CHAIN (spec section 4): slots reported by onSlot, rendered
-        // as they land. chainProvisional stays true until onBlock replaces
-        // the payload with the complete one, so the Build button cannot
-        // appear on a chain that has not closed.
+        // as they land. chainProvisional stays true for the whole stream and
+        // is cleared only by the replacement at done (handleChatReply builds
+        // a fresh ChatMsg, whose flag defaults false), so the Build button
+        // cannot appear on a chain that has not closed OR on one the server
+        // has not finished enforcing. onBlock used to clear it early; see the
+        // note there for why a complete block is still not a shippable one.
         juce::StringArray slotJsons;
         bool chainProvisional = false;
         // Rendering-side half of the stream observable (10 Aug 2026). The
@@ -22511,7 +22514,25 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
         if (ev.type == "chain")
         {
             stp->chainJson = ev.payload;   // complete by construction (rule 1)
-            stp->chainProvisional = false; // and only NOW may Build appear
+            // STAYS PROVISIONAL UNTIL done (11 Aug 2026). This line used to
+            // clear the flag here, which let Build appear on the STREAMED
+            // block: complete, yes, but not the one the server ships.
+            //
+            // The window is not new and this change does not introduce it.
+            // The server has always been free to rewrite the block after the
+            // stream (the one-shot path has done so since 20 Jul), and
+            // done.reply has always been authoritative -- handleChatReply
+            // replaces the provisional by identity. What changed is the size
+            // of what gets rewritten: /api/chat-stream now runs the same
+            // block enforcement /api/chat does, so between block-complete and
+            // done the streamed block can differ from the shipped one by a
+            // twin refusal, a stripped control, a version strip, or a deleted
+            // result claim. Building from it would dial values the server
+            // refused, and the log would show a build nobody authorised.
+            //
+            // The cost is a few hundred milliseconds of Build latency: the
+            // block is the reply tail, so done follows almost immediately.
+            // The gap is imperceptible and the correctness is not optional.
             paintBubble();
         }
         // gain / ask / edit: resolved at done by handleChatReply — see the
