@@ -3258,6 +3258,74 @@ void testLocalMapOutranksCachedNonConfirmation()
     }
 }
 
+/** THE PLACEHOLDER MUST NOT BE DERIVED FROM, AND A FAILURE MUST NAME ITS URL.
+
+    Mac 2, 11 Aug 2026. `saveMapperToken` writes a FRESH config.json holding only
+    mapper_token when none exists, so signing in silently removed upload_url.
+    resolveEndpoint then returned its unset placeholder --
+    "https://UPLOAD-ENDPOINT-UNSET.echojay.invalid/api/params/ejmap" -- and
+    categoriseEndpoint's guard was `contains ("/api/params/")`, which the
+    placeholder satisfies BY CONSTRUCTION. So it derived
+    ".../echojay.invalid/api/params/categories", the production fallback on the
+    next line became dead code, `.invalid` never resolved, createInputStream
+    returned nullptr, status stayed 0, and the message said "no response".
+
+    Size-independent, so it read as a body-size problem for six rounds; and the
+    maps fetch kept working throughout because mapsEndpoint never consults
+    config.json. The message had the URL in scope and never printed it.
+
+    Source checks, per testSweepDeadline: this file cannot instantiate
+    MainComponent.
+*/
+void testUnsetEndpointNotDerived()
+{
+    auto src = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/MainComponent.h")
+                   .loadFileAsString();
+
+    {
+        auto body = src.fromFirstOccurrenceOf ("juce::String categoriseEndpoint()", false, false)
+                       .upToFirstOccurrenceOf ("\n    /** The products a sweep", false, false);
+        check (body.contains ("cfg.urlFrom != \"placeholder\""),
+               "ENDPOINT: categorise asks whether anything CONFIGURED the url, not whether "
+               "the string looks like one -- the placeholder looks like one on purpose");
+        check (body.contains ("return \"https://www.echojay.ai/api/params/categories\";"),
+               "ENDPOINT: and the production fallback is still there for a READ");
+    }
+
+    {
+        // resolveEndpoint must keep recording provenance, or the guard above
+        // silently degrades to always-true.
+        auto mouth = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapMouth.h")
+                         .loadFileAsString();
+        check (mouth.contains ("urlFrom = \"placeholder\""),
+               "ENDPOINT: resolveEndpoint still defaults urlFrom to \"placeholder\"");
+        check (mouth.contains ("e.urlFrom = \"EJMAP_UPLOAD_URL\"")
+                 && mouth.contains ("e.urlFrom = configFile (root).getFileName()"),
+               "ENDPOINT: ...and still overwrites it when something actually sets the url");
+    }
+
+    {
+        auto body = src.fromFirstOccurrenceOf ("void runCategorise()", false, false)
+                       .upToFirstOccurrenceOf ("\n    juce::String categoriseLine", false, false);
+        check (body.contains ("\"  [endpoint \" + endpoint + \"]\""),
+               "MESSAGE: the categorise failure NAMES the url it tried -- the one fact that "
+               "would have ended this on day one");
+        check (body.contains ("could not connect -- no response ever ")
+                 && body.contains ("the server refused it: HTTP "),
+               "MESSAGE: and distinguishes a refusal from never reaching anything, which the "
+               "code already knew and the words did not say");
+    }
+
+    {
+        auto body = src.fromFirstOccurrenceOf ("void sendPendingMaps (", false, false);
+        check (body.contains ("hostPort.containsIgnoreCase (\"UPLOAD-ENDPOINT-UNSET\")"),
+               "SEND: the unset placeholder is refused as a CONFIGURATION fault before the "
+               "wire, rather than posting into a domain that cannot resolve");
+        check (body.contains ("signing in creates that file without one"),
+               "SEND: and the refusal names how the machine got there");
+    }
+}
+
 void testEmptyControlNameRejected()
 {
     using ejmap::Mouth;
@@ -3522,6 +3590,7 @@ int main (int, char**)
     testSweepDeadline();
     testEmptyControlNameRejected();
     testLocalMapOutranksCachedNonConfirmation();
+    testUnsetEndpointNotDerived();
     testUnfinishedAttemptRule();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;

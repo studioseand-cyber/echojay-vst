@@ -7463,6 +7463,29 @@ public:
                 ++refused;
                 continue;
             }
+            // THE UNSET PLACEHOLDER IS A CONFIGURATION FAULT, NOT A NETWORK ONE.
+            //
+            // uploadBaseUrl falls back to UPLOAD-ENDPOINT-UNSET.echojay.invalid
+            // when nothing sets upload_url, and that is deliberate: sending
+            // publishes, so it must be configured on purpose rather than
+            // defaulted to production. But the placeholder then reached the
+            // wire as a DNS failure, which reads like the network being down.
+            //
+            // saveMapperToken is how a machine gets here: signing in when no
+            // config.json exists writes a FRESH file holding only
+            // mapper_token, so upload_url is silently gone and every path that
+            // derives from config.json resolves to .invalid. Measured on Mac 2.
+            if (hostPort.containsIgnoreCase ("UPLOAD-ENDPOINT-UNSET"))
+            {
+                Mouth::setQueueState (ledger.getRoot(), fp, "refused",
+                                      "upload endpoint is unset", identityKey);
+                printLine ("refused", "the upload endpoint is UNSET (" + hostPort
+                             + "). Set upload_url in "
+                             + Mouth::configFile (ledger.getRoot()).getFullPathName()
+                             + " -- signing in creates that file without one.");
+                ++refused;
+                continue;
+            }
 
             const auto res = ejmap::sendBytesOverTls (bytes, hostPort);
             Mouth::setQueueState (ledger.getRoot(), fp, res.queueState(),
@@ -13339,8 +13362,33 @@ private:
         if (up.isNotEmpty())
             return up.endsWith ("/ejmap") ? up.dropLastCharacters (5) + "categories"
                                           : up.upToLastOccurrenceOf ("/", true, false) + "categories";
+        // NEVER DERIVE FROM THE PLACEHOLDER.
+        //
+        // The old guard was `cfg.url.contains ("/api/params/")`, and the unset
+        // placeholder is "https://UPLOAD-ENDPOINT-UNSET.echojay.invalid/api/
+        // params/ejmap" -- which contains "/api/params/" BY CONSTRUCTION. So a
+        // machine with no upload_url derived .../echojay.invalid/api/params/
+        // categories, the production fallback below became dead code, and
+        // `.invalid` is a reserved TLD that never resolves: DNS fails,
+        // createInputStream returns nullptr, status stays 0, and the client
+        // printed "no response" at every batch size.
+        //
+        // Measured on Mac 2, 11 Aug 2026, and it cost a day: the failure looked
+        // like a body-size problem because it was size-independent in a way
+        // nobody could see, and the maps fetch kept working the whole time
+        // because mapsEndpoint never consults config.json at all.
+        //
+        // resolveEndpoint ALREADY records whether anything configured the URL.
+        // urlFrom stays "placeholder" until an env var or a readable config.json
+        // sets it, so that -- not the shape of the string -- is the question.
+        //
+        // Falling back to production is right for a READ. The send keeps the
+        // visible placeholder on purpose, because sending publishes and must be
+        // configured deliberately; see sendPendingMaps, which now refuses
+        // rather than posting into a domain that cannot exist.
         auto cfg = ejmap::Mouth::resolveEndpoint (ledger.getRoot());
-        if (cfg.url.isNotEmpty() && cfg.url.contains ("/api/params/"))
+        if (cfg.urlFrom != "placeholder" && cfg.url.isNotEmpty()
+             && cfg.url.contains ("/api/params/"))
             return cfg.url.upToLastOccurrenceOf ("/", true, false) + "categories";
         return "https://www.echojay.ai/api/params/categories";
     }
@@ -13463,8 +13511,24 @@ private:
                 auto why = juce::JSON::parse (text).getProperty ("detail", "").toString();
                 if (why.isEmpty()) why = juce::JSON::parse (text).getProperty ("error", "").toString();
                 categoriseState = CategoriseState::failed;
-                categoriseFailure = (status != 0 ? "HTTP " + juce::String (status) : juce::String ("no response"))
-                                  + (why.isNotEmpty() ? ": " + why : juce::String());
+                // NAME THE ENDPOINT, AND SAY WHICH FAILURE THIS IS.
+                //
+                // "no response" was true and useless. It never said WHERE, and
+                // the answer was in a variable this line already had. Six
+                // rounds of diagnosis went to body size, the token, the
+                // network and a stale preview, and the cause was a URL the
+                // client could have printed at the moment it gave up.
+                //
+                // status is 0 only when createInputStream returned nullptr --
+                // nothing was ever received. A refusal SETS status, so the two
+                // are already distinct in the code; they were not distinct in
+                // the words.
+                categoriseFailure = (status != 0
+                                       ? "the server refused it: HTTP " + juce::String (status)
+                                       : juce::String ("could not connect -- no response ever "
+                                                       "arrived"))
+                                  + (why.isNotEmpty() ? ": " + why : juce::String())
+                                  + "  [endpoint " + endpoint + "]";
                 sweepSay ("CATEGORISE FAILED (" + categoriseFailure + "). "
                           "The sweep will still run; uncategorised products are skipped.");
                 return;
