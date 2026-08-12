@@ -161,14 +161,18 @@ int main()
                    "divergence with the live map held marks AND refuses the in-flight set");
         }
         // THE LADDER PROPER: divergence, live map absent. Correct, fetch,
-        // mark, hold - and no wholesale refusal: the apply waits for the
-        // live fp's own map and runs normally against it.
+        // mark, hold - and refuse the in-flight set here TOO (12 Aug 2026,
+        // widened): the hazard is what the SERVER served, which the client
+        // cannot see, and divergence proves the server was told the wrong
+        // fingerprint on both branches. The refusal only bites when a map
+        // would let values write; a null-answered fetch still resolves
+        // unmapped with its own card speech.
         {
             const auto st = staleLadderAtLoad ("fpOld", "fpNew", false);
             check (st.rung == StaleRung::refetch
                    && st.correctIndex && st.kickRefetch && st.markSlot
-                   && ! st.refuseInFlight,
-                   "divergence without the live map corrects, fetches and marks");
+                   && st.refuseInFlight,
+                   "divergence without the live map corrects, fetches, marks and refuses");
         }
         // Resolution: a wholesale refusal names itself first; otherwise the
         // dial result outranks the map bookkeeping. Once the apply has run,

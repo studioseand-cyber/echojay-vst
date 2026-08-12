@@ -142,20 +142,24 @@ struct StaleLadderStep
     bool refuseInFlight;  // refuse the ENTIRE in-flight control set at apply
 };
 
-// At load. mapHeldForLiveFp: whether the live fp's map is already cached.
-// A held map is NOT a dial (12 Aug 2026, rung A rehearsal: this branch
-// asserted refetched-dialled over applied=0 unusableMap): no fetch is
-// needed, the slot is marked, AND the in-flight control set is refused
-// wholesale (12 Aug, rung C rehearsal). The settings riding this turn were
-// authored against the WRONG EXPOSURE - the build turn's mapFps carried
-// the stale fp - and per-name resolution cannot catch that: with CLA-76's
-// identity pointed at bx_townhouse's fingerprint the two foreign names
-// died correctly while Release, valid in both vocabularies, wrote 100 (a
-// millisecond value) to a seven-position knob and clamped to the rail.
-// Only the value was wrong, so only refusing the whole set is safe. The
-// wrong MAP is still structurally unreachable (the apply keys on the fp
-// computed at load and the map's own fp field must match it); this refusal
-// is about wrong VALUES arriving through valid names.
+// At load. ANY divergence refuses the in-flight control set (12 Aug 2026,
+// widened same day from map-held only): the branch split is about what the
+// CLIENT holds, while the hazard is what the SERVER served, and the client
+// cannot see the second. Divergence at load proves the build turn's mapFps
+// told the server the wrong fingerprint, so the settings riding this turn
+// are suspect on both branches. Per-name resolution cannot catch that:
+// with CLA-76's identity pointed at bx_townhouse's fingerprint the two
+// foreign names died correctly while Release, valid in both vocabularies,
+// wrote 100 (a millisecond value) to a seven-position knob and clamped to
+// the rail. The over-refusal cost is measured and near zero: the no-map
+// case falls back to flat semantics that die as unusableMap anyway (rung
+// A). The refusal fires only when a map would let values WRITE - a
+// null-answered fetch still resolves unmapped, with its own card speech.
+// The wrong MAP itself is structurally unreachable (the apply keys on the
+// fp computed at load and the map's own fp field must match it); this
+// refusal is about wrong VALUES arriving through valid names.
+// A queued server-side refinement (pass-2 echoing fromFp vs fromBulk per
+// slot) would let this refusal go precise instead of conservative.
 inline StaleLadderStep staleLadderAtLoad (const juce::String& indexedFp,
                                           const juce::String& liveFp,
                                           bool mapHeldForLiveFp)
@@ -166,7 +170,7 @@ inline StaleLadderStep staleLadderAtLoad (const juce::String& indexedFp,
         return { StaleRung::firstIndex, true, false, false, false };
     if (mapHeldForLiveFp)
         return { StaleRung::mapHeld, true, false, true, true };
-    return { StaleRung::refetch, true, true, true, false };
+    return { StaleRung::refetch, true, true, true, true };
 }
 
 // At resolution. A wholesale refusal names itself first; otherwise the dial

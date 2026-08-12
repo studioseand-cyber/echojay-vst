@@ -1875,18 +1875,32 @@ bool ChainHost::settleStaleRung(int i)
                    + " live=" + s.fp.substring(0, 12)
                    + " rung=" + echojay::staleRungName(rung)).toRawUTF8());
     if (rung == echojay::StaleRung::dialled
-        || rung == echojay::StaleRung::undialled
-        || rung == echojay::StaleRung::refused)
+        || rung == echojay::StaleRung::undialled)
     {
         // dialled: the card reads "Applied automatically" through the
         // normal path; nothing to add. undialled: the live fp's own map
         // wrote nothing, which is the plain unusableMap outcome, already
         // worded by the composers; it is not version staleness, so it earns
-        // no note and no pill. refused: the whole set went manual at apply
-        // and the composers' unusableMap wording carries it; the rung line
-        // above is the record of WHY. All three clear the mark.
+        // no note and no pill. Both clear the mark.
         s.staleIndexedFp.clear();
         return false;
+    }
+    if (rung == echojay::StaleRung::refused)
+    {
+        // Refusing to write a value and then telling the user to hand-dial
+        // that same value would be worse than writing it (Sean, 12 Aug
+        // 2026): the numbers on the card were computed for the version the
+        // server was told about, not the one that loaded. Keep the guidance,
+        // reframe the numbers as intent.
+        const juce::String note = s.desc.name
+            + " is a different version from the one these settings were "
+              "worked out for, so nothing was dialled. The values shown were "
+              "computed for that other version and will not map onto this "
+              "one, so use them as intent rather than as numbers.";
+        if (! s.settings.startsWith(note))
+            s.settings = s.settings.isEmpty() ? note : note + "\n" + s.settings;
+        s.staleIndexedFp.clear();
+        return true;
     }
     // Unmapped: the corpus does not hold the installed binary's fingerprint.
     // The card speaks, and every requested key goes manual so the card's
@@ -2437,33 +2451,6 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         s.dialStatus = DialStatus::pending;
         return;
     }
-    // Stale-map ladder, map-held divergence (12 Aug 2026, rung C): the
-    // settings in flight were authored against the WRONG EXPOSURE - the
-    // build turn's mapFps carried the stale fp - so the ENTIRE set is
-    // refused, not only the names that fail to resolve. Per-name resolution
-    // cannot catch this: with CLA-76's identity pointed at bx_townhouse's
-    // fingerprint the two foreign names died correctly while Release, valid
-    // in both vocabularies, wrote 100 (a millisecond value) to a
-    // seven-position knob and clamped to the rail. The name was right, the
-    // VALUE was from the wrong plugin's vocabulary. Every key goes manual;
-    // settleStaleRung names the rung at the settings-attach settle.
-    if (s.staleRefuseInFlight && !s.staleSettled && s.staleIndexedFp.isNotEmpty())
-    {
-        s.structuredApplied = true;
-        s.staleRefused      = true;
-        s.dialAppliedCount  = 0;
-        if (auto* ob = s.structuredSettings.getDynamicObject())
-            for (auto& kv : ob->getProperties())
-                s.dialManual.addIfNotAlreadyThere(echojay::semanticLabel(kv.name.toString()));
-        s.dialStatus = DialStatus::unusableMap;
-        EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
-                       + "\") STALE EXPOSURE - whole set refused, "
-                       + juce::String(s.dialManual.size())
-                       + " key(s) to manual (index asserted " + s.staleIndexedFp.substring(0, 12)
-                       + ", binary is " + s.fp.substring(0, 12) + ")").toRawUTF8());
-        return;
-    }
-
     auto it = paramMaps_.find(s.fp);
     if (it == paramMaps_.end())
     {
@@ -2486,6 +2473,37 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
                        + "  fetch_wired=" + (onNeedParamMaps ? "y" : "n")
                        + "  cached_maps=" + juce::String((int) paramMaps_.size())
                        + " -> " + (inFlight ? "pending" : "noMap")).toRawUTF8());
+        return;
+    }
+
+    // Stale-map ladder, ANY divergence (12 Aug 2026, rung C; widened same
+    // day from map-held only): the settings in flight were authored against
+    // the WRONG EXPOSURE - the build turn's mapFps told the server the
+    // stale fingerprint - so the ENTIRE set is refused, not only the names
+    // that fail to resolve. Per-name resolution cannot catch this: with
+    // CLA-76's identity pointed at bx_townhouse's fingerprint the two
+    // foreign names died correctly while Release, valid in both
+    // vocabularies, wrote 100 (a millisecond value) to a seven-position
+    // knob and clamped to the rail. The name was right, the VALUE was from
+    // the wrong plugin's vocabulary. Sits AFTER the map lookup on purpose:
+    // the refusal exists to stop values WRITING, so a slot with no map
+    // falls through above to pending/noMap and the unmapped rung keeps its
+    // own card speech. Every key goes manual; settleStaleRung names the
+    // rung and reframes the card's numbers as intent.
+    if (s.staleRefuseInFlight && !s.staleSettled && s.staleIndexedFp.isNotEmpty())
+    {
+        s.structuredApplied = true;
+        s.staleRefused      = true;
+        s.dialAppliedCount  = 0;
+        if (auto* ob = s.structuredSettings.getDynamicObject())
+            for (auto& kv : ob->getProperties())
+                s.dialManual.addIfNotAlreadyThere(echojay::semanticLabel(kv.name.toString()));
+        s.dialStatus = DialStatus::unusableMap;
+        EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+                       + "\") STALE EXPOSURE - whole set refused, "
+                       + juce::String(s.dialManual.size())
+                       + " key(s) to manual (index asserted " + s.staleIndexedFp.substring(0, 12)
+                       + ", binary is " + s.fp.substring(0, 12) + ")").toRawUTF8());
         return;
     }
 
