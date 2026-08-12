@@ -47,12 +47,20 @@ if [ ! -f "$LIB" ] || [ ! -f "$REPO/build/compile_commands.json" ]; then
   exit 0
 fi
 
-echo "  running workspace round-trip self-test..."
-out=$("$REPO/tools/workspace_roundtrip_test/build_and_run.sh" 2>&1)
-if [ $? -ne 0 ]; then
-  echo "GATE FAIL: workspace_roundtrip_test"
-  echo "$out" | tail -12
-  exit 1
-fi
-echo "  ok  workspace_roundtrip_test: $(echo "$out" | grep -iE 'pass|ok|self-test' | tail -1)"
+# BUILD-DEPENDENT SUITES (12 Aug 2026: mapfps_test joins the roundtrip
+# test). mapfps_test carries the structural check that both ChainHost call
+# sites go through fpForIdentity; a wiring regression should fail HERE, at
+# commit, not survive until the next install run catches it.
+for T in workspace_roundtrip_test mapfps_test; do
+  RUNNER="$REPO/tools/$T/build_and_run.sh"
+  [ -x "$RUNNER" ] || { echo "  SKIP  $T (not in this worktree)"; continue; }
+  echo "  running $T..."
+  out=$("$RUNNER" 2>&1)
+  if [ $? -ne 0 ]; then
+    echo "GATE FAIL: $T"
+    echo "$out" | tail -12
+    exit 1
+  fi
+  echo "  ok  $T: $(echo "$out" | tail -1)"
+done
 echo "pre-commit gate: all suites green"

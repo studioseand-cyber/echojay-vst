@@ -3230,17 +3230,44 @@ juce::String ChainHost::buildMapFpsJson(int maxEntries) const
     // that is not a conflict, the rack is simply more exact.
     for (const auto& s : slots_)
         put(s.desc.name, s.fp);
+    // Every feed entry lands in EXACTLY ONE bucket, in the same priority
+    // order the original checks ran (cap, rack, name conflict, then the
+    // join), so the counter line below reconciles against the feed count on
+    // every turn -- edit turns and capped turns included. Once the cap
+    // fires, everything after it counts capped, whatever it would have been.
+    int exact = 0, uidFb = 0, ambig = 0, miss = 0,
+        rackWon = 0, nameConfl = 0, capped = 0;
     for (const auto& e : recommendable_)
     {
-        if (o->getProperties().size() >= maxEntries) break;
-        if (o->getProperty(e.displayName).toString().isNotEmpty()) continue;   // rack wins
-        if (conflicted.contains(e.displayName)) continue;
-        auto it = identityToFp_.find(echojay::identityKeyForDescription(e.desc));
-        if (it != identityToFp_.end()) put(e.displayName, it->second);
+        if (o->getProperties().size() >= maxEntries)               { ++capped;    continue; }
+        if (o->getProperty(e.displayName).toString().isNotEmpty()) { ++rackWon;   continue; }   // rack wins
+        if (conflicted.contains(e.displayName))                    { ++nameConfl; continue; }
+        auto outcome = echojay::FpLookup::miss;
+        const auto fp = echojay::fpForIdentity(identityToFp_, e.desc, &outcome);
+        switch (outcome)
+        {
+            case echojay::FpLookup::exact:       ++exact; break;
+            case echojay::FpLookup::uidFallback: ++uidFb; break;
+            case echojay::FpLookup::ambiguous:   ++ambig; break;
+            case echojay::FpLookup::miss:        ++miss;  break;
+        }
+        if (fp.isNotEmpty()) put(e.displayName, fp);
     }
     // An ambiguous name (two fps claimed) is omitted entirely; the server's
     // sibling merge is the honest serve for it.
     for (const auto& n : conflicted) o->removeProperty(n);
+    // The counter at the decision: the server's fpKnown: 0 has exactly one
+    // client-side counterpart, and it is this line. Printed BEFORE the
+    // empty-object return so the zero case still measures itself.
+    EchoJay_NSLog(("EJMapFps: feed=" + juce::String((int) recommendable_.size())
+                   + " exact=" + juce::String(exact)
+                   + " uidFb=" + juce::String(uidFb)
+                   + " ambig=" + juce::String(ambig)
+                   + " miss=" + juce::String(miss)
+                   + " rackWon=" + juce::String(rackWon)
+                   + " nameConfl=" + juce::String(nameConfl)
+                   + " capped=" + juce::String(capped)
+                   + " -> " + juce::String(o->getProperties().size()) + " entr(ies)").toRawUTF8());
     if (o->getProperties().size() == 0) return "{}";
     return juce::JSON::toString(juce::var(o.get()), true);
 }
@@ -3279,9 +3306,13 @@ juce::StringArray ChainHost::getDialableRecommendableNames() const
     juce::StringArray out;
     for (const auto& e : recommendable_)
     {
-        auto it = identityToFp_.find(echojay::identityKeyForDescription(e.desc));
-        if (it == identityToFp_.end()) continue;
-        auto m = paramMaps_.find(it->second);
+        // Same join as buildMapFpsJson, through the same helper -- the two
+        // sites drifting apart is how the exact-key miss shipped in
+        // duplicate, and mapfps_test asserts structurally that neither has
+        // a direct identityToFp_ lookup again.
+        const auto fp = echojay::fpForIdentity(identityToFp_, e.desc);
+        if (fp.isEmpty()) continue;
+        auto m = paramMaps_.find(fp);
         if (m != paramMaps_.end() && echojay::mapIsDialableForSignals(m->second))
             out.addIfNotAlreadyThere(e.displayName);
     }
