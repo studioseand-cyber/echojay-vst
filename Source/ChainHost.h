@@ -117,6 +117,7 @@ public:
         int               appliedCount = 0;
         juce::String      staleIndexedFp; // stale-map ladder: superseded fp,
                                           // "" = load matched the index
+        juce::StringArray outOfRange;     // subset of manual: refused by range validation
     };
     std::vector<SlotDialInfo> getDialInfos() const;
     // One line per slot, at the END of a build, saying what actually dialled.
@@ -298,7 +299,8 @@ public:
     // structured settings plus the plugin's map.
     struct ApplyReport { juce::String semantic; bool applied; float normalized; juce::String note;
                          juce::String landedText; bool displayVerified = false; bool readbackMismatch = false;
-                         bool staleDisplayKept = false; juce::var requestedValue; };
+                         bool staleDisplayKept = false; juce::var requestedValue;
+                         bool outOfRange = false; };
     std::vector<ApplyReport> applyStructuredSettings (int slotIndex,
                                                       const juce::var& structuredSettings,
                                                       const juce::var& map);
@@ -696,8 +698,7 @@ private:
         // there is nothing to say.
         juce::String                         staleIndexedFp;
         bool                                 staleSettled = false;
-        bool                                 staleRefuseInFlight = false; // map-held divergence: refuse the whole in-flight set
-        bool                                 staleRefused = false;        // the refusal actually fired at apply
+        juce::StringArray                    dialOutOfRange;   // asked outside the live map's range, refused per value
         // Hosted settings cache (see setStateCacheEnabled). The blob and its
         // bookkeeping are read under stateCacheMutex_; everything else on
         // this struct follows the existing message-thread-only rule.

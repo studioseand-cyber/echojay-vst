@@ -26,6 +26,7 @@
 
 #include <JuceHeader.h>
 #include "EchoJayParamMaps.h"
+#include "EchoJayParamApply.h"
 #include <fstream>
 #include <sstream>
 
@@ -148,50 +149,63 @@ int main()
         }
         // Divergence with the live fp's map already cached: no fetch, but
         // NOT a dial (12 Aug 2026, rung A rehearsal lied here) - the slot
-        // is marked and the verdict waits for the apply. This is also the
-        // WRONG-MAP shape: a real-but-wrong indexed fp (another binary's
-        // genuine fingerprint, corpus holds its map) with the live fp's own
-        // map cached lands exactly here, and the apply below can only use
-        // the live fp's map.
+        // is marked and the verdict waits for the apply. No wholesale
+        // refusal any more (same day, removed): real divergence is the same
+        // uid at another version, where names and ranges usually match, and
+        // wrong VALUES are now refused individually by the range check
+        // below, on every turn.
         {
             const auto st = staleLadderAtLoad ("fpWrongButReal", "fpLive", true);
             check (st.rung == StaleRung::mapHeld
-                   && st.correctIndex && ! st.kickRefetch && st.markSlot
-                   && st.refuseInFlight,
-                   "divergence with the live map held marks AND refuses the in-flight set");
+                   && st.correctIndex && ! st.kickRefetch && st.markSlot,
+                   "divergence with the live map held defers the verdict and marks");
         }
         // THE LADDER PROPER: divergence, live map absent. Correct, fetch,
-        // mark, hold - and refuse the in-flight set here TOO (12 Aug 2026,
-        // widened): the hazard is what the SERVER served, which the client
-        // cannot see, and divergence proves the server was told the wrong
-        // fingerprint on both branches. The refusal only bites when a map
-        // would let values write; a null-answered fetch still resolves
-        // unmapped with its own card speech.
+        // mark, hold.
         {
             const auto st = staleLadderAtLoad ("fpOld", "fpNew", false);
             check (st.rung == StaleRung::refetch
-                   && st.correctIndex && st.kickRefetch && st.markSlot
-                   && st.refuseInFlight,
-                   "divergence without the live map corrects, fetches, marks and refuses");
+                   && st.correctIndex && st.kickRefetch && st.markSlot,
+                   "divergence without the live map corrects, fetches and marks");
         }
-        // Resolution: a wholesale refusal names itself first; otherwise the
-        // dial result outranks the map bookkeeping. Once the apply has run,
-        // dialled/undialled derive from whether anything WROTE, never from
-        // map presence.
-        check (staleLadderAtResolution (true, true, true, false, true) == StaleRung::refused,
-               "a refused set resolves to stale-exposure-refused, not undialled");
-        check (staleLadderAtResolution (true, true, true, true, false) == StaleRung::dialled,
+        // Resolution: the dial result outranks the map bookkeeping. Once
+        // the apply has run, dialled/undialled derive from whether anything
+        // WROTE, never from map presence.
+        check (staleLadderAtResolution (true, true, true, true) == StaleRung::dialled,
                "apply ran and wrote: dialled");
-        check (staleLadderAtResolution (false, true, true, true, false) == StaleRung::dialled,
+        check (staleLadderAtResolution (false, true, true, true) == StaleRung::dialled,
                "the dial verdict stands whatever the fetch bookkeeping says");
-        check (staleLadderAtResolution (true, true, true, false, false) == StaleRung::undialled,
+        check (staleLadderAtResolution (true, true, true, false) == StaleRung::undialled,
                "apply ran against a present map and wrote nothing: undialled, not dialled");
-        check (staleLadderAtResolution (true, true, false, false, false) == StaleRung::mapHeld,
+        check (staleLadderAtResolution (true, true, false, false) == StaleRung::mapHeld,
                "map present but apply not yet run keeps the verdict deferred");
-        check (staleLadderAtResolution (false, false, false, false, false) == StaleRung::refetch,
+        check (staleLadderAtResolution (false, false, false, false) == StaleRung::refetch,
                "unanswered fetch keeps the slot held");
-        check (staleLadderAtResolution (true, false, false, false, false) == StaleRung::unmapped,
+        check (staleLadderAtResolution (true, false, false, false) == StaleRung::unmapped,
                "answered without the map resolves to unmapped (card speaks)");
+    }
+
+    // ---- Range validation (12 Aug 2026, replaces the whole-set refusal) ----
+    // Clamp-to-rail-and-report-applied was the actual defect: Release 100
+    // (bx_townhouse's millisecond vocabulary) moved CLA-76's seven-position
+    // knob to position 7 and read APPLIED. The refusal lives at the value
+    // level, every turn, with a guard band sized for float32-vs-decimal
+    // bound mismatch (parts-per-million to <0.1%) against a defect class of
+    // span multiples.
+    {
+        using echojay::valueWithinMappedRange;
+        check (! valueWithinMappedRange (100.0f, 1.0f, 7.0f),
+               "the defect: 100 against [1 .. 7] refuses");
+        check (valueWithinMappedRange (7.0f, 1.0f, 7.0f),
+               "an exact upper-bound ask is in range");
+        check (valueWithinMappedRange (20.0f, 1.0f, 19.9999981f),
+               "a documented max against its float32-rendered bound is in range");
+        check (! valueWithinMappedRange (7.2f, 1.0f, 7.0f),
+               "3% over the top refuses (outside the 0.1%-of-span band)");
+        check (! valueWithinMappedRange (0.5f, 1.0f, 7.0f),
+               "below the bottom refuses");
+        check (valueWithinMappedRange (-18.0f, -60.0f, 0.0f),
+               "negative-range in-range value passes (threshold-style table)");
     }
 
     // ---- 2. Structural: both call sites go through the helper ----
@@ -228,6 +242,18 @@ int main()
                "completeLoad decides the load rung through staleLadderAtLoad");
         check (settle.contains ("staleLadderAtResolution"),
                "settleStaleRung decides the outcome through staleLadderAtResolution");
+
+        // Range-check wiring: applyOne must refuse through the pinned
+        // helper, not re-derive a clamp - clamp-to-rail-and-report-applied
+        // is the exact defect this replaced.
+        std::ifstream fa ("Source/EchoJayParamApply.h");
+        std::stringstream sa;
+        sa << fa.rdbuf();
+        const juce::String applySrc (sa.str());
+        const auto applyOneBody = functionBody (applySrc, "inline ApplyResult applyOne");
+        check (applyOneBody.isNotEmpty(), "applyOne body found");
+        check (applyOneBody.contains ("valueWithinMappedRange"),
+               "applyOne refuses out-of-range values through valueWithinMappedRange");
     }
 
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";

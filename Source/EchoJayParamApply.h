@@ -66,6 +66,10 @@ struct ApplyResult
         where verification ran and passed by norm).
     */
     bool         staleDisplayKept = false;
+    // Range validation (12 Aug 2026): the asked value fell outside the live
+    // map's anchor range for this control, nothing was written, the control
+    // went manual. Counted per slot on the EJRangeCheck line.
+    bool         outOfRange       = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -379,6 +383,41 @@ inline juce::Array<juce::Array<float>> anchorsFromVar (const juce::var& entry)
 // ---------------------------------------------------------------------------
 // Apply one semantic setting to the plugin using its map entry.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Range validation (12 Aug 2026, every turn, not only diverged ones). The
+// old behaviour clamped an out-of-range request to the rail and reported it
+// APPLIED: with CLA-76's identity planted at bx_townhouse's fingerprint the
+// model wrote Release 100, a millisecond value from the other plugin's
+// vocabulary, and the clamp moved a seven-position knob to position 7 and
+// called it a success. Clamp-to-rail-and-report-applied is wrong whether or
+// not a stale fingerprint was involved, so the refusal lives at the VALUE
+// level, unconditionally, and not behind a divergence gate.
+//
+// FOR THE RECORD, why the 100 got this far: refineControls clamps
+// server-side against the map it EXPOSED, and the client clamps against the
+// LIVE map. Two clamps against two different maps; a value legal in the
+// exposed vocabulary sails through the first and hits the second's rail.
+//
+// What this does NOT cover: a value that is IN range and still semantically
+// wrong for this version (Release 3 means something different on both
+// plugins). Only the queued server-side exposure echo (pass 2 marking
+// fromFp vs fromBulk per slot) can close that, because the client cannot
+// see which vocabulary authored the number.
+//
+// The guard band: STRICT refusal is not safe. Table bounds are float32
+// renderings of measured anchors while requests are decimal documentation
+// values ("20", "0.7"), a mismatch class of parts-per-million to well under
+// 0.1% (the q=0.7 ladder-tolerance defect was decided by ~3e-8). The defect
+// class this refuses is MULTIPLES of the span (100 against [1..7]), so a
+// 0.1%-of-span band separates them with orders of magnitude to spare.
+inline bool valueWithinMappedRange (float target, float loV, float hiV)
+{
+    const float tol = juce::jmax (1.0e-3f * (hiV - loV),
+                                  1.0e-5f * juce::jmax (std::abs (loV), std::abs (hiV)),
+                                  1.0e-6f);
+    return target >= loV - tol && target <= hiV + tol;
+}
+
 inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
                              const juce::String& semantic,
                              const juce::var& mapEntry,
@@ -523,6 +562,17 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
     float loV = eff.table.getFirst()[0], hiV = loV;
     for (auto& a : eff.table) { loV = juce::jmin (loV, a[0]); hiV = juce::jmax (hiV, a[0]); }
     if (hiV - loV < 1.0e-6f) { r.note = "degenerate map range, left manual"; return r; }
+
+    // Range validation: see valueWithinMappedRange above. Refused values
+    // write nothing and go manual, named individually on the card.
+    if (! valueWithinMappedRange (target, loV, hiV))
+    {
+        r.outOfRange = true;
+        r.note = "asked " + juce::String (target, 2) + ", this control's range is ["
+               + juce::String (loV, 2) + " .. " + juce::String (hiV, 2)
+               + "], left manual";
+        return r;
+    }
 
     norm = juce::jlimit (0.0f, 1.0f, interpolateAnchors (eff.table, target));
     writeNorm (norm);

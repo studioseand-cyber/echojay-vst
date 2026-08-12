@@ -1555,7 +1555,7 @@ ChainHost::applyStructuredSettings (int slotIndex,
     for (auto& r : results)
         out.push_back ({ r.semantic, r.applied, r.normalized, r.note,
                          r.landedText, r.displayVerified, r.readbackMismatch,
-                         r.staleDisplayKept, r.requestedValue });
+                         r.staleDisplayKept, r.requestedValue, r.outOfRange });
 
     return out;
 }
@@ -1704,7 +1704,6 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
         }
         if (step.markSlot)
             slots_[(size_t)newSlotIdx].staleIndexedFp = indexedFp;
-        slots_[(size_t)newSlotIdx].staleRefuseInFlight = step.refuseInFlight;
         if (step.kickRefetch)
         {
             requestMapPrefetch();
@@ -1859,8 +1858,7 @@ bool ChainHost::settleStaleRung(int i)
     const bool wrote    = s.dialStatus == DialStatus::applied
                        || s.dialStatus == DialStatus::partial;
     const auto rung = echojay::staleLadderAtResolution(
-        answered, paramMaps_.find(s.fp) != paramMaps_.end(), applyRan, wrote,
-        s.staleRefused);
+        answered, paramMaps_.find(s.fp) != paramMaps_.end(), applyRan, wrote);
     if (rung == echojay::StaleRung::refetch
         || rung == echojay::StaleRung::mapHeld) return false;   // verdict not in yet
     // An unmapped verdict before settings attach would settle with no keys
@@ -1877,30 +1875,35 @@ bool ChainHost::settleStaleRung(int i)
     if (rung == echojay::StaleRung::dialled
         || rung == echojay::StaleRung::undialled)
     {
-        // dialled: the card reads "Applied automatically" through the
-        // normal path; nothing to add. undialled: the live fp's own map
-        // wrote nothing, which is the plain unusableMap outcome, already
-        // worded by the composers; it is not version staleness, so it earns
-        // no note and no pill. Both clear the mark.
+        // dialled with nothing refused: the card reads "Applied
+        // automatically" through the normal path; nothing to add.
+        // undialled without divergence context is the plain unusableMap
+        // outcome, worded by the composers.
+        //
+        // DIVERGENCE + OUT-OF-RANGE REFUSALS is the one combination that
+        // earns a card note: those values were computed for the version the
+        // server was told about, and refusing a value then telling the user
+        // to hand-dial that same value would be worse than writing it. In-
+        // range values on the same slot dialled normally (same uid at a
+        // different version usually shares names and ranges, which is why
+        // the whole-set refusal this replaced was over-calibrated).
+        bool changed = false;
+        if (! s.dialOutOfRange.isEmpty())
+        {
+            const juce::String note = s.desc.name
+                + " loaded at a different version from the one its settings were "
+                  "worked out for. The out-of-range values ("
+                + s.dialOutOfRange.joinIntoString(", ")
+                + ") were computed for that other version and will not map onto "
+                  "this one - use them as intent rather than as numbers.";
+            if (! s.settings.startsWith(note))
+            {
+                s.settings = s.settings.isEmpty() ? note : note + "\n" + s.settings;
+                changed = true;
+            }
+        }
         s.staleIndexedFp.clear();
-        return false;
-    }
-    if (rung == echojay::StaleRung::refused)
-    {
-        // Refusing to write a value and then telling the user to hand-dial
-        // that same value would be worse than writing it (Sean, 12 Aug
-        // 2026): the numbers on the card were computed for the version the
-        // server was told about, not the one that loaded. Keep the guidance,
-        // reframe the numbers as intent.
-        const juce::String note = s.desc.name
-            + " is a different version from the one these settings were "
-              "worked out for, so nothing was dialled. The values shown were "
-              "computed for that other version and will not map onto this "
-              "one, so use them as intent rather than as numbers.";
-        if (! s.settings.startsWith(note))
-            s.settings = s.settings.isEmpty() ? note : note + "\n" + s.settings;
-        s.staleIndexedFp.clear();
-        return true;
+        return changed;
     }
     // Unmapped: the corpus does not hold the installed binary's fingerprint.
     // The card speaks, and every requested key goes manual so the card's
@@ -2476,37 +2479,6 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         return;
     }
 
-    // Stale-map ladder, ANY divergence (12 Aug 2026, rung C; widened same
-    // day from map-held only): the settings in flight were authored against
-    // the WRONG EXPOSURE - the build turn's mapFps told the server the
-    // stale fingerprint - so the ENTIRE set is refused, not only the names
-    // that fail to resolve. Per-name resolution cannot catch this: with
-    // CLA-76's identity pointed at bx_townhouse's fingerprint the two
-    // foreign names died correctly while Release, valid in both
-    // vocabularies, wrote 100 (a millisecond value) to a seven-position
-    // knob and clamped to the rail. The name was right, the VALUE was from
-    // the wrong plugin's vocabulary. Sits AFTER the map lookup on purpose:
-    // the refusal exists to stop values WRITING, so a slot with no map
-    // falls through above to pending/noMap and the unmapped rung keeps its
-    // own card speech. Every key goes manual; settleStaleRung names the
-    // rung and reframes the card's numbers as intent.
-    if (s.staleRefuseInFlight && !s.staleSettled && s.staleIndexedFp.isNotEmpty())
-    {
-        s.structuredApplied = true;
-        s.staleRefused      = true;
-        s.dialAppliedCount  = 0;
-        if (auto* ob = s.structuredSettings.getDynamicObject())
-            for (auto& kv : ob->getProperties())
-                s.dialManual.addIfNotAlreadyThere(echojay::semanticLabel(kv.name.toString()));
-        s.dialStatus = DialStatus::unusableMap;
-        EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
-                       + "\") STALE EXPOSURE - whole set refused, "
-                       + juce::String(s.dialManual.size())
-                       + " key(s) to manual (index asserted " + s.staleIndexedFp.substring(0, 12)
-                       + ", binary is " + s.fp.substring(0, 12) + ")").toRawUTF8());
-        return;
-    }
-
     // INTEGRITY: the map's own fp field must equal the slot's live
     // fingerprint, not just the cache key it was stored under. Catches any
     // keying bug (server response, cache merge, disk corruption) before a
@@ -2558,6 +2530,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
     s.dialManual.clear();
     s.dialReadbackMiss.clear();
     s.dialUnconfirmed.clear();
+    s.dialOutOfRange.clear();
     for (auto& r : report)
     {
         EchoJay_NSLog(("EJParamApply:   " + r.semantic + ": "
@@ -2599,8 +2572,23 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
             s.dialManual.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
             if (r.readbackMismatch)
                 s.dialReadbackMiss.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
+            if (r.outOfRange)
+                s.dialOutOfRange.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
         }
     }
+
+    // The range-check counter (12 Aug 2026), printed on EVERY dialled slot
+    // in the EJMapFps vocabulary, zero case included: if out-of-range asks
+    // turn out to be common on healthy (non-diverged) turns, the exposure
+    // is not communicating ranges to the model well enough - a finding
+    // nothing else can currently see.
+    EchoJay_NSLog(("EJRangeCheck: slot=" + juce::String(slotIndex)
+                   + " \"" + s.desc.name + "\""
+                   + " requested=" + juce::String((int) report.size())
+                   + " outOfRange=" + juce::String(s.dialOutOfRange.size())
+                   + (s.dialOutOfRange.isEmpty() ? juce::String()
+                        : " [" + s.dialOutOfRange.joinIntoString(", ") + "]")
+                   + (s.staleIndexedFp.isNotEmpty() ? " diverged=y" : " diverged=n")).toRawUTF8());
 
     // Honest per-slot verdict: applied only when EVERY requested semantic
     // was written; anything less is partial (some written) or unusableMap
@@ -3482,6 +3470,7 @@ std::vector<ChainHost::SlotDialInfo> ChainHost::getDialInfos() const
         di.unconfirmed  = s.dialUnconfirmed;
         di.appliedCount = s.dialAppliedCount;
         di.staleIndexedFp = s.staleIndexedFp;
+        di.outOfRange   = s.dialOutOfRange;
         out.push_back(std::move(di));
     }
     return out;

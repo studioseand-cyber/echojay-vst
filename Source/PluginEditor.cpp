@@ -19121,8 +19121,8 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
     // the common case, and "X (ratio by hand) needs hand-dialing" read as a
     // failure when threshold, attack, release, freq and gain all landed.
     juce::StringArray appliedNames, zeroParts, staleParts;
-    struct PartialPart { juce::String name; juce::StringArray manual; };
-    std::vector<PartialPart> partialParts;
+    struct PartialPart { juce::String name; juce::StringArray manual, oor; };
+    std::vector<PartialPart> partialParts, zeroOorParts;
     for (const auto& di : ch.getDialInfos())
     {
         // Written-but-display-stale (bridged report-only) is recorded
@@ -19131,13 +19131,18 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
         // applied count.
         if (!di.unconfirmed.isEmpty())
             logDialMiss(di.name, di.fp, "stale_display_kept", di.unconfirmed);
+        // Range refusals are recorded whatever the slot status: the bubble
+        // must never say "use the values on its card" about a value the
+        // card says will not map onto this version.
+        if (!di.outOfRange.isEmpty())
+            logDialMiss(di.name, di.fp, "out_of_range", di.outOfRange);
         switch (di.status)
         {
             case ChainHost::DialStatus::applied:
                 appliedNames.add(di.name);
                 break;
             case ChainHost::DialStatus::partial:
-                partialParts.push_back({ di.name, di.manual });
+                partialParts.push_back({ di.name, di.manual, di.outOfRange });
                 logDialMiss(di.name, di.fp, "partial", di.manual);
                 if (!di.readbackMiss.isEmpty())
                     logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
@@ -19157,6 +19162,12 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                 logDialMiss(di.name, di.fp, "no_map", di.manual);
                 break;
             case ChainHost::DialStatus::unusableMap:
+                if (!di.outOfRange.isEmpty())
+                {
+                    zeroOorParts.push_back({ di.name, di.manual, di.outOfRange });
+                    logDialMiss(di.name, di.fp, "unusable_map", di.manual);
+                    break;
+                }
                 zeroParts.add(di.name);
                 logDialMiss(di.name, di.fp, "unusable_map", di.manual);
                 if (!di.readbackMiss.isEmpty())
@@ -19176,7 +19187,8 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
 
     const int n = ch.getNumSlots();
     juce::String bubble;
-    if (partialParts.empty() && zeroParts.isEmpty() && staleParts.isEmpty())
+    if (partialParts.empty() && zeroParts.isEmpty() && staleParts.isEmpty()
+        && zeroOorParts.empty())
     {
         // Clean full build+dial: the FACTUAL line, never the model's result
         // (9 Aug 2026, same rule as the edit composer - a filter the model
@@ -19192,11 +19204,26 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
             bubble += " Settings applied to " + appliedNames.joinIntoString(", ") + ".";
         for (const auto& p : partialParts)
         {
-            const bool one = p.manual.size() == 1;
-            bubble += " Settings applied to " + p.name + ", except "
-                    + p.manual.joinIntoString(" and ")
-                    + (one ? " which needs hand-dialing - values on its card."
-                           : " which need hand-dialing - values on its card.");
+            // The bubble and the card must agree about the same values
+            // (12 Aug 2026): "use the values on its card" is only said for
+            // manual controls whose card values are usable as numbers.
+            // Out-of-range refusals get the intent framing, same as the
+            // card note.
+            juce::StringArray plain = p.manual;
+            for (const auto& o : p.oor) plain.removeString(o);
+            bubble += " Settings applied to " + p.name;
+            if (!plain.isEmpty())
+                bubble += ", except " + plain.joinIntoString(" and ")
+                        + (plain.size() == 1
+                               ? " which needs hand-dialing - values on its card."
+                               : " which need hand-dialing - values on its card.");
+            else
+                bubble += ".";
+            if (!p.oor.isEmpty())
+                bubble += " " + p.oor.joinIntoString(" and ")
+                        + (p.oor.size() == 1
+                               ? " asked a value outside this version's range - treat its card value as intent, not a number."
+                               : " asked values outside this version's range - treat their card values as intent, not numbers.");
         }
         if (!zeroParts.isEmpty())
         {
@@ -19205,6 +19232,10 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                     + (one ? " needs hand-dialing - use the values on its card."
                            : " need hand-dialing - use the values on their cards.");
         }
+        for (const auto& z : zeroOorParts)
+            bubble += " " + z.name + " asked values outside this version's range ("
+                    + z.oor.joinIntoString(", ")
+                    + ") - nothing was dialled; treat its card values as intent rather than numbers.";
         if (!staleParts.isEmpty())
         {
             const bool one = staleParts.size() == 1;
@@ -19337,20 +19368,22 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
         }
 
     juce::StringArray appliedNames, zeroParts, staleParts;
-    struct PartialPart { juce::String name; juce::StringArray manual; };
-    std::vector<PartialPart> partialParts;
+    struct PartialPart { juce::String name; juce::StringArray manual, oor; };
+    std::vector<PartialPart> partialParts, zeroOorParts;
     for (const auto& di : ch.getDialInfos())
     {
         if (!touchedNames.contains(di.name)) continue;
         if (!di.unconfirmed.isEmpty())   // bridged report-only: same record as the build path
             logDialMiss(di.name, di.fp, "stale_display_kept", di.unconfirmed);
+        if (!di.outOfRange.isEmpty())    // range refusals: same record as the build path
+            logDialMiss(di.name, di.fp, "out_of_range", di.outOfRange);
         switch (di.status)
         {
             case ChainHost::DialStatus::applied:
                 appliedNames.add(di.name);
                 break;
             case ChainHost::DialStatus::partial:
-                partialParts.push_back({ di.name, di.manual });
+                partialParts.push_back({ di.name, di.manual, di.outOfRange });
                 logDialMiss(di.name, di.fp, "partial", di.manual);
                 if (!di.readbackMiss.isEmpty())
                     logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
@@ -19368,6 +19401,12 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 logDialMiss(di.name, di.fp, "no_map", di.manual);
                 break;
             case ChainHost::DialStatus::unusableMap:
+                if (!di.outOfRange.isEmpty())
+                {
+                    zeroOorParts.push_back({ di.name, di.manual, di.outOfRange });
+                    logDialMiss(di.name, di.fp, "unusable_map", di.manual);
+                    break;
+                }
                 zeroParts.add(di.name);
                 logDialMiss(di.name, di.fp, "unusable_map", di.manual);
                 if (!di.readbackMiss.isEmpty())
@@ -19391,7 +19430,7 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
 
     juce::String bubble;
     if (partialParts.empty() && zeroParts.isEmpty() && staleParts.isEmpty()
-        && proseOnlySetNames.isEmpty())
+        && zeroOorParts.empty() && proseOnlySetNames.isEmpty())
     {
         // Clean dial: SILENCE (9 Aug 2026, Sean's rule). The model's result
         // line is NEVER relayed any more - a filter the model can evade by
@@ -19409,12 +19448,25 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
             bubble = "Settings applied to " + appliedNames.joinIntoString(", ") + ".";
         for (const auto& p : partialParts)
         {
-            const bool one = p.manual.size() == 1;
+            // Bubble/card agreement (12 Aug 2026): "values on its card" only
+            // for manual controls whose card values are usable as numbers;
+            // out-of-range refusals get the intent framing, same as the card.
+            juce::StringArray plain = p.manual;
+            for (const auto& o : p.oor) plain.removeString(o);
             bubble += (bubble.isEmpty() ? juce::String() : juce::String(" "));
-            bubble += "Settings applied to " + p.name + ", except "
-                    + p.manual.joinIntoString(" and ")
-                    + (one ? " which needs hand-dialing - values on its card."
-                           : " which need hand-dialing - values on its card.");
+            bubble += "Settings applied to " + p.name;
+            if (!plain.isEmpty())
+                bubble += ", except " + plain.joinIntoString(" and ")
+                        + (plain.size() == 1
+                               ? " which needs hand-dialing - values on its card."
+                               : " which need hand-dialing - values on its card.");
+            else
+                bubble += ".";
+            if (!p.oor.isEmpty())
+                bubble += " " + p.oor.joinIntoString(" and ")
+                        + (p.oor.size() == 1
+                               ? " asked a value outside this version's range - treat its card value as intent, not a number."
+                               : " asked values outside this version's range - treat their card values as intent, not numbers.");
         }
         if (!zeroParts.isEmpty())
         {
@@ -19423,6 +19475,13 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
             bubble += zeroParts.joinIntoString(" and ")
                     + (one ? " needs hand-dialing - use the values on its card."
                            : " need hand-dialing - use the values on their cards.");
+        }
+        for (const auto& z : zeroOorParts)
+        {
+            bubble += (bubble.isEmpty() ? juce::String() : juce::String(" "));
+            bubble += z.name + " asked values outside this version's range ("
+                    + z.oor.joinIntoString(", ")
+                    + ") - nothing was dialled; treat its card values as intent rather than numbers.";
         }
         if (!staleParts.isEmpty())
         {
