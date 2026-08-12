@@ -81,7 +81,17 @@ public:
     // server's sibling merge is the honest serve for an ambiguous name. A
     // name with no known fp is simply absent, same fallback. Returns "{}"
     // when nothing is known.
-    juce::String buildMapFpsJson(int maxEntries = 64) const;
+    // maxEntries RAISED FROM 64 (11 Aug 2026). The rack is never capped (a
+    // loaded slot's fp is the exact binary and always goes first); this bounds
+    // the RECOMMENDABLE set, and on a build turn the rack is empty so the
+    // whole budget went to the first 64 of a ~740-plugin scan. A live turn
+    // showed picked=4 fromFp=0 noFp=4: not one chosen plugin had a
+    // fingerprint, which left every fp-keyed path on the server answering
+    // "unknown" and falling back to the sibling-merged view.
+    //
+    // The server parses up to MAP_FPS_MAX (2000) and both must move together:
+    // raising one alone changes nothing, since the smaller cap still binds.
+    juce::String buildMapFpsJson(int maxEntries = 2000) const;
 
     // ---- Apply-time honesty (26 Jul 2026) ----
     // Per-slot auto-dial outcome. The result bubble may only relay the
