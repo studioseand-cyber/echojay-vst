@@ -156,31 +156,37 @@ int main()
         {
             const auto st = staleLadderAtLoad ("fpWrongButReal", "fpLive", true);
             check (st.rung == StaleRung::mapHeld
-                   && st.correctIndex && ! st.kickRefetch && st.markSlot,
-                   "divergence with the live map held defers the verdict and marks");
+                   && st.correctIndex && ! st.kickRefetch && st.markSlot
+                   && st.refuseInFlight,
+                   "divergence with the live map held marks AND refuses the in-flight set");
         }
         // THE LADDER PROPER: divergence, live map absent. Correct, fetch,
-        // mark, hold.
+        // mark, hold - and no wholesale refusal: the apply waits for the
+        // live fp's own map and runs normally against it.
         {
             const auto st = staleLadderAtLoad ("fpOld", "fpNew", false);
             check (st.rung == StaleRung::refetch
-                   && st.correctIndex && st.kickRefetch && st.markSlot,
+                   && st.correctIndex && st.kickRefetch && st.markSlot
+                   && ! st.refuseInFlight,
                    "divergence without the live map corrects, fetches and marks");
         }
-        // Resolution: the dial result outranks the map bookkeeping. Once
-        // the apply has run, dialled/undialled derive from whether anything
-        // WROTE, never from map presence.
-        check (staleLadderAtResolution (true, true, true, true) == StaleRung::dialled,
+        // Resolution: a wholesale refusal names itself first; otherwise the
+        // dial result outranks the map bookkeeping. Once the apply has run,
+        // dialled/undialled derive from whether anything WROTE, never from
+        // map presence.
+        check (staleLadderAtResolution (true, true, true, false, true) == StaleRung::refused,
+               "a refused set resolves to stale-exposure-refused, not undialled");
+        check (staleLadderAtResolution (true, true, true, true, false) == StaleRung::dialled,
                "apply ran and wrote: dialled");
-        check (staleLadderAtResolution (false, true, true, true) == StaleRung::dialled,
+        check (staleLadderAtResolution (false, true, true, true, false) == StaleRung::dialled,
                "the dial verdict stands whatever the fetch bookkeeping says");
-        check (staleLadderAtResolution (true, true, true, false) == StaleRung::undialled,
+        check (staleLadderAtResolution (true, true, true, false, false) == StaleRung::undialled,
                "apply ran against a present map and wrote nothing: undialled, not dialled");
-        check (staleLadderAtResolution (true, true, false, false) == StaleRung::mapHeld,
+        check (staleLadderAtResolution (true, true, false, false, false) == StaleRung::mapHeld,
                "map present but apply not yet run keeps the verdict deferred");
-        check (staleLadderAtResolution (false, false, false, false) == StaleRung::refetch,
+        check (staleLadderAtResolution (false, false, false, false, false) == StaleRung::refetch,
                "unanswered fetch keeps the slot held");
-        check (staleLadderAtResolution (true, false, false, false) == StaleRung::unmapped,
+        check (staleLadderAtResolution (true, false, false, false, false) == StaleRung::unmapped,
                "answered without the map resolves to unmapped (card speaks)");
     }
 

@@ -113,6 +113,7 @@ enum class StaleRung
     mapHeld,        // live-fp map present, dial verdict not in yet
     dialled,        // the apply RAN and WROTE (applied or partial)
     undialled,      // the apply ran against a present map and wrote nothing
+    refused,        // whole set refused: authored against the wrong exposure
     unmapped        // fetch answered and the corpus lacks this fp: card speaks
 };
 
@@ -126,6 +127,7 @@ inline const char* staleRungName (StaleRung r)
         case StaleRung::mapHeld:      return "map-held";
         case StaleRung::dialled:      return "dialled";
         case StaleRung::undialled:    return "undialled";
+        case StaleRung::refused:      return "stale-exposure-refused";
         case StaleRung::unmapped:     return "refetched-unmapped";
     }
     return "?";
@@ -134,42 +136,50 @@ inline const char* staleRungName (StaleRung r)
 struct StaleLadderStep
 {
     StaleRung rung;
-    bool correctIndex;   // write the live fp into the index
-    bool kickRefetch;    // request the live fp's map now
-    bool markSlot;       // remember the divergence on the slot until resolved
+    bool correctIndex;    // write the live fp into the index
+    bool kickRefetch;     // request the live fp's map now
+    bool markSlot;        // remember the divergence on the slot until resolved
+    bool refuseInFlight;  // refuse the ENTIRE in-flight control set at apply
 };
 
 // At load. mapHeldForLiveFp: whether the live fp's map is already cached.
 // A held map is NOT a dial (12 Aug 2026, rung A rehearsal: this branch
-// asserted refetched-dialled over applied=0 unusableMap): it means no fetch
-// is needed, and the verdict waits for the apply, so the slot is marked and
-// settles from the dial result like every other divergence. This is also
-// where the wrong-map plant lands: a real-but-wrong indexed fp with the
-// live fp's own map cached diverges into mapHeld, and the apply can only
-// ever use the live fp's map (the lookup keys on the fp computed at load,
-// and the map's own fp field must match it), so the wrong map is
-// structurally unreachable from here.
+// asserted refetched-dialled over applied=0 unusableMap): no fetch is
+// needed, the slot is marked, AND the in-flight control set is refused
+// wholesale (12 Aug, rung C rehearsal). The settings riding this turn were
+// authored against the WRONG EXPOSURE - the build turn's mapFps carried
+// the stale fp - and per-name resolution cannot catch that: with CLA-76's
+// identity pointed at bx_townhouse's fingerprint the two foreign names
+// died correctly while Release, valid in both vocabularies, wrote 100 (a
+// millisecond value) to a seven-position knob and clamped to the rail.
+// Only the value was wrong, so only refusing the whole set is safe. The
+// wrong MAP is still structurally unreachable (the apply keys on the fp
+// computed at load and the map's own fp field must match it); this refusal
+// is about wrong VALUES arriving through valid names.
 inline StaleLadderStep staleLadderAtLoad (const juce::String& indexedFp,
                                           const juce::String& liveFp,
                                           bool mapHeldForLiveFp)
 {
     if (indexedFp.isNotEmpty() && indexedFp == liveFp)
-        return { StaleRung::noDivergence, false, false, false };
+        return { StaleRung::noDivergence, false, false, false, false };
     if (indexedFp.isEmpty())
-        return { StaleRung::firstIndex, true, false, false };
+        return { StaleRung::firstIndex, true, false, false, false };
     if (mapHeldForLiveFp)
-        return { StaleRung::mapHeld, true, false, true };
-    return { StaleRung::refetch, true, true, true };
+        return { StaleRung::mapHeld, true, false, true, true };
+    return { StaleRung::refetch, true, true, true, false };
 }
 
-// At resolution. The dial result outranks the map bookkeeping: once the
-// apply has run, dialled/undialled derive from whether anything WROTE, never
-// from map presence. Before the apply, a present map defers the verdict
-// (mapHeld), an in-flight fetch holds (refetch), and only an answered fetch
-// with no map is unmapped.
+// At resolution. A wholesale refusal names itself first; otherwise the dial
+// result outranks the map bookkeeping: once the apply has run,
+// dialled/undialled derive from whether anything WROTE, never from map
+// presence. Before the apply, a present map defers the verdict (mapHeld),
+// an in-flight fetch holds (refetch), and only an answered fetch with no
+// map is unmapped.
 inline StaleRung staleLadderAtResolution (bool answered, bool mapHeldForLiveFp,
-                                          bool applyRan, bool wroteAnything)
+                                          bool applyRan, bool wroteAnything,
+                                          bool refusedWholeSet)
 {
+    if (refusedWholeSet)  return StaleRung::refused;
     if (applyRan)         return wroteAnything ? StaleRung::dialled : StaleRung::undialled;
     if (mapHeldForLiveFp) return StaleRung::mapHeld;
     if (! answered)       return StaleRung::refetch;

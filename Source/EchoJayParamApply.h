@@ -559,6 +559,13 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
             // report-only rule as the display paths.
             r.applied = true;
             r.staleDisplayKept = true;
+            // The captured text is a PRE-WRITE read on this path, by the
+            // same measurement that keeps the write: carrying it forward
+            // printed landed "4.00" for writes of 0.000 and 1.000 (12 Aug,
+            // CLA-76) on a line already saying readback cannot be
+            // confirmed. There is no post-write reader in-stack, so the
+            // honest value is none.
+            r.landedText.clear();
             r.note = "written; readback cannot be confirmed in-stack on this "
                      "bridged plugin";
         }
@@ -598,6 +605,9 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
         // bridge, so a revert here can only undo correct work.
         r.applied = true;
         r.staleDisplayKept = true;
+        // Same rule as the setread branch: the text was read pre-write, so
+        // it must not travel as a landing.
+        r.landedText.clear();
         r.note = "written; readback cannot be confirmed in-stack on this "
                  "bridged plugin";
     }

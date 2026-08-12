@@ -1704,6 +1704,7 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
         }
         if (step.markSlot)
             slots_[(size_t)newSlotIdx].staleIndexedFp = indexedFp;
+        slots_[(size_t)newSlotIdx].staleRefuseInFlight = step.refuseInFlight;
         if (step.kickRefetch)
         {
             requestMapPrefetch();
@@ -1858,7 +1859,8 @@ bool ChainHost::settleStaleRung(int i)
     const bool wrote    = s.dialStatus == DialStatus::applied
                        || s.dialStatus == DialStatus::partial;
     const auto rung = echojay::staleLadderAtResolution(
-        answered, paramMaps_.find(s.fp) != paramMaps_.end(), applyRan, wrote);
+        answered, paramMaps_.find(s.fp) != paramMaps_.end(), applyRan, wrote,
+        s.staleRefused);
     if (rung == echojay::StaleRung::refetch
         || rung == echojay::StaleRung::mapHeld) return false;   // verdict not in yet
     // An unmapped verdict before settings attach would settle with no keys
@@ -1873,13 +1875,16 @@ bool ChainHost::settleStaleRung(int i)
                    + " live=" + s.fp.substring(0, 12)
                    + " rung=" + echojay::staleRungName(rung)).toRawUTF8());
     if (rung == echojay::StaleRung::dialled
-        || rung == echojay::StaleRung::undialled)
+        || rung == echojay::StaleRung::undialled
+        || rung == echojay::StaleRung::refused)
     {
         // dialled: the card reads "Applied automatically" through the
         // normal path; nothing to add. undialled: the live fp's own map
         // wrote nothing, which is the plain unusableMap outcome, already
         // worded by the composers; it is not version staleness, so it earns
-        // no note and no pill. Both clear the mark.
+        // no note and no pill. refused: the whole set went manual at apply
+        // and the composers' unusableMap wording carries it; the rung line
+        // above is the record of WHY. All three clear the mark.
         s.staleIndexedFp.clear();
         return false;
     }
@@ -2432,6 +2437,33 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         s.dialStatus = DialStatus::pending;
         return;
     }
+    // Stale-map ladder, map-held divergence (12 Aug 2026, rung C): the
+    // settings in flight were authored against the WRONG EXPOSURE - the
+    // build turn's mapFps carried the stale fp - so the ENTIRE set is
+    // refused, not only the names that fail to resolve. Per-name resolution
+    // cannot catch this: with CLA-76's identity pointed at bx_townhouse's
+    // fingerprint the two foreign names died correctly while Release, valid
+    // in both vocabularies, wrote 100 (a millisecond value) to a
+    // seven-position knob and clamped to the rail. The name was right, the
+    // VALUE was from the wrong plugin's vocabulary. Every key goes manual;
+    // settleStaleRung names the rung at the settings-attach settle.
+    if (s.staleRefuseInFlight && !s.staleSettled && s.staleIndexedFp.isNotEmpty())
+    {
+        s.structuredApplied = true;
+        s.staleRefused      = true;
+        s.dialAppliedCount  = 0;
+        if (auto* ob = s.structuredSettings.getDynamicObject())
+            for (auto& kv : ob->getProperties())
+                s.dialManual.addIfNotAlreadyThere(echojay::semanticLabel(kv.name.toString()));
+        s.dialStatus = DialStatus::unusableMap;
+        EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+                       + "\") STALE EXPOSURE - whole set refused, "
+                       + juce::String(s.dialManual.size())
+                       + " key(s) to manual (index asserted " + s.staleIndexedFp.substring(0, 12)
+                       + ", binary is " + s.fp.substring(0, 12) + ")").toRawUTF8());
+        return;
+    }
+
     auto it = paramMaps_.find(s.fp);
     if (it == paramMaps_.end())
     {

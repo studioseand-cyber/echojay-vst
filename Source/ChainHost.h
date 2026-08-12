@@ -696,6 +696,8 @@ private:
         // there is nothing to say.
         juce::String                         staleIndexedFp;
         bool                                 staleSettled = false;
+        bool                                 staleRefuseInFlight = false; // map-held divergence: refuse the whole in-flight set
+        bool                                 staleRefused = false;        // the refusal actually fired at apply
         // Hosted settings cache (see setStateCacheEnabled). The blob and its
         // bookkeeping are read under stateCacheMutex_; everything else on
         // this struct follows the existing message-thread-only rule.
