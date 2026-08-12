@@ -121,6 +121,56 @@ int main()
                "two version keys agreeing on one fp keep the fallback");
     }
 
+    // ---- Stale-map ladder state table (12 Aug 2026) ----
+    // No live trigger on this machine (exact=0 means nothing here has ever
+    // diverged and re-matched), so the table is pinned here and rehearsed
+    // once with a planted fp before it is trusted. See STALE_LADDER notes.
+    {
+        using echojay::StaleRung;
+        using echojay::staleLadderAtLoad;
+        using echojay::staleLadderAtResolution;
+
+        // Same fp: nothing happens. Not a correction, not a fetch.
+        {
+            const auto st = staleLadderAtLoad ("fpA", "fpA", false);
+            check (st.rung == StaleRung::noDivergence
+                   && ! st.correctIndex && ! st.kickRefetch && ! st.markSlot,
+                   "load matching the index is no divergence and writes nothing");
+        }
+        // Empty index entry: new knowledge, not staleness. Correct the
+        // index, but no refetch and no slot mark - there is no stale map
+        // anywhere to hold against.
+        {
+            const auto st = staleLadderAtLoad ({}, "fpA", false);
+            check (st.rung == StaleRung::firstIndex
+                   && st.correctIndex && ! st.kickRefetch && ! st.markSlot,
+                   "first index corrects the index without fetch or mark");
+        }
+        // Divergence with the live fp's map already cached: resolves
+        // immediately, the normal apply serves it, nothing outstanding.
+        {
+            const auto st = staleLadderAtLoad ("fpOld", "fpNew", true);
+            check (st.rung == StaleRung::dialled
+                   && st.correctIndex && ! st.kickRefetch && ! st.markSlot,
+                   "divergence with the live map held resolves without a fetch");
+        }
+        // THE LADDER PROPER: divergence, live map absent. Correct, fetch,
+        // mark, hold.
+        {
+            const auto st = staleLadderAtLoad ("fpOld", "fpNew", false);
+            check (st.rung == StaleRung::refetch
+                   && st.correctIndex && st.kickRefetch && st.markSlot,
+                   "divergence without the live map corrects, fetches and marks");
+        }
+        // Resolution: unanswered stays held; an answer decides by presence.
+        check (staleLadderAtResolution (false, false) == StaleRung::refetch,
+               "unanswered fetch keeps the slot held");
+        check (staleLadderAtResolution (true, true) == StaleRung::dialled,
+               "answered with the map held resolves to dialled");
+        check (staleLadderAtResolution (true, false) == StaleRung::unmapped,
+               "answered without the map resolves to unmapped (card speaks)");
+    }
+
     // ---- 2. Structural: both call sites go through the helper ----
     {
         // build_and_run.sh runs from the repo root; read the shipped source.
@@ -143,6 +193,18 @@ int main()
                "buildMapFpsJson goes through fpForIdentity");
         check (dialable.contains ("fpForIdentity"),
                "getDialableRecommendableNames goes through fpForIdentity");
+
+        // Stale-map ladder wiring: the decisions must come from the pinned
+        // pure functions above, not a re-derived inline comparison, or the
+        // table this test asserts stops describing the shipped behaviour.
+        const auto load   = functionBody (src, "void ChainHost::completeLoad");
+        const auto settle = functionBody (src, "bool ChainHost::settleStaleRung");
+        check (load.isNotEmpty(),   "completeLoad body found");
+        check (settle.isNotEmpty(), "settleStaleRung body found");
+        check (load.contains ("staleLadderAtLoad"),
+               "completeLoad decides the load rung through staleLadderAtLoad");
+        check (settle.contains ("staleLadderAtResolution"),
+               "settleStaleRung decides the outcome through staleLadderAtResolution");
     }
 
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";

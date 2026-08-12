@@ -19120,7 +19120,7 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
     // Partial slots state the POSITIVE first: with richer maps partial is
     // the common case, and "X (ratio by hand) needs hand-dialing" read as a
     // failure when threshold, attack, release, freq and gain all landed.
-    juce::StringArray appliedNames, zeroParts;
+    juce::StringArray appliedNames, zeroParts, staleParts;
     struct PartialPart { juce::String name; juce::StringArray manual; };
     std::vector<PartialPart> partialParts;
     for (const auto& di : ch.getDialInfos())
@@ -19143,6 +19143,16 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                     logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
                 break;
             case ChainHost::DialStatus::noMap:
+                // Stale-map ladder, unmapped rung: the plugin loaded at a
+                // version the corpus has no mapping for. Its wording names
+                // the actual reason, and only this shape earns the
+                // suggest-an-alternative pill below.
+                if (di.staleIndexedFp.isNotEmpty())
+                {
+                    staleParts.add(di.name);
+                    logDialMiss(di.name, di.fp, "stale_unmapped", di.manual);
+                    break;
+                }
                 zeroParts.add(di.name);
                 logDialMiss(di.name, di.fp, "no_map", di.manual);
                 break;
@@ -19166,7 +19176,7 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
 
     const int n = ch.getNumSlots();
     juce::String bubble;
-    if (partialParts.empty() && zeroParts.isEmpty())
+    if (partialParts.empty() && zeroParts.isEmpty() && staleParts.isEmpty())
     {
         // Clean full build+dial: the FACTUAL line, never the model's result
         // (9 Aug 2026, same rule as the edit composer - a filter the model
@@ -19195,9 +19205,54 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                     + (one ? " needs hand-dialing - use the values on its card."
                            : " need hand-dialing - use the values on their cards.");
         }
+        if (!staleParts.isEmpty())
+        {
+            const bool one = staleParts.size() == 1;
+            bubble += " " + staleParts.joinIntoString(" and ")
+                    + (one ? " loaded at a version newer than any mapping we hold, so its controls need dialling by hand - values on its card."
+                           : " loaded at versions newer than any mapping we hold, so their controls need dialling by hand - values on their cards.");
+        }
     }
+    juce::String altPrompt, altLabel;
+    composeStaleAltFollowUp(staleParts, altPrompt, altLabel);
     clearStageStatus();   // the bubble replaces the load/dial-window label
-    appendLocalResultBubble(bubble);
+    appendLocalResultBubble(bubble, altPrompt, altLabel);
+}
+
+// Stale-map ladder, unmapped rung: the ONE user-pressed follow-up. Same
+// one-pill discipline as buildEditAltFollowUp (per-slot pills would stale
+// each other), and the prompt carries the REAL reason so the model cannot
+// rationalise the swap sonically. Constrained to the dialable set, which is
+// the complete list of names that can actually be auto-dialled here. Nothing
+// automatic: this fires only when the user presses the pill.
+void EchoJayEditor::composeStaleAltFollowUp(const juce::StringArray& staleNames,
+                                            juce::String& altPromptOut,
+                                            juce::String& altLabelOut)
+{
+    if (staleNames.isEmpty()) return;
+    const auto dialable = processorRef.getChainHost().getDialableRecommendableNames();
+    if (dialable.isEmpty()) return;   // no honest offer to make
+    const bool one = staleNames.size() == 1;
+    juce::StringArray quoted;
+    for (const auto& sn : staleNames) quoted.add("\"" + sn + "\"");
+    altPromptOut = juce::String(one ? "This plugin is" : "These plugins are")
+        + " a sound choice and stays in the chain unless I say otherwise: "
+        + quoted.joinIntoString(", ")
+        + ". But " + (one ? "its" : "their")
+        + " mapping is unavailable at the version installed on this machine, so "
+        + (one ? "its" : "their")
+        + " settings cannot be auto-dialled. Propose ONE alternative"
+        + (one ? juce::String() : juce::String(" for each"))
+        + " in the same role, chosen ONLY from this list, which is the complete "
+          "set that can be auto-dialled here: "
+        + dialable.joinIntoString(", ")
+        + ". Say plainly that the swap is offered because auto-dial is "
+          "unavailable for the installed version, not as a sonic judgement on "
+          "the original. Propose it as ONE chain edit replacing only "
+        + (one ? "that slot" : "those slots") + ".";
+    altLabelOut = (one ? "Suggest a dialable alternative to "
+                       : "Suggest dialable alternatives to ")
+                + staleNames.joinIntoString(", ");
 }
 
 // ---- Apply-time honesty for edits (item 3, 9 Aug 2026) ---------------------
@@ -19275,7 +19330,7 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                     }
         }
 
-    juce::StringArray appliedNames, zeroParts;
+    juce::StringArray appliedNames, zeroParts, staleParts;
     struct PartialPart { juce::String name; juce::StringArray manual; };
     std::vector<PartialPart> partialParts;
     for (const auto& di : ch.getDialInfos())
@@ -19295,6 +19350,14 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                     logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
                 break;
             case ChainHost::DialStatus::noMap:
+                // Stale-map ladder, unmapped rung: same diversion as the
+                // build path, same pill.
+                if (di.staleIndexedFp.isNotEmpty())
+                {
+                    staleParts.add(di.name);
+                    logDialMiss(di.name, di.fp, "stale_unmapped", di.manual);
+                    break;
+                }
                 zeroParts.add(di.name);
                 logDialMiss(di.name, di.fp, "no_map", di.manual);
                 break;
@@ -19321,7 +19384,8 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
     }
 
     juce::String bubble;
-    if (partialParts.empty() && zeroParts.isEmpty() && proseOnlySetNames.isEmpty())
+    if (partialParts.empty() && zeroParts.isEmpty() && staleParts.isEmpty()
+        && proseOnlySetNames.isEmpty())
     {
         // Clean dial: SILENCE (9 Aug 2026, Sean's rule). The model's result
         // line is NEVER relayed any more - a filter the model can evade by
@@ -19354,6 +19418,14 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                     + (one ? " needs hand-dialing - use the values on its card."
                            : " need hand-dialing - use the values on their cards.");
         }
+        if (!staleParts.isEmpty())
+        {
+            const bool one = staleParts.size() == 1;
+            bubble += (bubble.isEmpty() ? juce::String() : juce::String(" "));
+            bubble += staleParts.joinIntoString(" and ")
+                    + (one ? " loaded at a version newer than any mapping we hold, so its controls need dialling by hand - values on its card."
+                           : " loaded at versions newer than any mapping we hold, so their controls need dialling by hand - values on their cards.");
+        }
     }
     if (!undialledNames.isEmpty())
     {
@@ -19384,7 +19456,11 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                                              : " couldn't be set by name - dial them by hand.");
     }
     if (bubble.isNotEmpty())
-        appendLocalResultBubble(bubble);
+    {
+        juce::String altPrompt, altLabel;
+        composeStaleAltFollowUp(staleParts, altPrompt, altLabel);
+        appendLocalResultBubble(bubble, altPrompt, altLabel);
+    }
 }
 
 juce::String EchoJayEditor::consumeSuggestionSetsAtReceipt(const juce::String& editJson,

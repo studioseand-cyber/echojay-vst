@@ -97,6 +97,68 @@ inline juce::String fpForIdentity (const std::map<juce::String, juce::String>& i
     return resolve (FpLookup::uidFallback, found);
 }
 
+// ---------------------------------------------------------------------------
+// Stale-map ladder (12 Aug 2026). completeLoad is the ONLY point where index
+// staleness is detectable: at buildMapFpsJson time nothing has been loaded,
+// so a live fp differing from the indexed fp is the first and last proof the
+// index was stale. The decisions are pure functions here so mapfps_test can
+// pin the state table; ChainHost owns the side effects.
+// ---------------------------------------------------------------------------
+
+enum class StaleRung
+{
+    noDivergence,   // indexed fp equals live fp
+    firstIndex,     // nothing indexed yet: new knowledge, not staleness
+    refetch,        // stale index corrected, live-fp map fetch outstanding
+    dialled,        // live-fp map held (or arrived): the normal apply runs
+    unmapped        // fetch answered and the corpus lacks this fp: card speaks
+};
+
+inline const char* staleRungName (StaleRung r)
+{
+    switch (r)
+    {
+        case StaleRung::noDivergence: return "no-divergence";
+        case StaleRung::firstIndex:   return "first-index";
+        case StaleRung::refetch:      return "refetch-pending";
+        case StaleRung::dialled:      return "refetched-dialled";
+        case StaleRung::unmapped:     return "refetched-unmapped";
+    }
+    return "?";
+}
+
+struct StaleLadderStep
+{
+    StaleRung rung;
+    bool correctIndex;   // write the live fp into the index
+    bool kickRefetch;    // request the live fp's map now
+    bool markSlot;       // remember the divergence on the slot until resolved
+};
+
+// At load. mapHeldForLiveFp: whether the live fp's map is already cached, in
+// which case the divergence resolves immediately (rung dialled, the normal
+// apply path serves it) and no fetch or mark is needed.
+inline StaleLadderStep staleLadderAtLoad (const juce::String& indexedFp,
+                                          const juce::String& liveFp,
+                                          bool mapHeldForLiveFp)
+{
+    if (indexedFp.isNotEmpty() && indexedFp == liveFp)
+        return { StaleRung::noDivergence, false, false, false };
+    if (indexedFp.isEmpty())
+        return { StaleRung::firstIndex, true, false, false };
+    if (mapHeldForLiveFp)
+        return { StaleRung::dialled, true, false, false };
+    return { StaleRung::refetch, true, true, true };
+}
+
+// At fetch resolution. answered: the fetch for the live fp is no longer in
+// flight. Until then the rung stays refetch and the slot stays held.
+inline StaleRung staleLadderAtResolution (bool answered, bool mapHeldForLiveFp)
+{
+    if (! answered) return StaleRung::refetch;
+    return mapHeldForLiveFp ? StaleRung::dialled : StaleRung::unmapped;
+}
+
 // Compact human display of one applied semantic setting:
 //   ratio "4:1" -> "ratio 4:1", attack_ms 40 -> "attack 40ms",
 //   threshold_db -18 -> "threshold -18dB", freq_hz 1200 -> "freq 1200Hz",

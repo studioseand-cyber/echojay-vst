@@ -1678,13 +1678,50 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
             liveDesc = desc;   // never fingerprint from a blank description
         slots_[(size_t)newSlotIdx].fp =
             echojay::fingerprintForDescription(liveDesc, newProc->getParameters().size());
+        // Stale-map ladder (12 Aug 2026). This is the ONLY point where index
+        // staleness is detectable: a live fp differing from the indexed fp
+        // proves the index described a binary that is no longer installed.
+        // The decisions are echojay::staleLadderAtLoad (pure, pinned by
+        // mapfps_test); the side effects happen here. On divergence the
+        // index self-corrects as before, the slot is marked as having loaded
+        // against a fingerprint the server did not have, and the live fp's
+        // map is fetched NOW through the existing prefetch path (the
+        // corrected index makes the sweep want it). The apply for this slot
+        // then holds naturally: paramMaps_ has nothing under the live fp, so
+        // applyStructuredIfReady parks it pending until storeParamMaps
+        // answers, where settleStaleRung names the rung.
         const auto ik = echojay::identityKeyForDescription(liveDesc);
-        auto it = identityToFp_.find(ik);
-        if (it == identityToFp_.end() || it->second != slots_[(size_t)newSlotIdx].fp)
+        auto idxIt = identityToFp_.find(ik);
+        const juce::String indexedFp =
+            (idxIt != identityToFp_.end()) ? idxIt->second : juce::String();
+        const juce::String liveFp = slots_[(size_t)newSlotIdx].fp;
+        const auto step = echojay::staleLadderAtLoad(
+            indexedFp, liveFp, paramMaps_.find(liveFp) != paramMaps_.end());
+        if (step.correctIndex)
         {
-            identityToFp_[ik] = slots_[(size_t)newSlotIdx].fp;
+            identityToFp_[ik] = liveFp;
             saveParamMapsToDisk();
         }
+        if (step.markSlot)
+            slots_[(size_t)newSlotIdx].staleIndexedFp = indexedFp;
+        if (step.kickRefetch)
+        {
+            requestMapPrefetch();
+            // Honest status while the answer is in flight: the prefetch path
+            // marks requested but not pending, and pending is what keeps
+            // applyStructuredIfReady saying "pending" instead of "noMap".
+            // Only marked when the request actually left (editor wired).
+            if (mapsRequested_.contains(liveFp))
+                pendingMapFps_.addIfNotAlreadyThere(liveFp);
+        }
+        EchoJay_NSLog(("EJStaleMap: slot=" + juce::String(newSlotIdx)
+                       + " \"" + slots_[(size_t)newSlotIdx].desc.name + "\""
+                       + " indexed=" + (indexedFp.isEmpty() ? juce::String("(none)")
+                                                            : indexedFp.substring(0, 12))
+                       + " live=" + liveFp.substring(0, 12)
+                       + " rung=" + echojay::staleRungName(step.rung)
+                       + (step.rung == echojay::StaleRung::dialled
+                              ? juce::String(" (map already held)") : juce::String())).toRawUTF8());
         applyStructuredIfReady(newSlotIdx, DialTrigger::slotLoaded);
     }
 
@@ -1789,8 +1826,57 @@ void ChainHost::storeParamMaps(const juce::var& mapsObj)
         const bool wasApplied = slots_[(size_t)i].structuredApplied;
         applyStructuredIfReady(i, DialTrigger::mapArrived);
         if (!wasApplied && slots_[(size_t)i].structuredApplied) changed = true;
+        // Stale-map ladder: the apply above ran against whatever this
+        // response delivered, so the rung is decidable now.
+        if (settleStaleRung(i)) changed = true;
     }
     if (changed && onSlotSettingsChanged) onSlotSettingsChanged();
+}
+
+bool ChainHost::settleStaleRung(int i)
+{
+    if (i < 0 || i >= (int)slots_.size()) return false;
+    auto& s = slots_[(size_t)i];
+    if (s.staleIndexedFp.isEmpty() || s.staleSettled) return false;
+    // "Answered" needs the request to have LEFT first: a load with the
+    // editor unwired kicks nothing, and without the asked guard the next
+    // unrelated map arrival would read the absent pending mark as an answer
+    // and declare unmapped without the corpus ever being asked. Residual
+    // window: a prefetch-sweep request marks asked but not pending, so a
+    // response to a DIFFERENT batch landing while that one is in flight can
+    // still settle early; the cost is conservative wording that the
+    // mapArrived apply then corrects, never a lost dial.
+    const bool asked    = mapsRequested_.contains(s.fp);
+    const bool answered = asked && ! pendingMapFps_.contains(s.fp);
+    const auto rung = echojay::staleLadderAtResolution(
+        answered, paramMaps_.find(s.fp) != paramMaps_.end());
+    if (rung == echojay::StaleRung::refetch) return false;   // still in flight
+    s.staleSettled = true;
+    EchoJay_NSLog(("EJStaleMap: slot=" + juce::String(i) + " \"" + s.desc.name + "\""
+                   + " indexed=" + s.staleIndexedFp.substring(0, 12)
+                   + " live=" + s.fp.substring(0, 12)
+                   + " rung=" + echojay::staleRungName(rung)).toRawUTF8());
+    if (rung == echojay::StaleRung::dialled)
+    {
+        // The map arrived and the mapArrived apply just ran (or runs on this
+        // sweep). Say nothing: the card reads "Applied automatically"
+        // through the normal path, which is the whole point of the rung.
+        s.staleIndexedFp.clear();
+        return false;
+    }
+    // Unmapped: the corpus does not hold the installed binary's fingerprint.
+    // The card speaks, and every requested key goes manual so the card's
+    // existing hand-dial guidance (the prose the model wrote, kept below the
+    // note) carries the values. Control-level refusal logic is deliberately
+    // absent: there is no map to refuse against.
+    if (auto* o = s.structuredSettings.getDynamicObject())
+        for (auto& kv : o->getProperties())
+            s.dialManual.addIfNotAlreadyThere(echojay::semanticLabel(kv.name.toString()));
+    const juce::String note = "This version of " + s.desc.name
+        + " is newer than any mapping we hold, so these controls need dialling by hand.";
+    if (! s.settings.startsWith(note))
+        s.settings = s.settings.isEmpty() ? note : note + "\n" + s.settings;
+    return true;
 }
 
 void ChainHost::mergeBootstrapMaps()
@@ -3235,12 +3321,49 @@ juce::String ChainHost::buildMapFpsJson(int maxEntries) const
     // join), so the counter line below reconciles against the feed count on
     // every turn -- edit turns and capped turns included. Once the cap
     // fires, everything after it counts capped, whatever it would have been.
+    // rackWon vs the dup buckets (12 Aug 2026, from the 14:08 turn): the
+    // claimed check reads the OUTPUT OBJECT, which the recommendable loop
+    // itself fills, so a name already claimed by an EARLIER FEED ENTRY (the
+    // feed carries duplicate names) hit the same branch as a rack claim and
+    // 33 dup skips printed as rackWon against a rack of one fp-less
+    // built-in. Same skip, two owners; rackNames says which.
+    //
+    // AND THE SKIP IS NOT PROVEN HARMLESS (Sean, same day): because it
+    // fires before the join, a feed duplicate never reaches put, so put's
+    // conflict detection is DEAD CODE for feed-versus-feed names - it can
+    // only be populated by rack slots. A duplicate name is therefore
+    // resolved to whichever entry came first in SCAN ORDER, and scan order
+    // is not evidence: asserting the wrong binary is worse than asserting
+    // none, because the server's sibling merge is the honest serve for an
+    // ambiguous name. Measured before fixed: the three dup buckets below
+    // say whether first-wins ever disagrees with the duplicate's own fp.
+    // If dupDiffFp stays zero on this machine, first-wins is harmless here
+    // and this comment is the record; if not, those names get omitted the
+    // way conflicted already omits rack conflicts, and nameConfl starts
+    // counting something.
+    juce::StringArray rackNames;
+    for (const auto& s : slots_)
+        if (s.desc.name.isNotEmpty() && s.fp.isNotEmpty())
+            rackNames.addIfNotAlreadyThere(s.desc.name);
     int exact = 0, uidFb = 0, ambig = 0, miss = 0,
-        rackWon = 0, nameConfl = 0, capped = 0;
+        rackWon = 0, dupSameFp = 0, dupDiffFp = 0, dupUnresolved = 0,
+        nameConfl = 0, capped = 0;
     for (const auto& e : recommendable_)
     {
         if (o->getProperties().size() >= maxEntries)               { ++capped;    continue; }
-        if (o->getProperty(e.displayName).toString().isNotEmpty()) { ++rackWon;   continue; }   // rack wins
+        const auto storedFp = o->getProperty(e.displayName).toString();
+        if (storedFp.isNotEmpty())
+        {
+            if (rackNames.contains(e.displayName)) { ++rackWon; continue; }
+            // Feed duplicate: resolve ITS fp and compare against what the
+            // first-wins entry stored. Measurement only - the skip stands
+            // until dupDiffFp is shown nonzero live.
+            const auto dupFp = echojay::fpForIdentity(identityToFp_, e.desc);
+            if (dupFp.isEmpty())          ++dupUnresolved;
+            else if (dupFp == storedFp)   ++dupSameFp;
+            else                          ++dupDiffFp;
+            continue;
+        }
         if (conflicted.contains(e.displayName))                    { ++nameConfl; continue; }
         auto outcome = echojay::FpLookup::miss;
         const auto fp = echojay::fpForIdentity(identityToFp_, e.desc, &outcome);
@@ -3265,6 +3388,9 @@ juce::String ChainHost::buildMapFpsJson(int maxEntries) const
                    + " ambig=" + juce::String(ambig)
                    + " miss=" + juce::String(miss)
                    + " rackWon=" + juce::String(rackWon)
+                   + " dupSameFp=" + juce::String(dupSameFp)
+                   + " dupDiffFp=" + juce::String(dupDiffFp)
+                   + " dupUnresolved=" + juce::String(dupUnresolved)
                    + " nameConfl=" + juce::String(nameConfl)
                    + " capped=" + juce::String(capped)
                    + " -> " + juce::String(o->getProperties().size()) + " entr(ies)").toRawUTF8());
@@ -3286,6 +3412,7 @@ std::vector<ChainHost::SlotDialInfo> ChainHost::getDialInfos() const
         di.readbackMiss = s.dialReadbackMiss;
         di.unconfirmed  = s.dialUnconfirmed;
         di.appliedCount = s.dialAppliedCount;
+        di.staleIndexedFp = s.staleIndexedFp;
         out.push_back(std::move(di));
     }
     return out;

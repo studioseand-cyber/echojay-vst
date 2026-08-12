@@ -115,6 +115,8 @@ public:
         juce::StringArray unconfirmed; // written and KEPT on norm proof; display
                                        // read was stale (bridged AU, report-only)
         int               appliedCount = 0;
+        juce::String      staleIndexedFp; // stale-map ladder: superseded fp,
+                                          // "" = load matched the index
     };
     std::vector<SlotDialInfo> getDialInfos() const;
     // One line per slot, at the END of a build, saying what actually dialled.
@@ -686,6 +688,14 @@ private:
         juce::StringArray                    dialReadbackMiss;          // wrote wrong, reverted
         juce::StringArray                    dialUnconfirmed;           // written, display stale (bridged)
         int                                  dialAppliedCount = 0;
+        // Stale-map ladder (12 Aug 2026): the superseded index fp when the
+        // load diverged from the index ("" = no divergence), and whether the
+        // rung has been announced. staleIndexedFp stays set on the unmapped
+        // rung so the editor can compose the card wording and the
+        // suggest-an-alternative pill; it clears on the dialled rung, where
+        // there is nothing to say.
+        juce::String                         staleIndexedFp;
+        bool                                 staleSettled = false;
         // Hosted settings cache (see setStateCacheEnabled). The blob and its
         // bookkeeping are read under stateCacheMutex_; everything else on
         // this struct follows the existing message-thread-only rule.
@@ -733,6 +743,10 @@ private:
     };
     static const char* dialTriggerName (DialTrigger t);
     void applyStructuredIfReady (int slotIndex, DialTrigger trigger);
+    // Stale-map ladder resolution: called from the storeParamMaps sweep once
+    // the live-fp fetch has answered. Returns true when the card changed
+    // (the unmapped rung speaks).
+    bool settleStaleRung (int slotIndex);
     // Construct + append a built-in node synchronously. Returns an error
     // string, empty on success. Called only from loadPluginAsync.
     juce::String loadBuiltinNow (const juce::PluginDescription& desc);

@@ -2949,6 +2949,12 @@ private:
                          const juce::String& targetLabel, int totalOps,
                          const std::vector<ChainHost::ChainEditOp>& opsForAlt,
                          const juce::StringArray& baseSlots);
+    // Stale-map ladder, unmapped rung: the one user-pressed pill offering a
+    // dialable alternative, prompt constrained to getDialableRecommendable-
+    // Names and carrying the real (version, not sonic) reason.
+    void composeStaleAltFollowUp(const juce::StringArray& staleNames,
+                                 juce::String& altPromptOut,
+                                 juce::String& altLabelOut);
     // ONE author for the "Suggest an alternative" follow-up (local apply +
     // Link ack both consume it — the 1c prompt rules cannot drift apart)
     void buildEditAltFollowUp(const juce::StringArray& results,
