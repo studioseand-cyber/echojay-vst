@@ -1719,9 +1719,7 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
                        + " indexed=" + (indexedFp.isEmpty() ? juce::String("(none)")
                                                             : indexedFp.substring(0, 12))
                        + " live=" + liveFp.substring(0, 12)
-                       + " rung=" + echojay::staleRungName(step.rung)
-                       + (step.rung == echojay::StaleRung::dialled
-                              ? juce::String(" (map already held)") : juce::String())).toRawUTF8());
+                       + " rung=" + echojay::staleRungName(step.rung)).toRawUTF8());
         applyStructuredIfReady(newSlotIdx, DialTrigger::slotLoaded);
     }
 
@@ -1772,6 +1770,10 @@ void ChainHost::setSlotStructuredSettings(int i, const juce::var& structured)
     // answer is in flight.
     if (!slots_[(size_t)i].structuredApplied && pendingMapFps_.contains(fp))
         slots_[(size_t)i].dialStatus = DialStatus::pending;
+    // Stale-map ladder: on the map-held branch the dial verdict lands right
+    // here at settings attach, not on any fetch answer, so this is where
+    // that rung settles.
+    if (settleStaleRung(i) && onSlotSettingsChanged) onSlotSettingsChanged();
 }
 
 void ChainHost::storeParamMaps(const juce::var& mapsObj)
@@ -1848,19 +1850,36 @@ bool ChainHost::settleStaleRung(int i)
     // mapArrived apply then corrects, never a lost dial.
     const bool asked    = mapsRequested_.contains(s.fp);
     const bool answered = asked && ! pendingMapFps_.contains(s.fp);
+    // The dial verdict comes from the SLOT, never from map presence (12 Aug
+    // 2026, rung A rehearsal: a held map logged a dial over applied=0
+    // unusableMap). wrote means something actually landed: applied, or
+    // partial with its manual remainder on the card.
+    const bool applyRan = s.structuredApplied;
+    const bool wrote    = s.dialStatus == DialStatus::applied
+                       || s.dialStatus == DialStatus::partial;
     const auto rung = echojay::staleLadderAtResolution(
-        answered, paramMaps_.find(s.fp) != paramMaps_.end());
-    if (rung == echojay::StaleRung::refetch) return false;   // still in flight
+        answered, paramMaps_.find(s.fp) != paramMaps_.end(), applyRan, wrote);
+    if (rung == echojay::StaleRung::refetch
+        || rung == echojay::StaleRung::mapHeld) return false;   // verdict not in yet
+    // An unmapped verdict before settings attach would settle with no keys
+    // to send manual and no prose on the card; the settings-attach settle
+    // completes it instead. A slot that never gets settings never speaks,
+    // which is right: there is nothing to hand-dial.
+    if (rung == echojay::StaleRung::unmapped && s.structuredSettings.isVoid())
+        return false;
     s.staleSettled = true;
     EchoJay_NSLog(("EJStaleMap: slot=" + juce::String(i) + " \"" + s.desc.name + "\""
                    + " indexed=" + s.staleIndexedFp.substring(0, 12)
                    + " live=" + s.fp.substring(0, 12)
                    + " rung=" + echojay::staleRungName(rung)).toRawUTF8());
-    if (rung == echojay::StaleRung::dialled)
+    if (rung == echojay::StaleRung::dialled
+        || rung == echojay::StaleRung::undialled)
     {
-        // The map arrived and the mapArrived apply just ran (or runs on this
-        // sweep). Say nothing: the card reads "Applied automatically"
-        // through the normal path, which is the whole point of the rung.
+        // dialled: the card reads "Applied automatically" through the
+        // normal path; nothing to add. undialled: the live fp's own map
+        // wrote nothing, which is the plain unusableMap outcome, already
+        // worded by the composers; it is not version staleness, so it earns
+        // no note and no pill. Both clear the mark.
         s.staleIndexedFp.clear();
         return false;
     }

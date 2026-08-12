@@ -19230,6 +19230,12 @@ void EchoJayEditor::composeStaleAltFollowUp(const juce::StringArray& staleNames,
                                             juce::String& altLabelOut)
 {
     if (staleNames.isEmpty()) return;
+    // Auto-dial off is an explicit decline of the only-dialable constraint,
+    // and in that state the user has usually named the plugin themselves
+    // too, so the offer would contradict two explicit choices. The card
+    // wording stays either way (needing hand-dialling is useful information
+    // regardless); only the pill is conditional.
+    if (! api.getAutoDialMode()) return;
     const auto dialable = processorRef.getChainHost().getDialableRecommendableNames();
     if (dialable.isEmpty()) return;   // no honest offer to make
     const bool one = staleNames.size() == 1;

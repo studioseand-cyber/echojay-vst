@@ -146,13 +146,18 @@ int main()
                    && st.correctIndex && ! st.kickRefetch && ! st.markSlot,
                    "first index corrects the index without fetch or mark");
         }
-        // Divergence with the live fp's map already cached: resolves
-        // immediately, the normal apply serves it, nothing outstanding.
+        // Divergence with the live fp's map already cached: no fetch, but
+        // NOT a dial (12 Aug 2026, rung A rehearsal lied here) - the slot
+        // is marked and the verdict waits for the apply. This is also the
+        // WRONG-MAP shape: a real-but-wrong indexed fp (another binary's
+        // genuine fingerprint, corpus holds its map) with the live fp's own
+        // map cached lands exactly here, and the apply below can only use
+        // the live fp's map.
         {
-            const auto st = staleLadderAtLoad ("fpOld", "fpNew", true);
-            check (st.rung == StaleRung::dialled
-                   && st.correctIndex && ! st.kickRefetch && ! st.markSlot,
-                   "divergence with the live map held resolves without a fetch");
+            const auto st = staleLadderAtLoad ("fpWrongButReal", "fpLive", true);
+            check (st.rung == StaleRung::mapHeld
+                   && st.correctIndex && ! st.kickRefetch && st.markSlot,
+                   "divergence with the live map held defers the verdict and marks");
         }
         // THE LADDER PROPER: divergence, live map absent. Correct, fetch,
         // mark, hold.
@@ -162,12 +167,20 @@ int main()
                    && st.correctIndex && st.kickRefetch && st.markSlot,
                    "divergence without the live map corrects, fetches and marks");
         }
-        // Resolution: unanswered stays held; an answer decides by presence.
-        check (staleLadderAtResolution (false, false) == StaleRung::refetch,
+        // Resolution: the dial result outranks the map bookkeeping. Once
+        // the apply has run, dialled/undialled derive from whether anything
+        // WROTE, never from map presence.
+        check (staleLadderAtResolution (true, true, true, true) == StaleRung::dialled,
+               "apply ran and wrote: dialled");
+        check (staleLadderAtResolution (false, true, true, true) == StaleRung::dialled,
+               "the dial verdict stands whatever the fetch bookkeeping says");
+        check (staleLadderAtResolution (true, true, true, false) == StaleRung::undialled,
+               "apply ran against a present map and wrote nothing: undialled, not dialled");
+        check (staleLadderAtResolution (true, true, false, false) == StaleRung::mapHeld,
+               "map present but apply not yet run keeps the verdict deferred");
+        check (staleLadderAtResolution (false, false, false, false) == StaleRung::refetch,
                "unanswered fetch keeps the slot held");
-        check (staleLadderAtResolution (true, true) == StaleRung::dialled,
-               "answered with the map held resolves to dialled");
-        check (staleLadderAtResolution (true, false) == StaleRung::unmapped,
+        check (staleLadderAtResolution (true, false, false, false) == StaleRung::unmapped,
                "answered without the map resolves to unmapped (card speaks)");
     }
 
