@@ -48,7 +48,7 @@ inline juce::String identityKeyForDescription (const juce::PluginDescription& de
 
 // How fpForIdentity resolved (or refused) a lookup. One bucket per call,
 // so a caller counting these reconciles against its input count exactly.
-enum class FpLookup { exact, uidFallback, ambiguous, miss };
+enum class FpLookup { exact, uidFallback, ambiguous, miss, noUid };
 
 // identity -> fp with a version-insensitive fallback. Exact identity key
 // first; if that misses, format|uid alone, but only when every version key
@@ -76,6 +76,17 @@ inline juce::String fpForIdentity (const std::map<juce::String, juce::String>& i
         if (outcome != nullptr) *outcome = o;
         return fp;
     };
+
+    // uniqueId == 0 is NO IDENTITY, refused before any lookup (13 Aug
+    // 2026). Every thin VST3 scan row carries uniqueId=0, so all of them
+    // share the identity prefix VST3|0|: a COLLIDING key, not a missing
+    // one. The two-fingerprint case would refuse as ambiguous and is safe;
+    // the dangerous case is ONE fingerprint indexed under VST3|0|, which
+    // the uid fallback would hand to every remaining zero-uid VST3 plugin
+    // on the machine. Refused even for an exact-shaped key: a zero-uid
+    // index entry is itself corrupt and must never serve.
+    if (desc.uniqueId == 0)
+        return resolve (FpLookup::noUid, {});
 
     auto it = identityToFp.find (identityKeyForDescription (desc));
     if (it != identityToFp.end())

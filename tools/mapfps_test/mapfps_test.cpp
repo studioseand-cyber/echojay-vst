@@ -122,6 +122,27 @@ int main()
                "two version keys agreeing on one fp keep the fallback");
     }
 
+    // ---- The zero-uid guard (13 Aug 2026) ----
+    // Every thin VST3 scan row carries uniqueId=0, so all of them share the
+    // identity prefix VST3|0|: a COLLIDING key, not a missing one. One
+    // fingerprint indexed under it would be handed by the uid fallback to
+    // every zero-uid VST3 plugin on the machine (the two-fp case refuses as
+    // ambiguous and is safe; the one-fp case is the dangerous and likelier
+    // one). uniqueId==0 is therefore NO IDENTITY: refused before any
+    // lookup, exact-shaped keys included.
+    {
+        std::map<juce::String, juce::String> index;
+        index["VST3|0|1.0.0"] = "fpPoison";
+
+        auto oc = echojay::FpLookup::miss;
+        check (echojay::fpForIdentity (index, makeDesc ("VST3", 0, "1.0.0"), &oc).isEmpty()
+               && oc == echojay::FpLookup::noUid,
+               "zero uid refuses even an exact-shaped key against a poisoned index");
+        check (echojay::fpForIdentity (index, makeDesc ("VST3", 0, "2.0.0"), &oc).isEmpty()
+               && oc == echojay::FpLookup::noUid,
+               "zero uid refuses the prefix fallback that would serve the poison");
+    }
+
     // ---- Stale-map ladder state table (12 Aug 2026) ----
     // No live trigger on this machine (exact=0 means nothing here has ever
     // diverged and re-matched), so the table is pinned here and rehearsed

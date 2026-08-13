@@ -1764,8 +1764,13 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
         const juce::String liveFp = slots_[(size_t)newSlotIdx].fp;
         const auto step = echojay::staleLadderAtLoad(
             indexedFp, liveFp, paramMaps_.find(liveFp) != paramMaps_.end());
-        if (step.correctIndex)
+        if (step.correctIndex && liveDesc.uniqueId != 0)
         {
+            // The uid guard's write side: a zero-uid identity key (VST3|0|)
+            // is the shared prefix of every thin scan row, so indexing one
+            // would poison the whole zero-uid population. fpForIdentity
+            // refuses zero uids at read; this keeps the index clean at the
+            // source too.
             identityToFp_[ik] = liveFp;
             saveParamMapsToDisk();
         }
@@ -3475,7 +3480,7 @@ juce::String ChainHost::buildMapFpsJson(int maxEntries) const
     for (const auto& s : slots_)
         if (s.desc.name.isNotEmpty() && s.fp.isNotEmpty())
             rackNames.addIfNotAlreadyThere(s.desc.name);
-    int exact = 0, uidFb = 0, ambig = 0, miss = 0,
+    int exact = 0, uidFb = 0, ambig = 0, miss = 0, noUid = 0,
         rackWon = 0, dupSameFp = 0, dupDiffFp = 0, dupUnresolved = 0,
         nameConfl = 0, capped = 0;
     for (const auto& e : recommendable_)
@@ -3503,6 +3508,7 @@ juce::String ChainHost::buildMapFpsJson(int maxEntries) const
             case echojay::FpLookup::uidFallback: ++uidFb; break;
             case echojay::FpLookup::ambiguous:   ++ambig; break;
             case echojay::FpLookup::miss:        ++miss;  break;
+            case echojay::FpLookup::noUid:       ++noUid; break;
         }
         if (fp.isNotEmpty()) put(e.displayName, fp);
     }
@@ -3517,6 +3523,7 @@ juce::String ChainHost::buildMapFpsJson(int maxEntries) const
                    + " uidFb=" + juce::String(uidFb)
                    + " ambig=" + juce::String(ambig)
                    + " miss=" + juce::String(miss)
+                   + " noUid=" + juce::String(noUid)
                    + " rackWon=" + juce::String(rackWon)
                    + " dupSameFp=" + juce::String(dupSameFp)
                    + " dupDiffFp=" + juce::String(dupDiffFp)
