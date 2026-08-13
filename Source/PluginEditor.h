@@ -1082,6 +1082,17 @@ private:
         float durationSeconds = 0;
         float lufs = -100;
         juce::String chainData;   // non-empty when AI returned a <<<ECHOJAY_CHAIN>>> block
+        // STAGED CHAIN (spec section 4): true while chainData holds slots
+        // reported by onSlot and the block has NOT closed. The card renders
+        // its rows; the Build button does NOT appear until onBlock replaces
+        // this with the complete payload and clears the flag. A stream that
+        // dies here leaves rows and no button, which is the honest state.
+        //
+        // NOT PERSISTED, and not an oversight: WsMessage has no counterpart,
+        // same as provisionalId and clientAskKind. A reloaded chat can only
+        // ever hold a finished chain, so there is nothing for a persisted
+        // copy to say.
+        bool chainProvisional = false;
         juce::String gainData;    // non-empty when AI returned a <<<ECHOJAY_GAIN>>> block
         juce::String askData;     // non-empty when AI returned an <<<ECHOJAY_ASK>>> block
         bool askAnswered = false; // chip tapped — chips render disabled/hidden
@@ -1307,6 +1318,8 @@ private:
     juce::String effectiveChannelUid() const;    // active chat's, else pending
     juce::String findChannelChatId(const juce::String& linkUid) const; // "" = none
     bool linkUidLive(const juce::String& uid) const;
+    // Capability, not version. False for every Link that does not claim it.
+    bool linkUidDialCapable(const juce::String& uid) const;
     juce::String channelDisplayLabel(const juce::String& uid) const;
     juce::String findOrCreateChannelChatId(const juce::String& linkUid,
                                            const juce::String& linkNameNow);
@@ -1377,9 +1390,12 @@ private:
         { if (onRowDoubleClicked) onRowDoubleClicked(r); }
     };
     std::unique_ptr<ChainPluginListModel> chainListModel;
-    juce::ListBox    chainPluginList;
-    juce::TextEditor chainSearchBox;
-    juce::TextButton chainScanBtn  { "Refresh" };
+    // chainPluginList and chainSearchBox DELETED (13 Aug 2026, dead-layer
+    // sweep): the never-shown inline picker. chainListModel survives - the
+    // picker POPUP consumes it.
+    // chainScanBtn DELETED (13 Aug 2026): addChildComponent'd, never made
+    // visible, and its five weeks of invisibility hid the chain-scan
+    // trigger gap. Scan Now (showScanMenu) now runs both scans.
 
     // ---- Saved chains (Session B.1 / B.2) --------------------------------
     // Explicit saves only, never auto-save: a chain you did not choose to
@@ -1499,12 +1515,28 @@ private:
     // author, paint() measures nothing. 0 = the buttons are hidden, so the
     // name has the whole strip.
     int chainSaveBtnRight_ = 0;
-    juce::Label      chainStatusLabel;
-    juce::TextButton chainLoadBtn  { "Add to Chain" };
-    juce::Label      chainRecommendLabel;  // "recommendable: N resolved (M enabled, K unmatched)"
-    juce::TextEditor chainDebugJsonBox;    // shows raw chain JSON after each build (temporary debug)
+    // chainStatusLabel DELETED (13 Aug 2026): same corpse as chainScanBtn,
+    // invisible since birth, and it swallowed the staleness warning one
+    // commit after the button swallowed the scan trigger. Its replacement
+    // is chainListInfoLabel in the HEADER, beside the plugin count that
+    // actually misled for five weeks, visible on every tab and every rack
+    // state (the old site was also preempted whenever slots > 0).
+    juce::Label      chainListInfoLabel;
+    // chainLoadBtn, chainRecommendLabel and chainDebugJsonBox DELETED
+    // (13 Aug 2026, dead-layer sweep). The resolver coverage triple the
+    // label carried now logs from buildRecommendable itself (EJScan:
+    // resolver rebuilt), where a release build can see it.
     // Restricts the list to plugins loadable in this wrapper format.
     juce::String chainFormatFilter_;
+    // Scan sequencing (13 Aug 2026): the header's Scan Now runs the
+    // validating PluginScanner, and the chain scan (ChainHost) rides its
+    // COMPLETION, not alongside it, because the chain scan's VST3 rows read
+    // the validated cache and running first would read it stale. Set by the
+    // Scan Now / folder-change handlers, consumed by the timer's falling-
+    // edge watch. Dies with the editor if closed mid-scan, which only costs
+    // the ride-along; the next Scan Now queues it again.
+    bool chainScanAfterSettings_ = false;
+    bool prevSettingsScanning_   = false;
 
     // Holder for the currently-selected slot's editor
     // Pop-out window for hosted plugin editors at native size
@@ -2548,7 +2580,7 @@ private:
     juce::TextButton chatCollapseBtn { "Hide AI" };
     // "n/15" slots-used counter — sits left of the Aa button in the AI
     // ASSISTANT header (replaces the usage counter on this tab).
-    juce::Label chainSlotCountLabel;
+    // chainSlotCountLabel DELETED (13 Aug 2026, dead-layer sweep).
 
     // Warning overlay (shown once when CHAIN tab first opened)
     juce::Component  chainWarnOverlay;
@@ -2626,6 +2658,9 @@ private:
     int  editCardHeight(const ChatMsg& msg) const;
     // Build card (1d follow-up): structured slot lines + Build button —
     // the ops card's visual language applied to CHAIN blocks
+    // Caption line height under a slot row. ONE constant, consumed by the
+    // height helper and the paint loop, so they cannot drift apart.
+    static constexpr int kWhyH = 13;
     int  chainCardHeight(const ChatMsg& msg) const;
     // AI Compare figure card: single height source + renderer (paint-only, no
     // buttons). figuresData is client-built at compose time and persisted, so
@@ -2933,6 +2968,12 @@ private:
                          const juce::String& targetLabel, int totalOps,
                          const std::vector<ChainHost::ChainEditOp>& opsForAlt,
                          const juce::StringArray& baseSlots);
+    // Stale-map ladder, unmapped rung: the one user-pressed pill offering a
+    // dialable alternative, prompt constrained to getDialableRecommendable-
+    // Names and carrying the real (version, not sonic) reason.
+    void composeStaleAltFollowUp(const juce::StringArray& staleNames,
+                                 juce::String& altPromptOut,
+                                 juce::String& altLabelOut);
     // ONE author for the "Suggest an alternative" follow-up (local apply +
     // Link ack both consume it — the 1c prompt rules cannot drift apart)
     void buildEditAltFollowUp(const juce::StringArray& results,
@@ -3863,9 +3904,10 @@ private:
     // Settings PLUGINS row: a scan button (identical to the header one — shows
     // the count, opens the scan menu) with "View all" right beside it, and a
     // Help & Support button filling the other half (opens the website).
-    juce::Viewport settingsPluginViewport;
+    // settingsPluginViewport DELETED (13 Aug 2026, dead-layer sweep);
+    // settingsChecklist is parentless until something readopts it.
     std::unique_ptr<PluginChecklistComponent> settingsChecklist;
-    juce::TextEditor settingsPluginSearchBox;
+    // settingsPluginSearchBox DELETED (13 Aug 2026, dead-layer sweep).
     juce::TextButton viewAllPluginsBtn { "View all" };
     juce::TextButton settingsScanBtn { "Scan Plugins" };
     juce::TextButton settingsHelpBtn { "Help & Support" };

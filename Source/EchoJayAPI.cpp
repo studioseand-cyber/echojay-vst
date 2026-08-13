@@ -1584,6 +1584,49 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
             juce::var doneFrame;
             juce::String errorFrameMsg;
 
+            // ---- WHY THIS READS ONE BYTE (10 Aug 2026) ----------------------
+            // JUCE's WebInputStream::read() FILLS the buffer. It is not
+            // "return whatever has arrived": URLConnectionState::read loops
+            // `while (numBytes > 0)` on a condvar and breaks early ONLY once
+            // the request has FINISHED (juce_Network_mac.mm:443-467). So
+            // read(buf, sizeof buf) blocks until 8192 bytes exist or the
+            // response is over.
+            //
+            // A full seven-slot chain build measures 7772 wire bytes, UNDER
+            // 8192. So that read blocked for the whole turn and handed back
+            // every frame in a single call at the end. The server was
+            // streaming correctly the entire time -- frames measured leaving
+            // the handler from +1.8s spread across a 19.5s span -- and the
+            // transport reassembled them into a one-shot response. On screen
+            // that is a spinner for 30 seconds and then the complete reply,
+            // which is precisely what was reported, and it is indistinguishable
+            // from "streaming was never wired up".
+            //
+            // A one-byte read returns the moment any byte is available, so the
+            // only latency left is the server's. The obvious objection -- that
+            // removing one byte at a time from the front of the NSMutableData
+            // is quadratic -- does not apply here: the buffer is drained as
+            // fast as it fills, so each memmove covers the few queued bytes,
+            // not the response.
+            //
+            // Do NOT raise this for throughput. Any N > 1 re-couples our paint
+            // latency to the server's frame size, and the resulting bug is
+            // invisible in every functional test: the reply still arrives,
+            // complete, correct, and all at once.
+            constexpr int kReadChunk = 1;
+
+            // ---- Stream observability (10 Aug 2026) -------------------------
+            // Three attempts failed to tell "no deltas arrived" from "deltas
+            // arrived and were not painted", because between the open and the
+            // done frame this loop emitted nothing at all. These counters are
+            // that missing observable, and the pair that actually separates
+            // the two cases is (textDeltas, msToFirstDelta): a turn with
+            // textDeltas > 1 and msToFirstDelta well under the total is a
+            // rendering fault, and textDeltas <= 1 is a transport fault.
+            int readCalls = 0, bytesRead = 0, textDeltas = 0, thinkingDeltas = 0, frames = 0;
+            const juce::uint32 tStart = juce::Time::getMillisecondCounter();
+            juce::uint32 tFirstDelta = 0, tLastDelta = 0;
+
             while (! ws.isExhausted())
             {
                 // The alive check between chunks (spec 2.2): abandon rather
@@ -1595,12 +1638,16 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
                     return;
                 }
 
-                const int n = ws.read (buf, (int) sizeof (buf));
+                const int n = ws.read (buf, kReadChunk);
                 if (n <= 0)
                     break;   // EOF or error — settled below by gotDone
 
+                ++readCalls;
+                bytesRead += n;
+
                 for (auto& payload : framing.appendChunk (buf, n))
                 {
+                    ++frames;
                     auto frame = juce::JSON::parse (juce::String::fromUTF8 (payload.c_str(), (int) payload.size()));
                     auto* obj = frame.getDynamicObject();
                     if (obj == nullptr)
@@ -1610,13 +1657,26 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
 
                     if (type == "delta")
                     {
-                        // Feature A: text only. Thinking deltas (Feature B,
-                        // off) and future block types are ignored, per the
-                        // contract's forward-compatibility rule.
-                        if (obj->getProperty ("block").toString() == "text")
+                        // Tagged by TYPE on every delta, never by index or
+                        // arrival order (spec 3.1). Unknown block types stay
+                        // ignored, per the forward-compatibility rule.
+                        const auto block = obj->getProperty ("block").toString();
+                        if (block == "text")
                         {
+                            ++textDeltas;
+                            tLastDelta = juce::Time::getMillisecondCounter();
+                            if (tFirstDelta == 0) tFirstDelta = tLastDelta;
                             auto text = obj->getProperty ("text").toString();
                             dispatch ([ev, text] { if (ev->onTextDelta) ev->onTextDelta (text); });
+                        }
+                        else if (block == "thinking")
+                        {
+                            ++thinkingDeltas;
+                            // Feature B. Absent under Feature A because the
+                            // server sends no thinking config at all — this
+                            // branch simply never fires there.
+                            auto text = obj->getProperty ("text").toString();
+                            dispatch ([ev, text] { if (ev->onThinkingDelta) ev->onThinkingDelta (text); });
                         }
                     }
                     else if (type == "done")
@@ -1637,6 +1697,29 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
             }
 
             handle->detach();
+
+            // Logged BEFORE the alive/cancel check and before every early
+            // return below, because the turns worth diagnosing are exactly
+            // the ones that do not reach a clean done. `spread` is the load
+            // bearing field: it is the wall time between the first and last
+            // text delta REACHING THIS LOOP. A spread of thousands of ms
+            // means the transport delivered progressively and any failure to
+            // paint is downstream; a spread near 0 with a large total means
+            // the bytes were held and delivered in a lump, which is the
+            // JUCE read()-fills-the-buffer trap documented above.
+            {
+                const auto total = juce::Time::getMillisecondCounter() - tStart;
+                EchoJay_NSLog (("EJStream: reads=" + juce::String (readCalls)
+                                + " bytes=" + juce::String (bytesRead)
+                                + " frames=" + juce::String (frames)
+                                + " textDeltas=" + juce::String (textDeltas)
+                                + " thinkingDeltas=" + juce::String (thinkingDeltas)
+                                + " firstDelta=" + juce::String (tFirstDelta ? (int) (tFirstDelta - tStart) : -1) + "ms"
+                                + " spread=" + juce::String (tFirstDelta ? (int) (tLastDelta - tFirstDelta) : 0) + "ms"
+                                + " total=" + juce::String ((int) total) + "ms"
+                                + " done=" + juce::String (gotDone ? 1 : 0)).toRawUTF8());
+            }
+
             if (! aliveFlag->load() || handle->isCancelled()) return;
 
             if (gotErrorFrame)

@@ -624,6 +624,35 @@ real use before Phase 2/3. Do not wait for "everything" to ship anything.
   whether that content is trustworthy.
 
 ## Standing engineering rules (from prior work)
+- A READ THAT FILLS ITS BUFFER IS NOT A READ THAT RETURNS WHAT ARRIVED (10
+  Aug 2026). `juce::WebInputStream::read(buf, n)` reads like "give me up to
+  n bytes"; it actually loops on a condvar until it has ALL n, breaking
+  early only once the request has finished (`juce_Network_mac.mm:443`). The
+  streaming client asked for 8192. A full seven-slot chain build is 7772
+  wire bytes, so the very first read blocked for the entire turn and handed
+  back every frame at once: 30 seconds of spinner, then the whole reply.
+  The server was streaming perfectly throughout — measured leaving the
+  handler from +1.8s across a 19.5s span.
+  Three properties made this expensive, and they generalise:
+  - **The failure is a performance shape, not an error.** Every frame
+    arrived, parsed, and rendered correctly. Nothing threw, nothing logged,
+    the reply was complete and right. Only the TIMING was wrong, and no
+    functional test asserts timing.
+  - **It is indistinguishable from the feature not being wired up.** Three
+    separate attempts could not tell "no deltas arrived" from "deltas
+    arrived and were not painted", because the entire span between "stream
+    opened" and "done" emitted nothing at all. The fix was not a smarter
+    test, it was an OBSERVABLE: counters for deltas received, prose/slot
+    events fired and paints performed, on both sides of the boundary.
+  - **The buffer size looked like a throughput knob.** 8192 is the obvious
+    number to write and there is no size at which the code fails visibly,
+    so nothing ever pushes back. Any N > 1 silently couples paint latency
+    to the server's frame size.
+  The general rule: when a stream is the feature, TIME TO FIRST BYTE IS THE
+  CONTRACT, and it needs an instrument. Assert on when output appeared, not
+  only on what it was. And before trusting any read/poll/receive API in a
+  streaming path, read its implementation to find out whether it blocks for
+  a full buffer.
 - ANY STEP THAT CAN SILENTLY DO NOTHING MUST ASSERT IT DID SOMETHING (3 Aug
   2026, three instances in one day). The family, all the same shape — a tool
   reports SUCCESS for work it did not do, and nothing points at the cause:

@@ -638,10 +638,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
 
     reviewViewport.setViewedComponent(reviewChecklist.get(), false);
     reviewViewport.setScrollBarsShown(true, false);
-    settingsPluginViewport.setViewedComponent(settingsChecklist.get(), false);
-    settingsPluginViewport.setScrollBarsShown(true, false);
-
-    addChildComponent(settingsPluginViewport);
+    // settingsPluginViewport and settingsPluginSearchBox DELETED (13 Aug
+    // 2026, dead-layer sweep): never made visible. NOTE: settingsChecklist
+    // is now parentless - it stays constructed and refreshed, and is a
+    // candidate for the next sweep if nothing readopts it.
 
     // Review overlay button wiring. Done COMMITS the local selection, then
     // closes — this is the single point where ticks are saved.
@@ -710,8 +710,6 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // scan button (same behaviour as the header one), a View all button, and a
     // Help & Support button. The search box member is kept (unused inline) only
     // so existing references compile; search now lives inside the popup.
-    styleSearch(settingsPluginSearchBox, "Search your plugins...");
-    addChildComponent(settingsPluginSearchBox); // not shown inline anymore
 
     // Settings scan button — identical menu/behaviour to the header scan
     // button. Its label tracks the plugin count (kept in sync in timerCallback
@@ -1797,34 +1795,17 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     }
     chainListModel = std::make_unique<ChainPluginListModel>();
     chainListModel->onRowSelected = [this](int) { /* selection handled at load time */ };
-    chainListModel->onRowDoubleClicked = [this](int) { chainLoadBtn.triggerClick(); };
-    chainPluginList.setModel(chainListModel.get());
-    chainPluginList.setColour(juce::ListBox::backgroundColourId, juce::Colour(0xff1a1a1a));
-    chainPluginList.setColour(juce::ListBox::outlineColourId, juce::Colour(0xff333333));
-    chainPluginList.setRowHeight(22);
-    addChildComponent(chainPluginList);
+    // The inline chain-picker layer (ListBox, search box, load button,
+    // recommend label, debug box) was DELETED 13 Aug 2026: superseded by
+    // the picker popup and never made visible, while the timer kept feeding
+    // it. chainListModel SURVIVES - the popup consumes it.
 
-    chainSearchBox.setTextToShowWhenEmpty("Search plugins...", juce::Colour(0xff555555));
-    chainSearchBox.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff1e1e1e));
-    chainSearchBox.setColour(juce::TextEditor::textColourId, juce::Colour(0xffcccccc));
-    chainSearchBox.setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff333333));
-    chainSearchBox.onTextChange = [this] {
-        auto& ch = processorRef.getChainHost();
-        chainListModel->items = ch.getFilteredPlugins(chainSearchBox.getText(), chainFormatFilter_);
-        chainPluginList.updateContent();
-    };
-    addChildComponent(chainSearchBox);
-
-    chainScanBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2a4d7a));
-    chainScanBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-    chainScanBtn.onClick = [this] {
-        processorRef.getChainHost().startScan();
-    };
-    addChildComponent(chainScanBtn);
-
-    chainStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xff888888));
-    chainStatusLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
-    addChildComponent(chainStatusLabel);
+    // Chain-list staleness, in the header beside the plugin count
+    // (addAndMakeVisible, deliberately: two addChildComponent widgets in a
+    // row each swallowed a feature by never being shown).
+    chainListInfoLabel.setColour(juce::Label::textColourId, juce::Colour(0xff888888));
+    chainListInfoLabel.setFont(juce::Font(juce::FontOptions(10.0f)));
+    addAndMakeVisible(chainListInfoLabel);
 
     // ---- Saved chains: Save / Save As / Open -----------------------------
     for (auto* b : { &chainSaveBtn, &chainSaveAsBtn, &chainOpenBtn })
@@ -1860,50 +1841,8 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     };
 
     // Debug: raw chain JSON viewer — shown after each build, temporary
-    chainDebugJsonBox.setMultiLine(true, true);
-    chainDebugJsonBox.setReadOnly(true);
-    chainDebugJsonBox.setScrollbarsShown(true);
-    chainDebugJsonBox.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff101810));
-    chainDebugJsonBox.setColour(juce::TextEditor::textColourId, juce::Colour(0xff88cc88));
-    chainDebugJsonBox.setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff2a4a2a));
-    chainDebugJsonBox.setFont(juce::Font(juce::FontOptions(9.5f)));
-    chainDebugJsonBox.setText("(chain JSON will appear here after Build)", false);
-    addChildComponent(chainDebugJsonBox);
 
     // "Add to Chain" — appends the selected list entry as a new slot
-    chainLoadBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2a6b2a));
-    chainLoadBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-    chainLoadBtn.onClick = [this] {
-        int row = chainPluginList.getSelectedRow();
-        if (row < 0 || row >= chainListModel->items.size()) return;
-        auto desc = chainListModel->items[row];
-        auto& ch = processorRef.getChainHost();
-        chainStatusLabel.setText("Loading " + desc.name + "...", juce::dontSendNotification);
-        chainLoadBtn.setEnabled(false);
-        chainListPanel.statusText = "Loading " + desc.name + "...";
-        chainListPanel.repaint();
-        ch.loadPluginAsync(desc, [this, desc](const juce::String& err)
-        {
-            chainLoadBtn.setEnabled(true);
-            if (err.isNotEmpty())
-            {
-                chainListPanel.statusText = "Failed: " + err;
-                chainListPanel.repaint();
-                return;
-            }
-            auto& ch2 = processorRef.getChainHost();
-            chainSelectedSlot_ = ch2.getNumSlots() - 1;
-            chainListPanel.statusText = {};
-            chainListPanel.rebuild(ch2.getAllSlotInfos(), chainSelectedSlot_);
-            resized();
-            repaint();
-        });
-    };
-    addChildComponent(chainLoadBtn);
-
-    chainRecommendLabel.setColour(juce::Label::textColourId, juce::Colour(0xff557755));
-    chainRecommendLabel.setFont(juce::Font(juce::FontOptions(10.0f)));
-    addChildComponent(chainRecommendLabel);
 
     chainListPanel.onCreateEditor = [this](int i) -> juce::AudioProcessorEditor* {
         // A remote rack cannot render the LINK'S instance here (it lives in
@@ -2053,15 +1992,9 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     };
     addChildComponent(chatCollapseBtn);
 
-    // Slot counter lives INSIDE the chain area (header strip above the
-    // rack), tiny dim caps with a unit — never the sidebar header spot,
-    // and never a bare "n/15" that could read as the credits counter.
-    chainSlotCountLabel.setColour(juce::Label::textColourId, C::text3);
-    chainSlotCountLabel.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
-    chainSlotCountLabel.setJustificationType(juce::Justification::centredRight);
-    chainSlotCountLabel.setText("0/" + juce::String(ChainListPanel::kMaxSlots) + " PLUGINS",
-                                juce::dontSendNotification);
-    addChildComponent(chainSlotCountLabel);
+    // chainSlotCountLabel DELETED (13 Aug 2026, dead-layer sweep): part of
+    // the never-shown inline chain picker; the visible slot count lives in
+    // the ChainListPanel itself.
 
     // LINK MIXER: horizontal strips. Scrolls left/right ONLY: a strip is
     // exactly as tall as the band, so a vertical scrollbar could only ever
@@ -2290,6 +2223,16 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             // rack. The old target menu (which pre-ticked "Build here"
             // even inside channel chats) is deleted, not conditioned.
             const juce::String uid = effectiveChannelUid();
+            // THE ROUTER LINE (11 Aug 2026). Two build paths that looked
+            // identical in the log is what let a whole class of failure sit
+            // undiagnosed: every dial instrument lives in loadChainFromJson,
+            // so a channel build produced total silence and the silence was
+            // read as "the summary is broken" rather than "the summary is on
+            // the other path". Never infer which one ran again.
+            EchoJay_NSLog(("EJChain: build target uid=" + (uid.isEmpty() ? juce::String("(local rack)") : uid)
+                           + "  path=" + (uid.isEmpty() ? "loadChainFromJson" : "sendChainToLink")
+                           + "  dialCapable=" + (uid.isEmpty() ? "n/a (local)"
+                                                              : (linkUidDialCapable(uid) ? "y" : "n -> prose only"))).toRawUTF8());
             if (uid.isEmpty()) { loadChainFromJson(chainBuildJsons[(size_t)i]); return; }
             if (!linkUidLive(uid))
             {
@@ -2669,8 +2612,6 @@ void EchoJayEditor::showLoginScreen()
     settingsLanguage.setVisible(false);
     saveSettingsBtn.setVisible(false); settingsSavedLabel.setVisible(false);
     for (auto& b : dawButtons) b.setVisible(false);
-    settingsPluginViewport.setVisible(false);
-    settingsPluginSearchBox.setVisible(false);
     viewAllPluginsBtn.setVisible(false);
     settingsScanBtn.setVisible(false);
     settingsHelpBtn.setVisible(false);
@@ -2842,6 +2783,12 @@ void EchoJayEditor::cancelBrowserPairing()
 void EchoJayEditor::handleLogout()
 {
     api.logout();
+    // Clear-site instrumentation (11 Aug 2026): names WHICH site emptied
+    // the wire history, so "cleared between turns" is falsifiable rather
+    // than argued from reading. timerCallback is the one that can fire
+    // BETWEEN sends without any user action.
+    EchoJay_NSLog(("EJStores: chatRoles.clear() in handleLogout, had "
+                   + juce::String(processorRef.chatRoles.size()) + " entries").toRawUTF8());
     chatMessages.clear(); processorRef.chatHistory.clear(); processorRef.chatRoles.clear(); processorRef.chatContents.clear();
     showLoginScreen();
 }
@@ -4051,6 +3998,16 @@ void EchoJayEditor::showScanMenu(juce::Component* target)
 {
     auto& sc = processorRef.getPluginScanner();
     juce::PopupMenu menu;
+    // Secondary staleness surface (the header label is the primary): the
+    // chain list's own count and date, right where the user decides to scan.
+    {
+        auto& chh = processorRef.getChainHost();
+        const auto ms = chh.getEntriesScannedAtMs();
+        menu.addSectionHeader("Chain list: " + juce::String(chh.getNumPlugins())
+            + " plugins, scanned "
+            + (ms > 0 ? juce::Time(ms).toString(true, false)
+                      : juce::String("unknown")));
+    }
     menu.addItem(1, "Scan Now", ! sc.isScanning());
     menu.addItem(2, "Add Folder...");
 
@@ -4075,7 +4032,15 @@ void EchoJayEditor::showScanMenu(juce::Component* target)
             auto* scanner = &safeThis->processorRef.getPluginScanner();
             if (result == 1)
             {
+                // Scan Now also refreshes the CHAIN list (13 Aug 2026). It
+                // was the only reachable scan control, and it never touched
+                // chain_entries.xml: a July cache served five weeks because
+                // the chain scan's only trigger was the empty-cache auto-run
+                // at first open, once in a plugin's life. The chain scan is
+                // queued to follow COMPLETION (see chainScanAfterSettings_).
                 scanner->startScan();
+                safeThis->chainScanAfterSettings_ = true;
+                EchoJay_NSLog("EJScan: chain scan queued to follow the settings scan");
             }
             else if (result == 2)
             {
@@ -4092,6 +4057,8 @@ void EchoJayEditor::showScanMenu(juce::Component* target)
                             auto* scannerPtr = &safeThis->processorRef.getPluginScanner();
                             scannerPtr->addCustomFolder(picked);
                             scannerPtr->startScan();
+                            safeThis->chainScanAfterSettings_ = true;
+                            EchoJay_NSLog("EJScan: chain scan queued to follow the settings scan");
                         }
                     });
             }
@@ -4103,6 +4070,8 @@ void EchoJayEditor::showScanMenu(juce::Component* target)
                 {
                     scanner->removeCustomFolder(folders[idx]);
                     scanner->startScan();
+                    safeThis->chainScanAfterSettings_ = true;
+                    EchoJay_NSLog("EJScan: chain scan queued to follow the settings scan");
                 }
             }
         });
@@ -4135,7 +4104,6 @@ void EchoJayEditor::applyReviewModalState()
     // Setting it here as well would be a second authority for one control,
     // and this method is the documented SECOND authority that has caught the
     // chain chrome out before.
-    chainSlotCountLabel.setVisible(false);   // removed from the header, see resized()
     // Save / Save As / Open ride the same chrome flag, but their bounds also
     // depend on window width, so this CONSUMES the rect resized() stored
     // rather than re-deriving one. chainSaveBtnRight_ == 0 means resized()
@@ -9736,8 +9704,6 @@ void EchoJayEditor::showSettingsView()
     settingsManualBtn.setVisible(true);
     // Dump meters is DEV-ONLY (dev_mode file) — resized() owns its
     // visibility; never force it on here
-    settingsPluginViewport.setVisible(false);
-    settingsPluginSearchBox.setVisible(false);
 
     // Monthly stats keep counting (cheap; Trends may want them) even though
     // nothing on Settings renders them since the slim card was removed.
@@ -9831,8 +9797,6 @@ void EchoJayEditor::hideSettingsView()
     uiScaleCombo.setVisible(false);
     autoDialToggle.setVisible(false);
     for (auto& b : dawButtons) b.setVisible(false);
-    settingsPluginViewport.setVisible(false);
-    settingsPluginSearchBox.setVisible(false);
     viewAllPluginsBtn.setVisible(false);
     settingsScanBtn.setVisible(false);
     settingsHelpBtn.setVisible(false);
@@ -9901,13 +9865,6 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
             // `for (auto* b : {...}) b->setVisible(x)` loop is invisible to a
             // grep for "<name>.setVisible", which is how the Chain-over-Compare
             // bug survived its own author's audit.
-            chainScanBtn.setVisible(false);
-            chainStatusLabel.setVisible(false);
-            chainDebugJsonBox.setVisible(false);
-            chainRecommendLabel.setVisible(false);
-            chainSearchBox.setVisible(false);
-            chainPluginList.setVisible(false);
-            chainLoadBtn.setVisible(false);
             chainListPanel.setVisible(false);
             chatSidebar.setVisible(false);
             chatScroll.setVisible(false);
@@ -9919,13 +9876,6 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
             break;
 
         case Tab::Visualisation:
-            chainScanBtn.setVisible(false);
-            chainStatusLabel.setVisible(false);
-            chainDebugJsonBox.setVisible(false);
-            chainRecommendLabel.setVisible(false);
-            chainSearchBox.setVisible(false);
-            chainPluginList.setVisible(false);
-            chainLoadBtn.setVisible(false);
             chainListPanel.setVisible(false);
             visualMode = true; // Visualisation tab always shows the particle visual
             chatSidebar.setVisible(false);
@@ -9937,13 +9887,6 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
             }
             break;
         case Tab::Chat:
-            chainScanBtn.setVisible(false);
-            chainStatusLabel.setVisible(false);
-            chainDebugJsonBox.setVisible(false);
-            chainRecommendLabel.setVisible(false);
-            chainSearchBox.setVisible(false);
-            chainPluginList.setVisible(false);
-            chainLoadBtn.setVisible(false);
             chainListPanel.setVisible(false);
             if (!compactMode)
             {
@@ -9960,13 +9903,6 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
             break;
 
         case Tab::Meters:
-            chainScanBtn.setVisible(false);
-            chainStatusLabel.setVisible(false);
-            chainDebugJsonBox.setVisible(false);
-            chainRecommendLabel.setVisible(false);
-            chainSearchBox.setVisible(false);
-            chainPluginList.setVisible(false);
-            chainLoadBtn.setVisible(false);
             chainListPanel.setVisible(false);
             // Split layout (meters left, chat right) — same as Visualisation.
             // Tear down settings/compare so their content can't bleed in.
@@ -9984,13 +9920,6 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
             break;
 
         case Tab::Compare:
-            chainScanBtn.setVisible(false);
-            chainStatusLabel.setVisible(false);
-            chainDebugJsonBox.setVisible(false);
-            chainRecommendLabel.setVisible(false);
-            chainSearchBox.setVisible(false);
-            chainPluginList.setVisible(false);
-            chainLoadBtn.setVisible(false);
             chainListPanel.setVisible(false);
             // Stop chat AB playback — Compare has its own cmpStream player
             if (processorRef.abActive.load())
@@ -10008,13 +9937,6 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
             return; // showCompareView already called resized/repaint
 
         case Tab::Settings:
-            chainScanBtn.setVisible(false);
-            chainStatusLabel.setVisible(false);
-            chainDebugJsonBox.setVisible(false);
-            chainRecommendLabel.setVisible(false);
-            chainSearchBox.setVisible(false);
-            chainPluginList.setVisible(false);
-            chainLoadBtn.setVisible(false);
             chainListPanel.setVisible(false);
             chatSidebar.setVisible(false);
             showSettingsView(); // sets currentView = Settings, calls resized/repaint
@@ -10046,8 +9968,7 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
                 if (ch.getNumPlugins() == 0 && !ch.isScanning())
                     ch.startScan();
                 // Keep list model populated for the picker popup
-                chainListModel->items = ch.getFilteredPlugins(chainSearchBox.getText(), chainFormatFilter_);
-                chainPluginList.updateContent();
+                chainListModel->items = ch.getFilteredPlugins({}, chainFormatFilter_);
                 // Rebuild rack strip from current chain state
                 chainListPanel.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
                 chainListPanel.masterKnob.setValue(ch.getMasterWet());
@@ -10060,13 +9981,6 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
         }
 
         case Tab::Link:
-            chainScanBtn.setVisible(false);
-            chainStatusLabel.setVisible(false);
-            chainDebugJsonBox.setVisible(false);
-            chainRecommendLabel.setVisible(false);
-            chainSearchBox.setVisible(false);
-            chainPluginList.setVisible(false);
-            chainLoadBtn.setVisible(false);
             chainListPanel.setVisible(false);
             chatSidebar.setVisible(false);
             upgradeBtn.setVisible(false);
@@ -11148,6 +11062,12 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
         resized();
         chatMessages.clear();
         processorRef.chatHistory.clear();
+        // Clear-site instrumentation (11 Aug 2026): names WHICH site emptied
+        // the wire history, so "cleared between turns" is falsifiable rather
+        // than argued from reading. timerCallback is the one that can fire
+        // BETWEEN sends without any user action.
+        EchoJay_NSLog(("EJStores: chatRoles.clear() in loadChatFromWorkspace, had "
+                       + juce::String(processorRef.chatRoles.size()) + " entries").toRawUTF8());
         processorRef.chatRoles.clear();
         processorRef.chatContents.clear();
 
@@ -11443,6 +11363,12 @@ void EchoJayEditor::createNewChat()
     refreshChannelBannerCache();              // new chat = main: clears the banner
     chatMessages.clear();
     processorRef.chatHistory.clear();
+    // Clear-site instrumentation (11 Aug 2026): names WHICH site emptied
+    // the wire history, so "cleared between turns" is falsifiable rather
+    // than argued from reading. timerCallback is the one that can fire
+    // BETWEEN sends without any user action.
+    EchoJay_NSLog(("EJStores: chatRoles.clear() in createNewChat, had "
+                   + juce::String(processorRef.chatRoles.size()) + " entries").toRawUTF8());
     processorRef.chatRoles.clear();
     processorRef.chatContents.clear();
     sidebarDebugText = "";
@@ -11738,6 +11664,12 @@ void EchoJayEditor::showMoveToAlbumMenu(const juce::String& chatId)
                             safeThis->refreshChannelBannerCache();   // deactivation clears the banner
                             safeThis->chatMessages.clear();
                             safeThis->processorRef.chatHistory.clear();
+                            // Clear-site instrumentation (11 Aug 2026): names WHICH site emptied
+                            // the wire history, so "cleared between turns" is falsifiable rather
+                            // than argued from reading. timerCallback is the one that can fire
+                            // BETWEEN sends without any user action.
+                            EchoJay_NSLog(("EJStores: chatRoles.clear() in showMoveToAlbumMenu, had "
+                                           + juce::String(safeThis->processorRef.chatRoles.size()) + " entries").toRawUTF8());
                             safeThis->processorRef.chatRoles.clear();
                             safeThis->processorRef.chatContents.clear();
                         }
@@ -15569,8 +15501,13 @@ void EchoJayEditor::paint(juce::Graphics& g)
         // Build card: slot lines + "Build this chain" button — height from
         // chainCardHeight(), the SAME helper the measure pass consumes
         static constexpr int kChainBtnH = 26;
-        bool hasChainBtn = !isUser && msg.chainData.isNotEmpty()
+        // STAGED CHAIN (spec section 4): the CARD and the BUTTON are now
+        // separate gates. Rows render as slots land; the button waits for
+        // onBlock. Before this they shared one flag, so gating the button
+        // would have hidden the rows too - the opposite of the feature.
+        bool hasChainCard = !isUser && msg.chainData.isNotEmpty()
                         && !msg.chainBuildSuppressed;   // item 6: cross-scope guard
+        bool hasChainBtn = hasChainCard && !msg.chainProvisional;
         int chainAreaH = isUser ? 0 : chainCardHeight(msg);
         // AI Compare figure card — appended LAST in the card stack, so bubbleH
         // stays textH+waveCardH and no other card's Y shifts. SAME helper as the
@@ -15965,7 +15902,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
                 // language: 11.5f, 16px lines, cyan names, dim settings),
                 // then the Build button below them
                 int chainLinesH = 0;
-                if (hasChainBtn)
+                if (hasChainCard)
                 {
                     auto cv = juce::JSON::parse(msg.chainData);
                     if (auto* co = cv.getDynamicObject())
@@ -15997,8 +15934,23 @@ void EchoJayEditor::paint(juce::Graphics& g)
                                                juce::Justification::centredLeft, true);
                                 }
                                 ly += 16;
+                                // "why": one dim caption under its slot,
+                                // indented under the name. Absent why draws
+                                // nothing and costs no height (spec 3).
+                                const auto why = so->getProperty("why").toString().trim();
+                                if (why.isNotEmpty())
+                                {
+                                    g.setColour(C::text3);
+                                    g.setFont(juce::Font(juce::FontOptions(10.5f)));
+                                    g.drawText(why, lx + 12, ly, bubbleW - 32, kWhyH - 1,
+                                               juce::Justification::centredLeft, true);
+                                    g.setFont(juce::Font(juce::FontOptions(11.5f)));
+                                    ly += kWhyH;
+                                }
                             }
-                            chainLinesH = carr->size() * 16 + 4;
+                            // Measured from the SAME advances the loop made,
+                            // never recomputed from a second formula.
+                            chainLinesH = (ly - (drawY + bubbleH + 4)) + 4;
                         }
                 }
 
@@ -16016,6 +15968,21 @@ void EchoJayEditor::paint(juce::Graphics& g)
                 if (hasChainBtn && activeChainBuildBtns < kMaxChainBuildBtns)
                 {
                     int btnIdx = activeChainBuildBtns++;
+                    // BUTTON -> CARD MAPPING (11 Aug 2026). These indices are
+                    // assigned during PAINT, in visible order, and rebuilt on
+                    // every repaint -- so which chain a given button sends is
+                    // not fixed by the card, it is fixed by paint order at the
+                    // moment of the click. If a 5-slot card is on screen and
+                    // the button sends a 3-slot chain, this is where to look.
+                    // Logged only when the payload for an index CHANGES, so a
+                    // repaint storm does not flood the log.
+                    if (chainBuildJsons[(size_t)btnIdx] != msg.chainData)
+                    {
+                        EchoJay_NSLog(("EJChain: build button " + juce::String(btnIdx)
+                                       + " now points at a " + juce::String(msg.chainData.length())
+                                       + " ch block (was " + juce::String(chainBuildJsons[(size_t)btnIdx].length())
+                                       + " ch)").toRawUTF8());
+                    }
                     chainBuildJsons[(size_t)btnIdx] = msg.chainData;
                     int btnX = bubbleX + 10;
                     int btnY = drawY + bubbleH + 4 + chainLinesH;
@@ -16651,17 +16618,9 @@ void EchoJayEditor::resized()
         }
 
         // Left-panel components hidden — picker popup replaces them
-        chainScanBtn.setVisible(false);
-        chainStatusLabel.setVisible(false);
-        chainDebugJsonBox.setVisible(false);
-        chainRecommendLabel.setVisible(false);
-        chainSearchBox.setVisible(false);
-        chainPluginList.setVisible(false);
-        chainLoadBtn.setVisible(false);
     }
     else
     {
-        chainSlotCountLabel.setVisible(false);
     }
 
     // ---- Chain header: Save / Save As / Open ------------------------------
@@ -16780,7 +16739,11 @@ void EchoJayEditor::resized()
         // "Capture Vo..."). scanBtn is the fixed anchor; the capture button
         // takes the room between it and the detected label, clamped, and the
         // state block truncates the channel name via captureBtnMaxW_.
-        scanBtn.setBounds(tx, ty, 78, bh); tx += 78 + 14;   // item 5a: wider gap
+        scanBtn.setBounds(tx, ty, 78, bh); tx += 78 + 4;
+        // Chain-list scan date, beside the count that misled for five weeks
+        // (13 Aug 2026). Sits between the count and the capture button; the
+        // capture target label is the variable-width element and absorbs it.
+        chainListInfoLabel.setBounds(tx, ty, 150, bh); tx += 150 + 10;
         // Item 2a: FIXED-width Capture button.
         captureBtn.setBounds(tx, ty, 64, bh); tx += 68;
         // Item 2b: target indicator takes the room up to the detected label,
@@ -16794,6 +16757,7 @@ void EchoJayEditor::resized()
     if (compactMode)
     {
         scanBtn.setBounds(0, -20, 1, 1);
+        chainListInfoLabel.setBounds(0, -20, 1, 1);
         abSyncBtn.setBounds(-100, -100, 1, 1);
         captureTargetLabel.setVisible(false);
     }
@@ -17922,40 +17886,29 @@ void EchoJayEditor::timerCallback()
         // restore completes asynchronously and can finish while the user is
         // on another tab, or before this editor exists at all.
         chainListPanel.setStateNotes(ch.getStateNotes());
-        chainSlotCountLabel.setText(juce::String(ch.getNumSlots()) + "/"
-                                        + juce::String(ChainListPanel::kMaxSlots) + " PLUGINS",
-                                    juce::dontSendNotification);
         bool wasScanning = ch.isScanning();
         if (wasScanning)
         {
-            int pct = (int)(ch.getScanProgress() * 100.0f);
-            chainStatusLabel.setText("Reading plugins... " + juce::String(pct) + "%",
-                                     juce::dontSendNotification);
-            chainListModel->items = ch.getFilteredPlugins(chainSearchBox.getText(), chainFormatFilter_);
-            chainPluginList.updateContent();
+            // Keep the picker popup's model fresh while a scan streams in.
+            chainListModel->items = ch.getFilteredPlugins({}, chainFormatFilter_);
         }
         else
         {
             // Rebuild resolver once after scan completes (entries_ has stabilised).
             // hasResolvedRecommendable() latches inside buildRecommendable when it
             // ran against real inputs, replacing the old "enabled count still 0"
-            // staleness guess.
+            // staleness guess. The coverage triple this branch used to write
+            // into a never-rendered label now logs from buildRecommendable
+            // itself (EJScan: resolver rebuilt).
             bool entriesReady = ch.getNumPlugins() > 0;
             if (entriesReady && !ch.hasResolvedRecommendable())
                 ch.buildRecommendable(processorRef.getPluginScanner().getPlugins(), chainFormatFilter_);
-            if (entriesReady)
-                chainRecommendLabel.setText(
-                    "recommendable: " + juce::String(ch.getRecommendableCount())
-                    + " resolved (" + juce::String(ch.getEnabledInputCount()) + " enabled, "
-                    + juce::String(ch.getUnmatchedCount()) + " unmatched)",
-                    juce::dontSendNotification);
 
-            if (ch.getNumSlots() > 0)
-                chainStatusLabel.setText(juce::String(ch.getNumSlots()) + " slot(s) in chain",
-                                         juce::dontSendNotification);
-            else if (entriesReady)
-                chainStatusLabel.setText(juce::String(ch.getNumPlugins()) + " plugins available",
-                                         juce::dontSendNotification);
+            // The staleness text that briefly lived here (13 Aug, morning)
+            // now lives in chainListInfoLabel in the HEADER: this site was
+            // in a never-rendered label AND preempted by the slot count on
+            // any non-empty rack. The header shows it on every tab and
+            // every rack state.
         }
     }
 
@@ -18136,6 +18089,50 @@ void EchoJayEditor::timerCallback()
     passLabel.setText(passes > 0 ? juce::String(passes) + " pass" + (passes > 1 ? "es" : "") : "", juce::dontSendNotification);
 
     auto& sc = processorRef.getPluginScanner();
+    // Tick-state freshness (13 Aug 2026): plugin_disabled.json is the one
+    // authority for exclusions, and other plugin INSTANCES in this process
+    // write it too (the 11:50 untick wrote 483 uids while this instance's
+    // resolver kept reading 418). Reload on mtime change and unlatch the
+    // resolver, so a changed tick reaches the feed within a tick-plus-
+    // debounce rather than at the next restart. The writer instance takes
+    // the same path: its save moves the mtime, which is the single
+    // propagation mechanism for both cases.
+    // The timer is only the file-watch PUMP now: the unlatch itself rides
+    // the scanner's onDisabledSetChanged callback (one action, two
+    // triggers), so this call has no branch to get wrong.
+    sc.maybeReloadEnabledState();
+    // Chain-after-settings sequencing: fire the chain scan on the settings
+    // scan's FALLING EDGE, so its VST3 rows read the freshly validated
+    // cache rather than the one the settings scan was about to replace.
+    {
+        const bool settingsScanning = sc.isScanning();
+        if (prevSettingsScanning_ && !settingsScanning && chainScanAfterSettings_)
+        {
+            chainScanAfterSettings_ = false;
+            EchoJay_NSLog("EJScan: settings scan finished, chain scan follows");
+            processorRef.getChainHost().startScan();
+        }
+        prevSettingsScanning_ = settingsScanning;
+    }
+    // Chain-list staleness beside the header count (13 Aug 2026). The
+    // count in scanBtn is the SETTINGS list (plugin_cache.json); this label
+    // is the CHAIN list's date, the number that actually feeds the AI, and
+    // it renders on every tab and every rack state - its predecessor lived
+    // in a never-shown label and was preempted by any non-empty rack.
+    {
+        auto& chh = processorRef.getChainHost();
+        const auto ms = chh.getEntriesScannedAtMs();
+        const bool chainStale = ms <= 0
+            || juce::Time::currentTimeMillis() - ms > (juce::int64) 14 * 24 * 3600 * 1000;
+        chainListInfoLabel.setColour(juce::Label::textColourId,
+            chainStale ? juce::Colour(0xffcc8844) : juce::Colour(0xff888888));
+        chainListInfoLabel.setText(
+            "chain list " + juce::String(chh.getNumPlugins())
+            + (ms > 0 ? ", " + juce::Time(ms).toString(true, false)
+                      : juce::String(", scan date unknown"))
+            + (chainStale ? " - run Scan Now" : juce::String()),
+            juce::dontSendNotification);
+    }
     if (sc.isScanning()) {
         scanBtn.setButtonText("Scanning " + juce::String((int)(sc.getProgress() * 100)) + "%");
         scanBtn.setEnabled(false);
@@ -18214,6 +18211,12 @@ void EchoJayEditor::timerCallback()
                 processorRef.activeChatId = nc.id;
                 chatMessages.clear();
                 processorRef.chatHistory.clear();
+                // Clear-site instrumentation (11 Aug 2026): names WHICH site emptied
+                // the wire history, so "cleared between turns" is falsifiable rather
+                // than argued from reading. timerCallback is the one that can fire
+                // BETWEEN sends without any user action.
+                EchoJay_NSLog(("EJStores: chatRoles.clear() in timerCallback, had "
+                               + juce::String(processorRef.chatRoles.size()) + " entries").toRawUTF8());
                 processorRef.chatRoles.clear();
                 processorRef.chatContents.clear();
                 if (sidebarModel)
@@ -19049,6 +19052,9 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                                                      int attemptsLeft)
 {
     auto& ch = processorRef.getChainHost();
+    EchoJay_NSLog(("EJDialSummary: settle[finish] entered, attemptsLeft="
+                   + juce::String(attemptsLeft) + " settled="
+                   + (ch.dialStateSettled() ? "y" : "n")).toRawUTF8());
     if (!ch.dialStateSettled() && attemptsLeft > 0)
     {
         auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
@@ -19059,12 +19065,18 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
         return;
     }
 
+    // The other terminal path (see logDialMissesWhenSettled): these two are
+    // alternatives at the call site, so the summary has to sit in BOTH or a
+    // whole class of build reports nothing at all.
+    ch.logDialSummary(ch.dialStateSettled() ? "dial settled"
+                                            : "dial NOT settled, retry budget exhausted");
+
     // Partial slots state the POSITIVE first: with richer maps partial is
     // the common case, and "X (ratio by hand) needs hand-dialing" read as a
     // failure when threshold, attack, release, freq and gain all landed.
-    juce::StringArray appliedNames, zeroParts;
-    struct PartialPart { juce::String name; juce::StringArray manual; };
-    std::vector<PartialPart> partialParts;
+    juce::StringArray appliedNames, zeroParts, staleParts;
+    struct PartialPart { juce::String name; juce::StringArray manual, oor; };
+    std::vector<PartialPart> partialParts, zeroOorParts;
     for (const auto& di : ch.getDialInfos())
     {
         // Written-but-display-stale (bridged report-only) is recorded
@@ -19073,22 +19085,43 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
         // applied count.
         if (!di.unconfirmed.isEmpty())
             logDialMiss(di.name, di.fp, "stale_display_kept", di.unconfirmed);
+        // Range refusals are recorded whatever the slot status: the bubble
+        // must never say "use the values on its card" about a value the
+        // card says will not map onto this version.
+        if (!di.outOfRange.isEmpty())
+            logDialMiss(di.name, di.fp, "out_of_range", di.outOfRange);
         switch (di.status)
         {
             case ChainHost::DialStatus::applied:
                 appliedNames.add(di.name);
                 break;
             case ChainHost::DialStatus::partial:
-                partialParts.push_back({ di.name, di.manual });
+                partialParts.push_back({ di.name, di.manual, di.outOfRange });
                 logDialMiss(di.name, di.fp, "partial", di.manual);
                 if (!di.readbackMiss.isEmpty())
                     logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
                 break;
             case ChainHost::DialStatus::noMap:
+                // Stale-map ladder, unmapped rung: the plugin loaded at a
+                // version the corpus has no mapping for. Its wording names
+                // the actual reason, and only this shape earns the
+                // suggest-an-alternative pill below.
+                if (di.staleIndexedFp.isNotEmpty())
+                {
+                    staleParts.add(di.name);
+                    logDialMiss(di.name, di.fp, "stale_unmapped", di.manual);
+                    break;
+                }
                 zeroParts.add(di.name);
                 logDialMiss(di.name, di.fp, "no_map", di.manual);
                 break;
             case ChainHost::DialStatus::unusableMap:
+                if (!di.outOfRange.isEmpty())
+                {
+                    zeroOorParts.push_back({ di.name, di.manual, di.outOfRange });
+                    logDialMiss(di.name, di.fp, "unusable_map", di.manual);
+                    break;
+                }
                 zeroParts.add(di.name);
                 logDialMiss(di.name, di.fp, "unusable_map", di.manual);
                 if (!di.readbackMiss.isEmpty())
@@ -19108,7 +19141,8 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
 
     const int n = ch.getNumSlots();
     juce::String bubble;
-    if (partialParts.empty() && zeroParts.isEmpty())
+    if (partialParts.empty() && zeroParts.isEmpty() && staleParts.isEmpty()
+        && zeroOorParts.empty())
     {
         // Clean full build+dial: the FACTUAL line, never the model's result
         // (9 Aug 2026, same rule as the edit composer - a filter the model
@@ -19124,11 +19158,26 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
             bubble += " Settings applied to " + appliedNames.joinIntoString(", ") + ".";
         for (const auto& p : partialParts)
         {
-            const bool one = p.manual.size() == 1;
-            bubble += " Settings applied to " + p.name + ", except "
-                    + p.manual.joinIntoString(" and ")
-                    + (one ? " which needs hand-dialing - values on its card."
-                           : " which need hand-dialing - values on its card.");
+            // The bubble and the card must agree about the same values
+            // (12 Aug 2026): "use the values on its card" is only said for
+            // manual controls whose card values are usable as numbers.
+            // Out-of-range refusals get the intent framing, same as the
+            // card note.
+            juce::StringArray plain = p.manual;
+            for (const auto& o : p.oor) plain.removeString(o);
+            bubble += " Settings applied to " + p.name;
+            if (!plain.isEmpty())
+                bubble += ", except " + plain.joinIntoString(" and ")
+                        + (plain.size() == 1
+                               ? " which needs hand-dialing - values on its card."
+                               : " which need hand-dialing - values on its card.");
+            else
+                bubble += ".";
+            if (!p.oor.isEmpty())
+                bubble += " " + p.oor.joinIntoString(" and ")
+                        + (p.oor.size() == 1
+                               ? " asked a value outside this version's range - treat its card value as intent, not a number."
+                               : " asked values outside this version's range - treat their card values as intent, not numbers.");
         }
         if (!zeroParts.isEmpty())
         {
@@ -19137,9 +19186,64 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                     + (one ? " needs hand-dialing - use the values on its card."
                            : " need hand-dialing - use the values on their cards.");
         }
+        for (const auto& z : zeroOorParts)
+            bubble += " " + z.name + " asked values outside this version's range ("
+                    + z.oor.joinIntoString(", ")
+                    + ") - nothing was dialled; treat its card values as intent rather than numbers.";
+        if (!staleParts.isEmpty())
+        {
+            const bool one = staleParts.size() == 1;
+            bubble += " " + staleParts.joinIntoString(" and ")
+                    + (one ? " loaded at a version newer than any mapping we hold, so its controls need dialling by hand - values on its card."
+                           : " loaded at versions newer than any mapping we hold, so their controls need dialling by hand - values on their cards.");
+        }
     }
+    juce::String altPrompt, altLabel;
+    composeStaleAltFollowUp(staleParts, altPrompt, altLabel);
     clearStageStatus();   // the bubble replaces the load/dial-window label
-    appendLocalResultBubble(bubble);
+    appendLocalResultBubble(bubble, altPrompt, altLabel);
+}
+
+// Stale-map ladder, unmapped rung: the ONE user-pressed follow-up. Same
+// one-pill discipline as buildEditAltFollowUp (per-slot pills would stale
+// each other), and the prompt carries the REAL reason so the model cannot
+// rationalise the swap sonically. Constrained to the dialable set, which is
+// the complete list of names that can actually be auto-dialled here. Nothing
+// automatic: this fires only when the user presses the pill.
+void EchoJayEditor::composeStaleAltFollowUp(const juce::StringArray& staleNames,
+                                            juce::String& altPromptOut,
+                                            juce::String& altLabelOut)
+{
+    if (staleNames.isEmpty()) return;
+    // Auto-dial off is an explicit decline of the only-dialable constraint,
+    // and in that state the user has usually named the plugin themselves
+    // too, so the offer would contradict two explicit choices. The card
+    // wording stays either way (needing hand-dialling is useful information
+    // regardless); only the pill is conditional.
+    if (! api.getAutoDialMode()) return;
+    const auto dialable = processorRef.getChainHost().getDialableRecommendableNames();
+    if (dialable.isEmpty()) return;   // no honest offer to make
+    const bool one = staleNames.size() == 1;
+    juce::StringArray quoted;
+    for (const auto& sn : staleNames) quoted.add("\"" + sn + "\"");
+    altPromptOut = juce::String(one ? "This plugin is" : "These plugins are")
+        + " a sound choice and stays in the chain unless I say otherwise: "
+        + quoted.joinIntoString(", ")
+        + ". But " + (one ? "its" : "their")
+        + " mapping is unavailable at the version installed on this machine, so "
+        + (one ? "its" : "their")
+        + " settings cannot be auto-dialled. Propose ONE alternative"
+        + (one ? juce::String() : juce::String(" for each"))
+        + " in the same role, chosen ONLY from this list, which is the complete "
+          "set that can be auto-dialled here: "
+        + dialable.joinIntoString(", ")
+        + ". Say plainly that the swap is offered because auto-dial is "
+          "unavailable for the installed version, not as a sonic judgement on "
+          "the original. Propose it as ONE chain edit replacing only "
+        + (one ? "that slot" : "those slots") + ".";
+    altLabelOut = (one ? "Suggest a dialable alternative to "
+                       : "Suggest dialable alternatives to ")
+                + staleNames.joinIntoString(", ");
 }
 
 // ---- Apply-time honesty for edits (item 3, 9 Aug 2026) ---------------------
@@ -19217,30 +19321,46 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                     }
         }
 
-    juce::StringArray appliedNames, zeroParts;
-    struct PartialPart { juce::String name; juce::StringArray manual; };
-    std::vector<PartialPart> partialParts;
+    juce::StringArray appliedNames, zeroParts, staleParts;
+    struct PartialPart { juce::String name; juce::StringArray manual, oor; };
+    std::vector<PartialPart> partialParts, zeroOorParts;
     for (const auto& di : ch.getDialInfos())
     {
         if (!touchedNames.contains(di.name)) continue;
         if (!di.unconfirmed.isEmpty())   // bridged report-only: same record as the build path
             logDialMiss(di.name, di.fp, "stale_display_kept", di.unconfirmed);
+        if (!di.outOfRange.isEmpty())    // range refusals: same record as the build path
+            logDialMiss(di.name, di.fp, "out_of_range", di.outOfRange);
         switch (di.status)
         {
             case ChainHost::DialStatus::applied:
                 appliedNames.add(di.name);
                 break;
             case ChainHost::DialStatus::partial:
-                partialParts.push_back({ di.name, di.manual });
+                partialParts.push_back({ di.name, di.manual, di.outOfRange });
                 logDialMiss(di.name, di.fp, "partial", di.manual);
                 if (!di.readbackMiss.isEmpty())
                     logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
                 break;
             case ChainHost::DialStatus::noMap:
+                // Stale-map ladder, unmapped rung: same diversion as the
+                // build path, same pill.
+                if (di.staleIndexedFp.isNotEmpty())
+                {
+                    staleParts.add(di.name);
+                    logDialMiss(di.name, di.fp, "stale_unmapped", di.manual);
+                    break;
+                }
                 zeroParts.add(di.name);
                 logDialMiss(di.name, di.fp, "no_map", di.manual);
                 break;
             case ChainHost::DialStatus::unusableMap:
+                if (!di.outOfRange.isEmpty())
+                {
+                    zeroOorParts.push_back({ di.name, di.manual, di.outOfRange });
+                    logDialMiss(di.name, di.fp, "unusable_map", di.manual);
+                    break;
+                }
                 zeroParts.add(di.name);
                 logDialMiss(di.name, di.fp, "unusable_map", di.manual);
                 if (!di.readbackMiss.isEmpty())
@@ -19263,7 +19383,8 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
     }
 
     juce::String bubble;
-    if (partialParts.empty() && zeroParts.isEmpty() && proseOnlySetNames.isEmpty())
+    if (partialParts.empty() && zeroParts.isEmpty() && staleParts.isEmpty()
+        && zeroOorParts.empty() && proseOnlySetNames.isEmpty())
     {
         // Clean dial: SILENCE (9 Aug 2026, Sean's rule). The model's result
         // line is NEVER relayed any more - a filter the model can evade by
@@ -19281,12 +19402,25 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
             bubble = "Settings applied to " + appliedNames.joinIntoString(", ") + ".";
         for (const auto& p : partialParts)
         {
-            const bool one = p.manual.size() == 1;
+            // Bubble/card agreement (12 Aug 2026): "values on its card" only
+            // for manual controls whose card values are usable as numbers;
+            // out-of-range refusals get the intent framing, same as the card.
+            juce::StringArray plain = p.manual;
+            for (const auto& o : p.oor) plain.removeString(o);
             bubble += (bubble.isEmpty() ? juce::String() : juce::String(" "));
-            bubble += "Settings applied to " + p.name + ", except "
-                    + p.manual.joinIntoString(" and ")
-                    + (one ? " which needs hand-dialing - values on its card."
-                           : " which need hand-dialing - values on its card.");
+            bubble += "Settings applied to " + p.name;
+            if (!plain.isEmpty())
+                bubble += ", except " + plain.joinIntoString(" and ")
+                        + (plain.size() == 1
+                               ? " which needs hand-dialing - values on its card."
+                               : " which need hand-dialing - values on its card.");
+            else
+                bubble += ".";
+            if (!p.oor.isEmpty())
+                bubble += " " + p.oor.joinIntoString(" and ")
+                        + (p.oor.size() == 1
+                               ? " asked a value outside this version's range - treat its card value as intent, not a number."
+                               : " asked values outside this version's range - treat their card values as intent, not numbers.");
         }
         if (!zeroParts.isEmpty())
         {
@@ -19295,6 +19429,21 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
             bubble += zeroParts.joinIntoString(" and ")
                     + (one ? " needs hand-dialing - use the values on its card."
                            : " need hand-dialing - use the values on their cards.");
+        }
+        for (const auto& z : zeroOorParts)
+        {
+            bubble += (bubble.isEmpty() ? juce::String() : juce::String(" "));
+            bubble += z.name + " asked values outside this version's range ("
+                    + z.oor.joinIntoString(", ")
+                    + ") - nothing was dialled; treat its card values as intent rather than numbers.";
+        }
+        if (!staleParts.isEmpty())
+        {
+            const bool one = staleParts.size() == 1;
+            bubble += (bubble.isEmpty() ? juce::String() : juce::String(" "));
+            bubble += staleParts.joinIntoString(" and ")
+                    + (one ? " loaded at a version newer than any mapping we hold, so its controls need dialling by hand - values on its card."
+                           : " loaded at versions newer than any mapping we hold, so their controls need dialling by hand - values on their cards.");
         }
     }
     if (!undialledNames.isEmpty())
@@ -19326,7 +19475,11 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                                              : " couldn't be set by name - dial them by hand.");
     }
     if (bubble.isNotEmpty())
-        appendLocalResultBubble(bubble);
+    {
+        juce::String altPrompt, altLabel;
+        composeStaleAltFollowUp(staleParts, altPrompt, altLabel);
+        appendLocalResultBubble(bubble, altPrompt, altLabel);
+    }
 }
 
 juce::String EchoJayEditor::consumeSuggestionSetsAtReceipt(const juce::String& editJson,
@@ -19401,6 +19554,9 @@ juce::String EchoJayEditor::consumeSuggestionSetsAtReceipt(const juce::String& e
 void EchoJayEditor::logDialMissesWhenSettled(int attemptsLeft)
 {
     auto& ch = processorRef.getChainHost();
+    EchoJay_NSLog(("EJDialSummary: settle[misses] entered, attemptsLeft="
+                   + juce::String(attemptsLeft) + " settled="
+                   + (ch.dialStateSettled() ? "y" : "n")).toRawUTF8());
     if (!ch.dialStateSettled() && attemptsLeft > 0)
     {
         auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
@@ -19410,6 +19566,12 @@ void EchoJayEditor::logDialMissesWhenSettled(int attemptsLeft)
         });
         return;
     }
+    // Terminal state reached (or the retry budget ran out): this is the only
+    // moment at which "nothing dialled" is a readable fact rather than an
+    // inference from mid-sequence lines. Logged whether or not anything is
+    // wrong, so a healthy build and a build that never ran look different.
+    ch.logDialSummary(ch.dialStateSettled() ? "dial settled"
+                                            : "dial NOT settled, retry budget exhausted");
     for (const auto& di : ch.getDialInfos())
     {
         if (di.status == ChainHost::DialStatus::noMap)
@@ -19457,12 +19619,26 @@ int EchoJayEditor::chainCardHeight(const ChatMsg& msg) const
 {
     if (msg.role != "assistant" || msg.chainData.isEmpty()) return 0;
     static constexpr int kBtnH = 26;
-    int lines = 0;
+    int lines = 0, captions = 0;
     auto v = juce::JSON::parse(msg.chainData);
     if (auto* o = v.getDynamicObject())
         if (auto* arr = o->getProperty("chain").getArray())
+        {
             lines = arr->size();
-    return lines * 16 + (lines > 0 ? 4 : 0) + kBtnH + 8;
+            // A "why" caption adds a second, dimmer line under its slot.
+            // Counted HERE and advanced by the SAME per-slot amounts in the
+            // paint loop (16 per row, kWhyH per caption) — this helper is the
+            // one height source and paint measures nothing.
+            for (auto& e : *arr)
+                if (auto* so = e.getDynamicObject())
+                    if (so->getProperty("why").toString().trim().isNotEmpty())
+                        ++captions;
+        }
+    // No Build button while the block is still open (spec section 4): the
+    // rows are on screen, the button is not, and the card must not reserve
+    // space for a button that is not being drawn.
+    return lines * 16 + captions * kWhyH + (lines > 0 ? 4 : 0)
+         + (msg.chainProvisional ? 0 : kBtnH) + 8;
 }
 
 // The SINGLE height source for the AI Compare figure card. Both the measure
@@ -20078,6 +20254,18 @@ bool EchoJayEditor::linkUidLive(const juce::String& uid) const
     return false;
 }
 
+// Does the Link at this uid APPLY settings_structured? Capability, not
+// version: false for every Link that does not say otherwise, forever. An old
+// Link cannot announce anything, so the absence of a claim is the answer and
+// not a prompt to go looking for a version number.
+bool EchoJayEditor::linkUidDialCapable(const juce::String& uid) const
+{
+    if (uid.isEmpty()) return false;
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (e.info.uid == uid) return e.info.dialCapable;
+    return false;
+}
+
 juce::String EchoJayEditor::channelDisplayLabel(const juce::String& uid) const
 {
     // ONE accessor (processorRef.resolveLinkDisplayName, Phase N precedence)
@@ -20236,6 +20424,12 @@ void EchoJayEditor::resetToMainContext()
     processorRef.chatTargetLinkName.clear();
     chatMessages.clear();
     processorRef.chatHistory.clear();
+    // Clear-site instrumentation (11 Aug 2026): names WHICH site emptied
+    // the wire history, so "cleared between turns" is falsifiable rather
+    // than argued from reading. timerCallback is the one that can fire
+    // BETWEEN sends without any user action.
+    EchoJay_NSLog(("EJStores: chatRoles.clear() in resetToMainContext, had "
+                   + juce::String(processorRef.chatRoles.size()) + " entries").toRawUTF8());
     processorRef.chatRoles.clear();
     processorRef.chatContents.clear();
     refreshChannelBannerCache();
@@ -20326,6 +20520,12 @@ void EchoJayEditor::openChannelByUid(const juce::String& uid)
     processorRef.chatTargetLinkName.clear();
     chatMessages.clear();
     processorRef.chatHistory.clear();
+    // Clear-site instrumentation (11 Aug 2026): names WHICH site emptied
+    // the wire history, so "cleared between turns" is falsifiable rather
+    // than argued from reading. timerCallback is the one that can fire
+    // BETWEEN sends without any user action.
+    EchoJay_NSLog(("EJStores: chatRoles.clear() in openChannelByUid, had "
+                   + juce::String(processorRef.chatRoles.size()) + " entries").toRawUTF8());
     processorRef.chatRoles.clear();
     processorRef.chatContents.clear();
     refreshChannelBannerCache();
@@ -21789,6 +21989,26 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     // The quota decision (recorded in EchoJayAPI.cpp): this call is NOT
     // pre-gated, and a short-circuited turn is not billed. The send gate
     // above still stands in front of the MAIN call.
+    // STORE INSTRUMENTATION (11 Aug 2026). history=0b(0 msgs) on every turn,
+    // and the four stores are the only way to tell WHICH one is empty:
+    //   chatMessages          the UI list, and what priorAssistantForClassify reads
+    //   chatRoles/chatContents what becomes messages[] on the wire -- the HISTORY
+    // They can disagree, and if they do the consequence is precise: the server
+    // derives priorAssistantRaw by scanning messages[], so an empty
+    // chatRoles means CHAIN_OFFER_RE matches an EMPTY STRING no matter how the
+    // offer was worded, while /api/classify still receives a prior reply
+    // because the client sends it explicitly from chatMessages.
+    {
+        const auto pa = priorAssistantForClassify();
+        EchoJay_NSLog(("EJStores: send  chatMessages=" + juce::String((int) chatMessages.size())
+                       + " chatRoles=" + juce::String(processorRef.chatRoles.size())
+                       + " chatContents=" + juce::String(processorRef.chatContents.size())
+                       + " chatHistory=" + juce::String((int) processorRef.chatHistory.size())
+                       + "  priorAssistantForClassify=" + juce::String(pa.length()) + "ch"
+                       + (pa.isEmpty() ? juce::String(" EMPTY <- the offer regex has no input")
+                                       : juce::String(" \"") + pa.substring(juce::jmax(0, pa.length() - 60)).replace("\n", " ") + "\"")).toRawUTF8());
+    }
+
     EchoJayAPI::ClassifyRequest creq;
     creq.message        = userContent;          // full, unstripped
     creq.channel        = channelName;
@@ -21962,6 +22182,31 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
         }
     }
 
+    // WHAT EXTRACTION ACTUALLY PRODUCED, before anything downstream can rewrite
+    // it (11 Aug 2026). The server can report chainBlock=ok while the client
+    // ends up building from a synthesised, settings-free block, and nothing
+    // said which of the two the Build button would send. Counting the slots
+    // that carry settings_structured HERE separates "the model did not emit
+    // it" from "the client lost it" in one line, on the turn it happened.
+    if (success)
+    {
+        int slots = 0, withStructured = 0;
+        auto pv = juce::JSON::parse(chainJson);
+        if (auto* po = pv.getDynamicObject())
+            if (auto* carr = po->getProperty("chain").getArray())
+                for (auto& ev : *carr)
+                    if (auto* eo = ev.getDynamicObject())
+                    {
+                        ++slots;
+                        if (! eo->getProperty("settings_structured").isVoid()) ++withStructured;
+                    }
+        EchoJay_NSLog(("EJChain: extracted block -- " + juce::String(chainJson.length())
+                       + " ch, " + juce::String(slots) + " slot(s), "
+                       + juce::String(withStructured) + " with settings_structured"
+                       + (slots > 0 && withStructured == 0
+                            ? "  <- names only: nothing here can dial" : "")).toRawUTF8());
+    }
+
     // If extractChainBlock returned partial/truncated JSON, try bracket-depth salvage
     // before falling through to the name-scan fallback.
     if (!chainJson.isEmpty() && success)
@@ -21970,8 +22215,10 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
         if (!parsed.isObject())
         {
             juce::String salvaged = EchoJayAPI::salvagePartialChain(chainJson);
-            if (salvaged.isNotEmpty())
-                DBG("EchoJay chain salvage: recovered partial block");
+            EchoJay_NSLog(("EJChain: extract produced UNPARSEABLE json ("
+                           + juce::String(chainJson.length()) + " ch); salvage "
+                           + (salvaged.isNotEmpty() ? "recovered a partial block"
+                                                    : "recovered nothing -> name-scan next")).toRawUTF8());
             chainJson = salvaged; // empty if nothing recoverable → falls to name-scan
         }
     }
@@ -22027,7 +22274,19 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
                 arr += "{\"name\":\"" + mentions[i].name + "\",\"role\":\"from reply\"}";
             }
             chainJson = "{\"chain\":[" + arr + "],\"explanation\":\"Chain extracted from reply text\"}";
-            DBG("EchoJay chain fallback: synthesised block from " + juce::String(mentions.size()) + " mentions");
+            // LOUD, not DBG (11 Aug 2026). This path synthesises slots that
+            // carry ONLY name and role -- no settings, no settings_structured
+            // -- so a build from it dials NOTHING while looking like a normal
+            // chain. That is precisely the shape of a live report where every
+            // slot came back settings_structured=n requested=0, and DBG is
+            // compiled out of Release, so the one line that would have named
+            // the cause could never appear in the logs being read.
+            EchoJay_NSLog(("EJChain: NAME-SCAN FALLBACK fired -- synthesised "
+                           + juce::String((int) mentions.size())
+                           + " slots from prose. These carry NO settings and NO "
+                             "settings_structured, so a build from this block "
+                             "cannot dial. The real block was missing or "
+                             "unparseable.").toRawUTF8());
         }
     }
 
@@ -22125,6 +22384,11 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
         processorRef.chatHistory.push_back({"assistant", visibleReply});
         processorRef.chatRoles.add("assistant");
         processorRef.chatContents.add(visibleReply);
+        // The ONLY place an assistant turn joins the wire history. If this
+        // never logs, history can never be non-empty on the next send, and
+        // "cleared between turns" is ruled out without reading clear sites.
+        EchoJay_NSLog(("EJStores: handleChatReply SUCCESS branch, appended assistant; "
+                       "chatRoles now " + juce::String(processorRef.chatRoles.size())).toRawUTF8());
     } else {
         // DROP PATH 2 of 2: every failure, INCLUDING the
         // limit-reached copy, which arrives here as an ordinary
@@ -22262,6 +22526,27 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
         juce::String chainJson;   // set the moment the chain block completes
         int provisionalId = 0;    // the bubble's identity; created on first content
         bool sawFirstContent = false;
+        // Feature B, live only, never persisted. reasoningTail is the
+        // IN-PROGRESS unit (invisible); shownUnit is the last COMPLETED one
+        // (what the stage row displays). See onThinkingDelta.
+        juce::String reasoningTail;
+        juce::String shownUnit;
+        // STAGED CHAIN (spec section 4): slots reported by onSlot, rendered
+        // as they land. chainProvisional stays true for the whole stream and
+        // is cleared only by the replacement at done (handleChatReply builds
+        // a fresh ChatMsg, whose flag defaults false), so the Build button
+        // cannot appear on a chain that has not closed OR on one the server
+        // has not finished enforcing. onBlock used to clear it early; see the
+        // note there for why a complete block is still not a shippable one.
+        juce::StringArray slotJsons;
+        bool chainProvisional = false;
+        // Rendering-side half of the stream observable (10 Aug 2026). The
+        // transport logs what it RECEIVED; these count what actually reached
+        // a repaint. Comparing the two on one turn is what distinguishes
+        // "no deltas" from "deltas discarded" -- the question three tests
+        // could not answer, because each half was silent about the other.
+        int deltasIn = 0, proseEvents = 0, slotEvents = 0, paints = 0;
+        juce::uint32 tFirstPaint = 0;
     };
     auto st = std::make_shared<StreamTurn>();
     st->provisionalId = provisionalId;
@@ -22280,6 +22565,8 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
     {
         auto* ed = safeThis.getComponent();
         if (ed == nullptr) return;
+        ++stp->paints;
+        if (stp->tFirstPaint == 0) stp->tFirstPaint = juce::Time::getMillisecondCounter();
         if (! stp->sawFirstContent)
         {
             stp->sawFirstContent = true;
@@ -22298,13 +22585,28 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
         auto& m     = ed->chatMessages[(size_t) pIdx];
         m.content   = stp->prose;
         m.chainData = stp->chainJson;
+        m.chainProvisional = stp->chainProvisional;
         ed->resized();
         ed->repaint();
     };
 
     st->parser.onProse = [paintBubble, stp] (const juce::String& s)
     {
+        ++stp->proseEvents;
         stp->prose += s;
+        paintBubble();
+    };
+    // Slots land one at a time and render as rows immediately. The payload
+    // assembled here is PROVISIONAL and deliberately minimal: it carries the
+    // slots and nothing else, because it exists only to be drawn. Nothing
+    // reads it but the card renderer — applyChainEdits and the Build button
+    // see only what onBlock delivers.
+    st->parser.onSlot = [paintBubble, stp] (int, const juce::String& slotJson)
+    {
+        ++stp->slotEvents;
+        stp->slotJsons.add (slotJson);
+        stp->chainJson = "{\"chain\":[" + stp->slotJsons.joinIntoString (",") + "]}";
+        stp->chainProvisional = true;
         paintBubble();
     };
     st->parser.onBlock = [paintBubble, stp] (const EJStreamBlockParser::BlockEvent& ev)
@@ -22312,7 +22614,26 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
         if (ev.type == "chain")
         {
             stp->chainJson = ev.payload;   // complete by construction (rule 1)
-            paintBubble();                 // the card + Build resolve at once
+            // STAYS PROVISIONAL UNTIL done (11 Aug 2026). This line used to
+            // clear the flag here, which let Build appear on the STREAMED
+            // block: complete, yes, but not the one the server ships.
+            //
+            // The window is not new and this change does not introduce it.
+            // The server has always been free to rewrite the block after the
+            // stream (the one-shot path has done so since 20 Jul), and
+            // done.reply has always been authoritative -- handleChatReply
+            // replaces the provisional by identity. What changed is the size
+            // of what gets rewritten: /api/chat-stream now runs the same
+            // block enforcement /api/chat does, so between block-complete and
+            // done the streamed block can differ from the shipped one by a
+            // twin refusal, a stripped control, a version strip, or a deleted
+            // result claim. Building from it would dial values the server
+            // refused, and the log would show a build nobody authorised.
+            //
+            // The cost is a few hundred milliseconds of Build latency: the
+            // block is the reply tail, so done follows almost immediately.
+            // The gap is imperceptible and the correctness is not optional.
+            paintBubble();
         }
         // gain / ask / edit: resolved at done by handleChatReply — see the
         // header comment for why they wait a breath.
@@ -22322,7 +22643,91 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
     ev.onTextDelta = [safeThis, st] (const juce::String& t)
     {
         if (safeThis == nullptr) return;
+        ++st->deltasIn;
         st->parser.appendDelta (t);
+    };
+    // ---- Feature B: the reasoning ticker (spec section 4, Shape A) --------
+    // Reasoning renders into the STAGE ROW, not into a message. That is the
+    // whole design, and it is what makes the store discipline structural
+    // rather than remembered:
+    //
+    //   - the stage row is not a ChatMsg, and WsMessage has no counterpart
+    //     to it, so reasoning CANNOT reach chatMessages, chatRoles /
+    //     chatContents, chatHistory or the workspace. It is the same
+    //     guarantee shape as provisionalId, one level stricter.
+    //   - it is one fixed-height row (stageRowH), so it cannot perturb
+    //     message heights — the two-tH-sums bug class the stage row was
+    //     invented to sidestep stays sidestepped.
+    //   - it answers section 4's three open questions by construction:
+    //     not expanded by default, gone the moment the reply starts
+    //     (paintBubble's clearStageStatus), and never in history.
+    //
+    // The row already reads as working-state and its default text is
+    // literally "Thinking…"; this replaces that generic word with the
+    // model's actual current line. Deliberately unlabelled: at 320px a
+    // prefix would eat the content. If the scratch work reads badly in
+    // practice (section 6's risk — it may name plugins it later discards),
+    // the cheap fixes are a prefix here or dropping back to the generic
+    // line, both one edit at this site.
+    ev.onThinkingDelta = [safeThis, st] (const juce::String& t)
+    {
+        auto* ed = safeThis.getComponent();
+        if (ed == nullptr) return;
+        // Once the reply itself is streaming, the row is gone and reasoning
+        // is over — a late thinking delta must not resurrect it.
+        if (st->sawFirstContent) return;
+
+        st->reasoningTail += t;
+
+        // COMPLETED UNITS ONLY (10 Aug 2026 fix). The row shows the newest
+        // unit that has actually finished; the in-progress remainder stays
+        // buffered and invisible until its boundary arrives.
+        //
+        // The first version repainted on every delta with the growing
+        // partial, which put raw stream state on screen: "I'd rout" and
+        // then "I'd route the de-esser...", changing mid-word under the
+        // shimmer sweep so it read as a rendering fault. Four to six
+        // settled states per turn is the trade this ticker was designed
+        // for — fewer, later, and each one readable.
+        //
+        // A unit ends at a newline or a sentence end. Reasoning style
+        // varies per turn (the 10 Aug capture came in short lines, but a
+        // single-paragraph turn is equally legal), and a newline-only rule
+        // would leave one ellipsized opening on screen for the whole wait,
+        // which reads as a hang.
+        //
+        // Boundaries are consumed EARLIEST-first in a loop, because one
+        // delta can carry several, and comparison is between like
+        // quantities: `e` and `endAt` are both END indices of a delimiter.
+        // The previous code compared a raw start index against an adjusted
+        // end index, so a later ". " could lose to an earlier "\n" and the
+        // wrong unit won — wrong regardless of what it looked like.
+        bool promoted = false;
+        for (;;)
+        {
+            int endAt = -1;
+            for (const auto* d : { "\n", ". ", "? ", "! " })
+            {
+                const juce::String delim (d);
+                const int p = st->reasoningTail.indexOf (delim);
+                if (p < 0) continue;
+                const int e = p + delim.length() - 1;      // END index of this delimiter
+                if (endAt < 0 || e < endAt) endAt = e;      // earliest complete unit wins
+            }
+            if (endAt < 0) break;                          // nothing finished yet: show nothing new
+            const auto unit = st->reasoningTail.substring (0, endAt + 1).trim();
+            st->reasoningTail = st->reasoningTail.substring (endAt + 1);
+            if (unit.isNotEmpty() && unit != st->shownUnit)
+            {
+                st->shownUnit = unit;
+                promoted = true;
+            }
+        }
+        // Until the first unit completes the row keeps its default
+        // "Thinking..." copy, which is the honest state: the model is
+        // thinking and has not finished a thought worth showing.
+        if (promoted)
+            ed->setStageStatus (st->shownUnit);
     };
     ev.onDone = [safeThis, st, activeChatId, turnTargetUid, turnTargetName] (const juce::var& done)
     {
@@ -22331,6 +22736,24 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
         ed->activeChatStream_ = nullptr;
         st->parser.finish();   // flush withheld prose; the authoritative
                                // replace below supersedes it either way
+
+        // The rendering half of the stream observable. Read TOGETHER with the
+        // transport's `EJStream: reads=...` line for the same turn:
+        //   deltas=0                      -> nothing arrived: transport/server
+        //   deltas>0, paints=0            -> arrived and were discarded
+        //   deltas>0, paints>0, firstPaint
+        //     close to the turn total     -> arrived in a lump at the end,
+        //                                    i.e. buffered somewhere upstream
+        //   paints spread through the turn-> progressive, working as designed
+        // firstPaint is what the user actually experienced: the moment
+        // anything at all stopped being a spinner.
+        EchoJay_NSLog (("EJStream: render deltas=" + juce::String (st->deltasIn)
+                        + " prose=" + juce::String (st->proseEvents)
+                        + " slots=" + juce::String (st->slotEvents)
+                        + " paints=" + juce::String (st->paints)
+                        + " firstPaint=" + juce::String (st->tFirstPaint
+                              ? (int) (juce::Time::getMillisecondCounter() - st->tFirstPaint) : -1)
+                        + "ms-before-done").toRawUTF8());
 
         const auto reply      = done.getProperty ("reply", juce::var()).toString();
         const auto chainBlock = done.getProperty ("chainBlock", juce::var()).toString();
@@ -22347,9 +22770,21 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
             ed->chatLoading = false;
             ed->clearStageStatus();
             ed->dropProvisional (st->provisionalId);
+            // ASCII ONLY, and not merely as a style preference (10 Aug
+            // 2026). These are bare const char* literals, and
+            // juce::String(const char*) parses through CharPointer_ASCII —
+            // one byte, one character. A UTF-8 em dash (e2 80 94) therefore
+            // arrived as three characters and rendered as mojibake in a
+            // user's chat. JUCE has an assertion for exactly this and it
+            // does NOT fire in a release build, so it degrades silently in
+            // the only builds users have. The em dash also violated the
+            // standing no-em-dash rule for output copy, so it goes rather
+            // than gets encoded. Any non-ASCII here must use
+            // juce::String::fromUTF8("\xe2\x80\xa6") like the rest of this
+            // file, or not exist.
             const juce::String msg = chainBlock == "truncated"
-                ? "That build didn't finish — the reply was cut off before the chain completed, so there's nothing safe to build. Ask again and I'll rebuild it fresh."
-                : "That turn should have delivered a buildable chain but didn't produce one. Nothing was built — ask again to retry.";
+                ? "That build didn't finish. The reply was cut off before the chain completed, so there's nothing safe to build. Ask again and I'll rebuild it fresh."
+                : "That turn should have delivered a buildable chain but didn't produce one. Nothing was built. Ask again to retry.";
             ed->chatMessages.push_back ({ "assistant", msg });
             ed->processorRef.chatHistory.push_back ({ "assistant", msg });
             ed->resized();
@@ -22879,6 +23314,28 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
     auto* o = v.getDynamicObject();
     if (o == nullptr || !o->hasProperty("chain")) return;
 
+    // WHAT IS ACTUALLY BEING SENT (11 Aug 2026). Extraction logged 5 slots all
+    // carrying settings_structured; the Link received 3 carrying none. Since
+    // the array is passed through verbatim below, a changed COUNT means the
+    // json handed to this function is not the block that was extracted -- so
+    // the string arriving here is the thing to measure, not the code path.
+    // Logged BEFORE the write, with the same shape as the extraction line so
+    // the two can be diffed directly on one turn.
+    {
+        int slots = 0, withStructured = 0;
+        if (auto* carr = o->getProperty("chain").getArray())
+            for (auto& ev : *carr)
+                if (auto* eo = ev.getDynamicObject())
+                {
+                    ++slots;
+                    if (! eo->getProperty("settings_structured").isVoid()) ++withStructured;
+                }
+        EchoJay_NSLog(("EJChain: sending to Link -- " + juce::String(chainJson.length())
+                       + " ch, " + juce::String(slots) + " slot(s), "
+                       + juce::String(withStructured) + " with settings_structured"
+                       + "  uid=" + id).toRawUTF8());
+    }
+
     // Chain entries pass through as-is (name/role/settings) — the Link
     // resolves names and applies plugin_disabled.json on its side.
     int seq = (int)(juce::Time::currentTimeMillis() / 1000);
@@ -22888,9 +23345,14 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
     cmd->setProperty("chain",      o->getProperty("chain"));
     cmd->setProperty("sourceNote", "EchoJay V2 chat build");
 
+    const juce::String payload = juce::JSON::toString(juce::var(cmd), true);
     juce::File(dir + "chain-ack-" + id + ".json").deleteFile();   // stale ack
-    juce::File(dir + "chain-cmd-" + id + ".json")
-        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+    juce::File(dir + "chain-cmd-" + id + ".json").replaceWithText(payload);
+    // A COPY THAT SURVIVES. The Link consumes and deletes chain-cmd, so after a
+    // build there is nothing left to inspect and the payload can only be
+    // reasoned about. This one is overwritten each send and is never read by
+    // anything, so it costs one file and settles the question directly.
+    juce::File(dir + "chain-cmd-last-sent.json").replaceWithText(payload);
 
     pollLinkChainAck(id, seq, 20, chainJson);   // 20 x 250ms = ~5s timeout; id = uid
 }
@@ -24549,7 +25011,6 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
     {
         switchToTab(Tab::Chain);
         chainListPanel.statusText = "Failed: " + why;
-        chainStatusLabel.setText(chainListPanel.statusText, juce::dontSendNotification);
         chainListPanel.repaint();
     };
 
@@ -24618,6 +25079,21 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
     {
         if (safeThis == nullptr) return;
 
+        // WATCHDOG (10 Aug 2026). The summary MUST NOT depend on which settle
+        // path runs. An all-built-in chain of four devices produced four
+        // slot-loaded lines and NO summary at all: the build reached the rack
+        // while every reporting route stayed silent, which is the one failure
+        // an instrument may never have. The settle paths still emit their own
+        // richer line first and this one is redundant on a healthy build --
+        // that is the point. It is armed HERE, at the moment the build is
+        // committed to, so the only way to get no summary is to never start.
+        // Each line carries its reason, so the log says which route arrived.
+        juce::Timer::callAfterDelay(6000, [safeThis]
+        {
+            if (safeThis == nullptr) return;
+            safeThis->processorRef.getChainHost().logDialSummary("WATCHDOG 6s after build start");
+        });
+
         // Close any open hosted editor FIRST; the rack is cleared a runloop
         // turn later (see onRemoveSlot — destroying a plugin's processor in
         // the same tick as its editor lets a final UI timer fire into freed
@@ -24641,8 +25117,6 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
         safeThis->chainListPanel.rebuild(ch2.getAllSlotInfos(), -1);
         safeThis->chainListPanel.statusText = "Loading " + slots[0].name
             + " (1 of " + juce::String((int)slots.size()) + ")...";
-        safeThis->chainStatusLabel.setText(safeThis->chainListPanel.statusText,
-                                           juce::dontSendNotification);
         safeThis->chainListPanel.repaint();
 
         // Load slots sequentially; after each success, store settings on the slot
@@ -24676,6 +25150,15 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                     // deferred path below waits for dial state to settle
                     // and only relays the model line on a clean FULL dial.
                     const bool cleanLoad = skipped->isEmpty() && ch3.getNumSlots() > 0;
+                    // Reached the end of the load loop. Logged because "no
+                    // summary" has two very different causes and they must not
+                    // look alike: the loop never finished, or it finished and
+                    // the settle path it chose went quiet.
+                    EchoJay_NSLog(("EJDialSummary: load loop complete, "
+                                   + juce::String(ch3.getNumSlots()) + " slot(s) racked, "
+                                   + juce::String((int) slots.size()) + " requested, cleanLoad="
+                                   + (cleanLoad ? "y -> finishChainBubbleWhenDialSettled"
+                                                : "n -> logDialMissesWhenSettled")).toRawUTF8());
                     juce::String resultBubble;
                     if (cleanLoad)
                         resultBubble.clear();   // composed by finishChainBubbleWhenDialSettled
@@ -24758,9 +25241,6 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                 if (!droppedDisabled.isEmpty())
                     status += " (skipped: " + droppedDisabled.joinIntoString(", ")
                             + ", disabled in Settings)";
-                safeThis->chainStatusLabel.setText(status, juce::dontSendNotification);
-                // Debug: show full raw chain JSON so we can verify settings fields
-                safeThis->chainDebugJsonBox.setText(chainJson, false);
                 safeThis->resized();
                 safeThis->repaint();
                 // Show the first loaded plugin so the display area is never
@@ -24793,8 +25273,6 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
             // before the stall or the progress label never shows.
             safeThis->chainListPanel.statusText = "Loading " + name + " ("
                 + juce::String(i + 1) + " of " + juce::String((int)slots.size()) + ")...";
-            safeThis->chainStatusLabel.setText(safeThis->chainListPanel.statusText,
-                                               juce::dontSendNotification);
             safeThis->setStageStatus(safeThis->chainListPanel.statusText);   // 1d shimmer
             safeThis->chainListPanel.repaint();
             juce::Timer::callAfterDelay(30, [safeThis, name, settings, structured, skipped, loadNextPtr]() mutable
@@ -24819,8 +25297,35 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                             // settings; ChainHost dials the plugin now if
                             // its map is cached, or on fetch completion.
                             // No structured settings -> prose only, as-is.
+                            // The SILENT SKIP that closed the loop on this bug
+                            // (10 Aug 2026). A slot whose block carried no
+                            // settings_structured never reaches
+                            // setSlotStructuredSettings, so it produces no
+                            // settings-attached line, no dial and no complaint:
+                            // indistinguishable from a dial that was attempted
+                            // and failed. The prose `settings` string is set
+                            // just above and shows on the card either way,
+                            // which is why "the settings appear in the card"
+                            // does not mean the dialable ones arrived.
                             if (structured.getDynamicObject() != nullptr)
+                            {
+                                EchoJay_NSLog(("EJDial: attaching settings_structured to \""
+                                               + name + "\", keys=["
+                                               + [&]{ juce::StringArray k;
+                                                      if (auto* o = structured.getDynamicObject())
+                                                          for (auto& kv : o->getProperties()) k.add(kv.name.toString());
+                                                      return k.joinIntoString(", "); }()
+                                               + "]").toRawUTF8());
                                 ch4.setSlotStructuredSettings(ch4.getNumSlots() - 1, structured);
+                            }
+                            else
+                            {
+                                EchoJay_NSLog(("EJDial: \"" + name + "\" carried NO "
+                                               "settings_structured in the chain block, so "
+                                               "nothing was ever offered to the dial path. "
+                                               "This is a SERVER/model-side gap, not a dial "
+                                               "failure.").toRawUTF8());
+                            }
                             // Progressive: the rack grows a row per loaded slot
                             safeThis->chainListPanel.rebuild(ch4.getAllSlotInfos(), -1);
                         }
@@ -26503,7 +27008,7 @@ bool EchoJayEditor::keyPressed(const juce::KeyPress& key)
         passwordInput.hasKeyboardFocus(false) || settingsName.hasKeyboardFocus(false) ||
         settingsMonitors.hasKeyboardFocus(false) || settingsHeadphones.hasKeyboardFocus(false) ||
         settingsGenres.hasKeyboardFocus(false) || settingsPlugins.hasKeyboardFocus(false) ||
-        reviewSearchBox.hasKeyboardFocus(false) || settingsPluginSearchBox.hasKeyboardFocus(false))
+        reviewSearchBox.hasKeyboardFocus(false))
         return false;
 
 

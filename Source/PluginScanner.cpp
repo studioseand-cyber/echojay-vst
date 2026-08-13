@@ -11,6 +11,9 @@
 
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
+
+// Unified-log line (implemented in the ObjC side; see NativeClip.h).
+extern "C" void EchoJay_NSLog(const char* msg);
 #include <algorithm>
 #include <functional>
 #include <map>
@@ -132,30 +135,8 @@ static juce::String bundleIdentifierFor(const juce::File& bundle)
 }
 #endif
 
-PluginScanner::PluginScanner() {}
-
-PluginScanner::~PluginScanner()
-{
-    // Tell any detached workers spawned by scanWithTimeout that this
-    // scanner is going away. The shared `alive` flag is captured by
-    // worker lambdas via a shared_ptr, so it outlives this scanner.
-    // Workers check it before scanDirectory and inside the walk loop.
-    alive->store(false);
-    
-    if (scanThread && scanThread->isThreadRunning())
-    {
-        scanThread->stopThread(5000);
-    }
-    
-    // Brief grace period so any detached worker that returned from its
-    // stuck syscall in the last few moments has a chance to notice the
-    // alive flag and unwind before we drop member memory. Not a hard
-    // guarantee — a worker mid-syscall when this runs may still race —
-    // but in practice the only worker types we detach are ones stuck
-    // for tens of seconds on cloud paths, and the chance of one
-    // returning in the exact window this hits is vanishingly small.
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-}
+// Ctor and dtor are header-inline; see PluginScanner.h for why it is
+// load-bearing (stale-lib layout vs inline methods).
 
 void PluginScanner::startScan()
 {
@@ -850,11 +831,26 @@ void PluginScanner::addPlugin(const juce::String& nameIn, const juce::String& ma
             // just learned, re-keying the exact index to match.
             pluginIndex.erase(makeKey(existing.name, existing.manufacturer));
             existing.manufacturer = manufacturer;
-            existing.uid = existing.name.toLowerCase().replaceCharacter(' ', '_')
-                           + "_" + manufacturer.toLowerCase().replaceCharacter(' ', '_');
+            existing.uid = echojay::makeUid(existing.name, manufacturer);
             if (! existing.format.contains(format))
                 existing.format += "/" + format;
             pluginIndex[makeKey(existing.name, existing.manufacturer)] = nIt->second;
+            return;
+        }
+        // One vocabulary for EQUALITY too (13 Aug 2026, the 57 doubles):
+        // the same product scanned per-format can arrive under different
+        // vendor strings (bx_boom as Plugin Alliance/AU and Brainworx/VST3)
+        // or different name formatting (Devil-Loc Deluxe vs
+        // Devil-Loc_Deluxe), and raw-string comparison called those genuine
+        // collisions and kept both rows. Product identity IS uid identity:
+        // if makeUid agrees, it is one plugin, and the row carries the
+        // format UNION exactly as the Unknown-absorption path always has.
+        // The resolver's hosted-format filter reads CHAIN entries, not
+        // these rows, so the union costs nothing there.
+        if (echojay::makeUid(name, manufacturer) == existing.uid)
+        {
+            if (! existing.format.contains(format))
+                existing.format += "/" + format;
             return;
         }
         // else: two real but different vendors share this name (genuine
@@ -867,7 +863,7 @@ void PluginScanner::addPlugin(const juce::String& nameIn, const juce::String& ma
     plugin.format = format;
     plugin.category = category;
     plugin.path = path;
-    plugin.uid = name.toLowerCase().replaceCharacter(' ', '_') + "_" + manufacturer.toLowerCase().replaceCharacter(' ', '_');
+    plugin.uid = echojay::makeUid(name, manufacturer);
 
     // Classify effect type for per-type capping of the AI feed. Instruments
     // don't go in the feed, so leave their fxType empty.
@@ -876,7 +872,7 @@ void PluginScanner::addPlugin(const juce::String& nameIn, const juce::String& ma
 
     // Respect a prior unticking: if the user disabled this uid before (and it
     // survived in disabledUids across the rescan), keep it disabled.
-    plugin.enabled = (disabledUids.find(plugin.uid) == disabledUids.end());
+    // enabled is derived at read (stampEnabled); nothing to set here.
 
     const size_t newIdx = plugins.size();
     pluginIndex[key] = newIdx;
@@ -891,67 +887,82 @@ void PluginScanner::addPlugin(const juce::String& nameIn, const juce::String& ma
 std::vector<ScannedPlugin> PluginScanner::getPlugins() const
 {
     std::lock_guard<std::mutex> lock(pluginMutex);
-    return plugins;
+    auto copy = plugins;
+    stampEnabled(copy, disabledUids);
+    return copy;
 }
+
+bool PluginScanner::maybeReloadEnabledState()
+{
+    // DIAGNOSIS INSTRUMENTATION (13 Aug 2026): the 12:28 unticks wrote 500
+    // uids and no instance rebuilt, including the writer. Three questions,
+    // one line each, bounded volume: is this called at all (once per
+    // scanner lifetime), does it see the mtime move, and what verdict does
+    // the set comparison reach. NOTE the standing hypothesis this must
+    // confirm or kill: the WRITER's own set is already fresh when its save
+    // moves the mtime, so the changed=n early-return below eats the
+    // writer's unlatch by design of this very function.
+    if (! enabledWatchLogged_)
+    {
+        enabledWatchLogged_ = true;
+        EchoJay_NSLog(("EJScan: enabledState watch active (scanner 0x"
+                       + juce::String::toHexString((juce::pointer_sized_int) this)
+                       + ")").toRawUTF8());
+    }
+    auto file = getEnabledStateFile();
+    if (! file.existsAsFile()) return false;
+    const auto mtime = file.getLastModificationTime();
+    if (mtime == enabledStateMtime_) return false;
+    enabledStateMtime_ = mtime;
+    auto json = juce::JSON::parse(file.loadFileAsString());
+    if (auto* arr = json.getArray())
+    {
+        std::set<juce::String> fresh;
+        for (auto& item : *arr)
+            fresh.insert(item.toString());
+        return applyReloadedDisabledSet(std::move(fresh));
+    }
+    return false;
+}
+
+// applyReloadedDisabledSet, notifyDisabledSetChanged and setPluginEnabled
+// are HEADER-INLINE (PluginScanner.h): the gate's test must compile the
+// shipped trigger behaviour, not link the previous build's copy.
 
 // ============================================================================
 // Enabled / disabled state
 // ============================================================================
 
-void PluginScanner::setPluginEnabled(const juce::String& uid, bool enabled)
-{
-    std::lock_guard<std::mutex> lock(pluginMutex);
-
-    // O(1) lookup via the dedupe index would need a uid->index map; we only
-    // have name|manufacturer keyed. A linear scan of a few thousand entries is
-    // ~microseconds and fine for a click, but we avoid the EXPENSIVE part
-    // (disk write) here — persistence is handled by the debounced commit in
-    // the editor (saveEnabledState), so rapid clicking doesn't write the file
-    // on every toggle. State lives in memory immediately either way.
-    for (auto& p : plugins)
-        if (p.uid == uid)
-            p.enabled = enabled;
-
-    if (enabled) disabledUids.erase(uid);
-    else         disabledUids.insert(uid);
-
-    cachedShuffledNames = juce::String();
-    cachedShuffleSize = 0;
-}
+// setPluginEnabled is header-inline; see the note above.
 
 void PluginScanner::setManyEnabled(const juce::StringArray& uids, bool enabled)
 {
+    bool changed = false;
     {
         std::lock_guard<std::mutex> lock(pluginMutex);
 
-        // Build a lookup set of the target uids so the plugin pass is O(n)
-        // rather than O(uids x n). "Untick all" on a 2000-plugin install would
-        // otherwise be ~4M comparisons.
-        std::set<juce::String> target;
         for (auto& uid : uids)
         {
-            target.insert(uid);
-            if (enabled) disabledUids.erase(uid);
-            else         disabledUids.insert(uid);
+            if (enabled) changed = (disabledUids.erase(uid) > 0) || changed;
+            else         changed = disabledUids.insert(uid).second || changed;
         }
 
-        for (auto& p : plugins)
-            if (target.find(p.uid) != target.end())
-                p.enabled = enabled;
-
-        cachedShuffledNames = juce::String();
-        cachedShuffleSize = 0;
+        if (changed)
+        {
+            cachedShuffledNames = juce::String();
+            cachedShuffleSize = 0;
+        }
     }
     saveEnabledState();
+    // The setter IS the writing instance's trigger: its own save cannot
+    // inform it through the file watch (a writer is not a reader).
+    if (changed) notifyDisabledSetChanged("setter");
 }
 
 bool PluginScanner::isPluginEnabled(const juce::String& uid) const
 {
     std::lock_guard<std::mutex> lock(pluginMutex);
-    for (auto& p : plugins)
-        if (p.uid == uid)
-            return p.enabled;
-    return true; // unknown uid: treat as enabled (the default)
+    return disabledUids.find(uid) == disabledUids.end();
 }
 
 void PluginScanner::addManualPlugin(const juce::String& name)
@@ -1012,18 +1023,43 @@ void PluginScanner::loadEnabledState()
 {
     auto file = getEnabledStateFile();
     if (! file.existsAsFile()) return;
+    enabledStateMtime_ = file.getLastModificationTime();
 
     auto json = juce::JSON::parse(file.loadFileAsString());
+    MigrationCounts mig;
     if (auto* arr = json.getArray())
     {
         std::lock_guard<std::mutex> lock(pluginMutex);
         disabledUids.clear();
         for (auto& item : *arr)
             disabledUids.insert(item.toString());
-
-        // Apply to any already-loaded plugins (e.g. loadCache ran first).
-        for (auto& p : plugins)
-            p.enabled = (disabledUids.find(p.uid) == disabledUids.end());
+        // No apply-loop any more: rows carry no tick state, the flag is
+        // stamped from this set at every read (stampEnabled).
+        // Vocabulary migration: runs after loadCache (the loadThread's
+        // ordering) so legacyUidMap_ is populated. See migrateDisabledSet
+        // for the chosen error direction.
+        mig = migrateDisabledSet(disabledUids, legacyUidMap_);
+    }
+    if (mig.rewritten > 0 || mig.collapsed > 0)
+    {
+        saveEnabledState();
+        // The first user whose exclusions shift after an update gets an
+        // explanation in the log rather than a mystery.
+        EchoJay_NSLog(("EJScan: disabled set migrated, "
+                       + juce::String(mig.rewritten) + " entr(ies) rewritten, "
+                       + juce::String(mig.collapsed) + " collapsed"
+                       + " (uid vocabulary unification)").toRawUTF8());
+    }
+    else
+    {
+        // The zero case announces itself too (13 Aug 2026, evening): a
+        // silent no-op is indistinguishable from correct-and-unreached,
+        // and this week produced four candidates for that pattern. One
+        // line per load, naming how many legacy candidates existed and
+        // that none were in the set, ends the ambiguity.
+        EchoJay_NSLog(("EJScan: disabled set migration checked, nothing to do ("
+                       + juce::String((int) legacyUidMap_.size())
+                       + " legacy candidate(s), none present in the set)").toRawUTF8());
     }
 }
 
@@ -1048,7 +1084,11 @@ juce::String PluginScanner::getPluginsJSON() const
         json += "\"format\":\"" + p.format + "\",";
         json += "\"category\":\"" + p.category + "\",";
         json += "\"uid\":\"" + p.uid.replace("\"", "\\\"") + "\",";
-        json += "\"enabled\":" + juce::String(p.enabled ? "true" : "false");
+        // Derived from the authority set at serialization; the WebView
+        // checklist reads it, nothing ever reads it back (loadCache ignores
+        // it since 13 Aug 2026).
+        json += "\"enabled\":" + juce::String(
+            disabledUids.find(p.uid) == disabledUids.end() ? "true" : "false");
         json += "}";
         if (i < plugins.size() - 1) json += ",";
     }
@@ -1094,7 +1134,7 @@ juce::String PluginScanner::getPluginNamesString() const
     std::map<juce::String, std::vector<Cand>> byType;
     for (auto& p : plugins)
     {
-        if (p.category != "Effect" || ! p.enabled) continue;
+        if (p.category != "Effect" || disabledUids.count(p.uid) > 0) continue;
         juce::String type = p.fxType.isNotEmpty() ? p.fxType : juce::String("Other");
         byType[type].push_back({ p.name + " (" + p.manufacturer + ")",
                                  sourcePriority(p.manufacturer),
@@ -1174,7 +1214,7 @@ int PluginScanner::getEnabledEffectCount() const
     std::lock_guard<std::mutex> lock(pluginMutex);
     int n = 0;
     for (auto& p : plugins)
-        if (p.category == "Effect" && p.enabled)
+        if (p.category == "Effect" && disabledUids.count(p.uid) == 0)
             ++n;
     return n;
 }
@@ -1188,7 +1228,7 @@ juce::String PluginScanner::getFullPluginList() const
     std::lock_guard<std::mutex> lock(pluginMutex);
     juce::StringArray arr;
     for (auto& p : plugins)
-        if (p.category == "Effect" && p.enabled)
+        if (p.category == "Effect" && disabledUids.count(p.uid) == 0)
             arr.add(p.name + " (" + p.manufacturer + ")");
     return arr.joinIntoString(", ");
 }
@@ -1206,7 +1246,7 @@ juce::String PluginScanner::getPluginSummary() const
     std::map<juce::String, int> byManu;
     for (auto& p : plugins)
     {
-        if (p.category != "Effect" || ! p.enabled) continue;
+        if (p.category != "Effect" || disabledUids.count(p.uid) > 0) continue;
         ++total;
         // Normalise the stock labels to something human ("Logic Pro Stock" ->
         // "Logic stock") and group all stock under their DAW name as-is.
@@ -1263,7 +1303,8 @@ void PluginScanner::loadCache()
     {
         std::lock_guard<std::mutex> lock(pluginMutex);
         plugins.clear();
-        
+        std::map<juce::String, size_t> loadedByUid;   // uid-equality dedupe, see below
+
         for (auto& item : *arr)
         {
             if (auto* obj = item.getDynamicObject())
@@ -1287,18 +1328,47 @@ void PluginScanner::loadCache()
                 }
                 p.format = obj->getProperty("format").toString();
                 p.category = obj->getProperty("category").toString();
-                p.uid = p.name.toLowerCase().replaceCharacter(' ', '_') + "_" +
-                         p.manufacturer.toLowerCase().replaceCharacter(' ', '_');
-                // enabled: prefer the cache value if present, but the
-                // disabledUids set (loaded separately) is the authority and is
-                // re-applied in loadEnabledState() regardless.
-                if (obj->hasProperty("enabled"))
-                    p.enabled = (bool) obj->getProperty("enabled");
+                p.uid = echojay::makeUid(p.name, p.manufacturer);
+                // Legacy spellings, derived from the DATA rather than the
+                // rule tables: any uid this row would have carried under
+                // less normalization (raw fields, or the cache's stored
+                // uid) maps to the canonical one, and the migration in
+                // loadEnabledState rewrites set entries through this map.
+                // Rule enumeration is not needed and cannot rot: whatever
+                // rewrote this row's identity is captured by comparing what
+                // the row WAS called with what it IS called.
+                {
+                    const auto rawName = obj->getProperty("name").toString();
+                    const auto rawManu = obj->getProperty("manufacturer").toString();
+                    const auto storedUid = obj->getProperty("uid").toString();
+                    const auto rawUid = rawName.toLowerCase().replaceCharacter(' ', '_')
+                                      + "_" + rawManu.toLowerCase().replaceCharacter(' ', '_');
+                    if (rawUid != p.uid)    legacyUidMap_[rawUid]    = p.uid;
+                    if (storedUid.isNotEmpty() && storedUid != p.uid)
+                                            legacyUidMap_[storedUid] = p.uid;
+                }
+                // The cache's "enabled" field is IGNORED on load (13 Aug
+                // 2026): it is a serialization artifact for the WebView, and
+                // reading it back is how the second copy of the tick state
+                // existed. disabledUids is the authority; the flag is
+                // stamped from it at read.
                 // Reclassify effect type on load (cheap, keyword-based) rather
                 // than persisting it — keeps the cache format stable and means
                 // classifier improvements apply to cached entries too.
                 if (p.category == "Effect")
                     p.fxType = echojay::fxTypeTag(echojay::classifyEffect(p.name));
+                // Same uid-equality dedupe as addPlugin, so a cache written
+                // BEFORE the dedupe existed converges at the next launch
+                // rather than waiting for a rescan: a row whose canonical
+                // uid already landed merges its format and is dropped.
+                if (auto seen = loadedByUid.find(p.uid); seen != loadedByUid.end())
+                {
+                    auto& kept = plugins[seen->second];
+                    if (! kept.format.contains(p.format))
+                        kept.format += "/" + p.format;
+                    continue;
+                }
+                loadedByUid[p.uid] = plugins.size();
                 plugins.push_back(p);
             }
         }

@@ -729,7 +729,25 @@ void ChainHost::process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi
 // ---------------------------------------------------------------------------
 void ChainHost::startScan()
 {
-    if (scanning_.load()) return;
+    // EJScan instrumentation (13 Aug 2026): a July chain_entries.xml served
+    // five weeks of sessions and a Scan press produced no rewrite, and this
+    // path had NO logging, so which mechanism ate the press is unknowable
+    // after the fact. Every decision on the path now says what it did; next
+    // time the log names it.
+    if (scanning_.load())
+    {
+        const auto ageS = scanStartedAtMs_ > 0
+            ? (juce::Time::currentTimeMillis() - scanStartedAtMs_) / 1000
+            : (juce::int64) -1;
+        EchoJay_NSLog(("EJScan: press REJECTED, a scan is already running ("
+                       + (ageS >= 0 ? juce::String(ageS) + "s old" : juce::String("age unknown"))
+                       + "). A scan that never completes bricks this button "
+                         "silently; if this line repeats with a growing age, "
+                         "that is the stuck-flag case.").toRawUTF8());
+        return;
+    }
+    EchoJay_NSLog("EJScan: press accepted, scan starting");
+    scanStartedAtMs_ = juce::Time::currentTimeMillis();
     cancelFlag_.store(false);
     scanning_.store(true);
     scanProgress_.store(0.0f);
@@ -776,9 +794,24 @@ void ChainHost::doRefresh()
         pd.uniqueId = pd.deprecatedUid = e.uniqueId;
         auEntries.add(pd);
     }
+    // Phase count: how many AU rows, and how many of those carry a real
+    // plist-resolved version. The shape test is safe HERE because the
+    // enumerator's output is only ever a dotted version or the triple, and
+    // the triple always contains commas.
+    {
+        int plistResolved = 0;
+        for (const auto& d : auEntries)
+            if (! d.version.containsChar(',')) ++plistResolved;
+        EchoJay_NSLog(("EJScan: AU registry read, " + juce::String(auEntries.size())
+                       + " entr(ies), " + juce::String(plistResolved)
+                       + " with plist version(s)").toRawUTF8());
+    }
     scanProgress_.store(0.5f);
 #endif
 
+    // RECORD, no fix (13 Aug 2026): cancelScan() has no callers, so this
+    // early return is UNREACHABLE. It is kept only because removing dead
+    // code is not this commit's job; do not trace it as a way a scan ends.
     if (cancelFlag_.load()) { std::lock_guard<std::mutex> lk(pluginsMutex_); entries_ = auEntries; return; }
 
     setScanStatus("Reading VST3 folders...");
@@ -827,6 +860,15 @@ void ChainHost::doRefresh()
         }
     }
 
+    {
+        int thin = 0;
+        for (const auto& d : vst3Entries)
+            if (d.version.isEmpty()) ++thin;
+        EchoJay_NSLog(("EJScan: VST3 folders read, " + juce::String(vst3Entries.size())
+                       + " row(s), " + juce::String(vst3Entries.size() - thin)
+                       + " from the validated cache, " + juce::String(thin)
+                       + " thin (unvalidated)").toRawUTF8());
+    }
     scanProgress_.store(0.9f);
 
     std::unordered_set<std::string> auNames;
@@ -850,17 +892,42 @@ void ChainHost::doRefresh()
     }
 
     // Persist the FULL entries list so the other host (main plugin / Link)
-    // resolves against the same list without running its own scan
+    // resolves against the same list without running its own scan. The
+    // write is CHECKED and stamped (13 Aug 2026): this file's mtime is the
+    // only completion signal the scan has, and its date going stale is how
+    // a July snapshot served five weeks of sessions unnoticed.
     {
+        const juce::int64 nowMs = juce::Time::currentTimeMillis();
         auto root = std::make_unique<juce::XmlElement>("CHAIN_ENTRIES");
+        root->setAttribute("scannedAt", juce::String(nowMs));
         for (auto& d : collected)
             if (auto x = d.createXml())
                 root->addChildElement(x.release());
         appSupportDir().createDirectory();
         auto ecFile = getEntriesCacheFile();
-        root->writeTo(ecFile);
-        entriesCacheTime_ = ecFile.getLastModificationTime();
+        if (root->writeTo(ecFile))
+        {
+            entriesCacheTime_   = ecFile.getLastModificationTime();
+            entriesScannedAtMs_ = nowMs;
+            EchoJay_NSLog(("EJScan: cache written, " + juce::String(collected.size())
+                           + " entr(ies), " + juce::String((int) ecFile.getSize())
+                           + "b -> " + ecFile.getFullPathName()).toRawUTF8());
+        }
+        else
+        {
+            // The in-memory list is still fresh (entries_ was replaced
+            // above), so this session works; the OTHER host and the next
+            // session keep reading the old file. Say so, loudly.
+            entriesScannedAtMs_ = nowMs;
+            EchoJay_NSLog(("EJScan: CACHE WRITE FAILED -> " + ecFile.getFullPathName()
+                           + " -- this session's list is fresh but the file "
+                             "still holds the OLD scan; the Link host and the "
+                             "next session will read stale entries.").toRawUTF8());
+        }
     }
+    EchoJay_NSLog(("EJScan: scan complete, " + juce::String(collected.size())
+                   + " entr(ies) in " + juce::String((juce::Time::currentTimeMillis()
+                                                      - scanStartedAtMs_) / 1000) + "s").toRawUTF8());
 
     scanProgress_.store(1.0f);
     setScanStatus({});
@@ -1555,7 +1622,7 @@ ChainHost::applyStructuredSettings (int slotIndex,
     for (auto& r : results)
         out.push_back ({ r.semantic, r.applied, r.normalized, r.note,
                          r.landedText, r.displayVerified, r.readbackMismatch,
-                         r.staleDisplayKept, r.requestedValue });
+                         r.staleDisplayKept, r.requestedValue, r.outOfRange });
 
     return out;
 }
@@ -1678,14 +1745,78 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
             liveDesc = desc;   // never fingerprint from a blank description
         slots_[(size_t)newSlotIdx].fp =
             echojay::fingerprintForDescription(liveDesc, newProc->getParameters().size());
+        // Stale-map ladder (12 Aug 2026). This is the ONLY point where index
+        // staleness is detectable: a live fp differing from the indexed fp
+        // proves the index described a binary that is no longer installed.
+        // The decisions are echojay::staleLadderAtLoad (pure, pinned by
+        // mapfps_test); the side effects happen here. On divergence the
+        // index self-corrects as before, the slot is marked as having loaded
+        // against a fingerprint the server did not have, and the live fp's
+        // map is fetched NOW through the existing prefetch path (the
+        // corrected index makes the sweep want it). The apply for this slot
+        // then holds naturally: paramMaps_ has nothing under the live fp, so
+        // applyStructuredIfReady parks it pending until storeParamMaps
+        // answers, where settleStaleRung names the rung.
         const auto ik = echojay::identityKeyForDescription(liveDesc);
-        auto it = identityToFp_.find(ik);
-        if (it == identityToFp_.end() || it->second != slots_[(size_t)newSlotIdx].fp)
+        auto idxIt = identityToFp_.find(ik);
+        const juce::String indexedFp =
+            (idxIt != identityToFp_.end()) ? idxIt->second : juce::String();
+        const juce::String liveFp = slots_[(size_t)newSlotIdx].fp;
+        const auto step = echojay::staleLadderAtLoad(
+            indexedFp, liveFp, paramMaps_.find(liveFp) != paramMaps_.end());
+        if (step.correctIndex && liveDesc.uniqueId != 0)
         {
-            identityToFp_[ik] = slots_[(size_t)newSlotIdx].fp;
+            // The uid guard's write side: a zero-uid identity key (VST3|0|)
+            // is the shared prefix of every thin scan row, so indexing one
+            // would poison the whole zero-uid population. fpForIdentity
+            // refuses zero uids at read; this keeps the index clean at the
+            // source too.
+            identityToFp_[ik] = liveFp;
             saveParamMapsToDisk();
         }
-        applyStructuredIfReady(newSlotIdx);
+        if (step.markSlot)
+            slots_[(size_t)newSlotIdx].staleIndexedFp = indexedFp;
+        if (step.kickRefetch)
+        {
+            requestMapPrefetch();
+            // Honest status while the answer is in flight: the prefetch path
+            // marks requested but not pending, and pending is what keeps
+            // applyStructuredIfReady saying "pending" instead of "noMap".
+            // Only marked when the request actually left (editor wired).
+            if (mapsRequested_.contains(liveFp))
+                pendingMapFps_.addIfNotAlreadyThere(liveFp);
+        }
+        EchoJay_NSLog(("EJStaleMap: slot=" + juce::String(newSlotIdx)
+                       + " \"" + slots_[(size_t)newSlotIdx].desc.name + "\""
+                       + " indexed=" + (indexedFp.isEmpty() ? juce::String("(none)")
+                                                            : indexedFp.substring(0, 12))
+                       + " live=" + liveFp.substring(0, 12)
+                       + " rung=" + echojay::staleRungName(step.rung)).toRawUTF8());
+        // VST3 identity capture, option 1 (13 Aug 2026): moduleinfo.json
+        // measured ZERO of 189 on this machine (FabFilter, iZotope, Waves
+        // and TR5 all absent), so scan-time identity for VST3 is not
+        // recoverable from bundles. The load IS the measurement: persist
+        // the validated description into knownPlugins_ (chain_plugins.xml),
+        // which the doRefresh join was built to consume, fill the thin
+        // in-memory entry now, and unlatch the resolver so the plugin the
+        // user just loaded is identifiable THIS session, not after the
+        // next Scan Now. Coverage grows with use, the AU model's shape.
+        if (liveDesc.pluginFormatName == "VST3" && liveDesc.uniqueId != 0)
+        {
+            {
+                std::lock_guard<std::mutex> lk(pluginsMutex_);
+                knownPlugins_.addType(liveDesc);
+            }
+            saveToDisk();
+            const int filled = enrichThinVst3EntriesFromKnown();
+            if (filled > 0) hasResolved_ = false;
+            EchoJay_NSLog(("EJScan: VST3 identity captured at load, \""
+                           + liveDesc.name + "\" uid=" + juce::String(liveDesc.uniqueId)
+                           + " version=" + liveDesc.version
+                           + ", " + juce::String(filled)
+                           + " thin entr(ies) enriched").toRawUTF8());
+        }
+        applyStructuredIfReady(newSlotIdx, DialTrigger::slotLoaded);
     }
 
     // Hosted settings cache. No-op unless enabled (it is not in EchoJay
@@ -1717,7 +1848,7 @@ void ChainHost::setSlotStructuredSettings(int i, const juce::var& structured)
 
     slots_[(size_t)i].structuredSettings = structured;
     slots_[(size_t)i].structuredApplied  = false;
-    applyStructuredIfReady(i);
+    applyStructuredIfReady(i, DialTrigger::settingsAttached);
 
     // Map not cached yet (first-ever encounter of this plugin): fetch just
     // this fingerprint; storeParamMaps applies the pending slot on arrival.
@@ -1735,6 +1866,10 @@ void ChainHost::setSlotStructuredSettings(int i, const juce::var& structured)
     // answer is in flight.
     if (!slots_[(size_t)i].structuredApplied && pendingMapFps_.contains(fp))
         slots_[(size_t)i].dialStatus = DialStatus::pending;
+    // Stale-map ladder: on the map-held branch the dial verdict lands right
+    // here at settings attach, not on any fetch answer, so this is where
+    // that rung settles.
+    if (settleStaleRung(i) && onSlotSettingsChanged) onSlotSettingsChanged();
 }
 
 void ChainHost::storeParamMaps(const juce::var& mapsObj)
@@ -1787,10 +1922,128 @@ void ChainHost::storeParamMaps(const juce::var& mapsObj)
     for (int i = 0; i < (int)slots_.size(); ++i)
     {
         const bool wasApplied = slots_[(size_t)i].structuredApplied;
-        applyStructuredIfReady(i);
+        applyStructuredIfReady(i, DialTrigger::mapArrived);
         if (!wasApplied && slots_[(size_t)i].structuredApplied) changed = true;
+        // Stale-map ladder: the apply above ran against whatever this
+        // response delivered, so the rung is decidable now.
+        if (settleStaleRung(i)) changed = true;
     }
     if (changed && onSlotSettingsChanged) onSlotSettingsChanged();
+}
+
+int ChainHost::enrichThinVst3EntriesFromKnown()
+{
+    std::lock_guard<std::mutex> lk(pluginsMutex_);
+    // Bundle paths claimed by more than one captured description are shells
+    // (WaveShell): filling the single thin shell row from any one member
+    // would assert an arbitrary identity, so those paths are skipped.
+    std::map<juce::String, int> pathClaims;
+    for (const auto& kd : knownPlugins_.getTypes())
+        if (kd.pluginFormatName == "VST3" && kd.uniqueId != 0)
+            ++pathClaims[kd.fileOrIdentifier];
+    int filled = 0;
+    for (const auto& kd : knownPlugins_.getTypes())
+    {
+        if (kd.pluginFormatName != "VST3" || kd.uniqueId == 0) continue;
+        if (pathClaims[kd.fileOrIdentifier] > 1) continue;
+        for (auto& d : entries_)
+            if (d.pluginFormatName == "VST3"
+                && d.fileOrIdentifier == kd.fileOrIdentifier
+                && (d.uniqueId == 0 || d.version.isEmpty()))
+            {
+                d.uniqueId = d.deprecatedUid = kd.uniqueId;
+                d.version  = kd.version;
+                if (d.manufacturerName.isEmpty())
+                    d.manufacturerName = kd.manufacturerName;
+                ++filled;
+            }
+    }
+    return filled;
+}
+
+bool ChainHost::settleStaleRung(int i)
+{
+    if (i < 0 || i >= (int)slots_.size()) return false;
+    auto& s = slots_[(size_t)i];
+    if (s.staleIndexedFp.isEmpty() || s.staleSettled) return false;
+    // "Answered" needs the request to have LEFT first: a load with the
+    // editor unwired kicks nothing, and without the asked guard the next
+    // unrelated map arrival would read the absent pending mark as an answer
+    // and declare unmapped without the corpus ever being asked. Residual
+    // window: a prefetch-sweep request marks asked but not pending, so a
+    // response to a DIFFERENT batch landing while that one is in flight can
+    // still settle early; the cost is conservative wording that the
+    // mapArrived apply then corrects, never a lost dial.
+    const bool asked    = mapsRequested_.contains(s.fp);
+    const bool answered = asked && ! pendingMapFps_.contains(s.fp);
+    // The dial verdict comes from the SLOT, never from map presence (12 Aug
+    // 2026, rung A rehearsal: a held map logged a dial over applied=0
+    // unusableMap). wrote means something actually landed: applied, or
+    // partial with its manual remainder on the card.
+    const bool applyRan = s.structuredApplied;
+    const bool wrote    = s.dialStatus == DialStatus::applied
+                       || s.dialStatus == DialStatus::partial;
+    const auto rung = echojay::staleLadderAtResolution(
+        answered, paramMaps_.find(s.fp) != paramMaps_.end(), applyRan, wrote);
+    if (rung == echojay::StaleRung::refetch
+        || rung == echojay::StaleRung::mapHeld) return false;   // verdict not in yet
+    // An unmapped verdict before settings attach would settle with no keys
+    // to send manual and no prose on the card; the settings-attach settle
+    // completes it instead. A slot that never gets settings never speaks,
+    // which is right: there is nothing to hand-dial.
+    if (rung == echojay::StaleRung::unmapped && s.structuredSettings.isVoid())
+        return false;
+    s.staleSettled = true;
+    EchoJay_NSLog(("EJStaleMap: slot=" + juce::String(i) + " \"" + s.desc.name + "\""
+                   + " indexed=" + s.staleIndexedFp.substring(0, 12)
+                   + " live=" + s.fp.substring(0, 12)
+                   + " rung=" + echojay::staleRungName(rung)).toRawUTF8());
+    if (rung == echojay::StaleRung::dialled
+        || rung == echojay::StaleRung::undialled)
+    {
+        // dialled with nothing refused: the card reads "Applied
+        // automatically" through the normal path; nothing to add.
+        // undialled without divergence context is the plain unusableMap
+        // outcome, worded by the composers.
+        //
+        // DIVERGENCE + OUT-OF-RANGE REFUSALS is the one combination that
+        // earns a card note: those values were computed for the version the
+        // server was told about, and refusing a value then telling the user
+        // to hand-dial that same value would be worse than writing it. In-
+        // range values on the same slot dialled normally (same uid at a
+        // different version usually shares names and ranges, which is why
+        // the whole-set refusal this replaced was over-calibrated).
+        bool changed = false;
+        if (! s.dialOutOfRange.isEmpty())
+        {
+            const juce::String note = s.desc.name
+                + " loaded at a different version from the one its settings were "
+                  "worked out for. The out-of-range values ("
+                + s.dialOutOfRange.joinIntoString(", ")
+                + ") were computed for that other version and will not map onto "
+                  "this one - use them as intent rather than as numbers.";
+            if (! s.settings.startsWith(note))
+            {
+                s.settings = s.settings.isEmpty() ? note : note + "\n" + s.settings;
+                changed = true;
+            }
+        }
+        s.staleIndexedFp.clear();
+        return changed;
+    }
+    // Unmapped: the corpus does not hold the installed binary's fingerprint.
+    // The card speaks, and every requested key goes manual so the card's
+    // existing hand-dial guidance (the prose the model wrote, kept below the
+    // note) carries the values. Control-level refusal logic is deliberately
+    // absent: there is no map to refuse against.
+    if (auto* o = s.structuredSettings.getDynamicObject())
+        for (auto& kv : o->getProperties())
+            s.dialManual.addIfNotAlreadyThere(echojay::semanticLabel(kv.name.toString()));
+    const juce::String note = "This version of " + s.desc.name
+        + " is newer than any mapping we hold, so these controls need dialling by hand.";
+    if (! s.settings.startsWith(note))
+        s.settings = s.settings.isEmpty() ? note : note + "\n" + s.settings;
+    return true;
 }
 
 void ChainHost::mergeBootstrapMaps()
@@ -1831,7 +2084,7 @@ void ChainHost::mergeBootstrapMaps()
         for (int i = 0; i < (int)slots_.size(); ++i)
         {
             const bool wasApplied = slots_[(size_t)i].structuredApplied;
-            applyStructuredIfReady(i);
+            applyStructuredIfReady(i, DialTrigger::mapArrived);
             if (!wasApplied && slots_[(size_t)i].structuredApplied) changed = true;
         }
         if (changed && onSlotSettingsChanged) onSlotSettingsChanged();
@@ -1967,17 +2220,27 @@ juce::String ChainHost::devApplyEqJson(int slotIndex, const juce::String& json)
 }
 
 juce::String ChainHost::applyStructuredToBuiltinSlot(int slotIndex, const juce::var& structured,
-                                                     int* appliedOut, int* skippedOut)
+                                                     int* appliedOut, int* skippedOut,
+                                                     bool* deviceMissingOut)
 {
     if (appliedOut != nullptr) *appliedOut = 0;
     if (skippedOut != nullptr) *skippedOut = 0;
-    if (slotIndex < 0 || slotIndex >= (int)slots_.size()) return {};
+    if (deviceMissingOut != nullptr) *deviceMissingOut = false;
+    if (slotIndex < 0 || slotIndex >= (int)slots_.size())
+    {
+        if (deviceMissingOut != nullptr) *deviceMissingOut = true;
+        return {};
+    }
 
     // ANY built-in, not just the EQ. The cast is to the shared device base, so
     // this one call site serves all 19 devices and a Wave 1 session adds nothing
     // here (BUILTIN_SUITE_PLAN.md §1).
     auto* device = dynamic_cast<EedDeviceProcessor*>(getSlotProcessor(slotIndex));
-    if (device == nullptr) return {};
+    if (device == nullptr)
+    {
+        if (deviceMissingOut != nullptr) *deviceMissingOut = true;
+        return {};
+    }
 
     // One call, whole value. The chain deliberately does NOT reach in for
     // .eq_bands or .params: which keys exist and in what order they resolve is
@@ -1987,7 +2250,189 @@ juce::String ChainHost::applyStructuredToBuiltinSlot(int slotIndex, const juce::
     return device->applyStructured(structured, appliedOut, skippedOut);
 }
 
-void ChainHost::applyStructuredIfReady(int slotIndex)
+// The terminal per-slot verdict. Everything the per-call lines cannot say,
+// because each of those is a snapshot taken mid-sequence while the benign
+// cases outnumber the real one. Here every slot has had its chance, so
+// "nothing dialled" is a fact that can be read off rather than inferred.
+//
+// Prints for EVERY slot, including the ones that worked, because a summary
+// that only lists failures cannot distinguish "all fine" from "never ran" --
+// the silent-success trap the register already carries.
+// Poll until no slot is still pending (a map fetch in flight), then report
+// once. Bounded, and the terminal line says WHICH it was, so an exhausted
+// budget never reads as a settled build.
+void ChainHost::reportDialWhenSettled(const juce::String& reason, int attemptsLeft)
+{
+    if (!dialStateSettled() && attemptsLeft > 0)
+    {
+        auto life = life_;   // weak guard: the host may go away mid-poll
+        juce::Timer::callAfterDelay(250, [this, life, reason, attemptsLeft]
+        {
+            if (life.use_count() <= 1) return;   // owner destroyed
+            reportDialWhenSettled(reason, attemptsLeft - 1);
+        });
+        return;
+    }
+    logDialSummary(reason + (dialStateSettled() ? ", dial settled"
+                                                : ", dial NOT settled (retry budget exhausted)"));
+}
+
+// requested, counted in the SAME UNIT as applied (11 Aug 2026).
+//
+// EchoJay Reverb reported requested=1 applied=7, which is not a near miss, it
+// is two different units side by side. `requested` counted TOP-LEVEL KEYS of
+// settings_structured, and every payload the model actually sends is a single
+// WRAPPER: built-ins get {"params":{...}}, third-party slots get
+// {"controls":{...}}, the EQ gets {"eq_bands":[...]}. So requested was almost
+// always 1 no matter how much was asked for, and applied>requested read as a
+// counting bug on exactly the slots that worked.
+//
+// A wrapper is a container, not a request. Count what is inside it, name the
+// SHAPE, and print the leaf names, because the top-level key alone cannot tell
+// a correct payload from a wrong-shaped one -- which is the confusion this
+// whole line exists to end.
+static int countRequestedSettings (const juce::var& structured,
+                                   juce::StringArray& keys,
+                                   juce::String& shape)
+{
+    shape = "none";
+    if (structured.isVoid()) return 0;
+
+    if (structured.isArray())
+    {
+        // A bare array is the EQ's band form arriving without its wrapper.
+        shape = "array";
+        const int n = structured.size();
+        keys.add("(bare array of " + juce::String(n) + ")");
+        return n;
+    }
+
+    auto* obj = structured.getDynamicObject();
+    if (obj == nullptr) { shape = "scalar"; return 0; }
+
+    const auto& props = obj->getProperties();
+    if (props.size() == 0) { shape = "empty"; return 0; }
+
+    int requested = 0, wrappers = 0, flat = 0;
+    for (const auto& kv : props)
+    {
+        const juce::String key = kv.name.toString();
+        const juce::var& val  = kv.value;
+
+        if ((key == "params" || key == "controls") && val.getDynamicObject() != nullptr)
+        {
+            ++wrappers;
+            juce::StringArray inner;
+            for (const auto& leaf : val.getDynamicObject()->getProperties())
+                inner.add(leaf.name.toString());
+            requested += inner.size();
+            keys.add(key + "{" + inner.joinIntoString(", ") + "}");
+        }
+        else if (val.isArray())
+        {
+            ++wrappers;
+            requested += val.size();
+            keys.add(key + "[" + juce::String(val.size()) + "]");
+        }
+        else
+        {
+            // A flat semantic key at the top level. Legitimate on the
+            // third-party path and the ONLY shape an old prompt produced, so
+            // it stays countable rather than being treated as malformed.
+            ++flat;
+            ++requested;
+            keys.add(key);
+        }
+    }
+
+    shape = (wrappers > 0 && flat > 0) ? "mixed"
+          : (wrappers > 0)             ? "wrapped"
+                                       : "flat";
+    return requested;
+}
+
+void ChainHost::logDialSummary(const juce::String& reason) const
+{
+    const auto statusName = [] (DialStatus st) -> const char*
+    {
+        switch (st)
+        {
+            case DialStatus::none:        return "none";
+            case DialStatus::pending:     return "pending";
+            case DialStatus::applied:     return "applied";
+            case DialStatus::partial:     return "partial";
+            case DialStatus::noMap:       return "noMap";
+            case DialStatus::unusableMap: return "unusableMap";
+        }
+        return "?";
+    };
+
+    int dialled = 0, noSettings = 0;
+    EchoJay_NSLog(("EJDialSummary: " + reason + ", " + juce::String((int) slots_.size())
+                   + " slot(s)").toRawUTF8());
+    for (int i = 0; i < (int) slots_.size(); ++i)
+    {
+        const auto& s = slots_[(size_t) i];
+        const bool hasSettings = ! s.structuredSettings.isVoid();
+        const bool builtin = isBuiltinSlot(i);
+        if (! hasSettings) ++noSettings;
+        if (s.dialAppliedCount > 0) ++dialled;
+
+        // requested = what the model asked for on this slot. Compared against
+        // applied, it is the difference between "asked for nothing" and
+        // "asked and got nothing", which is the whole question.
+        // The KEYS VERBATIM, not just a count. `settings` (the display string
+        // on the card) and `settings_structured` (the dial payload) are
+        // different fields, and a card full of settings says nothing about
+        // whether the dialable ones arrived -- that confusion cost a whole
+        // diagnosis pass. Printing the keys also makes a wrong-shape payload
+        // self-evident, since flat keys and a "params" wrapper are otherwise
+        // the same words.
+        juce::StringArray keys;
+        juce::String shape;
+        const int requested = countRequestedSettings(s.structuredSettings, keys, shape);
+
+        EchoJay_NSLog(("EJDialSummary:   slot " + juce::String(i)
+                       + " (\"" + s.desc.name + "\")"
+                       + (builtin ? " builtin" : "")
+                       + "  settings_structured=" + (hasSettings ? "y" : "n")
+                       + "  shape=" + shape
+                       + "  keys=[" + keys.joinIntoString(", ") + "]"
+                       + "  requested=" + juce::String(requested)
+                       + "  applied=" + juce::String(s.dialAppliedCount)
+                       // manual and readbackMiss TOGETHER, because manual alone
+                       // conflates two opposite failures: a semantic the map
+                       // never carried (readbackMiss 0 -> the map is the gap)
+                       // and one that was written and disagreed on read-back so
+                       // the value was reverted (readbackMiss > 0 -> the map is
+                       // wrong, or the plugin cannot be read in-stack). The
+                       // fixes point in different directions and the counts are
+                       // the only thing that separates them.
+                       + "  manual=" + juce::String(s.dialManual.size())
+                       + "  readbackMiss=" + juce::String(s.dialReadbackMiss.size())
+                       + "  status=" + statusName(s.dialStatus)
+                       + "  fp=" + (s.fp.isEmpty() ? juce::String("(none)") : s.fp.substring(0, 12))
+                       + "  map=" + (s.fp.isNotEmpty() && paramMaps_.find(s.fp) != paramMaps_.end() ? "y" : "n")).toRawUTF8());
+    }
+    // The headline, so the common question is answered without reading rows.
+    EchoJay_NSLog(("EJDialSummary: " + juce::String(dialled) + "/"
+                   + juce::String((int) slots_.size()) + " slot(s) dialled something"
+                   + (noSettings > 0 ? ("; " + juce::String(noSettings)
+                                        + " carried NO settings from the server") : juce::String())).toRawUTF8());
+}
+
+const char* ChainHost::dialTriggerName(DialTrigger t)
+{
+    switch (t)
+    {
+        case DialTrigger::slotLoaded:       return "slot-loaded";
+        case DialTrigger::settingsAttached: return "settings-attached";
+        case DialTrigger::mapArrived:       return "map-arrived";
+    }
+    return "?";
+}
+
+void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
 {
     if (slotIndex < 0 || slotIndex >= (int)slots_.size()) return;
     auto& s = slots_[(size_t)slotIndex];
@@ -2005,23 +2450,41 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
     // to, the slot has no fingerprint, the map is not here.
     if (s.structuredSettings.isVoid())
     {
-        // THE MOST VALUABLE OF THESE LINES, because "chose not to" and "was
-        // never offered" look the same and the difference is a release gate,
-        // not a prompt. The server withholds the set op, the controls block and
-        // bands from any client below a minimum version, reading the
-        // appVersion this binary declares (EchoJayAPI.cpp: JucePlugin_Version-
-        // String). A gated client is never taught that `set` exists, so the
-        // model reaches for `replace` -- which is the exact defect the set op
-        // was added to fix, still in force because the gate has not moved.
+        // THIS LINE USED TO CLAIM A FAULT ON EVERY HEALTHY BUILD (corrected 10
+        // Aug 2026). It fired unconditionally, and both routine callers reach
+        // it with void settings by design:
+        //   - slot-loaded: completeLoad and the built-in add run BEFORE the
+        //     caller attaches settings in the load callback. Every slot of
+        //     every build passes through here exactly once, void, always.
+        //   - map-arrived: the storeParamMaps sweeps walk EVERY slot, so a
+        //     slot that legitimately carries no settings is re-reported once
+        //     per map that arrives for some other plugin.
+        // Read as a fault, that produced "NO SETTINGS prints for every slot"
+        // on a build that may have dialled perfectly, and it cost a whole
+        // diagnosis pass. An instrument that cannot be wrong is worth less
+        // than no instrument, because it is believed.
         //
-        // The client cannot know the server's threshold, so it prints the
-        // version the gate is judging. That is the number to compare against
-        // *_MIN_PLUGIN_VERSION in api/chat.js when this line appears.
+        // So the trigger decides the verdict. Only settings-attached can be a
+        // genuine void here, and that one is unreachable (setSlotStructured-
+        // Settings returns early on void), which is asserted rather than
+        // assumed. The real "never dialled" question is terminal, not
+        // per-call: logDialSummary answers it once the build is done.
+        if (trigger == DialTrigger::slotLoaded || trigger == DialTrigger::mapArrived)
+        {
+            EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+                           + "\") no settings yet [" + dialTriggerName(trigger)
+                           + "] -- EXPECTED ORDERING, not a fault. Settings are attached "
+                             "after load; see the EJDialSummary line for what actually dialled.")
+                              .toRawUTF8());
+            return;
+        }
+
+        // settings-attached with nothing attached: a real contradiction.
+        jassertfalse;
         EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
-                       + "\") NO SETTINGS -- nothing was asked of the map."
-                         "  appVersion=" + juce::String(JucePlugin_VersionString)
-                       + "  (if this is below the server's *_MIN_PLUGIN_VERSION the model "
-                         "was never offered the set op, and `replace` is all it had)")
+                       + "\") NO SETTINGS at dial time [" + dialTriggerName(trigger)
+                       + "] -- settings were attached and are not here. This IS the fault."
+                         "  appVersion=" + juce::String(JucePlugin_VersionString))
                           .toRawUTF8());
         return;
     }
@@ -2035,10 +2498,28 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
     if (isBuiltinSlot(slotIndex))
     {
         int applied = 0, skipped = 0;
+        bool deviceMissing = false;
         const auto summary = applyStructuredToBuiltinSlot(slotIndex, s.structuredSettings,
-                                                          &applied, &skipped);
+                                                          &applied, &skipped, &deviceMissing);
         s.structuredApplied = true;
         s.dialAppliedCount  = applied;
+
+        // The cast failure gets its OWN line and its own status. Previously it
+        // returned the same empty summary as an unrecognised payload and was
+        // reported as unusableMap -- a slot that is a built-in by isBuiltinSlot
+        // but holds no EedDeviceProcessor is a routing bug, and reporting it as
+        // "the device did not understand the settings" points every reader at
+        // the payload, which would be intact.
+        if (deviceMissing)
+        {
+            s.dialStatus = DialStatus::none;
+            EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+                           + "\") BUILT-IN WITH NO DEVICE -- isBuiltinSlot is true but the slot "
+                             "holds no EedDeviceProcessor. This is a routing fault, NOT a payload "
+                             "one; the settings were never offered to anything.").toRawUTF8());
+            if (onSlotSettingsChanged) onSlotSettingsChanged();
+            return;
+        }
 
         // The summary, not the applied count, is the verdict. A move can be
         // entirely device-global ({"eq_settings":{"auto_gain":true}}) — it
@@ -2053,9 +2534,23 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
         }
         else
         {
-            // Structured settings arrived but carried nothing this device
-            // understands, so flat semantics are ignored.
+            // The device exists and resolved neither of its two accepted
+            // shapes. Name the keys it was actually handed, because the whole
+            // failure is a shape mismatch and the keys ARE the diagnosis: a
+            // flat semantic bag ({"low_cut_freq_hz":80,...}) is the anchor-path
+            // shape and the device wants {"params":{...}} or its array form.
             s.dialStatus = DialStatus::unusableMap;
+            juce::StringArray got;
+            if (auto* o = s.structuredSettings.getDynamicObject())
+                for (auto& kv : o->getProperties()) got.add(kv.name.toString());
+            else if (s.structuredSettings.isArray())
+                got.add("(bare array)");
+            EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+                           + "\") BUILT-IN PAYLOAD NOT UNDERSTOOD -- device present, resolved "
+                             "neither accepted shape. got keys: [" + got.joinIntoString(", ")
+                           + "]  wanted: \"params\":{...}" + (isBuiltinSlot(slotIndex)
+                               ? juce::String(" (or the device's own array form, e.g. \"eq_bands\")")
+                               : juce::String())).toRawUTF8());
         }
 
         EchoJay_NSLog(("EJParamApply: slot " + juce::String(slotIndex)
@@ -2161,6 +2656,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
     s.dialManual.clear();
     s.dialReadbackMiss.clear();
     s.dialUnconfirmed.clear();
+    s.dialOutOfRange.clear();
     for (auto& r : report)
     {
         EchoJay_NSLog(("EJParamApply:   " + r.semantic + ": "
@@ -2202,8 +2698,23 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
             s.dialManual.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
             if (r.readbackMismatch)
                 s.dialReadbackMiss.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
+            if (r.outOfRange)
+                s.dialOutOfRange.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
         }
     }
+
+    // The range-check counter (12 Aug 2026), printed on EVERY dialled slot
+    // in the EJMapFps vocabulary, zero case included: if out-of-range asks
+    // turn out to be common on healthy (non-diverged) turns, the exposure
+    // is not communicating ranges to the model well enough - a finding
+    // nothing else can currently see.
+    EchoJay_NSLog(("EJRangeCheck: slot=" + juce::String(slotIndex)
+                   + " \"" + s.desc.name + "\""
+                   + " requested=" + juce::String((int) report.size())
+                   + " outOfRange=" + juce::String(s.dialOutOfRange.size())
+                   + (s.dialOutOfRange.isEmpty() ? juce::String()
+                        : " [" + s.dialOutOfRange.joinIntoString(", ") + "]")
+                   + (s.staleIndexedFp.isNotEmpty() ? " diverged=y" : " diverged=n")).toRawUTF8());
 
     // Honest per-slot verdict: applied only when EVERY requested semantic
     // was written; anything less is partial (some written) or unusableMap
@@ -2459,7 +2970,7 @@ juce::String ChainHost::loadBuiltinNow(const juce::PluginDescription& desc)
     // Deliberately NO fingerprint and no identity/param-map registration. A
     // built-in is dialled by direct typed writes; giving it a fingerprint
     // would invite the anchor-table path this device exists to bypass.
-    applyStructuredIfReady(idx);
+    applyStructuredIfReady(idx, DialTrigger::slotLoaded);
 
     if (stateCacheEnabled_)
     {
@@ -2655,6 +3166,21 @@ void ChainHost::maybeReloadEntriesCache()
         {
             std::lock_guard<std::mutex> lock(pluginsMutex_);
             entries_ = loaded;
+        }
+        entriesScannedAtMs_ = doc->getStringAttribute("scannedAt").getLargeIntValue();
+        EchoJay_NSLog(("EJScan: cache reloaded, " + juce::String(loaded.size())
+                       + " entr(ies), scanned "
+                       + (entriesScannedAtMs_ > 0
+                              ? juce::Time(entriesScannedAtMs_).toString(true, true)
+                              : juce::String("UNKNOWN (unstamped cache)"))).toRawUTF8());
+        // A reload replaces entries_ wholesale (the other host may have
+        // scanned), which would drop same-session captured identities:
+        // re-apply them from knownPlugins_.
+        if (const int filled = enrichThinVst3EntriesFromKnown(); filled > 0)
+        {
+            hasResolved_ = false;
+            EchoJay_NSLog(("EJScan: " + juce::String(filled)
+                           + " thin VST3 entr(ies) enriched from load-captured identities").toRawUTF8());
         }
     }
     entriesCacheTime_ = mtime;
@@ -2923,11 +3449,30 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
 
     // Filter enabled scanner plugins and resolve against the map
     int enabledCount = 0;
+    std::set<juce::String> excludedUids;
+    int excludedRows = 0;
+    // The feed is a NAME list, so this is where a name becomes unique
+    // (13 Aug 2026, evening). 77 scanner groups share a name across vendor
+    // strings the catalog cannot unify (PA sub-brands under their own
+    // labels, spacing and casing variants, folder-layout garbage vendors
+    // like 'Se' and 'Pitch Shift'), and each group resolved its name TWICE
+    // into the feed - 13 duplicate names in a 65KB payload the model
+    // reads. Chain entries are already name-unique (measured: zero
+    // duplicates in 1590), so the collapse belongs here, first-wins, with
+    // its own counter so enabled still reconciles:
+    //   enabled = resolved + duplicates + unmatched.
+    std::set<juce::String> pushedNames;
+    int duplicateNames = 0;
     std::vector<RecommendableEntry> resolved;
 
     for (const auto& sp : allPlugins)
     {
-        if (!sp.enabled) continue;
+        if (!sp.enabled)
+        {
+            ++excludedRows;
+            excludedUids.insert(sp.uid);
+            continue;
+        }
         ++enabledCount;
 
         // Try exact normalized name
@@ -2943,14 +3488,52 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
         }
 
         if (it != nameMap.end())
+        {
+            if (! pushedNames.insert(sp.name).second)
+            {
+                ++duplicateNames;   // second row of a same-name pair; the
+                                    // desc resolves identically, so nothing
+                                    // is lost, only the repeat.
+                continue;
+            }
             resolved.push_back({ sp.name, it->second });
+        }
     }
 
-    // Log unmatched count to stderr so it's visible in DAW console
-    int unmatched = enabledCount - (int)resolved.size();
-    if (unmatched > 0)
-        DBG("ChainHost resolver: " + juce::String(resolved.size()) + "/" + juce::String(enabledCount)
-            + " enabled plugins resolved (" + juce::String(unmatched) + " unmatched)");
+    // The resolver coverage triple, relocated from a never-rendered label
+    // (13 Aug 2026, the dead-layer sweep) and promoted from DBG to a
+    // release-build line: unmatched is the number that would have flagged a
+    // starving resolver, and it existed nowhere a release build could see.
+    // N resolved here MUST equal feed= on the EJMapFps line - both count
+    // recommendable_. A divergence between those two lines is a FINDING
+    // (two counts of one population disagreeing), not a rounding
+    // difference.
+    // input and excluded ride the line (13 Aug 2026, the Brainworx 56) so
+    // the accounting is checkable on ONE line: input - excluded = enabled,
+    // and excluded against the EJScan set-size lines is one subtraction in
+    // the same log stream. The 56 hid for a day because enabled's
+    // reconciliation against the row count lived in nobody's head.
+    //
+    // "from N uid(s)" (same day, evening): a gap between excluded ROWS and
+    // the distinct uids excluding them means one uid is excluding multiple
+    // rows - duplicate catalog rows sharing a canonical identity (the 57
+    // bx AU/VST3 doubles), or, formerly, a disabled set holding more than
+    // one uid vocabulary. Either way the gap is a condition to SEE on the
+    // line, not to derive from four terminal commands after the fact.
+    // With rows unique, excluded ROWS equals excluded UIDS; a gap means
+    // duplicate rows have come back, and the line says so itself instead of
+    // waiting for someone to derive it by hand.
+    EchoJay_NSLog(("EJScan: resolver rebuilt, " + juce::String((int) resolved.size())
+                   + " resolved (input=" + juce::String((int) allPlugins.size())
+                   + ", enabled=" + juce::String(enabledCount)
+                   + ", excluded=" + juce::String(excludedRows)
+                   + " from " + juce::String((int) excludedUids.size()) + " uid(s)"
+                   + ", duplicates=" + juce::String(duplicateNames)
+                   + ", unmatched=" + juce::String(enabledCount - (int) resolved.size() - duplicateNames)
+                   + ")"
+                   + (excludedRows != (int) excludedUids.size()
+                          ? juce::String(" [DUPLICATE ROWS: excluded rows exceed uids]")
+                          : juce::String())).toRawUTF8());
 
     // Cache result (message thread only — no mutex)
     recommendable_          = std::move(resolved);
@@ -2988,17 +3571,86 @@ juce::String ChainHost::buildMapFpsJson(int maxEntries) const
     // that is not a conflict, the rack is simply more exact.
     for (const auto& s : slots_)
         put(s.desc.name, s.fp);
+    // Every feed entry lands in EXACTLY ONE bucket, in the same priority
+    // order the original checks ran (cap, rack, name conflict, then the
+    // join), so the counter line below reconciles against the feed count on
+    // every turn -- edit turns and capped turns included. Once the cap
+    // fires, everything after it counts capped, whatever it would have been.
+    // rackWon vs the dup buckets (12 Aug 2026, from the 14:08 turn): the
+    // claimed check reads the OUTPUT OBJECT, which the recommendable loop
+    // itself fills, so a name already claimed by an EARLIER FEED ENTRY (the
+    // feed carries duplicate names) hit the same branch as a rack claim and
+    // 33 dup skips printed as rackWon against a rack of one fp-less
+    // built-in. Same skip, two owners; rackNames says which.
+    //
+    // AND THE SKIP IS NOT PROVEN HARMLESS (Sean, same day): because it
+    // fires before the join, a feed duplicate never reaches put, so put's
+    // conflict detection is DEAD CODE for feed-versus-feed names - it can
+    // only be populated by rack slots. A duplicate name is therefore
+    // resolved to whichever entry came first in SCAN ORDER, and scan order
+    // is not evidence: asserting the wrong binary is worse than asserting
+    // none, because the server's sibling merge is the honest serve for an
+    // ambiguous name. Measured before fixed: the three dup buckets below
+    // say whether first-wins ever disagrees with the duplicate's own fp.
+    // If dupDiffFp stays zero on this machine, first-wins is harmless here
+    // and this comment is the record; if not, those names get omitted the
+    // way conflicted already omits rack conflicts, and nameConfl starts
+    // counting something.
+    juce::StringArray rackNames;
+    for (const auto& s : slots_)
+        if (s.desc.name.isNotEmpty() && s.fp.isNotEmpty())
+            rackNames.addIfNotAlreadyThere(s.desc.name);
+    int exact = 0, uidFb = 0, ambig = 0, miss = 0, noUid = 0,
+        rackWon = 0, dupSameFp = 0, dupDiffFp = 0, dupUnresolved = 0,
+        nameConfl = 0, capped = 0;
     for (const auto& e : recommendable_)
     {
-        if (o->getProperties().size() >= maxEntries) break;
-        if (o->getProperty(e.displayName).toString().isNotEmpty()) continue;   // rack wins
-        if (conflicted.contains(e.displayName)) continue;
-        auto it = identityToFp_.find(echojay::identityKeyForDescription(e.desc));
-        if (it != identityToFp_.end()) put(e.displayName, it->second);
+        if (o->getProperties().size() >= maxEntries)               { ++capped;    continue; }
+        const auto storedFp = o->getProperty(e.displayName).toString();
+        if (storedFp.isNotEmpty())
+        {
+            if (rackNames.contains(e.displayName)) { ++rackWon; continue; }
+            // Feed duplicate: resolve ITS fp and compare against what the
+            // first-wins entry stored. Measurement only - the skip stands
+            // until dupDiffFp is shown nonzero live.
+            const auto dupFp = echojay::fpForIdentity(identityToFp_, e.desc);
+            if (dupFp.isEmpty())          ++dupUnresolved;
+            else if (dupFp == storedFp)   ++dupSameFp;
+            else                          ++dupDiffFp;
+            continue;
+        }
+        if (conflicted.contains(e.displayName))                    { ++nameConfl; continue; }
+        auto outcome = echojay::FpLookup::miss;
+        const auto fp = echojay::fpForIdentity(identityToFp_, e.desc, &outcome);
+        switch (outcome)
+        {
+            case echojay::FpLookup::exact:       ++exact; break;
+            case echojay::FpLookup::uidFallback: ++uidFb; break;
+            case echojay::FpLookup::ambiguous:   ++ambig; break;
+            case echojay::FpLookup::miss:        ++miss;  break;
+            case echojay::FpLookup::noUid:       ++noUid; break;
+        }
+        if (fp.isNotEmpty()) put(e.displayName, fp);
     }
     // An ambiguous name (two fps claimed) is omitted entirely; the server's
     // sibling merge is the honest serve for it.
     for (const auto& n : conflicted) o->removeProperty(n);
+    // The counter at the decision: the server's fpKnown: 0 has exactly one
+    // client-side counterpart, and it is this line. Printed BEFORE the
+    // empty-object return so the zero case still measures itself.
+    EchoJay_NSLog(("EJMapFps: feed=" + juce::String((int) recommendable_.size())
+                   + " exact=" + juce::String(exact)
+                   + " uidFb=" + juce::String(uidFb)
+                   + " ambig=" + juce::String(ambig)
+                   + " miss=" + juce::String(miss)
+                   + " noUid=" + juce::String(noUid)
+                   + " rackWon=" + juce::String(rackWon)
+                   + " dupSameFp=" + juce::String(dupSameFp)
+                   + " dupDiffFp=" + juce::String(dupDiffFp)
+                   + " dupUnresolved=" + juce::String(dupUnresolved)
+                   + " nameConfl=" + juce::String(nameConfl)
+                   + " capped=" + juce::String(capped)
+                   + " -> " + juce::String(o->getProperties().size()) + " entr(ies)").toRawUTF8());
     if (o->getProperties().size() == 0) return "{}";
     return juce::JSON::toString(juce::var(o.get()), true);
 }
@@ -3017,6 +3669,8 @@ std::vector<ChainHost::SlotDialInfo> ChainHost::getDialInfos() const
         di.readbackMiss = s.dialReadbackMiss;
         di.unconfirmed  = s.dialUnconfirmed;
         di.appliedCount = s.dialAppliedCount;
+        di.staleIndexedFp = s.staleIndexedFp;
+        di.outOfRange   = s.dialOutOfRange;
         out.push_back(std::move(di));
     }
     return out;
@@ -3037,9 +3691,13 @@ juce::StringArray ChainHost::getDialableRecommendableNames() const
     juce::StringArray out;
     for (const auto& e : recommendable_)
     {
-        auto it = identityToFp_.find(echojay::identityKeyForDescription(e.desc));
-        if (it == identityToFp_.end()) continue;
-        auto m = paramMaps_.find(it->second);
+        // Same join as buildMapFpsJson, through the same helper -- the two
+        // sites drifting apart is how the exact-key miss shipped in
+        // duplicate, and mapfps_test asserts structurally that neither has
+        // a direct identityToFp_ lookup again.
+        const auto fp = echojay::fpForIdentity(identityToFp_, e.desc);
+        if (fp.isEmpty()) continue;
+        auto m = paramMaps_.find(fp);
         if (m != paramMaps_.end() && echojay::mapIsDialableForSignals(m->second))
             out.addIfNotAlreadyThere(e.displayName);
     }
@@ -3127,6 +3785,21 @@ void ChainHost::loadFromDisk()
                 {
                     std::lock_guard<std::mutex> lock(pluginsMutex_);
                     entries_ = loaded;
+                }
+                entriesScannedAtMs_ = doc->getStringAttribute("scannedAt").getLargeIntValue();
+                EchoJay_NSLog(("EJScan: cache loaded, " + juce::String(loaded.size())
+                               + " entr(ies), scanned "
+                               + (entriesScannedAtMs_ > 0
+                                      ? juce::Time(entriesScannedAtMs_).toString(true, true)
+                                      : juce::String("UNKNOWN (unstamped cache)"))).toRawUTF8());
+                // Identity captured in past sessions survives the thin cache:
+                // knownPlugins_ loaded above, entries_ just loaded, fill now
+                // rather than waiting for a scan.
+                if (const int filled = enrichThinVst3EntriesFromKnown(); filled > 0)
+                {
+                    hasResolved_ = false;
+                    EchoJay_NSLog(("EJScan: " + juce::String(filled)
+                                   + " thin VST3 entr(ies) enriched from load-captured identities").toRawUTF8());
                 }
             }
             entriesCacheTime_ = ecFile.getLastModificationTime();

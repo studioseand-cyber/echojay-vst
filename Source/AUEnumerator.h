@@ -12,7 +12,11 @@ struct AUEntry
     std::string manufacturer;
     std::string identifier;    // e.g. "AudioUnit:Effects/aufx,Comp,AAPL"
     std::string category;      // "Effect" | "Instrument" | "Generator"
-    std::string version;       // osType triplet, e.g. "aufx,Comp,AAPL"
+    std::string version;       // real version ("12.0.0") when the component
+                               // bundle's Info.plist declares one for this
+                               // triple; the osType triplet otherwise (the
+                               // pre-12-Aug-2026 behaviour, kept as the
+                               // fallthrough so the uid path still works)
     bool        isInstrument { false };
     int         uniqueId     { 0 };
 };

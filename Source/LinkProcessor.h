@@ -167,6 +167,14 @@ public:
         bool bypassed = false;
         float wet     = 1.0f;      // per-slot wet/dry (restore path)
         juce::String stateBase64;  // hosted plugin state (restore path only)
+        // THE FIELD THAT WAS MISSING (11 Aug 2026). settings_structured has
+        // always crossed the wire -- sendChainToLink passes the chain array
+        // through verbatim -- and this struct had nowhere to put it, so the
+        // parse read `settings` (prose) and dropped the dial payload on the
+        // floor. Channel builds have therefore NEVER dialled: the whole apply
+        // path is compiled into this binary via ChainHost.cpp and nothing ever
+        // handed it a value.
+        juce::var structured;      // settings_structured, void when absent
     };
 
     ChainHost& getChainHost() { return chainHost; }
