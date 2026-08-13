@@ -1814,16 +1814,12 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     };
     addChildComponent(chainSearchBox);
 
-    chainScanBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2a4d7a));
-    chainScanBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-    chainScanBtn.onClick = [this] {
-        processorRef.getChainHost().startScan();
-    };
-    addChildComponent(chainScanBtn);
-
-    chainStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xff888888));
-    chainStatusLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
-    addChildComponent(chainStatusLabel);
+    // Chain-list staleness, in the header beside the plugin count
+    // (addAndMakeVisible, deliberately: two addChildComponent widgets in a
+    // row each swallowed a feature by never being shown).
+    chainListInfoLabel.setColour(juce::Label::textColourId, juce::Colour(0xff888888));
+    chainListInfoLabel.setFont(juce::Font(juce::FontOptions(10.0f)));
+    addAndMakeVisible(chainListInfoLabel);
 
     // ---- Saved chains: Save / Save As / Open -----------------------------
     for (auto* b : { &chainSaveBtn, &chainSaveAsBtn, &chainOpenBtn })
@@ -1877,7 +1873,6 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         if (row < 0 || row >= chainListModel->items.size()) return;
         auto desc = chainListModel->items[row];
         auto& ch = processorRef.getChainHost();
-        chainStatusLabel.setText("Loading " + desc.name + "...", juce::dontSendNotification);
         chainLoadBtn.setEnabled(false);
         chainListPanel.statusText = "Loading " + desc.name + "...";
         chainListPanel.repaint();
@@ -4066,6 +4061,16 @@ void EchoJayEditor::showScanMenu(juce::Component* target)
 {
     auto& sc = processorRef.getPluginScanner();
     juce::PopupMenu menu;
+    // Secondary staleness surface (the header label is the primary): the
+    // chain list's own count and date, right where the user decides to scan.
+    {
+        auto& chh = processorRef.getChainHost();
+        const auto ms = chh.getEntriesScannedAtMs();
+        menu.addSectionHeader("Chain list: " + juce::String(chh.getNumPlugins())
+            + " plugins, scanned "
+            + (ms > 0 ? juce::Time(ms).toString(true, false)
+                      : juce::String("unknown")));
+    }
     menu.addItem(1, "Scan Now", ! sc.isScanning());
     menu.addItem(2, "Add Folder...");
 
@@ -9928,8 +9933,6 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
             // `for (auto* b : {...}) b->setVisible(x)` loop is invisible to a
             // grep for "<name>.setVisible", which is how the Chain-over-Compare
             // bug survived its own author's audit.
-            chainScanBtn.setVisible(false);
-            chainStatusLabel.setVisible(false);
             chainDebugJsonBox.setVisible(false);
             chainRecommendLabel.setVisible(false);
             chainSearchBox.setVisible(false);
@@ -9946,8 +9949,6 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
             break;
 
         case Tab::Visualisation:
-            chainScanBtn.setVisible(false);
-            chainStatusLabel.setVisible(false);
             chainDebugJsonBox.setVisible(false);
             chainRecommendLabel.setVisible(false);
             chainSearchBox.setVisible(false);
@@ -9964,8 +9965,6 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
             }
             break;
         case Tab::Chat:
-            chainScanBtn.setVisible(false);
-            chainStatusLabel.setVisible(false);
             chainDebugJsonBox.setVisible(false);
             chainRecommendLabel.setVisible(false);
             chainSearchBox.setVisible(false);
@@ -9987,8 +9986,6 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
             break;
 
         case Tab::Meters:
-            chainScanBtn.setVisible(false);
-            chainStatusLabel.setVisible(false);
             chainDebugJsonBox.setVisible(false);
             chainRecommendLabel.setVisible(false);
             chainSearchBox.setVisible(false);
@@ -10011,8 +10008,6 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
             break;
 
         case Tab::Compare:
-            chainScanBtn.setVisible(false);
-            chainStatusLabel.setVisible(false);
             chainDebugJsonBox.setVisible(false);
             chainRecommendLabel.setVisible(false);
             chainSearchBox.setVisible(false);
@@ -10035,8 +10030,6 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
             return; // showCompareView already called resized/repaint
 
         case Tab::Settings:
-            chainScanBtn.setVisible(false);
-            chainStatusLabel.setVisible(false);
             chainDebugJsonBox.setVisible(false);
             chainRecommendLabel.setVisible(false);
             chainSearchBox.setVisible(false);
@@ -10087,8 +10080,6 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
         }
 
         case Tab::Link:
-            chainScanBtn.setVisible(false);
-            chainStatusLabel.setVisible(false);
             chainDebugJsonBox.setVisible(false);
             chainRecommendLabel.setVisible(false);
             chainSearchBox.setVisible(false);
@@ -16731,8 +16722,6 @@ void EchoJayEditor::resized()
         }
 
         // Left-panel components hidden — picker popup replaces them
-        chainScanBtn.setVisible(false);
-        chainStatusLabel.setVisible(false);
         chainDebugJsonBox.setVisible(false);
         chainRecommendLabel.setVisible(false);
         chainSearchBox.setVisible(false);
@@ -16860,7 +16849,11 @@ void EchoJayEditor::resized()
         // "Capture Vo..."). scanBtn is the fixed anchor; the capture button
         // takes the room between it and the detected label, clamped, and the
         // state block truncates the channel name via captureBtnMaxW_.
-        scanBtn.setBounds(tx, ty, 78, bh); tx += 78 + 14;   // item 5a: wider gap
+        scanBtn.setBounds(tx, ty, 78, bh); tx += 78 + 4;
+        // Chain-list scan date, beside the count that misled for five weeks
+        // (13 Aug 2026). Sits between the count and the capture button; the
+        // capture target label is the variable-width element and absorbs it.
+        chainListInfoLabel.setBounds(tx, ty, 150, bh); tx += 150 + 10;
         // Item 2a: FIXED-width Capture button.
         captureBtn.setBounds(tx, ty, 64, bh); tx += 68;
         // Item 2b: target indicator takes the room up to the detected label,
@@ -16874,6 +16867,7 @@ void EchoJayEditor::resized()
     if (compactMode)
     {
         scanBtn.setBounds(0, -20, 1, 1);
+        chainListInfoLabel.setBounds(0, -20, 1, 1);
         abSyncBtn.setBounds(-100, -100, 1, 1);
         captureTargetLabel.setVisible(false);
     }
@@ -17983,9 +17977,6 @@ void EchoJayEditor::timerCallback()
         bool wasScanning = ch.isScanning();
         if (wasScanning)
         {
-            int pct = (int)(ch.getScanProgress() * 100.0f);
-            chainStatusLabel.setText("Reading plugins... " + juce::String(pct) + "%",
-                                     juce::dontSendNotification);
             chainListModel->items = ch.getFilteredPlugins(chainSearchBox.getText(), chainFormatFilter_);
             chainPluginList.updateContent();
         }
@@ -18005,36 +17996,11 @@ void EchoJayEditor::timerCallback()
                     + juce::String(ch.getUnmatchedCount()) + " unmatched)",
                     juce::dontSendNotification);
 
-            if (ch.getNumSlots() > 0)
-                chainStatusLabel.setText(juce::String(ch.getNumSlots()) + " slot(s) in chain",
-                                         juce::dontSendNotification);
-            else if (entriesReady)
-            {
-                // Staleness visibility (13 Aug 2026): a July cache served
-                // five weeks of sessions while this label reported a count
-                // with no date. The count here is the CHAIN list
-                // (chain_entries.xml), NOT the Settings scanner's
-                // plugin_cache.json count - two different lists, and the
-                // label says which one it is describing.
-                juce::String scanned;
-                bool stale = false;
-                if (const auto ms = ch.getEntriesScannedAtMs(); ms > 0)
-                {
-                    stale = juce::Time::currentTimeMillis() - ms
-                          > (juce::int64) 14 * 24 * 3600 * 1000;
-                    scanned = ", scanned " + juce::Time(ms).toString(true, false)
-                            + (stale ? " - STALE, press Scan Now" : "");
-                }
-                else
-                {
-                    stale = true;
-                    scanned = ", scan date unknown - press Scan Now";
-                }
-                chainStatusLabel.setColour(juce::Label::textColourId,
-                    stale ? juce::Colour(0xffcc8844) : juce::Colour(0xff888888));
-                chainStatusLabel.setText(juce::String(ch.getNumPlugins())
-                    + " plugins in chain list" + scanned, juce::dontSendNotification);
-            }
+            // The staleness text that briefly lived here (13 Aug, morning)
+            // now lives in chainListInfoLabel in the HEADER: this site was
+            // in a never-rendered label AND preempted by the slot count on
+            // any non-empty rack. The header shows it on every tab and
+            // every rack state.
         }
     }
 
@@ -18227,6 +18193,25 @@ void EchoJayEditor::timerCallback()
             processorRef.getChainHost().startScan();
         }
         prevSettingsScanning_ = settingsScanning;
+    }
+    // Chain-list staleness beside the header count (13 Aug 2026). The
+    // count in scanBtn is the SETTINGS list (plugin_cache.json); this label
+    // is the CHAIN list's date, the number that actually feeds the AI, and
+    // it renders on every tab and every rack state - its predecessor lived
+    // in a never-shown label and was preempted by any non-empty rack.
+    {
+        auto& chh = processorRef.getChainHost();
+        const auto ms = chh.getEntriesScannedAtMs();
+        const bool chainStale = ms <= 0
+            || juce::Time::currentTimeMillis() - ms > (juce::int64) 14 * 24 * 3600 * 1000;
+        chainListInfoLabel.setColour(juce::Label::textColourId,
+            chainStale ? juce::Colour(0xffcc8844) : juce::Colour(0xff888888));
+        chainListInfoLabel.setText(
+            "chain list " + juce::String(chh.getNumPlugins())
+            + (ms > 0 ? ", " + juce::Time(ms).toString(true, false)
+                      : juce::String(", scan date unknown"))
+            + (chainStale ? " - run Scan Now" : juce::String()),
+            juce::dontSendNotification);
     }
     if (sc.isScanning()) {
         scanBtn.setButtonText("Scanning " + juce::String((int)(sc.getProgress() * 100)) + "%");
@@ -25101,7 +25086,6 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
     {
         switchToTab(Tab::Chain);
         chainListPanel.statusText = "Failed: " + why;
-        chainStatusLabel.setText(chainListPanel.statusText, juce::dontSendNotification);
         chainListPanel.repaint();
     };
 
@@ -25208,8 +25192,6 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
         safeThis->chainListPanel.rebuild(ch2.getAllSlotInfos(), -1);
         safeThis->chainListPanel.statusText = "Loading " + slots[0].name
             + " (1 of " + juce::String((int)slots.size()) + ")...";
-        safeThis->chainStatusLabel.setText(safeThis->chainListPanel.statusText,
-                                           juce::dontSendNotification);
         safeThis->chainListPanel.repaint();
 
         // Load slots sequentially; after each success, store settings on the slot
@@ -25334,7 +25316,6 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                 if (!droppedDisabled.isEmpty())
                     status += " (skipped: " + droppedDisabled.joinIntoString(", ")
                             + ", disabled in Settings)";
-                safeThis->chainStatusLabel.setText(status, juce::dontSendNotification);
                 // Debug: show full raw chain JSON so we can verify settings fields
                 safeThis->chainDebugJsonBox.setText(chainJson, false);
                 safeThis->resized();
@@ -25369,8 +25350,6 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
             // before the stall or the progress label never shows.
             safeThis->chainListPanel.statusText = "Loading " + name + " ("
                 + juce::String(i + 1) + " of " + juce::String((int)slots.size()) + ")...";
-            safeThis->chainStatusLabel.setText(safeThis->chainListPanel.statusText,
-                                               juce::dontSendNotification);
             safeThis->setStageStatus(safeThis->chainListPanel.statusText);   // 1d shimmer
             safeThis->chainListPanel.repaint();
             juce::Timer::callAfterDelay(30, [safeThis, name, settings, structured, skipped, loadNextPtr]() mutable

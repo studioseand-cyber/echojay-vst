@@ -1392,7 +1392,9 @@ private:
     std::unique_ptr<ChainPluginListModel> chainListModel;
     juce::ListBox    chainPluginList;
     juce::TextEditor chainSearchBox;
-    juce::TextButton chainScanBtn  { "Refresh" };
+    // chainScanBtn DELETED (13 Aug 2026): addChildComponent'd, never made
+    // visible, and its five weeks of invisibility hid the chain-scan
+    // trigger gap. Scan Now (showScanMenu) now runs both scans.
 
     // ---- Saved chains (Session B.1 / B.2) --------------------------------
     // Explicit saves only, never auto-save: a chain you did not choose to
@@ -1512,7 +1514,13 @@ private:
     // author, paint() measures nothing. 0 = the buttons are hidden, so the
     // name has the whole strip.
     int chainSaveBtnRight_ = 0;
-    juce::Label      chainStatusLabel;
+    // chainStatusLabel DELETED (13 Aug 2026): same corpse as chainScanBtn,
+    // invisible since birth, and it swallowed the staleness warning one
+    // commit after the button swallowed the scan trigger. Its replacement
+    // is chainListInfoLabel in the HEADER, beside the plugin count that
+    // actually misled for five weeks, visible on every tab and every rack
+    // state (the old site was also preempted whenever slots > 0).
+    juce::Label      chainListInfoLabel;
     juce::TextButton chainLoadBtn  { "Add to Chain" };
     juce::Label      chainRecommendLabel;  // "recommendable: N resolved (M enabled, K unmatched)"
     juce::TextEditor chainDebugJsonBox;    // shows raw chain JSON after each build (temporary debug)
