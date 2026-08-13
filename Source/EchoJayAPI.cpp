@@ -7,6 +7,8 @@
 #include "EqPresets.h"    // the EQ teaching block lists presets from the table
 #include "EchoJayChannelLabel.h" // kChannelChooserCapability — the classify flag
                                  // is declared beside the chooser it describes
+#include "EchoJayHistoryTrim.h"  // the history-trim decision, header-inline so
+                                 // tools/mapfps_test compiles the shipped bytes
 
 // Defined later in this file (used by both /api/me parse sites)
 static void parseUsagePool(juce::DynamicObject* root, UserInfo& info);
@@ -983,15 +985,20 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
     // Keeping last 12 messages = roughly last 6 capture+reply pairs, plenty
     // for in-session continuity without dragging in unrelated old captures.
     constexpr int maxHistoryMessages = 12;
-    int firstIdx = juce::jmax(0, roles.size() - maxHistoryMessages);
 
-    // Byte-budget the payload on top of the message-count cap. Individual
-    // turns can be huge (capture turns embed meter context, Compare turns a
-    // full compareCtx, user turns the AVAILABLE PLUGINS injection), so twelve
-    // messages could still be hundreds of KB. Walk backwards from the newest
-    // accumulating stripped-content size; older messages fall off first. The
-    // newest message is always sent regardless of size.
-    constexpr int maxPayloadBytes = 60000;
+    // Byte-budget HISTORY on top of the message-count cap. Individual turns
+    // can be huge (capture turns embed meter context, Compare turns a full
+    // compareCtx, user turns the AVAILABLE PLUGINS injection), so twelve
+    // messages could still be hundreds of KB. History is walked backwards
+    // from the newest over stripped sizes; older messages fall off first.
+    // The newest message is always sent whole and is NOT charged against
+    // this budget. The previous version charged it against one shared
+    // 60000-byte payload budget on the assumption that it would always fit
+    // inside it; live sends measured the newest turn (with its injections)
+    // at 61-70KB, so the budget was negative before the walk started and
+    // history was empty on EVERY request. The decision itself lives in
+    // EchoJayHistoryTrim.h so tools/mapfps_test exercises the shipped bytes.
+    constexpr int maxHistoryBytes = 24000;
 
     // Per-turn injection blocks (plugin lists + chain rules) only matter on
     // the CURRENT message — strip them from history turns before sizing.
@@ -1012,25 +1019,34 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
         return c;
     };
 
+    // Sizes and roles for the trim decision, index-aligned with the wire
+    // arrays. The newest entry rides along for alignment but its size is
+    // never charged (see EchoJayHistoryTrim.h). The stripped sizes are also
+    // reused by the body-breakdown log below rather than recomputed.
+    std::vector<int>  strippedSizes ((size_t) roles.size(), 0);
+    std::vector<char> roleIsUser    ((size_t) roles.size(), 0);
+    for (int i = 0; i < roles.size(); ++i)
     {
-        int budget = maxPayloadBytes - (int)contents[roles.size() - 1].getNumBytesAsUTF8();
-        int cutIdx = roles.size() - 1;
-        while (cutIdx > firstIdx)
-        {
-            int sz = (int)strippedContent(cutIdx - 1).getNumBytesAsUTF8();
-            if (budget - sz < 0) break;
-            budget -= sz;
-            --cutIdx;
-        }
-        firstIdx = juce::jmax(firstIdx, cutIdx);
+        strippedSizes[(size_t) i] = (int) strippedContent(i).getNumBytesAsUTF8();
+        roleIsUser[(size_t) i]    = (roles[i] == "user") ? 1 : 0;
     }
+    const auto trim = echojay::trimChatHistory (strippedSizes, roleIsUser,
+                                                maxHistoryMessages, maxHistoryBytes);
+    const int firstIdx = trim.firstIdx;
 
-    // Anthropic API requires the first message in messages[] to be 'user'.
-    // If trimming landed us on 'assistant', skip forward by one to land on user.
-    while (firstIdx < roles.size() && roles[firstIdx] != "user")
-        firstIdx++;
-    if (firstIdx >= roles.size())          // degenerate: always send the newest
-        firstIdx = roles.size() - 1;
+    // The trim observable: EVERY build logs what was kept and what each
+    // stage dropped, INCLUDING the null result -- a line that only appeared
+    // on a non-trivial trim could not distinguish "nothing was dropped"
+    // from "the log never ran".
+    EchoJay_NSLog(("EJChat: history trim -- kept " + juce::String(trim.kept)
+                   + "/" + juce::String(trim.total) + " history msgs"
+                   + " (dropped: countCap " + juce::String(trim.droppedByCap)
+                   + ", byteBudget " + juce::String(trim.droppedByBudget)
+                   + ", roleAlign " + juce::String(trim.droppedByRole)
+                   + ((trim.droppedByCap == 0 && trim.droppedByBudget == 0
+                       && trim.droppedByRole == 0)
+                        ? juce::String(" -- nothing dropped") : juce::String())
+                   + ")").toRawUTF8());
 
     // Newest message: keep its live injection, but any meter/band TEXT is
     // gated on the same explicit-capture flag as the meters blob — a
@@ -1063,7 +1079,7 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
     {
         int histBytes = 0;
         for (int i = firstIdx; i < roles.size() - 1; ++i)
-            histBytes += (int) strippedContent(i).getNumBytesAsUTF8();
+            histBytes += strippedSizes[(size_t) i];
         EchoJay_NSLog(("EJChat: body breakdown -- system="
                        + juce::String((int) systemPrompt.getNumBytesAsUTF8()) + "b"
                        + " history=" + juce::String(histBytes) + "b("

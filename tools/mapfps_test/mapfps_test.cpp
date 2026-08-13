@@ -27,6 +27,7 @@
 #include <JuceHeader.h>
 #include "EchoJayParamMaps.h"
 #include "EchoJayParamApply.h"
+#include "EchoJayHistoryTrim.h"
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
 #include <fstream>
@@ -478,6 +479,91 @@ int main()
         check (applyOneBody.isNotEmpty(), "applyOne body found");
         check (applyOneBody.contains ("valueWithinMappedRange"),
                "applyOne refuses out-of-range values through valueWithinMappedRange");
+    }
+
+    // ---- Chat history trim (EchoJayHistoryTrim.h, header-inline) ----
+    // Born live: the newest turn (with its injections) measured 61-70KB
+    // against a shared 60000-byte payload budget, so the budget was negative
+    // before the walk started and history was 0 msgs on EVERY request. The
+    // property under test: the newest message's size is charged nowhere, so
+    // however large it grows, history admission is unaffected.
+    {
+        using echojay::trimChatHistory;
+
+        // THE LIVE SHAPE: a newest message far larger than the total budget
+        // must still admit the full (small) history.
+        {
+            const std::vector<int>  sz  { 900, 1100, 70000 };  // user, assistant, newest user
+            const std::vector<char> usr { 1, 0, 1 };
+            const auto r = trimChatHistory (sz, usr, 12, 24000);
+            check (r.firstIdx == 0 && r.kept == 2
+                   && r.droppedByCap == 0 && r.droppedByBudget == 0 && r.droppedByRole == 0,
+                   "newest larger than the whole budget still admits history",
+                   "firstIdx=" + juce::String (r.firstIdx) + " kept=" + juce::String (r.kept));
+        }
+
+        // History exceeding its own budget still trims oldest-first.
+        {
+            const std::vector<int>  sz  { 20000, 10000, 70000 };
+            const std::vector<char> usr { 1, 1, 1 };
+            const auto r = trimChatHistory (sz, usr, 12, 24000);
+            check (r.firstIdx == 1 && r.droppedByBudget == 1 && r.kept == 1,
+                   "history byte budget drops the oldest message first");
+        }
+
+        // The 12-message cap keeps at most 11 history messages plus newest.
+        {
+            const std::vector<int>  sz  ((size_t) 20, 100);
+            const std::vector<char> usr ((size_t) 20, 1);
+            const auto r = trimChatHistory (sz, usr, 12, 24000);
+            check (r.firstIdx == 8 && r.droppedByCap == 8 && r.kept == 11,
+                   "message-count cap still bounds history at 11 + newest");
+        }
+
+        // Role alignment: a leading assistant turn is skipped so messages[]
+        // opens on a user turn; degenerate all-assistant history sends the
+        // newest alone rather than an illegal first role.
+        {
+            const std::vector<int>  sz  { 500, 70000 };
+            const std::vector<char> usr { 0, 1 };
+            const auto r = trimChatHistory (sz, usr, 12, 24000);
+            check (r.firstIdx == 1 && r.droppedByRole == 1 && r.kept == 0,
+                   "leading assistant turn is skipped, newest still sent");
+        }
+
+        // Null trim: everything fits, nothing dropped, counters say so.
+        {
+            const std::vector<int>  sz  { 300, 400, 500 };
+            const std::vector<char> usr { 1, 0, 1 };
+            const auto r = trimChatHistory (sz, usr, 12, 24000);
+            check (r.kept == 2 && r.total == 2
+                   && r.droppedByCap == 0 && r.droppedByBudget == 0 && r.droppedByRole == 0,
+                   "null trim reports kept == total with zero drops");
+        }
+
+        // Single-message conversation: no history, newest sent, no crash.
+        {
+            const std::vector<int>  sz  { 70000 };
+            const std::vector<char> usr { 1 };
+            const auto r = trimChatHistory (sz, usr, 12, 24000);
+            check (r.firstIdx == 0 && r.kept == 0 && r.total == 0,
+                   "single-message conversation trims to nothing safely");
+        }
+
+        // Structural: buildChatRequestBody must decide through the helper,
+        // not through a re-derived inline walk, and the newest message's
+        // size must not feed any budget arithmetic there.
+        {
+            std::ifstream fapi ("Source/EchoJayAPI.cpp");
+            std::stringstream sapi;
+            sapi << fapi.rdbuf();
+            const juce::String apiSrc (sapi.str());
+            const auto body = functionBody (apiSrc, "juce::String EchoJayAPI::buildChatRequestBody");
+            check (body.contains ("echojay::trimChatHistory"),
+                   "buildChatRequestBody decides through trimChatHistory");
+            check (! body.contains ("maxPayloadBytes"),
+                   "the shared payload budget (newest charged against history) is gone");
+        }
     }
 
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";
