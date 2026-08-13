@@ -19,6 +19,22 @@
 
 echo "pre-commit gate: branch $(git branch --show-current)"
 
+# BUILD LOCK REFUSAL (13 Aug 2026). Twice in two days a commit or edit
+# landed while reinstall-v2.sh was building this worktree: once producing a
+# mixed-object artefact that stamped itself with a clean SHA (2.26.15), once
+# failing this very gate by linking a half-written SharedCode archive. The
+# gate catching it after the fact was luckier than it should be; a rule that
+# depends on remembering is not a fix. The lock directory is the build's
+# flight marker (see reinstall-v2.sh); while it exists, committing races
+# the artefact, so the gate refuses outright.
+if [ -d "$HOME/.echojay-build.lock" ]; then
+  echo "GATE FAIL: ~/.echojay-build.lock is held - a reinstall is building."
+  echo "  Committing mid-build races the artefact and links half-written libs."
+  echo "  Wait for the build to finish. If you are CERTAIN none is running:"
+  echo "    rmdir ~/.echojay-build.lock"
+  exit 1
+fi
+
 REPO=$(git rev-parse --show-toplevel)
 LIB="$REPO/build/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a"
 
