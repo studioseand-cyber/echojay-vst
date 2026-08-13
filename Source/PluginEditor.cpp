@@ -18071,11 +18071,10 @@ void EchoJayEditor::timerCallback()
     // debounce rather than at the next restart. The writer instance takes
     // the same path: its save moves the mtime, which is the single
     // propagation mechanism for both cases.
-    if (sc.maybeReloadEnabledState())
-    {
-        EchoJay_NSLog("EJScan: tick change reached the editor, resolver unlatched");
-        processorRef.getChainHost().invalidateRecommendable();
-    }
+    // The timer is only the file-watch PUMP now: the unlatch itself rides
+    // the scanner's onDisabledSetChanged callback (one action, two
+    // triggers), so this call has no branch to get wrong.
+    sc.maybeReloadEnabledState();
     // Chain-after-settings sequencing: fire the chain scan on the settings
     // scan's FALLING EDGE, so its VST3 rows read the freshly validated
     // cache rather than the one the settings scan was about to replace.

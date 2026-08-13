@@ -304,6 +304,17 @@ EchoJayProcessor::EchoJayProcessor()
     // delay-compensate the track when a latent plugin (lookahead limiter,
     // linear-phase EQ) sits in the chain, and the master wet/dry's dry leg
     // would be aligned against a host timeline that is itself off.
+    // ONE unlatch action, two triggers (13 Aug 2026): the scanner fires
+    // this on ANY disabled-set change - the setter on the instance that
+    // took the click, the file reload on every other instance - so the
+    // recommendable feed rebuilds with fresh ticks either way. Wired here
+    // because the processor owns both objects; the editor's timer is only
+    // the file-watch pump.
+    pluginScanner.onDisabledSetChanged = [this]
+    {
+        chainHost.invalidateRecommendable();
+    };
+
     chainHost.onChainChanged = [this]
     {
         setLatencySamples(chainHost.getTotalLatencySamples());

@@ -135,30 +135,8 @@ static juce::String bundleIdentifierFor(const juce::File& bundle)
 }
 #endif
 
-PluginScanner::PluginScanner() {}
-
-PluginScanner::~PluginScanner()
-{
-    // Tell any detached workers spawned by scanWithTimeout that this
-    // scanner is going away. The shared `alive` flag is captured by
-    // worker lambdas via a shared_ptr, so it outlives this scanner.
-    // Workers check it before scanDirectory and inside the walk loop.
-    alive->store(false);
-    
-    if (scanThread && scanThread->isThreadRunning())
-    {
-        scanThread->stopThread(5000);
-    }
-    
-    // Brief grace period so any detached worker that returned from its
-    // stuck syscall in the last few moments has a chance to notice the
-    // alive flag and unwind before we drop member memory. Not a hard
-    // guarantee — a worker mid-syscall when this runs may still race —
-    // but in practice the only worker types we detach are ones stuck
-    // for tens of seconds on cloud paths, and the chance of one
-    // returning in the exact window this hits is vanishingly small.
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-}
+// Ctor and dtor are header-inline; see PluginScanner.h for why it is
+// load-bearing (stale-lib layout vs inline methods).
 
 void PluginScanner::startScan()
 {
@@ -924,63 +902,46 @@ bool PluginScanner::maybeReloadEnabledState()
     auto json = juce::JSON::parse(file.loadFileAsString());
     if (auto* arr = json.getArray())
     {
-        std::lock_guard<std::mutex> lock(pluginMutex);
         std::set<juce::String> fresh;
         for (auto& item : *arr)
             fresh.insert(item.toString());
-        const bool changed = (fresh != disabledUids);
-        EchoJay_NSLog(("EJScan: enabledState mtime moved, "
-                       + juce::String((int) disabledUids.size()) + " -> "
-                       + juce::String((int) fresh.size()) + " uid(s), changed="
-                       + (changed ? "y" : "n") + " (scanner 0x"
-                       + juce::String::toHexString((juce::pointer_sized_int) this)
-                       + ")").toRawUTF8());
-        if (! changed) return false;   // touched, not changed
-        disabledUids = std::move(fresh);
-        cachedShuffledNames = juce::String();
-        cachedShuffleSize = 0;
-        return true;
+        return applyReloadedDisabledSet(std::move(fresh));
     }
     return false;
 }
+
+// applyReloadedDisabledSet, notifyDisabledSetChanged and setPluginEnabled
+// are HEADER-INLINE (PluginScanner.h): the gate's test must compile the
+// shipped trigger behaviour, not link the previous build's copy.
 
 // ============================================================================
 // Enabled / disabled state
 // ============================================================================
 
-void PluginScanner::setPluginEnabled(const juce::String& uid, bool enabled)
-{
-    std::lock_guard<std::mutex> lock(pluginMutex);
-
-    // The set is the ONE store (13 Aug 2026); rows carry no tick state any
-    // more. Persistence stays on the editor's debounced commit
-    // (saveEnabledState), so rapid clicking doesn't write the file per
-    // toggle; the set is fresh in memory immediately either way.
-    if (enabled) disabledUids.erase(uid);
-    else         disabledUids.insert(uid);
-
-    cachedShuffledNames = juce::String();
-    cachedShuffleSize = 0;
-}
+// setPluginEnabled is header-inline; see the note above.
 
 void PluginScanner::setManyEnabled(const juce::StringArray& uids, bool enabled)
 {
+    bool changed = false;
     {
         std::lock_guard<std::mutex> lock(pluginMutex);
 
-        // Build a lookup set of the target uids so the plugin pass is O(n)
-        // rather than O(uids x n). "Untick all" on a 2000-plugin install would
-        // otherwise be ~4M comparisons.
         for (auto& uid : uids)
         {
-            if (enabled) disabledUids.erase(uid);
-            else         disabledUids.insert(uid);
+            if (enabled) changed = (disabledUids.erase(uid) > 0) || changed;
+            else         changed = disabledUids.insert(uid).second || changed;
         }
 
-        cachedShuffledNames = juce::String();
-        cachedShuffleSize = 0;
+        if (changed)
+        {
+            cachedShuffledNames = juce::String();
+            cachedShuffleSize = 0;
+        }
     }
     saveEnabledState();
+    // The setter IS the writing instance's trigger: its own save cannot
+    // inform it through the file watch (a writer is not a reader).
+    if (changed) notifyDisabledSetChanged("setter");
 }
 
 bool PluginScanner::isPluginEnabled(const juce::String& uid) const

@@ -7,6 +7,11 @@
 #include <string>
 #include <atomic>
 #include <memory>
+#include <thread>
+#include <chrono>
+
+// Unified-log line (implemented in the ObjC side; see NativeClip.h).
+extern "C" void EchoJay_NSLog(const char* msg);
 
 struct ScannedPlugin {
     juce::String name;
@@ -32,8 +37,29 @@ struct ScannedPlugin {
 class PluginScanner
 {
 public:
-    PluginScanner();
-    ~PluginScanner();
+    // Ctor and dtor are HEADER-INLINE (13 Aug 2026), and it is load-bearing
+    // for the gate: mapfps_test instantiates this class while linking the
+    // PREVIOUS build's lib, and a stale-lib ctor constructs the OLD member
+    // layout under inline methods compiled against the NEW one - measured
+    // as "mutex lock failed: Invalid argument" the first time the layout
+    // grew. Inline lifecycle means the test TU owns the whole object with
+    // one consistent layout, whatever the lib holds.
+    PluginScanner() {}
+    ~PluginScanner()
+    {
+        // Tell any detached workers spawned by scanWithTimeout that this
+        // scanner is going away. The shared `alive` flag is captured by
+        // worker lambdas via a shared_ptr, so it outlives this scanner.
+        alive->store(false);
+        if (scanThread && scanThread->isThreadRunning())
+            scanThread->stopThread(5000);
+        // Brief grace period so any detached worker that returned from its
+        // stuck syscall in the last few moments notices the alive flag and
+        // unwinds before member memory drops. Not a hard guarantee; the
+        // detached workers are ones stuck for tens of seconds on cloud
+        // paths, and the race window here is vanishingly small.
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
     
     // Scan all plugin directories (runs on background thread)
     void startScan();
@@ -93,7 +119,30 @@ public:
     // and persisted separately from the plugin cache, so it survives a
     // rescan: re-detecting a plugin the user previously unticked keeps it
     // unticked.
-    void setPluginEnabled(const juce::String& uid, bool enabled);
+    // HEADER-INLINE (13 Aug 2026): the setter is the writing instance's
+    // unlatch trigger, and the gate's test must exercise the shipped
+    // behaviour, not the previous build's lib. See onDisabledSetChanged.
+    void setPluginEnabled(const juce::String& uid, bool enabled)
+    {
+        bool changed = false;
+        {
+            std::lock_guard<std::mutex> lock(pluginMutex);
+            // The set is the ONE store; rows carry no tick state.
+            // Persistence stays on the editor's debounced commit
+            // (saveEnabledState), so rapid clicking doesn't write the file
+            // per toggle; the set is fresh in memory immediately.
+            if (enabled) changed = disabledUids.erase(uid) > 0;
+            else         changed = disabledUids.insert(uid).second;
+            if (changed)
+            {
+                cachedShuffledNames = juce::String();
+                cachedShuffleSize = 0;
+            }
+        }
+        // The setter IS the writing instance's trigger: its own save cannot
+        // inform it through the file watch (a writer is not a reader).
+        if (changed) notifyDisabledSetChanged("setter");
+    }
     void setManyEnabled(const juce::StringArray& uids, bool enabled);
     bool isPluginEnabled(const juce::String& uid) const;
 
@@ -119,9 +168,51 @@ public:
     // one process but hold separate PluginScanner objects, and an untick in
     // instance A only wrote A's memory and the file - B's resolver kept
     // reading B's stale state until restart. Re-reads plugin_disabled.json
-    // when its mtime moves; returns true when the set changed so the caller
-    // can invalidate whatever it derived from it (the recommendable feed).
+    // when its mtime moves; returns true when the set changed.
     bool maybeReloadEnabledState();
+
+    // ONE action, two triggers (13 Aug 2026, evening). The file watch alone
+    // shipped broken by design: a writer is not a reader, so the instance
+    // that took the click saw its own save as "mtime moved, changed=n" and
+    // never unlatched (measured: 563 -> 563, enabled stuck at 1051). Every
+    // path that changes disabledUids - the setters on the writing instance,
+    // the file reload on every other - converges on notifyDisabledSetChanged,
+    // which fires this callback. The processor wires it to
+    // ChainHost::invalidateRecommendable at construction, so there is one
+    // unlatch action and it cannot drift between triggers.
+    std::function<void()> onDisabledSetChanged;
+
+    // The file trigger's decision core, split from the disk shell so the
+    // gate can exercise it without touching user files: compares, swaps,
+    // notifies. Returns true when the set actually changed. Public as the
+    // test seam; production callers are maybeReloadEnabledState only.
+    // HEADER-INLINE, like stampEnabled and for the same reason: the gate's
+    // test links the previous build's lib, and both the symbol and the
+    // notify behaviour must be the shipped ones.
+    bool applyReloadedDisabledSet(std::set<juce::String>&& fresh)
+    {
+        bool changed = false;
+        {
+            std::lock_guard<std::mutex> lock(pluginMutex);
+            changed = (fresh != disabledUids);
+            EchoJay_NSLog(("EJScan: enabledState mtime moved, "
+                           + juce::String((int) disabledUids.size()) + " -> "
+                           + juce::String((int) fresh.size()) + " uid(s), changed="
+                           + (changed ? "y" : "n") + " (scanner 0x"
+                           + juce::String::toHexString((juce::pointer_sized_int) this)
+                           + ")").toRawUTF8());
+            // changed=n here is normally the WRITER seeing its own save:
+            // expected, harmless, its unlatch already fired from the setter.
+            if (changed)
+            {
+                disabledUids = std::move(fresh);
+                cachedShuffledNames = juce::String();
+                cachedShuffleSize = 0;
+            }
+        }
+        if (changed) notifyDisabledSetChanged("file");
+        return changed;
+    }
     // The ONE place ScannedPlugin::enabled is ever assigned: stamps the flag
     // from the authority set. Static, pure and HEADER-INLINE so mapfps_test
     // compiles the shipped implementation directly (the gate links the
@@ -258,6 +349,14 @@ private:
     std::set<juce::String> disabledUids;
     juce::Time enabledStateMtime_;   // maybeReloadEnabledState's guard
     bool enabledWatchLogged_ = false;   // diagnosis: one watch-active line per lifetime
+    // The single notify: logs the source and fires onDisabledSetChanged.
+    // Called OUTSIDE pluginMutex (the callback reaches into ChainHost).
+    void notifyDisabledSetChanged(const char* source)
+    {
+        EchoJay_NSLog(("EJScan: disabled set changed via " + juce::String(source)
+                       + ", unlatch dispatched").toRawUTF8());
+        if (onDisabledSetChanged) onDisabledSetChanged();
+    }
 
     // Cached shuffled plugin list — populated lazily on first call to
     // getPluginNamesString() and reused for the lifetime of this scanner

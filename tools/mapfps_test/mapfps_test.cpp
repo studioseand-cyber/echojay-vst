@@ -257,6 +257,35 @@ int main()
                "removing it and restamping moves it back");
     }
 
+    // ---- Tick-change propagation: one action, two triggers (13 Aug) ----
+    // The gap that shipped the dead half: the gate pinned stampEnabled (the
+    // derivation) and covered NEITHER trigger, so a propagation path with
+    // zero exercises passed as "not needed" - dropSubstitutions, live. Both
+    // triggers must fire the ONE notify: the setter (the writing instance,
+    // whose own save cannot inform it through the file watch) and the file
+    // reload (every other instance). setPluginEnabled writes no files;
+    // applyReloadedDisabledSet is the file trigger's decision core minus
+    // the disk shell, which the retained EJScan lines observe live.
+    {
+        PluginScanner sc;
+        int fired = 0;
+        sc.onDisabledSetChanged = [&fired] { ++fired; };
+
+        sc.setPluginEnabled ("waves_thing_waves", false);
+        check (fired == 1, "setter trigger: an actual untick fires the notify");
+        sc.setPluginEnabled ("waves_thing_waves", false);
+        check (fired == 1, "setter trigger: a no-op untick does not re-fire");
+        sc.setPluginEnabled ("waves_thing_waves", true);
+        check (fired == 2, "setter trigger: re-ticking fires again");
+
+        std::set<juce::String> fresh { "other_thing_vendor" };
+        check (sc.applyReloadedDisabledSet (std::move (fresh)) && fired == 3,
+               "file trigger: a changed reloaded set fires the notify");
+        std::set<juce::String> same { "other_thing_vendor" };
+        check (! sc.applyReloadedDisabledSet (std::move (same)) && fired == 3,
+               "file trigger: the writer seeing its own save (changed=n) does not fire");
+    }
+
     // ---- 2. Structural: both call sites go through the helper ----
     {
         // build_and_run.sh runs from the repo root; read the shipped source.
@@ -322,6 +351,16 @@ int main()
             const auto getBody = functionBody (scannerCpp, "std::vector<ScannedPlugin> PluginScanner::getPlugins");
             check (getBody.contains ("stampEnabled"),
                    "getPlugins stamps from the authority set");
+
+            // The one unlatch action must be WIRED: the processor installs
+            // onDisabledSetChanged -> invalidateRecommendable at
+            // construction. Without this line both triggers fire into a
+            // null callback and the whole mechanism is correct and
+            // unreached again.
+            const auto procSrc = slurp ("Source/PluginProcessor.cpp");
+            check (procSrc.contains ("onDisabledSetChanged")
+                   && procSrc.contains ("invalidateRecommendable"),
+                   "the processor wires the notify to the resolver unlatch");
         }
 
         // Range-check wiring: applyOne must refuse through the pinned
