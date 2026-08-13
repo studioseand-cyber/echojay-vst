@@ -11,6 +11,9 @@
 
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
+
+// Unified-log line (implemented in the ObjC side; see NativeClip.h).
+extern "C" void EchoJay_NSLog(const char* msg);
 #include <algorithm>
 #include <functional>
 #include <map>
@@ -898,6 +901,21 @@ std::vector<ScannedPlugin> PluginScanner::getPlugins() const
 
 bool PluginScanner::maybeReloadEnabledState()
 {
+    // DIAGNOSIS INSTRUMENTATION (13 Aug 2026): the 12:28 unticks wrote 500
+    // uids and no instance rebuilt, including the writer. Three questions,
+    // one line each, bounded volume: is this called at all (once per
+    // scanner lifetime), does it see the mtime move, and what verdict does
+    // the set comparison reach. NOTE the standing hypothesis this must
+    // confirm or kill: the WRITER's own set is already fresh when its save
+    // moves the mtime, so the changed=n early-return below eats the
+    // writer's unlatch by design of this very function.
+    if (! enabledWatchLogged_)
+    {
+        enabledWatchLogged_ = true;
+        EchoJay_NSLog(("EJScan: enabledState watch active (scanner 0x"
+                       + juce::String::toHexString((juce::pointer_sized_int) this)
+                       + ")").toRawUTF8());
+    }
     auto file = getEnabledStateFile();
     if (! file.existsAsFile()) return false;
     const auto mtime = file.getLastModificationTime();
@@ -910,7 +928,14 @@ bool PluginScanner::maybeReloadEnabledState()
         std::set<juce::String> fresh;
         for (auto& item : *arr)
             fresh.insert(item.toString());
-        if (fresh == disabledUids) return false;   // touched, not changed
+        const bool changed = (fresh != disabledUids);
+        EchoJay_NSLog(("EJScan: enabledState mtime moved, "
+                       + juce::String((int) disabledUids.size()) + " -> "
+                       + juce::String((int) fresh.size()) + " uid(s), changed="
+                       + (changed ? "y" : "n") + " (scanner 0x"
+                       + juce::String::toHexString((juce::pointer_sized_int) this)
+                       + ")").toRawUTF8());
+        if (! changed) return false;   // touched, not changed
         disabledUids = std::move(fresh);
         cachedShuffledNames = juce::String();
         cachedShuffleSize = 0;

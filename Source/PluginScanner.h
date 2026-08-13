@@ -257,6 +257,7 @@ private:
     // disk via saveEnabledState/loadEnabledState. Guarded by pluginMutex.
     std::set<juce::String> disabledUids;
     juce::Time enabledStateMtime_;   // maybeReloadEnabledState's guard
+    bool enabledWatchLogged_ = false;   // diagnosis: one watch-active line per lifetime
 
     // Cached shuffled plugin list — populated lazily on first call to
     // getPluginNamesString() and reused for the lifetime of this scanner

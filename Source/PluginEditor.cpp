@@ -18072,7 +18072,10 @@ void EchoJayEditor::timerCallback()
     // the same path: its save moves the mtime, which is the single
     // propagation mechanism for both cases.
     if (sc.maybeReloadEnabledState())
+    {
+        EchoJay_NSLog("EJScan: tick change reached the editor, resolver unlatched");
         processorRef.getChainHost().invalidateRecommendable();
+    }
     // Chain-after-settings sequencing: fire the chain scan on the settings
     // scan's FALLING EDGE, so its VST3 rows read the freshly validated
     // cache rather than the one the settings scan was about to replace.
