@@ -372,6 +372,16 @@ int main()
         check (dialable.contains ("fpForIdentity"),
                "getDialableRecommendableNames goes through fpForIdentity");
 
+        // Feed name-uniqueness (13 Aug 2026, evening): the resolver
+        // collapses same-name scanner rows first-wins with a counted
+        // duplicates bucket, because 77 vendor-string seams beyond the
+        // catalog's rules put the same name in the feed twice. With this
+        // in place, EJMapFps' dupSameFp/dupDiffFp buckets should read ZERO
+        // and become the live regression detector for the collapse.
+        const auto buildRec = functionBody (src, "void ChainHost::buildRecommendable");
+        check (buildRec.contains ("pushedNames"),
+               "buildRecommendable collapses duplicate names into the duplicates counter");
+
         // Stale-map ladder wiring: the decisions must come from the pinned
         // pure functions above, not a re-derived inline comparison, or the
         // table this test asserts stops describing the shipped behaviour.

@@ -3451,6 +3451,18 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
     int enabledCount = 0;
     std::set<juce::String> excludedUids;
     int excludedRows = 0;
+    // The feed is a NAME list, so this is where a name becomes unique
+    // (13 Aug 2026, evening). 77 scanner groups share a name across vendor
+    // strings the catalog cannot unify (PA sub-brands under their own
+    // labels, spacing and casing variants, folder-layout garbage vendors
+    // like 'Se' and 'Pitch Shift'), and each group resolved its name TWICE
+    // into the feed - 13 duplicate names in a 65KB payload the model
+    // reads. Chain entries are already name-unique (measured: zero
+    // duplicates in 1590), so the collapse belongs here, first-wins, with
+    // its own counter so enabled still reconciles:
+    //   enabled = resolved + duplicates + unmatched.
+    std::set<juce::String> pushedNames;
+    int duplicateNames = 0;
     std::vector<RecommendableEntry> resolved;
 
     for (const auto& sp : allPlugins)
@@ -3476,7 +3488,16 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
         }
 
         if (it != nameMap.end())
+        {
+            if (! pushedNames.insert(sp.name).second)
+            {
+                ++duplicateNames;   // second row of a same-name pair; the
+                                    // desc resolves identically, so nothing
+                                    // is lost, only the repeat.
+                continue;
+            }
             resolved.push_back({ sp.name, it->second });
+        }
     }
 
     // The resolver coverage triple, relocated from a never-rendered label
@@ -3507,7 +3528,8 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
                    + ", enabled=" + juce::String(enabledCount)
                    + ", excluded=" + juce::String(excludedRows)
                    + " from " + juce::String((int) excludedUids.size()) + " uid(s)"
-                   + ", unmatched=" + juce::String(enabledCount - (int) resolved.size())
+                   + ", duplicates=" + juce::String(duplicateNames)
+                   + ", unmatched=" + juce::String(enabledCount - (int) resolved.size() - duplicateNames)
                    + ")"
                    + (excludedRows != (int) excludedUids.size()
                           ? juce::String(" [DUPLICATE ROWS: excluded rows exceed uids]")
