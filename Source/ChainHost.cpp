@@ -1792,6 +1792,30 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
                                                             : indexedFp.substring(0, 12))
                        + " live=" + liveFp.substring(0, 12)
                        + " rung=" + echojay::staleRungName(step.rung)).toRawUTF8());
+        // VST3 identity capture, option 1 (13 Aug 2026): moduleinfo.json
+        // measured ZERO of 189 on this machine (FabFilter, iZotope, Waves
+        // and TR5 all absent), so scan-time identity for VST3 is not
+        // recoverable from bundles. The load IS the measurement: persist
+        // the validated description into knownPlugins_ (chain_plugins.xml),
+        // which the doRefresh join was built to consume, fill the thin
+        // in-memory entry now, and unlatch the resolver so the plugin the
+        // user just loaded is identifiable THIS session, not after the
+        // next Scan Now. Coverage grows with use, the AU model's shape.
+        if (liveDesc.pluginFormatName == "VST3" && liveDesc.uniqueId != 0)
+        {
+            {
+                std::lock_guard<std::mutex> lk(pluginsMutex_);
+                knownPlugins_.addType(liveDesc);
+            }
+            saveToDisk();
+            const int filled = enrichThinVst3EntriesFromKnown();
+            if (filled > 0) hasResolved_ = false;
+            EchoJay_NSLog(("EJScan: VST3 identity captured at load, \""
+                           + liveDesc.name + "\" uid=" + juce::String(liveDesc.uniqueId)
+                           + " version=" + liveDesc.version
+                           + ", " + juce::String(filled)
+                           + " thin entr(ies) enriched").toRawUTF8());
+        }
         applyStructuredIfReady(newSlotIdx, DialTrigger::slotLoaded);
     }
 
@@ -1905,6 +1929,36 @@ void ChainHost::storeParamMaps(const juce::var& mapsObj)
         if (settleStaleRung(i)) changed = true;
     }
     if (changed && onSlotSettingsChanged) onSlotSettingsChanged();
+}
+
+int ChainHost::enrichThinVst3EntriesFromKnown()
+{
+    std::lock_guard<std::mutex> lk(pluginsMutex_);
+    // Bundle paths claimed by more than one captured description are shells
+    // (WaveShell): filling the single thin shell row from any one member
+    // would assert an arbitrary identity, so those paths are skipped.
+    std::map<juce::String, int> pathClaims;
+    for (const auto& kd : knownPlugins_.getTypes())
+        if (kd.pluginFormatName == "VST3" && kd.uniqueId != 0)
+            ++pathClaims[kd.fileOrIdentifier];
+    int filled = 0;
+    for (const auto& kd : knownPlugins_.getTypes())
+    {
+        if (kd.pluginFormatName != "VST3" || kd.uniqueId == 0) continue;
+        if (pathClaims[kd.fileOrIdentifier] > 1) continue;
+        for (auto& d : entries_)
+            if (d.pluginFormatName == "VST3"
+                && d.fileOrIdentifier == kd.fileOrIdentifier
+                && (d.uniqueId == 0 || d.version.isEmpty()))
+            {
+                d.uniqueId = d.deprecatedUid = kd.uniqueId;
+                d.version  = kd.version;
+                if (d.manufacturerName.isEmpty())
+                    d.manufacturerName = kd.manufacturerName;
+                ++filled;
+            }
+    }
+    return filled;
 }
 
 bool ChainHost::settleStaleRung(int i)
@@ -3119,6 +3173,15 @@ void ChainHost::maybeReloadEntriesCache()
                        + (entriesScannedAtMs_ > 0
                               ? juce::Time(entriesScannedAtMs_).toString(true, true)
                               : juce::String("UNKNOWN (unstamped cache)"))).toRawUTF8());
+        // A reload replaces entries_ wholesale (the other host may have
+        // scanned), which would drop same-session captured identities:
+        // re-apply them from knownPlugins_.
+        if (const int filled = enrichThinVst3EntriesFromKnown(); filled > 0)
+        {
+            hasResolved_ = false;
+            EchoJay_NSLog(("EJScan: " + juce::String(filled)
+                           + " thin VST3 entr(ies) enriched from load-captured identities").toRawUTF8());
+        }
     }
     entriesCacheTime_ = mtime;
 }
@@ -3672,6 +3735,15 @@ void ChainHost::loadFromDisk()
                                + (entriesScannedAtMs_ > 0
                                       ? juce::Time(entriesScannedAtMs_).toString(true, true)
                                       : juce::String("UNKNOWN (unstamped cache)"))).toRawUTF8());
+                // Identity captured in past sessions survives the thin cache:
+                // knownPlugins_ loaded above, entries_ just loaded, fill now
+                // rather than waiting for a scan.
+                if (const int filled = enrichThinVst3EntriesFromKnown(); filled > 0)
+                {
+                    hasResolved_ = false;
+                    EchoJay_NSLog(("EJScan: " + juce::String(filled)
+                                   + " thin VST3 entr(ies) enriched from load-captured identities").toRawUTF8());
+                }
             }
             entriesCacheTime_ = ecFile.getLastModificationTime();
         }

@@ -759,6 +759,15 @@ private:
     // the live-fp fetch has answered. Returns true when the card changed
     // (the unmapped rung speaks).
     bool settleStaleRung (int slotIndex);
+    // VST3 identity capture, option 1 (13 Aug 2026): fill thin VST3 entries
+    // (uniqueId 0 / empty version) from load-validated descriptions held in
+    // knownPlugins_. Identity only - name and fileOrIdentifier are the
+    // resolver's matching keys and stay untouched. Skips bundle paths that
+    // several captured descriptions share (the WaveShell shape), rather
+    // than stamping the shell row with an arbitrary member's identity.
+    // Returns the number of rows filled. Callers unlatch hasResolved_ when
+    // it is nonzero so the resolver rebuilds with the new identities.
+    int enrichThinVst3EntriesFromKnown();
     // Construct + append a built-in node synchronously. Returns an error
     // string, empty on success. Called only from loadPluginAsync.
     juce::String loadBuiltinNow (const juce::PluginDescription& desc);
