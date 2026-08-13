@@ -3499,13 +3499,19 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
     // bx AU/VST3 doubles), or, formerly, a disabled set holding more than
     // one uid vocabulary. Either way the gap is a condition to SEE on the
     // line, not to derive from four terminal commands after the fact.
+    // With rows unique, excluded ROWS equals excluded UIDS; a gap means
+    // duplicate rows have come back, and the line says so itself instead of
+    // waiting for someone to derive it by hand.
     EchoJay_NSLog(("EJScan: resolver rebuilt, " + juce::String((int) resolved.size())
                    + " resolved (input=" + juce::String((int) allPlugins.size())
                    + ", enabled=" + juce::String(enabledCount)
                    + ", excluded=" + juce::String(excludedRows)
                    + " from " + juce::String((int) excludedUids.size()) + " uid(s)"
                    + ", unmatched=" + juce::String(enabledCount - (int) resolved.size())
-                   + ")").toRawUTF8());
+                   + ")"
+                   + (excludedRows != (int) excludedUids.size()
+                          ? juce::String(" [DUPLICATE ROWS: excluded rows exceed uids]")
+                          : juce::String())).toRawUTF8());
 
     // Cache result (message thread only — no mutex)
     recommendable_          = std::move(resolved);

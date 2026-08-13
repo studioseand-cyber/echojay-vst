@@ -837,6 +837,22 @@ void PluginScanner::addPlugin(const juce::String& nameIn, const juce::String& ma
             pluginIndex[makeKey(existing.name, existing.manufacturer)] = nIt->second;
             return;
         }
+        // One vocabulary for EQUALITY too (13 Aug 2026, the 57 doubles):
+        // the same product scanned per-format can arrive under different
+        // vendor strings (bx_boom as Plugin Alliance/AU and Brainworx/VST3)
+        // or different name formatting (Devil-Loc Deluxe vs
+        // Devil-Loc_Deluxe), and raw-string comparison called those genuine
+        // collisions and kept both rows. Product identity IS uid identity:
+        // if makeUid agrees, it is one plugin, and the row carries the
+        // format UNION exactly as the Unknown-absorption path always has.
+        // The resolver's hosted-format filter reads CHAIN entries, not
+        // these rows, so the union costs nothing there.
+        if (echojay::makeUid(name, manufacturer) == existing.uid)
+        {
+            if (! existing.format.contains(format))
+                existing.format += "/" + format;
+            return;
+        }
         // else: two real but different vendors share this name (genuine
         // collision) -> fall through and keep them as separate rows.
     }
@@ -1287,7 +1303,8 @@ void PluginScanner::loadCache()
     {
         std::lock_guard<std::mutex> lock(pluginMutex);
         plugins.clear();
-        
+        std::map<juce::String, size_t> loadedByUid;   // uid-equality dedupe, see below
+
         for (auto& item : *arr)
         {
             if (auto* obj = item.getDynamicObject())
@@ -1340,6 +1357,18 @@ void PluginScanner::loadCache()
                 // classifier improvements apply to cached entries too.
                 if (p.category == "Effect")
                     p.fxType = echojay::fxTypeTag(echojay::classifyEffect(p.name));
+                // Same uid-equality dedupe as addPlugin, so a cache written
+                // BEFORE the dedupe existed converges at the next launch
+                // rather than waiting for a rescan: a row whose canonical
+                // uid already landed merges its format and is dropped.
+                if (auto seen = loadedByUid.find(p.uid); seen != loadedByUid.end())
+                {
+                    auto& kept = plugins[seen->second];
+                    if (! kept.format.contains(p.format))
+                        kept.format += "/" + p.format;
+                    continue;
+                }
+                loadedByUid[p.uid] = plugins.size();
                 plugins.push_back(p);
             }
         }

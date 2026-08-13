@@ -425,6 +425,20 @@ int main()
                    && procSrc.contains ("invalidateRecommendable"),
                    "the processor wires the notify to the resolver unlatch");
 
+            // Dedupe wiring (13 Aug 2026, evening): product EQUALITY must
+            // use the same vocabulary as identity - addPlugin's merge and
+            // loadCache's dedupe both decide via makeUid, so the 57
+            // Brainworx doubles (and the Devil-Loc name-formatting pair)
+            // cannot re-split under a third opinion about sameness.
+            {
+                const auto addBody  = functionBody (scannerCpp, "void PluginScanner::addPlugin");
+                const auto loadBody = functionBody (scannerCpp, "void PluginScanner::loadCache");
+                check (addBody.contains ("makeUid(name, manufacturer) == existing.uid"),
+                       "addPlugin merges cross-format rows by makeUid equality");
+                check (loadBody.contains ("loadedByUid"),
+                       "loadCache dedupes cached rows by uid so old caches converge");
+            }
+
             // makeUid wiring: every assignment to a uid FIELD must go
             // through makeUid. Any inline concatenation is a second uid
             // vocabulary waiting for its own Brainworx 56.
