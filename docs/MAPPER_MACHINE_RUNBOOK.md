@@ -1,82 +1,48 @@
-# Mapper machine runbook — categorise + sweep
+# Mapper machine runbook
 
-Copy-paste checklist to get a mapper's Mac producing maps. Do the parts in order.
-
-> These are workarounds. The real fix for categorise is the server queue in
-> `CATEGORISE_524_FIX.md` (not built yet). Until that ships, use Part 1.
-
-Set this once per terminal window:
+Copy-paste checklist to map a machine's plugins and get the maps back to the
+operator. Set this once per terminal window:
 
 ```
 BIN=/Applications/ejmap.app/Contents/MacOS/ejmap
 ```
 
----
+## The process — five steps
 
-## Part 1 — Categorise locally
-
-> **As of 13 Aug 2026 the server categorise fix is LIVE** — pressing Categorise in
-> the app now works on any machine, no keys, no local run (see
-> `CATEGORISE_524_FIX.md`). This Part is a **fallback only**: use it if the drainer
-> kill switch (`config:categorise:disabled`) is on, or the server is down.
-
-Do this when the app's **Categorise** button returns **524**. Needs the AI keys
-(so only on a trusted machine; clear them after). `categorise.py` is
-`tools/propose/categorise.py` — copy it onto the machine first.
-
-```
-# 1. libraries (--only-binary stops a pip compile-hang)
-python3 -m pip install --upgrade pip
-python3 -m pip install --only-binary=:all: anthropic openai
-
-# 2. keys, this window only
-export ANTHROPIC_API_KEY="…"
-export OPENAI_API_KEY="…"
-echo "A=${ANTHROPIC_API_KEY:+set} O=${OPENAI_API_KEY:+set}"     # want: A=set O=set
-
-# 3. run it (test 25, read, then the rest)
-python3 categorise.py --limit 25
-python3 categorise.py --report
-python3 categorise.py
-
-# 4. clear the keys
-unset ANTHROPIC_API_KEY OPENAI_API_KEY
-```
-
-Writes `~/Library/ejmap/categories.json`. A harmless `KeyError: 'confidence'`
-in the end summary is fine — the categories are already saved.
+1. **Scan** — in the app.
+2. **Categorise** — in the app (press Categorise; it works server-side as of
+   13 Aug 2026). Fallback if the server's ever down: §A.
+3. **Map one plugin by hand** — confirms the machine maps and saves (§2 below).
+4. **Batch sweep** — the terminal loop (§3 below).
+5. **Zip and hand over** — zip `~/Library/ejmap`, send the zip to the operator
+   (§4). **Do not rely on the app's Send All** — see §4 for why.
 
 ---
 
-## Part 2 — Reset the sweep
+## §1 — Reset before sweeping
 
-Always do this before sweeping — the marker is what makes it auto-resume the
-crash-loop.
+Clears the auto-resume marker (or every launch resumes the old crash-loop):
 
 ```
 pkill -9 -f ejmap
 rm -f ~/Library/ejmap/sweep-active.marker
 ```
 
----
+## §2 — Map one plugin by hand
 
-## Part 3 — Map ONE plugin by hand
-
-Open the app (it won't auto-sweep now), map a single plugin, and confirm the
-count goes up by 1:
+Open the app (it won't auto-sweep now), map a single plugin, confirm the count
+goes up by 1:
 
 ```
 ls ~/Library/ejmap/maps/ | wc -l
 ```
 
-If that works, the machine is healthy — move on. If it doesn't, stop and fix
-that first; batching won't help.
+If that works the machine is healthy — move on. If not, stop and fix that first.
 
----
+## §3 — Batch sweep
 
-## Part 4 — Batch sweep
-
-Small fresh batches. Leave it running.
+Small fresh batches — each a clean process that finishes and saves before it can
+degrade. Leave it running:
 
 ```
 for i in $(seq 1 60); do
@@ -85,22 +51,20 @@ for i in $(seq 1 60); do
 done
 ```
 
-Watch it climb in another tab (this number is the truth; ignore the terminal's
-per-batch 0→25 counter):
+Watch it climb in another tab (this is the real number; ignore the per-batch 0→25
+counter):
 
 ```
 ls ~/Library/ejmap/maps/ | wc -l
 ```
 
-Resumable — Ctrl+C and re-run the loop anytime; it skips what's mapped. When the
-count stops rising, this worklist is done.
+Resumable — Ctrl+C and re-run the loop anytime; it skips what's mapped. Stop when
+the count plateaus.
 
----
+### Skip a plugin that hangs
 
-## Part 5 — Skip a plugin that hangs
-
-If a batch jams on one plugin (e.g. Guitar Rig 5), Ctrl+C it and run this,
-swapping the name (lowercase, partial is fine). Next batch skips it.
+If a batch jams on one plugin (e.g. Guitar Rig 5, Acustica/Acqua), Ctrl+C it and
+run this, swapping the name (lowercase, partial is fine). The next batch skips it:
 
 ```
 python3 - <<'PY'
@@ -117,19 +81,53 @@ PY
 
 Or leave it — the 90 s watchdog kills a hanger and quarantines it after 3 tries.
 
----
+## §4 — Zip and hand over (NOT Send All)
 
-## Part 6 — Upload
+The app's **Send All is unreliable** and eats mapping sessions: it can lose its
+upload URL, choke with a 413 on big maps, and crash mid-send. Don't fight it —
+**zip the maps and hand them over**, and they get ingested on a keyed machine.
+It's simpler, it can't lose work, and it dodges every send bug.
 
 ```
-"$BIN" --send-pending
+cd ~/Library && zip -rq ~/Desktop/carl-ejmap.zip ejmap && echo "size: $(du -h ~/Desktop/carl-ejmap.zip | cut -f1)"
 ```
+
+(Swap `carl` for the machine/mapper name.) AirDrop / USB / upload that zip to the
+operator. It contains the mapper token in `config.json`, so keep it **private**.
+Verify the maps are in it before handing the machine back:
+
+```
+unzip -l ~/Desktop/carl-ejmap.zip | grep -c 'maps/.*\.json'
+```
+
+That count is the maps you swept — they're now safe off the machine.
 
 ---
 
-## Optional — exclude a whole unstable vendor
+## §A — Categorise locally (fallback only)
 
-For a vendor with a corrupt install (e.g. stacked Waves versions). Reversible.
+Only needed if the app's Categorise fails (the server fix is live, so normally it
+just works). Needs the AI keys — trusted machine only, clear them after.
+`categorise.py` is `tools/propose/categorise.py`.
+
+```
+python3 -m pip install --upgrade pip
+python3 -m pip install --only-binary=:all: anthropic openai
+export ANTHROPIC_API_KEY="…"
+export OPENAI_API_KEY="…"
+python3 categorise.py --limit 25
+python3 categorise.py --report
+python3 categorise.py
+unset ANTHROPIC_API_KEY OPENAI_API_KEY
+```
+
+Writes `~/Library/ejmap/categories.json`. A harmless `KeyError: 'confidence'` in
+the summary is fine — the categories are saved.
+
+## §B — Exclude an unstable vendor
+
+For a vendor whose install crashes the sweep (stacked Waves versions, Acustica).
+Reversible.
 
 ```
 cp ~/Library/ejmap/categories.json ~/Library/ejmap/categories.json.bak
@@ -146,3 +144,16 @@ PY
 ```
 
 Undo: `cp ~/Library/ejmap/categories.json.bak ~/Library/ejmap/categories.json`
+
+---
+
+## Operator side — ingest a handed-over zip
+
+Unzip it, then ingest the maps with the ingest script (POSTs each map to
+`/api/params/ejmap` with the mapper token from its `config.json`, gzipping the
+oversized ones so 413 can't bite). This replaces the app's send entirely. The
+script is a scratch tool — if it's not to hand, ask Fable to (re-)emit it.
+
+The proper in-app send fix (keep `upload_url`, gzip big maps, fix the mutex
+crash) is still worth building, but the zip-and-ingest path is the reliable one
+to lean on meanwhile.
