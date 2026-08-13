@@ -255,6 +255,26 @@ int main()
         PluginScanner::stampEnabled (list, disabled);
         check (list[0].enabled,
                "removing it and restamping moves it back");
+
+        // The accounting identity (13 Aug 2026, the Brainworx 56): enabled
+        // must equal rows minus rows-whose-uid-is-disabled, counted over
+        // ROWS, duplicates included. When live arithmetic broke this
+        // (enabled=931 against rows=1551 and 564 disabled), the cause was a
+        // second uid vocabulary, and nobody was checking the subtraction.
+        std::vector<ScannedPlugin> dup(3);
+        dup[0].uid = "same_uid_vendor";
+        dup[1].uid = "same_uid_vendor";
+        dup[2].uid = "other_vendor";
+        std::set<juce::String> dis { "same_uid_vendor" };
+        PluginScanner::stampEnabled (dup, dis);
+        int enabledN = 0, matchN = 0;
+        for (const auto& p : dup)
+        {
+            if (p.enabled) ++enabledN;
+            if (dis.count (p.uid) > 0) ++matchN;
+        }
+        check (enabledN == (int) dup.size() - matchN && enabledN == 1 && matchN == 2,
+               "enabled equals rows minus disabled-matching rows, duplicates counted per row");
     }
 
     // ---- Tick-change propagation: one action, two triggers (13 Aug) ----

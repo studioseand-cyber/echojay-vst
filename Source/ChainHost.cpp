@@ -3480,10 +3480,17 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
     // recommendable_. A divergence between those two lines is a FINDING
     // (two counts of one population disagreeing), not a rounding
     // difference.
+    // input and excluded ride the line (13 Aug 2026, the Brainworx 56) so
+    // the accounting is checkable on ONE line: input - excluded = enabled,
+    // and excluded against the EJScan set-size lines is one subtraction in
+    // the same log stream. The 56 hid for a day because enabled's
+    // reconciliation against the row count lived in nobody's head.
     EchoJay_NSLog(("EJScan: resolver rebuilt, " + juce::String((int) resolved.size())
-                   + " resolved (" + juce::String(enabledCount) + " enabled, "
-                   + juce::String(enabledCount - (int) resolved.size())
-                   + " unmatched)").toRawUTF8());
+                   + " resolved (input=" + juce::String((int) allPlugins.size())
+                   + ", enabled=" + juce::String(enabledCount)
+                   + ", excluded=" + juce::String((int) allPlugins.size() - enabledCount)
+                   + ", unmatched=" + juce::String(enabledCount - (int) resolved.size())
+                   + ")").toRawUTF8());
 
     // Cache result (message thread only — no mutex)
     recommendable_          = std::move(resolved);
