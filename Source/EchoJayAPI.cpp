@@ -75,9 +75,32 @@ juce::String EchoJayAPI::transportEndpoint(const juce::String& configured)
 {
    #if ECHOJAY_DEV_TRANSPORT
     const auto& dt = devTransport();
-    if (dt.baseUrl.isNotEmpty()) return dt.baseUrl;
+    const juce::String base = dt.baseUrl.isNotEmpty() ? dt.baseUrl : configured;
+   #else
+    const juce::String base = configured;
    #endif
-    return configured;
+
+    // Once per process, before the first request: which host, and why. A
+    // release build says devTransport=off against a production host, and that
+    // pairing is the diagnosis when every authenticated call 404s (the user
+    // exists only in the preview database). Host only; the bypass secret is
+    // never logged, only whether one was loaded.
+    static const bool transportLogged = [&base]
+    {
+       #if ECHOJAY_DEV_TRANSPORT
+        const char* dev = "on";
+        const char* byp = devTransport().bypass.isNotEmpty() ? "present" : "absent";
+       #else
+        const char* dev = "off";
+        const char* byp = "absent";
+       #endif
+        EchoJay_NSLog(("EJNet: base=" + juce::URL(base).getDomain()
+                       + " devTransport=" + dev + " bypass=" + byp).toRawUTF8());
+        return true;
+    }();
+    juce::ignoreUnused(transportLogged);
+
+    return base;
 }
 
 // Extra request headers the dev transport needs. Empty in a release build.
@@ -89,6 +112,23 @@ juce::String EchoJayAPI::transportHeaders()
         return "x-vercel-protection-bypass: " + dt.bypass + "\r\n";
    #endif
     return {};
+}
+
+// ============ Failure-path logging ============
+//
+// Every non-2xx response gets one line naming the endpoint, the status and
+// the start of the body. The UI's "Something went wrong" once hid a
+// production 404 ("User not found") for a whole debugging session; this line
+// is the observable that would have named it in one read. Callers pass the
+// response text they already read, so the log costs nothing on the 2xx path.
+static void logNon2xx(const juce::String& path, int statusCode,
+                      const juce::String& responseText)
+{
+    if (statusCode >= 200 && statusCode < 300)
+        return;
+    auto body = responseText.substring(0, 200).replaceCharacters("\r\n\t", "   ");
+    EchoJay_NSLog(("EJStream: " + path + " status=" + juce::String(statusCode)
+                   + " body=" + body).toRawUTF8());
 }
 
 // Static members for remote config — shared across all plugin instances
@@ -188,6 +228,7 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
                 juce::MemoryBlock mb;
                 stream->readIntoMemoryBlock(mb);
                 auto responseText = juce::String::fromUTF8((const char*)mb.getData(), (int)mb.getSize());
+                logNon2xx(path, statusCode, responseText);
                 json = juce::JSON::parse(responseText);
                 break; // got a response (any status) — stop retrying
             }
@@ -271,6 +312,7 @@ void EchoJayAPI::patchJSON(const juce::String& path, const juce::String& body,
             juce::MemoryBlock mb;
             stream->readIntoMemoryBlock(mb);
             auto responseText = juce::String::fromUTF8((const char*)mb.getData(), (int)mb.getSize());
+            logNon2xx(path, statusCode, responseText);
             json = juce::JSON::parse(responseText);
         }
 
@@ -326,6 +368,7 @@ void EchoJayAPI::deleteJSON(const juce::String& path,
             juce::MemoryBlock mb;
             stream->readIntoMemoryBlock(mb);
             auto responseText = juce::String::fromUTF8((const char*)mb.getData(), (int)mb.getSize());
+            logNon2xx(path, statusCode, responseText);
             json = juce::JSON::parse(responseText);
         }
 
@@ -449,9 +492,10 @@ void EchoJayAPI::getJSON(const juce::String& path,
             juce::MemoryBlock mb;
             stream->readIntoMemoryBlock(mb);
             auto responseText = juce::String::fromUTF8((const char*)mb.getData(), (int)mb.getSize());
+            logNon2xx(path, statusCode, responseText);
             json = juce::JSON::parse(responseText);
         }
-        
+
         auto callback = cb;
         auto sc = statusCode;
         auto j = json;
@@ -1567,8 +1611,14 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
                 juce::MemoryBlock mb;
                 ws.readIntoMemoryBlock (mb);
                 handle->detach();
+                auto bodyText = juce::String::fromUTF8 ((const char*) mb.getData(), (int) mb.getSize());
+                // Log BEFORE the teardown/cancel bail: the response happened,
+                // and this line is the outcome the routing line above goes
+                // silent on. NSLog touches no plugin state, so it is safe
+                // even when the plugin is mid-teardown.
+                logNon2xx ("/api/chat-stream", statusCode, bodyText);
                 if (! aliveFlag->load() || handle->isCancelled()) return;
-                auto json = juce::JSON::parse (juce::String::fromUTF8 ((const char*) mb.getData(), (int) mb.getSize()));
+                auto json = juce::JSON::parse (bodyText);
                 juce::String msg = "Something went wrong. Please try again.";
                 if (auto* o = json.getDynamicObject())
                     if (o->hasProperty ("error"))
