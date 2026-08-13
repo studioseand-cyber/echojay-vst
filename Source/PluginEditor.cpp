@@ -17997,8 +17997,32 @@ void EchoJayEditor::timerCallback()
                 chainStatusLabel.setText(juce::String(ch.getNumSlots()) + " slot(s) in chain",
                                          juce::dontSendNotification);
             else if (entriesReady)
-                chainStatusLabel.setText(juce::String(ch.getNumPlugins()) + " plugins available",
-                                         juce::dontSendNotification);
+            {
+                // Staleness visibility (13 Aug 2026): a July cache served
+                // five weeks of sessions while this label reported a count
+                // with no date. The count here is the CHAIN list
+                // (chain_entries.xml), NOT the Settings scanner's
+                // plugin_cache.json count - two different lists, and the
+                // label says which one it is describing.
+                juce::String scanned;
+                bool stale = false;
+                if (const auto ms = ch.getEntriesScannedAtMs(); ms > 0)
+                {
+                    stale = juce::Time::currentTimeMillis() - ms
+                          > (juce::int64) 14 * 24 * 3600 * 1000;
+                    scanned = ", scanned " + juce::Time(ms).toString(true, false)
+                            + (stale ? " - STALE, press Scan" : "");
+                }
+                else
+                {
+                    stale = true;
+                    scanned = ", scan date unknown - press Scan";
+                }
+                chainStatusLabel.setColour(juce::Label::textColourId,
+                    stale ? juce::Colour(0xffcc8844) : juce::Colour(0xff888888));
+                chainStatusLabel.setText(juce::String(ch.getNumPlugins())
+                    + " plugins in chain list" + scanned, juce::dontSendNotification);
+            }
         }
     }
 

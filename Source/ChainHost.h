@@ -45,10 +45,19 @@ public:
 
     // ---- List refresh (message thread) -----------------------------------
     void startScan();
+    // RECORD, no fix (13 Aug 2026): cancelScan has NO CALLERS, so the
+    // cancel early-return inside doRefresh is unreachable and misleads
+    // anyone tracing how a scan can end. A scan ends by completing.
     void cancelScan();
     bool  isScanning()      const noexcept { return scanning_.load(); }
     float getScanProgress() const noexcept { return scanProgress_.load(); }
     juce::String getScanStatus() const;
+    // When the entries list was last actually SCANNED (epoch ms; 0 = the
+    // cache predates the stamp). Written into chain_entries.xml at scan
+    // completion, read back at cache load, shown in the Chain tab. Exists
+    // because a July cache served five weeks of sessions while the UI
+    // confidently reported a plugin count with no date on it.
+    juce::int64 getEntriesScannedAtMs() const noexcept { return entriesScannedAtMs_; }
 
     // ---- Plugin list (message thread) ------------------------------------
     int getNumPlugins() const;
@@ -834,6 +843,8 @@ private:
 
     // Entries-cache staleness tracking (message thread)
     juce::Time entriesCacheTime_;
+    juce::int64 entriesScannedAtMs_ = 0;   // see getEntriesScannedAtMs()
+    juce::int64 scanStartedAtMs_    = 0;   // set when startScan accepts; ages a rejected press
 
     // Session-scoped load failures (see the comment block in the public
     // section): normalised "name|format" keys, message thread only,

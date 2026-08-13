@@ -729,7 +729,25 @@ void ChainHost::process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi
 // ---------------------------------------------------------------------------
 void ChainHost::startScan()
 {
-    if (scanning_.load()) return;
+    // EJScan instrumentation (13 Aug 2026): a July chain_entries.xml served
+    // five weeks of sessions and a Scan press produced no rewrite, and this
+    // path had NO logging, so which mechanism ate the press is unknowable
+    // after the fact. Every decision on the path now says what it did; next
+    // time the log names it.
+    if (scanning_.load())
+    {
+        const auto ageS = scanStartedAtMs_ > 0
+            ? (juce::Time::currentTimeMillis() - scanStartedAtMs_) / 1000
+            : (juce::int64) -1;
+        EchoJay_NSLog(("EJScan: press REJECTED, a scan is already running ("
+                       + (ageS >= 0 ? juce::String(ageS) + "s old" : juce::String("age unknown"))
+                       + "). A scan that never completes bricks this button "
+                         "silently; if this line repeats with a growing age, "
+                         "that is the stuck-flag case.").toRawUTF8());
+        return;
+    }
+    EchoJay_NSLog("EJScan: press accepted, scan starting");
+    scanStartedAtMs_ = juce::Time::currentTimeMillis();
     cancelFlag_.store(false);
     scanning_.store(true);
     scanProgress_.store(0.0f);
@@ -776,9 +794,24 @@ void ChainHost::doRefresh()
         pd.uniqueId = pd.deprecatedUid = e.uniqueId;
         auEntries.add(pd);
     }
+    // Phase count: how many AU rows, and how many of those carry a real
+    // plist-resolved version. The shape test is safe HERE because the
+    // enumerator's output is only ever a dotted version or the triple, and
+    // the triple always contains commas.
+    {
+        int plistResolved = 0;
+        for (const auto& d : auEntries)
+            if (! d.version.containsChar(',')) ++plistResolved;
+        EchoJay_NSLog(("EJScan: AU registry read, " + juce::String(auEntries.size())
+                       + " entr(ies), " + juce::String(plistResolved)
+                       + " with plist version(s)").toRawUTF8());
+    }
     scanProgress_.store(0.5f);
 #endif
 
+    // RECORD, no fix (13 Aug 2026): cancelScan() has no callers, so this
+    // early return is UNREACHABLE. It is kept only because removing dead
+    // code is not this commit's job; do not trace it as a way a scan ends.
     if (cancelFlag_.load()) { std::lock_guard<std::mutex> lk(pluginsMutex_); entries_ = auEntries; return; }
 
     setScanStatus("Reading VST3 folders...");
@@ -827,6 +860,15 @@ void ChainHost::doRefresh()
         }
     }
 
+    {
+        int thin = 0;
+        for (const auto& d : vst3Entries)
+            if (d.version.isEmpty()) ++thin;
+        EchoJay_NSLog(("EJScan: VST3 folders read, " + juce::String(vst3Entries.size())
+                       + " row(s), " + juce::String(vst3Entries.size() - thin)
+                       + " from the validated cache, " + juce::String(thin)
+                       + " thin (unvalidated)").toRawUTF8());
+    }
     scanProgress_.store(0.9f);
 
     std::unordered_set<std::string> auNames;
@@ -850,17 +892,42 @@ void ChainHost::doRefresh()
     }
 
     // Persist the FULL entries list so the other host (main plugin / Link)
-    // resolves against the same list without running its own scan
+    // resolves against the same list without running its own scan. The
+    // write is CHECKED and stamped (13 Aug 2026): this file's mtime is the
+    // only completion signal the scan has, and its date going stale is how
+    // a July snapshot served five weeks of sessions unnoticed.
     {
+        const juce::int64 nowMs = juce::Time::currentTimeMillis();
         auto root = std::make_unique<juce::XmlElement>("CHAIN_ENTRIES");
+        root->setAttribute("scannedAt", juce::String(nowMs));
         for (auto& d : collected)
             if (auto x = d.createXml())
                 root->addChildElement(x.release());
         appSupportDir().createDirectory();
         auto ecFile = getEntriesCacheFile();
-        root->writeTo(ecFile);
-        entriesCacheTime_ = ecFile.getLastModificationTime();
+        if (root->writeTo(ecFile))
+        {
+            entriesCacheTime_   = ecFile.getLastModificationTime();
+            entriesScannedAtMs_ = nowMs;
+            EchoJay_NSLog(("EJScan: cache written, " + juce::String(collected.size())
+                           + " entr(ies), " + juce::String((int) ecFile.getSize())
+                           + "b -> " + ecFile.getFullPathName()).toRawUTF8());
+        }
+        else
+        {
+            // The in-memory list is still fresh (entries_ was replaced
+            // above), so this session works; the OTHER host and the next
+            // session keep reading the old file. Say so, loudly.
+            entriesScannedAtMs_ = nowMs;
+            EchoJay_NSLog(("EJScan: CACHE WRITE FAILED -> " + ecFile.getFullPathName()
+                           + " -- this session's list is fresh but the file "
+                             "still holds the OLD scan; the Link host and the "
+                             "next session will read stale entries.").toRawUTF8());
+        }
     }
+    EchoJay_NSLog(("EJScan: scan complete, " + juce::String(collected.size())
+                   + " entr(ies) in " + juce::String((juce::Time::currentTimeMillis()
+                                                      - scanStartedAtMs_) / 1000) + "s").toRawUTF8());
 
     scanProgress_.store(1.0f);
     setScanStatus({});
@@ -3041,6 +3108,12 @@ void ChainHost::maybeReloadEntriesCache()
             std::lock_guard<std::mutex> lock(pluginsMutex_);
             entries_ = loaded;
         }
+        entriesScannedAtMs_ = doc->getStringAttribute("scannedAt").getLargeIntValue();
+        EchoJay_NSLog(("EJScan: cache reloaded, " + juce::String(loaded.size())
+                       + " entr(ies), scanned "
+                       + (entriesScannedAtMs_ > 0
+                              ? juce::Time(entriesScannedAtMs_).toString(true, true)
+                              : juce::String("UNKNOWN (unstamped cache)"))).toRawUTF8());
     }
     entriesCacheTime_ = mtime;
 }
@@ -3586,6 +3659,12 @@ void ChainHost::loadFromDisk()
                     std::lock_guard<std::mutex> lock(pluginsMutex_);
                     entries_ = loaded;
                 }
+                entriesScannedAtMs_ = doc->getStringAttribute("scannedAt").getLargeIntValue();
+                EchoJay_NSLog(("EJScan: cache loaded, " + juce::String(loaded.size())
+                               + " entr(ies), scanned "
+                               + (entriesScannedAtMs_ > 0
+                                      ? juce::Time(entriesScannedAtMs_).toString(true, true)
+                                      : juce::String("UNKNOWN (unstamped cache)"))).toRawUTF8());
             }
             entriesCacheTime_ = ecFile.getLastModificationTime();
         }
