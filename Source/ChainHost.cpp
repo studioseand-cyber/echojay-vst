@@ -3472,11 +3472,18 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
             resolved.push_back({ sp.name, it->second });
     }
 
-    // Log unmatched count to stderr so it's visible in DAW console
-    int unmatched = enabledCount - (int)resolved.size();
-    if (unmatched > 0)
-        DBG("ChainHost resolver: " + juce::String(resolved.size()) + "/" + juce::String(enabledCount)
-            + " enabled plugins resolved (" + juce::String(unmatched) + " unmatched)");
+    // The resolver coverage triple, relocated from a never-rendered label
+    // (13 Aug 2026, the dead-layer sweep) and promoted from DBG to a
+    // release-build line: unmatched is the number that would have flagged a
+    // starving resolver, and it existed nowhere a release build could see.
+    // N resolved here MUST equal feed= on the EJMapFps line - both count
+    // recommendable_. A divergence between those two lines is a FINDING
+    // (two counts of one population disagreeing), not a rounding
+    // difference.
+    EchoJay_NSLog(("EJScan: resolver rebuilt, " + juce::String((int) resolved.size())
+                   + " resolved (" + juce::String(enabledCount) + " enabled, "
+                   + juce::String(enabledCount - (int) resolved.size())
+                   + " unmatched)").toRawUTF8());
 
     // Cache result (message thread only — no mutex)
     recommendable_          = std::move(resolved);

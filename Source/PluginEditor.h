@@ -1390,8 +1390,9 @@ private:
         { if (onRowDoubleClicked) onRowDoubleClicked(r); }
     };
     std::unique_ptr<ChainPluginListModel> chainListModel;
-    juce::ListBox    chainPluginList;
-    juce::TextEditor chainSearchBox;
+    // chainPluginList and chainSearchBox DELETED (13 Aug 2026, dead-layer
+    // sweep): the never-shown inline picker. chainListModel survives - the
+    // picker POPUP consumes it.
     // chainScanBtn DELETED (13 Aug 2026): addChildComponent'd, never made
     // visible, and its five weeks of invisibility hid the chain-scan
     // trigger gap. Scan Now (showScanMenu) now runs both scans.
@@ -1521,9 +1522,10 @@ private:
     // actually misled for five weeks, visible on every tab and every rack
     // state (the old site was also preempted whenever slots > 0).
     juce::Label      chainListInfoLabel;
-    juce::TextButton chainLoadBtn  { "Add to Chain" };
-    juce::Label      chainRecommendLabel;  // "recommendable: N resolved (M enabled, K unmatched)"
-    juce::TextEditor chainDebugJsonBox;    // shows raw chain JSON after each build (temporary debug)
+    // chainLoadBtn, chainRecommendLabel and chainDebugJsonBox DELETED
+    // (13 Aug 2026, dead-layer sweep). The resolver coverage triple the
+    // label carried now logs from buildRecommendable itself (EJScan:
+    // resolver rebuilt), where a release build can see it.
     // Restricts the list to plugins loadable in this wrapper format.
     juce::String chainFormatFilter_;
     // Scan sequencing (13 Aug 2026): the header's Scan Now runs the
@@ -2578,7 +2580,7 @@ private:
     juce::TextButton chatCollapseBtn { "Hide AI" };
     // "n/15" slots-used counter — sits left of the Aa button in the AI
     // ASSISTANT header (replaces the usage counter on this tab).
-    juce::Label chainSlotCountLabel;
+    // chainSlotCountLabel DELETED (13 Aug 2026, dead-layer sweep).
 
     // Warning overlay (shown once when CHAIN tab first opened)
     juce::Component  chainWarnOverlay;
@@ -3902,9 +3904,10 @@ private:
     // Settings PLUGINS row: a scan button (identical to the header one — shows
     // the count, opens the scan menu) with "View all" right beside it, and a
     // Help & Support button filling the other half (opens the website).
-    juce::Viewport settingsPluginViewport;
+    // settingsPluginViewport DELETED (13 Aug 2026, dead-layer sweep);
+    // settingsChecklist is parentless until something readopts it.
     std::unique_ptr<PluginChecklistComponent> settingsChecklist;
-    juce::TextEditor settingsPluginSearchBox;
+    // settingsPluginSearchBox DELETED (13 Aug 2026, dead-layer sweep).
     juce::TextButton viewAllPluginsBtn { "View all" };
     juce::TextButton settingsScanBtn { "Scan Plugins" };
     juce::TextButton settingsHelpBtn { "Help & Support" };

@@ -637,10 +637,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
 
     reviewViewport.setViewedComponent(reviewChecklist.get(), false);
     reviewViewport.setScrollBarsShown(true, false);
-    settingsPluginViewport.setViewedComponent(settingsChecklist.get(), false);
-    settingsPluginViewport.setScrollBarsShown(true, false);
-
-    addChildComponent(settingsPluginViewport);
+    // settingsPluginViewport and settingsPluginSearchBox DELETED (13 Aug
+    // 2026, dead-layer sweep): never made visible. NOTE: settingsChecklist
+    // is now parentless - it stays constructed and refreshed, and is a
+    // candidate for the next sweep if nothing readopts it.
 
     // Review overlay button wiring. Done COMMITS the local selection, then
     // closes — this is the single point where ticks are saved.
@@ -709,8 +709,6 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // scan button (same behaviour as the header one), a View all button, and a
     // Help & Support button. The search box member is kept (unused inline) only
     // so existing references compile; search now lives inside the popup.
-    styleSearch(settingsPluginSearchBox, "Search your plugins...");
-    addChildComponent(settingsPluginSearchBox); // not shown inline anymore
 
     // Settings scan button — identical menu/behaviour to the header scan
     // button. Its label tracks the plugin count (kept in sync in timerCallback
@@ -1796,23 +1794,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     }
     chainListModel = std::make_unique<ChainPluginListModel>();
     chainListModel->onRowSelected = [this](int) { /* selection handled at load time */ };
-    chainListModel->onRowDoubleClicked = [this](int) { chainLoadBtn.triggerClick(); };
-    chainPluginList.setModel(chainListModel.get());
-    chainPluginList.setColour(juce::ListBox::backgroundColourId, juce::Colour(0xff1a1a1a));
-    chainPluginList.setColour(juce::ListBox::outlineColourId, juce::Colour(0xff333333));
-    chainPluginList.setRowHeight(22);
-    addChildComponent(chainPluginList);
-
-    chainSearchBox.setTextToShowWhenEmpty("Search plugins...", juce::Colour(0xff555555));
-    chainSearchBox.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff1e1e1e));
-    chainSearchBox.setColour(juce::TextEditor::textColourId, juce::Colour(0xffcccccc));
-    chainSearchBox.setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff333333));
-    chainSearchBox.onTextChange = [this] {
-        auto& ch = processorRef.getChainHost();
-        chainListModel->items = ch.getFilteredPlugins(chainSearchBox.getText(), chainFormatFilter_);
-        chainPluginList.updateContent();
-    };
-    addChildComponent(chainSearchBox);
+    // The inline chain-picker layer (ListBox, search box, load button,
+    // recommend label, debug box) was DELETED 13 Aug 2026: superseded by
+    // the picker popup and never made visible, while the timer kept feeding
+    // it. chainListModel SURVIVES - the popup consumes it.
 
     // Chain-list staleness, in the header beside the plugin count
     // (addAndMakeVisible, deliberately: two addChildComponent widgets in a
@@ -1855,49 +1840,8 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     };
 
     // Debug: raw chain JSON viewer — shown after each build, temporary
-    chainDebugJsonBox.setMultiLine(true, true);
-    chainDebugJsonBox.setReadOnly(true);
-    chainDebugJsonBox.setScrollbarsShown(true);
-    chainDebugJsonBox.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff101810));
-    chainDebugJsonBox.setColour(juce::TextEditor::textColourId, juce::Colour(0xff88cc88));
-    chainDebugJsonBox.setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff2a4a2a));
-    chainDebugJsonBox.setFont(juce::Font(juce::FontOptions(9.5f)));
-    chainDebugJsonBox.setText("(chain JSON will appear here after Build)", false);
-    addChildComponent(chainDebugJsonBox);
 
     // "Add to Chain" — appends the selected list entry as a new slot
-    chainLoadBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2a6b2a));
-    chainLoadBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-    chainLoadBtn.onClick = [this] {
-        int row = chainPluginList.getSelectedRow();
-        if (row < 0 || row >= chainListModel->items.size()) return;
-        auto desc = chainListModel->items[row];
-        auto& ch = processorRef.getChainHost();
-        chainLoadBtn.setEnabled(false);
-        chainListPanel.statusText = "Loading " + desc.name + "...";
-        chainListPanel.repaint();
-        ch.loadPluginAsync(desc, [this, desc](const juce::String& err)
-        {
-            chainLoadBtn.setEnabled(true);
-            if (err.isNotEmpty())
-            {
-                chainListPanel.statusText = "Failed: " + err;
-                chainListPanel.repaint();
-                return;
-            }
-            auto& ch2 = processorRef.getChainHost();
-            chainSelectedSlot_ = ch2.getNumSlots() - 1;
-            chainListPanel.statusText = {};
-            chainListPanel.rebuild(ch2.getAllSlotInfos(), chainSelectedSlot_);
-            resized();
-            repaint();
-        });
-    };
-    addChildComponent(chainLoadBtn);
-
-    chainRecommendLabel.setColour(juce::Label::textColourId, juce::Colour(0xff557755));
-    chainRecommendLabel.setFont(juce::Font(juce::FontOptions(10.0f)));
-    addChildComponent(chainRecommendLabel);
 
     chainListPanel.onCreateEditor = [this](int i) -> juce::AudioProcessorEditor* {
         // A remote rack cannot render the LINK'S instance here (it lives in
@@ -2047,15 +1991,9 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     };
     addChildComponent(chatCollapseBtn);
 
-    // Slot counter lives INSIDE the chain area (header strip above the
-    // rack), tiny dim caps with a unit — never the sidebar header spot,
-    // and never a bare "n/15" that could read as the credits counter.
-    chainSlotCountLabel.setColour(juce::Label::textColourId, C::text3);
-    chainSlotCountLabel.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
-    chainSlotCountLabel.setJustificationType(juce::Justification::centredRight);
-    chainSlotCountLabel.setText("0/" + juce::String(ChainListPanel::kMaxSlots) + " PLUGINS",
-                                juce::dontSendNotification);
-    addChildComponent(chainSlotCountLabel);
+    // chainSlotCountLabel DELETED (13 Aug 2026, dead-layer sweep): part of
+    // the never-shown inline chain picker; the visible slot count lives in
+    // the ChainListPanel itself.
 
     // LINK MIXER: horizontal strips. Scrolls left/right ONLY: a strip is
     // exactly as tall as the band, so a vertical scrollbar could only ever
@@ -2673,8 +2611,6 @@ void EchoJayEditor::showLoginScreen()
     settingsLanguage.setVisible(false);
     saveSettingsBtn.setVisible(false); settingsSavedLabel.setVisible(false);
     for (auto& b : dawButtons) b.setVisible(false);
-    settingsPluginViewport.setVisible(false);
-    settingsPluginSearchBox.setVisible(false);
     viewAllPluginsBtn.setVisible(false);
     settingsScanBtn.setVisible(false);
     settingsHelpBtn.setVisible(false);
@@ -4167,7 +4103,6 @@ void EchoJayEditor::applyReviewModalState()
     // Setting it here as well would be a second authority for one control,
     // and this method is the documented SECOND authority that has caught the
     // chain chrome out before.
-    chainSlotCountLabel.setVisible(false);   // removed from the header, see resized()
     // Save / Save As / Open ride the same chrome flag, but their bounds also
     // depend on window width, so this CONSUMES the rect resized() stored
     // rather than re-deriving one. chainSaveBtnRight_ == 0 means resized()
@@ -9768,8 +9703,6 @@ void EchoJayEditor::showSettingsView()
     settingsManualBtn.setVisible(true);
     // Dump meters is DEV-ONLY (dev_mode file) — resized() owns its
     // visibility; never force it on here
-    settingsPluginViewport.setVisible(false);
-    settingsPluginSearchBox.setVisible(false);
 
     // Monthly stats keep counting (cheap; Trends may want them) even though
     // nothing on Settings renders them since the slim card was removed.
@@ -9863,8 +9796,6 @@ void EchoJayEditor::hideSettingsView()
     uiScaleCombo.setVisible(false);
     autoDialToggle.setVisible(false);
     for (auto& b : dawButtons) b.setVisible(false);
-    settingsPluginViewport.setVisible(false);
-    settingsPluginSearchBox.setVisible(false);
     viewAllPluginsBtn.setVisible(false);
     settingsScanBtn.setVisible(false);
     settingsHelpBtn.setVisible(false);
@@ -9933,11 +9864,6 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
             // `for (auto* b : {...}) b->setVisible(x)` loop is invisible to a
             // grep for "<name>.setVisible", which is how the Chain-over-Compare
             // bug survived its own author's audit.
-            chainDebugJsonBox.setVisible(false);
-            chainRecommendLabel.setVisible(false);
-            chainSearchBox.setVisible(false);
-            chainPluginList.setVisible(false);
-            chainLoadBtn.setVisible(false);
             chainListPanel.setVisible(false);
             chatSidebar.setVisible(false);
             chatScroll.setVisible(false);
@@ -9949,11 +9875,6 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
             break;
 
         case Tab::Visualisation:
-            chainDebugJsonBox.setVisible(false);
-            chainRecommendLabel.setVisible(false);
-            chainSearchBox.setVisible(false);
-            chainPluginList.setVisible(false);
-            chainLoadBtn.setVisible(false);
             chainListPanel.setVisible(false);
             visualMode = true; // Visualisation tab always shows the particle visual
             chatSidebar.setVisible(false);
@@ -9965,11 +9886,6 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
             }
             break;
         case Tab::Chat:
-            chainDebugJsonBox.setVisible(false);
-            chainRecommendLabel.setVisible(false);
-            chainSearchBox.setVisible(false);
-            chainPluginList.setVisible(false);
-            chainLoadBtn.setVisible(false);
             chainListPanel.setVisible(false);
             if (!compactMode)
             {
@@ -9986,11 +9902,6 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
             break;
 
         case Tab::Meters:
-            chainDebugJsonBox.setVisible(false);
-            chainRecommendLabel.setVisible(false);
-            chainSearchBox.setVisible(false);
-            chainPluginList.setVisible(false);
-            chainLoadBtn.setVisible(false);
             chainListPanel.setVisible(false);
             // Split layout (meters left, chat right) — same as Visualisation.
             // Tear down settings/compare so their content can't bleed in.
@@ -10008,11 +9919,6 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
             break;
 
         case Tab::Compare:
-            chainDebugJsonBox.setVisible(false);
-            chainRecommendLabel.setVisible(false);
-            chainSearchBox.setVisible(false);
-            chainPluginList.setVisible(false);
-            chainLoadBtn.setVisible(false);
             chainListPanel.setVisible(false);
             // Stop chat AB playback — Compare has its own cmpStream player
             if (processorRef.abActive.load())
@@ -10030,11 +9936,6 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
             return; // showCompareView already called resized/repaint
 
         case Tab::Settings:
-            chainDebugJsonBox.setVisible(false);
-            chainRecommendLabel.setVisible(false);
-            chainSearchBox.setVisible(false);
-            chainPluginList.setVisible(false);
-            chainLoadBtn.setVisible(false);
             chainListPanel.setVisible(false);
             chatSidebar.setVisible(false);
             showSettingsView(); // sets currentView = Settings, calls resized/repaint
@@ -10066,8 +9967,7 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
                 if (ch.getNumPlugins() == 0 && !ch.isScanning())
                     ch.startScan();
                 // Keep list model populated for the picker popup
-                chainListModel->items = ch.getFilteredPlugins(chainSearchBox.getText(), chainFormatFilter_);
-                chainPluginList.updateContent();
+                chainListModel->items = ch.getFilteredPlugins({}, chainFormatFilter_);
                 // Rebuild rack strip from current chain state
                 chainListPanel.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
                 chainListPanel.masterKnob.setValue(ch.getMasterWet());
@@ -10080,11 +9980,6 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
         }
 
         case Tab::Link:
-            chainDebugJsonBox.setVisible(false);
-            chainRecommendLabel.setVisible(false);
-            chainSearchBox.setVisible(false);
-            chainPluginList.setVisible(false);
-            chainLoadBtn.setVisible(false);
             chainListPanel.setVisible(false);
             chatSidebar.setVisible(false);
             upgradeBtn.setVisible(false);
@@ -16722,15 +16617,9 @@ void EchoJayEditor::resized()
         }
 
         // Left-panel components hidden — picker popup replaces them
-        chainDebugJsonBox.setVisible(false);
-        chainRecommendLabel.setVisible(false);
-        chainSearchBox.setVisible(false);
-        chainPluginList.setVisible(false);
-        chainLoadBtn.setVisible(false);
     }
     else
     {
-        chainSlotCountLabel.setVisible(false);
     }
 
     // ---- Chain header: Save / Save As / Open ------------------------------
@@ -17971,30 +17860,23 @@ void EchoJayEditor::timerCallback()
         // restore completes asynchronously and can finish while the user is
         // on another tab, or before this editor exists at all.
         chainListPanel.setStateNotes(ch.getStateNotes());
-        chainSlotCountLabel.setText(juce::String(ch.getNumSlots()) + "/"
-                                        + juce::String(ChainListPanel::kMaxSlots) + " PLUGINS",
-                                    juce::dontSendNotification);
         bool wasScanning = ch.isScanning();
         if (wasScanning)
         {
-            chainListModel->items = ch.getFilteredPlugins(chainSearchBox.getText(), chainFormatFilter_);
-            chainPluginList.updateContent();
+            // Keep the picker popup's model fresh while a scan streams in.
+            chainListModel->items = ch.getFilteredPlugins({}, chainFormatFilter_);
         }
         else
         {
             // Rebuild resolver once after scan completes (entries_ has stabilised).
             // hasResolvedRecommendable() latches inside buildRecommendable when it
             // ran against real inputs, replacing the old "enabled count still 0"
-            // staleness guess.
+            // staleness guess. The coverage triple this branch used to write
+            // into a never-rendered label now logs from buildRecommendable
+            // itself (EJScan: resolver rebuilt).
             bool entriesReady = ch.getNumPlugins() > 0;
             if (entriesReady && !ch.hasResolvedRecommendable())
                 ch.buildRecommendable(processorRef.getPluginScanner().getPlugins(), chainFormatFilter_);
-            if (entriesReady)
-                chainRecommendLabel.setText(
-                    "recommendable: " + juce::String(ch.getRecommendableCount())
-                    + " resolved (" + juce::String(ch.getEnabledInputCount()) + " enabled, "
-                    + juce::String(ch.getUnmatchedCount()) + " unmatched)",
-                    juce::dontSendNotification);
 
             // The staleness text that briefly lived here (13 Aug, morning)
             // now lives in chainListInfoLabel in the HEADER: this site was
@@ -25316,8 +25198,6 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                 if (!droppedDisabled.isEmpty())
                     status += " (skipped: " + droppedDisabled.joinIntoString(", ")
                             + ", disabled in Settings)";
-                // Debug: show full raw chain JSON so we can verify settings fields
-                safeThis->chainDebugJsonBox.setText(chainJson, false);
                 safeThis->resized();
                 safeThis->repaint();
                 // Show the first loaded plugin so the display area is never
@@ -27085,7 +26965,7 @@ bool EchoJayEditor::keyPressed(const juce::KeyPress& key)
         passwordInput.hasKeyboardFocus(false) || settingsName.hasKeyboardFocus(false) ||
         settingsMonitors.hasKeyboardFocus(false) || settingsHeadphones.hasKeyboardFocus(false) ||
         settingsGenres.hasKeyboardFocus(false) || settingsPlugins.hasKeyboardFocus(false) ||
-        reviewSearchBox.hasKeyboardFocus(false) || settingsPluginSearchBox.hasKeyboardFocus(false))
+        reviewSearchBox.hasKeyboardFocus(false))
         return false;
 
 
