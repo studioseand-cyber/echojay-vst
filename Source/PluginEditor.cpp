@@ -18063,6 +18063,16 @@ void EchoJayEditor::timerCallback()
     passLabel.setText(passes > 0 ? juce::String(passes) + " pass" + (passes > 1 ? "es" : "") : "", juce::dontSendNotification);
 
     auto& sc = processorRef.getPluginScanner();
+    // Tick-state freshness (13 Aug 2026): plugin_disabled.json is the one
+    // authority for exclusions, and other plugin INSTANCES in this process
+    // write it too (the 11:50 untick wrote 483 uids while this instance's
+    // resolver kept reading 418). Reload on mtime change and unlatch the
+    // resolver, so a changed tick reaches the feed within a tick-plus-
+    // debounce rather than at the next restart. The writer instance takes
+    // the same path: its save moves the mtime, which is the single
+    // propagation mechanism for both cases.
+    if (sc.maybeReloadEnabledState())
+        processorRef.getChainHost().invalidateRecommendable();
     // Chain-after-settings sequencing: fire the chain scan on the settings
     // scan's FALLING EDGE, so its VST3 rows read the freshly validated
     // cache rather than the one the settings scan was about to replace.

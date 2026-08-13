@@ -876,7 +876,7 @@ void PluginScanner::addPlugin(const juce::String& nameIn, const juce::String& ma
 
     // Respect a prior unticking: if the user disabled this uid before (and it
     // survived in disabledUids across the rescan), keep it disabled.
-    plugin.enabled = (disabledUids.find(plugin.uid) == disabledUids.end());
+    // enabled is derived at read (stampEnabled); nothing to set here.
 
     const size_t newIdx = plugins.size();
     pluginIndex[key] = newIdx;
@@ -891,7 +891,32 @@ void PluginScanner::addPlugin(const juce::String& nameIn, const juce::String& ma
 std::vector<ScannedPlugin> PluginScanner::getPlugins() const
 {
     std::lock_guard<std::mutex> lock(pluginMutex);
-    return plugins;
+    auto copy = plugins;
+    stampEnabled(copy, disabledUids);
+    return copy;
+}
+
+bool PluginScanner::maybeReloadEnabledState()
+{
+    auto file = getEnabledStateFile();
+    if (! file.existsAsFile()) return false;
+    const auto mtime = file.getLastModificationTime();
+    if (mtime == enabledStateMtime_) return false;
+    enabledStateMtime_ = mtime;
+    auto json = juce::JSON::parse(file.loadFileAsString());
+    if (auto* arr = json.getArray())
+    {
+        std::lock_guard<std::mutex> lock(pluginMutex);
+        std::set<juce::String> fresh;
+        for (auto& item : *arr)
+            fresh.insert(item.toString());
+        if (fresh == disabledUids) return false;   // touched, not changed
+        disabledUids = std::move(fresh);
+        cachedShuffledNames = juce::String();
+        cachedShuffleSize = 0;
+        return true;
+    }
+    return false;
 }
 
 // ============================================================================
@@ -902,16 +927,10 @@ void PluginScanner::setPluginEnabled(const juce::String& uid, bool enabled)
 {
     std::lock_guard<std::mutex> lock(pluginMutex);
 
-    // O(1) lookup via the dedupe index would need a uid->index map; we only
-    // have name|manufacturer keyed. A linear scan of a few thousand entries is
-    // ~microseconds and fine for a click, but we avoid the EXPENSIVE part
-    // (disk write) here — persistence is handled by the debounced commit in
-    // the editor (saveEnabledState), so rapid clicking doesn't write the file
-    // on every toggle. State lives in memory immediately either way.
-    for (auto& p : plugins)
-        if (p.uid == uid)
-            p.enabled = enabled;
-
+    // The set is the ONE store (13 Aug 2026); rows carry no tick state any
+    // more. Persistence stays on the editor's debounced commit
+    // (saveEnabledState), so rapid clicking doesn't write the file per
+    // toggle; the set is fresh in memory immediately either way.
     if (enabled) disabledUids.erase(uid);
     else         disabledUids.insert(uid);
 
@@ -927,17 +946,11 @@ void PluginScanner::setManyEnabled(const juce::StringArray& uids, bool enabled)
         // Build a lookup set of the target uids so the plugin pass is O(n)
         // rather than O(uids x n). "Untick all" on a 2000-plugin install would
         // otherwise be ~4M comparisons.
-        std::set<juce::String> target;
         for (auto& uid : uids)
         {
-            target.insert(uid);
             if (enabled) disabledUids.erase(uid);
             else         disabledUids.insert(uid);
         }
-
-        for (auto& p : plugins)
-            if (target.find(p.uid) != target.end())
-                p.enabled = enabled;
 
         cachedShuffledNames = juce::String();
         cachedShuffleSize = 0;
@@ -948,10 +961,7 @@ void PluginScanner::setManyEnabled(const juce::StringArray& uids, bool enabled)
 bool PluginScanner::isPluginEnabled(const juce::String& uid) const
 {
     std::lock_guard<std::mutex> lock(pluginMutex);
-    for (auto& p : plugins)
-        if (p.uid == uid)
-            return p.enabled;
-    return true; // unknown uid: treat as enabled (the default)
+    return disabledUids.find(uid) == disabledUids.end();
 }
 
 void PluginScanner::addManualPlugin(const juce::String& name)
@@ -1012,6 +1022,7 @@ void PluginScanner::loadEnabledState()
 {
     auto file = getEnabledStateFile();
     if (! file.existsAsFile()) return;
+    enabledStateMtime_ = file.getLastModificationTime();
 
     auto json = juce::JSON::parse(file.loadFileAsString());
     if (auto* arr = json.getArray())
@@ -1020,10 +1031,8 @@ void PluginScanner::loadEnabledState()
         disabledUids.clear();
         for (auto& item : *arr)
             disabledUids.insert(item.toString());
-
-        // Apply to any already-loaded plugins (e.g. loadCache ran first).
-        for (auto& p : plugins)
-            p.enabled = (disabledUids.find(p.uid) == disabledUids.end());
+        // No apply-loop any more: rows carry no tick state, the flag is
+        // stamped from this set at every read (stampEnabled).
     }
 }
 
@@ -1048,7 +1057,11 @@ juce::String PluginScanner::getPluginsJSON() const
         json += "\"format\":\"" + p.format + "\",";
         json += "\"category\":\"" + p.category + "\",";
         json += "\"uid\":\"" + p.uid.replace("\"", "\\\"") + "\",";
-        json += "\"enabled\":" + juce::String(p.enabled ? "true" : "false");
+        // Derived from the authority set at serialization; the WebView
+        // checklist reads it, nothing ever reads it back (loadCache ignores
+        // it since 13 Aug 2026).
+        json += "\"enabled\":" + juce::String(
+            disabledUids.find(p.uid) == disabledUids.end() ? "true" : "false");
         json += "}";
         if (i < plugins.size() - 1) json += ",";
     }
@@ -1094,7 +1107,7 @@ juce::String PluginScanner::getPluginNamesString() const
     std::map<juce::String, std::vector<Cand>> byType;
     for (auto& p : plugins)
     {
-        if (p.category != "Effect" || ! p.enabled) continue;
+        if (p.category != "Effect" || disabledUids.count(p.uid) > 0) continue;
         juce::String type = p.fxType.isNotEmpty() ? p.fxType : juce::String("Other");
         byType[type].push_back({ p.name + " (" + p.manufacturer + ")",
                                  sourcePriority(p.manufacturer),
@@ -1174,7 +1187,7 @@ int PluginScanner::getEnabledEffectCount() const
     std::lock_guard<std::mutex> lock(pluginMutex);
     int n = 0;
     for (auto& p : plugins)
-        if (p.category == "Effect" && p.enabled)
+        if (p.category == "Effect" && disabledUids.count(p.uid) == 0)
             ++n;
     return n;
 }
@@ -1188,7 +1201,7 @@ juce::String PluginScanner::getFullPluginList() const
     std::lock_guard<std::mutex> lock(pluginMutex);
     juce::StringArray arr;
     for (auto& p : plugins)
-        if (p.category == "Effect" && p.enabled)
+        if (p.category == "Effect" && disabledUids.count(p.uid) == 0)
             arr.add(p.name + " (" + p.manufacturer + ")");
     return arr.joinIntoString(", ");
 }
@@ -1206,7 +1219,7 @@ juce::String PluginScanner::getPluginSummary() const
     std::map<juce::String, int> byManu;
     for (auto& p : plugins)
     {
-        if (p.category != "Effect" || ! p.enabled) continue;
+        if (p.category != "Effect" || disabledUids.count(p.uid) > 0) continue;
         ++total;
         // Normalise the stock labels to something human ("Logic Pro Stock" ->
         // "Logic stock") and group all stock under their DAW name as-is.
@@ -1289,11 +1302,11 @@ void PluginScanner::loadCache()
                 p.category = obj->getProperty("category").toString();
                 p.uid = p.name.toLowerCase().replaceCharacter(' ', '_') + "_" +
                          p.manufacturer.toLowerCase().replaceCharacter(' ', '_');
-                // enabled: prefer the cache value if present, but the
-                // disabledUids set (loaded separately) is the authority and is
-                // re-applied in loadEnabledState() regardless.
-                if (obj->hasProperty("enabled"))
-                    p.enabled = (bool) obj->getProperty("enabled");
+                // The cache's "enabled" field is IGNORED on load (13 Aug
+                // 2026): it is a serialization artifact for the WebView, and
+                // reading it back is how the second copy of the tick state
+                // existed. disabledUids is the authority; the flag is
+                // stamped from it at read.
                 // Reclassify effect type on load (cheap, keyword-based) rather
                 // than persisting it — keeps the cache format stable and means
                 // classifier improvements apply to cached entries too.

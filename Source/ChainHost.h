@@ -158,6 +158,11 @@ public:
     // resolved-with-zero-matches) from scanning/unresolved, where the inputs
     // weren't ready yet and callers should keep retrying. Message thread only.
     bool hasResolvedRecommendable() const noexcept { return hasResolved_; }
+    // Tick-state freshness (13 Aug 2026): the editor calls this when the
+    // disabled-uids authority changes (maybeReloadEnabledState), so the
+    // next timer tick rebuilds the feed against fresh ticks instead of
+    // waiting for a restart.
+    void invalidateRecommendable() noexcept { hasResolved_ = false; }
 
     // Async-load the first recommendable entry whose displayName matches `name`
     // (case-insensitive). Callback: empty string on success, error message on fail.

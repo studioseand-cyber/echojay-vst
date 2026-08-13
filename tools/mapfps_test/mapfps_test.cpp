@@ -27,6 +27,7 @@
 #include <JuceHeader.h>
 #include "EchoJayParamMaps.h"
 #include "EchoJayParamApply.h"
+#include "PluginScanner.h"
 #include <fstream>
 #include <sstream>
 
@@ -229,6 +230,33 @@ int main()
                "negative-range in-range value passes (threshold-style table)");
     }
 
+    // ---- Tick-state single store (13 Aug 2026) ----
+    // The enabled flag is DERIVED from disabledUids at read (stampEnabled),
+    // never stored: two copies of the tick state disagreed live (483 uids
+    // on disk against 418 mirrored flags, the resolver reading the stale
+    // side while the user's unticks went nowhere). The pin the incident
+    // demands: change the disabled set, restamp, enabled MOVES.
+    {
+        std::vector<ScannedPlugin> list(2);
+        list[0].uid = "waves_thing_waves";
+        list[1].uid = "fabfilter_thing_fabfilter";
+        std::set<juce::String> disabled;
+
+        PluginScanner::stampEnabled (list, disabled);
+        check (list[0].enabled && list[1].enabled,
+               "empty disabled set stamps everything enabled");
+
+        disabled.insert ("waves_thing_waves");
+        PluginScanner::stampEnabled (list, disabled);
+        check (! list[0].enabled && list[1].enabled,
+               "adding a uid to the set and restamping moves enabled");
+
+        disabled.erase ("waves_thing_waves");
+        PluginScanner::stampEnabled (list, disabled);
+        check (list[0].enabled,
+               "removing it and restamping moves it back");
+    }
+
     // ---- 2. Structural: both call sites go through the helper ----
     {
         // build_and_run.sh runs from the repo root; read the shipped source.
@@ -263,6 +291,38 @@ int main()
                "completeLoad decides the load rung through staleLadderAtLoad");
         check (settle.contains ("staleLadderAtResolution"),
                "settleStaleRung decides the outcome through staleLadderAtResolution");
+
+        // Tick-state wiring: ScannedPlugin::enabled may be ASSIGNED only
+        // inside stampEnabled (header-inline) - any second assignment site
+        // is the mirror growing back, the fourth two-stores-disagreeing
+        // defect in a week.
+        {
+            auto slurp = [] (const char* path)
+            {
+                std::ifstream fs (path);
+                std::stringstream sst;
+                sst << fs.rdbuf();
+                return juce::String (sst.str());
+            };
+            auto countAssigns = [] (const juce::String& s)
+            {
+                int n = 0;
+                for (int pos = s.indexOf ("p.enabled ="); pos >= 0;
+                     pos = s.indexOf (pos + 1, "p.enabled ="))
+                    ++n;
+                return n;
+            };
+            const auto scannerCpp = slurp ("Source/PluginScanner.cpp");
+            const auto scannerHdr = slurp ("Source/PluginScanner.h");
+            check (countAssigns (scannerCpp) == 0,
+                   "no p.enabled assignment anywhere in PluginScanner.cpp");
+            check (countAssigns (scannerHdr) == 1
+                   && scannerHdr.contains ("stampEnabled"),
+                   "exactly one p.enabled assignment in the header (inside stampEnabled)");
+            const auto getBody = functionBody (scannerCpp, "std::vector<ScannedPlugin> PluginScanner::getPlugins");
+            check (getBody.contains ("stampEnabled"),
+                   "getPlugins stamps from the authority set");
+        }
 
         // Range-check wiring: applyOne must refuse through the pinned
         // helper, not re-derive a clamp - clamp-to-rail-and-report-applied
