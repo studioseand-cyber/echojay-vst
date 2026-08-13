@@ -41,6 +41,53 @@ anchors drift on a version-only change with an unchanged surface, stop and bring
 that case here; the range/unit gate below won't catch a silent behavioural shift.
 This is data already on disk, no model spend.
 
+## §0 RESULT — FAILED as specced; design revised (13 Aug 2026)
+
+Measured against the datastore (local had one version per product; the datastore
+had 539 products mapped at two versions). **The surface is stable — indexes never
+moved — but anchors drift about one time in five.**
+
+- Surface: 163 identical, 221 pure superset (appended controls), 155 changed
+  range/unit.
+- Anchors on surface-unchanged shared controls: 335 identical, 204 differ. Of the
+  204, 99 are grid-only (sampling density; values agree where grids overlap —
+  harmless) and **105 pairs / 188 controls (~19% of comparable) show real value
+  drift**: same name/index/kind/range/unit, different display value at the same
+  normalized position — e.g. Waves LinEQ Band3 Frq 151 Hz vs 215 Hz at 0.40;
+  TrueVerb Reverb Mix −7.2 vs −6 dB at 0.75. Waves reshaped parameter *curves*
+  between v12 and v15 without touching declared ranges; Melda did the same 14→17.
+  Cross-vendor, not float noise.
+
+**Consequence: never copy anchors blind.** A carried or fallback-served anchor
+would dial the right control to the wrong value, silently — the exact failure the
+honesty floor exists to prevent. The anchor-copy in the rule below is dead. What
+survives, and replaces it:
+
+1. **Read-path fallback → surface only, anchors marked unverified.** Serve the
+   prior version's control *list* (names/indices) so an updated plugin stays
+   dialable by name, tagged `served_from` + `anchors_unverified`; the plugin must
+   not present carried anchor values as exact (see Plugin robustness). Dialable
+   by name with approximate values beats both "undialable" and "silently wrong."
+2. **Sweep carry → sample-verify, not blind copy.** Carry prior anchors
+   provisionally, then set-then-read a small sample of controls; match within
+   tolerance → accept the carry; any drift → full sweep. Saves time on the stable
+   ~62% while catching the ~19%.
+3. **Proposal carry → keep; it's surface-driven.** Semantics key off
+   name/index/kind/range (stable), so proposals carry safely for identical /
+   superset surfaces (skip the 155 range/unit-changed). This is the API-cost
+   saving and it survives §0. Caveat: propose takes an *anchor summary* as input,
+   so a re-propose could differ at the margin — but the semantic label rarely
+   turns on curve shape.
+
+**One confirmation still worth doing:** the pairs came from different
+machines/runs, so some drift could be measurement-side. Re-map one proven-drifted
+plugin (e.g. Waves LinEQ) at both versions on the *same* machine and diff — if it
+still drifts, it's real curve reshaping and this pivot stands.
+
+The three points above supersede the anchor-copy in the original design below.
+
+---
+
 ## The rule
 
 A map is a control **surface** (name, index, kind, range, unit per control) plus
