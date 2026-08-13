@@ -79,10 +79,25 @@ survives, and replaces it:
    so a re-propose could differ at the margin — but the semantic label rarely
    turns on curve shape.
 
-**One confirmation still worth doing:** the pairs came from different
-machines/runs, so some drift could be measurement-side. Re-map one proven-drifted
-plugin (e.g. Waves LinEQ) at both versions on the *same* machine and diff — if it
-still drifts, it's real curve reshaping and this pivot stands.
+**Measurement-noise ruled out (13 Aug 2026).** A same-machine control is
+impossible on this corpus — machine and version are perfectly correlated (Mac 1
+swept the old versions, Mac 2 the new), so all 539 pairs are cross-machine and the
+same-machine filter is empty. But the corpus carries a stronger internal control:
+**335 of the 539 pairs are byte-identical on anchors across different machines and
+OSes.** Read noise would smear every pair; instead the pipeline reproduces exactly
+335 times, while the 105 drifted pairs cluster in specific vendors/controls with
+physically meaningful jumps. The drift is real plugin behaviour, not measurement
+error — the noise hypothesis has no data behind it. A same-machine re-sweep of one
+drifted plugin stays as optional belt-and-braces during the sweep-carry build, not
+a gate.
+
+**Server pieces preview-verified (13 Aug 2026).** `feat/carry-forward` (cf84ff2):
+read-path fallback and proposal carry both confirmed on a preview deploy — the
+fallback serves the newest same-product version tagged `anchors_unverified` while
+`lean=1` still reports unmapped, and proposal carry stamps `carried_forward` with
+no model call and refuses on any surface change. Both behind flags, off in
+production. `PARAMS_PROPOSAL_CARRY` is safe to enable in prod now;
+`PARAMS_PRODUCT_FALLBACK` waits on the plugin honouring the tag.
 
 The three points above supersede the anchor-copy in the original design below.
 
