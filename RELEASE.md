@@ -160,14 +160,35 @@ which is an argument for shipping both halves of Session B together.
 
 ## Release gate: the dev transport must not be in the artefact
 
-The Session B development transport (preview base URL + the Vercel
-protection-bypass secret) is compiled out unless `ECHOJAY_DEV_TRANSPORT` is
-defined, which happens automatically in Debug and otherwise only when someone
-passes `-DECHOJAY_DEV_TRANSPORT=ON`. `build-installer.sh` never does.
+`ECHOJAY_DEV_TRANSPORT` must be OFF for any release artefact. The Session B
+development transport (preview base URL + the Vercel protection-bypass
+secret) is compiled out unless `ECHOJAY_DEV_TRANSPORT` is defined, which
+happens automatically in Debug and otherwise only when someone passes
+`-DECHOJAY_DEV_TRANSPORT=ON`. `build-installer.sh` never does.
 
-That secret grants access to every protected deployment on the project, so
-verify the ARTEFACT rather than trusting the source. This checks what actually
-shipped, which is the only check that answers the question:
+THE CACHE TRAP: that option is a CMake cache variable, so once any configure
+run sets it ON it stays ON in that build directory for every later build,
+including Release builds, until someone flips it back. A 2.26.02 pkg shipped
+with the transport compiled in for exactly this reason: the cache had been ON
+for days and nothing re-asserted it. Check the cache directly:
+
+```sh
+grep ECHOJAY_DEV_TRANSPORT build/CMakeCache.txt   # must say OFF for a release
+```
+
+and flip it off without a full reconfigure via
+`cmake -DECHOJAY_DEV_TRANSPORT=OFF build` (then rebuild).
+
+The secret grants access to every protected deployment on the project, so
+also verify the ARTEFACT rather than trusting the source or the cache. The
+one-number form of the check is:
+
+```sh
+strings "<component>/Contents/MacOS/EchoJay V2" | grep -c "x-vercel-protection-bypass"
+```
+
+which must print `0` for a release build. The fuller sweep checks what
+actually shipped, which is the only check that answers the question:
 
 ```sh
 BIN="build/EchoJay_artefacts/Release/AU/EchoJay V2.component/Contents/MacOS/EchoJay V2"

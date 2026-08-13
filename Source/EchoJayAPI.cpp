@@ -2070,14 +2070,24 @@ void EchoJayAPI::fetchRemoteConfig()
                            .withStatusCode(&statusCode);
         
         auto stream = url.createInputStream(options);
-        
-        if (stream != nullptr && statusCode == 200)
+
+        // The one request site the non-2xx sweep missed: config fetch
+        // failures were fully silent (the 200 branch just never ran).
+        // Same one-line observable as every other endpoint.
+        if (stream != nullptr && (statusCode < 200 || statusCode >= 300))
+        {
+            juce::MemoryBlock mb;
+            stream->readIntoMemoryBlock(mb);
+            logNon2xx("/api/vst-config", statusCode,
+                      juce::String::fromUTF8((const char*)mb.getData(), (int)mb.getSize()));
+        }
+        else if (stream != nullptr && statusCode == 200)
         {
             juce::MemoryBlock mb;
             stream->readIntoMemoryBlock(mb);
             auto responseText = juce::String::fromUTF8((const char*)mb.getData(), (int)mb.getSize());
             auto json = juce::JSON::parse(responseText);
-            
+
             if (auto* obj = json.getDynamicObject())
             {
                 int version = (int)obj->getProperty("systemPromptVersion");
