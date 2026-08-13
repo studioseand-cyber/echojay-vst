@@ -831,8 +831,7 @@ void PluginScanner::addPlugin(const juce::String& nameIn, const juce::String& ma
             // just learned, re-keying the exact index to match.
             pluginIndex.erase(makeKey(existing.name, existing.manufacturer));
             existing.manufacturer = manufacturer;
-            existing.uid = existing.name.toLowerCase().replaceCharacter(' ', '_')
-                           + "_" + manufacturer.toLowerCase().replaceCharacter(' ', '_');
+            existing.uid = echojay::makeUid(existing.name, manufacturer);
             if (! existing.format.contains(format))
                 existing.format += "/" + format;
             pluginIndex[makeKey(existing.name, existing.manufacturer)] = nIt->second;
@@ -848,7 +847,7 @@ void PluginScanner::addPlugin(const juce::String& nameIn, const juce::String& ma
     plugin.format = format;
     plugin.category = category;
     plugin.path = path;
-    plugin.uid = name.toLowerCase().replaceCharacter(' ', '_') + "_" + manufacturer.toLowerCase().replaceCharacter(' ', '_');
+    plugin.uid = echojay::makeUid(name, manufacturer);
 
     // Classify effect type for per-type capping of the AI feed. Instruments
     // don't go in the feed, so leave their fxType empty.
@@ -1011,6 +1010,7 @@ void PluginScanner::loadEnabledState()
     enabledStateMtime_ = file.getLastModificationTime();
 
     auto json = juce::JSON::parse(file.loadFileAsString());
+    MigrationCounts mig;
     if (auto* arr = json.getArray())
     {
         std::lock_guard<std::mutex> lock(pluginMutex);
@@ -1019,6 +1019,20 @@ void PluginScanner::loadEnabledState()
             disabledUids.insert(item.toString());
         // No apply-loop any more: rows carry no tick state, the flag is
         // stamped from this set at every read (stampEnabled).
+        // Vocabulary migration: runs after loadCache (the loadThread's
+        // ordering) so legacyUidMap_ is populated. See migrateDisabledSet
+        // for the chosen error direction.
+        mig = migrateDisabledSet(disabledUids, legacyUidMap_);
+    }
+    if (mig.rewritten > 0 || mig.collapsed > 0)
+    {
+        saveEnabledState();
+        // The first user whose exclusions shift after an update gets an
+        // explanation in the log rather than a mystery.
+        EchoJay_NSLog(("EJScan: disabled set migrated, "
+                       + juce::String(mig.rewritten) + " entr(ies) rewritten, "
+                       + juce::String(mig.collapsed) + " collapsed"
+                       + " (uid vocabulary unification)").toRawUTF8());
     }
 }
 
@@ -1286,8 +1300,25 @@ void PluginScanner::loadCache()
                 }
                 p.format = obj->getProperty("format").toString();
                 p.category = obj->getProperty("category").toString();
-                p.uid = p.name.toLowerCase().replaceCharacter(' ', '_') + "_" +
-                         p.manufacturer.toLowerCase().replaceCharacter(' ', '_');
+                p.uid = echojay::makeUid(p.name, p.manufacturer);
+                // Legacy spellings, derived from the DATA rather than the
+                // rule tables: any uid this row would have carried under
+                // less normalization (raw fields, or the cache's stored
+                // uid) maps to the canonical one, and the migration in
+                // loadEnabledState rewrites set entries through this map.
+                // Rule enumeration is not needed and cannot rot: whatever
+                // rewrote this row's identity is captured by comparing what
+                // the row WAS called with what it IS called.
+                {
+                    const auto rawName = obj->getProperty("name").toString();
+                    const auto rawManu = obj->getProperty("manufacturer").toString();
+                    const auto storedUid = obj->getProperty("uid").toString();
+                    const auto rawUid = rawName.toLowerCase().replaceCharacter(' ', '_')
+                                      + "_" + rawManu.toLowerCase().replaceCharacter(' ', '_');
+                    if (rawUid != p.uid)    legacyUidMap_[rawUid]    = p.uid;
+                    if (storedUid.isNotEmpty() && storedUid != p.uid)
+                                            legacyUidMap_[storedUid] = p.uid;
+                }
                 // The cache's "enabled" field is IGNORED on load (13 Aug
                 // 2026): it is a serialization artifact for the WebView, and
                 // reading it back is how the second copy of the tick state

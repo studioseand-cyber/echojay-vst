@@ -28,6 +28,7 @@
 #include "EchoJayParamMaps.h"
 #include "EchoJayParamApply.h"
 #include "PluginScanner.h"
+#include "PluginCatalog.h"
 #include <fstream>
 #include <sstream>
 
@@ -277,6 +278,48 @@ int main()
                "enabled equals rows minus disabled-matching rows, duplicates counted per row");
     }
 
+    // ---- makeUid: one identity per plugin, whatever path built it ----
+    // The Brainworx 56: three inline uid constructions with different
+    // normalization depths minted two identities for one plugin (scan-era
+    // plugin_alliance, load-era brainworx), and the disabled set held both.
+    // makeUid applies the full pipeline and is idempotent, so raw and
+    // already-normalized inputs agree.
+    {
+        check (echojay::makeUid ("bx_boom", "Plugin Alliance")
+                   == echojay::makeUid ("bx_boom", "Brainworx"),
+               "the seam that shipped: Plugin Alliance and Brainworx inputs make one uid");
+        check (echojay::makeUid ("bx_boom", "Plugin Alliance") == "bx_boom_brainworx",
+               "and it is the canonical (load-era) spelling");
+        check (echojay::makeUid ("Abbey Road Plates (s)", "Waves")
+                   == echojay::makeUid ("Abbey Road Plates", "Waves"),
+               "channel-variant names collapse to one uid");
+    }
+
+    // ---- Disabled-set migration: adds and canonicalises, never removes ----
+    {
+        using MC = PluginScanner::MigrationCounts;
+        std::map<juce::String, juce::String> legacy {
+            { "bx_boom_plugin_alliance", "bx_boom_brainworx" } };
+
+        std::set<juce::String> s1 { "bx_boom_plugin_alliance" };
+        MC c1 = PluginScanner::migrateDisabledSet (s1, legacy);
+        check (c1.rewritten == 1 && c1.collapsed == 0
+               && s1.count ("bx_boom_brainworx") == 1
+               && s1.count ("bx_boom_plugin_alliance") == 0,
+               "legacy-only entry is rewritten; the exclusion survives under canonical");
+
+        std::set<juce::String> s2 { "bx_boom_plugin_alliance", "bx_boom_brainworx" };
+        MC c2 = PluginScanner::migrateDisabledSet (s2, legacy);
+        check (c2.collapsed == 1 && c2.rewritten == 0
+               && s2.size() == 1 && s2.count ("bx_boom_brainworx") == 1,
+               "both spellings collapse to canonical, dropping neither exclusion");
+
+        std::set<juce::String> s3 { "mystery_uid_unknown_vendor" };
+        MC c3 = PluginScanner::migrateDisabledSet (s3, legacy);
+        check (c3.rewritten == 0 && c3.collapsed == 0 && s3.size() == 1,
+               "an entry matching no known legacy spelling is left untouched");
+    }
+
     // ---- Tick-change propagation: one action, two triggers (13 Aug) ----
     // The gap that shipped the dead half: the gate pinned stampEnabled (the
     // derivation) and covered NEITHER trigger, so a propagation path with
@@ -381,6 +424,23 @@ int main()
             check (procSrc.contains ("onDisabledSetChanged")
                    && procSrc.contains ("invalidateRecommendable"),
                    "the processor wires the notify to the resolver unlatch");
+
+            // makeUid wiring: every assignment to a uid FIELD must go
+            // through makeUid. Any inline concatenation is a second uid
+            // vocabulary waiting for its own Brainworx 56.
+            {
+                int uidAssigns = 0, viaMakeUid = 0;
+                for (int pos = scannerCpp.indexOf (".uid = "); pos >= 0;
+                     pos = scannerCpp.indexOf (pos + 1, ".uid = "))
+                {
+                    ++uidAssigns;
+                    const auto lineEnd = scannerCpp.indexOf (pos, "\n");
+                    if (scannerCpp.substring (pos, lineEnd).contains ("makeUid"))
+                        ++viaMakeUid;
+                }
+                check (uidAssigns > 0 && uidAssigns == viaMakeUid,
+                       "every uid field assignment in PluginScanner.cpp goes through makeUid");
+            }
         }
 
         // Range-check wiring: applyOne must refuse through the pinned

@@ -9,6 +9,7 @@
 #include <memory>
 #include <thread>
 #include <chrono>
+#include <map>
 
 // Unified-log line (implemented in the ObjC side; see NativeClip.h).
 extern "C" void EchoJay_NSLog(const char* msg);
@@ -225,6 +226,38 @@ public:
         for (auto& p : list)
             p.enabled = (disabled.find(p.uid) == disabled.end());
     }
+
+    // Disabled-set migration for the uid vocabulary unification (13 Aug
+    // 2026, the Brainworx 56). DIRECTION, chosen and stated: this only ever
+    // ADDS or CANONICALISES, never removes an exclusion. The two error
+    // directions are not symmetric - dropping an exclusion means offering a
+    // plugin the user deliberately excluded (the exact failure class fixed
+    // this morning), while carrying a stale entry costs nothing: a uid with
+    // no matching row is inert, and today's census measured zero orphans.
+    // A legacy-only entry is REWRITTEN to its canonical spelling (the
+    // exclusion survives under the new uid); when both spellings exist the
+    // pair is COLLAPSED to the canonical one, dropping neither exclusion,
+    // only the redundant string. Entries matching no known legacy spelling
+    // are left untouched forever, deliberately. The legacy map is derived
+    // from the DATA (each row's raw and stored uids against its canonical
+    // one), not from the rule tables, so all 84 catalog rewrite rules and
+    // any future one are covered without enumeration. Static and pure: the
+    // gate pins both directions without touching user files.
+    struct MigrationCounts { int rewritten = 0; int collapsed = 0; };
+    static MigrationCounts migrateDisabledSet(std::set<juce::String>& setRef,
+                                              const std::map<juce::String, juce::String>& legacyToCanonical)
+    {
+        MigrationCounts c;
+        for (const auto& kv : legacyToCanonical)
+        {
+            if (setRef.count(kv.first) == 0) continue;
+            const bool hadCanonical = setRef.count(kv.second) > 0;
+            setRef.erase(kv.first);
+            setRef.insert(kv.second);
+            if (hadCanonical) ++c.collapsed; else ++c.rewritten;
+        }
+        return c;
+    }
     
     // Get count
     int getPluginCount() const;
@@ -348,6 +381,10 @@ private:
     // disk via saveEnabledState/loadEnabledState. Guarded by pluginMutex.
     std::set<juce::String> disabledUids;
     juce::Time enabledStateMtime_;   // maybeReloadEnabledState's guard
+    // Legacy uid -> canonical uid, filled by loadCache from each row's raw
+    // and previously-stored spellings, consumed by the migration in
+    // loadEnabledState. Guarded by pluginMutex.
+    std::map<juce::String, juce::String> legacyUidMap_;
     bool enabledWatchLogged_ = false;   // diagnosis: one watch-active line per lifetime
     // The single notify: logs the source and fires onDisabledSetChanged.
     // Called OUTSIDE pluginMutex (the callback reaches into ChainHost).
