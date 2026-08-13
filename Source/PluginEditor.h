@@ -1518,6 +1518,15 @@ private:
     juce::TextEditor chainDebugJsonBox;    // shows raw chain JSON after each build (temporary debug)
     // Restricts the list to plugins loadable in this wrapper format.
     juce::String chainFormatFilter_;
+    // Scan sequencing (13 Aug 2026): the header's Scan Now runs the
+    // validating PluginScanner, and the chain scan (ChainHost) rides its
+    // COMPLETION, not alongside it, because the chain scan's VST3 rows read
+    // the validated cache and running first would read it stale. Set by the
+    // Scan Now / folder-change handlers, consumed by the timer's falling-
+    // edge watch. Dies with the editor if closed mid-scan, which only costs
+    // the ride-along; the next Scan Now queues it again.
+    bool chainScanAfterSettings_ = false;
+    bool prevSettingsScanning_   = false;
 
     // Holder for the currently-selected slot's editor
     // Pop-out window for hosted plugin editors at native size

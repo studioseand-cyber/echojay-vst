@@ -4090,7 +4090,15 @@ void EchoJayEditor::showScanMenu(juce::Component* target)
             auto* scanner = &safeThis->processorRef.getPluginScanner();
             if (result == 1)
             {
+                // Scan Now also refreshes the CHAIN list (13 Aug 2026). It
+                // was the only reachable scan control, and it never touched
+                // chain_entries.xml: a July cache served five weeks because
+                // the chain scan's only trigger was the empty-cache auto-run
+                // at first open, once in a plugin's life. The chain scan is
+                // queued to follow COMPLETION (see chainScanAfterSettings_).
                 scanner->startScan();
+                safeThis->chainScanAfterSettings_ = true;
+                EchoJay_NSLog("EJScan: chain scan queued to follow the settings scan");
             }
             else if (result == 2)
             {
@@ -4107,6 +4115,8 @@ void EchoJayEditor::showScanMenu(juce::Component* target)
                             auto* scannerPtr = &safeThis->processorRef.getPluginScanner();
                             scannerPtr->addCustomFolder(picked);
                             scannerPtr->startScan();
+                            safeThis->chainScanAfterSettings_ = true;
+                            EchoJay_NSLog("EJScan: chain scan queued to follow the settings scan");
                         }
                     });
             }
@@ -4118,6 +4128,8 @@ void EchoJayEditor::showScanMenu(juce::Component* target)
                 {
                     scanner->removeCustomFolder(folders[idx]);
                     scanner->startScan();
+                    safeThis->chainScanAfterSettings_ = true;
+                    EchoJay_NSLog("EJScan: chain scan queued to follow the settings scan");
                 }
             }
         });
@@ -18011,12 +18023,12 @@ void EchoJayEditor::timerCallback()
                     stale = juce::Time::currentTimeMillis() - ms
                           > (juce::int64) 14 * 24 * 3600 * 1000;
                     scanned = ", scanned " + juce::Time(ms).toString(true, false)
-                            + (stale ? " - STALE, press Scan" : "");
+                            + (stale ? " - STALE, press Scan Now" : "");
                 }
                 else
                 {
                     stale = true;
-                    scanned = ", scan date unknown - press Scan";
+                    scanned = ", scan date unknown - press Scan Now";
                 }
                 chainStatusLabel.setColour(juce::Label::textColourId,
                     stale ? juce::Colour(0xffcc8844) : juce::Colour(0xff888888));
@@ -18203,6 +18215,19 @@ void EchoJayEditor::timerCallback()
     passLabel.setText(passes > 0 ? juce::String(passes) + " pass" + (passes > 1 ? "es" : "") : "", juce::dontSendNotification);
 
     auto& sc = processorRef.getPluginScanner();
+    // Chain-after-settings sequencing: fire the chain scan on the settings
+    // scan's FALLING EDGE, so its VST3 rows read the freshly validated
+    // cache rather than the one the settings scan was about to replace.
+    {
+        const bool settingsScanning = sc.isScanning();
+        if (prevSettingsScanning_ && !settingsScanning && chainScanAfterSettings_)
+        {
+            chainScanAfterSettings_ = false;
+            EchoJay_NSLog("EJScan: settings scan finished, chain scan follows");
+            processorRef.getChainHost().startScan();
+        }
+        prevSettingsScanning_ = settingsScanning;
+    }
     if (sc.isScanning()) {
         scanBtn.setButtonText("Scanning " + juce::String((int)(sc.getProgress() * 100)) + "%");
         scanBtn.setEnabled(false);
