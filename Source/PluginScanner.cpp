@@ -1034,6 +1034,17 @@ void PluginScanner::loadEnabledState()
                        + juce::String(mig.collapsed) + " collapsed"
                        + " (uid vocabulary unification)").toRawUTF8());
     }
+    else
+    {
+        // The zero case announces itself too (13 Aug 2026, evening): a
+        // silent no-op is indistinguishable from correct-and-unreached,
+        // and this week produced four candidates for that pattern. One
+        // line per load, naming how many legacy candidates existed and
+        // that none were in the set, ends the ambiguity.
+        EchoJay_NSLog(("EJScan: disabled set migration checked, nothing to do ("
+                       + juce::String((int) legacyUidMap_.size())
+                       + " legacy candidate(s), none present in the set)").toRawUTF8());
+    }
 }
 
 

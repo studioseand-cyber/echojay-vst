@@ -3449,11 +3449,18 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
 
     // Filter enabled scanner plugins and resolve against the map
     int enabledCount = 0;
+    std::set<juce::String> excludedUids;
+    int excludedRows = 0;
     std::vector<RecommendableEntry> resolved;
 
     for (const auto& sp : allPlugins)
     {
-        if (!sp.enabled) continue;
+        if (!sp.enabled)
+        {
+            ++excludedRows;
+            excludedUids.insert(sp.uid);
+            continue;
+        }
         ++enabledCount;
 
         // Try exact normalized name
@@ -3485,10 +3492,18 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
     // and excluded against the EJScan set-size lines is one subtraction in
     // the same log stream. The 56 hid for a day because enabled's
     // reconciliation against the row count lived in nobody's head.
+    //
+    // "from N uid(s)" (same day, evening): a gap between excluded ROWS and
+    // the distinct uids excluding them means one uid is excluding multiple
+    // rows - duplicate catalog rows sharing a canonical identity (the 57
+    // bx AU/VST3 doubles), or, formerly, a disabled set holding more than
+    // one uid vocabulary. Either way the gap is a condition to SEE on the
+    // line, not to derive from four terminal commands after the fact.
     EchoJay_NSLog(("EJScan: resolver rebuilt, " + juce::String((int) resolved.size())
                    + " resolved (input=" + juce::String((int) allPlugins.size())
                    + ", enabled=" + juce::String(enabledCount)
-                   + ", excluded=" + juce::String((int) allPlugins.size() - enabledCount)
+                   + ", excluded=" + juce::String(excludedRows)
+                   + " from " + juce::String((int) excludedUids.size()) + " uid(s)"
                    + ", unmatched=" + juce::String(enabledCount - (int) resolved.size())
                    + ")").toRawUTF8());
 
