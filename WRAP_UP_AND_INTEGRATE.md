@@ -4,7 +4,7 @@ Paste this into any parallel session when it has done substantial work and you w
 landed safely. It encodes what this project's merges actually cost us.
 
 Integration branches:
-- plugin repo `echojay-vst` → **`feat/v2-with-devices`**
+- plugin repo `echojay-vst` → **`feat/plugin-dashboard`**
 - backend/web repo `echojay-saas` → **`feat/preview-combined`**
 
 ---
@@ -25,7 +25,7 @@ started on an exhausted context is how a silent bug ships. Stopping here is the 
 outcome, not a failure — the merge gets a fresh session.
 
 STEP 3 — MERGE INTO THE INTEGRATION BRANCH (only if you have real headroom).
-  plugin repo  (echojay-vst):  feat/v2-with-devices
+  plugin repo  (echojay-vst):  feat/plugin-dashboard
   backend/web  (echojay-saas): feat/preview-combined
     git fetch origin && git checkout <INTEGRATION BRANCH> && git pull && git merge <your branch>
 Do NOT merge into anyone else's feature branch. Resolve HUNK BY HUNK, keeping BOTH sides'

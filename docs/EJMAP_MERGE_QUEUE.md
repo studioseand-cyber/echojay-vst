@@ -38,5 +38,22 @@ equivalent-but-differently-shaped code, same reconciliation posture.
   (EchoJayParamApply parse) must land TOGETHER — signed anchors on an
   unsigned client revert every left-half dial. Client half rides a
   release; then a ~5-minute re-sweep of the 9 Melda MB plugins.
-- DEFECT_BRIDGED_READBACK.md (repo root, merged from v2): the real fix
-  (stable-read or deferred verify, gated on bridged instances).
+- DEFECT_BRIDGED_READBACK.md (repo root, merged from v2): the report-only
+  mitigation shipped in the 2.26.0 beta (EchoJayBridgedAU.h detection +
+  applyOne demotion, proven live on API-2500); the REAL fix (deferred
+  stable-read verification, render-cycle aware) is still owed. Two facts
+  the beta work measured past the filing: in-stack getValue() is ALSO
+  pre-write on the bridge (the filing's setread-immunity premise is
+  false), and bridge parameter traffic flushes with render cycles.
+
+## The stale-branch filing rule
+
+A FILING ON A STALE BRANCH NEEDS ITS BASE NAMED. Twice in one week a
+document was true when written and false where it was read:
+DEFECT_LADDER_TOLERANCE.md described code its own branch carried while
+the mainline had already fixed it (1 Aug, typedReadbackMatch) -- the
+filing was 297 commits behind and never said so. Any future filing
+states the commit it was diagnosed against, and any reader checks the
+described code EXISTS at the reading branch before building the fix --
+the defect it describes may have been fixed before the filing was even
+written.

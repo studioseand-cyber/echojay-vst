@@ -1,3 +1,4 @@
+#include "EchoJayBridgedAU.h"   // FIRST: pulls CoreFoundation before JUCE (Point ambiguity)
 #include "ChainHost.h"
 #include "EchoJayParamApply.h"
 #include "EchoJayParamMaps.h"
@@ -1539,11 +1540,22 @@ ChainHost::applyStructuredSettings (int slotIndex,
     auto* instance = dynamic_cast<juce::AudioPluginInstance*> (proc);
     if (instance == nullptr) return out;
 
-    auto results = echojay::applySettings (*instance, map, structuredSettings);
+    // Bridged-AU report-only (10 Aug 2026, DEFECT_BRIDGED_READBACK option
+    // a): on an instance whose serving binary was MEASURED bridged, the
+    // in-stack display read is pre-write, so display verification demotes
+    // to norm round-trip instead of reverting correct work. Unknown or
+    // unreadable components read native (EchoJayBridgedAU.h).
+    const bool staleDisplayReads = echojay::auComponentIsBridged (slot.desc);
+    if (staleDisplayReads)
+        EchoJay_NSLog(("EJDial: \"" + slot.desc.name
+                       + "\" is a bridged AU (no arm64 slice); display readback "
+                         "demoted to norm round-trip, mismatches reported not reverted").toRawUTF8());
+
+    auto results = echojay::applySettings (*instance, map, structuredSettings, staleDisplayReads);
     for (auto& r : results)
         out.push_back ({ r.semantic, r.applied, r.normalized, r.note,
                          r.landedText, r.displayVerified, r.readbackMismatch,
-                         r.requestedValue });
+                         r.staleDisplayKept, r.requestedValue });
 
     return out;
 }
@@ -2148,6 +2160,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
     juce::StringArray appliedSummary;
     s.dialManual.clear();
     s.dialReadbackMiss.clear();
+    s.dialUnconfirmed.clear();
     for (auto& r : report)
     {
         EchoJay_NSLog(("EJParamApply:   " + r.semantic + ": "
@@ -2176,6 +2189,13 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
             // reverts, lands in dialManual/dialReadbackMiss, and uploads a
             // readback_mismatch dial_miss.
             appliedSummary.add(line);
+            // The bridged report-only case is NOT the silent class: the
+            // display DISAGREED and the write was kept anyway, on a measured
+            // fact about the instance. The 9 Aug silence rule reasoned "the
+            // display disagreeing was never silent - it reverts"; with the
+            // revert gone, the caveat must surface instead.
+            if (r.staleDisplayKept)
+                s.dialUnconfirmed.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
         }
         else
         {
@@ -2203,7 +2223,12 @@ void ChainHost::applyStructuredIfReady(int slotIndex)
     // "Applied automatically" + a compact summary of what was set;
     // slots with nothing applied keep the prose guidance unchanged.
     if (!appliedSummary.isEmpty())
+    {
         s.settings = "Applied automatically\n" + appliedSummary.joinIntoString(", ");
+        if (!s.dialUnconfirmed.isEmpty())
+            s.settings += "\n" + s.dialUnconfirmed.joinIntoString(", ")
+                        + ": written - display could not be confirmed on this bridged plugin";
+    }
 }
 
 void ChainHost::loadParamMapsFromDisk()
@@ -2990,6 +3015,7 @@ std::vector<ChainHost::SlotDialInfo> ChainHost::getDialInfos() const
         di.status       = s.dialStatus;
         di.manual       = s.dialManual;
         di.readbackMiss = s.dialReadbackMiss;
+        di.unconfirmed  = s.dialUnconfirmed;
         di.appliedCount = s.dialAppliedCount;
         out.push_back(std::move(di));
     }
