@@ -26,3 +26,4 @@ test/eqtest
 test/*.o
 test/movetest
 tools/pitch_click_test/material.local
+tools/pitch_ab_test/material.local

@@ -1308,3 +1308,146 @@ The formant A/B set — the control heard in isolation, pitch held constant,
 `formant_shift` at −7 / −3 / 0 / +3 / +7 plus the preserve reference —
 renders via `EchoJayPitchRender --formant-set` and sits next to the acapella
 in `… - formant AB/`.
+
+---
+
+## 16. The Antares A/B — three losses, measured, closed
+
+An independent A/B against Antares Auto-Tune Pro (same take, low_male,
+D chromatic, retune 0 / flex 0 / humanize 0, formants on; 914 confidently
+voiced frames in the analyst's framing) found EchoJay losing three separate
+ways: median distance to the nearest semitone 16.9 ¢ against Antares's 8.5
+(dry 28.7); HNR −1.55 dB against −0.19; spectral flux +24.6% above dry
+against +3.8%. Every existing test was green throughout — the §14 lesson
+again, one abstraction level up: the suite proved the machine against
+ITSELF, and nothing proved it against the reference its user compares it to.
+
+### 16.1 Positive control
+
+The analysis was reproduced with this repo's own tracker before any DSP
+moved (2063 frames at hop 2.7 ms; the analyst's stack differs, so exact
+values shift while every ordering and magnitude holds): dry 29.5 ¢ /
+echojay-bounce 15.7 / antares 11.2; HNR 7.01 / 5.99 / 6.90; flux +20.7% /
++3.0%. One number the reproduction added: the tracker fails on **385 frames
+of our bounce against 29 of Antares's** — the "tracker working harder on our
+noisier output" hedge, quantified.
+
+### 16.2 Finding 1 was a settings trap, not a DSP defect — and both named
+suspects measured clean
+
+Rendering the dry through the shipped chain at the bounce's settings and
+sweeping one variable at a time:
+
+| variant | median ¢ | within 5 ¢ |
+|---|---|---|
+| natural_vibrato 100 (schema default) | 22.1 | 12.7% |
+| natural_vibrato 40 ('tuned' preset writes this) | 15.2 | 17.8% |
+| the actual bounce | 15.6 | 16.6% |
+| natural_vibrato 0 (the honest Antares match) | 7.9 | 37.8% |
+| Antares, same tracker | 11.1 | 34.4% |
+
+The bounce ran with natural_vibrato at 40 — the fingerprint of selecting
+`correction_mode tuned` and then zeroing retune/flex/humanize by hand, which
+leaves the vibrato re-add in place. That is the control DOING ITS JOB
+(§11.4 separates the note from the wobble precisely so the wobble can
+survive a snapped note), but it is a trap when the brief is "match Antares
+retune 0", which flattens vibrato. With it at 0 we measure BETTER than
+Antares's median on the same tracker. Both schema descriptions
+(retune_speed_ms, natural_vibrato) now name the interaction and the numbers.
+
+The two suspects named for the residual were both measured and cleared:
+
+- **Corrector lag compensation** — applying each hop's target 655 / 1528 /
+  2619 samples earlier (offline look-ahead) measured 9.3 / 10.7 / 10.0 ¢
+  against 9.0 at the shipped timing. The shifter's lookahead already aligns
+  the target with the audio it shapes; compensating AGAIN over-corrects.
+- **Hold-through-gaps** — reverting to the pre-§14 target-0 behaviour
+  measured 9.0 ¢, identical. At retune 0 the gap samples emit dry either
+  way; the hold stays (it is the click fix).
+
+### 16.3 Findings 2 and 3 were the synthesis, and the fix is not to
+granulate at corrector ratios
+
+The instrument that settled it: **unity resynthesis** — the wet path told to
+change nothing (target = detected f0). Raw-grain OLA measured **−1.0 dB HNR
+and +19% flux at unity**, so the roughness was structural, not correction.
+
+What was tried, in order, each measured on the reference take:
+
+| preserve architecture (unity) | HNR | flux |
+|---|---|---|
+| raw-grain OLA (shipped before this) | 5.97 | +19.0% |
+| LPC residual OLA + emit-time synthesis filter | 5.50 | +24.1% |
+| + placement-time grain alignment | 6.14 | +18.4% — and REJECTED: it fights the re-spacing (octave shifts collapsed to the source pitch) |
+| + epoch phase refinement (analysis domain) + fractional spacing | 5.73 | +21.2% |
+| raw grains + refinement + fractional spacing | 6.14 | +15.1% |
+| **splice-resampler** | **6.99** | **+2.6%** |
+
+The LPC-residual rebuild was built as directed and measured: at
+corrector-scale ratios the per-epoch coefficient switching costs more than
+ring-summing ever did, and it now serves only `formant_mode = shift` (where
+the envelope warp requires it). The load-bearing insight is architectural:
+granular synthesis rebuilds the waveform ~f0 times a second however well the
+grains align, while the reference class resamples continuously and splices
+out one period only when the read pointer has drifted a period —
+|ratio−1|·f0 splices per second, which is ~1/s at 20 cents and **zero at
+unity**. `preserve` now runs that splice-resampler inside ±2.5 st of unity
+(phase-aligned with the dry at every seam by construction, drift reset at
+unvoiced samples, ratio smoothed over 2 ms against detector frame noise and
+evaluated at the READ position), crossfading to the grain path beyond the
+band. Formants move with the ratio inside the band — bounded at a level
+correction never reaches audibly, and the band edge hands over to grains,
+which preserve exactly. Unvoiced stays bit-identical dry throughout.
+
+### 16.4 The permanent gate, and the ledger
+
+`tools/pitch_ab_test/` renders the dry bounce through the CURRENT engine
+(g++, from source — it cannot test a stale binary) at the hard-match
+settings and asserts the three findings against the ANTARES column,
+measured fresh from the reference bounce each run, never transcribed. The
+margins are the measured remaining gaps (cents +1.5, HNR −0.25 dB, flux
++2.0 points), named as such: tighten as they close, never widen. Material
+path in the git-ignored `tools/pitch_ab_test/material.local`. One
+measured-the-instrument note for whoever edits the gate: applying hop
+values at block granularity instead of slicing at hop boundaries measured
++28.6% flux against +4.2% — the render harness must slice exactly as
+`processBlock` does.
+
+Final ledger on the reference take, same tracker for all columns:
+
+| | dry | echojay (was) | echojay (now) | antares |
+|---|---|---|---|---|
+| median cents | 29.5 | 15.6 | **12.0** | 11.1 |
+| within 5 ¢ | 9.3% | 16.6% | **25.2%** | 34.4% |
+| HNR delta vs dry | — | −1.03 dB | **−0.16 dB** | −0.13 dB |
+| spectral flux vs dry | — | +20.7% | **+4.2%** | +3.0% |
+| tracker failures | 0 | 385 | **110** | 29 |
+
+At unity the wet path now measures HNR 7.03 against the dry's 7.01 and flux
++2.6% against Antares's +3.0 — resynthesis is transparent where it used to
+cost a dB. Within-5-¢ remains the honest open gap (25 vs 34): the splice
+ratio is open-loop in the detector's per-frame error where the grain path
+cancelled it, and closing it wants a finer tracker, not a louder assertion.
+
+### 16.5 Every surviving invariant, re-run
+
+The §15 bit-identity of preserve is retired by this change — it protected
+the worse code path. Everything else:
+
+- **g++ suites** (pitch_engine, pitch_correct, psola_engine): ALL PASS —
+  passthrough and unvoiced nulls bit-exact, pitch accuracy, formant
+  preserve at octave shifts, the §15 formant_shift sweep still monotonic
+  and continuous, levels (unison now −0.00 dB, whole tone −0.03 where the
+  grain path drifted to −0.36).
+- **Host path**: L vs R 0.000000; fixed-512 vs 128/256/1024/2048 exactly 0
+  — the splice state advances once per emitted sample and every placement
+  decision derives from grain-local quantities, which is what block-size
+  independence required. Oversize/tiny blocks finite. ALL PASS.
+- **Mode machine**: ALL PASS, unchanged.
+- **Click density** (gate at shipped defaults): **1.85/s** against the
+  3.5/s ceiling, positive control passed — down from §14's 2.43. The splice
+  path removes the grain boundaries the §14 residual lived on.
+- **CPU** (Release, 48 k / 128): means 6.3 / 8.0 / 4.5 / 19.6 / 19.6% —
+  within noise of §14.6 (the LPC cost is skipped inside the splice band,
+  decided from Ta/Ts so fixed-block exactness survives).
+- **pluginval strictness 5**: SUCCESS on the freshly built VST3.

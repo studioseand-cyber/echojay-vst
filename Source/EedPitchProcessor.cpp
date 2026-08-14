@@ -49,7 +49,12 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           (double) PitchCorrect::kDefRetuneMs,
           "how fast pitch is pulled to the target; 0 is the hard tuned effect "
           "where every note snaps instantly, 100+ is transparent and keeps the "
-          "singer's own movement between notes",
+          "singer's own movement between notes. NOTE: retune 0 alone is NOT "
+          "the full hard-tune - natural_vibrato re-adds the singer's own "
+          "wobble on top of the snapped note and defaults to 100. For the "
+          "complete snap set correction_mode hard, which also writes "
+          "natural_vibrato 0; measured, retune 0 with natural_vibrato left at "
+          "100 sits 22 cents from the nearest note where hard mode sits 9",
           false },
 
         { EedPitchProcessor::kFlex, "%", 0.0, 100.0, 55.0,
@@ -130,7 +135,10 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "it exactly as sung, 0 flattens it out for a dead-still note, above "
           "100 exaggerates what is already there. This is not a generator - it "
           "only scales movement the singer actually made, so it does nothing "
-          "on a note held straight",
+          "on a note held straight. It applies at EVERY retune speed: at "
+          "retune 0 the note snaps but the wobble still rides on top, so a "
+          "brief of 'hard tuned' or 'match Auto-Tune retune 0' needs this at "
+          "0 (correction_mode hard writes exactly that)",
           false },
 
         { EedPitchProcessor::kVibDepth, "c", 0.0, 100.0, 0.0,

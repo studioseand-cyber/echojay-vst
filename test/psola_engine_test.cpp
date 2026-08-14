@@ -470,6 +470,21 @@ int main()
         check (compared > 20000 && differing == 0, msg);
     }
 
+    std::printf ("== the SPLICE band is on pitch and stable (preserve, +1 st) ==\n");
+    {
+        // Inside +/-2.5 st preserve rides the splice-resampler, not the
+        // grains (PITCH_P0_VALIDATION.md §16) - so the corrector's own
+        // operating range needs its own accuracy-and-spread assertion.
+        const auto in = saw (fs, 220.0, 2.0);
+        const ShiftResult r = shift (in, fs, 220.0f, 233.08f);
+        const float got = detect (r.out, fs, PitchEngine::kAltoTenor, (size_t) (fs * 0.4));
+        char msg[160];
+        std::snprintf (msg, sizeof (msg),
+                       "220 -> 233.08 Hz through the splice path: detected %.2f Hz (%+.1f cents)",
+                       got, PitchEngine::centsBetween (got, 233.08f));
+        check (std::fabs (PitchEngine::centsBetween (got, 233.08f)) < 15.0f, msg);
+    }
+
     std::printf ("== the shift is stable, not just correct on average ==\n");
     {
         // A wandering output pitch reads as warble even when the median is
