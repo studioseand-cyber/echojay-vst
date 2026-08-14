@@ -20296,6 +20296,54 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
     });
 }
 
+// ONE composer for every skipped-slot alternatives offer (14 Aug 2026).
+// Factored VERBATIM out of loadChainFromJson's inline block so the recall
+// path could reuse it rather than grow a second one; the build path passes
+// the exact cause clause it always used, so its output is byte-identical.
+// Anchors each replacement after the nearest SURVIVING prior neighbour by
+// name, never by index: the follow-up turn carries a fresh [CURRENT CHAIN]
+// and stored numeric positions go stale.
+void EchoJayEditor::composeSkippedAltFollowUp(const juce::StringArray& intendedNames,
+                                              const juce::StringArray& skippedPlain,
+                                              const juce::String& causeClause,
+                                              juce::String& altPromptOut,
+                                              juce::String& altLabelOut)
+{
+    altPromptOut.clear();
+    altLabelOut.clear();
+    juce::StringArray failedNames, failedSpots, plainNames;
+    for (int i = 0; i < intendedNames.size(); ++i)
+        if (skippedPlain.contains(intendedNames[i]))
+        {
+            failedNames.add("\"" + intendedNames[i] + "\"");
+            plainNames.add(intendedNames[i]);
+            juce::String anchor = "at the start of the chain";
+            for (int pj = i - 1; pj >= 0; --pj)
+                if (!skippedPlain.contains(intendedNames[pj]))
+                {
+                    anchor = "right after \"" + intendedNames[pj] + "\"";
+                    break;
+                }
+            failedSpots.add("add a replacement for \""
+                + intendedNames[i] + "\" " + anchor);
+        }
+    if (failedNames.isEmpty()) return;
+    altPromptOut = (failedNames.size() == 1
+                      ? "This plugin" : "These plugins")
+        + causeClause
+        + failedNames.joinIntoString(", ")
+        + ". Do NOT propose them again. Suggest a DIFFERENT "
+          "plugin for each: "
+        + failedSpots.joinIntoString("; ")
+        + ". Place them using my CURRENT CHAIN exactly as it "
+          "is NOW (the failed plugins never loaded, so earlier "
+          "numbering does not apply). Propose them together as "
+          "ONE chain edit.";
+    altLabelOut = (plainNames.size() == 1 ? "Find a replacement for "
+                                          : "Find replacements for ")
+                  + plainNames.joinIntoString(", ");
+}
+
 void EchoJayEditor::buildEditAltFollowUp(const juce::StringArray& results,
                                          const std::vector<ChainHost::ChainEditOp>& opsForAlt,
                                          const juce::StringArray& baseSlots,
@@ -21571,8 +21619,10 @@ void EchoJayEditor::presentRecallReplaceAsk(const juce::String& id,
 void EchoJayEditor::recallLoadChain(const juce::String& id, const juce::String& name)
 {
     auto fetchFailed = std::make_shared<bool>(false);
+    auto intended    = std::make_shared<juce::StringArray>();
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    openSavedChain(id, name, [safeThis, fetchFailed, name](int sc, const juce::String& err)
+    openSavedChain(id, name,
+        [safeThis, fetchFailed, name](int sc, const juce::String& err)
     {
         *fetchFailed = true;
         EchoJay_NSLog(("EJRecall: loaded slots=0 skipped=0 (fetch failed,"
@@ -21585,13 +21635,17 @@ void EchoJayEditor::recallLoadChain(const juce::String& id, const juce::String& 
             ? "\"" + name + "\" is no longer in your library - it may have"
               " been deleted on another device. Nothing was loaded."
             : "\"" + name + "\" could not be loaded: " + err);
-    });
+    },
+        [intended](const juce::StringArray& names) { *intended = names; });
     // Loaded/skipped summary, watchdog-style: the restore has no single
     // completion event (onSlotSettled fires per slot), and the AI build
-    // path's 6s dial summary is the precedent. Skips are already reported
-    // to the USER through the state notes restoreSavedChain writes; this
-    // line is the log's copy.
-    juce::Timer::callAfterDelay(6000, [safeThis, fetchFailed]()
+    // path's 6s dial summary is the precedent. Skips stay reported to the
+    // USER through the state notes restoreSavedChain writes; on top of
+    // them, skipped slots now get the SAME alternatives offer the AI build
+    // path makes, through the one shared composer, with an honest cause
+    // clause: a saved-chain skip is "not found under this name, or
+    // disabled", never "unlicensed".
+    juce::Timer::callAfterDelay(6000, [safeThis, fetchFailed, intended, name]()
     {
         if (safeThis == nullptr || *fetchFailed) return;
         auto& ch = safeThis->processorRef.getChainHost();
@@ -21603,6 +21657,20 @@ void EchoJayEditor::recallLoadChain(const juce::String& id, const juce::String& 
                        + " skipped=" + juce::String(skippedNames.size())
                        + (skippedNames.isEmpty() ? juce::String()
                           : " (" + skippedNames.joinIntoString(", ") + ")")).toRawUTF8());
+        if (skippedNames.isEmpty()) return;
+        juce::String altPrompt, altLabel;
+        safeThis->composeSkippedAltFollowUp(*intended, skippedNames,
+            juce::String(" from the saved chain could not be loaded on this"
+              " machine just now - that is authoritative for this session"
+              " (not installed under this name, or disabled in Settings): "),
+            altPrompt, altLabel);
+        if (altPrompt.isEmpty()) return;
+        const int loaded = ch.getNumSlots();
+        safeThis->appendLocalResultBubble(
+            "Loaded \"" + name + "\" - " + juce::String(loaded) + " of "
+            + juce::String(loaded + skippedNames.size()) + " plugins ("
+            + skippedNames.joinIntoString(", ") + " skipped).",
+            altPrompt, altLabel, skippedNames);
     });
 }
 
@@ -25717,13 +25785,14 @@ void EchoJayEditor::showSavedChainsMenu()
 }
 
 void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& name,
-                                   std::function<void(int, const juce::String&)> onFetchError)
+                                   std::function<void(int, const juce::String&)> onFetchError,
+                                   std::function<void(const juce::StringArray&)> onSlotsParsed)
 {
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     setChainSaveStatus(juce::String::fromUTF8("Opening \"") + name
                        + juce::String::fromUTF8("\"\xe2\x80\xa6"));
 
-    api.fetchChain(id, [safeThis, id, name, onFetchError](const juce::var& json, int sc)
+    api.fetchChain(id, [safeThis, id, name, onFetchError, onSlotsParsed](const juce::var& json, int sc)
     {
         if (safeThis == nullptr) return;
         const auto err = EchoJayAPI::chainErrorMessage(json, sc);
@@ -25746,6 +25815,19 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
             safeThis->setChainSaveStatus("That chain could not be read.");
             if (onFetchError) onFetchError(sc, "That chain could not be read.");
             return;
+        }
+
+        if (onSlotsParsed)
+        {
+            juce::StringArray intended;
+            if (auto* sarr = slots.getArray())
+                for (auto& sv : *sarr)
+                    if (auto* so = sv.getDynamicObject())
+                    {
+                        const auto pn = so->getProperty("plugin").toString().trim();
+                        if (pn.isNotEmpty()) intended.add(pn);
+                    }
+            onSlotsParsed(intended);
         }
 
         safeThis->switchToTab(Tab::Chain);
@@ -25986,51 +26068,18 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                     // slots (per-failure offers would stale each other via
                     // the revision guard). "add ... after slot N" phrasing
                     // keeps the follow-up classifying as a chain edit.
-                    juce::String altPrompt;
-                    juce::StringArray plainNames;
+                    juce::String altPrompt, altLabel;
                     if (!skipped->isEmpty())
                     {
-                        juce::StringArray failedNames, failedSpots;
-                        for (int si2 = 0; si2 < (int)slots.size(); ++si2)
-                            if (skipped->contains(slots[(size_t)si2].name))
-                            {
-                                failedNames.add("\"" + slots[(size_t)si2].name + "\"");
-                                plainNames.add(slots[(size_t)si2].name);
-                                // Anchor by SURVIVING NEIGHBOUR NAME, never
-                                // by index: the follow-up turn carries a
-                                // fresh [CURRENT CHAIN], and stored numeric
-                                // positions go stale (a 7-slot proposal that
-                                // loaded 3 made "after slot 6" unresolvable).
-                                juce::String anchor = "at the start of the chain";
-                                for (int pj = si2 - 1; pj >= 0; --pj)
-                                    if (!skipped->contains(slots[(size_t)pj].name))
-                                    {
-                                        anchor = "right after \"" + slots[(size_t)pj].name + "\"";
-                                        break;
-                                    }
-                                failedSpots.add("add a replacement for \""
-                                    + slots[(size_t)si2].name + "\" " + anchor);
-                            }
-                        if (!failedNames.isEmpty())
-                            altPrompt = (failedNames.size() == 1
-                                           ? "This plugin" : "These plugins")
-                                + juce::String(" FAILED TO LOAD on this machine just "
-                                  "now - that is authoritative and final for this "
-                                  "session (likely unlicensed), regardless of "
-                                  "appearing in any plugin list: ")
-                                + failedNames.joinIntoString(", ")
-                                + ". Do NOT propose them again. Suggest a DIFFERENT "
-                                  "plugin for each: "
-                                + failedSpots.joinIntoString("; ")
-                                + ". Place them using my CURRENT CHAIN exactly as it "
-                                  "is NOW (the failed plugins never loaded, so earlier "
-                                  "numbering does not apply). Propose them together as "
-                                  "ONE chain edit.";
+                        juce::StringArray intended;
+                        for (const auto& sspec : slots) intended.add(sspec.name);
+                        safeThis->composeSkippedAltFollowUp(intended, *skipped,
+                            juce::String(" FAILED TO LOAD on this machine just "
+                              "now - that is authoritative and final for this "
+                              "session (likely unlicensed), regardless of "
+                              "appearing in any plugin list: "),
+                            altPrompt, altLabel);
                     }
-                    const juce::String altLabel = altPrompt.isEmpty() ? juce::String()
-                        : (plainNames.size() == 1 ? "Find a replacement for "
-                                                  : "Find replacements for ")
-                          + plainNames.joinIntoString(", ");
                     if (cleanLoad)
                     {
                         // Loads done, dialing may still be settling (async
@@ -26042,7 +26091,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                     else
                     {
                         safeThis->appendLocalResultBubble(resultBubble, altPrompt, altLabel,
-                                                          plainNames);
+                                                          *skipped);
                         safeThis->logDialMissesWhenSettled(8);
                     }
                 }

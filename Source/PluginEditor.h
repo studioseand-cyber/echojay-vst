@@ -1463,8 +1463,13 @@ private:
     // fetch or parse fails, with the HTTP status and the mapped message.
     // The sidebar status line still shows the error either way; the recall
     // path uses the hook for its own chat-visible message and log line.
+    // onSlotsParsed: optional hook invoked once the record's slots array
+    // validated, with the INTENDED plugin names in saved order. The recall
+    // path needs the order for the alternatives offer's surviving-neighbour
+    // anchors; nothing else exposes it after the fetch callback ends.
     void openSavedChain(const juce::String& id, const juce::String& name,
-                        std::function<void(int statusCode, const juce::String& err)> onFetchError = {});
+                        std::function<void(int statusCode, const juce::String& err)> onFetchError = {},
+                        std::function<void(const juce::StringArray& intendedNames)> onSlotsParsed = {});
     // Transient one-liner in the chain header ("Saved \"X\""). Past tense is
     // legitimate because saving IS something the user did, but it says only
     // that a chain was saved and never implies anything about the sound.
@@ -2994,6 +2999,20 @@ private:
     // logs the loaded/skipped summary (the restore has no single completion
     // event; the AI build path's dial-summary watchdog is the precedent).
     void recallLoadChain(const juce::String& id, const juce::String& name);
+    // ONE alternatives composer for skipped/failed slots (14 Aug 2026),
+    // factored out of the AI build path's inline block so the recall path
+    // reuses it instead of growing a second one. intendedNames is the
+    // chain's plugin names in intended order; skippedPlain the subset that
+    // did not load; causeClause the honest sentence fragment between "This
+    // plugin"/"These plugins" and the name list (load failure and
+    // not-found/disabled are different facts and must read as such).
+    // Anchors each replacement after its nearest SURVIVING prior neighbour
+    // by name, never by index (stored numbering goes stale).
+    void composeSkippedAltFollowUp(const juce::StringArray& intendedNames,
+                                   const juce::StringArray& skippedPlain,
+                                   const juce::String& causeClause,
+                                   juce::String& altPromptOut,
+                                   juce::String& altLabelOut);
     // ---- TIER 1 key precondition (KEY_PRECONDITION_SPEC.md §2.1) ---------
     // When a typed message genuinely needs the key (§2.2, narrow), no usable
     // reading exists, but a bus Link DOES: add an EchoJay Key Detector to
