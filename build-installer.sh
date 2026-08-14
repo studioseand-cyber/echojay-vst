@@ -16,7 +16,7 @@ PLUGIN_NAME="EchoJay V2"
 LINK_NAME="EchoJay Link"
 IDENTIFIER="com.echojay.plugin.v2"
 LINK_IDENTIFIER="com.echojay.link"
-VERSION="2.26.0"
+VERSION="2.26.2"
 # Display-only: v2.MM.PP padding for FILENAMES and human text; every
 # parsed field (pkgbuild --version, plists) keeps the numeric $VERSION.
 DISPLAY_VERSION=$(echo "$VERSION" | awk -F. '{printf "%d.%02d.%02d", $1, $2, $3}')
@@ -33,6 +33,30 @@ echo "   Building ${PLUGIN_NAME} v${DISPLAY_VERSION} Installer"
 echo "   (includes ${LINK_NAME} v${LINK_VERSION})"
 echo "  ========================================"
 echo ""
+
+# --- Shadow-install guard ---------------------------------------------------
+# A user-level component in ~/Library/Audio/Plug-Ins/Components shadows the
+# system install in /Library/Audio/Plug-Ins/Components, so the pkg built here
+# would NOT be what Logic loads. Several reinstall cycles were burned testing
+# a stale user-level binary while the system copy was fresh. Hard failure by
+# design: a warning scrolls past, a dead build does not.
+shopt -s nullglob
+SHADOW_COMPONENTS=("$HOME/Library/Audio/Plug-Ins/Components/"EchoJay*.component)
+shopt -u nullglob
+if [ ${#SHADOW_COMPONENTS[@]} -gt 0 ]; then
+    echo "  ERROR: user-level AU component(s) exist and would shadow this install:"
+    for s in "${SHADOW_COMPONENTS[@]}"; do
+        echo "    $s"
+    done
+    echo ""
+    echo "  Logic prefers the user-level copy over the system install, so the"
+    echo "  pkg this script builds would not be what Logic loads. Remove the"
+    echo "  shadow(s) first:"
+    for s in "${SHADOW_COMPONENTS[@]}"; do
+        echo "    rm -rf \"$s\""
+    done
+    exit 1
+fi
 
 # --- Find built plugins (paths verified against the actual build tree) ---
 MAIN_ART="${BUILD_DIR}/EchoJay_artefacts/Release"

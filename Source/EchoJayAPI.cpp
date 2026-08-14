@@ -7,6 +7,8 @@
 #include "EqPresets.h"    // the EQ teaching block lists presets from the table
 #include "EchoJayChannelLabel.h" // kChannelChooserCapability — the classify flag
                                  // is declared beside the chooser it describes
+#include "EchoJayHistoryTrim.h"  // the history-trim decision, header-inline so
+                                 // tools/mapfps_test compiles the shipped bytes
 
 // Defined later in this file (used by both /api/me parse sites)
 static void parseUsagePool(juce::DynamicObject* root, UserInfo& info);
@@ -75,9 +77,32 @@ juce::String EchoJayAPI::transportEndpoint(const juce::String& configured)
 {
    #if ECHOJAY_DEV_TRANSPORT
     const auto& dt = devTransport();
-    if (dt.baseUrl.isNotEmpty()) return dt.baseUrl;
+    const juce::String base = dt.baseUrl.isNotEmpty() ? dt.baseUrl : configured;
+   #else
+    const juce::String base = configured;
    #endif
-    return configured;
+
+    // Once per process, before the first request: which host, and why. A
+    // release build says devTransport=off against a production host, and that
+    // pairing is the diagnosis when every authenticated call 404s (the user
+    // exists only in the preview database). Host only; the bypass secret is
+    // never logged, only whether one was loaded.
+    static const bool transportLogged = [&base]
+    {
+       #if ECHOJAY_DEV_TRANSPORT
+        const char* dev = "on";
+        const char* byp = devTransport().bypass.isNotEmpty() ? "present" : "absent";
+       #else
+        const char* dev = "off";
+        const char* byp = "absent";
+       #endif
+        EchoJay_NSLog(("EJNet: base=" + juce::URL(base).getDomain()
+                       + " devTransport=" + dev + " bypass=" + byp).toRawUTF8());
+        return true;
+    }();
+    juce::ignoreUnused(transportLogged);
+
+    return base;
 }
 
 // Extra request headers the dev transport needs. Empty in a release build.
@@ -89,6 +114,23 @@ juce::String EchoJayAPI::transportHeaders()
         return "x-vercel-protection-bypass: " + dt.bypass + "\r\n";
    #endif
     return {};
+}
+
+// ============ Failure-path logging ============
+//
+// Every non-2xx response gets one line naming the endpoint, the status and
+// the start of the body. The UI's "Something went wrong" once hid a
+// production 404 ("User not found") for a whole debugging session; this line
+// is the observable that would have named it in one read. Callers pass the
+// response text they already read, so the log costs nothing on the 2xx path.
+static void logNon2xx(const juce::String& path, int statusCode,
+                      const juce::String& responseText)
+{
+    if (statusCode >= 200 && statusCode < 300)
+        return;
+    auto body = responseText.substring(0, 200).replaceCharacters("\r\n\t", "   ");
+    EchoJay_NSLog(("EJStream: " + path + " status=" + juce::String(statusCode)
+                   + " body=" + body).toRawUTF8());
 }
 
 // Static members for remote config — shared across all plugin instances
@@ -188,6 +230,7 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
                 juce::MemoryBlock mb;
                 stream->readIntoMemoryBlock(mb);
                 auto responseText = juce::String::fromUTF8((const char*)mb.getData(), (int)mb.getSize());
+                logNon2xx(path, statusCode, responseText);
                 json = juce::JSON::parse(responseText);
                 break; // got a response (any status) — stop retrying
             }
@@ -271,6 +314,7 @@ void EchoJayAPI::patchJSON(const juce::String& path, const juce::String& body,
             juce::MemoryBlock mb;
             stream->readIntoMemoryBlock(mb);
             auto responseText = juce::String::fromUTF8((const char*)mb.getData(), (int)mb.getSize());
+            logNon2xx(path, statusCode, responseText);
             json = juce::JSON::parse(responseText);
         }
 
@@ -326,6 +370,7 @@ void EchoJayAPI::deleteJSON(const juce::String& path,
             juce::MemoryBlock mb;
             stream->readIntoMemoryBlock(mb);
             auto responseText = juce::String::fromUTF8((const char*)mb.getData(), (int)mb.getSize());
+            logNon2xx(path, statusCode, responseText);
             json = juce::JSON::parse(responseText);
         }
 
@@ -449,9 +494,10 @@ void EchoJayAPI::getJSON(const juce::String& path,
             juce::MemoryBlock mb;
             stream->readIntoMemoryBlock(mb);
             auto responseText = juce::String::fromUTF8((const char*)mb.getData(), (int)mb.getSize());
+            logNon2xx(path, statusCode, responseText);
             json = juce::JSON::parse(responseText);
         }
-        
+
         auto callback = cb;
         auto sc = statusCode;
         auto j = json;
@@ -939,15 +985,20 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
     // Keeping last 12 messages = roughly last 6 capture+reply pairs, plenty
     // for in-session continuity without dragging in unrelated old captures.
     constexpr int maxHistoryMessages = 12;
-    int firstIdx = juce::jmax(0, roles.size() - maxHistoryMessages);
 
-    // Byte-budget the payload on top of the message-count cap. Individual
-    // turns can be huge (capture turns embed meter context, Compare turns a
-    // full compareCtx, user turns the AVAILABLE PLUGINS injection), so twelve
-    // messages could still be hundreds of KB. Walk backwards from the newest
-    // accumulating stripped-content size; older messages fall off first. The
-    // newest message is always sent regardless of size.
-    constexpr int maxPayloadBytes = 60000;
+    // Byte-budget HISTORY on top of the message-count cap. Individual turns
+    // can be huge (capture turns embed meter context, Compare turns a full
+    // compareCtx, user turns the AVAILABLE PLUGINS injection), so twelve
+    // messages could still be hundreds of KB. History is walked backwards
+    // from the newest over stripped sizes; older messages fall off first.
+    // The newest message is always sent whole and is NOT charged against
+    // this budget. The previous version charged it against one shared
+    // 60000-byte payload budget on the assumption that it would always fit
+    // inside it; live sends measured the newest turn (with its injections)
+    // at 61-70KB, so the budget was negative before the walk started and
+    // history was empty on EVERY request. The decision itself lives in
+    // EchoJayHistoryTrim.h so tools/mapfps_test exercises the shipped bytes.
+    constexpr int maxHistoryBytes = 24000;
 
     // Per-turn injection blocks (plugin lists + chain rules) only matter on
     // the CURRENT message — strip them from history turns before sizing.
@@ -968,25 +1019,34 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
         return c;
     };
 
+    // Sizes and roles for the trim decision, index-aligned with the wire
+    // arrays. The newest entry rides along for alignment but its size is
+    // never charged (see EchoJayHistoryTrim.h). The stripped sizes are also
+    // reused by the body-breakdown log below rather than recomputed.
+    std::vector<int>  strippedSizes ((size_t) roles.size(), 0);
+    std::vector<char> roleIsUser    ((size_t) roles.size(), 0);
+    for (int i = 0; i < roles.size(); ++i)
     {
-        int budget = maxPayloadBytes - (int)contents[roles.size() - 1].getNumBytesAsUTF8();
-        int cutIdx = roles.size() - 1;
-        while (cutIdx > firstIdx)
-        {
-            int sz = (int)strippedContent(cutIdx - 1).getNumBytesAsUTF8();
-            if (budget - sz < 0) break;
-            budget -= sz;
-            --cutIdx;
-        }
-        firstIdx = juce::jmax(firstIdx, cutIdx);
+        strippedSizes[(size_t) i] = (int) strippedContent(i).getNumBytesAsUTF8();
+        roleIsUser[(size_t) i]    = (roles[i] == "user") ? 1 : 0;
     }
+    const auto trim = echojay::trimChatHistory (strippedSizes, roleIsUser,
+                                                maxHistoryMessages, maxHistoryBytes);
+    const int firstIdx = trim.firstIdx;
 
-    // Anthropic API requires the first message in messages[] to be 'user'.
-    // If trimming landed us on 'assistant', skip forward by one to land on user.
-    while (firstIdx < roles.size() && roles[firstIdx] != "user")
-        firstIdx++;
-    if (firstIdx >= roles.size())          // degenerate: always send the newest
-        firstIdx = roles.size() - 1;
+    // The trim observable: EVERY build logs what was kept and what each
+    // stage dropped, INCLUDING the null result -- a line that only appeared
+    // on a non-trivial trim could not distinguish "nothing was dropped"
+    // from "the log never ran".
+    EchoJay_NSLog(("EJChat: history trim -- kept " + juce::String(trim.kept)
+                   + "/" + juce::String(trim.total) + " history msgs"
+                   + " (dropped: countCap " + juce::String(trim.droppedByCap)
+                   + ", byteBudget " + juce::String(trim.droppedByBudget)
+                   + ", roleAlign " + juce::String(trim.droppedByRole)
+                   + ((trim.droppedByCap == 0 && trim.droppedByBudget == 0
+                       && trim.droppedByRole == 0)
+                        ? juce::String(" -- nothing dropped") : juce::String())
+                   + ")").toRawUTF8());
 
     // Newest message: keep its live injection, but any meter/band TEXT is
     // gated on the same explicit-capture flag as the meters blob — a
@@ -1019,7 +1079,7 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
     {
         int histBytes = 0;
         for (int i = firstIdx; i < roles.size() - 1; ++i)
-            histBytes += (int) strippedContent(i).getNumBytesAsUTF8();
+            histBytes += strippedSizes[(size_t) i];
         EchoJay_NSLog(("EJChat: body breakdown -- system="
                        + juce::String((int) systemPrompt.getNumBytesAsUTF8()) + "b"
                        + " history=" + juce::String(histBytes) + "b("
@@ -1567,8 +1627,14 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
                 juce::MemoryBlock mb;
                 ws.readIntoMemoryBlock (mb);
                 handle->detach();
+                auto bodyText = juce::String::fromUTF8 ((const char*) mb.getData(), (int) mb.getSize());
+                // Log BEFORE the teardown/cancel bail: the response happened,
+                // and this line is the outcome the routing line above goes
+                // silent on. NSLog touches no plugin state, so it is safe
+                // even when the plugin is mid-teardown.
+                logNon2xx ("/api/chat-stream", statusCode, bodyText);
                 if (! aliveFlag->load() || handle->isCancelled()) return;
-                auto json = juce::JSON::parse (juce::String::fromUTF8 ((const char*) mb.getData(), (int) mb.getSize()));
+                auto json = juce::JSON::parse (bodyText);
                 juce::String msg = "Something went wrong. Please try again.";
                 if (auto* o = json.getDynamicObject())
                     if (o->hasProperty ("error"))
@@ -1584,6 +1650,49 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
             juce::var doneFrame;
             juce::String errorFrameMsg;
 
+            // ---- WHY THIS READS ONE BYTE (10 Aug 2026) ----------------------
+            // JUCE's WebInputStream::read() FILLS the buffer. It is not
+            // "return whatever has arrived": URLConnectionState::read loops
+            // `while (numBytes > 0)` on a condvar and breaks early ONLY once
+            // the request has FINISHED (juce_Network_mac.mm:443-467). So
+            // read(buf, sizeof buf) blocks until 8192 bytes exist or the
+            // response is over.
+            //
+            // A full seven-slot chain build measures 7772 wire bytes, UNDER
+            // 8192. So that read blocked for the whole turn and handed back
+            // every frame in a single call at the end. The server was
+            // streaming correctly the entire time -- frames measured leaving
+            // the handler from +1.8s spread across a 19.5s span -- and the
+            // transport reassembled them into a one-shot response. On screen
+            // that is a spinner for 30 seconds and then the complete reply,
+            // which is precisely what was reported, and it is indistinguishable
+            // from "streaming was never wired up".
+            //
+            // A one-byte read returns the moment any byte is available, so the
+            // only latency left is the server's. The obvious objection -- that
+            // removing one byte at a time from the front of the NSMutableData
+            // is quadratic -- does not apply here: the buffer is drained as
+            // fast as it fills, so each memmove covers the few queued bytes,
+            // not the response.
+            //
+            // Do NOT raise this for throughput. Any N > 1 re-couples our paint
+            // latency to the server's frame size, and the resulting bug is
+            // invisible in every functional test: the reply still arrives,
+            // complete, correct, and all at once.
+            constexpr int kReadChunk = 1;
+
+            // ---- Stream observability (10 Aug 2026) -------------------------
+            // Three attempts failed to tell "no deltas arrived" from "deltas
+            // arrived and were not painted", because between the open and the
+            // done frame this loop emitted nothing at all. These counters are
+            // that missing observable, and the pair that actually separates
+            // the two cases is (textDeltas, msToFirstDelta): a turn with
+            // textDeltas > 1 and msToFirstDelta well under the total is a
+            // rendering fault, and textDeltas <= 1 is a transport fault.
+            int readCalls = 0, bytesRead = 0, textDeltas = 0, thinkingDeltas = 0, frames = 0;
+            const juce::uint32 tStart = juce::Time::getMillisecondCounter();
+            juce::uint32 tFirstDelta = 0, tLastDelta = 0;
+
             while (! ws.isExhausted())
             {
                 // The alive check between chunks (spec 2.2): abandon rather
@@ -1595,12 +1704,16 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
                     return;
                 }
 
-                const int n = ws.read (buf, (int) sizeof (buf));
+                const int n = ws.read (buf, kReadChunk);
                 if (n <= 0)
                     break;   // EOF or error — settled below by gotDone
 
+                ++readCalls;
+                bytesRead += n;
+
                 for (auto& payload : framing.appendChunk (buf, n))
                 {
+                    ++frames;
                     auto frame = juce::JSON::parse (juce::String::fromUTF8 (payload.c_str(), (int) payload.size()));
                     auto* obj = frame.getDynamicObject();
                     if (obj == nullptr)
@@ -1610,13 +1723,26 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
 
                     if (type == "delta")
                     {
-                        // Feature A: text only. Thinking deltas (Feature B,
-                        // off) and future block types are ignored, per the
-                        // contract's forward-compatibility rule.
-                        if (obj->getProperty ("block").toString() == "text")
+                        // Tagged by TYPE on every delta, never by index or
+                        // arrival order (spec 3.1). Unknown block types stay
+                        // ignored, per the forward-compatibility rule.
+                        const auto block = obj->getProperty ("block").toString();
+                        if (block == "text")
                         {
+                            ++textDeltas;
+                            tLastDelta = juce::Time::getMillisecondCounter();
+                            if (tFirstDelta == 0) tFirstDelta = tLastDelta;
                             auto text = obj->getProperty ("text").toString();
                             dispatch ([ev, text] { if (ev->onTextDelta) ev->onTextDelta (text); });
+                        }
+                        else if (block == "thinking")
+                        {
+                            ++thinkingDeltas;
+                            // Feature B. Absent under Feature A because the
+                            // server sends no thinking config at all — this
+                            // branch simply never fires there.
+                            auto text = obj->getProperty ("text").toString();
+                            dispatch ([ev, text] { if (ev->onThinkingDelta) ev->onThinkingDelta (text); });
                         }
                     }
                     else if (type == "done")
@@ -1637,6 +1763,29 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
             }
 
             handle->detach();
+
+            // Logged BEFORE the alive/cancel check and before every early
+            // return below, because the turns worth diagnosing are exactly
+            // the ones that do not reach a clean done. `spread` is the load
+            // bearing field: it is the wall time between the first and last
+            // text delta REACHING THIS LOOP. A spread of thousands of ms
+            // means the transport delivered progressively and any failure to
+            // paint is downstream; a spread near 0 with a large total means
+            // the bytes were held and delivered in a lump, which is the
+            // JUCE read()-fills-the-buffer trap documented above.
+            {
+                const auto total = juce::Time::getMillisecondCounter() - tStart;
+                EchoJay_NSLog (("EJStream: reads=" + juce::String (readCalls)
+                                + " bytes=" + juce::String (bytesRead)
+                                + " frames=" + juce::String (frames)
+                                + " textDeltas=" + juce::String (textDeltas)
+                                + " thinkingDeltas=" + juce::String (thinkingDeltas)
+                                + " firstDelta=" + juce::String (tFirstDelta ? (int) (tFirstDelta - tStart) : -1) + "ms"
+                                + " spread=" + juce::String (tFirstDelta ? (int) (tLastDelta - tFirstDelta) : 0) + "ms"
+                                + " total=" + juce::String ((int) total) + "ms"
+                                + " done=" + juce::String (gotDone ? 1 : 0)).toRawUTF8());
+            }
+
             if (! aliveFlag->load() || handle->isCancelled()) return;
 
             if (gotErrorFrame)
@@ -1921,14 +2070,24 @@ void EchoJayAPI::fetchRemoteConfig()
                            .withStatusCode(&statusCode);
         
         auto stream = url.createInputStream(options);
-        
-        if (stream != nullptr && statusCode == 200)
+
+        // The one request site the non-2xx sweep missed: config fetch
+        // failures were fully silent (the 200 branch just never ran).
+        // Same one-line observable as every other endpoint.
+        if (stream != nullptr && (statusCode < 200 || statusCode >= 300))
+        {
+            juce::MemoryBlock mb;
+            stream->readIntoMemoryBlock(mb);
+            logNon2xx("/api/vst-config", statusCode,
+                      juce::String::fromUTF8((const char*)mb.getData(), (int)mb.getSize()));
+        }
+        else if (stream != nullptr && statusCode == 200)
         {
             juce::MemoryBlock mb;
             stream->readIntoMemoryBlock(mb);
             auto responseText = juce::String::fromUTF8((const char*)mb.getData(), (int)mb.getSize());
             auto json = juce::JSON::parse(responseText);
-            
+
             if (auto* obj = json.getDynamicObject())
             {
                 int version = (int)obj->getProperty("systemPromptVersion");

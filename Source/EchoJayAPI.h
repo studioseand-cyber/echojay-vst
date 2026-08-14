@@ -253,6 +253,14 @@ public:
     struct ChatStreamEvents
     {
         std::function<void(const juce::String& textDelta)> onTextDelta;
+        // Feature B (spec section 0). Fires only when the SERVER was asked to
+        // think (STREAM_THINKING); absent entirely under Feature A. Adaptive
+        // thinking may also skip thinking on an easy turn, so a Feature-B
+        // turn can legally carry ZERO of these — never wait on one.
+        //
+        // This is scratch work, not a reply: it is never part of done.reply,
+        // never goes near the block parser, and must never be persisted.
+        std::function<void(const juce::String& thinkingDelta)> onThinkingDelta;
         std::function<void(const juce::var& doneFrame)> onDone;
         std::function<void(const juce::String& error, int statusCode)> onError;
     };

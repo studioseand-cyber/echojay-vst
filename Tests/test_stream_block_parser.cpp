@@ -180,6 +180,59 @@ static void sweepSynthetic (const juce::String& name, const juce::String& full,
     check (name + ": truncation state correct", truncOk);
 }
 
+
+// ================= SLOT-LEVEL REPORTING (STAGED_CHAIN_SPEC section 4) =================
+// The contract: onSlot never reports a partial, the slots reported in
+// sequence match the slots in the final block exactly, and onBlock still
+// fires exactly once. Swept at every chunk size, like everything else here.
+static void sweepSlots (const juce::String& name, const juce::String& full,
+                        int expectedSlots, bool expectBlock = true)
+{
+    const auto utf8 = full.toStdString();
+    bool allGood = true, partialSeen = false, orderOk = true, blockOnce = true;
+    juce::StringArray finalSlotNames;
+    for (size_t cs = 1; cs <= utf8.size(); ++cs)
+    {
+        EJStreamBlockParser parser;
+        juce::StringArray slotsSeen;
+        int blocks = 0;
+        parser.onSlot = [&] (int idx, const juce::String& json)
+        {
+            // RULE 1 at slot level: every reported slot must parse and be complete.
+            auto v = juce::JSON::parse (json);
+            if (! v.isObject()) { partialSeen = true; return; }
+            if (json.trim().endsWith ("}") == false) partialSeen = true;
+            if (idx != slotsSeen.size()) orderOk = false;
+            slotsSeen.add (v.getDynamicObject()->getProperty ("name").toString());
+        };
+        parser.onBlock = [&] (const EJStreamBlockParser::BlockEvent& ev)
+        {
+            ++blocks;
+            if (ev.type != "chain") return;
+            auto v = juce::JSON::parse (ev.payload);
+            juce::StringArray inBlockNames;
+            if (auto* o = v.getDynamicObject())
+                if (auto* arr = o->getProperty ("chain").getArray())
+                    for (auto& e : *arr)
+                        if (auto* eo = e.getDynamicObject())
+                            inBlockNames.add (eo->getProperty ("name").toString());
+            if (finalSlotNames.isEmpty()) finalSlotNames = inBlockNames;
+            // The sequence reported must equal the sequence in the block.
+            if (inBlockNames != slotsSeen) allGood = false;
+        };
+        for (size_t i = 0; i < utf8.size(); i += cs)
+            parser.appendDelta (juce::String::fromUTF8 (utf8.substr (i, cs).c_str()));
+        parser.finish();
+        if (expectBlock && blocks != 1) blockOnce = false;
+        if (! expectBlock && blocks != 0) blockOnce = false;
+        if (! expectBlock && (int) slotsSeen.size() > expectedSlots) allGood = false;
+    }
+    check (name + ": no partial slot ever reported", ! partialSeen);
+    check (name + ": onSlot sequence == final block slots, every chunk size", allGood);
+    check (name + ": slot indices are 0..n-1 in order", orderOk);
+    check (name + ": onBlock fired exactly " + juce::String (expectBlock ? 1 : 0) + " time(s)", blockOnce);
+}
+
 int main (int argc, char** argv)
 {
     const juce::String fixtureDir = argc > 1 ? juce::String (argv[1]) : juce::String ("Tests/fixtures");
@@ -291,6 +344,34 @@ int main (int argc, char** argv)
         auto r = runParserOverDeltas ({ full }, ref.visible, 3);
         check ("truncated payload matches extractChainBlock's truncated out-param",
                r.truncatedPayload == ref.chain && r.truncatedType == "chain");
+    }
+
+
+    // ---- slot-level sweeps ----
+    {
+        const juce::String WHY_CHAIN =
+            "Corrective EQ, de-esser, compression.\n\n<<<ECHOJAY_CHAIN>>>{\"chain\":["
+            "{\"name\":\"TDR Nova\",\"role\":\"EQ\",\"why\":\"first so downstream sees a clean signal\",\"settings\":\"HPF 80Hz\"},"
+            "{\"name\":\"Weiss Deess\",\"role\":\"De-esser\",\"why\":\"ahead of the compressor; GR lifts esses\",\"settings\":\"-6dB @ 7kHz\"},"
+            "{\"name\":\"Kotelnikov\",\"role\":\"Compressor\",\"settings\":\"3:1, slow attack\"}"
+            "],\"explanation\":\"x\",\"result\":\"Chain built.\"}<<<END_CHAIN>>>";
+        sweepSlots ("slots: three-slot chain with why", WHY_CHAIN, 3);
+
+        // Braces and quotes INSIDE a settings string must not close a slot early.
+        const juce::String TRICKY =
+            "Prose.\n\n<<<ECHOJAY_CHAIN>>>{\"chain\":["
+            "{\"name\":\"AMEK EQ 200\",\"role\":\"EQ\",\"settings\":\"set {mode} to \\\"Style E\\\", 2.5:1\"},"
+            "{\"name\":\"Frontier\",\"role\":\"Limiter\",\"settings\":\"ceiling -1.0\"}"
+            "],\"explanation\":\"y\"}<<<END_CHAIN>>>";
+        sweepSlots ("slots: braces and escaped quotes inside settings", TRICKY, 2);
+
+        // A stream that dies mid-block: slots already closed may be reported,
+        // onBlock must NOT fire, and no partial may escape.
+        const juce::String DIES =
+            "Prose.\n\n<<<ECHOJAY_CHAIN>>>{\"chain\":["
+            "{\"name\":\"TDR Nova\",\"role\":\"EQ\",\"settings\":\"HPF 80Hz\"},"
+            "{\"name\":\"Weiss De";
+        sweepSlots ("slots: stream dies mid-slot, no block, no partial", DIES, 1, false);
     }
 
     std::printf ("\n%d passed, %d failed\n", passed, failed);

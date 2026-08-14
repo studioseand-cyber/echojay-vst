@@ -68,7 +68,10 @@ public:
 
     // Every param at its schema default. Used by restore (full replace) and by
     // a device wanting a genuine "reset".
-    void resetParamsToDefaults();
+    // Virtual so a device can guard side effects that only make sense for a
+    // USER move. EchoJay Pitch flips key_source to manual when key_root or
+    // scale is set by hand; a defaults write is not a hand.
+    virtual void resetParamsToDefaults();
 
     // Current values as a `params` object — the round-trip counterpart of
     // applyParams, for state and for showing the AI what the device is set to.

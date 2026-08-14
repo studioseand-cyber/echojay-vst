@@ -1037,6 +1037,11 @@ void LinkProcessor::updateShmState()
     LinkShm::setSlotGain(regMap, regSlotIdx, gainDb_.load(std::memory_order_relaxed));
     LinkShm::setSlotPlacement(regMap, regSlotIdx,
                               (uint8_t) placement_.load(std::memory_order_relaxed));
+    // THIS binary reads settings_structured and applies it (see
+    // buildChainFromSpec), so it may say so. Published beside gain and
+    // placement because it is the same kind of claim: a fact about this
+    // writer, asserted by the writer, never inferred by the reader.
+    LinkShm::setSlotDialCapable(regMap, regSlotIdx, true);
 
     if (on)
     {
@@ -1524,6 +1529,11 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
             self->chainBuilding = false;
             self->updateChainLatency();
             self->notifyChainModel();
+            // The Link reports its own dial outcome now. Before this, a
+            // channel build produced no dial line anywhere: the summary was
+            // wired into the main plugin's editor, which this binary does not
+            // compile, so a whole build path was unobservable by construction.
+            self->chainHost.reportDialWhenSettled("EJDialSummary(Link): channel build");
             if (onDone) onDone(*results, juce::var(*detail));
             return;
         }
@@ -1575,13 +1585,14 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
 
         juce::String stateB64 = item.stateBase64;
         bool wantBypass = item.bypassed;
+        juce::var structuredForSlot = item.structured;
         // Format preference applies to NEW instantiation only: restores
         // (stateBase64 present) keep the format their state was saved with —
         // AU and VST3 state blobs are not interchangeable.
         if (stateB64.isEmpty())
             desc = self->chainHost.preferInlineHostableDesc(desc);
         self->chainHost.loadPluginAsync(desc,
-            [self, results, addDetail, slot, stateB64, wantBypass, stepPtr,
+            [self, results, addDetail, slot, stateB64, wantBypass, structuredForSlot, stepPtr,
              name = item.name, resolvedName = desc.name]
             (const juce::String& err) mutable
         {
@@ -1597,6 +1608,13 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
                 int hostIdx = self->chainHost.getNumSlots() - 1;
                 slot.hostIdx = hostIdx;
                 self->chainHost.setSlotSettings(hostIdx, slot.settings);
+                // Auto-apply, the same three lines the LOCAL build path has had
+                // since the dial work shipped (PluginEditor loadChainFromJson).
+                // setSlotStructuredSettings ignores a void/non-object, so a
+                // prose-only slot is unchanged.
+                if (structuredForSlot.getDynamicObject() != nullptr
+                    || structuredForSlot.isArray())
+                    self->chainHost.setSlotStructuredSettings(hostIdx, structuredForSlot);
                 self->chainHost.setSlotWet(hostIdx, slot.wet);
                 if (wantBypass)
                     self->chainHost.setSlotBypassed(hostIdx, true);
@@ -1770,6 +1788,7 @@ void LinkProcessor::restoreChainFromVar(const juce::var& v)
         ChainBuildItem item;
         item.name        = o->getProperty("name").toString();
         item.settings    = o->getProperty("settings").toString();
+        item.structured  = o->getProperty("settings_structured");
         item.bypassed    = (bool)o->getProperty("bypassed");
         item.wet         = o->hasProperty("wet")
                              ? juce::jlimit(0.0f, 1.0f, (float)(double)o->getProperty("wet"))
@@ -1883,10 +1902,34 @@ void LinkProcessor::pollChainCommand()
                 ChainBuildItem item;
                 item.name     = eo->getProperty("name").toString().trim();
                 item.settings = eo->getProperty("settings").toString();
+                // THE COMMAND PATH, and the one that matters (11 Aug 2026).
+                // There are TWO parses of a chain array in this file and the
+                // first fix went to the wrong one: restoreChainFromVar is
+                // SESSION RESTORE, while THIS is what reads
+                // chain-cmd-<uid>.json -- the file a Build button writes. The
+                // payload arrived correct end to end (1370 ch, 5 slots, 5 with
+                // settings_structured, confirmed on disk) and was dropped
+                // here, one function away from the fix.
+                item.structured = eo->getProperty("settings_structured");
                 if (item.name.isNotEmpty())
                     spec.push_back(std::move(item));
             }
         }
+    }
+
+    // RECEIVE SIDE, mirroring the sender's line so the hop is closed at both
+    // ends. The main plugin logs "sending to Link -- N slots, N with
+    // settings_structured"; this says what arrived. Two numbers that disagree
+    // localise the loss to the file or the parse without another round of
+    // reasoning about which of them it must be.
+    {
+        int withStructured = 0;
+        for (const auto& it : spec)
+            if (it.structured.getDynamicObject() != nullptr || it.structured.isArray())
+                ++withStructured;
+        EchoJay_NSLog(("EJChain(Link): parsed command -- " + juce::String((int) spec.size())
+                       + " slot(s), " + juce::String(withStructured)
+                       + " with settings_structured").toRawUTF8());
     }
 
     buildChainFromSpec(std::move(spec),

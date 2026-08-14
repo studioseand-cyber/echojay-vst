@@ -19,6 +19,22 @@
 
 echo "pre-commit gate: branch $(git branch --show-current)"
 
+# BUILD LOCK REFUSAL (13 Aug 2026). Twice in two days a commit or edit
+# landed while reinstall-v2.sh was building this worktree: once producing a
+# mixed-object artefact that stamped itself with a clean SHA (2.26.15), once
+# failing this very gate by linking a half-written SharedCode archive. The
+# gate catching it after the fact was luckier than it should be; a rule that
+# depends on remembering is not a fix. The lock directory is the build's
+# flight marker (see reinstall-v2.sh); while it exists, committing races
+# the artefact, so the gate refuses outright.
+if [ -e "$HOME/.echojay-build.lock" ]; then
+  echo "GATE FAIL: ~/.echojay-build.lock is held - a reinstall is building."
+  echo "  Committing mid-build races the artefact and links half-written libs."
+  echo "  Wait for the build to finish. If you are CERTAIN none is running:"
+  echo "    rm -rf ~/.echojay-build.lock"
+  exit 1
+fi
+
 # --- Divergence notice (10 Aug 2026) -----------------------------------
 # HANDOVER.md lives on feat/plugin-dashboard, which means the sessions most
 # in need of it are the ones that cannot see it: a tree behind that branch
@@ -77,12 +93,20 @@ if [ ! -f "$LIB" ] || [ ! -f "$REPO/build/compile_commands.json" ]; then
   exit 0
 fi
 
-echo "  running workspace round-trip self-test..."
-out=$("$REPO/tools/workspace_roundtrip_test/build_and_run.sh" 2>&1)
-if [ $? -ne 0 ]; then
-  echo "GATE FAIL: workspace_roundtrip_test"
-  echo "$out" | tail -12
-  exit 1
-fi
-echo "  ok  workspace_roundtrip_test: $(echo "$out" | grep -iE 'pass|ok|self-test' | tail -1)"
+# BUILD-DEPENDENT SUITES (12 Aug 2026: mapfps_test joins the roundtrip
+# test). mapfps_test carries the structural check that both ChainHost call
+# sites go through fpForIdentity; a wiring regression should fail HERE, at
+# commit, not survive until the next install run catches it.
+for T in workspace_roundtrip_test mapfps_test; do
+  RUNNER="$REPO/tools/$T/build_and_run.sh"
+  [ -x "$RUNNER" ] || { echo "  SKIP  $T (not in this worktree)"; continue; }
+  echo "  running $T..."
+  out=$("$RUNNER" 2>&1)
+  if [ $? -ne 0 ]; then
+    echo "GATE FAIL: $T"
+    echo "$out" | tail -12
+    exit 1
+  fi
+  echo "  ok  $T: $(echo "$out" | tail -1)"
+done
 echo "pre-commit gate: all suites green"

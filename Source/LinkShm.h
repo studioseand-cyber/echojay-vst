@@ -148,7 +148,22 @@ struct alignas(128) RegistrySlot
                                //     3=send return (post-fader, v0.8.6).
                                //     Old writers leave 0 = unknown (treated as
                                //     pre-fader for level gating). Carved from _pad.
-    uint8_t  _pad[3];          //  3  → total 128
+    uint8_t  dialCapable;      //  1  Link reads settings_structured and applies
+                               //     it (v0.9.0). CAPABILITY, NOT VERSION, and
+                               //     the fallback is INCAPABLE rather than
+                               //     unknown: an old Link cannot announce
+                               //     anything, so 0 must mean "do not send
+                               //     controls" forever, never "ask the version".
+                               //     Carved from _pad on the existing
+                               //     convention -- old writers leave it zeroed,
+                               //     readers fall back -- which is how uid,
+                               //     gainDb and placement were each added.
+                               //     WHOEVER CARVES THE NEXT BYTE: keep the
+                               //     fallback the SAFE answer, not the
+                               //     convenient one. A zero here withholds a
+                               //     feature; a zero that meant "capable" would
+                               //     hand payloads to binaries that drop them.
+    uint8_t  _pad[2];          //  2  → total 128
 };
 static_assert(sizeof(RegistrySlot) == 128, "RegistrySlot must be 128 bytes");
 
@@ -739,6 +754,7 @@ inline int claimSlot(void* regMap,
                                            // previous owner's gain (the owner
                                            // re-publishes its real gain at once)
             slots[i].placement   = 0;      // recycled slot: unknown until owner republishes
+            slots[i].dialCapable = 0;      // and INCAPABLE until the new owner says otherwise
             // Reset the slot's meter frame: a recycled slot must NEVER serve
             // the previous owner's last values — the receiver would see an
             // unfamiliar seq, treat it as a fresh frame, and style frozen
@@ -807,8 +823,18 @@ inline void setSlotPlacement(void* regMap, int slotIdx, uint8_t placement)
     regSlots(regMap)[slotIdx].placement = placement;
 }
 
+// Publish the dial capability. Called by the Link that can READ
+// settings_structured, so presence of a 1 here is proof by the writer rather
+// than inference by the reader.
+inline void setSlotDialCapable(void* regMap, int slotIdx, bool capable)
+{
+    if (!regMap || slotIdx < 0 || slotIdx >= kRegMaxSlots) return;
+    regSlots(regMap)[slotIdx].dialCapable = capable ? 1 : 0;
+}
+
 struct SlotSnapshot {
     int          idx;
+    bool         dialCapable = false;   // 0 from every existing Link; see the field
     juce::String instanceUid;    // per-instance address ("" from old writers)
     juce::String displayName;
     juce::String audioFilename;  // filename only, e.g. "audio_drums.bin"
@@ -835,6 +861,7 @@ inline bool readSlot(void* regMap, int i, SlotSnapshot& out)
     out.active        = loadAcquire(&slot->activeFlag) != 0;
     out.gainDb        = slot->gainDb;
     out.placement     = slot->placement;
+    out.dialCapable   = slot->dialCapable != 0;   // 0 from every old Link
     return true;
 }
 

@@ -801,6 +801,12 @@ public:
         int          regIdx     = -1;     // registry slot index (meter frame lookup)
         float        gainDb     = 0.0f;   // Link's built-in gain stage (0 = old Links)
         int          placement  = 0;      // 0 unset/unknown, 1 bus, 2 insert
+        bool         dialCapable = false; // Link applies settings_structured.
+                                          // FALSE from every existing Link and
+                                          // that is the correct default: an old
+                                          // Link cannot announce anything, so
+                                          // absence must mean "do not send
+                                          // controls", never "check a version".
     };
 
     /// Refresh the list of known Link slots from the registry.

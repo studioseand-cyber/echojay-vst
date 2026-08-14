@@ -13,7 +13,7 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 # stepped-anchor readback (XTComp-pinned), and bridged-AU report-only.
 # The server's three dial gates (SET_OP/BANDS/CONTROLS_MIN) pin to this
 # version at deploy; the 2.99.99 gate-test bump died uncommitted, as designed.
-project(EchoJay VERSION 2.26.0)
+project(EchoJay VERSION 2.26.2)
 
 # Path to your JUCE installation — update this to match your setup
 # Download JUCE from https://juce.com/download/
@@ -240,6 +240,7 @@ target_sources(EchoJay PRIVATE
     Source/EedKeyDetectorProcessor.h
     Source/EedKeyEngine.cpp
     Source/EedKeyEngine.h
+    Source/EedKeyFeed.h
     Source/EedKeyWorker.h
     Source/EedLfoCore.h
     Source/EedModEditorBase.cpp
@@ -267,6 +268,13 @@ target_sources(EchoJay PRIVATE
     Source/EedPhaserEngine.h
     Source/EedPhaserProcessor.cpp
     Source/EedPhaserProcessor.h
+    Source/EedPitchCorrect.h
+    Source/EedPitchEditor.cpp
+    Source/EedPitchEditor.h
+    Source/EedPitchEngine.h
+    Source/EedPitchProcessor.cpp
+    Source/EedPitchProcessor.h
+    Source/EedPsolaEngine.h
     Source/EedReverbEditor.cpp
     Source/EedReverbEditor.h
     Source/EedReverbEngine.h
@@ -319,6 +327,7 @@ target_sources(EchoJay PRIVATE
     Source/viz/LfoScopeView.cpp
     Source/viz/LfoScopeView.h
     Source/viz/PanPositionView.cpp
+    Source/viz/PitchRibbonView.h
     Source/viz/PanPositionView.h
     Source/viz/SweepView.cpp
     Source/viz/SweepView.h
@@ -551,6 +560,7 @@ target_sources(EchoJayLink PRIVATE
     Source/EedKeyDetectorProcessor.h
     Source/EedKeyEngine.cpp
     Source/EedKeyEngine.h
+    Source/EedKeyFeed.h
     Source/EedKeyWorker.h
     Source/EedLfoCore.h
     Source/EedModEditorBase.cpp
@@ -578,6 +588,13 @@ target_sources(EchoJayLink PRIVATE
     Source/EedPhaserEngine.h
     Source/EedPhaserProcessor.cpp
     Source/EedPhaserProcessor.h
+    Source/EedPitchCorrect.h
+    Source/EedPitchEditor.cpp
+    Source/EedPitchEditor.h
+    Source/EedPitchEngine.h
+    Source/EedPitchProcessor.cpp
+    Source/EedPitchProcessor.h
+    Source/EedPsolaEngine.h
     Source/EedReverbEditor.cpp
     Source/EedReverbEditor.h
     Source/EedReverbEngine.h
@@ -630,6 +647,7 @@ target_sources(EchoJayLink PRIVATE
     Source/viz/LfoScopeView.cpp
     Source/viz/LfoScopeView.h
     Source/viz/PanPositionView.cpp
+    Source/viz/PitchRibbonView.h
     Source/viz/PanPositionView.h
     Source/viz/SweepView.cpp
     Source/viz/SweepView.h
@@ -780,6 +798,8 @@ target_sources(EchoJayBuiltinRegistryTest PRIVATE
     Source/EedPhaseInvertProcessor.cpp
     Source/EedPhaserEditor.cpp
     Source/EedPhaserProcessor.cpp
+    Source/EedPitchEditor.cpp
+    Source/EedPitchProcessor.cpp
     Source/EedReverbEditor.cpp
     Source/EedReverbProcessor.cpp
     Source/EedSaturationEditor.cpp
@@ -804,6 +824,7 @@ target_sources(EchoJayBuiltinRegistryTest PRIVATE
     Source/viz/LevelMeter.cpp
     Source/viz/LfoScopeView.cpp
     Source/viz/PanPositionView.cpp
+    Source/viz/PitchRibbonView.h
     Source/viz/SweepView.cpp
     Source/viz/DwellGlow.cpp
     Source/viz/TransferCurveView.cpp
@@ -825,6 +846,129 @@ target_link_libraries(EchoJayBuiltinRegistryTest PRIVATE
     juce::juce_recommended_config_flags)
 
 set_target_properties(EchoJayBuiltinRegistryTest PROPERTIES EXCLUDE_FROM_ALL TRUE)
+
+# ============================================================================
+# pitch_probe — offline validation harness for the P0 pitch detector
+# (PITCH_CORRECTION_SPEC.md §2.1 / §9).
+#
+# Runs EedPitchEngine over a real audio file and reports the number the spec
+# gates P0 on: octave-guard fires as a percentage of voiced hops. The g++ suite
+# proves the estimator on SYNTHETIC material; this is what proves it on
+# singing, which has consonants, breath, creak and a room under it.
+#
+# Its own target, EXCLUDE_FROM_ALL, and deliberately NOT linked into or
+# depended on by either plugin target — a validation tool must not be able to
+# break or slow a shipping build. The engine is header-only, so this needs no
+# device sources at all.
+#
+#   cmake --build build --target EchoJayPitchProbe
+#   ./build/EchoJayPitchProbe_artefacts/Debug/EchoJayPitchProbe vocal.wav --all
+# ============================================================================
+juce_add_console_app(EchoJayPitchProbe PRODUCT_NAME "EchoJayPitchProbe")
+juce_generate_juce_header(EchoJayPitchProbe)
+
+target_sources(EchoJayPitchProbe PRIVATE tools/pitch_probe/main.cpp)
+target_include_directories(EchoJayPitchProbe PRIVATE Source)
+target_compile_features(EchoJayPitchProbe PRIVATE cxx_std_17)
+
+target_compile_definitions(EchoJayPitchProbe PRIVATE
+    JUCE_USE_CURL=0
+    JUCE_WEB_BROWSER=0
+    JUCE_STANDALONE_APPLICATION=1)
+
+target_link_libraries(EchoJayPitchProbe PRIVATE
+    juce::juce_audio_formats
+    juce::juce_recommended_config_flags)
+
+set_target_properties(EchoJayPitchProbe PROPERTIES EXCLUDE_FROM_ALL TRUE)
+
+# ============================================================================
+# pitch_render — offline render harness for the P1 shifter.
+#
+# Every P1 number is measured; none of it has been LISTENED to. This worktree
+# must never install to the system plug-in folders (PARALLEL_SESSIONS.md), so a
+# DAW is not available to audition through and an offline render is the only
+# honest way to hear the shift.
+#
+# Own target, EXCLUDE_FROM_ALL, not a dependency of any plugin target — same
+# rule as pitch_probe. Both engines are header-only, so it needs no device
+# sources.
+#
+#   cmake --build build --target EchoJayPitchRender
+#   ./build/EchoJayPitchRender_artefacts/Debug/EchoJayPitchRender vocal.wav --set
+# ============================================================================
+juce_add_console_app(EchoJayPitchRender PRODUCT_NAME "EchoJayPitchRender")
+juce_generate_juce_header(EchoJayPitchRender)
+
+target_sources(EchoJayPitchRender PRIVATE tools/pitch_render/main.cpp)
+target_include_directories(EchoJayPitchRender PRIVATE Source)
+target_compile_features(EchoJayPitchRender PRIVATE cxx_std_17)
+
+target_compile_definitions(EchoJayPitchRender PRIVATE
+    JUCE_USE_CURL=0
+    JUCE_WEB_BROWSER=0
+    JUCE_STANDALONE_APPLICATION=1)
+
+target_link_libraries(EchoJayPitchRender PRIVATE
+    juce::juce_audio_formats
+    juce::juce_recommended_config_flags)
+
+set_target_properties(EchoJayPitchRender PROPERTIES EXCLUDE_FROM_ALL TRUE)
+
+# ============================================================================
+# pitch_mode_test — the P3 dialable contract: correction_mode writing the
+# visible params, and the pitch_scale array move's MERGE semantics. Needs JUCE
+# (it goes through applyStructured, the same funnel the chain uses), so it
+# cannot live in the g++ suite. EXCLUDE_FROM_ALL, like every other test target.
+# ============================================================================
+juce_add_console_app(EchoJayPitchModeTest PRODUCT_NAME "EchoJayPitchModeTest")
+juce_generate_juce_header(EchoJayPitchModeTest)
+
+target_sources(EchoJayPitchModeTest PRIVATE
+    tools/pitch_mode_test/main.cpp
+    Source/DeviceEditorBase.cpp
+    Source/EchoJayDeviceLookAndFeel.cpp
+    Source/EedDeviceProcessor.cpp
+    Source/EedDeviceRegistry.cpp
+    Source/EedPitchEditor.cpp
+    Source/EedPitchProcessor.cpp
+    Source/viz/DwellGlow.cpp
+    Source/viz/VizView.cpp)
+target_include_directories(EchoJayPitchModeTest PRIVATE Source)
+target_compile_features(EchoJayPitchModeTest PRIVATE cxx_std_17)
+target_compile_definitions(EchoJayPitchModeTest PRIVATE
+    JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0 JUCE_STANDALONE_APPLICATION=1)
+target_link_libraries(EchoJayPitchModeTest PRIVATE
+    juce::juce_audio_processors
+    juce::juce_audio_utils
+    juce::juce_gui_extra
+    juce::juce_recommended_config_flags)
+set_target_properties(EchoJayPitchModeTest PROPERTIES EXCLUDE_FROM_ALL TRUE)
+
+# ============================================================================
+# pitch_host_test — what a REAL host does: stereo, variable and small blocks.
+# Everything else feeds the engines fixed-size mono blocks; Logic does not.
+# ============================================================================
+juce_add_console_app(EchoJayPitchHostTest PRODUCT_NAME "EchoJayPitchHostTest")
+juce_generate_juce_header(EchoJayPitchHostTest)
+target_sources(EchoJayPitchHostTest PRIVATE
+    tools/pitch_host_test/main.cpp
+    Source/DeviceEditorBase.cpp
+    Source/EchoJayDeviceLookAndFeel.cpp
+    Source/EedDeviceProcessor.cpp
+    Source/EedDeviceRegistry.cpp
+    Source/EedPitchEditor.cpp
+    Source/EedPitchProcessor.cpp
+    Source/viz/DwellGlow.cpp
+    Source/viz/VizView.cpp)
+target_include_directories(EchoJayPitchHostTest PRIVATE Source)
+target_compile_features(EchoJayPitchHostTest PRIVATE cxx_std_17)
+target_compile_definitions(EchoJayPitchHostTest PRIVATE
+    JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0 JUCE_STANDALONE_APPLICATION=1)
+target_link_libraries(EchoJayPitchHostTest PRIVATE
+    juce::juce_audio_processors juce::juce_audio_utils
+    juce::juce_gui_extra juce::juce_recommended_config_flags)
+set_target_properties(EchoJayPitchHostTest PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
 # ============ Streaming parser test runner (spec step 3) ============
 # Console app, juce_core only — runs the read-back suite that holds the

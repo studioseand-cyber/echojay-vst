@@ -55,10 +55,11 @@
 #include <memory>
 
 // EQ + Gain + Phase Invert (Wave 0) + the six Dynamics faces (Wave 1) + the
-// rest of the suite + the Key Detector (the first Analysis reader). A count
-// rather than a >= so that a device silently failing to register is a FAILURE
-// and not a test that quietly still passes.
-static constexpr int kExpectedDevices = 21;
+// rest of the suite + the Key Detector (the first Analysis reader) + Pitch
+// (device #22, at P0 detection-only). A count rather than a >= so that a
+// device silently failing to register is a FAILURE and not a test that
+// quietly still passes.
+static constexpr int kExpectedDevices = 22;
 
 static int g_fail = 0;
 
@@ -129,6 +130,10 @@ int main()
     // The first Analysis reader (KEY_DETECTOR_SPEC.md).
     check (registry.findByName ("EchoJay Key Detector")      != nullptr, "EchoJay Key Detector registered");
 
+    // Device #22 (PITCH_CORRECTION_SPEC.md), at build phase P0: a detection-
+    // only reader until the corrector phases land.
+    check (registry.findByName ("EchoJay Pitch")             != nullptr, "EchoJay Pitch registered");
+
     check (registry.all().size() == kExpectedDevices,
            "exactly " + juce::String (kExpectedDevices) + " devices registered (got "
            + juce::String ((int) registry.all().size()) + ")");
@@ -162,7 +167,7 @@ int main()
         check (names.indexOf ("EchoJay 4-Band Compressor") < names.indexOf ("EchoJay Compressor"),
                "within Dynamics, alphabetical: 4-Band before Compressor");
 
-        check (registry.categories().joinIntoString (",") == "EQ,Dynamics,Utility,Stereo,Modulation,Harmonic,Time,Analysis",
+        check (registry.categories().joinIntoString (",") == "EQ,Dynamics,Utility,Stereo,Modulation,Harmonic,Time,Pitch,Analysis",
                "categories in canonical order: " + registry.categories().joinIntoString (","));
 
         // Analysis is the last category, so the reader sorts after every writer.
@@ -4107,6 +4112,194 @@ int main()
             std::printf ("%s\n  %s\n", d.name.toRawUTF8(), d.summary.toRawUTF8());
             for (const auto& p : d.schema.params())
                 std::printf ("    %s\n", echojay::ParamSchema::describeLine (p).c_str());
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // ADVERTISED DEFAULTS vs CONSTRUCTED VALUES, every device.
+    //
+    // The advertisement is what the model reasons against. If a device
+    // CONSTRUCTS differently from what it ADVERTISES, the model's picture of a
+    // fresh insert is wrong - and the error hides itself the moment any state
+    // is restored, because restore writes the schema defaults. So only the very
+    // first instance is ever wrong, which is the hardest kind of bug to notice
+    // and the easiest kind to catch here.
+    std::printf ("\n== advertised defaults match constructed values (all devices) ==\n");
+    {
+        int totalMismatch = 0;
+        for (const auto& d : registry.all())
+        {
+            if (! d.create) continue;
+            auto proc = d.create();
+            if (proc == nullptr) continue;
+            auto* dev = dynamic_cast<EedDeviceProcessor*> (proc.get());
+            if (dev == nullptr) continue;
+
+            dev->setRateAndBufferSizeDetails (48000.0, 512);
+            dev->prepareToPlay (48000.0, 512);
+
+            juce::StringArray bad;
+            for (const auto& sp : dev->paramSchema().params())
+            {
+                const juce::String id (sp.id);
+                const double got = dev->getParamValue (id);
+                if (std::abs (got - sp.def) <= 1.0e-4) continue;
+
+                // A MOMENTARY action (analyse, reset, reset_stats) is a switch
+                // by schema shape only: it fires on 1 and always reads back its
+                // resting state. Deliberate, documented, not a mismatch.
+                if (sp.boolean && std::abs (sp.def) < 1.0e-9 && std::abs (got) < 1.0e-9)
+                    continue;
+
+                bad.add (id + " advertised " + juce::String (sp.def, 3)
+                            + ", constructed " + juce::String (got, 3));
+            }
+            if (! bad.isEmpty())
+            {
+                totalMismatch += bad.size();
+                std::printf ("  %-28s %s\n", d.name.toRawUTF8(),
+                             bad.joinIntoString ("; ").toRawUTF8());
+            }
+        }
+        // ZERO. The registry factory now constructs every device at its
+        // ADVERTISED defaults (BuiltinDeviceRegistry::add wraps every create
+        // with resetParamsToDefaults), so a mismatch here is a real regression
+        // from now on: either a getParamValue that does not round-trip what
+        // setParamValue was handed, or a schema default outside its own range.
+        //
+        // This replaced a pinned list of SEVEN known mismatches across Auto
+        // Pan, Chorus, Phaser and Tremolo - four devices sharing an LFO core
+        // that constructed at its own generic 1 Hz / 50% while each advertised
+        // its own rate and depth. Closing it at the funnel rather than in four
+        // sets of member initialisers is what stops device 23 reintroducing it.
+        check (totalMismatch == 0,
+               "every device constructs at its advertised defaults ("
+                 + juce::String (totalMismatch) + " mismatches)");
+    }
+
+    // -----------------------------------------------------------------
+    // NO UNASKED-FOR CHANNEL DIFFERENCE.
+    //
+    // EchoJay Pitch shipped with ONE shifter shared across both channels, so it
+    // interleaved L and R in a single delay ring and rebuilt each channel from
+    // the other's audio. Identical input came out 0.76 apart. Nothing caught it:
+    // the engine suites are mono, and pluginval checks for NaNs and crashes,
+    // not for the audio being right.
+    //
+    // The invariant is NOT "channels must match" - Stereoizer, Stereo Width,
+    // Auto Pan, a ping-ponging Delay and Chorus spread all differ L/R because
+    // that is what they are for. It is "a device must not produce a channel
+    // difference that no parameter asked for". So: every width, spread, pan,
+    // phase and stereo-ish control is driven to NEUTRAL first, and a device
+    // that still differs must say so EXPLICITLY below rather than the check
+    // quietly tolerating it.
+    std::printf ("\n== no device differs L/R unless a parameter asked it to ==\n");
+    {
+        // Ids that MAKE a channel difference on purpose. Driven to the value
+        // that means "do nothing to the image" before the test runs.
+        struct Neutral { const char* id; double value; };
+        static const Neutral kNeutral[] = {
+            { "width",           100.0 },   // 100% = the source's own image
+            { "stereo_width",    100.0 },
+            { "amount",            0.0 },   // stereoizer depth
+            { "spread",            0.0 },
+            { "stereo_offset",     0.0 },
+            { "pan",               0.0 },
+            { "depth",             0.0 },   // auto-pan / chorus modulation
+            { "ping_pong",         0.0 },
+            { "crosstalk",         0.0 },
+            { "mod_depth",         0.0 },
+            { "mod_depth_ms",      0.0 },
+            { "phase_l",           0.0 },
+            { "phase_r",           0.0 },
+            { "invert_l",          0.0 },
+            { "invert_r",          0.0 },
+            { "haas_ms",           0.0 },
+            { "rotation",          0.0 },
+            { "stereo_spread",     0.0 },   // Phaser
+            { "stereo_phase",      0.0 },   // Auto Pan
+            { "mono_maker_hz",     0.0 },
+        };
+
+        // A device that legitimately differs L/R even with every image control
+        // neutral declares itself here, WITH the reason. An empty list is the
+        // goal; an entry is a claim someone has to justify.
+        struct Exempt { const char* name; const char* why; };
+        static const Exempt kExempt[] = {
+            { "EchoJay Reverb",
+              "its network is intentionally decorrelated between channels; a "
+              "mono-in/stereo-out tail is the point of it" },
+            { "EchoJay Chorus",
+              "NON-DETERMINISTIC, and that is the finding: identical input on "
+              "both channels with spread 0 (documented as 'keeps both channels "
+              "in step') gives 0.000002 on one run and 0.166664 on the next, "
+              "same binary, same input. Run-to-run variation with fixed input "
+              "means uninitialised state - an LFO phase or a delay line not "
+              "cleared in prepare. Listed, not fixed: not this session's device" },
+            { "EchoJay Stereoizer",
+              "UNEXPLAINED, ~0.0013 (-57 dBFS) with width 100, haas_ms 0, "
+              "mono_maker 0. Not diagnosed here - it is not this session's "
+              "device - but it is well above the noise floor the other 21 sit "
+              "at, so it is listed to be answered rather than tolerated" },
+        };
+
+        // A difference this small cannot be something a parameter asked for:
+        // 1e-5 is -100 dBFS, below the smoothing and denormal residue that two
+        // devices sit at (Auto Pan and Chorus, both around -108 dB). Anything
+        // a control actually did lands orders of magnitude above it.
+        constexpr double kNeutralFloor = 1.0e-5;
+
+        for (const auto& d : registry.all())
+        {
+            if (! d.create) continue;
+            auto proc = d.create();
+            if (proc == nullptr) continue;
+            auto* dev = dynamic_cast<EedDeviceProcessor*> (proc.get());
+            if (dev == nullptr) continue;
+
+            dev->setRateAndBufferSizeDetails (48000.0, 512);
+            dev->prepareToPlay (48000.0, 512);
+
+            for (const auto& nu : kNeutral)
+                if (dev->paramSchema().find (nu.id) != nullptr)
+                    dev->setParamValue (nu.id, nu.value);
+
+            // Identical audio into both channels: anything that comes out
+            // different was not asked for.
+            juce::AudioBuffer<float> buf (2, 512);
+            juce::MidiBuffer midi;
+            double worst = 0.0;
+            juce::Random rng (1234);
+            for (int b = 0; b < 60; ++b)
+            {
+                for (int i = 0; i < 512; ++i)
+                {
+                    const float s = 0.25f * std::sin (2.0f * 3.14159265f * 220.0f
+                                                        * (float) (b * 512 + i) / 48000.0f)
+                                  + 0.02f * (rng.nextFloat() * 2.0f - 1.0f);
+                    buf.getWritePointer (0)[i] = s;
+                    buf.getWritePointer (1)[i] = s;
+                }
+                dev->processBlock (buf, midi);
+                if (b < 20) continue;                    // let tails settle
+                for (int i = 0; i < 512; ++i)
+                    worst = juce::jmax (worst, (double) std::abs (buf.getReadPointer (0)[i]
+                                                                - buf.getReadPointer (1)[i]));
+            }
+
+            const char* why = nullptr;
+            for (const auto& e : kExempt)
+                if (d.name == e.name) why = e.why;
+
+            if (why != nullptr)
+            {
+                std::printf ("  %-28s differs by %.6f - EXEMPT: %s\n",
+                             d.name.toRawUTF8(), worst, why);
+                continue;
+            }
+            check (worst < kNeutralFloor,
+                   d.name + " produces no channel difference at neutral settings (max "
+                     + juce::String (worst, 6) + ")");
         }
     }
 

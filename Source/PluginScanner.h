@@ -7,6 +7,12 @@
 #include <string>
 #include <atomic>
 #include <memory>
+#include <thread>
+#include <chrono>
+#include <map>
+
+// Unified-log line (implemented in the ObjC side; see NativeClip.h).
+extern "C" void EchoJay_NSLog(const char* msg);
 
 struct ScannedPlugin {
     juce::String name;
@@ -15,12 +21,13 @@ struct ScannedPlugin {
     juce::String category;     // "Effect", "Instrument", "Unknown"
     juce::String path;
     juce::String uid;
-    bool enabled = true;       // ticked in the review list / Settings checklist.
-                               // Disabled plugins stay in the list (so the user
-                               // can re-tick later) but are excluded from the
-                               // AI plugin feed. Default true so a freshly
-                               // scanned plugin is available until the user
-                               // explicitly unticks it (e.g. unlicensed Waves).
+    bool enabled = true;       // DERIVED AT READ (13 Aug 2026), never stored:
+                               // stamped from disabledUids by stampEnabled in
+                               // getPlugins()/serialization. It was a second
+                               // copy of the tick state, and the two stores
+                               // disagreed live (483 uids on disk, 418 in the
+                               // mirrored flags, resolver reading the stale
+                               // side). disabledUids is the ONE authority.
     juce::String fxType;       // Processing type tag for effects ("EQ",
                                // "Dynamics", "Reverb", ...). Classified once at
                                // add time (echojay::classifyEffect). Used to cap
@@ -31,8 +38,29 @@ struct ScannedPlugin {
 class PluginScanner
 {
 public:
-    PluginScanner();
-    ~PluginScanner();
+    // Ctor and dtor are HEADER-INLINE (13 Aug 2026), and it is load-bearing
+    // for the gate: mapfps_test instantiates this class while linking the
+    // PREVIOUS build's lib, and a stale-lib ctor constructs the OLD member
+    // layout under inline methods compiled against the NEW one - measured
+    // as "mutex lock failed: Invalid argument" the first time the layout
+    // grew. Inline lifecycle means the test TU owns the whole object with
+    // one consistent layout, whatever the lib holds.
+    PluginScanner() {}
+    ~PluginScanner()
+    {
+        // Tell any detached workers spawned by scanWithTimeout that this
+        // scanner is going away. The shared `alive` flag is captured by
+        // worker lambdas via a shared_ptr, so it outlives this scanner.
+        alive->store(false);
+        if (scanThread && scanThread->isThreadRunning())
+            scanThread->stopThread(5000);
+        // Brief grace period so any detached worker that returned from its
+        // stuck syscall in the last few moments notices the alive flag and
+        // unwinds before member memory drops. Not a hard guarantee; the
+        // detached workers are ones stuck for tens of seconds on cloud
+        // paths, and the race window here is vanishingly small.
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
     
     // Scan all plugin directories (runs on background thread)
     void startScan();
@@ -92,7 +120,30 @@ public:
     // and persisted separately from the plugin cache, so it survives a
     // rescan: re-detecting a plugin the user previously unticked keeps it
     // unticked.
-    void setPluginEnabled(const juce::String& uid, bool enabled);
+    // HEADER-INLINE (13 Aug 2026): the setter is the writing instance's
+    // unlatch trigger, and the gate's test must exercise the shipped
+    // behaviour, not the previous build's lib. See onDisabledSetChanged.
+    void setPluginEnabled(const juce::String& uid, bool enabled)
+    {
+        bool changed = false;
+        {
+            std::lock_guard<std::mutex> lock(pluginMutex);
+            // The set is the ONE store; rows carry no tick state.
+            // Persistence stays on the editor's debounced commit
+            // (saveEnabledState), so rapid clicking doesn't write the file
+            // per toggle; the set is fresh in memory immediately.
+            if (enabled) changed = disabledUids.erase(uid) > 0;
+            else         changed = disabledUids.insert(uid).second;
+            if (changed)
+            {
+                cachedShuffledNames = juce::String();
+                cachedShuffleSize = 0;
+            }
+        }
+        // The setter IS the writing instance's trigger: its own save cannot
+        // inform it through the file watch (a writer is not a reader).
+        if (changed) notifyDisabledSetChanged("setter");
+    }
     void setManyEnabled(const juce::StringArray& uids, bool enabled);
     bool isPluginEnabled(const juce::String& uid) const;
 
@@ -114,6 +165,99 @@ public:
     void saveEnabledState() const;
     void loadEnabledState();
     static juce::File getEnabledStateFile();
+    // Cross-instance freshness (13 Aug 2026): several plugin instances share
+    // one process but hold separate PluginScanner objects, and an untick in
+    // instance A only wrote A's memory and the file - B's resolver kept
+    // reading B's stale state until restart. Re-reads plugin_disabled.json
+    // when its mtime moves; returns true when the set changed.
+    bool maybeReloadEnabledState();
+
+    // ONE action, two triggers (13 Aug 2026, evening). The file watch alone
+    // shipped broken by design: a writer is not a reader, so the instance
+    // that took the click saw its own save as "mtime moved, changed=n" and
+    // never unlatched (measured: 563 -> 563, enabled stuck at 1051). Every
+    // path that changes disabledUids - the setters on the writing instance,
+    // the file reload on every other - converges on notifyDisabledSetChanged,
+    // which fires this callback. The processor wires it to
+    // ChainHost::invalidateRecommendable at construction, so there is one
+    // unlatch action and it cannot drift between triggers.
+    std::function<void()> onDisabledSetChanged;
+
+    // The file trigger's decision core, split from the disk shell so the
+    // gate can exercise it without touching user files: compares, swaps,
+    // notifies. Returns true when the set actually changed. Public as the
+    // test seam; production callers are maybeReloadEnabledState only.
+    // HEADER-INLINE, like stampEnabled and for the same reason: the gate's
+    // test links the previous build's lib, and both the symbol and the
+    // notify behaviour must be the shipped ones.
+    bool applyReloadedDisabledSet(std::set<juce::String>&& fresh)
+    {
+        bool changed = false;
+        {
+            std::lock_guard<std::mutex> lock(pluginMutex);
+            changed = (fresh != disabledUids);
+            EchoJay_NSLog(("EJScan: enabledState mtime moved, "
+                           + juce::String((int) disabledUids.size()) + " -> "
+                           + juce::String((int) fresh.size()) + " uid(s), changed="
+                           + (changed ? "y" : "n") + " (scanner 0x"
+                           + juce::String::toHexString((juce::pointer_sized_int) this)
+                           + ")").toRawUTF8());
+            // changed=n here is normally the WRITER seeing its own save:
+            // expected, harmless, its unlatch already fired from the setter.
+            if (changed)
+            {
+                disabledUids = std::move(fresh);
+                cachedShuffledNames = juce::String();
+                cachedShuffleSize = 0;
+            }
+        }
+        if (changed) notifyDisabledSetChanged("file");
+        return changed;
+    }
+    // The ONE place ScannedPlugin::enabled is ever assigned: stamps the flag
+    // from the authority set. Static, pure and HEADER-INLINE so mapfps_test
+    // compiles the shipped implementation directly (the gate links the
+    // previous build's lib, which cannot carry a symbol added in the same
+    // commit) and pins the change-set-then-restamp contract without
+    // touching user files.
+    static void stampEnabled(std::vector<ScannedPlugin>& list,
+                             const std::set<juce::String>& disabled)
+    {
+        for (auto& p : list)
+            p.enabled = (disabled.find(p.uid) == disabled.end());
+    }
+
+    // Disabled-set migration for the uid vocabulary unification (13 Aug
+    // 2026, the Brainworx 56). DIRECTION, chosen and stated: this only ever
+    // ADDS or CANONICALISES, never removes an exclusion. The two error
+    // directions are not symmetric - dropping an exclusion means offering a
+    // plugin the user deliberately excluded (the exact failure class fixed
+    // this morning), while carrying a stale entry costs nothing: a uid with
+    // no matching row is inert, and today's census measured zero orphans.
+    // A legacy-only entry is REWRITTEN to its canonical spelling (the
+    // exclusion survives under the new uid); when both spellings exist the
+    // pair is COLLAPSED to the canonical one, dropping neither exclusion,
+    // only the redundant string. Entries matching no known legacy spelling
+    // are left untouched forever, deliberately. The legacy map is derived
+    // from the DATA (each row's raw and stored uids against its canonical
+    // one), not from the rule tables, so all 84 catalog rewrite rules and
+    // any future one are covered without enumeration. Static and pure: the
+    // gate pins both directions without touching user files.
+    struct MigrationCounts { int rewritten = 0; int collapsed = 0; };
+    static MigrationCounts migrateDisabledSet(std::set<juce::String>& setRef,
+                                              const std::map<juce::String, juce::String>& legacyToCanonical)
+    {
+        MigrationCounts c;
+        for (const auto& kv : legacyToCanonical)
+        {
+            if (setRef.count(kv.first) == 0) continue;
+            const bool hadCanonical = setRef.count(kv.second) > 0;
+            setRef.erase(kv.first);
+            setRef.insert(kv.second);
+            if (hadCanonical) ++c.collapsed; else ++c.rewritten;
+        }
+        return c;
+    }
     
     // Get count
     int getPluginCount() const;
@@ -236,6 +380,20 @@ private:
     // "user unticked it"; absence means enabled (the default). Persisted to
     // disk via saveEnabledState/loadEnabledState. Guarded by pluginMutex.
     std::set<juce::String> disabledUids;
+    juce::Time enabledStateMtime_;   // maybeReloadEnabledState's guard
+    // Legacy uid -> canonical uid, filled by loadCache from each row's raw
+    // and previously-stored spellings, consumed by the migration in
+    // loadEnabledState. Guarded by pluginMutex.
+    std::map<juce::String, juce::String> legacyUidMap_;
+    bool enabledWatchLogged_ = false;   // diagnosis: one watch-active line per lifetime
+    // The single notify: logs the source and fires onDisabledSetChanged.
+    // Called OUTSIDE pluginMutex (the callback reaches into ChainHost).
+    void notifyDisabledSetChanged(const char* source)
+    {
+        EchoJay_NSLog(("EJScan: disabled set changed via " + juce::String(source)
+                       + ", unlatch dispatched").toRawUTF8());
+        if (onDisabledSetChanged) onDisabledSetChanged();
+    }
 
     // Cached shuffled plugin list — populated lazily on first call to
     // getPluginNamesString() and reused for the lifetime of this scanner

@@ -45,10 +45,19 @@ public:
 
     // ---- List refresh (message thread) -----------------------------------
     void startScan();
+    // RECORD, no fix (13 Aug 2026): cancelScan has NO CALLERS, so the
+    // cancel early-return inside doRefresh is unreachable and misleads
+    // anyone tracing how a scan can end. A scan ends by completing.
     void cancelScan();
     bool  isScanning()      const noexcept { return scanning_.load(); }
     float getScanProgress() const noexcept { return scanProgress_.load(); }
     juce::String getScanStatus() const;
+    // When the entries list was last actually SCANNED (epoch ms; 0 = the
+    // cache predates the stamp). Written into chain_entries.xml at scan
+    // completion, read back at cache load, shown in the Chain tab. Exists
+    // because a July cache served five weeks of sessions while the UI
+    // confidently reported a plugin count with no date on it.
+    juce::int64 getEntriesScannedAtMs() const noexcept { return entriesScannedAtMs_; }
 
     // ---- Plugin list (message thread) ------------------------------------
     int getNumPlugins() const;
@@ -81,7 +90,17 @@ public:
     // server's sibling merge is the honest serve for an ambiguous name. A
     // name with no known fp is simply absent, same fallback. Returns "{}"
     // when nothing is known.
-    juce::String buildMapFpsJson(int maxEntries = 64) const;
+    // maxEntries RAISED FROM 64 (11 Aug 2026). The rack is never capped (a
+    // loaded slot's fp is the exact binary and always goes first); this bounds
+    // the RECOMMENDABLE set, and on a build turn the rack is empty so the
+    // whole budget went to the first 64 of a ~740-plugin scan. A live turn
+    // showed picked=4 fromFp=0 noFp=4: not one chosen plugin had a
+    // fingerprint, which left every fp-keyed path on the server answering
+    // "unknown" and falling back to the sibling-merged view.
+    //
+    // The server parses up to MAP_FPS_MAX (2000) and both must move together:
+    // raising one alone changes nothing, since the smaller cap still binds.
+    juce::String buildMapFpsJson(int maxEntries = 2000) const;
 
     // ---- Apply-time honesty (26 Jul 2026) ----
     // Per-slot auto-dial outcome. The result bubble may only relay the
@@ -105,8 +124,23 @@ public:
         juce::StringArray unconfirmed; // written and KEPT on norm proof; display
                                        // read was stale (bridged AU, report-only)
         int               appliedCount = 0;
+        juce::String      staleIndexedFp; // stale-map ladder: superseded fp,
+                                          // "" = load matched the index
+        juce::StringArray outOfRange;     // subset of manual: refused by range validation
     };
     std::vector<SlotDialInfo> getDialInfos() const;
+    // One line per slot, at the END of a build, saying what actually dialled.
+    // The per-call lines cannot answer "nothing dials" because each is a
+    // snapshot mid-sequence and the benign ones outnumber the real ones; this
+    // is the terminal state, when every slot has had its chance. Call it when
+    // a chain build finishes loading.
+    void logDialSummary (const juce::String& reason) const;
+    // Settle, then report -- and it lives HERE, not in an editor, because
+    // ChainHost.cpp is compiled into BOTH binaries while PluginEditor.cpp is
+    // not. Every dial instrument used to hang off the main plugin's editor, so
+    // a Link-side build dialled (or failed to) in total silence. A report that
+    // exists on one of two paths is not a report.
+    void reportDialWhenSettled (const juce::String& reason, int attemptsLeft = 8);
     // True when no slot is DialStatus::pending (bubble may compose).
     bool dialStateSettled() const;
     // Recommendable display names whose local map passes the dial-signals
@@ -124,6 +158,11 @@ public:
     // resolved-with-zero-matches) from scanning/unresolved, where the inputs
     // weren't ready yet and callers should keep retrying. Message thread only.
     bool hasResolvedRecommendable() const noexcept { return hasResolved_; }
+    // Tick-state freshness (13 Aug 2026): the editor calls this when the
+    // disabled-uids authority changes (maybeReloadEnabledState), so the
+    // next timer tick rebuilds the feed against fresh ticks instead of
+    // waiting for a restart.
+    void invalidateRecommendable() noexcept { hasResolved_ = false; }
 
     // Async-load the first recommendable entry whose displayName matches `name`
     // (case-insensitive). Callback: empty string on success, error message on fail.
@@ -274,7 +313,8 @@ public:
     // structured settings plus the plugin's map.
     struct ApplyReport { juce::String semantic; bool applied; float normalized; juce::String note;
                          juce::String landedText; bool displayVerified = false; bool readbackMismatch = false;
-                         bool staleDisplayKept = false; juce::var requestedValue; };
+                         bool staleDisplayKept = false; juce::var requestedValue;
+                         bool outOfRange = false; };
     std::vector<ApplyReport> applyStructuredSettings (int slotIndex,
                                                       const juce::var& structuredSettings,
                                                       const juce::var& map);
@@ -664,6 +704,15 @@ private:
         juce::StringArray                    dialReadbackMiss;          // wrote wrong, reverted
         juce::StringArray                    dialUnconfirmed;           // written, display stale (bridged)
         int                                  dialAppliedCount = 0;
+        // Stale-map ladder (12 Aug 2026): the superseded index fp when the
+        // load diverged from the index ("" = no divergence), and whether the
+        // rung has been announced. staleIndexedFp stays set on the unmapped
+        // rung so the editor can compose the card wording and the
+        // suggest-an-alternative pill; it clears on the dialled rung, where
+        // there is nothing to say.
+        juce::String                         staleIndexedFp;
+        bool                                 staleSettled = false;
+        juce::StringArray                    dialOutOfRange;   // asked outside the live map's range, refused per value
         // Hosted settings cache (see setStateCacheEnabled). The blob and its
         // bookkeeping are read under stateCacheMutex_; everything else on
         // this struct follows the existing message-thread-only rule.
@@ -691,7 +740,39 @@ private:
     std::shared_ptr<int>                 life_ { std::make_shared<int>(0) }; // weak-guard for deferred callbacks
     bool mapFresh (const juce::String& fp) const;
     void refetchStale (const juce::String& fp);
-    void applyStructuredIfReady (int slotIndex);
+    // WHY THIS TAKES A TRIGGER (10 Aug 2026). The NO SETTINGS line was read as
+    // the cause of "nothing dials" and it is not evidence of anything: this
+    // function is called at LOAD completion (completeLoad, and the built-in
+    // add), while the caller attaches settings in the load callback AFTERWARDS.
+    // So every slot of every healthy build passes through here once with void
+    // settings and printed the failure line. The two map-arrival sweeps call it
+    // for EVERY slot including ones that never had settings, printing it again.
+    //
+    // A void is only interesting if it is not one of those. The trigger says
+    // which call this is, so the log can tell "not attached YET" (ordering,
+    // expected, benign) from "settings never arrived for a slot that is ready
+    // to take them" (the real fault).
+    enum class DialTrigger
+    {
+        slotLoaded,        // completeLoad / built-in add: settings come next
+        settingsAttached,  // setSlotStructuredSettings: settings are here now
+        mapArrived,        // storeParamMaps sweep: indiscriminate over slots
+    };
+    static const char* dialTriggerName (DialTrigger t);
+    void applyStructuredIfReady (int slotIndex, DialTrigger trigger);
+    // Stale-map ladder resolution: called from the storeParamMaps sweep once
+    // the live-fp fetch has answered. Returns true when the card changed
+    // (the unmapped rung speaks).
+    bool settleStaleRung (int slotIndex);
+    // VST3 identity capture, option 1 (13 Aug 2026): fill thin VST3 entries
+    // (uniqueId 0 / empty version) from load-validated descriptions held in
+    // knownPlugins_. Identity only - name and fileOrIdentifier are the
+    // resolver's matching keys and stay untouched. Skips bundle paths that
+    // several captured descriptions share (the WaveShell shape), rather
+    // than stamping the shell row with an arbitrary member's identity.
+    // Returns the number of rows filled. Callers unlatch hasResolved_ when
+    // it is nonzero so the resolver rebuilds with the new identities.
+    int enrichThinVst3EntriesFromKnown();
     // Construct + append a built-in node synchronously. Returns an error
     // string, empty on success. Called only from loadPluginAsync.
     juce::String loadBuiltinNow (const juce::PluginDescription& desc);
@@ -702,9 +783,16 @@ private:
     // device understands. appliedOut/skippedOut count whatever the device counts
     // (bands, or params) — a settings-only move legitimately applies zero of
     // them and still returns a summary.
+    // deviceMissingOut separates the two ways this returns an empty string
+    // (10 Aug 2026). Both read as "the device understood nothing", and they
+    // are opposite faults: no EedDeviceProcessor on the slot at all is a
+    // ROUTING/cast failure, while a device that resolved neither of its two
+    // accepted shapes is a PAYLOAD failure. Without this the cast failure
+    // hides behind the payload one.
     juce::String applyStructuredToBuiltinSlot (int slotIndex, const juce::var& structured,
                                                int* appliedOut = nullptr,
-                                               int* skippedOut = nullptr);
+                                               int* skippedOut = nullptr,
+                                               bool* deviceMissingOut = nullptr);
     void loadParamMapsFromDisk();
     void saveParamMapsToDisk();
     // Read-only merge of the opt-in background mapper's output file
@@ -769,6 +857,8 @@ private:
 
     // Entries-cache staleness tracking (message thread)
     juce::Time entriesCacheTime_;
+    juce::int64 entriesScannedAtMs_ = 0;   // see getEntriesScannedAtMs()
+    juce::int64 scanStartedAtMs_    = 0;   // set when startScan accepts; ages a rejected press
 
     // Session-scoped load failures (see the comment block in the public
     // section): normalised "name|format" keys, message thread only,

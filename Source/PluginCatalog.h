@@ -741,6 +741,21 @@ inline juce::String canonicaliseManufacturer(const juce::String& rawIn)
 // touched. Returns the trimmed base name. NOTE: only the parenthetical form is
 // handled here; if a vendor uses a bare trailing word or an m/s suffix instead,
 // extend the token list once that exact pattern is confirmed.
+// ---------------------------------------------------------------------------
+// THE one uid construction point (13 Aug 2026). The tick-state identity was
+// built inline at three sites with DIFFERENT normalization depths, and the
+// catalog applies 84 rewrite rules (29 brand prefixes, 46 manufacturer
+// aliases, 9 channel-variant tokens, plus the category-folder heuristic), so
+// any site skipping part of the pipeline mints a second identity for the
+// same plugin. Measured live as the Brainworx 56: scan-era uids under
+// "plugin_alliance", load-era under "brainworx", one disabled set holding
+// both, tick semantics flipping per session era. Every uid goes through
+// here, with the FULL pipeline, and the pipeline is idempotent so raw and
+// already-normalized inputs produce the same uid (pinned in mapfps_test).
+// ---------------------------------------------------------------------------
+inline juce::String makeUid(const juce::String& rawName,
+                            const juce::String& rawManufacturer);
+
 inline juce::String stripChannelVariant(const juce::String& nameIn)
 {
     auto n = nameIn.trim();
@@ -766,6 +781,18 @@ inline juce::String stripChannelVariant(const juce::String& nameIn)
         }
     }
     return n;
+}
+
+inline juce::String makeUid(const juce::String& rawName,
+                            const juce::String& rawManufacturer)
+{
+    const auto name = stripChannelVariant(rawName);
+    auto manu = rawManufacturer;
+    if (auto corrected = resolveManufacturer(name, manu); corrected.isNotEmpty())
+        manu = corrected;
+    manu = canonicaliseManufacturer(manu);
+    return name.toLowerCase().replaceCharacter(' ', '_') + "_"
+         + manu.toLowerCase().replaceCharacter(' ', '_');
 }
 
 // Derive a manufacturer from a reverse-DNS CFBundleIdentifier (e.g.
