@@ -4007,6 +4007,8 @@ private:
         struct Row {
             enum class Kind { SectionTitle, AlbumHeader, ProjectHeader, ChannelHeader, ChatRow, ReviewRow };
             Kind         kind   = Kind::SectionTitle;
+            bool         inflight = false;   // ChatRow: a turn is streaming into
+                                             // this chat right now (dot glyph)
             juce::String id;      // AlbumHeader: album id; ProjectHeader: project
                                   // name; ChannelHeader: linkUid
             juce::String label;
@@ -4024,6 +4026,12 @@ private:
         std::function<void(const juce::String& projectName)> onProjectToggled;
         // Channel folder collapse toggle (collapse key "chan:<linkUid>")
         std::function<void(const juce::String& linkUid)> onChannelToggled;
+
+        // BUSY indicator (14 Aug 2026): the chat a turn is streaming into
+        // right now. Session state, never persisted, cleared when the turn
+        // completes whether or not that chat was opened. Not an unread
+        // marker: it says "arriving", not "arrived".
+        juce::String inflightChatId;
         std::function<void(const juce::String& projectName)> onProjectContextMenu;
         // Right-click on a chat row — editor shows rename/delete/move menu
         std::function<void(const juce::String& chatId)> onChatContextMenu;
@@ -4047,6 +4055,15 @@ private:
 
     void loadChatFromWorkspace(const juce::String& chatId);
     void createNewChat();
+    // ---- Stream ownership (14 Aug 2026: a stream belongs to a chat) ----
+    // Re-establish the in-flight turn's provisional rendering (stage row or
+    // partial bubble) after a chat switch, IF the newly opened chat owns the
+    // stream. Set by fireChatStreamCall, self-guarding on ownership, cleared
+    // at done/error. Null when no stream is in flight.
+    std::function<void()> restreamRepaint_;
+    // Sidebar busy dot: mark chatId as receiving a turn ("" = clear). Session
+    // state on the sidebar model only; refreshes the rows.
+    void setInflightChat(const juce::String& chatId);
     // The trackName (song/project) a NEW chat should get: the current header
     // project name if set, else the session's auto-project ("Untitled, <date>",
     // created once per session and adopted in place when a real name arrives).

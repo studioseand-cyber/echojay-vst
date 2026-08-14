@@ -10349,15 +10349,16 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
                  + " songs=" + juce::String((int)pinnedSongs.size())
                  + " albums=" + juce::String((int)pinnedAlbumIds.size())).toRawUTF8());
 
-    auto makeChatRow = [&activeChatId](const WsChat& chat, int indent)
+    auto makeChatRow = [this, &activeChatId](const WsChat& chat, int indent)
     {
         Row r;
-        r.kind   = Row::Kind::ChatRow;
-        r.id     = chat.id;
-        r.label  = chat.title.isEmpty() ? "Untitled" : chat.title;
-        r.active = (chat.id == activeChatId);
-        r.pinned = chat.pinned;
-        r.indent = indent;
+        r.kind     = Row::Kind::ChatRow;
+        r.id       = chat.id;
+        r.label    = chat.title.isEmpty() ? "Untitled" : chat.title;
+        r.active   = (chat.id == activeChatId);
+        r.pinned   = chat.pinned;
+        r.inflight = (chat.id == inflightChatId);   // busy dot: turn arriving
+        r.indent   = indent;
 
         auto raw = chat.created;
         auto s = raw.upToFirstOccurrenceOf("T", false, false);
@@ -10773,6 +10774,18 @@ void EchoJayEditor::ChatSidebarModel::paintListBoxItem(
             g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.75f));
             g.fillEllipse(px + 2.0f, py, 6.0f, 6.0f);                       // head
             g.drawLine(px + 5.0f, py + 5.5f, px + 5.0f, py + 11.0f, 1.6f);  // stem
+        }
+
+        // BUSY dot (14 Aug 2026): a turn is streaming into this chat right
+        // now. Amber, so it cannot be read as the cyan pin; sits inside the
+        // pin's reserve when both show. Session state only — it clears when
+        // the turn completes, opened or not.
+        if (row.inflight)
+        {
+            const float bx = (float)width - 15.0f - (float)pinReserve;
+            g.setColour(juce::Colour(0xffcc8844));
+            g.fillEllipse(bx, (float)height * 0.5f - 3.0f, 6.0f, 6.0f);
+            pinReserve += 14;
         }
 
         g.setColour(row.active ? C::text : C::text2);
@@ -11341,6 +11354,13 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
             chatScroll.setViewPositionProportionately(0.0, 1.0);
             chatScroll.programmaticScroll = wasProgrammatic;
         }
+        // Stream ownership across the switch (14 Aug 2026): the stage row
+        // belongs to the in-flight turn's chat, so it never survives a
+        // switch on its own -- and if THIS chat owns the stream, the
+        // partial reply (or the thinking row) is re-established as it
+        // stands rather than arriving all at once at done.
+        clearStageStatus();
+        if (restreamRepaint_) restreamRepaint_();
         repaint();
         return;
     }
@@ -11489,6 +11509,9 @@ void EchoJayEditor::createNewChat()
                    + juce::String(processorRef.chatRoles.size()) + " entries").toRawUTF8());
     processorRef.chatRoles.clear();
     processorRef.chatContents.clear();
+    // A new chat never owns an in-flight stream, so any thinking row on
+    // screen belongs elsewhere and must not follow us here.
+    clearStageStatus();
     sidebarDebugText = "";
 
     // Refresh sidebar (the new chat won't show — empty messages are filtered)
@@ -20665,9 +20688,24 @@ void EchoJayEditor::openChannelByUid(const juce::String& uid)
                    + juce::String(processorRef.chatRoles.size()) + " entries").toRawUTF8());
     processorRef.chatRoles.clear();
     processorRef.chatContents.clear();
+    // The pending (empty) channel context owns no stream: drop any thinking
+    // row that belonged to the chat we just left.
+    clearStageStatus();
     refreshChannelBannerCache();
     resized();
     repaint();
+}
+
+void EchoJayEditor::setInflightChat(const juce::String& chatId)
+{
+    if (sidebarModel == nullptr) return;
+    if (sidebarModel->inflightChatId == chatId) return;   // no-op, no rebuild
+    sidebarModel->inflightChatId = chatId;
+    sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
+                              workspace.getReviews(), workspace.getPinnedProjects(),
+                              collapsedAlbums, currentChatId);
+    chatSidebar.updateContent();
+    chatSidebar.repaint();
 }
 
 void EchoJayEditor::followBottomIfPinned()
@@ -22336,6 +22374,20 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
 {
     chatLoading = false;
     clearStageStatus();   // 1d: model wait over
+    setInflightChat({});  // busy dot clears on completion, opened or not
+
+    // OWNERSHIP (14 Aug 2026): the store writes below always target
+    // activeChatId and stay unconditional. The VIEW pushes (chatMessages)
+    // and the WIRE-store appends (chatHistory/chatRoles/chatContents, which
+    // mirror the OPEN chat) belong only to the owning chat -- appending
+    // them while another chat is open painted the reply there and polluted
+    // that chat's wire history.
+    const bool viewIsOwner = (activeChatId == currentChatId);
+    if (! viewIsOwner)
+        EchoJay_NSLog(("EJChat: reply for chat " + activeChatId
+                       + " completed while chat "
+                       + (currentChatId.isEmpty() ? juce::String("(none)") : currentChatId)
+                       + " open -- view and wire appends skipped, store written").toRawUTF8());
 
     juce::String visibleReply = reply;
     juce::String chainJson;
@@ -22565,29 +22617,38 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
         // two assistant turns for one send. The provisional's slot
         // is found by IDENTITY, so a second send landing first
         // cannot make this overwrite the wrong message.
-        const int pIdx = findProvisionalIdx(provisionalId);
-        if (pIdx >= 0) chatMessages[(size_t) pIdx] = cm;
-        else           chatMessages.push_back(cm);
-        // The REAL turn goes to all four stores; the provisional
-        // went to one. These three lines are why the provisional
-        // never touched them.
-        processorRef.chatHistory.push_back({"assistant", visibleReply});
-        processorRef.chatRoles.add("assistant");
-        processorRef.chatContents.add(visibleReply);
-        // The ONLY place an assistant turn joins the wire history. If this
-        // never logs, history can never be non-empty on the next send, and
-        // "cleared between turns" is ruled out without reading clear sites.
-        EchoJay_NSLog(("EJStores: handleChatReply SUCCESS branch, appended assistant; "
-                       "chatRoles now " + juce::String(processorRef.chatRoles.size())).toRawUTF8());
+        if (viewIsOwner)
+        {
+            const int pIdx = findProvisionalIdx(provisionalId);
+            if (pIdx >= 0) chatMessages[(size_t) pIdx] = cm;
+            else           chatMessages.push_back(cm);
+            // The REAL turn goes to all four stores; the provisional
+            // went to one. These three lines are why the provisional
+            // never touched them.
+            processorRef.chatHistory.push_back({"assistant", visibleReply});
+            processorRef.chatRoles.add("assistant");
+            processorRef.chatContents.add(visibleReply);
+            // The ONLY place an assistant turn joins the wire history. If this
+            // never logs, history can never be non-empty on the next send, and
+            // "cleared between turns" is ruled out without reading clear sites.
+            EchoJay_NSLog(("EJStores: handleChatReply SUCCESS branch, appended assistant; "
+                           "chatRoles now " + juce::String(processorRef.chatRoles.size())).toRawUTF8());
+        }
+        // Not the owner: nothing to do here. The workspace write below
+        // persists the turn, and reopening the owning chat rebuilds its
+        // view AND wire stores from that record.
     } else {
         // DROP PATH 2 of 2: every failure, INCLUDING the
         // limit-reached copy, which arrives here as an ordinary
         // failed send. Drop first, then push, or the turn ends with
         // a preamble promising work above a message saying it never
         // happened.
-        dropProvisional(provisionalId);
-        chatMessages.push_back({"assistant", reply});
-        processorRef.chatHistory.push_back({"assistant", reply});
+        if (viewIsOwner)
+        {
+            dropProvisional(provisionalId);
+            chatMessages.push_back({"assistant", reply});
+            processorRef.chatHistory.push_back({"assistant", reply});
+        }
     }
 
     // Mirror assistant turn to workspace and persist (visibleReply has block stripped; chain + gain + ask stored separately)
@@ -22643,6 +22704,12 @@ void EchoJayEditor::fireChatMainCall(const juce::String& sysPrompt,
                                      const juce::StringArray& roles,
                                      const juce::StringArray& contents)
 {
+    // Ownership, stated at start (14 Aug 2026): every turn belongs to the
+    // chat it was sent from, and the busy dot marks that chat's sidebar row
+    // until handleChatReply clears it -- whichever chat is open by then.
+    EchoJay_NSLog(("EJChat: turn belongs to chat " + activeChatId).toRawUTF8());
+    setInflightChat(activeChatId);
+
     // ---- Step-5 selection: chain builds stream, everything else one-shot ----
     // ONE choke point, because every typed send and chip tap funnels here
     // (spec 2.3): when the flag is on and the staged state says this send is
@@ -22740,11 +22807,19 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
         // the per-turn DELTA. paints>0 with follows=0 is the below-the-fold
         // bug's exact signature (the view never moved while content grew).
         int followsAtStart = 0;
+        // OWNERSHIP (14 Aug 2026): the chat this turn belongs to. The store
+        // write always knew it (activeChatId rode the done/error lambdas);
+        // the paint path never did, so a chat switch mid-stream painted the
+        // thinking row and the streamed text into whichever chat was open.
+        // Every provisional render now checks this against currentChatId.
+        juce::String owningChatId;
+        int suppressedPaints = 0;   // paints skipped because open chat differs
         juce::uint32 tFirstPaint = 0;
     };
     auto st = std::make_shared<StreamTurn>();
     st->provisionalId = provisionalId;
     st->followsAtStart = chatFollowFires_;
+    st->owningChatId   = activeChatId;
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
 
     // Paint the current provisional state into the bubble. Runs only on the
@@ -22760,13 +22835,29 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
     {
         auto* ed = safeThis.getComponent();
         if (ed == nullptr) return;
+        // sawFirstContent is a STREAM-level fact (the reply has started;
+        // late thinking deltas must not resurrect the row) and flips even
+        // when the paint below is suppressed. Everything after the guard is
+        // VIEW-level and belongs only to the owning chat.
+        const bool firstContent = ! stp->sawFirstContent;
+        stp->sawFirstContent = true;
+        if (ed->currentChatId != stp->owningChatId)
+        {
+            // OWNERSHIP GUARD (14 Aug 2026): the open chat is not the one
+            // this turn belongs to. Never paint into it, never create the
+            // provisional there. Counted AND logged: a suppressed paint
+            // that is never counted is how this stayed invisible.
+            ++stp->suppressedPaints;
+            EchoJay_NSLog(("EJChat: paint SUPPRESSED -- stream belongs to chat "
+                           + stp->owningChatId + ", open chat is "
+                           + (ed->currentChatId.isEmpty() ? juce::String("(none)")
+                                                          : ed->currentChatId)).toRawUTF8());
+            return;
+        }
         ++stp->paints;
         if (stp->tFirstPaint == 0) stp->tFirstPaint = juce::Time::getMillisecondCounter();
-        if (! stp->sawFirstContent)
-        {
-            stp->sawFirstContent = true;
+        if (firstContent)
             ed->clearStageStatus();   // streamed content replaces the shimmer
-        }
         int pIdx = ed->findProvisionalIdx (stp->provisionalId);
         if (pIdx < 0)
         {
@@ -22921,14 +23012,30 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
         // Until the first unit completes the row keeps its default
         // "Thinking..." copy, which is the honest state: the model is
         // thinking and has not finished a thought worth showing.
+        // OWNERSHIP: the unit buffer above always advances (switching back
+        // must show the current unit), but the stage row paints only into
+        // the owning chat -- same guard and same counter as paintBubble.
         if (promoted)
-            ed->setStageStatus (st->shownUnit);
+        {
+            if (ed->currentChatId != st->owningChatId)
+            {
+                ++st->suppressedPaints;
+                EchoJay_NSLog(("EJChat: thinking paint SUPPRESSED -- stream belongs to chat "
+                               + st->owningChatId + ", open chat is "
+                               + (ed->currentChatId.isEmpty() ? juce::String("(none)")
+                                                              : ed->currentChatId)).toRawUTF8());
+            }
+            else
+                ed->setStageStatus (st->shownUnit);
+        }
     };
     ev.onDone = [safeThis, st, activeChatId, turnTargetUid, turnTargetName] (const juce::var& done)
     {
         if (safeThis == nullptr) return;
         auto* ed = safeThis.getComponent();
         ed->activeChatStream_ = nullptr;
+        ed->restreamRepaint_  = nullptr;   // the stream is over; a later chat
+                                           // switch must not repaint its ghost
         st->parser.finish();   // flush withheld prose; the authoritative
                                // replace below supersedes it either way
 
@@ -22946,6 +23053,7 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
                         + " prose=" + juce::String (st->proseEvents)
                         + " slots=" + juce::String (st->slotEvents)
                         + " paints=" + juce::String (st->paints)
+                        + " suppressed=" + juce::String (st->suppressedPaints)
                         + " follows=" + juce::String (ed->chatFollowFires_ - st->followsAtStart)
                         + " firstPaint=" + juce::String (st->tFirstPaint
                               ? (int) (juce::Time::getMillisecondCounter() - st->tFirstPaint) : -1)
@@ -22965,7 +23073,21 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
             EchoJay_NSLog (("EJStream: FAILED BUILD chainBlock=" + chainBlock).toRawUTF8());
             ed->chatLoading = false;
             ed->clearStageStatus();
+            ed->setInflightChat ({});   // this terminal never reaches
+                                        // handleChatReply; the busy dot
+                                        // must still clear here
             ed->dropProvisional (st->provisionalId);
+            if (ed->currentChatId != st->owningChatId)
+            {
+                // Not the owner: the failure copy belongs to the stream's
+                // chat, not whichever one is open. Nothing is pushed; the
+                // suppression is logged like every other suppressed paint.
+                EchoJay_NSLog (("EJChat: failed-build copy SUPPRESSED -- stream belongs to chat "
+                                + st->owningChatId + ", open chat is "
+                                + (ed->currentChatId.isEmpty() ? juce::String ("(none)")
+                                                               : ed->currentChatId)).toRawUTF8());
+                return;
+            }
             // ASCII ONLY, and not merely as a style preference (10 Aug
             // 2026). These are bare const char* literals, and
             // juce::String(const char*) parses through CharPointer_ASCII —
@@ -22998,11 +23120,30 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
     {
         if (safeThis == nullptr) return;
         safeThis->activeChatStream_ = nullptr;
+        safeThis->restreamRepaint_  = nullptr;
         // DROP PATH 2, exactly as the one-shot path: the provisional — and
         // with it every delta the user watched — drops before the failure
         // copy renders. A stream that dies mid-flight leaves nothing.
         safeThis->handleChatReply (err, false, activeChatId,
                                    turnTargetUid, turnTargetName, st->provisionalId);
+    };
+
+    // Switching BACK mid-stream: loadChatFromWorkspace rebuilds the view
+    // from the store, which never holds the provisional, so without this a
+    // return to the owning chat showed blank until the next delta happened
+    // to arrive. Self-guarding on ownership (safe to call from any switch
+    // site), keeps st alive by capture, cleared at done/error above.
+    restreamRepaint_ = [safeThis, st, paintBubble]
+    {
+        auto* ed = safeThis.getComponent();
+        if (ed == nullptr) return;
+        if (ed->currentChatId != st->owningChatId) return;
+        if (! st->sawFirstContent)
+            ed->setStageStatus (st->shownUnit.isNotEmpty()
+                                    ? st->shownUnit
+                                    : juce::String::fromUTF8 ("Thinking\xe2\x80\xa6"));
+        else
+            paintBubble();
     };
 
     activeChatStream_ = api.streamChat (roles, contents, sysPrompt, std::move (ev));
