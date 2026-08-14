@@ -18,9 +18,18 @@
 set -e
 cd "$(dirname "$0")/../.."
 
-cmake --build build --target EchoJayPitchClickTest --config Debug 2>&1 | grep -E "error|warning: " || true
-BIN=build/EchoJayPitchClickTest_artefacts/Debug/EchoJayPitchClickTest
-[ -x "$BIN" ] || { echo "build failed"; exit 1; }
+# The artefact path FOLLOWS the build cache's configuration. This was
+# hardcoded to Debug, and when the build dir was reconfigured to Release the
+# gate kept green by running a STALE Debug binary - a gate that tests old
+# code is worse than no gate, because it gets believed. The -nt check makes
+# staleness fail loudly instead.
+CFG=$(sed -n 's/^CMAKE_BUILD_TYPE:STRING=//p' build/CMakeCache.txt)
+CFG=${CFG:-Debug}
+cmake --build build --target EchoJayPitchClickTest 2>&1 | grep -E "error|warning: " || true
+BIN=build/EchoJayPitchClickTest_artefacts/$CFG/EchoJayPitchClickTest
+[ -x "$BIN" ] || { echo "build failed ($BIN missing)"; exit 1; }
+[ "$BIN" -nt tools/pitch_click_test/main.cpp ] || { echo "STALE binary: $BIN predates main.cpp"; exit 1; }
+[ "$BIN" -nt Source/EedPsolaEngine.h ]         || { echo "STALE binary: $BIN predates EedPsolaEngine.h"; exit 1; }
 
 # The ceiling: measured 2.43/s on the real acapella after the emitDry-flip
 # fix, against 5.48/s before it (and the pre-fix run showed the signature the

@@ -46,6 +46,7 @@ public:
     static constexpr const char* kTracking   = "tracking";
     static constexpr const char* kTargetHz   = "target_hz";
     static constexpr const char* kFormantMode = "formant_mode";
+    static constexpr const char* kFormantShift = "formant_shift";
     static constexpr const char* kLowLatency  = "low_latency";
     // P2: the musical layer.
     static constexpr const char* kCorrect      = "correct";

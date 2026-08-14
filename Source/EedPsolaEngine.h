@@ -82,9 +82,9 @@ public:
     static constexpr int   kGrainPeriods = 2;
 
     // ---- formant_mode (spec §2.4) ------------------------------------------
-    // Order matches the spec's list, and is APPEND-ONLY: `shift` (LPC envelope
-    // warping) is P5 and will be index 2, so these indices never move.
-    enum FormantMode { kFormantOff = 0, kFormantPreserve = 1, kNumFormantModes };
+    // Order matches the spec's list, and is APPEND-ONLY: indices never move.
+    enum FormantMode { kFormantOff = 0, kFormantPreserve = 1, kFormantShift = 2,
+                       kNumFormantModes };
 
     void setFormantMode (int m) noexcept
     {
@@ -93,19 +93,38 @@ public:
     }
     int getFormantMode() const noexcept { return formantMode_.load (std::memory_order_relaxed); }
 
-    // formant_shift IS NOT IMPLEMENTED, deliberately - see
-    // PITCH_P0_VALIDATION.md §11. The cheap version (resample each grain by a
-    // user-chosen ratio, sharing the code path with `off`) was built and
-    // MEASURED, and it does not do what the control claims: the envelope is
-    // inert from -9 to +3 semitones and jumps in ~600 Hz steps outside that,
-    // because overlap-adding grains at the pitch period reconstructs an
-    // envelope that barely follows the per-grain resampling. Shipping it would
-    // have been a knob that lies.
+    // formant_shift, in semitones, active only in kFormantShift. Negative
+    // reads bigger/deeper, positive smaller/brighter - the "throat length"
+    // control.
     //
-    // The spec's own prescription is the answer and it is a different piece of
-    // work: estimate the spectral envelope (LPC, order ~ 2 + fs/1000, or
-    // cepstral liftering), FLATTEN, shift, then re-apply the envelope warped
-    // by the control.
+    // THE CHEAP VERSION WAS BUILT, MEASURED AND REJECTED, and must not come
+    // back (PITCH_P0_VALIDATION.md §11.3): resampling each grain by a user
+    // ratio, sharing the `off` code path, left the measured envelope INERT
+    // from -9 to +3 semitones, quantised in ~600 Hz steps outside that, and
+    // non-monotonic at the bottom - overlap-adding grains at the pitch period
+    // reconstructs an envelope that barely follows per-grain resampling, so
+    // that geometry cannot work however it is tuned.
+    //
+    // What ships instead is the spec's own prescription, per grain:
+    //   1. estimate the spectral envelope by LPC (order ~ 2 + fs/1000),
+    //   2. inverse-filter the grain to its RESIDUAL (flat spectrum, pulses),
+    //   3. do the PSOLA move on the residual - copied 1:1, re-spaced at the
+    //      target period, exactly like preserve - and
+    //   4. re-synthesise through the envelope with its frequency axis warped
+    //      by 2^(shift/12): the model envelope is evaluated on a dense grid,
+    //      resampled at w/beta, cosine-transformed back to an autocorrelation
+    //      (positive definite by construction) and Levinson'd into the warped
+    //      all-pole synthesis filter.
+    // See placeGrainWarped() for the measured details, including why the warp
+    // works on the envelope rather than on the autocorrelation at scaled lags.
+    static constexpr float kMaxFormantShiftSt = 12.0f;
+
+    void setFormantShift (float semitones) noexcept
+    {
+        formantShift_.store (std::clamp (semitones, -kMaxFormantShiftSt, kMaxFormantShiftSt),
+                             std::memory_order_relaxed);
+    }
+    float getFormantShift() const noexcept { return formantShift_.load (std::memory_order_relaxed); }
 
     // Fade applied on the VOICED side of a voiced/unvoiced seam. Short enough
     // to be inaudible as a level move, long enough to stop a step edge.
@@ -157,6 +176,22 @@ public:
         f0_.assign  (sz, 0.0f);      // <= 0 means UNVOICED at that sample
         acc_.assign (sz, 0.0f);
         win_.assign (sz, 0.0f);
+
+        // LPC scratch for kFormantShift, sized for the worst-case grain any
+        // voice_type can ask for, so the audio thread never allocates. The
+        // order follows the spec's ~ 2 + fs/1000 at the working rate.
+        lpcOrder_ = std::clamp (2 + (int) (fs_ / 1000.0), 8, kMaxLpcOrder);
+        const size_t grainMax = (size_t) (2 * maxPeriod_ + 1);
+        lpcX_.assign  (grainMax + (size_t) kMaxLpcOrder, 0.0f);
+        lpcY_.assign  (grainMax + (size_t) kMaxLpcOrder, 0.0f);
+        lpcE_.assign  (grainMax, 0.0f);
+        lpcWin_.assign (grainMax, 0.0f);
+        lpcR_.assign  ((size_t) (kMaxLpcOrder + 1), 0.0);
+        lpcRw_.assign ((size_t) (kMaxLpcOrder + 1), 0.0);
+        lpcP_.assign  ((size_t) (kWarpGrid + 1), 0.0);
+        lpcPw_.assign ((size_t) (kWarpGrid + 1), 0.0);
+        lpcA_.assign  ((size_t) (kMaxLpcOrder + 1), 0.0);
+        lpcAw_.assign ((size_t) (kMaxLpcOrder + 1), 0.0);
 
         seamFade_ = std::max (1, (int) std::lround (fs_ * (double) kSeamFadeMs * 0.001));
 
@@ -589,7 +624,19 @@ private:
     void placeGrain (uint64_t analysisEpoch, uint64_t synthEpoch, int Ta, int Ts,
                      int64_t emitFloor) noexcept
     {
-        const bool preserve = formantMode_.load (std::memory_order_relaxed) != kFormantOff;
+        const int mode = formantMode_.load (std::memory_order_relaxed);
+
+        // SHIFT branches before anything else touches the grain, so the
+        // preserve and off paths below stay bit-identical to what was measured
+        // and banked - formant_mode = preserve is the shipped default and its
+        // output must not move by one bit for this feature's sake.
+        if (mode == kFormantShift)
+        {
+            placeGrainWarped (analysisEpoch, synthEpoch, Ta, Ts, emitFloor);
+            return;
+        }
+
+        const bool preserve = mode != kFormantOff;
 
         // PRESERVE: the grain is copied at 1:1, so the pulse keeps its own
         // duration and therefore its own spectral envelope. Re-spacing changes
@@ -678,6 +725,281 @@ private:
         placedTo_ = std::max (placedTo_, synthEpoch + (uint64_t) half);
     }
 
+    // ---- kFormantShift: LPC envelope warp, per grain -----------------------
+    //
+    // The pipeline the spec prescribes, executed on each two-period grain:
+    //
+    //   analyse   A(z)  = LPC of the Hann-windowed grain (autocorrelation
+    //                     method, Levinson-Durbin, order lpcOrder_),
+    //   flatten   e[n]  = x[n] - sum a_k x[n-k]   - the residual, computed
+    //                     against the REAL ring history so it is exact,
+    //   shift             the residual grain is copied 1:1 and re-spaced at
+    //                     the target period by the caller - the same PSOLA
+    //                     move as preserve, applied to the flat signal,
+    //   re-apply  A'(z) = the envelope with its frequency axis scaled by
+    //                     beta = 2^(shift/12): P(w) = E/|A(w)|^2 evaluated on
+    //                     a dense grid, read back at w/beta, cosine-
+    //                     transformed to an autocorrelation and Levinson'd.
+    //                     No pole root-finding, no FFT, and the resampled
+    //                     curve is the SMOOTH model envelope - see the block
+    //                     comment inside for why warping the raw
+    //                     autocorrelation at scaled lags was tried first and
+    //                     measured broken.
+    //
+    // Level: with the autocorrelation method the prediction-error energy is
+    // E = r[0] * prod(1 - k_i^2), and filtering the (variance-E) residual
+    // through 1/A' multiplies variance by rw[0]/E'. Scaling the residual by
+    // sqrt((E'/E) * (r[0]/rw[0])) therefore lands the output back at the
+    // grain's own energy regardless of how the warp reshaped the envelope.
+    //
+    // Continuity through zero is structural, not tuned: at shift = 0 the
+    // envelope round trip reproduces A' ~= A, the residual is re-filtered by
+    // (nearly) the filter that made it, and the control approaches the
+    // preserve sound smoothly as it approaches 0 - measured, shift 0 and
+    // preserve read the same formant within the tracker's resolution.
+    //
+    // The synthesis filter is seeded with the DRY history before the grain
+    // rather than zeros: the Hann window silences the grain edges, and the
+    // warped filter's start-up transient decays inside the half-period the
+    // window is still rising through.
+    void placeGrainWarped (uint64_t analysisEpoch, uint64_t synthEpoch, int Ta, int Ts,
+                           int64_t emitFloor) noexcept
+    {
+        const int half = std::min (Ta, maxPeriod_);
+        const int len  = 2 * half + 1;
+        const float shiftSt = formantShift_.load (std::memory_order_relaxed);
+        const double beta = std::pow (2.0, (double) shiftSt / 12.0);
+
+        // Effective order: never more than the grain can support, and the
+        // scaled lags must stay inside the autocorrelation's support.
+        int p = std::min (lpcOrder_, (len - 2) / 2);
+        if (beta > 1.0)
+            p = std::min (p, (int) ((double) (len - 2) / beta));
+
+        const int64_t s0 = (int64_t) analysisEpoch - half;    // first grain sample
+        const int64_t h0 = s0 - p;                             // first history sample
+        const int64_t oldest = (int64_t) write_ - (int64_t) (mask_ + 1);
+
+        // Degenerate geometry, stream edges, or history outside the ring:
+        // place the grain as a plain 1:1 copy (the preserve geometry), which
+        // is the right sound for the edge of a voiced span anyway.
+        bool canModel = p >= 4 && h0 >= 0 && h0 > oldest
+                        && (uint64_t) (s0 + len) <= write_
+                        && (size_t) len <= lpcE_.size();
+
+        double E = 0.0, Ew = 0.0;
+        if (canModel)
+        {
+            // Contiguous copy: history then grain.
+            for (int i = 0; i < p + len; ++i)
+                lpcX_[(size_t) i] = in_[(size_t) ((uint32_t) (uint64_t) (h0 + i) & mask_)];
+
+            // Hann-windowed copy for the autocorrelation.
+            double r0 = 0.0;
+            for (int i = 0; i < len; ++i)
+            {
+                const float ph = (float) i / (float) (len - 1);
+                const float w  = 0.5f - 0.5f * std::cos (6.283185307179586f * ph);
+                lpcWin_[(size_t) i] = w * lpcX_[(size_t) (p + i)];
+                r0 += (double) lpcWin_[(size_t) i] * lpcWin_[(size_t) i];
+            }
+
+            if (r0 < 1.0e-12)
+                canModel = false;                     // silence: nothing to model
+            else
+            {
+                for (int k = 0; k <= p; ++k)
+                {
+                    double s = 0.0;
+                    for (int i = 0; i + k < len; ++i)
+                        s += (double) lpcWin_[(size_t) i] * (double) lpcWin_[(size_t) (i + k)];
+                    // Gaussian LAG WINDOW (the G.729/AMR conditioning trick):
+                    // a sum of near-pure harmonics is predictable to machine
+                    // precision, so the raw prediction error can collapse to
+                    // ~0 and the model degenerates into line spectra that
+                    // Levinson (and the warp's lag interpolation) cannot
+                    // handle. Convolving the envelope with a ~40 Hz Gaussian
+                    // gives every line a finite bandwidth: E stays bounded
+                    // away from zero, r(tau) decays smoothly enough to
+                    // interpolate, and 40 Hz is well under any formant
+                    // bandwidth this control claims to move.
+                    const double lw = 6.2831853 * 40.0 * (double) k / fs_;
+                    lpcR_[(size_t) k] = s * std::exp (-0.5 * lw * lw);
+                }
+                // A touch of ridge on top for the zero-lag term.
+                lpcR_[0] *= 1.0001;
+
+                E = levinson (lpcR_.data(), p, lpcA_.data());
+
+                // THE WARP HAPPENS IN THE ENVELOPE DOMAIN, deliberately.
+                //
+                // The first cut interpolated the raw autocorrelation at
+                // scaled lags (r(beta*k), the time-compression identity).
+                // Measured, that collapses at some warp factors: r(tau) of
+                // anything with near-Nyquist content oscillates at the
+                // sub-sample scale, interpolating it yields an INDEFINITE
+                // sequence, and Levinson degenerates through its reflection
+                // clamps - Ew came out 2.5e-16 against a healthy 1.9e-3, and
+                // the grain silently fell back to unwarped. The envelope
+                // itself is smooth by construction (the lag window above
+                // floors every peak's bandwidth), so THAT is the safe thing
+                // to resample:
+                //
+                //   1. evaluate the model envelope P(w) = E/|A(w)|^2 on a
+                //      dense grid (one complex rotation per coefficient),
+                //   2. read it at w/beta - linear interpolation of a smooth
+                //      curve; beyond the source band, hold the Nyquist value,
+                //   3. cosine-transform back to an autocorrelation - which is
+                //      positive definite BY CONSTRUCTION, being the transform
+                //      of a nonnegative spectrum - and Levinson that.
+                //
+                // Grid spacing pi/512 is ~47 Hz at 48 kHz, matched to the
+                // ~40 Hz bandwidth floor the lag window guarantees, so no
+                // peak can fall between grid points.
+                const int M = kWarpGrid;
+                for (int m = 0; m <= M; ++m)
+                {
+                    const double wm = 3.141592653589793 * (double) m / (double) M;
+                    // A(e^{-jw}) = 1 - sum a_k e^{-jwk}, via phase rotation.
+                    const double cw = std::cos (wm), sw = std::sin (wm);
+                    double cr = 1.0, ci = 0.0;          // e^{-j w k}, k = 0
+                    double re = 1.0, im = 0.0;
+                    for (int k = 1; k <= p; ++k)
+                    {
+                        const double nr = cr * cw + ci * sw;    // rotate by -w
+                        const double ni = ci * cw - cr * sw;
+                        cr = nr; ci = ni;
+                        re -= lpcA_[(size_t) k] * cr;
+                        im -= lpcA_[(size_t) k] * ci;
+                    }
+                    lpcP_[(size_t) m] = E / std::max (1.0e-12, re * re + im * im);
+                }
+                for (int m = 0; m <= M; ++m)
+                {
+                    const double t = (double) m / beta;          // grid position of w/beta
+                    const int    m0 = (int) t;
+                    const double fr = t - (double) m0;
+                    lpcPw_[(size_t) m] = m0 >= M ? lpcP_[(size_t) M]
+                                       : (1.0 - fr) * lpcP_[(size_t) m0] + fr * lpcP_[(size_t) (m0 + 1)];
+                }
+                for (int k = 0; k <= p; ++k)
+                {
+                    // Trapezoid cosine series over [0, pi]; rotation again.
+                    const double ck = std::cos (3.141592653589793 * (double) k / (double) M);
+                    const double sk = std::sin (3.141592653589793 * (double) k / (double) M);
+                    double cr = 1.0, ci = 0.0;
+                    double s = 0.5 * lpcPw_[0];
+                    for (int m = 1; m < M; ++m)
+                    {
+                        const double nr = cr * ck - ci * sk;
+                        const double ni = ci * ck + cr * sk;
+                        cr = nr; ci = ni;
+                        s += lpcPw_[(size_t) m] * cr;
+                    }
+                    s += 0.5 * lpcPw_[(size_t) M] * ((k & 1) != 0 ? -1.0 : 1.0);
+                    lpcRw_[(size_t) k] = s / (double) M;
+                }
+                Ew = levinson (lpcRw_.data(), p, lpcAw_.data());
+
+                // RELATIVE degeneracy guard, not absolute: a very small E on
+                // clean periodic material means the model is very GOOD, and
+                // the gain below carries the scale. Only an actual collapse
+                // drops the grain to the plain-copy path.
+                if (E <= 1.0e-9 * lpcR_[0] || Ew <= 1.0e-9 * lpcRw_[0] || lpcRw_[0] <= 0.0)
+                    canModel = false;
+            }
+        }
+
+        const float makeup = std::clamp ((float) Ta / (float) Ts, 1.0f, 2.0f);
+
+        if (canModel)
+        {
+            // Flatten: exact residual against the real history.
+            for (int n = 0; n < len; ++n)
+            {
+                double e = (double) lpcX_[(size_t) (p + n)];
+                for (int k = 1; k <= p; ++k)
+                    e -= lpcA_[(size_t) k] * (double) lpcX_[(size_t) (p + n - k)];
+                lpcE_[(size_t) n] = (float) e;
+            }
+
+            // Re-apply, warped. The residual is scaled so output energy lands
+            // at the grain's own: variance E in, filtered through 1/A' which
+            // amplifies white variance by rw[0]/Ew, must land at r[0] - so
+            // g^2 = (Ew/E) * (r[0]/rw[0]). The filter starts from the dry
+            // history.
+            const double g = std::clamp (
+                std::sqrt ((Ew / E) * (lpcR_[0] / std::max (1.0e-12, lpcRw_[0]))),
+                0.0625, 16.0);
+            for (int i = 0; i < p; ++i)
+                lpcY_[(size_t) i] = lpcX_[(size_t) i];
+            for (int n = 0; n < len; ++n)
+            {
+                double y = g * (double) lpcE_[(size_t) n];
+                for (int k = 1; k <= p; ++k)
+                    y += lpcAw_[(size_t) k] * (double) lpcY_[(size_t) (p + n - k)];
+                // A pathological frame must degrade, not explode: the warp can
+                // push a near-unit-circle pole harder than the source ever did.
+                y = std::clamp (y, -4.0, 4.0);
+                lpcY_[(size_t) (p + n)] = (float) y;
+            }
+        }
+        else
+        {
+            // Plain 1:1 copy - the preserve geometry without the model.
+            for (int n = 0; n < len; ++n)
+            {
+                const int64_t sp = s0 + n;
+                lpcY_[(size_t) (p + n)] = sp >= 0 && (uint64_t) sp < write_
+                    ? in_[(size_t) ((uint32_t) (uint64_t) sp & mask_)] : 0.0f;
+            }
+        }
+
+        for (int k = -half; k <= half; ++k)
+        {
+            const int64_t dst = (int64_t) synthEpoch + k;
+            if (dst < emitFloor) continue;
+
+            const float ph = (float) (k + half) / (float) (len - 1);
+            const float w  = 0.5f - 0.5f * std::cos (6.283185307179586f * ph);
+
+            const uint32_t di = (uint32_t) (uint64_t) dst & mask_;
+            acc_[(size_t) di] += makeup * w * lpcY_[(size_t) (p + k + half)];
+            win_[(size_t) di] += w;
+        }
+        if (debugOn_) dbgGrain_.push_back ({ synthEpoch, Ta, Ts, half, makeup });
+        placedTo_ = std::max (placedTo_, synthEpoch + (uint64_t) half);
+    }
+
+    // Levinson-Durbin on autocorrelation r[0..p]; writes predictor
+    // coefficients into a[1..p] (x[n] ~ sum a_k x[n-k]) and returns the
+    // prediction-error energy. Reflection coefficients are clamped just
+    // inside the unit circle so a razor-sharp resonance stays a filter
+    // rather than an oscillator.
+    static double levinson (const double* r, int p, double* a) noexcept
+    {
+        double E = r[0];
+        for (int k = 0; k <= p; ++k) a[k] = 0.0;
+        if (E <= 0.0) return 0.0;
+
+        double tmp[kMaxLpcOrder + 1];
+        for (int i = 1; i <= p; ++i)
+        {
+            double acc = r[i];
+            for (int j = 1; j < i; ++j) acc -= a[j] * r[i - j];
+            double kref = acc / E;
+            kref = std::clamp (kref, -0.9995, 0.9995);
+
+            for (int j = 1; j < i; ++j) tmp[j] = a[j] - kref * a[i - j];
+            for (int j = 1; j < i; ++j) a[j] = tmp[j];
+            a[i] = kref;
+
+            E *= (1.0 - kref * kref);
+            if (E <= 1.0e-15) break;
+        }
+        return E;
+    }
+
     void recomputeLatency() noexcept
     {
         latency_    = std::max (curPeriod_, (int) (lookahead_ * (float) curPeriod_));
@@ -704,6 +1026,15 @@ private:
     std::vector<float> in_, f0_, acc_, win_;
     uint32_t mask_ = 0;
 
+    // kFormantShift scratch - allocated in prepare(), never on the audio
+    // thread. kMaxLpcOrder bounds the spec's 2 + fs/1000 at any sample rate
+    // this plugin can be prepared at.
+    static constexpr int kMaxLpcOrder = 128;
+    static constexpr int kWarpGrid    = 512;
+    int lpcOrder_ = 50;
+    std::vector<float>  lpcX_, lpcY_, lpcE_, lpcWin_;
+    std::vector<double> lpcR_, lpcRw_, lpcA_, lpcAw_, lpcP_, lpcPw_;
+
     uint64_t write_   = 0;    // absolute input samples written
     int64_t  emitted_ = 0;    // input position just past the last sample emitted
     uint64_t placedTo_ = 0;
@@ -715,6 +1046,7 @@ private:
 
     std::atomic<float> targetHz_ { 0.0f };
     std::atomic<int>   formantMode_ { kFormantPreserve };
+    std::atomic<float> formantShift_ { 0.0f };
     std::atomic<float> mix_     { 1.0f };
     std::atomic<float> outGain_ { 1.0f };
     std::atomic<float> outDb_   { 0.0f };

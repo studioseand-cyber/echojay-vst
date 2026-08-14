@@ -179,11 +179,21 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "what happens to the vocal character when pitch moves: preserve "
           "keeps the formants where they are so a shifted voice still sounds "
           "like the same singer, off lets them move with the pitch for the "
-          "chipmunk/resampler effect",
+          "chipmunk/resampler effect, shift keeps them independent of pitch "
+          "AND moves them by formant_shift for a deliberate character change",
           false,
-          // Mirrors PsolaEngine::FormantMode, and APPEND-ONLY: `shift` (LPC
-          // envelope warping) is a later phase and becomes index 2.
-          { "off", "preserve" } },
+          // Mirrors PsolaEngine::FormantMode, APPEND-ONLY.
+          { "off", "preserve", "shift" } },
+
+        { EedPitchProcessor::kFormantShift, "st",
+          (double) -PsolaEngine::kMaxFormantShiftSt,
+          (double) PsolaEngine::kMaxFormantShiftSt, 0.0,
+          "moves the vocal character independently of pitch - the throat-"
+          "length control. Negative reads bigger and deeper, positive smaller "
+          "and brighter; a couple of semitones is a subtle character change, "
+          "the extremes are an effect. ONLY ACTIVE when formant_mode is "
+          "shift; preserve and off ignore it, and 0 sounds like preserve",
+          false },
 
         { EedPitchProcessor::kLowLatency, "", 0.0, 1.0, 0.0,
           "turn ON when the singer is TRACKING through this plugin and needs "
@@ -242,6 +252,11 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
     if (id == kFormantMode)
     {
         forEachShifter ([&] (auto& e) { e.setFormantMode ((int) std::lround (value)); });
+        return true;
+    }
+    if (id == kFormantShift)
+    {
+        forEachShifter ([&] (auto& e) { e.setFormantShift ((float) value); });
         return true;
     }
     if (id == kLowLatency)
@@ -305,6 +320,7 @@ double EedPitchProcessor::getParamValue (const juce::String& id) const
     if (id == kTracking)   return (double) engine_.getTracking();
     if (id == kTargetHz)   return (double) shifter().getTargetHz();
     if (id == kFormantMode) return (double) shifter().getFormantMode();
+    if (id == kFormantShift) return (double) shifter().getFormantShift();
     if (id == kLowLatency)  return shifter().getLookaheadPeriods() <= kLookaheadTracking + 0.01f
                                  ? 1.0 : 0.0;
     if (id == kKeySource)   return keyAuto_.load() ? 0.0 : 1.0;

@@ -860,7 +860,10 @@ reconstructs an envelope that barely follows the per-grain resampling, so the
 control cannot work this way however the geometry is tuned. **It is not
 shipped** — a knob that lies is worse than a missing one, and the spec's own
 prescription (LPC or cepstral envelope: flatten, shift, re-apply warped) is a
-different and larger piece of work.
+different and larger piece of work. **That larger piece of work has since
+been done: §15 is the LPC rebuild, measured monotonic and continuous across
+the whole range.** This section stays as the record of why the cheap
+geometry must not come back.
 
 **A measurement bug fell out of this and is worth recording.** The formant
 tracker was a Goertzel, which is ill-conditioned off-bin and loses precision
@@ -1140,3 +1143,168 @@ feature working and needs no new failure mode.
   232% (low_male), so single-run worst cases measure the OS scheduler, not
   the code. Means are the stable regression signal; they are unchanged.
 - **pluginval strictness 5** on this worktree's VST3: SUCCESS.
+
+---
+
+## 15. formant_shift, rebuilt via LPC — the knob no longer lies
+
+§11.3 rejected the cheap formant_shift (per-grain resampling through the
+`off` code path): inert from −9 to +3 st, ~600 Hz steps outside that,
+non-monotonic at the bottom. The acceptance for the rebuild is therefore
+exactly what that version failed: **monotonic and continuous across the whole
+−12..+12 range**, measured with the direct-DFT tracker (never the Goertzel —
+§11.3 records why).
+
+### 15.1 The method — the spec's own prescription, per grain
+
+`formant_mode = shift` (schema index 2, append-only as promised) runs each
+two-period grain through:
+
+1. **analyse** — LPC of the Hann-windowed grain, autocorrelation method,
+   Levinson-Durbin, order `2 + fs/1000` (46 at 44.1 k, 50 at 48 k);
+2. **flatten** — inverse-filter to the residual, against the REAL ring
+   history, so the residual is exact and the round trip at shift 0 is an
+   identity up to rounding;
+3. **shift** — the residual grain is copied 1:1 and re-spaced at the target
+   period: the same PSOLA move as preserve, applied to the flat signal;
+4. **re-apply, warped** — the model envelope `P(w) = E/|A(w)|²` is evaluated
+   on a π/512 grid, read back at `w/β` (β = 2^(shift/12)), cosine-transformed
+   to an autocorrelation and Levinson'd into the warped synthesis filter. The
+   residual is scaled by `sqrt((E'/E)·(r0/r'0))` so output energy lands at
+   the grain's own regardless of what the warp did to the envelope.
+
+**The warp lives in the envelope domain because the lag domain measurably
+fails.** The textbook shortcut — interpolate the raw autocorrelation at
+scaled lags, r(βk) — was tried first: at β = 0.5, 0.561 and 1.122 the
+interpolated sequence went indefinite (r(τ) of anything with near-Nyquist
+content oscillates at the sub-sample scale), Levinson degenerated through its
+reflection clamps to E' ≈ 2.5e-16 against a healthy 1.9e-3, and the guard
+silently dropped every grain to the unwarped fallback — three shift settings
+INERT at exactly the source formant, the §11.3 failure wearing a new hat. The
+smoothed model envelope is interpolable by construction (a 40 Hz Gaussian lag
+window floors every peak's bandwidth at roughly the grid spacing), and the
+cosine transform of a nonnegative spectrum is positive definite, so Levinson
+cannot degenerate on it. The degeneracy guard that remains is RELATIVE
+(E ≤ 1e-9·r0), because on clean periodic material a tiny absolute E means
+the model is very good, not broken — the first absolute guard was the bug.
+
+### 15.2 Measured — synthetic resonance, pitch held
+
+900 Hz resonance (q = 8) on a 90 Hz source, pitch held at 90 Hz, tracker =
+direct DFT sampling the envelope at every harmonic with parabolic refinement
+(raw peak-picking on periodic material quantises to harmonics and would read
+steps where there are none — the estimator has to be continuous before it can
+certify the control is):
+
+| shift | expected | measured | error |
+|---|---|---|---|
+| −12 st | 450 Hz | 452 Hz | +0.4% |
+| −10 st | 505 Hz | 533 Hz | +5.6% |
+| −8 st | 567 Hz | 561 Hz | −1.0% |
+| −6 st | 636 Hz | 633 Hz | −0.5% |
+| −4 st | 714 Hz | 717 Hz | +0.3% |
+| −2 st | 802 Hz | 806 Hz | +0.5% |
+| 0 st | 900 Hz | 901 Hz | +0.1% |
+| +2 st | 1010 Hz | 988 Hz | −2.2% |
+| +4 st | 1134 Hz | 1092 Hz | −3.7% |
+| +6 st | 1273 Hz | 1252 Hz | −1.6% |
+| +8 st | 1429 Hz | 1409 Hz | −1.4% |
+| +10 st | 1604 Hz | 1569 Hz | −2.1% |
+| +12 st | 1800 Hz | 1751 Hz | −2.7% |
+
+Monotonic at every step, every step ratio inside [1.04, 1.25] against the
+ideal 1.122, every point within 10% — all three asserted in
+`test/psola_engine_test.cpp`, which also proves independence (pitch up a
+fourth with formant −5 st: pitch lands +0 ¢, formant 675 Hz against 674
+wanted), shift 0 ≡ preserve within the tracker's resolution, and the
+unvoiced null in shift mode (0 differing samples).
+
+### 15.3 Measured — the real acapella
+
+A single "dominant formant peak" is ill-posed on real speech across a
+±1-octave warp: the pre-emphasised LTAS peak jumps between F0-region, F1 and
+F2 (measured: 186 → 646 → 1328 Hz) even while the envelope moves perfectly
+smoothly. The well-posed observable is the **log-frequency displacement of
+the whole LTAS envelope** against the shift-0 reference (250 Hz-smoothed log
+spectrum, 250–5000 Hz, least-squares over 0.1 st steps), plus the spectral
+centroid as a second, metric-independent monotone:
+
+| shift | envelope displacement | centroid (200–4000 Hz) |
+|---|---|---|
+| −12 st | −6.37 st | 385 Hz |
+| −10 st | −5.42 st | 380 Hz |
+| −8 st | −4.85 st | 379 Hz |
+| −6 st | −4.20 st | 377 Hz |
+| −4 st | −3.07 st | 392 Hz |
+| −2 st | −1.42 st | 432 Hz |
+| 0 st | 0.00 st | 479 Hz |
+| +2 st | +0.96 st | 508 Hz |
+| +4 st | +2.59 st | 545 Hz |
+| +6 st | +4.07 st | 592 Hz |
+| +8 st | +5.36 st | 639 Hz |
+| +10 st | +6.52 st | 691 Hz |
+| +12 st | +7.06 st | 747 Hz |
+
+Strictly monotonic at every one of the twelve steps — the property the
+rejected version lacked. The displacement magnitude under-reads the request
+(≈0.5–0.8×) and that is the METRIC, not the control: the LTAS mixes the
+moved envelope with the unmoved harmonic comb (the pitch is held, so the
+comb must not move), with part-unvoiced frames, and with band-edge
+truncation of features warped past 250/5000 Hz — all of which pull the
+least-squares displacement toward zero. The synthetic table above, where the
+observable is clean, carries the magnitude claim.
+
+### 15.4 Every banked invariant, re-run
+
+- **preserve is bit-identical to before this work** — proven directly, not
+  assumed: the same streaming harness compiled against the git-HEAD
+  `EedPsolaEngine.h` and against the new one, run over the full acapella:
+  preserve +3 st, preserve −4 st, off +3 st and passthrough all compare
+  **0 differing bytes**. The shift mode branches out of `placeGrain` before
+  the preserve/off code is touched.
+- **g++ suites** (pitch_engine, pitch_correct, psola_engine): ALL PASS,
+  including the unvoiced null and the new §15.2 assertions.
+- **Host path**: L vs R 0.000000 correcting and in passthrough; fixed-512 vs
+  fixed-128/256/1024/2048 exactly 0; variable-block residual 0.202 peak
+  (bound 0.25); oversize and tiny blocks finite. ALL PASS.
+- **Mode machine**: ALL PASS. formant_shift is exempted from the mode table
+  BY NAME with its reason (a who-is-singing control, and inert in every mode
+  since every mode writes formant_mode preserve); the walk still proves
+  formant_mode itself is written by all four modes.
+- **Click density**: 2.43/s against the 3.5/s ceiling, control 25/25 —
+  unchanged, as bit-identity requires. Diagnostic only (new
+  `--formant-shift` flag on the click tool, not part of the gate): the LPC
+  path itself measures **1.00/s** at −5 st on the same material — the
+  resynthesis smooths the duplicated-pulse burrs that make up the preserve
+  residual.
+- **Characters re-probed**: dry 13.1/8.3 ¢, hard tuned 7.7/**3.8** ¢,
+  natural 13.0/8.8 ¢, wrong key 30.6/33.0 ¢ — the §14.6 table exactly.
+- **CPU** (Release, 48 k / 128): means 6.1 / 7.8 / 4.2 / 19.7 / 19.7% per
+  voice type against §14.6's 6.0 / 7.6 / 4.1 / 19.3 / 19.3 — within run
+  noise, at the shipped defaults the LPC path never executes. Engine-level,
+  shift mode costs ~23% more than preserve (9.1 s vs 7.3 s for 118 s of
+  mono at 44.1 k, detector included) — ~1.5 points of realtime, only when
+  the mode is selected.
+- **pluginval strictness 5**: SUCCESS on this worktree's freshly built VST3.
+
+### 15.5 The gate that almost lied, and the A/B set
+
+Two findings from the re-run worth keeping:
+
+- `build_and_run.sh` hardcoded the Debug artefact path while the build
+  cache had moved to Release, so `cmake --build` rebuilt one binary and the
+  script ran another — the density gate was green against a STALE binary.
+  The script now derives the artefact dir from `CMAKE_BUILD_TYPE` and fails
+  loudly if the binary predates its sources. (Every §15 number above was
+  then re-measured on verified-fresh binaries.)
+- The residual 2.43 clicks/s (§14.3) was looked at again as a secondary:
+  it lives in the preserve wet path's grain summation, and any change there
+  breaks the bit-identity acceptance this very section banks. Left alone,
+  bounded by the gate; the shift path's 1.00/s reading says the burrs are
+  not fundamental to grain synthesis, so the option exists for a session
+  allowed to move preserve.
+
+The formant A/B set — the control heard in isolation, pitch held constant,
+`formant_shift` at −7 / −3 / 0 / +3 / +7 plus the preserve reference —
+renders via `EchoJayPitchRender --formant-set` and sits next to the acapella
+in `… - formant AB/`.

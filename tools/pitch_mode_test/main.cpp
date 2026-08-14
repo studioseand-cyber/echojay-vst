@@ -318,6 +318,9 @@ int main()
             { "tracking",         "detector strictness, not character" },
             { "target_hz",        "the P1 fixed-target diagnostic path" },
             { "low_latency",      "a latency trade; changes delay, not character" },
+            { "formant_shift",    "a WHO-is-singing control, not a correction character - and "
+                                  "inert in every mode anyway, since every mode writes "
+                                  "formant_mode preserve (which the walk above proves)" },
             { "mix",              "output stage" },
             { "output_db",        "output stage" },
             { "vib_depth_cents",  "ADDED vibrato is a creative layer the spec's mode table deliberately leaves alone (only natural_vibrato is in it)" },

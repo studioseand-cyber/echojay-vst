@@ -54,10 +54,24 @@ struct HopInfo
     bool  voicedChanged = false;
 };
 
+// DIAGNOSTIC override, not part of the gate: --formant-shift <st> runs the
+// whole battery with formant_mode = shift at the given amount, so the LPC
+// path's click density can be READ on real material. The banked ceiling is
+// asserted at the shipped defaults (preserve) only - build_and_run.sh does
+// not pass this flag.
+float g_formantShiftSt = 0.0f;
+bool  g_formantShiftOn = false;
+
 void configure (EedPitchProcessor& p, double fs, int maxBlock)
 {
     p.setRateAndBufferSizeDetails (fs, maxBlock);
     p.prepareToPlay (fs, maxBlock);
+    if (g_formantShiftOn)
+    {
+        p.setParamValue (EedPitchProcessor::kFormantMode,
+                         (double) echojay::PsolaEngine::kFormantShift);
+        p.setParamValue (EedPitchProcessor::kFormantShift, (double) g_formantShiftSt);
+    }
 }
 
 std::vector<float> runProcessor (const std::vector<float>& src, double fs,
@@ -246,7 +260,8 @@ int main (int argc, char* argv[])
     if (argc < 2)
     {
         std::printf ("usage: pitch_click_test (<wav> | --synth) [--dump <prefix>]\n"
-                     "                        [--max-per-second <x>] [--control]\n");
+                     "                        [--max-per-second <x>] [--control]\n"
+                     "                        [--formant-shift <st>]   (diagnostic, not the gate)\n");
         return 1;
     }
 
@@ -260,6 +275,8 @@ int main (int argc, char* argv[])
         if      (s == "--dump" && a + 1 < argc)          dumpPrefix = argv[++a];
         else if (s == "--max-per-second" && a + 1 < argc) maxPerSecond = juce::String (argv[++a]).getDoubleValue();
         else if (s == "--control")                        runControl = true;
+        else if (s == "--formant-shift" && a + 1 < argc)
+        { g_formantShiftSt = juce::String (argv[++a]).getFloatValue(); g_formantShiftOn = true; }
         else                                              wavArg = s;
     }
 

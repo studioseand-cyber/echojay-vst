@@ -157,18 +157,55 @@ static double peakHz (const std::vector<float>& x, double fs,
     return bestF;
 }
 
+// CONTINUOUS formant estimate for a HARMONIC spectrum, built on the same
+// direct-DFT magAt - the fixed tracker, not the Goertzel that reported 749 Hz
+// for a 900 Hz peak (see magAt's comment).
+//
+// peakHz alone cannot certify a continuous control on periodic material: the
+// spectral peak of a harmonic signal sits ON a harmonic, so raw peak-picking
+// quantises to multiples of f0 and a perfectly continuous envelope would still
+// read as steps. The envelope is instead SAMPLED at every harmonic and the
+// peak refined by parabolic interpolation through the log magnitudes of the
+// winning harmonic and its neighbours - the standard spectral-peak refinement,
+// which recovers a between-harmonics resonance to a few percent.
+static double formantHzHarmonic (const std::vector<float>& x, double fs, double f0,
+                                 double lo, double hi, size_t from, size_t len)
+{
+    const int kLo = std::max (1, (int) std::ceil  (lo / f0));
+    const int kHi = std::max (kLo + 2, (int) std::floor (hi / f0));
+
+    std::vector<double> m ((size_t) (kHi + 2), 0.0);
+    int    best = kLo;
+    double bestM = -1.0;
+    for (int k = kLo; k <= kHi; ++k)
+    {
+        m[(size_t) k] = magAt (x, fs, f0 * k, from, len);
+        if (m[(size_t) k] > bestM) { bestM = m[(size_t) k]; best = k; }
+    }
+    if (best <= kLo || best >= kHi) return f0 * best;
+
+    const double la = std::log (std::max (1e-12, m[(size_t) (best - 1)]));
+    const double lb = std::log (std::max (1e-12, m[(size_t) best]));
+    const double lc = std::log (std::max (1e-12, m[(size_t) (best + 1)]));
+    const double den = la - 2.0 * lb + lc;
+    const double d = std::abs (den) > 1e-12 ? 0.5 * (la - lc) / den : 0.0;
+    return f0 * ((double) best + std::clamp (d, -0.5, 0.5));
+}
+
 // Run the shifter over a source, returning its output.
 struct ShiftResult { std::vector<float> out; int latency = 0; };
 
 static ShiftResult shift (const std::vector<float>& in, double fs,
                           float sourceF0, float targetHz, bool voiced = true,
                           float lowestF0 = 80.0f,
-                          int formantMode = PsolaEngine::kFormantPreserve)
+                          int formantMode = PsolaEngine::kFormantPreserve,
+                          float formantShiftSt = 0.0f)
 {
     PsolaEngine e;
     e.prepare (fs, 512, lowestF0, 25.0f);
     e.setTargetHz (targetHz);
     e.setFormantMode (formantMode);
+    e.setFormantShift (formantShiftSt);
 
     ShiftResult r;
     r.latency = e.latencySamples();
@@ -335,6 +372,102 @@ int main()
                                      (size_t) (fs * 0.3));
         std::snprintf (msg, sizeof (msg), "off still lands on pitch: %.1f Hz (want 300)", gotOff);
         check (std::fabs (PitchEngine::centsBetween (gotOff, 300.0f)) < 40.0f, msg);
+    }
+
+    std::printf ("== formant_shift (LPC): MONOTONIC and CONTINUOUS across -12..+12 ==\n");
+    {
+        // THE ACCEPTANCE THE REJECTED VERSION FAILED (PITCH_P0_VALIDATION.md
+        // §11.3): the cheap per-grain resample was inert from -9 to +3 st,
+        // quantised in ~600 Hz steps outside that, and non-monotonic at the
+        // bottom. So the gate for the LPC version is exactly monotonicity and
+        // continuity over the WHOLE range, with the pitch held constant so
+        // nothing but the control moves the envelope.
+        //
+        // The resonance is deliberately a little wider (q = 8) than the
+        // preserve test's: the estimator samples the envelope at harmonics of
+        // f0, and a resonance much narrower than the harmonic spacing is
+        // under-sampled by any tracker.
+        // f0 = 90 rather than 110/150: the estimator samples the envelope at
+        // harmonics of f0, so a lower fundamental samples it more densely and
+        // the interpolation error shrinks with it.
+        const double f0 = 90.0, formant = 900.0;
+        const auto in = vowel (fs, f0, formant, 1.5, 8.0);
+        const size_t from = (size_t) (fs * 0.6), len = (size_t) (fs * 0.5);
+
+        double prev = 0.0;
+        bool monotonic = true, continuous = true, accurate = true;
+        std::printf ("     shift   expected   measured\n");
+        for (int st = -12; st <= 12; st += 2)
+        {
+            const ShiftResult r = shift (in, fs, (float) f0, (float) f0, true, 80.0f,
+                                         PsolaEngine::kFormantShift, (float) st);
+            const double want = formant * std::pow (2.0, (double) st / 12.0);
+            const double got  = formantHzHarmonic (r.out, fs, f0, 250.0, 3600.0, from, len);
+            std::printf ("     %+3d st  %6.0f Hz  %6.0f Hz  (%+.1f%%)\n",
+                         st, want, got, 100.0 * (got / want - 1.0));
+
+            if (st > -12)
+            {
+                // Each 2 st step must move (monotonic) and must move by
+                // roughly one step's worth, not a ~600 Hz jump or a stall
+                // (continuous). Expected ratio 2^(2/12) = 1.122.
+                const double ratio = got / prev;
+                if (ratio <= 1.0)                  monotonic  = false;
+                if (ratio < 1.04 || ratio > 1.25)  continuous = false;
+            }
+            if (std::abs (got / want - 1.0) > 0.10) accurate = false;
+            prev = got;
+        }
+        check (monotonic,  "monotonic: every 2 st step moves the formant UP");
+        check (continuous, "continuous: every step lands near 2^(2/12), no stalls, no 600 Hz jumps");
+        check (accurate,   "each point within 10% of 900 * 2^(st/12)");
+
+        // The control is INDEPENDENT of pitch: shift the pitch a fourth up
+        // while pulling the formant down 5 st - both must land.
+        const ShiftResult both = shift (in, fs, (float) f0, (float) (f0 * 4.0 / 3.0),
+                                        true, 80.0f, PsolaEngine::kFormantShift, -5.0f);
+        const float gotPitch = detect (both.out, fs, PitchEngine::kAltoTenor,
+                                       (size_t) (fs * 0.3));
+        const double wantF = formant * std::pow (2.0, -5.0 / 12.0);
+        const double gotF  = formantHzHarmonic (both.out, fs, f0 * 4.0 / 3.0,
+                                                250.0, 3600.0, from, len);
+        char msg[200];
+        std::snprintf (msg, sizeof (msg),
+                       "pitch +4th with formant -5 st: pitch %.1f Hz (want %.1f), formant %.0f Hz (want %.0f)",
+                       gotPitch, f0 * 4.0 / 3.0, gotF, wantF);
+        check (std::fabs (PitchEngine::centsBetween (gotPitch, (float) (f0 * 4.0 / 3.0))) < 35.0f
+               && std::abs (gotF / wantF - 1.0) < 0.12, msg);
+
+        // At shift 0 the warp is the identity and the LPC round trip is exact
+        // up to rounding, so `shift` at 0 must SOUND like preserve: same
+        // envelope, same pitch, comparable level.
+        const ShiftResult zero = shift (in, fs, (float) f0, (float) f0, true, 80.0f,
+                                        PsolaEngine::kFormantShift, 0.0f);
+        const ShiftResult keep = shift (in, fs, (float) f0, (float) f0, true, 80.0f,
+                                        PsolaEngine::kFormantPreserve);
+        const double zF = formantHzHarmonic (zero.out, fs, f0, 250.0, 3600.0, from, len);
+        const double kF = formantHzHarmonic (keep.out, fs, f0, 250.0, 3600.0, from, len);
+        std::snprintf (msg, sizeof (msg),
+                       "shift 0 measures %.0f Hz where preserve measures %.0f Hz", zF, kF);
+        check (std::abs (zF / kF - 1.0) < 0.05, msg);
+    }
+
+    std::printf ("== formant_shift leaves UNVOICED bit-identical to the delayed dry ==\n");
+    {
+        // Unvoiced is sacred in every mode - the new mode included.
+        const auto in = noise (fs, 1.0, 0.3f, 123);
+        const ShiftResult r = shift (in, fs, 0.0f, 440.0f, /*voiced*/ false, 80.0f,
+                                     PsolaEngine::kFormantShift, -7.0f);
+        size_t compared = 0, differing = 0;
+        for (size_t i = (size_t) r.latency; i + 512 < in.size(); ++i)
+        {
+            ++compared;
+            if (r.out[i] != in[i - (size_t) r.latency]) ++differing;
+        }
+        char msg[160];
+        std::snprintf (msg, sizeof (msg),
+                       "%zu unvoiced samples compared in shift mode, %zu differ", compared, differing);
+        check (compared > 20000 && differing == 0, msg);
     }
 
     std::printf ("== the shift is stable, not just correct on average ==\n");
