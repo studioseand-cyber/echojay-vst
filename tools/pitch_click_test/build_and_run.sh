@@ -39,7 +39,14 @@ BIN=build/EchoJayPitchClickTest_artefacts/$CFG/EchoJayPitchClickTest
 # not steps; see PITCH_P0_VALIDATION.md §14. 3.5/s is a regression alarm,
 # not a quality target: enough margin for material noise, and the original
 # failure (5.5/s) is comfortably above it.
-CEILING=3.5
+# Re-based 2026-08-14 after instrument failure #11 (drift-aware exclusion):
+# the 3.5 ceiling dated from a 5.5/s failure and a 2.43/s residual, but ~70%
+# of that residual was the take's own glottal edges drifted out of the old
+# +/-64 exclusion window by the splice-resampler and straddling the 20x
+# threshold. Corrected instrument + cubic splice interpolation measure
+# 0.45/s. 1.0/s is the regression alarm - the old DSP under the old
+# instrument (1.58-2.43/s) sits comfortably above it.
+CEILING=1.0
 
 MATERIAL_FILE="tools/pitch_click_test/material.local"
 if [ -f "$MATERIAL_FILE" ]; then

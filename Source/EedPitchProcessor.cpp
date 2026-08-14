@@ -703,8 +703,6 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
                      numCh > 1 ? buffer.getReadPointer (1) : nullptr,
                      n);
 
-    const echojay::PitchReading r = engine_.getReading();
-
     // THE BLOCK IS SLICED AT HOP BOUNDARIES.
     //
     // The musical layer has millisecond time constants and produces the target
@@ -829,11 +827,36 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     // Feed the ribbon here rather than from the editor's timer, so the trace
     // is the audio thread's ACTUAL decisions rather than a resampled guess at
     // them - and so it keeps its shape whether or not an editor is open.
-    ribbon_.push (r.voiced,
-                  r.voiced && r.f0Hz > 0.0f ? echojay::PitchEngine::hzToMidi (r.f0Hz) : 0.0f,
-                  target > 0.0f ? echojay::PitchEngine::hzToMidi (target) : 0.0f,
-                  correcting && r.voiced);
-
+    //
+    // TWO FEED BUGS LIVED HERE, found by validating the ribbon against the
+    // audio (PITCH_P0_VALIDATION.md §16.9) after a user report of tall
+    // spikes sent two rounds of debugging at a defect the audio never had:
+    //
+    // 1. The dim trace carried the RAW engine reading - pre-F0JumpGate - so
+    //    after the excursion-rejection work it displayed precisely the
+    //    estimates the audio rejects. Measured: 33 of 34 full-height ribbon
+    //    verticals on the acapella moved the corrected trace by under 2 st;
+    //    the picture spiked, the audio did not. The feed now carries the
+    //    GATED value (lastHopF0_ - the same number the shifter and the
+    //    corrector obey). Rejected estimates stay visible NUMERICALLY in the
+    //    octave-guard counter; a fainter raw spiking line would still read
+    //    as an artefact to anyone looking at it.
+    //
+    // 2. Pushed once per processBlock (~93 Hz at 512), against a view
+    //    designed for ~30 Hz columns - the ribbon spanned ~1.3 s where spec
+    //    §7 says about 4. Pushes are now decimated to the column cadence,
+    //    independent of host block size.
+    ribbonAccum_ += n;
+    const int colSamples = juce::jmax (1, (int) (sampleRate_ / 30.0));
+    while (ribbonAccum_ >= colSamples)
+    {
+        ribbonAccum_ -= colSamples;
+        ribbon_.push (lastHopVoiced_,
+                      lastHopVoiced_ && lastHopF0_ > 0.0f
+                          ? echojay::PitchEngine::hzToMidi (lastHopF0_) : 0.0f,
+                      target > 0.0f ? echojay::PitchEngine::hzToMidi (target) : 0.0f,
+                      correcting && lastHopVoiced_);
+    }
 }
 
 juce::AudioProcessorEditor* EedPitchProcessor::createEditor()

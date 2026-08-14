@@ -184,6 +184,7 @@ private:
     float lastHopF0_   = 0.0f;
     bool  lastHopVoiced_ = false;
     bool  lastCorrecting_ = false;
+    int   ribbonAccum_ = 0;      // decimates ribbon pushes to ~30 Hz columns
 
     int   lastAutoRoot_  = -1;
     bool  lastAutoMinor_ = false;

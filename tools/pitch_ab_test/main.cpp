@@ -426,6 +426,86 @@ static std::vector<double> hfEnvDb (const std::vector<float>& x, double fs, int&
     return e;
 }
 
+// ---- clicks (the pitch_click_test detector, Antares-anchored) ------------
+// Prediction error > 20x local median where the dry has no transient -
+// with the drift-aware patch-match exclusion (a candidate whose waveform
+// matches the dry at >= 0.97 correlation within the splice-drift window,
+// whose matched dry twin is itself near threshold, is the source's own
+// edge). Same rules as tools/pitch_click_test after instrument failure #11.
+static int clickEvents (const std::vector<float>& x, const std::vector<float>& dry, double fs)
+{
+    // Coarse alignment (the bounces are host-compensated to within a few ms).
+    int lag = 0;
+    {
+        const size_t from = (size_t) (fs * 1.0), len = (size_t) std::min ((double) dry.size() - from - 4801, fs * 3.0);
+        double best = -1e30;
+        for (int L = -2400; L <= 2400; L += 4)
+        {
+            double s = 0.0;
+            for (size_t i = from; i < from + len; i += 8)
+            {
+                const long j = (long) i + L;
+                if (j >= 0 && j < (long) x.size()) s += (double) dry[i] * x[(size_t) j];
+            }
+            if (s > best) { best = s; lag = L; }
+        }
+    }
+
+    auto pe = [] (const std::vector<float>& v, long i)
+    { return std::fabs ((double) v[(size_t) i] - (2.0 * v[(size_t) (i - 1)] - v[(size_t) (i - 2)])); };
+    auto scaleAt = [&] (const std::vector<float>& v, long i)
+    {
+        std::vector<double> w;
+        for (long j = std::max (2L, i - 512); j < std::min ((long) v.size() - 1, i + 512); j += 2)
+            w.push_back (pe (v, j));
+        std::nth_element (w.begin(), w.begin() + (long) (w.size() / 2), w.end());
+        return w[w.size() / 2];
+    };
+
+    int events = 0;
+    double lastT = -1.0;
+    for (long i = 600; i + 600 < (long) x.size(); ++i)
+    {
+        const double e = pe (x, i);
+        if (e < 0.02 && (i % 8) != 0) continue;
+        const double sc = scaleAt (x, i);
+        if (sc <= 0.0 || e < 20.0 * sc) continue;
+
+        const long di = i - lag;      // position in dry
+        if (di - 600 < 0 || di + 600 >= (long) dry.size()) continue;
+        bool excl = false;
+        for (long j = di - 64; j <= di + 64 && ! excl; ++j)
+            if (pe (dry, j) > 20.0 * scaleAt (dry, j)) excl = true;
+        if (! excl)
+        {
+            double bestC = -2.0; long bestJ = di;
+            for (int off = -480; off <= 480; off += 2)
+            {
+                double ab = 0, aa = 0, bb = 0;
+                for (int k = -64; k <= 64; k += 2)
+                {
+                    const double a = x[(size_t) (i + k)], b = dry[(size_t) (di + off + k)];
+                    ab += a * b; aa += a * a; bb += b * b;
+                }
+                if (aa < 1e-12 || bb < 1e-12) continue;
+                const double c = ab / std::sqrt (aa * bb);
+                if (c > bestC) { bestC = c; bestJ = di + off; }
+            }
+            if (bestC >= 0.97)
+            {
+                double dMax = 0.0;
+                for (int k = -8; k <= 8; ++k) dMax = std::max (dMax, pe (dry, bestJ + k));
+                if (dMax > 0.6 * 20.0 * scaleAt (dry, bestJ)) excl = true;
+            }
+        }
+        if (excl) continue;
+        const double t = (double) i / fs;
+        if (t - lastT > 0.004) ++events;
+        lastT = t;
+    }
+    return events;
+}
+
 // ---- pitch excursions (momentary wrong notes) ----------------------------
 // Events where a file's own pitch track departs its +/-150 ms local median
 // by more than kExcCents and comes back within kExcMaxMs. The local median
@@ -684,6 +764,39 @@ int main (int argc, char* argv[])
                        "ours %d vs Antares %d, dry %d (margin %d)",
                        kExcCents, kExcMaxMs, excOurs, excAnt, excDry, kExcMargin);
         check (excOurs <= excAnt + kExcMargin, msg);
+    }
+
+    // ---- clicks, Antares-anchored, with the shared injection control ------
+    {
+        const int clkOurs = clickEvents (ours, dry, fs);
+        const int clkAnt  = clickEvents (antares, dry, fs);
+
+        // Control: the same 25-step doctored copy the HF metric uses -
+        // injected steps are CREATED content, which the drift-aware
+        // exclusion cannot excuse by construction.
+        std::vector<float> doctored = ours;
+        int injected = 0;
+        for (int k = 0; k < 25; ++k)
+        {
+            const size_t p = (size_t) ((1.5 + 5.5 * k / 24.0) * fs);
+            if (p < 1200 || p + 4800 >= doctored.size()) continue;
+            double s = 0.0;
+            for (int i = -1200; i < 1200; i += 4)
+                s += (double) doctored[p + (size_t) i] * doctored[p + (size_t) i];
+            const float amp = (float) (3.0 * std::sqrt (s / 600.0));
+            for (int i = 0; i < 24; ++i)
+                doctored[p + (size_t) i] += amp * (1.0f - (float) i / 24.0f);
+            ++injected;
+        }
+        const int found = clickEvents (doctored, dry, fs) - clkOurs;
+        std::snprintf (msg, sizeof (msg),
+                       "click control: %d of %d injected steps found", found, injected);
+        check (found >= injected / 2, msg);
+
+        std::snprintf (msg, sizeof (msg),
+                       "clicks (pred-err 20x, drift-aware dry exclusion): ours %d vs Antares %d (margin 1)",
+                       clkOurs, clkAnt);
+        check (clkOurs <= clkAnt + 1, msg);
     }
 
     std::printf ("\n%s (%d failure%s)\n", g_fail == 0 ? "ALL PASS" : "FAILURES",

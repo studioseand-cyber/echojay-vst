@@ -217,6 +217,52 @@ std::vector<Click> findClicks (const std::vector<float>& proc,
         }
         if (dryTransient) continue;
 
+        // DRIFT-AWARE EXCLUSION (instrument failure #11, the §14.1 lineage
+        // one era later). The fixed +/-64 window assumes wet content sits at
+        // latency alignment - true in the grain era, false since the
+        // splice-resampler, whose read pointer drifts up to 0.75 of a period
+        // (~400 samples at this voice type) before splicing. Measured on the
+        // top-30 "clicks": median waveform correlation against the dry at
+        // the best offset within the drift window was 1.00, and the MATCHED
+        // dry feature's own error ratio was 19.4 against the 20x threshold -
+        // the take's own glottal edges, faithfully reproduced, drifted out
+        // of the exclusion window and straddling the threshold cliff. So:
+        // patch-match the candidate against the dry across the drift window;
+        // a near-perfect match whose dry twin is itself near-threshold is
+        // the source's edge, not a synthesis artefact. Genuinely CREATED
+        // content cannot match the dry (the three real events in that top-30
+        // measured corr 0.67-0.92 with dry ratios 1.5-8.5) and still counts
+        // - which the positive control proves every run, since injected
+        // steps are created content by construction.
+        {
+            const int drift = 480;                    // 0.75 * worst period + 64
+            double bestC = -2.0; int bestJ = di;
+            for (int off = -drift; off <= drift; ++off)
+            {
+                const int j = di + off;
+                if (j - 64 < 0 || j + 64 >= numS) continue;
+                double ab = 0.0, aa = 0.0, bb = 0.0;
+                for (int k = -64; k <= 64; ++k)
+                {
+                    const double a = proc[(size_t) (i + k)];
+                    const double b = src[(size_t) (j + k)];
+                    ab += a * b; aa += a * a; bb += b * b;
+                }
+                if (aa < 1e-12 || bb < 1e-12) continue;
+                const double c = ab / std::sqrt (aa * bb);
+                if (c > bestC) { bestC = c; bestJ = j; }
+            }
+            if (bestC >= 0.97)
+            {
+                double dMax = 0.0;
+                for (int k = -8; k <= 8; ++k)
+                    if (bestJ + k >= 2 && bestJ + k < numS)
+                        dMax = std::max (dMax, eDry[(size_t) (bestJ + k)]);
+                const double dsc = localScale (eDry, bestJ);
+                if (dsc > 0.0 && dMax > 0.6 * kFactor * dsc) continue;
+            }
+        }
+
         if (! clicks.empty() && i - clicks.back().at < 16) continue;   // one per event
         clicks.push_back ({ i, eOut[(size_t) i], sc, eDry[(size_t) i] });
     }

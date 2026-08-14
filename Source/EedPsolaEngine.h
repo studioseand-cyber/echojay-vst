@@ -227,8 +227,8 @@ public:
         std::fill (synState_.begin(), synState_.end(), 0.0);
         synIdx_ = 0;
         curTarget_ = 0.0f;
-        spliceDrift_ = 0.0; spliceOldDrift_ = 0.0; spliceR_ = 0.0;
-        spliceFadeLen_ = 0; spliceFadePos_ = 0;
+        spliceDrift_ = 0.0; spliceOldDrift_ = 0.0; spliceR_ = 0.0; spliceTf_ = 0.0;
+        spliceFadeLen_ = 0; spliceFadePos_ = 0; spliceT_ = 0;
         methodMix_ = 0.0f;
     }
 
@@ -326,6 +326,12 @@ public:
     // Diagnostic A/B only: route raw grains (identity filter entries) through
     // the residual plumbing, isolating the emit filter's contribution.
     void debugForceRawGrains (bool on) noexcept { dbgRawGrains_ = on; }
+
+    // Sub-decision synthesis events, for correlating audible burrs against
+    // things the hop log cannot see: splice-resampler period jumps, and
+    // splice<->grain method transitions. Input-time positions.
+    const std::vector<uint64_t>& debugSplices()     const noexcept { return dbgSplice_; }
+    const std::vector<uint64_t>& debugMethodFlips() const noexcept { return dbgMethodFlip_; }
     const std::vector<uint64_t>& debugReseeds()      const noexcept { return dbgReseed_; }
     const std::vector<uint64_t>& debugCursorResets() const noexcept { return dbgReset_; }
 
@@ -554,42 +560,44 @@ private:
                 const float f0Here = f0At ((uint64_t) std::max<int64_t> (0, rp));
                 const float tgt    = curTarget_;
                 const bool  ok     = f0Here > 0.0f && tgt > 0.0f;
-                // The ratio comes from the YIN estimate. A closed-loop ratio
-                // from MEASURED epoch spans was tried (the grain path's
-                // exactness argument transplanted) and measured WORSE - 18.1c
-                // median against 12.0, unity flux +6.5% against +2.6 - epoch
-                // spacing jitters a few samples on real glottal pulses and a
-                // few samples of a period is tens of cents, far noisier than
-                // the estimate it was meant to replace. The estimate's
-                // per-frame error is what the within-5c gap against the
-                // reference is made of; closing it means a finer tracker.
-                const double r = ok ? (double) tgt / (double) f0Here : 1.0;
-                const double absSt = ok ? std::fabs (std::log2 (r) * 12.0) : 99.0;
-                const float want   = (ok && absSt <= kSpliceBandSt) ? 0.0f : 1.0f;
-                const float step   = 1.0f / (float) std::max (16, (int) (0.004 * fs_));
-                methodMix_ += methodMix_ < want ?  std::min (step, want - methodMix_)
-                                                : -std::min (step, methodMix_ - want);
-                if (methodMix_ < 1.0f && ok)
-                {
-                    // The ratio is open-loop in the detector's frame noise
-                    // (the grain path cancels that noise by construction, this
-                    // path inherits it - measured +2.6 cents of median error).
-                    // A ~5 ms smoothing absorbs the frame-to-frame jitter;
-                    // a genuine note-sized move snaps through immediately.
-                    if (spliceR_ <= 0.0
-                        || std::fabs (std::log2 (r / spliceR_)) > 0.125)
-                        spliceR_ = r;
-                    else
-                        spliceR_ += (r - spliceR_) * (1.0 / (0.002 * fs_));
 
-                    const int T = std::clamp ((int) std::lround (fs_ / (double) f0Here),
-                                              8, maxPeriod_);
-                    const float ys = spliceSample ((uint64_t) p, T, spliceR_);
-                    wet = ys + methodMix_ * (wet - ys);
-                }
-                else
+                // `ok` gates STATE UPDATES only, never emission: the read
+                // position is displaced from p, so it can land on an
+                // isolated ring-unvoiced sample mid-note, and both earlier
+                // treatments of that flicker were measured as clicks -
+                // resetting the drift was a fadeless ~200-sample read jump,
+                // and falling through to the grain value was two unfaded
+                // samples of a different synthesis (§16.10). Through a
+                // flicker the splice keeps emitting on frozen state.
+                if (ok)
                 {
-                    spliceDrift_ = 0.0; spliceFadeLen_ = 0; spliceR_ = 0.0;
+                    const double r = (double) tgt / (double) f0Here;
+                    const double absSt = std::fabs (std::log2 (r) * 12.0);
+                    const float want = absSt <= kSpliceBandSt ? 0.0f : 1.0f;
+                    const float step = 1.0f / (float) std::max (16, (int) (0.004 * fs_));
+                    methodMix_ += methodMix_ < want ?  std::min (step, want - methodMix_)
+                                                    : -std::min (step, methodMix_ - want);
+
+                    // Always slewed at ~2 ms - the earlier snap branch for
+                    // moves > 0.125 st was measured creating clicks on fast
+                    // downward glides at retune 0 (§16.10): the target
+                    // staircases semitone by semitone through the glide and
+                    // every 100-cent step snapped the read velocity
+                    // instantly. Through the slew a note-sized step still
+                    // completes in ~6 ms, which keeps the hard-tune snap
+                    // character while the velocity stays continuous.
+                    if (spliceR_ <= 0.0) spliceR_ = r;
+                    else spliceR_ += (r - spliceR_) * (1.0 / (0.002 * fs_));
+
+                    spliceT_  = std::clamp ((int) std::lround (fs_ / (double) f0Here),
+                                            8, maxPeriod_);
+                    spliceTf_ = std::clamp (fs_ / (double) f0Here, 8.0, (double) maxPeriod_);
+                }
+
+                if (methodMix_ < 1.0f && spliceR_ > 0.0 && spliceT_ > 0)
+                {
+                    const float ys = spliceSample ((uint64_t) p, spliceT_, spliceTf_, spliceR_);
+                    wet = ys + methodMix_ * (wet - ys);
                 }
             }
             else if (g <= 0.0f)
@@ -597,7 +605,7 @@ private:
                 // A seam or unvoiced sample: the next voiced entry starts
                 // phase-aligned with the dry by construction.
                 spliceDrift_ = 0.0; spliceFadeLen_ = 0; methodMix_ = 0.0f;
-                spliceR_ = 0.0;
+                spliceR_ = 0.0; spliceT_ = 0; spliceTf_ = 0.0;
             }
 
             float y = g <= 0.0f ? dry : (g >= 1.0f ? wet : dry + g * (wet - dry));
@@ -1225,37 +1233,58 @@ private:
     // at a level the ear does not attribute to character change.
     static constexpr float kSpliceBandSt = 2.5f;
 
+    // Catmull-Rom, not linear. The §16.10 burr hunt ended here: with every
+    // control-path suspect measured and cleared (no decision change, no
+    // splice, no method flip, no seam, healthy window, no drift-displaced
+    // source transient - dry sharpness at the clicks 10.9x against a 9.4x
+    // baseline), the remaining mechanism was the read itself. Linear
+    // interpolation's error is O(h^2 * x''), which is negligible on smooth
+    // waveform and explodes exactly at sharp glottal closure edges, fading
+    // in and out as the fractional phase drifts - a once-per-period sizzle
+    // on hard-glottal material, at a rate that matches the measured 1.85
+    // clicks/s and their clustering. Four taps instead of two.
     float readInterp (double pos) const noexcept
     {
-        if (pos < 0.0) return 0.0f;
+        if (pos < 1.0) return 0.0f;
         const int64_t i0 = (int64_t) pos;
-        if ((uint64_t) (i0 + 1) >= write_) return in_[(size_t) ((uint32_t) (uint64_t) i0 & mask_)];
+        if ((uint64_t) (i0 + 2) >= write_)
+            return in_[(size_t) ((uint32_t) (uint64_t) std::min<int64_t> (i0, (int64_t) write_ - 1) & mask_)];
         const float fr = (float) (pos - (double) i0);
-        const float a  = in_[(size_t) ((uint32_t) (uint64_t) i0 & mask_)];
-        const float b  = in_[(size_t) ((uint32_t) (uint64_t) (i0 + 1) & mask_)];
-        return a + fr * (b - a);
+        const float xm = in_[(size_t) ((uint32_t) (uint64_t) (i0 - 1) & mask_)];
+        const float x0 = in_[(size_t) ((uint32_t) (uint64_t) i0 & mask_)];
+        const float x1 = in_[(size_t) ((uint32_t) (uint64_t) (i0 + 1) & mask_)];
+        const float x2 = in_[(size_t) ((uint32_t) (uint64_t) (i0 + 2) & mask_)];
+        return x0 + 0.5f * fr * (x1 - xm
+                   + fr * (2.0f * xm - 5.0f * x0 + 4.0f * x1 - x2
+                   + fr * (3.0f * (x0 - x1) + x2 - xm)));
     }
 
-    float spliceSample (uint64_t p, int T, double r) noexcept
+    float spliceSample (uint64_t p, int T, double Tf, double r) noexcept
     {
         spliceDrift_ += r - 1.0;
 
         // Trigger a period-aligned splice before the drift can outrun the
-        // lookahead: jump exactly one period, so the waveform phase is
-        // unchanged, and crossfade over ~4 ms so the join is inaudible.
+        // lookahead: jump one FRACTIONAL period (fs / f0, not the rounded T
+        // - the integer round misaligned the two copies by up to half a
+        // sample, which the crossfade turned into HF phase ripple), so the
+        // waveform phase is unchanged, and crossfade over ~4 ms.
         if (spliceFadeLen_ == 0 && std::fabs (spliceDrift_) > 0.75 * (double) T)
         {
             spliceOldDrift_ = spliceDrift_;
-            spliceDrift_   += spliceDrift_ > 0.0 ? -(double) T : (double) T;
+            spliceDrift_   += spliceDrift_ > 0.0 ? -Tf : Tf;
             spliceFadeLen_  = std::max (16, std::min (T / 2, (int) (0.004 * fs_)));
             spliceFadePos_  = 0;
+            if (debugOn_) dbgSplice_.push_back (p);
         }
 
         float y = readInterp ((double) p + spliceDrift_);
         if (spliceFadeLen_ > 0)
         {
             spliceOldDrift_ += r - 1.0;
-            const float a = (float) spliceFadePos_ / (float) spliceFadeLen_;
+            // Raised-cosine, not linear: continuous slope at both ends of
+            // the fade, so the join neither starts nor stops with a corner.
+            const float lin = (float) spliceFadePos_ / (float) spliceFadeLen_;
+            const float a   = 0.5f - 0.5f * std::cos (3.14159265f * lin);
             const float yOld = readInterp ((double) p + spliceOldDrift_);
             y = yOld + a * (y - yOld);
             if (++spliceFadePos_ >= spliceFadeLen_) spliceFadeLen_ = 0;
@@ -1305,6 +1334,8 @@ private:
     int    pitchLag_  = 0;
     bool   debugOn_   = false;
     bool   dbgRawGrains_ = false;
+    bool   dbgMethodState_ = false;
+    std::vector<uint64_t> dbgSplice_, dbgMethodFlip_;
     std::vector<uint64_t> dbgReseed_, dbgReset_;
     std::vector<DebugGrain> dbgGrain_;
     std::vector<DebugEmit>  dbgEmit_;
@@ -1339,8 +1370,8 @@ private:
 
     // Splice-resampler state.
     float  curTarget_ = 0.0f;
-    double spliceDrift_ = 0.0, spliceOldDrift_ = 0.0, spliceR_ = 0.0;
-    int    spliceFadeLen_ = 0, spliceFadePos_ = 0;
+    double spliceDrift_ = 0.0, spliceOldDrift_ = 0.0, spliceR_ = 0.0, spliceTf_ = 0.0;
+    int    spliceFadeLen_ = 0, spliceFadePos_ = 0, spliceT_ = 0;
     float  methodMix_ = 0.0f;      // 0 = splice, 1 = grains
 
 

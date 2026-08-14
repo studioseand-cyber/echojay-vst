@@ -1607,3 +1607,59 @@ onset (creak at 87 Hz into wet at 185) reads sub-octave to the tracker for
 with that event named; any spike the metric was built for fails the build.
 Acapella: dry 16 / ours 8 (low_male), dry 11 / ours 11 (alto_tenor) — at or
 below the source's own excursion behaviour on both readings.
+
+### 16.9 The ribbon feed — the picture is now the audio
+
+The ribbon's paint code was always §7-compliant (unvoiced closes the
+subpath; never zero, never held). The FEED had two bugs: the dim trace
+carried the RAW pre-F0JumpGate estimate — measured, 33 of 34 full-height
+verticals on the acapella moved the corrected trace under 2 st; the picture
+spiked, the audio did not, and a user report of those spikes cost two
+rounds of debugging a defect the audio never had — and pushes ran at block
+rate (~93 Hz at 512) against a view designed for 30 Hz columns, spanning
+~1.3 s where §7 says four. The feed now carries the GATED value (the number
+the shifter and corrector obey), decimated to the column cadence
+independently of host block size. Rejected estimates remain visible
+numerically in the octave-guard counter; no fainter raw layer was added — a
+spiking line reads as an artefact whatever its alpha.
+
+### 16.10 The wet-path burrs — three mechanisms, one instrument failure,
+and parity
+
+The residual click density (1.85/s at the old ceiling) decomposed under a
+synchronised timeline (per-hop decisions + the shifter's own emit record +
+sub-decision splice/method events) into:
+
+- **Instrument failure #11** (~70% of the count): the click tool's dry-
+  transient exclusion looked in a fixed ±64-sample window at latency
+  alignment - correct in the grain era, wrong since the splice-resampler,
+  whose read drifts up to 0.75 of a period. Patch-matching the top-30
+  "clicks" against the dry found median waveform correlation **1.00** at
+  the best in-window offset, with the matched dry feature's own error
+  ratio at **19.4 against the 20× threshold**: the take's own glottal
+  edges, faithfully reproduced, drifted out of the window and straddling
+  the threshold cliff. The exclusion is now drift-aware (patch-match ≥0.97
+  with a near-threshold dry twin excludes; created content cannot match
+  and the 25-step control still finds 25/25).
+- **Linear interpolation** in the splice read: error O(h²·x″), exploding
+  at sharp glottal edges as the fractional phase drifts. Catmull-Rom took
+  the honest density 1.85 → 1.58 before the instrument fix.
+- **Three real synthesis defects**, each found by waveform microscope and
+  fixed: the ratio's 0.125-st snap branch kinked the read velocity on fast
+  downward glides at retune 0 (the target staircases through the glide) —
+  now always slewed at 2 ms, a note step still completing in ~6 ms; the
+  splice jump used the ROUNDED period, misaligning the crossfaded copies
+  by up to half a sample — now fractional, with a raised-cosine fade; and
+  the state-reset on a momentary read-position voicing flicker was a
+  fadeless ~200-sample read jump in a fully wet span — `ok` now gates
+  state updates only, never emission, which also removed the §16.8 creak
+  excursion (ours now 1 = Antares = dry).
+
+After all of it: acapella click density **0.12/s** (ceiling re-based 3.5 →
+1.0 - the old ceiling dated from a 5.5/s failure and would pass the old
+DSP; the new one fails it). The AB gate gained the same detector as a
+sixth Antares-anchored metric: **ours 2 vs Antares 2** on the reference
+take, and the two are near-twins of Antares's own two (3.242 vs 3.284 -
+the material's hardest moments defeat both processors). HF excess fell to
+0.12/s. All six metrics green with their injection controls; suites, host
+invariants, mode machine, pluginval green.
