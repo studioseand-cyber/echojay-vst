@@ -285,6 +285,82 @@ int main()
                "...and states its MERGE semantics");
     }
 
+    std::printf ("== the correction_mode table is COMPLETE: every param is either "
+                 "written by every mode, or exempted here with a reason ==\n");
+    {
+        // WHY THIS TEST EXISTS. natural_vibrato was added at P5 without a
+        // column in the mode table, and hard tune silently re-added the full
+        // wobble on top of the snapped note - it measured WORSE than dry
+        // (15.7 against 13.0 cents) while the whole suite stayed green
+        // (PITCH_P0_VALIDATION.md §12). A mode is only as honest as its
+        // table is complete, and completeness must fail the build, not wait
+        // for a re-measure.
+        //
+        // THE RULE. Walk the schema. Every param must be either
+        //   (a) DETERMINED by selecting a mode - proven behaviourally: set
+        //       the param to each end of its range, select the mode, and the
+        //       readback must land on the same value both times - or
+        //   (b) listed below as NOT character-bearing, WITH the reason.
+        // A new param lands in neither and fails, which forces the author to
+        // answer "does this shape the corrected sound's character?" at the
+        // moment the param is added, not at the next listening session.
+        struct Exempt { const char* id; const char* why; };
+        static const Exempt kNotCharacter[] = {
+            { "correct",          "the master enable; a mode is a character, not an on/off" },
+            { "correction_mode",  "the selector itself" },
+            { "key_source",       "WHAT to correct to, not how the correction sounds" },
+            { "key_root",         "WHAT to correct to" },
+            { "scale",            "WHAT to correct to" },
+            { "reference_source", "WHAT tuning to correct to" },
+            { "reference_hz",     "WHAT tuning to correct to" },
+            { "transpose",        "a pitch offset on the result, orthogonal to character" },
+            { "voice_type",       "detector fit to the material, not character" },
+            { "tracking",         "detector strictness, not character" },
+            { "target_hz",        "the P1 fixed-target diagnostic path" },
+            { "low_latency",      "a latency trade; changes delay, not character" },
+            { "mix",              "output stage" },
+            { "output_db",        "output stage" },
+            { "vib_depth_cents",  "ADDED vibrato is a creative layer the spec's mode table deliberately leaves alone (only natural_vibrato is in it)" },
+            { "vib_rate_hz",      "added vibrato, as above" },
+            { "vib_shape",        "added vibrato, as above" },
+            { "vib_onset_ms",     "added vibrato, as above" },
+            { "reset_stats",      "momentary action, not a setting" },
+        };
+        auto exempt = [&] (const std::string& id)
+        {
+            for (const auto& e : kNotCharacter) if (id == e.id) return true;
+            return false;
+        };
+        // The exemption list may not rot: every entry must still name a real
+        // param, so a rename cannot quietly widen the hole it guards.
+        for (const auto& e : kNotCharacter)
+            check (EedPitchProcessor::schema().find (e.id) != nullptr,
+                   juce::String ("exempt id still exists in the schema: ") + e.id);
+
+        static const char* kModeNames[4] = { "natural", "balanced", "tuned", "hard" };
+        for (const auto& sp : EedPitchProcessor::schema().params())
+        {
+            if (exempt (sp.id)) continue;
+            bool determined = true;
+            for (int m = 0; m < 4 && determined; ++m)
+            {
+                p.setParamValue (juce::String (sp.id), sp.min);
+                p.setParamValue ("correction_mode", (double) m);
+                const double a = p.getParamValue (juce::String (sp.id));
+                p.setParamValue (juce::String (sp.id), sp.max);
+                p.setParamValue ("correction_mode", (double) m);
+                const double b = p.getParamValue (juce::String (sp.id));
+                if (std::abs (a - b) > 1.0e-6) determined = false;
+                (void) kModeNames[m];
+            }
+            check (determined,
+                   juce::String (sp.id.c_str())
+                   + " is character-bearing (not exempted), so every mode must WRITE it"
+                     " - if it was just added, either give it a column in applyMode's"
+                     " table or exempt it HERE with the reason");
+        }
+    }
+
     std::printf ("\n%s (%d failure%s)\n", g_fail == 0 ? "ALL PASS" : "FAILURES",
                  g_fail, g_fail == 1 ? "" : "s");
     return g_fail == 0 ? 0 : 1;
