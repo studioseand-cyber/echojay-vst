@@ -11380,6 +11380,7 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
         // switch on its own -- and if THIS chat owns the stream, the
         // partial reply (or the thinking row) is re-established as it
         // stands rather than arriving all at once at done.
+        noteStageSuppressedIfForeign();   // count BEFORE the clear reads state
         clearStageStatus();
         if (restreamRepaint_) restreamRepaint_();
         repaint();
@@ -11532,6 +11533,7 @@ void EchoJayEditor::createNewChat()
     processorRef.chatContents.clear();
     // A new chat never owns an in-flight stream, so any thinking row on
     // screen belongs elsewhere and must not follow us here.
+    noteStageSuppressedIfForeign();
     clearStageStatus();
     sidebarDebugText = "";
 
@@ -20711,10 +20713,36 @@ void EchoJayEditor::openChannelByUid(const juce::String& uid)
     processorRef.chatContents.clear();
     // The pending (empty) channel context owns no stream: drop any thinking
     // row that belonged to the chat we just left.
+    noteStageSuppressedIfForeign();
     clearStageStatus();
     refreshChannelBannerCache();
     resized();
     repaint();
+}
+
+bool EchoJayEditor::stageRowBelongsHere() const
+{
+    // The stage row belongs to the in-flight turn's chat. With no turn in
+    // flight (inflightChatId empty) it is plain view state: dial "Applying
+    // to..." labels, the scan hold and the chain shimmer show wherever they
+    // were set, exactly as before.
+    if (sidebarModel == nullptr || sidebarModel->inflightChatId.isEmpty())
+        return true;
+    return sidebarModel->inflightChatId == currentChatId;
+}
+
+void EchoJayEditor::noteStageSuppressedIfForeign()
+{
+    // Called once per chat switch (never per frame): if the switch hid an
+    // in-flight turn's stage row, the turn's suppressed count and the log
+    // both record it, so a fully-suppressed turn stays countable.
+    if (sidebarModel == nullptr || sidebarModel->inflightChatId.isEmpty()) return;
+    if (sidebarModel->inflightChatId == currentChatId) return;
+    if (!chatLoading && stageStatusText_.isEmpty()) return;
+    if (bumpStreamSuppressed_) bumpStreamSuppressed_();
+    EchoJay_NSLog(("EJChat: stage row SUPPRESSED -- turn belongs to chat "
+                   + sidebarModel->inflightChatId + ", open chat is "
+                   + (currentChatId.isEmpty() ? juce::String("(none)") : currentChatId)).toRawUTF8());
 }
 
 void EchoJayEditor::setInflightChat(const juce::String& chatId)
@@ -23055,8 +23083,9 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
         if (safeThis == nullptr) return;
         auto* ed = safeThis.getComponent();
         ed->activeChatStream_ = nullptr;
-        ed->restreamRepaint_  = nullptr;   // the stream is over; a later chat
-                                           // switch must not repaint its ghost
+        ed->restreamRepaint_      = nullptr;   // the stream is over; a later chat
+                                               // switch must not repaint its ghost
+        ed->bumpStreamSuppressed_ = nullptr;   // and must not count into it either
         st->parser.finish();   // flush withheld prose; the authoritative
                                // replace below supersedes it either way
 
@@ -23142,6 +23171,7 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
         if (safeThis == nullptr) return;
         safeThis->activeChatStream_ = nullptr;
         safeThis->restreamRepaint_  = nullptr;
+        safeThis->bumpStreamSuppressed_ = nullptr;
         // DROP PATH 2, exactly as the one-shot path: the provisional — and
         // with it every delta the user watched — drops before the failure
         // copy renders. A stream that dies mid-flight leaves nothing.
@@ -23166,6 +23196,10 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
         else
             paintBubble();
     };
+    // The stage-row gate's counting hook: a switch that hides this turn's
+    // row adds to the SAME suppressed figure the paint guards use, so the
+    // render line remains one complete account of the turn.
+    bumpStreamSuppressed_ = [st] { ++st->suppressedPaints; };
 
     activeChatStream_ = api.streamChat (roles, contents, sysPrompt, std::move (ev));
 }

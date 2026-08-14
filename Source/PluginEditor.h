@@ -1210,7 +1210,23 @@ private:
     juce::String stageStatusText_;      // real event labels while applying;
                                         // generic-safe line during model wait
     juce::Rectangle<int> stageRowRect_; // last painted row (ticker repaints it)
-    int stageRowH() const { return (chatLoading || stageStatusText_.isNotEmpty()) ? 30 : 0; }
+    // OWNERSHIP-GATED (14 Aug 2026): f2941ad gated the stage row's WRITERS
+    // (thinking promotion, switch-site clears), but the row also renders
+    // from chatLoading alone -- which survives a chat switch -- so the
+    // "Thinking" state followed the user into whichever chat they opened
+    // while the message paints correctly suppressed. This helper is the ONE
+    // height source both the paint pass and the measure pass consult, so
+    // gating it here gates every renderer at once. stageRowBelongsHere is
+    // true when no turn is in flight (dial/apply labels, scan hold and the
+    // chain shimmer are view state and show where they were set).
+    int stageRowH() const { return (chatLoading || stageStatusText_.isNotEmpty())
+                                    && stageRowBelongsHere() ? 30 : 0; }
+    bool stageRowBelongsHere() const;
+    // Counting half of the gate: bumps the ACTIVE stream turn's suppressed
+    // figure (null between turns), so the render line stays a complete
+    // account. Called once per suppressing chat switch, never per frame.
+    std::function<void()> bumpStreamSuppressed_;
+    void noteStageSuppressedIfForeign();
     void setStageStatus(const juce::String& s);
     void clearStageStatus();
     // Result stage: a local assistant bubble (persisted, block-less).
