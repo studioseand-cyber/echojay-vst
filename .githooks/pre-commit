@@ -27,12 +27,42 @@ echo "pre-commit gate: branch $(git branch --show-current)"
 # depends on remembering is not a fix. The lock directory is the build's
 # flight marker (see reinstall-v2.sh); while it exists, committing races
 # the artefact, so the gate refuses outright.
-if [ -d "$HOME/.echojay-build.lock" ]; then
+if [ -e "$HOME/.echojay-build.lock" ]; then
   echo "GATE FAIL: ~/.echojay-build.lock is held - a reinstall is building."
   echo "  Committing mid-build races the artefact and links half-written libs."
   echo "  Wait for the build to finish. If you are CERTAIN none is running:"
-  echo "    rmdir ~/.echojay-build.lock"
+  echo "    rm -rf ~/.echojay-build.lock"
   exit 1
+fi
+
+# --- Divergence notice (10 Aug 2026) -----------------------------------
+# HANDOVER.md lives on feat/plugin-dashboard, which means the sessions most
+# in need of it are the ones that cannot see it: a tree behind that branch
+# has no such file to read. The doc cannot tell someone they are missing it.
+# This can, because the ref is local even when the file is not checked out,
+# so `git show` reaches the live copy from ANY tree without a stub to
+# maintain or a doc to move out of version control.
+#
+# WARNING, NEVER A BLOCK. A hook that stops a commit gets --no-verify'd
+# within a week and then it protects nothing; the same reasoning the
+# unbuilt-tree SKIP below already carries.
+#
+# Reaches every tree because core.hooksPath is repo-wide -- but only once
+# that tree's branch carries this file, since the path resolves per
+# worktree. A tree far behind gets the notice on its first merge forward,
+# not before.
+HANDOVER_LINE=feat/plugin-dashboard
+HOOK_CUR=$(git branch --show-current)
+if [ "$HOOK_CUR" != "$HANDOVER_LINE" ] \
+   && git rev-parse --verify -q "$HANDOVER_LINE" >/dev/null 2>&1; then
+  HOOK_BEHIND=$(git rev-list --count "HEAD..$HANDOVER_LINE" 2>/dev/null || echo 0)
+  HOOK_AHEAD=$(git rev-list --count "$HANDOVER_LINE..HEAD" 2>/dev/null || echo 0)
+  if [ "${HOOK_BEHIND:-0}" -gt 0 ]; then
+    echo "  NOTE  behind $HANDOVER_LINE by $HOOK_BEHIND commit(s); ahead by ${HOOK_AHEAD:-0}."
+    echo "        Merge or rebase onto it BEFORE touching Source/ (HANDOVER section 5)."
+    echo "        Read it from here without checking it out:"
+    echo "          git show $HANDOVER_LINE:HANDOVER.md"
+  fi
 fi
 
 REPO=$(git rev-parse --show-toplevel)
