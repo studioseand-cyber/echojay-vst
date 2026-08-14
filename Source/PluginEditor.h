@@ -1335,7 +1335,11 @@ private:
     // ---- Phase C1: channel chats (active chat drives the target) ----
     juce::String activeChatLinkUid() const;      // "" = main chat
     juce::String effectiveChannelUid() const;    // active chat's, else pending
-    juce::String findChannelChatId(const juce::String& linkUid) const; // "" = none
+    // The channel's MOST RECENT chat by activity (updatedAt else created);
+    // "" = none. matchesOut (optional) receives how many chats matched, for
+    // the "latest of N" log line. Selection logic: echojay::latestChatForLink.
+    juce::String latestChannelChatId(const juce::String& linkUid,
+                                     int* matchesOut = nullptr) const;
     bool linkUidLive(const juce::String& uid) const;
     // Capability, not version. False for every Link that does not claim it.
     bool linkUidDialCapable(const juce::String& uid) const;
@@ -1536,11 +1540,12 @@ private:
     int chainSaveBtnRight_ = 0;
     // chainStatusLabel DELETED (13 Aug 2026): same corpse as chainScanBtn,
     // invisible since birth, and it swallowed the staleness warning one
-    // commit after the button swallowed the scan trigger. Its replacement
-    // is chainListInfoLabel in the HEADER, beside the plugin count that
-    // actually misled for five weeks, visible on every tab and every rack
-    // state (the old site was also preempted whenever slots > 0).
-    juce::Label      chainListInfoLabel;
+    // commit after the button swallowed the scan trigger.
+    // chainListInfoLabel DELETED (14 Aug 2026): the scan count + date it
+    // carried lives in the EJScan log lines; its 150px header slot now
+    // holds the New chat button, reachable from every tab (the sidebar's
+    // + New chat only exists on the Chat surface).
+    juce::TextButton headerNewChatBtn { "+ New chat" };
     // chainLoadBtn, chainRecommendLabel and chainDebugJsonBox DELETED
     // (13 Aug 2026, dead-layer sweep). The resolver coverage triple the
     // label carried now logs from buildRecommendable itself (EJScan:
@@ -3989,9 +3994,10 @@ private:
     struct ChatSidebarModel : public juce::ListBoxModel
     {
         struct Row {
-            enum class Kind { SectionTitle, AlbumHeader, ProjectHeader, ChatRow, ReviewRow };
+            enum class Kind { SectionTitle, AlbumHeader, ProjectHeader, ChannelHeader, ChatRow, ReviewRow };
             Kind         kind   = Kind::SectionTitle;
-            juce::String id;      // AlbumHeader: album id; ProjectHeader: project name
+            juce::String id;      // AlbumHeader: album id; ProjectHeader: project
+                                  // name; ChannelHeader: linkUid
             juce::String label;
             juce::String meta;
             bool         collapsed = false;
@@ -4005,6 +4011,8 @@ private:
         std::function<void(const juce::String&)> onAlbumToggled;
         // Project header collapse toggle + right-click "Move to album..."
         std::function<void(const juce::String& projectName)> onProjectToggled;
+        // Channel folder collapse toggle (collapse key "chan:<linkUid>")
+        std::function<void(const juce::String& linkUid)> onChannelToggled;
         std::function<void(const juce::String& projectName)> onProjectContextMenu;
         // Right-click on a chat row — editor shows rename/delete/move menu
         std::function<void(const juce::String& chatId)> onChatContextMenu;

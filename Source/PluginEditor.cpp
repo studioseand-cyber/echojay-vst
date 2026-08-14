@@ -6,6 +6,8 @@
 #include "EchoJayEventLog.h"   // events.jsonl + machine_id (dial_miss telemetry)
 #include "EchoJayParamApply.h" // kDialSignalsEnabled + dial predicate (shared)
 #include "EchoJayChannelLabel.h" // channelLabelUsable — ONE uid-passthrough test
+#include "EchoJayChannelChats.h" // latestChatForLink — the many-chats-per-channel
+                                 // selection, header-inline for the unit test
 #include "EchoJayFaderFilmstrip.h"  // Link mixer fader (128 x 60x480); .cpp-only
 #include "EedKeyDetectorProcessor.h"
 #include "EedKeyFeed.h"   // publish the resolved key for EchoJay Pitch (spec §6) // [DETECTED KEY] read path (KEY_DETECTOR_SPEC §4/§9)
@@ -1803,9 +1805,16 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // Chain-list staleness, in the header beside the plugin count
     // (addAndMakeVisible, deliberately: two addChildComponent widgets in a
     // row each swallowed a feature by never being shown).
-    chainListInfoLabel.setColour(juce::Label::textColourId, juce::Colour(0xff888888));
-    chainListInfoLabel.setFont(juce::Font(juce::FontOptions(10.0f)));
-    addAndMakeVisible(chainListInfoLabel);
+    // Header New chat (14 Aug 2026, in chainListInfoLabel's old 150px slot):
+    // starting a fresh conversation must not require being on the Chat tab
+    // first. Create, then switch — createNewChat is tab-agnostic (stores +
+    // sidebar only), and the switch makes the result visible.
+    headerNewChatBtn.onClick = [this]
+    {
+        createNewChat();
+        switchToTab(Tab::Chat);
+    };
+    addAndMakeVisible(headerNewChatBtn);
 
     // ---- Saved chains: Save / Save As / Open -----------------------------
     for (auto* b : { &chainSaveBtn, &chainSaveAsBtn, &chainOpenBtn })
@@ -2070,6 +2079,17 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     sidebarModel->onProjectToggled = [this](const juce::String& projName)
     {
         const juce::String key = "proj:" + projName;
+        if (collapsedAlbums.count(key)) collapsedAlbums.erase(key);
+        else                            collapsedAlbums.insert(key);
+        saveCollapsedState();
+        sidebarModel->refreshRows(workspace.getChats(), workspace.getAlbums(),
+                                  workspace.getReviews(), workspace.getPinnedProjects(), collapsedAlbums, currentChatId);
+        chatSidebar.updateContent();
+        repaint();
+    };
+    sidebarModel->onChannelToggled = [this](const juce::String& uid)
+    {
+        const juce::String key = "chan:" + uid;
         if (collapsedAlbums.count(key)) collapsedAlbums.erase(key);
         else                            collapsedAlbums.insert(key);
         saveCollapsedState();
@@ -10423,6 +10443,14 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
     std::stable_sort(top.begin(), top.end(),
                      [](const TopEntry& a, const TopEntry& b) { return a.recent > b.recent; });
 
+    // Channel folders (14 Aug 2026: a channel owns many chats). Within a
+    // project, chats with a linkUid group under a ChannelHeader; chats with
+    // an empty linkUid stay loose at project level. A folder only exists
+    // because at least one chat put it there (grouping is derived from the
+    // chats, so an empty folder cannot occur). Collapse key "chan:<uid>";
+    // the folder holding the active chat force-expands like its parents.
+    auto chanKey = [](const juce::String& u) { return "chan:" + u; };
+
     auto pushProject = [&](const juce::String& name, int headerIndent, int chatIndent)
     {
         Row ph;
@@ -10433,9 +10461,48 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
         ph.collapsed = projCollapsed(name);
         ph.active    = (name == activeProj);
         rows.push_back(ph);
-        if (!ph.collapsed)
-            for (auto* chat : projs[name].chats)
+        if (ph.collapsed) return;
+
+        // Loose (main) chats first, then one folder per channel, folders in
+        // first-seen order of the project's newest-first chat list.
+        std::map<juce::String, std::vector<const WsChat*>> chanChats;
+        std::vector<juce::String> chanOrder;
+        for (auto* chat : projs[name].chats)
+        {
+            if (chat->linkUid.isEmpty())
+            {
                 rows.push_back(makeChatRow(*chat, chatIndent));
+                continue;
+            }
+            if (chanChats.find(chat->linkUid) == chanChats.end())
+                chanOrder.push_back(chat->linkUid);
+            chanChats[chat->linkUid].push_back(chat);
+        }
+        for (auto& cu : chanOrder)
+        {
+            auto& cc = chanChats[cu];
+            bool holdsActive = false;
+            for (auto* chat : cc)
+                if (chat->id == activeChatId) { holdsActive = true; break; }
+            // Label from the newest non-empty linkNameSnap (cc inherits the
+            // project's newest-first order); the uid itself never displays.
+            juce::String label;
+            for (auto* chat : cc)
+                if (chat->linkNameSnap.isNotEmpty()) { label = chat->linkNameSnap; break; }
+            if (label.isEmpty()) label = "Channel";
+
+            Row chr;
+            chr.kind      = Row::Kind::ChannelHeader;
+            chr.id        = cu;
+            chr.label     = label + "  (" + juce::String((int)cc.size()) + ")";
+            chr.indent    = chatIndent;
+            chr.collapsed = !holdsActive && collapsedSet.count(chanKey(cu)) > 0;
+            chr.active    = holdsActive;
+            rows.push_back(chr);
+            if (!chr.collapsed)
+                for (auto* chat : cc)
+                    rows.push_back(makeChatRow(*chat, chatIndent + 16));
+        }
     };
 
     // One album header + its (non-pinned) songs + legacy direct chats. Used by
@@ -10655,6 +10722,34 @@ void EchoJayEditor::ChatSidebarModel::paintListBoxItem(
         return;
     }
 
+    if (row.kind == Row::Kind::ChannelHeader)
+    {
+        // Channel folder inside a song: same triangle grammar as the levels
+        // above, lighter weight than a ProjectHeader, with a small channel
+        // dot before the name so the folder reads as a Link at a glance.
+        g.setColour(C::bg);
+        g.fillRect(0, 0, width, height);
+        {
+            float cx = (float)(padX + row.indent) + 5.0f;
+            float cy = (float)height * 0.5f;
+            juce::Path tri;
+            if (row.collapsed)
+                tri.addTriangle(cx - 3.0f, cy - 4.0f, cx - 3.0f, cy + 4.0f, cx + 3.0f, cy);
+            else
+                tri.addTriangle(cx - 4.0f, cy - 3.0f, cx + 4.0f, cy - 3.0f, cx, cy + 3.0f);
+            g.setColour(C::text3);
+            g.fillPath(tri);
+        }
+        g.setColour(juce::Colour(0xff22d3ee).withAlpha(row.active ? 0.9f : 0.55f));
+        g.fillEllipse((float)(padX + row.indent) + 13.0f, (float)height * 0.5f - 2.5f, 5.0f, 5.0f);
+        g.setColour(row.active ? C::text : C::text2);
+        g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+        g.drawText(row.label, padX + row.indent + 22, 0,
+                   width - padX * 2 - row.indent - 22, height,
+                   juce::Justification::centredLeft);
+        return;
+    }
+
     if (row.kind == Row::Kind::ChatRow)
     {
         g.setColour(row.active ? C::bg4 : C::bg);
@@ -10743,6 +10838,13 @@ void EchoJayEditor::ChatSidebarModel::listBoxItemClicked(
         {
             onProjectToggled(row.id);
         }
+        return;
+    }
+
+    if (row.kind == Row::Kind::ChannelHeader)
+    {
+        if (!e.mods.isPopupMenu() && onChannelToggled)
+            onChannelToggled(row.id);   // id = linkUid
         return;
     }
 
@@ -11333,16 +11435,20 @@ void EchoJayEditor::saveCollapsedState() const
 
 void EchoJayEditor::createNewChat()
 {
-    // "Already empty" may still be a CHANNEL context — a pending channel
-    // (chip/banner tap before first send) or a virgin channel chat — and
-    // the old early-return fired BEFORE any reset, so pending leaked into
-    // "New chat" and the banner kept reading the previous channel. New
-    // chat ALWAYS lands in a clean MAIN state; it just skips minting a
-    // record when there is nothing to leave behind.
+    // INHERIT the active channel (14 Aug 2026): a new chat started while a
+    // channel is active is pre-assigned to it, because a channel owns many
+    // chats now. The composer's channel selector remains the way to change
+    // the assignment before the first message goes out. Captured BEFORE the
+    // pending clear below: effectiveChannelUid reads pending when no chat
+    // is active yet.
+    const juce::String inheritUid = effectiveChannelUid();
+
+    // Nothing to leave behind: an empty context (main or channel) already
+    // IS a fresh chat, so minting another empty record would be noise.
+    // (This branch used to reset a channel context to main; with channel
+    // inheritance that reset would just undo the pre-assignment.)
     if (chatMessages.empty())
     {
-        if (effectiveChannelUid().isEmpty()) return;   // already a clean main state
-        resetToMainContext();
         chatInput.grabKeyboardFocus();
         return;
     }
@@ -11354,6 +11460,9 @@ void EchoJayEditor::createNewChat()
     c.trackName    = newChatProjectName();   // never empty → never Ungrouped
     c.albumId      = getCurrentAlbumId();
     c.revisionCount = 0;
+    c.linkUid      = inheritUid;             // "" = main chat, unchanged shape
+    c.linkNameSnap = inheritUid.isNotEmpty() ? channelDisplayLabel(inheritUid)
+                                             : juce::String();
     // messages intentionally empty — won't appear in sidebar until first send
 
     workspace.addChat(c);
@@ -11364,7 +11473,8 @@ void EchoJayEditor::createNewChat()
     processorRef.pendingChannelUid.clear();   // any activation ends pending
     processorRef.chatTargetLinkUid.clear();   // router selection resets too
     processorRef.chatTargetLinkName.clear();
-    refreshChannelBannerCache();              // new chat = main: clears the banner
+    refreshChannelBannerCache();              // reflects the INHERITED channel
+                                              // (or clears it for a main chat)
     chatMessages.clear();
     processorRef.chatHistory.clear();
     // Clear-site instrumentation (11 Aug 2026): names WHICH site emptied
@@ -16744,10 +16854,10 @@ void EchoJayEditor::resized()
         // takes the room between it and the detected label, clamped, and the
         // state block truncates the channel name via captureBtnMaxW_.
         scanBtn.setBounds(tx, ty, 78, bh); tx += 78 + 4;
-        // Chain-list scan date, beside the count that misled for five weeks
-        // (13 Aug 2026). Sits between the count and the capture button; the
-        // capture target label is the variable-width element and absorbs it.
-        chainListInfoLabel.setBounds(tx, ty, 150, bh); tx += 150 + 10;
+        // New chat, reachable from every tab (14 Aug 2026) — the slot the
+        // chain-list scan date held; that readout lives in the EJScan log
+        // lines now. Same 150px so nothing downstream of it moves.
+        headerNewChatBtn.setBounds(tx, ty, 150, bh); tx += 150 + 10;
         // Item 2a: FIXED-width Capture button.
         captureBtn.setBounds(tx, ty, 64, bh); tx += 68;
         // Item 2b: target indicator takes the room up to the detected label,
@@ -16761,7 +16871,7 @@ void EchoJayEditor::resized()
     if (compactMode)
     {
         scanBtn.setBounds(0, -20, 1, 1);
-        chainListInfoLabel.setBounds(0, -20, 1, 1);
+        headerNewChatBtn.setBounds(0, -20, 1, 1);
         abSyncBtn.setBounds(-100, -100, 1, 1);
         captureTargetLabel.setVisible(false);
     }
@@ -17913,10 +18023,9 @@ void EchoJayEditor::timerCallback()
                 ch.buildRecommendable(processorRef.getPluginScanner().getPlugins(), chainFormatFilter_);
 
             // The staleness text that briefly lived here (13 Aug, morning)
-            // now lives in chainListInfoLabel in the HEADER: this site was
-            // in a never-rendered label AND preempted by the slot count on
-            // any non-empty rack. The header shows it on every tab and
-            // every rack state.
+            // moved to a header label and then out of the UI entirely
+            // (14 Aug): the chain-list date reads from the EJScan log lines
+            // now, and the header slot holds the New chat button.
         }
     }
 
@@ -18122,25 +18231,9 @@ void EchoJayEditor::timerCallback()
         }
         prevSettingsScanning_ = settingsScanning;
     }
-    // Chain-list staleness beside the header count (13 Aug 2026). The
-    // count in scanBtn is the SETTINGS list (plugin_cache.json); this label
-    // is the CHAIN list's date, the number that actually feeds the AI, and
-    // it renders on every tab and every rack state - its predecessor lived
-    // in a never-shown label and was preempted by any non-empty rack.
-    {
-        auto& chh = processorRef.getChainHost();
-        const auto ms = chh.getEntriesScannedAtMs();
-        const bool chainStale = ms <= 0
-            || juce::Time::currentTimeMillis() - ms > (juce::int64) 14 * 24 * 3600 * 1000;
-        chainListInfoLabel.setColour(juce::Label::textColourId,
-            chainStale ? juce::Colour(0xffcc8844) : juce::Colour(0xff888888));
-        chainListInfoLabel.setText(
-            "chain list " + juce::String(chh.getNumPlugins())
-            + (ms > 0 ? ", " + juce::Time(ms).toString(true, false)
-                      : juce::String(", scan date unknown"))
-            + (chainStale ? " - run Scan Now" : juce::String()),
-            juce::dontSendNotification);
-    }
+    // chainListInfoLabel DELETED (14 Aug 2026): the chain-list count + scan
+    // date it showed here are in the EJScan log lines (cache date is stamped
+    // at read); its header slot now holds the New chat button.
     if (sc.isScanning()) {
         scanBtn.setButtonText("Scanning " + juce::String((int)(sc.getProgress() * 100)) + "%");
         scanBtn.setEnabled(false);
@@ -20306,23 +20399,20 @@ juce::String EchoJayEditor::effectiveChannelUid() const
     return currentChatId.isEmpty() ? processorRef.pendingChannelUid : juce::String();
 }
 
-juce::String EchoJayEditor::findChannelChatId(const juce::String& linkUid) const
+juce::String EchoJayEditor::latestChannelChatId(const juce::String& linkUid,
+                                                int* matchesOut) const
 {
-    // THE open-or-create lookup, and the ONLY place the pair below may be
-    // read (tap + first-send create both come through here).
-    //
-    // V1 CONSTRAINT, NOT A SCHEMA PROPERTY: one channel chat per
-    // (linkUid, trackName) pair. WsChat.id remains the REAL key — the
-    // pair is only how open-or-create finds "the" chat today. A future
-    // "New chat" for channels is a change to THIS lookup (e.g. newest
-    // matching instead of first), not a data migration. Do not read the
-    // pair as an invariant anywhere else.
+    // THE open-or-create lookup (tap + first-send create both come through
+    // here). A channel owns MANY chats since 14 Aug 2026; "the" chat for a
+    // (linkUid, trackName) pair means the most recent by activity, and the
+    // selection lives header-inline in EchoJayChannelChats.h so the unit
+    // test compiles the shipped bytes. WsChat.id remains the REAL key.
     auto* self = const_cast<EchoJayEditor*>(this);
     const juce::String proj = self->newChatProjectName();
-    for (const auto& c : workspace.getChats())
-        if (c.linkUid == linkUid && c.trackName == proj)
-            return c.id;
-    return {};
+    const auto pick = echojay::latestChatForLink(workspace.getChats(), linkUid, proj);
+    if (matchesOut != nullptr) *matchesOut = pick.matches;
+    if (pick.index < 0) return {};
+    return workspace.getChats()[(size_t) pick.index].id;
 }
 
 juce::String EchoJayEditor::findOrCreateChannelChatId(const juce::String& linkUid,
@@ -20331,9 +20421,16 @@ juce::String EchoJayEditor::findOrCreateChannelChatId(const juce::String& linkUi
     // Create half of open-or-create (Phase C1): called at FIRST SEND only
     // (openChannelByUid holds a pending target instead of minting an
     // empty record on a bare tap). Lookup semantics live in
-    // findChannelChatId above.
-    if (auto existing = findChannelChatId(linkUid); existing.isNotEmpty())
+    // latestChannelChatId above. BOTH branches log which chat won and why:
+    // with many chats per channel, "which conversation did this land in"
+    // must be answerable from one line.
+    int matches = 0;
+    if (auto existing = latestChannelChatId(linkUid, &matches); existing.isNotEmpty())
+    {
+        EchoJay_NSLog(("EJChat: channel " + linkUid + " -> chat " + existing
+                       + " (latest of " + juce::String(matches) + ")").toRawUTF8());
         return existing;
+    }
 
     WsChat c;
     c.id           = juce::String(juce::Time::currentTimeMillis());
@@ -20344,6 +20441,8 @@ juce::String EchoJayEditor::findOrCreateChannelChatId(const juce::String& linkUi
     c.linkUid      = linkUid;
     c.linkNameSnap = linkNameNow;
     workspace.addChat(c);
+    EchoJay_NSLog(("EJChat: channel " + linkUid + " -> chat " + c.id
+                   + " (created, none existed)").toRawUTF8());
     return c.id;
 }
 
@@ -20514,10 +20613,14 @@ void EchoJayEditor::openChannelByUid(const juce::String& uid)
 {
     if (uid.isEmpty()) return;
 
-    if (auto existing = findChannelChatId(uid); existing.isNotEmpty())
+    int matches = 0;
+    if (auto existing = latestChannelChatId(uid, &matches); existing.isNotEmpty())
     {
-        // Open, never duplicate: the lookup found this channel's chat for
-        // the current project.
+        // Open the channel's MOST RECENT chat by activity (a channel owns
+        // many chats since 14 Aug 2026; the edit-card target switch comes
+        // through here too, so "the switch" lands in the latest one).
+        EchoJay_NSLog(("EJChat: channel " + uid + " -> chat " + existing
+                       + " (latest of " + juce::String(matches) + ")").toRawUTF8());
         processorRef.pendingChannelUid.clear();
         loadChatFromWorkspace(existing);
         return;
@@ -21789,28 +21892,57 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
         resized();
     }
 
-    // ===== Pill = ROUTER (this pass) =====
-    // A main chat with a selection SENDS INTO the channel conversation:
-    // resolve/create the channel chat, ACTIVATE it first, and the message
-    // appends THERE only — the main chat's history stays byte-identical
-    // and does NOT follow (deliberate: a routed "add a de-esser to that"
-    // arrives without context and the model asks). The selection then
-    // resets — transient by design; a main chat silently pointed at a
-    // channel was the invisible mode this pass removes. If the Link is
-    // gone, STILL route: the injection gate fires STATE 3 — never a
-    // silent main-chat fallback (that was Phase R pill-as-target logic,
-    // wrong for a router).
-    if (activeChatLinkUid().isEmpty() && processorRef.pendingChannelUid.isEmpty()
-        && processorRef.chatTargetLinkUid.isNotEmpty())
+    // ===== Pill = ROUTER (rewritten 14 Aug 2026: a channel owns many chats) =====
+    // Three cases, most specific first:
+    //
+    //  1. The current chat ALREADY carries the selected channel: send HERE.
+    //     No redirect — redirecting was what made "New chat + assign" append
+    //     to the channel's existing conversation and abandon the new one.
+    //  2. The current chat is VIRGIN (no messages yet): ASSIGN the channel
+    //     to it. This is the composer selector doing its stated job —
+    //     changing a new chat's channel before the first message goes out.
+    //  3. A main chat WITH history and a selection: route into the
+    //     channel's latest chat (or create one), as before. The main chat's
+    //     history stays byte-identical and does NOT follow (deliberate: a
+    //     routed "add a de-esser to that" arrives without context and the
+    //     model asks). If the Link is gone, STILL route: the injection gate
+    //     fires STATE 3 — never a silent main-chat fallback.
+    //
+    // The selection resets in every taken branch — transient by design; a
+    // chat silently pointed at a channel was the invisible mode the router
+    // pass removed, and that stays removed.
+    if (processorRef.chatTargetLinkUid.isNotEmpty())
     {
         const juce::String uid   = processorRef.chatTargetLinkUid;
         const juce::String label = channelDisplayLabel(uid);
-        processorRef.chatTargetLinkUid.clear();
-        processorRef.chatTargetLinkName.clear();
-        const juce::String cid = findOrCreateChannelChatId(uid, label);
-        loadChatFromWorkspace(cid);   // view + sidebar selection follow
-        EchoJay_NSLog(("EJChat: routed send -> channel chat \"" + label
-                       + "\" (" + cid + ")").toRawUTF8());
+
+        if (activeChatLinkUid() == uid)
+        {
+            processorRef.chatTargetLinkUid.clear();
+            processorRef.chatTargetLinkName.clear();
+            EchoJay_NSLog(("EJChat: send stays in current chat " + currentChatId
+                           + " (already channel \"" + label + "\")").toRawUTF8());
+        }
+        else if (auto* wc = workspace.findChatById(currentChatId);
+                 wc != nullptr && wc->messages.empty())
+        {
+            processorRef.chatTargetLinkUid.clear();
+            processorRef.chatTargetLinkName.clear();
+            wc->linkUid      = uid;
+            wc->linkNameSnap = label;
+            refreshChannelBannerCache();
+            EchoJay_NSLog(("EJChat: assigned channel \"" + label
+                           + "\" to virgin chat " + currentChatId).toRawUTF8());
+        }
+        else if (activeChatLinkUid().isEmpty() && processorRef.pendingChannelUid.isEmpty())
+        {
+            processorRef.chatTargetLinkUid.clear();
+            processorRef.chatTargetLinkName.clear();
+            const juce::String cid = findOrCreateChannelChatId(uid, label);
+            loadChatFromWorkspace(cid);   // view + sidebar selection follow
+            EchoJay_NSLog(("EJChat: routed send -> channel chat \"" + label
+                           + "\" (" + cid + ")").toRawUTF8());
+        }
     }
 
     // Phase C3: first send in a PENDING channel mints the record NOW (the
