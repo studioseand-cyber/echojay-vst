@@ -25,3 +25,4 @@ DerivedData/
 test/eqtest
 test/*.o
 test/movetest
+tools/pitch_click_test/material.local

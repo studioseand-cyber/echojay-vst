@@ -473,7 +473,7 @@ juce::String EedPitchProcessor::applyStructured (const juce::var& structured,
 // the key auto-map (spec §6) — why this device belongs in EchoJay
 // ---------------------------------------------------------------------------
 // The precedence walk that decides WHICH source wins lives once, in
-// PluginEditor::collectKeySources(), and is shared with the [DETECTED KEY] feed
+// EchoJayProcessor::collectKeySources(), and is shared with the [DETECTED KEY] feed
 // block and the Meters panel. This reads its published result. Re-implementing
 // the walk here would give the suite two rankings that can disagree, which is
 // the exact bug the shared collector exists to prevent.
@@ -724,8 +724,30 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
             if (correctOn_.load())
             {
                 correcting = true;
-                target = correct_.process (hops[h].f0Hz, hops[h].voiced, hopMs);
-                if (target <= 0.0f) correcting = false;
+                const float t = correct_.process (hops[h].f0Hz, hops[h].voiced, hopMs);
+
+                // THE CLICKING LIVED HERE. The corrector returns 0 on every
+                // untracked hop ("hold everything"), and passing that 0 to
+                // the shifter as its target flips PsolaEngine::process into
+                // the emitDry PASSTHROUGH branch - an instantaneous, fadeless
+                // switch from grain-summed wet to raw delayed dry. At normal
+                // tracking ~13% of voiced frames are gated, so the output
+                // flipped wet->dry->wet several times a second, a hard step
+                // each way. Measured (tools/pitch_click_test): clicks were
+                // 13x enriched at emit-state flips, the top clicks were all
+                // vertical steps AT the flip, and holding the target dropped
+                // the flip coincidence to exactly the base rate and killed
+                // the fixed-offset-after-hop signature outright, 3.47/s ->
+                // 2.43/s overall (the residual is wet-path roughness on
+                // sharp-glottal passages, bounded by the permanent density
+                // gate). HOLD the last target instead: the f0
+                // ring already marks the gap unvoiced, and emitMixed then
+                // emits those samples as bit-exact dry THROUGH the seam fade,
+                // which exists for exactly this join. Same audible content,
+                // faded instead of stepped - and unvoiced stays sacred.
+                if (t > 0.0f)           target = t;
+                else if (target <= 0.0f) correcting = false;   // nothing to hold yet
+                // else: hold the last target through the gap.
             }
             else
             {

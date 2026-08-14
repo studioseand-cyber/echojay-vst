@@ -1010,3 +1010,133 @@ Also fixed while in there: `PsolaEngine::process` now returns early if the
 engine is unprepared (`mask_ == 0`), rather than indexing an empty ring. JUCE
 orders `prepareToPlay` first so it was latent — but latent is a property of
 today's callers.
+---
+
+## 14. The clicking — measured, misdiagnosed once, found, fixed
+
+**Symptom:** audible clicking in a DAW at the shipped defaults on the real
+acapella. Every existing test was green throughout — pitch accuracy, nulls,
+block-size exactness, pluginval strictness 5.
+
+### 14.1 The instrument had to be repaired before it could be trusted
+
+`tools/pitch_click_test` locates samples that break the local waveform trend
+(prediction error > 20× the local median error) where the dry has no
+transient. Its first version compared against the dry at the SAME index — but
+the output runs `latency` (1656) samples behind, so every source transient
+inside a dry-emitted span counted as a "click" 1656 samples after itself.
+**147 of 302 reported clicks were that artefact**, discovered because the
+shifter's own per-sample emit record said they sat on samples emitted as
+bit-exact delayed dry. The tool now aligns the exclusion and carries a
+positive control (`--control`): injected 65% amplitude steps at known wet
+positions must be found, and the doctored run must not report wildly more
+than baseline + injections. An earlier ancestor of this detector reported
+1432 clicks/second where the truth was 5.5; a detector's zero is worth
+nothing until it has found what it was told to find.
+
+### 14.2 What the clicking actually was
+
+Two hypotheses died on the data before the real one confirmed:
+
+- **"Open-loop sqrt(Ts/Ta) gain + Ta-length grains step the overlap-add."**
+  Plausible, and per-grain logging half-confirmed it — until the base rate
+  was checked: 79.5% of ALL grains change half/gain between neighbours, and
+  80.6% of grains near clicks did. No enrichment. Switching preserve to
+  per-sample window normalisation changed the click count by ~8%: not it.
+- **"Thin window-sum patches."** Zero clicks sat at w < 0.5.
+
+The real mechanism, settled by the shifter's own emit record and waveform
+plots of the top clicks: **`PitchCorrect::process` returns 0 on every
+untracked hop, and the processor handed that 0 to the shifter as its target —
+which flips `PsolaEngine::process` into the `emitDry` passthrough branch, an
+instantaneous, fadeless switch from grain-summed wet to raw delayed dry.**
+At `tracking = normal` ~13% of voiced frames are gated (§6), so the output
+flipped wet→dry→wet several times a second, a hard step each way. Measured
+signatures, all consistent: 39% of clicks at a fixed 16–23 samples from a
+hop (the slice boundary, seen through the pitch-lag mapping), 65% amplitude
+steps, clicks 13× enriched within 96 samples of an emit-state edge, and the
+top-click plots all showing the same vertical step at the flip with the seam
+fade nowhere in sight — because the target-0 path bypasses `emitMixed`, and
+the seam fade lives inside `emitMixed`.
+
+### 14.3 The fix, and what it measured
+
+`EedPitchProcessor` now HOLDS the last target through untracked hops. The f0
+ring already marks the gap unvoiced, and `emitMixed` then emits those samples
+as bit-exact dry THROUGH the seam fade, which exists for exactly this join.
+Unvoiced stays sacred (the null suite is unchanged and green); the only
+change is that the wet→dry join is faded instead of stepped.
+
+| | before | after |
+|---|---|---|
+| clicks/second (aligned detector) | 3.47 | **2.43** |
+| clicks on emit-state edges | 27% (13× base) | 2.1% (= base rate) |
+| fixed-offset-after-hop signature | 39% in one 8-sample bucket | gone (scattered) |
+| top-click waveform shape | hard vertical steps | small burrs |
+
+The residual 2.43/s is wet-path roughness on sharp-glottal and fricative
+passages (nearly all of it concentrated in a few seconds of the take) —
+PSOLA duplicating sharp pulses, not systematic steps. It is bounded by the
+permanent density gate (`build_and_run.sh`, ceiling 3.5/s against the
+original failure's 5.48/s) rather than claimed fixed.
+
+### 14.4 What changed in the shifter while the wrong hypothesis was open
+
+The preserve path now normalises by the accumulated window per sample (the
+same rule as `off`), with a measured make-up gain `clamp(Ta/Ts, 1, 2)` for
+the upshift energy that averaging misaligned pulse copies loses. Not the
+click fix — but kept on its own merits, measured on the 30-check PSOLA
+suite: every upshift now lands within +1.16 dB of dry where the open-loop
+gain drifted to −2.9/−6.1 dB at a fifth/octave up (sqrt make-up was tried
+and rejected: −3.04 dB at the octave). The window-sum histogram that
+justified the floor (94% of emitted voiced samples at w = 0.95–1.05, a thin
+edge tail below the 0.35 floor) is printed by the click tool on every run.
+
+### 14.5 The key staleness fix (same session)
+
+`KeyFeed` was published only from the editor's 2 Hz timer, so closing the
+plugin window froze the key at its last value — the stale-key failure §10.2's
+chromatic fallback exists to prevent, arriving by a different route. The
+precedence walk (`collectKeySources`) reads only processor state, so it moved
+to `EchoJayProcessor`, published from the processor's own 1 Hz timer for the
+life of the instance; the editor delegates to the same single walk for its
+UI. Publisher moved rather than key aged out: ageing to chromatic would have
+made auto-key silently degrade the moment the window closed, which is the
+feature turning itself off; a publisher that outlives the window keeps the
+feature working and needs no new failure mode.
+
+### 14.6 Every invariant, re-run after the fixes
+
+- **g++ suites**: pitch_engine, pitch_correct, psola_engine — ALL PASS
+  (includes the unvoiced null: unvoiced/silent output bit-identical to the
+  delayed dry).
+- **Host path** (EchoJayPitchHostTest): L vs R **0.000000** correcting and in
+  passthrough; fixed-512 vs fixed-128/256/1024/2048 **exactly 0**;
+  variable-block residual 0.202 peak (bound 0.25, §13.2's documented
+  behaviour); oversize and tiny blocks finite. ALL PASS.
+- **Mode machine** (EchoJayPitchModeTest): ALL PASS, now including the §12
+  completeness assertion — every schema param is either proven to be WRITTEN
+  by all four modes (set to each range end, select mode, readback must agree)
+  or exempted by name with a reason. A new character-bearing param with no
+  mode column fails the build.
+- **Click density** (tools/pitch_click_test/build_and_run.sh): positive
+  control 25/25 injected steps found with no false-positive explosion;
+  density 2.43/s against the 3.5/s ceiling (5.48/s at the bug). PASS.
+- **Characters, re-rendered and re-probed** (§12's table, same method):
+
+  | render | mean dev | median | within 5 ¢ |
+  |---|---|---|---|
+  | dry | 13.1 ¢ | 8.3 | 35.7% |
+  | hard tuned | 7.7 ¢ | **3.8** | 59.9% |
+  | natural | 13.0 ¢ | 8.8 | 33.2% |
+  | wrong key (C minor forced) | 30.6 ¢ | 33.0 | 5.0% |
+
+  Hard tune's median moved 3.6 → 3.8 ¢ under the normalisation change —
+  within the character, stated rather than rounded away.
+- **CPU** (Release, 48 kHz, 128-sample blocks): means match §13.3 exactly —
+  6.0 / 7.6 / 4.1 / 19.3 / 19.3% per voice type. The WORST-case column is
+  not comparable at this granularity: across three runs of the same binary
+  on an idle machine the max-over-40k-blocks statistic swung 17% → 44% →
+  232% (low_male), so single-run worst cases measure the OS scheduler, not
+  the code. Means are the stable regression signal; they are unchanged.
+- **pluginval strictness 5** on this worktree's VST3: SUCCESS.

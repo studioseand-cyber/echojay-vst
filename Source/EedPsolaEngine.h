@@ -111,13 +111,20 @@ public:
     // to be inaudible as a level move, long enough to stop a step edge.
     static constexpr float kSeamFadeMs = 1.5f;
 
-    // Safety ceiling on the overlap-add window sum (PRESERVE): only ever
-    // attenuates, and only once the accumulated window is far past what any
-    // sane ratio produces. Never boosts.
-    static constexpr float kWindowCeil = 0.5f;
-
-    // Divisor floor for OFF's abutting windows: lifts the joins back to flat
-    // without amplifying a genuine gap into noise.
+    // Divisor floor for the per-sample window-sum normalisation, BOTH modes.
+    //
+    // Chosen from the measured distribution of the accumulated window sum on
+    // the real acapella (tools/pitch_click_test), not from reasoning — a
+    // constant chosen by reasoning is exactly how the open-loop gain shipped
+    // 5.5 clicks a second: 94% of emitted voiced samples sit in w = 0.95-1.05
+    // and normal operation occupies w >= ~0.8, so any floor below that shelf
+    // never touches steady state. Below the shelf is a thin edge tail (1.4%
+    // of samples under 0.5, 0.98% under 0.35, minimum 0.0), which is where
+    // instantaneous normalisation would reconstruct full amplitude from a
+    // bare window tail — duplicated-pulse smear. The floor decides where
+    // reconstruction gives way to a natural fade; the shipped value was
+    // picked by sweeping 0.25 / 0.35 / 0.50 on the same material and reading
+    // click density and pitch accuracy, see PITCH_P0_VALIDATION.md §14.
     static constexpr float kWindowFloor = 0.35f;
 
     // ---- lifecycle (audio stopped) ----------------------------------------
@@ -269,6 +276,15 @@ public:
     static constexpr int kDebugWinBuckets = 80;      // 0.00..4.00 in 0.05 steps
     float debugWinMin() const noexcept { return dbgWinMin_; }
 
+    // Per emitted sample, in emit order (one entry per output sample): the
+    // seam gain that mixed wet against dry, and the window sum under it.
+    // seamG < 0 marks a sample emitted by the PASSTHROUGH path (no grains).
+    // This is what lets a click position be asked "were you a wet/dry seam,
+    // a window hole, or neither?" against the shifter's own record instead
+    // of a parallel reconstruction's guess.
+    struct DebugEmit { float seamG, winSum; };
+    const std::vector<DebugEmit>& debugEmits() const noexcept { return dbgEmit_; }
+
     void setPitchLagSamples (int lag) noexcept { pitchLag_ = std::max (0, lag); }
     int  getPitchLagSamples() const noexcept   { return pitchLag_; }
 
@@ -346,7 +362,7 @@ private:
         for (int i = 0; i < n; ++i)
         {
             const int64_t p = base + (int64_t) i;
-            if (p < 0) { out[i] = 0.0f; continue; }      // latency warm-up
+            if (p < 0) { out[i] = 0.0f; if (debugOn_) dbgEmit_.push_back ({ -1.0f, 0.0f }); continue; }
             const uint32_t idx = (uint32_t) (uint64_t) p & mask_;
             const float og = outGain_.load (std::memory_order_relaxed);
             out[i] = og == 1.0f ? in_[(size_t) idx] : in_[(size_t) idx] * og;
@@ -354,23 +370,17 @@ private:
             // shifting does not read stale grain content.
             acc_[(size_t) idx] = 0.0f;
             win_[(size_t) idx] = 0.0f;
+            if (debugOn_) dbgEmit_.push_back ({ -1.0f, 0.0f });
         }
         emitted_ = base + (int64_t) n;
     }
 
     void emitMixed (float* out, int n, int64_t base) noexcept
     {
-        // Normalisation follows the WINDOWING regime, not the mode's name: a
-        // resampled grain (off, or a non-zero shift) has abutting windows that
-        // dip to zero at the joins, which is what instantaneous normalisation
-        // is for. A 1:1 grain has variable overlap of duplicated pulses, where
-        // the same division smears the pulse train.
-        const bool flat = formantMode_.load (std::memory_order_relaxed) == kFormantPreserve;
-
         for (int i = 0; i < n; ++i)
         {
             const int64_t p = base + (int64_t) i;
-            if (p < 0) { out[i] = 0.0f; continue; }      // latency warm-up
+            if (p < 0) { out[i] = 0.0f; if (debugOn_) dbgEmit_.push_back ({ -1.0f, 0.0f }); continue; }
             const uint32_t idx = (uint32_t) (uint64_t) p & mask_;
 
             const float dry = in_[(size_t) idx];
@@ -382,7 +392,20 @@ private:
             // as unshifted. Flooring the divisor instead lets the thin patch
             // come out quiet, which is what a truncated vocal-tract ring
             // actually sounds like, rather than wrong.
-            // See placeGrain for why the two modes normalise differently.
+            //
+            // BOTH modes normalise by the accumulated window, per sample.
+            // PRESERVE used an open-loop sqrt(Ts/Ta) grain gain instead, on
+            // the argument that instantaneous division would smear duplicated
+            // pulses - and that argument shipped 5.5 clicks a second on real
+            // material (tools/pitch_click_test, 329 in 60 s): every ordinary
+            // f0 update changed the next grain's length AND its gain, so the
+            // overlap-add summed to a different amplitude a fixed ~20 samples
+            // after the hop, with nothing reconciling the seam. Measured, the
+            // window sum sits at 0.95-1.05 for 94% of emitted voiced samples,
+            // so this division is a near no-op in steady state and exactly
+            // cancels the length-dependent amplitude at the seams. The smear
+            // the old comment feared lives only below the floor, where the
+            // clamp lets thin coverage fade instead of reconstructing it.
             const float w   = win_[(size_t) idx];
             if (debugOn_ && w > 0.0f)
             {
@@ -391,14 +414,13 @@ private:
                 ++dbgWinHist_[(size_t) b];
                 dbgWinMin_ = std::min (dbgWinMin_, w);
             }
-            const float wet = flat
-                ? acc_[(size_t) idx] / std::max (1.0f, w * kWindowCeil)
-                : acc_[(size_t) idx] / std::max (w, kWindowFloor);
+            const float wet = acc_[(size_t) idx] / std::max (w, kWindowFloor);
 
             // UNVOICED IS SACRED: the dry sample, untouched. Voiced samples
             // near the seam fade between wet and dry so the join is smooth,
             // and that fade lives entirely on the voiced side.
             const float g = seamGain ((uint64_t) p);
+            if (debugOn_) dbgEmit_.push_back ({ g, w });
             float y = g <= 0.0f ? dry : (g >= 1.0f ? wet : dry + g * (wet - dry));
 
             // Blend against the delay-matched dry, then trim. Skipped entirely
@@ -593,29 +615,37 @@ private:
 
         const int len = 2 * half + 1;
 
-        // Level is an ENERGY problem, not an amplitude one, and getting that
-        // wrong is worth 3 dB. The output is a pulse train: each grain carries
-        // gain^2 * E of energy and they arrive every Ts, so output power goes
-        // as gain^2 * E / Ts against the source's E / Ta. Unity therefore wants
+        // Level make-up ON TOP of the per-sample window-sum normalisation.
         //
-        //     gain = sqrt (Ts / Ta)
+        // The normalisation (emitMixed) makes output amplitude invariant to
+        // grain length - which is the click fix: PRESERVE used to apply an
+        // open-loop sqrt(Ts/Ta) here with NO per-sample normalisation, so
+        // every ordinary f0 update changed the next grain's length and gain
+        // and the overlap-add stepped to a new amplitude ~20 samples after
+        // the hop: 329 audible steps in 60 s of the acapella, 65% amplitude
+        // steps (tools/pitch_click_test). An open-loop gain is correct on
+        // average and wrong at every transition; the window sum is correct
+        // per sample by construction.
         //
-        // not Ts/Ta. The amplitude-shaped correction measured -6 dB on a 2x
-        // upshift and -2.9 dB at 1.5x; this lands both inside 3 dB.
+        // What the division alone gets wrong is upshift LEVEL: overlapping
+        // grains carry time-offset copies of the same pulse, and averaging
+        // misaligned copies loses energy - measured -2.92 dB at a fifth up,
+        // -6.05 dB at an octave up (test/psola_engine_test.cpp). This gain
+        // rides on top of the normalisation, so unlike the old one it can
+        // never step the seam: where grains overlap, out = sum(g w x)/sum(w),
+        // a crossfade between neighbouring gains over ~Ta samples.
+        // A hop's typical sub-cent f0 move changes it by <0.1%.
         //
-        // It is deliberately an OPEN-LOOP average correction rather than a
-        // per-sample window-sum division. Dividing instantaneously AVERAGES
-        // overlapping copies of the same pulse instead of adding them, which
-        // smears the pulse train - and the pulse train is the signal.
-        // OFF's windows are Ts long and spaced Ts, so they ABUT rather than
-        // overlap and their sum dips to zero at each join. That is exactly the
-        // case instantaneous normalisation handles correctly, so OFF is
-        // normalised at emit and needs no open-loop gain here. PRESERVE is the
-        // opposite: variable overlap of DUPLICATED pulses, where instantaneous
-        // normalisation averages copies instead of adding them and smears the
-        // pulse train. Two different windowing regimes, two different rules.
+        // The LAW was picked by measurement, not derivation: linear Ta/Ts
+        // against sqrt(Ta/Ts) across the suite's nine ratios - linear holds
+        // every upshift within +1.16 dB of dry (octave-up -0.03), sqrt drifts
+        // to -3.04 dB by the octave. Down-shifts are left uncompensated
+        // (clamp floor 1): their loss is floored window GAPS, not averaging,
+        // and boosting reconstructed patches would amplify the wrong thing.
+        // Ceiling 2 = one octave of make-up, the "extreme for a corrector"
+        // end of the tested range.
         const float gain = preserve
-            ? std::clamp (std::sqrt ((float) Ts / (float) Ta), 0.25f, 4.0f)
+            ? std::clamp ((float) Ta / (float) Ts, 1.0f, 2.0f)
             : 1.0f;
 
         for (int k = -half; k <= half; ++k)
@@ -662,6 +692,7 @@ private:
     bool   debugOn_   = false;
     std::vector<uint64_t> dbgReseed_, dbgReset_;
     std::vector<DebugGrain> dbgGrain_;
+    std::vector<DebugEmit>  dbgEmit_;
     std::vector<uint32_t>   dbgWinHist_;
     float dbgWinMin_ = 1.0e9f;
     int    maxPeriod_  = 2048;
