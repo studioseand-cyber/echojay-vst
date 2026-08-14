@@ -28,6 +28,7 @@
 #include "EchoJayParamMaps.h"
 #include "EchoJayParamApply.h"
 #include "EchoJayHistoryTrim.h"
+#include "EchoJayChannelChats.h"
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
 #include <fstream>
@@ -563,6 +564,80 @@ int main()
                    "buildChatRequestBody decides through trimChatHistory");
             check (! body.contains ("maxPayloadBytes"),
                    "the shared payload budget (newest charged against history) is gone");
+        }
+    }
+
+    // ---- Channel-chat selection (EchoJayChannelChats.h, header-inline) ----
+    // A channel owns many chats (14 Aug 2026); "the" chat for a channel is
+    // the most recent by ACTIVITY: updatedAt when non-empty, else created.
+    // The old first-match lookup is exactly what made "New chat + assign"
+    // append to the channel's existing conversation.
+    {
+        struct StubChat { juce::String linkUid, trackName, updatedAt, created; };
+        using echojay::latestChatForLink;
+        const juce::String uid ("linkA"), proj ("Song 1");
+
+        // No match at all.
+        {
+            const std::vector<StubChat> chats {
+                { "linkB", proj, "", "2026-08-01T10:00:00.000Z" },
+                { uid, "Song 2", "", "2026-08-02T10:00:00.000Z" },
+            };
+            const auto p = latestChatForLink (chats, uid, proj);
+            check (p.index == -1 && p.matches == 0,
+                   "no (linkUid, trackName) match returns index -1, matches 0");
+        }
+
+        // One match: chosen regardless of position.
+        {
+            const std::vector<StubChat> chats {
+                { "linkB", proj, "", "2026-08-05T10:00:00.000Z" },
+                { uid, proj, "", "2026-08-01T10:00:00.000Z" },
+            };
+            const auto p = latestChatForLink (chats, uid, proj);
+            check (p.index == 1 && p.matches == 1, "single match wins");
+        }
+
+        // Several matches where the newest by updatedAt is NOT the newest by
+        // created: activity must win over creation (and over vector order --
+        // the store prepends by creation).
+        {
+            const std::vector<StubChat> chats {
+                { uid, proj, "2026-08-10T10:00:00.000Z", "2026-08-09T10:00:00.000Z" },   // created latest
+                { uid, proj, "2026-08-14T10:00:00.000Z", "2026-08-01T10:00:00.000Z" },   // oldest created, newest ACTIVITY
+                { uid, proj, "2026-08-12T10:00:00.000Z", "2026-08-05T10:00:00.000Z" },
+            };
+            const auto p = latestChatForLink (chats, uid, proj);
+            check (p.index == 1 && p.matches == 3,
+                   "newest by updatedAt beats newest by created",
+                   "picked index " + juce::String (p.index));
+        }
+
+        // updatedAt empty on one side: created stands in for it, and a
+        // never-stamped chat can still win on a newer created.
+        {
+            const std::vector<StubChat> chats {
+                { uid, proj, "2026-08-10T10:00:00.000Z", "2026-08-02T10:00:00.000Z" },
+                { uid, proj, "",                          "2026-08-13T10:00:00.000Z" },  // no updatedAt; created decides
+            };
+            const auto p = latestChatForLink (chats, uid, proj);
+            check (p.index == 1 && p.matches == 2,
+                   "empty updatedAt falls back to created for that chat");
+        }
+
+        // Structural: the editor's lookup decides through the helper -- a
+        // re-derived inline first-match loop is how the one-chat-per-channel
+        // behaviour existed in the first place.
+        {
+            std::ifstream fed ("Source/PluginEditor.cpp");
+            std::stringstream sed_;
+            sed_ << fed.rdbuf();
+            const juce::String edSrc (sed_.str());
+            const auto body = functionBody (edSrc, "juce::String EchoJayEditor::latestChannelChatId");
+            check (body.contains ("echojay::latestChatForLink"),
+                   "latestChannelChatId decides through latestChatForLink");
+            check (! edSrc.contains ("findChannelChatId"),
+                   "the first-match lookup name is gone from PluginEditor.cpp");
         }
     }
 

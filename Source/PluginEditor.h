@@ -1210,7 +1210,23 @@ private:
     juce::String stageStatusText_;      // real event labels while applying;
                                         // generic-safe line during model wait
     juce::Rectangle<int> stageRowRect_; // last painted row (ticker repaints it)
-    int stageRowH() const { return (chatLoading || stageStatusText_.isNotEmpty()) ? 30 : 0; }
+    // OWNERSHIP-GATED (14 Aug 2026): f2941ad gated the stage row's WRITERS
+    // (thinking promotion, switch-site clears), but the row also renders
+    // from chatLoading alone -- which survives a chat switch -- so the
+    // "Thinking" state followed the user into whichever chat they opened
+    // while the message paints correctly suppressed. This helper is the ONE
+    // height source both the paint pass and the measure pass consult, so
+    // gating it here gates every renderer at once. stageRowBelongsHere is
+    // true when no turn is in flight (dial/apply labels, scan hold and the
+    // chain shimmer are view state and show where they were set).
+    int stageRowH() const { return (chatLoading || stageStatusText_.isNotEmpty())
+                                    && stageRowBelongsHere() ? 30 : 0; }
+    bool stageRowBelongsHere() const;
+    // Counting half of the gate: bumps the ACTIVE stream turn's suppressed
+    // figure (null between turns), so the render line stays a complete
+    // account. Called once per suppressing chat switch, never per frame.
+    std::function<void()> bumpStreamSuppressed_;
+    void noteStageSuppressedIfForeign();
     void setStageStatus(const juce::String& s);
     void clearStageStatus();
     // Result stage: a local assistant bubble (persisted, block-less).
@@ -1274,6 +1290,19 @@ private:
     {
         std::function<bool(const juce::MouseEvent&)> onClickCheck;
         std::function<void()> onScroll;
+        // Bottom pin (14 Aug 2026). While true, new content keeps the view
+        // at the bottom (the timer's auto-scroll). Cleared the moment a USER
+        // scroll leaves the bottom band, restored when one returns to it, so
+        // scrollback stays readable mid-stream instead of being yanked down
+        // on every delta. programmaticScroll must be held around every
+        // code-driven setSize/setViewPosition on this viewport: those fire
+        // visibleAreaChanged exactly like a user scroll, and re-deriving the
+        // pin from a move the code itself made is the thrash this flag
+        // exists to prevent (content growth alone pushes the bottom away
+        // and would unpin every streaming turn).
+        bool pinnedToBottom     = true;
+        bool programmaticScroll = false;
+        static constexpr int kBottomTolerancePx = 24;
         void mouseDown(const juce::MouseEvent& e) override
         {
             if (onClickCheck && onClickCheck(e))
@@ -1285,12 +1314,29 @@ private:
         // chat region — without it, the editor's manually-painted avatars
         // tear at the viewport boundary because half the avatar lives in
         // the area JUCE marks dirty during scroll and half doesn't.
-        void visibleAreaChanged(const juce::Rectangle<int>&) override
+        void visibleAreaChanged(const juce::Rectangle<int>& area) override
         {
+            if (! programmaticScroll)
+            {
+                const auto* viewed = getViewedComponent();
+                const int contentH = viewed != nullptr ? viewed->getHeight() : 0;
+                pinnedToBottom = area.getBottom() >= contentH - kBottomTolerancePx;
+            }
             if (onScroll) onScroll();
         }
     };
     ChatViewport chatScroll;
+    // Follow the bottom AT the content change, not where a disagreement is
+    // detected (14 Aug 2026). The timer-side height check could never fire
+    // during a streamed turn: paintBubble ran resized() per event, resized()
+    // re-synced chatContent's height, and the timer then saw agreement at
+    // every tick, so streamed rows rendered below the fold. Every site that
+    // changes content height calls this; the timer keeps a backstop role
+    // for height changes that happen outside resized(). No-op unless
+    // pinned; counts fires into chatFollowFires_ so a turn's render line
+    // can say "9 paints, 0 follows", which IS this bug's signature.
+    void followBottomIfPinned();
+    int  chatFollowFires_ = 0;   // running total; per-turn delta via snapshot
     juce::Component chatContent;
     juce::TextEditor chatInput;
     juce::TextButton chatSendBtn { "Send" };
@@ -1316,7 +1362,11 @@ private:
     // ---- Phase C1: channel chats (active chat drives the target) ----
     juce::String activeChatLinkUid() const;      // "" = main chat
     juce::String effectiveChannelUid() const;    // active chat's, else pending
-    juce::String findChannelChatId(const juce::String& linkUid) const; // "" = none
+    // The channel's MOST RECENT chat by activity (updatedAt else created);
+    // "" = none. matchesOut (optional) receives how many chats matched, for
+    // the "latest of N" log line. Selection logic: echojay::latestChatForLink.
+    juce::String latestChannelChatId(const juce::String& linkUid,
+                                     int* matchesOut = nullptr) const;
     bool linkUidLive(const juce::String& uid) const;
     // Capability, not version. False for every Link that does not claim it.
     bool linkUidDialCapable(const juce::String& uid) const;
@@ -1517,11 +1567,12 @@ private:
     int chainSaveBtnRight_ = 0;
     // chainStatusLabel DELETED (13 Aug 2026): same corpse as chainScanBtn,
     // invisible since birth, and it swallowed the staleness warning one
-    // commit after the button swallowed the scan trigger. Its replacement
-    // is chainListInfoLabel in the HEADER, beside the plugin count that
-    // actually misled for five weeks, visible on every tab and every rack
-    // state (the old site was also preempted whenever slots > 0).
-    juce::Label      chainListInfoLabel;
+    // commit after the button swallowed the scan trigger.
+    // chainListInfoLabel DELETED (14 Aug 2026): the scan count + date it
+    // carried lives in the EJScan log lines; its 150px header slot now
+    // holds the New chat button, reachable from every tab (the sidebar's
+    // + New chat only exists on the Chat surface).
+    juce::TextButton headerNewChatBtn { "+ New chat" };
     // chainLoadBtn, chainRecommendLabel and chainDebugJsonBox DELETED
     // (13 Aug 2026, dead-layer sweep). The resolver coverage triple the
     // label carried now logs from buildRecommendable itself (EJScan:
@@ -3947,12 +3998,16 @@ private:
     static constexpr int kSidebarW = 210;
 
     // Which albums are collapsed (by album id). Default = all expanded.
-    // Album ids + "proj:<name>" keys the user has collapsed. Persisted to a
-    // global prefs file so songs stay collapsed across restart / project
-    // reopen (the active chat's project still force-expands in refreshRows).
+    // Album ids + "proj:<name>" + "chan:<uid|main>" keys the user has
+    // collapsed. Persisted to a global prefs file so songs stay collapsed
+    // across restart / project reopen. The active chat's ancestors expand
+    // as a ONE-SHOT key erase at activation (expandAncestorsOf), never as a
+    // per-render override: the override made the active chain's triangles
+    // dead controls whose stored keys flip-flopped with click parity.
     std::set<juce::String> collapsedAlbums;
     void loadCollapsedState();
     void saveCollapsedState() const;
+    void expandAncestorsOf(const juce::String& chatId);
 
     // Currently open chat id (empty = none)
     juce::String currentChatId;
@@ -3970,9 +4025,12 @@ private:
     struct ChatSidebarModel : public juce::ListBoxModel
     {
         struct Row {
-            enum class Kind { SectionTitle, AlbumHeader, ProjectHeader, ChatRow, ReviewRow };
+            enum class Kind { SectionTitle, AlbumHeader, ProjectHeader, ChannelHeader, ChatRow, ReviewRow };
             Kind         kind   = Kind::SectionTitle;
-            juce::String id;      // AlbumHeader: album id; ProjectHeader: project name
+            bool         inflight = false;   // ChatRow: a turn is streaming into
+                                             // this chat right now (dot glyph)
+            juce::String id;      // AlbumHeader: album id; ProjectHeader: project
+                                  // name; ChannelHeader: linkUid
             juce::String label;
             juce::String meta;
             bool         collapsed = false;
@@ -3986,6 +4044,14 @@ private:
         std::function<void(const juce::String&)> onAlbumToggled;
         // Project header collapse toggle + right-click "Move to album..."
         std::function<void(const juce::String& projectName)> onProjectToggled;
+        // Channel folder collapse toggle (collapse key "chan:<linkUid>")
+        std::function<void(const juce::String& linkUid)> onChannelToggled;
+
+        // BUSY indicator (14 Aug 2026): the chat a turn is streaming into
+        // right now. Session state, never persisted, cleared when the turn
+        // completes whether or not that chat was opened. Not an unread
+        // marker: it says "arriving", not "arrived".
+        juce::String inflightChatId;
         std::function<void(const juce::String& projectName)> onProjectContextMenu;
         // Right-click on a chat row — editor shows rename/delete/move menu
         std::function<void(const juce::String& chatId)> onChatContextMenu;
@@ -4009,6 +4075,15 @@ private:
 
     void loadChatFromWorkspace(const juce::String& chatId);
     void createNewChat();
+    // ---- Stream ownership (14 Aug 2026: a stream belongs to a chat) ----
+    // Re-establish the in-flight turn's provisional rendering (stage row or
+    // partial bubble) after a chat switch, IF the newly opened chat owns the
+    // stream. Set by fireChatStreamCall, self-guarding on ownership, cleared
+    // at done/error. Null when no stream is in flight.
+    std::function<void()> restreamRepaint_;
+    // Sidebar busy dot: mark chatId as receiving a turn ("" = clear). Session
+    // state on the sidebar model only; refreshes the rows.
+    void setInflightChat(const juce::String& chatId);
     // The trackName (song/project) a NEW chat should get: the current header
     // project name if set, else the session's auto-project ("Untitled, <date>",
     // created once per session and adopted in place when a real name arrives).
