@@ -10464,45 +10464,66 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
         rows.push_back(ph);
         if (ph.collapsed) return;
 
-        // Loose (main) chats first, then one folder per channel, folders in
-        // first-seen order of the project's newest-first chat list.
+        // The Main folder first, then one folder per channel, folders in
+        // first-seen order of the project's newest-first chat list. Loose
+        // chats (empty linkUid, the "main chat" value the data vocabulary
+        // already uses at EchoJayWorkspace.h's linkUid field) get the SAME
+        // folder grammar as the channels: without one, a long list of main
+        // chats sat loose at project level and could not be collapsed. The
+        // synthetic "main" folder id cannot collide with a real linkUid
+        // (uids are hex identities; the empty-uid state is what "main"
+        // stands in for). Every folder exists only because at least one
+        // chat put it there.
         std::map<juce::String, std::vector<const WsChat*>> chanChats;
         std::vector<juce::String> chanOrder;
+        std::vector<const WsChat*> mainChats;
         for (auto* chat : projs[name].chats)
         {
             if (chat->linkUid.isEmpty())
             {
-                rows.push_back(makeChatRow(*chat, chatIndent));
+                mainChats.push_back(chat);
                 continue;
             }
             if (chanChats.find(chat->linkUid) == chanChats.end())
                 chanOrder.push_back(chat->linkUid);
             chanChats[chat->linkUid].push_back(chat);
         }
-        for (auto& cu : chanOrder)
+
+        // Emit one folder: header + (unless collapsed) its chats. Shared by
+        // Main and the channels so the two cannot drift in grammar.
+        auto pushChanFolder = [&](const juce::String& folderId,
+                                  const juce::String& label,
+                                  const std::vector<const WsChat*>& cc)
         {
-            auto& cc = chanChats[cu];
             bool holdsActive = false;
             for (auto* chat : cc)
                 if (chat->id == activeChatId) { holdsActive = true; break; }
+
+            Row chr;
+            chr.kind      = Row::Kind::ChannelHeader;
+            chr.id        = folderId;
+            chr.label     = label + "  (" + juce::String((int)cc.size()) + ")";
+            chr.indent    = chatIndent;
+            chr.collapsed = !holdsActive && collapsedSet.count(chanKey(folderId)) > 0;
+            chr.active    = holdsActive;
+            rows.push_back(chr);
+            if (!chr.collapsed)
+                for (auto* chat : cc)
+                    rows.push_back(makeChatRow(*chat, chatIndent + 16));
+        };
+
+        if (!mainChats.empty())
+            pushChanFolder("main", "Main", mainChats);
+        for (auto& cu : chanOrder)
+        {
+            auto& cc = chanChats[cu];
             // Label from the newest non-empty linkNameSnap (cc inherits the
             // project's newest-first order); the uid itself never displays.
             juce::String label;
             for (auto* chat : cc)
                 if (chat->linkNameSnap.isNotEmpty()) { label = chat->linkNameSnap; break; }
             if (label.isEmpty()) label = "Channel";
-
-            Row chr;
-            chr.kind      = Row::Kind::ChannelHeader;
-            chr.id        = cu;
-            chr.label     = label + "  (" + juce::String((int)cc.size()) + ")";
-            chr.indent    = chatIndent;
-            chr.collapsed = !holdsActive && collapsedSet.count(chanKey(cu)) > 0;
-            chr.active    = holdsActive;
-            rows.push_back(chr);
-            if (!chr.collapsed)
-                for (auto* chat : cc)
-                    rows.push_back(makeChatRow(*chat, chatIndent + 16));
+            pushChanFolder(cu, label, cc);
         }
     };
 
