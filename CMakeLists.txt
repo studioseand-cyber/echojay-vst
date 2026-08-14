@@ -964,6 +964,32 @@ target_link_libraries(EchoJayPitchHostTest PRIVATE
     juce::juce_gui_extra juce::juce_recommended_config_flags)
 set_target_properties(EchoJayPitchHostTest PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
+# ============================================================================
+# pitch_click_test — locate DISCONTINUITIES in the real host path and label
+# each one with the state at that instant. A click is measurable; this measures
+# it rather than reasoning about it.
+# ============================================================================
+juce_add_console_app(EchoJayPitchClickTest PRODUCT_NAME "EchoJayPitchClickTest")
+juce_generate_juce_header(EchoJayPitchClickTest)
+target_sources(EchoJayPitchClickTest PRIVATE
+    tools/pitch_click_test/main.cpp
+    Source/DeviceEditorBase.cpp
+    Source/EchoJayDeviceLookAndFeel.cpp
+    Source/EedDeviceProcessor.cpp
+    Source/EedDeviceRegistry.cpp
+    Source/EedPitchEditor.cpp
+    Source/EedPitchProcessor.cpp
+    Source/viz/DwellGlow.cpp
+    Source/viz/VizView.cpp)
+target_include_directories(EchoJayPitchClickTest PRIVATE Source)
+target_compile_features(EchoJayPitchClickTest PRIVATE cxx_std_17)
+target_compile_definitions(EchoJayPitchClickTest PRIVATE
+    JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0 JUCE_STANDALONE_APPLICATION=1)
+target_link_libraries(EchoJayPitchClickTest PRIVATE
+    juce::juce_audio_processors juce::juce_audio_utils juce::juce_audio_formats
+    juce::juce_gui_extra juce::juce_recommended_config_flags)
+set_target_properties(EchoJayPitchClickTest PROPERTIES EXCLUDE_FROM_ALL TRUE)
+
 # ============ Streaming parser test runner (spec step 3) ============
 # Console app, juce_core only — runs the read-back suite that holds the
 # incremental block parser byte-identical to the whole-reply strip

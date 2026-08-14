@@ -250,6 +250,25 @@ public:
         process (in, out, n, f0Hz, voiced, targetHz_.load (std::memory_order_relaxed));
     }
 
+    // ---- READ-ONLY DIAGNOSTIC HOOK ---------------------------------------
+    // Records WHERE the synthesis phase is discontinuous: an epoch re-seed
+    // (the analysis epoch jumps to a new peak) and a synthesis-cursor reset.
+    // Both change which part of the waveform the next grain is drawn from, so
+    // both are candidates for a step in the output. Off unless a caller asks;
+    // it changes no decision, only observes them.
+    void debugRecordPhaseEvents (bool on) noexcept { debugOn_ = on; }
+    const std::vector<uint64_t>& debugReseeds()      const noexcept { return dbgReseed_; }
+    const std::vector<uint64_t>& debugCursorResets() const noexcept { return dbgReset_; }
+
+    // Per-grain geometry, and the accumulated-window sum seen at emit. The
+    // first says WHICH grain changed shape; the second is the distribution the
+    // normalisation floor has to be chosen against.
+    struct DebugGrain { uint64_t pos; int Ta, Ts, half; float gain; };
+    const std::vector<DebugGrain>& debugGrains() const noexcept { return dbgGrain_; }
+    const std::vector<uint32_t>&   debugWinHist() const noexcept { return dbgWinHist_; }
+    static constexpr int kDebugWinBuckets = 80;      // 0.00..4.00 in 0.05 steps
+    float debugWinMin() const noexcept { return dbgWinMin_; }
+
     void setPitchLagSamples (int lag) noexcept { pitchLag_ = std::max (0, lag); }
     int  getPitchLagSamples() const noexcept   { return pitchLag_; }
 
@@ -365,6 +384,13 @@ private:
             // actually sounds like, rather than wrong.
             // See placeGrain for why the two modes normalise differently.
             const float w   = win_[(size_t) idx];
+            if (debugOn_ && w > 0.0f)
+            {
+                if (dbgWinHist_.empty()) dbgWinHist_.assign (kDebugWinBuckets, 0u);
+                const int b = std::clamp ((int) (w / 0.05f), 0, kDebugWinBuckets - 1);
+                ++dbgWinHist_[(size_t) b];
+                dbgWinMin_ = std::min (dbgWinMin_, w);
+            }
             const float wet = flat
                 ? acc_[(size_t) idx] / std::max (1.0f, w * kWindowCeil)
                 : acc_[(size_t) idx] / std::max (w, kWindowFloor);
@@ -487,6 +513,7 @@ private:
 
         if (! haveSynth_ || nextSynth_ + (uint64_t) (4 * curPeriod_) < (uint64_t) std::max<int64_t> (base, 0))
         {
+            if (debugOn_ && haveSynth_) dbgReset_.push_back ((uint64_t) std::max<int64_t> (base, 0));
             nextSynth_ = (uint64_t) std::max<int64_t> (base, 0);
             haveSynth_ = true;
             haveEpoch_ = false;
@@ -512,6 +539,7 @@ private:
             {
                 uint64_t e;
                 if (! seedEpoch (nextSynth_, safeLimit, e)) break;
+                if (debugOn_) dbgReseed_.push_back (nextSynth_);
                 lastEpoch_ = e;
                 haveEpoch_ = true;
             }
@@ -616,6 +644,7 @@ private:
             acc_[(size_t) di] += gain * w * x;
             win_[(size_t) di] += w;
         }
+        if (debugOn_) dbgGrain_.push_back ({ synthEpoch, Ta, Ts, half, gain });
         placedTo_ = std::max (placedTo_, synthEpoch + (uint64_t) half);
     }
 
@@ -630,6 +659,11 @@ private:
     double fs_ = 48000.0;
     float  lookahead_ = kLookaheadDefault;
     int    pitchLag_  = 0;
+    bool   debugOn_   = false;
+    std::vector<uint64_t> dbgReseed_, dbgReset_;
+    std::vector<DebugGrain> dbgGrain_;
+    std::vector<uint32_t>   dbgWinHist_;
+    float dbgWinMin_ = 1.0e9f;
     int    maxPeriod_  = 2048;
     int    curPeriod_  = 600;
     int    latency_    = 1800;
