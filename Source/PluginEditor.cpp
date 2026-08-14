@@ -11332,11 +11332,15 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
 
         layoutChatMessages();
         // Scroll to bottom, and RE-PIN: opening a chat always starts at the
-        // newest message with the follow behaviour on.
+        // newest message with the follow behaviour on. Save/restore guard,
+        // same re-entrancy rule as followBottomIfPinned.
         chatScroll.pinnedToBottom = true;
-        chatScroll.programmaticScroll = true;
-        chatScroll.setViewPositionProportionately(0.0, 1.0);
-        chatScroll.programmaticScroll = false;
+        {
+            const bool wasProgrammatic = chatScroll.programmaticScroll;
+            chatScroll.programmaticScroll = true;
+            chatScroll.setViewPositionProportionately(0.0, 1.0);
+            chatScroll.programmaticScroll = wasProgrammatic;
+        }
         repaint();
         return;
     }
@@ -17204,9 +17208,21 @@ void EchoJayEditor::resized()
     int currentContentH = std::max(chatScroll.getHeight(), measureChatContentHeight());
     // Layout resize is code-driven: it must not re-derive the bottom pin
     // (a growth here reads as "left the bottom" from inside visibleAreaChanged).
-    chatScroll.programmaticScroll = true;
-    chatContent.setSize(chatW - chatAvatarReserve - 4, currentContentH);
-    chatScroll.programmaticScroll = false;
+    // Save/restore, not set/clear: resized() can be entered while an outer
+    // caller already holds the guard (see followBottomIfPinned).
+    {
+        const bool wasProgrammatic = chatScroll.programmaticScroll;
+        chatScroll.programmaticScroll = true;
+        chatContent.setSize(chatW - chatAvatarReserve - 4, currentContentH);
+        chatScroll.programmaticScroll = wasProgrammatic;
+    }
+    // THE follow site (14 Aug 2026): every path that changes content height
+    // comes through here — including paintBubble's per-event resized() —
+    // so the pinned view follows AT the change. The timer's version of this
+    // could never fire mid-stream: this line had already re-synced the
+    // height by the time the timer compared, so agreement was permanent and
+    // streamed rows rendered below the fold.
+    followBottomIfPinned();
     
     // In compact mode, ensure chat components are on top
     if (compactMode) {
@@ -18663,20 +18679,24 @@ void EchoJayEditor::timerCallback()
     // resized() so the scroll extent is never a second, weaker guess.
     if (currentScreen == Screen::Main && !chatMessages.empty())
     {
+        // BACKSTOP, not the follow site (14 Aug 2026). The follow lives at
+        // the height-sync line in resized(), where content changes actually
+        // land; a height-disagreement trigger here could never fire during
+        // a streamed turn because paintBubble's resized() had already
+        // re-synced the height by the time this tick compared. This tick
+        // now only (a) syncs the extent for height changes that happened
+        // OUTSIDE resized(), and (b) re-follows if pinned and not at the
+        // bottom for any reason — both no-ops on a quiet frame.
         const int totalH = measureChatContentHeight();
         const int visH   = chatScroll.getHeight();
         if (chatContent.getHeight() != std::max(visH, totalH))
         {
-            // PIN-GATED (14 Aug 2026): follow new content only while the
-            // user is at the bottom. The guard spans the setSize too --
-            // growth alone moves the bottom away from the visible area and
-            // would otherwise unpin every streaming turn from inside code.
+            const bool wasProgrammatic = chatScroll.programmaticScroll;
             chatScroll.programmaticScroll = true;
             chatContent.setSize(chatScroll.getWidth() - 4, std::max(visH, totalH));
-            if (chatScroll.pinnedToBottom && totalH > visH)
-                chatScroll.setViewPosition(0, totalH - visH);   // new content -> newest visible
-            chatScroll.programmaticScroll = false;
+            chatScroll.programmaticScroll = wasProgrammatic;
         }
+        followBottomIfPinned();
     }
 
     // Auto-refresh compare view when references change
@@ -20648,6 +20668,27 @@ void EchoJayEditor::openChannelByUid(const juce::String& uid)
     refreshChannelBannerCache();
     resized();
     repaint();
+}
+
+void EchoJayEditor::followBottomIfPinned()
+{
+    if (! chatScroll.pinnedToBottom) return;
+    const int contentH = chatContent.getHeight();
+    const int visH     = chatScroll.getViewHeight();
+    const int targetY  = juce::jmax(0, contentH - visH);
+    if (chatScroll.getViewPositionY() == targetY) return;   // already there
+
+    // SAVE AND RESTORE, never set-true/set-false: this runs inside
+    // resized(), which layout cascades can enter while an outer caller is
+    // already holding the guard around its own programmatic scroll. A blind
+    // `= false` on the way out would clear that outer guard mid-flight and
+    // the next visibleAreaChanged would re-derive the pin from a move the
+    // code made — the exact thrash the guard exists to prevent.
+    const bool wasProgrammatic = chatScroll.programmaticScroll;
+    chatScroll.programmaticScroll = true;
+    chatScroll.setViewPosition(chatScroll.getViewPositionX(), targetY);
+    chatScroll.programmaticScroll = wasProgrammatic;
+    ++chatFollowFires_;
 }
 
 bool EchoJayEditor::targetPillEligible() const
@@ -22695,10 +22736,15 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
         // "no deltas" from "deltas discarded" -- the question three tests
         // could not answer, because each half was silent about the other.
         int deltasIn = 0, proseEvents = 0, slotEvents = 0, paints = 0;
+        // Editor-wide follow counter at stream start: the render line logs
+        // the per-turn DELTA. paints>0 with follows=0 is the below-the-fold
+        // bug's exact signature (the view never moved while content grew).
+        int followsAtStart = 0;
         juce::uint32 tFirstPaint = 0;
     };
     auto st = std::make_shared<StreamTurn>();
     st->provisionalId = provisionalId;
+    st->followsAtStart = chatFollowFires_;
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
 
     // Paint the current provisional state into the bubble. Runs only on the
@@ -22900,6 +22946,7 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
                         + " prose=" + juce::String (st->proseEvents)
                         + " slots=" + juce::String (st->slotEvents)
                         + " paints=" + juce::String (st->paints)
+                        + " follows=" + juce::String (ed->chatFollowFires_ - st->followsAtStart)
                         + " firstPaint=" + juce::String (st->tFirstPaint
                               ? (int) (juce::Time::getMillisecondCounter() - st->tFirstPaint) : -1)
                         + "ms-before-done").toRawUTF8());

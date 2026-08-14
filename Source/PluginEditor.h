@@ -1310,6 +1310,17 @@ private:
         }
     };
     ChatViewport chatScroll;
+    // Follow the bottom AT the content change, not where a disagreement is
+    // detected (14 Aug 2026). The timer-side height check could never fire
+    // during a streamed turn: paintBubble ran resized() per event, resized()
+    // re-synced chatContent's height, and the timer then saw agreement at
+    // every tick, so streamed rows rendered below the fold. Every site that
+    // changes content height calls this; the timer keeps a backstop role
+    // for height changes that happen outside resized(). No-op unless
+    // pinned; counts fires into chatFollowFires_ so a turn's render line
+    // can say "9 paints, 0 follows", which IS this bug's signature.
+    void followBottomIfPinned();
+    int  chatFollowFires_ = 0;   // running total; per-turn delta via snapshot
     juce::Component chatContent;
     juce::TextEditor chatInput;
     juce::TextButton chatSendBtn { "Send" };
