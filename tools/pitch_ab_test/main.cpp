@@ -58,6 +58,19 @@ static constexpr double kCentsGapC  = 1.5;   // measured +0.9c vs Antares
 static constexpr double kHnrGapDb   = 0.25;  // measured -0.04 dB (we WIN this one)
 static constexpr double kFluxGapPp  = 2.0;   // measured +1.2 points vs Antares
 
+// HF-excess event ceiling (events/s where our >6 kHz peak envelope exceeds
+// the Antares bounce's LOCAL MAX by >15 dB). The +/-3 ms reference window is
+// load-bearing: both processors are resamplers whose output timing wobbles a
+// few ms against each other, and an instantaneous compare reads that skew as
+// level at every shared source transient - measured, it manufactures ~4
+// events/s that vanish at any tolerance >= 2 ms and sit at identical times
+// across all four voice types (i.e. they are the take's own consonants).
+// Current truth: the HOST bounce measures 0; the offline render measures one
+// marginal event at a note-boundary chatter with no waveform step. Goal 0.
+static constexpr double kHfxThreshDb = 15.0;
+static constexpr double kHfxTolMs    = 3.0;
+static constexpr double kHfxMaxPerSec = 0.30;   // = the two marginal events on the reference take; a third fails
+
 // ---------------------------------------------------------------------------
 // WAV I/O (PCM16/24, float32; channels averaged)
 // ---------------------------------------------------------------------------
@@ -333,6 +346,71 @@ static double fluxTotal (const std::vector<float>& x)
 static double median (std::vector<double> v)
 { if (v.empty()) return 0.0; std::sort (v.begin(), v.end()); return v[v.size() / 2]; }
 
+// ---- HF excess (>6 kHz, timing-robust) -----------------------------------
+static std::vector<float> highpass6k (const std::vector<float>& x, double fs)
+{
+    std::vector<float> y = x;
+    const double qv[2] = { 0.54119610, 1.30656296 };   // 4th-order Butterworth
+    for (int s = 0; s < 2; ++s)
+    {
+        const double w0 = 2.0 * M_PI * 6000.0 / fs;
+        const double alpha = std::sin (w0) / (2.0 * qv[s]);
+        const double cosw = std::cos (w0);
+        const double b0 = (1 + cosw) / 2, b1 = -(1 + cosw), b2 = (1 + cosw) / 2;
+        const double a0 = 1 + alpha, a1 = -2 * cosw, a2 = 1 - alpha;
+        double x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+        for (auto& v : y)
+        {
+            const double xn = v;
+            const double yn = (b0 * xn + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2) / a0;
+            x2 = x1; x1 = xn; y2 = y1; y1 = yn;
+            v = (float) yn;
+        }
+    }
+    return y;
+}
+
+// 2 ms peak envelope in dB, 0.5 ms hop.
+static std::vector<double> hfEnvDb (const std::vector<float>& x, double fs, int& hopOut)
+{
+    const auto hf = highpass6k (x, fs);
+    const int W = (int) (0.002 * fs), H = (int) (0.0005 * fs);
+    hopOut = H;
+    std::vector<double> e;
+    for (size_t p = 0; p + (size_t) W < hf.size(); p += (size_t) H)
+    {
+        double s = 0.0;
+        for (int i = 0; i < W; ++i) s = std::max (s, (double) std::fabs (hf[p + (size_t) i]));
+        e.push_back (20.0 * std::log10 (std::max (1e-7, s)));
+    }
+    return e;
+}
+
+// Count events where ours exceeds the reference's +/-tol local max by thr dB.
+static int hfExcessEvents (const std::vector<double>& eO, const std::vector<double>& eR,
+                           int hop, double fs)
+{
+    std::vector<double> sorted = eR;
+    std::sort (sorted.begin(), sorted.end());
+    const double floorDb = sorted[sorted.size() / 2] - 6.0;
+    const int tol = (int) (kHfxTolMs * 0.001 * fs) / hop;
+
+    int events = 0;
+    bool in = false;
+    double lastT = -1.0;
+    for (size_t i = 0; i < eO.size(); ++i)
+    {
+        double r = floorDb;
+        for (long j = (long) i - tol; j <= (long) i + tol; ++j)
+            if (j >= 0 && (size_t) j < eR.size()) r = std::max (r, eR[(size_t) j]);
+        const bool hot = eO[i] - r > kHfxThreshDb;
+        const double t = (double) (i * (size_t) hop) / fs;
+        if (hot && ! in && t - lastT > 0.005) { ++events; lastT = t; }
+        in = hot;
+    }
+    return events;
+}
+
 struct Metrics { double medCents = 0, within5 = 0, medHnr = 0, fluxPct = 0; int unvoiced = 0; };
 
 static Metrics measure (const std::vector<float>& x, const Track& t, double fs,
@@ -429,6 +507,43 @@ int main (int argc, char* argv[])
                    "roughness: spectral flux %+.1f%% vs Antares %+.1f%% (margin %.1f points)",
                    mo.fluxPct, ma.fluxPct, kFluxGapPp);
     check (mo.fluxPct <= ma.fluxPct + kFluxGapPp, msg);
+
+    // ---- HF-excess events, with the instrument's own positive control ----
+    {
+        int hop = 0;
+        const auto eA = hfEnvDb (antares, fs, hop);
+        const auto eO = hfEnvDb (ours, fs, hop);
+        const int clean = hfExcessEvents (eO, eA, hop, fs);
+        const double dur = (double) ours.size() / fs;
+
+        // Control: 25 one-sample-onset steps at 3x local RMS injected into a
+        // COPY of our render must be found, or the zero above means nothing.
+        std::vector<float> doctored = ours;
+        int injected = 0;
+        for (int k = 0; k < 25; ++k)
+        {
+            const size_t p = (size_t) ((1.5 + 5.5 * k / 24.0) * fs);
+            if (p < 1200 || p + 4800 >= doctored.size()) continue;
+            double s = 0.0;
+            for (int i = -1200; i < 1200; i += 4)
+                s += (double) doctored[p + (size_t) i] * doctored[p + (size_t) i];
+            const float amp = (float) (3.0 * std::sqrt (s / 600.0));
+            for (int i = 0; i < 24; ++i)
+                doctored[p + (size_t) i] += amp * (1.0f - (float) i / 24.0f);
+            ++injected;
+        }
+        const auto eD = hfEnvDb (doctored, fs, hop);
+        const int found = hfExcessEvents (eD, eA, hop, fs) - clean;
+
+        std::snprintf (msg, sizeof (msg),
+                       "HF-excess control: %d of %d injected steps found", found, injected);
+        check (found >= injected / 2, msg);
+
+        std::snprintf (msg, sizeof (msg),
+                       "HF excess (>6 kHz, >%.0f dB over Antares +/-%.0f ms): %d events, %.2f/s (ceiling %.2f/s)",
+                       kHfxThreshDb, kHfxTolMs, clean, clean / dur, kHfxMaxPerSec);
+        check (clean / dur <= kHfxMaxPerSec, msg);
+    }
 
     std::printf ("\n%s (%d failure%s)\n", g_fail == 0 ? "ALL PASS" : "FAILURES",
                  g_fail, g_fail == 1 ? "" : "s");

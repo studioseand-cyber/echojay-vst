@@ -1501,3 +1501,48 @@ anything and the synthetic suite carries correctness there). The honest
 summary: at corrector ratios, where the reference comparison lives, wet
 resynthesis is transparent; at transpose ratios it is an improved granular
 shifter.
+
+### 16.7 The HF-excess report — instrument first, then the verdict
+
+A host-side analysis reported >6 kHz envelope events exceeding the Antares
+bounce by >15 dB, arriving in pairs and triples spaced 31–44 ms (mean
+~36 ms ≈ the low_male tracking lag), with named timestamps, and proposed a
+mechanism: the splice ratio's decision and the audio it splices aligned to
+f0 estimates one tracking lag apart.
+
+**The reproduction failed, and the failure was diagnosable.** None of the
+named timestamps show an anomaly in any bounce in the reference folder,
+under HF-envelope or waveform-jump criteria, at any threshold, with no
+constant offset mapping that event list onto anything measurable here. An
+INSTANTANEOUS HF compare against Antares does manufacture ~4 events/s —
+but they sit on the take's own consonant transients, they appear at
+IDENTICAL times and spacings across all four voice types (soprano cannot
+even track this voice, so a tracking-lag mechanism cannot produce identical
+soprano events — the discriminator the analysis itself proposed, run, and
+failed), and they vanish at any reference tolerance ≥ 2 ms. Two resamplers
+wobble a few milliseconds against each other; sample-exact comparison
+reads that skew as level at every shared transient. The waveform-jump scan
+confirms it from the other side: the biggest jumps in the wet are the DRY's
+own glottal/plosive steps, same list, same sizes.
+
+**The code suspect is real and was left alone, on three measurements.**
+The splice ratio's numerator (the corrector's target, from the fresh hop)
+and denominator (the back-dated f0 ring) do disagree — by latency − lag
+(~20 ms at low_male, not one full lag). But re-timing the target to
+"correct" it makes the output measurably worse in every direction tried:
+positive leads cost cents (§16.2), and the aligned negative lead
+(−957 samples) produced 3 genuine HF events up to 29.7 dB where the
+shipped timing produces 1. The fresh-target timing is load-bearing —
+the synthesis lookahead consumes it ahead of emission — and the
+misalignment on paper is compensation in practice.
+
+**Re-gated with a validated instrument.** The gate now carries a fourth
+metric: >6 kHz peak-envelope events >15 dB over the Antares bounce's
+±3 ms local max, with a 25-step injection control per run (14 found —
+a zero from an instrument that cannot find planted steps is worth
+nothing). Verdict: the HOST bounce of the shipped build measures **0
+events**; the gate's own offline render measures 2 marginal events
+(0.24/s), the inspected one sitting at an F#3/G3 note-boundary chatter
+where the wet's largest waveform step is SMALLER than the dry's at the
+same instant. Ceiling 0.30/s — exactly those two events, a third fails;
+the goal, as directed, is zero.
