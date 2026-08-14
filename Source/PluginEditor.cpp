@@ -10419,11 +10419,19 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
         if (ch.id == activeChatId) { activeProj = ch.trackName; break; }
     const juce::String activeAlbum = (activeProj.isNotEmpty() && projAlbum.count(activeProj))
                                    ? projAlbum[activeProj] : juce::String();
+    // RENDER PURELY FROM THE STORED SET (14 Aug 2026). These used to force-
+    // expand the active chat's album/project regardless of the key, which
+    // made every folder on the active chain uncollapsible: the click stored
+    // the key, the rebuild ignored it, and the stored state flip-flopped
+    // with click parity. Auto-expand on activation still happens, as a
+    // ONE-SHOT key erase in expandAncestorsOf (loadChatFromWorkspace), so a
+    // manual collapse afterwards sticks.
+    juce::ignoreUnused(activeAlbum);
     auto projKey = [](const juce::String& n) { return "proj:" + n; };
     auto albumCollapsed = [&](const juce::String& id)
-        { return id != activeAlbum && collapsedSet.count(id) > 0; };
+        { return collapsedSet.count(id) > 0; };
     auto projCollapsed  = [&](const juce::String& n)
-        { return n != activeProj && collapsedSet.count(projKey(n)) > 0; };
+        { return collapsedSet.count(projKey(n)) > 0; };
 
     // 4. Recency: project = its newest chat; album = newest across its projects.
     auto albumRecent = [&](const juce::String& id) {
@@ -10504,7 +10512,10 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
             chr.id        = folderId;
             chr.label     = label + "  (" + juce::String((int)cc.size()) + ")";
             chr.indent    = chatIndent;
-            chr.collapsed = !holdsActive && collapsedSet.count(chanKey(folderId)) > 0;
+            // Stored key only — the activation expand is the one-shot erase
+            // in expandAncestorsOf, so a manual collapse sticks (holdsActive
+            // here made the active folder's triangle a dead control).
+            chr.collapsed = collapsedSet.count(chanKey(folderId)) > 0;
             chr.active    = holdsActive;
             rows.push_back(chr);
             if (!chr.collapsed)
@@ -10849,6 +10860,28 @@ void EchoJayEditor::ChatSidebarModel::listBoxItemClicked(
     if (rowNum < 0 || rowNum >= (int)rows.size()) return;
     const auto& row = rows[(size_t)rowNum];
 
+    // Every folder-row click logs BEFORE dispatch: index, kind, the exact
+    // collapse key the toggle will flip, and the state transition. A click
+    // that toggles nothing must log, not vanish -- the dead-triangle defect
+    // stayed invisible precisely because dead clicks left no trace.
+    if (row.kind == Row::Kind::AlbumHeader
+        || row.kind == Row::Kind::ProjectHeader
+        || row.kind == Row::Kind::ChannelHeader)
+    {
+        const juce::String key =
+            row.kind == Row::Kind::AlbumHeader   ? row.id
+          : row.kind == Row::Kind::ProjectHeader ? "proj:" + row.id
+                                                 : "chan:" + row.id;
+        const char* kindName =
+            row.kind == Row::Kind::AlbumHeader   ? "album"
+          : row.kind == Row::Kind::ProjectHeader ? "project" : "channel";
+        EchoJay_NSLog(("EJSidebar: click row=" + juce::String(rowNum)
+                       + " kind=" + kindName + " key=" + key
+                       + " collapsed " + (row.collapsed ? "1" : "0")
+                       + " -> " + (row.collapsed ? "0" : "1")
+                       + (e.mods.isPopupMenu() ? " (context menu)" : "")).toRawUTF8());
+    }
+
     if (row.kind == Row::Kind::AlbumHeader)
     {
         if (e.mods.isPopupMenu())
@@ -11190,6 +11223,8 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
 
         currentChatId = chatId;
         processorRef.activeChatId = chatId;   // survives editor recreate
+        expandAncestorsOf(chatId);            // one-shot: ancestors open NOW,
+                                              // later collapses stick
         processorRef.pendingChannelUid.clear();   // any activation ends pending
         processorRef.chatTargetLinkUid.clear();   // router selection is transient:
         processorRef.chatTargetLinkName.clear();  // every activation resets it
@@ -11391,6 +11426,48 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
 // ============================================================================
 // Sidebar column management — Phase 2b
 // ============================================================================
+
+void EchoJayEditor::expandAncestorsOf(const juce::String& chatId)
+{
+    // ONE-SHOT activation expand (14 Aug 2026): erase the collapse keys on
+    // the opened chat's ancestor chain (channel folder, project, album) so
+    // the chat is visible, then let every later render read the stored set
+    // untouched. This replaces the per-render force-expand, which made the
+    // active chain's triangles dead controls.
+    const auto& chats = workspace.getChats();
+    const WsChat* chat = nullptr;
+    for (const auto& c : chats)
+        if (c.id == chatId) { chat = &c; break; }
+    if (chat == nullptr) return;
+
+    bool changed = false;
+    auto drop = [&](const juce::String& key)
+    {
+        if (collapsedAlbums.erase(key) > 0) changed = true;
+    };
+
+    drop("chan:" + (chat->linkUid.isEmpty() ? juce::String("main") : chat->linkUid));
+    if (chat->trackName.isNotEmpty())
+    {
+        drop("proj:" + chat->trackName);
+        // Album claim: projectNames first, legacy chatIds' trackNames second
+        // -- the SAME derivation refreshRows uses, first claiming album wins.
+        for (const auto& album : workspace.getAlbums())
+        {
+            bool claims = album.projectNames.contains(chat->trackName);
+            if (!claims)
+                for (const auto& cid : album.chatIds)
+                {
+                    for (const auto& c2 : chats)
+                        if (c2.id == cid && c2.trackName == chat->trackName)
+                            { claims = true; break; }
+                    if (claims) break;
+                }
+            if (claims) { drop(album.id); break; }
+        }
+    }
+    if (changed) saveCollapsedState();
+}
 
 juce::String EchoJayEditor::getCurrentAlbumId() const
 {

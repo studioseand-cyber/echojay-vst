@@ -3998,12 +3998,16 @@ private:
     static constexpr int kSidebarW = 210;
 
     // Which albums are collapsed (by album id). Default = all expanded.
-    // Album ids + "proj:<name>" keys the user has collapsed. Persisted to a
-    // global prefs file so songs stay collapsed across restart / project
-    // reopen (the active chat's project still force-expands in refreshRows).
+    // Album ids + "proj:<name>" + "chan:<uid|main>" keys the user has
+    // collapsed. Persisted to a global prefs file so songs stay collapsed
+    // across restart / project reopen. The active chat's ancestors expand
+    // as a ONE-SHOT key erase at activation (expandAncestorsOf), never as a
+    // per-render override: the override made the active chain's triangles
+    // dead controls whose stored keys flip-flopped with click parity.
     std::set<juce::String> collapsedAlbums;
     void loadCollapsedState();
     void saveCollapsedState() const;
+    void expandAncestorsOf(const juce::String& chatId);
 
     // Currently open chat id (empty = none)
     juce::String currentChatId;
