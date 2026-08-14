@@ -1274,6 +1274,19 @@ private:
     {
         std::function<bool(const juce::MouseEvent&)> onClickCheck;
         std::function<void()> onScroll;
+        // Bottom pin (14 Aug 2026). While true, new content keeps the view
+        // at the bottom (the timer's auto-scroll). Cleared the moment a USER
+        // scroll leaves the bottom band, restored when one returns to it, so
+        // scrollback stays readable mid-stream instead of being yanked down
+        // on every delta. programmaticScroll must be held around every
+        // code-driven setSize/setViewPosition on this viewport: those fire
+        // visibleAreaChanged exactly like a user scroll, and re-deriving the
+        // pin from a move the code itself made is the thrash this flag
+        // exists to prevent (content growth alone pushes the bottom away
+        // and would unpin every streaming turn).
+        bool pinnedToBottom     = true;
+        bool programmaticScroll = false;
+        static constexpr int kBottomTolerancePx = 24;
         void mouseDown(const juce::MouseEvent& e) override
         {
             if (onClickCheck && onClickCheck(e))
@@ -1285,8 +1298,14 @@ private:
         // chat region — without it, the editor's manually-painted avatars
         // tear at the viewport boundary because half the avatar lives in
         // the area JUCE marks dirty during scroll and half doesn't.
-        void visibleAreaChanged(const juce::Rectangle<int>&) override
+        void visibleAreaChanged(const juce::Rectangle<int>& area) override
         {
+            if (! programmaticScroll)
+            {
+                const auto* viewed = getViewedComponent();
+                const int contentH = viewed != nullptr ? viewed->getHeight() : 0;
+                pinnedToBottom = area.getBottom() >= contentH - kBottomTolerancePx;
+            }
             if (onScroll) onScroll();
         }
     };

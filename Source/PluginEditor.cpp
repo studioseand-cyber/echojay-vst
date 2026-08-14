@@ -11229,8 +11229,12 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
         }
 
         layoutChatMessages();
-        // Scroll to bottom
+        // Scroll to bottom, and RE-PIN: opening a chat always starts at the
+        // newest message with the follow behaviour on.
+        chatScroll.pinnedToBottom = true;
+        chatScroll.programmaticScroll = true;
         chatScroll.setViewPositionProportionately(0.0, 1.0);
+        chatScroll.programmaticScroll = false;
         repaint();
         return;
     }
@@ -17088,7 +17092,11 @@ void EchoJayEditor::resized()
     // stale height sat below the real content and broke the sidebar's scroll.
     // max(viewport, content) keeps it at least a viewport tall; grows to fit.
     int currentContentH = std::max(chatScroll.getHeight(), measureChatContentHeight());
+    // Layout resize is code-driven: it must not re-derive the bottom pin
+    // (a growth here reads as "left the bottom" from inside visibleAreaChanged).
+    chatScroll.programmaticScroll = true;
     chatContent.setSize(chatW - chatAvatarReserve - 4, currentContentH);
+    chatScroll.programmaticScroll = false;
     
     // In compact mode, ensure chat components are on top
     if (compactMode) {
@@ -18566,9 +18574,15 @@ void EchoJayEditor::timerCallback()
         const int visH   = chatScroll.getHeight();
         if (chatContent.getHeight() != std::max(visH, totalH))
         {
+            // PIN-GATED (14 Aug 2026): follow new content only while the
+            // user is at the bottom. The guard spans the setSize too --
+            // growth alone moves the bottom away from the visible area and
+            // would otherwise unpin every streaming turn from inside code.
+            chatScroll.programmaticScroll = true;
             chatContent.setSize(chatScroll.getWidth() - 4, std::max(visH, totalH));
-            if (totalH > visH)
+            if (chatScroll.pinnedToBottom && totalH > visH)
                 chatScroll.setViewPosition(0, totalH - visH);   // new content -> newest visible
+            chatScroll.programmaticScroll = false;
         }
     }
 
@@ -21877,6 +21891,9 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
 
     chatInput.clear();
     chatLoading = true;
+    // Sending RE-PINS: the user's own turn (and the reply that follows it)
+    // is the one thing that always belongs on screen, wherever they were.
+    chatScroll.pinnedToBottom = true;
     repaint();
 
     // usage-v2 (spec section 5): plain chat turns send NO band/meter data.
