@@ -21304,6 +21304,15 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
         }
     }
 
+    // [SAVED CHAINS]: names and ids only, riding the SAME arms as the chain
+    // guidance (hadFeed || relevant). A recall ask ("load my vocal chain")
+    // always hits the "chain" cue in messageNeedsPlugins, so the library is
+    // present exactly when a recall could be asked for, and a plain chat
+    // turn does not pay for it. History turns drop it with the feed: its
+    // marker is in historyStripMarkers().
+    if (hadFeed || relevant)
+        out += buildSavedChainsInjection();
+
     // [DETECTED KEY] (KEY_DETECTOR_SPEC.md §4/§9): the READ path. Rides on
     // every compose site (this is the ONE injection helper), whenever any
     // source actually has a reading — a Key Detector in the local chain, or a
@@ -21319,6 +21328,96 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
     }
     if (hadChainFeedOut != nullptr) *hadChainFeedOut = hadFeed;
     return out;
+}
+
+// The [SAVED CHAINS] block: the user's saved chain library as NAMES AND IDS
+// ONLY. Slots and state never ride: the recall design is that the model
+// names a chain and the plugin loads it from its own store, so the turn
+// carries a menu, never the contents.
+//
+// DATA SOURCE POLICY (stated, because the failure mode is silent):
+// chainRows_ is filled only by refreshChainList(), whose sole caller is the
+// sidebar opening, and a chat turn must never pay a network round trip for
+// this block. So the order is: rows already in memory this session, else
+// the on-disk list cache (same file the sidebar renders from), else no
+// block. The source is logged on EVERY turn this block is considered,
+// including the zero case, so an absent block reads as "no cache yet" in
+// the log and never has to be inferred.
+juce::String EchoJayEditor::buildSavedChainsInjection()
+{
+    // Count cap and per-name clip, per the shipped patterns: the classify
+    // links cap (kMaxClassifyLinks, drop counted) and the [CURRENT CHAIN]
+    // settings clip (per item, ellipsis). 120 mirrors the server's bad_name
+    // rule (lib/dash/chains.js, 1 to 120 chars), so the clip only fires on
+    // junk a healthy server would have refused; it guards the turn against
+    // a hand-edited or corrupt cache, not against legal names.
+    constexpr int kMaxSavedChainNames   = 50;
+    constexpr int kMaxSavedChainNameLen = 120;
+
+    struct NameRow { juce::String id, name; };
+    std::vector<NameRow> rows;
+    juce::String source;
+
+    if (chainListFetchedAtMs_ > 0)
+    {
+        source = chainListFromCache_ ? "sidebar-cache" : "server";
+        for (const auto& r : chainRows_)
+            rows.push_back({ r.id, r.name });
+    }
+    else
+    {
+        juce::int64 at = 0;
+        auto cached = readChainListCache(api.getUserInfo().email, at);
+        auto* arr = cached.getArray();
+        if (arr != nullptr && at > 0)
+        {
+            source = "disk-cache";
+            for (auto& v : *arr)
+                if (auto* o = v.getDynamicObject())
+                {
+                    NameRow r { o->getProperty("id").toString(),
+                                o->getProperty("name").toString() };
+                    if (r.id.isNotEmpty() && r.name.isNotEmpty())
+                        rows.push_back(std::move(r));
+                }
+        }
+        else
+        {
+            source = "none";
+        }
+    }
+
+    const int total   = (int) rows.size();
+    const int shown   = juce::jmin(total, kMaxSavedChainNames);
+    const int dropped = total - shown;
+
+    EchoJay_NSLog(("EJChat: SAVED CHAINS "
+                   + juce::String(shown > 0 ? "injection attached -- "
+                                            : "not attached -- ")
+                   + juce::String(shown) + " names, dropped "
+                   + juce::String(dropped) + " over cap, source="
+                   + source).toRawUTF8());
+    if (shown < 1) return {};
+
+    juce::String block;
+    block << "\n\n[SAVED CHAINS - the user's saved chain library, names and "
+             "ids only. The user can ask to load one by name. Chain contents "
+             "(slots, settings) are not visible here and must never be "
+             "invented or guessed at. Names are not guaranteed unique.\n";
+    for (int i = 0; i < shown; ++i)
+    {
+        const auto& r = rows[(size_t) i];
+        const juce::String name = r.name.length() > kMaxSavedChainNameLen
+            ? r.name.substring(0, kMaxSavedChainNameLen)
+                  + juce::String::fromUTF8("\xe2\x80\xa6")
+            : r.name;
+        block << juce::String(i + 1) << ". \"" << name
+              << "\" (id " << r.id << ")\n";
+    }
+    if (dropped > 0)
+        block << "(" << juce::String(dropped) << " more not shown)\n";
+    block << "]";
+    return block;
 }
 
 // The [DETECTED KEY] block (KEY_DETECTOR_SPEC.md §4, extended by §9).

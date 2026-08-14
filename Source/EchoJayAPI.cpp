@@ -2562,7 +2562,7 @@ const juce::StringArray& EchoJayAPI::historyStripMarkers()
     // own right so a future reordering cannot leak it into history.
     static const juce::StringArray markers {
         "\n\n[AVAILABLE PLUGINS", "\n\n[USER'S FULL PLUGIN LIST",
-        "\n\n[AVAILABLE BUILTINS",
+        "\n\n[AVAILABLE BUILTINS", "\n\n[SAVED CHAINS",
         "\n\n[CURRENT CHAIN", "\n\n[TARGET CHANNEL", "\n\n[THIS CHANNEL"
     };
     return markers;

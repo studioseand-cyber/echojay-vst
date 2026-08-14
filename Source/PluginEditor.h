@@ -2955,6 +2955,12 @@ private:
     // built from collectKeySources(); names which source won (and which stem,
     // for a channel reading). Empty when no source has a reading.
     juce::String buildDetectedKeyContext();
+
+    // The [SAVED CHAINS] block: names and ids from the user's saved chain
+    // library, NEVER slots or state. See the definition for the data-source
+    // policy (session rows, else disk cache, never a fetch) and the cap/clip
+    // rules. Logs its source and drop count every turn it is considered.
+    juce::String buildSavedChainsInjection();
     // ---- TIER 1 key precondition (KEY_PRECONDITION_SPEC.md §2.1) ---------
     // When a typed message genuinely needs the key (§2.2, narrow), no usable
     // reading exists, but a bus Link DOES: add an EchoJay Key Detector to
