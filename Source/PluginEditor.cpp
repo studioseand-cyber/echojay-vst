@@ -2324,7 +2324,34 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         askChipBtns[(size_t)i].setVisible(false);
         askChipBtns[(size_t)i].onClick = [this, i]()
         {
-            if (!askShelfVisible_ || askChipQuestion_.isEmpty()) return;
+            // EVERY tap logs one EJAskChip line: label, intent, the keys
+            // actually present on the stored choice var, and which branch
+            // took it. The 14 Aug live failure was invisible because the
+            // interception logged only on finding a recall_id — a chip
+            // carrying none fell to the generic send silently, which is
+            // indistinguishable from the interception never running. So
+            // the fall-through names itself too.
+            const juce::String tapKeys = [&]() -> juce::String
+            {
+                if (auto* o = askChipVars[(size_t) i].getDynamicObject())
+                {
+                    juce::StringArray ks;
+                    for (const auto& p : o->getProperties())
+                        ks.add(p.name.toString());
+                    return "[" + ks.joinIntoString(",") + "]";
+                }
+                return askChipVars[(size_t) i].isVoid() ? "(void)" : "(non-object)";
+            }();
+            auto logTap = [&](const juce::String& branch)
+            {
+                EchoJay_NSLog(("EJAskChip: tap label=\"" + askChipLabels[(size_t) i]
+                               + "\" intent=" + (askChipIntents[(size_t) i].isEmpty()
+                                                    ? juce::String("(none)")
+                                                    : askChipIntents[(size_t) i])
+                               + " keys=" + tapKeys
+                               + " branch=" + branch).toRawUTF8());
+            };
+            if (!askShelfVisible_ || askChipQuestion_.isEmpty()) { logTap("shelf_inactive"); return; }
             const juce::String intent = askChipIntents[(size_t)i];
             // STEP 3: the compare-scope chips are handled ENTIRELY client-side —
             // they must NOT send a chat turn. Mark the ASK answered (so the
@@ -2332,6 +2359,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             // with the chosen numbersOnly against the currently loaded slots.
             if (intent == "cmp_anyway" || intent == "cmp_numbers")
             {
+                logTap("compare_scope");
                 supersedePendingAsks();     // marks + persists askAnswered
                 askShelfVisible_ = false;
                 resized();
@@ -2349,6 +2377,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             // is the same turn the user would have got by typing it there.
             if (intent == "switch")
             {
+                logTap("channel_switch");
                 openChannelChooser((int) i);
                 return;
             }
@@ -2365,6 +2394,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             //                   still asks before replacing a non-empty rack.
             if (intent == "recall_confirm" || intent == "recall_cancel")
             {
+                logTap(intent);
                 auto* co = askChipVars[(size_t) i].getDynamicObject();
                 const juce::String rid  = co ? co->getProperty("recall_id").toString() : juce::String();
                 const juce::String rnm  = co ? co->getProperty("recall_name").toString() : juce::String();
@@ -2383,6 +2413,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 const juce::String rid = EJRecall::choiceRecallId(askChipVars[(size_t) i]);
                 if (rid.isNotEmpty())
                 {
+                    logTap("recall_id");
                     supersedePendingAsks();
                     askShelfVisible_ = false;
                     resized();
@@ -2433,6 +2464,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             const juce::String tt = intent == "edit" ? "chain_edit"
                                   : intent == "build" ? "chain_generate"
                                   : juce::String("chat");
+            logTap("generic_send tt=" + tt);
             sendChatMessage(askChipLabels[(size_t)i]
                             + " (answering: \"" + askChipQuestion_ + "\")",
                             askChipLabels[(size_t)i], tt);   // bubble shows the label only
