@@ -25561,6 +25561,19 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
                 // cannot see.
                 safeThis->chainListPanel.setStateNotes(ch2.getStateNotes());
                 safeThis->repaint();
+            },
+            // The Settings disabled-set gate, the SAME check the AI build
+            // path applies (loadChainFromJson): loose name match against
+            // the scanner rows, then the uid's enabled flag. Without it a
+            // saved chain resurrects plugins the user unticked.
+            [safeThis](const juce::String& resolvedName)
+            {
+                if (safeThis == nullptr) return false;
+                auto& sc = safeThis->processorRef.getPluginScanner();
+                for (auto& p : sc.getPlugins())
+                    if (ChainHost::namesMatchLoose(resolvedName, p.name))
+                        return ! sc.isPluginEnabled(p.uid);
+                return false;
             });
 
             safeThis->processorRef.savedChainId   = id;
@@ -25596,6 +25609,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
     struct SlotSpec { juce::String name; juce::String settings; juce::var structured; };
     std::vector<SlotSpec> slots;
     juce::StringArray droppedDisabled;
+    juce::StringArray droppedUnknown;
     auto& scanner = processorRef.getPluginScanner();
     for (int i = 0; i < chainArr.size(); ++i)
     {
@@ -25631,7 +25645,15 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
             }
         }
         if (found) slots.push_back({ name, settings, structured });
-        else DBG("loadChainFromJson: skipping unknown name: " + name);
+        else if (!droppedDisabled.contains(name))
+        {
+            // A name neither list resolves was previously a DBG line and
+            // nothing else: the slot vanished with no user-visible trace,
+            // while disabled skips were named. Both drops are reported now,
+            // through the same status line, each with its reason.
+            droppedUnknown.add(name);
+            DBG("loadChainFromJson: skipping unknown name: " + name);
+        }
     }
     if (slots.empty())
     {
@@ -25643,7 +25665,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
 
-    auto doLoad = [safeThis, slots, chainJson, droppedDisabled]()
+    auto doLoad = [safeThis, slots, chainJson, droppedDisabled, droppedUnknown]()
     {
         if (safeThis == nullptr) return;
 
@@ -25667,7 +25689,8 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
         // the same tick as its editor lets a final UI timer fire into freed
         // state).
         safeThis->chainListPanel.closeAllEditors();
-        juce::Timer::callAfterDelay(80, [safeThis, slots, chainJson, droppedDisabled]
+        juce::Timer::callAfterDelay(80, [safeThis, slots, chainJson, droppedDisabled,
+                                         droppedUnknown]
         {
         if (safeThis == nullptr) return;
         auto& ch2 = safeThis->processorRef.getChainHost();
@@ -25693,7 +25716,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
         auto skipped     = std::make_shared<juce::StringArray>();
 
         *loadNextPtr = [safeThis, slots, idx, skipped, loadNextPtr, chainJson,
-                        droppedDisabled]() mutable
+                        droppedDisabled, droppedUnknown]() mutable
         {
             if (safeThis == nullptr) return;
             if (*idx >= (int)slots.size())
@@ -25809,6 +25832,9 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                 if (!droppedDisabled.isEmpty())
                     status += " (skipped: " + droppedDisabled.joinIntoString(", ")
                             + ", disabled in Settings)";
+                if (!droppedUnknown.isEmpty())
+                    status += " (skipped: " + droppedUnknown.joinIntoString(", ")
+                            + ", not available on this machine)";
                 safeThis->resized();
                 safeThis->repaint();
                 // Show the first loaded plugin so the display area is never

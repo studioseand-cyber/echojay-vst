@@ -646,8 +646,16 @@ public:
     // success or failure, so the rack UI can show the chain filling in.
     // Plugin instantiation blocks the message thread, so without this the
     // panel would sit on an empty rack and then jump.
+    // isDisabledByName: the Settings disabled-set check, passed as a
+    // predicate because the scanner (the one authority for "user unticked
+    // it") lives on the editor, not here. resolveByName is scan-wide, so
+    // without this a saved chain silently resurrects a plugin the user
+    // disabled; the AI build path has always refused these, and the two
+    // paths must agree on what is loadable. Called with the RESOLVED name.
+    // Empty predicate = no check (session restore keeps its old behaviour).
     void restoreSavedChain(const juce::var& slotsArr, const juce::var& stateObj,
-                           std::function<void()> onSlotSettled = {});
+                           std::function<void()> onSlotSettled = {},
+                           std::function<bool(const juce::String&)> isDisabledByName = {});
 
     // TWO CAP PAIRS, DELIBERATELY DIFFERENT. Both in decoded bytes.
     //

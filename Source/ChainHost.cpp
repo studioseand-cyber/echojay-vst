@@ -4314,7 +4314,8 @@ juce::var ChainHost::buildChainSlotsVar() const
 }
 
 void ChainHost::restoreSavedChain(const juce::var& slotsArr, const juce::var& stateObj,
-                                  std::function<void()> onSlotSettled)
+                                  std::function<void()> onSlotSettled,
+                                  std::function<bool(const juce::String&)> isDisabledByName)
 {
     auto* arr = slotsArr.getArray();
     if (arr == nullptr || arr->isEmpty()) return;
@@ -4342,6 +4343,16 @@ void ChainHost::restoreSavedChain(const juce::var& slotsArr, const juce::var& st
             // this on a machine where it is not installed, or where it
             // cannot authorise right now.
             addStateNote(name + ": could not be found on this machine,"
+                                " so this slot was skipped");
+            continue;
+        }
+
+        // Disabled-set check, against the RESOLVED name (mirrors the AI
+        // build path's gate). Reported through the same state-note channel
+        // as the not-found case: one mechanism, one place the user looks.
+        if (isDisabledByName && isDisabledByName(desc.name))
+        {
+            addStateNote(name + ": is disabled in Settings,"
                                 " so this slot was skipped");
             continue;
         }
