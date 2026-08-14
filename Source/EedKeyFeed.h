@@ -5,15 +5,20 @@
     WHY THIS EXISTS AT ALL. The precedence walk that decides which key source
     wins - newest capture, then a bus Link, then this plugin on a music bus,
     then a channel Link, then the local chain - already exists exactly once, in
-    PluginEditor::collectKeySources(), and both the [DETECTED KEY] feed block
-    and the Meters KEY panel read it. A device must NOT re-implement that walk;
-    two rankings that can disagree is precisely the bug the shared collector was
-    written to prevent.
+    EchoJayProcessor::collectKeySources(), and the [DETECTED KEY] feed block,
+    the Meters KEY panel and this feed all read it. A device must NOT
+    re-implement that walk; two rankings that can disagree is precisely the bug
+    the shared collector was written to prevent.
 
-    So the editor PUBLISHES its resolved primary here, and devices READ it. The
-    walk stays in one place and the device stays self-contained - no back
-    pointer to the editor, no edit to ChainHost, consistent with the registry
-    rule that a device integrates through its own files.
+    So the PROCESSOR publishes its resolved primary here from its own 1 Hz
+    timer (the editor's 2 Hz refresh republishes the same walk while a window
+    is open), and devices READ it. It was the editor's job alone once, and
+    that was a bug: with the window closed nothing published, so the key froze
+    at its last value - a stale key applied with confidence, the exact failure
+    the chromatic fallback below exists to prevent. The walk stays in one
+    place and the device stays self-contained - no back pointer to the editor,
+    no edit to ChainHost, consistent with the registry rule that a device
+    integrates through its own files.
 
     SCOPE HONESTY. This is process-wide, like DashPoll's poller. Several plugin
     instances each publish their own resolved primary, so the last writer wins.
@@ -71,7 +76,7 @@ public:
         return f;
     }
 
-    // Message thread (the editor's 2 Hz source collection).
+    // Message thread (the processor's 1 Hz timer; the editor's 2 Hz refresh).
     void publish (const DetectedKeyFact& f) noexcept
     {
         gen_.fetch_add (1, std::memory_order_relaxed);
