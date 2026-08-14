@@ -153,6 +153,7 @@ private:
     echojay::PitchEngine engine_;
     std::array<echojay::PsolaEngine, kMaxChannels> psola_;
     echojay::PitchCorrect correct_;
+    echojay::F0JumpGate   f0Gate_;
     echojay::viz::PitchRibbonView ribbon_;
     // These three MUST match their schema defaults. They did not: correct
     // advertised on but constructed off, correction_mode advertised natural

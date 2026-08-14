@@ -375,11 +375,18 @@ juce::String EedPitchProcessor::applyMode (int mode)
     // missing: hard tune came out at 15.7 cents mean deviation against 13.0 for
     // the untouched signal - i.e. WORSE than not correcting.
     struct Preset { float retune, flex, humanize, naturalVib; bool ignoreVib; };
+    // targeting_ignores_vibrato is ON in ALL FOUR modes. The spec's first §4
+    // table set it off for tuned/hard, and that was a spec error (its author's
+    // words), corrected in both places 2026-08-14: target selection without
+    // vibrato smoothing flips between adjacent scale degrees whenever a wide
+    // vibrato sits on a semitone boundary, and that is true no matter how
+    // hard the retune - Antares keeps its equivalent independent of retune
+    // speed, and with it on the device matches Auto-Tune audibly.
     static const Preset kPresets[4] = {
-        { 120.0f, 55.0f, 60.0f, 100.0f, true  },   // natural
-        {  40.0f, 25.0f, 30.0f, 100.0f, true  },   // balanced
-        {   8.0f,  0.0f,  0.0f,  40.0f, false },   // tuned
-        {   0.0f,  0.0f,  0.0f,   0.0f, false },   // hard
+        { 120.0f, 55.0f, 60.0f, 100.0f, true },    // natural
+        {  40.0f, 25.0f, 30.0f, 100.0f, true },    // balanced
+        {   8.0f,  0.0f,  0.0f,  40.0f, true },    // tuned
+        {   0.0f,  0.0f,  0.0f,   0.0f, true },    // hard
     };
     const Preset& p = kPresets[m];
 
@@ -650,6 +657,8 @@ void EedPitchProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     forEachShifter ([&] (auto& e) { e.prepare (sampleRate, samplesPerBlock,
                     PitchEngine::voiceRange (engine_.getVoiceType()).fMinHz, worst); });
 
+    f0Gate_.reset();
+
     // The corrector runs once per DETECTOR HOP, so it needs that cadence to
     // convert its millisecond time constants.
     correct_.prepare (sampleRate, engine_.inputHopLength (engine_.getVoiceType()));
@@ -739,16 +748,41 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         // At the hop itself, the musical layer decides the next target.
         if (h < numHops)
         {
+            // OCTAVE-SCALE EXCURSION REJECTION, before the corrector and the
+            // shifter's f0 track see the hop (see F0JumpGate). A brief wrong-
+            // octave estimate corrected smoothly is a momentary wrong NOTE -
+            // clean in the waveform, invisible to every discontinuity gate,
+            // caught only by the pitch ribbon and the excursion metric. On an
+            // octave-scale jump the AUDIO is asked which story is true - the
+            // input ring is right there in the shifter, and two
+            // autocorrelations on a rare event are free.
+            float rOldT = -1.0f, rNewT = -1.0f;
+            const bool seeding = hops[h].voiced && hops[h].f0Hz > 0.0f
+                              && f0Gate_.lastGood() <= 0.0f;
+            if (f0Gate_.isBigJump (hops[h].f0Hz, hops[h].voiced) || seeding)
+            {
+                // On a jump, "old" is the last accepted period; at a SEED it
+                // is HALF the candidate's (the sub-octave vetting lag).
+                const double refHz = seeding ? 2.0 * (double) hops[h].f0Hz
+                                             : (double) f0Gate_.lastGood();
+                const int tOld = (int) std::lround (sampleRate_ / refHz);
+                const int tNew = (int) std::lround (sampleRate_ / (double) hops[h].f0Hz);
+                rOldT = shifter().inputPeriodicity (hops[h].inputPos, tOld);
+                rNewT = shifter().inputPeriodicity (hops[h].inputPos, tNew);
+            }
+            const float gatedF0 = f0Gate_.filter (hops[h].f0Hz, hops[h].voiced, hopMs,
+                                                  rOldT, rNewT);
+
             // The f0 the SHIFTER uses is the hop's own, not the block's last
             // reading - otherwise every slice in a block shares one value and
             // the result depends on where the block boundaries fell.
-            sliceF0     = hops[h].f0Hz;
+            sliceF0     = gatedF0;
             sliceVoiced = hops[h].voiced;
 
             if (correctOn_.load())
             {
                 correcting = true;
-                const float t = correct_.process (hops[h].f0Hz, hops[h].voiced, hopMs);
+                const float t = correct_.process (gatedF0, hops[h].voiced, hopMs);
 
                 // THE CLICKING LIVED HERE. The corrector returns 0 on every
                 // untracked hop ("hold everything"), and passing that 0 to

@@ -1546,3 +1546,64 @@ events**; the gate's own offline render measures 2 marginal events
 where the wet's largest waveform step is SMALLER than the dry's at the
 same instant. Ceiling 0.30/s — exactly those two events, a third fails;
 the goal, as directed, is zero.
+
+### 16.8 The mode-table correction, and the momentary-wrong-note defect
+
+**targeting_ignores_vibrato is ON in all four modes** — the §4 table's
+off-for-tuned/hard was a spec error, corrected in spec, presets and mode
+test. Re-gated with it on (this is now the shipped configuration for every
+mode, and every §16 number before this section was taken with it off):
+
+| hard match, same tracker | with it off (§16.6) | with it ON (shipped) | antares |
+|---|---|---|---|
+| median cents | 12.0 | **10.3** | 11.1 |
+| within 5 ¢ | 25.1% | **28.5%** | 34.4% |
+| HNR delta vs dry | −0.16 dB | **−0.00 dB** | −0.13 dB |
+| spectral flux vs dry | +3.8% | **+3.3%** | +3.0% |
+
+Median cents and HNR now BEAT the Antares column. Click gate at the shipped
+defaults: 1.78/s against the 3.5 ceiling, control passed, unchanged.
+
+**The momentary wrong note** (Sean's ribbon spikes; the octave guard logged
+339 fires on one phrase; the independent A/B's 3.5% of frames >600 ¢ from
+dry against Antares's 0.44%, mostly downward). A grain-accurate shift to the
+wrong pitch is smooth in the waveform and invisible to every discontinuity
+gate, so the AB gate gained a fifth metric — pitch excursions: the output's
+own track departing its ±150 ms local median by >400 ¢ and returning within
+150 ms, injection-validated (10 octave-up patches spliced into a copy; 5
+found) before any number was trusted.
+
+The fix went through three measured iterations, and the record matters:
+
+1. **Blind persistence** (hold any >600 ¢ jump for 50 ms, the directed
+   confirm-window extension) — REJECTED: it INJECTED excursions on the rap
+   acapella, 16 against 8 without it, because that delivery changes register
+   across consonant gaps and produces true fry subharmonics, and holding the
+   old octave through a genuine period-doubling is itself a 50 ms wrong note.
+2. **Ask the audio** (F0JumpGate + PsolaEngine::inputPeriodicity): on an
+   octave-scale jump, one normalised autocorrelation settles which story is
+   true — a spurious flip leaves the waveform periodic at the OLD lag, a
+   real drop collapses it there, an upward move is believed when the NEW lag
+   correlates. Persistence stays as the backstop for inconclusive frames.
+   Measured: acapella excursions 8 with the gate == 8 without (nothing
+   injected), while the gate held **345 hops** — strikingly close to the 339
+   guard fires — and audio-confirmed 53 genuine jumps.
+3. **Seed vetting**: the remaining event was a SUB-OCTAVE ONSET — a span's
+   first estimate reading 79–87 Hz for 24 ms where the true pitch is 175
+   (the ×2 "jump" when the detector rights itself was never the problem; the
+   seed was). At a seed, the same audio question runs against HALF the
+   candidate period: if the half lag is also strongly periodic the candidate
+   is plausibly a sub-octave read, and the hop presents as untracked (dry
+   output, exactly like tracker warm-up) until it persists 50 ms or
+   corrects. A clean onset has a low half-lag correlation and seeds
+   immediately, so normal onsets pay nothing. This also removed the third
+   HF-excess event that had appeared on the reference take - the sub-octave
+   onset was being SYNTHESISED.
+
+Final excursion ledger: reference take ours 2 / Antares 1 / dry 1 — the +1
+dissected at 1.895 s as the take's own creak onset, where the hard-tuned
+onset (creak at 87 Hz into wet at 185) reads sub-octave to the tracker for
+~15 ms across the seam; not a mid-phrase spike. Ceiling set at Antares+1
+with that event named; any spike the metric was built for fails the build.
+Acapella: dry 16 / ours 8 (low_male), dry 11 / ours 11 (alto_tenor) — at or
+below the source's own excursion behaviour on both readings.

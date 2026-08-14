@@ -355,7 +355,7 @@ int main (int argc, char* argv[])
             // corrector working, and the wrong scale being asked for.
             RenderOpts hard = base;
             hard.correct = true; hard.retuneMs = 0.0f; hard.flex = 0.0f;
-            hard.humanize = 0.0f; hard.ignoreVib = false; hard.naturalVib = 0.0f;
+            hard.humanize = 0.0f; hard.ignoreVib = true; hard.naturalVib = 0.0f;
             hard.scaleMask = 0b111111111111;
             jobs.push_back ({ "30 CHARACTER A - hard tuned (retune 0, flex 0, chromatic).wav", hard });
 

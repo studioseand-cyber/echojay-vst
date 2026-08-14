@@ -350,6 +350,32 @@ public:
     void setPitchLagSamples (int lag) noexcept { pitchLag_ = std::max (0, lag); }
     int  getPitchLagSamples() const noexcept   { return pitchLag_; }
 
+    // Normalised autocorrelation of the INPUT ring at one lag, over a window
+    // of two periods ending at `inputPos`. This is the F0JumpGate's audio
+    // question (PITCH_P0_VALIDATION.md §16.8): when the estimate jumps an
+    // octave, is the waveform still periodic at the OLD lag (a spurious flip
+    // - hold) or has that correlation collapsed (the signal really moved -
+    // believe it)? O(2T) per call and only asked on octave-scale jumps.
+    float inputPeriodicity (uint64_t inputPos, int lagSamples) const noexcept
+    {
+        if (mask_ == 0 || lagSamples < 8) return 0.0f;
+        const int W = 2 * lagSamples;
+        const int64_t from   = (int64_t) inputPos - W;
+        const int64_t oldest = (int64_t) write_ - (int64_t) (mask_ + 1);
+        if (from - lagSamples <= oldest || from - lagSamples < 0
+            || inputPos > write_) return 0.0f;
+
+        double ab = 0.0, aa = 0.0, bb = 0.0;
+        for (int i = 0; i < W; ++i)
+        {
+            const double a = in_[(size_t) ((uint32_t) (uint64_t) (from + i) & mask_)];
+            const double b = in_[(size_t) ((uint32_t) (uint64_t) (from + i - lagSamples) & mask_)];
+            ab += a * b; aa += a * a; bb += b * b;
+        }
+        if (aa < 1.0e-12 || bb < 1.0e-12) return 0.0f;
+        return (float) (ab / std::sqrt (aa * bb));
+    }
+
     // ---- audio thread ------------------------------------------------------
     // Push n input samples with the detector's CURRENT reading, and pull the n
     // output samples that are `latencySamples()` behind them. f0 <= 0 or

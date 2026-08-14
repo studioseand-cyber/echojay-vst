@@ -53,7 +53,10 @@ int main()
         check (p.getParamValue ("retune_speed_ms") == 0.0, "hard wrote retune_speed_ms 0");
         check (p.getParamValue ("flex") == 0.0, "hard wrote flex 0");
         check (p.getParamValue ("humanize") == 0.0, "hard wrote humanize 0");
-        check (p.getParamValue ("targeting_ignores_vibrato") == 0.0, "hard wrote ignore_vibrato off");
+        // ON in every mode since the §4 table correction: target selection
+        // without vibrato smoothing flips between adjacent degrees whenever a
+        // wide vibrato sits on a semitone boundary, at ANY retune speed.
+        check (p.getParamValue ("targeting_ignores_vibrato") == 1.0, "hard wrote ignore_vibrato on");
         check (s.contains ("retune_speed_ms") && s.contains ("flex") && s.contains ("humanize"),
                "the summary NAMES what it changed, not just the mode");
     }
