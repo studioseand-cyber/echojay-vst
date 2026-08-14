@@ -1193,16 +1193,41 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
     { if (onDone) onDone(juce::StringArray{ why }, 0, true); };
 
     // ---- Pre-flight guard 1: revision (same-session staleness) ----
+    // ONE user-visible message for all three guards, but the EJEdit line
+    // names which one fired and what it compared: the 14 Aug 2026 false-
+    // staleness report was undiagnosable because the refusal asserted
+    // "chain changed" with no record of expected/live revision or of the
+    // baseSlots the ops were written against. ASCII punctuation only in
+    // these strings: they travel as char* literals into juce::String,
+    // which reads bytes, not UTF-8 (the em dash drew as mojibake).
     if (expectedRevision >= 0 && expectedRevision != getChainRevision())
-        return abort("chain changed since this edit was proposed — ask again");
+    {
+        EchoJay_NSLog(("EJEdit: preflight REFUSED guard=revision expected="
+                       + juce::String(expectedRevision) + " live="
+                       + juce::String(getChainRevision())).toRawUTF8());
+        return abort("chain changed since this edit was proposed - ask again");
+    }
 
     // ---- Pre-flight guard 2: baseSlots vs live rack ----
     const int n = getNumSlots();
     if (baseSlots.size() != n)
-        return abort("chain changed since this edit was proposed — ask again");
+    {
+        EchoJay_NSLog(("EJEdit: preflight REFUSED guard=baseSlots-count base="
+                       + juce::String(baseSlots.size()) + " [" + baseSlots.joinIntoString(", ")
+                       + "] live=" + juce::String(n)).toRawUTF8());
+        return abort("chain changed since this edit was proposed - ask again");
+    }
     for (int i = 0; i < n; ++i)
         if (!namesMatchLoose(baseSlots[i], slots_[(size_t)i].desc.name))
-            return abort("chain changed since this edit was proposed — ask again");
+        {
+            EchoJay_NSLog(("EJEdit: preflight REFUSED guard=baseSlots-name slot="
+                           + juce::String(i) + " base=\"" + baseSlots[i] + "\" live=\""
+                           + slots_[(size_t)i].desc.name + "\"").toRawUTF8());
+            return abort("chain changed since this edit was proposed - ask again");
+        }
+    EchoJay_NSLog(("EJEdit: staleness guards passed rev=" + juce::String(getChainRevision())
+                   + " slots=" + juce::String(n)
+                   + " ops=" + juce::String((int) ops.size())).toRawUTF8());
 
     if (ops.empty()) return abort("no operations in this edit");
 
