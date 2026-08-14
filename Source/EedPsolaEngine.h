@@ -528,7 +528,16 @@ private:
                 const float f0Here = f0At ((uint64_t) std::max<int64_t> (0, rp));
                 const float tgt    = curTarget_;
                 const bool  ok     = f0Here > 0.0f && tgt > 0.0f;
-                const double r     = ok ? (double) tgt / (double) f0Here : 1.0;
+                // The ratio comes from the YIN estimate. A closed-loop ratio
+                // from MEASURED epoch spans was tried (the grain path's
+                // exactness argument transplanted) and measured WORSE - 18.1c
+                // median against 12.0, unity flux +6.5% against +2.6 - epoch
+                // spacing jitters a few samples on real glottal pulses and a
+                // few samples of a period is tens of cents, far noisier than
+                // the estimate it was meant to replace. The estimate's
+                // per-frame error is what the within-5c gap against the
+                // reference is made of; closing it means a finer tracker.
+                const double r = ok ? (double) tgt / (double) f0Here : 1.0;
                 const double absSt = ok ? std::fabs (std::log2 (r) * 12.0) : 99.0;
                 const float want   = (ok && absSt <= kSpliceBandSt) ? 0.0f : 1.0f;
                 const float step   = 1.0f / (float) std::max (16, (int) (0.004 * fs_));
@@ -932,16 +941,14 @@ private:
                         && (size_t) len <= lpcE_.size();
         if (dbgRawGrains_) canModel = false;      // diagnostic A/B only
 
-        // Inside the splice band, preserve's emission comes from the
-        // resampler and these grains are only heard for ~4 ms during a
-        // method crossfade - raw grains are fine there, and skipping the
-        // model saves the whole per-grain LPC cost at the shipped defaults.
-        // Decided from the grain's own Ta/Ts (never from emit-side state,
-        // which runs a block-size-dependent margin behind placement), so
-        // fixed-block exactness holds.
-        if (! warp && canModel
-            && std::fabs (std::log2 ((double) Ta / (double) std::max (1, Ts))) * 12.0
-               <= (double) kSpliceBandSt - 0.5)
+        // PRESERVE'S GRAINS ARE ALWAYS RAW (identity filter entries). The
+        // LPC residual + emit-filter pipeline was measured against raw OLA
+        // with everything else equal and LOST on the reference take - unity
+        // HNR 5.70 vs 6.14, flux +21% vs +15%, and +5 st transpose HNR 6.47
+        // vs 7.30 - the per-epoch coefficient switching costs more than the
+        // ring-summing it was meant to cure. The model runs only for
+        // formant_mode = shift, where the envelope warp requires it.
+        if (! warp)
             canModel = false;
 
         double E = 0.0, Ew = 0.0;
@@ -1309,6 +1316,7 @@ private:
     double spliceDrift_ = 0.0, spliceOldDrift_ = 0.0, spliceR_ = 0.0;
     int    spliceFadeLen_ = 0, spliceFadePos_ = 0;
     float  methodMix_ = 0.0f;      // 0 = splice, 1 = grains
+
 
     uint64_t write_   = 0;    // absolute input samples written
     int64_t  emitted_ = 0;    // input position just past the last sample emitted
