@@ -107,6 +107,38 @@ inline bool extractChainEditBlock(juce::String& replyInOut, juce::String& editJs
     return true;
 }
 
+// CHAIN_RECALL block (saved-chain recall, 14 Aug 2026). Same tolerant
+// truncation semantics as the others: a truncated payload is returned for
+// salvage but the CALLER must never act on it - the recall path acts only
+// on a payload whose close marker arrived (rule 1 of the stream parser
+// holds the same line incrementally).
+inline bool extractChainRecallBlock(juce::String& replyInOut, juce::String& recallJsonOut)
+{
+    const juce::String kOpen  = "<<<ECHOJAY_CHAIN_RECALL>>>";
+    const juce::String kClose = "<<<END_CHAIN_RECALL>>>";
+
+    int start = replyInOut.indexOf(kOpen);
+    if (start < 0) return false;
+
+    int jsonStart = start + (int)kOpen.length();
+    int end = replyInOut.indexOf(start, kClose);
+
+    if (end >= 0)
+    {
+        recallJsonOut = replyInOut.substring(jsonStart, end).trim();
+        replyInOut    = replyInOut.substring(0, start).trimEnd()
+                      + replyInOut.substring(end + (int)kClose.length());
+        return true;
+    }
+    // Truncated: strip so raw JSON never leaks into chat, but return FALSE.
+    // Unlike chain (where a partial block can still render rows), a partial
+    // recall has nothing salvageable and acting on it would load a chain
+    // the model never finished naming.
+    recallJsonOut.clear();
+    replyInOut = replyInOut.substring(0, start).trimEnd();
+    return false;
+}
+
 // ASK question/choices block (CHAIN_AI_BUILD_SPEC Phase 1b). Same tolerant
 // truncation semantics as the chain/gain extractors.
 inline bool extractAskBlock(juce::String& replyInOut, juce::String& askJsonOut)

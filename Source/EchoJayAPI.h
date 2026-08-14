@@ -683,6 +683,14 @@ public:
     // (canonical) and extractAskBlockWeb in public/app.html.
     static bool extractAskBlock(juce::String& replyInOut, juce::String& askJsonOut);
 
+    // CHAIN_RECALL block (saved-chain recall, 14 Aug 2026): payload
+    // {"id","name","explanation"}. Delimiters: keep in sync with
+    // api/_blocks.js BLOCK_TYPES.chain_recall (canonical). DIFFERENT
+    // truncation contract from the others: a truncated block is stripped
+    // from the visible reply but returns FALSE with an empty payload,
+    // because a half-arrived recall must never reach the load path.
+    static bool extractChainRecallBlock(juce::String& replyInOut, juce::String& recallJsonOut);
+
     // Recover a valid chain JSON string from a partially-written (truncated) block.
     // Scans for complete {...} objects using brace depth and reconstructs the array.
     // Returns an empty string if no complete entry can be found.

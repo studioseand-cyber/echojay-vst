@@ -2834,6 +2834,11 @@ bool EchoJayAPI::extractChainEditBlock(juce::String& replyInOut, juce::String& e
 // truncation semantics as the chain/gain extractors. Delimiters: keep in
 // sync with api/_blocks.js BLOCK_TYPES.ask (the canonical registry) and
 // extractAskBlockWeb in public/app.html.
+bool EchoJayAPI::extractChainRecallBlock(juce::String& replyInOut, juce::String& recallJsonOut)
+{
+    return EJReplyBlocks::extractChainRecallBlock(replyInOut, recallJsonOut);
+}
+
 bool EchoJayAPI::extractAskBlock(juce::String& replyInOut, juce::String& askJsonOut)
 {
     return EJReplyBlocks::extractAskBlock(replyInOut, askJsonOut);

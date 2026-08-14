@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "EJStreamBlockParser.h" // incremental block parser (spec step 3/4)
+#include "EJRecall.h"            // saved-chain recall decision logic (pure)
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics (EJChat:)
 #include "EchoJayLogo.h"  // embedded logo PNG — Settings orb card glyph source
 #include "EchoJayVisualiserTexture.h"  // shared SPECTRUM/SPECTROGRAM texture
@@ -2350,6 +2351,44 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             {
                 openChannelChooser((int) i);
                 return;
+            }
+            // STEP 3c (14 Aug 2026): recall chips are ALSO entirely
+            // client-side and cost no chat turn. Three shapes:
+            //   recall_confirm  the client-authored replace-ask's Load chip;
+            //                   carries recall_id + recall_name and goes
+            //                   straight to the load (the question WAS the
+            //                   replace confirmation).
+            //   recall_cancel   its decline chip: clear the shelf, log, done.
+            //   recall_id on a server-authored ambiguity chip (no confirm
+            //                   intent): the tap IS the disambiguation;
+            //                   route it through handleChainRecall, which
+            //                   still asks before replacing a non-empty rack.
+            if (intent == "recall_confirm" || intent == "recall_cancel")
+            {
+                auto* co = askChipVars[(size_t) i].getDynamicObject();
+                const juce::String rid  = co ? co->getProperty("recall_id").toString() : juce::String();
+                const juce::String rnm  = co ? co->getProperty("recall_name").toString() : juce::String();
+                const int rackNow = processorRef.getChainHost().getNumSlots();
+                supersedePendingAsks();
+                askShelfVisible_ = false;
+                resized();
+                EchoJay_NSLog(("EJRecall: replace ask shown=yes rack="
+                               + juce::String(rackNow) + " answer="
+                               + (intent == "recall_confirm" ? "load" : "cancel")).toRawUTF8());
+                if (intent == "recall_confirm" && rid.isNotEmpty())
+                    recallLoadChain(rid, rnm);
+                return;
+            }
+            {
+                const juce::String rid = EJRecall::choiceRecallId(askChipVars[(size_t) i]);
+                if (rid.isNotEmpty())
+                {
+                    supersedePendingAsks();
+                    askShelfVisible_ = false;
+                    resized();
+                    handleChainRecall(rid, askChipLabels[(size_t) i]);
+                    return;
+                }
             }
             // A TAP IS AN ANSWER; a typed message is a new request. The two are
             // byte-identical on the wire otherwise ("build me a vocal chain"
@@ -5993,6 +6032,12 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
                 EchoJayAPI::extractGainBlock(visibleReply, gainJson);
                 EchoJayAPI::extractAskBlock(visibleReply, askJson);
                 EchoJayAPI::extractChainEditBlock(visibleReply, editJson);
+                // Recall is never taught on compare turns; strip so the raw
+                // block cannot leak as text, and log that it was not acted on.
+                juce::String recallJson;
+                if (EchoJayAPI::extractChainRecallBlock(visibleReply, recallJson))
+                    EchoJay_NSLog("EJRecall: block received on a compare turn"
+                                  " -- stripped, not handled on this path");
             }
             // RUNTIME guard (not just the dev jassert below, which compiles out
             // in release - and this is exactly the guarantee that failed in the
@@ -17112,10 +17157,11 @@ void EchoJayEditor::resized()
             const int bw = chatBoxRect_.getWidth();
             std::vector<juce::Rectangle<int>> rects;
             juce::StringArray labels, intents;
+            juce::Array<juce::var> choiceVars;
             const int shelfH = measureAskShelf(chatMessages[(size_t)askIdxL], bw,
                                                &rects, &labels,
                                                &askChipQuestion_, &askShelfHintRect_,
-                                               &intents);
+                                               &intents, &choiceVars);
             if (shelfH > 0)
             {
                 askShelfRect_    = { chatBoxRect_.getX(),
@@ -17127,6 +17173,7 @@ void EchoJayEditor::resized()
                 {
                     askChipLabels[(size_t)ci] = labels[ci];
                     askChipIntents[(size_t)ci] = ci < intents.size() ? intents[ci] : juce::String();
+                    askChipVars[(size_t)ci] = ci < choiceVars.size() ? choiceVars[ci] : juce::var();
                     askChipBtns[(size_t)ci].setButtonText(labels[ci]);
                     askChipBtns[(size_t)ci].setBounds(
                         rects[(size_t)ci].translated(askShelfRect_.getX(), askShelfRect_.getY()));
@@ -19140,7 +19187,8 @@ int EchoJayEditor::measureAskShelf(const ChatMsg& msg, int shelfW,
                                    juce::StringArray* labelsOut,
                                    juce::String* questionOut,
                                    juce::Rectangle<int>* hintRectOut,
-                                   juce::StringArray* intentsOut)
+                                   juce::StringArray* intentsOut,
+                                   juce::Array<juce::var>* choiceVarsOut)
 {
     if (msg.role != "assistant" || msg.askData.isEmpty() || msg.askAnswered)
         return 0;
@@ -19170,6 +19218,10 @@ int EchoJayEditor::measureAskShelf(const ChatMsg& msg, int shelfW,
         if (chipRectsOut) chipRectsOut->push_back({ x, y, w, kAskChipH });
         if (labelsOut) labelsOut->add(label);
         if (intentsOut) intentsOut->add(co->getProperty("intent").toString().trim().toLowerCase());
+        // The whole choice var per accepted chip, index-parallel with the
+        // labels/intents by construction (recall chips carry recall_id /
+        // recall_name beyond label+intent).
+        if (choiceVarsOut) choiceVarsOut->add(cv);
         x += w + gap;
         ++count;
     }
@@ -21354,38 +21406,8 @@ juce::String EchoJayEditor::buildSavedChainsInjection()
     constexpr int kMaxSavedChainNames   = 50;
     constexpr int kMaxSavedChainNameLen = 120;
 
-    struct NameRow { juce::String id, name; };
-    std::vector<NameRow> rows;
-    juce::String source;
-
-    if (chainListFetchedAtMs_ > 0)
-    {
-        source = chainListFromCache_ ? "sidebar-cache" : "server";
-        for (const auto& r : chainRows_)
-            rows.push_back({ r.id, r.name });
-    }
-    else
-    {
-        juce::int64 at = 0;
-        auto cached = readChainListCache(api.getUserInfo().email, at);
-        auto* arr = cached.getArray();
-        if (arr != nullptr && at > 0)
-        {
-            source = "disk-cache";
-            for (auto& v : *arr)
-                if (auto* o = v.getDynamicObject())
-                {
-                    NameRow r { o->getProperty("id").toString(),
-                                o->getProperty("name").toString() };
-                    if (r.id.isNotEmpty() && r.name.isNotEmpty())
-                        rows.push_back(std::move(r));
-                }
-        }
-        else
-        {
-            source = "none";
-        }
-    }
+    std::vector<SavedChainRef> rows;
+    const juce::String source = collectSavedChainRefs(rows);
 
     const int total   = (int) rows.size();
     const int shown   = juce::jmin(total, kMaxSavedChainNames);
@@ -21418,6 +21440,170 @@ juce::String EchoJayEditor::buildSavedChainsInjection()
         block << "(" << juce::String(dropped) << " more not shown)\n";
     block << "]";
     return block;
+}
+
+// The one source-policy implementation both consumers share (the [SAVED
+// CHAINS] injection above and the recall path): session rows first, else
+// the on-disk list cache, never a network fetch in front of a turn.
+juce::String EchoJayEditor::collectSavedChainRefs(std::vector<SavedChainRef>& out)
+{
+    if (chainListFetchedAtMs_ > 0)
+    {
+        for (const auto& r : chainRows_)
+            out.push_back({ r.id, r.name });
+        return chainListFromCache_ ? "sidebar-cache" : "server";
+    }
+    juce::int64 at = 0;
+    auto cached = readChainListCache(api.getUserInfo().email, at);
+    auto* arr = cached.getArray();
+    if (arr != nullptr && at > 0)
+    {
+        for (auto& v : *arr)
+            if (auto* o = v.getDynamicObject())
+            {
+                SavedChainRef r { o->getProperty("id").toString(),
+                                  o->getProperty("name").toString() };
+                if (r.id.isNotEmpty() && r.name.isNotEmpty())
+                    out.push_back(std::move(r));
+            }
+        return "disk-cache";
+    }
+    return "none";
+}
+
+// ===========================================================================
+//  Saved-chain recall (14 Aug 2026): the receiving half of the server's
+//  <<<ECHOJAY_CHAIN_RECALL>>> block. Decisions in EJRecall.h (pure, tested
+//  in EJStreamTests); side effects here. Every branch logs, including the
+//  ones that do nothing: a recall that resolves nothing and logs nothing
+//  is indistinguishable from a recall that never arrived.
+// ===========================================================================
+void EchoJayEditor::handleChainRecall(const juce::String& id, const juce::String& name)
+{
+    EchoJay_NSLog(("EJRecall: block received id=" + id + " name=" + name).toRawUTF8());
+
+    // Second, independent id check against what THIS plugin knows about.
+    // The server already allowlisted the id against the same list it was
+    // sent, but the plugin is the one about to do the destructive thing.
+    std::vector<SavedChainRef> refs;
+    const juce::String source = collectSavedChainRefs(refs);
+    juce::String resolvedName;
+    bool known = false;
+    for (const auto& r : refs)
+        if (r.id == id) { known = true; resolvedName = r.name; break; }
+
+    const int rackSlots = processorRef.getChainHost().getNumSlots();
+    switch (EJRecall::decide(known, rackSlots))
+    {
+        case EJRecall::Decision::Refuse:
+            EchoJay_NSLog(("EJRecall: resolved=no reason=id-not-in-local-list"
+                           " source=" + source).toRawUTF8());
+            appendLocalResultBubble(
+                (name.isNotEmpty() ? "\"" + name + "\"" : juce::String("That chain"))
+                + " isn't in your saved chains list, so nothing was loaded."
+                  " Open the Chains sidebar to see what is saved.");
+            return;
+
+        case EJRecall::Decision::LoadDirect:
+            EchoJay_NSLog(("EJRecall: resolved=yes reason=" + source).toRawUTF8());
+            EchoJay_NSLog("EJRecall: replace ask shown=no rack=0 answer=load");
+            recallLoadChain(id, resolvedName.isNotEmpty() ? resolvedName : name);
+            return;
+
+        case EJRecall::Decision::AskReplace:
+            EchoJay_NSLog(("EJRecall: resolved=yes reason=" + source).toRawUTF8());
+            presentRecallReplaceAsk(id, resolvedName.isNotEmpty() ? resolvedName : name,
+                                    rackSlots);
+            return;
+    }
+}
+
+// Ask before replacing, through the ASK shelf: the presentCompareScopeAsk
+// pattern, a client-authored ask whose chips are intercepted locally and
+// never send a chat turn. NOT showOkCancelBox and NOT any AlertWindow:
+// modals are banned on host-driven paths (in Logic the window opens BEHIND
+// the plugin and blocks all input; see the Link ack consumer's note).
+void EchoJayEditor::presentRecallReplaceAsk(const juce::String& id,
+                                            const juce::String& name, int rackSlots)
+{
+    const juce::String question =
+        "Load \"" + name + "\"? This channel already has "
+        + juce::String(rackSlots) + (rackSlots == 1 ? " plugin" : " plugins")
+        + " racked, and loading replaces them.";
+
+    auto* root = new juce::DynamicObject();
+    root->setProperty("question", question);
+    juce::Array<juce::var> choices;
+    {
+        auto* c = new juce::DynamicObject();
+        c->setProperty("label",       "Load it");
+        c->setProperty("intent",      "recall_confirm");
+        c->setProperty("recall_id",   id);
+        c->setProperty("recall_name", name);
+        choices.add(juce::var(c));
+    }
+    {
+        auto* c = new juce::DynamicObject();
+        c->setProperty("label",  "Keep current");
+        c->setProperty("intent", "recall_cancel");
+        choices.add(juce::var(c));
+    }
+    root->setProperty("choices", choices);
+    const juce::String askJson = juce::JSON::toString(juce::var(root), true);
+
+    ChatMsg cm;
+    cm.role    = "assistant";
+    cm.content = question;
+    cm.askData = askJson;
+    chatMessages.push_back(cm);
+    processorRef.chatHistory.push_back({ "assistant", question });
+    // Persist so the pending ask survives an editor recreate, exactly like
+    // the compare-scope ask.
+    if (currentChatId.isNotEmpty())
+        workspace.appendMessageToChat(currentChatId, "assistant", question,
+                                      {}, {}, {}, askJson, {});
+    EchoJay_NSLog(("EJRecall: replace ask shown=yes rack=" + juce::String(rackSlots)
+                   + " answer=pending").toRawUTF8());
+    resized();
+    repaint();
+}
+
+void EchoJayEditor::recallLoadChain(const juce::String& id, const juce::String& name)
+{
+    auto fetchFailed = std::make_shared<bool>(false);
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    openSavedChain(id, name, [safeThis, fetchFailed, name](int sc, const juce::String& err)
+    {
+        *fetchFailed = true;
+        EchoJay_NSLog(("EJRecall: loaded slots=0 skipped=0 (fetch failed,"
+                       " status " + juce::String(sc) + ")").toRawUTF8());
+        if (safeThis == nullptr) return;
+        // 404 = the chain existed in the local list but not on the server
+        // any more: deleted elsewhere. Its own message, per the rule that
+        // silence on any recall failure is the failure mode.
+        safeThis->appendLocalResultBubble(sc == 404
+            ? "\"" + name + "\" is no longer in your library - it may have"
+              " been deleted on another device. Nothing was loaded."
+            : "\"" + name + "\" could not be loaded: " + err);
+    });
+    // Loaded/skipped summary, watchdog-style: the restore has no single
+    // completion event (onSlotSettled fires per slot), and the AI build
+    // path's 6s dial summary is the precedent. Skips are already reported
+    // to the USER through the state notes restoreSavedChain writes; this
+    // line is the log's copy.
+    juce::Timer::callAfterDelay(6000, [safeThis, fetchFailed]()
+    {
+        if (safeThis == nullptr || *fetchFailed) return;
+        auto& ch = safeThis->processorRef.getChainHost();
+        juce::StringArray skippedNames;
+        for (const auto& note : ch.getStateNotes())
+            if (note.contains("skipped"))
+                skippedNames.add(note.upToFirstOccurrenceOf(":", false, false).trim());
+        EchoJay_NSLog(("EJRecall: loaded slots=" + juce::String(ch.getNumSlots())
+                       + " skipped=" + juce::String(skippedNames.size())
+                       + (skippedNames.isEmpty() ? juce::String()
+                          : " (" + skippedNames.joinIntoString(", ") + ")")).toRawUTF8());
+    });
 }
 
 // The [DETECTED KEY] block (KEY_DETECTOR_SPEC.md §4, extended by §9).
@@ -22633,6 +22819,32 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
             EchoJay_NSLog("EJChat: ASK block received");
         if (EchoJayAPI::extractChainEditBlock(visibleReply, editJson))
             EchoJay_NSLog("EJChat: CHAIN_EDIT block received");
+        // CHAIN_RECALL (14 Aug 2026): a COMPLETE block (the extractor
+        // returns false on a truncated one, and the stream parser never
+        // surfaces one) hands off to handleChainRecall. Deferred a tick so
+        // the reply bubble lands first; the recall's own messages (refusal,
+        // replace-ask, failures) then read in order under it.
+        {
+            juce::String recallJson;
+            if (EchoJayAPI::extractChainRecallBlock(visibleReply, recallJson))
+            {
+                juce::String rid, rnm;
+                if (EJRecall::parseBlock(recallJson, rid, rnm))
+                {
+                    auto safeRecall = juce::Component::SafePointer<EchoJayEditor>(this);
+                    juce::MessageManager::callAsync([safeRecall, rid, rnm]
+                    {
+                        if (safeRecall != nullptr)
+                            safeRecall->handleChainRecall(rid, rnm);
+                    });
+                }
+                else
+                {
+                    EchoJay_NSLog("EJRecall: block received but payload"
+                                  " unparseable -- ignored, nothing loaded");
+                }
+            }
+        }
 
         // Empty-ops edit block = no block (9 Aug 2026, belt - the
         // server strips these too): the prose IS the turn, and a
@@ -23146,8 +23358,10 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
             // The gap is imperceptible and the correctness is not optional.
             paintBubble();
         }
-        // gain / ask / edit: resolved at done by handleChatReply — see the
-        // header comment for why they wait a breath.
+        // gain / ask / edit / recall: resolved at done by handleChatReply —
+        // see the header comment for why they wait a breath. For recall the
+        // wait is also the enforcement window: the server's refine pass can
+        // strip an invalid block between block-complete and done.
     };
 
     EchoJayAPI::ChatStreamEvents ev;
@@ -25502,17 +25716,23 @@ void EchoJayEditor::showSavedChainsMenu()
     });
 }
 
-void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& name)
+void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& name,
+                                   std::function<void(int, const juce::String&)> onFetchError)
 {
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     setChainSaveStatus(juce::String::fromUTF8("Opening \"") + name
                        + juce::String::fromUTF8("\"\xe2\x80\xa6"));
 
-    api.fetchChain(id, [safeThis, id, name](const juce::var& json, int sc)
+    api.fetchChain(id, [safeThis, id, name, onFetchError](const juce::var& json, int sc)
     {
         if (safeThis == nullptr) return;
         const auto err = EchoJayAPI::chainErrorMessage(json, sc);
-        if (err.isNotEmpty()) { safeThis->setChainSaveStatus(err); return; }
+        if (err.isNotEmpty())
+        {
+            safeThis->setChainSaveStatus(err);
+            if (onFetchError) onFetchError(sc, err);
+            return;
+        }
 
         juce::var slots, state;
         if (auto* obj = json.getDynamicObject())
@@ -25524,6 +25744,7 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
         if (!slots.isArray())
         {
             safeThis->setChainSaveStatus("That chain could not be read.");
+            if (onFetchError) onFetchError(sc, "That chain could not be read.");
             return;
         }
 
@@ -26927,6 +27148,14 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
                     EchoJay_NSLog("EJChat: ASK block received (capture turn)");
                 if (EchoJayAPI::extractChainEditBlock(visibleReply, editJson))
                     EchoJay_NSLog("EJChat: CHAIN_EDIT block received (capture turn)");
+                // Recall is never taught on capture turns; strip so the raw
+                // block cannot leak as text, and log that it was not acted on.
+                {
+                    juce::String recallJson;
+                    if (EchoJayAPI::extractChainRecallBlock(visibleReply, recallJson))
+                        EchoJay_NSLog("EJRecall: block received on a capture turn"
+                                      " -- stripped, not handled on this path");
+                }
 
                 // Empty-ops edit block = no block (9 Aug 2026, belt - the
                 // server strips these too): the prose IS the turn, and a

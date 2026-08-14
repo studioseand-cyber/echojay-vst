@@ -18,8 +18,10 @@
 //   2. Prose streams; blocks do not. onProse carries only displayable
 //      prose increments; the whole block resolves at once in onBlock, so a
 //      chain list can never grow one plugin at a time.
-//   3. Every marker-delimited block is atomic: CHAIN, CHAIN_EDIT, GAIN,
-//      ASK — the same four the whole-reply extractors handle.
+//   3. Every marker-delimited block is atomic: CHAIN, CHAIN_EDIT,
+//      CHAIN_RECALL, GAIN, ASK — the same set the whole-reply extractors
+//      handle. Rule 1 is exactly why a half-arrived RECALL can never reach
+//      the load path: it is never surfaced anywhere until its close marker.
 //   4. The concatenation of every onProse string is BYTE-IDENTICAL to what
 //      the whole-reply strip (EJReplyBlocks, the real extractors, in the
 //      call-site order chain/gain/ask/edit) leaves behind on the assembled
@@ -55,7 +57,7 @@ class EJStreamBlockParser
 public:
     struct BlockEvent
     {
-        juce::String type;      // "chain" | "chain_edit" | "gain" | "ask"
+        juce::String type;      // "chain" | "chain_edit" | "chain_recall" | "gain" | "ask"
         juce::String payload;   // complete inner JSON, trimmed — never partial
     };
 
@@ -108,16 +110,19 @@ public:
 
 private:
     struct Marker { const char* type; juce::String open, close; bool consumed = false; };
-    Marker markers[4] =
+    static constexpr int kNumMarkers = 5;
+    Marker markers[kNumMarkers] =
     {
-        // chain_edit FIRST is not required for correctness (complete-marker
-        // matches are unambiguous: "<<<ECHOJAY_CHAIN>>>" is not a prefix of
-        // "<<<ECHOJAY_CHAIN_EDIT>>>"), but keep the longer sibling first so
-        // nobody "simplifies" a future scan into prefix matching.
-        { "chain_edit", "<<<ECHOJAY_CHAIN_EDIT>>>", "<<<END_CHAIN_EDIT>>>" },
-        { "chain",      "<<<ECHOJAY_CHAIN>>>",      "<<<END_CHAIN>>>" },
-        { "gain",       "<<<ECHOJAY_GAIN>>>",       "<<<END_GAIN>>>" },
-        { "ask",        "<<<ECHOJAY_ASK>>>",        "<<<END_ASK>>>" },
+        // Longer chain-family siblings FIRST is not required for correctness
+        // (complete-marker matches are unambiguous: "<<<ECHOJAY_CHAIN>>>" is
+        // not a prefix of "<<<ECHOJAY_CHAIN_EDIT>>>" or
+        // "<<<ECHOJAY_CHAIN_RECALL>>>"), but keep them first so nobody
+        // "simplifies" a future scan into prefix matching.
+        { "chain_recall", "<<<ECHOJAY_CHAIN_RECALL>>>", "<<<END_CHAIN_RECALL>>>" },
+        { "chain_edit",   "<<<ECHOJAY_CHAIN_EDIT>>>",   "<<<END_CHAIN_EDIT>>>" },
+        { "chain",        "<<<ECHOJAY_CHAIN>>>",        "<<<END_CHAIN>>>" },
+        { "gain",         "<<<ECHOJAY_GAIN>>>",         "<<<END_GAIN>>>" },
+        { "ask",          "<<<ECHOJAY_ASK>>>",          "<<<END_ASK>>>" },
     };
 
     juce::String pending;           // unemitted tail (prose mode)
@@ -224,7 +229,7 @@ private:
             // ---- prose mode ----
             // Earliest complete, unconsumed opening marker in the buffer.
             int foundIdx = -1, foundPos = -1;
-            for (int i = 0; i < 4; ++i)
+            for (int i = 0; i < kNumMarkers; ++i)
             {
                 if (markers[i].consumed) continue;
                 const int p = pending.indexOf (markers[i].open);
@@ -262,7 +267,7 @@ private:
             // before it. Everything ahead of that is safe to emit now.
             const int len = pending.length();
             int best = 0;
-            for (int i = 0; i < 4; ++i)
+            for (int i = 0; i < kNumMarkers; ++i)
             {
                 if (markers[i].consumed) continue;
                 const int maxL = juce::jmin ((int) markers[i].open.length() - 1, len);

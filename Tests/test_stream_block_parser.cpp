@@ -23,6 +23,7 @@
 #include "../Source/EJStreamFraming.h"
 #include "../Source/EJReplyBlocks.h"
 #include "../Source/EJStreamBlockParser.h"
+#include "../Source/EJRecall.h"
 
 #include <cstdio>
 #include <vector>
@@ -38,16 +39,17 @@ static void check (const juce::String& name, bool cond, const juce::String& deta
 // ---- the whole-reply reference: the REAL extractors, call-site order ----
 struct RefStrip
 {
-    juce::String visible, chain, gain, ask, edit;
+    juce::String visible, chain, gain, ask, edit, recall;
 };
 static RefStrip refStrip (const juce::String& full)
 {
     RefStrip r;
     r.visible = full;
-    EJReplyBlocks::extractChainBlock     (r.visible, r.chain);
-    EJReplyBlocks::extractGainBlock      (r.visible, r.gain);
-    EJReplyBlocks::extractAskBlock       (r.visible, r.ask);
-    EJReplyBlocks::extractChainEditBlock (r.visible, r.edit);
+    EJReplyBlocks::extractChainBlock       (r.visible, r.chain);
+    EJReplyBlocks::extractGainBlock        (r.visible, r.gain);
+    EJReplyBlocks::extractAskBlock         (r.visible, r.ask);
+    EJReplyBlocks::extractChainEditBlock   (r.visible, r.edit);
+    EJReplyBlocks::extractChainRecallBlock (r.visible, r.recall);
     return r;
 }
 
@@ -163,9 +165,10 @@ static void sweepSynthetic (const juce::String& name, const juce::String& full,
         if ((int) r.blocks.size() != expectedBlocks) blocksOk = false;
         for (auto& b : r.blocks)
         {
-            const juce::String& want = b.type == "chain" ? ref.chain
-                                     : b.type == "gain"  ? ref.gain
-                                     : b.type == "ask"   ? ref.ask : ref.edit;
+            const juce::String& want = b.type == "chain"        ? ref.chain
+                                     : b.type == "gain"         ? ref.gain
+                                     : b.type == "ask"          ? ref.ask
+                                     : b.type == "chain_recall" ? ref.recall : ref.edit;
             if (b.payload != want) blocksOk = false;
         }
         if (expectTruncated)
@@ -336,6 +339,70 @@ int main (int argc, char** argv)
                     0, true, "chain");
     sweepSynthetic ("stream dies inside a partial OPEN marker: literal prose",
                     "Building it.\n\n<<<ECHOJA", 0);
+
+    // ================= saved-chain recall (14 Aug 2026) =================
+    const juce::String RECALL_BLK =
+        "<<<ECHOJAY_CHAIN_RECALL>>>{\"id\":\"ch_aaa111\",\"name\":\"Drill vocal\","
+        "\"explanation\":\"Loading the saved chain.\"}<<<END_CHAIN_RECALL>>>";
+
+    // A complete block parses, at every chunk size, through the stream
+    // parser, with payload parity against the whole-reply extractor.
+    sweepSynthetic ("recall block parses complete",
+                    "Loading it now.\n\n" + RECALL_BLK, 1);
+    // The CHAIN_RECALL marker must not confuse the CHAIN or CHAIN_EDIT
+    // scans (shared prefix family).
+    sweepSynthetic ("recall beside a chain block: two events, no cross-talk",
+                    "Two things.\n\n" + CHAIN_BLK + "\n\n" + RECALL_BLK, 2);
+    // A truncated recall NEVER acts: quarantined by the stream parser...
+    sweepSynthetic ("truncated recall: quarantined, never an event",
+                    "Loading it.\n\n<<<ECHOJAY_CHAIN_RECALL>>>{\"id\":\"ch_aa",
+                    0, true, "chain_recall");
+    // ...and refused by the whole-reply extractor too (returns false with
+    // an EMPTY payload, unlike its siblings: nothing salvageable, and
+    // acting on a half-named chain would be the failure).
+    {
+        juce::String vis = "Loading it.\n\n<<<ECHOJAY_CHAIN_RECALL>>>{\"id\":\"ch_aa";
+        juce::String payload = "sentinel";
+        const bool got = EJReplyBlocks::extractChainRecallBlock (vis, payload);
+        check ("recall extractor: truncated block returns false", ! got);
+        check ("recall extractor: truncated payload is EMPTY (never salvaged)", payload.isEmpty());
+        check ("recall extractor: truncated block still stripped from visible text",
+               ! vis.contains ("<<<") && vis == "Loading it.");
+    }
+    {
+        juce::String vis = "Here.\n\n" + RECALL_BLK + "\n\nDone.";
+        juce::String payload;
+        const bool got = EJReplyBlocks::extractChainRecallBlock (vis, payload);
+        juce::String rid, rnm;
+        check ("recall extractor: complete block extracted and stripped",
+               got && ! vis.contains ("<<<"));
+        check ("recall parseBlock: id and name read from the payload",
+               EJRecall::parseBlock (payload, rid, rnm)
+               && rid == "ch_aaa111" && rnm == "Drill vocal");
+        check ("recall parseBlock: id-less payload refused",
+               ! EJRecall::parseBlock ("{\"name\":\"x\"}", rid, rnm));
+    }
+    // The decision table the editor acts on: unknown id refused regardless
+    // of rack; empty rack loads with no question; non-empty rack asks.
+    check ("recall decide: unknown id refused (empty rack)",
+           EJRecall::decide (false, 0) == EJRecall::Decision::Refuse);
+    check ("recall decide: unknown id refused (racked)",
+           EJRecall::decide (false, 3) == EJRecall::Decision::Refuse);
+    check ("recall decide: empty rack loads directly, no ask",
+           EJRecall::decide (true, 0) == EJRecall::Decision::LoadDirect);
+    check ("recall decide: non-empty rack raises the replace ask",
+           EJRecall::decide (true, 1) == EJRecall::Decision::AskReplace);
+    // The ambiguity chip payload: recall_id read from the choice var the
+    // shelf stores per chip, so a tap resolves to the right id.
+    {
+        auto* c = new juce::DynamicObject();
+        c->setProperty ("label", "Vocal air");
+        c->setProperty ("recall_id", "ch_bbb222");
+        check ("recall chip: recall_id resolves from the choice payload",
+               EJRecall::choiceRecallId (juce::var (c)) == "ch_bbb222");
+        check ("recall chip: a choice without recall_id yields empty",
+               EJRecall::choiceRecallId (juce::JSON::parse ("{\"label\":\"Not now\"}")).isEmpty());
+    }
 
     // Truncated payload parity with the extractor's truncated out-param.
     {

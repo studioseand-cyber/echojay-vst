@@ -1459,7 +1459,12 @@ private:
     // The request itself. id empty = create, id set = overwrite that chain.
     void sendChainSave(const juce::String& id, const juce::String& name);
     void showSavedChainsMenu();
-    void openSavedChain(const juce::String& id, const juce::String& name);
+    // onFetchError (14 Aug 2026, recall): optional hook invoked when the
+    // fetch or parse fails, with the HTTP status and the mapped message.
+    // The sidebar status line still shows the error either way; the recall
+    // path uses the hook for its own chat-visible message and log line.
+    void openSavedChain(const juce::String& id, const juce::String& name,
+                        std::function<void(int statusCode, const juce::String& err)> onFetchError = {});
     // Transient one-liner in the chain header ("Saved \"X\""). Past tense is
     // legitimate because saving IS something the user did, but it says only
     // that a chain was saved and never implies anything about the sound.
@@ -2758,6 +2763,11 @@ private:
     std::array<juce::TextButton, kMaxAskChips> askChipBtns;
     std::array<juce::String, kMaxAskChips> askChipLabels;
     std::array<juce::String, kMaxAskChips> askChipIntents;   // ""|"edit"|"build" (3-pre)
+    // The full choice var per chip (14 Aug 2026, recall). Chips that need
+    // more than label+intent (recall_id, recall_name) read it from here;
+    // index-parallel with the arrays above by construction (one source
+    // loop in measureAskShelf fills all of them).
+    std::array<juce::var, kMaxAskChips> askChipVars;
     // ---- Channel selection (banner dropdown; the chip bar is deleted) ----
     // THE channel selector: clicking the banner opens a menu of LIVE
     // channels from the registry (current one ticked; an offline current
@@ -2819,7 +2829,8 @@ private:
                         juce::StringArray* labelsOut = nullptr,
                         juce::String* questionOut = nullptr,
                         juce::Rectangle<int>* hintRectOut = nullptr,
-                        juce::StringArray* intentsOut = nullptr);
+                        juce::StringArray* intentsOut = nullptr,
+                        juce::Array<juce::var>* choiceVarsOut = nullptr);
 
     // ---- AI-proposed Link gain (APPLY cards) --------------------------------
     // The assistant may emit a <<<ECHOJAY_GAIN>>> block of measurement-backed
@@ -2961,6 +2972,28 @@ private:
     // policy (session rows, else disk cache, never a fetch) and the cap/clip
     // rules. Logs its source and drop count every turn it is considered.
     juce::String buildSavedChainsInjection();
+
+    // ---- Saved-chain recall (14 Aug 2026) ----
+    // The receiving half of the server's <<<ECHOJAY_CHAIN_RECALL>>> block.
+    // Decision logic is pure and lives in EJRecall.h; these are the side
+    // effects. handleChainRecall: local id validation (second, independent
+    // check; the server allowlisted already but the plugin does the
+    // destructive thing), then load directly on an empty rack or ask
+    // through the ASK shelf on a non-empty one (AlertWindow is banned on
+    // host-driven paths, see the Logic note near the Link ack consumer).
+    struct SavedChainRef { juce::String id, name; };
+    // Shared source policy with buildSavedChainsInjection: session rows,
+    // else the disk list cache, never a network fetch. Returns the source
+    // label ("server" | "sidebar-cache" | "disk-cache" | "none").
+    juce::String collectSavedChainRefs(std::vector<SavedChainRef>& out);
+    void handleChainRecall(const juce::String& id, const juce::String& name);
+    void presentRecallReplaceAsk(const juce::String& id, const juce::String& name,
+                                 int rackSlots);
+    // openSavedChain plus recall-specific outcome reporting: fetch errors
+    // get their own message (404 = deleted elsewhere), and a 6s watchdog
+    // logs the loaded/skipped summary (the restore has no single completion
+    // event; the AI build path's dial-summary watchdog is the precedent).
+    void recallLoadChain(const juce::String& id, const juce::String& name);
     // ---- TIER 1 key precondition (KEY_PRECONDITION_SPEC.md §2.1) ---------
     // When a typed message genuinely needs the key (§2.2, narrow), no usable
     // reading exists, but a bus Link DOES: add an EchoJay Key Detector to
