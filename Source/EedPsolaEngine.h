@@ -477,7 +477,8 @@ private:
 
     void emitMixed (float* out, int n, int64_t base) noexcept
     {
-        const bool lpc = formantMode_.load (std::memory_order_relaxed) != kFormantOff;
+        const int  fm  = formantMode_.load (std::memory_order_relaxed);
+        const bool lpc = fm != kFormantOff;
         for (int i = 0; i < n; ++i)
         {
             const int64_t p = base + (int64_t) i;
@@ -549,8 +550,18 @@ private:
             // ratio here - bounded by the band at a level correction never
             // reaches audibly - and the grain path takes over beyond it,
             // through a short crossfade.
-            if (g > 0.0f && lpc
-                && formantMode_.load (std::memory_order_relaxed) == kFormantPreserve)
+            // PRESERVE **AND OFF** ride the splice inside the band. Off was
+            // measured through the six-metric gate on its grain path at
+            // corrector ratios: HNR 4.87 dB against preserve's 6.99, flux
+            // +19% against +3.3, 59 clicks against 2 - a defect, not the
+            // mode working, because at these ratios the splice-resampler IS
+            // off's semantics (a resampler moves formants with the ratio;
+            // the displacement at tens of cents is negligible, which is the
+            // same fact that makes it acceptable for preserve). The two
+            // modes deliberately converge in-band and diverge beyond it,
+            // where off's resampled grains go full chipmunk. SHIFT never
+            // splices - its envelope warp needs the LPC grain path.
+            if (g > 0.0f && fm != kFormantShift)
             {
                 // The ratio is what the READ point's audio must be scaled by,
                 // so evaluate f0 where the read pointer actually is - up to

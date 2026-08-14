@@ -187,7 +187,19 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
 
     PsolaEngine sh;
     sh.prepare (fs, 256, PitchEngine::voiceRange (vt).fMinHz, worst);
-    sh.setFormantMode (PsolaEngine::kFormantPreserve);
+    // DIAGNOSTIC overrides, not the gate: AB_FORMANT_MODE=off|preserve|shift
+    // and AB_FORMANT_SHIFT=<st> run the same six metrics on the other
+    // formant modes so they can be compared against the preserve column.
+    // The shipped gate run sets neither and asserts at preserve.
+    int fmode = PsolaEngine::kFormantPreserve;
+    if (const char* m = getenv ("AB_FORMANT_MODE"))
+    {
+        if (! std::strcmp (m, "off"))   fmode = PsolaEngine::kFormantOff;
+        if (! std::strcmp (m, "shift")) fmode = PsolaEngine::kFormantShift;
+    }
+    sh.setFormantMode (fmode);
+    if (const char* s = getenv ("AB_FORMANT_SHIFT"))
+        sh.setFormantShift ((float) std::atof (s));
     sh.setPitchLagSamples (det2.pitchLagFor (vt));
     const int latency = sh.latencySamples();
 

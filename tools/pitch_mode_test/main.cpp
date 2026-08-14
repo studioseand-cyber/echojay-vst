@@ -2,6 +2,7 @@
 // applyStructured funnel the chain hands settings to.
 #include <JuceHeader.h>
 #include "EedPitchProcessor.h"
+#include "EedPitchEditor.h"
 #include "EedDeviceRegistry.h"
 #include "EedKeyFeed.h"
 #include <cstdio>
@@ -364,6 +365,64 @@ int main()
                    + " is character-bearing (not exempted), so every mode must WRITE it"
                      " - if it was just added, either give it a column in applyMode's"
                      " table or exempt it HERE with the reason");
+        }
+    }
+
+    std::printf ("== UI coverage: every schema param has a hand control, or is "
+                 "exempted here with the reason ==\n");
+    {
+        // WHY THIS EXISTS. `scale` was in the schema, dialable by the model,
+        // wired in the editor - and squeezed by the layout to a ~10-pixel
+        // sliver, so a user reported the panel "shows KEY only" and the
+        // parameter was, in practice, invisible state. The same shape of
+        // failure as the constructed-vs-advertised defaults sweep: what the
+        // model can set and the user cannot see will eventually surprise
+        // someone. (This walk proves LISTING, not pixels - the layout half
+        // lives in the editor-paint harness.)
+        //
+        // The exemption ledger below is deliberately LOUD: every UI-less
+        // param is named with its status, and a new param lands in neither
+        // list and fails the build.
+        struct NoUi { const char* id; const char* why; };
+        static const NoUi kNoUi[] = {
+            { "key_source",       "ONE-WAY GAP: touching key/scale forces manual and no "
+                                  "hand control returns to auto - known, scope separately" },
+            { "reference_source", "no UI yet - auto tuning reference, rarely hand-set" },
+            { "reference_hz",     "no UI yet" },
+            { "transpose",        "no UI yet" },
+            { "natural_vibrato",  "no UI yet - character-relevant, worth a knob eventually" },
+            { "vib_depth_cents",  "no UI yet - added-vibrato block has no panel" },
+            { "vib_rate_hz",      "no UI yet - added-vibrato block has no panel" },
+            { "vib_shape",        "no UI yet - added-vibrato block has no panel" },
+            { "vib_onset_ms",     "no UI yet - added-vibrato block has no panel" },
+            { "formant_shift",    "no UI yet - and the shift path carries a measured "
+                                  "fidelity cost (schema text), so no knob until rebuilt" },
+            { "mix",              "no UI yet - the chain wet knob covers the common case" },
+            { "output_db",        "no UI yet" },
+        };
+        auto exemptUi = [&] (const std::string& id)
+        {
+            for (const auto& e : kNoUi) if (id == e.id) return true;
+            return false;
+        };
+        for (const auto& e : kNoUi)
+            check (EedPitchProcessor::schema().find (e.id) != nullptr,
+                   juce::String ("UI-exempt id still exists in the schema: ") + e.id);
+
+        const auto& hand = EedPitchEditor::handControlledParams();
+        for (const char* id : hand)
+            check (EedPitchProcessor::schema().find (id) != nullptr,
+                   juce::String ("hand-controlled id still exists in the schema: ") + id);
+
+        for (const auto& sp : EedPitchProcessor::schema().params())
+        {
+            bool covered = exemptUi (sp.id);
+            for (const char* id : hand) if (sp.id == id) covered = true;
+            check (covered,
+                   juce::String (sp.id.c_str())
+                   + " has no hand control and no exemption - add it to the editor's"
+                     " handControlledParams() with a control, or to the ledger HERE"
+                     " with its status");
         }
     }
 

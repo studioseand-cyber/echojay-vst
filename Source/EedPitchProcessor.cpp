@@ -188,7 +188,15 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "keeps the formants where they are so a shifted voice still sounds "
           "like the same singer, off lets them move with the pitch for the "
           "chipmunk/resampler effect, shift keeps them independent of pitch "
-          "AND moves them by formant_shift for a deliberate character change",
+          "AND moves them by formant_shift for a deliberate character change. "
+          "At CORRECTION-sized moves preserve and off are measured identical "
+          "(formant displacement at tens of cents is inaudible); off only "
+          "sounds different on big transposes. shift runs a heavier synthesis "
+          "path with a MEASURED quality cost even at formant_shift 0 - about "
+          "1.6 dB of harmonicity and several times the frame-to-frame "
+          "roughness of preserve on real vocals - so reach for it only when "
+          "the character change IS the point, never for transparent "
+          "correction",
           false,
           // Mirrors PsolaEngine::FormantMode, APPEND-ONLY.
           { "off", "preserve", "shift" } },
@@ -200,7 +208,10 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "length control. Negative reads bigger and deeper, positive smaller "
           "and brighter; a couple of semitones is a subtle character change, "
           "the extremes are an effect. ONLY ACTIVE when formant_mode is "
-          "shift; preserve and off ignore it, and 0 sounds like preserve",
+          "shift, which carries a measured fidelity cost regardless of this "
+          "value (see formant_mode) - the moved character rides on a rougher "
+          "voice. An EFFECT control: never part of making correction sound "
+          "transparent or natural",
           false },
 
         { EedPitchProcessor::kLowLatency, "", 0.0, 1.0, 0.0,

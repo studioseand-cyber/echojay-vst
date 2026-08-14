@@ -1663,3 +1663,60 @@ take, and the two are near-twins of Antares's own two (3.242 vs 3.284 -
 the material's hardest moments defeat both processors). HF excess fell to
 0.12/s. All six metrics green with their injection controls; suites, host
 invariants, mode machine, pluginval green.
+
+### 16.11 The other formant modes through the six-metric gate, and the UI
+that was invisible
+
+**off** measured through the gate at hard-tune settings read HNR 4.87 dB
+against preserve's 6.99, flux +19% against +3.3, **59 clicks against 2** —
+a defect, exactly as framed: at corrector ratios formant displacement is
+negligible, so off had no business sounding different, and the difference
+was architectural (off ran the grain-OLA path in-band where preserve rides
+the splice-resampler — whose formants-move-with-ratio behaviour IS off's
+semantics). Off now splices inside the band and measures **identical to
+preserve** (10.1 ¢ / 6.98 dB / +3.1% / 2 clicks); beyond the band its
+resampled grains still go full chipmunk, and the psola suite's mode-
+separation checks still pass.
+
+**shift**, swept at formant_shift 0 / ±3 / ±7:
+
+| shift | med cents | within 5 | HNR | flux | clicks |
+|---|---|---|---|---|---|
+| preserve (ref) | 10.1 | 29.0% | 6.99 | +3.3% | 2 |
+| 0 | 12.3 | 28.7% | **5.43** | **+30.8%** | 3 |
+| +3 | 8.7 | 29.1% | 4.96 | +30.7% | 2 |
+| −3 | 11.5 | 24.9% | 5.83 | +34.0% | 4 |
+| +7 | 9.3 | 27.6% | 4.66 | +36.5% | 4 |
+| −7 | 15.2 | 19.8% | 5.68 | +43.0% | 1 |
+
+**The diagnostic is unambiguous: at shift = 0, with nothing warped, HNR is
+already −1.6 dB and flux ×9 against preserve. The cost is the LPC-residual
+path itself, not the warp** (the warp adds a few points of flux and little
+else). The fix is architectural — the same verdict that demoted this path
+from preserve in §16.3 — and is future work. Until then: the schema
+descriptions for formant_mode and formant_shift now state the measured
+trade so the model does not reach for shift casually, and shift stays OUT
+of the device advertisement (the registry summary), which continues to
+promise only preserved formants. The mode remains dialable: its
+monotonicity acceptance (§15) still holds, and a character effect is
+allowed to cost fidelity as long as the cost is stated where the knob is.
+
+**The invisible scale control.** `scale` was in the schema, dialable by
+the model, fully wired in the editor — and the combo column's layout gave
+three 24 px rows a 58 px band, so the third row, SCALE, was squeezed to a
+~10-pixel sliver. A user reported the panel "shows KEY only" and was
+right. The column now divides evenly; both key and scale dim to 45% alpha
+under key_source = auto (they show the DETECTED values — a reading, not an
+edit surface) while staying clickable, since selecting a value is how the
+user takes manual control (the underlying params already flipped
+key_source on any hand write).
+
+**The permanent UI-coverage audit** (tools/pitch_mode_test): the editor
+now publishes handControlledParams(), and the walk fails the build on any
+schema param that is neither hand-controlled nor exempted-with-reason.
+The ledger currently names 12 UI-less params, the loudest being
+**key_source's one-way gap — touching key/scale forces manual and no hand
+control returns to auto** — held for separate scoping, as is the
+pitch_scale degree editor (twelve enables plus per-degree bias is a real
+panel, most naturally an interactive degree strip on the ribbon's existing
+scale lines; more than a small job, not bundled here).
