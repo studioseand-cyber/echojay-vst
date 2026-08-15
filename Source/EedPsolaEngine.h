@@ -21,6 +21,18 @@
     makes it a voice rather than a chipmunk - stays exactly where it was. That
     is the whole reason PSOLA earns its place over a resampler.
 
+    TWO SYNTHESIS METHODS SINCE THE ANTARES A/B (PITCH_P0_VALIDATION.md §16).
+    Granular OLA rebuilds the waveform ~f0 times a second however well the
+    grains align - measured at -1.0 dB HNR and +19% spectral flux with NO
+    pitch change asked for, against a reference that loses nothing. So
+    `preserve` inside +/-2.5 st of unity - which is where a corrector lives -
+    runs a SPLICE-RESAMPLER instead: a continuous resample of the dry ring,
+    phase-aligned with the dry at every seam, splicing out exactly one period
+    only when the read pointer has drifted one (|ratio-1| * f0 splices per
+    second: ~1/s at 20 cents, zero at unity). The grain machinery above takes
+    over beyond the band, through a short crossfade, and is what `off` and
+    `shift` always use.
+
     EPOCHS. Peak-picking inside each expected period window, which the spec
     names as adequate. What actually matters for quality is not anatomical
     accuracy but CONSISTENCY: the same phase point every period, so grains
@@ -82,9 +94,9 @@ public:
     static constexpr int   kGrainPeriods = 2;
 
     // ---- formant_mode (spec §2.4) ------------------------------------------
-    // Order matches the spec's list, and is APPEND-ONLY: `shift` (LPC envelope
-    // warping) is P5 and will be index 2, so these indices never move.
-    enum FormantMode { kFormantOff = 0, kFormantPreserve = 1, kNumFormantModes };
+    // Order matches the spec's list, and is APPEND-ONLY: indices never move.
+    enum FormantMode { kFormantOff = 0, kFormantPreserve = 1, kFormantShift = 2,
+                       kNumFormantModes };
 
     void setFormantMode (int m) noexcept
     {
@@ -93,31 +105,57 @@ public:
     }
     int getFormantMode() const noexcept { return formantMode_.load (std::memory_order_relaxed); }
 
-    // formant_shift IS NOT IMPLEMENTED, deliberately - see
-    // PITCH_P0_VALIDATION.md §11. The cheap version (resample each grain by a
-    // user-chosen ratio, sharing the code path with `off`) was built and
-    // MEASURED, and it does not do what the control claims: the envelope is
-    // inert from -9 to +3 semitones and jumps in ~600 Hz steps outside that,
-    // because overlap-adding grains at the pitch period reconstructs an
-    // envelope that barely follows the per-grain resampling. Shipping it would
-    // have been a knob that lies.
+    // formant_shift, in semitones, active only in kFormantShift. Negative
+    // reads bigger/deeper, positive smaller/brighter - the "throat length"
+    // control.
     //
-    // The spec's own prescription is the answer and it is a different piece of
-    // work: estimate the spectral envelope (LPC, order ~ 2 + fs/1000, or
-    // cepstral liftering), FLATTEN, shift, then re-apply the envelope warped
-    // by the control.
+    // THE CHEAP VERSION WAS BUILT, MEASURED AND REJECTED, and must not come
+    // back (PITCH_P0_VALIDATION.md §11.3): resampling each grain by a user
+    // ratio, sharing the `off` code path, left the measured envelope INERT
+    // from -9 to +3 semitones, quantised in ~600 Hz steps outside that, and
+    // non-monotonic at the bottom - overlap-adding grains at the pitch period
+    // reconstructs an envelope that barely follows per-grain resampling, so
+    // that geometry cannot work however it is tuned.
+    //
+    // What ships instead is the spec's own prescription, per grain:
+    //   1. estimate the spectral envelope by LPC (order ~ 2 + fs/1000),
+    //   2. inverse-filter the grain to its RESIDUAL (flat spectrum, pulses),
+    //   3. do the PSOLA move on the residual - copied 1:1, re-spaced at the
+    //      target period, exactly like preserve - and
+    //   4. re-synthesise through the envelope with its frequency axis warped
+    //      by 2^(shift/12): the model envelope is evaluated on a dense grid,
+    //      resampled at w/beta, cosine-transformed back to an autocorrelation
+    //      (positive definite by construction) and Levinson'd into the warped
+    //      all-pole synthesis filter.
+    // See placeGrainResidual() for the measured details, including why the warp
+    // works on the envelope rather than on the autocorrelation at scaled lags.
+    static constexpr float kMaxFormantShiftSt = 12.0f;
+
+    void setFormantShift (float semitones) noexcept
+    {
+        formantShift_.store (std::clamp (semitones, -kMaxFormantShiftSt, kMaxFormantShiftSt),
+                             std::memory_order_relaxed);
+    }
+    float getFormantShift() const noexcept { return formantShift_.load (std::memory_order_relaxed); }
 
     // Fade applied on the VOICED side of a voiced/unvoiced seam. Short enough
     // to be inaudible as a level move, long enough to stop a step edge.
     static constexpr float kSeamFadeMs = 1.5f;
 
-    // Safety ceiling on the overlap-add window sum (PRESERVE): only ever
-    // attenuates, and only once the accumulated window is far past what any
-    // sane ratio produces. Never boosts.
-    static constexpr float kWindowCeil = 0.5f;
-
-    // Divisor floor for OFF's abutting windows: lifts the joins back to flat
-    // without amplifying a genuine gap into noise.
+    // Divisor floor for the per-sample window-sum normalisation, BOTH modes.
+    //
+    // Chosen from the measured distribution of the accumulated window sum on
+    // the real acapella (tools/pitch_click_test), not from reasoning — a
+    // constant chosen by reasoning is exactly how the open-loop gain shipped
+    // 5.5 clicks a second: 94% of emitted voiced samples sit in w = 0.95-1.05
+    // and normal operation occupies w >= ~0.8, so any floor below that shelf
+    // never touches steady state. Below the shelf is a thin edge tail (1.4%
+    // of samples under 0.5, 0.98% under 0.35, minimum 0.0), which is where
+    // instantaneous normalisation would reconstruct full amplitude from a
+    // bare window tail — duplicated-pulse smear. The floor decides where
+    // reconstruction gives way to a natural fade; the shipped value was
+    // picked by sweeping 0.25 / 0.35 / 0.50 on the same material and reading
+    // click density and pitch accuracy, see PITCH_P0_VALIDATION.md §14.
     static constexpr float kWindowFloor = 0.35f;
 
     // ---- lifecycle (audio stopped) ----------------------------------------
@@ -151,6 +189,26 @@ public:
         acc_.assign (sz, 0.0f);
         win_.assign (sz, 0.0f);
 
+        // LPC scratch for kFormantShift, sized for the worst-case grain any
+        // voice_type can ask for, so the audio thread never allocates. The
+        // order follows the spec's ~ 2 + fs/1000 at the working rate.
+        lpcOrder_ = std::clamp (2 + (int) (fs_ / 1000.0), 8, kMaxLpcOrder);
+        const size_t grainMax = (size_t) (2 * maxPeriod_ + 1);
+        lpcX_.assign  (grainMax + (size_t) kMaxLpcOrder, 0.0f);
+        lpcY_.assign  (grainMax + (size_t) kMaxLpcOrder, 0.0f);
+        lpcE_.assign  (grainMax, 0.0f);
+        lpcWin_.assign (grainMax, 0.0f);
+        lpcR_.assign  ((size_t) (kMaxLpcOrder + 1), 0.0);
+        lpcRw_.assign ((size_t) (kMaxLpcOrder + 1), 0.0);
+        lpcP_.assign  ((size_t) (kWarpGrid + 1), 0.0);
+        lpcPw_.assign ((size_t) (kWarpGrid + 1), 0.0);
+        lpcA_.assign  ((size_t) (kMaxLpcOrder + 1), 0.0);
+        lpcAw_.assign ((size_t) (kMaxLpcOrder + 1), 0.0);
+        coefPos_.assign  ((size_t) kCoefRing, 0);
+        coefOrd_.assign  ((size_t) kCoefRing, 0);
+        coefData_.assign ((size_t) kCoefRing * (size_t) (kMaxLpcOrder + 1), 0.0);
+        synState_.assign ((size_t) kMaxLpcOrder, 0.0);
+
         seamFade_ = std::max (1, (int) std::lround (fs_ * (double) kSeamFadeMs * 0.001));
 
         reset();
@@ -164,7 +222,14 @@ public:
         std::fill (win_.begin(), win_.end(), 0.0f);
         write_ = 0; emitted_ = 0; placedTo_ = 0;
         lastEpoch_ = 0; haveEpoch_ = false;
-        nextSynth_ = 0; haveSynth_ = false;
+        nextSynth_ = 0; haveSynth_ = false; synthFrac_ = 0.0;
+        coefHead_ = 0; coefTail_ = 0; coefCur_ = -1;
+        std::fill (synState_.begin(), synState_.end(), 0.0);
+        synIdx_ = 0;
+        curTarget_ = 0.0f;
+        spliceDrift_ = 0.0; spliceOldDrift_ = 0.0; spliceR_ = 0.0; spliceTf_ = 0.0;
+        spliceFadeLen_ = 0; spliceFadePos_ = 0; spliceT_ = 0;
+        methodMix_ = 0.0f;
     }
 
     // The active voice_type's floor. Changes the reported latency, which the
@@ -250,8 +315,78 @@ public:
         process (in, out, n, f0Hz, voiced, targetHz_.load (std::memory_order_relaxed));
     }
 
+    // ---- READ-ONLY DIAGNOSTIC HOOK ---------------------------------------
+    // Records WHERE the synthesis phase is discontinuous: an epoch re-seed
+    // (the analysis epoch jumps to a new peak) and a synthesis-cursor reset.
+    // Both change which part of the waveform the next grain is drawn from, so
+    // both are candidates for a step in the output. Off unless a caller asks;
+    // it changes no decision, only observes them.
+    void debugRecordPhaseEvents (bool on) noexcept { debugOn_ = on; }
+
+    // Diagnostic A/B only: route raw grains (identity filter entries) through
+    // the residual plumbing, isolating the emit filter's contribution.
+    void debugForceRawGrains (bool on) noexcept { dbgRawGrains_ = on; }
+
+    // Diagnostic only: disable the in-band splice-resampler so preserve/off
+    // fall back to their grain paths. Exists for the equivalence gate's
+    // POSITIVE CONTROL - forcing the two modes onto different paths must
+    // make the equivalence check fail, or the check proves nothing.
+    void debugDisableSplice (bool on) noexcept { dbgNoSplice_ = on; }
+
+    // Sub-decision synthesis events, for correlating audible burrs against
+    // things the hop log cannot see: splice-resampler period jumps, and
+    // splice<->grain method transitions. Input-time positions.
+    const std::vector<uint64_t>& debugSplices()     const noexcept { return dbgSplice_; }
+    const std::vector<uint64_t>& debugMethodFlips() const noexcept { return dbgMethodFlip_; }
+    const std::vector<uint64_t>& debugReseeds()      const noexcept { return dbgReseed_; }
+    const std::vector<uint64_t>& debugCursorResets() const noexcept { return dbgReset_; }
+
+    // Per-grain geometry, and the accumulated-window sum seen at emit. The
+    // first says WHICH grain changed shape; the second is the distribution the
+    // normalisation floor has to be chosen against.
+    struct DebugGrain { uint64_t pos; int Ta, Ts, half; float gain; };
+    const std::vector<DebugGrain>& debugGrains() const noexcept { return dbgGrain_; }
+    const std::vector<uint32_t>&   debugWinHist() const noexcept { return dbgWinHist_; }
+    static constexpr int kDebugWinBuckets = 80;      // 0.00..4.00 in 0.05 steps
+    float debugWinMin() const noexcept { return dbgWinMin_; }
+
+    // Per emitted sample, in emit order (one entry per output sample): the
+    // seam gain that mixed wet against dry, and the window sum under it.
+    // seamG < 0 marks a sample emitted by the PASSTHROUGH path (no grains).
+    // This is what lets a click position be asked "were you a wet/dry seam,
+    // a window hole, or neither?" against the shifter's own record instead
+    // of a parallel reconstruction's guess.
+    struct DebugEmit { float seamG, winSum; };
+    const std::vector<DebugEmit>& debugEmits() const noexcept { return dbgEmit_; }
+
     void setPitchLagSamples (int lag) noexcept { pitchLag_ = std::max (0, lag); }
     int  getPitchLagSamples() const noexcept   { return pitchLag_; }
+
+    // Normalised autocorrelation of the INPUT ring at one lag, over a window
+    // of two periods ending at `inputPos`. This is the F0JumpGate's audio
+    // question (PITCH_P0_VALIDATION.md §16.8): when the estimate jumps an
+    // octave, is the waveform still periodic at the OLD lag (a spurious flip
+    // - hold) or has that correlation collapsed (the signal really moved -
+    // believe it)? O(2T) per call and only asked on octave-scale jumps.
+    float inputPeriodicity (uint64_t inputPos, int lagSamples) const noexcept
+    {
+        if (mask_ == 0 || lagSamples < 8) return 0.0f;
+        const int W = 2 * lagSamples;
+        const int64_t from   = (int64_t) inputPos - W;
+        const int64_t oldest = (int64_t) write_ - (int64_t) (mask_ + 1);
+        if (from - lagSamples <= oldest || from - lagSamples < 0
+            || inputPos > write_) return 0.0f;
+
+        double ab = 0.0, aa = 0.0, bb = 0.0;
+        for (int i = 0; i < W; ++i)
+        {
+            const double a = in_[(size_t) ((uint32_t) (uint64_t) (from + i) & mask_)];
+            const double b = in_[(size_t) ((uint32_t) (uint64_t) (from + i - lagSamples) & mask_)];
+            ab += a * b; aa += a * a; bb += b * b;
+        }
+        if (aa < 1.0e-12 || bb < 1.0e-12) return 0.0f;
+        return (float) (ab / std::sqrt (aa * bb));
+    }
 
     // ---- audio thread ------------------------------------------------------
     // Push n input samples with the detector's CURRENT reading, and pull the n
@@ -317,6 +452,7 @@ public:
         // read it out.
         advanceSynthesis (base + (int64_t) n + (int64_t) curPeriod_ * kGrainPeriods, base,
                           target);
+        curTarget_ = target;
         emitMixed (out, n, base);
     }
 
@@ -324,34 +460,35 @@ private:
     // ---- output ------------------------------------------------------------
     void emitDry (float* out, int n, int64_t base) noexcept
     {
+        const bool lpc = formantMode_.load (std::memory_order_relaxed) != kFormantOff;
         for (int i = 0; i < n; ++i)
         {
             const int64_t p = base + (int64_t) i;
-            if (p < 0) { out[i] = 0.0f; continue; }      // latency warm-up
+            if (p < 0) { out[i] = 0.0f; if (debugOn_) dbgEmit_.push_back ({ -1.0f, 0.0f }); continue; }
             const uint32_t idx = (uint32_t) (uint64_t) p & mask_;
             const float og = outGain_.load (std::memory_order_relaxed);
             out[i] = og == 1.0f ? in_[(size_t) idx] : in_[(size_t) idx] * og;
+            // Keep the synthesis filter's state fed with the dry signal, so
+            // a later switch into correction rings from reality. This writes
+            // internal state only - passthrough output stays the exact dry.
+            if (lpc) pushSynthState (in_[(size_t) idx]);
             // Clear the accumulators as we pass, so a later switch back to
             // shifting does not read stale grain content.
             acc_[(size_t) idx] = 0.0f;
             win_[(size_t) idx] = 0.0f;
+            if (debugOn_) dbgEmit_.push_back ({ -1.0f, 0.0f });
         }
         emitted_ = base + (int64_t) n;
     }
 
     void emitMixed (float* out, int n, int64_t base) noexcept
     {
-        // Normalisation follows the WINDOWING regime, not the mode's name: a
-        // resampled grain (off, or a non-zero shift) has abutting windows that
-        // dip to zero at the joins, which is what instantaneous normalisation
-        // is for. A 1:1 grain has variable overlap of duplicated pulses, where
-        // the same division smears the pulse train.
-        const bool flat = formantMode_.load (std::memory_order_relaxed) == kFormantPreserve;
-
+        const int  fm  = formantMode_.load (std::memory_order_relaxed);
+        const bool lpc = fm != kFormantOff;
         for (int i = 0; i < n; ++i)
         {
             const int64_t p = base + (int64_t) i;
-            if (p < 0) { out[i] = 0.0f; continue; }      // latency warm-up
+            if (p < 0) { out[i] = 0.0f; if (debugOn_) dbgEmit_.push_back ({ -1.0f, 0.0f }); continue; }
             const uint32_t idx = (uint32_t) (uint64_t) p & mask_;
 
             const float dry = in_[(size_t) idx];
@@ -363,16 +500,131 @@ private:
             // as unshifted. Flooring the divisor instead lets the thin patch
             // come out quiet, which is what a truncated vocal-tract ring
             // actually sounds like, rather than wrong.
-            // See placeGrain for why the two modes normalise differently.
+            //
+            // BOTH modes normalise by the accumulated window, per sample.
+            // PRESERVE used an open-loop sqrt(Ts/Ta) grain gain instead, on
+            // the argument that instantaneous division would smear duplicated
+            // pulses - and that argument shipped 5.5 clicks a second on real
+            // material (tools/pitch_click_test, 329 in 60 s): every ordinary
+            // f0 update changed the next grain's length AND its gain, so the
+            // overlap-add summed to a different amplitude a fixed ~20 samples
+            // after the hop, with nothing reconciling the seam. Measured, the
+            // window sum sits at 0.95-1.05 for 94% of emitted voiced samples,
+            // so this division is a near no-op in steady state and exactly
+            // cancels the length-dependent amplitude at the seams. The smear
+            // the old comment feared lives only below the floor, where the
+            // clamp lets thin coverage fade instead of reconstructing it.
             const float w   = win_[(size_t) idx];
-            const float wet = flat
-                ? acc_[(size_t) idx] / std::max (1.0f, w * kWindowCeil)
-                : acc_[(size_t) idx] / std::max (w, kWindowFloor);
+            if (debugOn_ && w > 0.0f)
+            {
+                if (dbgWinHist_.empty()) dbgWinHist_.assign (kDebugWinBuckets, 0u);
+                const int b = std::clamp ((int) (w / 0.05f), 0, kDebugWinBuckets - 1);
+                ++dbgWinHist_[(size_t) b];
+                dbgWinMin_ = std::min (dbgWinMin_, w);
+            }
+            const float resid = acc_[(size_t) idx] / std::max (w, kWindowFloor);
 
             // UNVOICED IS SACRED: the dry sample, untouched. Voiced samples
             // near the seam fade between wet and dry so the join is smooth,
             // and that fade lives entirely on the voiced side.
             const float g = seamGain ((uint64_t) p);
+            if (debugOn_) dbgEmit_.push_back ({ g, w });
+
+            // preserve/shift: the OLA'd content is the RESIDUAL; the envelope
+            // is re-applied here by the continuous synthesis filter. On dry
+            // samples the filter is not run but its state is fed the dry
+            // signal, so the next voiced sample rings from where the audio
+            // actually was. `off` keeps the direct OLA.
+            float wet;
+            if (lpc)
+            {
+                if (g > 0.0f) wet = synthStep ((uint64_t) p, resid);
+                else          { pushSynthState (dry); wet = dry; }
+            }
+            else wet = resid;
+
+            // PRESERVE within the splice band rides the SPLICE-RESAMPLER
+            // instead of the grains (PITCH_P0_VALIDATION.md §16): at
+            // corrector-scale ratios the output is a continuous resample of
+            // the dry signal, phase-aligned with it at every seam, with ONE
+            // period-aligned splice each time the read pointer drifts a
+            // period - roughly |ratio-1| * f0 splices per second, i.e. ~1/s
+            // at 20 cents and ZERO at unity, against ~f0 grain boundaries
+            // per second for OLA. Measured on the reference take, the grain
+            // path cost -1.0 dB HNR and +19% flux at unity where this path
+            // is, by construction, the identity. Formants move with the
+            // ratio here - bounded by the band at a level correction never
+            // reaches audibly - and the grain path takes over beyond it,
+            // through a short crossfade.
+            // PRESERVE **AND OFF** ride the splice inside the band. Off was
+            // measured through the six-metric gate on its grain path at
+            // corrector ratios: HNR 4.87 dB against preserve's 6.99, flux
+            // +19% against +3.3, 59 clicks against 2 - a defect, not the
+            // mode working, because at these ratios the splice-resampler IS
+            // off's semantics (a resampler moves formants with the ratio;
+            // the displacement at tens of cents is negligible, which is the
+            // same fact that makes it acceptable for preserve). The two
+            // modes deliberately converge in-band and diverge beyond it,
+            // where off's resampled grains go full chipmunk. SHIFT never
+            // splices - its envelope warp needs the LPC grain path.
+            if (g > 0.0f && fm != kFormantShift && ! dbgNoSplice_)
+            {
+                // The ratio is what the READ point's audio must be scaled by,
+                // so evaluate f0 where the read pointer actually is - up to
+                // ~3/4 of a period away from p, which on a vibrato is a
+                // few cents of systematic error if ignored.
+                const int64_t rp = (int64_t) p + (int64_t) std::lround (spliceDrift_);
+                const float f0Here = f0At ((uint64_t) std::max<int64_t> (0, rp));
+                const float tgt    = curTarget_;
+                const bool  ok     = f0Here > 0.0f && tgt > 0.0f;
+
+                // `ok` gates STATE UPDATES only, never emission: the read
+                // position is displaced from p, so it can land on an
+                // isolated ring-unvoiced sample mid-note, and both earlier
+                // treatments of that flicker were measured as clicks -
+                // resetting the drift was a fadeless ~200-sample read jump,
+                // and falling through to the grain value was two unfaded
+                // samples of a different synthesis (§16.10). Through a
+                // flicker the splice keeps emitting on frozen state.
+                if (ok)
+                {
+                    const double r = (double) tgt / (double) f0Here;
+                    const double absSt = std::fabs (std::log2 (r) * 12.0);
+                    const float want = absSt <= kSpliceBandSt ? 0.0f : 1.0f;
+                    const float step = 1.0f / (float) std::max (16, (int) (0.004 * fs_));
+                    methodMix_ += methodMix_ < want ?  std::min (step, want - methodMix_)
+                                                    : -std::min (step, methodMix_ - want);
+
+                    // Always slewed at ~2 ms - the earlier snap branch for
+                    // moves > 0.125 st was measured creating clicks on fast
+                    // downward glides at retune 0 (§16.10): the target
+                    // staircases semitone by semitone through the glide and
+                    // every 100-cent step snapped the read velocity
+                    // instantly. Through the slew a note-sized step still
+                    // completes in ~6 ms, which keeps the hard-tune snap
+                    // character while the velocity stays continuous.
+                    if (spliceR_ <= 0.0) spliceR_ = r;
+                    else spliceR_ += (r - spliceR_) * (1.0 / (0.002 * fs_));
+
+                    spliceT_  = std::clamp ((int) std::lround (fs_ / (double) f0Here),
+                                            8, maxPeriod_);
+                    spliceTf_ = std::clamp (fs_ / (double) f0Here, 8.0, (double) maxPeriod_);
+                }
+
+                if (methodMix_ < 1.0f && spliceR_ > 0.0 && spliceT_ > 0)
+                {
+                    const float ys = spliceSample ((uint64_t) p, spliceT_, spliceTf_, spliceR_);
+                    wet = ys + methodMix_ * (wet - ys);
+                }
+            }
+            else if (g <= 0.0f)
+            {
+                // A seam or unvoiced sample: the next voiced entry starts
+                // phase-aligned with the dry by construction.
+                spliceDrift_ = 0.0; spliceFadeLen_ = 0; methodMix_ = 0.0f;
+                spliceR_ = 0.0; spliceT_ = 0; spliceTf_ = 0.0;
+            }
+
             float y = g <= 0.0f ? dry : (g >= 1.0f ? wet : dry + g * (wet - dry));
 
             // Blend against the delay-matched dry, then trim. Skipped entirely
@@ -442,6 +694,56 @@ private:
             const float v = in_[(size_t) ((uint32_t) p & mask_)];
             if (v > bestV) { bestV = v; best = p; }
         }
+
+        // PHASE REFINEMENT (PITCH_P0_VALIDATION.md §16). Peak-picking is only
+        // consistent to a few samples on real glottal pulses - breathy or
+        // double-peaked periods move the maximum around inside the pulse -
+        // and every misplaced epoch makes its grain sum against its
+        // neighbours out of phase. Measured on the reference take that cost
+        // -1.0 dB HNR and +19% spectral flux at UNITY, with no pitch change
+        // asked for. Refine the picked peak +/-8 samples to the offset whose
+        // one-period window best correlates with the PREVIOUS epoch's window:
+        // the train becomes phase-consistent (the property the grains need),
+        // while the coarse pick still decides which pulse is the epoch, so
+        // re-spacing and pitch are untouched. The refinement is relative to
+        // the previous ANALYSIS epoch - never to synthesis placement - so it
+        // cannot fight the re-spacing (a placement-time aligner was tried
+        // first and measurably pulled shifted output back toward the source
+        // pitch).
+        constexpr int kRefine = 8;
+        const int W = std::min (T, 320);
+        const int64_t aFrom = (int64_t) from - W / 2;
+        const int64_t bFrom = (int64_t) best - W / 2 - kRefine;
+        const int64_t oldest = (int64_t) write_ - (int64_t) (mask_ + 1);
+        if (aFrom > oldest && aFrom >= 0 && bFrom > oldest && bFrom >= 0
+            && best + (uint64_t) (W / 2 + kRefine) < limit)
+        {
+            double aa = 0.0;
+            for (int i = 0; i < W; ++i)
+            {
+                const double a = in_[(size_t) ((uint32_t) (uint64_t) (aFrom + i) & mask_)];
+                aa += a * a;
+            }
+            if (aa > 1.0e-12)
+            {
+                int bestD = 0;
+                double bestC = -1.0e30;
+                for (int d = -kRefine; d <= kRefine; ++d)
+                {
+                    double ab = 0.0, bb = 0.0;
+                    for (int i = 0; i < W; ++i)
+                    {
+                        const double a = in_[(size_t) ((uint32_t) (uint64_t) (aFrom + i) & mask_)];
+                        const double b = in_[(size_t) ((uint32_t) (uint64_t) ((int64_t) best + d - W / 2 + i) & mask_)];
+                        ab += a * b; bb += b * b;
+                    }
+                    const double c = ab / std::sqrt (std::max (1.0e-12, aa * bb));
+                    if (c > bestC) { bestC = c; bestD = d; }
+                }
+                best = (uint64_t) ((int64_t) best + bestD);
+            }
+        }
+
         epochOut = best;
         return true;
     }
@@ -487,6 +789,7 @@ private:
 
         if (! haveSynth_ || nextSynth_ + (uint64_t) (4 * curPeriod_) < (uint64_t) std::max<int64_t> (base, 0))
         {
+            if (debugOn_ && haveSynth_) dbgReset_.push_back ((uint64_t) std::max<int64_t> (base, 0));
             nextSynth_ = (uint64_t) std::max<int64_t> (base, 0);
             haveSynth_ = true;
             haveEpoch_ = false;
@@ -502,6 +805,7 @@ private:
                 // tracking so the next voiced span re-seeds on a real pulse.
                 ++nextSynth_;
                 haveEpoch_ = false;
+                synthFrac_ = 0.0;
                 continue;
             }
 
@@ -512,8 +816,25 @@ private:
             {
                 uint64_t e;
                 if (! seedEpoch (nextSynth_, safeLimit, e)) break;
+                if (debugOn_) dbgReseed_.push_back (nextSynth_);
                 lastEpoch_ = e;
                 haveEpoch_ = true;
+
+                // PHASE-ALIGNED ENTRY (PITCH_P0_VALIDATION.md §16). Snap the
+                // synthesis grid onto the seeded pulse: the first grain's
+                // content offset is then ZERO, so the wet starts in phase
+                // with the dry it is about to crossfade from, instead of up
+                // to a full period out - which is what made every
+                // voiced/unvoiced seam a phase discontinuity, and the seams
+                // are exactly where the reference A/B measured the HNR loss
+                // concentrating. No hole opens: the grain's left half spans a
+                // full period, which reaches back past where the grid stood.
+                if (e > nextSynth_)
+                {
+                    nextSynth_ = e;
+                    synthFrac_ = 0.0;
+                    if (nextSynth_ >= upTo || nextSynth_ >= safeLimit) break;
+                }
             }
             while (lastEpoch_ < nextSynth_)
             {
@@ -528,8 +849,19 @@ private:
             ratio = std::clamp (ratio, 1.0f / kMaxRatio, kMaxRatio);
             const int Ts = std::max (4, (int) std::lround ((double) Ta / (double) ratio));
 
-            placeGrain (lastEpoch_, nextSynth_, Ta, Ts, base);
-            nextSynth_ += (uint64_t) Ts;
+            placeGrain (lastEpoch_, nextSynth_, Ta, Ts, base, synthFrac_);
+
+            // FRACTIONAL SPACING, error-diffused. Advancing by the rounded
+            // Ts biases every period by up to half a sample - a persistent
+            // few-cents offset that also drags the synthesis grid across the
+            // analysis epochs, forcing extra content swaps. Diffusing the
+            // rounding error keeps the average spacing exact; each grain
+            // still lands on an integer sample.
+            const double tsd = std::max (4.0, (double) Ta / (double) ratio);
+            synthFrac_ += tsd;
+            const int stepN = std::max (4, (int) synthFrac_);
+            synthFrac_ -= (double) stepN;
+            nextSynth_ += (uint64_t) stepN;
         }
     }
 
@@ -537,72 +869,44 @@ private:
     // epoch, added at the synthesis epoch. The window is accumulated
     // alongside so the overlap-add can be normalised.
     void placeGrain (uint64_t analysisEpoch, uint64_t synthEpoch, int Ta, int Ts,
-                     int64_t emitFloor) noexcept
+                     int64_t emitFloor, double posFrac) noexcept
     {
-        const bool preserve = formantMode_.load (std::memory_order_relaxed) != kFormantOff;
+        const int mode = formantMode_.load (std::memory_order_relaxed);
 
-        // PRESERVE: the grain is copied at 1:1, so the pulse keeps its own
-        // duration and therefore its own spectral envelope. Re-spacing changes
-        // only how OFTEN pulses arrive. Formants stay put - the whole point.
-        //
+        // PRESERVE and SHIFT share the LPC-PSOLA pipeline: the grain is
+        // flattened to its residual, the RESIDUAL is overlap-added, and the
+        // envelope is re-applied by one continuous synthesis filter at emit
+        // time (unwarped for preserve, warped for shift). See
+        // placeGrainResidual() for why raw-grain OLA was retired.
+        if (mode != kFormantOff)
+        {
+            placeGrainResidual (analysisEpoch, synthEpoch, Ta, Ts, emitFloor,
+                                mode == kFormantShift, posFrac);
+            return;
+        }
+
         // OFF: the grain is RESAMPLED by the pitch ratio as it is placed, so
         // the pulse is compressed or stretched along with the pitch and the
-        // envelope moves with it. This is the chipmunk/resampler behaviour,
-        // kept because it is occasionally exactly what someone wants - and
-        // because having both makes the formant work audible rather than a
-        // claim in a comment.
+        // envelope moves with it. The chipmunk/resampler behaviour, kept
+        // because it is occasionally exactly what someone wants.
         // OFF reads exactly ONE input period per grain (+/- Ta/2, which after
-        // resampling is +/- Ts/2 of output). Measured: any wider span pulls in
-        // a second pulse and the output lands 314 cents sharp - Ts, Ta/2 and Ta
-        // all read 359.7 Hz where 300 was asked for, while Ts/2 reads 300.02.
-        // PRESERVE reads +/-Ta at 1:1 - two periods, the standard TD-PSOLA
-        // grain. OFF reads +/-Ta/2, ONE period, resampled by the pitch ratio:
-        // measured in P1, a wider span pulls in a second pulse and the output
-        // lands 314 cents sharp.
-        const int half = preserve ? std::min (Ta, maxPeriod_)
-                                  : std::max (2, std::min (Ts / 2, maxPeriod_));
-        const double step = preserve ? 1.0 : (double) Ta / (double) std::max (1, Ts);
-
+        // resampling is +/- Ts/2 of output). Measured in P1: any wider span
+        // pulls in a second pulse and the output lands 314 cents sharp.
+        const int half = std::max (2, std::min (Ts / 2, maxPeriod_));
+        const double step = (double) Ta / (double) std::max (1, Ts);
         const int len = 2 * half + 1;
-
-        // Level is an ENERGY problem, not an amplitude one, and getting that
-        // wrong is worth 3 dB. The output is a pulse train: each grain carries
-        // gain^2 * E of energy and they arrive every Ts, so output power goes
-        // as gain^2 * E / Ts against the source's E / Ta. Unity therefore wants
-        //
-        //     gain = sqrt (Ts / Ta)
-        //
-        // not Ts/Ta. The amplitude-shaped correction measured -6 dB on a 2x
-        // upshift and -2.9 dB at 1.5x; this lands both inside 3 dB.
-        //
-        // It is deliberately an OPEN-LOOP average correction rather than a
-        // per-sample window-sum division. Dividing instantaneously AVERAGES
-        // overlapping copies of the same pulse instead of adding them, which
-        // smears the pulse train - and the pulse train is the signal.
-        // OFF's windows are Ts long and spaced Ts, so they ABUT rather than
-        // overlap and their sum dips to zero at each join. That is exactly the
-        // case instantaneous normalisation handles correctly, so OFF is
-        // normalised at emit and needs no open-loop gain here. PRESERVE is the
-        // opposite: variable overlap of DUPLICATED pulses, where instantaneous
-        // normalisation averages copies instead of adding them and smears the
-        // pulse train. Two different windowing regimes, two different rules.
-        const float gain = preserve
-            ? std::clamp (std::sqrt ((float) Ts / (float) Ta), 0.25f, 4.0f)
-            : 1.0f;
 
         for (int k = -half; k <= half; ++k)
         {
             const int64_t dst = (int64_t) synthEpoch + k;
             if (dst < emitFloor) continue;                 // already emitted
 
-            const double srcPos = (double) (int64_t) analysisEpoch + (double) k * step;
+            const double srcPos = (double) (int64_t) analysisEpoch
+                                + ((double) k - posFrac) * step;
             if (srcPos < 0.0) continue;
             const int64_t s0 = (int64_t) std::floor (srcPos);
             if ((uint64_t) s0 + 1 >= write_) continue;
 
-            // Linear interpolation: only ever used when OFF is resampling the
-            // grain (step == 1 lands exactly on s0), so it costs nothing in the
-            // mode that matters for quality.
             const float frac = (float) (srcPos - (double) s0);
             const float a0 = in_[(size_t) ((uint32_t) (uint64_t) s0 & mask_)];
             const float a1 = in_[(size_t) ((uint32_t) (uint64_t) (s0 + 1) & mask_)];
@@ -613,10 +917,425 @@ private:
             const float w  = 0.5f - 0.5f * std::cos (6.283185307179586f * ph);
 
             const uint32_t di = (uint32_t) (uint64_t) dst & mask_;
-            acc_[(size_t) di] += gain * w * x;
+            acc_[(size_t) di] += w * x;
             win_[(size_t) di] += w;
         }
+        if (debugOn_) dbgGrain_.push_back ({ synthEpoch, Ta, Ts, half, 1.0f });
         placedTo_ = std::max (placedTo_, synthEpoch + (uint64_t) half);
+    }
+
+    // ---- preserve & shift: LPC-PSOLA, residual OLA + emit-time envelope ----
+    //
+    // WHY RAW-GRAIN OLA WAS RETIRED for preserve (the A/B against Antares,
+    // PITCH_P0_VALIDATION.md §16): overlap-adding raw grains sums time-offset
+    // copies of the vocal-tract RING, and the copies never align exactly -
+    // epoch picking jitters a few samples on real glottal pulses, Ts rounds
+    // to integers, and every misalignment combs the spectrum differently
+    // from one grain to the next. Measured on the reference take, that cost
+    // -1.0 dB of HNR and +19% spectral flux WITH NO PITCH CHANGE AT ALL
+    // (unity resynthesis), where Antares loses -0.2 dB / +4%. The fix is the
+    // classic LPC-PSOLA architecture:
+    //
+    //   analyse   A(z)  = LPC of the Hann-windowed grain (autocorrelation
+    //                     method, Levinson-Durbin, order ~ 2 + fs/1000),
+    //   flatten   e[n]  = the residual, computed against the REAL ring
+    //                     history so it is exact,
+    //   move            = overlap-add the RESIDUAL grains at the target
+    //                     period - residual pulses are impulsive, so
+    //                     misaligned copies hurt far less than misaligned
+    //                     rings,
+    //   re-ring         = ONE continuous all-pole synthesis filter at emit
+    //                     time, coefficients switched per synthesis epoch
+    //                     (a coefficient ring travels with the grains),
+    //                     state carried sample to sample - the ring is
+    //                     generated once, never summed against itself.
+    //
+    // PRESERVE uses A(z) unwarped. SHIFT re-applies the envelope with its
+    // frequency axis scaled by beta = 2^(shift/12): P(w) = E/|A(w)|^2 on a
+    // dense grid, read back at w/beta, cosine-transformed to an
+    // autocorrelation (positive definite by construction) and Levinson'd.
+    // Warping the raw autocorrelation at scaled lags was tried first and
+    // measured broken - r(tau) of near-Nyquist content interpolates into an
+    // indefinite sequence and Levinson collapses (Ew 2.5e-16 against a
+    // healthy 1.9e-3).
+    //
+    // Level for shift: filtering the (variance-E) residual through 1/A'
+    // multiplies variance by rw[0]/E', so the residual is scaled by
+    // sqrt((E'/E) * (r[0]/rw[0])) and output energy lands at the grain's
+    // own regardless of how the warp reshaped the envelope. Preserve needs
+    // no scale: the residual of A filtered through 1/A reconstructs the
+    // grain's own level by definition.
+    //
+    // At shift = 0 the warp is skipped entirely, so shift-at-zero and
+    // preserve are the SAME code path, not merely similar sounds.
+    void placeGrainResidual (uint64_t analysisEpoch, uint64_t synthEpoch, int Ta, int Ts,
+                             int64_t emitFloor, bool warp, double posFrac) noexcept
+    {
+        const int half = std::min (Ta, maxPeriod_);
+        const int len  = 2 * half + 1;
+        const float shiftSt = warp ? formantShift_.load (std::memory_order_relaxed) : 0.0f;
+        const double beta = std::pow (2.0, (double) shiftSt / 12.0);
+        const bool doWarp = warp && std::fabs (shiftSt) > 1.0e-4f;
+
+        const int p = std::min (lpcOrder_, (len - 2) / 2);
+
+        const int64_t s0 = (int64_t) analysisEpoch - half;    // first grain sample
+        const int64_t h0 = s0 - p;                             // first history sample
+        const int64_t oldest = (int64_t) write_ - (int64_t) (mask_ + 1);
+
+        // Degenerate geometry, stream edges, or history outside the ring:
+        // the grain goes into the OLA raw, with an IDENTITY filter entry so
+        // the emit filter passes it through unchanged - the right sound for
+        // the edge of a voiced span anyway.
+        bool canModel = p >= 4 && h0 >= 0 && h0 > oldest
+                        && (uint64_t) (s0 + len) <= write_
+                        && (size_t) len <= lpcE_.size();
+        if (dbgRawGrains_) canModel = false;      // diagnostic A/B only
+
+        // PRESERVE'S GRAINS ARE ALWAYS RAW (identity filter entries). The
+        // LPC residual + emit-filter pipeline was measured against raw OLA
+        // with everything else equal and LOST on the reference take - unity
+        // HNR 5.70 vs 6.14, flux +21% vs +15%, and +5 st transpose HNR 6.47
+        // vs 7.30 - the per-epoch coefficient switching costs more than the
+        // ring-summing it was meant to cure. The model runs only for
+        // formant_mode = shift, where the envelope warp requires it.
+        if (! warp)
+            canModel = false;
+
+        double E = 0.0, Ew = 0.0;
+        double g = 1.0;
+        const double* coefs = lpcA_.data();
+        if (canModel)
+        {
+            // Contiguous copy: history then grain.
+            for (int i = 0; i < p + len; ++i)
+                lpcX_[(size_t) i] = in_[(size_t) ((uint32_t) (uint64_t) (h0 + i) & mask_)];
+
+            // Hann-windowed copy for the autocorrelation.
+            double r0 = 0.0;
+            for (int i = 0; i < len; ++i)
+            {
+                const float ph = (float) i / (float) (len - 1);
+                const float w  = 0.5f - 0.5f * std::cos (6.283185307179586f * ph);
+                lpcWin_[(size_t) i] = w * lpcX_[(size_t) (p + i)];
+                r0 += (double) lpcWin_[(size_t) i] * lpcWin_[(size_t) i];
+            }
+
+            if (r0 < 1.0e-12)
+                canModel = false;                     // silence: nothing to model
+            else
+            {
+                for (int k = 0; k <= p; ++k)
+                {
+                    double s = 0.0;
+                    for (int i = 0; i + k < len; ++i)
+                        s += (double) lpcWin_[(size_t) i] * (double) lpcWin_[(size_t) (i + k)];
+                    // Gaussian LAG WINDOW (the G.729/AMR conditioning trick):
+                    // a sum of near-pure harmonics is predictable to machine
+                    // precision, so the raw prediction error can collapse to
+                    // ~0 and the model degenerates into line spectra that
+                    // Levinson (and the warp's lag interpolation) cannot
+                    // handle. Convolving the envelope with a ~40 Hz Gaussian
+                    // gives every line a finite bandwidth: E stays bounded
+                    // away from zero, r(tau) decays smoothly enough to
+                    // interpolate, and 40 Hz is well under any formant
+                    // bandwidth this control claims to move.
+                    const double lw = 6.2831853 * 40.0 * (double) k / fs_;
+                    lpcR_[(size_t) k] = s * std::exp (-0.5 * lw * lw);
+                }
+                // A touch of ridge on top for the zero-lag term.
+                lpcR_[0] *= 1.0001;
+
+                E = levinson (lpcR_.data(), p, lpcA_.data());
+                if (E <= 1.0e-9 * lpcR_[0])
+                    canModel = false;
+
+                if (canModel && doWarp)
+                {
+                    // THE WARP HAPPENS IN THE ENVELOPE DOMAIN: evaluate
+                    // P(w) = E/|A(w)|^2 on a pi/512 grid (one complex
+                    // rotation per coefficient), read it back at w/beta
+                    // (hold the Nyquist value beyond the source band),
+                    // cosine-transform to an autocorrelation and Levinson.
+                    // Grid spacing ~47 Hz at 48 kHz matches the ~40 Hz
+                    // bandwidth floor the lag window guarantees, so no peak
+                    // can fall between grid points.
+                    const int M = kWarpGrid;
+                    for (int m = 0; m <= M; ++m)
+                    {
+                        const double wm = 3.141592653589793 * (double) m / (double) M;
+                        const double cw = std::cos (wm), sw = std::sin (wm);
+                        double cr = 1.0, ci = 0.0;          // e^{-j w k}, k = 0
+                        double re = 1.0, im = 0.0;
+                        for (int k = 1; k <= p; ++k)
+                        {
+                            const double nr = cr * cw + ci * sw;    // rotate by -w
+                            const double ni = ci * cw - cr * sw;
+                            cr = nr; ci = ni;
+                            re -= lpcA_[(size_t) k] * cr;
+                            im -= lpcA_[(size_t) k] * ci;
+                        }
+                        lpcP_[(size_t) m] = E / std::max (1.0e-12, re * re + im * im);
+                    }
+                    for (int m = 0; m <= M; ++m)
+                    {
+                        const double t = (double) m / beta;          // grid position of w/beta
+                        const int    m0 = (int) t;
+                        const double fr = t - (double) m0;
+                        lpcPw_[(size_t) m] = m0 >= M ? lpcP_[(size_t) M]
+                                           : (1.0 - fr) * lpcP_[(size_t) m0] + fr * lpcP_[(size_t) (m0 + 1)];
+                    }
+                    for (int k = 0; k <= p; ++k)
+                    {
+                        // Trapezoid cosine series over [0, pi]; rotation again.
+                        const double ck = std::cos (3.141592653589793 * (double) k / (double) M);
+                        const double sk = std::sin (3.141592653589793 * (double) k / (double) M);
+                        double cr = 1.0, ci = 0.0;
+                        double s = 0.5 * lpcPw_[0];
+                        for (int m = 1; m < M; ++m)
+                        {
+                            const double nr = cr * ck - ci * sk;
+                            const double ni = ci * ck + cr * sk;
+                            cr = nr; ci = ni;
+                            s += lpcPw_[(size_t) m] * cr;
+                        }
+                        s += 0.5 * lpcPw_[(size_t) M] * ((k & 1) != 0 ? -1.0 : 1.0);
+                        lpcRw_[(size_t) k] = s / (double) M;
+                    }
+                    Ew = levinson (lpcRw_.data(), p, lpcAw_.data());
+
+                    // RELATIVE degeneracy guard: only an actual collapse
+                    // falls back to the unwarped envelope.
+                    if (Ew > 1.0e-9 * lpcRw_[0] && lpcRw_[0] > 0.0)
+                    {
+                        coefs = lpcAw_.data();
+                        g = std::clamp (
+                            std::sqrt ((Ew / E) * (lpcR_[0] / std::max (1.0e-12, lpcRw_[0]))),
+                            0.0625, 16.0);
+                    }
+                }
+            }
+        }
+
+        // The upshift make-up (measured law, clamp(Ta/Ts, 1, 2) - see the
+        // level suite) now rides on the RESIDUAL: overlapping residual
+        // grains still average time-offset copies of the same excitation
+        // pulse, and the synthesis filter is linear, so the loss and its
+        // cure sit in the same place they always did.
+        const float makeup = std::clamp ((float) Ta / (float) Ts, 1.0f, 2.0f);
+        const float grainGain = makeup * (float) g;
+
+        if (canModel)
+        {
+            // Flatten: exact residual against the real history.
+            for (int n = 0; n < len; ++n)
+            {
+                double e = (double) lpcX_[(size_t) (p + n)];
+                for (int k = 1; k <= p; ++k)
+                    e -= lpcA_[(size_t) k] * (double) lpcX_[(size_t) (p + n - k)];
+                lpcE_[(size_t) n] = (float) e;
+            }
+        }
+        else
+        {
+            // Raw grain with an identity filter entry.
+            for (int n = 0; n < len; ++n)
+            {
+                const int64_t sp = s0 + n;
+                lpcE_[(size_t) n] = sp >= 0 && (uint64_t) sp < write_
+                    ? in_[(size_t) ((uint32_t) (uint64_t) sp & mask_)] : 0.0f;
+            }
+        }
+
+        for (int k = -half; k <= half; ++k)
+        {
+            const int64_t dst = (int64_t) synthEpoch + k;
+            if (dst < emitFloor) continue;
+
+            const float ph = (float) (k + half) / (float) (len - 1);
+            const float w  = 0.5f - 0.5f * std::cos (6.283185307179586f * ph);
+
+            // SUB-SAMPLE PLACEMENT: the error-diffused grid still lands on
+            // integer samples; reading the content at the grid's fractional
+            // error puts every grain at its EXACT ideal position, so grains
+            // stop jittering half a sample against each other.
+            const double mpos = (double) (k + half) - posFrac;
+            const int    m0   = (int) std::floor (mpos);
+            const double fr   = mpos - (double) m0;
+            const float  e0   = m0 >= 0 && m0 < len ? lpcE_[(size_t) m0] : 0.0f;
+            const float  e1   = m0 + 1 >= 0 && m0 + 1 < len ? lpcE_[(size_t) (m0 + 1)] : 0.0f;
+            const float  v    = (float) ((1.0 - fr) * (double) e0 + fr * (double) e1);
+
+            const uint32_t di = (uint32_t) (uint64_t) dst & mask_;
+            acc_[(size_t) di] += grainGain * w * v;
+            win_[(size_t) di] += w;
+        }
+
+        pushCoefEntry (synthEpoch, canModel ? p : 0, coefs);
+
+        if (debugOn_) dbgGrain_.push_back ({ synthEpoch, Ta, Ts, half, grainGain });
+        placedTo_ = std::max (placedTo_, synthEpoch + (uint64_t) half);
+    }
+
+    // ---- the coefficient ring and the emit-time synthesis filter -----------
+    // Entries travel with the grains: one per synthesis epoch, consumed in
+    // input-time order by the emit filter. Placement runs at least two
+    // periods ahead of emission at every block size (advanceSynthesis's
+    // margin), so an entry always exists before the samples it governs are
+    // emitted - which is what keeps fixed-block exactness intact.
+    static constexpr int kCoefRing = 256;
+
+    void pushCoefEntry (uint64_t pos, int ord, const double* a) noexcept
+    {
+        if (coefData_.empty()) return;
+        // Keep positions monotonic: a synthesis-cursor reset can re-place at
+        // or before the last epoch; overwrite the newest entry rather than
+        // breaking the reader's ordered walk.
+        size_t idx;
+        if (coefHead_ > coefTail_ && coefPos_[(size_t) ((coefHead_ - 1) & (kCoefRing - 1))] >= pos)
+            idx = (size_t) ((coefHead_ - 1) & (kCoefRing - 1));
+        else
+        {
+            idx = (size_t) (coefHead_ & (kCoefRing - 1));
+            ++coefHead_;
+            if (coefHead_ - coefTail_ > kCoefRing) coefTail_ = coefHead_ - kCoefRing;
+        }
+        coefPos_[idx] = pos;
+        coefOrd_[idx] = ord;
+        if (ord > 0)
+            std::copy (a + 1, a + 1 + ord,
+                       coefData_.begin() + (long) (idx * (size_t) (kMaxLpcOrder + 1)));
+    }
+
+    // One filter step at output position p, driven by the (normalised)
+    // residual. State is the filter's OWN recent output; the caller pushes
+    // dry samples through pushSynthState() on unvoiced/passthrough spans so
+    // a voiced re-entry rings from reality instead of from silence.
+    float synthStep (uint64_t p, float resid) noexcept
+    {
+        while (coefCur_ + 1 < coefHead_
+               && coefPos_[(size_t) ((coefCur_ + 1) & (kCoefRing - 1))] <= p)
+            ++coefCur_;
+        if (coefCur_ < coefTail_) coefCur_ = coefTail_ - 1;   // aged out: identity
+
+        double y = resid;
+        if (coefCur_ >= coefTail_)
+        {
+            const size_t idx = (size_t) (coefCur_ & (kCoefRing - 1));
+            const int ord = coefOrd_[idx];
+            const double* a = coefData_.data() + idx * (size_t) (kMaxLpcOrder + 1);
+            for (int k = 1; k <= ord; ++k)
+                y += a[(size_t) (k - 1)]
+                   * synState_[(size_t) ((synIdx_ - (uint32_t) (k - 1)) & (uint32_t) (kMaxLpcOrder - 1))];
+            // Degrade, never explode: coefficient switches on a razor frame
+            // can transient; the clamp bounds it at the same level the old
+            // per-grain path used.
+            y = std::clamp (y, -4.0, 4.0);
+        }
+        pushSynthState ((float) y);
+        return (float) y;
+    }
+
+    void pushSynthState (float y) noexcept
+    {
+        synIdx_ = (synIdx_ + 1) & (uint32_t) (kMaxLpcOrder - 1);
+        synState_[(size_t) synIdx_] = (double) y;
+    }
+
+    // ---- the splice-resampler (preserve, inside the band) ------------------
+    // Half-band each side of unity where preserve resamples instead of
+    // granulating. Correction at retune 0 lives within +/-50 cents of unity;
+    // 2.5 st covers every note-sized transient the retune envelope passes
+    // through, while the formant error the resample introduces stays bounded
+    // at a level the ear does not attribute to character change.
+    static constexpr float kSpliceBandSt = 2.5f;
+
+    // Catmull-Rom, not linear. The §16.10 burr hunt ended here: with every
+    // control-path suspect measured and cleared (no decision change, no
+    // splice, no method flip, no seam, healthy window, no drift-displaced
+    // source transient - dry sharpness at the clicks 10.9x against a 9.4x
+    // baseline), the remaining mechanism was the read itself. Linear
+    // interpolation's error is O(h^2 * x''), which is negligible on smooth
+    // waveform and explodes exactly at sharp glottal closure edges, fading
+    // in and out as the fractional phase drifts - a once-per-period sizzle
+    // on hard-glottal material, at a rate that matches the measured 1.85
+    // clicks/s and their clustering. Four taps instead of two.
+    float readInterp (double pos) const noexcept
+    {
+        if (pos < 1.0) return 0.0f;
+        const int64_t i0 = (int64_t) pos;
+        if ((uint64_t) (i0 + 2) >= write_)
+            return in_[(size_t) ((uint32_t) (uint64_t) std::min<int64_t> (i0, (int64_t) write_ - 1) & mask_)];
+        const float fr = (float) (pos - (double) i0);
+        const float xm = in_[(size_t) ((uint32_t) (uint64_t) (i0 - 1) & mask_)];
+        const float x0 = in_[(size_t) ((uint32_t) (uint64_t) i0 & mask_)];
+        const float x1 = in_[(size_t) ((uint32_t) (uint64_t) (i0 + 1) & mask_)];
+        const float x2 = in_[(size_t) ((uint32_t) (uint64_t) (i0 + 2) & mask_)];
+        return x0 + 0.5f * fr * (x1 - xm
+                   + fr * (2.0f * xm - 5.0f * x0 + 4.0f * x1 - x2
+                   + fr * (3.0f * (x0 - x1) + x2 - xm)));
+    }
+
+    float spliceSample (uint64_t p, int T, double Tf, double r) noexcept
+    {
+        spliceDrift_ += r - 1.0;
+
+        // Trigger a period-aligned splice before the drift can outrun the
+        // lookahead: jump one FRACTIONAL period (fs / f0, not the rounded T
+        // - the integer round misaligned the two copies by up to half a
+        // sample, which the crossfade turned into HF phase ripple), so the
+        // waveform phase is unchanged, and crossfade over ~4 ms.
+        if (spliceFadeLen_ == 0 && std::fabs (spliceDrift_) > 0.75 * (double) T)
+        {
+            spliceOldDrift_ = spliceDrift_;
+            spliceDrift_   += spliceDrift_ > 0.0 ? -Tf : Tf;
+            spliceFadeLen_  = std::max (16, std::min (T / 2, (int) (0.004 * fs_)));
+            spliceFadePos_  = 0;
+            if (debugOn_) dbgSplice_.push_back (p);
+        }
+
+        float y = readInterp ((double) p + spliceDrift_);
+        if (spliceFadeLen_ > 0)
+        {
+            spliceOldDrift_ += r - 1.0;
+            // Raised-cosine, not linear: continuous slope at both ends of
+            // the fade, so the join neither starts nor stops with a corner.
+            const float lin = (float) spliceFadePos_ / (float) spliceFadeLen_;
+            const float a   = 0.5f - 0.5f * std::cos (3.14159265f * lin);
+            const float yOld = readInterp ((double) p + spliceOldDrift_);
+            y = yOld + a * (y - yOld);
+            if (++spliceFadePos_ >= spliceFadeLen_) spliceFadeLen_ = 0;
+        }
+        return y;
+    }
+
+    // Levinson-Durbin on autocorrelation r[0..p]; writes predictor
+    // coefficients into a[1..p] (x[n] ~ sum a_k x[n-k]) and returns the
+    // prediction-error energy. Reflection coefficients are clamped just
+    // inside the unit circle so a razor-sharp resonance stays a filter
+    // rather than an oscillator.
+    static double levinson (const double* r, int p, double* a) noexcept
+    {
+        double E = r[0];
+        for (int k = 0; k <= p; ++k) a[k] = 0.0;
+        if (E <= 0.0) return 0.0;
+
+        double tmp[kMaxLpcOrder + 1];
+        for (int i = 1; i <= p; ++i)
+        {
+            double acc = r[i];
+            for (int j = 1; j < i; ++j) acc -= a[j] * r[i - j];
+            double kref = acc / E;
+            kref = std::clamp (kref, -0.9995, 0.9995);
+
+            for (int j = 1; j < i; ++j) tmp[j] = a[j] - kref * a[i - j];
+            for (int j = 1; j < i; ++j) a[j] = tmp[j];
+            a[i] = kref;
+
+            E *= (1.0 - kref * kref);
+            if (E <= 1.0e-15) break;
+        }
+        return E;
     }
 
     void recomputeLatency() noexcept
@@ -630,6 +1349,16 @@ private:
     double fs_ = 48000.0;
     float  lookahead_ = kLookaheadDefault;
     int    pitchLag_  = 0;
+    bool   debugOn_   = false;
+    bool   dbgRawGrains_ = false;
+    bool   dbgNoSplice_  = false;
+    bool   dbgMethodState_ = false;
+    std::vector<uint64_t> dbgSplice_, dbgMethodFlip_;
+    std::vector<uint64_t> dbgReseed_, dbgReset_;
+    std::vector<DebugGrain> dbgGrain_;
+    std::vector<DebugEmit>  dbgEmit_;
+    std::vector<uint32_t>   dbgWinHist_;
+    float dbgWinMin_ = 1.0e9f;
     int    maxPeriod_  = 2048;
     int    curPeriod_  = 600;
     int    latency_    = 1800;
@@ -639,6 +1368,31 @@ private:
     std::vector<float> in_, f0_, acc_, win_;
     uint32_t mask_ = 0;
 
+    // kFormantShift scratch - allocated in prepare(), never on the audio
+    // thread. kMaxLpcOrder bounds the spec's 2 + fs/1000 at any sample rate
+    // this plugin can be prepared at.
+    static constexpr int kMaxLpcOrder = 128;
+    static constexpr int kWarpGrid    = 512;
+    int lpcOrder_ = 50;
+    std::vector<float>  lpcX_, lpcY_, lpcE_, lpcWin_;
+    std::vector<double> lpcR_, lpcRw_, lpcA_, lpcAw_, lpcP_, lpcPw_;
+
+    // Coefficient ring (one entry per synthesis epoch) and the continuous
+    // synthesis filter's state - the emit-time half of LPC-PSOLA.
+    std::vector<uint64_t> coefPos_;
+    std::vector<int>      coefOrd_;
+    std::vector<double>   coefData_;
+    int64_t coefHead_ = 0, coefTail_ = 0, coefCur_ = -1;
+    std::vector<double>   synState_;
+    uint32_t synIdx_ = 0;
+
+    // Splice-resampler state.
+    float  curTarget_ = 0.0f;
+    double spliceDrift_ = 0.0, spliceOldDrift_ = 0.0, spliceR_ = 0.0, spliceTf_ = 0.0;
+    int    spliceFadeLen_ = 0, spliceFadePos_ = 0, spliceT_ = 0;
+    float  methodMix_ = 0.0f;      // 0 = splice, 1 = grains
+
+
     uint64_t write_   = 0;    // absolute input samples written
     int64_t  emitted_ = 0;    // input position just past the last sample emitted
     uint64_t placedTo_ = 0;
@@ -647,9 +1401,11 @@ private:
     bool     haveEpoch_ = false;
     uint64_t nextSynth_ = 0;
     bool     haveSynth_ = false;
+    double   synthFrac_ = 0.0;
 
     std::atomic<float> targetHz_ { 0.0f };
     std::atomic<int>   formantMode_ { kFormantPreserve };
+    std::atomic<float> formantShift_ { 0.0f };
     std::atomic<float> mix_     { 1.0f };
     std::atomic<float> outGain_ { 1.0f };
     std::atomic<float> outDb_   { 0.0f };

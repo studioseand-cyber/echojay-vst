@@ -49,7 +49,12 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           (double) PitchCorrect::kDefRetuneMs,
           "how fast pitch is pulled to the target; 0 is the hard tuned effect "
           "where every note snaps instantly, 100+ is transparent and keeps the "
-          "singer's own movement between notes",
+          "singer's own movement between notes. NOTE: retune 0 alone is NOT "
+          "the full hard-tune - natural_vibrato re-adds the singer's own "
+          "wobble on top of the snapped note and defaults to 100. For the "
+          "complete snap set correction_mode hard, which also writes "
+          "natural_vibrato 0; measured, retune 0 with natural_vibrato left at "
+          "100 sits 22 cents from the nearest note where hard mode sits 9",
           false },
 
         { EedPitchProcessor::kFlex, "%", 0.0, 100.0, 55.0,
@@ -130,7 +135,10 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "it exactly as sung, 0 flattens it out for a dead-still note, above "
           "100 exaggerates what is already there. This is not a generator - it "
           "only scales movement the singer actually made, so it does nothing "
-          "on a note held straight",
+          "on a note held straight. It applies at EVERY retune speed: at "
+          "retune 0 the note snaps but the wobble still rides on top, so a "
+          "brief of 'hard tuned' or 'match Auto-Tune retune 0' needs this at "
+          "0 (correction_mode hard writes exactly that)",
           false },
 
         { EedPitchProcessor::kVibDepth, "c", 0.0, 100.0, 0.0,
@@ -176,14 +184,35 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
         { EedPitchProcessor::kFormantMode, "",
           0.0, (double) (PsolaEngine::kNumFormantModes - 1),
           (double) PsolaEngine::kFormantPreserve,
-          "what happens to the vocal character when pitch moves: preserve "
-          "keeps the formants where they are so a shifted voice still sounds "
-          "like the same singer, off lets them move with the pitch for the "
-          "chipmunk/resampler effect",
+          "what happens to the vocal character when pitch moves. preserve is "
+          "the default and the right answer for correction. off is a "
+          "TRANSPOSE-TIME control, not a correction mode: at tuning-sized "
+          "corrections it is measured IDENTICAL to preserve (and the build "
+          "asserts that equivalence), and it only matters when transpose "
+          "moves pitch by semitones - preserved formants keep the same "
+          "singer, moving formants make a smaller or larger one. Setting off "
+          "with transpose at 0 changes nothing. shift keeps formants "
+          "independent of pitch AND moves them by formant_shift, on a "
+          "heavier synthesis path with a MEASURED quality cost even at "
+          "formant_shift 0 - about 1.6 dB of harmonicity and several times "
+          "the roughness of preserve - so reach for it only when the "
+          "character change IS the point",
           false,
-          // Mirrors PsolaEngine::FormantMode, and APPEND-ONLY: `shift` (LPC
-          // envelope warping) is a later phase and becomes index 2.
-          { "off", "preserve" } },
+          // Mirrors PsolaEngine::FormantMode, APPEND-ONLY.
+          { "off", "preserve", "shift" } },
+
+        { EedPitchProcessor::kFormantShift, "st",
+          (double) -PsolaEngine::kMaxFormantShiftSt,
+          (double) PsolaEngine::kMaxFormantShiftSt, 0.0,
+          "moves the vocal character independently of pitch - the throat-"
+          "length control. Negative reads bigger and deeper, positive smaller "
+          "and brighter; a couple of semitones is a subtle character change, "
+          "the extremes are an effect. ONLY ACTIVE when formant_mode is "
+          "shift, which carries a measured fidelity cost regardless of this "
+          "value (see formant_mode) - the moved character rides on a rougher "
+          "voice. An EFFECT control: never part of making correction sound "
+          "transparent or natural",
+          false },
 
         { EedPitchProcessor::kLowLatency, "", 0.0, 1.0, 0.0,
           "turn ON when the singer is TRACKING through this plugin and needs "
@@ -242,6 +271,11 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
     if (id == kFormantMode)
     {
         forEachShifter ([&] (auto& e) { e.setFormantMode ((int) std::lround (value)); });
+        return true;
+    }
+    if (id == kFormantShift)
+    {
+        forEachShifter ([&] (auto& e) { e.setFormantShift ((float) value); });
         return true;
     }
     if (id == kLowLatency)
@@ -305,6 +339,7 @@ double EedPitchProcessor::getParamValue (const juce::String& id) const
     if (id == kTracking)   return (double) engine_.getTracking();
     if (id == kTargetHz)   return (double) shifter().getTargetHz();
     if (id == kFormantMode) return (double) shifter().getFormantMode();
+    if (id == kFormantShift) return (double) shifter().getFormantShift();
     if (id == kLowLatency)  return shifter().getLookaheadPeriods() <= kLookaheadTracking + 0.01f
                                  ? 1.0 : 0.0;
     if (id == kKeySource)   return keyAuto_.load() ? 0.0 : 1.0;
@@ -351,11 +386,18 @@ juce::String EedPitchProcessor::applyMode (int mode)
     // missing: hard tune came out at 15.7 cents mean deviation against 13.0 for
     // the untouched signal - i.e. WORSE than not correcting.
     struct Preset { float retune, flex, humanize, naturalVib; bool ignoreVib; };
+    // targeting_ignores_vibrato is ON in ALL FOUR modes. The spec's first §4
+    // table set it off for tuned/hard, and that was a spec error (its author's
+    // words), corrected in both places 2026-08-14: target selection without
+    // vibrato smoothing flips between adjacent scale degrees whenever a wide
+    // vibrato sits on a semitone boundary, and that is true no matter how
+    // hard the retune - Antares keeps its equivalent independent of retune
+    // speed, and with it on the device matches Auto-Tune audibly.
     static const Preset kPresets[4] = {
-        { 120.0f, 55.0f, 60.0f, 100.0f, true  },   // natural
-        {  40.0f, 25.0f, 30.0f, 100.0f, true  },   // balanced
-        {   8.0f,  0.0f,  0.0f,  40.0f, false },   // tuned
-        {   0.0f,  0.0f,  0.0f,   0.0f, false },   // hard
+        { 120.0f, 55.0f, 60.0f, 100.0f, true },    // natural
+        {  40.0f, 25.0f, 30.0f, 100.0f, true },    // balanced
+        {   8.0f,  0.0f,  0.0f,  40.0f, true },    // tuned
+        {   0.0f,  0.0f,  0.0f,   0.0f, true },    // hard
     };
     const Preset& p = kPresets[m];
 
@@ -473,7 +515,7 @@ juce::String EedPitchProcessor::applyStructured (const juce::var& structured,
 // the key auto-map (spec §6) — why this device belongs in EchoJay
 // ---------------------------------------------------------------------------
 // The precedence walk that decides WHICH source wins lives once, in
-// PluginEditor::collectKeySources(), and is shared with the [DETECTED KEY] feed
+// EchoJayProcessor::collectKeySources(), and is shared with the [DETECTED KEY] feed
 // block and the Meters panel. This reads its published result. Re-implementing
 // the walk here would give the suite two rankings that can disagree, which is
 // the exact bug the shared collector exists to prevent.
@@ -626,6 +668,8 @@ void EedPitchProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     forEachShifter ([&] (auto& e) { e.prepare (sampleRate, samplesPerBlock,
                     PitchEngine::voiceRange (engine_.getVoiceType()).fMinHz, worst); });
 
+    f0Gate_.reset();
+
     // The corrector runs once per DETECTOR HOP, so it needs that cadence to
     // convert its millisecond time constants.
     correct_.prepare (sampleRate, engine_.inputHopLength (engine_.getVoiceType()));
@@ -670,8 +714,6 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
                      numCh > 1 ? buffer.getReadPointer (1) : nullptr,
                      n);
 
-    const echojay::PitchReading r = engine_.getReading();
-
     // THE BLOCK IS SLICED AT HOP BOUNDARIES.
     //
     // The musical layer has millisecond time constants and produces the target
@@ -715,17 +757,64 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         // At the hop itself, the musical layer decides the next target.
         if (h < numHops)
         {
+            // OCTAVE-SCALE EXCURSION REJECTION, before the corrector and the
+            // shifter's f0 track see the hop (see F0JumpGate). A brief wrong-
+            // octave estimate corrected smoothly is a momentary wrong NOTE -
+            // clean in the waveform, invisible to every discontinuity gate,
+            // caught only by the pitch ribbon and the excursion metric. On an
+            // octave-scale jump the AUDIO is asked which story is true - the
+            // input ring is right there in the shifter, and two
+            // autocorrelations on a rare event are free.
+            float rOldT = -1.0f, rNewT = -1.0f;
+            const bool seeding = hops[h].voiced && hops[h].f0Hz > 0.0f
+                              && f0Gate_.lastGood() <= 0.0f;
+            if (f0Gate_.isBigJump (hops[h].f0Hz, hops[h].voiced) || seeding)
+            {
+                // On a jump, "old" is the last accepted period; at a SEED it
+                // is HALF the candidate's (the sub-octave vetting lag).
+                const double refHz = seeding ? 2.0 * (double) hops[h].f0Hz
+                                             : (double) f0Gate_.lastGood();
+                const int tOld = (int) std::lround (sampleRate_ / refHz);
+                const int tNew = (int) std::lround (sampleRate_ / (double) hops[h].f0Hz);
+                rOldT = shifter().inputPeriodicity (hops[h].inputPos, tOld);
+                rNewT = shifter().inputPeriodicity (hops[h].inputPos, tNew);
+            }
+            const float gatedF0 = f0Gate_.filter (hops[h].f0Hz, hops[h].voiced, hopMs,
+                                                  rOldT, rNewT);
+
             // The f0 the SHIFTER uses is the hop's own, not the block's last
             // reading - otherwise every slice in a block shares one value and
             // the result depends on where the block boundaries fell.
-            sliceF0     = hops[h].f0Hz;
+            sliceF0     = gatedF0;
             sliceVoiced = hops[h].voiced;
 
             if (correctOn_.load())
             {
                 correcting = true;
-                target = correct_.process (hops[h].f0Hz, hops[h].voiced, hopMs);
-                if (target <= 0.0f) correcting = false;
+                const float t = correct_.process (gatedF0, hops[h].voiced, hopMs);
+
+                // THE CLICKING LIVED HERE. The corrector returns 0 on every
+                // untracked hop ("hold everything"), and passing that 0 to
+                // the shifter as its target flips PsolaEngine::process into
+                // the emitDry PASSTHROUGH branch - an instantaneous, fadeless
+                // switch from grain-summed wet to raw delayed dry. At normal
+                // tracking ~13% of voiced frames are gated, so the output
+                // flipped wet->dry->wet several times a second, a hard step
+                // each way. Measured (tools/pitch_click_test): clicks were
+                // 13x enriched at emit-state flips, the top clicks were all
+                // vertical steps AT the flip, and holding the target dropped
+                // the flip coincidence to exactly the base rate and killed
+                // the fixed-offset-after-hop signature outright, 3.47/s ->
+                // 2.43/s overall (the residual is wet-path roughness on
+                // sharp-glottal passages, bounded by the permanent density
+                // gate). HOLD the last target instead: the f0
+                // ring already marks the gap unvoiced, and emitMixed then
+                // emits those samples as bit-exact dry THROUGH the seam fade,
+                // which exists for exactly this join. Same audible content,
+                // faded instead of stepped - and unvoiced stays sacred.
+                if (t > 0.0f)           target = t;
+                else if (target <= 0.0f) correcting = false;   // nothing to hold yet
+                // else: hold the last target through the gap.
             }
             else
             {
@@ -749,11 +838,36 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     // Feed the ribbon here rather than from the editor's timer, so the trace
     // is the audio thread's ACTUAL decisions rather than a resampled guess at
     // them - and so it keeps its shape whether or not an editor is open.
-    ribbon_.push (r.voiced,
-                  r.voiced && r.f0Hz > 0.0f ? echojay::PitchEngine::hzToMidi (r.f0Hz) : 0.0f,
-                  target > 0.0f ? echojay::PitchEngine::hzToMidi (target) : 0.0f,
-                  correcting && r.voiced);
-
+    //
+    // TWO FEED BUGS LIVED HERE, found by validating the ribbon against the
+    // audio (PITCH_P0_VALIDATION.md §16.9) after a user report of tall
+    // spikes sent two rounds of debugging at a defect the audio never had:
+    //
+    // 1. The dim trace carried the RAW engine reading - pre-F0JumpGate - so
+    //    after the excursion-rejection work it displayed precisely the
+    //    estimates the audio rejects. Measured: 33 of 34 full-height ribbon
+    //    verticals on the acapella moved the corrected trace by under 2 st;
+    //    the picture spiked, the audio did not. The feed now carries the
+    //    GATED value (lastHopF0_ - the same number the shifter and the
+    //    corrector obey). Rejected estimates stay visible NUMERICALLY in the
+    //    octave-guard counter; a fainter raw spiking line would still read
+    //    as an artefact to anyone looking at it.
+    //
+    // 2. Pushed once per processBlock (~93 Hz at 512), against a view
+    //    designed for ~30 Hz columns - the ribbon spanned ~1.3 s where spec
+    //    §7 says about 4. Pushes are now decimated to the column cadence,
+    //    independent of host block size.
+    ribbonAccum_ += n;
+    const int colSamples = juce::jmax (1, (int) (sampleRate_ / 30.0));
+    while (ribbonAccum_ >= colSamples)
+    {
+        ribbonAccum_ -= colSamples;
+        ribbon_.push (lastHopVoiced_,
+                      lastHopVoiced_ && lastHopF0_ > 0.0f
+                          ? echojay::PitchEngine::hzToMidi (lastHopF0_) : 0.0f,
+                      target > 0.0f ? echojay::PitchEngine::hzToMidi (target) : 0.0f,
+                      correcting && lastHopVoiced_);
+    }
 }
 
 juce::AudioProcessorEditor* EedPitchProcessor::createEditor()

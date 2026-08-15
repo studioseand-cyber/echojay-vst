@@ -173,9 +173,16 @@ user (and the model) can see what it did:
 | `retune_speed_ms` | 120 | 40 | 8 | 0 |
 | `flex` | 55 | 25 | 0 | 0 |
 | `humanize` | 60 | 30 | 0 | 0 |
-| `targeting_ignores_vibrato` | on | on | off | off |
+| `targeting_ignores_vibrato` | on | on | on | on |
 | `natural_vibrato` | 100 (kept) | 100 | 40 | 0 |
 | `formant_mode` | preserve | preserve | preserve | preserve |
+
+*(Corrected 2026-08-14: this table originally set `targeting_ignores_vibrato`
+off for `tuned` and `hard`, and that was a spec error. Target selection
+without vibrato smoothing flips between adjacent scale degrees whenever a
+wide vibrato sits on a semitone boundary — true at every retune speed, which
+is why Antares keeps its equivalent independent of retune. It is on in all
+four modes.)*
 
 **Selecting a mode writes those values into the visible params.** It does not hide them. The
 user turns any knob afterwards and the mode display goes to `custom`. This matters for

@@ -204,6 +204,67 @@ public:
     juce::String getKeySourcePinLabel() const { return keySourcePinLabel_; }
     void setKeySourcePin(const juce::String& pinId, const juce::String& label);
 
+    // ---- key source collection (KEY_DETECTOR_SPEC §9, PITCH spec §6) -----
+    // THE ONE precedence walk that ranks every key source — capture, bus
+    // Link, self-on-music-bus, channel Link, local chain — lives HERE, on
+    // the processor, and the editor delegates to it. It lived on the editor
+    // first, and that placement was itself a bug: the KeyFeed that EchoJay
+    // Pitch follows was only published from the editor's timer, so closing
+    // the plugin window froze the key at its last value — the stale-key
+    // failure the chromatic fallback exists to prevent, arriving by a
+    // different route. Collection now runs (and publishes) on the
+    // processor's own 1 Hz timer for the life of the instance; the editor
+    // merely reads the same walk for its UI.
+    struct KeySourceReading
+    {
+        enum class Kind { Capture, BusLink, SelfBus, ChannelLink, LocalChain };
+        Kind  kind = Kind::LocalChain;
+        juce::String name, uid;        // uid: Link instance uid (Links only)
+        juce::String detail;           // capture: which channel the offline
+                                       // pass read ("Music Bus (bus Link)")
+        int   placement = 0;           // registry value (Links only)
+        int   root = 0; bool minor = false;
+        float conf = 0.0f, tuningHz = 440.0f, tuningCents = 0.0f, rootHz = 0.0f;
+        juce::uint32 ageMs = 0;
+        bool  committed = false;
+        float analysedSeconds = 0.0f;
+        bool  hasChroma = false;
+        std::array<float, 12> chroma {};
+        int   altRoot = -1; bool altMinor = false; float altScore = 0.0f;
+        bool  poisoned = false;        // vocal-channel local reading: never use
+        // §7 source selector: sources that EXIST but have no reading yet
+        // still appear in the menu (hasReading=false, skipped by precedence);
+        // unusableReason non-empty = greyed in the menu WITH the why, still
+        // pinnable. pinId is the stable identity the pin persists.
+        bool  hasReading = true;
+        juce::String pinId;            // "self" | "chain" | "capture" | "link:<uid>"
+        juce::String unusableReason;
+    };
+    struct KeySources
+    {
+        std::vector<KeySourceReading> all;   // precedence order (menu order)
+        int  primaryIdx = -1;                // -1 = nothing usable
+        bool disagree   = false;             // usable sources name different keys
+        // §7: autoIdx is what precedence picks IGNORING the pin (so the menu
+        // can always show what Auto resolves to); primaryIdx is after the
+        // pin is applied. A pin that resolves to a source with a reading
+        // sets userSelected; a pin whose source is gone sets pinMissing —
+        // stated, never silently replaced.
+        int  autoIdx      = -1;
+        int  pinnedIdx    = -1;
+        bool userSelected = false;
+        bool pinMissing   = false;
+        juce::String pinMissingLabel;
+        const KeySourceReading* primary() const
+        { return primaryIdx >= 0 ? &all[(size_t) primaryIdx] : nullptr; }
+    };
+    static constexpr juce::uint32 kCaptureKeyFreshMs = 15 * 60 * 1000;
+    KeySources collectKeySources();
+    // Build the resolved-primary fact and publish it to echojay::KeyFeed.
+    // Message thread only (the 1 Hz timer, and the editor's 2 Hz refresh —
+    // publishing from both is harmless: same walk, same fact).
+    void publishKeyFeed(const KeySources& sources);
+
     MeterEngine& getMeterEngine()   { return meterEngine; }
     MeterEngine& getABMeterEngine() { return abMeterEngine; }
     MeterEngine& getCompareMeter(int slot) { return (slot == 0) ? cmpMeter[0] : cmpMeter[1]; }

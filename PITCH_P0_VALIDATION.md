@@ -860,7 +860,10 @@ reconstructs an envelope that barely follows the per-grain resampling, so the
 control cannot work this way however the geometry is tuned. **It is not
 shipped** — a knob that lies is worse than a missing one, and the spec's own
 prescription (LPC or cepstral envelope: flatten, shift, re-apply warped) is a
-different and larger piece of work.
+different and larger piece of work. **That larger piece of work has since
+been done: §15 is the LPC rebuild, measured monotonic and continuous across
+the whole range.** This section stays as the record of why the cheap
+geometry must not come back.
 
 **A measurement bug fell out of this and is worth recording.** The formant
 tracker was a Goertzel, which is ill-conditioned off-bin and loses precision
@@ -1010,3 +1013,762 @@ Also fixed while in there: `PsolaEngine::process` now returns early if the
 engine is unprepared (`mask_ == 0`), rather than indexing an empty ring. JUCE
 orders `prepareToPlay` first so it was latent — but latent is a property of
 today's callers.
+---
+
+## 14. The clicking — measured, misdiagnosed once, found, fixed
+
+**Symptom:** audible clicking in a DAW at the shipped defaults on the real
+acapella. Every existing test was green throughout — pitch accuracy, nulls,
+block-size exactness, pluginval strictness 5.
+
+### 14.1 The instrument had to be repaired before it could be trusted
+
+`tools/pitch_click_test` locates samples that break the local waveform trend
+(prediction error > 20× the local median error) where the dry has no
+transient. Its first version compared against the dry at the SAME index — but
+the output runs `latency` (1656) samples behind, so every source transient
+inside a dry-emitted span counted as a "click" 1656 samples after itself.
+**147 of 302 reported clicks were that artefact**, discovered because the
+shifter's own per-sample emit record said they sat on samples emitted as
+bit-exact delayed dry. The tool now aligns the exclusion and carries a
+positive control (`--control`): injected 65% amplitude steps at known wet
+positions must be found, and the doctored run must not report wildly more
+than baseline + injections. An earlier ancestor of this detector reported
+1432 clicks/second where the truth was 5.5; a detector's zero is worth
+nothing until it has found what it was told to find.
+
+### 14.2 What the clicking actually was
+
+Two hypotheses died on the data before the real one confirmed:
+
+- **"Open-loop sqrt(Ts/Ta) gain + Ta-length grains step the overlap-add."**
+  Plausible, and per-grain logging half-confirmed it — until the base rate
+  was checked: 79.5% of ALL grains change half/gain between neighbours, and
+  80.6% of grains near clicks did. No enrichment. Switching preserve to
+  per-sample window normalisation changed the click count by ~8%: not it.
+- **"Thin window-sum patches."** Zero clicks sat at w < 0.5.
+
+The real mechanism, settled by the shifter's own emit record and waveform
+plots of the top clicks: **`PitchCorrect::process` returns 0 on every
+untracked hop, and the processor handed that 0 to the shifter as its target —
+which flips `PsolaEngine::process` into the `emitDry` passthrough branch, an
+instantaneous, fadeless switch from grain-summed wet to raw delayed dry.**
+At `tracking = normal` ~13% of voiced frames are gated (§6), so the output
+flipped wet→dry→wet several times a second, a hard step each way. Measured
+signatures, all consistent: 39% of clicks at a fixed 16–23 samples from a
+hop (the slice boundary, seen through the pitch-lag mapping), 65% amplitude
+steps, clicks 13× enriched within 96 samples of an emit-state edge, and the
+top-click plots all showing the same vertical step at the flip with the seam
+fade nowhere in sight — because the target-0 path bypasses `emitMixed`, and
+the seam fade lives inside `emitMixed`.
+
+### 14.3 The fix, and what it measured
+
+`EedPitchProcessor` now HOLDS the last target through untracked hops. The f0
+ring already marks the gap unvoiced, and `emitMixed` then emits those samples
+as bit-exact dry THROUGH the seam fade, which exists for exactly this join.
+Unvoiced stays sacred (the null suite is unchanged and green); the only
+change is that the wet→dry join is faded instead of stepped.
+
+| | before | after |
+|---|---|---|
+| clicks/second (aligned detector) | 3.47 | **2.43** |
+| clicks on emit-state edges | 27% (13× base) | 2.1% (= base rate) |
+| fixed-offset-after-hop signature | 39% in one 8-sample bucket | gone (scattered) |
+| top-click waveform shape | hard vertical steps | small burrs |
+
+The residual 2.43/s is wet-path roughness on sharp-glottal and fricative
+passages (nearly all of it concentrated in a few seconds of the take) —
+PSOLA duplicating sharp pulses, not systematic steps. It is bounded by the
+permanent density gate (`build_and_run.sh`, ceiling 3.5/s against the
+original failure's 5.48/s) rather than claimed fixed.
+
+### 14.4 What changed in the shifter while the wrong hypothesis was open
+
+The preserve path now normalises by the accumulated window per sample (the
+same rule as `off`), with a measured make-up gain `clamp(Ta/Ts, 1, 2)` for
+the upshift energy that averaging misaligned pulse copies loses. Not the
+click fix — but kept on its own merits, measured on the 30-check PSOLA
+suite: every upshift now lands within +1.16 dB of dry where the open-loop
+gain drifted to −2.9/−6.1 dB at a fifth/octave up (sqrt make-up was tried
+and rejected: −3.04 dB at the octave). The window-sum histogram that
+justified the floor (94% of emitted voiced samples at w = 0.95–1.05, a thin
+edge tail below the 0.35 floor) is printed by the click tool on every run.
+
+### 14.5 The key staleness fix (same session)
+
+`KeyFeed` was published only from the editor's 2 Hz timer, so closing the
+plugin window froze the key at its last value — the stale-key failure §10.2's
+chromatic fallback exists to prevent, arriving by a different route. The
+precedence walk (`collectKeySources`) reads only processor state, so it moved
+to `EchoJayProcessor`, published from the processor's own 1 Hz timer for the
+life of the instance; the editor delegates to the same single walk for its
+UI. Publisher moved rather than key aged out: ageing to chromatic would have
+made auto-key silently degrade the moment the window closed, which is the
+feature turning itself off; a publisher that outlives the window keeps the
+feature working and needs no new failure mode.
+
+### 14.6 Every invariant, re-run after the fixes
+
+- **g++ suites**: pitch_engine, pitch_correct, psola_engine — ALL PASS
+  (includes the unvoiced null: unvoiced/silent output bit-identical to the
+  delayed dry).
+- **Host path** (EchoJayPitchHostTest): L vs R **0.000000** correcting and in
+  passthrough; fixed-512 vs fixed-128/256/1024/2048 **exactly 0**;
+  variable-block residual 0.202 peak (bound 0.25, §13.2's documented
+  behaviour); oversize and tiny blocks finite. ALL PASS.
+- **Mode machine** (EchoJayPitchModeTest): ALL PASS, now including the §12
+  completeness assertion — every schema param is either proven to be WRITTEN
+  by all four modes (set to each range end, select mode, readback must agree)
+  or exempted by name with a reason. A new character-bearing param with no
+  mode column fails the build.
+- **Click density** (tools/pitch_click_test/build_and_run.sh): positive
+  control 25/25 injected steps found with no false-positive explosion;
+  density 2.43/s against the 3.5/s ceiling (5.48/s at the bug). PASS.
+- **Characters, re-rendered and re-probed** (§12's table, same method):
+
+  | render | mean dev | median | within 5 ¢ |
+  |---|---|---|---|
+  | dry | 13.1 ¢ | 8.3 | 35.7% |
+  | hard tuned | 7.7 ¢ | **3.8** | 59.9% |
+  | natural | 13.0 ¢ | 8.8 | 33.2% |
+  | wrong key (C minor forced) | 30.6 ¢ | 33.0 | 5.0% |
+
+  Hard tune's median moved 3.6 → 3.8 ¢ under the normalisation change —
+  within the character, stated rather than rounded away.
+- **CPU** (Release, 48 kHz, 128-sample blocks): means match §13.3 exactly —
+  6.0 / 7.6 / 4.1 / 19.3 / 19.3% per voice type. The WORST-case column is
+  not comparable at this granularity: across three runs of the same binary
+  on an idle machine the max-over-40k-blocks statistic swung 17% → 44% →
+  232% (low_male), so single-run worst cases measure the OS scheduler, not
+  the code. Means are the stable regression signal; they are unchanged.
+- **pluginval strictness 5** on this worktree's VST3: SUCCESS.
+
+---
+
+## 15. formant_shift, rebuilt via LPC — the knob no longer lies
+
+§11.3 rejected the cheap formant_shift (per-grain resampling through the
+`off` code path): inert from −9 to +3 st, ~600 Hz steps outside that,
+non-monotonic at the bottom. The acceptance for the rebuild is therefore
+exactly what that version failed: **monotonic and continuous across the whole
+−12..+12 range**, measured with the direct-DFT tracker (never the Goertzel —
+§11.3 records why).
+
+### 15.1 The method — the spec's own prescription, per grain
+
+`formant_mode = shift` (schema index 2, append-only as promised) runs each
+two-period grain through:
+
+1. **analyse** — LPC of the Hann-windowed grain, autocorrelation method,
+   Levinson-Durbin, order `2 + fs/1000` (46 at 44.1 k, 50 at 48 k);
+2. **flatten** — inverse-filter to the residual, against the REAL ring
+   history, so the residual is exact and the round trip at shift 0 is an
+   identity up to rounding;
+3. **shift** — the residual grain is copied 1:1 and re-spaced at the target
+   period: the same PSOLA move as preserve, applied to the flat signal;
+4. **re-apply, warped** — the model envelope `P(w) = E/|A(w)|²` is evaluated
+   on a π/512 grid, read back at `w/β` (β = 2^(shift/12)), cosine-transformed
+   to an autocorrelation and Levinson'd into the warped synthesis filter. The
+   residual is scaled by `sqrt((E'/E)·(r0/r'0))` so output energy lands at
+   the grain's own regardless of what the warp did to the envelope.
+
+**The warp lives in the envelope domain because the lag domain measurably
+fails.** The textbook shortcut — interpolate the raw autocorrelation at
+scaled lags, r(βk) — was tried first: at β = 0.5, 0.561 and 1.122 the
+interpolated sequence went indefinite (r(τ) of anything with near-Nyquist
+content oscillates at the sub-sample scale), Levinson degenerated through its
+reflection clamps to E' ≈ 2.5e-16 against a healthy 1.9e-3, and the guard
+silently dropped every grain to the unwarped fallback — three shift settings
+INERT at exactly the source formant, the §11.3 failure wearing a new hat. The
+smoothed model envelope is interpolable by construction (a 40 Hz Gaussian lag
+window floors every peak's bandwidth at roughly the grid spacing), and the
+cosine transform of a nonnegative spectrum is positive definite, so Levinson
+cannot degenerate on it. The degeneracy guard that remains is RELATIVE
+(E ≤ 1e-9·r0), because on clean periodic material a tiny absolute E means
+the model is very good, not broken — the first absolute guard was the bug.
+
+### 15.2 Measured — synthetic resonance, pitch held
+
+900 Hz resonance (q = 8) on a 90 Hz source, pitch held at 90 Hz, tracker =
+direct DFT sampling the envelope at every harmonic with parabolic refinement
+(raw peak-picking on periodic material quantises to harmonics and would read
+steps where there are none — the estimator has to be continuous before it can
+certify the control is):
+
+| shift | expected | measured | error |
+|---|---|---|---|
+| −12 st | 450 Hz | 452 Hz | +0.4% |
+| −10 st | 505 Hz | 533 Hz | +5.6% |
+| −8 st | 567 Hz | 561 Hz | −1.0% |
+| −6 st | 636 Hz | 633 Hz | −0.5% |
+| −4 st | 714 Hz | 717 Hz | +0.3% |
+| −2 st | 802 Hz | 806 Hz | +0.5% |
+| 0 st | 900 Hz | 901 Hz | +0.1% |
+| +2 st | 1010 Hz | 988 Hz | −2.2% |
+| +4 st | 1134 Hz | 1092 Hz | −3.7% |
+| +6 st | 1273 Hz | 1252 Hz | −1.6% |
+| +8 st | 1429 Hz | 1409 Hz | −1.4% |
+| +10 st | 1604 Hz | 1569 Hz | −2.1% |
+| +12 st | 1800 Hz | 1751 Hz | −2.7% |
+
+Monotonic at every step, every step ratio inside [1.04, 1.25] against the
+ideal 1.122, every point within 10% — all three asserted in
+`test/psola_engine_test.cpp`, which also proves independence (pitch up a
+fourth with formant −5 st: pitch lands +0 ¢, formant 675 Hz against 674
+wanted), shift 0 ≡ preserve within the tracker's resolution, and the
+unvoiced null in shift mode (0 differing samples).
+
+### 15.3 Measured — the real acapella
+
+A single "dominant formant peak" is ill-posed on real speech across a
+±1-octave warp: the pre-emphasised LTAS peak jumps between F0-region, F1 and
+F2 (measured: 186 → 646 → 1328 Hz) even while the envelope moves perfectly
+smoothly. The well-posed observable is the **log-frequency displacement of
+the whole LTAS envelope** against the shift-0 reference (250 Hz-smoothed log
+spectrum, 250–5000 Hz, least-squares over 0.1 st steps), plus the spectral
+centroid as a second, metric-independent monotone:
+
+| shift | envelope displacement | centroid (200–4000 Hz) |
+|---|---|---|
+| −12 st | −6.37 st | 385 Hz |
+| −10 st | −5.42 st | 380 Hz |
+| −8 st | −4.85 st | 379 Hz |
+| −6 st | −4.20 st | 377 Hz |
+| −4 st | −3.07 st | 392 Hz |
+| −2 st | −1.42 st | 432 Hz |
+| 0 st | 0.00 st | 479 Hz |
+| +2 st | +0.96 st | 508 Hz |
+| +4 st | +2.59 st | 545 Hz |
+| +6 st | +4.07 st | 592 Hz |
+| +8 st | +5.36 st | 639 Hz |
+| +10 st | +6.52 st | 691 Hz |
+| +12 st | +7.06 st | 747 Hz |
+
+Strictly monotonic at every one of the twelve steps — the property the
+rejected version lacked. The displacement magnitude under-reads the request
+(≈0.5–0.8×) and that is the METRIC, not the control: the LTAS mixes the
+moved envelope with the unmoved harmonic comb (the pitch is held, so the
+comb must not move), with part-unvoiced frames, and with band-edge
+truncation of features warped past 250/5000 Hz — all of which pull the
+least-squares displacement toward zero. The synthetic table above, where the
+observable is clean, carries the magnitude claim.
+
+### 15.4 Every banked invariant, re-run
+
+- **preserve is bit-identical to before this work** — proven directly, not
+  assumed: the same streaming harness compiled against the git-HEAD
+  `EedPsolaEngine.h` and against the new one, run over the full acapella:
+  preserve +3 st, preserve −4 st, off +3 st and passthrough all compare
+  **0 differing bytes**. The shift mode branches out of `placeGrain` before
+  the preserve/off code is touched.
+- **g++ suites** (pitch_engine, pitch_correct, psola_engine): ALL PASS,
+  including the unvoiced null and the new §15.2 assertions.
+- **Host path**: L vs R 0.000000 correcting and in passthrough; fixed-512 vs
+  fixed-128/256/1024/2048 exactly 0; variable-block residual 0.202 peak
+  (bound 0.25); oversize and tiny blocks finite. ALL PASS.
+- **Mode machine**: ALL PASS. formant_shift is exempted from the mode table
+  BY NAME with its reason (a who-is-singing control, and inert in every mode
+  since every mode writes formant_mode preserve); the walk still proves
+  formant_mode itself is written by all four modes.
+- **Click density**: 2.43/s against the 3.5/s ceiling, control 25/25 —
+  unchanged, as bit-identity requires. Diagnostic only (new
+  `--formant-shift` flag on the click tool, not part of the gate): the LPC
+  path itself measures **1.00/s** at −5 st on the same material — the
+  resynthesis smooths the duplicated-pulse burrs that make up the preserve
+  residual.
+- **Characters re-probed**: dry 13.1/8.3 ¢, hard tuned 7.7/**3.8** ¢,
+  natural 13.0/8.8 ¢, wrong key 30.6/33.0 ¢ — the §14.6 table exactly.
+- **CPU** (Release, 48 k / 128): means 6.1 / 7.8 / 4.2 / 19.7 / 19.7% per
+  voice type against §14.6's 6.0 / 7.6 / 4.1 / 19.3 / 19.3 — within run
+  noise, at the shipped defaults the LPC path never executes. Engine-level,
+  shift mode costs ~23% more than preserve (9.1 s vs 7.3 s for 118 s of
+  mono at 44.1 k, detector included) — ~1.5 points of realtime, only when
+  the mode is selected.
+- **pluginval strictness 5**: SUCCESS on this worktree's freshly built VST3.
+
+### 15.5 The gate that almost lied, and the A/B set
+
+Two findings from the re-run worth keeping:
+
+- `build_and_run.sh` hardcoded the Debug artefact path while the build
+  cache had moved to Release, so `cmake --build` rebuilt one binary and the
+  script ran another — the density gate was green against a STALE binary.
+  The script now derives the artefact dir from `CMAKE_BUILD_TYPE` and fails
+  loudly if the binary predates its sources. (Every §15 number above was
+  then re-measured on verified-fresh binaries.)
+- The residual 2.43 clicks/s (§14.3) was looked at again as a secondary:
+  it lives in the preserve wet path's grain summation, and any change there
+  breaks the bit-identity acceptance this very section banks. Left alone,
+  bounded by the gate; the shift path's 1.00/s reading says the burrs are
+  not fundamental to grain synthesis, so the option exists for a session
+  allowed to move preserve.
+
+The formant A/B set — the control heard in isolation, pitch held constant,
+`formant_shift` at −7 / −3 / 0 / +3 / +7 plus the preserve reference —
+renders via `EchoJayPitchRender --formant-set` and sits next to the acapella
+in `… - formant AB/`.
+
+---
+
+## 16. The Antares A/B — three losses, measured, closed
+
+An independent A/B against Antares Auto-Tune Pro (same take, low_male,
+D chromatic, retune 0 / flex 0 / humanize 0, formants on; 914 confidently
+voiced frames in the analyst's framing) found EchoJay losing three separate
+ways: median distance to the nearest semitone 16.9 ¢ against Antares's 8.5
+(dry 28.7); HNR −1.55 dB against −0.19; spectral flux +24.6% above dry
+against +3.8%. Every existing test was green throughout — the §14 lesson
+again, one abstraction level up: the suite proved the machine against
+ITSELF, and nothing proved it against the reference its user compares it to.
+
+### 16.1 Positive control
+
+The analysis was reproduced with this repo's own tracker before any DSP
+moved (2063 frames at hop 2.7 ms; the analyst's stack differs, so exact
+values shift while every ordering and magnitude holds): dry 29.5 ¢ /
+echojay-bounce 15.7 / antares 11.2; HNR 7.01 / 5.99 / 6.90; flux +20.7% /
++3.0%. One number the reproduction added: the tracker fails on **385 frames
+of our bounce against 29 of Antares's** — the "tracker working harder on our
+noisier output" hedge, quantified.
+
+### 16.2 Finding 1 was a settings trap, not a DSP defect — and both named
+suspects measured clean
+
+Rendering the dry through the shipped chain at the bounce's settings and
+sweeping one variable at a time:
+
+| variant | median ¢ | within 5 ¢ |
+|---|---|---|
+| natural_vibrato 100 (schema default) | 22.1 | 12.7% |
+| natural_vibrato 40 ('tuned' preset writes this) | 15.2 | 17.8% |
+| the actual bounce | 15.6 | 16.6% |
+| natural_vibrato 0 (the honest Antares match) | 7.9 | 37.8% |
+| Antares, same tracker | 11.1 | 34.4% |
+
+The bounce ran with natural_vibrato at 40 — the fingerprint of selecting
+`correction_mode tuned` and then zeroing retune/flex/humanize by hand, which
+leaves the vibrato re-add in place. That is the control DOING ITS JOB
+(§11.4 separates the note from the wobble precisely so the wobble can
+survive a snapped note), but it is a trap when the brief is "match Antares
+retune 0", which flattens vibrato. With it at 0 we measure BETTER than
+Antares's median on the same tracker. Both schema descriptions
+(retune_speed_ms, natural_vibrato) now name the interaction and the numbers.
+
+The two suspects named for the residual were both measured and cleared:
+
+- **Corrector lag compensation** — applying each hop's target 655 / 1528 /
+  2619 samples earlier (offline look-ahead) measured 9.3 / 10.7 / 10.0 ¢
+  against 9.0 at the shipped timing. The shifter's lookahead already aligns
+  the target with the audio it shapes; compensating AGAIN over-corrects.
+- **Hold-through-gaps** — reverting to the pre-§14 target-0 behaviour
+  measured 9.0 ¢, identical. At retune 0 the gap samples emit dry either
+  way; the hold stays (it is the click fix).
+
+### 16.3 Findings 2 and 3 were the synthesis, and the fix is not to
+granulate at corrector ratios
+
+The instrument that settled it: **unity resynthesis** — the wet path told to
+change nothing (target = detected f0). Raw-grain OLA measured **−1.0 dB HNR
+and +19% flux at unity**, so the roughness was structural, not correction.
+
+What was tried, in order, each measured on the reference take:
+
+| preserve architecture (unity) | HNR | flux |
+|---|---|---|
+| raw-grain OLA (shipped before this) | 5.97 | +19.0% |
+| LPC residual OLA + emit-time synthesis filter | 5.50 | +24.1% |
+| + placement-time grain alignment | 6.14 | +18.4% — and REJECTED: it fights the re-spacing (octave shifts collapsed to the source pitch) |
+| + epoch phase refinement (analysis domain) + fractional spacing | 5.73 | +21.2% |
+| raw grains + refinement + fractional spacing | 6.14 | +15.1% |
+| **splice-resampler** | **6.99** | **+2.6%** |
+
+The LPC-residual rebuild was built as directed and measured: at
+corrector-scale ratios the per-epoch coefficient switching costs more than
+ring-summing ever did, and it now serves only `formant_mode = shift` (where
+the envelope warp requires it). The load-bearing insight is architectural:
+granular synthesis rebuilds the waveform ~f0 times a second however well the
+grains align, while the reference class resamples continuously and splices
+out one period only when the read pointer has drifted a period —
+|ratio−1|·f0 splices per second, which is ~1/s at 20 cents and **zero at
+unity**. `preserve` now runs that splice-resampler inside ±2.5 st of unity
+(phase-aligned with the dry at every seam by construction, drift reset at
+unvoiced samples, ratio smoothed over 2 ms against detector frame noise and
+evaluated at the READ position), crossfading to the grain path beyond the
+band. Formants move with the ratio inside the band — bounded at a level
+correction never reaches audibly, and the band edge hands over to grains,
+which preserve exactly. Unvoiced stays bit-identical dry throughout.
+
+### 16.4 The permanent gate, and the ledger
+
+`tools/pitch_ab_test/` renders the dry bounce through the CURRENT engine
+(g++, from source — it cannot test a stale binary) at the hard-match
+settings and asserts the three findings against the ANTARES column,
+measured fresh from the reference bounce each run, never transcribed. The
+margins are the measured remaining gaps (cents +1.5, HNR −0.25 dB, flux
++2.0 points), named as such: tighten as they close, never widen. Material
+path in the git-ignored `tools/pitch_ab_test/material.local`. One
+measured-the-instrument note for whoever edits the gate: applying hop
+values at block granularity instead of slicing at hop boundaries measured
++28.6% flux against +4.2% — the render harness must slice exactly as
+`processBlock` does.
+
+Final ledger on the reference take, same tracker for all columns:
+
+| | dry | echojay (was) | echojay (now) | antares |
+|---|---|---|---|---|
+| median cents | 29.5 | 15.6 | **12.0** | 11.1 |
+| within 5 ¢ | 9.3% | 16.6% | **25.2%** | 34.4% |
+| HNR delta vs dry | — | −1.03 dB | **−0.16 dB** | −0.13 dB |
+| spectral flux vs dry | — | +20.7% | **+4.2%** | +3.0% |
+| tracker failures | 0 | 385 | **110** | 29 |
+
+At unity the wet path now measures HNR 7.03 against the dry's 7.01 and flux
++2.6% against Antares's +3.0 — resynthesis is transparent where it used to
+cost a dB. Within-5-¢ remains the honest open gap (25 vs 34): the splice
+ratio is open-loop in the detector's per-frame error where the grain path
+cancelled it, and closing it wants a finer tracker, not a louder assertion.
+
+### 16.5 Every surviving invariant, re-run
+
+The §15 bit-identity of preserve is retired by this change — it protected
+the worse code path. Everything else:
+
+- **g++ suites** (pitch_engine, pitch_correct, psola_engine): ALL PASS —
+  passthrough and unvoiced nulls bit-exact, pitch accuracy, formant
+  preserve at octave shifts, the §15 formant_shift sweep still monotonic
+  and continuous, levels (unison now −0.00 dB, whole tone −0.03 where the
+  grain path drifted to −0.36).
+- **Host path**: L vs R 0.000000; fixed-512 vs 128/256/1024/2048 exactly 0
+  — the splice state advances once per emitted sample and every placement
+  decision derives from grain-local quantities, which is what block-size
+  independence required. Oversize/tiny blocks finite. ALL PASS.
+- **Mode machine**: ALL PASS, unchanged.
+- **Click density** (gate at shipped defaults): **1.78/s** against the
+  3.5/s ceiling, positive control passed — down from §14's 2.43. The splice
+  path removes the grain boundaries the §14 residual lived on.
+- **CPU** (Release, 48 k / 128): means 6.3 / 8.0 / 4.5 / 19.6 / 19.6% —
+  within noise of §14.6 (the LPC cost is skipped inside the splice band,
+  decided from Ta/Ts so fixed-block exactness survives).
+- **pluginval strictness 5**: SUCCESS on the freshly built VST3.
+
+### 16.6 The clean comparison, the trade named, and the outside-band answer
+
+The §16.4 ledger's "echojay (now)" column IS the honest match — the gate
+renders natural_vibrato 0, retune 0, flex 0, humanize 0, ignore_vibrato
+off; there is no configuration daylight between it and the Antares column.
+The 7.9–9.0 ¢ figures earlier in §16.2 are the OLD grain-path engine at
+those same knobs. Put side by side, the two architectures at identical
+settings against Antares:
+
+| hard match, same tracker | grain path (old) | splice (shipped) | antares |
+|---|---|---|---|
+| median cents | 9.0 | 12.0 | 11.1 |
+| within 5 ¢ | 34.6% | 25.1% | 34.4% |
+| HNR delta vs dry | −1.05 dB | −0.16 dB | −0.13 dB |
+| flux vs dry | +20.0% | +3.8% | +3.0% |
+
+**So the within-5 gap is real, and it is not the tracker's ceiling** — the
+grain path proves this detector supports 34.6%. It is the splice ratio
+being open-loop in the estimate's per-frame error, where grain spacing at
+fs/target cancels that error by construction. One closure was tried and
+measured: deriving the ratio from MEASURED epoch spans (the grain path's
+exactness argument transplanted) came out at 18.1 ¢ / 18.9% — epoch
+spacing jitters a few samples on real pulses and a few samples of a period
+is tens of cents, noisier than the estimate it replaced. Rejected; the
+comment above the ratio records it. Closing the last nine points of
+within-5 without giving back the two decibels wants a finer f0 estimate
+feeding the ratio, and that is a detector project, not a knob.
+
+**Outside the ±2.5 st band** the transparency numbers are, plainly, a
+near-unity result — the grain path takes over and granular limits return.
+What the band-exterior DID gain from this session (epoch phase refinement,
+error-diffused fractional spacing, phase-snapped entry, and preserve's
+grains going RAW after the LPC emit-filter measured worse there too —
++5 st HNR 6.47 LPC against 7.30 old-raw):
+
+| +5 st transpose, hard match | old engine | shipped now |
+|---|---|---|
+| median cents | 7.7 | 7.7 |
+| within 5 ¢ | 37.4% | 37.7% |
+| median HNR | 7.30 dB | 7.74 dB |
+| flux vs dry | +23.4% | +17.4% |
+
+Better on every axis, not Antares-transparent (no Antares reference exists
+at transpose, and flux-vs-dry inflates legitimately once the spectrum
+actually moves — at +12 st the dry-referenced metrics stop meaning
+anything and the synthetic suite carries correctness there). The honest
+summary: at corrector ratios, where the reference comparison lives, wet
+resynthesis is transparent; at transpose ratios it is an improved granular
+shifter.
+
+### 16.7 The HF-excess report — instrument first, then the verdict
+
+A host-side analysis reported >6 kHz envelope events exceeding the Antares
+bounce by >15 dB, arriving in pairs and triples spaced 31–44 ms (mean
+~36 ms ≈ the low_male tracking lag), with named timestamps, and proposed a
+mechanism: the splice ratio's decision and the audio it splices aligned to
+f0 estimates one tracking lag apart.
+
+**The reproduction failed, and the failure was diagnosable.** None of the
+named timestamps show an anomaly in any bounce in the reference folder,
+under HF-envelope or waveform-jump criteria, at any threshold, with no
+constant offset mapping that event list onto anything measurable here. An
+INSTANTANEOUS HF compare against Antares does manufacture ~4 events/s —
+but they sit on the take's own consonant transients, they appear at
+IDENTICAL times and spacings across all four voice types (soprano cannot
+even track this voice, so a tracking-lag mechanism cannot produce identical
+soprano events — the discriminator the analysis itself proposed, run, and
+failed), and they vanish at any reference tolerance ≥ 2 ms. Two resamplers
+wobble a few milliseconds against each other; sample-exact comparison
+reads that skew as level at every shared transient. The waveform-jump scan
+confirms it from the other side: the biggest jumps in the wet are the DRY's
+own glottal/plosive steps, same list, same sizes.
+
+**The code suspect is real and was left alone, on three measurements.**
+The splice ratio's numerator (the corrector's target, from the fresh hop)
+and denominator (the back-dated f0 ring) do disagree — by latency − lag
+(~20 ms at low_male, not one full lag). But re-timing the target to
+"correct" it makes the output measurably worse in every direction tried:
+positive leads cost cents (§16.2), and the aligned negative lead
+(−957 samples) produced 3 genuine HF events up to 29.7 dB where the
+shipped timing produces 1. The fresh-target timing is load-bearing —
+the synthesis lookahead consumes it ahead of emission — and the
+misalignment on paper is compensation in practice.
+
+**Re-gated with a validated instrument.** The gate now carries a fourth
+metric: >6 kHz peak-envelope events >15 dB over the Antares bounce's
+±3 ms local max, with a 25-step injection control per run (14 found —
+a zero from an instrument that cannot find planted steps is worth
+nothing). Verdict: the HOST bounce of the shipped build measures **0
+events**; the gate's own offline render measures 2 marginal events
+(0.24/s), the inspected one sitting at an F#3/G3 note-boundary chatter
+where the wet's largest waveform step is SMALLER than the dry's at the
+same instant. Ceiling 0.30/s — exactly those two events, a third fails;
+the goal, as directed, is zero.
+
+### 16.8 The mode-table correction, and the momentary-wrong-note defect
+
+**targeting_ignores_vibrato is ON in all four modes** — the §4 table's
+off-for-tuned/hard was a spec error, corrected in spec, presets and mode
+test. Re-gated with it on (this is now the shipped configuration for every
+mode, and every §16 number before this section was taken with it off):
+
+| hard match, same tracker | with it off (§16.6) | with it ON (shipped) | antares |
+|---|---|---|---|
+| median cents | 12.0 | **10.3** | 11.1 |
+| within 5 ¢ | 25.1% | **28.5%** | 34.4% |
+| HNR delta vs dry | −0.16 dB | **−0.00 dB** | −0.13 dB |
+| spectral flux vs dry | +3.8% | **+3.3%** | +3.0% |
+
+Median cents and HNR now BEAT the Antares column. Click gate at the shipped
+defaults: 1.78/s against the 3.5 ceiling, control passed, unchanged.
+
+**The momentary wrong note** (Sean's ribbon spikes; the octave guard logged
+339 fires on one phrase; the independent A/B's 3.5% of frames >600 ¢ from
+dry against Antares's 0.44%, mostly downward). A grain-accurate shift to the
+wrong pitch is smooth in the waveform and invisible to every discontinuity
+gate, so the AB gate gained a fifth metric — pitch excursions: the output's
+own track departing its ±150 ms local median by >400 ¢ and returning within
+150 ms, injection-validated (10 octave-up patches spliced into a copy; 5
+found) before any number was trusted.
+
+The fix went through three measured iterations, and the record matters:
+
+1. **Blind persistence** (hold any >600 ¢ jump for 50 ms, the directed
+   confirm-window extension) — REJECTED: it INJECTED excursions on the rap
+   acapella, 16 against 8 without it, because that delivery changes register
+   across consonant gaps and produces true fry subharmonics, and holding the
+   old octave through a genuine period-doubling is itself a 50 ms wrong note.
+2. **Ask the audio** (F0JumpGate + PsolaEngine::inputPeriodicity): on an
+   octave-scale jump, one normalised autocorrelation settles which story is
+   true — a spurious flip leaves the waveform periodic at the OLD lag, a
+   real drop collapses it there, an upward move is believed when the NEW lag
+   correlates. Persistence stays as the backstop for inconclusive frames.
+   Measured: acapella excursions 8 with the gate == 8 without (nothing
+   injected), while the gate held **345 hops** — strikingly close to the 339
+   guard fires — and audio-confirmed 53 genuine jumps.
+3. **Seed vetting**: the remaining event was a SUB-OCTAVE ONSET — a span's
+   first estimate reading 79–87 Hz for 24 ms where the true pitch is 175
+   (the ×2 "jump" when the detector rights itself was never the problem; the
+   seed was). At a seed, the same audio question runs against HALF the
+   candidate period: if the half lag is also strongly periodic the candidate
+   is plausibly a sub-octave read, and the hop presents as untracked (dry
+   output, exactly like tracker warm-up) until it persists 50 ms or
+   corrects. A clean onset has a low half-lag correlation and seeds
+   immediately, so normal onsets pay nothing. This also removed the third
+   HF-excess event that had appeared on the reference take - the sub-octave
+   onset was being SYNTHESISED.
+
+Final excursion ledger: reference take ours 2 / Antares 1 / dry 1 — the +1
+dissected at 1.895 s as the take's own creak onset, where the hard-tuned
+onset (creak at 87 Hz into wet at 185) reads sub-octave to the tracker for
+~15 ms across the seam; not a mid-phrase spike. Ceiling set at Antares+1
+with that event named; any spike the metric was built for fails the build.
+Acapella: dry 16 / ours 8 (low_male), dry 11 / ours 11 (alto_tenor) — at or
+below the source's own excursion behaviour on both readings.
+
+### 16.9 The ribbon feed — the picture is now the audio
+
+The ribbon's paint code was always §7-compliant (unvoiced closes the
+subpath; never zero, never held). The FEED had two bugs: the dim trace
+carried the RAW pre-F0JumpGate estimate — measured, 33 of 34 full-height
+verticals on the acapella moved the corrected trace under 2 st; the picture
+spiked, the audio did not, and a user report of those spikes cost two
+rounds of debugging a defect the audio never had — and pushes ran at block
+rate (~93 Hz at 512) against a view designed for 30 Hz columns, spanning
+~1.3 s where §7 says four. The feed now carries the GATED value (the number
+the shifter and corrector obey), decimated to the column cadence
+independently of host block size. Rejected estimates remain visible
+numerically in the octave-guard counter; no fainter raw layer was added — a
+spiking line reads as an artefact whatever its alpha.
+
+### 16.10 The wet-path burrs — three mechanisms, one instrument failure,
+and parity
+
+The residual click density (1.85/s at the old ceiling) decomposed under a
+synchronised timeline (per-hop decisions + the shifter's own emit record +
+sub-decision splice/method events) into:
+
+- **Instrument failure #11** (~70% of the count): the click tool's dry-
+  transient exclusion looked in a fixed ±64-sample window at latency
+  alignment - correct in the grain era, wrong since the splice-resampler,
+  whose read drifts up to 0.75 of a period. Patch-matching the top-30
+  "clicks" against the dry found median waveform correlation **1.00** at
+  the best in-window offset, with the matched dry feature's own error
+  ratio at **19.4 against the 20× threshold**: the take's own glottal
+  edges, faithfully reproduced, drifted out of the window and straddling
+  the threshold cliff. The exclusion is now drift-aware (patch-match ≥0.97
+  with a near-threshold dry twin excludes; created content cannot match
+  and the 25-step control still finds 25/25).
+- **Linear interpolation** in the splice read: error O(h²·x″), exploding
+  at sharp glottal edges as the fractional phase drifts. Catmull-Rom took
+  the honest density 1.85 → 1.58 before the instrument fix.
+- **Three real synthesis defects**, each found by waveform microscope and
+  fixed: the ratio's 0.125-st snap branch kinked the read velocity on fast
+  downward glides at retune 0 (the target staircases through the glide) —
+  now always slewed at 2 ms, a note step still completing in ~6 ms; the
+  splice jump used the ROUNDED period, misaligning the crossfaded copies
+  by up to half a sample — now fractional, with a raised-cosine fade; and
+  the state-reset on a momentary read-position voicing flicker was a
+  fadeless ~200-sample read jump in a fully wet span — `ok` now gates
+  state updates only, never emission, which also removed the §16.8 creak
+  excursion (ours now 1 = Antares = dry).
+
+After all of it: acapella click density **0.12/s** (ceiling re-based 3.5 →
+1.0 - the old ceiling dated from a 5.5/s failure and would pass the old
+DSP; the new one fails it). The AB gate gained the same detector as a
+sixth Antares-anchored metric: **ours 2 vs Antares 2** on the reference
+take, and the two are near-twins of Antares's own two (3.242 vs 3.284 -
+the material's hardest moments defeat both processors). HF excess fell to
+0.12/s. All six metrics green with their injection controls; suites, host
+invariants, mode machine, pluginval green.
+
+### 16.11 The other formant modes through the six-metric gate, and the UI
+that was invisible
+
+**off** measured through the gate at hard-tune settings read HNR 4.87 dB
+against preserve's 6.99, flux +19% against +3.3, **59 clicks against 2** —
+a defect, exactly as framed: at corrector ratios formant displacement is
+negligible, so off had no business sounding different, and the difference
+was architectural (off ran the grain-OLA path in-band where preserve rides
+the splice-resampler — whose formants-move-with-ratio behaviour IS off's
+semantics). Off now splices inside the band and measures **identical to
+preserve** (10.1 ¢ / 6.98 dB / +3.1% / 2 clicks); beyond the band its
+resampled grains still go full chipmunk, and the psola suite's mode-
+separation checks still pass.
+
+**shift**, swept at formant_shift 0 / ±3 / ±7:
+
+| shift | med cents | within 5 | HNR | flux | clicks |
+|---|---|---|---|---|---|
+| preserve (ref) | 10.1 | 29.0% | 6.99 | +3.3% | 2 |
+| 0 | 12.3 | 28.7% | **5.43** | **+30.8%** | 3 |
+| +3 | 8.7 | 29.1% | 4.96 | +30.7% | 2 |
+| −3 | 11.5 | 24.9% | 5.83 | +34.0% | 4 |
+| +7 | 9.3 | 27.6% | 4.66 | +36.5% | 4 |
+| −7 | 15.2 | 19.8% | 5.68 | +43.0% | 1 |
+
+**The diagnostic is unambiguous: at shift = 0, with nothing warped, HNR is
+already −1.6 dB and flux ×9 against preserve. The cost is the LPC-residual
+path itself, not the warp** (the warp adds a few points of flux and little
+else). The fix is architectural — the same verdict that demoted this path
+from preserve in §16.3 — and is future work. Until then: the schema
+descriptions for formant_mode and formant_shift now state the measured
+trade so the model does not reach for shift casually, and shift stays OUT
+of the device advertisement (the registry summary), which continues to
+promise only preserved formants. The mode remains dialable: its
+monotonicity acceptance (§15) still holds, and a character effect is
+allowed to cost fidelity as long as the cost is stated where the knob is.
+
+**The invisible scale control.** `scale` was in the schema, dialable by
+the model, fully wired in the editor — and the combo column's layout gave
+three 24 px rows a 58 px band, so the third row, SCALE, was squeezed to a
+~10-pixel sliver. A user reported the panel "shows KEY only" and was
+right. The column now divides evenly; both key and scale dim to 45% alpha
+under key_source = auto (they show the DETECTED values — a reading, not an
+edit surface) while staying clickable, since selecting a value is how the
+user takes manual control (the underlying params already flipped
+key_source on any hand write).
+
+**The permanent UI-coverage audit** (tools/pitch_mode_test): the editor
+now publishes handControlledParams(), and the walk fails the build on any
+schema param that is neither hand-controlled nor exempted-with-reason.
+The ledger currently names 12 UI-less params, the loudest being
+**key_source's one-way gap — touching key/scale forces manual and no hand
+control returns to auto** — held for separate scoping, as is the
+pitch_scale degree editor (twelve enables plus per-degree bias is a real
+panel, most naturally an interactive degree strip on the ribbon's existing
+scale lines; more than a small job, not bundled here).
+
+### 16.12 The key_source trapdoor, closed
+
+§16.11's loudest ledger entry is fixed: an AUTO/MANUAL toggle now sits
+beside the key and scale combos, spanning the two rows it governs. Lit
+means auto; clicking a combo still takes manual control as before, and the
+toggle is the way back - returning to auto clears the auto-key memo, the
+next block re-applies the detected key and scale, and the combos show them
+(dimmed) within a timer tick. Losing the detected-key feature for the life
+of the instance because of one click on a dropdown was a trapdoor in the
+device's headline reason to exist. reference_source keeps its ledger
+entry: the same one-way shape exists at the param level, but no hand
+control writes reference_hz, so only the model can spring that one - and
+the model can release it. The pitch_scale degree editor stays scoped
+separately (an interactive degree strip on the ribbon's scale lines is
+the right shape; not a small job).
+
+### 16.13 preserve == off, provable; off reframed; the key-B octave finding
+
+**The equivalence is now asserted every build.** The gate renders preserve
+and off from the same dry and requires the six metrics to agree within
+tight tolerances (measured: cents 10.1/10.1, HNR 6.99/6.98, flux
++3.3/+3.1, hfx 1/1, exc 1/1, clicks 2/2; not bit-identical — 0.05% of
+samples differ at band-edge method-fade moments, stated in the check's own
+output). The POSITIVE CONTROL forces off onto its grain path via
+debugDisableSplice and requires the comparator to catch it — it does, at
+exactly the old defect's signature (HNR 4.87, flux +19). The regression
+Sean heard twice now fails the build instead of waiting for ears.
+
+**off is a transpose-time control** — schema text rewritten to say it
+changes nothing at tuning-sized corrections and only matters when
+transpose moves pitch by semitones; the editor's combo item reads
+"FORM OFF (TRANSPOSE)" and the combo rests dim on preserve, lighting only
+when the setting departs. **shift unchanged**: dialable, out of the
+advertisement, cost written on the knob — the only mode that does
+something no other control can.
+
+**The key-B octave finding: neither a wrong key nor wrong-octave
+targeting.** Reported: corrections median 181 ¢, p90 1424, 38% beyond
+±250. Re-measured with our own instruments on the reference take at hard
+settings, key B major: |committed target − detected f0| median **64 ¢**,
+p90 163, **3.5% beyond 250** — and |target − nearest-enabled-degree(f0)|
+median **0 ¢**: the selector's octave arithmetic is sound (±1-octave
+neighbourhood search, distance-bounded by half the largest scale gap).
+The >600 ¢ tail is 30 hops (1.5%), of which 22 are the PREVIOUS note held
+through a register flip — §2.3's note-change confirm window doing its
+documented job for ~25–70 ms per flip — and the tail is IDENTICAL under
+chromatic, which acquits the key entirely. The reported magnitudes
+(181/1424/38%) do not reproduce on clean audio; that bounce's formant-off
+ran the pre-§16.13 grain path (the defect above), whose roughness made
+the external tracker exaggerate — the same instrument hazard the reporter
+flagged themselves.

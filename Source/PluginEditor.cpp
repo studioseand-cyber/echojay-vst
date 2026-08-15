@@ -10,7 +10,6 @@
                                  // selection, header-inline for the unit test
 #include "EchoJayFaderFilmstrip.h"  // Link mixer fader (128 x 60x480); .cpp-only
 #include "EedKeyDetectorProcessor.h"
-#include "EedKeyFeed.h"   // publish the resolved key for EchoJay Pitch (spec §6) // [DETECTED KEY] read path (KEY_DETECTOR_SPEC §4/§9)
 #include "viz/DwellGlow.h"           // KEY panel note wheel — the family's heat ramp
 #include "EqNote.h"                  // describeFreqAsNote — root_hz note names in the feed
                                     // include, so only THIS TU pays its 8.4MB
@@ -17967,25 +17966,12 @@ void EchoJayEditor::timerCallback()
         keySourcesDiv_ = 0;
         keySources_ = collectKeySources();
 
-        // Publish the ALREADY-RESOLVED primary. The precedence walk stays in
-        // collectKeySources() and is never re-implemented downstream, so the
-        // device, the [DETECTED KEY] feed block and the Meters panel can never
-        // rank sources differently.
-        echojay::DetectedKeyFact fact;
-        if (const auto* p = keySources_.primary())
-        {
-            fact.valid      = true;
-            fact.root       = p->root;
-            fact.minor      = p->minor;
-            fact.confidence = p->conf;
-            fact.tuningHz   = p->tuningHz > 0.0f ? p->tuningHz : 440.0f;
-            fact.ageMs      = p->ageMs;
-            fact.fromBus    = p->kind == KeySourceReading::Kind::BusLink
-                           || p->kind == KeySourceReading::Kind::SelfBus;
-            const auto nm = p->name.isNotEmpty() ? p->name : juce::String ("EchoJay");
-            nm.copyToUTF8 (fact.sourceName, (int) sizeof (fact.sourceName));
-        }
-        echojay::KeyFeed::instance().publish (fact);
+        // Publish the resolved primary at the editor's 2 Hz too. The
+        // AUTHORITATIVE publisher is the processor's 1 Hz timer (which keeps
+        // the KeyFeed alive with the window closed — the walk lives there
+        // now); publishing here as well just tightens latency while the user
+        // is looking, and both publish the output of the same single walk.
+        processorRef.publishKeyFeed (keySources_);
     }
 
     if (currentView == View::Meters && !visualMode && currentScreen == Screen::Main)
@@ -21332,247 +21318,10 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
 //      the track's.
 // Every reading carries confidence, and the block teaches the rule that keeps
 // it honest: below ~0.5, treat the key as unknown.
-EchoJayEditor::KeySources EchoJayEditor::collectKeySources()
-{
-    KeySources out;
-    const juce::uint32 nowMs   = juce::Time::getMillisecondCounter();
-    const juce::int64  nowWall = juce::Time::currentTimeMillis();
-
-    // Root in octave 2, the octave the feed's note-maths examples use, for
-    // sources that carry tuning but not the analysed octave.
-    auto rootHzOct2 = [] (float tuningHz, int root)
-    { return tuningHz * std::pow (2.0f, (float) (36 + root - 69) / 12.0f); };
-
-    // ---- 1. the newest capture with an offline reading (§5.2) -------------
-    {
-        const auto snaps = processorRef.getSnapshots();
-        for (int i = (int) snaps.size() - 1; i >= 0; --i)
-        {
-            const auto& s = snaps[(size_t) i];
-            if (! s.keyValid) continue;
-            KeySourceReading k;
-            k.kind   = KeySourceReading::Kind::Capture;
-            k.pinId  = "capture";
-            k.name   = s.name;
-            k.detail = s.keySourceName
-                     + (s.keySourcePlacement == 1 ? " (bus Link)" : " (this channel)");
-            k.root = s.keyRoot; k.minor = s.keyMinor; k.conf = s.keyConfidence;
-            k.tuningHz    = s.keyTuningHz > 0.0f ? s.keyTuningHz : 440.0f;
-            k.tuningCents = s.keyTuningCents;
-            k.rootHz      = rootHzOct2 (k.tuningHz, k.root);
-            k.ageMs = s.timestamp > 0 && nowWall > s.timestamp
-                        ? (juce::uint32) juce::jmin<juce::int64> (nowWall - s.timestamp,
-                                                                  0x7fffffff)
-                        : 0;
-            k.committed = true;
-            k.analysedSeconds = s.durationSeconds;
-            k.hasChroma = true; k.chroma = s.keyChroma;
-            k.altRoot = s.keyAltRoot; k.altMinor = s.keyAltMinor; k.altScore = s.keyAltScore;
-            out.all.push_back (std::move (k));
-            break;                       // newest keyed capture only
-        }
-    }
-
-    // ---- 2./3. Bus-grade readings, then channel ---------------------------
-    // Bus grade is Link frames with placement==bus PLUS this plugin's own
-    // passive reading when its declared role IS a music bus (§6.1) — same
-    // engine, same duty cycle, and the channel is by declaration the music.
-    std::vector<KeySourceReading> busLinks, chanLinks, tail;
-    {
-        // "this channel" always EXISTS as a menu entry (§7.1). It joins the
-        // BUS tier only when the declared role is a music bus AND a reading
-        // exists; a non-music role lists greyed with the reason (§7.1) and
-        // is still pinnable (§7.2 — the role may be mis-declared).
-        const auto ct = processorRef.getChannelType();
-        const bool roleMusic = processorRef.selfKeyRoleIsMusic();
-        const auto r = processorRef.getSelfKeyEngine().getReading();
-        KeySourceReading k;
-        k.kind   = KeySourceReading::Kind::SelfBus;
-        k.pinId  = "self";
-        k.name   = "this channel";
-        k.detail = channelTypeNames[(int) ct];
-        k.hasReading = r.valid;
-        if (r.valid)
-        {
-            k.root = r.root; k.minor = r.minor; k.conf = r.confidence;
-            k.tuningHz = r.tuningHz; k.tuningCents = r.tuningCents;
-            k.rootHz = r.rootHz;
-            const auto stamp = processorRef.selfKeyChangeMs();
-            k.ageMs = stamp != 0 ? nowMs - stamp : 0;
-            k.committed = r.committed;
-            k.analysedSeconds = r.analysedSeconds;
-            k.hasChroma = true; k.chroma = r.chroma;
-            if (r.numAlternates > 0)
-            {
-                k.altRoot  = r.alternates[0].root;
-                k.altMinor = r.alternates[0].minor;
-                k.altScore = r.alternates[0].score;
-            }
-        }
-        if (! roleMusic)
-        {
-            k.poisoned = true;
-            k.unusableReason = channelTypeNames[(int) ct] + " role - not the music";
-        }
-        if (roleMusic && r.valid) busLinks.push_back (std::move (k));
-        else                      tail.push_back (std::move (k));
-    }
-    for (const auto& e : processorRef.getLinkDisplayList())
-    {
-        const auto& li = e.info;
-        LinkMeterFrame f;
-        const bool haveFrame = li.regIdx >= 0
-                            && processorRef.readLinkMeterFrame(li.regIdx, f);
-
-        KeySourceReading k;
-        k.name = e.displayName;   k.uid = li.uid;
-        k.pinId = "link:" + li.uid;
-        k.placement = li.placement;
-        k.kind = li.placement == 1 ? KeySourceReading::Kind::BusLink
-                                   : KeySourceReading::Kind::ChannelLink;
-        if (haveFrame && frameHasKey(f))
-        {
-            k.root = (int) f.keyRoot; k.minor = f.keyIsMinor != 0;
-            k.conf = f.keyConfidence;
-            k.tuningHz    = f.keyTuningHz > 0.0f ? f.keyTuningHz : 440.0f;
-            k.tuningCents = 1200.0f * std::log2 (k.tuningHz / 440.0f);
-            k.rootHz      = rootHzOct2 (k.tuningHz, k.root);
-            k.ageMs = f.keyAgeMs;
-            k.committed = true;          // the passive pass is a committed pass
-            (k.kind == KeySourceReading::Kind::BusLink ? busLinks : chanLinks)
-                .push_back (std::move (k));
-        }
-        else if (li.uid.isNotEmpty())
-        {
-            // Exists, no reading yet — a menu entry, never a precedence one.
-            k.hasReading = false;
-            tail.push_back (std::move (k));
-        }
-    }
-    auto byConf = [] (const KeySourceReading& a, const KeySourceReading& b)
-    { return a.conf > b.conf; };
-    std::sort (busLinks.begin(),  busLinks.end(),  byConf);
-    // Channel-grade: declared channel (2) beats send return (3) beats unset.
-    std::sort (chanLinks.begin(), chanLinks.end(),
-               [] (const KeySourceReading& a, const KeySourceReading& b)
-               {
-                   auto rank = [] (int p) { return p == 2 ? 0 : p == 3 ? 1 : 2; };
-                   if (rank (a.placement) != rank (b.placement))
-                       return rank (a.placement) < rank (b.placement);
-                   return a.conf > b.conf;
-               });
-    for (auto& k : busLinks)  out.all.push_back (std::move (k));
-    for (auto& k : chanLinks) out.all.push_back (std::move (k));
-
-    // ---- 4. the local chain's own Key Detector (§4) -----------------------
-    {
-        const auto ct = processorRef.getChannelType();
-        const bool vocal = ct == ChannelType::LeadVocal
-                        || ct == ChannelType::BackingVocal
-                        || ct == ChannelType::Adlibs
-                        || ct == ChannelType::VocalBus;
-        auto& ch = processorRef.getChainHost();
-        for (int i = 0; i < ch.getNumSlots(); ++i)
-            if (auto* kd = dynamic_cast<EedKeyDetectorProcessor*>(ch.getSlotProcessor(i)))
-            {
-                const auto r = kd->engine().getReading();
-                KeySourceReading k;
-                k.kind  = KeySourceReading::Kind::LocalChain;
-                k.pinId = "chain";
-                k.name  = "this chain";
-                k.detail = processorRef.getChannelType() == ChannelType::Other
-                               ? juce::String() : channelTypeNames[(int) ct];
-                k.hasReading = r.valid;
-                if (r.valid)
-                {
-                    k.root = r.root; k.minor = r.minor; k.conf = r.confidence;
-                    k.tuningHz = r.tuningHz; k.tuningCents = r.tuningCents;
-                    k.rootHz = r.rootHz;
-                    const auto stamp = kd->readingChangeMs();
-                    k.ageMs = stamp != 0 ? nowMs - stamp : 0;
-                    k.committed = r.committed;
-                    k.analysedSeconds = r.analysedSeconds;
-                    k.hasChroma = true; k.chroma = r.chroma;
-                    if (r.numAlternates > 0)
-                    {
-                        k.altRoot  = r.alternates[0].root;
-                        k.altMinor = r.alternates[0].minor;
-                        k.altScore = r.alternates[0].score;
-                    }
-                }
-                // §5.3 restated by §6.1: the disqualifier is "not the
-                // music", judged by declared role — a vocal-role channel's
-                // chain reading is never preferred automatically.
-                k.poisoned = vocal;
-                if (vocal)
-                    k.unusableReason = channelTypeNames[(int) ct]
-                                     + " role - not the music";
-                if (r.valid) out.all.push_back (std::move (k));
-                else         tail.push_back (std::move (k));
-                break;                   // one detector speaks for the chain
-            }
-    }
-
-    // Existence-only entries (§7.1) close the list: visible in the menu,
-    // invisible to precedence (hasReading false or poisoned).
-    for (auto& k : tail) out.all.push_back (std::move (k));
-
-    if (out.all.empty()) return out;
-
-    // ---- AUTO: first entry WITH a reading and not poisoned, in precedence
-    // order — except that a STALE capture yields to a live bus-grade
-    // reading (§5.3 point 1).
-    for (int i = 0; i < (int) out.all.size(); ++i)
-        if (out.all[(size_t) i].hasReading && ! out.all[(size_t) i].poisoned)
-        { out.autoIdx = i; break; }
-    if (out.autoIdx >= 0
-        && out.all[(size_t) out.autoIdx].kind == KeySourceReading::Kind::Capture
-        && out.all[(size_t) out.autoIdx].ageMs > kCaptureKeyFreshMs)
-    {
-        for (int i = 0; i < (int) out.all.size(); ++i)
-            if (out.all[(size_t) i].hasReading
-                && (out.all[(size_t) i].kind == KeySourceReading::Kind::BusLink
-                 || out.all[(size_t) i].kind == KeySourceReading::Kind::SelfBus))
-            { out.autoIdx = i; break; }
-    }
-    out.primaryIdx = out.autoIdx;
-
-    // ---- §7.2: a PIN overrides precedence, including the poisoning rule —
-    // an explicit choice beats an inferred one. A pinned source that is
-    // GONE is stated (pinMissing), never silently replaced; a pinned source
-    // that exists but has no reading yet shows as waiting, not as Auto.
-    if (const juce::String pin = processorRef.getKeySourcePin(); pin.isNotEmpty())
-    {
-        int idx = -1;
-        for (int i = 0; i < (int) out.all.size(); ++i)
-            if (out.all[(size_t) i].pinId == pin) { idx = i; break; }
-        if (idx < 0)
-        {
-            out.pinMissing = true;
-            out.pinMissingLabel = processorRef.getKeySourcePinLabel();
-        }
-        else
-        {
-            out.pinnedIdx = idx;
-            if (out.all[(size_t) idx].hasReading)
-            {
-                out.primaryIdx = idx;
-                out.userSelected = true;
-            }
-            else
-                out.primaryIdx = -1;     // pinned, waiting for a reading
-        }
-    }
-
-    // Disagreement among sources WITH readings is information (§9).
-    if (const auto* p = out.primary())
-        for (const auto& s : out.all)
-            if (s.hasReading && ! s.poisoned
-                && (s.root != p->root || s.minor != p->minor))
-                out.disagree = true;
-
-    return out;
-}
+// collectKeySources() moved to EchoJayProcessor (PluginProcessor.cpp): the
+// walk reads only processor state, and the KeyFeed it feeds must be published
+// with the window closed. The editor's inline delegate (PluginEditor.h) keeps
+// every call site here reading the same single ranking.
 
 // §7.1: one short label per source, shared by the menu and the Auto line so
 // they cannot drift apart.

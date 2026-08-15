@@ -1,0 +1,66 @@
+#!/bin/bash
+# Build and run the click-density test for EchoJay Pitch.
+#
+# WHY THIS TEST EXISTS. The device shipped 5.5 audible clicks a second on a
+# real acapella while every existing test stayed green - pitch accuracy,
+# nulls, block-size exactness, pluginval strictness 5. Only a listen caught
+# it, and a listen does not run in CI. This runs the detector that DID catch
+# it, with its own positive control (injected discontinuities of known size
+# at known positions must be found), and asserts a click-density ceiling.
+#
+# MATERIAL. Real-vocal density is only measurable on a real vocal, and the
+# repo does not name the author's library files (see PITCH_P0_VALIDATION.md
+# on why). The path lives in an UNCOMMITTED sibling file:
+#     tools/pitch_click_test/material.local     (git-ignored)
+# containing one line: the absolute path to the test vocal. When present,
+# the density gate runs on it. When absent, the test still runs the positive
+# control on a synthetic vocal - weaker, but never silent.
+set -e
+cd "$(dirname "$0")/../.."
+
+# The artefact path FOLLOWS the build cache's configuration. This was
+# hardcoded to Debug, and when the build dir was reconfigured to Release the
+# gate kept green by running a STALE Debug binary - a gate that tests old
+# code is worse than no gate, because it gets believed. The -nt check makes
+# staleness fail loudly instead.
+CFG=$(sed -n 's/^CMAKE_BUILD_TYPE:STRING=//p' build/CMakeCache.txt)
+CFG=${CFG:-Debug}
+cmake --build build --target EchoJayPitchClickTest 2>&1 | grep -E "error|warning: " || true
+BIN=build/EchoJayPitchClickTest_artefacts/$CFG/EchoJayPitchClickTest
+[ -x "$BIN" ] || { echo "build failed ($BIN missing)"; exit 1; }
+[ "$BIN" -nt tools/pitch_click_test/main.cpp ] || { echo "STALE binary: $BIN predates main.cpp"; exit 1; }
+[ "$BIN" -nt Source/EedPsolaEngine.h ]         || { echo "STALE binary: $BIN predates EedPsolaEngine.h"; exit 1; }
+
+# The ceiling: measured 2.43/s on the real acapella after the emitDry-flip
+# fix, against 5.48/s before it (and the pre-fix run showed the signature the
+# ceiling exists to catch: 39% of clicks at a fixed 16-23 samples after a
+# hop, hard amplitude steps at every tracking gap). The residual 2.43/s is
+# wet-path roughness on sharp-glottal and fricative passages - small burrs,
+# not steps; see PITCH_P0_VALIDATION.md §14. 3.5/s is a regression alarm,
+# not a quality target: enough margin for material noise, and the original
+# failure (5.5/s) is comfortably above it.
+# Re-based 2026-08-14 after instrument failure #11 (drift-aware exclusion):
+# the 3.5 ceiling dated from a 5.5/s failure and a 2.43/s residual, but ~70%
+# of that residual was the take's own glottal edges drifted out of the old
+# +/-64 exclusion window by the splice-resampler and straddling the 20x
+# threshold. Corrected instrument + cubic splice interpolation measure
+# 0.45/s. 1.0/s is the regression alarm - the old DSP under the old
+# instrument (1.58-2.43/s) sits comfortably above it.
+CEILING=1.0
+
+MATERIAL_FILE="tools/pitch_click_test/material.local"
+if [ -f "$MATERIAL_FILE" ]; then
+    WAV="$(head -1 "$MATERIAL_FILE")"
+    if [ -f "$WAV" ]; then
+        echo "== real material: control + density gate (ceiling $CEILING/s) =="
+        "$BIN" "$WAV" --control --max-per-second "$CEILING"
+    else
+        echo "material.local names a missing file: $WAV" >&2
+        exit 1
+    fi
+else
+    echo "== no material.local: positive control on synthetic vocal only =="
+    echo "   (echo /path/to/vocal.wav > $MATERIAL_FILE to enable the real gate)"
+    "$BIN" --synth --control
+fi
+echo "PASS"

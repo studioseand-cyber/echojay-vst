@@ -402,71 +402,20 @@ private:
     bool tonalSmoothInit_ = false;
 
     // ---- Detected key: the shared source collector -----------------------
-    // ONE precedence walk (KEY_PRECONDITION_SPEC.md §5.3, restated by §6.1)
-    // consumed by both the [DETECTED KEY] feed block and the Meters KEY
-    // panel, so the two can never rank sources differently:
-    //   1. the newest CAPTURE of the music/mix carrying an offline reading,
-    //   2. a BUS-grade passive reading — a bus Link, or THIS plugin's own
-    //      channel when its declared role IS a music bus (§6.1: EchoJay on
-    //      the mix bus is exactly the right source; no Link required),
-    //   3. a CHANNEL Link's reading (one stem — usable, named as such),
-    //   4. a Key Detector in the local chain — trustworthy only when this
-    //      channel is the music; POISONED (never primary, warned) when it
-    //      is a vocal, because a confident vocal-derived key is worse than
-    //      no key at all.
-    // The disqualifier is NOT "the channel EchoJay is on" — it is "a channel
-    // that is not the music", judged by DECLARED ROLE, never by proximity.
-    // A stale capture yields to a live bus reading (kCaptureKeyFreshMs).
-    struct KeySourceReading
-    {
-        enum class Kind { Capture, BusLink, SelfBus, ChannelLink, LocalChain };
-        Kind  kind = Kind::LocalChain;
-        juce::String name, uid;        // uid: Link instance uid (Links only)
-        juce::String detail;           // capture: which channel the offline
-                                       // pass read ("Music Bus (bus Link)")
-        int   placement = 0;           // registry value (Links only)
-        int   root = 0; bool minor = false;
-        float conf = 0.0f, tuningHz = 440.0f, tuningCents = 0.0f, rootHz = 0.0f;
-        juce::uint32 ageMs = 0;
-        bool  committed = false;
-        float analysedSeconds = 0.0f;
-        bool  hasChroma = false;
-        std::array<float, 12> chroma {};
-        int   altRoot = -1; bool altMinor = false; float altScore = 0.0f;
-        bool  poisoned = false;        // vocal-channel local reading: never use
-        // §7 source selector: sources that EXIST but have no reading yet
-        // still appear in the menu (hasReading=false, skipped by precedence);
-        // unusableReason non-empty = greyed in the menu WITH the why, still
-        // pinnable. pinId is the stable identity the pin persists.
-        bool  hasReading = true;
-        juce::String pinId;            // "self" | "chain" | "capture" | "link:<uid>"
-        juce::String unusableReason;
-    };
-    struct KeySources
-    {
-        std::vector<KeySourceReading> all;   // precedence order (menu order)
-        int  primaryIdx = -1;                // -1 = nothing usable
-        bool disagree   = false;             // usable sources name different keys
-        // §7: autoIdx is what precedence picks IGNORING the pin (so the menu
-        // can always show what Auto resolves to); primaryIdx is after the
-        // pin is applied. A pin that resolves to a source with a reading
-        // sets userSelected; a pin whose source is gone sets pinMissing —
-        // stated, never silently replaced.
-        int  autoIdx      = -1;
-        int  pinnedIdx    = -1;
-        bool userSelected = false;
-        bool pinMissing   = false;
-        juce::String pinMissingLabel;
-        const KeySourceReading* primary() const
-        { return primaryIdx >= 0 ? &all[(size_t) primaryIdx] : nullptr; }
-    };
-    static constexpr juce::uint32 kCaptureKeyFreshMs = 15 * 60 * 1000;
-    KeySources collectKeySources();
+    // THE ONE precedence walk now lives on the PROCESSOR
+    // (EchoJayProcessor::collectKeySources) so the KeyFeed that EchoJay
+    // Pitch follows is published with or without an open window — when the
+    // walk lived here, closing the editor froze the key at its last value.
+    // The editor keeps aliases and a delegating call so its UI code reads
+    // the very same ranking; there is still exactly one walk.
+    using KeySourceReading = EchoJayProcessor::KeySourceReading;
+    using KeySources       = EchoJayProcessor::KeySources;
+    KeySources collectKeySources() { return processorRef.collectKeySources(); }
 
     // ---- KEY panel (Meters middle row, KEY_PRECONDITION_SPEC.md §1) ------
-    // Sources are collected at 2 Hz on the editor timer (collectKeySources
-    // copies snapshots under a mutex — too heavy for 20 Hz paint); paint
-    // reads this cache. keyChromaShown_ eases toward the primary source's
+    // The UI cache is refreshed at 2 Hz on the editor timer (the walk copies
+    // snapshots under a mutex — too heavy for 20 Hz paint); paint reads this
+    // cache. keyChromaShown_ eases toward the primary source's
     // chroma at the DwellGlow time constant so the wheel moves with the same
     // hand as the device's.
     KeySources keySources_;

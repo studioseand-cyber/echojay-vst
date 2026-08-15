@@ -56,6 +56,153 @@
 namespace echojay
 {
 
+// ---------------------------------------------------------------------------
+// F0JumpGate — rejects octave-scale detector excursions BEFORE anything acts
+// on them (PITCH_P0_VALIDATION.md §16.8).
+//
+// The audible defect this exists for is a momentary WRONG PITCH, not a click:
+// the octave guard's residual failures (339 fires logged on one phrase) put a
+// brief octave/sub-harmonic estimate into the chain, the corrector snaps a
+// target to it and the splice-resampler's ratio inherits it, and the output
+// lands smoothly - grain-accurately - on the wrong note. Perfectly clean in
+// the waveform, invisible to every discontinuity gate, measured at 3.5% of
+// voiced frames departing >600 cents from the dry against Antares's 0.44%,
+// mostly downward (the estimate doubling drops the splice ratio an octave).
+//
+// The rule extends the note-change confirm window (PitchCorrect's
+// kNoteConfirmMs) to LARGE jumps at the f0 level: a jump of more than
+// kBigJumpCents from the last accepted estimate must PERSIST for kConfirmMs
+// before it is believed; until then the last accepted f0 is substituted, and
+// a jump that reverts inside the window never happened. Genuine octave leaps
+// in a sung phrase are rare and can afford the ~50 ms onset delay; spurious
+// ones are frequent and cost an audible glitch each.
+//
+// This sits UPSTREAM of both consumers on purpose: filtering only the
+// corrector's target would leave the shifter's f0 ring spiking, and the
+// splice ratio target/f0 would then drop the output an octave with the
+// target held perfectly still.
+struct F0JumpGate
+{
+    static constexpr float kBigJumpCents  = 600.0f;   // octave-scale, incl. the x1.5 lattice confusion (702c)
+    static constexpr float kSameCandCents = 200.0f;   // hops agreeing with the pending candidate
+    static constexpr float kConfirmMs     = 50.0f;    // the user-stated 40-60 ms window
+
+    // The confirm window applies WITHIN a voiced run, not across gap resumes.
+    // Measured with a 200 ms forget (PitchCorrect's gap-resume window): the
+    // gate INJECTED excursions on the rap acapella - 16 against 8 without it
+    // - because that delivery changes register across consonant gaps
+    // constantly, and holding the old octave for 50 ms after such a resume is
+    // itself a 50 ms wrong note. 30 ms sits above the 11 ms median mid-note
+    // tracking dropout (§5.3) and below any real consonant gap, so mid-phrase
+    // spikes are still gated and register changes across gaps are believed
+    // immediately.
+    static constexpr float kGapForgetMs   = 30.0f;
+
+    // Periodicity threshold for the audio question (see filter()).
+    static constexpr float kStillPeriodic = 0.60f;
+
+    // Would this hop trigger the octave-scale confirm path? Callers use it
+    // to decide whether to spend the two autocorrelations.
+    bool isBigJump (float f0Hz, bool voiced) const noexcept
+    {
+        return voiced && f0Hz > 0.0f && lastGood_ > 0.0f
+            && std::fabs (1200.0f * std::log2 (f0Hz / lastGood_)) > kBigJumpCents;
+    }
+    float lastGood() const noexcept { return lastGood_; }
+
+    // rOldPeriod / rNewPeriod: the input's normalised autocorrelation at the
+    // last-accepted and the candidate period (PsolaEngine::inputPeriodicity),
+    // or -1 when the caller cannot ask the audio. THE AUDIO SETTLES IT when
+    // it can (measured on the rap acapella, §16.8): blind persistence-holding
+    // INJECTED excursions - 16 against 8 - because that take's vocal fry
+    // produces true subharmonics, and holding the old octave through a real
+    // period-doubling is itself a 50 ms wrong note. A spurious flip leaves
+    // the waveform periodic at the OLD lag; a real drop collapses it there;
+    // an upward move is believed when the NEW (shorter) lag correlates.
+    // Persistence remains the backstop for the inconclusive cases.
+    float filter (float f0Hz, bool voiced, float dtMs,
+                  float rOldPeriod = -1.0f, float rNewPeriod = -1.0f) noexcept
+    {
+        if (! voiced || f0Hz <= 0.0f)
+        {
+            gapMs_ += dtMs;
+            if (gapMs_ >= kGapForgetMs) { lastGood_ = 0.0f; havePending_ = false; }
+            return f0Hz;
+        }
+        gapMs_ = 0.0f;
+
+        if (lastGood_ <= 0.0f)
+        {
+            // SEED VETTING. A span's first estimate can be a SUB-OCTAVE read
+            // of a creaky onset (measured: 79-87 Hz for 24 ms where the true
+            // pitch is 175, then a +1200c "jump" when the detector rights
+            // itself - and synthesis had already chased the wrong octave).
+            // At the seed, rOldPeriod carries the correlation at HALF the
+            // candidate period: if the audio is strongly periodic there too,
+            // the candidate is plausibly the sub-octave of a higher true
+            // pitch - present the hop as untracked (the output stays dry, as
+            // it would under tracker warm-up) until the candidate persists
+            // kConfirmMs or corrects. A clean onset has a LOW half-period
+            // correlation and seeds immediately, so it costs nothing.
+            if (rOldPeriod >= kStillPeriodic)
+            {
+                if (! havePending_
+                    || std::fabs (1200.0f * std::log2 (f0Hz / pending_)) > kSameCandCents)
+                { havePending_ = true; pending_ = f0Hz; pendingMs_ = 0.0f; }
+                pendingMs_ += dtMs;
+                if (pendingMs_ < kConfirmMs)
+                { ++rejectedHops_; return 0.0f; }
+            }
+            lastGood_ = f0Hz; havePending_ = false; return f0Hz;
+        }
+
+        const float jump = std::fabs (1200.0f * std::log2 (f0Hz / lastGood_));
+        if (jump <= kBigJumpCents)
+        { lastGood_ = f0Hz; havePending_ = false; return f0Hz; }
+
+        // Ask the audio first.
+        if (rOldPeriod >= 0.0f && rNewPeriod >= 0.0f)
+        {
+            const bool up = f0Hz > lastGood_;
+            const bool audioMoved = up ? rNewPeriod >= kStillPeriodic
+                                       : rOldPeriod <  kStillPeriodic;
+            if (audioMoved)
+            {
+                lastGood_ = f0Hz; havePending_ = false;
+                ++confirmed_;
+                return f0Hz;
+            }
+        }
+
+        // Inconclusive or unaskable: confirm by persistence.
+        if (! havePending_
+            || std::fabs (1200.0f * std::log2 (f0Hz / pending_)) > kSameCandCents)
+        { havePending_ = true; pending_ = f0Hz; pendingMs_ = 0.0f; }
+
+        pendingMs_ += dtMs;
+        if (pendingMs_ >= kConfirmMs)
+        {
+            lastGood_ = f0Hz; havePending_ = false;
+            ++confirmed_;
+            return f0Hz;
+        }
+        ++rejectedHops_;
+        return lastGood_;
+    }
+
+    void reset() noexcept
+    { lastGood_ = 0.0f; pending_ = 0.0f; pendingMs_ = 0.0f; gapMs_ = 0.0f;
+      havePending_ = false; }
+
+    uint32_t rejectedHops() const noexcept { return rejectedHops_; }
+    uint32_t confirmedJumps() const noexcept { return confirmed_; }
+
+private:
+    float lastGood_ = 0.0f, pending_ = 0.0f, pendingMs_ = 0.0f, gapMs_ = 0.0f;
+    bool  havePending_ = false;
+    uint32_t rejectedHops_ = 0, confirmed_ = 0;
+};
+
 class PitchCorrect
 {
 public:

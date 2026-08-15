@@ -2,6 +2,7 @@
 // applyStructured funnel the chain hands settings to.
 #include <JuceHeader.h>
 #include "EedPitchProcessor.h"
+#include "EedPitchEditor.h"
 #include "EedDeviceRegistry.h"
 #include "EedKeyFeed.h"
 #include <cstdio>
@@ -53,7 +54,10 @@ int main()
         check (p.getParamValue ("retune_speed_ms") == 0.0, "hard wrote retune_speed_ms 0");
         check (p.getParamValue ("flex") == 0.0, "hard wrote flex 0");
         check (p.getParamValue ("humanize") == 0.0, "hard wrote humanize 0");
-        check (p.getParamValue ("targeting_ignores_vibrato") == 0.0, "hard wrote ignore_vibrato off");
+        // ON in every mode since the §4 table correction: target selection
+        // without vibrato smoothing flips between adjacent degrees whenever a
+        // wide vibrato sits on a semitone boundary, at ANY retune speed.
+        check (p.getParamValue ("targeting_ignores_vibrato") == 1.0, "hard wrote ignore_vibrato on");
         check (s.contains ("retune_speed_ms") && s.contains ("flex") && s.contains ("humanize"),
                "the summary NAMES what it changed, not just the mode");
     }
@@ -283,6 +287,143 @@ int main()
                "the advertisement mentions the pitch_scale move at all");
         check (summary.containsIgnoreCase ("merge") || summary.containsIgnoreCase ("omitted"),
                "...and states its MERGE semantics");
+    }
+
+    std::printf ("== the correction_mode table is COMPLETE: every param is either "
+                 "written by every mode, or exempted here with a reason ==\n");
+    {
+        // WHY THIS TEST EXISTS. natural_vibrato was added at P5 without a
+        // column in the mode table, and hard tune silently re-added the full
+        // wobble on top of the snapped note - it measured WORSE than dry
+        // (15.7 against 13.0 cents) while the whole suite stayed green
+        // (PITCH_P0_VALIDATION.md §12). A mode is only as honest as its
+        // table is complete, and completeness must fail the build, not wait
+        // for a re-measure.
+        //
+        // THE RULE. Walk the schema. Every param must be either
+        //   (a) DETERMINED by selecting a mode - proven behaviourally: set
+        //       the param to each end of its range, select the mode, and the
+        //       readback must land on the same value both times - or
+        //   (b) listed below as NOT character-bearing, WITH the reason.
+        // A new param lands in neither and fails, which forces the author to
+        // answer "does this shape the corrected sound's character?" at the
+        // moment the param is added, not at the next listening session.
+        struct Exempt { const char* id; const char* why; };
+        static const Exempt kNotCharacter[] = {
+            { "correct",          "the master enable; a mode is a character, not an on/off" },
+            { "correction_mode",  "the selector itself" },
+            { "key_source",       "WHAT to correct to, not how the correction sounds" },
+            { "key_root",         "WHAT to correct to" },
+            { "scale",            "WHAT to correct to" },
+            { "reference_source", "WHAT tuning to correct to" },
+            { "reference_hz",     "WHAT tuning to correct to" },
+            { "transpose",        "a pitch offset on the result, orthogonal to character" },
+            { "voice_type",       "detector fit to the material, not character" },
+            { "tracking",         "detector strictness, not character" },
+            { "target_hz",        "the P1 fixed-target diagnostic path" },
+            { "low_latency",      "a latency trade; changes delay, not character" },
+            { "formant_shift",    "a WHO-is-singing control, not a correction character - and "
+                                  "inert in every mode anyway, since every mode writes "
+                                  "formant_mode preserve (which the walk above proves)" },
+            { "mix",              "output stage" },
+            { "output_db",        "output stage" },
+            { "vib_depth_cents",  "ADDED vibrato is a creative layer the spec's mode table deliberately leaves alone (only natural_vibrato is in it)" },
+            { "vib_rate_hz",      "added vibrato, as above" },
+            { "vib_shape",        "added vibrato, as above" },
+            { "vib_onset_ms",     "added vibrato, as above" },
+            { "reset_stats",      "momentary action, not a setting" },
+        };
+        auto exempt = [&] (const std::string& id)
+        {
+            for (const auto& e : kNotCharacter) if (id == e.id) return true;
+            return false;
+        };
+        // The exemption list may not rot: every entry must still name a real
+        // param, so a rename cannot quietly widen the hole it guards.
+        for (const auto& e : kNotCharacter)
+            check (EedPitchProcessor::schema().find (e.id) != nullptr,
+                   juce::String ("exempt id still exists in the schema: ") + e.id);
+
+        static const char* kModeNames[4] = { "natural", "balanced", "tuned", "hard" };
+        for (const auto& sp : EedPitchProcessor::schema().params())
+        {
+            if (exempt (sp.id)) continue;
+            bool determined = true;
+            for (int m = 0; m < 4 && determined; ++m)
+            {
+                p.setParamValue (juce::String (sp.id), sp.min);
+                p.setParamValue ("correction_mode", (double) m);
+                const double a = p.getParamValue (juce::String (sp.id));
+                p.setParamValue (juce::String (sp.id), sp.max);
+                p.setParamValue ("correction_mode", (double) m);
+                const double b = p.getParamValue (juce::String (sp.id));
+                if (std::abs (a - b) > 1.0e-6) determined = false;
+                (void) kModeNames[m];
+            }
+            check (determined,
+                   juce::String (sp.id.c_str())
+                   + " is character-bearing (not exempted), so every mode must WRITE it"
+                     " - if it was just added, either give it a column in applyMode's"
+                     " table or exempt it HERE with the reason");
+        }
+    }
+
+    std::printf ("== UI coverage: every schema param has a hand control, or is "
+                 "exempted here with the reason ==\n");
+    {
+        // WHY THIS EXISTS. `scale` was in the schema, dialable by the model,
+        // wired in the editor - and squeezed by the layout to a ~10-pixel
+        // sliver, so a user reported the panel "shows KEY only" and the
+        // parameter was, in practice, invisible state. The same shape of
+        // failure as the constructed-vs-advertised defaults sweep: what the
+        // model can set and the user cannot see will eventually surprise
+        // someone. (This walk proves LISTING, not pixels - the layout half
+        // lives in the editor-paint harness.)
+        //
+        // The exemption ledger below is deliberately LOUD: every UI-less
+        // param is named with its status, and a new param lands in neither
+        // list and fails the build.
+        struct NoUi { const char* id; const char* why; };
+        static const NoUi kNoUi[] = {
+            { "reference_source", "no UI yet. Same one-way SHAPE as key_source's closed "
+                                  "gap, but no hand control writes reference_hz, so only "
+                                  "the model can spring it - and the model can release it" },
+            { "reference_hz",     "no UI yet" },
+            { "transpose",        "no UI yet" },
+            { "natural_vibrato",  "no UI yet - character-relevant, worth a knob eventually" },
+            { "vib_depth_cents",  "no UI yet - added-vibrato block has no panel" },
+            { "vib_rate_hz",      "no UI yet - added-vibrato block has no panel" },
+            { "vib_shape",        "no UI yet - added-vibrato block has no panel" },
+            { "vib_onset_ms",     "no UI yet - added-vibrato block has no panel" },
+            { "formant_shift",    "no UI yet - and the shift path carries a measured "
+                                  "fidelity cost (schema text), so no knob until rebuilt" },
+            { "mix",              "no UI yet - the chain wet knob covers the common case" },
+            { "output_db",        "no UI yet" },
+        };
+        auto exemptUi = [&] (const std::string& id)
+        {
+            for (const auto& e : kNoUi) if (id == e.id) return true;
+            return false;
+        };
+        for (const auto& e : kNoUi)
+            check (EedPitchProcessor::schema().find (e.id) != nullptr,
+                   juce::String ("UI-exempt id still exists in the schema: ") + e.id);
+
+        const auto& hand = EedPitchEditor::handControlledParams();
+        for (const char* id : hand)
+            check (EedPitchProcessor::schema().find (id) != nullptr,
+                   juce::String ("hand-controlled id still exists in the schema: ") + id);
+
+        for (const auto& sp : EedPitchProcessor::schema().params())
+        {
+            bool covered = exemptUi (sp.id);
+            for (const char* id : hand) if (sp.id == id) covered = true;
+            check (covered,
+                   juce::String (sp.id.c_str())
+                   + " has no hand control and no exemption - add it to the editor's"
+                     " handControlledParams() with a control, or to the ledger HERE"
+                     " with its status");
+        }
     }
 
     std::printf ("\n%s (%d failure%s)\n", g_fail == 0 ? "ALL PASS" : "FAILURES",

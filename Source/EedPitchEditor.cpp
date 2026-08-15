@@ -62,8 +62,15 @@ EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
     if (const auto* spec = EedPitchProcessor::schema().find (EedPitchProcessor::kFormantMode))
     {
         for (std::size_t i = 0; i < spec->choices.size(); ++i)
-            formantBox_.addItem ("FORM " + juce::String (spec->choices[i]).toUpperCase(),
-                                 (int) i + 1);
+        {
+            // `off` is a transpose-time control - measured identical to
+            // preserve at correction-sized shifts (the gate asserts it) -
+            // so its item says when it matters instead of posing as an
+            // equal choice.
+            juce::String label = "FORM " + juce::String (spec->choices[i]).toUpperCase();
+            if (juce::String (spec->choices[i]) == "off") label << " (TRANSPOSE)";
+            formantBox_.addItem (label, (int) i + 1);
+        }
         formantBox_.setSelectedId (
             (int) proc_.getParamValue (EedPitchProcessor::kFormantMode) + 1,
             juce::dontSendNotification);
@@ -152,6 +159,26 @@ EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
     };
     setupToggle (correctBtn_, EedPitchProcessor::kCorrect);
     setupToggle (vibBtn_,     EedPitchProcessor::kIgnoreVib);
+
+    // THE WAY BACK TO AUTO. Touching key or scale takes manual control (by
+    // design - an edit the next block silently overwrites would look
+    // broken), but until this button that was a TRAPDOOR: one click on the
+    // key combo and the detected-key feature - the reason this device lives
+    // inside EchoJay at all - was gone for the life of the instance. The
+    // toggle reads key_source; lit means auto, and returning to auto
+    // re-applies the detected key and scale on the next block, which the
+    // combos then show (dimmed) within a timer tick.
+    styleButton (keyAutoBtn_, true);
+    keyAutoBtn_.setToggleState (
+        proc_.getParamValue (EedPitchProcessor::kKeySource) < 0.5,
+        juce::dontSendNotification);
+    keyAutoBtn_.onClick = [this]
+    {
+        if (suppressCallbacks_) return;
+        proc_.setParamValue (EedPitchProcessor::kKeySource,
+                             keyAutoBtn_.getToggleState() ? 0.0 : 1.0);
+    };
+    addAndMakeVisible (keyAutoBtn_);
 
     // THE LATENCY MODE. Deliberately a mode button rather than a checkbox: the
     // user is choosing between two WORKFLOWS, and the number it costs is the
@@ -253,9 +280,22 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
         row.removeFromLeft (juce::jmin (6, row.getWidth()));
 
         auto col = row.removeFromLeft (juce::jmin (116, row.getWidth()));
-        modeBox_.setBounds (col.removeFromTop (juce::jmin (kRowH, col.getHeight())).reduced (1));
-        keyBox_.setBounds (col.removeFromTop (juce::jmin (kRowH, col.getHeight())).reduced (1));
-        scaleBox_.setBounds (col.removeFromTop (juce::jmin (kRowH, col.getHeight())).reduced (1));
+        // THREE rows share the column EVENLY. Stacking them at kRowH each
+        // needed 72 px in a 58 px band, so the third row - the SCALE combo -
+        // was silently squeezed to a ~10 px sliver: present in the code,
+        // synced, dialable by the model, and invisible to the user, who
+        // reasonably reported "the panel shows KEY only". A control the
+        // model can set and the user cannot see is invisible state.
+        const int comboH = juce::jmax (1, col.getHeight() / 3);
+        modeBox_.setBounds (col.removeFromTop (comboH).reduced (1));
+        keyBox_.setBounds (col.removeFromTop (comboH).reduced (1));
+        scaleBox_.setBounds (col.removeFromTop (comboH).reduced (1));
+
+        // The AUTO/MANUAL toggle sits beside the two controls it governs,
+        // spanning the key and scale rows.
+        auto kcol = row.removeFromLeft (juce::jmin (46, row.getWidth()));
+        kcol.removeFromTop (comboH);
+        keyAutoBtn_.setBounds (kcol.reduced (1));
 
         row.removeFromLeft (juce::jmin (6, row.getWidth()));
         auto sw = row.removeFromLeft (juce::jmin (80, row.getWidth()));
@@ -517,6 +557,37 @@ void EedPitchEditor::syncFromProcessor()
     syncBox (keyBox_,   EedPitchProcessor::kKeyRoot);
     syncBox (scaleBox_, EedPitchProcessor::kScale);
 
+    // In key_source = auto the key and scale combos show the DETECTED values
+    // (the syncs above read them back) and dim, because they are a reading,
+    // not the user's values. They stay CLICKABLE - selecting a value is how
+    // the user takes manual control, and the underlying params already flip
+    // key_source to manual on any hand write. The attribution line under the
+    // ribbon names the source either way.
+    {
+        const bool keyAuto = proc_.getParamValue (EedPitchProcessor::kKeySource) < 0.5;
+        const float alpha = keyAuto ? 0.45f : 1.0f;
+        if (std::abs (keyBox_.getAlpha() - alpha) > 0.01f)
+        {
+            keyBox_.setAlpha (alpha);
+            scaleBox_.setAlpha (alpha);
+        }
+        if (keyAutoBtn_.getToggleState() != keyAuto)
+            keyAutoBtn_.setToggleState (keyAuto, juce::dontSendNotification);
+    }
+
+    // The formant combo rests DIM on preserve (the default, and the right
+    // answer for correction) and lights up only when the setting departs -
+    // off and shift are not equal-prominence choices when one of them does
+    // nothing at correction-sized shifts and the other costs fidelity.
+    {
+        const bool departed =
+            (int) proc_.getParamValue (EedPitchProcessor::kFormantMode)
+                != (int) echojay::PsolaEngine::kFormantPreserve;
+        const float alpha = departed ? 1.0f : 0.55f;
+        if (std::abs (formantBox_.getAlpha() - alpha) > 0.01f)
+            formantBox_.setAlpha (alpha);
+    }
+
     auto syncToggle = [this] (juce::TextButton& b, const char* id)
     {
         const bool want = proc_.getParamValue (id) >= 0.5;
@@ -542,4 +613,29 @@ void EedPitchEditor::timerCallback()
 
     // The readout is pure paint; repaint just the content band.
     repaint (contentBounds());
+}
+
+// The hand-control inventory, one entry per control wired above. The audit
+// in tools/pitch_mode_test walks the schema against this and fails the build
+// on any param that is neither here nor exempted-with-reason there.
+const std::vector<const char*>& EedPitchEditor::handControlledParams()
+{
+    static const std::vector<const char*> ids = {
+        EedPitchProcessor::kVoiceType,     // voiceBox_
+        EedPitchProcessor::kTracking,      // trackBox_
+        EedPitchProcessor::kFormantMode,   // formantBox_
+        EedPitchProcessor::kMode,          // modeBox_
+        EedPitchProcessor::kKeyRoot,       // keyBox_
+        EedPitchProcessor::kScale,         // scaleBox_
+        EedPitchProcessor::kKeySource,     // keyAutoBtn_ - closes the one-way gap
+        EedPitchProcessor::kCorrect,       // correctBtn_
+        EedPitchProcessor::kIgnoreVib,     // vibBtn_
+        EedPitchProcessor::kLowLatency,    // latencyBtn_
+        EedPitchProcessor::kRetuneMs,      // retuneKnob_
+        EedPitchProcessor::kFlex,          // flexKnob_
+        EedPitchProcessor::kHumanize,      // humanKnob_
+        EedPitchProcessor::kTargetHz,      // targetKnob_
+        EedPitchProcessor::kResetStats,    // resetBtn_
+    };
+    return ids;
 }
