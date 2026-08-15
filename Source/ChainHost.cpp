@@ -1193,19 +1193,23 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
     { if (onDone) onDone(juce::StringArray{ why }, 0, true); };
 
     // ---- Pre-flight guard 1: revision (same-session staleness) ----
-    // ONE user-visible message for all three guards, but the EJEdit line
-    // names which one fired and what it compared: the 14 Aug 2026 false-
-    // staleness report was undiagnosable because the refusal asserted
-    // "chain changed" with no record of expected/live revision or of the
-    // baseSlots the ops were written against. ASCII punctuation only in
-    // these strings: they travel as char* literals into juce::String,
-    // which reads bytes, not UTF-8 (the em dash drew as mojibake).
+    // EACH guard names what it actually compared, in the log AND in the
+    // user-visible message (15 Aug 2026). The three used to share one
+    // string, so a baseSlots mismatch reported itself as "chain changed" -
+    // a cause that guard never checked, and in the 14 Aug live incident a
+    // false one: the rack had NOT changed since the proposal, the proposal
+    // was written for a chain that never loaded. A message asserting an
+    // unchecked cause is worse than a vague one, because it gets believed.
+    // ASCII punctuation only in these strings: they travel as char*
+    // literals into juce::String, which reads bytes, not UTF-8 (the em
+    // dash drew as mojibake).
     if (expectedRevision >= 0 && expectedRevision != getChainRevision())
     {
         EchoJay_NSLog(("EJEdit: preflight REFUSED guard=revision expected="
                        + juce::String(expectedRevision) + " live="
                        + juce::String(getChainRevision())).toRawUTF8());
-        return abort("chain changed since this edit was proposed - ask again");
+        return abort("the rack was modified after this edit was proposed"
+                     " - ask again");
     }
 
     // ---- Pre-flight guard 2: baseSlots vs live rack ----
@@ -1215,7 +1219,12 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
         EchoJay_NSLog(("EJEdit: preflight REFUSED guard=baseSlots-count base="
                        + juce::String(baseSlots.size()) + " [" + baseSlots.joinIntoString(", ")
                        + "] live=" + juce::String(n)).toRawUTF8());
-        return abort("chain changed since this edit was proposed - ask again");
+        return abort("this edit was written for a "
+                     + juce::String(baseSlots.size()) + "-slot chain, but the rack "
+                     + (n == 0 ? juce::String("is empty")
+                               : "has " + juce::String(n) + " slot"
+                                 + (n == 1 ? "" : "s"))
+                     + " - ask again");
     }
     for (int i = 0; i < n; ++i)
         if (!namesMatchLoose(baseSlots[i], slots_[(size_t)i].desc.name))
@@ -1223,7 +1232,9 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
             EchoJay_NSLog(("EJEdit: preflight REFUSED guard=baseSlots-name slot="
                            + juce::String(i) + " base=\"" + baseSlots[i] + "\" live=\""
                            + slots_[(size_t)i].desc.name + "\"").toRawUTF8());
-            return abort("chain changed since this edit was proposed - ask again");
+            return abort("this edit expected \"" + baseSlots[i] + "\" at slot "
+                         + juce::String(i + 1) + ", but the rack has \""
+                         + slots_[(size_t)i].desc.name + "\" there - ask again");
         }
     EchoJay_NSLog(("EJEdit: staleness guards passed rev=" + juce::String(getChainRevision())
                    + " slots=" + juce::String(n)
@@ -2229,7 +2240,7 @@ juce::String ChainHost::devApplyEqJson(int slotIndex, const juce::String& json)
     int applied = 0, skipped = 0;
     const auto summary = applyStructuredToBuiltinSlot(slotIndex, parsed, &applied, &skipped);
     if (summary.isEmpty())
-        return "nothing the EQ understands — expected a bare [...] eq_bands array, or "
+        return "nothing the EQ understands - expected a bare [...] eq_bands array, or "
                "{\"eq_bands\":[...], \"eq_settings\":{...}}";
 
     // Keep the rack card in step with what was just written.
