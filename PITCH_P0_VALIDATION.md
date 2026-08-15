@@ -1720,3 +1720,19 @@ control returns to auto** — held for separate scoping, as is the
 pitch_scale degree editor (twelve enables plus per-degree bias is a real
 panel, most naturally an interactive degree strip on the ribbon's existing
 scale lines; more than a small job, not bundled here).
+
+### 16.12 The key_source trapdoor, closed
+
+§16.11's loudest ledger entry is fixed: an AUTO/MANUAL toggle now sits
+beside the key and scale combos, spanning the two rows it governs. Lit
+means auto; clicking a combo still takes manual control as before, and the
+toggle is the way back - returning to auto clears the auto-key memo, the
+next block re-applies the detected key and scale, and the combos show them
+(dimmed) within a timer tick. Losing the detected-key feature for the life
+of the instance because of one click on a dropdown was a trapdoor in the
+device's headline reason to exist. reference_source keeps its ledger
+entry: the same one-way shape exists at the param level, but no hand
+control writes reference_hz, so only the model can spring that one - and
+the model can release it. The pitch_scale degree editor stays scoped
+separately (an interactive degree strip on the ribbon's scale lines is
+the right shape; not a small job).

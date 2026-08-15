@@ -153,6 +153,26 @@ EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
     setupToggle (correctBtn_, EedPitchProcessor::kCorrect);
     setupToggle (vibBtn_,     EedPitchProcessor::kIgnoreVib);
 
+    // THE WAY BACK TO AUTO. Touching key or scale takes manual control (by
+    // design - an edit the next block silently overwrites would look
+    // broken), but until this button that was a TRAPDOOR: one click on the
+    // key combo and the detected-key feature - the reason this device lives
+    // inside EchoJay at all - was gone for the life of the instance. The
+    // toggle reads key_source; lit means auto, and returning to auto
+    // re-applies the detected key and scale on the next block, which the
+    // combos then show (dimmed) within a timer tick.
+    styleButton (keyAutoBtn_, true);
+    keyAutoBtn_.setToggleState (
+        proc_.getParamValue (EedPitchProcessor::kKeySource) < 0.5,
+        juce::dontSendNotification);
+    keyAutoBtn_.onClick = [this]
+    {
+        if (suppressCallbacks_) return;
+        proc_.setParamValue (EedPitchProcessor::kKeySource,
+                             keyAutoBtn_.getToggleState() ? 0.0 : 1.0);
+    };
+    addAndMakeVisible (keyAutoBtn_);
+
     // THE LATENCY MODE. Deliberately a mode button rather than a checkbox: the
     // user is choosing between two WORKFLOWS, and the number it costs is the
     // whole point of the choice, so it is printed on the control.
@@ -263,6 +283,12 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
         modeBox_.setBounds (col.removeFromTop (comboH).reduced (1));
         keyBox_.setBounds (col.removeFromTop (comboH).reduced (1));
         scaleBox_.setBounds (col.removeFromTop (comboH).reduced (1));
+
+        // The AUTO/MANUAL toggle sits beside the two controls it governs,
+        // spanning the key and scale rows.
+        auto kcol = row.removeFromLeft (juce::jmin (46, row.getWidth()));
+        kcol.removeFromTop (comboH);
+        keyAutoBtn_.setBounds (kcol.reduced (1));
 
         row.removeFromLeft (juce::jmin (6, row.getWidth()));
         auto sw = row.removeFromLeft (juce::jmin (80, row.getWidth()));
@@ -538,6 +564,8 @@ void EedPitchEditor::syncFromProcessor()
             keyBox_.setAlpha (alpha);
             scaleBox_.setAlpha (alpha);
         }
+        if (keyAutoBtn_.getToggleState() != keyAuto)
+            keyAutoBtn_.setToggleState (keyAuto, juce::dontSendNotification);
     }
 
     auto syncToggle = [this] (juce::TextButton& b, const char* id)
@@ -579,6 +607,7 @@ const std::vector<const char*>& EedPitchEditor::handControlledParams()
         EedPitchProcessor::kMode,          // modeBox_
         EedPitchProcessor::kKeyRoot,       // keyBox_
         EedPitchProcessor::kScale,         // scaleBox_
+        EedPitchProcessor::kKeySource,     // keyAutoBtn_ - closes the one-way gap
         EedPitchProcessor::kCorrect,       // correctBtn_
         EedPitchProcessor::kIgnoreVib,     // vibBtn_
         EedPitchProcessor::kLowLatency,    // latencyBtn_

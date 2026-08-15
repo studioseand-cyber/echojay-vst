@@ -54,6 +54,7 @@ private:
     juce::ComboBox   voiceBox_, trackBox_, formantBox_, keyBox_, scaleBox_, modeBox_;
     juce::TextButton correctBtn_ { "CORRECT" };
     juce::TextButton vibBtn_     { "IGN VIB" };
+    juce::TextButton keyAutoBtn_ { "AUTO" };
 
     // low_latency is a WORKFLOW choice (tracking vs mixing), so it reads as a
     // mode rather than a checkbox, and carries the number it costs.

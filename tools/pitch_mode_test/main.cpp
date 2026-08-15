@@ -385,9 +385,9 @@ int main()
         // list and fails the build.
         struct NoUi { const char* id; const char* why; };
         static const NoUi kNoUi[] = {
-            { "key_source",       "ONE-WAY GAP: touching key/scale forces manual and no "
-                                  "hand control returns to auto - known, scope separately" },
-            { "reference_source", "no UI yet - auto tuning reference, rarely hand-set" },
+            { "reference_source", "no UI yet. Same one-way SHAPE as key_source's closed "
+                                  "gap, but no hand control writes reference_hz, so only "
+                                  "the model can spring it - and the model can release it" },
             { "reference_hz",     "no UI yet" },
             { "transpose",        "no UI yet" },
             { "natural_vibrato",  "no UI yet - character-relevant, worth a knob eventually" },
