@@ -21434,6 +21434,34 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
                            + juce::String(chainHost.getNumSlots()) + " slots, rev "
                            + juce::String(chainHost.getChainRevision())).toRawUTF8());
         }
+        else
+        {
+            // EMPTY IS DECLARED, NOT IMPLIED (15 Aug 2026). Absence of the
+            // [CURRENT CHAIN] block used to be the only signal that the rack
+            // was empty, and the server cannot tell absence of information
+            // from information about absence: after a recall that skipped
+            // every slot, the model kept reasoning against the chain it
+            // believed it had loaded and proposed edits to a rack that never
+            // existed (the 14 Aug false-staleness refusal). The marker MUST
+            // NOT start with "[CURRENT CHAIN": the server derives
+            // hasCurrentChain from that exact prefix (classify.js:519,
+            // _prompt-shapes.js:325, _chat-assembly.js:762) and an empty
+            // rack is correctly chain-absent for classification. Verified
+            // server-side before shipping: no server change needed - the
+            // typed-portion cut lands at the feed marker that precedes this
+            // arm (the same ordering convention [THIS CHANNEL] rides), and
+            // "[CURRENT RACK" collides with nothing in the api tree.
+            // Stripped from history via historyStripMarkers(), same as its
+            // non-empty sibling.
+            out += "\n\n[CURRENT RACK EMPTY - the user's rack has NO plugins"
+                   " loaded right now. This is a positive statement of"
+                   " emptiness, not missing data: no chain exists to edit or"
+                   " reference (a recall or build may have loaded nothing,"
+                   " whatever was discussed earlier), so treat any chain"
+                   " request as building from scratch and never propose"
+                   " edit ops against slots you believe are loaded.]";
+            EchoJay_NSLog("EJChat: CURRENT RACK EMPTY declaration attached (0 slots)");
+        }
     }
 
     // [SAVED CHAINS]: names and ids only, riding the SAME arms as the chain
@@ -24649,7 +24677,7 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
     const auto busMd = processorRef.getMeterEngine().getMeterData();
 
     juce::String c;
-    c << "\n\n[LINK LEVELS — internal context, do not show raw numbers unless "
+    c << "\n\n[LINK LEVELS - internal context, do not show raw numbers unless "
          "citing them in a gain proposal reason. All Link measurements below are "
          "taken at the Link's INSERT POINT, before the channel fader.]\n";
     const float busTrim = processorRef.getBusGainDb();
@@ -24675,10 +24703,10 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
         c << "\n";
     }
     // Placement-aware rules (see the investigation: no fader access).
-    c << "\nPLACEMENT RULES — read carefully:\n"
+    c << "\nPLACEMENT RULES - read carefully:\n"
          "- A Link's placement is either \"bus\" (post-fader: its loudness IS what "
          "reaches the mix), \"channel\" (pre-fader), or \"unset\" (user hasn't said; "
-         "treat it as channel — conservative).\n"
+         "treat it as channel - conservative).\n"
          "- For \"bus\" and \"send return\" Links, their loudness is their real "
          "contribution. You MAY compare their levels to each other and to the mix "
          "bus, and MAY propose gain changes, when the MEASURED values justify it.\n"
@@ -24709,7 +24737,7 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
              "question is about that Link's level, include exactly ONE gentle nudge in "
              "your reply (fold it into the caveat, not a separate paragraph, and never "
              "more than once): \"I can compare levels properly if you tell me whether "
-             "that Link is on a bus or a channel — set it in the Link's header.\" Do "
+             "that Link is on a bus or a channel - set it in the Link's header.\" Do "
              "not nag beyond this one sentence, and never block the answer.\n";
     c << "- DIRECTION: match the thing the user asked to MOVE. \"match X to Y\" "
          "moves X toward Y's level; Y is the reference and stays put. If the user "
@@ -24719,7 +24747,7 @@ juce::String EchoJayEditor::buildLinkLevelsContext()
          "gain. If the request is ambiguous about which side should move, ASK "
          "instead of proposing.\n"
          "- Never claim you changed a gain yourself - the user applies it.\n"
-         "\nProposal format — only when the rules above permit. Emit ONE block as the "
+         "\nProposal format - only when the rules above permit. Emit ONE block as the "
          "very last thing in your reply, nothing after <<<END_GAIN>>>:\n"
          "<<<ECHOJAY_GAIN>>>\n"
          "{\"proposals\":[{\"linkId\":\"<exact Link name>\",\"currentGain\":<dB now>,"
@@ -26367,20 +26395,20 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
         // Individual channels: only flag crest if drastically off
         if (d.crestFactor < 3.0f)
         {
-            flagsStr += "Dynamics: Crest " + juce::String(d.crestFactor, 1) + " dB — extremely squashed\n";
+            flagsStr += "Dynamics: Crest " + juce::String(d.crestFactor, 1) + " dB - extremely squashed\n";
             flaggedAnything = true;
         }
         
         // Include LUFS quietly for sanity checking — the AI is told not to mention it,
         // but uses it to detect if the readings don't match the channel type
-        flagsStr += "(Internal — do not mention to user) Integrated: " + ff(d.integrated) + " LUFS, LRA: " + juce::String(d.loudnessRange, 1) + " LU, Crest: " + juce::String(d.crestFactor, 1) + " dB\n";
+        flagsStr += "(Internal - do not mention to user) Integrated: " + ff(d.integrated) + " LUFS, LRA: " + juce::String(d.loudnessRange, 1) + " LU, Crest: " + juce::String(d.crestFactor, 1) + " dB\n";
     }
     
     // True peak: flag clipping
     float tpThreshold = isIndividual ? 0.0f : 2.0f;
     if (d.truePeakL > tpThreshold || d.truePeakR > tpThreshold)
     {
-        flagsStr += "True Peak: L " + ff(d.truePeakL) + " dBTP | R " + ff(d.truePeakR) + " dBTP — clipping\n";
+        flagsStr += "True Peak: L " + ff(d.truePeakL) + " dBTP | R " + ff(d.truePeakR) + " dBTP - clipping\n";
         flaggedAnything = true;
     }
     
@@ -26388,17 +26416,17 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
     if (isFullMix)
     {
         if (d.width < 10.0f)
-            flagsStr += "Stereo: Width " + juce::String(d.width, 1) + "% — narrow\n";
+            flagsStr += "Stereo: Width " + juce::String(d.width, 1) + "% - narrow\n";
         else if (d.width > 55.0f)
-            flagsStr += "Stereo: Width " + juce::String(d.width, 1) + "% — wide\n";
+            flagsStr += "Stereo: Width " + juce::String(d.width, 1) + "% - wide\n";
         if (d.correlation < 0.0f)
-            flagsStr += "Correlation: " + juce::String(d.correlation, 2) + " — PHASE ISSUES\n";
+            flagsStr += "Correlation: " + juce::String(d.correlation, 2) + " - PHASE ISSUES\n";
     }
     else if (ch == "Synth Pad" || ch == "Overheads" || ch == "Orchestral" || ch == "Strings")
     {
         if (d.width < 5.0f)
         {
-            flagsStr += "Stereo: Width " + juce::String(d.width, 1) + "% — unexpectedly mono\n";
+            flagsStr += "Stereo: Width " + juce::String(d.width, 1) + "% - unexpectedly mono\n";
             flaggedAnything = true;
         }
     }
@@ -26523,9 +26551,9 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
             if (peakBandIdx >= 3) // peak in mids or higher
             { mismatch = true; reason = "peak energy is in the upper bands, not the low end"; }
             else if (peakBandIdx <= 1 && bandCrest[peakBandIdx] > 14.0f)
-            { mismatch = true; reason = "the low-end character is highly transient — more like a kick than a sustained bass"; }
+            { mismatch = true; reason = "the low-end character is highly transient - more like a kick than a sustained bass"; }
             else if (highActive && bandCrest[5] > 14.0f && !subActive)
-            { mismatch = true; reason = "high-frequency transient energy with no sub — looks more like a hat or percussion"; }
+            { mismatch = true; reason = "high-frequency transient energy with no sub - looks more like a hat or percussion"; }
         }
         else if (ch == "Bass Guitar")
         {
@@ -26541,20 +26569,20 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
         else if (ch == "Hi-Hat")
         {
             if (peakBandIdx <= 1)
-            { mismatch = true; reason = "peak energy is in the sub/low — hi-hats live in the upper bands"; }
+            { mismatch = true; reason = "peak energy is in the sub/low - hi-hats live in the upper bands"; }
             else if (peakBandIdx <= 3 && bandCrest[5] < 6.0f)
-            { mismatch = true; reason = "no transient character in the highs — doesn't look like a hi-hat"; }
+            { mismatch = true; reason = "no transient character in the highs - doesn't look like a hi-hat"; }
         }
         else if (ch == "Snare")
         {
             if (peakBandIdx == 0) // peak in sub
-            { mismatch = true; reason = "peak energy is in the sub — that's not where a snare lives"; }
+            { mismatch = true; reason = "peak energy is in the sub - that's not where a snare lives"; }
         }
         else if (ch == "Lead Vocal" || ch == "Backing Vocal" || ch == "Adlibs" || ch == "Vocal Bus")
         {
             // Peak in sub = definitely not a vocal
             if (peakBandIdx == 0)
-            { mismatch = true; reason = "peak energy is in the sub-bass range — not characteristic of a vocal"; }
+            { mismatch = true; reason = "peak energy is in the sub-bass range - not characteristic of a vocal"; }
             else
             {
                 // Loosened: 4+ active bands (was 5+) catches mixes where mastering HPF
@@ -26565,17 +26593,17 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
                 bool sustainedLow = lowActive && bandCrest[1] < 9.0f;
                 
                 if (activeCount >= 4 && (sustainedSub || sustainedLow))
-                { mismatch = true; reason = "energy is spread across the frequency range with sustained low-end content — looks more like a full mix or instrumental than an isolated vocal"; }
+                { mismatch = true; reason = "energy is spread across the frequency range with sustained low-end content - looks more like a full mix or instrumental than an isolated vocal"; }
                 // Or: any vocal channel with significant sub presence is suspicious — vocals
                 // shouldn't have meaningful sub energy unless they're heavily processed/layered
                 else if (subActive && (peakBandDb - bands[0].avgDb) < 18.0f)
-                { mismatch = true; reason = "there's significant sub-bass content for a vocal channel — vocals usually sit above 100Hz, so this could be a full mix or unusual processing"; }
+                { mismatch = true; reason = "there's significant sub-bass content for a vocal channel - vocals usually sit above 100Hz, so this could be a full mix or unusual processing"; }
             }
         }
         else if (ch == "Sub Bass")
         {
             if (peakBandIdx >= 2)
-            { mismatch = true; reason = "peak energy is above the sub range — sub-bass should sit below 80Hz"; }
+            { mismatch = true; reason = "peak energy is above the sub range - sub-bass should sit below 80Hz"; }
         }
         else if (ch == "Piano" || ch == "Keys" || ch == "Acoustic Guitar" || ch == "Electric Guitar")
         {
@@ -26586,16 +26614,16 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
         else if (ch == "Drum Bus" || ch == "Percussion")
         {
             if (bandCrest[peakBandIdx] < 6.0f)
-            { mismatch = true; reason = "no transient character — drums/percussion should show sharper peaks than this"; }
+            { mismatch = true; reason = "no transient character - drums/percussion should show sharper peaks than this"; }
         }
         
         if (mismatch)
         {
             juce::String guess = guessShape();
-            channelMismatchFlag = "CHANNEL SHAPE UNUSUAL: The reading is unusual for a \"" + ch + "\" — " + reason;
+            channelMismatchFlag = "CHANNEL SHAPE UNUSUAL: The reading is unusual for a \"" + ch + "\" - " + reason;
             if (guess.isNotEmpty())
                 channelMismatchFlag += ". The shape is closer to what we'd expect from " + guess;
-            channelMismatchFlag += ". Mention this to the user as something worth checking — frame it as a question, not a verdict (e.g. 'these readings are a bit unusual for an 808 — is this definitely a bass?'). The user knows what they captured better than the meters do, so it might be a genuine creative choice (heavy distortion, layering, sidechaining etc) — leave room for that.\n";
+            channelMismatchFlag += ". Mention this to the user as something worth checking - frame it as a question, not a verdict (e.g. 'these readings are a bit unusual for an 808 - is this definitely a bass?'). The user knows what they captured better than the meters do, so it might be a genuine creative choice (heavy distortion, layering, sidechaining etc) - leave room for that.\n";
             flaggedAnything = true;
         }
     }
@@ -26623,7 +26651,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
         
         // Less than 3 active bands = probably not a full mix (full mixes spread across spectrum)
         if (activeCount < 3)
-        { busShapeOdd = true; busReason = "energy is concentrated in only " + juce::String(activeCount) + " band(s) — a full mix usually has energy across most of the spectrum"; busGuess = "an isolated element rather than a full mix"; }
+        { busShapeOdd = true; busReason = "energy is concentrated in only " + juce::String(activeCount) + " band(s) - a full mix usually has energy across most of the spectrum"; busGuess = "an isolated element rather than a full mix"; }
         // Peak in mids/upper-mids with no sustained low end = vocal/single melodic element
         else if ((peakBandIdx == 3 || peakBandIdx == 4) && !sustainedLowEnd && !subActive)
         { busShapeOdd = true; busReason = "the energy is sitting up in the mids with no sustained low end"; busGuess = "an isolated vocal or single melodic element"; }
@@ -26636,9 +26664,9 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
         
         if (busShapeOdd)
         {
-            channelMismatchFlag = "CHANNEL SHAPE UNUSUAL: The reading is unusual for a \"" + ch + "\" — " + busReason
+            channelMismatchFlag = "CHANNEL SHAPE UNUSUAL: The reading is unusual for a \"" + ch + "\" - " + busReason
                 + ". The shape is closer to what we'd expect from " + busGuess
-                + ". Mention this to the user as something worth checking — frame it as a question, not a verdict (e.g. 'these readings look more like a single element than a full mix — did you mean to capture this on the Mix Bus?'). They might have a stripped-back section playing or be testing something unusual, so leave room for that.\n";
+                + ". Mention this to the user as something worth checking - frame it as a question, not a verdict (e.g. 'these readings look more like a single element than a full mix - did you mean to capture this on the Mix Bus?'). They might have a stripped-back section playing or be testing something unusual, so leave room for that.\n";
             flaggedAnything = true;
         }
     }
@@ -26693,7 +26721,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
                 if (avg > prevPeakDb) { prevPeakDb = avg; prevPeakBand = b; }
             }
             if (std::abs(peakBandIdx - prevPeakBand) >= 2)
-            { driftFlags++; driftReasons.add("the spectrum shape has moved — a different frequency range is dominant now"); }
+            { driftFlags++; driftReasons.add("the spectrum shape has moved - a different frequency range is dominant now"); }
             
             // Width shift > 30%
             float widthDiff = std::abs(snap.averagedData.width - prev.averagedData.width);
@@ -26702,9 +26730,9 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
             
             if (driftFlags >= 2)
             {
-                channelMismatchFlag = "CAPTURE DRIFT: This " + ch + " capture is significantly different from the previous one — " 
+                channelMismatchFlag = "CAPTURE DRIFT: This " + ch + " capture is significantly different from the previous one - " 
                     + driftReasons.joinIntoString(", ") 
-                    + ". Open by mentioning this is a big shift from the previous pass and ask what's different — could be a different song or section, an element captured by accident, or major mix changes. Don't assume it's a mistake; frame it as a question.\n";
+                    + ". Open by mentioning this is a big shift from the previous pass and ask what's different - could be a different song or section, an element captured by accident, or major mix changes. Don't assume it's a mistake; frame it as a question.\n";
                 flaggedAnything = true;
             }
         }
@@ -26755,7 +26783,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
         if (emptyBandCount > 0)
         {
             flagsStr += "Spectrum: " + activeBandSummary + "\n";
-            flagsStr += juce::String("SPECTRUM ISSUE: No energy in ") + emptyBandNames + " — entire frequency range(s) missing from this mix\n";
+            flagsStr += juce::String("SPECTRUM ISSUE: No energy in ") + emptyBandNames + " - entire frequency range(s) missing from this mix\n";
         }
         
         // Check for any band peaking near 0dBFS (sustained clipping-level energy)
@@ -26764,7 +26792,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
             if (bands[b].avgDb > -3.0f)
             {
                 if (emptyBandCount == 0) flagsStr += "Spectrum: " + activeBandSummary + "\n";
-                flagsStr += juce::String("SPECTRUM ISSUE: ") + bands[b].name + " is averaging " + juce::String(bands[b].avgDb, 0) + "dB — extremely hot\n";
+                flagsStr += juce::String("SPECTRUM ISSUE: ") + bands[b].name + " is averaging " + juce::String(bands[b].avgDb, 0) + "dB - extremely hot\n";
                 break;
             }
         }
@@ -26798,12 +26826,12 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
         
         if (expectsLowEnd && subEmpty && lowEmpty)
         {
-            flagsStr += "SPECTRUM WARNING: No sub or low frequency content detected — unusual for " + ch.toLowerCase() + ". Possible HPF issue or wrong channel type selected.\n";
+            flagsStr += "SPECTRUM WARNING: No sub or low frequency content detected - unusual for " + ch.toLowerCase() + ". Possible HPF issue or wrong channel type selected.\n";
             flaggedAnything = true;
         }
         else if (expectsLowEnd && subEmpty && !lowEmpty)
         {
-            flagsStr += "SPECTRUM NOTE: No sub content below 80Hz — the low end starts from around 80Hz upward.\n";
+            flagsStr += "SPECTRUM NOTE: No sub content below 80Hz - the low end starts from around 80Hz upward.\n";
             flaggedAnything = true;
         }
         
@@ -26813,7 +26841,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
             float subLevel = bands[0].avgDb;
             if (subLevel > -50.0f)
             {
-                flagsStr += "SPECTRUM WARNING: Sub energy detected at " + juce::String(subLevel, 0) + "dB — likely bleed or missing HPF.\n";
+                flagsStr += "SPECTRUM WARNING: Sub energy detected at " + juce::String(subLevel, 0) + "dB - likely bleed or missing HPF.\n";
                 flaggedAnything = true;
             }
         }
@@ -26822,7 +26850,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
             float lowLevel = bands[1].avgDb;
             if (lowLevel > -40.0f)
             {
-                flagsStr += "SPECTRUM WARNING: Low-end energy detected at " + juce::String(lowLevel, 0) + "dB — bleed or missing HPF.\n";
+                flagsStr += "SPECTRUM WARNING: Low-end energy detected at " + juce::String(lowLevel, 0) + "dB - bleed or missing HPF.\n";
                 flaggedAnything = true;
             }
         }
@@ -26832,14 +26860,14 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
                         (peakBandDb - bands[3].avgDb > emptyRelativeThreshold);
         if (expectsMids && midEmpty)
         {
-            flagsStr += "SPECTRUM WARNING: No mid-range energy (1-4kHz) — this will lack presence and clarity.\n";
+            flagsStr += "SPECTRUM WARNING: No mid-range energy (1-4kHz) - this will lack presence and clarity.\n";
             flaggedAnything = true;
         }
         
         // Flag: extreme case — almost all energy in one band only
         if (activeBandCount <= 1 && emptyBandCount >= 4)
         {
-            flagsStr += juce::String("SPECTRUM WARNING: Energy concentrated in only ") + juce::String(activeBandCount) + " band(s) — " + 
+            flagsStr += juce::String("SPECTRUM WARNING: Energy concentrated in only ") + juce::String(activeBandCount) + " band(s) - " + 
                 juce::String(emptyBandCount) + " bands are empty. This is very unusual and suggests heavy filtering, wrong channel, or a processing issue.\n";
             flaggedAnything = true;
         }
@@ -26847,7 +26875,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
         // Flag: everything is empty (silence or near-silence)
         if (emptyBandCount == numBands)
         {
-            flagsStr += "SPECTRUM WARNING: No significant energy in any frequency band — the signal may be extremely quiet or silent.\n";
+            flagsStr += "SPECTRUM WARNING: No significant energy in any frequency band - the signal may be extremely quiet or silent.\n";
             flaggedAnything = true;
         }
     }
@@ -26893,7 +26921,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
         for (int b = 0; b < numBands; ++b)
             if (bands[b].avgDb < quietestDb && bands[b].avgDb > -90.0f) { quietestDb = bands[b].avgDb; quietest = b; }
         
-        juce::String p = "[SPECTRUM REFERENCE — DO NOT mention this on the initial review. ONLY use if the user asks about frequencies, tonal balance, the spectrum, or the lows/mids/highs. When they ask, describe in plain language — never quote dB values or band names.]\n";
+        juce::String p = "[SPECTRUM REFERENCE - DO NOT mention this on the initial review. ONLY use if the user asks about frequencies, tonal balance, the spectrum, or the lows/mids/highs. When they ask, describe in plain language - never quote dB values or band names.]\n";
         p += "Band profile (avg dB / crest dB): ";
         for (int b = 0; b < numBands; ++b)
         {
@@ -26935,7 +26963,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
         // block (added below) tells it to only use that data on follow-up.
         meterCtx = "\n\n[" + (isFullMix ? "FULL TRACK" : ch.toUpperCase()) + 
                    (isIndividual ? " CHANNEL" : " ANALYSIS") + 
-                   ": \"" + snap.name + "\" (" + durStr + ") — meters aren't flagging anything]\n";
+                   ": \"" + snap.name + "\" (" + durStr + ") - meters aren't flagging anything]\n";
         // For full mix we ALWAYS emit LUFS and crest values, even when nothing
         // is flagged — without these the AI hallucinates plausible-sounding
         // numbers (consistently inventing things like "-9 LUFS, 8dB crest").
@@ -26975,12 +27003,12 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
     {
         const char* angles[] = {
             "If nothing is wrong, offer to build a processing chain using their plugins with specific settings.",
-            "If nothing is wrong, ask what they're going for with this sound — what vibe or direction.",
+            "If nothing is wrong, ask what they're going for with this sound - what vibe or direction.",
             "If nothing is wrong, suggest one creative technique they could try with this element. Be specific.",
             "If nothing is wrong, ask what part of the sound they're least happy with.",
             "If nothing is wrong, pick an interesting plugin from their list and suggest how it could colour this sound.",
             "If nothing is wrong, ask if they want to A/B this against a reference in Compare Mixes.",
-            "If nothing is wrong, offer a quick tip relevant to this type of channel — something practical, not generic."
+            "If nothing is wrong, offer a quick tip relevant to this type of channel - something practical, not generic."
         };
         int angleIdx = (int)(juce::Time::currentTimeMillis() % 7);
         meterCtx += "\n[APPROACH: " + juce::String(angles[angleIdx]) + "]\n";
@@ -26992,7 +27020,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
     if (!channelScoped && !snap.channels.empty())
     {
         auto ff2 = [](float v) -> juce::String { return v > -99 ? juce::String(v, 1) : "N/A"; };
-        juce::String mcCtx = "\n\n[MULTI-CHANNEL CAPTURE — " + juce::String((int)snap.channels.size()) + " channels]\n";
+        juce::String mcCtx = "\n\n[MULTI-CHANNEL CAPTURE - " + juce::String((int)snap.channels.size()) + " channels]\n";
         mcCtx += "Channels captured: ";
         for (size_t ci = 0; ci < snap.channels.size(); ++ci)
         {
@@ -27016,8 +27044,8 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
                 if (live.isNotEmpty()) chName = live;
             }
             juce::String header = (ci == 0)
-                ? ("[HOST — " + chName + "]\n")
-                : ("[LINK — " + chName + "]\n");
+                ? ("[HOST - " + chName + "]\n")
+                : ("[LINK - " + chName + "]\n");
             mcCtx += header;
             // Capture honesty via the FRAMES SENTINEL (framesReceived): the
             // two facts the injection could not tell apart are now
@@ -27052,7 +27080,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
             }
             else
             {
-            mcCtx += "(Internal — do not show raw numbers) ";
+            mcCtx += "(Internal - do not show raw numbers) ";
             mcCtx += "Integrated: " + ff2(md.integrated) + " LUFS | LRA: " + ff2(md.loudnessRange) + " LU\n";
             mcCtx += "Peak: L " + ff2(md.peakMaxL) + " / R " + ff2(md.peakMaxR) + " dBFS\n";
             mcCtx += "RMS: L " + ff2(md.rmsL) + " / R " + ff2(md.rmsR) + " dB\n";
@@ -27166,7 +27194,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
         // Compare to previous revision
         auto& pr = prevReview->data;
         juce::String prevBlock =
-            "\n\n[PREVIOUS REVISION DATA — do not show these numbers to the user, "
+            "\n\n[PREVIOUS REVISION DATA - do not show these numbers to the user, "
             "use them to compare against the current meter data:]\n"
             "Loudness: Integrated " + ff(pr.integ) + " LUFS | LRA " + ff(pr.range) + " LU\n"
             "Levels: Avg RMS " + ff(pr.rmsL) + "/" + ff(pr.rmsR) + " dB"

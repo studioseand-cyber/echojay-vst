@@ -2007,7 +2007,7 @@ namespace {
         }
         
         if (flagged == 0) {
-            ctx += "TONAL BALANCE: Very similar across the frequency range — no notable band differences.\n";
+            ctx += "TONAL BALANCE: Very similar across the frequency range - no notable band differences.\n";
         } else {
             ctx += "TONAL BALANCE DIFFERENCES (relative, already normalised for overall level):\n";
             ctx += tonalLines;
@@ -2022,7 +2022,7 @@ juce::String EchoJayProcessor::buildCompareContext(const CaptureSnapshot& captur
     auto& b = reference.data;
     
     juce::String ctx;
-    ctx += "[BEGIN COMPARE CONTEXT — this block is a one-off comparison, NOT an ongoing mix discussion]\n";
+    ctx += "[BEGIN COMPARE CONTEXT - this block is a one-off comparison, NOT an ongoing mix discussion]\n";
     ctx += "[AI COMPARE REQUEST: Your mix (" + capture.name + ") vs Reference (" + reference.name + ")]\n\n";
     ctx += "YOUR MIX: Int " + ff(a.integrated) + " LUFS | Crest " + juce::String(a.crestFactor, 1) + " dB";
     if (a.width < 10.0f || a.width > 55.0f) ctx += " | Width " + juce::String(a.width, 1) + "%";
@@ -2047,7 +2047,7 @@ juce::String EchoJayProcessor::buildCompareContext(const CaptureSnapshot& captur
     ctx += "\n";
     appendTonalDiff(ctx, a.spectrum, reference.eqCurve, "your mix", "the reference");
     
-    ctx += "\nINSTRUCTIONS: Only comment on differences that are genuinely significant. Small variations (< 1.5 LUFS, < 2dB crest, < 15% width) are normal and should be described as practically the same. Width is not a reliable metric — only flag if the difference is drastic. For tonal balance, speak in plain language ('your mix is heavier in the low end', 'the reference has more air on top') — do NOT quote dB values or band names like '200-600Hz' to the user. Focus on what the user should actually do differently to get closer to the reference. Be concise — 2-3 paragraphs max.\n";
+    ctx += "\nINSTRUCTIONS: Only comment on differences that are genuinely significant. Small variations (< 1.5 LUFS, < 2dB crest, < 15% width) are normal and should be described as practically the same. Width is not a reliable metric - only flag if the difference is drastic. For tonal balance, speak in plain language ('your mix is heavier in the low end', 'the reference has more air on top') - do NOT quote dB values or band names like '200-600Hz' to the user. Focus on what the user should actually do differently to get closer to the reference. Be concise - 2-3 paragraphs max.\n";
     
     // Length-based caveats — comparing a snippet against a full track (or vice
     // versa) skews tonal balance and dynamics readings, so the AI must mention this.
@@ -2061,20 +2061,20 @@ juce::String EchoJayProcessor::buildCompareContext(const CaptureSnapshot& captur
         {
             ctx += "[LENGTH MISMATCH: Your capture is " + juce::String((int)capDur) + "s, the reference is " 
                 + juce::String((int)refDur) + "s. Open the response by telling the user this comparison may be misleading "
-                "because one is a short snippet and one is a full track — tonal balance especially can read very differently. "
+                "because one is a short snippet and one is a full track - tonal balance especially can read very differently. "
                 "Suggest they capture a longer section (ideally a full chorus and verse) for a more accurate comparison. "
                 "Then proceed with the comparison but keep caveats in mind.]\n";
         }
         else if (capDur < 30.0f)
         {
-            ctx += "[CAPTURE LENGTH: Your capture is only " + juce::String((int)capDur) + "s — mention briefly that the "
+            ctx += "[CAPTURE LENGTH: Your capture is only " + juce::String((int)capDur) + "s - mention briefly that the "
                 "comparison is based on a short snippet and a longer capture would give a fuller picture, "
                 "but proceed with the comparison.]\n";
         }
     }
     
     ctx += "[END COMPARE CONTEXT]\n";
-    ctx += "[PERSISTENT NOTE: If the user later captures a new mix and asks about it, DO NOT treat the numbers in the compare block above as a previous version of that new mix. The compare block is a snapshot of this specific comparison, not part of an ongoing capture history. New captures have their own CURRENT MIX data — use only that for new-capture analysis.]\n";
+    ctx += "[PERSISTENT NOTE: If the user later captures a new mix and asks about it, DO NOT treat the numbers in the compare block above as a previous version of that new mix. The compare block is a snapshot of this specific comparison, not part of an ongoing capture history. New captures have their own CURRENT MIX data - use only that for new-capture analysis.]\n";
     
     return ctx;
 }
@@ -2086,7 +2086,7 @@ juce::String EchoJayProcessor::buildCompareContext(const CaptureSnapshot& a, con
     auto& db = b.averagedData;
     
     juce::String ctx;
-    ctx += "[BEGIN COMPARE CONTEXT — this block is a one-off comparison, NOT an ongoing mix discussion]\n";
+    ctx += "[BEGIN COMPARE CONTEXT - this block is a one-off comparison, NOT an ongoing mix discussion]\n";
     ctx += "[AI COMPARE REQUEST: " + a.name + " vs " + b.name + "]\n\n";
     ctx += a.name + ": Int " + ff(da.integrated) + " LUFS | Crest " + juce::String(da.crestFactor, 1) + " dB";
     if (da.width < 10.0f || da.width > 55.0f) ctx += " | Width " + juce::String(da.width, 1) + "%";
@@ -2113,7 +2113,7 @@ juce::String EchoJayProcessor::buildCompareContext(const CaptureSnapshot& a, con
     ctx += "\n";
     appendTonalDiff(ctx, da.spectrum, db.spectrum, a.name, b.name);
     
-    ctx += "\nINSTRUCTIONS: Only comment on differences that are genuinely significant. Small variations (< 1.5 LUFS, < 2dB crest, < 15% width) are normal measurement noise and should be described as practically the same — do NOT suggest changes for metrics that haven't meaningfully changed. Width is not reliable enough to suggest changes unless the difference is drastic (> 15%). For tonal balance, speak in plain language ('more low end', 'brighter on top') — do NOT quote dB values or band names like '200-600Hz' to the user. If the passes are essentially the same, say so and ask what they changed or what they're trying to achieve. Be concise — 2-3 paragraphs max.\n";
+    ctx += "\nINSTRUCTIONS: Only comment on differences that are genuinely significant. Small variations (< 1.5 LUFS, < 2dB crest, < 15% width) are normal measurement noise and should be described as practically the same - do NOT suggest changes for metrics that haven't meaningfully changed. Width is not reliable enough to suggest changes unless the difference is drastic (> 15%). For tonal balance, speak in plain language ('more low end', 'brighter on top') - do NOT quote dB values or band names like '200-600Hz' to the user. If the passes are essentially the same, say so and ask what they changed or what they're trying to achieve. Be concise - 2-3 paragraphs max.\n";
     
     // Length-based caveats
     float aDur = a.durationSeconds, bDur = b.durationSeconds;
@@ -2125,18 +2125,18 @@ juce::String EchoJayProcessor::buildCompareContext(const CaptureSnapshot& a, con
         {
             ctx += "[LENGTH MISMATCH: " + a.name + " is " + juce::String((int)aDur) + "s, " + b.name + " is " 
                 + juce::String((int)bDur) + "s. Open by telling the user this comparison may be misleading because "
-                "one capture is a short snippet and the other is much longer — tonal balance especially won't read accurately. "
+                "one capture is a short snippet and the other is much longer - tonal balance especially won't read accurately. "
                 "Suggest they capture matching sections for a fairer comparison, then proceed with the comparison.]\n";
         }
         else if (aDur < 30.0f && bDur < 30.0f)
         {
-            ctx += "[SHORT CAPTURES: Both passes are under 30s — mention briefly that short snippets can give a partial "
+            ctx += "[SHORT CAPTURES: Both passes are under 30s - mention briefly that short snippets can give a partial "
                 "picture, but proceed with the comparison.]\n";
         }
     }
     
     ctx += "[END COMPARE CONTEXT]\n";
-    ctx += "[PERSISTENT NOTE: If the user later captures a new pass and asks about it, DO NOT treat the numbers in the compare block above as a previous version of that new capture. This compare is a snapshot of two specific passes at one moment. New captures have their own CURRENT MIX data — use only that for new-capture analysis.]\n";
+    ctx += "[PERSISTENT NOTE: If the user later captures a new pass and asks about it, DO NOT treat the numbers in the compare block above as a previous version of that new capture. This compare is a snapshot of two specific passes at one moment. New captures have their own CURRENT MIX data - use only that for new-capture analysis.]\n";
     
     return ctx;
 }
@@ -2303,7 +2303,7 @@ juce::String EchoJayProcessor::buildCompareContext(const ReferenceResult& a, con
     auto& db = b.data;
     
     juce::String ctx;
-    ctx += "[BEGIN COMPARE CONTEXT — this block is a one-off comparison of REFERENCE tracks, NOT the user's mix]\n";
+    ctx += "[BEGIN COMPARE CONTEXT - this block is a one-off comparison of REFERENCE tracks, NOT the user's mix]\n";
     ctx += "[AI COMPARE REQUEST: Reference A (" + a.name + ") vs Reference B (" + b.name + ")]\n\n";
     ctx += a.name + ": Int " + ff(da.integrated) + " LUFS | Crest " + juce::String(da.crestFactor, 1) + " dB";
     if (da.width < 10.0f || da.width > 55.0f) ctx += " | Width " + juce::String(da.width, 1) + "%";
@@ -2331,7 +2331,7 @@ juce::String EchoJayProcessor::buildCompareContext(const ReferenceResult& a, con
     ctx += "\n";
     appendTonalDiff(ctx, a.eqCurve, b.eqCurve, a.name, b.name);
     
-    ctx += "\nINSTRUCTIONS: The user is comparing two reference tracks (not their own mix) — this is usually to understand what separates two sounds they like, or to pick which one to aim for. Focus on what's genuinely different between the two. For tonal balance, speak in plain language ('more low end', 'brighter on top') — do NOT quote dB values or band names like '200-600Hz'. Do NOT suggest 'changes the user should make' since these aren't their mixes. Be concise — 2-3 paragraphs max.\n";
+    ctx += "\nINSTRUCTIONS: The user is comparing two reference tracks (not their own mix) - this is usually to understand what separates two sounds they like, or to pick which one to aim for. Focus on what's genuinely different between the two. For tonal balance, speak in plain language ('more low end', 'brighter on top') - do NOT quote dB values or band names like '200-600Hz'. Do NOT suggest 'changes the user should make' since these aren't their mixes. Be concise - 2-3 paragraphs max.\n";
     
     // Length-based caveats — references are usually full tracks but worth checking
     float aDur = a.durationSeconds, bDur = b.durationSeconds;
@@ -2347,7 +2347,7 @@ juce::String EchoJayProcessor::buildCompareContext(const ReferenceResult& a, con
     }
     
     ctx += "[END COMPARE CONTEXT]\n";
-    ctx += "[PERSISTENT NOTE: The two tracks above are REFERENCE tracks — not the user's own mix. If the user later captures their mix and asks about it, DO NOT treat these reference numbers as a previous version of their capture. Reference tracks and user captures are separate things.]\n";
+    ctx += "[PERSISTENT NOTE: The two tracks above are REFERENCE tracks - not the user's own mix. If the user later captures their mix and asks about it, DO NOT treat these reference numbers as a previous version of their capture. Reference tracks and user captures are separate things.]\n";
     
     return ctx;
 }
