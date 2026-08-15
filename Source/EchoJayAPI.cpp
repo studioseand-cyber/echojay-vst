@@ -1891,7 +1891,13 @@ void EchoJayAPI::classify(const ClassifyRequest& req,
     });
 
     postJSON("/api/classify", juce::JSON::toString(juce::var(body.get())),
-             [answer, latch, aliveFlag, sentChannel = req.channel]
+             [answer, latch, aliveFlag, sentChannel = req.channel,
+              // Request-side fact, decided at send: the advisory gate depends
+              // on the [SAVED CHAINS] marker riding this turn's composed
+              // message, and until now its presence was not observable from
+              // the client. Tested here on the SENT string, not re-derived
+              // at log time from state that may have moved.
+              sentSavedChains = req.message.contains("\n\n[SAVED CHAINS")]
              (const juce::var& json, int statusCode)
     {
         if (latch->exchange(true)) return;   // the deadline already answered
@@ -1958,7 +1964,11 @@ void EchoJayAPI::classify(const ClassifyRequest& req,
                        + " preamble=" + (r.preamble.isNotEmpty() ? "yes" : "no")
                        + " token=" + (r.token.isNotEmpty() ? "yes" : "no")
                        + " mode=" + r.mode
-                       + (r.fallback.isNotEmpty() ? " fallback=" + r.fallback : juce::String())).toRawUTF8());
+                       // both stated positively on every line: a fallback is
+                       // reported, never inferred from a field's absence, and
+                       // savedChains says whether the marker rode THIS request
+                       + " fallback=" + (r.fallback.isNotEmpty() ? r.fallback : juce::String("(none)"))
+                       + " savedChains=" + (sentSavedChains ? "yes" : "no")).toRawUTF8());
 
         if (*answer) (*answer)(r);
     }, /*maxAttempts*/ 1, /*connectTimeoutMs*/ kClassifyBudgetMs);
