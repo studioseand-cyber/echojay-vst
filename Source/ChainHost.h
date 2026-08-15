@@ -65,6 +65,30 @@ public:
         const juce::String& filter,
         const juce::String& formatFilter = {}) const;
 
+    // Why a scanned row is withheld from the browser and the feed (15 Aug
+    // 2026). ONE function decides; getFilteredPlugins, resolveByName and
+    // buildRecommendable all call it, so the predicate and the reason
+    // cannot disagree. Settings draws the reason; nothing here renders.
+    //   CrashBlacklisted          on chain_blacklist.txt (withheld)
+    //   ArchitectureIncompatible  VST3 with no slice for this process (withheld)
+    //   Unreadable                VST3 whose binary could not be judged. KEPT:
+    //                             it is in the enum so a diagnostic can tell
+    //                             it from Loadable, never so it can be filtered.
+    //   None                      kept
+    // The format filter is not a withhold (a per-host view) and is applied
+    // separately at each site. Cheap per row: the arch memo already exists.
+    enum class WithholdReason { None, CrashBlacklisted, ArchitectureIncompatible, Unreadable };
+    static bool isWithheld(WithholdReason r) noexcept
+    {
+        return r == WithholdReason::CrashBlacklisted
+            || r == WithholdReason::ArchitectureIncompatible;
+    }
+    WithholdReason withholdReason(const juce::PluginDescription& d) const;   // takes pluginsMutex_
+    // User-facing clause completing "\"<name>\" ...", e.g. "is installed but
+    // its VST3 has no arm64 build, so it cannot run in this host". Empty for
+    // None and Unreadable (nothing to explain: the row is offered).
+    static juce::String withholdReasonText(WithholdReason r);
+
     // ---- Settings ↔ ChainHost resolver (message thread) -----------------
     // A "recommendable" plugin is BOTH enabled in the Settings checklist AND
     // present in ChainHost's loadable entries_ list (same format filter applies).
@@ -385,9 +409,18 @@ public:
     // Resolve an incoming chain-entry name against the loadable entries.
     // matchLogOut (optional) receives the match path taken, or the closest
     // candidates on failure — for build-time diagnostics.
+    //
+    // Honest miss (15 Aug 2026): a name that matches a row this host
+    // WITHHOLDS (isWithheld) still returns empty, so nothing resolves that
+    // cannot load, but the miss says which it was: matchLogOut reads
+    // "WITHHELD (<reason>) -> ..." and *withheldOut receives the reason.
+    // A genuine miss leaves *withheldOut at None. Callers turn that into
+    // "cannot run in this host" instead of "not found", which is the one
+    // case where the user can act on the truth.
     juce::PluginDescription resolveByName(const juce::String& rawName,
                                           const juce::String& formatFilter,
-                                          juce::String* matchLogOut = nullptr) const;
+                                          juce::String* matchLogOut = nullptr,
+                                          WithholdReason* withheldOut = nullptr) const;
 
     // ---- Built-in devices (EchoJay-owned nodes hosted as ordinary slots) ---
     // The chain otherwise only hosts what formatManager_ can instantiate from
@@ -985,6 +1018,10 @@ private:
     bool archLoadable(const juce::String& path) const;   // Unreadable counts as loadable
     mutable std::mutex                          archMutex_;
     mutable std::map<std::string, ArchVerdict>  archCache_;
+    // The one decision (see WithholdReason, public). Caller holds
+    // pluginsMutex_: blacklist_ is read directly, archVerdict takes its own
+    // lock. The three feed sites call THIS; the public withholdReason wraps it.
+    WithholdReason withholdReasonLocked(const juce::PluginDescription& d) const;
 
     juce::AudioPluginFormat* getFormatByName(const juce::String& namePart) const;
 
