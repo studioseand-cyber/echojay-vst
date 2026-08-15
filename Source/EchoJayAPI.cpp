@@ -1891,7 +1891,8 @@ void EchoJayAPI::classify(const ClassifyRequest& req,
     });
 
     postJSON("/api/classify", juce::JSON::toString(juce::var(body.get())),
-             [answer, latch, aliveFlag](const juce::var& json, int statusCode)
+             [answer, latch, aliveFlag, sentChannel = req.channel]
+             (const juce::var& json, int statusCode)
     {
         if (latch->exchange(true)) return;   // the deadline already answered
         if (! aliveFlag->load()) return;
@@ -1942,7 +1943,11 @@ void EchoJayAPI::classify(const ClassifyRequest& req,
         // advisory is logged on EVERY classify result, present or not, so a
         // missing advisory is distinguishable from one that arrived and was
         // not drawn (the draw site logs separately).
+        // channel is the REQUEST's fact echoed here so every turn's log
+        // shows what the server was told - including channel="" when the
+        // field was omitted (empty means unknown, a real third answer).
         EchoJay_NSLog(("EJClassify: intent=" + (r.intent.isNotEmpty() ? r.intent : juce::String("(none)"))
+                       + " channel=\"" + sentChannel + "\""
                        + " precondition=" + (r.precondition.isNotEmpty() ? r.precondition : juce::String("(none)"))
                        + " advisory=" + (! r.advisory ? juce::String("no")
                                          : r.advisoryText.isNotEmpty()
