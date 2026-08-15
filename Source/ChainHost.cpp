@@ -565,7 +565,8 @@ ChainHost::ChainHost()
     if (deadman.existsAsFile())
     {
         juce::String crashed = deadman.loadFileAsString().trim();
-        if (crashed.isNotEmpty()) addToBlacklist(crashed);
+        if (crashed.isNotEmpty())
+            addToBlacklist(crashed, "crashed the host during load (deadman)");
         deadman.deleteFile();
     }
 }
@@ -778,6 +779,13 @@ void ChainHost::doRefresh()
 {
     struct Finally { ChainHost* h; ~Finally() { h->scanning_.store(false); } } fin{this};
 
+    // The FILE is the authority at scan time: deleting a line from
+    // chain_blacklist.txt re-enables that plugin on the next scan without
+    // restarting the host, exactly as the file's header promises. Safe to
+    // replace the in-memory set because every add persists immediately
+    // (addToBlacklist), so memory never holds an entry the file lacks.
+    reloadBlacklistFromDisk();
+
     juce::Array<juce::PluginDescription> auEntries, vst3Entries;
 
 #if JUCE_MAC
@@ -816,6 +824,7 @@ void ChainHost::doRefresh()
     if (cancelFlag_.load()) { std::lock_guard<std::mutex> lk(pluginsMutex_); entries_ = auEntries; return; }
 
     setScanStatus("Reading VST3 folders...");
+    juce::StringArray withheldByBlacklist;
     auto* vst3Fmt = getFormatByName("VST3");
     if (vst3Fmt)
     {
@@ -833,7 +842,11 @@ void ChainHost::doRefresh()
             {
                 if (cancelFlag_.load()) break;
                 juce::String path = f.getFullPathName();
-                if (isBlacklisted(path)) continue;
+                if (isBlacklisted(path))
+                {
+                    withheldByBlacklist.add(f.getFileNameWithoutExtension());
+                    continue;
+                }
 
                 bool usedCache = false;
                 {
@@ -870,6 +883,15 @@ void ChainHost::doRefresh()
                        + " from the validated cache, " + juce::String(thin)
                        + " thin (unvalidated)").toRawUTF8());
     }
+    // Logged EVERY scan, including when empty: the blacklist is a permanent
+    // per-path exclusion with no Settings UI yet, and this line is its only
+    // discoverability. A plugin silently missing here is a plugin silently
+    // deleted from someone's catalogue.
+    EchoJay_NSLog(("EJScan: " + juce::String(withheldByBlacklist.size())
+                   + " entr(ies) withheld by crash blacklist"
+                   + (withheldByBlacklist.isEmpty()
+                          ? juce::String()
+                          : ": " + withheldByBlacklist.joinIntoString(", "))).toRawUTF8());
     scanProgress_.store(0.9f);
 
     // Both formats are kept. The cache is shared between the AU and VST3
@@ -1016,6 +1038,11 @@ juce::Array<juce::PluginDescription> ChainHost::getFilteredPlugins(
     for (auto& d : rows)
     {
         if (formatFilter.isNotEmpty() && d.pluginFormatName != formatFilter) continue;
+        // Crash-blacklisted rows are hidden from the browser too, not only
+        // refused at load: entries_ can still carry them between the
+        // blacklist growing and the next rescan. blacklist_ read directly,
+        // pluginsMutex_ is already held here.
+        if (blacklist_.contains(d.fileOrIdentifier)) continue;
         if (lf.isEmpty()
             || d.name.toLowerCase().contains(lf)
             || d.manufacturerName.toLowerCase().contains(lf))
@@ -2994,7 +3021,7 @@ static void pollVST3Validation(
 
     if (ticksLeft <= 0)
     {
-        host->addToBlacklist(desc.fileOrIdentifier);
+        host->addToBlacklist(desc.fileOrIdentifier, "validation timed out");
         cb("Timed out loading \"" + desc.name + "\": added to skip list");
         return;
     }
@@ -3069,6 +3096,23 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
     {
         const auto err = loadBuiltinNow(desc);
         if (callback) callback(err);
+        return;
+    }
+
+    // Crash blacklist, consulted at the LOAD and not only at the scan
+    // (15 Aug 2026): the entries cache can hold a plugin that was
+    // blacklisted AFTER the cache was written (the deadman fires on
+    // relaunch, and no rescan runs in between), and that gap loaded
+    // Auto-Tune Vocal Compressor a second time one minute after it was
+    // blacklisted, crashing the DAW again. Withheld, not deleted:
+    // deleting its line from chain_blacklist.txt re-enables the plugin.
+    if (desc.fileOrIdentifier.isNotEmpty() && isBlacklisted(desc.fileOrIdentifier))
+    {
+        if (callback)
+            callback("\"" + desc.name + "\" was withheld: it crashed a "
+                     "previous load and is on the crash skip list "
+                     "(chain_blacklist.txt). Deleting its line there "
+                     "re-enables it.");
         return;
     }
 
@@ -3432,10 +3476,58 @@ bool ChainHost::isBlacklisted(const juce::String& path) const
     return blacklist_.contains(path);
 }
 
-void ChainHost::addToBlacklist(const juce::String& path)
+void ChainHost::addToBlacklist(const juce::String& path, const juce::String& reason)
 {
+    juce::String bl;
+    {
+        std::lock_guard<std::mutex> lock(pluginsMutex_);
+        if (!blacklist_.contains(path)) blacklist_.add(path);
+        if (blacklistMeta_[path].isEmpty())
+            blacklistMeta_.set(path,
+                (reason.isNotEmpty() ? reason : juce::String("crashed or hung during load"))
+                + "\t" + juce::Time::getCurrentTime().toISO8601(true));
+        bl << "# EchoJay crash skip list. A plugin listed here is withheld from\n"
+              "# the chain feed and refused at load until its line is removed.\n"
+              "# Deleting a line re-enables that plugin on the next scan.\n"
+              "# Format: path<TAB>reason<TAB>ISO date. A bare path (no tabs) is\n"
+              "# a pre-format entry and stays valid.\n";
+        for (auto& p : blacklist_)
+        {
+            bl << p;
+            const auto& meta = blacklistMeta_[p];
+            if (meta.isNotEmpty()) bl << "\t" << meta;
+            bl << "\n";
+        }
+    }
+    // Persisted HERE and only here, immediately: the deadman consumer runs
+    // at construction and a crash can end the session before any later
+    // save; and because nothing else writes this file, a user's hand
+    // deletion of a line is never rewritten from stale memory.
+    appSupportDir().createDirectory();
+    getBlacklistFile().replaceWithText(bl);
+}
+
+void ChainHost::reloadBlacklistFromDisk()
+{
+    juce::StringArray lines;
+    if (auto blFile = getBlacklistFile(); blFile.existsAsFile())
+        lines = juce::StringArray::fromLines(blFile.loadFileAsString());
     std::lock_guard<std::mutex> lock(pluginsMutex_);
-    if (!blacklist_.contains(path)) blacklist_.add(path);
+    blacklist_.clear();
+    blacklistMeta_.clear();
+    for (auto& raw : lines)
+    {
+        auto line = raw.trim();
+        if (line.isEmpty() || line.startsWithChar('#')) continue;
+        // Tabbed form: path<TAB>reason<TAB>ISO date. Bare paths (the
+        // pre-format form, possibly CRLF-terminated) stay valid.
+        auto path = line.upToFirstOccurrenceOf("\t", false, false).trim();
+        if (path.isEmpty()) continue;
+        blacklist_.addIfNotAlreadyThere(path);
+        auto meta = line.fromFirstOccurrenceOf("\t", false, false).trim();
+        if (meta.isNotEmpty() && blacklistMeta_[path].isEmpty())
+            blacklistMeta_.set(path, meta);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3501,6 +3593,13 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
             // not proposed again until reload (iLok may be absent — see
             // ChainHost.h). Edit/build resolution stays unfiltered.
             if (sessionLoadFailed_.contains(sessionLoadKey(d.name, d.pluginFormatName))) continue;
+            // Crash-blacklisted rows never reach the feed: the loader now
+            // refuses them (loadPluginAsync gate), and offering a plugin we
+            // will refuse is worse than not offering it. entries_ can still
+            // carry such a row when the blacklist grew after the entries
+            // cache was written (deadman on relaunch, no rescan between).
+            // blacklist_ read directly: pluginsMutex_ is already held here.
+            if (blacklist_.contains(d.fileOrIdentifier)) continue;
             loadable.add(d);
         }
     }
@@ -3830,9 +3929,10 @@ void ChainHost::saveToDisk() const
     std::lock_guard<std::mutex> lock(pluginsMutex_);
     auto xml = knownPlugins_.createXml();
     if (xml) xml->writeTo(getPluginListFile());
-    juce::String bl;
-    for (auto& p : blacklist_) bl += p + "\n";
-    getBlacklistFile().replaceWithText(bl);
+    // chain_blacklist.txt is deliberately NOT written here: addToBlacklist
+    // persists it immediately at add time, and nothing else writes it, so a
+    // user's hand deletion of a line (the only recovery path until the
+    // Settings UI exists) is never rewritten from stale memory.
 }
 
 void ChainHost::loadFromDisk()
@@ -3888,15 +3988,7 @@ void ChainHost::loadFromDisk()
             entriesCacheTime_ = ecFile.getLastModificationTime();
         }
     }
-    auto blFile = getBlacklistFile();
-    if (blFile.existsAsFile())
-    {
-        auto lines = juce::StringArray::fromLines(blFile.loadFileAsString());
-        std::lock_guard<std::mutex> lock(pluginsMutex_);
-        for (auto& line : lines)
-            if (line.trim().isNotEmpty())
-                blacklist_.addIfNotAlreadyThere(line.trim());
-    }
+    reloadBlacklistFromDisk();
 }
 
 // ---------------------------------------------------------------------------

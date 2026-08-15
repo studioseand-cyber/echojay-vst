@@ -686,7 +686,10 @@ public:
     }
     void completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
                       const juce::PluginDescription& desc);
-    void addToBlacklist(const juce::String& path);
+    // reason travels into chain_blacklist.txt next to the path with an ISO
+    // date; the first reason recorded for a path wins (it names the
+    // original event, later duplicates are re-detections).
+    void addToBlacklist(const juce::String& path, const juce::String& reason = {});
 
     double sampleRate_ = 44100.0;  // public so pollVST3Validation can read
     int    blockSize_  = 512;
@@ -823,6 +826,16 @@ private:
     juce::Array<juce::PluginDescription> entries_;
     juce::KnownPluginList                knownPlugins_;
     juce::StringArray                    blacklist_;
+    // Replaces the in-memory set from chain_blacklist.txt (startup and every
+    // scan): the file is the authority, so deleting a line re-enables the
+    // plugin on the next scan without a host restart.
+    void reloadBlacklistFromDisk();
+    // path -> "reason<TAB>ISO date", written into chain_blacklist.txt after
+    // the path. Absent for entries that predate the tabbed format; the
+    // reader tolerates bare paths and the writer keeps them bare. NOT a
+    // fourth exclusion store: the blacklist is still blacklist_, this only
+    // annotates it.
+    juce::StringPairArray                blacklistMeta_;
 
     // AudioProcessorGraph: input → [active slots in order] → output
     std::unique_ptr<juce::AudioProcessorGraph> graph_;
