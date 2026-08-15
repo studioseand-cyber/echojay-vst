@@ -8,6 +8,7 @@
 #include "NativeClip.h"   // EchoJay_NSLog
 #include <algorithm>
 #include <unordered_map>
+#include <unordered_set>
 
 #if JUCE_MAC
  #include <libproc.h>
@@ -871,20 +872,25 @@ void ChainHost::doRefresh()
     }
     scanProgress_.store(0.9f);
 
-    std::unordered_set<std::string> auNames;
-    for (auto& d : auEntries)
-        auNames.insert(d.name.toLowerCase().toStdString());
-
+    // Both formats are kept. The cache is shared between the AU and VST3
+    // instances (see the FULL-list comment on the write below), so a
+    // name-based drop here decides what the OTHER host can see: a VST3 row
+    // discarded because an AU shares its name is then removed again by
+    // chainFormatFilter_ under VST3 hosting, and the plugin vanishes.
+    // Deduplication belongs at feed-build time, where the format filter
+    // already runs (collapseAuPreferring, empty-filter branch). Measured
+    // 15 Aug 2026: the old drop cost 261 of 449 VST3 rows, leaving a
+    // Reaper user 18 loadable plugins out of 181 offered.
     juce::Array<juce::PluginDescription> collected;
-    for (auto& d : auEntries) collected.add(d);
-    for (auto& d : vst3Entries)
-        if (auNames.find(d.name.toLowerCase().toStdString()) == auNames.end())
-            collected.add(d);
+    for (auto& d : auEntries)   collected.add(d);
+    for (auto& d : vst3Entries) collected.add(d);
 
-    std::sort(collected.begin(), collected.end(),
-              [](const juce::PluginDescription& a, const juce::PluginDescription& b) {
-                  return a.name.compareIgnoreCase(b.name) < 0;
-              });
+    // stable_sort: equal-name rows (now one AU + one VST3) keep a
+    // deterministic AU-then-VST3 order across scans.
+    std::stable_sort(collected.begin(), collected.end(),
+                     [](const juce::PluginDescription& a, const juce::PluginDescription& b) {
+                         return a.name.compareIgnoreCase(b.name) < 0;
+                     });
 
     {
         std::lock_guard<std::mutex> lk(pluginsMutex_);
@@ -910,7 +916,9 @@ void ChainHost::doRefresh()
             entriesCacheTime_   = ecFile.getLastModificationTime();
             entriesScannedAtMs_ = nowMs;
             EchoJay_NSLog(("EJScan: cache written, " + juce::String(collected.size())
-                           + " entr(ies), " + juce::String((int) ecFile.getSize())
+                           + " entr(ies) (" + juce::String(auEntries.size()) + " AU + "
+                           + juce::String(vst3Entries.size()) + " VST3), "
+                           + juce::String((int) ecFile.getSize())
                            + "b -> " + ecFile.getFullPathName()).toRawUTF8());
         }
         else
@@ -943,6 +951,32 @@ void ChainHost::doRefresh()
 // ---------------------------------------------------------------------------
 // Plugin list queries
 // ---------------------------------------------------------------------------
+
+// AU-preferring name collapse for the EMPTY format filter (AAX/Standalone
+// wrapper "show all", and the empty-filter resolveByName fallbacks). The
+// entries cache keeps BOTH formats of a name since 15 Aug 2026 (see the
+// collection comment in the scan), so the dedupe that used to run at scan
+// time now runs here, at presentation time, with the same comparison, the
+// same lowercasing and the same AU-first-wins semantics: a VST3 row is
+// skipped when any AU shares its lowercased name. Empty-filter callers
+// therefore see a list identical to the pre-relocation one.
+static juce::Array<juce::PluginDescription>
+collapseAuPreferring(const juce::Array<juce::PluginDescription>& rows)
+{
+    std::unordered_set<std::string> auNames;
+    for (const auto& d : rows)
+        if (d.pluginFormatName == "AudioUnit")
+            auNames.insert(d.name.toLowerCase().toStdString());
+
+    juce::Array<juce::PluginDescription> out;
+    out.ensureStorageAllocated(rows.size());
+    for (const auto& d : rows)
+        if (d.pluginFormatName != "VST3"
+            || auNames.find(d.name.toLowerCase().toStdString()) == auNames.end())
+            out.add(d);
+    return out;
+}
+
 int ChainHost::getNumPlugins() const
 {
     std::lock_guard<std::mutex> lock(pluginsMutex_);
@@ -974,7 +1008,12 @@ juce::Array<juce::PluginDescription> ChainHost::getFilteredPlugins(
             result.add(d);
     }
 
-    for (auto& d : entries_)
+    juce::Array<juce::PluginDescription> collapsed;
+    if (formatFilter.isEmpty())
+        collapsed = collapseAuPreferring(entries_);
+    const auto& rows = formatFilter.isEmpty() ? collapsed : entries_;
+
+    for (auto& d : rows)
     {
         if (formatFilter.isNotEmpty() && d.pluginFormatName != formatFilter) continue;
         if (lf.isEmpty()
@@ -3281,6 +3320,10 @@ juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
             cands.add(d);
         }
     }
+    // Empty-filter resolution collapses AU-preferring, so first-match
+    // semantics are identical to the old scan-time dedupe.
+    if (formatFilter.isEmpty())
+        cands = collapseAuPreferring(cands);
 
     auto logMatch = [&](const char* how, const juce::PluginDescription& d)
     {
@@ -3493,9 +3536,13 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
     // labels, spacing and casing variants, folder-layout garbage vendors
     // like 'Se' and 'Pitch Shift'), and each group resolved its name TWICE
     // into the feed - 13 duplicate names in a 65KB payload the model
-    // reads. Chain entries are already name-unique (measured: zero
-    // duplicates in 1590), so the collapse belongs here, first-wins, with
-    // its own counter so enabled still reconciles:
+    // reads. Chain entries are intentionally NOT name-unique since 15 Aug
+    // 2026: the cache keeps both the AU and the VST3 row of a name, and
+    // collapsing happens at presentation time (collapseAuPreferring in the
+    // empty-filter branches). The nameMap above is first-wins, so a
+    // format-filtered feed still resolves one row per name; the collapse
+    // here stays first-wins, with its own counter so enabled still
+    // reconciles:
     //   enabled = resolved + duplicates + unmatched.
     std::set<juce::String> pushedNames;
     int duplicateNames = 0;
