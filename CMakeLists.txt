@@ -13,7 +13,7 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 # stepped-anchor readback (XTComp-pinned), and bridged-AU report-only.
 # The server's three dial gates (SET_OP/BANDS/CONTROLS_MIN) pin to this
 # version at deploy; the 2.99.99 gate-test bump died uncommitted, as designed.
-project(EchoJay VERSION 2.26.2)
+project(EchoJay VERSION 2.26.3)
 
 # Path to your JUCE installation — update this to match your setup
 # Download JUCE from https://juce.com/download/
