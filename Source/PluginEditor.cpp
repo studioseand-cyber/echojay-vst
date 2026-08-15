@@ -2398,15 +2398,65 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 auto* co = askChipVars[(size_t) i].getDynamicObject();
                 const juce::String rid  = co ? co->getProperty("recall_id").toString() : juce::String();
                 const juce::String rnm  = co ? co->getProperty("recall_name").toString() : juce::String();
+                // Present only when the replace-ask was raised for a LINK
+                // destination (the mismatch ask's chooser path); absent on
+                // the original local ask, which keeps its original route.
+                const juce::String tuid = co ? co->getProperty("recall_target_uid").toString() : juce::String();
+                const juce::String tnm  = co ? co->getProperty("recall_target_name").toString() : juce::String();
                 const int rackNow = processorRef.getChainHost().getNumSlots();
                 supersedePendingAsks();
                 askShelfVisible_ = false;
                 resized();
                 EchoJay_NSLog(("EJRecall: replace ask shown=yes rack="
-                               + juce::String(rackNow) + " answer="
+                               + juce::String(rackNow)
+                               + (tuid.isNotEmpty() ? " target=\"" + tnm + "\" uid=" + tuid
+                                                    : juce::String())
+                               + " answer="
                                + (intent == "recall_confirm" ? "load" : "cancel")).toRawUTF8());
                 if (intent == "recall_confirm" && rid.isNotEmpty())
+                {
+                    if (tuid.isNotEmpty()) recallLoadChainToLink(tuid, rid, rnm);
+                    else                   recallLoadChain(rid, rnm);
+                }
+                return;
+            }
+            // STEP 3d (15 Aug 2026): the channel-mismatch advisory ask.
+            // BEFORE the bare recall_id sniff below - these chips carry
+            // recall_id too, and falling through would route them straight
+            // to handleChainRecall, re-raising the ask they answer.
+            if (intent == "recall_here" || intent == "recall_switch")
+            {
+                logTap(intent);
+                auto* co = askChipVars[(size_t) i].getDynamicObject();
+                const juce::String rid = co ? co->getProperty("recall_id").toString() : juce::String();
+                const juce::String rnm = co ? co->getProperty("recall_name").toString() : juce::String();
+                if (intent == "recall_switch")
+                {
+                    // The shelf stays up while the chooser is open (the
+                    // switch-chip precedent above): dismissing the menu must
+                    // leave both chips available, not strand the recall.
+                    EchoJay_NSLog("EJRecall: mismatch ask branch=choose-channel (chooser opening)");
+                    openRecallChannelChooser((int) i);
+                    return;
+                }
+                // Load it here: the channel decision is made; the replace
+                // confirmation follows only if THIS rack is non-empty, the
+                // same rule the direct recall path applies.
+                pendingRecallMismatchAsk_ = false;   // answered, not dismissed
+                supersedePendingAsks();
+                askShelfVisible_ = false;
+                resized();
+                const int rackNow = processorRef.getChainHost().getNumSlots();
+                EchoJay_NSLog(("EJRecall: mismatch ask branch=load-here rack="
+                               + juce::String(rackNow)).toRawUTF8());
+                if (rid.isEmpty()) return;
+                if (rackNow == 0)
+                {
+                    EchoJay_NSLog("EJRecall: replace ask shown=no rack=0 answer=load");
                     recallLoadChain(rid, rnm);
+                }
+                else
+                    presentRecallReplaceAsk(rid, rnm, rackNow);
                 return;
             }
             {
@@ -21100,6 +21150,15 @@ int EchoJayEditor::findNewestUnansweredAsk() const
 
 void EchoJayEditor::supersedePendingAsks()
 {
+    // Dismissal logging for the mismatch ask (15 Aug 2026): its own chips
+    // clear the flag BEFORE superseding, so a supersede that arrives with
+    // the flag still up is the user moving on without choosing - a typed
+    // turn, a new ask, whatever - and that branch must be visible too.
+    if (pendingRecallMismatchAsk_)
+    {
+        pendingRecallMismatchAsk_ = false;
+        EchoJay_NSLog("EJRecall: mismatch ask dismissed without choosing (superseded)");
+    }
     bool any = false;
     for (auto& m : chatMessages)
         if (m.role == "assistant" && m.askData.isNotEmpty() && !m.askAnswered)
@@ -21601,6 +21660,43 @@ void EchoJayEditor::handleChainRecall(const juce::String& id, const juce::String
         if (r.id == id) { known = true; resolvedName = r.name; break; }
 
     const int rackSlots = processorRef.getChainHost().getNumSlots();
+
+    // ---- channel-mismatch advisory (15 Aug 2026) ----------------------
+    // Consumed HERE, whatever happens next: the held text describes this
+    // recall and must not leak into a later one. When it is present and a
+    // destination exists, ONE ask replaces the plain line plus the
+    // immediate replace confirm: the channel decision comes first, and the
+    // replace confirmation follows only for the chosen destination. No
+    // other channel to offer = the ask would be a one-chip question, so
+    // fall back to exactly today's behaviour (plain line, then decide).
+    const juce::String advisoryHeadsUp =
+        (recallAdvisoryKind_ == "channel_mismatch" && recallAdvisoryText_.isNotEmpty())
+            ? recallAdvisoryText_ : juce::String();
+    recallAdvisoryKind_.clear();
+    recallAdvisoryText_.clear();
+    if (advisoryHeadsUp.isNotEmpty() && known)
+    {
+        std::vector<std::string> registryUids;
+        for (const auto& e : processorRef.getLinkDisplayList())
+            if (e.info.uid.isNotEmpty())
+                registryUids.push_back(e.info.uid.toStdString());
+        const auto ordered = echojay::orderSwitchDestinations(
+            registryUids, {}, effectiveChannelUid().toStdString());
+        if (! ordered.empty())
+        {
+            EchoJay_NSLog(("EJRecall: resolved=yes reason=" + source).toRawUTF8());
+            presentRecallMismatchAsk(id, resolvedName.isNotEmpty() ? resolvedName : name,
+                                     advisoryHeadsUp);
+            return;
+        }
+        EchoJay_NSLog("EJRecall: mismatch ask fallback=no-destinations -"
+                      " drawing the plain advisory line");
+        appendLocalResultBubble(advisoryHeadsUp);
+    }
+    else if (advisoryHeadsUp.isNotEmpty())
+        EchoJay_NSLog("EJRecall: mismatch advisory dropped - recall id refused,"
+                      " nothing will load");
+
     switch (EJRecall::decide(known, rackSlots))
     {
         case EJRecall::Decision::Refuse:
@@ -21632,12 +21728,18 @@ void EchoJayEditor::handleChainRecall(const juce::String& id, const juce::String
 // modals are banned on host-driven paths (in Logic the window opens BEHIND
 // the plugin and blocks all input; see the Link ack consumer's note).
 void EchoJayEditor::presentRecallReplaceAsk(const juce::String& id,
-                                            const juce::String& name, int rackSlots)
+                                            const juce::String& name, int rackSlots,
+                                            const juce::String& targetUid,
+                                            const juce::String& targetName)
 {
-    const juce::String question =
-        "Load \"" + name + "\"? This channel already has "
-        + juce::String(rackSlots) + (rackSlots == 1 ? " plugin" : " plugins")
-        + " racked, and loading replaces them.";
+    const bool toLink = targetUid.isNotEmpty();
+    const juce::String plugins =
+        juce::String(rackSlots) + (rackSlots == 1 ? " plugin" : " plugins");
+    const juce::String question = toLink
+        ? "Load \"" + name + "\" onto \"" + targetName + "\"? That channel"
+          " already has " + plugins + " racked, and loading replaces them."
+        : "Load \"" + name + "\"? This channel already has " + plugins
+          + " racked, and loading replaces them.";
 
     auto* root = new juce::DynamicObject();
     root->setProperty("question", question);
@@ -21648,6 +21750,13 @@ void EchoJayEditor::presentRecallReplaceAsk(const juce::String& id,
         c->setProperty("intent",      "recall_confirm");
         c->setProperty("recall_id",   id);
         c->setProperty("recall_name", name);
+        if (toLink)
+        {
+            // The confirm tap routes to recallLoadChainToLink on these; a
+            // local confirm (fields absent) keeps the original path.
+            c->setProperty("recall_target_uid",  targetUid);
+            c->setProperty("recall_target_name", targetName);
+        }
         choices.add(juce::var(c));
     }
     {
@@ -21671,9 +21780,149 @@ void EchoJayEditor::presentRecallReplaceAsk(const juce::String& id,
         workspace.appendMessageToChat(currentChatId, "assistant", question,
                                       {}, {}, {}, askJson, {});
     EchoJay_NSLog(("EJRecall: replace ask shown=yes rack=" + juce::String(rackSlots)
+                   + (toLink ? " target=\"" + targetName + "\" uid=" + targetUid
+                             : juce::String())
                    + " answer=pending").toRawUTF8());
     resized();
     repaint();
+}
+
+// The channel-mismatch ask: the server's heads-up text IS the question, and
+// the two chips are the same choice the build path offers when a channel is
+// wrong - load it here, or put it somewhere else. Client-authored end to
+// end (the server has no reliable knowledge of which channels exist; the
+// plugin does), chips intercepted locally, never a chat turn, never an
+// AlertWindow (presentCompareScopeAsk precedent, Logic behind-the-window
+// rule). One question at a time: the replace confirmation is raised only
+// AFTER the destination is decided, and only if that destination's rack is
+// non-empty.
+void EchoJayEditor::presentRecallMismatchAsk(const juce::String& id,
+                                             const juce::String& name,
+                                             const juce::String& headsUp)
+{
+    auto* root = new juce::DynamicObject();
+    root->setProperty("question", headsUp);
+    juce::Array<juce::var> choices;
+    {
+        auto* c = new juce::DynamicObject();
+        c->setProperty("label",       "Load it here");
+        c->setProperty("intent",      "recall_here");
+        c->setProperty("recall_id",   id);
+        c->setProperty("recall_name", name);
+        choices.add(juce::var(c));
+    }
+    {
+        auto* c = new juce::DynamicObject();
+        c->setProperty("label",       "Choose another channel");
+        c->setProperty("intent",      "recall_switch");
+        c->setProperty("recall_id",   id);
+        c->setProperty("recall_name", name);
+        choices.add(juce::var(c));
+    }
+    root->setProperty("choices", choices);
+    const juce::String askJson = juce::JSON::toString(juce::var(root), true);
+
+    ChatMsg cm;
+    cm.role    = "assistant";
+    cm.content = headsUp;
+    cm.askData = askJson;
+    chatMessages.push_back(cm);
+    processorRef.chatHistory.push_back({ "assistant", headsUp });
+    if (currentChatId.isNotEmpty())
+        workspace.appendMessageToChat(currentChatId, "assistant", headsUp,
+                                      {}, {}, {}, askJson, {});
+    pendingRecallMismatchAsk_ = true;
+    EchoJay_NSLog(("EJRecall: mismatch ask shown name=\"" + name
+                   + "\" answer=pending").toRawUTF8());
+    resized();
+    repaint();
+}
+
+// recallLoadChain's Link-targeted sibling. Fetches the saved chain and maps
+// it onto the EXISTING chain-cmd transport (sendChainToLink): slots become
+// {name, state, bypassed} entries, keyed state riding along so the recall
+// stays a recall (exact saved settings) rather than a rebuild at defaults.
+// The Link resolves names against its own catalogue and applies its own
+// disabled set; per-slot outcomes come back through the ack the poller
+// already reports. An OLDER Link (pre state/bypassed cmd parse) ignores the
+// two fields and loads the plugins at their defaults - named slots, no
+// crash, outcome still acked.
+void EchoJayEditor::recallLoadChainToLink(const juce::String& linkUid,
+                                          const juce::String& id,
+                                          const juce::String& name)
+{
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.fetchChain(id, [safeThis, id, name, linkUid](const juce::var& json, int sc)
+    {
+        if (safeThis == nullptr) return;
+        const auto err = EchoJayAPI::chainErrorMessage(json, sc);
+        if (err.isNotEmpty())
+        {
+            EchoJay_NSLog(("EJRecall: link-target fetch failed status "
+                           + juce::String(sc)).toRawUTF8());
+            // Same outcome copy as the local recall's fetch-error hook: a
+            // silent recall failure is the failure mode.
+            safeThis->appendLocalResultBubble(sc == 404
+                ? "\"" + name + "\" is no longer in your library - it may have"
+                  " been deleted on another device. Nothing was loaded."
+                : "\"" + name + "\" could not be loaded: " + err);
+            return;
+        }
+
+        juce::var slots, state;
+        if (auto* obj = json.getDynamicObject())
+            if (auto* c = obj->getProperty("chain").getDynamicObject())
+            {
+                slots = c->getProperty("slots");
+                state = c->getProperty("state");
+            }
+        if (! slots.isArray())
+        {
+            safeThis->appendLocalResultBubble("That chain could not be read.");
+            return;
+        }
+
+        // Saved slot -> cmd entry. State is keyed by the SAVED slot number
+        // (the restoreSavedChain contract), so the key comes from `n`, not
+        // from our position in the array.
+        auto* statesObj = state.getDynamicObject();
+        juce::Array<juce::var> entries;
+        int withState = 0;
+        if (auto* sarr = slots.getArray())
+            for (int i = 0; i < sarr->size(); ++i)
+                if (auto* so = (*sarr)[i].getDynamicObject())
+                {
+                    const auto pn = so->getProperty("plugin").toString().trim();
+                    if (pn.isEmpty()) continue;
+                    auto* eo = new juce::DynamicObject();
+                    eo->setProperty("name", pn);
+                    if ((bool) so->getProperty("bypassed"))
+                        eo->setProperty("bypassed", true);
+                    const int n = so->hasProperty("n") ? (int) so->getProperty("n") : (i + 1);
+                    if (statesObj != nullptr)
+                    {
+                        const juce::String key(n);
+                        if (statesObj->hasProperty(key))
+                        {
+                            eo->setProperty("state", statesObj->getProperty(key));
+                            ++withState;
+                        }
+                    }
+                    entries.add(juce::var(eo));
+                }
+        if (entries.isEmpty())
+        {
+            safeThis->appendLocalResultBubble("That chain could not be read.");
+            return;
+        }
+
+        auto* wrap = new juce::DynamicObject();
+        wrap->setProperty("chain", entries);
+        EchoJay_NSLog(("EJRecall: loading \"" + name + "\" to Link uid=" + linkUid
+                       + " slots=" + juce::String(entries.size())
+                       + " withState=" + juce::String(withState)).toRawUTF8());
+        safeThis->sendChainToLink(linkUid, juce::JSON::toString(juce::var(wrap), true));
+    });
 }
 
 void EchoJayEditor::recallLoadChain(const juce::String& id, const juce::String& name)
@@ -22796,6 +23045,19 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     {
         if (safeThis == nullptr) return;
 
+        // A held channel-mismatch advisory describes ONE turn's recall
+        // block. Every classify result starts clean; a leftover here means
+        // the previous turn's reply never carried a recall block, and that
+        // is worth a line rather than a silent leak into a later recall.
+        if (safeThis->recallAdvisoryKind_.isNotEmpty())
+        {
+            EchoJay_NSLog(("EJRecall: held advisory \"" + safeThis->recallAdvisoryKind_
+                           + "\" expired unconsumed (no recall block arrived"
+                             " on its turn)").toRawUTF8());
+            safeThis->recallAdvisoryKind_.clear();
+            safeThis->recallAdvisoryText_.clear();
+        }
+
         // Nothing usable: the turn proceeds EXACTLY as it did before the
         // classifier existed. This is the common path while the account is
         // gated off, and it must stay the cheap one.
@@ -22883,7 +23145,21 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
         // reply and the advisory must survive it. Both outcomes log, so a
         // missing advisory (EJClassify line says advisory=(none)) is
         // distinguishable from one that arrived and was not drawn.
-        if (c.advisory.isNotEmpty() && c.advisoryText.isNotEmpty())
+        if (c.advisory == "channel_mismatch" && c.advisoryText.isNotEmpty())
+        {
+            // NOT drawn as a plain line (15 Aug 2026): held for this turn's
+            // recall block, where handleChainRecall raises ONE ask carrying
+            // this text as its question with Load-it-here / Choose-another-
+            // channel chips - replacing the plain line PLUS the immediate
+            // replace confirm. Falls back to the plain line there when no
+            // other channel exists to offer.
+            safeThis->recallAdvisoryKind_ = c.advisory;
+            safeThis->recallAdvisoryText_ = c.advisoryText;
+            EchoJay_NSLog(("EJRecall: advisory \"channel_mismatch\" held for the"
+                           " recall ask (" + juce::String(c.advisoryText.length())
+                           + " ch)").toRawUTF8());
+        }
+        else if (c.advisory.isNotEmpty() && c.advisoryText.isNotEmpty())
         {
             EchoJay_NSLog(("EJRecall: advisory \"" + c.advisory + "\" drawn ("
                            + juce::String(c.advisoryText.length()) + " ch)").toRawUTF8());
@@ -24090,6 +24366,93 @@ void EchoJayEditor::openChannelChooser(int chipIdx)
         {
             if (safeThis == nullptr || result <= 0 || result > ordered.size()) return;
             safeThis->switchChannelCarryingRequest(ordered[result - 1]);
+        });
+}
+
+// The recall variant: same registry membership, same ordering authority and
+// the same offline marking as openChannelChooser above, but NO model ranking
+// (no ranking exists on a recall) and the pick LOADS THE SAVED CHAIN on the
+// chosen Link - it never carries a chat turn over and never seeds one. The
+// replace confirmation is evaluated against the CHOSEN channel's rack
+// (sidecar), and an empty rack skips it entirely, the same rule the local
+// path applies.
+void EchoJayEditor::openRecallChannelChooser(int chipIdx)
+{
+    juce::String rid, rnm;
+    if (auto* co = askChipVars[(size_t) chipIdx].getDynamicObject())
+    {
+        rid = co->getProperty("recall_id").toString().trim();
+        rnm = co->getProperty("recall_name").toString().trim();
+    }
+    if (rid.isEmpty())
+    {
+        EchoJay_NSLog("EJRecall: mismatch chooser refused - chip carries no recall_id");
+        return;
+    }
+
+    std::vector<std::string> registryUids;
+    std::map<juce::String, juce::String> nameByUid;
+    for (const auto& e : processorRef.getLinkDisplayList())
+    {
+        if (e.info.uid.isEmpty()) continue;
+        registryUids.push_back(e.info.uid.toStdString());
+        nameByUid[e.info.uid] = e.displayName;
+    }
+    juce::StringArray ordered;
+    for (const auto& u : echojay::orderSwitchDestinations(
+             registryUids, {}, effectiveChannelUid().toStdString()))
+        ordered.add(juce::String(u));
+    if (ordered.isEmpty())
+    {
+        // handleChainRecall checked before offering the chip, but Links can
+        // vanish between the ask and the tap.
+        EchoJay_NSLog("EJRecall: mismatch chooser opened with no destination (no other Links)");
+        return;
+    }
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader("LOAD THIS CHAIN ON");
+    for (int i = 0; i < ordered.size(); ++i)
+    {
+        juce::String row = nameByUid[ordered[i]];
+        if (! linkUidLive(ordered[i])) row += "  (offline)";
+        menu.addItem(i + 1, row);
+    }
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetComponent(&askChipBtns[(size_t) chipIdx]),
+        [safeThis, ordered, nameByUid, rid, rnm](int result)
+        {
+            if (safeThis == nullptr) return;
+            if (result <= 0 || result > ordered.size())
+            {
+                // Dismissed without choosing a destination: the ask stays on
+                // the shelf with both chips live, and says so in the log.
+                EchoJay_NSLog("EJRecall: mismatch chooser dismissed - ask still open");
+                return;
+            }
+            const juce::String uid  = ordered[result - 1];
+            const auto nameIt       = nameByUid.find(uid);
+            const juce::String disp = nameIt != nameByUid.end() ? nameIt->second : uid;
+            safeThis->pendingRecallMismatchAsk_ = false;   // answered, not dismissed
+            safeThis->supersedePendingAsks();
+            safeThis->askShelfVisible_ = false;
+            safeThis->resized();
+            const auto rack  = safeThis->readLinkRackSidecar(uid);
+            const int  slots = rack.valid ? (int) rack.slots.size() : 0;
+            EchoJay_NSLog(("EJRecall: mismatch ask branch=switch target=\"" + disp
+                           + "\" uid=" + uid + " rackValid=" + (rack.valid ? "y" : "n")
+                           + " slots=" + juce::String(slots)).toRawUTF8());
+            if (slots == 0)
+            {
+                // Empty (or unpublished) rack on the chosen channel: no
+                // replace confirmation, same rule as the local direct load.
+                EchoJay_NSLog("EJRecall: replace ask shown=no rack=0 answer=load (link target)");
+                safeThis->recallLoadChainToLink(uid, rid, rnm);
+            }
+            else
+                safeThis->presentRecallReplaceAsk(rid, rnm, slots, uid, disp);
         });
 }
 

@@ -1911,6 +1911,17 @@ void LinkProcessor::pollChainCommand()
                 // settings_structured, confirmed on disk) and was dropped
                 // here, one function away from the fix.
                 item.structured = eo->getProperty("settings_structured");
+                // Saved-chain recall to a Link (15 Aug 2026): the recall
+                // sender includes per-slot hosted state and bypass - the
+                // SAME fields session restore has always carried one
+                // function up (restoreChainFromVar), applied by the same
+                // buildChainFromSpec. Build commands never set them, so a
+                // build turn parses exactly as before.
+                item.stateBase64 = eo->getProperty("state").toString();
+                item.bypassed    = (bool) eo->getProperty("bypassed");
+                if (eo->hasProperty("wet"))
+                    item.wet = juce::jlimit(0.0f, 1.0f,
+                                            (float)(double) eo->getProperty("wet"));
                 if (item.name.isNotEmpty())
                     spec.push_back(std::move(item));
             }

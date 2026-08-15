@@ -2992,8 +2992,44 @@ private:
     // label ("server" | "sidebar-cache" | "disk-cache" | "none").
     juce::String collectSavedChainRefs(std::vector<SavedChainRef>& out);
     void handleChainRecall(const juce::String& id, const juce::String& name);
+    // targetUid empty = the local rack (the original behaviour, wording and
+    // all). Non-empty = the recall is destined for that LINK's rack: the
+    // question names the channel, and the confirm chip carries
+    // recall_target_uid/_name so the tap routes to recallLoadChainToLink.
     void presentRecallReplaceAsk(const juce::String& id, const juce::String& name,
-                                 int rackSlots);
+                                 int rackSlots,
+                                 const juce::String& targetUid  = {},
+                                 const juce::String& targetName = {});
+    // The channel-mismatch advisory ask (15 Aug 2026): ONE client-authored
+    // ASK whose question is the server's heads-up text and whose chips are
+    // "Load it here" / "Choose another channel" - it replaces the plain
+    // advisory line PLUS the immediate replace-confirm, so the channel
+    // decision comes first and the replace confirmation follows only for
+    // the chosen destination (and only when that destination's rack is
+    // non-empty). Client-composed: the plugin knows which channels exist,
+    // the server does not; neither chip ever sends a chat turn
+    // (presentCompareScopeAsk precedent).
+    void presentRecallMismatchAsk(const juce::String& id, const juce::String& name,
+                                  const juce::String& headsUp);
+    // The chooser behind "Choose another channel": openChannelChooser's
+    // menu (registry membership, orderSwitchDestinations ordering, offline
+    // marked) but the pick LOADS THE SAVED CHAIN on the chosen Link instead
+    // of carrying a chat turn over. Dismissing the menu leaves the ask open.
+    void openRecallChannelChooser(int chipIdx);
+    // recallLoadChain's Link-targeted sibling: fetch the saved chain, map
+    // slots+state to chain-cmd entries (name/state/bypassed), and send
+    // through the existing sendChainToLink transport. The Link resolves
+    // names and applies its own disabled set; the ack poller reports.
+    void recallLoadChainToLink(const juce::String& linkUid,
+                               const juce::String& id, const juce::String& name);
+    // Held channel-mismatch advisory for THIS turn's recall block (kind +
+    // text), cleared on consumption and expired with a log line by the
+    // next classify result. pendingRecallMismatchAsk_ is true while the
+    // mismatch ask is unanswered, so a supersede that none of its own
+    // chips initiated (they clear it first) logs as dismissed-without-
+    // choosing.
+    juce::String recallAdvisoryKind_, recallAdvisoryText_;
+    bool pendingRecallMismatchAsk_ = false;
     // openSavedChain plus recall-specific outcome reporting: fetch errors
     // get their own message (404 = deleted elsewhere), and a 6s watchdog
     // logs the loaded/skipped summary (the restore has no single completion
