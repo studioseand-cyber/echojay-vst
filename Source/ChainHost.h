@@ -964,6 +964,28 @@ private:
     void doRefresh();
     void setScanStatus(const juce::String& s);
     bool isBlacklisted(const juce::String& path) const;
+
+    // Architecture gate for VST3 rows (15 Aug 2026). A VST3 bundle whose
+    // binary carries no slice for the RUNNING process (x86_64-only under a
+    // native arm64 host: 331 of 449 on the census machine) is offered,
+    // resolved and fed to the model, then fails at load with "No types
+    // found". Consulted at FEED time beside the format check, exactly as
+    // blacklist_ is, and never at scan time: the entries cache is shared
+    // between the AU and VST3 hosts and the answer depends on the process
+    // (native vs Rosetta), so a scan-time drop would be right for whichever
+    // host scanned and wrong for the other. Memoised per path in memory
+    // only, never persisted; cleared when a scan re-reads the folders.
+    // A read that fails for ANY reason (no binary, unknown magic, short
+    // file) is Unreadable and KEPT: failing closed produces a silently
+    // missing plugin, which is the defect this exists to fix.
+    // archMutex_ is its own lock because every caller already holds
+    // pluginsMutex_ (non-recursive).
+    enum class ArchVerdict { Loadable, NotLoadable, Unreadable };
+    ArchVerdict archVerdict(const juce::String& path) const;
+    bool archLoadable(const juce::String& path) const;   // Unreadable counts as loadable
+    mutable std::mutex                          archMutex_;
+    mutable std::map<std::string, ArchVerdict>  archCache_;
+
     juce::AudioPluginFormat* getFormatByName(const juce::String& namePart) const;
 
     static juce::File getPluginListFile();

@@ -15,6 +15,9 @@
  #include <dlfcn.h>
  #include <unistd.h>
  #include <sys/param.h>   // MAXCOMLEN
+ #include <mach-o/dyld.h>     // _dyld_get_image_header: the process cputype (arch gate)
+ #include <mach-o/fat.h>      // FAT_MAGIC, fat_arch (arch gate)
+ #include <mach-o/loader.h>   // MH_MAGIC, mach_header (arch gate)
 #endif
 
 // Defined later in this file (used by the shared name resolution above it)
@@ -824,6 +827,15 @@ void ChainHost::doRefresh()
     if (cancelFlag_.load()) { std::lock_guard<std::mutex> lk(pluginsMutex_); entries_ = auEntries; return; }
 
     setScanStatus("Reading VST3 folders...");
+    // The architecture memo is per path and per process, never persisted;
+    // a rescan is the one moment a bundle on disk may have been replaced
+    // (a universal update over an Intel-only install), so it is re-judged
+    // from here on. NOTHING is filtered here: the scan enumerates every
+    // bundle and the cache below keeps all of them (ArchVerdict, header).
+    {
+        std::lock_guard<std::mutex> lk(archMutex_);
+        archCache_.clear();
+    }
     juce::StringArray withheldByBlacklist;
     auto* vst3Fmt = getFormatByName("VST3");
     if (vst3Fmt)
@@ -1043,6 +1055,10 @@ juce::Array<juce::PluginDescription> ChainHost::getFilteredPlugins(
         // blacklist growing and the next rescan. blacklist_ read directly,
         // pluginsMutex_ is already held here.
         if (blacklist_.contains(d.fileOrIdentifier)) continue;
+        // Same shape for architecture: a VST3 row with no slice for this
+        // process is withheld here, at presentation time, not at scan time
+        // (see ArchVerdict in the header). AU rows are never judged.
+        if (d.pluginFormatName == "VST3" && ! archLoadable(d.fileOrIdentifier)) continue;
         if (lf.isEmpty()
             || d.name.toLowerCase().contains(lf)
             || d.manufacturerName.toLowerCase().contains(lf))
@@ -3325,6 +3341,11 @@ juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
         {
             if (formatFilter.isNotEmpty() && d.pluginFormatName != formatFilter)
                 continue;
+            // A VST3 row this process cannot load does not resolve: resolving
+            // it only defers the same failure to loadPluginAsync ("No types
+            // found"). Feed-time gate, same as getFilteredPlugins.
+            if (d.pluginFormatName == "VST3" && ! archLoadable(d.fileOrIdentifier))
+                continue;
             cands.add(d);
         }
     }
@@ -3495,6 +3516,191 @@ void ChainHost::reloadBlacklistFromDisk()
 }
 
 // ---------------------------------------------------------------------------
+// Architecture gate (VST3 rows only; see ArchVerdict in the header)
+//
+// Reads the Mach-O header of the bundle's executable and asks one question:
+// does any slice match the cputype of the process this code is running in?
+// Header bytes only. No dlopen, no bundle load, no instantiation, so there
+// is nothing here that can crash the host; lipo -archs over the same 449
+// bundles takes seconds.
+//
+// The EJ_ARCH_GATE markers fence the pure part so a harness can compile the
+// SHIPPED text (sed between the markers) against the census instead of a
+// copy that drifts. Keep the fenced block self-contained: juce::File,
+// juce::XmlDocument and the mach-o headers, nothing from ChainHost.
+// ---------------------------------------------------------------------------
+#if JUCE_MAC
+namespace {
+// EJ_ARCH_GATE_BEGIN
+namespace ejarch {
+
+enum Verdict { Loadable, NotLoadable, Unreadable };
+
+// The bundle's executable: <bundle>/Contents/MacOS/<name>. Name match first
+// (394 of 448 bundles on the census machine), then CFBundleExecutable from
+// Info.plist (the iZotope PluginHooksVST family, the *_VST_AU_Protect
+// wrappers, WaveShell: 54 bundles whose binary is not named after the
+// bundle), then the first non-dylib file in MacOS/ (Listento ships four
+// dylibs beside its binary). A single-file .vst3 (ChopSuey, a Windows PE)
+// is returned as itself and fails the magic check below, which is Unreadable.
+inline juce::File bundleBinary(const juce::File& bundle)
+{
+    if (bundle.existsAsFile()) return bundle;
+    auto contents = bundle.getChildFile("Contents");
+    auto macos    = contents.getChildFile("MacOS");
+    if (! macos.isDirectory()) return {};
+
+    auto named = macos.getChildFile(bundle.getFileNameWithoutExtension());
+    if (named.existsAsFile()) return named;
+
+    if (auto plist = juce::XmlDocument::parse(contents.getChildFile("Info.plist")))
+        if (auto* dict = plist->getChildByName("dict"))
+            for (auto* k = dict->getFirstChildElement(); k != nullptr; k = k->getNextElement())
+                if (k->hasTagName("key") && k->getAllSubText().trim() == "CFBundleExecutable")
+                {
+                    if (auto* v = k->getNextElement())
+                    {
+                        auto f = macos.getChildFile(v->getAllSubText().trim());
+                        if (f.existsAsFile()) return f;
+                    }
+                    break;
+                }
+
+    auto files = macos.findChildFiles(juce::File::findFiles, false);
+    for (const auto& f : files)
+        if (! f.hasFileExtension(".dylib")) return f;
+    return files.isEmpty() ? juce::File() : files.getReference(0);
+}
+
+inline uint32_t be32(const uint8_t* p)
+{
+    return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | uint32_t(p[3]);
+}
+inline uint32_t le32(const uint8_t* p)
+{
+    return (uint32_t(p[3]) << 24) | (uint32_t(p[2]) << 16) | (uint32_t(p[1]) << 8) | uint32_t(p[0]);
+}
+
+// The cputype of the process this code is running in, read at runtime from
+// the main executable's in-memory Mach-O header. Under Rosetta that is the
+// x86_64 slice the loader chose, so the answer follows the PROCESS, not the
+// machine, and nothing is hardcoded. 0 if dyld reports no image 0 (never
+// seen); the caller treats 0 as "cannot judge", which keeps every row.
+inline cpu_type_t processCpuType()
+{
+    if (const auto* mh = _dyld_get_image_header(0)) return mh->cputype;
+    return 0;
+}
+
+// Judge one executable against a process cputype. Fat: FAT_MAGIC or
+// FAT_MAGIC_64, big-endian on disk, walk the arch table (capped at 32
+// entries; a real fat file has 2 or 3, and 0xCAFEBABE is also the Java
+// class magic, whose next field is a version well above that). Thin:
+// MH_MAGIC / MH_MAGIC_64 native, MH_CIGAM / MH_CIGAM_64 byte-swapped
+// (a ppc-only thin binary read on a little-endian host). Anything else,
+// including a file too short to hold its own header, is Unreadable.
+inline Verdict verdictForBinary(const juce::File& bin, cpu_type_t proc)
+{
+    if (proc == 0 || ! bin.existsAsFile()) return Unreadable;
+
+    juce::MemoryBlock head;
+    {
+        juce::FileInputStream in(bin);
+        if (! in.openedOk()) return Unreadable;
+        in.readIntoMemoryBlock(head, 8 + 32 * (int) sizeof(fat_arch_64));
+    }
+    const auto* p = static_cast<const uint8_t*>(head.getData());
+    const auto  n = head.getSize();
+    if (n < 8) return Unreadable;
+
+    const uint32_t magicBE = be32(p);
+    if (magicBE == FAT_MAGIC || magicBE == FAT_MAGIC_64)
+    {
+        const bool     is64  = (magicBE == FAT_MAGIC_64);
+        const size_t   entry = is64 ? sizeof(fat_arch_64) : sizeof(fat_arch);
+        const uint32_t count = be32(p + 4);
+        if (count == 0 || count > 32) return Unreadable;
+        if (n < 8 + (size_t) count * entry) return Unreadable;
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            const auto cputype = (cpu_type_t) be32(p + 8 + i * entry);   // first field of both fat_arch forms
+            if (cputype == proc) return Loadable;
+        }
+        return NotLoadable;
+    }
+
+    const uint32_t magicLE = le32(p);
+    if (magicLE == MH_MAGIC || magicLE == MH_MAGIC_64)
+        return ((cpu_type_t) le32(p + 4) == proc) ? Loadable : NotLoadable;
+    if (magicLE == MH_CIGAM || magicLE == MH_CIGAM_64)
+        return ((cpu_type_t) be32(p + 4) == proc) ? Loadable : NotLoadable;
+
+    return Unreadable;
+}
+
+inline Verdict verdictForBundle(const juce::File& bundle, cpu_type_t proc)
+{
+    return verdictForBinary(bundleBinary(bundle), proc);
+}
+
+} // namespace ejarch
+// EJ_ARCH_GATE_END
+} // namespace
+#endif
+
+// Human name of the process cputype for the withheld-by-architecture line.
+static juce::String processArchName()
+{
+   #if JUCE_MAC
+    switch (ejarch::processCpuType())
+    {
+        case CPU_TYPE_ARM64:  return "arm64";
+        case CPU_TYPE_X86_64: return "x86_64";
+        case CPU_TYPE_ARM:    return "arm";
+        case CPU_TYPE_X86:    return "i386";
+        case 0:               return "unknown, gate open";
+        default:              return "cputype " + juce::String((int) ejarch::processCpuType());
+    }
+   #else
+    return "not macOS, gate open";
+   #endif
+}
+
+ChainHost::ArchVerdict ChainHost::archVerdict(const juce::String& path) const
+{
+   #if JUCE_MAC
+    const auto key = path.toStdString();
+    {
+        std::lock_guard<std::mutex> lk(archMutex_);
+        auto it = archCache_.find(key);
+        if (it != archCache_.end()) return it->second;
+    }
+    // Computed outside the lock: file reads under a mutex the feed builders
+    // wait on would serialise the first browser open behind disk. Two
+    // threads judging the same path once each is harmless.
+    static const cpu_type_t proc = ejarch::processCpuType();
+    ArchVerdict v = ArchVerdict::Unreadable;
+    switch (ejarch::verdictForBundle(juce::File(path), proc))
+    {
+        case ejarch::Loadable:    v = ArchVerdict::Loadable;    break;
+        case ejarch::NotLoadable: v = ArchVerdict::NotLoadable; break;
+        case ejarch::Unreadable:  v = ArchVerdict::Unreadable;  break;
+    }
+    std::lock_guard<std::mutex> lk(archMutex_);
+    archCache_[key] = v;
+    return v;
+   #else
+    juce::ignoreUnused(path);
+    return ArchVerdict::Unreadable;   // no gate off macOS: every row kept
+   #endif
+}
+
+bool ChainHost::archLoadable(const juce::String& path) const
+{
+    return archVerdict(path) != ArchVerdict::NotLoadable;
+}
+
+// ---------------------------------------------------------------------------
 // Settings ↔ ChainHost resolver
 // ---------------------------------------------------------------------------
 
@@ -3546,6 +3752,7 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
     // Snapshot the loadable entries under lock
     juce::Array<juce::PluginDescription> loadable;
     bool entriesEmpty = false;
+    int  withheldByArch = 0, archUnreadableKept = 0;
     {
         std::lock_guard<std::mutex> lk(pluginsMutex_);
         entriesEmpty = entries_.isEmpty();
@@ -3564,9 +3771,29 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
             // cache was written (deadman on relaunch, no rescan between).
             // blacklist_ read directly: pluginsMutex_ is already held here.
             if (blacklist_.contains(d.fileOrIdentifier)) continue;
+            // Architecture gate, VST3 rows only (ArchVerdict in the header):
+            // a bundle with no slice for this process would be offered,
+            // chosen by the model, then fail at load with "No types found".
+            // Unreadable rows are KEPT and counted, so the fail-open path
+            // is visible on the line below rather than assumed.
+            if (d.pluginFormatName == "VST3")
+            {
+                const auto v = archVerdict(d.fileOrIdentifier);
+                if (v == ArchVerdict::NotLoadable) { ++withheldByArch; continue; }
+                if (v == ArchVerdict::Unreadable)  ++archUnreadableKept;
+            }
             loadable.add(d);
         }
     }
+    // Logged on EVERY build, including at zero, for the reason the crash
+    // blacklist line in the scan gives: a plugin silently missing from the
+    // feed is a plugin silently deleted from someone's catalogue. Zero under
+    // AU hosting is the expected reading (no VST3 row reaches the gate);
+    // ABSENT is a regression.
+    EchoJay_NSLog(("EJScan: " + juce::String(withheldByArch)
+                   + " VST3 row(s) withheld by architecture (process "
+                   + processArchName() + "), "
+                   + juce::String(archUnreadableKept) + " unreadable, kept").toRawUTF8());
 
     // Build a normalized-name → PluginDescription map from the loadable entries.
     // If multiple entries share the same normalized name, keep the first (alphabetically
