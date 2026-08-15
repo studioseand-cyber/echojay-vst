@@ -1736,3 +1736,39 @@ control writes reference_hz, so only the model can spring that one - and
 the model can release it. The pitch_scale degree editor stays scoped
 separately (an interactive degree strip on the ribbon's scale lines is
 the right shape; not a small job).
+
+### 16.13 preserve == off, provable; off reframed; the key-B octave finding
+
+**The equivalence is now asserted every build.** The gate renders preserve
+and off from the same dry and requires the six metrics to agree within
+tight tolerances (measured: cents 10.1/10.1, HNR 6.99/6.98, flux
++3.3/+3.1, hfx 1/1, exc 1/1, clicks 2/2; not bit-identical — 0.05% of
+samples differ at band-edge method-fade moments, stated in the check's own
+output). The POSITIVE CONTROL forces off onto its grain path via
+debugDisableSplice and requires the comparator to catch it — it does, at
+exactly the old defect's signature (HNR 4.87, flux +19). The regression
+Sean heard twice now fails the build instead of waiting for ears.
+
+**off is a transpose-time control** — schema text rewritten to say it
+changes nothing at tuning-sized corrections and only matters when
+transpose moves pitch by semitones; the editor's combo item reads
+"FORM OFF (TRANSPOSE)" and the combo rests dim on preserve, lighting only
+when the setting departs. **shift unchanged**: dialable, out of the
+advertisement, cost written on the knob — the only mode that does
+something no other control can.
+
+**The key-B octave finding: neither a wrong key nor wrong-octave
+targeting.** Reported: corrections median 181 ¢, p90 1424, 38% beyond
+±250. Re-measured with our own instruments on the reference take at hard
+settings, key B major: |committed target − detected f0| median **64 ¢**,
+p90 163, **3.5% beyond 250** — and |target − nearest-enabled-degree(f0)|
+median **0 ¢**: the selector's octave arithmetic is sound (±1-octave
+neighbourhood search, distance-bounded by half the largest scale gap).
+The >600 ¢ tail is 30 hops (1.5%), of which 22 are the PREVIOUS note held
+through a register flip — §2.3's note-change confirm window doing its
+documented job for ~25–70 ms per flip — and the tail is IDENTICAL under
+chromatic, which acquits the key entirely. The reported magnitudes
+(181/1424/38%) do not reproduce on clean audio; that bounce's formant-off
+ran the pre-§16.13 grain path (the defect above), whose roughness made
+the external tracker exaggerate — the same instrument hazard the reporter
+flagged themselves.

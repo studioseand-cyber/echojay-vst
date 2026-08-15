@@ -327,6 +327,12 @@ public:
     // the residual plumbing, isolating the emit filter's contribution.
     void debugForceRawGrains (bool on) noexcept { dbgRawGrains_ = on; }
 
+    // Diagnostic only: disable the in-band splice-resampler so preserve/off
+    // fall back to their grain paths. Exists for the equivalence gate's
+    // POSITIVE CONTROL - forcing the two modes onto different paths must
+    // make the equivalence check fail, or the check proves nothing.
+    void debugDisableSplice (bool on) noexcept { dbgNoSplice_ = on; }
+
     // Sub-decision synthesis events, for correlating audible burrs against
     // things the hop log cannot see: splice-resampler period jumps, and
     // splice<->grain method transitions. Input-time positions.
@@ -561,7 +567,7 @@ private:
             // modes deliberately converge in-band and diverge beyond it,
             // where off's resampled grains go full chipmunk. SHIFT never
             // splices - its envelope warp needs the LPC grain path.
-            if (g > 0.0f && fm != kFormantShift)
+            if (g > 0.0f && fm != kFormantShift && ! dbgNoSplice_)
             {
                 // The ratio is what the READ point's audio must be scaled by,
                 // so evaluate f0 where the read pointer actually is - up to
@@ -1345,6 +1351,7 @@ private:
     int    pitchLag_  = 0;
     bool   debugOn_   = false;
     bool   dbgRawGrains_ = false;
+    bool   dbgNoSplice_  = false;
     bool   dbgMethodState_ = false;
     std::vector<uint64_t> dbgSplice_, dbgMethodFlip_;
     std::vector<uint64_t> dbgReseed_, dbgReset_;

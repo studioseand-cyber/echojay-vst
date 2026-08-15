@@ -153,7 +153,9 @@ static bool readWavMono (const char* path, std::vector<float>& out, double& fs)
 // The render: dry through the CURRENT engine at the hard-match settings,
 // mirroring EedPitchProcessor::processBlock's hop slicing and target hold.
 // ---------------------------------------------------------------------------
-static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs)
+static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs,
+                                         int fmodeArg = -1, float fshiftArg = 0.0f,
+                                         bool disableSplice = false)
 {
     constexpr int vt = PitchEngine::kLowMale;
 
@@ -191,15 +193,21 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
     // and AB_FORMANT_SHIFT=<st> run the same six metrics on the other
     // formant modes so they can be compared against the preserve column.
     // The shipped gate run sets neither and asserts at preserve.
-    int fmode = PsolaEngine::kFormantPreserve;
-    if (const char* m = getenv ("AB_FORMANT_MODE"))
+    int fmode = fmodeArg >= 0 ? fmodeArg : PsolaEngine::kFormantPreserve;
+    if (fmodeArg < 0)
     {
-        if (! std::strcmp (m, "off"))   fmode = PsolaEngine::kFormantOff;
-        if (! std::strcmp (m, "shift")) fmode = PsolaEngine::kFormantShift;
+        if (const char* m = getenv ("AB_FORMANT_MODE"))
+        {
+            if (! std::strcmp (m, "off"))   fmode = PsolaEngine::kFormantOff;
+            if (! std::strcmp (m, "shift")) fmode = PsolaEngine::kFormantShift;
+        }
     }
     sh.setFormantMode (fmode);
-    if (const char* s = getenv ("AB_FORMANT_SHIFT"))
-        sh.setFormantShift ((float) std::atof (s));
+    float fshift = fshiftArg;
+    if (fmodeArg < 0)
+        if (const char* s = getenv ("AB_FORMANT_SHIFT")) fshift = (float) std::atof (s);
+    sh.setFormantShift (fshift);
+    sh.debugDisableSplice (disableSplice);
     sh.setPitchLagSamples (det2.pitchLagFor (vt));
     const int latency = sh.latencySamples();
 
@@ -809,6 +817,77 @@ int main (int argc, char* argv[])
                        "clicks (pred-err 20x, drift-aware dry exclusion): ours %d vs Antares %d (margin 1)",
                        clkOurs, clkAnt);
         check (clkOurs <= clkAnt + 1, msg);
+    }
+
+    // ---- preserve == off inside the band: the PROVABLE equivalence --------
+    // Inside +/-2.5 st the splice-resampler moves formants with the ratio,
+    // which IS off's semantics - so at correction-sized shifts the two modes
+    // are the same path doing the same thing, and any divergence is a
+    // regression (the one Sean heard twice: off silently running a rougher
+    // synthesis at settings where it should change nothing). This check
+    // renders both and asserts the six metrics agree within tight
+    // tolerances; the POSITIVE CONTROL forces off onto its grain path (the
+    // old defect, via debugDisableSplice) and requires the comparator to
+    // catch the divergence - an equivalence check that cannot detect
+    // inequivalence proves nothing.
+    {
+        const std::vector<float> offOurs = renderEchoJay (dry, fs,
+                                                          PsolaEngine::kFormantOff);
+        double maxDiff = 0.0;
+        size_t nDiff = 0;
+        for (size_t i = 0; i < ours.size() && i < offOurs.size(); ++i)
+        {
+            const double d = std::fabs ((double) ours[i] - offOurs[i]);
+            maxDiff = std::max (maxDiff, d);
+            if (d > 1e-4) ++nDiff;
+        }
+        std::printf ("  preserve vs off in-band: max sample diff %.6f, %zu samples differ > 1e-4\n",
+                     maxDiff, nDiff);
+
+        auto sixOf = [&] (const std::vector<float>& x)
+        {
+            const Track t = trackFile (x, fs);
+            Metrics m = measure (x, t, fs, sel, hop, dryFlux);
+            struct Six { double cents, hnr, flux; int hfx, exc, clk; };
+            Six s;
+            s.cents = m.medCents; s.hnr = m.medHnr; s.flux = m.fluxPct;
+            int hEnv = 0;
+            const auto eX = hfEnvDb (x, fs, hEnv);
+            const auto eA = hfEnvDb (antares, fs, hEnv);
+            s.hfx = hfExcessEvents (eX, eA, hEnv, fs);
+            PitchEngine hp2; hp2.prepare (fs, 8192);
+            s.exc = excursionEvents (t, (double) hp2.inputHopLength (PitchEngine::kLowMale) / fs);
+            s.clk = clickEvents (x, dry, fs);
+            return s;
+        };
+        const auto sp = sixOf (ours);
+        const auto so = sixOf (offOurs);
+        auto agrees = [] (const decltype (sp)& a, const decltype (sp)& b)
+        {
+            return std::fabs (a.cents - b.cents) <= 0.3
+                && std::fabs (a.hnr   - b.hnr)   <= 0.10
+                && std::fabs (a.flux  - b.flux)  <= 0.5
+                && std::abs (a.hfx - b.hfx) <= 1
+                && std::abs (a.exc - b.exc) <= 1
+                && std::abs (a.clk - b.clk) <= 1;
+        };
+        std::snprintf (msg, sizeof (msg),
+                       "preserve == off in-band across the six metrics "
+                       "(cents %.1f/%.1f  HNR %.2f/%.2f  flux %.1f/%.1f  hfx %d/%d  exc %d/%d  clk %d/%d)",
+                       sp.cents, so.cents, sp.hnr, so.hnr, sp.flux, so.flux,
+                       sp.hfx, so.hfx, sp.exc, so.exc, sp.clk, so.clk);
+        check (agrees (sp, so), msg);
+
+        // Control: off forced onto its grain path must DIVERGE.
+        const std::vector<float> offForced = renderEchoJay (dry, fs,
+                                                            PsolaEngine::kFormantOff,
+                                                            0.0f, /*disableSplice*/ true);
+        const auto sf = sixOf (offForced);
+        std::snprintf (msg, sizeof (msg),
+                       "equivalence control: forced-divergent off is CAUGHT "
+                       "(HNR %.2f vs %.2f, flux %.1f vs %.1f)",
+                       sf.hnr, sp.hnr, sf.flux, sp.flux);
+        check (! agrees (sp, sf), msg);
     }
 
     std::printf ("\n%s (%d failure%s)\n", g_fail == 0 ? "ALL PASS" : "FAILURES",

@@ -62,8 +62,15 @@ EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
     if (const auto* spec = EedPitchProcessor::schema().find (EedPitchProcessor::kFormantMode))
     {
         for (std::size_t i = 0; i < spec->choices.size(); ++i)
-            formantBox_.addItem ("FORM " + juce::String (spec->choices[i]).toUpperCase(),
-                                 (int) i + 1);
+        {
+            // `off` is a transpose-time control - measured identical to
+            // preserve at correction-sized shifts (the gate asserts it) -
+            // so its item says when it matters instead of posing as an
+            // equal choice.
+            juce::String label = "FORM " + juce::String (spec->choices[i]).toUpperCase();
+            if (juce::String (spec->choices[i]) == "off") label << " (TRANSPOSE)";
+            formantBox_.addItem (label, (int) i + 1);
+        }
         formantBox_.setSelectedId (
             (int) proc_.getParamValue (EedPitchProcessor::kFormantMode) + 1,
             juce::dontSendNotification);
@@ -566,6 +573,19 @@ void EedPitchEditor::syncFromProcessor()
         }
         if (keyAutoBtn_.getToggleState() != keyAuto)
             keyAutoBtn_.setToggleState (keyAuto, juce::dontSendNotification);
+    }
+
+    // The formant combo rests DIM on preserve (the default, and the right
+    // answer for correction) and lights up only when the setting departs -
+    // off and shift are not equal-prominence choices when one of them does
+    // nothing at correction-sized shifts and the other costs fidelity.
+    {
+        const bool departed =
+            (int) proc_.getParamValue (EedPitchProcessor::kFormantMode)
+                != (int) echojay::PsolaEngine::kFormantPreserve;
+        const float alpha = departed ? 1.0f : 0.55f;
+        if (std::abs (formantBox_.getAlpha() - alpha) > 0.01f)
+            formantBox_.setAlpha (alpha);
     }
 
     auto syncToggle = [this] (juce::TextButton& b, const char* id)

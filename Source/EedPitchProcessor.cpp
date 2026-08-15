@@ -184,19 +184,19 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
         { EedPitchProcessor::kFormantMode, "",
           0.0, (double) (PsolaEngine::kNumFormantModes - 1),
           (double) PsolaEngine::kFormantPreserve,
-          "what happens to the vocal character when pitch moves: preserve "
-          "keeps the formants where they are so a shifted voice still sounds "
-          "like the same singer, off lets them move with the pitch for the "
-          "chipmunk/resampler effect, shift keeps them independent of pitch "
-          "AND moves them by formant_shift for a deliberate character change. "
-          "At CORRECTION-sized moves preserve and off are measured identical "
-          "(formant displacement at tens of cents is inaudible); off only "
-          "sounds different on big transposes. shift runs a heavier synthesis "
-          "path with a MEASURED quality cost even at formant_shift 0 - about "
-          "1.6 dB of harmonicity and several times the frame-to-frame "
-          "roughness of preserve on real vocals - so reach for it only when "
-          "the character change IS the point, never for transparent "
-          "correction",
+          "what happens to the vocal character when pitch moves. preserve is "
+          "the default and the right answer for correction. off is a "
+          "TRANSPOSE-TIME control, not a correction mode: at tuning-sized "
+          "corrections it is measured IDENTICAL to preserve (and the build "
+          "asserts that equivalence), and it only matters when transpose "
+          "moves pitch by semitones - preserved formants keep the same "
+          "singer, moving formants make a smaller or larger one. Setting off "
+          "with transpose at 0 changes nothing. shift keeps formants "
+          "independent of pitch AND moves them by formant_shift, on a "
+          "heavier synthesis path with a MEASURED quality cost even at "
+          "formant_shift 0 - about 1.6 dB of harmonicity and several times "
+          "the roughness of preserve - so reach for it only when the "
+          "character change IS the point",
           false,
           // Mirrors PsolaEngine::FormantMode, APPEND-ONLY.
           { "off", "preserve", "shift" } },
