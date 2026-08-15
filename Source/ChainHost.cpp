@@ -420,14 +420,19 @@ juce::PluginDescription ChainHost::findVst3Alternative(const juce::String& plugi
         return variant.isEmpty() || en.contains(variant);
     };
 
-    // 1. Direct VST3 entry / previously deep-scanned cache
+    // 1. Direct VST3 entry / previously deep-scanned cache. A withheld VST3
+    //    (crash-blacklisted, or no slice for this process) is not an
+    //    alternative: the loader would refuse or fail it, and the caller
+    //    falls back to the AU it started with. pluginsMutex_ is held.
     {
         std::lock_guard<std::mutex> lock(pluginsMutex_);
         for (auto& d : entries_)
-            if (d.pluginFormatName == "VST3" && matches(d.name))
+            if (d.pluginFormatName == "VST3" && matches(d.name)
+                && ! isWithheld(withholdReasonLocked(d)))
                 return d;
         for (const auto& d : knownPlugins_.getTypes())
-            if (d.pluginFormatName == "VST3" && matches(d.name))
+            if (d.pluginFormatName == "VST3" && matches(d.name)
+                && ! isWithheld(withholdReasonLocked(d)))
                 return d;
     }
 
@@ -854,11 +859,17 @@ void ChainHost::doRefresh()
             {
                 if (cancelFlag_.load()) break;
                 juce::String path = f.getFullPathName();
+                // Recorded, NOT dropped (15 Aug 2026, evening). The row is
+                // kept in entries_ and in the shared cache like any other and
+                // withheld at the feed sites through
+                // WithholdReason::CrashBlacklisted, the same relocation the
+                // dedupe (1069ffe) and the architecture gate (037c36d) had:
+                // a scan-time drop decided what the OTHER host could see and
+                // made CrashBlacklisted unreachable after any rescan. This
+                // list is only what the scan SAW on the blacklist, for the
+                // log line below.
                 if (isBlacklisted(path))
-                {
                     withheldByBlacklist.add(f.getFileNameWithoutExtension());
-                    continue;
-                }
 
                 bool usedCache = false;
                 {
@@ -898,7 +909,11 @@ void ChainHost::doRefresh()
     // Logged EVERY scan, including when empty: the blacklist is a permanent
     // per-path exclusion with no Settings UI yet, and this line is its only
     // discoverability. A plugin silently missing here is a plugin silently
-    // deleted from someone's catalogue.
+    // deleted from someone's catalogue. Since 15 Aug 2026 (evening) the
+    // rows named here are KEPT in the list and the cache and withheld at
+    // feed time (WithholdReason::CrashBlacklisted); the count and the names
+    // are what the scan saw on the blacklist, unchanged in meaning for the
+    // reader of this line.
     EchoJay_NSLog(("EJScan: " + juce::String(withheldByBlacklist.size())
                    + " entr(ies) withheld by crash blacklist"
                    + (withheldByBlacklist.isEmpty()
@@ -2886,6 +2901,13 @@ void ChainHost::startFingerprintPass()
         for (const auto& d : entries_)
         {
             if (d.isInstrument) continue;                       // never a chain slot
+            // Withheld rows are never instantiated here: this pass creates
+            // the plugin directly (asyncCreatePlugin), not through the
+            // loadPluginAsync gate, and a crash-blacklisted row now stays in
+            // entries_ after a rescan (WithholdReason, header). Skipping the
+            // architecture-incompatible ones as well only saves a load that
+            // would fail with "No types found". pluginsMutex_ is held.
+            if (isWithheld(withholdReasonLocked(d))) continue;
             // Thin VST3 (unvalidated, version empty): fingerprinting now
             // would hash a wrong basis. completeLoad covers it on first load.
             if (d.pluginFormatName == "VST3" && d.version.isEmpty()) continue;
