@@ -410,9 +410,12 @@ public:
         // Recall advisory (additive, 15 Aug 2026): rides a chain_recall turn
         // with shortCircuit=false and no question. NOT a question and NOT a
         // block - one ordinary assistant line drawn before the recall's
-        // replace confirmation. Same explicit-boolean discipline as
-        // shortCircuit: the flag decides, text presence never does.
-        bool advisory = false;
+        // replace confirmation. advisory is a STRING NAMING THE KIND
+        // ("channel_mismatch"), not a boolean - the first cut parsed it
+        // (bool) and a string kind read as false, so the advisory arrived
+        // and was never drawn (verified live 15 Aug 10:45:13). Non-empty
+        // means present; the kind decides, text presence never does.
+        juce::String advisory;
         juce::String advisoryText;
     };
 

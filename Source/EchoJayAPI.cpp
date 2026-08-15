@@ -1943,7 +1943,17 @@ void EchoJayAPI::classify(const ClassifyRequest& req,
         r.shortCircuit    = (bool) obj->getProperty("shortCircuit");
         r.questionFollows = (bool) obj->getProperty("questionFollows");
         r.chips           = obj->getProperty("chips");
-        r.advisory        = (bool) obj->getProperty("advisory");
+        // advisory is a string naming the kind ("channel_mismatch"), and a
+        // non-empty string IS the flag. Parsing it (bool) read every kind
+        // as false and the advisory was never drawn (live, 15 Aug
+        // 10:45:13). The isBool arm is future-proofing, not the contract:
+        // var(false).toString() is "0", which is non-empty, so a boolean
+        // false from some future server must not read as present.
+        {
+            const auto av = obj->getProperty("advisory");
+            r.advisory = av.isBool() ? (bool(av) ? juce::String("(unnamed)") : juce::String())
+                                     : av.toString().trim();
+        }
         r.advisoryText    = obj->getProperty("advisoryText").toString().trim();
 
         // advisory is logged on EVERY classify result, present or not, so a
@@ -1955,10 +1965,13 @@ void EchoJayAPI::classify(const ClassifyRequest& req,
         EchoJay_NSLog(("EJClassify: intent=" + (r.intent.isNotEmpty() ? r.intent : juce::String("(none)"))
                        + " channel=\"" + sentChannel + "\""
                        + " precondition=" + (r.precondition.isNotEmpty() ? r.precondition : juce::String("(none)"))
-                       + " advisory=" + (! r.advisory ? juce::String("no")
-                                         : r.advisoryText.isNotEmpty()
-                                             ? "yes (" + juce::String(r.advisoryText.length()) + " ch)"
-                                             : juce::String("yes-but-EMPTY-TEXT"))
+                       // the kind string verbatim, so an unrecognised kind is
+                       // visible in the log instead of silently false
+                       + " advisory=" + (r.advisory.isEmpty() ? juce::String("(none)")
+                                         : "\"" + r.advisory + "\""
+                                           + (r.advisoryText.isNotEmpty()
+                                                ? " (" + juce::String(r.advisoryText.length()) + " ch)"
+                                                : juce::String(" EMPTY-TEXT")))
                        + " shortCircuit=" + (r.shortCircuit ? "yes" : "no")
                        + " questionFollows=" + (r.questionFollows ? "yes" : "no")
                        + " preamble=" + (r.preamble.isNotEmpty() ? "yes" : "no")

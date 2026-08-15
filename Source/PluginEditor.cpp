@@ -22881,18 +22881,19 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
         // local assistant line (appendLocalResultBubble), NOT the
         // provisional bubble below: provisionals are replaced by the real
         // reply and the advisory must survive it. Both outcomes log, so a
-        // missing advisory (EJClassify line says advisory=no) is
+        // missing advisory (EJClassify line says advisory=(none)) is
         // distinguishable from one that arrived and was not drawn.
-        if (c.advisory && c.advisoryText.isNotEmpty())
+        if (c.advisory.isNotEmpty() && c.advisoryText.isNotEmpty())
         {
-            EchoJay_NSLog(("EJRecall: advisory drawn ("
+            EchoJay_NSLog(("EJRecall: advisory \"" + c.advisory + "\" drawn ("
                            + juce::String(c.advisoryText.length()) + " ch)").toRawUTF8());
             safeThis->appendLocalResultBubble(c.advisoryText);
             safeThis->resized();
         }
-        else if (c.advisory)
+        else if (c.advisory.isNotEmpty())
         {
-            EchoJay_NSLog("EJRecall: advisory flag set but advisoryText empty -- nothing drawn");
+            EchoJay_NSLog(("EJRecall: advisory \"" + c.advisory
+                           + "\" arrived with empty advisoryText -- nothing drawn").toRawUTF8());
         }
 
         // ---- the provisional bubble ------------------------------------
