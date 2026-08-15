@@ -22842,6 +22842,31 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
             return;
         }
 
+        // ---- recall advisory (additive, 15 Aug 2026) --------------------
+        // advisory/advisoryText ride a chain_recall classify with
+        // shortCircuit=false and no question, so this sits AFTER every
+        // short-circuit branch (none of which an advisory turn takes) and
+        // BEFORE the main call: the line is on screen before the reply
+        // streams, and therefore before the replace confirmation the recall
+        // block raises. It is advisory ONLY - not a block, not a second
+        // question, and it does not gate or delay the turn. A persistent
+        // local assistant line (appendLocalResultBubble), NOT the
+        // provisional bubble below: provisionals are replaced by the real
+        // reply and the advisory must survive it. Both outcomes log, so a
+        // missing advisory (EJClassify line says advisory=no) is
+        // distinguishable from one that arrived and was not drawn.
+        if (c.advisory && c.advisoryText.isNotEmpty())
+        {
+            EchoJay_NSLog(("EJRecall: advisory drawn ("
+                           + juce::String(c.advisoryText.length()) + " ch)").toRawUTF8());
+            safeThis->appendLocalResultBubble(c.advisoryText);
+            safeThis->resized();
+        }
+        else if (c.advisory)
+        {
+            EchoJay_NSLog("EJRecall: advisory flag set but advisoryText empty -- nothing drawn");
+        }
+
         // ---- the provisional bubble ------------------------------------
         // chatMessages and NOTHING ELSE. See ChatMsg::provisionalId for the
         // four stores and why only one of them is written here.

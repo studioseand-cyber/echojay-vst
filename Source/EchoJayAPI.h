@@ -407,6 +407,13 @@ public:
         bool shortCircuit    = false;
         bool questionFollows = false; // a SECOND call owns the wording
         juce::var chips;              // [{label, detail?, intent?}] or void
+        // Recall advisory (additive, 15 Aug 2026): rides a chain_recall turn
+        // with shortCircuit=false and no question. NOT a question and NOT a
+        // block - one ordinary assistant line drawn before the recall's
+        // replace confirmation. Same explicit-boolean discipline as
+        // shortCircuit: the flag decides, text presence never does.
+        bool advisory = false;
+        juce::String advisoryText;
     };
 
     // ---- abort budgets ----------------------------------------------------

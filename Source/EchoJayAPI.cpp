@@ -1936,9 +1936,18 @@ void EchoJayAPI::classify(const ClassifyRequest& req,
         r.shortCircuit    = (bool) obj->getProperty("shortCircuit");
         r.questionFollows = (bool) obj->getProperty("questionFollows");
         r.chips           = obj->getProperty("chips");
+        r.advisory        = (bool) obj->getProperty("advisory");
+        r.advisoryText    = obj->getProperty("advisoryText").toString().trim();
 
+        // advisory is logged on EVERY classify result, present or not, so a
+        // missing advisory is distinguishable from one that arrived and was
+        // not drawn (the draw site logs separately).
         EchoJay_NSLog(("EJClassify: intent=" + (r.intent.isNotEmpty() ? r.intent : juce::String("(none)"))
                        + " precondition=" + (r.precondition.isNotEmpty() ? r.precondition : juce::String("(none)"))
+                       + " advisory=" + (! r.advisory ? juce::String("no")
+                                         : r.advisoryText.isNotEmpty()
+                                             ? "yes (" + juce::String(r.advisoryText.length()) + " ch)"
+                                             : juce::String("yes-but-EMPTY-TEXT"))
                        + " shortCircuit=" + (r.shortCircuit ? "yes" : "no")
                        + " questionFollows=" + (r.questionFollows ? "yes" : "no")
                        + " preamble=" + (r.preamble.isNotEmpty() ? "yes" : "no")
