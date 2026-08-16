@@ -1927,6 +1927,16 @@ void LinkProcessor::pollChainCommand()
                 if (eo->hasProperty("wet"))
                     item.wet = juce::jlimit(0.0f, 1.0f,
                                             (float)(double) eo->getProperty("wet"));
+                // The model's slot-level "wet_pct" (0..100) on a chain block
+                // built to this Link (16 Aug 2026): same knob, same default;
+                // a non-number is absent. "wet" (0..1, recall/restore) wins
+                // if both are present, which no sender does.
+                else if (eo->hasProperty("wet_pct"))
+                {
+                    const auto wv = eo->getProperty("wet_pct");
+                    if (wv.isDouble() || wv.isInt() || wv.isInt64())
+                        item.wet = juce::jlimit(0.0f, 1.0f, (float)(double) wv / 100.0f);
+                }
                 if (item.name.isNotEmpty())
                     spec.push_back(std::move(item));
             }

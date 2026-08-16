@@ -214,11 +214,15 @@ public:
     // injection), never renumbered mid-sequence — the sequencer translates
     // through an original->current map as earlier ops shift the rack.
     struct ChainEditOp {
-        juce::String op;        // add | remove | replace | move | bypass
-        int  slot  = -1;        // original index (remove/replace/move/bypass)
+        juce::String op;        // add | remove | replace | move | bypass | set | set_wet
+        int  slot  = -1;        // original index (remove/replace/move/bypass/set/set_wet)
         int  to    = -1;        // move target (original numbering)
         int  after = -2;        // add: insert after this original slot; -1 = first
         bool on    = false;     // bypass state
+        // Slot wet/dry from the model (16 Aug 2026): "wet_pct" 0..100 on a
+        // set_wet op (required there) or riding an add/replace (applied once
+        // the slot has loaded). -1 = absent = leave the knob alone.
+        float wetPct = -1.0f;
         juce::String name;      // add/replace: name from AVAILABLE PLUGINS
         juce::String settings;  // prose settings for the slot tile (display)
         // Server-decided no-such-control verdict riding the op (9 Aug

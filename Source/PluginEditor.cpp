@@ -27191,7 +27191,9 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
     juce::StringArray recommNames = ch.getRecommendableNames();
 
     // Collect names+settings from chain JSON, filtering to only those in recommendable
-    struct SlotSpec { juce::String name; juce::String settings; juce::var structured; };
+    // wetPct: the model's slot-level "wet_pct" (0..100) or -1 when absent,
+    // which means "leave the knob alone" (a fresh slot starts at 1.0).
+    struct SlotSpec { juce::String name; juce::String settings; juce::var structured; float wetPct = -1.0f; };
     std::vector<SlotSpec> slots;
     juce::StringArray droppedDisabled;
     juce::StringArray droppedUnknown;
@@ -27207,6 +27209,18 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
         // settings_structured (server-validated): drives the auto-apply
         // path; void/absent means prose-only for this slot.
         juce::var structured  = entryObj->getProperty("settings_structured");
+        // Slot wet/dry from the model (16 Aug 2026): "wet_pct" 0..100 on the
+        // slot object. Numbers clamp; anything else is absent and logged.
+        float wetPct = -1.0f;
+        if (entryObj->hasProperty("wet_pct"))
+        {
+            const auto wv = entryObj->getProperty("wet_pct");
+            if (wv.isDouble() || wv.isInt() || wv.isInt64())
+                wetPct = juce::jlimit(0.0f, 100.0f, (float)(double) wv);
+            else
+                EchoJay_NSLog(("EJChain: wet_pct on \"" + name + "\" is not a number ("
+                               + wv.toString() + "); ignored").toRawUTF8());
+        }
         bool found = false;
         for (auto& r : recommNames)
             if (ChainHost::namesMatchLoose(name, r)) { found = true; break; }
@@ -27229,7 +27243,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                 else          found = true;
             }
         }
-        if (found) slots.push_back({ name, settings, structured });
+        if (found) slots.push_back({ name, settings, structured, wetPct });
         else if (!droppedDisabled.contains(name))
         {
             // A name neither list resolves was previously a DBG line and
@@ -27414,6 +27428,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
             juce::String name     = slots[i].name;
             juce::String settings = slots[i].settings;
             juce::var structured  = slots[i].structured;
+            const float wetPct    = slots[i].wetPct;
             // Status first, load on the NEXT runloop turn: instantiation
             // blocks the message thread, so the paint must get through
             // before the stall or the progress label never shows.
@@ -27421,11 +27436,11 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                 + juce::String(i + 1) + " of " + juce::String((int)slots.size()) + ")...";
             safeThis->setStageStatus(safeThis->chainListPanel.statusText);   // 1d shimmer
             safeThis->chainListPanel.repaint();
-            juce::Timer::callAfterDelay(30, [safeThis, name, settings, structured, skipped, loadNextPtr]() mutable
+            juce::Timer::callAfterDelay(30, [safeThis, name, settings, structured, wetPct, skipped, loadNextPtr]() mutable
             {
                 if (safeThis == nullptr) return;
                 safeThis->processorRef.getChainHost().loadByRecommendedName(name,
-                    [safeThis, name, settings, structured, skipped, loadNextPtr](const juce::String& err) mutable
+                    [safeThis, name, settings, structured, wetPct, skipped, loadNextPtr](const juce::String& err) mutable
                     {
                         if (safeThis == nullptr) return;
                         if (err.isNotEmpty())
@@ -27471,6 +27486,15 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                                                "nothing was ever offered to the dial path. "
                                                "This is a SERVER/model-side gap, not a dial "
                                                "failure.").toRawUTF8());
+                            }
+                            // Slot wet/dry from the block: EchoJay's own
+                            // blend, applied to the slot that just loaded;
+                            // absent leaves it at the default.
+                            if (wetPct >= 0.0f)
+                            {
+                                ch4.setSlotWet(ch4.getNumSlots() - 1, wetPct / 100.0f);
+                                EchoJay_NSLog(("EJChain: wet_pct " + juce::String(wetPct, 1)
+                                               + " applied to \"" + name + "\"").toRawUTF8());
                             }
                             // Progressive: the rack grows a row per loaded slot
                             safeThis->chainListPanel.rebuild(ch4.getAllSlotInfos(), -1);

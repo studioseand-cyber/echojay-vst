@@ -1177,6 +1177,18 @@ std::vector<ChainHost::ChainEditOp> ChainHost::parseChainEditOps(
         // raw var — setSlotStructuredSettings ignores a void/non-object, so ops
         // without it behave exactly as before.
         op.structuredSettings = eo->getProperty("settings_structured");
+        // Slot wet/dry from the model: "wet_pct" 0..100. Numbers clamp;
+        // anything else is absent (the knob is left alone) and logged, so
+        // a wrong type never silently reads as 0% or 100%.
+        if (eo->hasProperty("wet_pct"))
+        {
+            const auto wv = eo->getProperty("wet_pct");
+            if (wv.isDouble() || wv.isInt() || wv.isInt64())
+                op.wetPct = juce::jlimit(0.0f, 100.0f, (float)(double) wv);
+            else
+                EchoJay_NSLog(("EJEdit: wet_pct on op \"" + op.op + "\" is not a number ("
+                               + wv.toString() + "); ignored").toRawUTF8());
+        }
         if (auto* nsObj = eo->getProperty("no_such").getDynamicObject())
         {
             op.noSuchTerm = nsObj->getProperty("term").toString();
@@ -1246,6 +1258,10 @@ juce::String ChainHost::describeEditOp(const ChainEditOp& op,
              + " (slot " + juce::String(op.slot + 1) + ") to position " + juce::String(op.to + 1);
     if (op.op == "bypass")
         return juce::String(op.on ? "\xe2\x8f\xbb bypass " : "\xe2\x8f\xbb un-bypass ")
+             + slotName(op.slot) + " (slot " + juce::String(op.slot + 1) + ")";
+    if (op.op == "set_wet")
+        return juce::String::fromUTF8("\xe2\x97\x90 set wet ")
+             + juce::String(juce::roundToInt(juce::jmax(0.0f, op.wetPct))) + "% on "
              + slotName(op.slot) + " (slot " + juce::String(op.slot + 1) + ")";
     if (op.op == "set")
     {
@@ -1421,6 +1437,13 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
                 if (op.settings.isEmpty() && op.structuredSettings.getDynamicObject() == nullptr)
                     return bad("set without any settings");
             }
+            else if (op.op == "set_wet")
+            {
+                // Slot wet/dry only (16 Aug 2026): EchoJay's own blend on an
+                // EXISTING slot, never a plugin parameter, never the instance.
+                if (!validSlot(op.slot)) return bad(slotLabel(op.slot) + " does not exist");
+                if (op.wetPct < 0.0f) return bad("set_wet without a wet_pct (0 to 100)");
+            }
             else return bad("unknown operation \"" + op.op + "\"");
         }
     }
@@ -1480,6 +1503,8 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
             label = "Reordering the chain...";
         else if (op.op == "bypass")
             label = op.on ? "Bypassing a slot..." : "Un-bypassing a slot...";
+        else if (op.op == "set_wet")
+            label = "Setting wet/dry...";
         else if (op.op == "set")
         {
             const int cur = (op.slot >= 0 && op.slot < (int)st->map.size())
@@ -1544,6 +1569,17 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
         if (cur < 0) return failAndStop("bypass failed: slot no longer present");
         setSlotBypassed(cur, op.on);
         finishOpAndContinue(juce::String(op.on ? "bypassed " : "un-bypassed ")
+                            + slots_[(size_t)cur].desc.name);
+        return;
+    }
+    if (op.op == "set_wet")
+    {
+        const int cur = curOf(op.slot);
+        if (cur < 0) return failAndStop("set_wet failed: slot no longer present");
+        setSlotWet(cur, op.wetPct / 100.0f);
+        EchoJay_NSLog(("EJEdit: set_wet slot=" + juce::String(cur + 1) + " \""
+                       + slots_[(size_t)cur].desc.name + "\" wet=" + juce::String(op.wetPct, 1) + "%").toRawUTF8());
+        finishOpAndContinue("set wet " + juce::String(juce::roundToInt(op.wetPct)) + "% on "
                             + slots_[(size_t)cur].desc.name);
         return;
     }
@@ -1653,6 +1689,10 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
                     setSlotSettings(slotIdx, theOp.settings);
                 if (theOp.structuredSettings.getDynamicObject() != nullptr)
                     setSlotStructuredSettings(slotIdx, theOp.structuredSettings);
+                // wet_pct riding an add/replace: EchoJay's own blend on the
+                // slot that just loaded; absent leaves the default (1.0).
+                if (theOp.wetPct >= 0.0f)
+                    setSlotWet(slotIdx, theOp.wetPct / 100.0f);
             };
 
             if (theOp.op == "add")
