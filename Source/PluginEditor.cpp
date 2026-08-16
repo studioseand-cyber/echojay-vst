@@ -7464,16 +7464,43 @@ void EchoJayEditor::editProceedWithState(const juce::String& uid, int slot0,
     const juce::String pName = it->second.rack.slots[(size_t) slot0].name;
     const juce::String pFmt  = it->second.rack.slots[(size_t) slot0].format;
 
-    auto desc = processorRef.getChainHost().resolveByName(pName, pFmt);
+    // Withheld rows resolve to nothing, and the resolver says why through
+    // its fourth parameter (16 Aug 2026): a crash-blacklisted or Intel-only
+    // plugin used to be reported as "not in this machine's plugin list",
+    // which is the one message the user cannot act on.
+    auto& chHost = processorRef.getChainHost();
+    ChainHost::WithholdReason withheld = ChainHost::WithholdReason::None;
+    auto desc = chHost.resolveByName(pName, pFmt, nullptr, &withheld);
+    if (desc.name.isEmpty() && withheld == ChainHost::WithholdReason::None)
+        desc = chHost.resolveByName(pName, {}, nullptr, &withheld);
     if (desc.name.isEmpty())
-        desc = processorRef.getChainHost().resolveByName(pName, {});
-    if (desc.name.isEmpty())
-    { say("\"" + pName + "\" is not in this machine's plugin list, so no "
-          "editing copy can be made."); return; }
+    {
+        if (ChainHost::isWithheld(withheld))
+            say("\"" + pName + "\" " + ChainHost::withholdReasonText(withheld)
+                + ". No editing copy can be made.");
+        else
+            say("\"" + pName + "\" is not in this machine's plugin list, so no "
+                "editing copy can be made.");
+        return;
+    }
+    // The gate the load path has (ChainHost::loadPluginAsync), applied to
+    // THIS caller: asyncCreatePlugin instantiates directly, so a withheld
+    // desc reaching it would load a plugin the feed and the loader both
+    // refuse. Same decision function as the three feed sites, never a
+    // reimplemented predicate. The fingerprint pass is a separate caller
+    // with its own death marker and is gated inside ChainHost already.
+    if (const auto why = chHost.withholdReason(desc); ChainHost::isWithheld(why))
+    {
+        EchoJay_NSLog(("EJEdit: editing copy refused, \"" + desc.name + "\" "
+                       + ChainHost::withholdReasonText(why)).toRawUTF8());
+        say("\"" + pName + "\" " + ChainHost::withholdReasonText(why)
+            + ". No editing copy can be made.");
+        return;
+    }
 
     say("Opening " + pName + "...");
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    processorRef.getChainHost().asyncCreatePlugin(desc,
+    chHost.asyncCreatePlugin(desc,
         [safeThis, uid, slot0, pName, pFmt, b64]
         (std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& loadErr)
     {
