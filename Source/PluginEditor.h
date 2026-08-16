@@ -2701,10 +2701,9 @@ private:
     //   chip: pill (fully rounded), fill cyan 9% (hover 18%), border cyan
     //         40% (hover 70%), text 0xff7FE3F2 @ 12.5px, pad 6v/14h
     //   shelf: input bg + 5% cyan wash, radius 12px top corners only
-    // AskChipLnF (the pill) is still worn by the edit-apply / edit-alt /
-    // result chips. The ASK shelf itself moved to stacked rows (AskRowLnF,
-    // below) on 16 Aug 2026; app.html's shelf follows the same shape and its
-    // slice(0,4) cap goes with it (web client, other session).
+    // AskChipLnF (the pill) is worn by the edit-apply / edit-alt / result
+    // chips and by the PILL shelf (client-authored asks). Server-authored
+    // questions render as the numbered BriefCard below (16 Aug 2026).
     struct AskChipLnF : juce::LookAndFeel_V4
     {
         void drawButtonBackground(juce::Graphics& g, juce::Button& b,
@@ -2721,68 +2720,116 @@ private:
         { return juce::Font(juce::FontOptions(12.5f)); }
     };
     AskChipLnF askChipLnF_;   // declared BEFORE the buttons: destroyed after them
-    // ASK shelf rows (16 Aug 2026): the shelf is a VERTICAL STACK now, one
-    // full-width row per option in server order, then an "Enter other
-    // answer" row, then Skip. The horizontal chip row and its four-option
-    // cap (kMaxAskChips) are gone: a stack does not run out of width, and
-    // the cap was silently dropping the fifth option of questions that
-    // carry four plus an escape hatch. Row look mirrors the option chips
-    // (cyan 9%/18% fill, 40%/70% border, 12.5px text) but rounded 8px and
-    // LEFT-aligned so a sentence-length option reads as a sentence.
-    // public/app.html's .ask-shelf is the other client of this shape.
-    struct AskRowLnF : juce::LookAndFeel_V4
-    {
-        void drawButtonBackground(juce::Graphics& g, juce::Button& b,
-                                  const juce::Colour&, bool over, bool down) override
-        {
-            auto r = b.getLocalBounds().toFloat().reduced(0.5f);
-            const auto cyan = juce::Colour(0xff22d3ee);
-            g.setColour(cyan.withAlpha(over || down ? 0.18f : 0.09f));
-            g.fillRoundedRectangle(r, 8.0f);
-            g.setColour(cyan.withAlpha(over || down ? 0.70f : 0.40f));
-            g.drawRoundedRectangle(r, 8.0f, 1.0f);
-        }
-        juce::Font getTextButtonFont(juce::TextButton&, int) override
-        { return juce::Font(juce::FontOptions(12.5f)); }
-        void drawButtonText(juce::Graphics& g, juce::TextButton& b, bool, bool) override
-        {
-            g.setFont(getTextButtonFont(b, b.getHeight()));
-            g.setColour(b.findColour(b.getToggleState() ? juce::TextButton::textColourOnId
-                                                        : juce::TextButton::textColourOffId)
-                         .withMultipliedAlpha(b.isEnabled() ? 1.0f : 0.5f));
-            g.drawText(b.getButtonText(), b.getLocalBounds().reduced(12, 0),
-                       juce::Justification::centredLeft, true);
-        }
-    };
-    AskRowLnF askRowLnF_;     // declared BEFORE the row buttons: destroyed after them
-    static constexpr int kAskChipH = 27;   // row height: 12.5px text + padding
-    // Option rows, grown on demand (NO cap). Every button is created by
+    // ---- ASK surfaces (16 Aug 2026, one card): TWO shapes, decided per ask ----
+    //   CARD   ONLY the [ASK BRIEF] payload carrying every question of the
+    //          brief (paginated locally, ONE message sent when the set is
+    //          complete or X closes it). Numbered rows, hairlines, pager + X,
+    //          an escape row with "Something else" and Skip. Drawn by
+    //          BriefCard below.
+    //   PILLS  everything else, whoever wrote it: the server's own build
+    //          confirmation ("Ready to build it?"), legacy single ASK
+    //          blocks, recall confirm/cancel/here/switch, the compare scope
+    //          pair, the classify short-circuit chips. A decision that acts.
+    //          The horizontal AskChipLnF flow, no numbering, no counter, no
+    //          Skip, no other-answer row.
+    // askIsCard decides; measureAskShelf lays out the pills; the card lays
+    // itself out from its own preferredHeight.
+    static constexpr int kAskChipH = 27;   // pill height: 12.5px text + padding
+    // Pill buttons, grown on demand (no cap). Every button is created by
     // ensureAskChipButtons with the SAME onClick (onAskChipTapped(i)), so
-    // index i is the only thing that distinguishes them.
+    // index i is the only thing that distinguishes them. The arrays below
+    // are ALSO the card's tap plumbing: syncAskArraysToCard fills them from
+    // the card's current page so a legacy-card row tap and the general-chain
+    // row ride the same onAskChipTapped path a pill does.
     std::vector<std::unique_ptr<juce::TextButton>> askChipBtns;
     std::vector<juce::String> askChipLabels;
     std::vector<juce::String> askChipIntents;   // ""|"edit"|"build" (3-pre)
     // The full choice var per row (14 Aug 2026, recall). Rows that need
     // more than label+intent (recall_id, recall_name) read it from here;
-    // index-parallel with the vectors above by construction (one source
-    // loop in measureAskShelf fills all of them).
+    // index-parallel with the vectors above by construction.
     std::vector<juce::var> askChipVars;
     void ensureAskChipButtons(int n);
     void onAskChipTapped(int i);
-    // The two fixed rows under the options. "Enter other answer" focuses
-    // the composer and leaves the shelf up (the send supersedes it, as a
-    // typed answer always did). Skip answers the CURRENT question with the
-    // literal label "Skip" through the same tap path, so the server sees
-    // it as a tap on this question and nothing else: skip means skip THIS
-    // question, not stop asking and not build now. Skip is NOT drawn on
-    // asks whose every choice is client-side (compare scope, recall
-    // confirm, channel mismatch): those already carry their decline as a
-    // row and must not send a turn.
-    juce::TextButton askOtherBtn_ { "Enter other answer" };
-    juce::TextButton askSkipBtn_  { "Skip" };
-    bool askSkipShown_ = false;
-    static bool askChoiceIsClientOnly(const juce::var& choice);
-    void onAskSkipTapped();
+    static bool askIsCard(const ChatMsg& msg);
+
+    // The wire contract for the whole-brief payload (shared with the server
+    // session, 16 Aug 2026; do not vary without saying so):
+    //   [ASK BRIEF channel="Lead Vocal"]
+    //   1. axis=role  text="What is the vocal doing in the track?"
+    //      options="Lead, needs to sit forward and cut" | "Melodic, ..." | ...
+    //   2. axis=tuning  text="..."
+    //      options="..." | "..."
+    // and, once the card is complete, ONE user message:
+    //   Brief answers (Lead Vocal)
+    //   role: Lead, needs to sit forward and cut
+    //   tuning: Skip
+    //   space: <typed> something big and washy
+    // (chosen option = label verbatim; skipped = the literal Skip; typed =
+    // "<typed> " + the words; keyed by AXIS ID; an axis the user never
+    // reached before X is OMITTED, and the server logs it as dismissed, so
+    // a dismissal never counts as a Skip.) "Just build me a general chain"
+    // sends alone and immediately, in the old tap format.
+    // extractAskBriefBlock parses the payload out of a reply into the SAME
+    // askData JSON every existing consumer reads (brief:true, channel,
+    // questions[], plus top-level question/choices = question 1).
+    static bool extractAskBriefBlock(juce::String& replyInOut, juce::String& askJsonOut);
+    static juce::String kBriefSkipToken() { return "Skip"; }
+
+    struct BriefCard : juce::Component
+    {
+        struct Q
+        {
+            juce::String axis, text;
+            juce::StringArray labels, intents;
+            juce::Array<juce::var> vars;
+        };
+        enum class Kind { None, Option, Skip, Typed };
+        std::vector<Q> qs;
+        std::vector<Kind> kinds;            // per question
+        std::vector<juce::String> answers;  // per question: label / typed words
+        juce::String channel;
+        bool briefMode = true;              // always: the card exists for [ASK BRIEF] only
+        int page = 0;
+        int hoverRow = -1;                  // option row under the mouse
+        int activeRow = -1;                 // keyboard-highlighted option row
+        bool composerFocused = false;       // mirrored from the composer by the timer
+        enum Hit { HitNone, HitOption, HitPrev, HitNext, HitClose, HitOther, HitSkip };
+        std::function<void(int qi, int oi)> onOption;
+        std::function<void(int qi)>         onSkip;
+        std::function<void()>               onClose, onOther;
+        std::function<void(int newPage)>    onPage;
+        std::function<void(juce::juce_wchar)> onTypeThrough;   // a letter while focused: to the composer
+        static constexpr int kHeaderH = 34, kRowH = 32, kPadX = 14, kBottomPad = 6;
+        int preferredHeight() const;
+        int optionCount() const { return page >= 0 && page < (int) qs.size() ? qs[(size_t) page].labels.size() : 0; }
+        bool complete() const;              // every question has a value
+        int firstOpenPage(int from) const;  // next page without a value, or -1
+        void reset(std::vector<Q> qsIn, const juce::String& channelIn, bool briefModeIn);
+        void goTo(int p);
+        void paint(juce::Graphics&) override;
+        void mouseMove(const juce::MouseEvent&) override;
+        void mouseExit(const juce::MouseEvent&) override;
+        void mouseDown(const juce::MouseEvent&) override;
+        bool keyPressed(const juce::KeyPress&) override;
+        void focusLost(FocusChangeType) override { activeRow = -1; repaint(); }
+    private:
+        Hit hitTest(juce::Point<int> p, int* rowOut) const;
+        juce::Rectangle<int> rowRect(int i) const;
+        juce::Rectangle<int> escapeRowRect() const;
+        juce::Rectangle<int> prevRect() const, nextRect() const, closeRect() const, skipRect() const;
+    };
+    BriefCard briefCard_;
+    // The chat message the card was built from (chatMessages index) and its
+    // askData, so a layout pass can tell "same ask, keep the page and the
+    // answers" from "a new ask, rebuild".
+    juce::String briefCardAskData_;
+    void syncAskArraysToCard();             // askChip arrays <- current page
+    void onBriefOption(int qi, int oi);
+    void onBriefSkip(int qi);
+    void onBriefClose();
+    void onBriefAdvance();                  // next open page or send
+    void sendBriefAnswers(const juce::String& why);
+    bool briefTakesTypedAnswer(const juce::String& typed);   // Enter/Send intercept
     // ---- Channel selection (banner dropdown; the chip bar is deleted) ----
     // THE channel selector: clicking the banner opens a menu of LIVE
     // channels from the registry (current one ticked; an offline current
@@ -2825,7 +2872,8 @@ private:
     int  askChipMsgIdx_ = -1;          // chatMessages index the rows belong to
     int  activeAskChips = 0;
     juce::Rectangle<int> askShelfRect_;
-    bool askShelfVisible_ = false;
+    bool askShelfVisible_ = false;      // a shelf (card OR pills) is docked
+    bool askShelfIsCard_  = false;      // which of the two
     // Scan-window hold (sendChatMessage): when the first send of a session
     // arrives before the recommendable list resolves, the send waits,
     // bounded, rather than riding feed-less and staging chat. 0 = no hold
@@ -2835,18 +2883,16 @@ private:
     int findNewestUnansweredAsk() const;
     // Mark every pending ask answered (any user send supersedes the question)
     void supersedePendingAsks();
-    // The ONE layout authority for the shelf (height reservation + row
+    // The ONE layout authority for the PILL shelf (height reservation + pill
     // placement); the paint pass draws only the background inside the rect
-    // this produced, so the two cannot disagree. Stacks every option as a
-    // full-width row, then the "Enter other answer" row, then Skip when
-    // *skipOut says so; rects are relative to the shelf origin, options
-    // first, then the other row, then the skip row. Returns total shelf
-    // height (0 = no shelf).
+    // this produced, so the two cannot disagree. Flows the pills into rows
+    // for the given shelf width (no cap); rects are relative to the shelf
+    // origin. Returns total shelf height (0 = no shelf). Card asks are not
+    // measured here (BriefCard::preferredHeight).
     int measureAskShelf(const ChatMsg& msg, int shelfW,
-                        std::vector<juce::Rectangle<int>>* rowRectsOut = nullptr,
+                        std::vector<juce::Rectangle<int>>* chipRectsOut = nullptr,
                         juce::StringArray* labelsOut = nullptr,
                         juce::String* questionOut = nullptr,
-                        bool* skipOut = nullptr,
                         juce::StringArray* intentsOut = nullptr,
                         juce::Array<juce::var>* choiceVarsOut = nullptr);
 

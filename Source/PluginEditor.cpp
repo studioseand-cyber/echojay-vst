@@ -1719,7 +1719,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chatSendBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
     chatSendBtn.onClick = [this] {
         auto t = chatInput.getText().trim();
-        if (t.isNotEmpty()) sendChatMessage(t);
+        if (t.isNotEmpty() && !briefTakesTypedAnswer(t)) sendChatMessage(t);
     };
     addChildComponent(chatSendBtn);
 
@@ -2312,28 +2312,50 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         addAndMakeVisible(resultChipBtns[(size_t)i]);
     }
 
-    // ASK shelf rows (Phase 1b, B2; stacked 16 Aug 2026): full-width row
-    // buttons docked on top of the chat input. Tap = auto-send the
-    // formatted answer; the send path itself supersedes every pending ask
-    // (so the shelf also vanishes when the user ignores the rows and types
-    // free text). Option buttons are created on demand by
-    // ensureAskChipButtons (no cap); the two fixed rows live here.
-    askOtherBtn_.setLookAndFeel(&askRowLnF_);
-    askOtherBtn_.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff7FE3F2));
-    askOtherBtn_.setVisible(false);
-    askOtherBtn_.onClick = [this]()
+    // ASK surfaces (Phase 1b, B2; one card 16 Aug 2026). Pills are created
+    // on demand by ensureAskChipButtons; the card is one component whose
+    // callbacks land here. Both dock on the chat input top; a send
+    // supersedes every pending ask, so both vanish when the user types
+    // free text past a legacy question.
+    briefCard_.setWantsKeyboardFocus(true);
+    // Focus arrives explicitly (on the card's arrival, or by keys), never by
+    // a click: a click on "Something else" must hand the composer the
+    // keyboard without the card taking it back first.
+    briefCard_.setMouseClickGrabsKeyboardFocus(false);
+    briefCard_.setVisible(false);
+    briefCard_.onOption = [this](int qi, int oi) { onBriefOption(qi, oi); };
+    briefCard_.onSkip   = [this](int qi) { onBriefSkip(qi); };
+    briefCard_.onClose  = [this]() { onBriefClose(); };
+    briefCard_.onOther  = [this]()
     {
-        // A real row, not a hint: the invitation to type is where options
-        // nobody thought of come from, and it read low as grey text.
-        EchoJay_NSLog("EJAskChip: tap label=\"Enter other answer\" branch=focus_input");
+        // "Something else": the composer takes the answer as <typed> for
+        // the current question. Grabbed now and again on the next message
+        // tick (a host can re-assert its first responder after the click);
+        // the timer mirrors the composer's TRUE focus back into the card so
+        // the escape row and the placeholder show it only when it is so.
         chatInput.grabKeyboardFocus();
+        auto safe = juce::Component::SafePointer<EchoJayEditor>(this);
+        juce::MessageManager::callAsync([safe]()
+        {
+            if (safe == nullptr) return;
+            safe->chatInput.grabKeyboardFocus();
+            EchoJay_NSLog(("EJBrief: something-else tapped, composer focus="
+                           + juce::String(safe->chatInput.hasKeyboardFocus(true) ? "yes" : "NO")).toRawUTF8());
+        });
     };
-    addAndMakeVisible(askOtherBtn_);
-    askSkipBtn_.setLookAndFeel(&askRowLnF_);
-    askSkipBtn_.setColour(juce::TextButton::textColourOffId, C::text2);
-    askSkipBtn_.setVisible(false);
-    askSkipBtn_.onClick = [this]() { onAskSkipTapped(); };
-    addAndMakeVisible(askSkipBtn_);
+    briefCard_.onPage = [this](int newPage)
+    {
+        briefCard_.goTo(newPage);
+        syncAskArraysToCard();
+        EchoJay_NSLog(("EJBrief: page " + juce::String(briefCard_.page + 1) + " of "
+                       + juce::String((int) briefCard_.qs.size())).toRawUTF8());
+    };
+    briefCard_.onTypeThrough = [this](juce::juce_wchar c)
+    {
+        chatInput.grabKeyboardFocus();
+        chatInput.insertTextAtCaret(juce::String::charToString(c));
+    };
+    addChildComponent(briefCard_);
 
     // Link tab has no persistent child components — painted directly.
 
@@ -5934,6 +5956,7 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
                 EchoJayAPI::extractChainBlock(visibleReply, chainJson);
                 EchoJayAPI::extractGainBlock(visibleReply, gainJson);
                 EchoJayAPI::extractAskBlock(visibleReply, askJson);
+                { juce::String bj; if (extractAskBriefBlock(visibleReply, bj)) askJson = bj; }
                 EchoJayAPI::extractChainEditBlock(visibleReply, editJson);
                 // Recall is never taught on compare turns; strip so the raw
                 // block cannot leak as text, and log that it was not acted on.
@@ -15188,7 +15211,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
         g.drawRoundedRectangle(r.reduced(0.5f), 12.0f, 1.0f);
     }
 
-    if (askShelfVisible_ && currentScreen == Screen::Main)
+    if (askShelfVisible_ && !askShelfIsCard_ && currentScreen == Screen::Main)
     {
         auto r = askShelfRect_.toFloat();
         juce::Path shelf;
@@ -15200,8 +15223,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
         g.fillPath(shelf);
         g.setColour(C::border2);                                 // input outline colour
         g.strokePath(shelf, juce::PathStrokeType(1.0f));
-        // Rows (options, "Enter other answer", Skip) are buttons placed by
-        // the layout pass; nothing else is painted here.
+        // Pills are buttons placed by the layout pass; a card paints itself.
     }
 
     // FREE V2 premium lock strip: Link / Chain / Compare stay fully visible,
@@ -17343,59 +17365,127 @@ void EchoJayEditor::resized()
     // viewport instead of covering the last message. Chip buttons are
     // positioned here (layout), painted background + hint in paint().
     askShelfVisible_ = false;
-    askSkipShown_    = false;
+    askShelfIsCard_  = false;
     {
         const int askIdxL = findNewestUnansweredAsk();
         if (askIdxL >= 0 && assistantInputContext() && !chatCentredEmpty_)
         {
             const int bw = chatBoxRect_.getWidth();
-            std::vector<juce::Rectangle<int>> rects;
-            juce::StringArray labels, intents;
-            juce::Array<juce::var> choiceVars;
-            bool skip = false;
-            const int shelfH = measureAskShelf(chatMessages[(size_t)askIdxL], bw,
-                                               &rects, &labels,
-                                               &askChipQuestion_, &skip,
-                                               &intents, &choiceVars);
-            if (shelfH > 0)
+            const ChatMsg& am = chatMessages[(size_t) askIdxL];
+            if (askIsCard(am))
             {
-                askShelfRect_    = { chatBoxRect_.getX(),
-                                     chatBoxRect_.getY() - shelfH, bw, shelfH };
-                askShelfVisible_ = true;
-                askChipMsgIdx_   = askIdxL;
-                // rects = every option row, then the other row, then the
-                // skip row when skip is set (measureAskShelf's contract)
-                activeAskChips   = labels.size();
-                ensureAskChipButtons(activeAskChips);
-                const auto origin = askShelfRect_.getPosition();
-                for (int ci = 0; ci < activeAskChips; ++ci)
+                // CARD ([ASK BRIEF] only). Rebuild the card only for a NEW
+                // ask (askData or message changed); a resize keeps the page
+                // and the answers.
+                if (briefCardAskData_ != am.askData || askChipMsgIdx_ != askIdxL)
                 {
-                    askChipLabels[(size_t)ci] = labels[ci];
-                    askChipIntents[(size_t)ci] = ci < intents.size() ? intents[ci] : juce::String();
-                    askChipVars[(size_t)ci] = ci < choiceVars.size() ? choiceVars[ci] : juce::var();
-                    auto& btn = *askChipBtns[(size_t)ci];
-                    btn.setButtonText(labels[ci]);
-                    btn.setBounds(rects[(size_t)ci] + origin);
-                    btn.setVisible(true);
-                    btn.toFront(false);
+                    std::vector<BriefCard::Q> qs;
+                    juce::String channel;
+                    auto v = juce::JSON::parse(am.askData);
+                    if (auto* o = v.getDynamicObject())
+                    {
+                        auto readChoices = [](const juce::var& choicesVar, BriefCard::Q& q)
+                        {
+                            if (auto* arr = choicesVar.getArray())
+                                for (auto& cv : *arr)
+                                    if (auto* co = cv.getDynamicObject())
+                                    {
+                                        const juce::String lab = co->getProperty("label").toString().trim();
+                                        if (lab.isEmpty()) continue;
+                                        q.labels.add(lab);
+                                        q.intents.add(co->getProperty("intent").toString().trim().toLowerCase());
+                                        q.vars.add(cv);
+                                    }
+                        };
+                        channel = o->getProperty("channel").toString();
+                        if (auto* qarr = o->getProperty("questions").getArray())
+                            for (auto& qv : *qarr)
+                                if (auto* qo = qv.getDynamicObject())
+                                {
+                                    BriefCard::Q q;
+                                    q.axis = qo->getProperty("axis").toString();
+                                    q.text = qo->getProperty("question").toString().trim();
+                                    readChoices(qo->getProperty("choices"), q);
+                                    if (q.text.isNotEmpty() && q.labels.size() >= 1) qs.push_back(q);
+                                }
+                    }
+                    if (!qs.empty())
+                    {
+                        briefCard_.reset(std::move(qs), channel, true);
+                        briefCardAskData_ = am.askData;
+                        askChipMsgIdx_    = askIdxL;
+                        EchoJay_NSLog(("EJBrief: card shown channel=\"" + channel + "\" questions="
+                                       + juce::String((int) briefCard_.qs.size())
+                                       + " options_q1=" + juce::String(briefCard_.qs.front().labels.size())).toRawUTF8());
+                    }
                 }
-                askOtherBtn_.setBounds(rects[(size_t) activeAskChips] + origin);
-                askOtherBtn_.setVisible(true);
-                askOtherBtn_.toFront(false);
-                askSkipShown_ = skip;
-                if (skip)
+                if (!briefCard_.qs.empty())
                 {
-                    askSkipBtn_.setBounds(rects[(size_t) activeAskChips + 1] + origin);
-                    askSkipBtn_.setVisible(true);
-                    askSkipBtn_.toFront(false);
+                    const int cardH = briefCard_.preferredHeight();
+                    askShelfRect_    = { chatBoxRect_.getX(), chatBoxRect_.getY() - cardH, bw, cardH };
+                    askShelfVisible_ = true;
+                    askShelfIsCard_  = true;
+                    askChipMsgIdx_   = askIdxL;
+                    syncAskArraysToCard();
+                    briefCard_.setBounds(askShelfRect_);
+                    briefCard_.setVisible(true);
+                    briefCard_.toFront(false);
+                }
+            }
+            else
+            {
+                // PILLS
+                std::vector<juce::Rectangle<int>> rects;
+                juce::StringArray labels, intents;
+                juce::Array<juce::var> choiceVars;
+                const int shelfH = measureAskShelf(am, bw, &rects, &labels,
+                                                   &askChipQuestion_, &intents, &choiceVars);
+                if (shelfH > 0)
+                {
+                    askShelfRect_    = { chatBoxRect_.getX(),
+                                         chatBoxRect_.getY() - shelfH, bw, shelfH };
+                    askShelfVisible_ = true;
+                    askChipMsgIdx_   = askIdxL;
+                    activeAskChips   = labels.size();
+                    ensureAskChipButtons(activeAskChips);
+                    const auto origin = askShelfRect_.getPosition();
+                    for (int ci = 0; ci < activeAskChips; ++ci)
+                    {
+                        askChipLabels[(size_t)ci] = labels[ci];
+                        askChipIntents[(size_t)ci] = ci < intents.size() ? intents[ci] : juce::String();
+                        askChipVars[(size_t)ci] = ci < choiceVars.size() ? choiceVars[ci] : juce::var();
+                        auto& btn = *askChipBtns[(size_t)ci];
+                        btn.setButtonText(labels[ci]);
+                        btn.setBounds(rects[(size_t)ci] + origin);
+                        btn.setVisible(true);
+                        btn.toFront(false);
+                    }
                 }
             }
         }
     }
-    for (int ci = askShelfVisible_ ? activeAskChips : 0; ci < (int) askChipBtns.size(); ++ci)
+    // Pills off when the shelf is a card or absent; card off when not a card
+    for (int ci = (askShelfVisible_ && !askShelfIsCard_) ? activeAskChips : 0; ci < (int) askChipBtns.size(); ++ci)
         askChipBtns[(size_t)ci]->setVisible(false);
-    if (!askShelfVisible_) askOtherBtn_.setVisible(false);
-    if (!askSkipShown_)    askSkipBtn_.setVisible(false);
+    if (!askShelfIsCard_)
+    {
+        briefCard_.setVisible(false);
+        if (!askShelfVisible_) briefCardAskData_.clear();
+    }
+    // The composer's placeholder reads "Or reply directly..." under a card
+    // (the timer swaps in "Your answer to: <question>" while the composer
+    // actually has focus, and this pass leaves that alone)
+    {
+        static const juce::String kCardPh = "Or reply directly...";
+        const juce::String cur = chatInput.getTextToShowWhenEmpty();
+        if (askShelfIsCard_)
+        {
+            if (cur != kCardPh && !cur.startsWith("Your answer to: "))
+                chatInput.setTextToShowWhenEmpty(kCardPh, C::text3);
+        }
+        else if (cur == kCardPh || cur.startsWith("Your answer to: "))
+            chatInput.setTextToShowWhenEmpty(chatCentredEmpty_ ? "Type a question..." : "Ask about your mix...", C::text3);
+    }
 
     if (assistantInputContext() && shouldShowFastModelBanner())
     {
@@ -17576,8 +17666,7 @@ void EchoJayEditor::resized()
             for (int i = 0; i < kMaxWavePlayBtns; ++i)
                 wavePlayOverlays[(size_t)i].setVisible(false);
             for (auto& ab : askChipBtns) ab->setVisible(false);
-            askOtherBtn_.setVisible(false);
-            askSkipBtn_.setVisible(false);
+            briefCard_.setVisible(false);
         }
     }
     // Content height from THE single source (measureChatContentHeight), the
@@ -18644,6 +18733,24 @@ void EchoJayEditor::timerCallback()
         }
         prevSettingsScanning_ = settingsScanning;
     }
+    // Brief card: mirror the composer's real focus into the card so the
+    // "Something else" state is drawn from fact (the escape row lights up,
+    // the placeholder names the question) and cleared when focus leaves.
+    if (askShelfVisible_ && askShelfIsCard_)
+    {
+        const bool f = chatInput.hasKeyboardFocus(true);
+        if (f != briefCard_.composerFocused)
+        {
+            briefCard_.composerFocused = f;
+            briefCard_.repaint();
+            const int qi = briefCard_.page;
+            const juce::String qtext = qi >= 0 && qi < (int) briefCard_.qs.size() ? briefCard_.qs[(size_t) qi].text : juce::String();
+            chatInput.setTextToShowWhenEmpty(f && qtext.isNotEmpty() ? "Your answer to: " + qtext : juce::String("Or reply directly..."), C::text3);
+            chatInput.repaint();
+        }
+    }
+    else if (briefCard_.composerFocused)
+        briefCard_.composerFocused = false;
     // Chain-scan falling edge: the scan replaced entries_ and wrote the
     // cache; nothing had told the feed. Rebuild the resolver against the
     // scanner's ticks NOW (the same call the Chain tab makes on entry), refresh
@@ -19444,7 +19551,9 @@ void EchoJayEditor::textEditorReturnKeyPressed(juce::TextEditor& ed)
 {
     if (&ed == &chatInput) {
         auto t = chatInput.getText().trim();
-        if (t.isNotEmpty()) sendChatMessage(t);
+        // A brief card takes the words as <typed> for its current question
+        // and advances; nothing is sent until the set is complete.
+        if (t.isNotEmpty() && !briefTakesTypedAnswer(t)) sendChatMessage(t);
     }
 }
 
@@ -19455,7 +19564,7 @@ void EchoJayEditor::ensureAskChipButtons(int n)
     {
         const int i = (int) askChipBtns.size();
         auto b = std::make_unique<juce::TextButton>();
-        b->setLookAndFeel(&askRowLnF_);
+        b->setLookAndFeel(&askChipLnF_);
         b->setColour(juce::TextButton::textColourOffId, juce::Colour(0xff7FE3F2));
         b->setVisible(false);
         b->onClick = [this, i]() { onAskChipTapped(i); };
@@ -19467,47 +19576,538 @@ void EchoJayEditor::ensureAskChipButtons(int n)
     if ((int) askChipVars.size()    < n) askChipVars.resize((size_t) n);
 }
 
-bool EchoJayEditor::askChoiceIsClientOnly(const juce::var& choice)
+bool EchoJayEditor::askIsCard(const ChatMsg& msg)
 {
-    // The intents the tap handler resolves WITHOUT a chat turn, plus the
-    // bare recall_id disambiguation. Keep in step with onAskChipTapped's
-    // client-side branches: a new client-only intent that is missing here
-    // draws a Skip that would send a turn on a question the model never
-    // asked.
-    auto* co = choice.getDynamicObject();
-    if (co == nullptr) return false;
-    const auto intent = co->getProperty("intent").toString().trim().toLowerCase();
-    if (intent == "cmp_anyway" || intent == "cmp_numbers" || intent == "switch"
-        || intent == "recall_confirm" || intent == "recall_cancel"
-        || intent == "recall_here" || intent == "recall_switch")
-        return true;
-    return EJRecall::choiceRecallId(choice).isNotEmpty();
+    // A card ONLY for the whole-brief payload ([ASK BRIEF], brief:true).
+    // Everything else is pills, whoever wrote it: the server's own build
+    // confirmation ("Ready to build it? Build it / Not yet"), the model's
+    // legacy single ASK blocks, the classify short-circuit chips, recall
+    // and compare scope. A decision that acts is not a question that
+    // informs, and only the brief payload is the latter (Sean, 16 Aug).
+    auto v = juce::JSON::parse(msg.askData);
+    auto* o = v.getDynamicObject();
+    return o != nullptr && (bool) o->getProperty("brief");
 }
 
-void EchoJayEditor::onAskSkipTapped()
+// [ASK BRIEF channel="..."] payload -> askData JSON. Lines after the header
+// that read "N. axis=ID text=\"...\"" or "options=\"a\" | \"b\"" belong to
+// the block (blank lines tolerated); the first other line ends it. The
+// block is cut from the visible reply. Returns false when no header exists
+// or no question parsed (the reply is then left untouched).
+bool EchoJayEditor::extractAskBriefBlock(juce::String& replyInOut, juce::String& askJsonOut)
 {
-    if (!askShelfVisible_ || askChipQuestion_.isEmpty() || !askSkipShown_)
+    const int start = replyInOut.indexOf("[ASK BRIEF");
+    if (start < 0) return false;
+    const juce::String tail = replyInOut.substring(start);
+    juce::StringArray lines = juce::StringArray::fromLines(tail);
+    if (lines.isEmpty()) return false;
+    const juce::String header = lines[0].trim();
+    if (!header.startsWith("[ASK BRIEF")) return false;
+    juce::String channel;
     {
-        EchoJay_NSLog("EJAskChip: tap label=\"Skip\" branch=shelf_inactive");
+        const int q1 = header.indexOf("channel=\"");
+        if (q1 >= 0)
+        {
+            const int q2 = header.indexOf(q1 + 9, "\"");
+            if (q2 > q1) channel = header.substring(q1 + 9, q2).trim();
+        }
+    }
+    struct PQ { juce::String axis, text; juce::StringArray options; };
+    std::vector<PQ> qs;
+    int consumed = 1;   // lines that belong to the block
+    for (int i = 1; i < lines.size(); ++i)
+    {
+        const juce::String ln = lines[i].trim();
+        if (ln.isEmpty()) { consumed = i + 1; continue; }
+        // "N. axis=ID  text="..."
+        const bool questionLine = [&]()
+        {
+            int d = 0;
+            while (d < ln.length() && juce::CharacterFunctions::isDigit(ln[d])) ++d;
+            return d > 0 && d < ln.length() && ln[d] == '.' && ln.substring(d + 1).trimStart().startsWith("axis=");
+        }();
+        if (questionLine)
+        {
+            PQ q;
+            const juce::String afterAxis = ln.fromFirstOccurrenceOf("axis=", false, false).trim();
+            q.axis = afterAxis.upToFirstOccurrenceOf(" ", false, false).trim();
+            const int t1 = ln.indexOf("text=\"");
+            if (t1 >= 0)
+            {
+                const int t2 = ln.lastIndexOfChar('"');
+                if (t2 > t1 + 6) q.text = ln.substring(t1 + 6, t2).trim();
+            }
+            qs.push_back(q);
+            consumed = i + 1;
+            continue;
+        }
+        if (ln.startsWith("options=") && !qs.empty())
+        {
+            // Every double-quoted run on the line is one option, in order
+            juce::StringArray opts;
+            int pos = 0;
+            while (true)
+            {
+                const int o1 = ln.indexOfChar(pos, '"');
+                if (o1 < 0) break;
+                const int o2 = ln.indexOfChar(o1 + 1, '"');
+                if (o2 < 0) break;
+                const juce::String lab = ln.substring(o1 + 1, o2).trim();
+                if (lab.isNotEmpty()) opts.add(lab);
+                pos = o2 + 1;
+            }
+            qs.back().options = opts;
+            consumed = i + 1;
+            continue;
+        }
+        break;   // first line that is not part of the block
+    }
+    // Keep only questions with text and at least two options
+    std::vector<PQ> good;
+    for (auto& q : qs) if (q.text.isNotEmpty() && q.options.size() >= 2) good.push_back(q);
+    if (good.empty())
+    {
+        // A header without a usable question: left in the text (nothing to
+        // hide would be a lie about what was received) and said out loud,
+        // with the first lines, so a format drift on the wire is visible.
+        juce::StringArray peek;
+        for (int i = 0; i < juce::jmin(4, lines.size()); ++i) peek.add(lines[i].trim().substring(0, 90));
+        EchoJay_NSLog(("EJBrief: [ASK BRIEF] header found but no question parsed (raw q=" + juce::String((int) qs.size())
+                       + "); first lines: " + peek.joinIntoString(" // ")).toRawUTF8());
+        return false;
+    }
+
+    // Cut the block from the reply: prefix trimEnd'd (the block extractors'
+    // convention, and byte-identical to what the stream parser emits),
+    // suffix verbatim from the first line that was not part of the block.
+    {
+        int cutLen = 0;
+        for (int i = 0; i < consumed && i < lines.size(); ++i) cutLen += lines[i].length() + 1;
+        cutLen = juce::jmin(cutLen, tail.length());
+        replyInOut = replyInOut.substring(0, start).trimEnd() + tail.substring(cutLen);
+    }
+    auto* root = new juce::DynamicObject();
+    root->setProperty("brief", true);
+    root->setProperty("channel", channel);
+    juce::Array<juce::var> qarr;
+    auto mkChoices = [](const PQ& q)
+    {
+        juce::Array<juce::var> ch;
+        for (auto& lab : q.options)
+        {
+            auto* c = new juce::DynamicObject();
+            c->setProperty("label", lab);
+            c->setProperty("intent", "build");
+            ch.add(juce::var(c));
+        }
+        return ch;
+    };
+    for (auto& q : good)
+    {
+        auto* qo = new juce::DynamicObject();
+        qo->setProperty("axis", q.axis);
+        qo->setProperty("question", q.text);
+        qo->setProperty("choices", mkChoices(q));
+        qarr.add(juce::var(qo));
+    }
+    root->setProperty("questions", qarr);
+    // Question 1 at top level: every existing consumer (persistence, the
+    // unanswered-ask finder, the pill fallback) reads the old shape there.
+    root->setProperty("question", good.front().text);
+    root->setProperty("choices", mkChoices(good.front()));
+    askJsonOut = juce::JSON::toString(juce::var(root), true);
+    EchoJay_NSLog(("EJBrief: [ASK BRIEF] parsed channel=\"" + channel + "\" questions="
+                   + juce::String((int) good.size()) + " (raw " + juce::String((int) qs.size()) + ")").toRawUTF8());
+    return true;
+}
+
+// ---- BriefCard --------------------------------------------------------------
+int EchoJayEditor::BriefCard::preferredHeight() const
+{
+    return kHeaderH + optionCount() * kRowH + kRowH + kBottomPad;
+}
+bool EchoJayEditor::BriefCard::complete() const
+{
+    for (auto k : kinds) if (k == Kind::None) return false;
+    return !kinds.empty();
+}
+int EchoJayEditor::BriefCard::firstOpenPage(int from) const
+{
+    const int n = (int) qs.size();
+    for (int k = 0; k < n; ++k)
+    {
+        const int i = (from + k) % juce::jmax(1, n);
+        if (i < (int) kinds.size() && kinds[(size_t) i] == Kind::None) return i;
+    }
+    return -1;
+}
+void EchoJayEditor::BriefCard::reset(std::vector<Q> qsIn, const juce::String& channelIn, bool briefModeIn)
+{
+    qs = std::move(qsIn);
+    channel = channelIn;
+    briefMode = briefModeIn;
+    kinds.assign(qs.size(), Kind::None);
+    answers.assign(qs.size(), juce::String());
+    page = 0; hoverRow = -1; activeRow = -1;
+    repaint();
+}
+void EchoJayEditor::BriefCard::goTo(int p)
+{
+    page = juce::jlimit(0, juce::jmax(0, (int) qs.size() - 1), p);
+    hoverRow = -1; activeRow = -1;
+    repaint();
+}
+juce::Rectangle<int> EchoJayEditor::BriefCard::rowRect(int i) const
+{
+    return { 0, kHeaderH + i * kRowH, getWidth(), kRowH };
+}
+juce::Rectangle<int> EchoJayEditor::BriefCard::escapeRowRect() const
+{
+    return { 0, kHeaderH + optionCount() * kRowH, getWidth(), kRowH };
+}
+juce::Rectangle<int> EchoJayEditor::BriefCard::closeRect() const
+{
+    return { getWidth() - kPadX - 22, (kHeaderH - 22) / 2, 22, 22 };
+}
+juce::Rectangle<int> EchoJayEditor::BriefCard::nextRect() const
+{
+    return closeRect().translated(-30, 0);
+}
+juce::Rectangle<int> EchoJayEditor::BriefCard::prevRect() const
+{
+    // "1 of N" sits between prev and next; the label is 44px wide
+    return nextRect().translated(-(22 + 44 + 4), 0);
+}
+juce::Rectangle<int> EchoJayEditor::BriefCard::skipRect() const
+{
+    auto er = escapeRowRect();
+    return { getWidth() - kPadX - 58, er.getY() + (kRowH - 22) / 2, 58, 22 };
+}
+EchoJayEditor::BriefCard::Hit EchoJayEditor::BriefCard::hitTest(juce::Point<int> p, int* rowOut) const
+{
+    if (rowOut) *rowOut = -1;
+    if (closeRect().expanded(3).contains(p)) return HitClose;
+    if (qs.size() > 1)
+    {
+        if (nextRect().expanded(3).contains(p)) return HitNext;
+        if (prevRect().expanded(3).contains(p)) return HitPrev;
+    }
+    for (int i = 0; i < optionCount(); ++i)
+        if (rowRect(i).contains(p)) { if (rowOut) *rowOut = i; return HitOption; }
+    if (skipRect().expanded(3).contains(p)) return HitSkip;
+    if (escapeRowRect().contains(p)) return HitOther;
+    return HitNone;
+}
+void EchoJayEditor::BriefCard::paint(juce::Graphics& g)
+{
+    const auto cyan = juce::Colour(0xff22d3ee);
+    auto r = getLocalBounds().toFloat();
+    // Same ground as the shelf: input bg + a 5% cyan wash, top corners
+    // rounded, flush on the input top (the bottom edge is the seam)
+    juce::Path bg;
+    bg.addRoundedRectangle(r.getX(), r.getY(), r.getWidth(), r.getHeight(), 12.0f, 12.0f, true, true, false, false);
+    g.setColour(C::bg3); g.fillPath(bg);
+    g.setColour(cyan.withAlpha(0.05f)); g.fillPath(bg);
+    g.setColour(C::border2); g.strokePath(bg, juce::PathStrokeType(1.0f));
+    if (qs.empty() || page < 0 || page >= (int) qs.size()) return;
+    const auto& q = qs[(size_t) page];
+
+    // Header: question left, pager + X right
+    const int n = (int) qs.size();
+    juce::Rectangle<int> hdr(kPadX, 0, getWidth() - 2 * kPadX, kHeaderH);
+    const int clusterW = (n > 1 ? (22 + 44 + 4 + 22 + 8) : 0) + 22;
+    g.setFont(juce::Font(juce::FontOptions(13.5f, juce::Font::bold)));
+    g.setColour(C::text);
+    g.drawText(q.text, hdr.withTrimmedRight(clusterW + 8), juce::Justification::centredLeft, true);
+    auto chevron = [&](juce::Rectangle<int> box, bool right, juce::Colour col)
+    {
+        auto b = box.toFloat().reduced(7.0f, 6.0f);
+        juce::Path pth;
+        if (right) { pth.startNewSubPath(b.getX(), b.getY()); pth.lineTo(b.getRight(), b.getCentreY()); pth.lineTo(b.getX(), b.getBottom()); }
+        else       { pth.startNewSubPath(b.getRight(), b.getY()); pth.lineTo(b.getX(), b.getCentreY()); pth.lineTo(b.getRight(), b.getBottom()); }
+        g.setColour(col);
+        g.strokePath(pth, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    };
+    if (n > 1)
+    {
+        chevron(prevRect(), false, page > 0 ? C::text2 : C::text3.withAlpha(0.35f));
+        chevron(nextRect(), true,  page < n - 1 ? C::text2 : C::text3.withAlpha(0.35f));
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(11.0f)));
+        juce::Rectangle<int> lab(prevRect().getRight() + 2, prevRect().getY(), 44, 22);
+        g.drawText(juce::String(page + 1) + " of " + juce::String(n), lab, juce::Justification::centred);
+    }
+    {
+        // X
+        auto b = closeRect().toFloat().reduced(7.0f);
+        g.setColour(C::text3);
+        g.drawLine(b.getX(), b.getY(), b.getRight(), b.getBottom(), 1.4f);
+        g.drawLine(b.getRight(), b.getY(), b.getX(), b.getBottom(), 1.4f);
+    }
+
+    // Option rows
+    const int lit = activeRow >= 0 ? activeRow : hoverRow;
+    for (int i = 0; i < optionCount(); ++i)
+    {
+        auto rr = rowRect(i);
+        const bool chosen = kinds[(size_t) page] == Kind::Option && answers[(size_t) page] == q.labels[i];
+        if (i == lit || chosen)
+        {
+            g.setColour(cyan.withAlpha(chosen ? 0.12f : 0.08f));
+            g.fillRect(rr.reduced(6, 1));
+        }
+        // numbered chip
+        juce::Rectangle<int> chip(kPadX, rr.getY() + (kRowH - 18) / 2, 18, 18);
+        g.setColour(cyan.withAlpha(0.12f));
+        g.fillRoundedRectangle(chip.toFloat(), 5.0f);
+        g.setColour(cyan.withAlpha(0.45f));
+        g.drawRoundedRectangle(chip.toFloat().reduced(0.5f), 5.0f, 1.0f);
+        g.setColour(juce::Colour(0xff7FE3F2));
+        g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold)));
+        g.drawText(juce::String(i + 1), chip, juce::Justification::centred);
+        // label
+        g.setColour(C::text);
+        g.setFont(juce::Font(juce::FontOptions(12.5f)));
+        g.drawText(q.labels[i], rr.withLeft(kPadX + 30).withTrimmedRight(kPadX + 26),
+                   juce::Justification::centredLeft, true);
+        if (i == lit)
+            chevron({ getWidth() - kPadX - 22, rr.getY() + (kRowH - 22) / 2, 22, 22 }, true, juce::Colour(0xff7FE3F2));
+        // hairline under every option row (the escape row follows the last)
+        g.setColour(C::border2.withAlpha(0.35f));
+        g.drawHorizontalLine(rr.getBottom() - 1, (float) kPadX, (float) (getWidth() - kPadX));
+    }
+
+    // Escape row: pencil + "Something else" (placeholder look) + Skip
+    {
+        auto er = escapeRowRect();
+        // pencil glyph: a short slanted bar with a tip
+        {
+            auto pb = juce::Rectangle<float>((float) kPadX + 2.0f, (float) er.getY() + 9.0f, 14.0f, 14.0f);
+            juce::Path pen;
+            pen.startNewSubPath(pb.getX() + 2.0f, pb.getBottom() - 2.0f);
+            pen.lineTo(pb.getRight() - 3.0f, pb.getY() + 3.0f);
+            g.setColour(composerFocused ? juce::Colour(0xff7FE3F2) : C::text3);
+            g.strokePath(pen, juce::PathStrokeType(2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            g.fillEllipse(pb.getX(), pb.getBottom() - 4.0f, 3.5f, 3.5f);
+        }
+        if (composerFocused)
+        {
+            // The composer has the keyboard: say so where the user looked
+            g.setColour(cyan.withAlpha(0.10f));
+            g.fillRect(er.reduced(6, 1).withTrimmedRight(70));
+        }
+        g.setColour(composerFocused ? juce::Colour(0xff7FE3F2) : C::text3);
+        g.setFont(juce::Font(juce::FontOptions(12.5f)));
+        const bool typedHere = kinds[(size_t) page] == Kind::Typed;
+        const juce::String otherText = typedHere ? "Something else: " + answers[(size_t) page]
+                                     : composerFocused ? juce::String("Type your answer below and press Enter")
+                                                       : juce::String("Something else");
+        g.drawText(otherText, er.withLeft(kPadX + 30).withTrimmedRight(kPadX + 70), juce::Justification::centredLeft, true);
+        auto sk = skipRect().toFloat();
+        const bool skipped = kinds[(size_t) page] == Kind::Skip;
+        g.setColour(cyan.withAlpha(skipped ? 0.18f : 0.06f));
+        g.fillRoundedRectangle(sk, sk.getHeight() * 0.5f);
+        g.setColour(cyan.withAlpha(skipped ? 0.70f : 0.40f));
+        g.drawRoundedRectangle(sk.reduced(0.5f), sk.getHeight() * 0.5f, 1.0f);
+        g.setColour(skipped ? juce::Colour(0xff7FE3F2) : C::text2);
+        g.setFont(juce::Font(juce::FontOptions(11.5f)));
+        g.drawText(skipped ? "Skipped" : "Skip", skipRect(), juce::Justification::centred);
+    }
+}
+void EchoJayEditor::BriefCard::mouseMove(const juce::MouseEvent& e)
+{
+    int row = -1;
+    hitTest(e.getPosition(), &row);
+    if (row != hoverRow) { hoverRow = row; repaint(); }
+}
+void EchoJayEditor::BriefCard::mouseExit(const juce::MouseEvent&)
+{
+    if (hoverRow != -1) { hoverRow = -1; repaint(); }
+}
+void EchoJayEditor::BriefCard::mouseDown(const juce::MouseEvent& e)
+{
+    int row = -1;
+    switch (hitTest(e.getPosition(), &row))
+    {
+        case HitClose:  if (onClose) onClose(); break;
+        case HitPrev:   if (onPage && page > 0) onPage(page - 1); break;
+        case HitNext:   if (onPage && page < (int) qs.size() - 1) onPage(page + 1); break;
+        case HitOption: if (onOption && row >= 0) onOption(page, row); break;
+        case HitSkip:   if (onSkip) onSkip(page); break;
+        case HitOther:  if (onOther) onOther(); break;
+        case HitNone:   grabKeyboardFocus(); break;
+    }
+}
+bool EchoJayEditor::BriefCard::keyPressed(const juce::KeyPress& k)
+{
+    const int n = (int) qs.size();
+    if (k == juce::KeyPress::escapeKey) { if (onClose) onClose(); return true; }
+    if (k == juce::KeyPress::leftKey)   { if (onPage && page > 0) onPage(page - 1); return true; }
+    if (k == juce::KeyPress::rightKey)  { if (onPage && page < n - 1) onPage(page + 1); return true; }
+    if (k == juce::KeyPress::downKey)   { activeRow = juce::jmin(optionCount() - 1, activeRow + 1); repaint(); return true; }
+    if (k == juce::KeyPress::upKey)     { activeRow = juce::jmax(0, activeRow - 1); repaint(); return true; }
+    if (k == juce::KeyPress::returnKey) { if (activeRow >= 0 && onOption) onOption(page, activeRow); return true; }
+    const auto c = k.getTextCharacter();
+    if (c >= '1' && c <= '9')
+    {
+        const int idx = (int) (c - '1');
+        if (idx < optionCount() && onOption) onOption(page, idx);
+        return true;
+    }
+    if (c >= 32 && c != 127 && !k.getModifiers().isCommandDown() && !k.getModifiers().isCtrlDown())
+    {
+        // Typing while the card has focus: the composer takes it, character
+        // and all, so "Something else" needs no click first.
+        if (onTypeThrough) onTypeThrough(c);
+        return true;
+    }
+    return false;
+}
+
+// ---- brief card plumbing on the editor -------------------------------------
+void EchoJayEditor::syncAskArraysToCard()
+{
+    // The tap arrays mirror the CURRENT page so a legacy-card row and the
+    // general-chain row ride onAskChipTapped exactly as a pill does.
+    if (briefCard_.qs.empty()) return;
+    const auto& q = briefCard_.qs[(size_t) juce::jlimit(0, (int) briefCard_.qs.size() - 1, briefCard_.page)];
+    const int n = q.labels.size();
+    ensureAskChipButtons(n);
+    for (int i = 0; i < n; ++i)
+    {
+        askChipLabels[(size_t) i]  = q.labels[i];
+        askChipIntents[(size_t) i] = i < q.intents.size() ? q.intents[i] : juce::String();
+        askChipVars[(size_t) i]    = i < q.vars.size() ? q.vars[i] : juce::var();
+    }
+    activeAskChips   = n;
+    askChipQuestion_ = q.text;
+}
+
+void EchoJayEditor::onBriefOption(int qi, int oi)
+{
+    if (!askShelfVisible_ || !askShelfIsCard_) return;
+    if (qi < 0 || qi >= (int) briefCard_.qs.size()) return;
+    const auto& q = briefCard_.qs[(size_t) qi];
+    if (oi < 0 || oi >= q.labels.size()) return;
+    const juce::String label = q.labels[oi];
+    // The general chip stops everything and sends alone, immediately, in
+    // the old tap format: the server's escape hatch, unchanged.
+    const bool general = label.equalsIgnoreCase("Just build me a general chain");
+    if (general)
+    {
+        if (briefCard_.page != qi) { briefCard_.goTo(qi); }
+        syncAskArraysToCard();
+        EchoJay_NSLog(("EJBrief: option -> tap path (general) q=" + juce::String(qi + 1)
+                       + " label=\"" + label + "\"").toRawUTF8());
+        onAskChipTapped(oi);
         return;
     }
-    // Skip rides the tap path so the server sees exactly what a row tap
-    // sends: "Skip (answering: \"<question>\")". It stages the turn type
-    // the question's own options stage (build for a brief question, edit
-    // for an edit ask, chat otherwise) so the skip routes where the answer
-    // would have; the server's brief evaluator reads the label. Skip is a
-    // decision about THIS question only.
-    juce::String tt = "chat";
-    for (int ci = 0; ci < activeAskChips && ci < (int) askChipIntents.size(); ++ci)
+    briefCard_.kinds[(size_t) qi]   = BriefCard::Kind::Option;
+    briefCard_.answers[(size_t) qi] = label;
+    EchoJay_NSLog(("EJBrief: answer q=" + juce::String(qi + 1) + " axis=" + q.axis
+                   + " kind=option label=\"" + label + "\"").toRawUTF8());
+    onBriefAdvance();
+}
+
+void EchoJayEditor::onBriefSkip(int qi)
+{
+    if (!askShelfVisible_ || !askShelfIsCard_) return;
+    if (qi < 0 || qi >= (int) briefCard_.qs.size()) return;
+    const auto& q = briefCard_.qs[(size_t) qi];
+    briefCard_.kinds[(size_t) qi]   = BriefCard::Kind::Skip;
+    briefCard_.answers[(size_t) qi] = juce::String();
+    EchoJay_NSLog(("EJBrief: answer q=" + juce::String(qi + 1) + " axis=" + q.axis + " kind=skip").toRawUTF8());
+    onBriefAdvance();
+}
+
+void EchoJayEditor::onBriefAdvance()
+{
+    // Next page without a value, looking forward first; none left = send.
+    const int next = briefCard_.firstOpenPage(briefCard_.page + 1);
+    if (next < 0) { sendBriefAnswers("complete"); return; }
+    briefCard_.goTo(next);
+    syncAskArraysToCard();
+    briefCard_.grabKeyboardFocus();
+    briefCard_.repaint();
+}
+
+void EchoJayEditor::onBriefClose()
+{
+    if (!askShelfVisible_ || !askShelfIsCard_) return;
+    // X = build with what I have: the message goes out now with a line for
+    // every axis that HAS a value; the unanswered axes are OMITTED, never
+    // written as Skip, so a dismissal cannot be mistaken for a deliberate
+    // per-question Skip (the server logs missing axes as dismissed).
+    int unanswered = 0;
+    for (auto k : briefCard_.kinds) if (k == BriefCard::Kind::None) ++unanswered;
+    EchoJay_NSLog(("EJBrief: closed via X, unanswered=" + juce::String(unanswered) + " omitted").toRawUTF8());
+    sendBriefAnswers("closed");
+}
+
+void EchoJayEditor::sendBriefAnswers(const juce::String& why)
+{
+    if (briefCard_.qs.empty()) return;
+    // The ONE message, exactly the wire contract, keyed by axis id
+    juce::String msg = "Brief answers (" + briefCard_.channel + ")";
+    int nOpt = 0, nSkip = 0, nTyped = 0, nNone = 0;
+    for (size_t i = 0; i < briefCard_.qs.size(); ++i)
     {
-        if (askChipIntents[(size_t) ci] == "build") { tt = "chain_generate"; break; }
-        if (askChipIntents[(size_t) ci] == "edit")  { tt = "chain_edit"; }
+        const auto& q = briefCard_.qs[i];
+        juce::String v;
+        switch (briefCard_.kinds[i])
+        {
+            case BriefCard::Kind::Option: v = briefCard_.answers[i]; ++nOpt; break;
+            case BriefCard::Kind::Typed:  v = "<typed> " + briefCard_.answers[i]; ++nTyped; break;
+            case BriefCard::Kind::Skip:   v = kBriefSkipToken(); ++nSkip; break;
+            case BriefCard::Kind::None:   ++nNone; continue;   // dismissed via X: no line
+        }
+        msg << "\n" << q.axis << ": " << v;
+    }
+    // What the CHAT shows: the questions and the answers in words. The wire
+    // text above is what is SENT; displayText is what is drawn (the same
+    // split every tap turn uses).
+    juce::String shown = "Brief answers";
+    for (size_t i = 0; i < briefCard_.qs.size(); ++i)
+    {
+        const auto& q = briefCard_.qs[i];
+        juce::String a;
+        switch (briefCard_.kinds[i])
+        {
+            case BriefCard::Kind::Option: a = briefCard_.answers[i]; break;
+            case BriefCard::Kind::Typed:  a = briefCard_.answers[i]; break;
+            case BriefCard::Kind::Skip:   a = "Skipped"; break;
+            case BriefCard::Kind::None:   continue;
+        }
+        shown << "\n" << q.text << "\n" << juce::String::fromUTF8("\xe2\x86\x92 ") << a;
     }
     if (askChipMsgIdx_ >= 0 && askChipMsgIdx_ < (int) chatMessages.size())
         nextClassifyAnswers_ = chatMessages[(size_t) askChipMsgIdx_].clientAskKind;
-    EchoJay_NSLog(("EJAskChip: tap label=\"Skip\" branch=skip_question tt=" + tt
-                   + " q=\"" + askChipQuestion_ + "\"").toRawUTF8());
-    sendChatMessage("Skip (answering: \"" + askChipQuestion_ + "\")", "Skip", tt);
+    EchoJay_NSLog(("EJBrief: sending brief answers (" + why + ") channel=\"" + briefCard_.channel
+                   + "\" option=" + juce::String(nOpt) + " skip=" + juce::String(nSkip)
+                   + " typed=" + juce::String(nTyped) + " omitted=" + juce::String(nNone)
+                   + " lines=" + juce::String(nOpt + nSkip + nTyped)).toRawUTF8());
+    // Staged as a build: every brief option carries intent build. The send
+    // path supersedes the ask, so the card leaves with the message.
+    sendChatMessage(msg, shown, "chain_generate");
+}
+
+bool EchoJayEditor::briefTakesTypedAnswer(const juce::String& typed)
+{
+    // Enter / Send while the card is up: the words answer the current
+    // question as <typed> and the card advances; nothing is sent until the
+    // set is complete (or X closes it).
+    if (!askShelfVisible_ || !askShelfIsCard_) return false;
+    const int qi = briefCard_.page;
+    if (qi < 0 || qi >= (int) briefCard_.qs.size()) return false;
+    const juce::String t = typed.trim();
+    if (t.isEmpty()) return false;
+    briefCard_.kinds[(size_t) qi]   = BriefCard::Kind::Typed;
+    briefCard_.answers[(size_t) qi] = t;
+    EchoJay_NSLog(("EJBrief: answer q=" + juce::String(qi + 1) + " axis=" + briefCard_.qs[(size_t) qi].axis
+                   + " kind=typed chars=" + juce::String(t.length())).toRawUTF8());
+    chatInput.clear();
+    onBriefAdvance();
+    return true;
 }
 
 void EchoJayEditor::onAskChipTapped(int i)
@@ -19711,22 +20311,20 @@ void EchoJayEditor::onAskChipTapped(int i)
                     askChipLabels[(size_t)i], tt);   // bubble shows the label only
 }
 
-// ---- ASK shelf: the one layout authority (Phase 1b, B2; stacked 16 Aug 2026) ----
-// Called from the layout pass with the shelf width; the paint pass draws
-// only the background inside the rect this produced, so the reserved height
-// and the rendered rows cannot disagree. Rects are relative to the shelf
-// origin: every option row first (server order, NO cap), then the "Enter
-// other answer" row, then the Skip row when *skipOut is set. Returns 0 for
-// non-ask / answered / unparseable messages.
+// ---- ASK pill shelf: the one layout authority (Phase 1b, B2) ----
+// Called from the layout pass with the shelf width; the paint pass draws only
+// the background inside the rect this produced, so the reserved height and
+// the rendered pills cannot disagree. Flows every choice as a pill (no cap),
+// wrapping on narrow columns; rects are relative to the shelf origin.
+// Returns 0 for non-ask / answered / unparseable messages. Card asks are
+// laid out by BriefCard, not here.
 int EchoJayEditor::measureAskShelf(const ChatMsg& msg, int shelfW,
-                                   std::vector<juce::Rectangle<int>>* rowRectsOut,
+                                   std::vector<juce::Rectangle<int>>* chipRectsOut,
                                    juce::StringArray* labelsOut,
                                    juce::String* questionOut,
-                                   bool* skipOut,
                                    juce::StringArray* intentsOut,
                                    juce::Array<juce::var>* choiceVarsOut)
 {
-    if (skipOut) *skipOut = false;
     if (msg.role != "assistant" || msg.askData.isEmpty() || msg.askAnswered)
         return 0;
     auto v = juce::JSON::parse(msg.askData);
@@ -19735,43 +20333,34 @@ int EchoJayEditor::measureAskShelf(const ChatMsg& msg, int shelfW,
     auto* choices = o->getProperty("choices").getArray();
     if (choices == nullptr || choices->size() < 2) return 0;
 
-    const int padX = 10, padY = 8, gap = 4;
-    const int rowW = juce::jmax(60, shelfW - 2 * padX);
-    int y = padY, count = 0;
-    bool anyServerChoice = false;
+    // Parity values: see the header comment block (mirrors app.html CSS)
+    juce::Font chipFont(juce::FontOptions(12.5f));
+    const int padX = 10, padY = 8, gap = 6;
+    const int availR = juce::jmax(90, shelfW - padX);
+    int x = padX, y = padY, count = 0;
     for (auto& cv : *choices)
     {
         auto* co = cv.getDynamicObject();
         if (co == nullptr) continue;
         juce::String label = co->getProperty("label").toString().trim();
         if (label.isEmpty()) continue;
-        if (rowRectsOut) rowRectsOut->push_back({ padX, y, rowW, kAskChipH });
+        int w = juce::jlimit(56, availR - padX,
+            juce::GlyphArrangement::getStringWidthInt(chipFont, label) + 28);
+        // Flow-wrap on narrow columns (sidebars)
+        if (x > padX && x + w > availR) { x = padX; y += kAskChipH + gap; }
+        if (chipRectsOut) chipRectsOut->push_back({ x, y, w, kAskChipH });
         if (labelsOut) labelsOut->add(label);
         if (intentsOut) intentsOut->add(co->getProperty("intent").toString().trim().toLowerCase());
-        // The whole choice var per accepted row, index-parallel with the
-        // labels/intents by construction (recall rows carry recall_id /
+        // The whole choice var per accepted pill, index-parallel with the
+        // labels/intents by construction (recall pills carry recall_id /
         // recall_name beyond label+intent).
         if (choiceVarsOut) choiceVarsOut->add(cv);
-        if (!askChoiceIsClientOnly(cv)) anyServerChoice = true;
-        y += kAskChipH + gap;
+        x += w + gap;
         ++count;
     }
     if (count == 0) return 0;
-
-    // "Enter other answer" is a row like the options, always.
-    if (rowRectsOut) rowRectsOut->push_back({ padX, y, rowW, kAskChipH });
-    y += kAskChipH + gap;
-    // Skip: only where a skip is an answer the server can read (see
-    // askChoiceIsClientOnly). A client-only ask keeps its own decline row.
-    if (anyServerChoice)
-    {
-        if (rowRectsOut) rowRectsOut->push_back({ padX, y, rowW, kAskChipH });
-        y += kAskChipH + gap;
-        if (skipOut) *skipOut = true;
-    }
-
     if (questionOut) *questionOut = o->getProperty("question").toString().trim();
-    return y - gap + padY;
+    return y + kAskChipH + padY;
 }
 
 // ---- Staged replies (Phase 1d): stage row + result bubble ----
@@ -23466,6 +24055,19 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
             EchoJay_NSLog("EJChat: gain proposal block received");
         if (EchoJayAPI::extractAskBlock(visibleReply, askJson))
             EchoJay_NSLog("EJChat: ASK block received");
+        // The whole-brief payload (one card, all questions): parsed into the
+        // same askData shape, so everything downstream is unchanged. ALWAYS
+        // stripped (it is backend wiring and is never drawn), and when it
+        // parses it supersedes a legacy ASK block riding the same reply.
+        {
+            juce::String briefJson;
+            if (extractAskBriefBlock(visibleReply, briefJson))
+            {
+                if (askJson.isNotEmpty()) EchoJay_NSLog("EJChat: ASK BRIEF payload supersedes the legacy ASK block on this reply");
+                askJson = briefJson;
+                EchoJay_NSLog("EJChat: ASK BRIEF payload received");
+            }
+        }
         if (EchoJayAPI::extractChainEditBlock(visibleReply, editJson))
             EchoJay_NSLog("EJChat: CHAIN_EDIT block received");
         // CHAIN_RECALL (14 Aug 2026): a COMPLETE block (the extractor
@@ -23747,7 +24349,13 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
     // and the message viewport reflows above it (message is now in
     // chatMessages, so findNewestUnansweredAsk sees it)
     if (askJson.isNotEmpty())
+    {
         resized();
+        // A card takes the keyboard so number keys select and arrows page;
+        // typing letters hands focus back to the composer with the char.
+        if (askShelfVisible_ && askShelfIsCard_ && viewIsOwner)
+            briefCard_.grabKeyboardFocus();
+    }
     if (sidebarModel)
     {
         sidebarModel->refreshRows(
@@ -27865,6 +28473,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
                     EchoJay_NSLog("EJChat: gain block received (capture turn)");
                 if (EchoJayAPI::extractAskBlock(visibleReply, askJson))
                     EchoJay_NSLog("EJChat: ASK block received (capture turn)");
+                { juce::String bj; if (extractAskBriefBlock(visibleReply, bj)) { askJson = bj; EchoJay_NSLog("EJChat: ASK BRIEF payload received (capture turn)"); } }
                 if (EchoJayAPI::extractChainEditBlock(visibleReply, editJson))
                     EchoJay_NSLog("EJChat: CHAIN_EDIT block received (capture turn)");
                 // Recall is never taught on capture turns; strip so the raw

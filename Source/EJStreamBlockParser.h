@@ -22,6 +22,13 @@
 //      CHAIN_RECALL, GAIN, ASK — the same set the whole-reply extractors
 //      handle. Rule 1 is exactly why a half-arrived RECALL can never reach
 //      the load path: it is never surfaced anywhere until its close marker.
+//      Plus the LINE-DELIMITED brief payload "[ASK BRIEF channel=...]"
+//      (16 Aug 2026, one card): no close marker; the block is the header
+//      line plus every following line that is blank, "N. axis=..." or
+//      "options=...", and the first other line ends it. Withheld from
+//      onProse the same way (it is backend wiring and is never drawn),
+//      surfaced once as onBlock type "ask_brief" with the raw lines, first
+//      occurrence only. Mirrors EchoJayEditor::extractAskBriefBlock.
 //   4. The concatenation of every onProse string is BYTE-IDENTICAL to what
 //      the whole-reply strip (EJReplyBlocks, the real extractors, in the
 //      call-site order chain/gain/ask/edit) leaves behind on the assembled
@@ -128,6 +135,55 @@ private:
     juce::String pending;           // unemitted tail (prose mode)
     juce::String blockBuf;          // inner bytes of the open block
     int inBlock = -1;               // index into markers, -1 = prose mode
+    // ---- [ASK BRIEF] line-delimited block ----
+    const juce::String briefOpen { "[ASK BRIEF" };
+    bool briefConsumed = false;     // first occurrence only, like the markers
+    bool inBrief = false;           // withholding brief lines
+    juce::String briefBuf;          // accepted lines (header first), newline-terminated
+    juce::String briefTail;         // bytes after the accepted lines, not yet a full line
+    juce::String briefPrefixWs;     // whitespace trimmed off the prefix at open (restored if degenerate)
+    int briefQuestions = 0;         // "N. axis=" lines accepted so far
+
+    static bool briefQuestionLine (const juce::String& raw)
+    {
+        const auto ln = raw.trim();
+        int d = 0;
+        while (d < ln.length() && juce::CharacterFunctions::isDigit (ln[d])) ++d;
+        return d > 0 && d < ln.length() && ln[d] == '.' && ln.substring (d + 1).trimStart().startsWith ("axis=");
+    }
+    static bool briefOptionsLine (const juce::String& raw)   { return raw.trim().startsWith ("options="); }
+    static bool briefBlankLine (const juce::String& raw)     { return raw.trim().isEmpty(); }
+    bool briefLineBelongs (const juce::String& raw) const
+    {
+        return briefBlankLine (raw) || briefQuestionLine (raw) || briefOptionsLine (raw);
+    }
+    void briefAccept (const juce::String& raw)
+    {
+        if (briefQuestionLine (raw)) ++briefQuestions;
+        briefBuf += raw;
+    }
+    // Close the brief block. Fires onBlock when at least one question line
+    // was accepted; otherwise the buffered text was never a payload and
+    // flows on as prose (verbatim). `rest` returns to prose mode.
+    void briefEnd (const juce::String& rest)
+    {
+        inBrief = false;
+        briefConsumed = true;
+        if (briefQuestions > 0)
+        {
+            BlockEvent ev { "ask_brief", briefBuf.trim() };
+            pending = rest;
+            briefBuf.clear(); briefTail.clear(); briefQuestions = 0;
+            if (onBlock) onBlock (ev);
+        }
+        else
+        {
+            // Never a payload: the whole-reply extractor leaves such text
+            // untouched, so the whitespace trimmed at open goes back too.
+            pending = briefPrefixWs + briefBuf + rest;
+            briefBuf.clear(); briefTail.clear(); briefPrefixWs.clear(); briefQuestions = 0;
+        }
+    }
     bool finished = false;
     juce::String truncatedType_, truncatedPayload_;
     int slotScanFrom_ = 0;          // blockBuf index already scanned for slots
@@ -189,6 +245,46 @@ private:
     {
         for (;;)
         {
+            if (inBrief)
+            {
+                briefTail += pending;
+                pending.clear();
+                // Every COMPLETE line is classified; a partial line waits
+                // for its newline (or the end of the stream).
+                bool ended = false;
+                for (;;)
+                {
+                    const int nl = briefTail.indexOfChar ('\n');
+                    if (nl < 0) break;
+                    const juce::String line = briefTail.substring (0, nl + 1);
+                    if (briefBuf.isEmpty() || briefLineBelongs (line))
+                    {
+                        briefAccept (line);          // header line always accepted
+                        briefTail = briefTail.substring (nl + 1);
+                        continue;
+                    }
+                    // first line that is not part of the block: it and
+                    // everything after it are prose, verbatim
+                    const juce::String rest = briefTail;
+                    briefTail.clear();
+                    briefEnd (rest);
+                    ended = true;
+                    break;
+                }
+                if (ended) continue;   // prose mode resumes with `pending`
+                if (! atEnd) return;   // withhold the partial line
+                // End of stream: the trailing partial line is classified
+                // by the same rule (the whole-reply extractor sees it as
+                // the last line).
+                if (briefTail.isNotEmpty())
+                {
+                    if (briefBuf.isEmpty() || briefLineBelongs (briefTail)) { briefAccept (briefTail); briefTail.clear(); briefEnd ({}); }
+                    else { const juce::String rest = briefTail; briefTail.clear(); briefEnd (rest); }
+                }
+                else briefEnd ({});
+                continue;
+            }
+
             if (inBlock >= 0)
             {
                 blockBuf += pending;
@@ -240,6 +336,22 @@ private:
                 }
             }
 
+            // The brief header competes with the markers for "earliest"
+            int briefPos = -1;
+            if (! briefConsumed)
+                briefPos = pending.indexOf (briefOpen);
+            if (briefPos >= 0 && (foundPos < 0 || briefPos < foundPos))
+            {
+                const juce::String prefix = pending.substring (0, briefPos);
+                const juce::String kept   = prefix.trimEnd();
+                emitProse (kept);
+                briefPrefixWs = prefix.substring (kept.length());
+                pending = pending.substring (briefPos);   // the header line stays in the block
+                inBrief = true;
+                briefBuf.clear(); briefTail.clear(); briefQuestions = 0;
+                continue;
+            }
+
             if (foundIdx >= 0)
             {
                 // trimEnd on the prefix = the extractors' strip. The
@@ -279,6 +391,12 @@ private:
                         break;
                     }
                 }
+            }
+            if (! briefConsumed)
+            {
+                const int maxL = juce::jmin ((int) briefOpen.length() - 1, len);
+                for (int L = maxL; L > best; --L)
+                    if (pending.endsWith (briefOpen.substring (0, L))) { best = L; break; }
             }
             int holdStart = len - best;
             while (holdStart > 0
