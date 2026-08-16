@@ -1320,7 +1320,11 @@ void LinkProcessor::setGainDb(float db, bool snapSmoothing)
 
 void LinkProcessor::setPlacement(int p)
 {
-    p = juce::jlimit((int) PlacementUnset, (int) PlacementInsert, p);
+    // Clamp to the LAST enum value. This clamped to PlacementInsert from
+    // before Send existed (49125ff), so choosing Send stored Channel: the
+    // menu, the remote command and the shm mirror all passed through here.
+    // The restore path (setStateInformation) already clamps to Send.
+    p = juce::jlimit((int) PlacementUnset, (int) PlacementSend, p);
     placement_.store(p, std::memory_order_relaxed);
     if (regMap != nullptr && regSlotIdx >= 0)
         LinkShm::setSlotPlacement(regMap, regSlotIdx, (uint8_t) p);
@@ -1328,7 +1332,8 @@ void LinkProcessor::setPlacement(int p)
     if (onLinkStateChanged) onLinkStateChanged();
     EchoJay_NSLog(("EJLinkState: placement set to "
                    + juce::String(p == PlacementBus ? "bus"
-                                  : p == PlacementInsert ? "insert" : "unset")).toRawUTF8());
+                                  : p == PlacementInsert ? "insert"
+                                  : p == PlacementSend ? "send" : "unset")).toRawUTF8());
 }
 
 // =============================================================================
