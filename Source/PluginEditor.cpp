@@ -18644,6 +18644,50 @@ void EchoJayEditor::timerCallback()
         }
         prevSettingsScanning_ = settingsScanning;
     }
+    // Chain-scan falling edge: the scan replaced entries_ and wrote the
+    // cache; nothing had told the feed. Rebuild the resolver against the
+    // scanner's ticks NOW (the same call the Chain tab makes on entry), refresh
+    // the picker model and the Settings withheld section, and say what
+    // happened where the press was made. hasResolvedRecommendable latches
+    // inside buildRecommendable, so the tab-entry and bootstrap paths do not
+    // build a second time after this.
+    {
+        auto& ch = processorRef.getChainHost();
+        const bool chainScanning = ch.isScanning();
+        if (prevChainScanning_ && !chainScanning)
+        {
+            const int n = ch.getNumPlugins();
+            auto scanned = sc.getPlugins();
+            if (n > 0 && !scanned.empty())
+            {
+                ch.buildRecommendable(scanned, chainFormatFilter_);
+                ch.requestMapPrefetch();
+            }
+            if (chainListModel)
+                chainListModel->items = ch.getFilteredPlugins({}, chainFormatFilter_);
+            rebuildSettingsWithheld();
+            const juce::String msg = "Rescanned: " + juce::String(n)
+                                   + " plugin" + (n == 1 ? "" : "s") + " in the chain list";
+            EchoJay_NSLog(("EJScan: chain scan finished, feed rebuilt (" + juce::String(n)
+                           + " entries, " + juce::String((int) scanned.size())
+                           + " scanner rows)").toRawUTF8());
+            chainListPanel.statusText = msg;
+            chainListPanel.repaint();
+            if (currentView == View::Settings)
+            {
+                settingsSavedLabel.setText(msg, juce::dontSendNotification);
+                auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+                juce::Timer::callAfterDelay(6000, [safeThis, msg]()
+                {
+                    if (safeThis == nullptr) return;
+                    if (safeThis->settingsSavedLabel.getText() == msg)
+                        safeThis->settingsSavedLabel.setText("", juce::dontSendNotification);
+                });
+            }
+            resized();
+        }
+        prevChainScanning_ = chainScanning;
+    }
     // chainListInfoLabel DELETED (14 Aug 2026): the chain-list count + scan
     // date it showed here are in the EJScan log lines (cache date is stamped
     // at read); its header slot now holds the New chat button.

@@ -1547,6 +1547,12 @@ private:
     // the ride-along; the next Scan Now queues it again.
     bool chainScanAfterSettings_ = false;
     bool prevSettingsScanning_   = false;
+    // Chain-scan falling edge (16 Aug 2026): a Rescan press ran the scan
+    // and rewrote the cache, and the feed stayed as it was until a tab
+    // switch happened to rebuild it (measured 2m45s on 15 Aug). The timer
+    // watches ChainHost::isScanning go false and rebuilds the feed THEN,
+    // and tells the user "rescanned, N plugins" where they can see it.
+    bool prevChainScanning_      = false;
 
     // Holder for the currently-selected slot's editor
     // Pop-out window for hosted plugin editors at native size
