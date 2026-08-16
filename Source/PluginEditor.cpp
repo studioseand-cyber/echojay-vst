@@ -2312,214 +2312,28 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         addAndMakeVisible(resultChipBtns[(size_t)i]);
     }
 
-    // ASK choice chips (Phase 1b, B2) — pill buttons in the shelf docked on
-    // top of the chat input. Tap = auto-send the formatted answer; the send
-    // path itself supersedes every pending ask (so the shelf also vanishes
-    // when the user ignores the chips and types free text).
-    for (int i = 0; i < kMaxAskChips; ++i)
+    // ASK shelf rows (Phase 1b, B2; stacked 16 Aug 2026): full-width row
+    // buttons docked on top of the chat input. Tap = auto-send the
+    // formatted answer; the send path itself supersedes every pending ask
+    // (so the shelf also vanishes when the user ignores the rows and types
+    // free text). Option buttons are created on demand by
+    // ensureAskChipButtons (no cap); the two fixed rows live here.
+    askOtherBtn_.setLookAndFeel(&askRowLnF_);
+    askOtherBtn_.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff7FE3F2));
+    askOtherBtn_.setVisible(false);
+    askOtherBtn_.onClick = [this]()
     {
-        askChipBtns[(size_t)i].setLookAndFeel(&askChipLnF_);
-        askChipBtns[(size_t)i].setColour(juce::TextButton::textColourOffId, juce::Colour(0xff7FE3F2));
-        askChipBtns[(size_t)i].setVisible(false);
-        askChipBtns[(size_t)i].onClick = [this, i]()
-        {
-            // EVERY tap logs one EJAskChip line: label, intent, the keys
-            // actually present on the stored choice var, and which branch
-            // took it. The 14 Aug live failure was invisible because the
-            // interception logged only on finding a recall_id — a chip
-            // carrying none fell to the generic send silently, which is
-            // indistinguishable from the interception never running. So
-            // the fall-through names itself too.
-            const juce::String tapKeys = [&]() -> juce::String
-            {
-                if (auto* o = askChipVars[(size_t) i].getDynamicObject())
-                {
-                    juce::StringArray ks;
-                    for (const auto& p : o->getProperties())
-                        ks.add(p.name.toString());
-                    return "[" + ks.joinIntoString(",") + "]";
-                }
-                return askChipVars[(size_t) i].isVoid() ? "(void)" : "(non-object)";
-            }();
-            auto logTap = [&](const juce::String& branch)
-            {
-                EchoJay_NSLog(("EJAskChip: tap label=\"" + askChipLabels[(size_t) i]
-                               + "\" intent=" + (askChipIntents[(size_t) i].isEmpty()
-                                                    ? juce::String("(none)")
-                                                    : askChipIntents[(size_t) i])
-                               + " keys=" + tapKeys
-                               + " branch=" + branch).toRawUTF8());
-            };
-            if (!askShelfVisible_ || askChipQuestion_.isEmpty()) { logTap("shelf_inactive"); return; }
-            const juce::String intent = askChipIntents[(size_t)i];
-            // STEP 3: the compare-scope chips are handled ENTIRELY client-side —
-            // they must NOT send a chat turn. Mark the ASK answered (so the
-            // shelf clears and the state persists) and re-run the comparison
-            // with the chosen numbersOnly against the currently loaded slots.
-            if (intent == "cmp_anyway" || intent == "cmp_numbers")
-            {
-                logTap("compare_scope");
-                supersedePendingAsks();     // marks + persists askAnswered
-                askShelfVisible_ = false;
-                resized();
-                runAICompareWith(compareTop_, compareBot_,
-                                 intent == "cmp_numbers" ? CompareScope::NumbersOnly
-                                                         : CompareScope::Anyway);
-                return;
-            }
-            // STEP 3b: the channel-switch chip is ALSO entirely client-side.
-            // Same reason as the compare pair above and one more: this chip
-            // sends no turn at all, so there is nothing for the model to
-            // contradict and nothing it can fabricate. The switch itself is
-            // navigation and is never billed; the request it carries over is
-            // billed as whatever it classifies as on the NEW channel, which
-            // is the same turn the user would have got by typing it there.
-            if (intent == "switch")
-            {
-                logTap("channel_switch");
-                openChannelChooser((int) i);
-                return;
-            }
-            // STEP 3c (14 Aug 2026): recall chips are ALSO entirely
-            // client-side and cost no chat turn. Three shapes:
-            //   recall_confirm  the client-authored replace-ask's Load chip;
-            //                   carries recall_id + recall_name and goes
-            //                   straight to the load (the question WAS the
-            //                   replace confirmation).
-            //   recall_cancel   its decline chip: clear the shelf, log, done.
-            //   recall_id on a server-authored ambiguity chip (no confirm
-            //                   intent): the tap IS the disambiguation;
-            //                   route it through handleChainRecall, which
-            //                   still asks before replacing a non-empty rack.
-            if (intent == "recall_confirm" || intent == "recall_cancel")
-            {
-                logTap(intent);
-                auto* co = askChipVars[(size_t) i].getDynamicObject();
-                const juce::String rid  = co ? co->getProperty("recall_id").toString() : juce::String();
-                const juce::String rnm  = co ? co->getProperty("recall_name").toString() : juce::String();
-                // Present only when the replace-ask was raised for a LINK
-                // destination (the mismatch ask's chooser path); absent on
-                // the original local ask, which keeps its original route.
-                const juce::String tuid = co ? co->getProperty("recall_target_uid").toString() : juce::String();
-                const juce::String tnm  = co ? co->getProperty("recall_target_name").toString() : juce::String();
-                const int rackNow = processorRef.getChainHost().getNumSlots();
-                supersedePendingAsks();
-                askShelfVisible_ = false;
-                resized();
-                EchoJay_NSLog(("EJRecall: replace ask shown=yes rack="
-                               + juce::String(rackNow)
-                               + (tuid.isNotEmpty() ? " target=\"" + tnm + "\" uid=" + tuid
-                                                    : juce::String())
-                               + " answer="
-                               + (intent == "recall_confirm" ? "load" : "cancel")).toRawUTF8());
-                if (intent == "recall_confirm" && rid.isNotEmpty())
-                {
-                    if (tuid.isNotEmpty()) recallLoadChainToLink(tuid, rid, rnm);
-                    else                   recallLoadChain(rid, rnm);
-                }
-                return;
-            }
-            // STEP 3d (15 Aug 2026): the channel-mismatch advisory ask.
-            // BEFORE the bare recall_id sniff below - these chips carry
-            // recall_id too, and falling through would route them straight
-            // to handleChainRecall, re-raising the ask they answer.
-            if (intent == "recall_here" || intent == "recall_switch")
-            {
-                logTap(intent);
-                auto* co = askChipVars[(size_t) i].getDynamicObject();
-                const juce::String rid = co ? co->getProperty("recall_id").toString() : juce::String();
-                const juce::String rnm = co ? co->getProperty("recall_name").toString() : juce::String();
-                if (intent == "recall_switch")
-                {
-                    // The shelf stays up while the chooser is open (the
-                    // switch-chip precedent above): dismissing the menu must
-                    // leave both chips available, not strand the recall.
-                    EchoJay_NSLog("EJRecall: mismatch ask branch=choose-channel (chooser opening)");
-                    openRecallChannelChooser((int) i);
-                    return;
-                }
-                // Load it here: the channel decision is made; the replace
-                // confirmation follows only if THIS rack is non-empty, the
-                // same rule the direct recall path applies.
-                pendingRecallMismatchAsk_ = false;   // answered, not dismissed
-                supersedePendingAsks();
-                askShelfVisible_ = false;
-                resized();
-                const int rackNow = processorRef.getChainHost().getNumSlots();
-                EchoJay_NSLog(("EJRecall: mismatch ask branch=load-here rack="
-                               + juce::String(rackNow)).toRawUTF8());
-                if (rid.isEmpty()) return;
-                if (rackNow == 0)
-                {
-                    EchoJay_NSLog("EJRecall: replace ask shown=no rack=0 answer=load");
-                    recallLoadChain(rid, rnm);
-                }
-                else
-                    presentRecallReplaceAsk(rid, rnm, rackNow);
-                return;
-            }
-            {
-                const juce::String rid = EJRecall::choiceRecallId(askChipVars[(size_t) i]);
-                if (rid.isNotEmpty())
-                {
-                    logTap("recall_id");
-                    supersedePendingAsks();
-                    askShelfVisible_ = false;
-                    resized();
-                    handleChainRecall(rid, askChipLabels[(size_t) i]);
-                    return;
-                }
-            }
-            // A TAP IS AN ANSWER; a typed message is a new request. The two are
-            // byte-identical on the wire otherwise ("build me a vocal chain"
-            // either way), so the server cannot tell them apart and stopped
-            // asking after the first mismatch. Stated as a fact here instead.
-            if (askChipMsgIdx_ >= 0 && askChipMsgIdx_ < (int) chatMessages.size())
-                nextClassifyAnswers_ = chatMessages[(size_t) askChipMsgIdx_].clientAskKind;
-            // Answer format per CHAIN_AI_BUILD_SPEC: self-contained Q->A pair
-            // that survives history trimming (blocks are stripped in storage).
-            // sendChatMessage -> supersedePendingAsks marks + persists.
-            // intent -> staged turnType (3-pre): "edit" chips act on the
-            // existing rack; server trust-but-validates as always
-            //
-            // TWO PRODUCERS reach this line: the ASK block in a reply, and
-            // /api/classify's short-circuit chips. The classifier sends the
-            // SAME "build"/"edit" vocabulary, so it needs no branch of its
-            // own — and it must NOT get one above, because unlike the
-            // compare-scope pair its chips DO send a turn.
-            //
-            // NO INTENT MEANS "chat", EXPLICITLY (3 Aug 2026, live defect).
-            // This used to fall through to an empty string, which let
-            // sendChatMessage decide from hadChainFeed — and hadChainFeed is
-            // true on effectively every send, so the fall-through was
-            // "always build" wearing a conditional. Tapping the
-            // channel_mismatch chip "I'll switch over" therefore staged
-            // chain_generate and built a chain on the channel the user had
-            // just declined. The classifier had returned intent=chat for
-            // that tap and was correct; nothing routes on its verdict until
-            // cutover, so the staged label won.
-            //
-            // Absence of an intent is a POSITIVE signal, not missing
-            // information: build and edit are stated when meant, so a chip
-            // without one is deliberately not a build. Staging "chat" is
-            // also the conservative direction on BILLING — chain_generate
-            // draws the premium lane (monthly pool + credits), chat draws
-            // the daily one, and the old behaviour spent a premium action on
-            // a turn where the user declined to build.
-            //
-            // Safe as a floor rather than a ceiling: the server runs
-            // classifyChainIntent over the text and upgrades a genuine build
-            // request back to chain_generate, so a real ask still routes.
-            const juce::String tt = intent == "edit" ? "chain_edit"
-                                  : intent == "build" ? "chain_generate"
-                                  : juce::String("chat");
-            logTap("generic_send tt=" + tt);
-            sendChatMessage(askChipLabels[(size_t)i]
-                            + " (answering: \"" + askChipQuestion_ + "\")",
-                            askChipLabels[(size_t)i], tt);   // bubble shows the label only
-        };
-        addAndMakeVisible(askChipBtns[(size_t)i]);
-    }
+        // A real row, not a hint: the invitation to type is where options
+        // nobody thought of come from, and it read low as grey text.
+        EchoJay_NSLog("EJAskChip: tap label=\"Enter other answer\" branch=focus_input");
+        chatInput.grabKeyboardFocus();
+    };
+    addAndMakeVisible(askOtherBtn_);
+    askSkipBtn_.setLookAndFeel(&askRowLnF_);
+    askSkipBtn_.setColour(juce::TextButton::textColourOffId, C::text2);
+    askSkipBtn_.setVisible(false);
+    askSkipBtn_.onClick = [this]() { onAskSkipTapped(); };
+    addAndMakeVisible(askSkipBtn_);
 
     // Link tab has no persistent child components — painted directly.
 
@@ -15087,9 +14901,8 @@ void EchoJayEditor::paint(juce::Graphics& g)
         g.fillPath(shelf);
         g.setColour(C::border2);                                 // input outline colour
         g.strokePath(shelf, juce::PathStrokeType(1.0f));
-        g.setColour(C::text3);
-        g.setFont(juce::Font(juce::FontOptions(11.0f)));
-        g.drawText("or type below", askShelfHintRect_, juce::Justification::centredLeft);
+        // Rows (options, "Enter other answer", Skip) are buttons placed by
+        // the layout pass; nothing else is painted here.
     }
 
     // FREE V2 premium lock strip: Link / Chain / Compare stay fully visible,
@@ -17231,6 +17044,7 @@ void EchoJayEditor::resized()
     // viewport instead of covering the last message. Chip buttons are
     // positioned here (layout), painted background + hint in paint().
     askShelfVisible_ = false;
+    askSkipShown_    = false;
     {
         const int askIdxL = findNewestUnansweredAsk();
         if (askIdxL >= 0 && assistantInputContext() && !chatCentredEmpty_)
@@ -17239,9 +17053,10 @@ void EchoJayEditor::resized()
             std::vector<juce::Rectangle<int>> rects;
             juce::StringArray labels, intents;
             juce::Array<juce::var> choiceVars;
+            bool skip = false;
             const int shelfH = measureAskShelf(chatMessages[(size_t)askIdxL], bw,
                                                &rects, &labels,
-                                               &askChipQuestion_, &askShelfHintRect_,
+                                               &askChipQuestion_, &skip,
                                                &intents, &choiceVars);
             if (shelfH > 0)
             {
@@ -17249,25 +17064,39 @@ void EchoJayEditor::resized()
                                      chatBoxRect_.getY() - shelfH, bw, shelfH };
                 askShelfVisible_ = true;
                 askChipMsgIdx_   = askIdxL;
-                activeAskChips   = juce::jmin((int)rects.size(), kMaxAskChips);
+                // rects = every option row, then the other row, then the
+                // skip row when skip is set (measureAskShelf's contract)
+                activeAskChips   = labels.size();
+                ensureAskChipButtons(activeAskChips);
+                const auto origin = askShelfRect_.getPosition();
                 for (int ci = 0; ci < activeAskChips; ++ci)
                 {
                     askChipLabels[(size_t)ci] = labels[ci];
                     askChipIntents[(size_t)ci] = ci < intents.size() ? intents[ci] : juce::String();
                     askChipVars[(size_t)ci] = ci < choiceVars.size() ? choiceVars[ci] : juce::var();
-                    askChipBtns[(size_t)ci].setButtonText(labels[ci]);
-                    askChipBtns[(size_t)ci].setBounds(
-                        rects[(size_t)ci].translated(askShelfRect_.getX(), askShelfRect_.getY()));
-                    askChipBtns[(size_t)ci].setVisible(true);
-                    askChipBtns[(size_t)ci].toFront(false);
+                    auto& btn = *askChipBtns[(size_t)ci];
+                    btn.setButtonText(labels[ci]);
+                    btn.setBounds(rects[(size_t)ci] + origin);
+                    btn.setVisible(true);
+                    btn.toFront(false);
                 }
-                askShelfHintRect_ = askShelfHintRect_.translated(askShelfRect_.getX(),
-                                                                 askShelfRect_.getY());
+                askOtherBtn_.setBounds(rects[(size_t) activeAskChips] + origin);
+                askOtherBtn_.setVisible(true);
+                askOtherBtn_.toFront(false);
+                askSkipShown_ = skip;
+                if (skip)
+                {
+                    askSkipBtn_.setBounds(rects[(size_t) activeAskChips + 1] + origin);
+                    askSkipBtn_.setVisible(true);
+                    askSkipBtn_.toFront(false);
+                }
             }
         }
     }
-    for (int ci = askShelfVisible_ ? activeAskChips : 0; ci < kMaxAskChips; ++ci)
-        askChipBtns[(size_t)ci].setVisible(false);
+    for (int ci = askShelfVisible_ ? activeAskChips : 0; ci < (int) askChipBtns.size(); ++ci)
+        askChipBtns[(size_t)ci]->setVisible(false);
+    if (!askShelfVisible_) askOtherBtn_.setVisible(false);
+    if (!askSkipShown_)    askSkipBtn_.setVisible(false);
 
     if (assistantInputContext() && shouldShowFastModelBanner())
     {
@@ -17447,8 +17276,9 @@ void EchoJayEditor::resized()
                 chainBuildBtns[(size_t)i].setVisible(false);
             for (int i = 0; i < kMaxWavePlayBtns; ++i)
                 wavePlayOverlays[(size_t)i].setVisible(false);
-            for (int i = 0; i < kMaxAskChips; ++i)
-                askChipBtns[(size_t)i].setVisible(false);
+            for (auto& ab : askChipBtns) ab->setVisible(false);
+            askOtherBtn_.setVisible(false);
+            askSkipBtn_.setVisible(false);
         }
     }
     // Content height from THE single source (measureChatContentHeight), the
@@ -19245,19 +19075,285 @@ void EchoJayEditor::textEditorReturnKeyPressed(juce::TextEditor& ed)
     }
 }
 
-// ---- ASK shelf: shared measure/flow (Phase 1b, B2 docked shelf) ----
-// Called from BOTH the layout pass (reservation + chip placement) and the
-// paint pass (shelf background + hint) with the same shelfW, so the reserved
-// height and the rendered content can never disagree. Rects are relative to
-// the shelf origin. Returns 0 for non-ask / answered / unparseable messages.
+// ---- ASK shelf: rows, taps, skip ----
+void EchoJayEditor::ensureAskChipButtons(int n)
+{
+    while ((int) askChipBtns.size() < n)
+    {
+        const int i = (int) askChipBtns.size();
+        auto b = std::make_unique<juce::TextButton>();
+        b->setLookAndFeel(&askRowLnF_);
+        b->setColour(juce::TextButton::textColourOffId, juce::Colour(0xff7FE3F2));
+        b->setVisible(false);
+        b->onClick = [this, i]() { onAskChipTapped(i); };
+        addAndMakeVisible(*b);
+        askChipBtns.push_back(std::move(b));
+    }
+    if ((int) askChipLabels.size()  < n) askChipLabels.resize((size_t) n);
+    if ((int) askChipIntents.size() < n) askChipIntents.resize((size_t) n);
+    if ((int) askChipVars.size()    < n) askChipVars.resize((size_t) n);
+}
+
+bool EchoJayEditor::askChoiceIsClientOnly(const juce::var& choice)
+{
+    // The intents the tap handler resolves WITHOUT a chat turn, plus the
+    // bare recall_id disambiguation. Keep in step with onAskChipTapped's
+    // client-side branches: a new client-only intent that is missing here
+    // draws a Skip that would send a turn on a question the model never
+    // asked.
+    auto* co = choice.getDynamicObject();
+    if (co == nullptr) return false;
+    const auto intent = co->getProperty("intent").toString().trim().toLowerCase();
+    if (intent == "cmp_anyway" || intent == "cmp_numbers" || intent == "switch"
+        || intent == "recall_confirm" || intent == "recall_cancel"
+        || intent == "recall_here" || intent == "recall_switch")
+        return true;
+    return EJRecall::choiceRecallId(choice).isNotEmpty();
+}
+
+void EchoJayEditor::onAskSkipTapped()
+{
+    if (!askShelfVisible_ || askChipQuestion_.isEmpty() || !askSkipShown_)
+    {
+        EchoJay_NSLog("EJAskChip: tap label=\"Skip\" branch=shelf_inactive");
+        return;
+    }
+    // Skip rides the tap path so the server sees exactly what a row tap
+    // sends: "Skip (answering: \"<question>\")". It stages the turn type
+    // the question's own options stage (build for a brief question, edit
+    // for an edit ask, chat otherwise) so the skip routes where the answer
+    // would have; the server's brief evaluator reads the label. Skip is a
+    // decision about THIS question only.
+    juce::String tt = "chat";
+    for (int ci = 0; ci < activeAskChips && ci < (int) askChipIntents.size(); ++ci)
+    {
+        if (askChipIntents[(size_t) ci] == "build") { tt = "chain_generate"; break; }
+        if (askChipIntents[(size_t) ci] == "edit")  { tt = "chain_edit"; }
+    }
+    if (askChipMsgIdx_ >= 0 && askChipMsgIdx_ < (int) chatMessages.size())
+        nextClassifyAnswers_ = chatMessages[(size_t) askChipMsgIdx_].clientAskKind;
+    EchoJay_NSLog(("EJAskChip: tap label=\"Skip\" branch=skip_question tt=" + tt
+                   + " q=\"" + askChipQuestion_ + "\"").toRawUTF8());
+    sendChatMessage("Skip (answering: \"" + askChipQuestion_ + "\")", "Skip", tt);
+}
+
+void EchoJayEditor::onAskChipTapped(int i)
+{
+    if (i < 0 || i >= (int) askChipVars.size() || i >= (int) askChipLabels.size()
+        || i >= (int) askChipIntents.size())
+        return;
+    // EVERY tap logs one EJAskChip line: label, intent, the keys
+    // actually present on the stored choice var, and which branch
+    // took it. The 14 Aug live failure was invisible because the
+    // interception logged only on finding a recall_id - a chip
+    // carrying none fell to the generic send silently, which is
+    // indistinguishable from the interception never running. So
+    // the fall-through names itself too.
+    const juce::String tapKeys = [&]() -> juce::String
+    {
+        if (auto* o = askChipVars[(size_t) i].getDynamicObject())
+        {
+            juce::StringArray ks;
+            for (const auto& p : o->getProperties())
+                ks.add(p.name.toString());
+            return "[" + ks.joinIntoString(",") + "]";
+        }
+        return askChipVars[(size_t) i].isVoid() ? "(void)" : "(non-object)";
+    }();
+    auto logTap = [&](const juce::String& branch)
+    {
+        EchoJay_NSLog(("EJAskChip: tap label=\"" + askChipLabels[(size_t) i]
+                       + "\" intent=" + (askChipIntents[(size_t) i].isEmpty()
+                                            ? juce::String("(none)")
+                                            : askChipIntents[(size_t) i])
+                       + " keys=" + tapKeys
+                       + " branch=" + branch).toRawUTF8());
+    };
+    if (!askShelfVisible_ || askChipQuestion_.isEmpty()) { logTap("shelf_inactive"); return; }
+    const juce::String intent = askChipIntents[(size_t)i];
+    // STEP 3: the compare-scope chips are handled ENTIRELY client-side  -
+    // they must NOT send a chat turn. Mark the ASK answered (so the
+    // shelf clears and the state persists) and re-run the comparison
+    // with the chosen numbersOnly against the currently loaded slots.
+    if (intent == "cmp_anyway" || intent == "cmp_numbers")
+    {
+        logTap("compare_scope");
+        supersedePendingAsks();     // marks + persists askAnswered
+        askShelfVisible_ = false;
+        resized();
+        runAICompareWith(compareTop_, compareBot_,
+                         intent == "cmp_numbers" ? CompareScope::NumbersOnly
+                                                 : CompareScope::Anyway);
+        return;
+    }
+    // STEP 3b: the channel-switch chip is ALSO entirely client-side.
+    // Same reason as the compare pair above and one more: this chip
+    // sends no turn at all, so there is nothing for the model to
+    // contradict and nothing it can fabricate. The switch itself is
+    // navigation and is never billed; the request it carries over is
+    // billed as whatever it classifies as on the NEW channel, which
+    // is the same turn the user would have got by typing it there.
+    if (intent == "switch")
+    {
+        logTap("channel_switch");
+        openChannelChooser((int) i);
+        return;
+    }
+    // STEP 3c (14 Aug 2026): recall chips are ALSO entirely
+    // client-side and cost no chat turn. Three shapes:
+    //   recall_confirm  the client-authored replace-ask's Load chip;
+    //                   carries recall_id + recall_name and goes
+    //                   straight to the load (the question WAS the
+    //                   replace confirmation).
+    //   recall_cancel   its decline chip: clear the shelf, log, done.
+    //   recall_id on a server-authored ambiguity chip (no confirm
+    //                   intent): the tap IS the disambiguation;
+    //                   route it through handleChainRecall, which
+    //                   still asks before replacing a non-empty rack.
+    if (intent == "recall_confirm" || intent == "recall_cancel")
+    {
+        logTap(intent);
+        auto* co = askChipVars[(size_t) i].getDynamicObject();
+        const juce::String rid  = co ? co->getProperty("recall_id").toString() : juce::String();
+        const juce::String rnm  = co ? co->getProperty("recall_name").toString() : juce::String();
+        // Present only when the replace-ask was raised for a LINK
+        // destination (the mismatch ask's chooser path); absent on
+        // the original local ask, which keeps its original route.
+        const juce::String tuid = co ? co->getProperty("recall_target_uid").toString() : juce::String();
+        const juce::String tnm  = co ? co->getProperty("recall_target_name").toString() : juce::String();
+        const int rackNow = processorRef.getChainHost().getNumSlots();
+        supersedePendingAsks();
+        askShelfVisible_ = false;
+        resized();
+        EchoJay_NSLog(("EJRecall: replace ask shown=yes rack="
+                       + juce::String(rackNow)
+                       + (tuid.isNotEmpty() ? " target=\"" + tnm + "\" uid=" + tuid
+                                            : juce::String())
+                       + " answer="
+                       + (intent == "recall_confirm" ? "load" : "cancel")).toRawUTF8());
+        if (intent == "recall_confirm" && rid.isNotEmpty())
+        {
+            if (tuid.isNotEmpty()) recallLoadChainToLink(tuid, rid, rnm);
+            else                   recallLoadChain(rid, rnm);
+        }
+        return;
+    }
+    // STEP 3d (15 Aug 2026): the channel-mismatch advisory ask.
+    // BEFORE the bare recall_id sniff below - these chips carry
+    // recall_id too, and falling through would route them straight
+    // to handleChainRecall, re-raising the ask they answer.
+    if (intent == "recall_here" || intent == "recall_switch")
+    {
+        logTap(intent);
+        auto* co = askChipVars[(size_t) i].getDynamicObject();
+        const juce::String rid = co ? co->getProperty("recall_id").toString() : juce::String();
+        const juce::String rnm = co ? co->getProperty("recall_name").toString() : juce::String();
+        if (intent == "recall_switch")
+        {
+            // The shelf stays up while the chooser is open (the
+            // switch-chip precedent above): dismissing the menu must
+            // leave both chips available, not strand the recall.
+            EchoJay_NSLog("EJRecall: mismatch ask branch=choose-channel (chooser opening)");
+            openRecallChannelChooser((int) i);
+            return;
+        }
+        // Load it here: the channel decision is made; the replace
+        // confirmation follows only if THIS rack is non-empty, the
+        // same rule the direct recall path applies.
+        pendingRecallMismatchAsk_ = false;   // answered, not dismissed
+        supersedePendingAsks();
+        askShelfVisible_ = false;
+        resized();
+        const int rackNow = processorRef.getChainHost().getNumSlots();
+        EchoJay_NSLog(("EJRecall: mismatch ask branch=load-here rack="
+                       + juce::String(rackNow)).toRawUTF8());
+        if (rid.isEmpty()) return;
+        if (rackNow == 0)
+        {
+            EchoJay_NSLog("EJRecall: replace ask shown=no rack=0 answer=load");
+            recallLoadChain(rid, rnm);
+        }
+        else
+            presentRecallReplaceAsk(rid, rnm, rackNow);
+        return;
+    }
+    {
+        const juce::String rid = EJRecall::choiceRecallId(askChipVars[(size_t) i]);
+        if (rid.isNotEmpty())
+        {
+            logTap("recall_id");
+            supersedePendingAsks();
+            askShelfVisible_ = false;
+            resized();
+            handleChainRecall(rid, askChipLabels[(size_t) i]);
+            return;
+        }
+    }
+    // A TAP IS AN ANSWER; a typed message is a new request. The two are
+    // byte-identical on the wire otherwise ("build me a vocal chain"
+    // either way), so the server cannot tell them apart and stopped
+    // asking after the first mismatch. Stated as a fact here instead.
+    if (askChipMsgIdx_ >= 0 && askChipMsgIdx_ < (int) chatMessages.size())
+        nextClassifyAnswers_ = chatMessages[(size_t) askChipMsgIdx_].clientAskKind;
+    // Answer format per CHAIN_AI_BUILD_SPEC: self-contained Q->A pair
+    // that survives history trimming (blocks are stripped in storage).
+    // sendChatMessage -> supersedePendingAsks marks + persists.
+    // intent -> staged turnType (3-pre): "edit" chips act on the
+    // existing rack; server trust-but-validates as always
+    //
+    // TWO PRODUCERS reach this line: the ASK block in a reply, and
+    // /api/classify's short-circuit chips. The classifier sends the
+    // SAME "build"/"edit" vocabulary, so it needs no branch of its
+    // own - and it must NOT get one above, because unlike the
+    // compare-scope pair its chips DO send a turn.
+    //
+    // NO INTENT MEANS "chat", EXPLICITLY (3 Aug 2026, live defect).
+    // This used to fall through to an empty string, which let
+    // sendChatMessage decide from hadChainFeed - and hadChainFeed is
+    // true on effectively every send, so the fall-through was
+    // "always build" wearing a conditional. Tapping the
+    // channel_mismatch chip "I'll switch over" therefore staged
+    // chain_generate and built a chain on the channel the user had
+    // just declined. The classifier had returned intent=chat for
+    // that tap and was correct; nothing routes on its verdict until
+    // cutover, so the staged label won.
+    //
+    // Absence of an intent is a POSITIVE signal, not missing
+    // information: build and edit are stated when meant, so a chip
+    // without one is deliberately not a build. Staging "chat" is
+    // also the conservative direction on BILLING - chain_generate
+    // draws the premium lane (monthly pool + credits), chat draws
+    // the daily one, and the old behaviour spent a premium action on
+    // a turn where the user declined to build.
+    //
+    // Safe as a floor rather than a ceiling: the server runs
+    // classifyChainIntent over the text and upgrades a genuine build
+    // request back to chain_generate, so a real ask still routes.
+    const juce::String tt = intent == "edit" ? "chain_edit"
+                          : intent == "build" ? "chain_generate"
+                          : juce::String("chat");
+    logTap("generic_send tt=" + tt);
+    sendChatMessage(askChipLabels[(size_t)i]
+                    + " (answering: \"" + askChipQuestion_ + "\")",
+                    askChipLabels[(size_t)i], tt);   // bubble shows the label only
+}
+
+// ---- ASK shelf: the one layout authority (Phase 1b, B2; stacked 16 Aug 2026) ----
+// Called from the layout pass with the shelf width; the paint pass draws
+// only the background inside the rect this produced, so the reserved height
+// and the rendered rows cannot disagree. Rects are relative to the shelf
+// origin: every option row first (server order, NO cap), then the "Enter
+// other answer" row, then the Skip row when *skipOut is set. Returns 0 for
+// non-ask / answered / unparseable messages.
 int EchoJayEditor::measureAskShelf(const ChatMsg& msg, int shelfW,
-                                   std::vector<juce::Rectangle<int>>* chipRectsOut,
+                                   std::vector<juce::Rectangle<int>>* rowRectsOut,
                                    juce::StringArray* labelsOut,
                                    juce::String* questionOut,
-                                   juce::Rectangle<int>* hintRectOut,
+                                   bool* skipOut,
                                    juce::StringArray* intentsOut,
                                    juce::Array<juce::var>* choiceVarsOut)
 {
+    if (skipOut) *skipOut = false;
     if (msg.role != "assistant" || msg.askData.isEmpty() || msg.askAnswered)
         return 0;
     auto v = juce::JSON::parse(msg.askData);
@@ -19266,42 +19362,43 @@ int EchoJayEditor::measureAskShelf(const ChatMsg& msg, int shelfW,
     auto* choices = o->getProperty("choices").getArray();
     if (choices == nullptr || choices->size() < 2) return 0;
 
-    // Parity values — see the header comment block (mirrors app.html CSS)
-    juce::Font chipFont(juce::FontOptions(12.5f));
-    juce::Font hintFont(juce::FontOptions(11.0f));
-    const int padX = 10, padY = 8, gap = 6;
-    const int availR = juce::jmax(90, shelfW - padX);
-    int x = padX, y = padY, count = 0;
+    const int padX = 10, padY = 8, gap = 4;
+    const int rowW = juce::jmax(60, shelfW - 2 * padX);
+    int y = padY, count = 0;
+    bool anyServerChoice = false;
     for (auto& cv : *choices)
     {
-        if (count >= kMaxAskChips) break;
         auto* co = cv.getDynamicObject();
         if (co == nullptr) continue;
         juce::String label = co->getProperty("label").toString().trim();
         if (label.isEmpty()) continue;
-        int w = juce::jlimit(56, availR - padX,
-            juce::GlyphArrangement::getStringWidthInt(chipFont, label) + 28);
-        // Flow-wrap on narrow columns (sidebars)
-        if (x > padX && x + w > availR) { x = padX; y += kAskChipH + gap; }
-        if (chipRectsOut) chipRectsOut->push_back({ x, y, w, kAskChipH });
+        if (rowRectsOut) rowRectsOut->push_back({ padX, y, rowW, kAskChipH });
         if (labelsOut) labelsOut->add(label);
         if (intentsOut) intentsOut->add(co->getProperty("intent").toString().trim().toLowerCase());
-        // The whole choice var per accepted chip, index-parallel with the
-        // labels/intents by construction (recall chips carry recall_id /
+        // The whole choice var per accepted row, index-parallel with the
+        // labels/intents by construction (recall rows carry recall_id /
         // recall_name beyond label+intent).
         if (choiceVarsOut) choiceVarsOut->add(cv);
-        x += w + gap;
+        if (!askChoiceIsClientOnly(cv)) anyServerChoice = true;
+        y += kAskChipH + gap;
         ++count;
     }
     if (count == 0) return 0;
 
-    // Muted hint flows after the last chip, wrapping like a chip would
-    const int hintW = juce::GlyphArrangement::getStringWidthInt(hintFont, "or type below") + 4;
-    if (x > padX && x + hintW > availR) { x = padX; y += kAskChipH + gap; }
-    if (hintRectOut) *hintRectOut = { x, y, hintW, kAskChipH };
+    // "Enter other answer" is a row like the options, always.
+    if (rowRectsOut) rowRectsOut->push_back({ padX, y, rowW, kAskChipH });
+    y += kAskChipH + gap;
+    // Skip: only where a skip is an answer the server can read (see
+    // askChoiceIsClientOnly). A client-only ask keeps its own decline row.
+    if (anyServerChoice)
+    {
+        if (rowRectsOut) rowRectsOut->push_back({ padX, y, rowW, kAskChipH });
+        y += kAskChipH + gap;
+        if (skipOut) *skipOut = true;
+    }
 
     if (questionOut) *questionOut = o->getProperty("question").toString().trim();
-    return y + kAskChipH + padY;
+    return y - gap + padY;
 }
 
 // ---- Staged replies (Phase 1d): stage row + result bubble ----
@@ -23857,9 +23954,10 @@ juce::String EchoJayEditor::askDataFromClassifyChips(const juce::String& questio
     if (arr == nullptr || arr->isEmpty()) return {};
 
     juce::Array<juce::var> choices;
+    // No cap (16 Aug 2026): the shelf stacks rows, so every chip the
+    // classifier sends is rendered, in its order.
     for (const auto& cv : *arr)
     {
-        if (choices.size() >= kMaxAskChips) break;
         juce::String label, detail, intent;
         juce::var candidates;
         if (auto* co = cv.getDynamicObject())
@@ -24110,7 +24208,7 @@ void EchoJayEditor::openChannelChooser(int chipIdx)
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     menu.showMenuAsync(
-        juce::PopupMenu::Options().withTargetComponent(&askChipBtns[(size_t) chipIdx]),
+        juce::PopupMenu::Options().withTargetComponent(askChipBtns[(size_t) chipIdx].get()),
         [safeThis, ordered](int result)
         {
             if (safeThis == nullptr || result <= 0 || result > ordered.size()) return;
@@ -24128,6 +24226,7 @@ void EchoJayEditor::openChannelChooser(int chipIdx)
 void EchoJayEditor::openRecallChannelChooser(int chipIdx)
 {
     juce::String rid, rnm;
+    if (chipIdx >= 0 && chipIdx < (int) askChipVars.size())
     if (auto* co = askChipVars[(size_t) chipIdx].getDynamicObject())
     {
         rid = co->getProperty("recall_id").toString().trim();
@@ -24170,7 +24269,7 @@ void EchoJayEditor::openRecallChannelChooser(int chipIdx)
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     menu.showMenuAsync(
-        juce::PopupMenu::Options().withTargetComponent(&askChipBtns[(size_t) chipIdx]),
+        juce::PopupMenu::Options().withTargetComponent(askChipBtns[(size_t) chipIdx].get()),
         [safeThis, ordered, nameByUid, rid, rnm](int result)
         {
             if (safeThis == nullptr) return;

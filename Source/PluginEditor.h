@@ -2694,8 +2694,11 @@ private:
     // .ask-chip CSS; keep in sync:
     //   chip: pill (fully rounded), fill cyan 9% (hover 18%), border cyan
     //         40% (hover 70%), text 0xff7FE3F2 @ 12.5px, pad 6v/14h
-    //   shelf: input bg + 5% cyan wash, radius 12px top corners only,
-    //          hint "or type below" muted after the chips
+    //   shelf: input bg + 5% cyan wash, radius 12px top corners only
+    // AskChipLnF (the pill) is still worn by the edit-apply / edit-alt /
+    // result chips. The ASK shelf itself moved to stacked rows (AskRowLnF,
+    // below) on 16 Aug 2026; app.html's shelf follows the same shape and its
+    // slice(0,4) cap goes with it (web client, other session).
     struct AskChipLnF : juce::LookAndFeel_V4
     {
         void drawButtonBackground(juce::Graphics& g, juce::Button& b,
@@ -2712,16 +2715,68 @@ private:
         { return juce::Font(juce::FontOptions(12.5f)); }
     };
     AskChipLnF askChipLnF_;   // declared BEFORE the buttons: destroyed after them
-    static constexpr int kMaxAskChips = 4;
-    static constexpr int kAskChipH = 27;   // 12.5px text + 6px vertical padding
-    std::array<juce::TextButton, kMaxAskChips> askChipBtns;
-    std::array<juce::String, kMaxAskChips> askChipLabels;
-    std::array<juce::String, kMaxAskChips> askChipIntents;   // ""|"edit"|"build" (3-pre)
-    // The full choice var per chip (14 Aug 2026, recall). Chips that need
+    // ASK shelf rows (16 Aug 2026): the shelf is a VERTICAL STACK now, one
+    // full-width row per option in server order, then an "Enter other
+    // answer" row, then Skip. The horizontal chip row and its four-option
+    // cap (kMaxAskChips) are gone: a stack does not run out of width, and
+    // the cap was silently dropping the fifth option of questions that
+    // carry four plus an escape hatch. Row look mirrors the option chips
+    // (cyan 9%/18% fill, 40%/70% border, 12.5px text) but rounded 8px and
+    // LEFT-aligned so a sentence-length option reads as a sentence.
+    // public/app.html's .ask-shelf is the other client of this shape.
+    struct AskRowLnF : juce::LookAndFeel_V4
+    {
+        void drawButtonBackground(juce::Graphics& g, juce::Button& b,
+                                  const juce::Colour&, bool over, bool down) override
+        {
+            auto r = b.getLocalBounds().toFloat().reduced(0.5f);
+            const auto cyan = juce::Colour(0xff22d3ee);
+            g.setColour(cyan.withAlpha(over || down ? 0.18f : 0.09f));
+            g.fillRoundedRectangle(r, 8.0f);
+            g.setColour(cyan.withAlpha(over || down ? 0.70f : 0.40f));
+            g.drawRoundedRectangle(r, 8.0f, 1.0f);
+        }
+        juce::Font getTextButtonFont(juce::TextButton&, int) override
+        { return juce::Font(juce::FontOptions(12.5f)); }
+        void drawButtonText(juce::Graphics& g, juce::TextButton& b, bool, bool) override
+        {
+            g.setFont(getTextButtonFont(b, b.getHeight()));
+            g.setColour(b.findColour(b.getToggleState() ? juce::TextButton::textColourOnId
+                                                        : juce::TextButton::textColourOffId)
+                         .withMultipliedAlpha(b.isEnabled() ? 1.0f : 0.5f));
+            g.drawText(b.getButtonText(), b.getLocalBounds().reduced(12, 0),
+                       juce::Justification::centredLeft, true);
+        }
+    };
+    AskRowLnF askRowLnF_;     // declared BEFORE the row buttons: destroyed after them
+    static constexpr int kAskChipH = 27;   // row height: 12.5px text + padding
+    // Option rows, grown on demand (NO cap). Every button is created by
+    // ensureAskChipButtons with the SAME onClick (onAskChipTapped(i)), so
+    // index i is the only thing that distinguishes them.
+    std::vector<std::unique_ptr<juce::TextButton>> askChipBtns;
+    std::vector<juce::String> askChipLabels;
+    std::vector<juce::String> askChipIntents;   // ""|"edit"|"build" (3-pre)
+    // The full choice var per row (14 Aug 2026, recall). Rows that need
     // more than label+intent (recall_id, recall_name) read it from here;
-    // index-parallel with the arrays above by construction (one source
+    // index-parallel with the vectors above by construction (one source
     // loop in measureAskShelf fills all of them).
-    std::array<juce::var, kMaxAskChips> askChipVars;
+    std::vector<juce::var> askChipVars;
+    void ensureAskChipButtons(int n);
+    void onAskChipTapped(int i);
+    // The two fixed rows under the options. "Enter other answer" focuses
+    // the composer and leaves the shelf up (the send supersedes it, as a
+    // typed answer always did). Skip answers the CURRENT question with the
+    // literal label "Skip" through the same tap path, so the server sees
+    // it as a tap on this question and nothing else: skip means skip THIS
+    // question, not stop asking and not build now. Skip is NOT drawn on
+    // asks whose every choice is client-side (compare scope, recall
+    // confirm, channel mismatch): those already carry their decline as a
+    // row and must not send a turn.
+    juce::TextButton askOtherBtn_ { "Enter other answer" };
+    juce::TextButton askSkipBtn_  { "Skip" };
+    bool askSkipShown_ = false;
+    static bool askChoiceIsClientOnly(const juce::var& choice);
+    void onAskSkipTapped();
     // ---- Channel selection (banner dropdown; the chip bar is deleted) ----
     // THE channel selector: clicking the banner opens a menu of LIVE
     // channels from the registry (current one ticked; an offline current
@@ -2760,10 +2815,10 @@ private:
     // entry is a LABEL for the existing no-channel state, never a new
     // targeting destination (no sentinel uid exists anywhere).
     void resetToMainContext();
-    juce::String askChipQuestion_;     // question of the chips currently shown
-    int  askChipMsgIdx_ = -1;          // chatMessages index the chips belong to
+    juce::String askChipQuestion_;     // question of the rows currently shown
+    int  askChipMsgIdx_ = -1;          // chatMessages index the rows belong to
     int  activeAskChips = 0;
-    juce::Rectangle<int> askShelfRect_, askShelfHintRect_;
+    juce::Rectangle<int> askShelfRect_;
     bool askShelfVisible_ = false;
     // Scan-window hold (sendChatMessage): when the first send of a session
     // arrives before the recommendable list resolves, the send waits,
@@ -2774,15 +2829,18 @@ private:
     int findNewestUnansweredAsk() const;
     // Mark every pending ask answered (any user send supersedes the question)
     void supersedePendingAsks();
-    // Shared by the layout pass (height reservation + button placement) and
-    // the paint pass (shelf background + hint) — they MUST agree. Flows
-    // chips + trailing hint into rows for the given shelf width; rects are
-    // relative to the shelf origin. Returns total shelf height (0 = no shelf).
+    // The ONE layout authority for the shelf (height reservation + row
+    // placement); the paint pass draws only the background inside the rect
+    // this produced, so the two cannot disagree. Stacks every option as a
+    // full-width row, then the "Enter other answer" row, then Skip when
+    // *skipOut says so; rects are relative to the shelf origin, options
+    // first, then the other row, then the skip row. Returns total shelf
+    // height (0 = no shelf).
     int measureAskShelf(const ChatMsg& msg, int shelfW,
-                        std::vector<juce::Rectangle<int>>* chipRectsOut = nullptr,
+                        std::vector<juce::Rectangle<int>>* rowRectsOut = nullptr,
                         juce::StringArray* labelsOut = nullptr,
                         juce::String* questionOut = nullptr,
-                        juce::Rectangle<int>* hintRectOut = nullptr,
+                        bool* skipOut = nullptr,
                         juce::StringArray* intentsOut = nullptr,
                         juce::Array<juce::var>* choiceVarsOut = nullptr);
 
