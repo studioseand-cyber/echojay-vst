@@ -48,6 +48,7 @@ struct RenderOpts
     int   voiceType   = PitchEngine::kAltoTenor;
     int   tracking    = PitchEngine::kNormal;
     int   formantMode = PsolaEngine::kFormantPreserve;
+    float formantShiftSt = 0.0f;    // only heard when formantMode == kFormantShift
     float semitones   = 0.0f;    // relative shift; ignored when targetHz > 0
     float targetHz    = 0.0f;    // absolute fixed target
 
@@ -89,6 +90,7 @@ juce::AudioBuffer<float> renderOne (const juce::AudioBuffer<float>& src, double 
         auto e = std::make_unique<PsolaEngine>();
         e->prepare (fs, 1024, PitchEngine::voiceRange (o.voiceType).fMinHz, worst);
         e->setFormantMode (o.formantMode);
+        e->setFormantShift (o.formantShiftSt);
         shifters.push_back (std::move (e));
     }
     latencyOut = shifters[0]->latencySamples();
@@ -207,7 +209,10 @@ int usage()
         "    --set               render the whole comparison set (default)\n"
         "    --semitones <n>     render ONE relative shift instead\n"
         "    --target-hz <hz>    render ONE fixed-target shift instead\n"
-        "    --formant <mode>    preserve | off   (single renders only)\n\n"
+        "    --formant <mode>    preserve | off | shift   (single renders only)\n"
+        "    --formant-shift <st>  formant warp in semitones; implies --formant shift\n"
+        "    --formant-set       render the formant A/B set: pitch held constant,\n"
+        "                        formant_shift at -7 / -3 / 0 / +3 / +7\n\n"
         "  Every render is latency-compensated, so the files line up against\n"
         "  the dry on a timeline without nudging.\n");
     return 1;
@@ -221,6 +226,7 @@ int main (int argc, char* argv[])
     RenderOpts base;
     bool wholeSet = true;
     bool haveSingle = false;
+    bool formantSet = false;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -254,9 +260,18 @@ int main (int argc, char* argv[])
         else if (a == "--formant")
         {
             const juce::String want = next();
-            base.formantMode = want.equalsIgnoreCase ("off") ? PsolaEngine::kFormantOff
-                                                             : PsolaEngine::kFormantPreserve;
+            base.formantMode = want.equalsIgnoreCase ("off")   ? PsolaEngine::kFormantOff
+                             : want.equalsIgnoreCase ("shift") ? PsolaEngine::kFormantShift
+                                                               : PsolaEngine::kFormantPreserve;
         }
+        else if (a == "--formant-shift")
+        {
+            // Setting the amount IS choosing the mode - a shift amount heard
+            // through `preserve` would be the tool quietly ignoring the ask.
+            base.formantShiftSt = next().getFloatValue();
+            base.formantMode    = PsolaEngine::kFormantShift;
+        }
+        else if (a == "--formant-set") { wholeSet = false; formantSet = true; }
         else if (a.startsWith ("-")) return usage();
         else path = a;
     }
@@ -340,7 +355,7 @@ int main (int argc, char* argv[])
             // corrector working, and the wrong scale being asked for.
             RenderOpts hard = base;
             hard.correct = true; hard.retuneMs = 0.0f; hard.flex = 0.0f;
-            hard.humanize = 0.0f; hard.ignoreVib = false; hard.naturalVib = 0.0f;
+            hard.humanize = 0.0f; hard.ignoreVib = true; hard.naturalVib = 0.0f;
             hard.scaleMask = 0b111111111111;
             jobs.push_back ({ "30 CHARACTER A - hard tuned (retune 0, flex 0, chromatic).wav", hard });
 
@@ -372,12 +387,45 @@ int main (int argc, char* argv[])
             jobs.push_back ({ "21 FORMANT AB " + sign + mag + "st B - off (chipmunk).wav", move });
         }
     }
+    else if (formantSet)
+    {
+        // THE FORMANT A/B SET: pitch held constant (a relative shift of 0, so
+        // the corrected pitch IS the sung pitch), only formant_shift moving.
+        // This is the only honest way to audition the control in isolation -
+        // any pitch move in the same render would smear what the ear should
+        // attribute to the formant warp. `preserve` is included as the
+        // reference wet path: shift 0 should be indistinguishable from it.
+        RenderOpts keep = base;
+        keep.semitones = 0.0f;
+        keep.formantMode = PsolaEngine::kFormantPreserve;
+        jobs.push_back ({ "01 FORMANT SET reference - preserve, pitch unchanged.wav", keep });
+
+        const int shifts[] = { -7, -3, 0, 3, 7 };
+        int idx = 2;
+        for (int st : shifts)
+        {
+            RenderOpts o = base;
+            o.semitones      = 0.0f;
+            o.formantMode    = PsolaEngine::kFormantShift;
+            o.formantShiftSt = (float) st;
+            juce::String nm;
+            nm << juce::String (idx++).paddedLeft ('0', 2) << " FORMANT SET shift "
+               << (st >= 0 ? "+" : "-") << juce::String (std::abs (st)).paddedLeft ('0', 2)
+               << "st - pitch unchanged"
+               << (st < 0 ? " (bigger, deeper)" : st > 0 ? " (smaller, brighter)" : "")
+               << ".wav";
+            jobs.push_back ({ nm, o });
+        }
+    }
     else
     {
         juce::String nm = "render";
         if (base.targetHz > 0.0f) nm = "fixed target " + juce::String (base.targetHz, 1) + "Hz";
         else                      nm = "shift " + juce::String (base.semitones, 1) + "st";
-        nm << (base.formantMode == PsolaEngine::kFormantOff ? " (formant off)" : " (formants preserved)");
+        nm << (base.formantMode == PsolaEngine::kFormantOff   ? " (formant off)"
+             : base.formantMode == PsolaEngine::kFormantShift
+                 ? (" (formant shift " + juce::String (base.formantShiftSt, 1) + "st)")
+                 : " (formants preserved)");
         jobs.push_back ({ nm + ".wav", base });
     }
 

@@ -46,11 +46,9 @@ fi
 trap 'rmdir "$LOCK" 2>/dev/null' EXIT INT TERM
 echo "Build lock acquired."
 
-# 1. Drop the running plugin image FIRST so a cached binary can't mask the
-#    install (this runs even if the build later fails — that's fine, the old
-#    on-disk component stays in place and simply reloads).
-killall AudioComponentRegistrar AUHostingServiceXPC_arrow 2>/dev/null || true
-
+# 1. Resolve the tree from the caller's cwd — everything below keys off it.
+#    (Moved above the killall on 15 Aug 2026 so a run the stamp guard refuses
+#    has touched nothing at all, not even the running AU host.)
 REPO="$(git rev-parse --show-toplevel 2>/dev/null)"
 if [ -z "$REPO" ]; then
   echo "Not inside a git repo. cd into the tree you want to build first."
@@ -59,6 +57,60 @@ fi
 BUILD="$REPO/build"
 DEST=~/Library/Audio/Plug-Ins/Components
 CML="$REPO/CMakeLists.txt"
+
+# 1b. STAMP GUARD — the bump below writes three TRACKED files, and that write
+#     is allowed only in the PRIMARY worktree (echojay-vst-v200, the
+#     integration tree). Run anywhere else it leaves residue: the stamps sat
+#     uncommitted in two feature worktrees for weeks (2.23.87, 2.25.15),
+#     filled three of the four stashes, and the moment a feature branch
+#     commits them, the merge into the mainline either conflicts or silently
+#     drags the shipped version backwards.
+#
+#     Identified by PATH, not by branch — a branch can be checked out in any
+#     worktree. The property enforced: only in the primary worktree does
+#     --git-dir equal --git-common-dir; every linked worktree's git dir is a
+#     subdirectory (.git/worktrees/<name>) of the primary's. Both sides come
+#     from the same resolver, so symlinked paths compare consistently.
+#
+#     Extracted and exercised by tools/reinstall_v2_test (pre-commit gate):
+#     refusal from a linked worktree and permission from the primary are both
+#     asserted, so the guard has been watched failing, not just passing.
+stamp_guard() {  # $1 = worktree root;  non-zero anywhere but the primary worktree
+  # env -u GIT_DIR: git EXPORTS GIT_DIR into hook environments, and with it
+  # set, `git -C <dir>` stops discovering <dir>'s repo and answers for
+  # $GIT_DIR instead — the same trap documented at the top of the test
+  # harness, which is exactly where this function also has to run.
+  local repo="$1" gitdir common branch
+  gitdir="$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE \
+            git -C "$repo" rev-parse --path-format=absolute --git-dir 2>/dev/null)"
+  common="$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE \
+            git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+  if [ -z "$gitdir" ] || [ -z "$common" ]; then
+    echo "  REFUSED: cannot resolve the git dirs for $repo — not bumping blind."
+    return 1
+  fi
+  if [ "$gitdir" != "$common" ]; then
+    branch="$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE \
+              git -C "$repo" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+    echo "  REFUSED: $repo (branch ${branch:-unknown})"
+    echo "  is a linked worktree; version stamps bump only in the primary one:"
+    echo "  $(dirname "$common")"
+    echo "  A bump here dirties tracked files that conflict, or silently"
+    echo "  regress the version, when this branch merges. Build from the"
+    echo "  primary worktree instead."
+    return 1
+  fi
+  return 0
+}
+if ! stamp_guard "$REPO"; then
+  echo "ABORT: stamp guard refused this worktree — nothing was killed, built, or installed."
+  exit 1
+fi
+
+# 1c. Drop the running plugin image before building so a cached binary can't
+#    mask the install (this runs even if the build later fails — that's fine,
+#    the old on-disk component stays in place and simply reloads).
+killall AudioComponentRegistrar AUHostingServiceXPC_arrow 2>/dev/null || true
 
 # 2. Bump patch (+rollover) on the single stored source of truth.
 CUR=$(sed -n 's/^project(EchoJay VERSION 2\.\([0-9]*\)\.\([0-9]*\))$/\1 \2/p' "$CML")

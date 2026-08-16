@@ -52,6 +52,17 @@ case "$FN" in
 esac
 eval "$FN"
 
+# stamp_guard() sits earlier in the file, so it gets its own window: from its
+# opening line to the first closing brace at column 0.
+GFN=$(awk '/^stamp_guard\(\) \{/ {on=1}
+           on {print}
+           on && /^\}/ {exit}' "$SRC")
+case "$GFN" in
+  *"stamp_guard()"*) ;;
+  *) echo "FAIL: stamp_guard() not found in $SRC (renamed or removed?)"; exit 1 ;;
+esac
+eval "$GFN"
+
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 REPO="$TMP"; CML="$TMP/CMakeLists.txt"   # the names the extracted functions read
@@ -94,6 +105,35 @@ mkfixture "2.25.10"
 bumpfiles "2.25.10" "2.25.11" >/dev/null
 bumpfiles "2.25.11" "2.25.10" >/dev/null; ck "revert returns 0" "$?" "0"
 ck "CMakeLists back" "$(grep -c 'VERSION 2.25.10' "$CML")" "1"
+
+# 5. THE STAMP GUARD, both directions — a refusal nobody has watched happen
+#    is not a guard, and a guard that also refuses the primary worktree is a
+#    dead script. Real worktrees, not a mock: the property under test IS git's
+#    git-dir/common-dir distinction.
+#
+#    UNSET THE HOOK'S GIT ENV FIRST. These are the only git commands this
+#    harness runs, and under the pre-commit gate git has exported GIT_DIR and
+#    GIT_INDEX_FILE — with those set, the fixture's init/commit/worktree-add
+#    operate on the REPO BEING COMMITTED instead of the fixture. On this
+#    suite's first gated run (15 Aug 2026) that committed the gate's staged
+#    index onto feat/plugin-dashboard as "fixture" and registered a ghost
+#    worktree. Same trap the header documents for $0 resolution: under a
+#    hook, nothing may reach git through inherited environment.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+GT="$TMP/guard"
+git init -q "$GT/prim"
+git -C "$GT/prim" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m fixture
+git -C "$GT/prim" worktree add -q -b guard-feature "$GT/wt" >/dev/null 2>&1
+
+OUT=$(stamp_guard "$GT/wt"); rc=$?
+ck "guard refuses a linked worktree" "$rc" "1"
+ck "and names the worktree" "$(print -r -- "$OUT" | grep -c "REFUSED: $GT/wt")" "1"
+ck "and names its branch"   "$(print -r -- "$OUT" | grep -c "guard-feature")" "1"
+stamp_guard "$GT/prim" >/dev/null
+ck "guard permits the primary worktree" "$?" "0"
+
+# The worktree registration lives under prim/.git and dies with $TMP's rm -rf;
+# nothing to prune.
 
 echo "reinstall_v2_test: $pass passed, $fail failed"
 exit $(( fail > 0 ? 1 : 0 ))

@@ -46,6 +46,7 @@ public:
     static constexpr const char* kTracking   = "tracking";
     static constexpr const char* kTargetHz   = "target_hz";
     static constexpr const char* kFormantMode = "formant_mode";
+    static constexpr const char* kFormantShift = "formant_shift";
     static constexpr const char* kLowLatency  = "low_latency";
     // P2: the musical layer.
     static constexpr const char* kCorrect      = "correct";
@@ -152,6 +153,7 @@ private:
     echojay::PitchEngine engine_;
     std::array<echojay::PsolaEngine, kMaxChannels> psola_;
     echojay::PitchCorrect correct_;
+    echojay::F0JumpGate   f0Gate_;
     echojay::viz::PitchRibbonView ribbon_;
     // These three MUST match their schema defaults. They did not: correct
     // advertised on but constructed off, correction_mode advertised natural
@@ -182,6 +184,7 @@ private:
     float lastHopF0_   = 0.0f;
     bool  lastHopVoiced_ = false;
     bool  lastCorrecting_ = false;
+    int   ribbonAccum_ = 0;      // decimates ribbon pushes to ~30 Hz columns
 
     int   lastAutoRoot_  = -1;
     bool  lastAutoMinor_ = false;

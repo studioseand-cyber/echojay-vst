@@ -15,6 +15,9 @@
  #include <dlfcn.h>
  #include <unistd.h>
  #include <sys/param.h>   // MAXCOMLEN
+ #include <mach-o/dyld.h>     // _dyld_get_image_header: the process cputype (arch gate)
+ #include <mach-o/fat.h>      // FAT_MAGIC, fat_arch (arch gate)
+ #include <mach-o/loader.h>   // MH_MAGIC, mach_header (arch gate)
 #endif
 
 // Defined later in this file (used by the shared name resolution above it)
@@ -417,14 +420,19 @@ juce::PluginDescription ChainHost::findVst3Alternative(const juce::String& plugi
         return variant.isEmpty() || en.contains(variant);
     };
 
-    // 1. Direct VST3 entry / previously deep-scanned cache
+    // 1. Direct VST3 entry / previously deep-scanned cache. A withheld VST3
+    //    (crash-blacklisted, or no slice for this process) is not an
+    //    alternative: the loader would refuse or fail it, and the caller
+    //    falls back to the AU it started with. pluginsMutex_ is held.
     {
         std::lock_guard<std::mutex> lock(pluginsMutex_);
         for (auto& d : entries_)
-            if (d.pluginFormatName == "VST3" && matches(d.name))
+            if (d.pluginFormatName == "VST3" && matches(d.name)
+                && ! isWithheld(withholdReasonLocked(d)))
                 return d;
         for (const auto& d : knownPlugins_.getTypes())
-            if (d.pluginFormatName == "VST3" && matches(d.name))
+            if (d.pluginFormatName == "VST3" && matches(d.name)
+                && ! isWithheld(withholdReasonLocked(d)))
                 return d;
     }
 
@@ -824,6 +832,15 @@ void ChainHost::doRefresh()
     if (cancelFlag_.load()) { std::lock_guard<std::mutex> lk(pluginsMutex_); entries_ = auEntries; return; }
 
     setScanStatus("Reading VST3 folders...");
+    // The architecture memo is per path and per process, never persisted;
+    // a rescan is the one moment a bundle on disk may have been replaced
+    // (a universal update over an Intel-only install), so it is re-judged
+    // from here on. NOTHING is filtered here: the scan enumerates every
+    // bundle and the cache below keeps all of them (ArchVerdict, header).
+    {
+        std::lock_guard<std::mutex> lk(archMutex_);
+        archCache_.clear();
+    }
     juce::StringArray withheldByBlacklist;
     auto* vst3Fmt = getFormatByName("VST3");
     if (vst3Fmt)
@@ -842,11 +859,17 @@ void ChainHost::doRefresh()
             {
                 if (cancelFlag_.load()) break;
                 juce::String path = f.getFullPathName();
+                // Recorded, NOT dropped (15 Aug 2026, evening). The row is
+                // kept in entries_ and in the shared cache like any other and
+                // withheld at the feed sites through
+                // WithholdReason::CrashBlacklisted, the same relocation the
+                // dedupe (1069ffe) and the architecture gate (037c36d) had:
+                // a scan-time drop decided what the OTHER host could see and
+                // made CrashBlacklisted unreachable after any rescan. This
+                // list is only what the scan SAW on the blacklist, for the
+                // log line below.
                 if (isBlacklisted(path))
-                {
                     withheldByBlacklist.add(f.getFileNameWithoutExtension());
-                    continue;
-                }
 
                 bool usedCache = false;
                 {
@@ -886,7 +909,11 @@ void ChainHost::doRefresh()
     // Logged EVERY scan, including when empty: the blacklist is a permanent
     // per-path exclusion with no Settings UI yet, and this line is its only
     // discoverability. A plugin silently missing here is a plugin silently
-    // deleted from someone's catalogue.
+    // deleted from someone's catalogue. Since 15 Aug 2026 (evening) the
+    // rows named here are KEPT in the list and the cache and withheld at
+    // feed time (WithholdReason::CrashBlacklisted); the count and the names
+    // are what the scan saw on the blacklist, unchanged in meaning for the
+    // reader of this line.
     EchoJay_NSLog(("EJScan: " + juce::String(withheldByBlacklist.size())
                    + " entr(ies) withheld by crash blacklist"
                    + (withheldByBlacklist.isEmpty()
@@ -1038,11 +1065,13 @@ juce::Array<juce::PluginDescription> ChainHost::getFilteredPlugins(
     for (auto& d : rows)
     {
         if (formatFilter.isNotEmpty() && d.pluginFormatName != formatFilter) continue;
-        // Crash-blacklisted rows are hidden from the browser too, not only
-        // refused at load: entries_ can still carry them between the
-        // blacklist growing and the next rescan. blacklist_ read directly,
-        // pluginsMutex_ is already held here.
-        if (blacklist_.contains(d.fileOrIdentifier)) continue;
+        // Crash-blacklisted and architecture-incompatible rows are hidden
+        // from the browser too, not only refused at load: entries_ can
+        // still carry them between the blacklist growing and the next
+        // rescan, and the arch answer belongs to this process (see
+        // WithholdReason in the header). One function decides, here and
+        // at the other two feed sites. pluginsMutex_ is already held.
+        if (isWithheld(withholdReasonLocked(d))) continue;
         if (lf.isEmpty()
             || d.name.toLowerCase().contains(lf)
             || d.manufacturerName.toLowerCase().contains(lf))
@@ -1328,8 +1357,10 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
             if (op.op == "add")
             {
                 if (op.name.isEmpty()) return bad("add without a plugin name");
-                if (resolveByName(op.name, {}).name.isEmpty())
-                    return bad("\"" + op.name + "\" not in the loadable plugin list");
+                if (auto why = WithholdReason::None; resolveByName(op.name, {}, nullptr, &why).name.isEmpty())
+                    return bad("\"" + op.name + "\" "
+                               + (why == WithholdReason::None ? juce::String("not in the loadable plugin list")
+                                                              : withholdReasonText(why)));
                 // Positional target: out-of-range/removed "after" CLAMPS to
                 // append-at-end (the runtime add path already does this) —
                 // aborting the whole batch over a position was worse than an
@@ -1349,8 +1380,10 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
             {
                 if (!validSlot(op.slot)) return bad(slotLabel(op.slot) + " does not exist");
                 if (op.name.isEmpty()) return bad("replace without a plugin name");
-                if (resolveByName(op.name, {}).name.isEmpty())
-                    return bad("\"" + op.name + "\" not in the loadable plugin list");
+                if (auto why = WithholdReason::None; resolveByName(op.name, {}, nullptr, &why).name.isEmpty())
+                    return bad("\"" + op.name + "\" "
+                               + (why == WithholdReason::None ? juce::String("not in the loadable plugin list")
+                                                              : withholdReasonText(why)));
             }
             else if (op.op == "move")
             {
@@ -1538,9 +1571,14 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
         // Fallible work FIRST: load (appends at the end). Only on success do
         // we touch existing slots, so a failed load is a clean no-op and the
         // sequence CONTINUES with the remaining independent ops.
-        auto desc = resolveByName(op.name, {});
+        // Honest miss (WithholdReason): a plugin this host withholds is
+        // reported as such, not as "not resolvable".
+        WithholdReason why = WithholdReason::None;
+        auto desc = resolveByName(op.name, {}, nullptr, &why);
         if (desc.name.isEmpty())
-            return failButContinue(op.op + " failed: \"" + op.name + "\" not resolvable");
+            return failButContinue(op.op + " failed: \"" + op.name + "\" "
+                                   + (why == WithholdReason::None ? juce::String("not resolvable")
+                                                                  : withholdReasonText(why)));
         desc = preferInlineHostableDesc(desc);
         auto self = st;
         const auto theOp = op;
@@ -2899,6 +2937,13 @@ void ChainHost::startFingerprintPass()
         for (const auto& d : entries_)
         {
             if (d.isInstrument) continue;                       // never a chain slot
+            // Withheld rows are never instantiated here: this pass creates
+            // the plugin directly (asyncCreatePlugin), not through the
+            // loadPluginAsync gate, and a crash-blacklisted row now stays in
+            // entries_ after a rescan (WithholdReason, header). Skipping the
+            // architecture-incompatible ones as well only saves a load that
+            // would fail with "No types found". pluginsMutex_ is held.
+            if (isWithheld(withholdReasonLocked(d))) continue;
             // Thin VST3 (unvalidated, version empty): fingerprinting now
             // would hash a wrong basis. completeLoad covers it on first load.
             if (d.pluginFormatName == "VST3" && d.version.isEmpty()) continue;
@@ -3334,8 +3379,10 @@ bool ChainHost::namesMatchLoose(const juce::String& incoming,
 
 juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
                                                  const juce::String& formatFilter,
-                                                 juce::String* matchLogOut) const
+                                                 juce::String* matchLogOut,
+                                                 WithholdReason* withheldOut) const
 {
+    if (withheldOut) *withheldOut = WithholdReason::None;
     auto raw  = rawName.trim();
     auto base = stripParenthetical(raw);
 
@@ -3354,13 +3401,20 @@ juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
         manu = raw.fromLastOccurrenceOf(" (", false, false)
                   .dropLastCharacters(1).trim();
 
-    juce::Array<juce::PluginDescription> cands;
+    // Two pools, one pass under the lock. cands are the rows this host
+    // offers; withheld are the rows the format filter admits but the ONE
+    // withhold decision (WithholdReason, header) keeps back. The withheld
+    // pool never resolves; it exists so a miss can say which it was.
+    juce::Array<juce::PluginDescription> cands, withheld;
+    juce::Array<WithholdReason>          withheldWhy;   // parallel to withheld
     {
         std::lock_guard<std::mutex> lock(pluginsMutex_);
         for (auto& d : entries_)
         {
             if (formatFilter.isNotEmpty() && d.pluginFormatName != formatFilter)
                 continue;
+            const auto why = withholdReasonLocked(d);
+            if (isWithheld(why)) { withheld.add(d); withheldWhy.add(why); continue; }
             cands.add(d);
         }
     }
@@ -3368,31 +3422,6 @@ juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
     // semantics are identical to the old scan-time dedupe.
     if (formatFilter.isEmpty())
         cands = collapseAuPreferring(cands);
-
-    auto logMatch = [&](const char* how, const juce::PluginDescription& d)
-    {
-        if (matchLogOut)
-            *matchLogOut = juce::String(how) + " -> \"" + d.name + "\" ["
-                         + d.pluginFormatName + "]";
-    };
-
-    for (auto& d : cands)
-        if (d.name.equalsIgnoreCase(raw)) { logMatch("exact", d); return d; }
-
-    // Parenthetical-stripped match, manufacturer as tie-breaker
-    juce::Array<juce::PluginDescription> baseHits;
-    for (auto& d : cands)
-        if (d.name.equalsIgnoreCase(base)) baseHits.add(d);
-    if (baseHits.size() == 1) { logMatch("stripped", baseHits[0]); return baseHits[0]; }
-    if (baseHits.size() > 1)
-    {
-        if (manu.isNotEmpty())
-            for (auto& d : baseHits)
-                if (d.manufacturerName.containsIgnoreCase(manu))
-                { logMatch("stripped+manufacturer", d); return d; }
-        logMatch("stripped (first of several)", baseHits[0]);
-        return baseHits[0];
-    }
 
     // Normalised (case/punctuation/version-token tolerant). Model-number guard:
     // normalizeName strips a trailing number as a version, which collapses
@@ -3402,14 +3431,71 @@ juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
     // (e.g. "Saturn 2" vs a plugin named "Saturn") still tolerates the strip.
     auto keyIn = normalizeName(base);
     auto numIn = trailingModelNumber(base);
-    for (auto& d : cands)
-        if (normalizeName(stripParenthetical(d.name)) == keyIn)
+
+    // The match ladder, exact / stripped / stripped+manufacturer / normalised,
+    // as ONE function so the offered pool and the withheld pool are searched
+    // by identical rules: a name that would have resolved to a withheld row
+    // is reported as withheld, never as not found. Returns the index into
+    // pool, or -1; how receives the rung that matched.
+    auto matchIn = [&](const juce::Array<juce::PluginDescription>& pool,
+                       juce::String& how) -> int
+    {
+        for (int i = 0; i < pool.size(); ++i)
+            if (pool.getReference(i).name.equalsIgnoreCase(raw)) { how = "exact"; return i; }
+
+        // Parenthetical-stripped match, manufacturer as tie-breaker
+        juce::Array<int> baseHits;
+        for (int i = 0; i < pool.size(); ++i)
+            if (pool.getReference(i).name.equalsIgnoreCase(base)) baseHits.add(i);
+        if (baseHits.size() == 1) { how = "stripped"; return baseHits[0]; }
+        if (baseHits.size() > 1)
         {
-            auto numCand = trailingModelNumber(stripParenthetical(d.name));
-            if (numIn.isNotEmpty() && numCand.isNotEmpty() && numIn != numCand)
-                continue;
-            logMatch("normalised", d); return d;
+            if (manu.isNotEmpty())
+                for (int i : baseHits)
+                    if (pool.getReference(i).manufacturerName.containsIgnoreCase(manu))
+                    { how = "stripped+manufacturer"; return i; }
+            how = "stripped (first of several)";
+            return baseHits[0];
         }
+
+        for (int i = 0; i < pool.size(); ++i)
+        {
+            const auto& d = pool.getReference(i);
+            if (normalizeName(stripParenthetical(d.name)) == keyIn)
+            {
+                auto numCand = trailingModelNumber(stripParenthetical(d.name));
+                if (numIn.isNotEmpty() && numCand.isNotEmpty() && numIn != numCand)
+                    continue;
+                how = "normalised"; return i;
+            }
+        }
+        return -1;
+    };
+
+    juce::String how;
+    if (const int i = matchIn(cands, how); i >= 0)
+    {
+        const auto& d = cands.getReference(i);
+        if (matchLogOut)
+            *matchLogOut = how + " -> \"" + d.name + "\" [" + d.pluginFormatName + "]";
+        return d;
+    }
+
+    // Honest miss: the name is on this machine, this host keeps it back.
+    // Still empty (nothing resolves that cannot load), but the caller can
+    // say so instead of "not found".
+    if (const int i = matchIn(withheld, how); i >= 0)
+    {
+        const auto& d   = withheld.getReference(i);
+        const auto  why = withheldWhy[i];
+        if (withheldOut) *withheldOut = why;
+        if (matchLogOut)
+            *matchLogOut = "WITHHELD ("
+                         + juce::String(why == WithholdReason::CrashBlacklisted
+                                            ? "crash blacklist" : "architecture")
+                         + ", " + how + ") -> \"" + d.name + "\" [" + d.pluginFormatName + "]";
+        return {};
+    }
 
     if (matchLogOut)
     {
@@ -3531,6 +3617,238 @@ void ChainHost::reloadBlacklistFromDisk()
 }
 
 // ---------------------------------------------------------------------------
+// Architecture gate (VST3 rows only; see ArchVerdict in the header)
+//
+// Reads the Mach-O header of the bundle's executable and asks one question:
+// does any slice match the cputype of the process this code is running in?
+// Header bytes only. No dlopen, no bundle load, no instantiation, so there
+// is nothing here that can crash the host; lipo -archs over the same 449
+// bundles takes seconds.
+//
+// The EJ_ARCH_GATE markers fence the pure part so a harness can compile the
+// SHIPPED text (sed between the markers) against the census instead of a
+// copy that drifts. Keep the fenced block self-contained: juce::File,
+// juce::XmlDocument and the mach-o headers, nothing from ChainHost.
+// ---------------------------------------------------------------------------
+#if JUCE_MAC
+namespace {
+// EJ_ARCH_GATE_BEGIN
+namespace ejarch {
+
+enum Verdict { Loadable, NotLoadable, Unreadable };
+
+// The bundle's executable: <bundle>/Contents/MacOS/<name>. Name match first
+// (394 of 448 bundles on the census machine), then CFBundleExecutable from
+// Info.plist (the iZotope PluginHooksVST family, the *_VST_AU_Protect
+// wrappers, WaveShell: 54 bundles whose binary is not named after the
+// bundle), then the first non-dylib file in MacOS/ (Listento ships four
+// dylibs beside its binary). A single-file .vst3 (ChopSuey, a Windows PE)
+// is returned as itself and fails the magic check below, which is Unreadable.
+inline juce::File bundleBinary(const juce::File& bundle)
+{
+    if (bundle.existsAsFile()) return bundle;
+    auto contents = bundle.getChildFile("Contents");
+    auto macos    = contents.getChildFile("MacOS");
+    if (! macos.isDirectory()) return {};
+
+    auto named = macos.getChildFile(bundle.getFileNameWithoutExtension());
+    if (named.existsAsFile()) return named;
+
+    if (auto plist = juce::XmlDocument::parse(contents.getChildFile("Info.plist")))
+        if (auto* dict = plist->getChildByName("dict"))
+            for (auto* k = dict->getFirstChildElement(); k != nullptr; k = k->getNextElement())
+                if (k->hasTagName("key") && k->getAllSubText().trim() == "CFBundleExecutable")
+                {
+                    if (auto* v = k->getNextElement())
+                    {
+                        auto f = macos.getChildFile(v->getAllSubText().trim());
+                        if (f.existsAsFile()) return f;
+                    }
+                    break;
+                }
+
+    auto files = macos.findChildFiles(juce::File::findFiles, false);
+    for (const auto& f : files)
+        if (! f.hasFileExtension(".dylib")) return f;
+    return files.isEmpty() ? juce::File() : files.getReference(0);
+}
+
+inline uint32_t be32(const uint8_t* p)
+{
+    return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | uint32_t(p[3]);
+}
+inline uint32_t le32(const uint8_t* p)
+{
+    return (uint32_t(p[3]) << 24) | (uint32_t(p[2]) << 16) | (uint32_t(p[1]) << 8) | uint32_t(p[0]);
+}
+
+// The cputype of the process this code is running in, read at runtime from
+// the main executable's in-memory Mach-O header. Under Rosetta that is the
+// x86_64 slice the loader chose, so the answer follows the PROCESS, not the
+// machine, and nothing is hardcoded. 0 if dyld reports no image 0 (never
+// seen); the caller treats 0 as "cannot judge", which keeps every row.
+inline cpu_type_t processCpuType()
+{
+    if (const auto* mh = _dyld_get_image_header(0)) return mh->cputype;
+    return 0;
+}
+
+// Judge one executable against a process cputype. Fat: FAT_MAGIC or
+// FAT_MAGIC_64, big-endian on disk, walk the arch table (capped at 32
+// entries; a real fat file has 2 or 3, and 0xCAFEBABE is also the Java
+// class magic, whose next field is a version well above that). Thin:
+// MH_MAGIC / MH_MAGIC_64 native, MH_CIGAM / MH_CIGAM_64 byte-swapped
+// (a ppc-only thin binary read on a little-endian host). Anything else,
+// including a file too short to hold its own header, is Unreadable.
+inline Verdict verdictForBinary(const juce::File& bin, cpu_type_t proc)
+{
+    if (proc == 0 || ! bin.existsAsFile()) return Unreadable;
+
+    juce::MemoryBlock head;
+    {
+        juce::FileInputStream in(bin);
+        if (! in.openedOk()) return Unreadable;
+        in.readIntoMemoryBlock(head, 8 + 32 * (int) sizeof(fat_arch_64));
+    }
+    const auto* p = static_cast<const uint8_t*>(head.getData());
+    const auto  n = head.getSize();
+    if (n < 8) return Unreadable;
+
+    const uint32_t magicBE = be32(p);
+    if (magicBE == FAT_MAGIC || magicBE == FAT_MAGIC_64)
+    {
+        const bool     is64  = (magicBE == FAT_MAGIC_64);
+        const size_t   entry = is64 ? sizeof(fat_arch_64) : sizeof(fat_arch);
+        const uint32_t count = be32(p + 4);
+        if (count == 0 || count > 32) return Unreadable;
+        if (n < 8 + (size_t) count * entry) return Unreadable;
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            const auto cputype = (cpu_type_t) be32(p + 8 + i * entry);   // first field of both fat_arch forms
+            if (cputype == proc) return Loadable;
+        }
+        return NotLoadable;
+    }
+
+    const uint32_t magicLE = le32(p);
+    if (magicLE == MH_MAGIC || magicLE == MH_MAGIC_64)
+        return ((cpu_type_t) le32(p + 4) == proc) ? Loadable : NotLoadable;
+    if (magicLE == MH_CIGAM || magicLE == MH_CIGAM_64)
+        return ((cpu_type_t) be32(p + 4) == proc) ? Loadable : NotLoadable;
+
+    return Unreadable;
+}
+
+inline Verdict verdictForBundle(const juce::File& bundle, cpu_type_t proc)
+{
+    return verdictForBinary(bundleBinary(bundle), proc);
+}
+
+} // namespace ejarch
+// EJ_ARCH_GATE_END
+} // namespace
+#endif
+
+// Human name of the process cputype for the withheld-by-architecture line.
+static juce::String processArchName()
+{
+   #if JUCE_MAC
+    switch (ejarch::processCpuType())
+    {
+        case CPU_TYPE_ARM64:  return "arm64";
+        case CPU_TYPE_X86_64: return "x86_64";
+        case CPU_TYPE_ARM:    return "arm";
+        case CPU_TYPE_X86:    return "i386";
+        case 0:               return "unknown, gate open";
+        default:              return "cputype " + juce::String((int) ejarch::processCpuType());
+    }
+   #else
+    return "not macOS, gate open";
+   #endif
+}
+
+ChainHost::ArchVerdict ChainHost::archVerdict(const juce::String& path) const
+{
+   #if JUCE_MAC
+    const auto key = path.toStdString();
+    {
+        std::lock_guard<std::mutex> lk(archMutex_);
+        auto it = archCache_.find(key);
+        if (it != archCache_.end()) return it->second;
+    }
+    // Computed outside the lock: file reads under a mutex the feed builders
+    // wait on would serialise the first browser open behind disk. Two
+    // threads judging the same path once each is harmless.
+    static const cpu_type_t proc = ejarch::processCpuType();
+    ArchVerdict v = ArchVerdict::Unreadable;
+    switch (ejarch::verdictForBundle(juce::File(path), proc))
+    {
+        case ejarch::Loadable:    v = ArchVerdict::Loadable;    break;
+        case ejarch::NotLoadable: v = ArchVerdict::NotLoadable; break;
+        case ejarch::Unreadable:  v = ArchVerdict::Unreadable;  break;
+    }
+    std::lock_guard<std::mutex> lk(archMutex_);
+    archCache_[key] = v;
+    return v;
+   #else
+    juce::ignoreUnused(path);
+    return ArchVerdict::Unreadable;   // no gate off macOS: every row kept
+   #endif
+}
+
+bool ChainHost::archLoadable(const juce::String& path) const
+{
+    return archVerdict(path) != ArchVerdict::NotLoadable;
+}
+
+// ---------------------------------------------------------------------------
+// Withhold reason: the ONE decision the three feed sites share
+// ---------------------------------------------------------------------------
+ChainHost::WithholdReason ChainHost::withholdReasonLocked(const juce::PluginDescription& d) const
+{
+    // Blacklist first: a row that crashed the host is withheld whatever its
+    // slices say, and the reason the user can act on is the blacklist line.
+    if (d.fileOrIdentifier.isNotEmpty() && blacklist_.contains(d.fileOrIdentifier))
+        return WithholdReason::CrashBlacklisted;
+    // VST3 rows only. AU rows are never judged and built-ins never reach
+    // entries_ (compiled in, exempt by construction).
+    if (d.pluginFormatName == "VST3")
+    {
+        switch (archVerdict(d.fileOrIdentifier))
+        {
+            case ArchVerdict::NotLoadable: return WithholdReason::ArchitectureIncompatible;
+            case ArchVerdict::Unreadable:  return WithholdReason::Unreadable;   // KEPT
+            case ArchVerdict::Loadable:    break;
+        }
+    }
+    return WithholdReason::None;
+}
+
+ChainHost::WithholdReason ChainHost::withholdReason(const juce::PluginDescription& d) const
+{
+    std::lock_guard<std::mutex> lock(pluginsMutex_);
+    return withholdReasonLocked(d);
+}
+
+juce::String ChainHost::withholdReasonText(WithholdReason r)
+{
+    switch (r)
+    {
+        case WithholdReason::CrashBlacklisted:
+            return "was withheld: it crashed a previous load and is on the "
+                   "crash skip list (chain_blacklist.txt); deleting its line "
+                   "there re-enables it";
+        case WithholdReason::ArchitectureIncompatible:
+            return "is installed but its VST3 has no " + processArchName()
+                 + " build, so it cannot run in this host";
+        case WithholdReason::Unreadable:
+        case WithholdReason::None:
+            break;
+    }
+    return {};
+}
+
+// ---------------------------------------------------------------------------
 // Settings ↔ ChainHost resolver
 // ---------------------------------------------------------------------------
 
@@ -3582,6 +3900,7 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
     // Snapshot the loadable entries under lock
     juce::Array<juce::PluginDescription> loadable;
     bool entriesEmpty = false;
+    int  withheldByArch = 0, archUnreadableKept = 0;
     {
         std::lock_guard<std::mutex> lk(pluginsMutex_);
         entriesEmpty = entries_.isEmpty();
@@ -3598,11 +3917,31 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
             // will refuse is worse than not offering it. entries_ can still
             // carry such a row when the blacklist grew after the entries
             // cache was written (deadman on relaunch, no rescan between).
-            // blacklist_ read directly: pluginsMutex_ is already held here.
-            if (blacklist_.contains(d.fileOrIdentifier)) continue;
+            // Architecture-incompatible rows (VST3 with no slice for this
+            // process) would be offered, chosen by the model, then fail at
+            // load with "No types found". ONE function decides both
+            // (WithholdReason, header); pluginsMutex_ is already held.
+            // Unreadable rows are KEPT and counted, so the fail-open path
+            // is visible on the line below rather than assumed.
+            switch (withholdReasonLocked(d))
+            {
+                case WithholdReason::CrashBlacklisted:         continue;
+                case WithholdReason::ArchitectureIncompatible: ++withheldByArch; continue;
+                case WithholdReason::Unreadable:               ++archUnreadableKept; break;
+                case WithholdReason::None:                     break;
+            }
             loadable.add(d);
         }
     }
+    // Logged on EVERY build, including at zero, for the reason the crash
+    // blacklist line in the scan gives: a plugin silently missing from the
+    // feed is a plugin silently deleted from someone's catalogue. Zero under
+    // AU hosting is the expected reading (no VST3 row reaches the gate);
+    // ABSENT is a regression.
+    EchoJay_NSLog(("EJScan: " + juce::String(withheldByArch)
+                   + " VST3 row(s) withheld by architecture (process "
+                   + processArchName() + "), "
+                   + juce::String(archUnreadableKept) + " unreadable, kept").toRawUTF8());
 
     // Build a normalized-name → PluginDescription map from the loadable entries.
     // If multiple entries share the same normalized name, keep the first (alphabetically
@@ -3905,7 +4244,8 @@ void ChainHost::loadByRecommendedName(const juce::String& name,
     // Same resolution both hosts use, honouring the active format filter.
     {
         juce::String matchLog;
-        auto d = resolveByName(name, recommendableFormat_, &matchLog);
+        WithholdReason why = WithholdReason::None;
+        auto d = resolveByName(name, recommendableFormat_, &matchLog, &why);
         // Log which stage resolved (or failed) so a future mis-resolution -
         // like "AMEK EQ 250" landing on "AMEK EQ 200" - is diagnosable from
         // the unified log instead of invisible.
@@ -3913,6 +4253,13 @@ void ChainHost::loadByRecommendedName(const juce::String& name,
         if (d.name.isNotEmpty())
         {
             loadPluginAsync(preferInlineHostableDesc(d), std::move(callback));
+            return;
+        }
+        // Honest miss (WithholdReason): the name matched a row this host
+        // withholds. Say which, not "not found".
+        if (why != WithholdReason::None)
+        {
+            callback("\"" + name + "\" " + withholdReasonText(why));
             return;
         }
     }
@@ -4511,14 +4858,20 @@ void ChainHost::restoreSavedChain(const juce::var& slotsArr, const juce::var& st
         // a slot we cannot resolve must not shift anyone else's key.
         const int n = o->hasProperty("n") ? (int)o->getProperty("n") : (i + 1);
 
-        auto desc = resolveByName(name, {}, nullptr);
+        WithholdReason why = WithholdReason::None;
+        auto desc = resolveByName(name, {}, nullptr, &why);
         if (desc.name.isEmpty())
         {
             // NEVER "not owned": a plugin the user owns looks exactly like
             // this on a machine where it is not installed, or where it
-            // cannot authorise right now.
-            addStateNote(name + ": could not be found on this machine,"
-                                " so this slot was skipped");
+            // cannot authorise right now. And never "not found" for a
+            // plugin that IS here but this host withholds (an Intel-only
+            // VST3 under arm64, a crash-blacklisted row): that is the one
+            // miss the user can act on, so the note says which it was.
+            addStateNote(name + (why == WithholdReason::None
+                                     ? juce::String(": could not be found on this machine,")
+                                     : " " + withholdReasonText(why) + ",")
+                              + " so this slot was skipped");
             continue;
         }
 
