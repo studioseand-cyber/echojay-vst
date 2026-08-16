@@ -4067,6 +4067,50 @@ private:
     // row (left cluster), same quiet link style as Help & Support
     juce::TextButton settingsManualBtn { "Manual" };
 
+    // ---- Settings: WITHHELD FROM THE CHAIN LIST (16 Aug 2026) ----
+    // A native arm64 host offers 118 of 449 VST3 rows and, before this,
+    // nothing in the product said where the other 331 went. This section
+    // renders every row ChainHost withholds from THIS host's chain list,
+    // greyed, with the reason ChainHost gives (withholdReason: read, never
+    // reimplemented) and, for a crash-blacklisted row, a Re-enable control
+    // that deletes its line from chain_blacklist.txt (the file is the
+    // authority; the next scan re-reads it, no restart). Architecture rows
+    // carry no control: it is not a choice, and the note above the rows
+    // says the one thing that changes it (running the host under Rosetta),
+    // once, here. Unreadable rows are KEPT by ChainHost and are not withheld,
+    // so they are not listed. The user's own ticks are never touched.
+    // Rows come from the shared entries cache (ChainHost::getEntriesCacheFile,
+    // the same file entries_ is loaded from) so no ChainHost API had to grow.
+    struct WithheldRow
+    {
+        juce::String name, path;
+        ChainHost::WithholdReason reason = ChainHost::WithholdReason::None;
+        juce::String date;          // from the blacklist line's ISO stamp, may be empty
+        bool reenabled = false;     // line deleted this session; back after the next scan
+    };
+    std::vector<WithheldRow> settingsWithheld_;
+    int  settingsWithheldArch_  = 0;
+    int  settingsWithheldCrash_ = 0;
+    bool settingsWithheldExpanded_ = false;
+    juce::TextButton settingsWithheldToggleBtn_ { "Show" };
+    std::vector<std::unique_ptr<juce::TextButton>> settingsReenableBtns_;
+    static constexpr int kWithheldRowH = 22;
+    // ONE geometry for resized() and paintSettingsView (the two must agree,
+    // as every other Settings section's paint mirrors its layout).
+    struct WithheldLayout
+    {
+        int labelY = 0;                     // section label (14px)
+        juce::Rectangle<int> summary;       // one-line count summary
+        juce::Rectangle<int> toggle;        // Show/Hide button, empty when nothing is withheld
+        juce::Rectangle<int> note;          // architecture note, empty when collapsed or none
+        int rowsY = 0;                      // first row top when expanded
+        int endY  = 0;                      // next section starts here
+    };
+    WithheldLayout withheldSectionLayout(int sx, int sy, int sw) const;
+    void rebuildSettingsWithheld();
+    void reenableWithheldRow(int idx);
+    static juce::File chainBlacklistFile();
+
     // Scrollable Settings: the settings-only children live inside
     // settingsContent_, viewed through settingsViewport_. resized() stays
     // the single layout authority: it lays the content out in CONTENT

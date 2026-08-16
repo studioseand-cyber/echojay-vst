@@ -2365,12 +2365,20 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         juce::Component* settingsMovers[] = {
             &settingsName, &settingsMonitors, &settingsHeadphones, &settingsGenres,
             &settingsExpLevel, &settingsLanguage, &uiScaleCombo, &autoDialToggle,
-            &settingsScanBtn, &viewAllPluginsBtn,
+            &settingsScanBtn, &viewAllPluginsBtn, &settingsWithheldToggleBtn_,
             &saveSettingsBtn, &settingsManualBtn, &settingsSavedLabel,
             &settingsHelpBtn, &dumpMetersBtn, &logoutBtn, &settingsOrbCard_ };
         for (auto* m : settingsMovers) settingsContent_.addChildComponent(*m);
         for (auto& btn : dawButtons) settingsContent_.addChildComponent(btn);
     }
+    // WITHHELD FROM THE CHAIN LIST: the Show/Hide toggle. Re-enable buttons
+    // are created per crash row by rebuildSettingsWithheld.
+    settingsWithheldToggleBtn_.onClick = [this]()
+    {
+        settingsWithheldExpanded_ = !settingsWithheldExpanded_;
+        resized();
+        settingsContent_.repaint();
+    };
 
     updateOnboardingPrompts();
 
@@ -9740,6 +9748,10 @@ void EchoJayEditor::showSettingsView()
     updateGenrePromptVisibility();
     updateProjectPromptVisibility();
 
+    // Withheld chain rows: read fresh on every open (a scan or a re-enable
+    // may have happened since); the section lays out in resized() below.
+    rebuildSettingsWithheld();
+
     resized(); repaint();
 }
 
@@ -9762,6 +9774,8 @@ void EchoJayEditor::hideSettingsView()
     settingsHelpBtn.setVisible(false);
     settingsManualBtn.setVisible(false);
     dumpMetersBtn.setVisible(false);
+    settingsWithheldToggleBtn_.setVisible(false);
+    for (auto& rb : settingsReenableBtns_) rb->setVisible(false);
     // Leaving Settings: a deferred prompt may return
     updateProjectPromptVisibility();
     resized(); repaint();
@@ -12236,6 +12250,191 @@ void EchoJayEditor::bumpMonthlyStat(const juce::String& key)
     f.replaceWithText(juce::JSON::toString(juce::var(o), true));
 }
 
+// ---- Settings: WITHHELD FROM THE CHAIN LIST (16 Aug 2026) ----
+// Which slice this process is: the arm64 slice of the universal binary is
+// compiled with JUCE_ARM, the x86_64 slice (native Intel or Rosetta) is not,
+// so this agrees with ChainHost's runtime cputype read by construction.
+#if JUCE_ARM
+static constexpr bool kEjProcessIsArm = true;
+#else
+static constexpr bool kEjProcessIsArm = false;
+#endif
+
+juce::File EchoJayEditor::chainBlacklistFile()
+{
+    // ChainHost keeps its file helpers private; the blacklist lives beside
+    // the entries cache in the same app-support folder, under the name the
+    // ChainHost header documents. Derived from the public sibling on
+    // purpose rather than a second copy of the folder logic.
+    return ChainHost::getEntriesCacheFile().getSiblingFile("chain_blacklist.txt");
+}
+
+EchoJayEditor::WithheldLayout EchoJayEditor::withheldSectionLayout(int sx, int sy, int sw) const
+{
+    WithheldLayout wl;
+    const int labelGap = 18;
+    wl.labelY = sy;
+    int y = sy + labelGap;
+    const bool any = !settingsWithheld_.empty();
+    const int toggleW = any ? 92 : 0;
+    wl.summary = { sx, y, sw - (any ? toggleW + 8 : 0), 24 };
+    if (any) wl.toggle = { sx + sw - toggleW, y, toggleW, 24 };
+    y += 24 + 6;
+    if (any && settingsWithheldExpanded_)
+    {
+        if (settingsWithheldArch_ > 0)
+        {
+            wl.note = { sx, y, sw, 44 };
+            y += 44 + 4;
+        }
+        wl.rowsY = y;
+        y += kWithheldRowH * (int) settingsWithheld_.size();
+    }
+    else
+        wl.rowsY = y;
+    wl.endY = y + 8;
+    return wl;
+}
+
+void EchoJayEditor::rebuildSettingsWithheld()
+{
+    settingsWithheld_.clear();
+    settingsWithheldArch_ = settingsWithheldCrash_ = 0;
+
+    // Blacklist line stamps (path TAB reason TAB ISO date; bare paths are the
+    // pre-format form and carry no date). Read for the date only; the
+    // decision itself is ChainHost's.
+    std::map<juce::String, juce::String> dateByPath;
+    if (auto bl = chainBlacklistFile(); bl.existsAsFile())
+    {
+        for (auto& raw : juce::StringArray::fromLines(bl.loadFileAsString()))
+        {
+            auto line = raw.trim();
+            if (line.isEmpty() || line.startsWithChar('#')) continue;
+            auto path = line.upToFirstOccurrenceOf("\t", false, false).trim();
+            auto meta = line.fromFirstOccurrenceOf("\t", false, false).trim();
+            auto iso  = meta.fromFirstOccurrenceOf("\t", false, false).trim();
+            if (path.isEmpty()) continue;
+            juce::String date;
+            if (iso.isNotEmpty())
+            {
+                const auto t = juce::Time::fromISO8601(iso);
+                if (t.toMilliseconds() > 0)
+                    date = juce::String(t.getDayOfMonth()) + " " + t.getMonthName(true);
+            }
+            dateByPath[path] = date;
+        }
+    }
+
+    auto& ch = processorRef.getChainHost();
+    auto ecFile = ChainHost::getEntriesCacheFile();
+    if (ecFile.existsAsFile())
+    {
+        if (auto doc = juce::XmlDocument::parse(ecFile);
+            doc != nullptr && doc->getTagName() == "CHAIN_ENTRIES")
+        {
+            for (auto* c : doc->getChildIterator())
+            {
+                juce::PluginDescription d;
+                if (!d.loadFromXml(*c)) continue;
+                // The per-host view, exactly as the feed sites apply it
+                if (chainFormatFilter_.isNotEmpty() && d.pluginFormatName != chainFormatFilter_)
+                    continue;
+                const auto why = ch.withholdReason(d);
+                if (!ChainHost::isWithheld(why)) continue;   // None and Unreadable are offered
+                WithheldRow row;
+                row.name   = d.name;
+                row.path   = d.fileOrIdentifier;
+                row.reason = why;
+                if (why == ChainHost::WithholdReason::CrashBlacklisted)
+                {
+                    ++settingsWithheldCrash_;
+                    if (auto it = dateByPath.find(row.path); it != dateByPath.end())
+                        row.date = it->second;
+                }
+                else
+                    ++settingsWithheldArch_;
+                settingsWithheld_.push_back(std::move(row));
+            }
+        }
+    }
+    // Crash rows first (they have a control), then by name
+    std::stable_sort(settingsWithheld_.begin(), settingsWithheld_.end(),
+        [](const WithheldRow& a, const WithheldRow& b)
+        {
+            const bool ca = a.reason == ChainHost::WithholdReason::CrashBlacklisted;
+            const bool cb = b.reason == ChainHost::WithholdReason::CrashBlacklisted;
+            if (ca != cb) return ca;
+            return a.name.compareIgnoreCase(b.name) < 0;
+        });
+
+    // One Re-enable button per crash row, in row order
+    while (settingsReenableBtns_.size() < (size_t) settingsWithheldCrash_)
+    {
+        auto b = std::make_unique<juce::TextButton>("Re-enable");
+        b->setVisible(false);
+        settingsContent_.addChildComponent(*b);
+        settingsReenableBtns_.push_back(std::move(b));
+    }
+    for (size_t bi = 0, ri = 0; ri < settingsWithheld_.size(); ++ri)
+    {
+        if (settingsWithheld_[ri].reason != ChainHost::WithholdReason::CrashBlacklisted) continue;
+        if (bi >= settingsReenableBtns_.size()) break;
+        const int rowIdx = (int) ri;
+        settingsReenableBtns_[bi]->onClick = [this, rowIdx]() { reenableWithheldRow(rowIdx); };
+        ++bi;
+    }
+    for (size_t bi = (size_t) settingsWithheldCrash_; bi < settingsReenableBtns_.size(); ++bi)
+        settingsReenableBtns_[bi]->setVisible(false);
+
+    EchoJay_NSLog(("EJScan: settings withheld section, " + juce::String(settingsWithheld_.size())
+                   + " row(s): " + juce::String(settingsWithheldCrash_) + " crash-blacklisted, "
+                   + juce::String(settingsWithheldArch_) + " architecture"
+                   + (chainFormatFilter_.isNotEmpty() ? " [" + chainFormatFilter_ + "]"
+                                                      : juce::String())).toRawUTF8());
+}
+
+void EchoJayEditor::reenableWithheldRow(int idx)
+{
+    if (idx < 0 || idx >= (int) settingsWithheld_.size()) return;
+    auto& row = settingsWithheld_[(size_t) idx];
+    if (row.reason != ChainHost::WithholdReason::CrashBlacklisted || row.reenabled) return;
+
+    // Delete THIS row's line from chain_blacklist.txt and nothing else: the
+    // file is read fresh here and written back minus one line, never from a
+    // remembered copy, so a line another instance added since is kept. No
+    // ChainHost state is touched; the next scan re-reads the file (which
+    // is what re-enables the plugin, without a host restart), and the
+    // in-memory gate keeps refusing the load until then. Comment lines and
+    // bare pre-format paths pass through unchanged.
+    auto bl = chainBlacklistFile();
+    int removed = 0;
+    if (bl.existsAsFile())
+    {
+        juce::StringArray kept;
+        for (auto& raw : juce::StringArray::fromLines(bl.loadFileAsString()))
+        {
+            auto line = raw.trim();
+            if (line.isNotEmpty() && !line.startsWithChar('#'))
+            {
+                auto path = line.upToFirstOccurrenceOf("\t", false, false).trim();
+                if (path == row.path) { ++removed; continue; }
+            }
+            kept.add(raw);
+        }
+        // Drop the trailing empty element fromLines leaves behind a final
+        // newline, then end the file with one newline as the writer does.
+        while (!kept.isEmpty() && kept[kept.size() - 1].trim().isEmpty()) kept.remove(kept.size() - 1);
+        bl.replaceWithText(kept.joinIntoString("\n") + "\n");
+    }
+    row.reenabled = true;
+    EchoJay_NSLog(("EJScan: re-enable \"" + row.name + "\" -> removed " + juce::String(removed)
+                   + " line(s) from " + bl.getFullPathName()
+                   + "; takes effect on the next scan").toRawUTF8());
+    resized();
+    settingsContent_.repaint();
+}
+
 void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> area)
 {
     int x = area.getX(), w = area.getWidth();
@@ -12309,6 +12508,79 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
     g.setColour(C::text3);
     g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
     g.drawText("YOUR PLUGINS", x, y, w, 14, juce::Justification::centredLeft);
+    y += labelGap + fh + 8;
+
+    // === WITHHELD FROM THE CHAIN LIST: text only; the toggle and the
+    // Re-enable buttons are components resized() placed from the SAME
+    // geometry (withheldSectionLayout). ===
+    {
+        const auto wl = withheldSectionLayout(x, y, w);
+        g.setColour(C::text3);
+        g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+        g.drawText("WITHHELD FROM THE CHAIN LIST", x, wl.labelY, w, 14,
+                   juce::Justification::centredLeft);
+        // Summary line
+        {
+            juce::String sum;
+            if (settingsWithheld_.empty())
+                sum = "Nothing is withheld from the chain list.";
+            else
+            {
+                juce::StringArray parts;
+                if (settingsWithheldCrash_ > 0)
+                    parts.add(juce::String(settingsWithheldCrash_) + " disabled after a crash");
+                if (settingsWithheldArch_ > 0)
+                    parts.add(juce::String(settingsWithheldArch_) + " cannot run in this host ("
+                              + (kEjProcessIsArm ? "Intel only" : "Apple Silicon only") + ")");
+                sum = juce::String(settingsWithheld_.size()) + " withheld: "
+                    + parts.joinIntoString(", ");
+            }
+            g.setColour(C::text2);
+            g.setFont(juce::Font(juce::FontOptions(11.5f)));
+            g.drawText(sum, wl.summary, juce::Justification::centredLeft, true);
+        }
+        if (!wl.note.isEmpty())
+        {
+            // Said ONCE, here, where the user can act on it.
+            const juce::String note = kEjProcessIsArm
+                ? "The Intel-only rows are VST3 builds with no Apple Silicon slice. This host is "
+                  "running natively on Apple Silicon, which costs most of a legacy VST3 library; "
+                  "to use them, run the host under Rosetta. Nothing here changes your ticks."
+                : "The Apple Silicon-only rows are VST3 builds with no Intel slice, and this host "
+                  "is running as an Intel process (Rosetta); to use them, run the host natively. "
+                  "Nothing here changes your ticks.";
+            g.setColour(C::text3);
+            g.setFont(juce::Font(juce::FontOptions(11.0f)));
+            g.drawFittedText(note, wl.note, juce::Justification::topLeft, 3, 1.0f);
+        }
+        if (settingsWithheldExpanded_)
+        {
+            int ry = wl.rowsY;
+            g.setFont(juce::Font(juce::FontOptions(11.5f)));
+            for (const auto& row : settingsWithheld_)
+            {
+                const bool crash = row.reason == ChainHost::WithholdReason::CrashBlacklisted;
+                juce::String why;
+                if (crash)
+                    why = row.reenabled ? juce::String("re-enabled, back after the next Scan Now")
+                        : "disabled after a crash" + (row.date.isNotEmpty() ? ", " + row.date
+                                                                             : juce::String());
+                else
+                    why = juce::String("cannot run in this host, ")
+                        + (kEjProcessIsArm ? "Intel only" : "Apple Silicon only");
+                // Greyed row: the name in muted text, the reason dimmer still
+                const int rowW = crash ? w - 100 : w;
+                juce::Rectangle<int> rr(x, ry, rowW, kWithheldRowH);
+                g.setColour(row.reenabled ? C::text2 : C::text3);
+                const int nameW = juce::jmin(rowW / 2,
+                    juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), row.name) + 4);
+                g.drawText(row.name, rr.removeFromLeft(nameW), juce::Justification::centredLeft, true);
+                g.setColour(C::text3.withAlpha(0.75f));
+                g.drawText(why, rr.reduced(8, 0), juce::Justification::centredLeft, true);
+                ry += kWithheldRowH;
+            }
+        }
+    }
 
     // === Right column cards — meters-panel styling (dark cards, tiny-caps
     // headers, cyan accents). Rects come from resized(). ===
@@ -17550,6 +17822,36 @@ void EchoJayEditor::resized()
             settingsScanBtn.setBounds(sx, sy, sw - viewAllW - rowGap, fh);
             viewAllPluginsBtn.setBounds(sx + sw - viewAllW, sy, viewAllW, fh);
             sy += fh + 8;
+
+            // WITHHELD FROM THE CHAIN LIST: geometry from the ONE helper the
+            // paint pass also uses; buttons placed here, text painted there.
+            {
+                const auto wl = withheldSectionLayout(sx, sy, sw);
+                settingsWithheldToggleBtn_.setBounds(wl.toggle);
+                settingsWithheldToggleBtn_.setVisible(!wl.toggle.isEmpty());
+                settingsWithheldToggleBtn_.setButtonText(
+                    settingsWithheldExpanded_ ? "Hide"
+                                              : "Show " + juce::String(settingsWithheld_.size()));
+                int ry = wl.rowsY;
+                size_t bi = 0;
+                for (size_t ri = 0; ri < settingsWithheld_.size(); ++ri)
+                {
+                    const auto& row = settingsWithheld_[ri];
+                    if (row.reason == ChainHost::WithholdReason::CrashBlacklisted
+                        && bi < settingsReenableBtns_.size())
+                    {
+                        auto& rb = *settingsReenableBtns_[bi++];
+                        rb.setBounds(sx + sw - 92, ry + 2, 92, kWithheldRowH - 4);
+                        rb.setVisible(settingsWithheldExpanded_);
+                        rb.setEnabled(!row.reenabled);
+                        rb.setButtonText(row.reenabled ? "Re-enabled" : "Re-enable");
+                    }
+                    ry += kWithheldRowH;
+                }
+                for (; bi < settingsReenableBtns_.size(); ++bi)
+                    settingsReenableBtns_[bi]->setVisible(false);
+                sy = wl.endY;
+            }
 
             // ONE stack layout drives both the card height and the button slot
             auto info = api.getUserInfo();
