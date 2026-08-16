@@ -4886,6 +4886,13 @@ juce::var ChainHost::buildChainSlotsVar() const
         o->setProperty("version",      s.desc.version);
         o->setProperty("uid",          juce::String(s.desc.uniqueId));
         o->setProperty("bypassed",     s.bypassed);
+        // Per-slot wet/dry (16 Aug 2026): a shared chain used to lose the
+        // knob and reopen fully wet, the opposite of this product's
+        // subtle-by-default. Written always; a reader treats absent as 1.0,
+        // so chains saved before this line behave exactly as they did.
+        // NOTE the server's slot normaliser (lib/dash/chains.js) whitelists
+        // keys and drops this one until it learns it.
+        o->setProperty("wet",          (double) s.wet);
         // The AI's prose dial-in guidance is the closest thing this rack has
         // to a role, and it is display text rather than a short label, so it
         // is NOT sent as one. An absent role is honest; an invented one would
@@ -4952,11 +4959,12 @@ void ChainHost::restoreSavedChain(const juce::var& slotsArr, const juce::var& st
         RestoreItem item;
         item.desc     = desc;
         item.bypassed = (bool)o->getProperty("bypassed");
-        // The shared chain format carries no wet/dry, so a saved chain
-        // restores fully wet. Session restore keeps wet because its own XML
-        // has it. Stated here so the difference is a known gap and not a
-        // mystery the next reader has to rediscover.
-        item.wet         = 1.0f;
+        // Per-slot wet/dry: carried since 16 Aug 2026 (a chain saved
+        // before then, or one the server normalised without it, has no
+        // "wet" and restores fully wet, exactly as before).
+        item.wet         = o->hasProperty("wet")
+                             ? juce::jlimit(0.0f, 1.0f, (float)(double) o->getProperty("wet"))
+                             : 1.0f;
         item.expectState = (statesObj != nullptr);
         if (statesObj != nullptr)
         {

@@ -22943,6 +22943,10 @@ void EchoJayEditor::recallLoadChainToLink(const juce::String& linkUid,
                     eo->setProperty("name", pn);
                     if ((bool) so->getProperty("bypassed"))
                         eo->setProperty("bypassed", true);
+                    // Per-slot wet/dry travels with the recall (the Link's
+                    // command parser reads "wet" 0..1; absent = 1.0)
+                    if (so->hasProperty("wet"))
+                        eo->setProperty("wet", juce::jlimit(0.0, 1.0, (double) so->getProperty("wet")));
                     const int n = so->hasProperty("n") ? (int) so->getProperty("n") : (i + 1);
                     if (statesObj != nullptr)
                     {
