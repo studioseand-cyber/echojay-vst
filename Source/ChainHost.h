@@ -993,12 +993,29 @@ private:
 
     // juce::AudioProcessorListener: the hosted plugins tell us when
     // something moved. Both can arrive on the audio thread during
-    // automation, so they touch nothing but two atomics: no container
-    // access, no allocation, no lock.
+    // automation, so they touch nothing but atomics: no container access,
+    // no allocation, no lock. A LATENCY change additionally schedules a
+    // graph rebuild (see LatencyRebuilder): the render sequence bakes each
+    // plugin's latency into the dry-leg delays at build, so a plugin that
+    // changes it at runtime (an oversampling / HQ switch) left every
+    // partial-wet blend comb-filtering and the host's reported latency
+    // stale until the next structural change (measured 16 Aug 2026,
+    // HANDOVER/measurements/slot_wet_null_test: residual -3 dB, comb to
+    // -12 dB, cured by a rebuild). Only latencyChanged schedules it; a
+    // parameter move never does.
     void audioProcessorParameterChanged (juce::AudioProcessor*, int, float) override
         { noteHostedChange(); }
-    void audioProcessorChanged (juce::AudioProcessor*, const ChangeDetails&) override
-        { noteHostedChange(); }
+    void audioProcessorChanged (juce::AudioProcessor*, const ChangeDetails& d) override
+        { noteHostedChange(); if (d.latencyChanged) onHostedLatencyChanged(); }
+    // Message-thread, coalesced: triggerAsyncUpdate from any thread, an 80 ms
+    // debounce so a plugin that fires twice for one switch rebuilds once, and
+    // a compare against the latencies the graph was last built with so a
+    // no-op notification rebuilds nothing.
+    struct LatencyRebuilder;
+    std::unique_ptr<LatencyRebuilder> latencyRebuilder_;
+    std::vector<int>                  builtLatencies_;   // per slot at the last rebuildGraph (message thread)
+    void onHostedLatencyChanged() noexcept;   // any thread
+    void rebuildForLatencyIfChanged();        // message thread
 
     // Internal helpers
     void rebuildGraph();

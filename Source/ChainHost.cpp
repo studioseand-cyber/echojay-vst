@@ -554,11 +554,27 @@ struct ChainHost::StateCacheTimer : juce::Timer
     ChainHost& owner;
 };
 
+// Runtime latency rebuild (16 Aug 2026). triggerAsyncUpdate is safe from
+// the audio thread; handleAsyncUpdate lands on the message thread and only
+// (re)starts the debounce, so a burst of latencyChanged notifications
+// collapses into one timer callback, which is the one place the graph is
+// touched.
+struct ChainHost::LatencyRebuilder : juce::AsyncUpdater, juce::Timer
+{
+    explicit LatencyRebuilder(ChainHost& o) : owner(o) {}
+    ~LatencyRebuilder() override { cancelPendingUpdate(); stopTimer(); }
+    void handleAsyncUpdate() override { startTimer(kDebounceMs); }
+    void timerCallback() override { stopTimer(); owner.rebuildForLatencyIfChanged(); }
+    static constexpr int kDebounceMs = 80;
+    ChainHost& owner;
+};
+
 ChainHost::ChainHost()
 {
     juce::addDefaultFormatsToManager(formatManager_);
 
     graph_ = std::make_unique<juce::AudioProcessorGraph>();
+    latencyRebuilder_ = std::make_unique<LatencyRebuilder>(*this);
 
     using IOProc = juce::AudioProcessorGraph::AudioGraphIOProcessor;
     inputNode_  = graph_->addNode(std::make_unique<IOProc>(IOProc::audioInputNode));
@@ -603,6 +619,7 @@ ChainHost::~ChainHost()
     // design, so a listener left attached would be a call into freed memory
     // the first time a stray plugin timer fired.
     if (stateCacheTimer_) stateCacheTimer_->stopTimer();
+    if (latencyRebuilder_) { latencyRebuilder_->cancelPendingUpdate(); latencyRebuilder_->stopTimer(); }
     stateCacheEnabled_ = false;
     for (int i = 0; i < (int)slots_.size(); ++i)
         detachHostedListener(i);
@@ -3254,6 +3271,13 @@ void ChainHost::rebuildGraph()
 
     hasActiveSlots_.store(!active.empty());
 
+    // The latencies this build bakes into the dry-leg delays; the runtime
+    // latency watch compares against these (rebuildForLatencyIfChanged).
+    builtLatencies_.assign(slots_.size(), 0);
+    for (size_t si = 0; si < slots_.size(); ++si)
+        if (slots_[si].node && slots_[si].node->getProcessor())
+            builtLatencies_[si] = slots_[si].node->getProcessor()->getLatencySamples();
+
     if (active.empty())
     {
         // Pure passthrough — also skip graph in process() for safety
@@ -4521,6 +4545,46 @@ void ChainHost::setStateCacheEnabled(bool shouldBeEnabled)
         stateCacheTimer_ = std::make_unique<StateCacheTimer>(*this);
     stateCacheTimer_->startTimer(kStateTickMs);
     noteHostedChange();   // first capture on the next settled tick
+}
+
+void ChainHost::onHostedLatencyChanged() noexcept
+{
+    // Any thread (a plugin may report a latency change from its own UI or
+    // from the audio thread): nothing but a thread-safe trigger.
+    if (latencyRebuilder_) latencyRebuilder_->triggerAsyncUpdate();
+}
+
+void ChainHost::rebuildForLatencyIfChanged()
+{
+    // Message thread, after the debounce. Rebuild ONLY if some slot's
+    // reported latency differs from what the graph was built with: a
+    // notification that changes nothing costs nothing, and a burst for one
+    // switch already collapsed into this one call.
+    bool changed = false;
+    juce::String detail;
+    for (size_t si = 0; si < slots_.size(); ++si)
+    {
+        auto* p = slots_[si].node ? slots_[si].node->getProcessor() : nullptr;
+        if (p == nullptr) continue;
+        const int now  = p->getLatencySamples();
+        const int was  = si < builtLatencies_.size() ? builtLatencies_[si] : -1;
+        if (now != was)
+        {
+            changed = true;
+            detail << (detail.isEmpty() ? "" : ", ") << slots_[si].desc.name << " " << was << "->" << now;
+        }
+    }
+    if (!changed) return;
+    EchoJay_NSLog(("EJChain: hosted latency changed at runtime (" + detail
+                   + "); rebuilding the graph so the wet/dry dry legs and the host "
+                     "latency follow it").toRawUTF8());
+    // Same rebuild every structural op takes: reconnects, the render
+    // sequence re-bakes the delays from the new latencies, onChainChanged
+    // re-mirrors getTotalLatencySamples into the host. Audible cost at the
+    // instant: the new dry-leg delay buffers start empty, so a partially
+    // wet slot loses its dry component for the plugin's latency (about
+    // 20 ms at 1000 samples), once; a fully wet slot hears nothing.
+    rebuildGraph();
 }
 
 void ChainHost::noteHostedChange() noexcept
