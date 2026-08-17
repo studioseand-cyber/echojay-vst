@@ -1785,15 +1785,28 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     };
     addChildComponent(upgradeBtn);
 
-    // CHAIN tab — determine which plugin format is loadable in this host.
-    // Hosting a VST3 from inside an AU sandbox (Logic) is blocked by the OS; hosting
-    // an AU from inside a VST3 host is equally unsupported. Filter to only the format
-    // that matches our own wrapper so users never see dead entries.
+    // CHAIN tab: the chain feed is filtered to the plugin format that matches
+    // our own wrapper (AU inside an AU host, VST3 inside a VST3 host).
+    //
+    // This comment used to say the OS blocks hosting a VST3 from inside an AU
+    // sandbox. That was never measured, and on 17 Aug 2026 it was measured
+    // false: the dev-mode "/vst3test" command instantiated FabFilter Pro-Q 3
+    // (VST3) inside Logic's AUHostingServiceXPC_arrow process seven times out
+    // of seven, 150 to 441 ms each, 519 parameters, 4 in / 2 out, latency 0,
+    // then released it. So VST3 hosting inside the AU host process is not
+    // blocked at instantiate.
+    //
+    // How far that evidence goes: a headless instantiate and release only.
+    // Untested are the paths that would actually hurt: an editor open for an
+    // hour, audio running through the instance, and session state saved and
+    // restored across a host relaunch. Until those are measured the filter
+    // stays as it is; this is a policy kept on purpose, not a limit of the OS.
+    // Hosting an AU from inside a VST3 host is likewise unmeasured.
     switch (processorRef.wrapperType)
     {
         case juce::AudioProcessor::wrapperType_AudioUnit: chainFormatFilter_ = "AudioUnit"; break;
         case juce::AudioProcessor::wrapperType_VST3:      chainFormatFilter_ = "VST3";      break;
-        default: break; // Standalone / unknown — show all
+        default: break; // Standalone / unknown: show all
     }
     chainListModel = std::make_unique<ChainPluginListModel>();
     chainListModel->onRowSelected = [this](int) { /* selection handled at load time */ };
@@ -23835,9 +23848,11 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
         handleDevEqTest(msg.fromFirstOccurrenceOf("/eqtest", false, true).trim());
         return;
     }
-    // DEV ONLY (17 Aug 2026): measure the sandbox claim behind the AU-host
+    // DEV ONLY (17 Aug 2026): measures the sandbox claim behind the AU-host
     // format filter. Instantiates a VST3 inside THIS process regardless of
-    // the filter and reports what happened; changes no policy.
+    // the filter and reports what happened; changes no policy. Result and
+    // its limits are recorded at the chainFormatFilter_ switch in the ctor
+    // (Pro-Q 3 loaded seven of seven inside Logic's AU host process).
     if (msg.startsWithIgnoreCase("/vst3test") && ChainHost::devModeActive())
     {
         handleDevVst3Test(msg.fromFirstOccurrenceOf("/vst3test", false, true).trim());
