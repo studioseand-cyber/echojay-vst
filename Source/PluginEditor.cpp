@@ -12347,31 +12347,158 @@ EchoJayEditor::WithheldLayout EchoJayEditor::withheldSectionLayout(int sx, int s
     const int labelGap = 18;
     wl.labelY = sy;
     int y = sy + labelGap;
-    const bool any = !settingsWithheld_.empty();
-    const int toggleW = any ? 92 : 0;
-    wl.summary = { sx, y, sw - (any ? toggleW + 8 : 0), 24 };
-    if (any) wl.toggle = { sx + sw - toggleW, y, toggleW, 24 };
-    y += 24 + 6;
-    if (any && settingsWithheldExpanded_)
+    const bool any = !settingsWithheldGroups_.empty();
+    const int toggleW = any ? 100 : 0;
+    wl.headline = { sx, y, sw - (any ? toggleW + 8 : 0), 22 };
+    if (any) wl.toggle = { sx + sw - toggleW, y, toggleW, 22 };
+    y += 22;
+    wl.denominator = { sx, y, sw, 16 };
+    y += 16 + 4;
+    for (const auto& gr : settingsWithheldGroups_)
     {
-        if (settingsWithheldArch_ > 0)
-        {
-            wl.note = { sx, y, sw, 44 };
-            y += 44 + 4;
-        }
-        wl.rowsY = y;
-        y += kWithheldRowH * (int) settingsWithheld_.size();
+        WithheldLayout::Group g;
+        g.titleY = y; y += kWithheldGroupH;
+        if (gr.remedy.isNotEmpty())      { g.remedyY = y;  y += 16; }
+        if (gr.vendorsLine.isNotEmpty()) { g.vendorsY = y; y += 16; }
+        g.itemsY = y;
+        if (settingsWithheldExpanded_) y += kWithheldRowH * (int) gr.items.size();
+        y += 4;
+        wl.groups.push_back(g);
     }
-    else
-        wl.rowsY = y;
     wl.endY = y + 8;
     return wl;
 }
 
+// A name folded for "is this bundle the same plugin": lowercase, alphanumerics
+// only. Classification aid ONLY (which panel group a no-entry name falls in);
+// the availability verdict itself comes from ChainHost::resolveByName.
+juce::String EchoJayEditor::foldPluginName(const juce::String& s)
+{
+    juce::String out;
+    for (auto c : s.toLowerCase())
+        if (juce::CharacterFunctions::isLetterOrDigit(c)) out << juce::String::charToString(c);
+    return out;
+}
+
+std::vector<EchoJayEditor::WithheldGroup>
+EchoJayEditor::classifyWithheld(const std::vector<ScannedPlugin>& plugins, const ChainHost& ch,
+                                const juce::String& hostFmt,
+                                const std::map<juce::String, WithheldItem>& crashByFold,
+                                const std::set<juce::String>& nestedVst3,
+                                int* enabledNamesOut, int* cannotOut)
+{
+    // Enabled Settings rows, one verdict per plugin. Rows collapse when they
+    // fold to the same key after a leading vendor prefix equal to the row's
+    // own manufacturer is dropped ("FabFilter Pro-Q 3" VST3 row and "Pro-Q 3"
+    // AU row are one plugin; "EchoBoyJr" and "EchoBoy Jr" too). Every name
+    // variant is kept and every one is asked, so a plugin is available when
+    // ANY of its rows resolves in this host, whichever spelling the AU
+    // registry or the VST3 bundle used.
+    struct NameRow { juce::String name, vendor; juce::StringArray names, formats; };
+    std::map<juce::String, NameRow> byName;   // fold -> row
+    auto keyOf = [](const ScannedPlugin& p)
+    {
+        juce::String n = p.name.trim();
+        const juce::String vend = p.manufacturer.trim();
+        if (vend.isNotEmpty() && n.length() > vend.length() + 1 && n.startsWithIgnoreCase(vend + " "))
+            n = n.substring(vend.length() + 1).trim();
+        return foldPluginName(n);
+    };
+    for (const auto& p : plugins)
+    {
+        if (!p.enabled) continue;
+        auto& r = byName[keyOf(p)];
+        if (r.name.isEmpty()) { r.name = p.name; r.vendor = p.manufacturer; }
+        r.names.addIfNotAlreadyThere(p.name);
+        r.formats.addIfNotAlreadyThere(p.format);
+    }
+    if (enabledNamesOut) *enabledNamesOut = (int) byName.size();
+
+    WithheldGroup gCrash, gIntel, gVst2, gNot, gUnr, gFmt;
+    gCrash.kind = WithheldGroup::Crash;      gCrash.title = "disabled after a crash";
+    gIntel.kind = WithheldGroup::IntelOnly;  gIntel.title = kEjProcessIsArm ? "Intel only, no Apple Silicon build installed"
+                                                                            : "Apple Silicon only, no Intel build installed";
+    gIntel.remedy = kEjProcessIsArm ? "Update these to Apple Silicon builds and they will work. Until then only a host running under Rosetta can load them."
+                                    : "These need this host to run natively on Apple Silicon.";
+    gVst2.kind  = WithheldGroup::Vst2;       gVst2.title  = "VST2, which EchoJay cannot host in any host";
+    gNot.kind   = WithheldGroup::NotScanned; gNot.title   = "in a vendor subfolder the chain scan does not enter yet";
+    gUnr.kind   = WithheldGroup::Unreadable; gUnr.title   = "not matched to anything the chain list can load (a name mismatch, or a bundle that could not be read)";
+    gFmt.kind   = WithheldGroup::FormatOnly; gFmt.title   = hostFmt == "AudioUnit" ? "usable in a VST3 host such as Reaper, not in this AU host"
+                                                          : hostFmt == "VST3"      ? "usable in an AU host such as Logic, not in this VST3 host"
+                                                                                   : "usable in another host format only";
+    std::map<juce::String, int> intelVendors;
+    for (const auto& kv : byName)
+    {
+        const auto& r = kv.second;
+        // Ask the resolver for EVERY spelling; keep the strongest answer per
+        // format (found beats withheld beats miss; crash beats architecture)
+        bool foundAU = false, foundV = false;
+        ChainHost::WithholdReason wAU = ChainHost::WithholdReason::None, wV = ChainHost::WithholdReason::None;
+        auto stronger = [](ChainHost::WithholdReason a, ChainHost::WithholdReason b)
+        {
+            auto rank = [](ChainHost::WithholdReason w) { return w == ChainHost::WithholdReason::CrashBlacklisted ? 2 : w == ChainHost::WithholdReason::ArchitectureIncompatible ? 1 : 0; };
+            return rank(a) >= rank(b) ? a : b;
+        };
+        for (const auto& nm : r.names)
+        {
+            ChainHost::WithholdReason a = ChainHost::WithholdReason::None, v = ChainHost::WithholdReason::None;
+            if (ch.resolveByName(nm, "AudioUnit", nullptr, &a).name.isNotEmpty()) foundAU = true; else wAU = stronger(wAU, a);
+            if (ch.resolveByName(nm, "VST3",      nullptr, &v).name.isNotEmpty()) foundV  = true; else wV  = stronger(wV, v);
+        }
+        const bool foundHost  = hostFmt == "AudioUnit" ? foundAU : hostFmt == "VST3" ? foundV : (foundAU || foundV);
+        const bool foundOther = hostFmt == "AudioUnit" ? foundV  : hostFmt == "VST3" ? foundAU : false;
+        if (foundHost) continue;   // AVAILABLE: a route reaches the feed here
+        WithheldItem it; it.name = r.name; it.vendor = r.vendor;
+        if (foundOther) { gFmt.items.push_back(it); continue; }
+        if (wAU == ChainHost::WithholdReason::CrashBlacklisted || wV == ChainHost::WithholdReason::CrashBlacklisted)
+        {
+            if (auto f = crashByFold.find(kv.first); f != crashByFold.end()) gCrash.items.push_back(f->second);
+            else gCrash.items.push_back(it);
+            continue;
+        }
+        if (wAU == ChainHost::WithholdReason::ArchitectureIncompatible || wV == ChainHost::WithholdReason::ArchitectureIncompatible)
+        {
+            gIntel.items.push_back(it);
+            ++intelVendors[r.vendor.isEmpty() ? juce::String("Unknown") : r.vendor];
+            continue;
+        }
+        bool onlyVst2 = true;
+        for (const auto& f : r.formats) if (f != "VST") onlyVst2 = false;
+        if (onlyVst2) { gVst2.items.push_back(it); continue; }
+        bool nested = nestedVst3.count(kv.first) > 0;
+        for (const auto& nm : r.names) if (nestedVst3.count(foldPluginName(nm))) nested = true;
+        if (nested) { gNot.items.push_back(it); continue; }
+        gUnr.items.push_back(it);
+    }
+    {
+        std::vector<std::pair<int, juce::String>> v;
+        for (auto& kv : intelVendors) v.push_back({ kv.second, kv.first });
+        std::sort(v.rbegin(), v.rend());
+        juce::StringArray parts;
+        for (size_t i = 0; i < v.size() && i < 8; ++i) parts.add(v[i].second + " " + juce::String(v[i].first));
+        if (v.size() > 8) parts.add("and " + juce::String((int) v.size() - 8) + " more");
+        gIntel.vendorsLine = parts.joinIntoString(", ");
+    }
+    auto sortItems = [](WithheldGroup& g) { std::sort(g.items.begin(), g.items.end(), [](const WithheldItem& a, const WithheldItem& b) { return a.name.compareIgnoreCase(b.name) < 0; }); };
+    std::vector<WithheldGroup> out;
+    int cannot = 0;
+    for (auto* g : { &gCrash, &gIntel, &gVst2, &gNot, &gUnr, &gFmt })
+    {
+        sortItems(*g);
+        if (g->items.empty()) continue;
+        if (g->kind != WithheldGroup::FormatOnly) cannot += (int) g->items.size();
+        out.push_back(*g);
+    }
+    if (cannotOut) *cannotOut = cannot;
+    return out;
+}
+
 void EchoJayEditor::rebuildSettingsWithheld()
 {
-    settingsWithheld_.clear();
-    settingsWithheldArch_ = settingsWithheldCrash_ = 0;
+    settingsWithheldGroups_.clear();
+    settingsWithheldEnabledNames_ = 0;
+    settingsWithheldCannot_ = 0;
+    auto& ch = processorRef.getChainHost();
 
     // Blacklist line stamps (path TAB reason TAB ISO date; bare paths are the
     // pre-format form and carry no date). Read for the date only; the
@@ -12397,80 +12524,77 @@ void EchoJayEditor::rebuildSettingsWithheld()
             dateByPath[path] = date;
         }
     }
-
-    auto& ch = processorRef.getChainHost();
-    auto ecFile = ChainHost::getEntriesCacheFile();
-    if (ecFile.existsAsFile())
-    {
-        if (auto doc = juce::XmlDocument::parse(ecFile);
-            doc != nullptr && doc->getTagName() == "CHAIN_ENTRIES")
-        {
+    // Crash-blacklisted rows come from the entries cache (any format: a
+    // crashed plugin is a crashed plugin whichever host is asking), because
+    // the Re-enable control needs the bundle path.
+    std::map<juce::String, WithheldItem> crashByFold;
+    if (auto ecFile = ChainHost::getEntriesCacheFile(); ecFile.existsAsFile())
+        if (auto doc = juce::XmlDocument::parse(ecFile); doc != nullptr && doc->getTagName() == "CHAIN_ENTRIES")
             for (auto* c : doc->getChildIterator())
             {
                 juce::PluginDescription d;
                 if (!d.loadFromXml(*c)) continue;
-                // The per-host view, exactly as the feed sites apply it
-                if (chainFormatFilter_.isNotEmpty() && d.pluginFormatName != chainFormatFilter_)
-                    continue;
-                const auto why = ch.withholdReason(d);
-                if (!ChainHost::isWithheld(why)) continue;   // None and Unreadable are offered
-                WithheldRow row;
-                row.name   = d.name;
-                row.path   = d.fileOrIdentifier;
-                row.reason = why;
-                if (why == ChainHost::WithholdReason::CrashBlacklisted)
-                {
-                    ++settingsWithheldCrash_;
-                    if (auto it = dateByPath.find(row.path); it != dateByPath.end())
-                        row.date = it->second;
-                }
-                else
-                    ++settingsWithheldArch_;
-                settingsWithheld_.push_back(std::move(row));
+                if (ch.withholdReason(d) != ChainHost::WithholdReason::CrashBlacklisted) continue;
+                WithheldItem it; it.name = d.name; it.vendor = d.manufacturerName; it.path = d.fileOrIdentifier;
+                if (auto f = dateByPath.find(it.path); f != dateByPath.end()) it.date = f->second;
+                crashByFold[foldPluginName(d.name)] = it;
             }
-        }
-    }
-    // Crash rows first (they have a control), then by name
-    std::stable_sort(settingsWithheld_.begin(), settingsWithheld_.end(),
-        [](const WithheldRow& a, const WithheldRow& b)
-        {
-            const bool ca = a.reason == ChainHost::WithholdReason::CrashBlacklisted;
-            const bool cb = b.reason == ChainHost::WithholdReason::CrashBlacklisted;
-            if (ca != cb) return ca;
-            return a.name.compareIgnoreCase(b.name) < 0;
-        });
 
-    // One Re-enable button per crash row, in row order
-    while (settingsReenableBtns_.size() < (size_t) settingsWithheldCrash_)
+    // .vst3 bundles ONE level below the VST3 folders: the chain scan walks the
+    // folder non-recursively (ChainHost.cpp, findChildFiles(..., false)), so
+    // these never become entries. That is a scan defect (P2's), and a name
+    // that lives there is reported as "not scanned yet", never as unreadable.
+    std::set<juce::String> nestedVst3;
+    {
+        juce::Array<juce::File> roots { juce::File("/Library/Audio/Plug-Ins/VST3"),
+                                        juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+                                            .getChildFile("Library/Audio/Plug-Ins/VST3") };
+        for (auto& root : roots)
+            if (root.isDirectory())
+                for (auto& sub : root.findChildFiles(juce::File::findDirectories, false))
+                    if (!sub.hasFileExtension(".vst3"))
+                        for (auto& b : sub.findChildFiles(juce::File::findDirectories | juce::File::findFiles, false, "*.vst3"))
+                            nestedVst3.insert(foldPluginName(b.getFileNameWithoutExtension()));
+    }
+
+    settingsWithheldGroups_ = classifyWithheld(processorRef.getPluginScanner().getPlugins(), ch,
+                                               chainFormatFilter_, crashByFold, nestedVst3,
+                                               &settingsWithheldEnabledNames_, &settingsWithheldCannot_);
+
+    // One Re-enable button per crash item
+    int crashCount = 0;
+    for (const auto& g : settingsWithheldGroups_) if (g.kind == WithheldGroup::Crash) crashCount = (int) g.items.size();
+    while (settingsReenableBtns_.size() < (size_t) crashCount)
     {
         auto b = std::make_unique<juce::TextButton>("Re-enable");
         b->setVisible(false);
         settingsContent_.addChildComponent(*b);
         settingsReenableBtns_.push_back(std::move(b));
     }
-    for (size_t bi = 0, ri = 0; ri < settingsWithheld_.size(); ++ri)
-    {
-        if (settingsWithheld_[ri].reason != ChainHost::WithholdReason::CrashBlacklisted) continue;
-        if (bi >= settingsReenableBtns_.size()) break;
-        const int rowIdx = (int) ri;
-        settingsReenableBtns_[bi]->onClick = [this, rowIdx]() { reenableWithheldRow(rowIdx); };
-        ++bi;
-    }
-    for (size_t bi = (size_t) settingsWithheldCrash_; bi < settingsReenableBtns_.size(); ++bi)
+    for (size_t gi = 0; gi < settingsWithheldGroups_.size(); ++gi)
+        if (settingsWithheldGroups_[gi].kind == WithheldGroup::Crash)
+            for (size_t ii = 0; ii < settingsWithheldGroups_[gi].items.size() && ii < settingsReenableBtns_.size(); ++ii)
+            {
+                const int G = (int) gi, I = (int) ii;
+                settingsReenableBtns_[ii]->onClick = [this, G, I]() { reenableWithheldItem(G, I); };
+            }
+    for (size_t bi = (size_t) crashCount; bi < settingsReenableBtns_.size(); ++bi)
         settingsReenableBtns_[bi]->setVisible(false);
 
-    EchoJay_NSLog(("EJScan: settings withheld section, " + juce::String(settingsWithheld_.size())
-                   + " row(s): " + juce::String(settingsWithheldCrash_) + " crash-blacklisted, "
-                   + juce::String(settingsWithheldArch_) + " architecture"
-                   + (chainFormatFilter_.isNotEmpty() ? " [" + chainFormatFilter_ + "]"
-                                                      : juce::String())).toRawUTF8());
+    juce::String logLine = "EJScan: settings withheld section [" + (chainFormatFilter_.isEmpty() ? juce::String("all") : chainFormatFilter_)
+                         + "]: " + juce::String(settingsWithheldCannot_) + " of " + juce::String(settingsWithheldEnabledNames_)
+                         + " enabled names cannot be used here:";
+    for (const auto& g : settingsWithheldGroups_) logLine << " " << (int) g.items.size() << " " << g.title << ";";
+    EchoJay_NSLog(logLine.toRawUTF8());
 }
 
-void EchoJayEditor::reenableWithheldRow(int idx)
+void EchoJayEditor::reenableWithheldItem(int groupIdx, int itemIdx)
 {
-    if (idx < 0 || idx >= (int) settingsWithheld_.size()) return;
-    auto& row = settingsWithheld_[(size_t) idx];
-    if (row.reason != ChainHost::WithholdReason::CrashBlacklisted || row.reenabled) return;
+    if (groupIdx < 0 || groupIdx >= (int) settingsWithheldGroups_.size()) return;
+    auto& g = settingsWithheldGroups_[(size_t) groupIdx];
+    if (g.kind != WithheldGroup::Crash || itemIdx < 0 || itemIdx >= (int) g.items.size()) return;
+    auto& row = g.items[(size_t) itemIdx];
+    if (row.reenabled || row.path.isEmpty()) return;
 
     // Delete THIS row's line from chain_blacklist.txt and nothing else: the
     // file is read fresh here and written back minus one line, never from a
@@ -12494,8 +12618,6 @@ void EchoJayEditor::reenableWithheldRow(int idx)
             }
             kept.add(raw);
         }
-        // Drop the trailing empty element fromLines leaves behind a final
-        // newline, then end the file with one newline as the writer does.
         while (!kept.isEmpty() && kept[kept.size() - 1].trim().isEmpty()) kept.remove(kept.size() - 1);
         bl.replaceWithText(kept.joinIntoString("\n") + "\n");
     }
@@ -12589,67 +12711,63 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
         const auto wl = withheldSectionLayout(x, y, w);
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-        g.drawText("WITHHELD FROM THE CHAIN LIST", x, wl.labelY, w, 14,
-                   juce::Justification::centredLeft);
-        // Summary line
+        g.drawText("WITHHELD FROM THE CHAIN LIST", x, wl.labelY, w, 14, juce::Justification::centredLeft);
+        // Headline: the count WITH its denominator, or the null only when
+        // every group is empty
         {
-            juce::String sum;
-            if (settingsWithheld_.empty())
-                sum = "Nothing is withheld from the chain list.";
+            juce::String head;
+            if (settingsWithheldGroups_.empty())
+                head = "Nothing is withheld from the chain list: every plugin you have ticked can be used here.";
+            else if (settingsWithheldCannot_ > 0)
+                head = juce::String(settingsWithheldCannot_) + " of your " + juce::String(settingsWithheldEnabledNames_)
+                     + " enabled plugins cannot be used in this host";
             else
-            {
-                juce::StringArray parts;
-                if (settingsWithheldCrash_ > 0)
-                    parts.add(juce::String(settingsWithheldCrash_) + " disabled after a crash");
-                if (settingsWithheldArch_ > 0)
-                    parts.add(juce::String(settingsWithheldArch_) + " cannot run in this host ("
-                              + (kEjProcessIsArm ? "Intel only" : "Apple Silicon only") + ")");
-                sum = juce::String(settingsWithheld_.size()) + " withheld: "
-                    + parts.joinIntoString(", ");
-            }
-            g.setColour(C::text2);
-            g.setFont(juce::Font(juce::FontOptions(11.5f)));
-            g.drawText(sum, wl.summary, juce::Justification::centredLeft, true);
+                head = "Every plugin you have ticked can be used here; some are usable only in another host format";
+            g.setColour(settingsWithheldGroups_.empty() ? C::text2 : C::text);
+            g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+            g.drawText(head, wl.headline, juce::Justification::centredLeft, true);
         }
-        if (!wl.note.isEmpty())
         {
-            // Said ONCE, here, where the user can act on it.
-            const juce::String note = kEjProcessIsArm
-                ? "The Intel-only rows are VST3 builds with no Apple Silicon slice. This host is "
-                  "running natively on Apple Silicon, which costs most of a legacy VST3 library; "
-                  "to use them, run the host under Rosetta. Nothing here changes your ticks."
-                : "The Apple Silicon-only rows are VST3 builds with no Intel slice, and this host "
-                  "is running as an Intel process (Rosetta); to use them, run the host natively. "
-                  "Nothing here changes your ticks.";
+            const juce::String den = "Counted by plugin name across the " + juce::String(settingsWithheldEnabledNames_)
+                                   + " plugins ticked above, each asked whether any of its builds can load in this "
+                                   + (chainFormatFilter_ == "AudioUnit" ? juce::String("AU") : chainFormatFilter_ == "VST3" ? juce::String("VST3") : juce::String(""))
+                                   + " host. Your ticks are not changed here.";
             g.setColour(C::text3);
-            g.setFont(juce::Font(juce::FontOptions(11.0f)));
-            g.drawFittedText(note, wl.note, juce::Justification::topLeft, 3, 1.0f);
+            g.setFont(juce::Font(juce::FontOptions(10.5f)));
+            g.drawText(den, wl.denominator, juce::Justification::centredLeft, true);
         }
-        if (settingsWithheldExpanded_)
+        for (size_t gi = 0; gi < settingsWithheldGroups_.size() && gi < wl.groups.size(); ++gi)
         {
-            int ry = wl.rowsY;
-            g.setFont(juce::Font(juce::FontOptions(11.5f)));
-            for (const auto& row : settingsWithheld_)
+            const auto& gr = settingsWithheldGroups_[gi];
+            const auto& gl = wl.groups[gi];
+            const bool fmtOnly = gr.kind == WithheldGroup::FormatOnly;
+            // "  165  Intel only, ..."
+            g.setColour(fmtOnly ? C::text2 : C::text);
+            g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+            g.drawText(juce::String((int) gr.items.size()), x, gl.titleY, 40, kWithheldGroupH, juce::Justification::centredRight);
+            g.setFont(juce::Font(juce::FontOptions(12.0f)));
+            g.drawText(gr.title, x + 48, gl.titleY, w - 48, kWithheldGroupH, juce::Justification::centredLeft, true);
+            g.setColour(C::text3);
+            g.setFont(juce::Font(juce::FontOptions(10.5f)));
+            if (gl.remedyY >= 0)  g.drawText(gr.remedy,      x + 48, gl.remedyY,  w - 48, 16, juce::Justification::centredLeft, true);
+            if (gl.vendorsY >= 0) g.drawText(gr.vendorsLine, x + 48, gl.vendorsY, w - 48, 16, juce::Justification::centredLeft, true);
+            if (settingsWithheldExpanded_)
             {
-                const bool crash = row.reason == ChainHost::WithholdReason::CrashBlacklisted;
-                juce::String why;
-                if (crash)
-                    why = row.reenabled ? juce::String("re-enabled, back after the next Scan Now")
-                        : "disabled after a crash" + (row.date.isNotEmpty() ? ", " + row.date
-                                                                             : juce::String());
-                else
-                    why = juce::String("cannot run in this host, ")
-                        + (kEjProcessIsArm ? "Intel only" : "Apple Silicon only");
-                // Greyed row: the name in muted text, the reason dimmer still
-                const int rowW = crash ? w - 100 : w;
-                juce::Rectangle<int> rr(x, ry, rowW, kWithheldRowH);
-                g.setColour(row.reenabled ? C::text2 : C::text3);
-                const int nameW = juce::jmin(rowW / 2,
-                    juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), row.name) + 4);
-                g.drawText(row.name, rr.removeFromLeft(nameW), juce::Justification::centredLeft, true);
-                g.setColour(C::text3.withAlpha(0.75f));
-                g.drawText(why, rr.reduced(8, 0), juce::Justification::centredLeft, true);
-                ry += kWithheldRowH;
+                int ry = gl.itemsY;
+                g.setFont(juce::Font(juce::FontOptions(11.0f)));
+                for (const auto& it : gr.items)
+                {
+                    const int rowW = gr.kind == WithheldGroup::Crash ? w - 100 : w;
+                    juce::Rectangle<int> rr(x + 48, ry, rowW - 48, kWithheldRowH);
+                    juce::String line = it.name;
+                    if (it.vendor.isNotEmpty() && !it.name.containsIgnoreCase(it.vendor)) line << "  " << it.vendor;
+                    if (gr.kind == WithheldGroup::Crash)
+                        line << (it.reenabled ? "  (re-enabled, back after the next Scan Now)"
+                                              : it.date.isNotEmpty() ? "  (" + it.date + ")" : juce::String());
+                    g.setColour(it.reenabled ? C::text2 : C::text3);
+                    g.drawText(line, rr, juce::Justification::centredLeft, true);
+                    ry += kWithheldRowH;
+                }
             }
         }
     }
@@ -17967,24 +18085,23 @@ void EchoJayEditor::resized()
                 const auto wl = withheldSectionLayout(sx, sy, sw);
                 settingsWithheldToggleBtn_.setBounds(wl.toggle);
                 settingsWithheldToggleBtn_.setVisible(!wl.toggle.isEmpty());
-                settingsWithheldToggleBtn_.setButtonText(
-                    settingsWithheldExpanded_ ? "Hide"
-                                              : "Show " + juce::String(settingsWithheld_.size()));
-                int ry = wl.rowsY;
+                settingsWithheldToggleBtn_.setButtonText(settingsWithheldExpanded_ ? "Hide names" : "Show names");
                 size_t bi = 0;
-                for (size_t ri = 0; ri < settingsWithheld_.size(); ++ri)
+                for (size_t gi = 0; gi < settingsWithheldGroups_.size() && gi < wl.groups.size(); ++gi)
                 {
-                    const auto& row = settingsWithheld_[ri];
-                    if (row.reason == ChainHost::WithholdReason::CrashBlacklisted
-                        && bi < settingsReenableBtns_.size())
+                    const auto& gr = settingsWithheldGroups_[gi];
+                    if (gr.kind != WithheldGroup::Crash) continue;
+                    int ry = wl.groups[gi].itemsY;
+                    for (const auto& it : gr.items)
                     {
+                        if (bi >= settingsReenableBtns_.size()) break;
                         auto& rb = *settingsReenableBtns_[bi++];
-                        rb.setBounds(sx + sw - 92, ry + 2, 92, kWithheldRowH - 4);
+                        rb.setBounds(sx + sw - 92, ry + 1, 92, kWithheldRowH - 2);
                         rb.setVisible(settingsWithheldExpanded_);
-                        rb.setEnabled(!row.reenabled);
-                        rb.setButtonText(row.reenabled ? "Re-enabled" : "Re-enable");
+                        rb.setEnabled(!it.reenabled && it.path.isNotEmpty());
+                        rb.setButtonText(it.reenabled ? "Re-enabled" : "Re-enable");
+                        ry += kWithheldRowH;
                     }
-                    ry += kWithheldRowH;
                 }
                 for (; bi < settingsReenableBtns_.size(); ++bi)
                     settingsReenableBtns_[bi]->setVisible(false);
@@ -23493,6 +23610,49 @@ juce::String EchoJayEditor::maybeRunKeyPrecondition(const juce::String& typedMsg
 // DEV ONLY. See the header. Applies a hand-written eq_bands JSON straight to
 // the built-in EQ slot so the exact-apply path can be proven from the app
 // before the backend contract that emits eq_bands is deployed.
+void EchoJayEditor::handleDevVst3Test(const juce::String& name)
+{
+    auto say = [this](const juce::String& t)
+    {
+        chainListPanel.statusText = t; chainListPanel.repaint();
+        EchoJay_NSLog(("EJVst3Test: " + t).toRawUTF8());
+    };
+    auto& ch = processorRef.getChainHost();
+    if (name.isEmpty()) { say("usage: /vst3test <plugin name> (a VST3 that resolves; the format filter is bypassed on purpose)"); return; }
+    juce::String log; ChainHost::WithholdReason why = ChainHost::WithholdReason::None;
+    auto desc = ch.resolveByName(name, "VST3", &log, &why);
+    if (desc.name.isEmpty())
+    {
+        say("vst3test: \"" + name + "\" did not resolve as a VST3 (" + log + ")"
+            + (ChainHost::isWithheld(why) ? " " + ChainHost::withholdReasonText(why) : juce::String()));
+        return;
+    }
+    say("vst3test: instantiating \"" + desc.name + "\" [" + desc.pluginFormatName + "] from " + desc.fileOrIdentifier
+        + " inside this " + (chainFormatFilter_.isEmpty() ? juce::String("standalone") : chainFormatFilter_) + " host process...");
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    ch.asyncCreatePlugin(desc, [safeThis, desc, t0](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
+    {
+        if (safeThis == nullptr) return;
+        const int ms = (int) (juce::Time::getMillisecondCounterHiRes() - t0);
+        juce::String t;
+        if (inst != nullptr)
+        {
+            t = "vst3test: LOADED \"" + desc.name + "\" in " + juce::String(ms) + " ms: "
+              + juce::String(inst->getParameters().size()) + " parameters, "
+              + juce::String(inst->getTotalNumInputChannels()) + " in / "
+              + juce::String(inst->getTotalNumOutputChannels()) + " out, latency "
+              + juce::String(inst->getLatencySamples()) + ". The instance is released now; nothing was racked.";
+            inst.reset();
+        }
+        else
+            t = "vst3test: FAILED \"" + desc.name + "\" after " + juce::String(ms) + " ms: "
+              + (err.isEmpty() ? juce::String("(no error text from the format)") : err);
+        safeThis->chainListPanel.statusText = t; safeThis->chainListPanel.repaint();
+        EchoJay_NSLog(("EJVst3Test: " + t).toRawUTF8());
+    });
+}
+
 void EchoJayEditor::handleDevEqTest(const juce::String& jsonArg)
 {
     auto& ch = processorRef.getChainHost();
@@ -23539,6 +23699,14 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     if (msg.startsWithIgnoreCase("/eqtest") && ChainHost::devModeActive())
     {
         handleDevEqTest(msg.fromFirstOccurrenceOf("/eqtest", false, true).trim());
+        return;
+    }
+    // DEV ONLY (17 Aug 2026): measure the sandbox claim behind the AU-host
+    // format filter. Instantiates a VST3 inside THIS process regardless of
+    // the filter and reports what happened; changes no policy.
+    if (msg.startsWithIgnoreCase("/vst3test") && ChainHost::devModeActive())
+    {
+        handleDevVst3Test(msg.fromFirstOccurrenceOf("/vst3test", false, true).trim());
         return;
     }
 
