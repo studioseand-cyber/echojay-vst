@@ -43,6 +43,7 @@ juce::File ChainHost::getEntriesCacheFile() { return appSupportDir().getChildFil
 juce::File ChainHost::getParamMapsCacheFile() { return appSupportDir().getChildFile("param_maps.json"); }
 juce::File ChainHost::getBlacklistFile()  { return appSupportDir().getChildFile("chain_blacklist.txt"); }
 juce::File ChainHost::getDeadmanFile()    { return appSupportDir().getChildFile("chain_load_deadman.txt"); }
+juce::File ChainHost::getStateOversizeFile() { return appSupportDir().getChildFile("chain_state_oversize.txt"); }
 
 // ---------------------------------------------------------------------------
 // Death markers (17 Aug 2026). A mark is pushed before a call into a hosted
@@ -965,6 +966,7 @@ void ChainHost::doRefresh()
     // replace the in-memory set because every add persists immediately
     // (addToBlacklist), so memory never holds an entry the file lacks.
     reloadBlacklistFromDisk();
+    reloadStateOversizeFromDisk();
 
     juce::Array<juce::PluginDescription> auEntries, vst3Entries;
 
@@ -2225,6 +2227,24 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
         addStateNote(desc.name + ": the VST3 build, hosted inside this AU host."
                      " Experimental; the chain list offers VST3s here only while"
                      " vst3_in_au_host is on");
+    // Second net for SettingsTooLarge (the fingerprint pass is the first):
+    // a plugin fingerprinted before this measurement existed is measured at
+    // its first rack. Default state, right after instantiate; the slot stays
+    // racked for this session and is withheld from the list from now on.
+    if (!isBuiltinDescription(desc))
+        if (auto* p = slots_.back().node ? slots_.back().node->getProcessor() : nullptr)
+        {
+            juce::MemoryBlock st;
+            try { p->getStateInformation(st); } catch (...) { st.reset(); }
+            if ((int) st.getSize() > kSessionStateMaxSlotBytes)
+            {
+                recordStateOversize(desc.fileOrIdentifier, (int) st.getSize(), desc.name, "first rack");
+                addStateNote(desc.name + ": its settings are " + juce::File::descriptionOfSizeInBytes((juce::int64) st.getSize())
+                             + " at their defaults, over the " + juce::File::descriptionOfSizeInBytes((juce::int64) kSessionStateMaxSlotBytes)
+                             + " a session can save per plugin, so a chain holding it cannot be saved with the project;"
+                               " it stays racked now and is withheld from the chain list from here on");
+            }
+        }
     bumpChainRevision();
     rebuildGraph();
     if (prepared_)
@@ -3373,6 +3393,17 @@ void ChainHost::fingerprintNext()
                 EchoJay_NSLog(("EJFpPass: (" + juce::String(n) + "/"
                                + juce::String(fpQueueTotal_) + ") " + desc.name
                                + " -> " + fp.substring(0, 12)).toRawUTF8());
+                // The instance is up anyway: measure its default-state size,
+                // so a plugin whose settings can never be saved is withheld
+                // before it reaches the picker (17 Aug 2026). Default state
+                // only: a sampler grows with the content the user loads, and
+                // that growth is reported by the capture note at rack time.
+                {
+                    juce::MemoryBlock st;
+                    try { inst->getStateInformation(st); } catch (...) { st.reset(); }
+                    if ((int) st.getSize() > kSessionStateMaxSlotBytes)
+                        recordStateOversize(desc.fileOrIdentifier, (int) st.getSize(), desc.name, "fingerprint pass");
+                }
                 inst.reset();   // release immediately; the instance was only for param_count
             }
             else
@@ -4216,6 +4247,9 @@ ChainHost::WithholdReason ChainHost::withholdReasonLocked(const juce::PluginDesc
     // slices say, and the reason the user can act on is the blacklist line.
     if (d.fileOrIdentifier.isNotEmpty() && blacklist_.contains(d.fileOrIdentifier))
         return WithholdReason::CrashBlacklisted;
+    // Settings too large to save: its own file, its own reason (any format)
+    if (d.fileOrIdentifier.isNotEmpty() && stateOversize_.find(d.fileOrIdentifier) != stateOversize_.end())
+        return WithholdReason::SettingsTooLarge;
     // VST3 rows only. AU rows are never judged and built-ins never reach
     // entries_ (compiled in, exempt by construction).
     if (d.pluginFormatName == "VST3")
@@ -4247,6 +4281,11 @@ juce::String ChainHost::withholdReasonText(WithholdReason r)
         case WithholdReason::ArchitectureIncompatible:
             return "is installed but its VST3 has no " + processArchName()
                  + " build, so it cannot run in this host";
+        case WithholdReason::SettingsTooLarge:
+            return "is withheld: its settings at their defaults are larger than the "
+                 + juce::File::descriptionOfSizeInBytes((juce::int64) kSessionStateMaxSlotBytes)
+                 + " a session can save per plugin, so a chain holding it could not be saved "
+                   "(chain_state_oversize.txt; deleting its line there offers it again)";
         case WithholdReason::Unreadable:
         case WithholdReason::None:
             break;
@@ -4742,6 +4781,68 @@ void ChainHost::loadFromDisk()
         }
     }
     reloadBlacklistFromDisk();
+    reloadStateOversizeFromDisk();
+}
+
+// ---------------------------------------------------------------------------
+// Settings too large to save: chain_state_oversize.txt is the authority
+// (path<TAB>bytes<TAB>ISO date). Read at construction and at every scan,
+// like the blacklist; deleting a line offers the plugin again on the next
+// scan. Written by recordStateOversize only.
+// ---------------------------------------------------------------------------
+void ChainHost::reloadStateOversizeFromDisk()
+{
+    juce::StringArray lines;
+    if (auto f = getStateOversizeFile(); f.existsAsFile())
+        lines = juce::StringArray::fromLines(f.loadFileAsString());
+    std::lock_guard<std::mutex> lock(pluginsMutex_);
+    stateOversize_.clear();
+    for (auto& raw : lines)
+    {
+        auto line = raw.trim();
+        if (line.isEmpty() || line.startsWithChar('#')) continue;
+        auto path  = line.upToFirstOccurrenceOf("\t", false, false).trim();
+        auto rest  = line.fromFirstOccurrenceOf("\t", false, false).trim();
+        const int bytes = rest.upToFirstOccurrenceOf("\t", false, false).trim().getIntValue();
+        if (path.isEmpty() || bytes <= 0) continue;
+        stateOversize_[path] = bytes;
+    }
+}
+
+int ChainHost::oversizeStateBytes(const juce::String& path) const
+{
+    std::lock_guard<std::mutex> lock(pluginsMutex_);
+    auto it = stateOversize_.find(path);
+    return it == stateOversize_.end() ? 0 : it->second;
+}
+
+void ChainHost::recordStateOversize(const juce::String& path, int bytes, const juce::String& name, const juce::String& where)
+{
+    if (path.isEmpty() || bytes <= kSessionStateMaxSlotBytes) return;
+    {
+        std::lock_guard<std::mutex> lock(pluginsMutex_);
+        auto it = stateOversize_.find(path);
+        if (it != stateOversize_.end() && it->second >= bytes) return;   // already recorded, no smaller
+        stateOversize_[path] = bytes;
+    }
+    auto f = getStateOversizeFile();
+    juce::String text = f.existsAsFile() ? f.loadFileAsString() : juce::String();
+    if (text.isEmpty())
+        text = "# EchoJay: plugins whose settings at their defaults are larger than the per-plugin\n"
+               "# session cap, so a chain holding them could not be saved with the project.\n"
+               "# They are withheld from the chain list. Deleting a line offers that plugin again\n"
+               "# on the next scan. Format: path<TAB>bytes<TAB>ISO date.\n";
+    // one line per path: drop an older line for the same path
+    juce::StringArray kept;
+    for (auto& raw : juce::StringArray::fromLines(text))
+        if (raw.trim().isEmpty() || raw.startsWithChar('#') || raw.upToFirstOccurrenceOf("\t", false, false).trim() != path)
+            if (raw.trim().isNotEmpty()) kept.add(raw);
+    kept.add(path + "\t" + juce::String(bytes) + "\t" + juce::Time::getCurrentTime().toISO8601(true));
+    f.getParentDirectory().createDirectory();
+    f.replaceWithText(kept.joinIntoString("\n") + "\n");
+    EchoJay_NSLog(("EJScan: \"" + name + "\" settings are " + juce::File::descriptionOfSizeInBytes((juce::int64) bytes)
+                   + " at their defaults, over the " + juce::File::descriptionOfSizeInBytes((juce::int64) kSessionStateMaxSlotBytes)
+                   + " per-plugin session cap (" + where + "); recorded in chain_state_oversize.txt, withheld from the chain list").toRawUTF8());
 }
 
 // ---------------------------------------------------------------------------
@@ -5146,7 +5247,7 @@ void ChainHost::captureSlotState(int i, double nowMs)
     // here: capping at storage time would silently make the API's larger cap
     // unreachable and there would be no second capture path to fall back on.
     const int  bytes    = (int)mb.getSize();
-    const bool oversize = bytes > kApiStateMaxSlotBytes;
+    const bool oversize = bytes > kStateStoreMaxSlotBytes;
     juce::String b64;
     if (bytes > 0 && !oversize)
         b64 = juce::Base64::toBase64(mb.getData(), mb.getSize());
@@ -5177,7 +5278,7 @@ void ChainHost::captureSlotState(int i, double nowMs)
             note = s.desc.name + ": settings are "
                  + juce::File::descriptionOfSizeInBytes((juce::int64)bytes)
                  + ", over the " + juce::File::descriptionOfSizeInBytes(
-                       (juce::int64)kApiStateMaxSlotBytes)
+                       (juce::int64)kStateStoreMaxSlotBytes)
                  + " limit, so they will not be saved";
         }
         else if (!oversize && s.oversizeReported)

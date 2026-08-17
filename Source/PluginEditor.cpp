@@ -12471,6 +12471,7 @@ std::vector<EchoJayEditor::WithheldGroup>
 EchoJayEditor::classifyWithheld(const std::vector<ScannedPlugin>& plugins, const ChainHost& ch,
                                 const juce::String& hostFmt,
                                 const std::map<juce::String, WithheldItem>& crashByFold,
+                                const std::map<juce::String, WithheldItem>& tooLargeByFold,
                                 const std::set<juce::String>& nestedVst3,
                                 int* enabledNamesOut, int* cannotOut)
 {
@@ -12573,12 +12574,16 @@ EchoJayEditor::classifyWithheld(const std::vector<ScannedPlugin>& plugins, const
     }
     if (enabledNamesOut) *enabledNamesOut = (int) byName.size();
 
-    WithheldGroup gCrash, gIntel, gVst2, gNot, gUnr, gFmt;
+    WithheldGroup gCrash, gLarge, gIntel, gVst2, gNot, gUnr, gFmt;
     gCrash.kind = WithheldGroup::Crash;      gCrash.title = "disabled after a crash";
     gIntel.kind = WithheldGroup::IntelOnly;  gIntel.title = kEjProcessIsArm ? "Intel only, no Apple Silicon build installed"
                                                                             : "Apple Silicon only, no Intel build installed";
     gIntel.remedy = kEjProcessIsArm ? "Update these to Apple Silicon builds and they will work. Until then only a host running under Rosetta can load them."
                                     : "These need this host to run natively on Apple Silicon.";
+    gLarge.kind = WithheldGroup::TooLarge;   gLarge.title = "settings too large to save (over the "
+                                                          + juce::File::descriptionOfSizeInBytes((juce::int64) ChainHost::kSessionStateMaxSlotBytes)
+                                                          + " per-plugin session limit)";
+    gLarge.remedy = "A chain holding one of these could not be saved with the project. Re-enable offers it again on the next scan.";
     gVst2.kind  = WithheldGroup::Vst2;       gVst2.title  = "VST2, which EchoJay cannot host in any host";
     gNot.kind   = WithheldGroup::NotScanned; gNot.title   = "in a vendor subfolder the chain scan does not enter yet";
     gUnr.kind   = WithheldGroup::Unreadable; gUnr.title   = "not matched to anything the chain list can load (a name mismatch, or a bundle that could not be read)";
@@ -12595,7 +12600,7 @@ EchoJayEditor::classifyWithheld(const std::vector<ScannedPlugin>& plugins, const
         ChainHost::WithholdReason wAU = ChainHost::WithholdReason::None, wV = ChainHost::WithholdReason::None;
         auto stronger = [](ChainHost::WithholdReason a, ChainHost::WithholdReason b)
         {
-            auto rank = [](ChainHost::WithholdReason w) { return w == ChainHost::WithholdReason::CrashBlacklisted ? 2 : w == ChainHost::WithholdReason::ArchitectureIncompatible ? 1 : 0; };
+            auto rank = [](ChainHost::WithholdReason w) { return w == ChainHost::WithholdReason::CrashBlacklisted ? 3 : w == ChainHost::WithholdReason::SettingsTooLarge ? 2 : w == ChainHost::WithholdReason::ArchitectureIncompatible ? 1 : 0; };
             return rank(a) >= rank(b) ? a : b;
         };
         for (const auto& nm : r.names)
@@ -12613,6 +12618,12 @@ EchoJayEditor::classifyWithheld(const std::vector<ScannedPlugin>& plugins, const
         {
             if (auto f = crashByFold.find(kv.first); f != crashByFold.end()) gCrash.items.push_back(f->second);
             else gCrash.items.push_back(it);
+            continue;
+        }
+        if (wAU == ChainHost::WithholdReason::SettingsTooLarge || wV == ChainHost::WithholdReason::SettingsTooLarge)
+        {
+            if (auto f = tooLargeByFold.find(kv.first); f != tooLargeByFold.end()) gLarge.items.push_back(f->second);
+            else gLarge.items.push_back(it);
             continue;
         }
         if (wAU == ChainHost::WithholdReason::ArchitectureIncompatible || wV == ChainHost::WithholdReason::ArchitectureIncompatible)
@@ -12641,7 +12652,7 @@ EchoJayEditor::classifyWithheld(const std::vector<ScannedPlugin>& plugins, const
     auto sortItems = [](WithheldGroup& g) { std::sort(g.items.begin(), g.items.end(), [](const WithheldItem& a, const WithheldItem& b) { return a.name.compareIgnoreCase(b.name) < 0; }); };
     std::vector<WithheldGroup> out;
     int cannot = 0;
-    for (auto* g : { &gCrash, &gIntel, &gVst2, &gNot, &gUnr, &gFmt })
+    for (auto* g : { &gCrash, &gLarge, &gIntel, &gVst2, &gNot, &gUnr, &gFmt })
     {
         sortItems(*g);
         if (g->items.empty()) continue;
@@ -12686,17 +12697,29 @@ void EchoJayEditor::rebuildSettingsWithheld()
     // Crash-blacklisted rows come from the entries cache (any format: a
     // crashed plugin is a crashed plugin whichever host is asking), because
     // the Re-enable control needs the bundle path.
-    std::map<juce::String, WithheldItem> crashByFold;
+    // Too-large rows the same way (path for Re-enable, bytes for the detail).
+    std::map<juce::String, WithheldItem> crashByFold, tooLargeByFold;
     if (auto ecFile = ChainHost::getEntriesCacheFile(); ecFile.existsAsFile())
         if (auto doc = juce::XmlDocument::parse(ecFile); doc != nullptr && doc->getTagName() == "CHAIN_ENTRIES")
             for (auto* c : doc->getChildIterator())
             {
                 juce::PluginDescription d;
                 if (!d.loadFromXml(*c)) continue;
-                if (ch.withholdReason(d) != ChainHost::WithholdReason::CrashBlacklisted) continue;
-                WithheldItem it; it.name = d.name; it.vendor = d.manufacturerName; it.path = d.fileOrIdentifier;
-                if (auto f = dateByPath.find(it.path); f != dateByPath.end()) it.date = f->second;
-                crashByFold[foldPluginName(d.name)] = it;
+                const auto why = ch.withholdReason(d);
+                if (why == ChainHost::WithholdReason::CrashBlacklisted)
+                {
+                    WithheldItem it; it.name = d.name; it.vendor = d.manufacturerName; it.path = d.fileOrIdentifier;
+                    if (auto f = dateByPath.find(it.path); f != dateByPath.end()) it.date = f->second;
+                    crashByFold[foldPluginName(d.name)] = it;
+                }
+                else if (why == ChainHost::WithholdReason::SettingsTooLarge)
+                {
+                    WithheldItem it; it.name = d.name; it.vendor = d.manufacturerName; it.path = d.fileOrIdentifier;
+                    it.detail = juce::File::descriptionOfSizeInBytes((juce::int64) ch.oversizeStateBytes(it.path))
+                              + " at its defaults, limit "
+                              + juce::File::descriptionOfSizeInBytes((juce::int64) ChainHost::kSessionStateMaxSlotBytes);
+                    tooLargeByFold[foldPluginName(d.name)] = it;
+                }
             }
 
     // .vst3 bundles ONE level below the VST3 folders: the chain scan walks the
@@ -12717,12 +12740,12 @@ void EchoJayEditor::rebuildSettingsWithheld()
     }
 
     settingsWithheldGroups_ = classifyWithheld(processorRef.getPluginScanner().getPlugins(), ch,
-                                               chainFormatFilter_, crashByFold, nestedVst3,
+                                               chainFormatFilter_, crashByFold, tooLargeByFold, nestedVst3,
                                                &settingsWithheldEnabledNames_, &settingsWithheldCannot_);
 
-    // One Re-enable button per crash item
+    // One Re-enable button per crash item and per too-large item
     int crashCount = 0;
-    for (const auto& g : settingsWithheldGroups_) if (g.kind == WithheldGroup::Crash) crashCount = (int) g.items.size();
+    for (const auto& g : settingsWithheldGroups_) if (WithheldGroup::hasReenable(g.kind)) crashCount += (int) g.items.size();
     while (settingsReenableBtns_.size() < (size_t) crashCount)
     {
         auto b = std::make_unique<juce::TextButton>("Re-enable");
@@ -12730,13 +12753,16 @@ void EchoJayEditor::rebuildSettingsWithheld()
         settingsContent_.addChildComponent(*b);
         settingsReenableBtns_.push_back(std::move(b));
     }
-    for (size_t gi = 0; gi < settingsWithheldGroups_.size(); ++gi)
-        if (settingsWithheldGroups_[gi].kind == WithheldGroup::Crash)
-            for (size_t ii = 0; ii < settingsWithheldGroups_[gi].items.size() && ii < settingsReenableBtns_.size(); ++ii)
-            {
-                const int G = (int) gi, I = (int) ii;
-                settingsReenableBtns_[ii]->onClick = [this, G, I]() { reenableWithheldItem(G, I); };
-            }
+    {
+        size_t bi = 0;
+        for (size_t gi = 0; gi < settingsWithheldGroups_.size(); ++gi)
+            if (WithheldGroup::hasReenable(settingsWithheldGroups_[gi].kind))
+                for (size_t ii = 0; ii < settingsWithheldGroups_[gi].items.size() && bi < settingsReenableBtns_.size(); ++ii, ++bi)
+                {
+                    const int G = (int) gi, I = (int) ii;
+                    settingsReenableBtns_[bi]->onClick = [this, G, I]() { reenableWithheldItem(G, I); };
+                }
+    }
     for (size_t bi = (size_t) crashCount; bi < settingsReenableBtns_.size(); ++bi)
         settingsReenableBtns_[bi]->setVisible(false);
 
@@ -12751,7 +12777,7 @@ void EchoJayEditor::reenableWithheldItem(int groupIdx, int itemIdx)
 {
     if (groupIdx < 0 || groupIdx >= (int) settingsWithheldGroups_.size()) return;
     auto& g = settingsWithheldGroups_[(size_t) groupIdx];
-    if (g.kind != WithheldGroup::Crash || itemIdx < 0 || itemIdx >= (int) g.items.size()) return;
+    if (!WithheldGroup::hasReenable(g.kind) || itemIdx < 0 || itemIdx >= (int) g.items.size()) return;
     auto& row = g.items[(size_t) itemIdx];
     if (row.reenabled || row.path.isEmpty()) return;
 
@@ -12762,7 +12788,8 @@ void EchoJayEditor::reenableWithheldItem(int groupIdx, int itemIdx)
     // is what re-enables the plugin, without a host restart), and the
     // in-memory gate keeps refusing the load until then. Comment lines and
     // bare pre-format paths pass through unchanged.
-    auto bl = chainBlacklistFile();
+    // The same edit for a too-large row, on ITS file (chain_state_oversize.txt).
+    auto bl = g.kind == WithheldGroup::TooLarge ? ChainHost::getStateOversizeFile() : chainBlacklistFile();
     int removed = 0;
     if (bl.existsAsFile())
     {
@@ -12916,13 +12943,16 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
                 g.setFont(juce::Font(juce::FontOptions(11.0f)));
                 for (const auto& it : gr.items)
                 {
-                    const int rowW = gr.kind == WithheldGroup::Crash ? w - 100 : w;
+                    const int rowW = WithheldGroup::hasReenable(gr.kind) ? w - 100 : w;
                     juce::Rectangle<int> rr(x + 48, ry, rowW - 48, kWithheldRowH);
                     juce::String line = it.name;
                     if (it.vendor.isNotEmpty() && !it.name.containsIgnoreCase(it.vendor)) line << "  " << it.vendor;
                     if (gr.kind == WithheldGroup::Crash)
                         line << (it.reenabled ? "  (re-enabled, back after the next Scan Now)"
                                               : it.date.isNotEmpty() ? "  (" + it.date + ")" : juce::String());
+                    else if (gr.kind == WithheldGroup::TooLarge)
+                        line << (it.reenabled ? "  (re-enabled, back after the next Scan Now)"
+                                              : it.detail.isNotEmpty() ? "  (" + it.detail + ")" : juce::String());
                     g.setColour(it.reenabled ? C::text2 : C::text3);
                     g.drawText(line, rr, juce::Justification::centredLeft, true);
                     ry += kWithheldRowH;
@@ -18249,7 +18279,7 @@ void EchoJayEditor::resized()
                 for (size_t gi = 0; gi < settingsWithheldGroups_.size() && gi < wl.groups.size(); ++gi)
                 {
                     const auto& gr = settingsWithheldGroups_[gi];
-                    if (gr.kind != WithheldGroup::Crash) continue;
+                    if (!WithheldGroup::hasReenable(gr.kind)) continue;
                     int ry = wl.groups[gi].itemsY;
                     for (const auto& it : gr.items)
                     {

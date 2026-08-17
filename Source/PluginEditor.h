@@ -4146,11 +4146,15 @@ private:
     {
         juce::String name, vendor, path;
         juce::String date;          // crash rows: from the blacklist line's ISO stamp, may be empty
-        bool reenabled = false;     // crash rows: line deleted this session
+        juce::String detail;        // too-large rows: "1.1 MB at its defaults, limit 4 MB"
+        bool reenabled = false;     // crash / too-large rows: line deleted this session
     };
     struct WithheldGroup
     {
-        enum Kind { Crash, IntelOnly, Vst2, NotScanned, Unreadable, FormatOnly } kind = Unreadable;
+        // Crash and TooLarge rows carry a Re-enable control (each deletes the
+        // row's line from its own file: chain_blacklist.txt, chain_state_oversize.txt)
+        enum Kind { Crash, TooLarge, IntelOnly, Vst2, NotScanned, Unreadable, FormatOnly } kind = Unreadable;
+        static bool hasReenable(Kind k) noexcept { return k == Crash || k == TooLarge; }
         juce::String title;         // "Intel only, no Apple Silicon build installed"
         juce::String remedy;        // one line, only where a remedy exists
         juce::String vendorsLine;   // "IK Multimedia 46, iZotope 36, ..." (IntelOnly)
@@ -4187,6 +4191,7 @@ private:
                                                        const ChainHost& ch,
                                                        const juce::String& hostFmt,
                                                        const std::map<juce::String, WithheldItem>& crashByFold,
+                                                       const std::map<juce::String, WithheldItem>& tooLargeByFold,
                                                        const std::set<juce::String>& nestedVst3,
                                                        int* enabledNamesOut, int* cannotOut);
     static juce::String foldPluginName(const juce::String& s);

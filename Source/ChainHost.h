@@ -85,12 +85,22 @@ public:
     //   None                      kept
     // The format filter is not a withhold (a per-host view) and is applied
     // separately at each site. Cheap per row: the arch memo already exists.
-    enum class WithholdReason { None, CrashBlacklisted, ArchitectureIncompatible, Unreadable };
+    // SettingsTooLarge (17 Aug 2026): the plugin's settings at their defaults
+    // are over the per-plugin cap a SESSION can save, so a chain holding it
+    // could not be saved with the project; its own reason and its own file
+    // (chain_state_oversize.txt), never the crash list. Measured in the
+    // fingerprint pass and at first rack (completeLoad); the file is the
+    // authority and deleting a line offers the plugin again.
+    enum class WithholdReason { None, CrashBlacklisted, ArchitectureIncompatible, Unreadable, SettingsTooLarge };
     static bool isWithheld(WithholdReason r) noexcept
     {
         return r == WithholdReason::CrashBlacklisted
-            || r == WithholdReason::ArchitectureIncompatible;
+            || r == WithholdReason::ArchitectureIncompatible
+            || r == WithholdReason::SettingsTooLarge;
     }
+    // Bytes recorded for a SettingsTooLarge path (0 when not recorded)
+    int oversizeStateBytes(const juce::String& path) const;
+    static juce::File getStateOversizeFile();
     WithholdReason withholdReason(const juce::PluginDescription& d) const;   // takes pluginsMutex_
     // User-facing clause completing "\"<name>\" ...", e.g. "is installed but
     // its VST3 has no arm64 build, so it cannot run in this host". Empty for
@@ -756,21 +766,30 @@ public:
 
     // TWO CAP PAIRS, DELIBERATELY DIFFERENT. Both in decoded bytes.
     //
-    // SESSION (tighter): an oversized session has no server to reject it. It
-    // is written into the user's project file on every single save, it grows
-    // the file forever, and there is no undo. This cap protects a document.
+    // SESSION: written into the user's project file on every save. Was 128 KB
+    // / 512 KB, a number with nothing measured behind it; raised 17 Aug 2026
+    // to 4 MB / 16 MB after a 1.1 MB sampler state was refused while Logic
+    // projects carry multi-MB plugin states routinely. What it still costs:
+    // project-file growth per Cmd-S (about 1.33x the state in base64) and a
+    // slower capture tick for that slot, which the backoff already handles.
+    // This cap protects a document.
     //
-    // API (looser): mirrors MAX_STATE_BYTES_PER_SLOT / MAX_STATE_BYTES_TOTAL
-    // in the backend's lib/dash/chains.js, which rejects with 413 rather than
+    // API: mirrors MAX_STATE_BYTES_PER_SLOT / MAX_STATE_BYTES_TOTAL in the
+    // backend's lib/dash/chains.js, which rejects with 413 rather than
     // truncating. Capping first here is what turns a failed save into an
-    // honest partial one. This cap protects a request.
+    // honest partial one. It cannot follow the session cap: the platform's
+    // request body limit is 4.5 MB and one 4 MB slot base64-encodes to about
+    // 5.4 MB, so it would fail before our 413. This cap protects a request.
     //
     // Do NOT "fix" the difference by aligning them, in either direction. Same
     // note lives in SESSION_B_BUILD_SPEC.md section 5.
-    static constexpr int kSessionStateMaxSlotBytes  = 128 * 1024;
-    static constexpr int kSessionStateMaxTotalBytes = 512 * 1024;
+    static constexpr int kSessionStateMaxSlotBytes  = 4 * 1024 * 1024;
+    static constexpr int kSessionStateMaxTotalBytes = 16 * 1024 * 1024;
     static constexpr int kApiStateMaxSlotBytes      = 256 * 1024;
     static constexpr int kApiStateMaxTotalBytes     = 1024 * 1024;
+    // The cache stores up to the LOOSEST consumer's per-slot cap
+    static constexpr int kStateStoreMaxSlotBytes    = kSessionStateMaxSlotBytes > kApiStateMaxSlotBytes
+                                                        ? kSessionStateMaxSlotBytes : kApiStateMaxSlotBytes;
 
     bool chainWarningDismissed = false;
 
@@ -923,6 +942,9 @@ private:
     juce::Array<juce::PluginDescription> entries_;
     juce::KnownPluginList                knownPlugins_;
     juce::StringArray                    blacklist_;
+    std::map<juce::String, int>          stateOversize_;   // path -> default-state bytes; see WithholdReason::SettingsTooLarge
+    void reloadStateOversizeFromDisk();                    // pluginsMutex_ taken inside
+    void recordStateOversize(const juce::String& path, int bytes, const juce::String& name, const juce::String& where);
     // Replaces the in-memory set from chain_blacklist.txt (startup and every
     // scan): the file is the authority, so deleting a line re-enables the
     // plugin on the next scan without a host restart.
