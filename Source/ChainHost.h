@@ -350,7 +350,24 @@ public:
     echojay::LevelTally::Snapshot getChainInLevels() const  { return chainInTally_.snapshot(); }
     echojay::LevelTally::Snapshot getChainOutLevels() const { return chainOutTally_.snapshot(); }
     SlotLevels getSlotLevels(int i) const;
-    void resetAllLevels();   // source change (step 3), manual reset
+    void resetAllLevels();   // source change, manual reset
+    // ---- Persistence of the running level ("chainLevels", beside the frozen
+    // chainSlotsXml). The tally is a claim about the SOURCE, so it carries the
+    // host's track name and is discarded on restore when the names differ:
+    // a plugin copied to another track starts empty rather than inheriting
+    // a confidently wrong level. Where NEITHER side names the track the
+    // tally is discarded too (nothing can tie it to a source); it restarts
+    // after a few seconds of playing. Slot tallies are keyed by saved slot number
+    // and land as each slot restores (restoreNextSlot); chain in/out land at
+    // once. Message thread.
+    juce::var getLevelsStateVar(const juce::String& trackName) const;
+    void      setPendingLevelsState(const juce::var& v, const juce::String& currentTrackName);
+    // The host's name for this track as last reported (empty = unknown).
+    // A CHANGE of name, or a first name that differs from the one a restored
+    // tally was measured on (the host reported the name after the state
+    // arrived), resets the tallies: same guard, both orderings.
+    void      setHostTrackName(const juce::String& name);
+    juce::String getHostTrackName() const { return hostTrackName_; }
 
     // EchoJay auto-parameter-mapping: dial a slot's hosted plugin from
     // structured settings plus the plugin's map.
@@ -911,8 +928,16 @@ private:
     void bumpChainRevision() noexcept { chainRevision_.fetch_add(1, std::memory_order_relaxed);
                                         noteHostedChange(); }
 
-    // Running level at the chain input and output (see getChainInLevels)
-    echojay::LevelTally chainInTally_, chainOutTally_;
+    // Running level at the chain input and output (see getChainInLevels):
+    // K-weighted (LUFS), the perceived level C7 matches
+    echojay::LevelTally chainInTally_  { echojay::LevelTally::Weighting::K };
+    echojay::LevelTally chainOutTally_ { echojay::LevelTally::Weighting::K };
+    double              tallySr_ = 0.0;   // rate the tallies were prepared at
+    juce::String hostTrackName_;
+    juce::String restoredLevelsTrack_;   // the track a restored tally was measured on, until the host names this one
+    // Pending per-slot level restore, keyed by saved slot number (1-based,
+    // the same key the hosted-state object uses); consumed by restoreNextSlot
+    std::map<int, std::pair<juce::var, juce::var>> pendingSlotLevels_;
     // Which node fed each slot at the last rebuild: a slot whose predecessor
     // changed (move, insert before it, the previous slot bypassed) sees a
     // different signal, so its tallies restart.

@@ -123,12 +123,17 @@ struct ChainWetKnob : public juce::Component,
 
     void mouseDown(const juce::MouseEvent& e) override
     {
+        // Right-click / ctrl-click: a small menu the owner fills (the master
+        // knob offers "Reset level tally"), no drag begins
+        if (e.mods.isPopupMenu()) { if (onPopup) onPopup(); return; }
         dragStartValue_ = value_;
         dragStartY_     = e.position.y;
     }
 
+    std::function<void()> onPopup;   // right-click, optional
     void mouseDrag(const juce::MouseEvent& e) override
     {
+        if (e.mods.isPopupMenu()) return;
         // 150 px of vertical travel = full range — same feel at any knob size
         const float delta = (dragStartY_ - e.position.y) / 150.0f;
         setValue(dragStartValue_ + delta, true);

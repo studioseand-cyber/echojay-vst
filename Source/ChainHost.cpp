@@ -496,10 +496,16 @@ public:
     {
         smooth_.reset(sampleRate, 0.05);
         smooth_.setCurrentAndTargetValue(wet_ ? wet_->load(std::memory_order_relaxed) : 1.0f);
-        // A new sample rate is a new source (step 3 of the level pass owns
-        // the wider reset story); the tallies re-prepare and clear here.
-        inTally_.prepare(sampleRate);
-        outTally_.prepare(sampleRate);
+        // The tallies clear ONLY on a sample-rate change (a new source, or a
+        // re-prepare that changes what a sample means). Hosts re-prepare on
+        // buffer-size changes and transport events too, and a tally that
+        // forgot the track on every play would never reach its floor.
+        if (sampleRate != tallySr_)
+        {
+            tallySr_ = sampleRate;
+            inTally_.prepare(sampleRate);
+            outTally_.prepare(sampleRate);
+        }
     }
     void releaseResources() override {}
 
@@ -510,6 +516,7 @@ public:
     const echojay::LevelTally& inTally()  const { return inTally_; }
     const echojay::LevelTally& outTally() const { return outTally_; }
     void resetTallies() { inTally_.reset(); outTally_.reset(); }
+    void restoreTallies(const juce::var& in, const juce::var& out) { inTally_.fromVar(in); outTally_.fromVar(out); }
 
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override
     {
@@ -561,7 +568,11 @@ public:
 private:
     std::shared_ptr<std::atomic<float>> wet_;
     juce::SmoothedValue<float>          smooth_;
-    echojay::LevelTally                 inTally_, outTally_;
+    // Plain (dBFS RMS) on the slot legs: a threshold is set in the units the
+    // detector sees, and out minus in cancels any weighting anyway.
+    echojay::LevelTally                 inTally_  { echojay::LevelTally::Weighting::Plain };
+    echojay::LevelTally                 outTally_ { echojay::LevelTally::Weighting::Plain };
+    double                              tallySr_ = 0.0;
 };
 
 // Defined up here, not with the rest of the settings-cache code below:
@@ -681,8 +692,14 @@ void ChainHost::prepare(double sampleRate, int blockSize)
     dryRingWrite_ = 0;
     masterWetSmooth_.reset(sampleRate, 0.05);
     masterWetSmooth_.setCurrentAndTargetValue(masterWet_.load(std::memory_order_relaxed));
-    chainInTally_.prepare(sampleRate);
-    chainOutTally_.prepare(sampleRate);
+    // Running level: cleared only when the sample rate CHANGES (see
+    // SlotWetBlend::prepareToPlay for why not on every prepare)
+    if (sampleRate != tallySr_)
+    {
+        tallySr_ = sampleRate;
+        chainInTally_.prepare(sampleRate);
+        chainOutTally_.prepare(sampleRate);
+    }
 
     graph_->setPlayConfigDetails(2, 2, sampleRate, blockSize);
     graph_->prepareToPlay(sampleRate, blockSize);
@@ -1849,6 +1866,109 @@ void ChainHost::resetAllLevels()
         if (s.blendNode)
             if (auto* b = dynamic_cast<SlotWetBlend*>(s.blendNode->getProcessor()))
                 b->resetTallies();
+    pendingSlotLevels_.clear();
+    EchoJay_NSLog("EJLevels: all level tallies reset");
+}
+
+void ChainHost::setHostTrackName(const juce::String& nameIn)
+{
+    const juce::String name = nameIn.trim();
+    const juce::String was  = hostTrackName_;
+    hostTrackName_ = name;
+    if (name.isEmpty()) return;
+    // Two orderings of the same guard: the name changed under a live
+    // instance (copied to another track, or the track renamed: a rename
+    // costs one reset, which is the cheap direction), or the host named the
+    // track AFTER a restore that carried another track's tally.
+    if (was.isNotEmpty() && was != name)
+    {
+        EchoJay_NSLog(("EJLevels: host track name changed \"" + was + "\" -> \"" + name
+                       + "\": level tallies reset").toRawUTF8());
+        resetAllLevels();
+    }
+    else if (was.isEmpty() && restoredLevelsTrack_.isNotEmpty() && restoredLevelsTrack_ != name)
+    {
+        EchoJay_NSLog(("EJLevels: restored tally was measured on \"" + restoredLevelsTrack_
+                       + "\", host now names this track \"" + name + "\": level tallies reset").toRawUTF8());
+        resetAllLevels();
+    }
+    else if (was.isEmpty())
+        EchoJay_NSLog(("EJLevels: host track name \"" + name + "\"").toRawUTF8());
+    restoredLevelsTrack_.clear();
+}
+
+juce::var ChainHost::getLevelsStateVar(const juce::String& trackName) const
+{
+    auto* o = new juce::DynamicObject();
+    o->setProperty("v", 1);
+    o->setProperty("trackName", trackName);
+    o->setProperty("in",  chainInTally_.toVar());
+    o->setProperty("out", chainOutTally_.toVar());
+    juce::Array<juce::var> arr;
+    for (int i = 0; i < (int)slots_.size(); ++i)
+    {
+        const auto& s = slots_[(size_t)i];
+        auto* b = s.blendNode ? dynamic_cast<SlotWetBlend*>(s.blendNode->getProcessor()) : nullptr;
+        if (b == nullptr) continue;   // never in circuit: nothing measured, nothing saved
+        auto* so = new juce::DynamicObject();
+        so->setProperty("n",   i + 1);   // the slot number chainSlotsXml writes it as
+        so->setProperty("in",  b->inTally().toVar());
+        so->setProperty("out", b->outTally().toVar());
+        arr.add(juce::var(so));
+    }
+    o->setProperty("slots", arr);
+    return juce::var(o);
+}
+
+void ChainHost::setPendingLevelsState(const juce::var& v, const juce::String& currentTrackName)
+{
+    pendingSlotLevels_.clear();
+    auto* o = v.getDynamicObject();
+    if (o == nullptr) return;
+    const juce::String savedTrack = o->getProperty("trackName").toString().trim();
+    const juce::String nowTrack   = currentTrackName.trim();
+    // THE GUARD (load-bearing, not defensive): a level tally describes a
+    // source. If this host names tracks and the names differ, the saved
+    // tally is somebody else's channel (the plugin was copied) and starts
+    // empty rather than inheriting a confidently wrong level. Names that
+    // are both empty (a host that names no track) let it through; the
+    // heard/window figures and the decay bound the damage there.
+    if (savedTrack.isNotEmpty() && nowTrack.isNotEmpty() && savedTrack != nowTrack)
+    {
+        EchoJay_NSLog(("EJLevels: saved tally discarded, it was measured on track \"" + savedTrack
+                       + "\" and this is \"" + nowTrack + "\"").toRawUTF8());
+        return;
+    }
+    if (savedTrack.isEmpty() && nowTrack.isEmpty())
+    {
+        // Neither side can name the track, so nothing can say whether this
+        // is the channel the tally was measured on: DISCARDED, not restored.
+        // Bounded-wrong is still wrong, and a copied plugin inheriting a
+        // level is the exact failure this instrument exists to prevent. The
+        // cost is three seconds of playing after a reopen, which the feature
+        // asks for anyway. An Ableton user reading "no level known" after a
+        // reopen finds the reason here.
+        EchoJay_NSLog("EJLevels: saved tally DISCARDED: neither the session nor the host names this "
+                      "track (this host reports no track name), so the tally cannot be tied to a "
+                      "source; it restarts on the next few seconds of playing");
+        return;
+    }
+    // Remember what the restored tally was measured on: if the host names
+    // this track later and it differs, setHostTrackName resets.
+    restoredLevelsTrack_ = nowTrack.isEmpty() ? savedTrack : juce::String();
+    int slotsPending = 0;
+    if (auto* arr = o->getProperty("slots").getArray())
+        for (auto& sv : *arr)
+            if (auto* so = sv.getDynamicObject())
+            {
+                const int n = (int) so->getProperty("n");
+                if (n >= 1) { pendingSlotLevels_[n] = { so->getProperty("in"), so->getProperty("out") }; ++slotsPending; }
+            }
+    const bool inOk  = chainInTally_.fromVar(o->getProperty("in"));
+    const bool outOk = chainOutTally_.fromVar(o->getProperty("out"));
+    EchoJay_NSLog(("EJLevels: pending restore, chain in=" + juce::String(inOk ? "y" : "n")
+                   + " out=" + juce::String(outOk ? "y" : "n") + " slots=" + juce::String(slotsPending)
+                   + " track=\"" + savedTrack + "\"").toRawUTF8());
 }
 
 std::vector<ChainHost::ApplyReport>
@@ -4531,6 +4651,15 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
                     setSlotWet(lastSlot, savedWet);
                     if (wasBypassed) setSlotBypassed(lastSlot, true);
                     applyRestoredState(lastSlot, stateB64, expectState, slotName);
+                    // Running level saved for this slot number (session
+                    // restore only; a saved-chain load has nothing pending)
+                    if (auto it = pendingSlotLevels_.find(idx + 1); it != pendingSlotLevels_.end())
+                    {
+                        if (auto* b = slots_[(size_t) lastSlot].blendNode
+                                        ? dynamic_cast<SlotWetBlend*>(slots_[(size_t) lastSlot].blendNode->getProcessor()) : nullptr)
+                            b->restoreTallies(it->second.first, it->second.second);
+                        pendingSlotLevels_.erase(it);
+                    }
                 }
             }
             else

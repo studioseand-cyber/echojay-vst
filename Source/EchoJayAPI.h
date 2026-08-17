@@ -667,8 +667,23 @@ public:
     // byte-identical either way (server classifier + history strip key on
     // it).
     static juce::String buildCurrentChainInjection(const ChainHost& chainHost);
+    // slotLevelNotes: optional per-slot running-level clause (index-parallel
+    // with rack.slots; an empty string draws nothing for that slot). Only the
+    // local-rack adapter fills it today; a Link's rack carries no tally yet.
     static juce::String buildCurrentChainInjection(const LinkShm::RackSidecar& rack,
-                                                   const juce::String& channelLabel);
+                                                   const juce::String& channelLabel,
+                                                   const juce::StringArray* slotLevelNotes = nullptr);
+    // Running level (LevelTally, 17 Aug 2026), rendered for the model.
+    //   formatLevelClause: one point, "in -19.2 dBFS RMS (p90 -15.5), peak
+    //     -6.0, crest 12 dB, heard 2m10s (describes ~2m10s)" or the loud null
+    //     "no level known (heard 1 s)". Never a default number.
+    //   buildChainLevelsInjection: the "[CHAIN LEVELS ...]" marker for the
+    //     chain input and output; rides the same arm as [CURRENT CHAIN] /
+    //     [CURRENT RACK EMPTY], listed in historyStripMarkers, below every
+    //     cache breakpoint by construction (it varies per turn).
+    static juce::String formatHeard(float seconds);
+    static juce::String formatSlotLevelNote(const ChainHost& chainHost, int slot);
+    static juce::String buildChainLevelsInjection(const ChainHost& chainHost);
 
     // Parse the chain block out of an assistant reply.
     // Returns true and fills chainJsonOut if a block (complete or truncated) is present.

@@ -1150,8 +1150,29 @@ void EchoJayProcessor::setChannelTypePromptDismissed(bool dismissed)
 // ============ Self key detection (§6.1) ============
 // The Link's §5.1 scheduler on the main plugin's own channel, gated on the
 // DECLARED ROLE being a music bus. Message thread, 1 Hz.
+void EchoJayProcessor::updateTrackProperties(const TrackProperties& props)
+{
+    if (!props.name.has_value()) return;   // colour-only update carries no name
+    const juce::String n = juce::String(*props.name).trim();
+    {
+        const juce::ScopedLock sl(hostTrackNameLock_);
+        if (hostTrackNamePending_ == n) return;
+        hostTrackNamePending_ = n;
+    }
+    hostTrackNameDirty_.store(true, std::memory_order_release);
+}
+
+void EchoJayProcessor::applyHostTrackNameIfDirty()
+{
+    if (!hostTrackNameDirty_.exchange(false, std::memory_order_acq_rel)) return;
+    juce::String n;
+    { const juce::ScopedLock sl(hostTrackNameLock_); n = hostTrackNamePending_; }
+    chainHost.setHostTrackName(n);   // the guard (change, or late first name) lives there
+}
+
 void EchoJayProcessor::timerCallback()
 {
+    applyHostTrackNameIfDirty();
     scheduleSelfKeyPass();
 
     // Keep the KeyFeed alive without an editor. EchoJay Pitch follows the
@@ -2992,6 +3013,10 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
                               "this session");
     if (!chainSlotState.isVoid())
         state->setProperty("chainSlotState", chainSlotState);
+    // Running level tally (17 Aug 2026): a sibling key, never inside the
+    // frozen chainSlotsXml. Carries the host track name for the restore
+    // guard. An older build ignores it.
+    state->setProperty("chainLevels", chainHost.getLevelsStateVar(chainHost.getHostTrackName()));
     state->setProperty("chainWarningDismissed", chainHost.chainWarningDismissed);
     // Saved chain identity: written only when there IS one, so a session
     // with no saved chain grows no keys and still reads identically in an
@@ -3256,11 +3281,30 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
         juce::var chainSlotState;
         if (obj->hasProperty("chainSlotState"))
             chainSlotState = obj->getProperty("chainSlotState");
+        // Running level tally: chain in/out land at once, per-slot tallies
+        // are held pending and land as each slot restores. Guarded by the
+        // host track name inside setPendingLevelsState; the name the host
+        // has reported so far (if any) is what it is compared against.
+        juce::var chainLevels;
+        if (obj->hasProperty("chainLevels"))
+            chainLevels = obj->getProperty("chainLevels");
 
         if (slotsXml.isNotEmpty())
         {
-            juce::MessageManager::callAsync([this, slotsXml, chainSlotState] {
+            juce::MessageManager::callAsync([this, slotsXml, chainSlotState, chainLevels] {
+                applyHostTrackNameIfDirty();
+                if (!chainLevels.isVoid())
+                    chainHost.setPendingLevelsState(chainLevels, chainHost.getHostTrackName());
                 chainHost.tryRestoreSlotsFromXml(slotsXml, chainSlotState);
+            });
+        }
+        else if (!chainLevels.isVoid())
+        {
+            // No slots to restore, but the chain in/out tally still describes
+            // this track's level (an empty rack build wants it)
+            juce::MessageManager::callAsync([this, chainLevels] {
+                applyHostTrackNameIfDirty();
+                chainHost.setPendingLevelsState(chainLevels, chainHost.getHostTrackName());
             });
         }
         else if (chainLoadedDescXml.isNotEmpty())

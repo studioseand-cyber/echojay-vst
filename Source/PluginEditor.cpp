@@ -1943,6 +1943,28 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         if (chainViewUid().isNotEmpty()) return;
         processorRef.getChainHost().setMasterWet(v);
     };
+    // Manual reset of the running level tally: right-click the master knob.
+    chainListPanel.masterKnob.onPopup = [this]()
+    {
+        if (chainViewUid().isNotEmpty()) return;
+        juce::PopupMenu m;
+        m.addSectionHeader("Running level");
+        {
+            const auto in = processorRef.getChainHost().getChainInLevels();
+            m.addItem(1, in.known ? "Input " + juce::String(in.levelDb, 1) + " LUFS, heard "
+                                        + EchoJayAPI::formatHeard(in.heardSeconds)
+                                  : juce::String("No level known yet (heard "
+                                        + EchoJayAPI::formatHeard(in.heardSeconds) + ")"), false);
+        }
+        m.addItem(2, "Reset level tally");
+        auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+        m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&chainListPanel.masterKnob),
+            [safeThis](int r)
+            {
+                if (safeThis == nullptr || r != 2) return;
+                safeThis->processorRef.getChainHost().resetAllLevels();
+            });
+    };
     chainListPanel.masterKnob.setValue(processorRef.getChainHost().getMasterWet());
     addChildComponent(chainListPanel);
 
@@ -22565,6 +22587,16 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
                    " request as building from scratch and never propose"
                    " edit ops against slots you believe are loaded.]";
             EchoJay_NSLog("EJChat: CURRENT RACK EMPTY declaration attached (0 slots)");
+        }
+        // [CHAIN LEVELS]: the chain input (and output) running level, on the
+        // same arm as the rack block, empty rack included (a build on an
+        // empty rack needs the input level most). Per-slot figures ride
+        // inside the [CURRENT CHAIN] slot lines above.
+        {
+            const juce::String lv = EchoJayAPI::buildChainLevelsInjection(chainHost);
+            out += lv;
+            EchoJay_NSLog(("EJLevels: CHAIN LEVELS marker attached, " + juce::String(lv.length())
+                           + " chars: " + lv.substring(0, 160).replace("\n", " ")).toRawUTF8());
         }
     }
 

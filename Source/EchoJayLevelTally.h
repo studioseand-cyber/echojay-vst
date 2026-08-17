@@ -44,10 +44,11 @@
 //              that reads a number without checking known() reads NaN,
 //              which fails loudly rather than plausibly.
 //
-// Statistics (the smallest set that serves C7 and L2): gated loudness
-// (LUFS), p10 / p50 / p90 of momentary loudness over the absolute-gated
-// hops (L2 reasons about p90, because reduction is set by the loud
-// passages), plain RMS and a recent peak (both decayed) for crest.
+// Statistics (the smallest set that serves C7 and L2): gated level (LUFS on
+// the K-weighted chain in/out, dBFS RMS on the plain slot legs, see
+// Weighting), p10 / p50 / p90 of the 400 ms momentary level over the
+// absolute-gated hops (L2 reasons about p90, because reduction is set by
+// the loud passages), plain RMS and a recent peak (both decayed) for crest.
 //
 // Threading: push() on the audio thread only (no allocation, no lock held
 // across audio work: the per-hop publish is a SpinLock TRY-lock that skips a
@@ -68,6 +69,15 @@ namespace echojay {
 class LevelTally
 {
 public:
+    // ---- weighting: what the number IS ------------------------------------
+    // Chain input and output are K-weighted (LUFS): C7 wants perceived
+    // loudness in and out. Slot legs are PLAIN (dBFS RMS): a compressor's
+    // detector never hears K-weighting, so its input level and its measured
+    // reduction (out minus in, the filter cancels anyway) belong in the units
+    // its threshold is set in. Plain also costs a quarter of K per sample,
+    // which at twenty instances is the difference between a rounding error
+    // and a percent of a core (measured 17 Aug 2026).
+    enum class Weighting { K, Plain };
     // ---- the named constants that will want tuning once ------------------
     static constexpr double kHalfLifeSeconds        = 120.0;
     static constexpr double kEffectiveWindowSeconds = 2.0 * kHalfLifeSeconds / 0.6931471805599453;   // 2 tau
@@ -82,10 +92,11 @@ public:
     struct Snapshot
     {
         bool  known = false;          // heardSeconds >= kHeardFloorSeconds
+        bool  kWeighted = false;      // levelDb and the percentiles are LUFS (true) or dBFS RMS (false)
         float heardSeconds  = 0.0f;   // gated audio heard since reset, undecayed
         float windowSeconds = 0.0f;   // how much of it the estimate describes
         // Everything below is NaN while !known. Read known first.
-        float lufsGated = std::numeric_limits<float>::quiet_NaN();
+        float levelDb = std::numeric_limits<float>::quiet_NaN();   // gated: LUFS (K) or dBFS RMS (Plain)
         float p10 = std::numeric_limits<float>::quiet_NaN();
         float p50 = std::numeric_limits<float>::quiet_NaN();
         float p90 = std::numeric_limits<float>::quiet_NaN();
@@ -94,7 +105,8 @@ public:
         float crestDb = std::numeric_limits<float>::quiet_NaN();   // peakDb - rmsDb
     };
 
-    LevelTally() { std::fill (bins_.begin(), bins_.end(), 0.0); }
+    explicit LevelTally (Weighting w = Weighting::K) : weighting_ (w) { std::fill (bins_.begin(), bins_.end(), 0.0); }
+    Weighting weighting() const noexcept { return weighting_; }
 
     // Message thread (or before audio starts). Also clears the state.
     void prepare (double sampleRate)
@@ -123,10 +135,13 @@ public:
             hopPlainPow_ += 0.5 * ((double) l * l + (double) r * r);
             const float a = std::max (std::abs (l), std::abs (r));
             if (a > hopPeak_) hopPeak_ = a;
-            // K-weighted power, summed over channels as BS.1770 does
-            const double kl = biquad (l, zl1_, k1_), kr = biquad (r, zr1_, k1_);
-            const double kl2 = biquad ((float) kl, zl2_, k2_), kr2 = biquad ((float) kr, zr2_, k2_);
-            hopKPow_ += kl2 * kl2 + kr2 * kr2;
+            if (weighting_ == Weighting::K)
+            {
+                // K-weighted power, summed over channels as BS.1770 does
+                const double kl = biquad (l, zl1_, k1_), kr = biquad (r, zr1_, k1_);
+                const double kl2 = biquad ((float) kl, zl2_, k2_), kr2 = biquad ((float) kr, zr2_, k2_);
+                hopKPow_ += kl2 * kl2 + kr2 * kr2;
+            }
             if (++hopFill_ >= hopSamples_) closeHop();
         }
     }
@@ -142,20 +157,29 @@ public:
     // ---- persistence (used by the session state, step 4) -----------------
     juce::var toVar() const
     {
-        // Snapshot of the WORKING state as last published: bins (3 dp),
-        // heard, recent peak, decayed plain power. Enough to resume with the
-        // same claims; the reader re-derives everything else.
+        // The WORKING state as last published, sparse: only non-empty bins,
+        // each as [bin, weight (3 dp), mean level of the bin (0.1 dB)], plus
+        // heard, recent peak and the decayed plain power. A few hundred
+        // bytes per tally; the reader re-derives everything else.
         const juce::SpinLock::ScopedLockType lock (pubLock_);
         auto* o = new juce::DynamicObject();
-        juce::Array<juce::var> b;
-        juce::Array<juce::var> bp;
-        for (int i = 0; i < kBins; ++i) { b.add (std::round (pubBins_[(size_t) i] * 1000.0) / 1000.0); bp.add (pubBinPow_[(size_t) i]); }
-        o->setProperty ("bins", b);
-        o->setProperty ("binPow", bp);
-        o->setProperty ("heard", (double) pubHeardHops_);
-        o->setProperty ("plainPow", pubPlainPow_);
-        o->setProperty ("plainW", pubPlainW_);
-        o->setProperty ("peak", (double) pubPeak_);
+        o->setProperty ("w", weighting_ == Weighting::K ? "K" : "plain");
+        juce::Array<juce::var> sparse;
+        for (int i = 0; i < kBins; ++i)
+        {
+            const double w = pubBins_[(size_t) i];
+            if (w <= 1e-6) continue;
+            const double meanPow = pubBinPow_[(size_t) i] / w;
+            const double db = meanPow > 0.0 ? 10.0 * std::log10 (meanPow) : -200.0;
+            juce::Array<juce::var> e;
+            e.add (i); e.add (std::round (w * 1000.0) / 1000.0); e.add (std::round (db * 10.0) / 10.0);
+            sparse.add (juce::var (e));
+        }
+        o->setProperty ("bins", sparse);
+        o->setProperty ("heard", std::round (pubHeardHops_ * 10.0) / 10.0);
+        o->setProperty ("plainDb", pubPlainW_ > 0.0 && pubPlainPow_ > 0.0 ? std::round (100.0 * std::log10 (pubPlainPow_ / pubPlainW_)) / 10.0 : -200.0);
+        o->setProperty ("plainW", std::round (pubPlainW_ * 1000.0) / 1000.0);
+        o->setProperty ("peakDb", pubPeak_ > 0.0f ? std::round (200.0 * std::log10 (pubPeak_)) / 10.0 : -200.0);
         return juce::var (o);
     }
     // Any thread before audio, or message thread: adopted at the next push.
@@ -164,19 +188,32 @@ public:
         auto* o = v.getDynamicObject();
         if (o == nullptr) return false;
         auto* b = o->getProperty ("bins").getArray();
-        if (b == nullptr || b->size() != kBins) return false;
+        if (b == nullptr) return false;
+        // A K tally never adopts a plain one or vice versa: the units differ
+        const juce::String w = o->getProperty ("w").toString();
+        if (w.isNotEmpty() && (w == "K") != (weighting_ == Weighting::K)) return false;
         PendingRestore p;
-        auto* bpArr = o->getProperty ("binPow").getArray();
-        if (bpArr == nullptr || bpArr->size() != kBins) return false;
-        for (int i = 0; i < kBins; ++i)
+        for (auto& ev : *b)
         {
-            p.bins[(size_t) i]   = juce::jmax (0.0, (double) (*b)[i]);
-            p.binPow[(size_t) i] = juce::jmax (0.0, (double) (*bpArr)[i]);
+            auto* e = ev.getArray();
+            if (e == nullptr || e->size() < 3) continue;
+            const int i = (int) (*e)[0];
+            if (i < 0 || i >= kBins) continue;
+            const double wt = juce::jmax (0.0, (double) (*e)[1]);
+            const double db = (double) (*e)[2];
+            p.bins[(size_t) i]   = wt;
+            p.binPow[(size_t) i] = wt * std::pow (10.0, db / 10.0);
         }
         p.heardHops = juce::jmax (0.0, (double) o->getProperty ("heard"));
-        p.plainPow  = juce::jmax (0.0, (double) o->getProperty ("plainPow"));
         p.plainW    = juce::jmax (0.0, (double) o->getProperty ("plainW"));
-        p.peak      = juce::jlimit (0.0f, 4.0f, (float) (double) o->getProperty ("peak"));
+        {
+            const double pdb = (double) o->getProperty ("plainDb");
+            p.plainPow = pdb > -190.0 ? p.plainW * std::pow (10.0, pdb / 10.0) : 0.0;
+        }
+        {
+            const double kdb = (double) o->getProperty ("peakDb");
+            p.peak = kdb > -190.0 ? (float) std::pow (10.0, kdb / 20.0) : 0.0f;
+        }
         {
             const juce::SpinLock::ScopedLockType lock (restoreLock_);
             pending_ = p;
@@ -187,6 +224,7 @@ public:
 
 private:
     // ---- audio-thread state ------------------------------------------------
+    const Weighting weighting_;
     double sampleRate_ = 48000.0;
     bool   prepared_ = false;
     int    hopSamples_ = 4800;
@@ -243,7 +281,10 @@ private:
                 restoreLock_.exit();
             }
         }
-        const double hopK = hopKPow_ / (double) hopSamples_;   // mean K-power over the hop (L+R)
+        // K: mean K-power over the hop, L+R summed (BS.1770). Plain: mean
+        // per-channel power (dBFS RMS convention). Both go through the same
+        // 400 ms block, gate, histogram and decay; only the unit differs.
+        const double hopK = (weighting_ == Weighting::K ? hopKPow_ : hopPlainPow_) / (double) hopSamples_;
         ring_[(size_t) ringPos_] = hopK;
         ringPos_ = (ringPos_ + 1) % kHopsPerBlock;
         if (ringFill_ < kHopsPerBlock) ++ringFill_;
@@ -252,7 +293,7 @@ private:
             double mp = 0.0;
             for (auto v : ring_) mp += v;
             mp /= (double) kHopsPerBlock;
-            const double lufs = mp > 0.0 ? -0.691 + 10.0 * std::log10 (mp) : -200.0;
+            const double lufs = mp > 0.0 ? offsetDb() + 10.0 * std::log10 (mp) : -200.0;
             if (lufs > kAbsGateLufs)
             {
                 // gated hop: decay everything, then add this hop
@@ -280,9 +321,13 @@ private:
     double pubHeardHops_ = 0.0, pubPlainPow_ = 0.0, pubPlainW_ = 0.0;
     float  pubPeak_ = 0.0f;
 
+    // LUFS carries the BS.1770 -0.691 offset; plain dBFS RMS carries none.
+    double offsetDb() const noexcept { return weighting_ == Weighting::K ? -0.691 : 0.0; }
+
     Snapshot compute() const noexcept
     {
         Snapshot s;
+        s.kWeighted     = weighting_ == Weighting::K;
         s.heardSeconds  = (float) (heardHops_ * kHopSeconds);
         s.windowSeconds = (float) juce::jmin ((double) s.heardSeconds, kEffectiveWindowSeconds);
         s.known = s.heardSeconds >= kHeardFloorSeconds;
@@ -292,13 +337,13 @@ private:
         double w = 0.0, pw = 0.0;
         for (int i = 0; i < kBins; ++i) { w += bins_[(size_t) i]; pw += binPow_[(size_t) i]; }
         if (w <= 0.0 || pw <= 0.0) { s.known = false; return s; }
-        const double absMean = -0.691 + 10.0 * std::log10 (pw / w);
+        const double absMean = offsetDb() + 10.0 * std::log10 (pw / w);
         // relative gate: bins below absMean - 10 LU are dropped
         const double rel = absMean + kRelGateLu;
         double w2 = 0.0, pw2 = 0.0;
         for (int i = 0; i < kBins; ++i)
             if (kBinLoLufs + i + 0.5 >= rel) { w2 += bins_[(size_t) i]; pw2 += binPow_[(size_t) i]; }
-        s.lufsGated = (float) (w2 > 0.0 ? -0.691 + 10.0 * std::log10 (pw2 / w2) : absMean);
+        s.levelDb = (float) (w2 > 0.0 ? offsetDb() + 10.0 * std::log10 (pw2 / w2) : absMean);
         // percentiles over the absolute-gated hops (verse vs chorus)
         auto pct = [&] (double q) -> float
         {

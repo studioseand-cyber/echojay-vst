@@ -2604,7 +2604,10 @@ const juce::StringArray& EchoJayAPI::historyStripMarkers()
         // The empty-rack declaration (15 Aug 2026): deliberately NOT a
         // "[CURRENT CHAIN" prefix - the server keys hasCurrentChain on that
         // exact string and an empty rack must stay chain-absent there.
-        "\n\n[CURRENT RACK EMPTY"
+        "\n\n[CURRENT RACK EMPTY",
+        // The running level marker (17 Aug 2026): rides after the rack
+        // block on the same arm, varies per turn, never belongs in history.
+        "\n\n[CHAIN LEVELS"
     };
     return markers;
 }
@@ -2795,17 +2798,79 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const ChainHost& chainHost)
 {
     // Adapter: fill a RackSidecar from the live local rack and let the ONE
     // formatter below author the block (Phase R anti-drift discipline).
+    // The per-slot running level rides beside it as notes, index-parallel,
+    // so the sidecar's wire struct is untouched.
     LinkShm::RackSidecar rack;
     rack.valid     = true;
     rack.revision  = chainHost.getChainRevision();
     rack.masterWet = chainHost.getMasterWet();
+    juce::StringArray notes;
+    int i = 0;
     for (const auto& s : chainHost.getAllSlotInfos())
+    {
         rack.slots.push_back({ s.name, s.format, s.settings, s.bypassed, s.wet });
-    return buildCurrentChainInjection(rack, juce::String());
+        notes.add(formatSlotLevelNote(chainHost, i++));
+    }
+    return buildCurrentChainInjection(rack, juce::String(), &notes);
+}
+
+// ---- running level, rendered ----------------------------------------------
+juce::String EchoJayAPI::formatHeard(float seconds)
+{
+    const int s = juce::jmax(0, juce::roundToInt(seconds));
+    if (s < 60) return juce::String(s) + "s";
+    const int m = s / 60, r = s % 60;
+    return juce::String(m) + "m" + (r > 0 ? juce::String(r) + "s" : juce::String());
+}
+
+static juce::String fmt1(float v) { return juce::String(v, 1); }
+
+juce::String EchoJayAPI::formatSlotLevelNote(const ChainHost& chainHost, int slot)
+{
+    const auto lv = chainHost.getSlotLevels(slot);
+    if (!lv.measured) return {};   // bypassed / not in circuit: nothing to say
+    // THE LOUD NULL: below the floor the model reads these words, never a
+    // number. Both legs must be known before any figure is written.
+    if (!lv.in.known || !lv.out.known)
+        return "level: no level known (heard " + formatHeard(juce::jmax(lv.in.heardSeconds, lv.out.heardSeconds)) + ")";
+    // Compact on purpose: this rides every slot line of every chain turn.
+    // in level, in p90 and peak (what a threshold is set against), out
+    // level, and out-in measured (on a compressor this IS the reduction).
+    juce::String n;
+    n << "in " << fmt1(lv.in.levelDb) << " dBFS RMS (p90 " << fmt1(lv.in.p90) << ", pk " << fmt1(lv.in.peakDb)
+      << "), out " << fmt1(lv.out.levelDb) << ", out-in " << fmt1(lv.out.levelDb - lv.in.levelDb) << " dB"
+      << ", heard " << formatHeard(lv.in.heardSeconds);
+    if (lv.in.windowSeconds < lv.in.heardSeconds - 1.0f)
+        n << " (~" << formatHeard(lv.in.windowSeconds) << " described)";
+    return n;
+}
+
+juce::String EchoJayAPI::buildChainLevelsInjection(const ChainHost& chainHost)
+{
+    const auto in  = chainHost.getChainInLevels();
+    const auto out = chainHost.getChainOutLevels();
+    juce::String b;
+    b << "\n\n[CHAIN LEVELS - measured while the user played (BS.1770 gated, K-weighted; heard = gated"
+         " audio so far, described = how much the figures reflect). Set thresholds against INPUT p90, never a guess: ";
+    if (!in.known)
+    {
+        b << "no level known (heard " << formatHeard(in.heardSeconds) << "); do not assume one, say so if a setting depends on it.]";
+        return b;
+    }
+    b << "input " << fmt1(in.levelDb) << " LUFS (p10 " << fmt1(in.p10) << ", p90 " << fmt1(in.p90)
+      << "), peak " << fmt1(in.peakDb) << " dBFS, crest " << fmt1(in.crestDb) << " dB, heard "
+      << formatHeard(in.heardSeconds);
+    if (in.windowSeconds < in.heardSeconds - 1.0f)
+        b << " (~" << formatHeard(in.windowSeconds) << " described)";
+    if (out.known && chainHost.getNumSlots() > 0)
+        b << "; output " << fmt1(out.levelDb) << " LUFS (out-in " << fmt1(out.levelDb - in.levelDb) << " dB)";
+    b << "]";
+    return b;
 }
 
 juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& rack,
-                                                    const juce::String& channelLabel)
+                                                    const juce::String& channelLabel,
+                                                    const juce::StringArray* slotLevelNotes)
 {
     if (!rack.valid || rack.slots.empty()) return {};
 
@@ -2838,6 +2903,8 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& 
         if (s.bypassed) block << ", BYPASSED";
         if (s.wet < 0.995f)
             block << ", wet " << juce::roundToInt(s.wet * 100.0f) << "%";
+        if (slotLevelNotes != nullptr && i < slotLevelNotes->size() && (*slotLevelNotes)[i].isNotEmpty())
+            block << "; " << (*slotLevelNotes)[i];
         block << ")";
         auto settings = s.settings.trim();
         if (settings.isNotEmpty())
