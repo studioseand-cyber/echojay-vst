@@ -8,31 +8,9 @@ MeterEngine::~MeterEngine() {}
 
 void MeterEngine::computeKWeightingCoeffs(double sr)
 {
-    double f0 = 1681.974450955533;
-    double G = 3.999843853973347;
-    double Q = 0.7071752369554196;
-    
-    double K = std::tan(juce::MathConstants<double>::pi * f0 / sr);
-    double Vh = std::pow(10.0, G / 20.0);
-    double Vb = std::pow(Vh, 0.4996667741545416);
-    double a0_ = 1.0 + K / Q + K * K;
-    
-    kStage1.b0 = (Vh + Vb * K / Q + K * K) / a0_;
-    kStage1.b1 = 2.0 * (K * K - Vh) / a0_;
-    kStage1.b2 = (Vh - Vb * K / Q + K * K) / a0_;
-    kStage1.a1 = 2.0 * (K * K - 1.0) / a0_;
-    kStage1.a2 = (1.0 - K / Q + K * K) / a0_;
-    
-    double f1 = 38.13547087602444;
-    double Q1 = 0.5003270373238773;
-    double K1 = std::tan(juce::MathConstants<double>::pi * f1 / sr);
-    double a0_1 = 1.0 + K1 / Q1 + K1 * K1;
-    
-    kStage2.b0 = 1.0 / a0_1;
-    kStage2.b1 = -2.0 / a0_1;
-    kStage2.b2 = 1.0 / a0_1;
-    kStage2.a1 = 2.0 * (K1 * K1 - 1.0) / a0_1;
-    kStage2.a2 = (1.0 - K1 / Q1 + K1 * K1) / a0_1;
+    // One copy of the BS.1770 numbers (EchoJayKWeighting.h), shared with
+    // LevelTally so both instruments weight identically.
+    echojay::computeKWeightingCoeffs(sr, kStage1, kStage2);
 }
 
 void MeterEngine::computeWidthHpfCoeffs(double sr)

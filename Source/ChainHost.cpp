@@ -496,8 +496,20 @@ public:
     {
         smooth_.reset(sampleRate, 0.05);
         smooth_.setCurrentAndTargetValue(wet_ ? wet_->load(std::memory_order_relaxed) : 1.0f);
+        // A new sample rate is a new source (step 3 of the level pass owns
+        // the wider reset story); the tallies re-prepare and clear here.
+        inTally_.prepare(sampleRate);
+        outTally_.prepare(sampleRate);
     }
     void releaseResources() override {}
+
+    // Running level on BOTH legs (17 Aug 2026): inputs 2/3 are this slot's
+    // input (the dry tap), inputs 0/1 the plugin's output. Measured before
+    // the fully-wet early-out below, so a slot at 100% is measured too.
+    // Cost is a few flops per sample; see EchoJayLevelTally.h.
+    const echojay::LevelTally& inTally()  const { return inTally_; }
+    const echojay::LevelTally& outTally() const { return outTally_; }
+    void resetTallies() { inTally_.reset(); outTally_.reset(); }
 
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override
     {
@@ -506,6 +518,13 @@ public:
         smooth_.setTargetValue(target);
 
         const int n = buffer.getNumSamples();
+        {
+            const int nch = buffer.getNumChannels();
+            if (nch >= 1)
+                outTally_.push(buffer.getReadPointer(0), nch >= 2 ? buffer.getReadPointer(1) : nullptr, n);
+            if (nch >= 3)
+                inTally_.push(buffer.getReadPointer(2), nch >= 4 ? buffer.getReadPointer(3) : nullptr, n);
+        }
         // Fully wet and settled: output channels 0/1 already hold the wet
         // signal in-place — nothing to do (zero cost at the default setting).
         if (!smooth_.isSmoothing() && target >= 0.9995f)
@@ -542,6 +561,7 @@ public:
 private:
     std::shared_ptr<std::atomic<float>> wet_;
     juce::SmoothedValue<float>          smooth_;
+    echojay::LevelTally                 inTally_, outTally_;
 };
 
 // Defined up here, not with the rest of the settings-cache code below:
@@ -661,6 +681,8 @@ void ChainHost::prepare(double sampleRate, int blockSize)
     dryRingWrite_ = 0;
     masterWetSmooth_.reset(sampleRate, 0.05);
     masterWetSmooth_.setCurrentAndTargetValue(masterWet_.load(std::memory_order_relaxed));
+    chainInTally_.prepare(sampleRate);
+    chainOutTally_.prepare(sampleRate);
 
     graph_->setPlayConfigDetails(2, 2, sampleRate, blockSize);
     graph_->prepareToPlay(sampleRate, blockSize);
@@ -678,8 +700,22 @@ void ChainHost::process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi
     // An empty AudioProcessorGraph with only IO nodes can drop audio under
     // certain prepare/rebuild orderings; bypassing it avoids that entirely.
     // (Also means master wet/dry costs nothing on an empty chain.)
-    if (!prepared_ || !graph_ || !hasActiveSlots_.load())
+    if (!prepared_ || !graph_) return;
+    // Running level at the chain INPUT, before anything, including on an
+    // empty rack: a build on an empty rack still needs to know the level.
+    if (buffer.getNumChannels() >= 1)
+        chainInTally_.push(buffer.getReadPointer(0),
+                           buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : nullptr,
+                           buffer.getNumSamples());
+    if (!hasActiveSlots_.load())
+    {
+        // Passthrough: the chain output IS the input
+        if (buffer.getNumChannels() >= 1)
+            chainOutTally_.push(buffer.getReadPointer(0),
+                                buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : nullptr,
+                                buffer.getNumSamples());
         return;   // buffer passes through untouched
+    }
 
     const int n   = buffer.getNumSamples();
     const int chs = juce::jmin(2, buffer.getNumChannels());
@@ -714,6 +750,7 @@ void ChainHost::process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi
         if (ringOk) dryRingWrite_ = (dryRingWrite_ + n) % kDryRingLen;
         masterWetSmooth_.skip(n);
         graph_->processBlock(buffer, midi);
+        chainOutTally_.push(buffer.getReadPointer(0), chs >= 2 ? buffer.getReadPointer(1) : nullptr, n);
         return;
     }
 
@@ -749,6 +786,8 @@ void ChainHost::process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi
             out[i] = out[i] * w + dryScratch_.getReadPointer(c)[i] * (1.0f - w);
         }
     }
+    // Running level at the chain OUTPUT: post master wet, pre bus trim
+    chainOutTally_.push(buffer.getReadPointer(0), chs >= 2 ? buffer.getReadPointer(1) : nullptr, n);
 }
 
 // ---------------------------------------------------------------------------
@@ -1785,6 +1824,31 @@ float ChainHost::getSlotWet(int i) const
 {
     if (i < 0 || i >= (int)slots_.size()) return 1.0f;
     return slots_[(size_t)i].wet;
+}
+
+ChainHost::SlotLevels ChainHost::getSlotLevels(int i) const
+{
+    SlotLevels out;
+    if (i < 0 || i >= (int)slots_.size()) return out;
+    const auto& s = slots_[(size_t)i];
+    if (s.bypassed || !s.blendNode) return out;   // not in circuit: not measured
+    if (auto* b = dynamic_cast<SlotWetBlend*>(s.blendNode->getProcessor()))
+    {
+        out.in  = b->inTally().snapshot();
+        out.out = b->outTally().snapshot();
+        out.measured = true;
+    }
+    return out;
+}
+
+void ChainHost::resetAllLevels()
+{
+    chainInTally_.reset();
+    chainOutTally_.reset();
+    for (auto& s : slots_)
+        if (s.blendNode)
+            if (auto* b = dynamic_cast<SlotWetBlend*>(s.blendNode->getProcessor()))
+                b->resetTallies();
 }
 
 std::vector<ChainHost::ApplyReport>
@@ -3345,6 +3409,30 @@ void ChainHost::rebuildGraph()
     // (passthrough) so the blend never mixes against silence — the same
     // intent as the old uncovered-channel passthrough at the chain tail.
     juce::AudioProcessorGraph::NodeID prev = inputNode_->nodeID;   // always 2-out
+    // Running-level bookkeeping: a slot whose PREDECESSOR changed since the
+    // last build (moved, a slot inserted before it, the previous slot
+    // bypassed) now sees a different signal, so its tallies restart; a slot
+    // whose input is the same signal keeps its history. Recorded per slot
+    // index in slots_ order; a slot that was not active last time has no
+    // record and starts fresh when it becomes active.
+    std::vector<juce::AudioProcessorGraph::NodeID> preds(slots_.size());
+    for (auto& stage : active)
+    {
+        for (size_t si = 0; si < slots_.size(); ++si)
+            if (slots_[si].node && slots_[si].node->nodeID == stage.plugin)
+            {
+                preds[si] = prev;
+                const bool changed = si >= builtPredecessors_.size()
+                                  || !(builtPredecessors_[si] == prev);
+                if (changed && slots_[si].blendNode)
+                    if (auto* b = dynamic_cast<SlotWetBlend*>(slots_[si].blendNode->getProcessor()))
+                        b->resetTallies();
+                break;
+            }
+        prev = stage.blend;
+    }
+    builtPredecessors_ = preds;
+    prev = inputNode_->nodeID;
     for (auto& stage : active)
     {
         int nIn  = channelsOf(stage.plugin, true);

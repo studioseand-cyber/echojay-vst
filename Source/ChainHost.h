@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "PluginScanner.h"
 #include "EedDeviceRegistry.h"
+#include "EchoJayLevelTally.h"
 #include <atomic>
 #include <map>
 #include <mutex>
@@ -336,6 +337,20 @@ public:
     float getMasterWet() const noexcept { return masterWet_.load(std::memory_order_relaxed); }
     void  setSlotWet(int i, float wet01);
     float getSlotWet(int i) const;
+
+    // ---- Running level (LevelTally, 17 Aug 2026) --------------------------
+    // The chain input (pre-graph, even with an empty rack, so a build on an
+    // empty rack still knows the level), the chain output (post master wet,
+    // pre bus trim: the chain's own output), and each ACTIVE slot's input
+    // and output, measured inside its SlotWetBlend on both legs. A bypassed
+    // slot has no blend node and is not measured. Snapshots are honest by
+    // construction: known == false and NaN numbers until the floor of gated
+    // audio has been heard. Message thread.
+    struct SlotLevels { echojay::LevelTally::Snapshot in, out; bool measured = false; };
+    echojay::LevelTally::Snapshot getChainInLevels() const  { return chainInTally_.snapshot(); }
+    echojay::LevelTally::Snapshot getChainOutLevels() const { return chainOutTally_.snapshot(); }
+    SlotLevels getSlotLevels(int i) const;
+    void resetAllLevels();   // source change (step 3), manual reset
 
     // EchoJay auto-parameter-mapping: dial a slot's hosted plugin from
     // structured settings plus the plugin's map.
@@ -895,6 +910,13 @@ private:
     // the end rather than once per op.
     void bumpChainRevision() noexcept { chainRevision_.fetch_add(1, std::memory_order_relaxed);
                                         noteHostedChange(); }
+
+    // Running level at the chain input and output (see getChainInLevels)
+    echojay::LevelTally chainInTally_, chainOutTally_;
+    // Which node fed each slot at the last rebuild: a slot whose predecessor
+    // changed (move, insert before it, the previous slot bypassed) sees a
+    // different signal, so its tallies restart.
+    std::vector<juce::AudioProcessorGraph::NodeID> builtPredecessors_;
 
     // ---- Master wet/dry state (audio thread reads, message thread writes) --
     // dryRing_ holds the pre-graph input so the dry leg can be delayed by the

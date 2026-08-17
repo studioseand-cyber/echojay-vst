@@ -5,10 +5,10 @@
 #include <vector>
 #include <mutex>
 
-// K-weighting filter coefficients for LUFS (ITU-R BS.1770-4)
-struct BiquadCoeffs {
-    double b0, b1, b2, a1, a2;
-};
+// K-weighting filter coefficients for LUFS (ITU-R BS.1770-4): BiquadCoeffs
+// and the coefficient formula live in EchoJayKWeighting.h, shared with the
+// running level instrument (EchoJayLevelTally.h), so the numbers exist once.
+#include "EchoJayKWeighting.h"
 
 struct MeterData {
     // Loudness (LUFS)
