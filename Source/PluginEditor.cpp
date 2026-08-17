@@ -12372,12 +12372,74 @@ EchoJayEditor::WithheldLayout EchoJayEditor::withheldSectionLayout(int sx, int s
 // A name folded for "is this bundle the same plugin": lowercase, alphanumerics
 // only. Classification aid ONLY (which panel group a no-entry name falls in);
 // the availability verdict itself comes from ChainHost::resolveByName.
-juce::String EchoJayEditor::foldPluginName(const juce::String& s)
+static juce::String withheldFold(const juce::String& s)
 {
     juce::String out;
     for (auto c : s.toLowerCase())
         if (juce::CharacterFunctions::isLetterOrDigit(c)) out << juce::String::charToString(c);
     return out;
+}
+juce::String EchoJayEditor::foldPluginName(const juce::String& s) { return withheldFold(s); }
+
+// Token signature for the twin merge (below): lowercase tokens split on
+// punctuation, hyphens NEXT TO A DIGIT joining ("C-18" -> "c18", "C673-A" ->
+// "c673a"), vendor tokens dropped.
+static juce::StringArray withheldTokens(const juce::String& name, const juce::String& vendor)
+{
+    juce::String n;
+    {
+        const auto low = name.toLowerCase();
+        for (int i = 0; i < low.length(); ++i)
+        {
+            const auto c = low[i];
+            if (c == '-' && ((i > 0 && juce::CharacterFunctions::isDigit(low[i - 1]))
+                          || (i + 1 < low.length() && juce::CharacterFunctions::isDigit(low[i + 1]))))
+                continue;
+            n << juce::String::charToString(c);
+        }
+    }
+    juce::StringArray out; juce::String cur;
+    auto flush = [&] { if (cur.isNotEmpty()) { out.add(cur); cur.clear(); } };
+    for (auto c : n) { if (juce::CharacterFunctions::isLetterOrDigit(c)) cur << juce::String::charToString(c); else flush(); }
+    flush();
+    const juce::String v = withheldFold(vendor);
+    juce::StringArray kept;
+    for (auto& t : out) if (withheldFold(t) != v) kept.add(t);
+    return kept;
+}
+static bool withheldIsNum(const juce::String& t) { return t.isNotEmpty() && t.containsOnly("0123456789"); }
+// Same product by signature: same token count; each token maps to a distinct
+// token of the other: digits equal exactly, letters equal, or a short
+// abbreviation (<= 5 chars) that prefixes the long one, dropping at least four
+// letters and no digit ("comp" / "compressor" yes; "serum" / "serumfx" no, a
+// suffix is another product; "soothe" / "soothe2" no). Or the two fold to the
+// same string once vendor tokens go.
+static bool withheldSameProduct(const juce::StringArray& a, const juce::StringArray& b)
+{
+    if (a.isEmpty() || b.isEmpty()) return false;
+    if (withheldFold(a.joinIntoString("")) == withheldFold(b.joinIntoString(""))) return true;
+    if (a.size() != b.size()) return false;
+    std::vector<bool> used((size_t) b.size(), false);
+    for (auto& ta : a)
+    {
+        bool hit = false;
+        for (int j = 0; j < b.size() && !hit; ++j)
+        {
+            if (used[(size_t) j]) continue;
+            const auto& tb = b[j];
+            bool ok = ta == tb;
+            if (!ok && !withheldIsNum(ta) && !withheldIsNum(tb))
+            {
+                const auto& sh = ta.length() <= tb.length() ? ta : tb;
+                const auto& lo = ta.length() <= tb.length() ? tb : ta;
+                const auto rest = lo.substring(sh.length());
+                ok = sh.length() <= 5 && lo.startsWith(sh) && rest.length() >= 4 && !rest.containsAnyOf("0123456789");
+            }
+            if (ok) { used[(size_t) j] = true; hit = true; }
+        }
+        if (!hit) return false;
+    }
+    return true;
 }
 
 std::vector<EchoJayEditor::WithheldGroup>
@@ -12394,23 +12456,95 @@ EchoJayEditor::classifyWithheld(const std::vector<ScannedPlugin>& plugins, const
     // variant is kept and every one is asked, so a plugin is available when
     // ANY of its rows resolves in this host, whichever spelling the AU
     // registry or the VST3 bundle used.
+    // Parenthesised variants ("Pro-C (SC)", "Pro-C (SC Mono)") are ONE
+    // product to update, so the parenthetical leaves the key too
+    // (ChainHost::stripParenthetical, the resolver's own rule).
     struct NameRow { juce::String name, vendor; juce::StringArray names, formats; };
     std::map<juce::String, NameRow> byName;   // fold -> row
     auto keyOf = [](const ScannedPlugin& p)
     {
-        juce::String n = p.name.trim();
+        juce::String n = ChainHost::stripParenthetical(p.name.trim());
         const juce::String vend = p.manufacturer.trim();
         if (vend.isNotEmpty() && n.length() > vend.length() + 1 && n.startsWithIgnoreCase(vend + " "))
             n = n.substring(vend.length() + 1).trim();
         return foldPluginName(n);
     };
+    // Vendor as the AU registry spells it where the same folded vendor has an
+    // AU row (the scanner's VST3 rows carry folder-derived, title-cased
+    // strings: "Mcdsp" beside the registry's "McDSP"); otherwise the scanner's
+    // string verbatim; empty stays empty. The scanner's no-vendor sentinel is
+    // the literal "Unknown" (PluginScanner.cpp), and that is empty here too.
+    auto vendorOf = [](const ScannedPlugin& p)
+    {
+        const juce::String v = p.manufacturer.trim();
+        return v == "Unknown" ? juce::String() : v;
+    };
+    std::map<juce::String, juce::String> vendorDisplay;
+    for (const auto& p : plugins)
+    {
+        const juce::String v = vendorOf(p);
+        if (v.isEmpty()) continue;
+        const juce::String k = foldPluginName(v);
+        auto it = vendorDisplay.find(k);
+        if (it == vendorDisplay.end()) vendorDisplay[k] = v;
+        else if (p.format == "AU" || p.format.contains("AU")) it->second = v;   // registry spelling wins
+    }
+    auto showVendor = [&](const juce::String& v)
+    {
+        const juce::String t = v.trim() == "Unknown" ? juce::String() : v.trim();
+        if (t.isEmpty()) return juce::String();
+        auto it = vendorDisplay.find(foldPluginName(t));
+        return it != vendorDisplay.end() ? it->second : t;
+    };
     for (const auto& p : plugins)
     {
         if (!p.enabled) continue;
         auto& r = byName[keyOf(p)];
-        if (r.name.isEmpty()) { r.name = p.name; r.vendor = p.manufacturer; }
+        if (r.name.isEmpty()) { r.name = ChainHost::stripParenthetical(p.name.trim()); r.vendor = showVendor(p.manufacturer); }
         r.names.addIfNotAlreadyThere(p.name);
+        r.names.addIfNotAlreadyThere(ChainHost::stripParenthetical(p.name.trim()));
         r.formats.addIfNotAlreadyThere(p.format);
+    }
+    // The twin merge: a row that resolves nowhere in this host but is the
+    // same product as a row that DOES (same folded vendor, token signature
+    // above) is that product's Intel/VST2 build, and the product is
+    // available. Merged into the available row; every merge is logged.
+    {
+        std::map<juce::String, std::vector<juce::String>> availByVendor;   // vendor fold -> available keys
+        for (auto& kv : byName)
+        {
+            bool avail = false;
+            for (const auto& nm : kv.second.names)
+            {
+                const bool a = ch.resolveByName(nm, "AudioUnit").name.isNotEmpty();
+                const bool v = ch.resolveByName(nm, "VST3").name.isNotEmpty();
+                if (hostFmt == "AudioUnit" ? a : hostFmt == "VST3" ? v : (a || v)) { avail = true; break; }
+            }
+            if (avail) availByVendor[foldPluginName(kv.second.vendor)].push_back(kv.first);
+        }
+        std::vector<juce::String> merged;
+        for (auto& kv : byName)
+        {
+            const juce::String vk = foldPluginName(kv.second.vendor);
+            auto it = availByVendor.find(vk);
+            if (it == availByVendor.end()) continue;
+            if (std::find(it->second.begin(), it->second.end(), kv.first) != it->second.end()) continue;   // itself available
+            const auto sig = withheldTokens(kv.second.name, kv.second.vendor);
+            for (const auto& availKey : it->second)
+            {
+                auto& target = byName[availKey];
+                if (withheldSameProduct(sig, withheldTokens(target.name, target.vendor)))
+                {
+                    EchoJay_NSLog(("EJScan: withheld panel merged \"" + kv.second.name + "\" into \"" + target.name
+                                   + "\" (" + target.vendor + "), same product by token signature").toRawUTF8());
+                    for (const auto& nm : kv.second.names) target.names.addIfNotAlreadyThere(nm);
+                    for (const auto& f : kv.second.formats) target.formats.addIfNotAlreadyThere(f);
+                    merged.push_back(kv.first);
+                    break;
+                }
+            }
+        }
+        for (const auto& k : merged) byName.erase(k);
     }
     if (enabledNamesOut) *enabledNamesOut = (int) byName.size();
 
@@ -12459,7 +12593,7 @@ EchoJayEditor::classifyWithheld(const std::vector<ScannedPlugin>& plugins, const
         if (wAU == ChainHost::WithholdReason::ArchitectureIncompatible || wV == ChainHost::WithholdReason::ArchitectureIncompatible)
         {
             gIntel.items.push_back(it);
-            ++intelVendors[r.vendor.isEmpty() ? juce::String("Unknown") : r.vendor];
+            if (r.vendor.isNotEmpty()) ++intelVendors[r.vendor];
             continue;
         }
         bool onlyVst2 = true;
