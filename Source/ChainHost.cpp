@@ -4985,17 +4985,20 @@ void ChainHost::applyRestoredParams(int slotIdx, const juce::var& params, const 
     // never applied. The values apply only when the plugin that actually
     // resolved into this slot IS the one they were saved for.
     auto* entry = params.getDynamicObject();
-    if (entry == nullptr) return;                       // a string value: no identity, skip
+    if (entry == nullptr) return;                       // a bare string value: no identity, skip
     const juce::var uidVar = entry->getProperty("uid");
-    if (! (uidVar.isInt() || uidVar.isInt64())) return; // missing / string uid: no identity, skip
-    const juce::int64 savedUid   = (juce::int64) uidVar;
+    if (! uidVar.isString()) return;                    // missing / non-string uid: no identity, skip
+    const juce::String savedUid  = uidVar.toString();
+    if (savedUid.isEmpty()) return;                     // empty uid: no identity, skip
     const juce::String savedFmt  = entry->getProperty("format").toString();
     const juce::String savedName = entry->getProperty("plugin").toString();
     const juce::String payload   = entry->getProperty("params").toString();
     if (payload.isEmpty()) return;
 
+    // String compare, byte-identical to the slot uid buildChainSlotsVar writes
+    // (juce::String(uniqueId)); the server keys stateParams to slots the same way.
     const auto& slotDesc = slots_[(size_t)slotIdx].desc;
-    if ((juce::int64) slotDesc.uniqueId != savedUid || slotDesc.pluginFormatName != savedFmt)
+    if (juce::String(slotDesc.uniqueId) != savedUid || slotDesc.pluginFormatName != savedFmt)
     {
         addStateNote(slotName + ": its saved parameter values were for \"" + savedName + "\" ("
                      + savedFmt + "), not the plugin in this slot, so they were not applied");
@@ -5402,11 +5405,14 @@ juce::var ChainHost::getCachedSlotParamsVar() const
         if (s.desc.pluginFormatName != "VST3" || s.lastKnownParams.isEmpty()) continue;
         // Identity-carrying object form (server contract, 17 Aug 2026): the
         // values apply on restore ONLY if the plugin that resolves into the
-        // slot is the same one, so its identity travels with them. uid is
-        // PluginDescription::uniqueId as an integer (the same value the
-        // shared slots[n-1].uid carries), so the two compare without parsing.
+        // slot is the same one, so its identity travels with them. uid is a
+        // STRING, juce::String(desc.uniqueId), byte-identical to what
+        // buildChainSlotsVar writes for the slot's own uid: the server's
+        // normalizeSlots runs every slot field through str(), so the slot
+        // uid is a string by contract and an integer here would compare
+        // against null. So this side matches it: a string compare on restore.
         auto* e = new juce::DynamicObject();
-        e->setProperty("uid",    (juce::int64) s.desc.uniqueId);
+        e->setProperty("uid",    juce::String(s.desc.uniqueId));
         e->setProperty("format", s.desc.pluginFormatName);
         e->setProperty("plugin", s.desc.name);
         e->setProperty("params", s.lastKnownParams);
