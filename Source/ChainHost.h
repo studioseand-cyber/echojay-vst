@@ -748,11 +748,11 @@ public:
 
     // ---- Public helpers for static pollVST3Validation free function ------
     // (Free functions cannot access private members in C++.)
+    // The ONE instantiate site (17 Aug 2026): every route that creates a
+    // hosted plugin instance goes through here, under a death mark that is
+    // held through cb (see the death-marker block in ChainHost.cpp).
     void asyncCreatePlugin(const juce::PluginDescription& d,
-        std::function<void(std::unique_ptr<juce::AudioPluginInstance>, const juce::String&)> cb)
-    {
-        formatManager_.createPluginInstanceAsync(d, sampleRate_, blockSize_, std::move(cb));
-    }
+        std::function<void(std::unique_ptr<juce::AudioPluginInstance>, const juce::String&)> cb);
     void completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
                       const juce::PluginDescription& desc);
     // reason travels into chain_blacklist.txt next to the path with an ISO
@@ -1104,6 +1104,9 @@ private:
     static juce::File getPluginListFile();
     static juce::File getBlacklistFile();
     static juce::File getDeadmanFile();
+    // Turn every chain_load_deadman.<pid>.txt left by a dead process into
+    // blacklist rows (constructor; see the death-marker block in the cpp)
+    void consumeDeathMarks();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChainHost)
 };

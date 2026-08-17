@@ -14,6 +14,8 @@
  #include <libproc.h>
  #include <dlfcn.h>
  #include <unistd.h>
+ #include <signal.h>      // kill(pid, 0): is the process that wrote a death marker still alive
+ #include <cerrno>
  #include <sys/param.h>   // MAXCOMLEN
  #include <mach-o/dyld.h>     // _dyld_get_image_header: the process cputype (arch gate)
  #include <mach-o/fat.h>      // FAT_MAGIC, fat_arch (arch gate)
@@ -41,6 +43,110 @@ juce::File ChainHost::getEntriesCacheFile() { return appSupportDir().getChildFil
 juce::File ChainHost::getParamMapsCacheFile() { return appSupportDir().getChildFile("param_maps.json"); }
 juce::File ChainHost::getBlacklistFile()  { return appSupportDir().getChildFile("chain_blacklist.txt"); }
 juce::File ChainHost::getDeadmanFile()    { return appSupportDir().getChildFile("chain_load_deadman.txt"); }
+
+// ---------------------------------------------------------------------------
+// Death markers (17 Aug 2026). A mark is pushed before a call into a hosted
+// plugin that can take the process down and popped after it returns; the
+// live set is written to chain_load_deadman.<pid>.txt, one line per mark
+// (phase, path, name). A file whose pid is no longer running was left by a
+// process that died with those calls in flight, and the next ChainHost to
+// construct on this machine turns each line into a chain_blacklist.txt row
+// ("crashed the host during <phase> (deadman)"), which withholds the plugin
+// at feed and at load from then on. Per-pid files because Logic constructs
+// EchoJay instances at any moment: instance 5's constructor must not consume
+// a mark instance 1 is holding mid-load in the same process. The old single
+// chain_load_deadman.txt (validation only, path only) is still consumed.
+//
+// Covered: instantiate on every route (asyncCreatePlugin, held through the
+// caller's callback so completeLoad's graph insert and prepareToPlay are
+// inside it), thin-VST3 validation, setStateInformation on restore and on
+// the same-plugin replace, and createEditor. NOT covered, on purpose: a
+// death while processing or while an editor is open. Those windows hold N
+// racked plugins and no attribution; blacklisting all of them would punish
+// good plugins for a sibling's crash or a force-quit, and Logic kills the
+// AU host on quit without running destructors, so a "racked at death"
+// record would fire falsely on every launch.
+// ---------------------------------------------------------------------------
+namespace {
+struct DeathMark { int id; juce::String phase, path, name; };
+std::mutex& deathMarkMutex() { static std::mutex m; return m; }
+std::vector<DeathMark>& deathMarks() { static std::vector<DeathMark> v; return v; }
+juce::File deathMarkFile()
+{
+    return appSupportDir().getChildFile("chain_load_deadman." + juce::String((int) getpid()) + ".txt");
+}
+// Caller holds deathMarkMutex()
+void writeDeathMarksLocked()
+{
+    auto f = deathMarkFile();
+    if (deathMarks().empty()) { f.deleteFile(); return; }
+    juce::String out;
+    for (const auto& m : deathMarks())
+        out << m.phase << "\t" << m.path << "\t" << m.name << "\n";
+    f.getParentDirectory().createDirectory();
+    f.replaceWithText(out);
+}
+int pushDeathMark(const juce::String& phase, const juce::PluginDescription& d)
+{
+    if (d.fileOrIdentifier.isEmpty()) return 0;   // built-ins: nothing to blacklist
+    std::lock_guard<std::mutex> lk(deathMarkMutex());
+    static int nextId = 1;
+    const int id = nextId++;
+    deathMarks().push_back({ id, phase, d.fileOrIdentifier, d.name });
+    writeDeathMarksLocked();
+    return id;
+}
+void popDeathMark(int id)
+{
+    if (id == 0) return;
+    std::lock_guard<std::mutex> lk(deathMarkMutex());
+    auto& v = deathMarks();
+    v.erase(std::remove_if(v.begin(), v.end(), [id](const DeathMark& m) { return m.id == id; }), v.end());
+    writeDeathMarksLocked();
+}
+bool processAlive(int pid)
+{
+    if (pid <= 0) return false;
+    if (::kill((pid_t) pid, 0) == 0) return true;
+    return errno == EPERM;   // exists, not ours: alive
+}
+} // namespace
+
+// Consume every marker file left by a dead process. Runs in the ChainHost
+// constructor (main plugin and Link alike: the blacklist is machine-wide).
+void ChainHost::consumeDeathMarks()
+{
+    // Legacy single-path file (validation deadman before 17 Aug 2026)
+    auto legacy = getDeadmanFile();
+    if (legacy.existsAsFile())
+    {
+        juce::String crashed = legacy.loadFileAsString().trim();
+        if (crashed.isNotEmpty())
+            addToBlacklist(crashed, "crashed the host during load (deadman)");
+        legacy.deleteFile();
+    }
+    for (const auto& f : appSupportDir().findChildFiles(juce::File::findFiles, false, "chain_load_deadman.*.txt"))
+    {
+        const int pid = f.getFileName().fromFirstOccurrenceOf("chain_load_deadman.", false, false)
+                                       .upToFirstOccurrenceOf(".txt", false, false).getIntValue();
+        if (pid == (int) getpid()) continue;     // ours: live marks, by definition
+        if (processAlive(pid)) continue;         // another live host process
+        juce::StringArray lines;
+        lines.addLines(f.loadFileAsString());
+        for (const auto& line : lines)
+        {
+            juce::StringArray cols;
+            cols.addTokens(line, "\t", "");
+            if (cols.size() < 2 || cols[1].trim().isEmpty()) continue;
+            const juce::String phase = cols[0].trim(), path = cols[1].trim();
+            const juce::String name  = cols.size() > 2 ? cols[2].trim() : path;
+            EchoJay_NSLog(("EJScan: deadman: \"" + name + "\" was in flight (" + phase
+                           + ") when host process " + juce::String(pid) + " died; added to chain_blacklist.txt").toRawUTF8());
+            addToBlacklist(path, "crashed the host during " + phase + " (deadman)");
+        }
+        f.deleteFile();
+    }
+}
 
 // Session load-failure key (see ChainHost.h: deliberately NOT persisted —
 // a load failure means "could not authorise right now", e.g. iLok absent,
@@ -616,14 +722,7 @@ ChainHost::ChainHost()
     loadParamMapsFromDisk();
     mergeBootstrapMaps();
 
-    auto deadman = getDeadmanFile();
-    if (deadman.existsAsFile())
-    {
-        juce::String crashed = deadman.loadFileAsString().trim();
-        if (crashed.isNotEmpty())
-            addToBlacklist(crashed, "crashed the host during load (deadman)");
-        deadman.deleteFile();
-    }
+    consumeDeathMarks();
 }
 
 // Process-lifetime store for hosted plugin instances — INTENTIONALLY leaked
@@ -1801,9 +1900,13 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
                 if (samePlugin && oldState.getSize() > 0)
                     if (auto* newNode = slots_[(size_t)oldCur].node.get())
                         if (auto* newProc = newNode->getProcessor())
+                        {
+                            const int mark = pushDeathMark("state restore", desc);
                             try { newProc->setStateInformation(oldState.getData(),
                                                                (int)oldState.getSize()); }
                             catch (...) {}
+                            popDeathMark(mark);
+                        }
 
                 applyOpSettings(oldCur);
                 finish(samePlugin
@@ -2075,7 +2178,11 @@ juce::AudioProcessorEditor* ChainHost::createEditorForSlot(int i)
     try
     {
         auto* proc = slots_[i].node->getProcessor();
-        return proc ? proc->createEditor() : nullptr;
+        if (proc == nullptr) return nullptr;
+        const int mark = pushDeathMark("editor creation", slots_[i].desc);
+        auto* ed = proc->createEditor();
+        popDeathMark(mark);
+        return ed;
     }
     catch (...) { return nullptr; }
 }
@@ -2083,6 +2190,22 @@ juce::AudioProcessorEditor* ChainHost::createEditorForSlot(int i)
 // ---------------------------------------------------------------------------
 // Async load (appends to chain)
 // ---------------------------------------------------------------------------
+void ChainHost::asyncCreatePlugin(const juce::PluginDescription& d,
+    std::function<void(std::unique_ptr<juce::AudioPluginInstance>, const juce::String&)> cb)
+{
+    // Death mark up for the instantiate, and held THROUGH the caller's
+    // callback: completeLoad inserts the node and prepares the graph in
+    // there, and a plugin that dies in prepareToPlay died at instantiate for
+    // every purpose the blacklist serves.
+    const int mark = pushDeathMark("instantiate", d);
+    formatManager_.createPluginInstanceAsync(d, sampleRate_, blockSize_,
+        [mark, cb = std::move(cb)](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
+        {
+            if (cb) cb(std::move(inst), err);
+            popDeathMark(mark);
+        });
+}
+
 void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
                               const juce::PluginDescription& desc)
 {
@@ -3265,7 +3388,7 @@ static void pollVST3Validation(
     ChainHost* host,
     std::shared_ptr<struct VST3ValState> vs,
     juce::PluginDescription desc,
-    juce::File deadman,
+    int validationMark,
     std::function<void(const juce::String&)> cb,
     int ticksLeft);
 
@@ -3279,13 +3402,13 @@ static void pollVST3Validation(
     ChainHost* host,
     std::shared_ptr<VST3ValState> vs,
     juce::PluginDescription desc,
-    juce::File deadman,
+    int validationMark,
     std::function<void(const juce::String&)> cb,
     int ticksLeft)
 {
     if (vs->done.load())
     {
-        deadman.deleteFile();
+        popDeathMark(validationMark);
         juce::PluginDescription fullDesc;
         bool found = false;
         {
@@ -3307,13 +3430,16 @@ static void pollVST3Validation(
 
     if (ticksLeft <= 0)
     {
+        // Blacklisted here and now; the mark comes down so the next launch
+        // does not record the same event a second time under another reason.
+        popDeathMark(validationMark);
         host->addToBlacklist(desc.fileOrIdentifier, "validation timed out");
         cb("Timed out loading \"" + desc.name + "\": added to skip list");
         return;
     }
 
-    juce::Timer::callAfterDelay(100, [host, vs, desc, deadman, cb, ticksLeft]() mutable {
-        pollVST3Validation(host, vs, desc, deadman, cb, ticksLeft - 1);
+    juce::Timer::callAfterDelay(100, [host, vs, desc, validationMark, cb, ticksLeft]() mutable {
+        pollVST3Validation(host, vs, desc, validationMark, cb, ticksLeft - 1);
     });
 }
 
@@ -3421,8 +3547,9 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
 
     if (!needsValidation)
     {
-        formatManager_.createPluginInstanceAsync(
-            fullDesc, sampleRate_, blockSize_,
+        // Through asyncCreatePlugin, so the death mark covers this branch
+        // (AU, and VST3s already validated) and not only the fp pass.
+        asyncCreatePlugin(fullDesc,
             [this, callback, fullDesc](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
             {
                 if (!inst)
@@ -3440,10 +3567,9 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
         return;
     }
 
-    // Thin VST3: validate in detached thread, poll on message thread
-    appSupportDir().createDirectory();
-    auto deadman = getDeadmanFile();
-    deadman.replaceWithText(desc.fileOrIdentifier);
+    // Thin VST3: validate in detached thread, poll on message thread. The
+    // death mark stands in for the old single-path deadman file.
+    const int validationMark = pushDeathMark("validation", desc);
 
     auto* vst3Fmt = getFormatByName("VST3");
     if (!vst3Fmt) { callback("VST3 format not available"); return; }
@@ -3463,7 +3589,7 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
         }
     }).detach();
 
-    pollVST3Validation(this, vs, desc, deadman, callback, 100);
+    pollVST3Validation(this, vs, desc, validationMark, callback, 100);
 }
 
 // ---------------------------------------------------------------------------
@@ -4707,16 +4833,20 @@ void ChainHost::applyRestoredState(int slotIdx, const juce::String& b64,
         return;
     }
 
+    const int mark = (slotIdx >= 0 && slotIdx < (int)slots_.size())
+                       ? pushDeathMark("state restore", slots_[(size_t)slotIdx].desc) : 0;
     try
     {
         proc->setStateInformation(mo.getData(), (int)mo.getDataSize());
     }
     catch (...)
     {
+        popDeathMark(mark);
         addStateNote(slotName + ": rejected its saved settings,"
                                 " so it loaded at its defaults");
         return;
     }
+    popDeathMark(mark);
 
     // Seed the cache with what we just restored, so a save that happens
     // before the first capture round-trips this slot instead of nulling it.
