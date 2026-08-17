@@ -1819,6 +1819,18 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             chainFormatFilter_    = chainOfferBothBuilds_ ? juce::String() : juce::String("AudioUnit");
             break;
         case juce::AudioProcessor::wrapperType_VST3:      chainFormatFilter_ = "VST3";      break;
+        case juce::AudioProcessor::wrapperType_AAX:
+            // Pro Tools (17 Aug 2026). A named case, not the old fallthrough.
+            // EchoJay's AAX build is macOS only, and on a Mac the format that
+            // is both hostable and DIALABLE is the AudioUnit: a VST3 offered
+            // here has no fingerprint until it is racked, so it can be placed
+            // but never set (measured, HANDOVER/measurements/protools_dial.out),
+            // and the fallthrough was silently offering exactly those
+            // un-dialable VST3-only names. So AAX takes the same filter as
+            // Logic. Whether an AU inline-hosts inside Pro Tools' AAX host is
+            // unmeasured, the same open question the AU host carries generally.
+            chainFormatFilter_ = "AudioUnit";
+            break;
         default: break; // Standalone / unknown: show all
     }
     chainListModel = std::make_unique<ChainPluginListModel>();

@@ -1345,6 +1345,11 @@ juce::String LinkProcessor::chainFormatFilter() const
     {
         case juce::AudioProcessor::wrapperType_AudioUnit: return "AudioUnit";
         case juce::AudioProcessor::wrapperType_VST3:      return "VST3";
+        // AAX (Pro Tools, macOS only) takes the same filter as the AU host:
+        // AU is the format that is both hostable and dialable on a Mac, so a
+        // named case, not the old fallthrough (mirrors the main plugin's
+        // chainFormatFilter_ switch in PluginEditor.cpp).
+        case juce::AudioProcessor::wrapperType_AAX:       return "AudioUnit";
         default:                                          return {};
     }
 }

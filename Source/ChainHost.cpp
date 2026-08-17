@@ -4874,7 +4874,7 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
     juce::String stateB64   = items[idx].stateBase64;
     bool         expectState = items[idx].expectState;
     juce::String slotName   = items[idx].desc.name;
-    juce::String slotParams = items[idx].params;
+    juce::var slotParams = items[idx].params;
     loadPluginAsync(items[idx].desc,
         [this, items = std::move(items), idx, wasBypassed, savedWet,
          stateB64, expectState, slotName, slotParams, onSlotSettled](const juce::String& err) mutable
@@ -4975,13 +4975,35 @@ void ChainHost::applyRestoredState(int slotIdx, const juce::String& b64,
     }
 }
 
-void ChainHost::applyRestoredParams(int slotIdx, const juce::String& params, const juce::String& slotName)
+void ChainHost::applyRestoredParams(int slotIdx, const juce::var& params, const juce::String& slotName)
 {
-    if (params.isEmpty()) return;                       // absent: nothing, the old restore
+    if (params.isVoid()) return;                        // absent: nothing, the old restore
     if (slotIdx < 0 || slotIdx >= (int)slots_.size()) return;
-    if (slots_[(size_t)slotIdx].desc.pluginFormatName != "VST3") return;   // AU: never touched
+
+    // Identity gate. The entry must be the {uid,format,plugin,params} object;
+    // a bare string (no identity) or a missing / non-integer uid is skipped,
+    // never applied. The values apply only when the plugin that actually
+    // resolved into this slot IS the one they were saved for.
+    auto* entry = params.getDynamicObject();
+    if (entry == nullptr) return;                       // a string value: no identity, skip
+    const juce::var uidVar = entry->getProperty("uid");
+    if (! (uidVar.isInt() || uidVar.isInt64())) return; // missing / string uid: no identity, skip
+    const juce::int64 savedUid   = (juce::int64) uidVar;
+    const juce::String savedFmt  = entry->getProperty("format").toString();
+    const juce::String savedName = entry->getProperty("plugin").toString();
+    const juce::String payload   = entry->getProperty("params").toString();
+    if (payload.isEmpty()) return;
+
+    const auto& slotDesc = slots_[(size_t)slotIdx].desc;
+    if ((juce::int64) slotDesc.uniqueId != savedUid || slotDesc.pluginFormatName != savedFmt)
+    {
+        addStateNote(slotName + ": its saved parameter values were for \"" + savedName + "\" ("
+                     + savedFmt + "), not the plugin in this slot, so they were not applied");
+        return;
+    }
     auto* proc = getSlotProcessor(slotIdx);
     if (proc == nullptr) return;
+    const juce::String& params2 = payload;   // the "id=value,..." string, below
 
     // ID -> parameter, once
     std::unordered_map<std::string, juce::AudioProcessorParameter*> byId;
@@ -4991,7 +5013,7 @@ void ChainHost::applyRestoredParams(int slotIdx, const juce::String& params, con
 
     int applied = 0, listed = 0, unknown = 0;
     juce::StringArray pairs;
-    pairs.addTokens(params, ",", "");
+    pairs.addTokens(params2, ",", "");
     for (const auto& pr : pairs)
     {
         const int eq = pr.indexOfChar('=');
@@ -5065,7 +5087,7 @@ void ChainHost::tryRestoreSlotsFromXml(const juce::String& xml,
         {
             const juce::String key ((int)items.size() + 1);
             if (paramsObj->hasProperty(key))
-                item.params = paramsObj->getProperty(key).toString();
+                item.params = paramsObj->getProperty(key);   // the {uid,format,plugin,params} object
         }
         items.push_back(std::move(item));
     }
@@ -5378,7 +5400,17 @@ juce::var ChainHost::getCachedSlotParamsVar() const
     {
         const auto& s = slots_[(size_t)i];
         if (s.desc.pluginFormatName != "VST3" || s.lastKnownParams.isEmpty()) continue;
-        obj->setProperty(juce::String(i + 1), s.lastKnownParams);
+        // Identity-carrying object form (server contract, 17 Aug 2026): the
+        // values apply on restore ONLY if the plugin that resolves into the
+        // slot is the same one, so its identity travels with them. uid is
+        // PluginDescription::uniqueId as an integer (the same value the
+        // shared slots[n-1].uid carries), so the two compare without parsing.
+        auto* e = new juce::DynamicObject();
+        e->setProperty("uid",    (juce::int64) s.desc.uniqueId);
+        e->setProperty("format", s.desc.pluginFormatName);
+        e->setProperty("plugin", s.desc.name);
+        e->setProperty("params", s.lastKnownParams);
+        obj->setProperty(juce::String(i + 1), juce::var(e));
         ++n;
     }
     juce::var out(obj);
@@ -5570,7 +5602,7 @@ void ChainHost::restoreSavedChain(const juce::var& slotsArr, const juce::var& st
         {
             const juce::String key (n);
             if (paramsMap->hasProperty(key))
-                item.params = paramsMap->getProperty(key).toString();
+                item.params = paramsMap->getProperty(key);   // the {uid,format,plugin,params} object
         }
         items.push_back(std::move(item));
     }

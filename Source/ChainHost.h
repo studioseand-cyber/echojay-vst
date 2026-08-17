@@ -1075,15 +1075,17 @@ private:
     // where there is nothing to have lost and a note would be pure noise.
     struct RestoreItem { juce::PluginDescription desc; bool bypassed; float wet = 1.0f;
                          juce::String stateBase64; bool expectState = false;
-                         juce::String params; };   // "id=value,..." for a VST3 slot, empty = none
+                         juce::var params; };   // the {uid,format,plugin,params} object for a VST3 slot (see getCachedSlotParamsVar), void = none
     // onSlotSettled: see restoreSavedChain. Empty for a session restore,
     // which builds its rack before any editor exists to watch it.
     void restoreNextSlot(std::vector<RestoreItem> items, int idx,
                          std::function<void()> onSlotSettled = {});
     void applyRestoredState(int slotIdx, const juce::String& b64,
                             bool expectState, const juce::String& slotName);
-    // AFTER applyRestoredState, VST3 slots only (see getCachedSlotParamsVar)
-    void applyRestoredParams(int slotIdx, const juce::String& params, const juce::String& slotName);
+    // AFTER applyRestoredState. The per-slot {uid,format,plugin,params} object;
+    // applied only when the resolved slot IS that plugin (uid + format). See
+    // getCachedSlotParamsVar.
+    void applyRestoredParams(int slotIdx, const juce::var& params, const juce::String& slotName);
 
     // ---- Hosted settings cache internals ---------------------------------
     // Debounce: capture 2s after the last observed change, so one knob drag
