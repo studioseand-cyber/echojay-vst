@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "ChainPluginPicker.h"   // P13: the searchable "+" picker (shared with the Link)
 #include "EJStreamBlockParser.h" // incremental block parser (spec step 3/4)
 #include "EJRecall.h"            // saved-chain recall decision logic (pure)
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics (EJChat:)
@@ -25750,27 +25751,13 @@ void EchoJayEditor::showChainPluginPicker()
     auto plugins = ch.getFilteredPlugins("", chainFormatFilter_, !chainOfferBothBuilds_);
     if (plugins.isEmpty()) return;
 
-    juce::PopupMenu menu;
-    // Search hint as disabled header
-    menu.addSectionHeader("ADD PLUGIN TO CHAIN");
-
-    for (int i = 0; i < plugins.size(); ++i)
-    {
-        const auto& p = plugins.getReference(i);
-        bool isAU = p.pluginFormatName == "AudioUnit";
-        juce::String label = p.name + "  [" + (isAU ? "AU" : "VST3") + "]";
-        menu.addItem(i + 1, label);
-    }
-
+    // P13 (17 Aug 2026): the searchable picker (ChainPluginPicker.h) in
+    // place of a 1400-row PopupMenu; type to filter, keyboard first.
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    menu.showMenuAsync(
-        juce::PopupMenu::Options()
-            .withTargetComponent(&chainListPanel)
-            .withMaximumNumColumns(1)
-            .withMinimumNumColumns(1),
-        [safeThis, plugins](int result)
+    ChainPluginPicker::show(chainListPanel.addBlock, plugins,
+        [safeThis](const juce::PluginDescription& picked)
         {
-            if (safeThis == nullptr || result <= 0 || result > plugins.size()) return;
+            if (safeThis == nullptr) return;
             // REMOTE ADD forks here. The op adds BY NAME, so it is the raw
             // picker name that travels, NOT preferInlineHostableDesc's
             // possible AU-to-VST3 swap: that swap exists so the editor can be
@@ -25785,12 +25772,12 @@ void EchoJayEditor::showChainPluginPicker()
                 // by refreshChainPanelForView from the pending list and the
                 // sidecar cache, one author. Writing "Adding..." from a
                 // second place is how the line got orphaned mid-sentence.
-                safeThis->sendRackAdd(rackUid, plugins[result - 1].name);
+                safeThis->sendRackAdd(rackUid, picked.name);
                 return;
             }
             auto& ch2 = safeThis->processorRef.getChainHost();
-            // NEW instantiation — popout-only AUs may swap to their VST3 build
-            auto desc = ch2.preferInlineHostableDesc(plugins[result - 1]);
+            // NEW instantiation: popout-only AUs may swap to their VST3 build
+            auto desc = ch2.preferInlineHostableDesc(picked);
             safeThis->chainListPanel.statusText = "Loading " + desc.name + "...";
             safeThis->chainListPanel.repaint();
 
