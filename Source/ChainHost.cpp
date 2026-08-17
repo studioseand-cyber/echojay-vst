@@ -4874,9 +4874,10 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
     juce::String stateB64   = items[idx].stateBase64;
     bool         expectState = items[idx].expectState;
     juce::String slotName   = items[idx].desc.name;
+    juce::String slotParams = items[idx].params;
     loadPluginAsync(items[idx].desc,
         [this, items = std::move(items), idx, wasBypassed, savedWet,
-         stateB64, expectState, slotName, onSlotSettled](const juce::String& err) mutable
+         stateB64, expectState, slotName, slotParams, onSlotSettled](const juce::String& err) mutable
         {
             if (err.isEmpty())
             {
@@ -4886,6 +4887,9 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
                     setSlotWet(lastSlot, savedWet);
                     if (wasBypassed) setSlotBypassed(lastSlot, true);
                     applyRestoredState(lastSlot, stateB64, expectState, slotName);
+                    // Blob first, then the JUCE-side parameter values (VST3
+                    // only): see getCachedSlotParamsVar in the header
+                    applyRestoredParams(lastSlot, slotParams, slotName);
                     // Running level saved for this slot number (session
                     // restore only; a saved-chain load has nothing pending)
                     if (auto it = pendingSlotLevels_.find(idx + 1); it != pendingSlotLevels_.end())
@@ -4971,8 +4975,52 @@ void ChainHost::applyRestoredState(int slotIdx, const juce::String& b64,
     }
 }
 
+void ChainHost::applyRestoredParams(int slotIdx, const juce::String& params, const juce::String& slotName)
+{
+    if (params.isEmpty()) return;                       // absent: nothing, the old restore
+    if (slotIdx < 0 || slotIdx >= (int)slots_.size()) return;
+    if (slots_[(size_t)slotIdx].desc.pluginFormatName != "VST3") return;   // AU: never touched
+    auto* proc = getSlotProcessor(slotIdx);
+    if (proc == nullptr) return;
+
+    // ID -> parameter, once
+    std::unordered_map<std::string, juce::AudioProcessorParameter*> byId;
+    for (auto* p : proc->getParameters())
+        if (auto* hp = dynamic_cast<juce::HostedAudioProcessorParameter*>(p))
+            byId.emplace(hp->getParameterID().toStdString(), p);
+
+    int applied = 0, listed = 0, unknown = 0;
+    juce::StringArray pairs;
+    pairs.addTokens(params, ",", "");
+    for (const auto& pr : pairs)
+    {
+        const int eq = pr.indexOfChar('=');
+        if (eq <= 0) continue;
+        ++listed;
+        auto it = byId.find(pr.substring(0, eq).toStdString());
+        if (it == byId.end()) { ++unknown; continue; }   // a parameter this build no longer has
+        const float v = juce::jlimit(0.0f, 1.0f, (float) pr.substring(eq + 1).getDoubleValue());
+        // setValueNotifyingHost: JUCE's cache and dispatcher, so the
+        // controller sees it now and the processor at the next process call.
+        // Only where it differs, so a value the blob already carried is not
+        // re-sent (and a plugin that derives a value from its own state keeps
+        // it when the cache agrees).
+        if (std::abs(it->second->getValue() - v) > 1.0e-6f)
+        {
+            it->second->setValueNotifyingHost(v);
+            ++applied;
+        }
+    }
+    EchoJay_NSLog(("EJChain: \"" + slotName + "\" restored " + juce::String(applied) + " parameter value(s) beside its state ("
+                   + juce::String(listed) + " listed, " + juce::String(unknown) + " unknown to this build)").toRawUTF8());
+    if (listed > 0 && unknown == listed)
+        addStateNote(slotName + ": none of its saved parameter values matched this build of the plugin,"
+                                " so only its saved state was applied");
+}
+
 void ChainHost::tryRestoreSlotsFromXml(const juce::String& xml,
-                                       const juce::var& slotStates)
+                                       const juce::var& slotStates,
+                                       const juce::var& slotParams)
 {
     if (xml.isEmpty()) return;
     auto root = juce::XmlDocument::parse(xml);
@@ -4991,6 +5039,7 @@ void ChainHost::tryRestoreSlotsFromXml(const juce::String& xml,
     // before hosted settings were persisted, which is the common case and
     // restores exactly as it always did.
     auto* statesObj = slotStates.getDynamicObject();
+    auto* paramsObj = slotParams.getDynamicObject();   // absent on every session before 17 Aug 2026
 
     std::vector<RestoreItem> items;
     for (auto* child : root->getChildIterator())
@@ -5011,6 +5060,12 @@ void ChainHost::tryRestoreSlotsFromXml(const juce::String& xml,
             const juce::String key ((int)items.size() + 1);
             if (statesObj->hasProperty(key))
                 item.stateBase64 = statesObj->getProperty(key).toString();
+        }
+        if (paramsObj != nullptr)
+        {
+            const juce::String key ((int)items.size() + 1);
+            if (paramsObj->hasProperty(key))
+                item.params = paramsObj->getProperty(key).toString();
         }
         items.push_back(std::move(item));
     }
@@ -5252,14 +5307,38 @@ void ChainHost::captureSlotState(int i, double nowMs)
     if (bytes > 0 && !oversize)
         b64 = juce::Base64::toBase64(mb.getData(), mb.getSize());
 
+    // VST3 only: the JUCE-side parameter values, read from the CACHE
+    // (AudioProcessorParameter::getValue, the edited value), never from the
+    // plugin's own state (stale until the next process call). See
+    // getCachedSlotParamsVar in the header. Built off the lock, like the blob.
+    juce::String params;
+    if (slots_[(size_t)i].desc.pluginFormatName == "VST3")
+    {
+        juce::MemoryOutputStream ps;
+        bool first = true;
+        for (auto* p : proc->getParameters())
+        {
+            auto* hp = dynamic_cast<juce::HostedAudioProcessorParameter*>(p);
+            if (hp == nullptr) continue;
+            const auto id = hp->getParameterID();
+            if (id.isEmpty() || id.containsAnyOf("=,")) continue;
+            if (!first) ps.writeByte(',');
+            first = false;
+            ps << id << "=" << juce::String((double) p->getValue(), 7);
+        }
+        params = ps.toString();
+        if (params.length() > kApiStateMaxSlotBytes) params.clear();   // never seen; a list, not a blob
+    }
+
     juce::String note;
     {
         std::lock_guard<std::mutex> lock(stateCacheMutex_);
         auto& s = slots_[(size_t)i];
-        s.lastKnownState = b64;
-        s.lastKnownBytes = oversize ? 0 : bytes;
-        s.lastCaptureMs  = cost;
-        s.capturedAtMs   = nowMs;
+        s.lastKnownState  = b64;
+        s.lastKnownBytes  = oversize ? 0 : bytes;
+        s.lastKnownParams = params;
+        s.lastCaptureMs   = cost;
+        s.capturedAtMs    = nowMs;
 
         // Backoff. An expensive slot earns a long minimum interval so one
         // sampler cannot make the whole cache thrash; a slot over the cap is
@@ -5287,6 +5366,23 @@ void ChainHost::captureSlotState(int i, double nowMs)
         }
     }
     if (note.isNotEmpty()) addStateNote(note);
+}
+
+juce::var ChainHost::getCachedSlotParamsVar() const
+{
+    // Strings the cache already holds, nothing else (safe in a save callback)
+    std::lock_guard<std::mutex> lock(stateCacheMutex_);
+    auto* obj = new juce::DynamicObject();
+    int n = 0;
+    for (int i = 0; i < (int)slots_.size(); ++i)
+    {
+        const auto& s = slots_[(size_t)i];
+        if (s.desc.pluginFormatName != "VST3" || s.lastKnownParams.isEmpty()) continue;
+        obj->setProperty(juce::String(i + 1), s.lastKnownParams);
+        ++n;
+    }
+    juce::var out(obj);
+    return n > 0 ? out : juce::var();
 }
 
 juce::var ChainHost::getCachedSlotStatesVar(int maxSlotBytes,
@@ -5404,7 +5500,8 @@ juce::var ChainHost::buildChainSlotsVar() const
 
 void ChainHost::restoreSavedChain(const juce::var& slotsArr, const juce::var& stateObj,
                                   std::function<void()> onSlotSettled,
-                                  std::function<bool(const juce::String&)> isDisabledByName)
+                                  std::function<bool(const juce::String&)> isDisabledByName,
+                                  const juce::var& paramsObj)
 {
     auto* arr = slotsArr.getArray();
     if (arr == nullptr || arr->isEmpty()) return;
@@ -5412,6 +5509,7 @@ void ChainHost::restoreSavedChain(const juce::var& slotsArr, const juce::var& st
     // One load, one clean slate: notes are about the chain now on screen.
     clearStateNotes();
     auto* statesObj = stateObj.getDynamicObject();
+    auto* paramsMap = paramsObj.getDynamicObject();   // stateParams; absent until the server carries it
 
     std::vector<RestoreItem> items;
     for (int i = 0; i < arr->size(); ++i)
@@ -5467,6 +5565,12 @@ void ChainHost::restoreSavedChain(const juce::var& slotsArr, const juce::var& st
             const juce::String key (n);
             if (statesObj->hasProperty(key))
                 item.stateBase64 = statesObj->getProperty(key).toString();
+        }
+        if (paramsMap != nullptr)
+        {
+            const juce::String key (n);
+            if (paramsMap->hasProperty(key))
+                item.params = paramsMap->getProperty(key).toString();
         }
         items.push_back(std::move(item));
     }

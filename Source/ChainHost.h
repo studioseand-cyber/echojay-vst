@@ -671,8 +671,12 @@ public:
     // 1-based, absent/null meaning "nothing was saved for that slot". Empty
     // var = a session written before hosted settings were persisted, which
     // restores exactly as it always did.
+    // slotParams (17 Aug 2026): a second sibling object, {"1": "id=v,id=v,...", ...},
+    // the JUCE-side parameter values of VST3 slots, applied AFTER the blob;
+    // see getCachedSlotParamsVar. Absent = nothing, exactly the old restore.
     void tryRestoreSlotsFromXml(const juce::String& xml,
-                                const juce::var& slotStates = {});
+                                const juce::var& slotStates = {},
+                                const juce::var& slotParams = {});
 
     // ---- Hosted plugin settings: CACHE, not capture -----------------------
     // getStateInformation on a hosted plugin can take seconds (samplers,
@@ -716,6 +720,30 @@ public:
     juce::var getCachedSlotStatesVar(int maxSlotBytes,
                                      int maxTotalBytes,
                                      const juce::String& consumer) const;
+
+    // VST3 PARAMETER VALUES BESIDE THE BLOB (17 Aug 2026). JUCE delivers a
+    // hosted VST3's parameter edits to the plugin's processor INSIDE
+    // processBlock (inputParameterChanges), and getStateInformation reads the
+    // processor side; Logic idles a stopped channel, so an edit made with the
+    // transport stopped is in JUCE's cache (AudioProcessorParameter::getValue,
+    // the EDITED value) and not yet in the blob (the STALE value), and a save
+    // then a reopen came back at the old settings. Measured live both ways
+    // (HANDOVER/measurements/state_test.cpp). So for VST3 slots the cache
+    // also holds "id=value,..." (Vst ParamID, stable across builds, unlike
+    // index) read from getValue at capture, and restore applies it AFTER
+    // the blob through setValueNotifyingHost, which writes the cache and
+    // reaches the controller now and the processor at the next process call.
+    // Parameters are a subset of state, so applying them last cannot lose
+    // non-parameter content (a sampler's file). What it can still get
+    // wrong: a plugin that moves a parameter internally without telling the
+    // host has that one value overwritten by the cache's older reading.
+    // AU slots are never written (correct today, unchanged). Absent = do
+    // nothing, so sessions and chains saved before this restore as before.
+    // {"n": "id=v,..."} for VST3 slots that have one; void when none. A
+    // sibling of the state object in the session (chainSlotParams) and in
+    // the share body (stateParams; the SERVER must accept, store and return
+    // that key for shares to carry it, see the 17 Aug report).
+    juce::var getCachedSlotParamsVar() const;
 
     // Session-scoped, plain-language notes about settings that did NOT
     // capture or did NOT restore, named by plugin. Never persisted, never
@@ -762,7 +790,8 @@ public:
     // Empty predicate = no check (session restore keeps its old behaviour).
     void restoreSavedChain(const juce::var& slotsArr, const juce::var& stateObj,
                            std::function<void()> onSlotSettled = {},
-                           std::function<bool(const juce::String&)> isDisabledByName = {});
+                           std::function<bool(const juce::String&)> isDisabledByName = {},
+                           const juce::var& paramsObj = {});   // stateParams, keyed by saved n; see getCachedSlotParamsVar
 
     // TWO CAP PAIRS, DELIBERATELY DIFFERENT. Both in decoded bytes.
     //
@@ -845,6 +874,7 @@ private:
         // this struct follows the existing message-thread-only rule.
         juce::String                         lastKnownState;      // base64, empty = none held
         int                                  lastKnownBytes = 0;  // DECODED size of the above
+        juce::String                         lastKnownParams;     // VST3 only: "id=value,..." from JUCE's parameter cache (see getCachedSlotParamsVar)
         double                               lastCaptureMs = 0.0; // cost of the last capture
         double                               capturedAtMs  = 0.0; // when it was taken (0 = never)
         double                               nextCaptureMs = 0.0; // backoff gate
@@ -1044,13 +1074,16 @@ private:
     // which the user is told about. False on every pre-existing session,
     // where there is nothing to have lost and a note would be pure noise.
     struct RestoreItem { juce::PluginDescription desc; bool bypassed; float wet = 1.0f;
-                         juce::String stateBase64; bool expectState = false; };
+                         juce::String stateBase64; bool expectState = false;
+                         juce::String params; };   // "id=value,..." for a VST3 slot, empty = none
     // onSlotSettled: see restoreSavedChain. Empty for a session restore,
     // which builds its rack before any editor exists to watch it.
     void restoreNextSlot(std::vector<RestoreItem> items, int idx,
                          std::function<void()> onSlotSettled = {});
     void applyRestoredState(int slotIdx, const juce::String& b64,
                             bool expectState, const juce::String& slotName);
+    // AFTER applyRestoredState, VST3 slots only (see getCachedSlotParamsVar)
+    void applyRestoredParams(int slotIdx, const juce::String& params, const juce::String& slotName);
 
     // ---- Hosted settings cache internals ---------------------------------
     // Debounce: capture 2s after the last observed change, so one knob drag

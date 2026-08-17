@@ -3032,6 +3032,11 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
                               "this session");
     if (!chainSlotState.isVoid())
         state->setProperty("chainSlotState", chainSlotState);
+    // VST3 parameter values beside the blob (17 Aug 2026): a SIBLING key, so
+    // chainSlotState keeps its per-slot base64 strings and an older build
+    // reads it exactly as before. Absent when no VST3 slot has one.
+    if (auto chainSlotParams = chainHost.getCachedSlotParamsVar(); !chainSlotParams.isVoid())
+        state->setProperty("chainSlotParams", chainSlotParams);
     // Running level tally (17 Aug 2026): a sibling key, never inside the
     // frozen chainSlotsXml. Carries the host track name for the restore
     // guard. An older build ignores it.
@@ -3300,6 +3305,9 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
         juce::var chainSlotState;
         if (obj->hasProperty("chainSlotState"))
             chainSlotState = obj->getProperty("chainSlotState");
+        juce::var chainSlotParams;   // absent on every session before 17 Aug 2026: nothing applied
+        if (obj->hasProperty("chainSlotParams"))
+            chainSlotParams = obj->getProperty("chainSlotParams");
         // Running level tally: chain in/out land at once, per-slot tallies
         // are held pending and land as each slot restores. Guarded by the
         // host track name inside setPendingLevelsState; the name the host
@@ -3310,11 +3318,11 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
 
         if (slotsXml.isNotEmpty())
         {
-            juce::MessageManager::callAsync([this, slotsXml, chainSlotState, chainLevels] {
+            juce::MessageManager::callAsync([this, slotsXml, chainSlotState, chainSlotParams, chainLevels] {
                 applyHostTrackNameIfDirty();
                 if (!chainLevels.isVoid())
                     chainHost.setPendingLevelsState(chainLevels, chainHost.getHostTrackName());
-                chainHost.tryRestoreSlotsFromXml(slotsXml, chainSlotState);
+                chainHost.tryRestoreSlotsFromXml(slotsXml, chainSlotState, chainSlotParams);
             });
         }
         else if (!chainLevels.isVoid())

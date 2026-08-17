@@ -27334,6 +27334,14 @@ void EchoJayEditor::sendChainSave(const juce::String& id, const juce::String& na
     root->setProperty("slots",  slots);
     if (!state.isVoid())
         root->setProperty("state", state);
+    // VST3 parameter values beside the state (17 Aug 2026), a SIBLING key so
+    // `state` keeps its base64-per-slot contract. SERVER DEPENDENCY, named:
+    // createChain/patch in lib/dash/chains.js destructure a fixed key set and
+    // drop the rest, so until the server accepts, stores and returns
+    // `stateParams` (object keyed by 1-based n, string values), a shared
+    // chain carries the blob only, exactly as today.
+    if (auto stateParams = ch.getCachedSlotParamsVar(); !stateParams.isVoid())
+        root->setProperty("stateParams", stateParams);
     const auto body = juce::JSON::toString(juce::var(root.release()), true);
 
     chainSaveInFlight_ = true;
@@ -27463,12 +27471,14 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
             return;
         }
 
-        juce::var slots, state;
+        juce::var slots, state, stateParams;
         if (auto* obj = json.getDynamicObject())
             if (auto* c = obj->getProperty("chain").getDynamicObject())
             {
                 slots = c->getProperty("slots");
                 state = c->getProperty("state");
+                // Present only once the server carries it (see sendChainSave)
+                if (c->hasProperty("stateParams")) stateParams = c->getProperty("stateParams");
             }
         if (!slots.isArray())
         {
@@ -27497,7 +27507,7 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
         // its editor lets a final UI timer fire into freed state. Same
         // discipline the AI chain build uses.
         safeThis->chainListPanel.closeAllEditors();
-        juce::Timer::callAfterDelay(80, [safeThis, slots, state, id, name]
+        juce::Timer::callAfterDelay(80, [safeThis, slots, state, stateParams, id, name]
         {
             if (safeThis == nullptr) return;
             auto& ch = safeThis->processorRef.getChainHost();
@@ -27537,7 +27547,8 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
                     if (ChainHost::namesMatchLoose(resolvedName, p.name))
                         return ! sc.isPluginEnabled(p.uid);
                 return false;
-            });
+            },
+            stateParams);   // VST3 parameter values beside the state, when the server carries them
 
             safeThis->processorRef.savedChainId   = id;
             safeThis->processorRef.savedChainName = name;
