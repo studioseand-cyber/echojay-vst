@@ -1538,6 +1538,7 @@ private:
     // resolver rebuilt), where a release build can see it.
     // Restricts the list to plugins loadable in this wrapper format.
     juce::String chainFormatFilter_;
+    bool chainOfferBothBuilds_ = false;   // VST3-in-AU-host experiment: picker keeps AU and VST3 twins
     // Scan sequencing (13 Aug 2026): the header's Scan Now runs the
     // validating PluginScanner, and the chain scan (ChainHost) rides its
     // COMPLETION, not alongside it, because the chain scan's VST3 rows read

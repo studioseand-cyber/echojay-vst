@@ -336,6 +336,25 @@ EchoJayProcessor::EchoJayProcessor()
     // class and captures live in LinkProcessor::chainModelToVar instead.
     chainHost.setStateCacheEnabled(true);
 
+    // Which wrapper this instance is (for the rack note in completeLoad),
+    // and the one-time, loud log for the VST3-in-AU-host experiment.
+    chainHost.setHostPluginFormat(wrapperType == wrapperType_AudioUnit ? juce::String("AudioUnit")
+                                : wrapperType == wrapperType_VST3      ? juce::String("VST3")
+                                                                       : juce::String());
+    if (wrapperType == wrapperType_AudioUnit && ChainHost::vst3InAuHostExperiment())
+    {
+        static bool loggedOnce = false;   // once per host process, not per instance
+        if (!loggedOnce)
+        {
+            loggedOnce = true;
+            EchoJay_NSLog("EJVst3InAu: EXPERIMENT ON. ~/Library/EchoJay/vst3_in_au_host is set (with dev_mode): "
+                          "VST3 plugins are OFFERED in the chain list and the model feed inside this AU host. "
+                          "Experimental. Sessions and chains built with it hold VST3 slots: with the flag off "
+                          "they still restore on this machine (the load path does not check format) and the "
+                          "rack says so; on a machine without those VST3s they are skipped with a rack note.");
+        }
+    }
+
     // Defer plugin cache loading to background so constructor returns fast.
     // Tracked on loadThread (a std::thread member) so the destructor can join
     // it — see ~EchoJayProcessor. Bails immediately if shutdown began.

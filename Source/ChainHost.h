@@ -62,9 +62,16 @@ public:
 
     // ---- Plugin list (message thread) ------------------------------------
     int getNumPlugins() const;
+    // collapseTwins: with an EMPTY formatFilter the list is collapsed
+    // AU-preferring (a VST3 row whose exact name has an AU row is hidden).
+    // false keeps both builds, for a picker whose rows are labelled by
+    // format; the VST3-in-AU-host experiment needs it so "Pro-Q 3 [VST3]"
+    // is rackable beside "Pro-Q 3 [AU]". The model feed is name-keyed and
+    // never gets both, by construction.
     juce::Array<juce::PluginDescription> getFilteredPlugins(
         const juce::String& filter,
-        const juce::String& formatFilter = {}) const;
+        const juce::String& formatFilter = {},
+        bool collapseTwins = true) const;
 
     // Why a scanned row is withheld from the browser and the feed (15 Aug
     // 2026). ONE function decides; getFilteredPlugins, resolveByName and
@@ -430,6 +437,27 @@ public:
             || juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
                    .getChildFile("EchoJay").getChildFile("dev_mode").existsAsFile();
     }
+
+    // EXPERIMENT (17 Aug 2026): offer VST3 rows inside an AU host. Off by
+    // default everywhere, dev mode included; on only when BOTH dev_mode and
+    // ~/Library/EchoJay/vst3_in_au_host exist. It widens what the picker and
+    // the model feed OFFER (the editor's chainFormatFilter_ goes empty under
+    // AU); the load path has never checked format, so a session or shared
+    // chain holding a VST3 restores here with the flag off too, and
+    // completeLoad says so in the rack. Read at editor construction and at
+    // processor construction (the one-time log).
+    static bool vst3InAuHostExperiment()
+    {
+        return devModeActive()
+            && juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                   .getChildFile("EchoJay").getChildFile("vst3_in_au_host").existsAsFile();
+    }
+
+    // The wrapper this ChainHost lives in ("AudioUnit", "VST3", or empty for
+    // standalone / Link, which does not set it). Set by the processor at
+    // construction; completeLoad uses it to note, in the rack, a slot whose
+    // build is not the host's own format.
+    void setHostPluginFormat(const juce::String& f) { hostPluginFormat_ = f; }
 
     juce::AudioProcessorEditor* createEditorForSlot(int i);
 
@@ -934,6 +962,7 @@ private:
     echojay::LevelTally chainOutTally_ { echojay::LevelTally::Weighting::K };
     double              tallySr_ = 0.0;   // rate the tallies were prepared at
     juce::String hostTrackName_;
+    juce::String hostPluginFormat_;   // see setHostPluginFormat
     juce::String restoredLevelsTrack_;   // the track a restored tally was measured on, until the host names this one
     // Pending per-slot level restore, keyed by saved slot number (1-based,
     // the same key the hosted-state object uses); consumed by restoreNextSlot

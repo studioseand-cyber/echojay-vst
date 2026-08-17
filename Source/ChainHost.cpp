@@ -1206,7 +1206,8 @@ int ChainHost::getNumPlugins() const
 
 juce::Array<juce::PluginDescription> ChainHost::getFilteredPlugins(
     const juce::String& filter,
-    const juce::String& formatFilter) const
+    const juce::String& formatFilter,
+    bool collapseTwins) const
 {
     std::lock_guard<std::mutex> lock(pluginsMutex_);
     juce::Array<juce::PluginDescription> result;
@@ -1230,9 +1231,9 @@ juce::Array<juce::PluginDescription> ChainHost::getFilteredPlugins(
     }
 
     juce::Array<juce::PluginDescription> collapsed;
-    if (formatFilter.isEmpty())
+    if (formatFilter.isEmpty() && collapseTwins)
         collapsed = collapseAuPreferring(entries_);
-    const auto& rows = formatFilter.isEmpty() ? collapsed : entries_;
+    const auto& rows = (formatFilter.isEmpty() && collapseTwins) ? collapsed : entries_;
 
     for (auto& d : rows)
     {
@@ -2217,6 +2218,13 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
     slot.desc     = desc;
     slot.bypassed = false;
     slots_.push_back(std::move(slot));
+    // A VST3 build inside an AU host is told in the rack, on every route
+    // (session restore, shared chain, picker, model): the chain that comes
+    // back is the chain that was saved, and it is not silent about it.
+    if (hostPluginFormat_ == "AudioUnit" && desc.pluginFormatName == "VST3")
+        addStateNote(desc.name + ": the VST3 build, hosted inside this AU host."
+                     " Experimental; the chain list offers VST3s here only while"
+                     " vst3_in_au_host is on");
     bumpChainRevision();
     rebuildGraph();
     if (prepared_)

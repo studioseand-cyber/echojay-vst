@@ -1802,9 +1802,21 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // restored across a host relaunch. Until those are measured the filter
     // stays as it is; this is a policy kept on purpose, not a limit of the OS.
     // Hosting an AU from inside a VST3 host is likewise unmeasured.
+    //
+    // The experiment that measures them (17 Aug 2026): with dev_mode AND
+    // ~/Library/EchoJay/vst3_in_au_host present (ChainHost::
+    // vst3InAuHostExperiment), an AU instance runs with an EMPTY filter, the
+    // standalone code path, so the model feed and the withheld panel see the
+    // VST3-only names; the picker and the add menu additionally keep BOTH
+    // builds of a same-named pair (chainOfferBothBuilds_, rows labelled by
+    // format), which is how "Pro-Q 3 [VST3]" is rackable beside "Pro-Q 3
+    // [AU]". Off by default everywhere. Loading was never filtered.
     switch (processorRef.wrapperType)
     {
-        case juce::AudioProcessor::wrapperType_AudioUnit: chainFormatFilter_ = "AudioUnit"; break;
+        case juce::AudioProcessor::wrapperType_AudioUnit:
+            chainOfferBothBuilds_ = ChainHost::vst3InAuHostExperiment();
+            chainFormatFilter_    = chainOfferBothBuilds_ ? juce::String() : juce::String("AudioUnit");
+            break;
         case juce::AudioProcessor::wrapperType_VST3:      chainFormatFilter_ = "VST3";      break;
         default: break; // Standalone / unknown: show all
     }
@@ -10027,7 +10039,7 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
                 if (ch.getNumPlugins() == 0 && !ch.isScanning())
                     ch.startScan();
                 // Keep list model populated for the picker popup
-                chainListModel->items = ch.getFilteredPlugins({}, chainFormatFilter_);
+                chainListModel->items = ch.getFilteredPlugins({}, chainFormatFilter_, !chainOfferBothBuilds_);
                 // Rebuild rack strip from current chain state
                 chainListPanel.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
                 chainListPanel.masterKnob.setValue(ch.getMasterWet());
@@ -18796,7 +18808,7 @@ void EchoJayEditor::timerCallback()
         if (wasScanning)
         {
             // Keep the picker popup's model fresh while a scan streams in.
-            chainListModel->items = ch.getFilteredPlugins({}, chainFormatFilter_);
+            chainListModel->items = ch.getFilteredPlugins({}, chainFormatFilter_, !chainOfferBothBuilds_);
         }
         else
         {
@@ -19057,7 +19069,7 @@ void EchoJayEditor::timerCallback()
                 ch.requestMapPrefetch();
             }
             if (chainListModel)
-                chainListModel->items = ch.getFilteredPlugins({}, chainFormatFilter_);
+                chainListModel->items = ch.getFilteredPlugins({}, chainFormatFilter_, !chainOfferBothBuilds_);
             rebuildSettingsWithheld();
             const juce::String msg = "Rescanned: " + juce::String(n)
                                    + " plugin" + (n == 1 ? "" : "s") + " in the chain list";
@@ -25705,7 +25717,7 @@ void EchoJayEditor::switchChannelCarryingRequest(const juce::String& uid)
 void EchoJayEditor::showChainPluginPicker()
 {
     auto& ch = processorRef.getChainHost();
-    auto plugins = ch.getFilteredPlugins("", chainFormatFilter_);
+    auto plugins = ch.getFilteredPlugins("", chainFormatFilter_, !chainOfferBothBuilds_);
     if (plugins.isEmpty()) return;
 
     juce::PopupMenu menu;
