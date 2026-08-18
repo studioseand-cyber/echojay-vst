@@ -205,8 +205,19 @@ void LinkProcessor::publishRackSidecar()
     }
     const bool curveMoved = (curve != lastPublishedCurve_);
 
-    if (!revMoved && !epMoved && !curveMoved) return;
-    if (!revMoved)
+    // Pre-gain moved (value, hand-set flag, or input-known state), polled the
+    // same way as the curve because it fires no notification. Publishing on
+    // an input-known transition lets a stale "--" on the main plugin resolve
+    // to the real figure once audio is heard.
+    const float pgDb    = chainHost.getPreGainDb();
+    const bool  pgUser  = chainHost.isPreGainUserSet();
+    const bool  pgKnown = chainHost.getChainInLevels().known;
+    const bool preGainMoved = (pgDb    != lastPublishedPreGainDb_)
+                           || (pgUser  != lastPublishedPreGainUserSet_)
+                           || (pgKnown != lastPublishedPreGainInputKnown_);
+
+    if (!revMoved && !epMoved && !curveMoved && !preGainMoved) return;
+    if (!revMoved && !preGainMoved)
     {
         // A settle test ALONE would starve under sustained automation: a host
         // automating an EQ emits changes every block, so the "last change"
@@ -223,6 +234,9 @@ void LinkProcessor::publishRackSidecar()
     lastPublishedRackRev_ = rev;
     lastPublishedEpoch_   = epoch;
     lastPublishedCurve_   = curve;
+    lastPublishedPreGainDb_        = pgDb;
+    lastPublishedPreGainUserSet_   = pgUser;
+    lastPublishedPreGainInputKnown_ = pgKnown;
     lastRackPublishMs_    = nowMs;
 
     LinkShm::RackSidecar rc;
@@ -234,9 +248,9 @@ void LinkProcessor::publishRackSidecar()
     // Pre-chain gain mirror (18 Aug 2026): the main plugin's mixer shows and
     // drives it in Pre mode. inputKnown so a strip with no level heard shows
     // "unset" rather than a confident 0.
-    rc.preGainDb         = chainHost.getPreGainDb();
-    rc.preGainUserSet    = chainHost.isPreGainUserSet();
-    rc.preGainInputKnown = chainHost.getChainInLevels().known;
+    rc.preGainDb         = pgDb;
+    rc.preGainUserSet    = pgUser;
+    rc.preGainInputKnown = pgKnown;
     {
         const auto infos = chainHost.getAllSlotInfos();
         for (int i = 0; i < (int) infos.size(); ++i)
