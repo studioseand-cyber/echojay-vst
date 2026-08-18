@@ -26,6 +26,13 @@
 class ChainHost : private juce::AudioProcessorListener
 {
 public:
+    /** tools/state_match_test reaches the deadman file, the blacklist and the
+        entries pool through this. UNCONDITIONAL, no EJ_SELFTEST guard, for the
+        reason PluginEditor.h gives at its own test friends: a define that
+        changes a header between translation units fails as memory corruption,
+        while a friend declaration changes no layout, size or vtable. */
+    friend struct EchoJayStateMatchTestAccess;
+
     // Lightweight slot description safe to copy to the UI thread
     struct SlotInfo {
         juce::String name;
