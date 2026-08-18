@@ -1019,9 +1019,6 @@ void ChainHost::doRefresh()
         archCache_.clear();
     }
     juce::StringArray withheldByBlacklist;
-    // Tier-1 enumerate tally, for the log line below: the in-DAW answer to
-    // "how many bundles fail to enumerate, and why" (arch vs a real failure).
-    int enumOk = 0, enumArchSkip = 0, enumFailed = 0, enumCacheHit = 0;
     auto* vst3Fmt = getFormatByName("VST3");
     if (vst3Fmt)
     {
@@ -1038,13 +1035,10 @@ void ChainHost::doRefresh()
             juce::Array<juce::File> found;
             collectVst3BundlesRecursively(dir, found, 4);
 
-            int seenHere = 0;
-            for (auto& f : found)  // counters below feed the in-DAW enumerate report
+            for (auto& f : found)
             {
                 if (cancelFlag_.load()) break;
                 juce::String path = f.getFullPathName();
-                if ((seenHere++ % 8) == 0)
-                    setScanStatus("Reading VST3 plugins... " + juce::String(seenHere) + " of " + juce::String(found.size()));
                 // Recorded, NOT dropped (15 Aug 2026, evening). The row is
                 // kept in entries_ and in the shared cache like any other and
                 // withheld at the feed sites through
@@ -1069,55 +1063,15 @@ void ChainHost::doRefresh()
                         }
                     }
                 }
-                if (usedCache) ++enumCacheHit;
 
                 if (!usedCache)
                 {
-                    // TIER 1 (P15, 18 Aug 2026): enumerate the bundle at scan to
-                    // learn its real identity (uid, version, vendor, name),
-                    // instead of a thin row named from the folder. findAllTypesForFile
-                    // (via scanAndAddFile) loads the module and reads the factory;
-                    // it does NOT create a processing instance, so it is cheaper
-                    // than the fingerprint pass (tier 2) and carries only a
-                    // validation-phase death mark, not the instantiate one. Skipped
-                    // for a bundle with no slice for this process: it cannot
-                    // enumerate on this arch (findAllTypesForFile returns nothing,
-                    // slowly) and is withheld anyway; it keeps its thin row so the
-                    // OTHER host and the withheld panel still see it. scanAndAddFile
-                    // lands results in knownPlugins_ (persisted to chain_plugins.xml),
-                    // so the cache-hit branch above catches it next scan: one-time
-                    // and resumable. A module-load crash here is recorded by the
-                    // deadman and the bundle is skipped on the next scan.
-                    bool enumerated = false;
-                    if (! isBlacklisted(path) && archVerdict(path) == ArchVerdict::Loadable)
-                    {
-                        juce::PluginDescription probe;
-                        probe.name             = f.getFileNameWithoutExtension();
-                        probe.pluginFormatName = "VST3";
-                        probe.fileOrIdentifier = path;
-                        const int mark = pushDeathMark("scan enumerate", probe);
-                        juce::OwnedArray<juce::PluginDescription> types;
-                        {
-                            std::lock_guard<std::mutex> lk(pluginsMutex_);
-                            knownPlugins_.scanAndAddFile(path, true, types, *vst3Fmt);
-                        }
-                        popDeathMark(mark);
-                        for (auto* d : types) { vst3Entries.add(*d); enumerated = true; }
-                        if (enumerated) ++enumOk; else ++enumFailed;
-                    }
-                    else
-                    {
-                        ++enumArchSkip;   // no slice for this process, or blacklisted
-                    }
-                    if (! enumerated)
-                    {
-                        juce::PluginDescription thin;
-                        thin.name             = f.getFileNameWithoutExtension();
-                        thin.pluginFormatName = "VST3";
-                        thin.fileOrIdentifier = path;
-                        thin.category         = "Effect";
-                        vst3Entries.add(thin);
-                    }
+                    juce::PluginDescription thin;
+                    thin.name             = f.getFileNameWithoutExtension();
+                    thin.pluginFormatName = "VST3";
+                    thin.fileOrIdentifier = path;
+                    thin.category         = "Effect";
+                    vst3Entries.add(thin);
                 }
             }
         }
@@ -1129,18 +1083,8 @@ void ChainHost::doRefresh()
             if (d.version.isEmpty()) ++thin;
         EchoJay_NSLog(("EJScan: VST3 folders read, " + juce::String(vst3Entries.size())
                        + " row(s), " + juce::String(vst3Entries.size() - thin)
-                       + " with an identity, " + juce::String(thin)
-                       + " thin").toRawUTF8());
-        // The in-DAW answer to the enumerate question (P15): of the bundles
-        // this scan had to read (not cache hits), how many the arch gate
-        // skipped (Intel-only, cannot enumerate here) versus how many failed
-        // to enumerate for another reason. A non-zero enumFailed here, on
-        // arch-loadable bundles, is the hole to close: it means the bundle
-        // enumerated in the DAW no better than in the bare harness.
-        EchoJay_NSLog(("EJScan: VST3 enumerate: " + juce::String(enumOk) + " ok, "
-                       + juce::String(enumArchSkip) + " arch-skipped (no slice here), "
-                       + juce::String(enumFailed) + " failed, "
-                       + juce::String(enumCacheHit) + " cache hits").toRawUTF8());
+                       + " from the validated cache, " + juce::String(thin)
+                       + " thin (unvalidated)").toRawUTF8());
     }
     // Logged EVERY scan, including when empty: the blacklist is a permanent
     // per-path exclusion with no Settings UI yet, and this line is its only
