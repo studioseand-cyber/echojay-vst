@@ -4344,9 +4344,11 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
     juce::String slotName   = items[idx].desc.name;
     // The deadman names the plugin by this, so it rides with the item too.
     juce::String identifier = items[idx].desc.fileOrIdentifier;
+    bool         withholdState = items[idx].withholdState;
     loadPluginAsync(items[idx].desc,
         [this, items = std::move(items), idx, wasBypassed, savedWet,
-         stateB64, expectState, slotName, identifier, onSlotSettled](const juce::String& err) mutable
+         stateB64, expectState, slotName, identifier, withholdState,
+         onSlotSettled](const juce::String& err) mutable
         {
             if (err.isEmpty())
             {
@@ -4355,7 +4357,10 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
                 {
                     setSlotWet(lastSlot, savedWet);
                     if (wasBypassed) setSlotBypassed(lastSlot, true);
-                    applyRestoredState(lastSlot, stateB64, expectState, slotName, identifier);
+                    // Withheld chunks were already explained by the note that
+                    // decided it (restoreSavedChain); no second line here.
+                    if (!withholdState)
+                        applyRestoredState(lastSlot, stateB64, expectState, slotName, identifier);
                 }
             }
             else
@@ -4884,6 +4889,69 @@ void ChainHost::restoreSavedChain(const juce::var& slotsArr, const juce::var& st
             if (statesObj->hasProperty(key))
                 item.stateBase64 = statesObj->getProperty(key).toString();
         }
+
+        // FORMAT, UID, VERSION. All three have been written since Session B
+        // (see the save side above) and none of them was ever read. A chunk is
+        // format-bound: a VST3 chunk does not load into the AU build of the same
+        // plugin, and pushing it anyway is worse than pushing nothing — best case
+        // ignored, realistic case garbage parameters that sound wrong and look
+        // deliberate, worst case a dead host.
+        //
+        // ABSENT IS NOT A MISMATCH. A chain saved before a field existed carries
+        // an empty string, and an empty string must compare as "no opinion" or
+        // every legacy chain silently loses its settings. The same rule holds on
+        // the FOUND side: a thin VST3 row (validated on first load, not at scan)
+        // carries uid 0 and no version until then, and comparing a real saved uid
+        // against that 0 would withhold a chain from its own plugin.
+        //
+        // Decided only when there is a chunk to push: with nothing saved for the
+        // slot there is nothing to withhold and nothing to attempt, and a note
+        // saying settings "were applied" or "were not applied" would describe a
+        // dial that never happened.
+        bool withhold = false;
+        if (item.stateBase64.isNotEmpty())
+        {
+            const juce::String savedFormat  = o->getProperty("format").toString().trim();
+            const juce::String savedVersion = o->getProperty("version").toString().trim();
+            const juce::String savedUid     = o->getProperty("uid").toString().trim();
+            const juce::String foundUid (desc.uniqueId);
+            const bool foundUidKnown     = desc.uniqueId != 0;
+            const bool foundVersionKnown = desc.version.isNotEmpty();
+
+            if (savedFormat.isNotEmpty()
+                && ! savedFormat.equalsIgnoreCase(desc.pluginFormatName))
+            {
+                withhold = true;
+                addStateNote(name + ": saved as " + savedFormat + " but loaded here as "
+                             + desc.pluginFormatName
+                             + ", so its settings were not applied (settings do not"
+                               " transfer between formats)");
+            }
+            else if (savedUid.isNotEmpty() && foundUidKnown && savedUid != foundUid)
+            {
+                // Same name, same format, different plugin. A rescan can change a uid,
+                // but so can two plugins sharing a name, and we cannot tell which from
+                // here. Withholding costs one line of text; guessing costs the rack.
+                withhold = true;
+                addStateNote(name + ": this is a different build from the one saved,"
+                                    " so its settings were not applied");
+            }
+            else if (savedVersion.isNotEmpty() && foundVersionKnown
+                     && savedVersion != desc.version)
+            {
+                // ATTEMPTED, deliberately, and said out loud. Most plugins version their
+                // own chunks and tolerate an older one; some do not. The deadman in
+                // applyRestoredState now covers this call, so the bad case is one plugin
+                // recorded and withheld on the next launch rather than a session that
+                // will not open. The note exists because "never claim a dial you did
+                // not perform" cuts both ways: we DID perform it, and the user should
+                // still check it.
+                addStateNote(name + ": saved from version " + savedVersion
+                             + ", this machine has " + desc.version
+                             + " — settings were applied, worth checking");
+            }
+        }
+        item.withholdState = withhold;
         items.push_back(std::move(item));
     }
 

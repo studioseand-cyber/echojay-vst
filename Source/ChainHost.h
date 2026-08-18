@@ -934,7 +934,12 @@ private:
     // which the user is told about. False on every pre-existing session,
     // where there is nothing to have lost and a note would be pure noise.
     struct RestoreItem { juce::PluginDescription desc; bool bypassed; float wet = 1.0f;
-                         juce::String stateBase64; bool expectState = false; };
+                         juce::String stateBase64; bool expectState = false;
+                         /** Set by restoreSavedChain when the chunk must NOT be
+                             pushed. The session-XML path leaves it false: there the
+                             description came from the same file as the chunk, so
+                             format and uid match by construction. */
+                         bool withholdState = false; };
     // onSlotSettled: see restoreSavedChain. Empty for a session restore,
     // which builds its rack before any editor exists to watch it.
     void restoreNextSlot(std::vector<RestoreItem> items, int idx,
