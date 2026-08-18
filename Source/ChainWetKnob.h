@@ -219,49 +219,62 @@ struct PreGainKnob : ChainWetKnob
         const float a1     = juce::MathConstants<float>::pi * 2.75f;   // 4:30
         const float aMid   = juce::MathConstants<float>::pi * 2.0f;    // 12:00 = 0 dB
         const float av     = a0 + getValue() * (a1 - a0);
-        const auto  base   = userSet ? juce::Colour(0xfff59e0b)   // amber: hand-set
-                                     : juce::Colour(0xff22d3ee);  // cyan: auto
+        // Pre-gain hue is VIOLET, not the wet knobs' cyan, so a glance (even a
+        // screenshot) separates them; amber still means hand-set. Hue says
+        // what KIND of control, amber says WHO set it.
+        const auto fill = userSet ? juce::Colour(0xfff59e0b)   // amber: hand-set
+                                  : juce::Colour(0xffa855f7);  // violet: auto pre-gain
 
-        // Fill the arc FROM the centre: cut grows anticlockwise, boost grows
-        // clockwise. That, plus the always-drawn centre detent below, is what
-        // separates this from a wet knob (which fills from the 7:30 rail)
-        // without needing a legend.
+        // 1. FULL arc TRACK, dim, around the whole sweep, ALWAYS. A complete
+        //    ring behind the value is a different SHAPE at rest from the wet
+        //    knob (partial fill over nothing), before the knob is even moved.
+        {
+            juce::Path track;
+            track.addCentredArc(centre.x, centre.y, rad, rad, 0, a0, a1, true);
+            g.setColour(juce::Colour(0xff41465c).withAlpha(0.95f));
+            g.strokePath(track, juce::PathStrokeType(geo.arcT, juce::PathStrokeType::curved,
+                                                     juce::PathStrokeType::rounded));
+        }
+
+        // 2. Bipolar fill FROM the centre over the track: cut grows
+        //    anticlockwise, boost clockwise.
         if (std::abs(av - aMid) > 0.01f)
         {
             juce::Path arc;
             arc.addCentredArc(centre.x, centre.y, rad, rad, 0,
                               juce::jmin(aMid, av), juce::jmax(aMid, av), true);
-            g.setColour(base.withAlpha(0.9f));
+            g.setColour(fill.withAlpha(0.95f));
             g.strokePath(arc, juce::PathStrokeType(geo.arcT, juce::PathStrokeType::curved,
                                                    juce::PathStrokeType::rounded));
         }
 
-        // Centre detent tick at 12 o'clock, ALWAYS: the zero a wet knob has no
-        // concept of, so it reads as bipolar even at rest with an empty arc.
+        // 3. A NOTCH cut THROUGH the ring at 12 o'clock: a radial slot across
+        //    the full ring band in the knob's dark ground, edged bright, so
+        //    the ring reads as a centre-detented hardware trim, not a floating
+        //    dot above the cap.
         {
-            const float ti = rad - geo.arcT, to = rad + geo.arcT * 0.9f;
-            g.setColour(juce::Colour(0xffcfe3ff).withAlpha(0.9f));
-            g.drawLine(centre.x + std::sin(aMid) * ti, centre.y - std::cos(aMid) * ti,
-                       centre.x + std::sin(aMid) * to, centre.y - std::cos(aMid) * to,
-                       juce::jmax(1.0f, geo.arcT * 0.6f));
+            const float sx = std::sin(aMid), cyf = -std::cos(aMid);
+            const float ti = rad - geo.arcT * 1.2f, to = rad + geo.arcT * 1.2f;
+            g.setColour(juce::Colour(0xff0b0d18));
+            g.drawLine(centre.x + sx * ti, centre.y + cyf * ti,
+                       centre.x + sx * to, centre.y + cyf * to,
+                       juce::jmax(2.0f, geo.arcT * 1.0f));
+            g.setColour(juce::Colour(0xffe8eefc).withAlpha(0.95f));
+            g.drawLine(centre.x + sx * ti, centre.y + cyf * ti,
+                       centre.x + sx * to, centre.y + cyf * to,
+                       juce::jmax(1.0f, geo.arcT * 0.4f));
         }
 
-        // End dot at the current value so the exact position always reads.
-        {
-            const float dotR = geo.arcT * 1.1f;
-            g.setColour(base.brighter(0.6f));
-            g.fillEllipse(centre.x + std::sin(av) * rad - dotR,
-                          centre.y - std::cos(av) * rad - dotR,
-                          dotR * 2.0f, dotR * 2.0f);
-        }
-
+        // dB readout WITH its unit ("0.0 dB", not "0.0"): the wet knobs read a
+        // percentage, so a unit is the cheapest signal that these measure
+        // different things.
         const int capH = 10;
         auto r = getLocalBounds().removeFromBottom(capH);
         juce::String txt;
         juce::Colour col;
         const bool zeroish = std::abs(db()) < 0.05f;
-        if (! inputKnown && zeroish) { txt = "--";                col = juce::Colour(0xff8a94a6); }
-        else                          { txt = juce::String(db(), 1);
+        if (! inputKnown && zeroish) { txt = "--";                     col = juce::Colour(0xff8a94a6); }
+        else                          { txt = juce::String(db(), 1) + " dB";
                                         col = userSet ? juce::Colour(0xfff59e0b)   // amber: hand-set
                                                       : juce::Colour(0xffa0a0b8); } // grey: auto
         g.setColour(col);
@@ -286,8 +299,14 @@ struct PreGainKnob : ChainWetKnob
 protected:
     void updateTooltip() override
     {
-        setTooltip("Pre-gain " + juce::String(db(), 1) + " dB into the rack"
-                   + (userSet ? " (set by hand, builds will not change it)" : " (auto)")
-                   + " (drag; shift = fine; double-click = auto)");
+        // Plain words first, so it does not read as a variant of the wet
+        // knob's "Wet/dry mix..." sentence. Then the value, then who set it.
+        const juce::String who = (! inputKnown && std::abs(db()) < 0.05f)
+                                    ? juce::String("no input level heard yet")
+                                    : userSet ? juce::String("set by hand, builds will not change it")
+                                              : juce::String("auto, set from the measured input");
+        setTooltip("Pre-chain gain - headroom into the rack: "
+                   + juce::String(db(), 1) + " dB (" + who + ")."
+                   + "  Drag to change; shift for fine; double-click for auto.");
     }
 };
