@@ -44,14 +44,21 @@ struct ChainWetKnob : public juce::Component,
         return strip;
     }
 
-    void paint(juce::Graphics& g) override
+    // Geometry the value indicator needs, returned by paintKnobBody.
+    struct KnobGeom { juce::Rectangle<float> square; float d = 0.0f; float arcT = 0.0f; };
+
+    // Draws the filmstrip body (or the decode-failure fallback) and returns
+    // its geometry. Split out of paint() so a subclass can keep the metal but
+    // draw a DIFFERENT indicator over it: the pre-gain trim draws a bipolar
+    // arc from centre instead of this wet knob's arc-from-zero.
+    KnobGeom paintKnobBody(juce::Graphics& g)
     {
         const int capH = caption.isNotEmpty() ? 10 : 0;
         auto knob = getLocalBounds().withTrimmedBottom(capH).toFloat();
         const float d = juce::jmin(knob.getWidth(), knob.getHeight());
         auto square = knob.withSizeKeepingCentre(d, d);
 
-        // Value arc geometry — thin cyan ring just OUTSIDE the metal, never
+        // Value arc geometry: a thin ring just OUTSIDE the metal, never
         // covering it: the filmstrip body is inset by the ring's thickness.
         // Thickness scales with knob size (~6.5% of diameter, min 1.5px), so
         // at 44px it's a ~3px ring and at 22px still a clearly readable
@@ -81,6 +88,15 @@ struct ChainWetKnob : public juce::Component,
             g.setColour(juce::Colour::fromFloatRGBA(1, 1, 1, 0.10f));
             g.drawEllipse(body, 1.0f);
         }
+        return { square, d, arcT };
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        const auto geo = paintKnobBody(g);
+        const float d      = geo.d;
+        const float arcT   = geo.arcT;
+        const auto  square = geo.square;
 
         // Cyan value arc, minimum-angle position to current value (270° sweep,
         // same 7:30 → 4:30 travel as the filmstrip frames), capped by a
@@ -110,6 +126,7 @@ struct ChainWetKnob : public juce::Component,
                           dotR * 2.0f, dotR * 2.0f);
         }
 
+        const int capH = caption.isNotEmpty() ? 10 : 0;
         if (capH > 0)
         {
             g.setColour(juce::Colour(0xffa0a0b8));
@@ -189,11 +206,54 @@ struct PreGainKnob : ChainWetKnob
 
     void paint(juce::Graphics& g) override
     {
-        // Draw the knob without the base caption, then our own dB label.
+        // Metal only, no base caption and NOT the wet knob's arc-from-zero:
+        // this is a bipolar trim and must not read as a mix.
         const auto savedCap = caption;
         caption = {};
-        ChainWetKnob::paint(g);
+        const auto geo = paintKnobBody(g);
         caption = savedCap;
+
+        const auto  centre = geo.square.getCentre();
+        const float rad    = geo.d * 0.5f - geo.arcT * 0.5f;
+        const float a0     = juce::MathConstants<float>::pi * 1.25f;   // 7:30
+        const float a1     = juce::MathConstants<float>::pi * 2.75f;   // 4:30
+        const float aMid   = juce::MathConstants<float>::pi * 2.0f;    // 12:00 = 0 dB
+        const float av     = a0 + getValue() * (a1 - a0);
+        const auto  base   = userSet ? juce::Colour(0xfff59e0b)   // amber: hand-set
+                                     : juce::Colour(0xff22d3ee);  // cyan: auto
+
+        // Fill the arc FROM the centre: cut grows anticlockwise, boost grows
+        // clockwise. That, plus the always-drawn centre detent below, is what
+        // separates this from a wet knob (which fills from the 7:30 rail)
+        // without needing a legend.
+        if (std::abs(av - aMid) > 0.01f)
+        {
+            juce::Path arc;
+            arc.addCentredArc(centre.x, centre.y, rad, rad, 0,
+                              juce::jmin(aMid, av), juce::jmax(aMid, av), true);
+            g.setColour(base.withAlpha(0.9f));
+            g.strokePath(arc, juce::PathStrokeType(geo.arcT, juce::PathStrokeType::curved,
+                                                   juce::PathStrokeType::rounded));
+        }
+
+        // Centre detent tick at 12 o'clock, ALWAYS: the zero a wet knob has no
+        // concept of, so it reads as bipolar even at rest with an empty arc.
+        {
+            const float ti = rad - geo.arcT, to = rad + geo.arcT * 0.9f;
+            g.setColour(juce::Colour(0xffcfe3ff).withAlpha(0.9f));
+            g.drawLine(centre.x + std::sin(aMid) * ti, centre.y - std::cos(aMid) * ti,
+                       centre.x + std::sin(aMid) * to, centre.y - std::cos(aMid) * to,
+                       juce::jmax(1.0f, geo.arcT * 0.6f));
+        }
+
+        // End dot at the current value so the exact position always reads.
+        {
+            const float dotR = geo.arcT * 1.1f;
+            g.setColour(base.brighter(0.6f));
+            g.fillEllipse(centre.x + std::sin(av) * rad - dotR,
+                          centre.y - std::cos(av) * rad - dotR,
+                          dotR * 2.0f, dotR * 2.0f);
+        }
 
         const int capH = 10;
         auto r = getLocalBounds().removeFromBottom(capH);
