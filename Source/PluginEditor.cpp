@@ -16750,7 +16750,20 @@ void EchoJayEditor::resized()
         dashViewport_.setBounds(0, topH, mW,
                                 juce::jmax(50, b.getHeight() - topH - abOffD));
         dashViewport_.setVisible(dashboardTab && currentScreen == Screen::Main
-                                 && !compactMode && !visualOnlyMode);
+                                 && !compactMode && !visualOnlyMode
+                                 // A prompt or overlay OUTRANKS tab content, and
+                                 // Dashboard is the default tab, so on a fresh
+                                 // instance the intake prompts (channel/genre/
+                                 // project = the onboarding overlay) landed UNDER
+                                 // the dashboard and could not be dismissed. Same
+                                 // set particleVisualHolder gates on; folded into
+                                 // the one visibility expression, never hidden
+                                 // from the prompt-showing code (the moved-bug
+                                 // shape this block warns about).
+                                 && !channelPromptVisible && !genrePromptVisible
+                                 && !projectPromptVisible
+                                 && !updateOverlay.isVisible()
+                                 && !reviewOverlay.visibleState);
 
         // Content width, then content height from the ONE geometry author.
         // layout() is pure in width, so calling it here and again from the
