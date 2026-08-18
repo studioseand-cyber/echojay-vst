@@ -939,8 +939,12 @@ private:
     // which builds its rack before any editor exists to watch it.
     void restoreNextSlot(std::vector<RestoreItem> items, int idx,
                          std::function<void()> onSlotSettled = {});
+    // identifier: the plugin's fileOrIdentifier, written into the deadman
+    // marker around the setStateInformation call so a crash there is
+    // blacklisted by name on the next launch (see the marker in the .cpp).
     void applyRestoredState(int slotIdx, const juce::String& b64,
-                            bool expectState, const juce::String& slotName);
+                            bool expectState, const juce::String& slotName,
+                            const juce::String& identifier);
 
     // ---- Hosted settings cache internals ---------------------------------
     // Debounce: capture 2s after the last observed change, so one knob drag

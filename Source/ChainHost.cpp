@@ -572,9 +572,20 @@ ChainHost::ChainHost()
     auto deadman = getDeadmanFile();
     if (deadman.existsAsFile())
     {
-        juce::String crashed = deadman.loadFileAsString().trim();
+        // TWO LINES since 2.26.5: identifier, then phase. A file written by an
+        // older build has one line, and an ABSENT phase means "load" — which is
+        // the only phase that existed when it was written. Absent is not a new
+        // state; it is the old one, and it must keep blacklisting exactly as it
+        // did before.
+        auto lines = juce::StringArray::fromLines(deadman.loadFileAsString());
+        const juce::String crashed = lines.size() > 0 ? lines[0].trim() : juce::String();
+        const juce::String phase   = lines.size() > 1 ? lines[1].trim() : juce::String("load");
+
         if (crashed.isNotEmpty())
-            addToBlacklist(crashed, "crashed the host during load (deadman)");
+            addToBlacklist(crashed,
+                           phase == "state restore"
+                               ? juce::String("crashed the host restoring its saved settings (deadman)")
+                               : juce::String("crashed the host during load (deadman)"));
         deadman.deleteFile();
     }
 }
@@ -3166,7 +3177,7 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
     // Thin VST3: validate in detached thread, poll on message thread
     appSupportDir().createDirectory();
     auto deadman = getDeadmanFile();
-    deadman.replaceWithText(desc.fileOrIdentifier);
+    deadman.replaceWithText(desc.fileOrIdentifier + "\nload");
 
     auto* vst3Fmt = getFormatByName("VST3");
     if (!vst3Fmt) { callback("VST3 format not available"); return; }
@@ -4331,9 +4342,11 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
     juce::String stateB64   = items[idx].stateBase64;
     bool         expectState = items[idx].expectState;
     juce::String slotName   = items[idx].desc.name;
+    // The deadman names the plugin by this, so it rides with the item too.
+    juce::String identifier = items[idx].desc.fileOrIdentifier;
     loadPluginAsync(items[idx].desc,
         [this, items = std::move(items), idx, wasBypassed, savedWet,
-         stateB64, expectState, slotName, onSlotSettled](const juce::String& err) mutable
+         stateB64, expectState, slotName, identifier, onSlotSettled](const juce::String& err) mutable
         {
             if (err.isEmpty())
             {
@@ -4342,7 +4355,7 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
                 {
                     setSlotWet(lastSlot, savedWet);
                     if (wasBypassed) setSlotBypassed(lastSlot, true);
-                    applyRestoredState(lastSlot, stateB64, expectState, slotName);
+                    applyRestoredState(lastSlot, stateB64, expectState, slotName, identifier);
                 }
             }
             else
@@ -4360,7 +4373,8 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
 }
 
 void ChainHost::applyRestoredState(int slotIdx, const juce::String& b64,
-                                   bool expectState, const juce::String& slotName)
+                                   bool expectState, const juce::String& slotName,
+                                   const juce::String& identifier)
 {
     if (b64.isEmpty())
     {
@@ -4390,16 +4404,33 @@ void ChainHost::applyRestoredState(int slotIdx, const juce::String& b64,
         return;
     }
 
+    // THE DEADMAN, over the one call in this file that runs third-party code on
+    // data we did not author. A try/catch cannot catch a segfault, and a plugin
+    // mis-parsing a chunk segfaults — that is the whole failure mode. If this
+    // call never returns, the marker survives the crash and the next launch
+    // blacklists the plugin naming THIS phase, so the user gets one bad plugin
+    // withheld rather than a session that will not open twice.
+    //
+    // Written per slot, not per chain: the identifier has to be the plugin that
+    // actually died, not the last one in the list.
+    appSupportDir().createDirectory();
+    auto deadman = getDeadmanFile();
+    deadman.replaceWithText(identifier + "\nstate restore");
+
+    bool applied = false;
     try
     {
         proc->setStateInformation(mo.getData(), (int)mo.getDataSize());
+        applied = true;
     }
     catch (...)
     {
         addStateNote(slotName + ": rejected its saved settings,"
                                 " so it loaded at its defaults");
-        return;
     }
+
+    deadman.deleteFile();
+    if (!applied) return;
 
     // Seed the cache with what we just restored, so a save that happens
     // before the first capture round-trips this slot instead of nulling it.
