@@ -25161,7 +25161,8 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
     // Only when there is something to lose: an empty rack loads silently.
     // The wording says what WILL happen, not what the state is.
     if (const int n = processorRef.getChainHost().getNumSlots();
-        n > 0 && ! std::exchange(chainOpenReplaceConfirmed_, false))
+        // std::exchange first so the flag ALWAYS clears, even when n == 0: && short-circuits, and a stale true must never outlive one call.
+        ! std::exchange(chainOpenReplaceConfirmed_, false) && n > 0)
     {
         auto* dlg = new juce::AlertWindow(
             "Open Chain",
