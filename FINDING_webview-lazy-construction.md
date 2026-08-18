@@ -63,3 +63,20 @@ the cost of **one open, populated dashboard**. Without lazy construction, that
 cost is multiplied across every instance regardless of use. With lazy
 construction, an instance whose Dashboard is never opened pays **zero** webview
 cost — which is the whole point of raising this before 1b is built.
+
+## Stage 2: the webview is a native NSView, so overlays must HIDE it, not out-z-order it
+
+In 1b the webview is a `WKWebView` — a **native NSView**, which composites above
+**all** JUCE lightweight painting unconditionally, regardless of z-order (the
+same rule the Chain rack already lives by: hosted-plugin NSView editors "must be
+HIDDEN, not out-z-ordered"). So `toFront()` on an overlay does nothing against
+it: **every prompt and overlay that should outrank tab content must drive the
+webview's `setVisible(false)`, never rely on paint order.** This is not
+hypothetical — the lightweight `dashViewport_` already slipped past
+`onboardingOverlay_.toFront()` and covered the intake prompts on every fresh
+instance (fixed by folding the prompt/overlay set into its single visibility
+expression). A native webview makes that failure mode unconditional. The hook is
+already in the right place: the `dashViewport_.setVisible(...)` expression in
+`resized()` that this work extends is exactly where 1b swaps in the webview, so
+the guard set (channel/genre/project prompts, update overlay, review overlay, and
+any future overlay) travels with it.
