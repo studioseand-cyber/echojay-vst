@@ -1995,12 +1995,25 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                                         + EchoJayAPI::formatHeard(in.heardSeconds) + ")"), false);
         }
         m.addItem(2, "Reset level tally");
+        // Start-to-end level match readout + zero (C7). The figure is shown;
+        // a non-zero trim can be zeroed (visible and reversible, the whole
+        // point of the rule). Only shown once there is something to say.
+        const auto match = processorRef.getChainHost().getLevelMatch();
+        if (match.text.isNotEmpty())
+        {
+            m.addSeparator();
+            m.addItem(3, match.text, false);   // the figure, informational
+            const bool haveTrim = std::abs(match.appliedDb) > 0.001f;
+            m.addItem(4, "Zero level match", haveTrim);
+        }
         auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
         m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&chainListPanel.masterKnob),
             [safeThis](int r)
             {
-                if (safeThis == nullptr || r != 2) return;
-                safeThis->processorRef.getChainHost().resetAllLevels();
+                if (safeThis == nullptr) return;
+                if (r == 2) safeThis->processorRef.getChainHost().resetAllLevels();
+                else if (r == 4) { safeThis->processorRef.getChainHost().clearLevelMatch();
+                                   safeThis->processorRef.markStateDirty(); }
             });
     };
     chainListPanel.masterKnob.setValue(processorRef.getChainHost().getMasterWet());
@@ -27733,6 +27746,15 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                 // 1d: stage row down, result bubble up. Model "result" text
                 // only on a clean full build; otherwise compose factually.
                 safeThis->clearStageStatus();
+                // Start-to-end level match (C7): arm at BUILD, once. Mix Bus
+                // and Master Bus are exempt (they may come out louder, C2).
+                // The trim lands once audio has been heard and freezes; an
+                // edit before it lands voids it. Never fires on an edit.
+                {
+                    const auto ct = safeThis->processorRef.getChannelType();
+                    const bool isBus = (ct == ChannelType::FullMix || ct == ChannelType::MasterBus);
+                    ch3.armLevelMatch(isBus);
+                }
                 {
                     // Apply-time honesty (26 Jul 2026): a clean LOAD no
                     // longer relays the model's "result" line immediately -

@@ -368,6 +368,30 @@ public:
     echojay::LevelTally::Snapshot getChainOutLevels() const { return chainOutTally_.snapshot(); }
     SlotLevels getSlotLevels(int i) const;
     void resetAllLevels();   // source change, manual reset
+
+    // ---- Start-to-end level match (C7, 18 Aug 2026) --------------------
+    // At BUILD (never on an edit) EchoJay trims the whole chain back to the
+    // level it entered at, so bypass is an honest A/B of CHARACTER, not
+    // loudness. The trim is EchoJay's own gain (never a plugin parameter),
+    // applied post-chain / pre-meter in the processor from chainMatchGainDb_,
+    // which is upstream-independent of chainOutTally_ (that tally reads the
+    // raw output, so the trim never feeds back). Mix Bus and Master Bus are
+    // exempt (one job, they are meant to come out louder, C2). known == false
+    // never computes. See armLevelMatch / updateLevelMatchIfReady.
+    enum class MatchState { Off, Pending, Applied, Unity, SkippedBus, SkippedRange, VoidedEdited };
+    struct MatchReadout { float appliedDb = 0.0f; bool pending = false; MatchState state = MatchState::Off; juce::String text; };
+    static constexpr float kMatchClampDb      = 12.0f;   // a larger ask means something is wrong: skip, do not apply
+    static constexpr float kNoTrimThresholdDb = 0.3f;    // below level-match JND, above the gate resolution
+    float getChainMatchGainDb() const noexcept { return chainMatchGainDb_.load(std::memory_order_relaxed); }
+    // At build: arm (or, for a bus, record the exemption). isBusType true for
+    // Mix Bus / Master Bus only. Message thread.
+    void armLevelMatch(bool isBusType);
+    // 1 Hz from the processor timer: lands a pending trim once known, once,
+    // then freezes; voids a pending trim if the chain was edited since arming.
+    void updateLevelMatchIfReady();
+    // The figure and its state for the readout; and the zero control.
+    MatchReadout getLevelMatch() const;
+    void clearLevelMatch();   // user zeroes it (visible, reversible)
     // ---- Persistence of the running level ("chainLevels", beside the frozen
     // chainSlotsXml). The tally is a claim about the SOURCE, so it carries the
     // host's track name and is discarded on restore when the names differ:
@@ -1031,6 +1055,13 @@ private:
     static constexpr int kDryRingLen = 1 << 18;
     std::atomic<float>          masterWet_ { 1.0f };
     juce::SmoothedValue<float>  masterWetSmooth_;
+
+    // Start-to-end level match (C7). chainMatchGainDb_ is the applied trim,
+    // read by the processor's audio thread; the rest is message-thread only.
+    std::atomic<float>  chainMatchGainDb_ { 0.0f };
+    MatchState          matchState_   = MatchState::Off;
+    bool                matchPending_ = false;
+    int                 matchArmRev_  = -1;   // getChainRevision() at arm time
     juce::AudioBuffer<float>    dryScratch_;   // delayed-dry read buffer (blockSize)
     juce::AudioBuffer<float>    dryRing_;      // dry history ring (2 x kDryRingLen)
     int                         dryRingWrite_ = 0;
