@@ -974,14 +974,6 @@ private:
     std::atomic<bool> busGainSnapPending_ { false };
     bool applyBusGainSmoothed(juce::AudioBuffer<float>& buffer);
 
-    // Start-to-end level match (C7): EchoJay's own trim, target read from
-    // chainHost.getChainMatchGainDb() each block, applied at the same
-    // post-chain / pre-meter tap as the bus gain but SEPARATE from it (the
-    // bus gain is the user's fader). See applyChainMatchGainSmoothed.
-    juce::LinearSmoothedValue<float> chainMatchSmoothed_ { 1.0f };
-    std::atomic<bool> chainMatchSnapPending_ { false };
-    bool applyChainMatchGainSmoothed(juce::AudioBuffer<float>& buffer);
-
     // Per-link capture channels — message thread writes, audio thread reads via spinlock
     std::vector<std::unique_ptr<LinkCaptureChannel>> linkCaptureChannels;
     juce::SpinLock                                   linkCaptureSpinLock;

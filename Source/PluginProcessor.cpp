@@ -532,9 +532,6 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     busGainSmoothed_.reset(sampleRate, 0.030);
     busGainSmoothed_.setCurrentAndTargetValue(
         juce::Decibels::decibelsToGain(busGainDb_.load(std::memory_order_relaxed)));
-    chainMatchSmoothed_.reset(sampleRate, 0.030);
-    chainMatchSmoothed_.setCurrentAndTargetValue(
-        juce::Decibels::decibelsToGain(chainHost.getChainMatchGainDb()));
     meterEngine.prepare(sampleRate, samplesPerBlock);
     captureEngine.prepare(sampleRate, samplesPerBlock);
     selfKeyEngine_.prepare(sampleRate, samplesPerBlock);   // §6.1 self key tap
@@ -967,10 +964,6 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     // meters, the capture and the AI's level context all describe what
     // actually LEAVES EchoJay. Bit-transparent at 0 dB (unity early-out
     // inside), so the untouched default changes nothing.
-    // Start-to-end level match FIRST (C7): EchoJay's own trim so bypass is an
-    // honest A/B of character not loudness. Separate from the bus fader; both
-    // are scalar gains at this one tap, so order does not matter.
-    applyChainMatchGainSmoothed(buffer);
     applyBusGainSmoothed(buffer);
 
     // ===== POST-CHAIN TAP =====
@@ -1200,9 +1193,6 @@ void EchoJayProcessor::timerCallback()
 {
     applyHostTrackNameIfDirty();
     scheduleSelfKeyPass();
-    // Land a pending start-to-end level match once enough audio has been
-    // heard (C7). One-shot and revision-guarded inside; cheap when not armed.
-    chainHost.updateLevelMatchIfReady();
 
     // Keep the KeyFeed alive without an editor. EchoJay Pitch follows the
     // session key through KeyFeed; when the ONLY publisher was the editor's
@@ -2865,33 +2855,6 @@ bool EchoJayProcessor::applyBusGainSmoothed(juce::AudioBuffer<float>& buffer)
     return true;
 }
 
-bool EchoJayProcessor::applyChainMatchGainSmoothed(juce::AudioBuffer<float>& buffer)
-{
-    const float targetLin = juce::Decibels::decibelsToGain(chainHost.getChainMatchGainDb());
-    if (chainMatchSnapPending_.exchange(false, std::memory_order_acq_rel))
-        chainMatchSmoothed_.setCurrentAndTargetValue(targetLin);
-    else
-        chainMatchSmoothed_.setTargetValue(targetLin);
-    if (! chainMatchSmoothed_.isSmoothing() && chainMatchSmoothed_.getCurrentValue() == 1.0f)
-        return false;
-    const int n = buffer.getNumSamples();
-    const int numCh = buffer.getNumChannels();
-    if (chainMatchSmoothed_.isSmoothing())
-    {
-        for (int i = 0; i < n; ++i)
-        {
-            const float g = chainMatchSmoothed_.getNextValue();
-            for (int ch = 0; ch < numCh; ++ch)
-                buffer.getWritePointer(ch)[i] *= g;
-        }
-    }
-    else
-    {
-        buffer.applyGain(chainMatchSmoothed_.getCurrentValue());
-    }
-    return true;
-}
-
 void EchoJayProcessor::setBusGainDb(float db, bool snapSmoothing)
 {
     db = juce::jlimit(kBusGainMinDb, kBusGainMaxDb, db);
@@ -3358,10 +3321,7 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
             juce::MessageManager::callAsync([this, slotsXml, chainSlotState, chainSlotParams, chainLevels] {
                 applyHostTrackNameIfDirty();
                 if (!chainLevels.isVoid())
-                {
                     chainHost.setPendingLevelsState(chainLevels, chainHost.getHostTrackName());
-                    chainMatchSnapPending_.store(true, std::memory_order_relaxed);   // snap the restored trim, no ramp
-                }
                 chainHost.tryRestoreSlotsFromXml(slotsXml, chainSlotState, chainSlotParams);
             });
         }
@@ -3372,7 +3332,6 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
             juce::MessageManager::callAsync([this, chainLevels] {
                 applyHostTrackNameIfDirty();
                 chainHost.setPendingLevelsState(chainLevels, chainHost.getHostTrackName());
-                chainMatchSnapPending_.store(true, std::memory_order_relaxed);
             });
         }
         else if (chainLoadedDescXml.isNotEmpty())

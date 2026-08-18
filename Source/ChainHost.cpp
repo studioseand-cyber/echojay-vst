@@ -2030,110 +2030,6 @@ void ChainHost::setHostTrackName(const juce::String& nameIn)
     restoredLevelsTrack_.clear();
 }
 
-// ---------------------------------------------------------------------------
-// Start-to-end level match (C7)
-// ---------------------------------------------------------------------------
-void ChainHost::armLevelMatch(bool isBusType)
-{
-    // Mix Bus / Master Bus: exempt, one job (C2). Any prior trim is cleared
-    // so a bus never carries a match from a previous build.
-    if (isBusType)
-    {
-        chainMatchGainDb_.store(0.0f, std::memory_order_relaxed);
-        matchPending_ = false;
-        matchArmRev_  = -1;
-        matchState_   = MatchState::SkippedBus;
-        EchoJay_NSLog("EJMatch: build on a bus role, no level match (C2)");
-        return;
-    }
-    // Arm. The trim lands once enough audio has been heard on BOTH the chain
-    // input and output, computed once and frozen. Recording the revision lets
-    // a later edit void a still-pending arm rather than firing on the edited
-    // chain (the rule is: never on an edit).
-    chainMatchGainDb_.store(0.0f, std::memory_order_relaxed);
-    matchPending_ = true;
-    matchArmRev_  = getChainRevision();
-    matchState_   = MatchState::Pending;
-    EchoJay_NSLog(("EJMatch: armed at build, rev=" + juce::String(matchArmRev_)
-                   + " (trim lands once audio is heard)").toRawUTF8());
-    // If audio was already flowing before the build, it may already be known:
-    // land it now rather than waiting a tick.
-    updateLevelMatchIfReady();
-}
-
-void ChainHost::updateLevelMatchIfReady()
-{
-    if (! matchPending_) return;
-    // An edit since the arm: the pending trim is for a chain that no longer
-    // exists. Void it, do not fire on the edited chain.
-    if (getChainRevision() != matchArmRev_)
-    {
-        matchPending_ = false;
-        matchState_   = MatchState::VoidedEdited;
-        EchoJay_NSLog("EJMatch: pending trim voided, chain edited before audio was heard");
-        return;
-    }
-    const auto in  = chainInTally_.snapshot();
-    const auto out = chainOutTally_.snapshot();
-    if (! in.known || ! out.known) return;   // known == false: never compute, stay pending
-
-    // Trim to put the output back to the input level. Both are K-weighted
-    // LUFS, so this is input - output in dB.
-    const float rawTrim = in.levelDb - out.levelDb;
-    matchPending_ = false;
-    if (std::abs(rawTrim) > kMatchClampDb)
-    {
-        // A double-figure ask is a broken measurement or a chain doing
-        // something drastic, not a trim to apply. Skip and say the figure.
-        chainMatchGainDb_.store(0.0f, std::memory_order_relaxed);
-        matchState_ = MatchState::SkippedRange;
-        EchoJay_NSLog(("EJMatch: measured " + juce::String(rawTrim, 2) + " dB, over the "
-                       + juce::String(kMatchClampDb, 0) + " dB ceiling; no trim applied").toRawUTF8());
-        return;
-    }
-    if (std::abs(rawTrim) < kNoTrimThresholdDb)
-    {
-        chainMatchGainDb_.store(0.0f, std::memory_order_relaxed);
-        matchState_ = MatchState::Unity;
-        EchoJay_NSLog(("EJMatch: chain is unity (" + juce::String(rawTrim, 2)
-                       + " dB, under " + juce::String(kNoTrimThresholdDb, 2) + "); no trim needed").toRawUTF8());
-        return;
-    }
-    chainMatchGainDb_.store(rawTrim, std::memory_order_relaxed);
-    matchState_ = MatchState::Applied;
-    EchoJay_NSLog(("EJMatch: applied " + juce::String(rawTrim, 2) + " dB (in "
-                   + juce::String(in.levelDb, 2) + " LUFS, out " + juce::String(out.levelDb, 2)
-                   + " LUFS); frozen").toRawUTF8());
-}
-
-ChainHost::MatchReadout ChainHost::getLevelMatch() const
-{
-    MatchReadout r;
-    r.appliedDb = chainMatchGainDb_.load(std::memory_order_relaxed);
-    r.state     = matchState_;
-    r.pending   = matchPending_;
-    switch (matchState_)
-    {
-        case MatchState::Off:          r.text = ""; break;
-        case MatchState::Pending:      r.text = "Level match: pending (waiting for audio)"; break;
-        case MatchState::Applied:      r.text = "Level match: " + juce::String(r.appliedDb, 1) + " dB"; break;
-        case MatchState::Unity:        r.text = "Level match: none (chain is already unity)"; break;
-        case MatchState::SkippedBus:   r.text = "Level match: off (bus role comes out at its own level)"; break;
-        case MatchState::SkippedRange: r.text = "Level match: skipped (measured out of range)"; break;
-        case MatchState::VoidedEdited: r.text = "Level match: none (chain changed before it could measure)"; break;
-    }
-    return r;
-}
-
-void ChainHost::clearLevelMatch()
-{
-    chainMatchGainDb_.store(0.0f, std::memory_order_relaxed);
-    matchPending_ = false;
-    matchArmRev_  = -1;
-    matchState_   = MatchState::Off;
-    EchoJay_NSLog("EJMatch: zeroed by the user");
-}
-
 juce::var ChainHost::getLevelsStateVar(const juce::String& trackName) const
 {
     auto* o = new juce::DynamicObject();
@@ -2141,12 +2037,6 @@ juce::var ChainHost::getLevelsStateVar(const juce::String& trackName) const
     o->setProperty("trackName", trackName);
     o->setProperty("in",  chainInTally_.toVar());
     o->setProperty("out", chainOutTally_.toVar());
-    // The start-to-end level match, restored frozen (never recomputed on
-    // reopen). Only a settled state persists: a still-pending arm is not
-    // saved, so reopening a session that was never played does not resume a
-    // half-armed trim.
-    o->setProperty("matchDb",    (double) chainMatchGainDb_.load(std::memory_order_relaxed));
-    o->setProperty("matchState", (int) matchState_);
     juce::Array<juce::var> arr;
     for (int i = 0; i < (int)slots_.size(); ++i)
     {
@@ -2168,29 +2058,6 @@ void ChainHost::setPendingLevelsState(const juce::var& v, const juce::String& cu
     pendingSlotLevels_.clear();
     auto* o = v.getDynamicObject();
     if (o == nullptr) return;
-
-    // The start-to-end level match restores FROZEN, before and independent of
-    // the track-name guard below (the trim is a property of the built chain,
-    // not of the source level, and it is visible and reversible either way).
-    // Never recomputed on reopen; a state saved as Pending is NOT resumed (a
-    // session closed before audio was heard reopens with no half-armed trim).
-    if (o->hasProperty("matchDb") && o->hasProperty("matchState"))
-    {
-        const int st = (int) o->getProperty("matchState");
-        if (st == (int) MatchState::Pending || st < 0 || st > (int) MatchState::VoidedEdited)
-        {
-            chainMatchGainDb_.store(0.0f, std::memory_order_relaxed);
-            matchState_   = MatchState::Off;
-        }
-        else
-        {
-            chainMatchGainDb_.store((float)(double) o->getProperty("matchDb"), std::memory_order_relaxed);
-            matchState_   = (MatchState) st;
-        }
-        matchPending_ = false;
-        matchArmRev_  = -1;
-    }
-
     const juce::String savedTrack = o->getProperty("trackName").toString().trim();
     const juce::String nowTrack   = currentTrackName.trim();
     // THE GUARD (load-bearing, not defensive): a level tally describes a
