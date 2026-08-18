@@ -1508,6 +1508,11 @@ private:
     juce::String chainSaveStatus_;
     juce::uint32 chainSaveStatusAt_ = 0;
     bool         chainSaveInFlight_ = false;
+    // Set by the unsaved-rack confirm's OK and consumed (cleared) by the very
+    // next openSavedChain call, which is made synchronously from that same
+    // callback: it lets the confirmed re-entry skip the confirm without a
+    // second signature. Never true across a runloop turn.
+    bool         chainOpenReplaceConfirmed_ = false;
     void setChainSaveStatus(const juce::String& s);
     // Left edge of the Save button, stored by resized() and CONSUMED by
     // paint(). Height reservation rule: resized() is the sole geometry

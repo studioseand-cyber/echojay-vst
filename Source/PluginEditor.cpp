@@ -25155,6 +25155,34 @@ void EchoJayEditor::showSavedChainsMenu()
 void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& name)
 {
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+
+    // THE UNSAVED-RACK CONFIRM, here and not at the callers, so the dashboard,
+    // feed rows and message attachments inherit it by reaching this path.
+    // Only when there is something to lose: an empty rack loads silently.
+    // The wording says what WILL happen, not what the state is.
+    if (const int n = processorRef.getChainHost().getNumSlots();
+        n > 0 && ! std::exchange(chainOpenReplaceConfirmed_, false))
+    {
+        auto* dlg = new juce::AlertWindow(
+            "Open Chain",
+            "Opening \"" + name + "\" replaces the "
+            + (n == 1 ? juce::String("plugin now in the rack, and its")
+                      : juce::String(n) + " plugins now in the rack, and their")
+            + " current settings go with " + (n == 1 ? "it." : "them."),
+            juce::MessageBoxIconType::WarningIcon);
+        dlg->addButton("Replace", 1);
+        dlg->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+        dlg->enterModalState(true,
+            juce::ModalCallbackFunction::create([safeThis, dlg, id, name](int result)
+            {
+                delete dlg;
+                if (safeThis == nullptr || result != 1) return;
+                safeThis->chainOpenReplaceConfirmed_ = true;
+                safeThis->openSavedChain(id, name);
+            }));
+        return;
+    }
+
     setChainSaveStatus(juce::String::fromUTF8("Opening \"") + name
                        + juce::String::fromUTF8("\"\xe2\x80\xa6"));
 
