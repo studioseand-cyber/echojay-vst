@@ -952,6 +952,14 @@ struct RackSidecar {
     juce::String uid, name;
     int   revision = -1;
     float masterWet = 1.0f;
+    // Pre-chain gain (18 Aug 2026): mirrored so the mixer can show and drive
+    // each channel's pre-gain in Pre mode. Additive keys at v:1; an old
+    // reader ignores them and preGainDb stays 0 (unity, benign). userSet says
+    // the value was set by hand (a build will not overwrite it) so the strip
+    // can mark it; inputKnown gates the "no level, no confident 0" display.
+    float preGainDb = 0.0f;
+    bool  preGainUserSet = false;
+    bool  preGainInputKnown = false;
     std::vector<RackSidecarSlot> slots;
 };
 
@@ -1059,6 +1067,9 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
     obj->setProperty("name",      rc.name);
     obj->setProperty("revision",  rc.revision);
     obj->setProperty("masterWet", rc.masterWet);
+    obj->setProperty("preGainDb",        rc.preGainDb);
+    obj->setProperty("preGainUserSet",   rc.preGainUserSet);
+    obj->setProperty("preGainInputKnown", rc.preGainInputKnown);
     juce::Array<juce::var> slots;
     for (const auto& s : rc.slots)
     {
@@ -1106,6 +1117,9 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
     rc.revision  = (int)obj->getProperty("revision");
     rc.masterWet = obj->hasProperty("masterWet")
                      ? (float)(double)obj->getProperty("masterWet") : 1.0f;
+    rc.preGainDb        = obj->hasProperty("preGainDb") ? (float)(double)obj->getProperty("preGainDb") : 0.0f;
+    rc.preGainUserSet   = obj->hasProperty("preGainUserSet") && (bool)obj->getProperty("preGainUserSet");
+    rc.preGainInputKnown = obj->hasProperty("preGainInputKnown") && (bool)obj->getProperty("preGainInputKnown");
     if (auto* arr = obj->getProperty("slots").getArray())
         for (auto& sv : *arr)
             if (auto* so = sv.getDynamicObject())

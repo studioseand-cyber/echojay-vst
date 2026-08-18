@@ -368,6 +368,38 @@ public:
     echojay::LevelTally::Snapshot getChainOutLevels() const { return chainOutTally_.snapshot(); }
     SlotLevels getSlotLevels(int i) const;
     void resetAllLevels();   // source change, manual reset
+
+    // ---- Pre-chain gain (headroom + operating level, 18 Aug 2026) ------
+    // A gain applied BEFORE the first slot. Three jobs (Sean): headroom into
+    // the rack (a trim EchoJay never had), a known operating level so
+    // analogue-modelled plugins behave predictably, and an output that lands
+    // near the input because the chain was DESIGNED at that level, not
+    // compensated afterward. chainInTally_ still measures the RAW input
+    // (before this gain); slot 1's own input tally then reads the post-trim
+    // OPERATING level, which the model chooses settings against.
+    //
+    // At build EchoJay sets it from the measured input to reach the target,
+    // UNLESS the user set it by hand (preGainUserSet_), which a build never
+    // overwrites. known == false: not set, no guess, the reason is visible.
+    // The value is EchoJay's own gain, never a plugin parameter, and is a
+    // user-owned control (range below). Persisted with the SESSION; a shared
+    // chain does NOT carry it (it is source-specific and recomputed locally).
+    static constexpr float kPreGainTargetLufs = -18.0f;  // analogue reference (0 VU) in the level layer's unit
+    static constexpr float kPreGainMinDb = -24.0f, kPreGainMaxDb = 24.0f;
+    enum class PreGainState { Off, Auto, UserSet, NoLevel };
+    struct PreGainReadout { float db = 0.0f; PreGainState state = PreGainState::Off; bool userSet = false; juce::String text; };
+    float getPreGainDb() const noexcept { return preGainDb_.load(std::memory_order_relaxed); }
+    bool  isPreGainUserSet() const noexcept { return preGainUserSet_; }
+    // User (knob/menu): userSet true stamps the hand-set flag so a build
+    // leaves it. resetPreGainToAuto clears the flag so the next build sets it.
+    void  setPreGainDb(float db, bool userSet);
+    void  resetPreGainToAuto();
+    // At BUILD only (loadChainFromJson). Never on an edit.
+    void  computePreGainAtBuild();
+    PreGainReadout getPreGain() const;
+    // The operating level the settings are chosen against = raw input + the
+    // applied pre-gain. NaN when the input level is not known.
+    float getOperatingLevelLufs() const;
     // ---- Persistence of the running level ("chainLevels", beside the frozen
     // chainSlotsXml). The tally is a claim about the SOURCE, so it carries the
     // host's track name and is discarded on restore when the names differ:
@@ -1031,6 +1063,13 @@ private:
     static constexpr int kDryRingLen = 1 << 18;
     std::atomic<float>          masterWet_ { 1.0f };
     juce::SmoothedValue<float>  masterWetSmooth_;
+
+    // Pre-chain gain (see the pre-gain block above). preGainDb_ is read by
+    // the audio thread; preGainUserSet_ / preGainState_ are message-thread.
+    std::atomic<float>          preGainDb_ { 0.0f };
+    juce::SmoothedValue<float>  preGainSmooth_;
+    bool                        preGainUserSet_ = false;
+    PreGainState                preGainState_   = PreGainState::Off;
     juce::AudioBuffer<float>    dryScratch_;   // delayed-dry read buffer (blockSize)
     juce::AudioBuffer<float>    dryRing_;      // dry history ring (2 x kDryRingLen)
     int                         dryRingWrite_ = 0;

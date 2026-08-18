@@ -122,7 +122,8 @@ struct EchoJayLinkMixerTestAccess
     { Ed::layOutLinkCtrls (r, out); }
     static std::vector<int> ctrlIds()
     { return { Ed::kCtrlNarrow, Ed::kCtrlWide,
-               Ed::kCtrlNumbers, Ed::kCtrlChain }; }
+               Ed::kCtrlNumbers, Ed::kCtrlChain,
+               Ed::kCtrlPost, Ed::kCtrlPre }; }
 };
 
 using T    = EchoJayLinkMixerTestAccess;
@@ -486,7 +487,7 @@ static void testCtrls()
         std::vector<T::Ctrl> zs;
         T::ctrls (r, zs);
 
-        checkEq ((int) zs.size(), 4, "all four segments exist at shipping width");
+        checkEq ((int) zs.size(), 6, "all six segments exist at shipping width");
         for (const auto& z : zs)
         {
             check (r.contains (z.rect), "control zone stays inside the row");
@@ -519,7 +520,7 @@ static void testCtrls()
         const juce::Rectangle<int> r { 32, 112, 120, 30 };
         std::vector<T::Ctrl> zs;
         T::ctrls (r, zs);
-        check ((int) zs.size() < 4, "a too-tight row drops zones");
+        check ((int) zs.size() < 6, "a too-tight row drops zones");
         for (const auto& z : zs)
             check (r.contains (z.rect), "surviving zones stay inside the row");
     }

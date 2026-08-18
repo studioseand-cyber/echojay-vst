@@ -644,6 +644,14 @@ public:
         return saved == 2 ? LinkMixerContent::Chain : LinkMixerContent::Numbers;
     }
     LinkMixerContent linkMixerContent = LinkMixerContent::Numbers;
+
+    // Mixer fader mode (18 Aug 2026): Post = each fader controls its channel's
+    // post-chain output level (as always); Pre = each fader controls that
+    // channel's PRE-chain gain (headroom into the rack). Per Link, persisted.
+    // The meters stay post-chain in both: you trim the input while watching
+    // the output. Repoints the ONE strip, never a second row.
+    enum class LinkFaderMode { Post = 0, Pre = 1 };
+    LinkFaderMode linkFaderMode = LinkFaderMode::Post;
     bool linkMixerWide = false;        // false = narrow strips (the reference)
 
     /** LINK MIXER rack cache (step 9). ON THE PROCESSOR, not the editor,

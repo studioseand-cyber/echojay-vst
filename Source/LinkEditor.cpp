@@ -214,6 +214,7 @@ LinkEditor::~LinkEditor()
 
 void LinkEditor::timerCallback()
 {
+    chainPanel.syncPreGain();   // keep the Link's own pre-gain knob live
     // Repaint only when the mono fold-down note appears/disappears/changes, so
     // steady-state playback never triggers a repaint (which could flicker the
     // hosted native editor). Both status lines (mini in paint(), full in the

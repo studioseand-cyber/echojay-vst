@@ -1602,6 +1602,7 @@ private:
         static constexpr int kBlockGap = 26;   // connector-line gap between blocks
         static constexpr int kAddW     = 40;   // "+" block
         static constexpr int kMasterW  = 62;   // fixed master MIX knob area, right of strip
+        static constexpr int kPreGainW = 56;   // fixed pre-gain knob area, HEAD of the strip (where signal enters)
 
         // Compact rounded block in the bottom strip — name + B/X/</> controls.
         // Clicking anywhere else on the block selects it (shows editor above).
@@ -1718,6 +1719,7 @@ private:
         StripContent     stripContent;
         juce::TextButton addBlock { "+" };
         ChainWetKnob     masterKnob;   // whole-chain wet/dry, fixed right of strip
+        PreGainKnob      preGainKnob;  // pre-chain headroom gain, HEAD of strip (local + remote)
         std::vector<std::unique_ptr<Block>> blocks;
         std::vector<ChainHost::SlotInfo>    slotInfos;
         int selectedIdx = -1;
@@ -1818,6 +1820,17 @@ private:
         std::function<void()>           onAddClick;
         std::function<void(int, float)> onSlotWet;    // slot idx, wet 0..1
         std::function<void(float)>      onMasterWet;  // wet 0..1
+        std::function<void(float)>      onPreGain;    // pre-gain, ABSOLUTE dB (owner routes local vs remote)
+        std::function<void()>           onPreGainReset;   // double-click = reset to auto
+        // Owner-driven display state for the pre-gain knob (refreshed each tick
+        // and on rebuild). Kept here so paint reads it back with no lookups.
+        void setPreGainDisplay(float db, bool userSet, bool inputKnown)
+        {
+            preGainKnob.userSet = userSet;
+            preGainKnob.inputKnown = inputKnown;
+            preGainKnob.setDb(db, false);   // no notify: display only
+            preGainKnob.repaint();
+        }
         std::function<juce::AudioProcessorEditor*(int)> onCreateEditor;
 
         ChainListPanel()
@@ -1879,6 +1892,15 @@ private:
             masterKnob.caption = "MIX";
             masterKnob.onChange = [this](float v) { if (onMasterWet) onMasterWet(v); };
             addAndMakeVisible(masterKnob);
+
+            // Pre-gain knob at the rack head. onChange gives 0..1; map to the
+            // absolute dB and hand it to the owner, which routes it to the
+            // local chain host or a remote Link. A drag is a HAND set.
+            preGainKnob.caption = "PRE";
+            preGainKnob.onChange = [this](float v01)
+            { if (onPreGain) onPreGain(PreGainKnob::dbFromV(v01)); };
+            preGainKnob.onResetAuto = [this] { if (onPreGainReset) onPreGainReset(); };
+            addAndMakeVisible(preGainKnob);
 
             popBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xcc0E1020));
             popBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
@@ -2559,8 +2581,13 @@ private:
             // narrow the window gets. Same shape as the master knob's
             // reservation at the right end.
             rackBtn.setBounds(8, getHeight() - kStripH + 8, kRackSelW - 16, 24);
-            stripView.setBounds(kRackSelW, getHeight() - kStripH,
-                                juce::jmax(50, getWidth() - kMasterW - kRackSelW),
+            // Pre-gain knob at the HEAD of the strip, left of the first block:
+            // its position says what it does (the signal enters here). Shown
+            // in local AND remote (a selected rack has a pre-gain too), so it
+            // is not gated on !remote the way the master MIX knob is.
+            preGainKnob.setBounds(kRackSelW + 6, getHeight() - kStripH + 6, 44, 54);
+            stripView.setBounds(kRackSelW + kPreGainW, getHeight() - kStripH,
+                                juce::jmax(50, getWidth() - kMasterW - kRackSelW - kPreGainW),
                                 kStripH);
             masterKnob.setBounds(getWidth() - kMasterW + 9,
                                  getHeight() - kStripH + 6, 44, 54);
@@ -3196,6 +3223,7 @@ private:
         bool target = false;
         bool timedOut = false;
         bool isGain = false;    // this pending is a gain change (else Active)
+        bool isPreGain = false; // a PRE-chain gain change (mixer Pre mode)
         float gainDb = 0.0f;    // desired gain for optimistic row display
     };
     std::vector<LinkCtrlPending> linkCtrlPending_;
@@ -3447,20 +3475,28 @@ private:
     /** dB<->y for the fader rect, mapped across the artwork's cap travel
         band (see above). Same range (-24..+12), same 0.1 dB snap. Pure,
         shared by the drag, the travel ticks and the fallback thumb. */
-    static float gainFromY(int y, juce::Rectangle<int> capArea)
+    // Range-aware mapping (18 Aug 2026): POST spans -24..+12 (the output
+    // fader), PRE spans -24..+24 (headroom). The lane travel is the same
+    // pixels, so PRE is coarser dB/pixel (a legitimate wider range); the
+    // 0.1 dB snap keeps precision. The old two-arg forms delegate to the
+    // POST range so every existing caller is unchanged.
+    static float gainFromYRanged(int y, juce::Rectangle<int> capArea, float lo, float hi)
     {
         const float top = faderTravelTop(capArea), bot = faderTravelBot(capArea);
         const float f = juce::jlimit(0.0f, 1.0f,
             (bot - (float)y) / juce::jmax(1.0f, bot - top));
-        return juce::jlimit(-24.0f, 12.0f,
-            std::round((-24.0f + f * 36.0f) * 10.0f) / 10.0f);
+        return juce::jlimit(lo, hi, std::round((lo + f * (hi - lo)) * 10.0f) / 10.0f);
     }
-    static int yFromGain(float db, juce::Rectangle<int> capArea)
+    static int yFromGainRanged(float db, juce::Rectangle<int> capArea, float lo, float hi)
     {
         const float top = faderTravelTop(capArea), bot = faderTravelBot(capArea);
-        const float f = juce::jlimit(0.0f, 1.0f, (db + 24.0f) / 36.0f);
+        const float f = juce::jlimit(0.0f, 1.0f, (db - lo) / juce::jmax(1.0f, hi - lo));
         return (int)std::round(bot - f * (bot - top));
     }
+    static float gainFromY(int y, juce::Rectangle<int> capArea)
+    { return gainFromYRanged(y, capArea, -24.0f, 12.0f); }
+    static int yFromGain(float db, juce::Rectangle<int> capArea)
+    { return yFromGainRanged(db, capArea, -24.0f, 12.0f); }
     /** dB per pixel of travel, derived from the SAME travel constants as
         gainFromY/yFromGain and held to them by the self-test, so fine and
         coarse drags agree about where a dB lives; the fine modifier only
@@ -3468,11 +3504,17 @@ private:
         cannot consume gainFromY deltas directly: those clamp at the travel
         rails, and a FINE drag whose cursor has passed a rail while its
         value has not would stall. */
-    static float gainPerPixel(juce::Rectangle<int> capArea)
+    static float gainPerPixelRanged(juce::Rectangle<int> capArea, float span)
     {
-        return 36.0f / juce::jmax(1.0f, faderTravelBot(capArea)
-                                      - faderTravelTop(capArea));
+        return span / juce::jmax(1.0f, faderTravelBot(capArea)
+                                     - faderTravelTop(capArea));
     }
+    static float gainPerPixel(juce::Rectangle<int> capArea)
+    { return gainPerPixelRanged(capArea, 36.0f); }
+    // Fader value range for the current mixer fader mode. POST is the output
+    // fader (-24..+12); PRE is the pre-chain headroom range (-24..+24).
+    float faderLo() const;
+    float faderHi() const;
     /** Shift = fine drag at one eighth speed. */
     static constexpr float kFaderFineRatio = 1.0f / 8.0f;
 
@@ -3496,7 +3538,8 @@ private:
     // kCtrlMeter (11) retired in 8b with the meter mode; the id is not
     // reused so an old log line can never be misread against a new control.
     static constexpr int kCtrlNarrow  = 0, kCtrlWide  = 1,
-                         kCtrlNumbers = 10, kCtrlChain = 12;
+                         kCtrlNumbers = 10, kCtrlChain = 12,
+                         kCtrlPost = 13, kCtrlPre = 14;   // fader mode (18 Aug 2026)
     /** Pure. Segments get fixed preferred widths, shrink proportionally to a
         pressable floor if the rect is tight, and any zone that still cannot
         fit inside the rect is DROPPED rather than clipped into an overlap. */
@@ -3625,7 +3668,8 @@ private:
                         const EchoJayProcessor::LinkDisplayEntry* entry);
     /** The drawn track, its ticks and the cap sprite at `gDb`. ONE painter
         for the channel strips and the bus, so the two cannot drift. */
-    void paintFaderLane(juce::Graphics& g, const StripGeom& sg, float gDb);
+    void paintFaderLane(juce::Graphics& g, const StripGeom& sg, float gDb,
+                        float lo = -24.0f, float hi = 12.0f);
     /** Routes one press through stripHitAt. `local` is in sg's space.
         numClicks carries the double-click (fader reset to 0 dB). */
     void linkStripMouseDown(const StripGeom& sg, juce::Point<int> local,
@@ -3974,6 +4018,12 @@ private:
     // Remote gain: ctrl-cmd carrying the CURRENT active + a new absolute
     // gainDb field, acked like Active. Authority stays with the Link.
     void sendLinkGainCommand(const juce::String& linkAddr, float gainDb);
+    // Pre-chain gain (mixer Pre mode). A fader move is a HAND set (userSet).
+    void sendLinkPreGainCommand(const juce::String& linkAddr, float preGainDb);
+    void sendLinkPreGainResetCommand(const juce::String& linkAddr);
+    float linkRowDisplayPreGain(const juce::String& linkAddr) const;
+    // True when the mixer faders are repointed to the pre-chain gain.
+    bool  linkFaderModeIsPre() const;
     // Remote placement declaration (0 unset, 1 bus, 2 insert) via ctrl-cmd.
     void sendLinkPlacementCommand(const juce::String& linkAddr, int placement);
     void showLinkPlacementMenu(const juce::String& linkAddr);

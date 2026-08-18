@@ -57,6 +57,7 @@ public:
         static constexpr int kBlockH    = 64;   // room for the wet/dry knob row
         static constexpr int kBlockGap  = 26;
         static constexpr int kMasterW   = 62;   // fixed master MIX knob area
+        static constexpr int kPreGainW  = 56;   // fixed pre-gain knob area, HEAD of strip
 
         // Pop-out fallback window (native size, always on top, close returns
         // the editor inline)
@@ -209,6 +210,7 @@ public:
         juce::Viewport   stripView;
         StripContent     stripContent;
         ChainWetKnob     masterKnob;   // whole-chain wet/dry, fixed right of strip
+        PreGainKnob      preGainKnob;  // pre-chain headroom gain, HEAD of strip (the Link's own rack)
         std::vector<std::unique_ptr<Block>> blocks;
         int selectedIdx = -1;
 
@@ -268,6 +270,18 @@ public:
             masterKnob.onChange     = [this](float v) { proc.setChainMasterWet(v); };
             masterKnob.onGestureEnd = [this] { proc.commitChainWetChange(); };
             addAndMakeVisible(masterKnob);
+
+            // Pre-gain knob at the HEAD of the Link's OWN rack strip: the
+            // control the main plugin has, now on the Link's own editor. It
+            // drives this Link's chain host directly; a drag is a hand set.
+            preGainKnob.caption = "PRE";
+            preGainKnob.onChange = [this](float v01)
+            { proc.getChainHost().setPreGainDb(PreGainKnob::dbFromV(v01), true);
+              proc.commitChainWetChange(); };
+            preGainKnob.onResetAuto = [this]
+            { proc.getChainHost().resetPreGainToAuto(); proc.commitChainWetChange();
+              syncPreGain(); };   // rebuild is not per-tick here: repaint the knob now
+            addAndMakeVisible(preGainKnob);
 
             popBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xcc0E1020));
             popBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
@@ -619,6 +633,12 @@ public:
             }
             layoutStrip();
             masterKnob.setValue(proc.getChainMasterWet());
+            {
+                auto& ch = proc.getChainHost();
+                preGainKnob.userSet = ch.isPreGainUserSet();
+                preGainKnob.inputKnown = ch.getChainInLevels().known;
+                preGainKnob.setDb(ch.getPreGainDb(), false);
+            }
             popBtn.setVisible(canPopOut());
 
             // Keep the inline editor in sync: the model index it was opened
@@ -763,6 +783,18 @@ public:
             }
         }
 
+        // Refresh the pre-gain knob from this Link's chain host. Skipped while
+        // dragging so it never fights the gesture. Called per tick (this panel
+        // has no per-tick rebuild) and after a reset.
+        void syncPreGain()
+        {
+            if (preGainKnob.isMouseButtonDown()) return;
+            auto& ch = proc.getChainHost();
+            preGainKnob.userSet = ch.isPreGainUserSet();
+            preGainKnob.inputKnown = ch.getChainInLevels().known;
+            preGainKnob.setDb(ch.getPreGainDb(), false);
+        }
+
         void resized() override
         {
             popBtn.setBounds(getWidth() - 40, 3, 26, 22);
@@ -770,8 +802,9 @@ public:
             settingsBox.setBounds(sb.getX() + 8, sb.getY() + 18,
                                   sb.getWidth() - 16, sb.getHeight() - 24);
             updateSettingsCard();
-            stripView.setBounds(0, getHeight() - kStripH,
-                                juce::jmax(50, getWidth() - kMasterW), kStripH);
+            preGainKnob.setBounds(6, getHeight() - kStripH + 6, 44, 54);
+            stripView.setBounds(kPreGainW, getHeight() - kStripH,
+                                juce::jmax(50, getWidth() - kMasterW - kPreGainW), kStripH);
             masterKnob.setBounds(getWidth() - kMasterW + 9,
                                  getHeight() - kStripH + 6, 44, 54);
             layoutStrip();

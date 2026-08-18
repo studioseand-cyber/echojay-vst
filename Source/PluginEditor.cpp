@@ -1981,7 +1981,23 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         if (chainViewUid().isNotEmpty()) return;
         processorRef.getChainHost().setMasterWet(v);
     };
+    // Pre-chain gain: driven by the rack-head PreGainKnob (18 Aug 2026),
+    // replacing the master-knob menu items (that menu was on the wrong
+    // control and absent in some views). Routed local vs remote by which
+    // rack the panel shows. A drag is a HAND set (build will not overwrite).
+    chainListPanel.onPreGain = [this](float db) {
+        const juce::String uid = chainViewUid();
+        if (uid.isNotEmpty()) sendLinkPreGainCommand(uid, db);
+        else { processorRef.getChainHost().setPreGainDb(db, true); processorRef.markStateDirty(); }
+    };
+    chainListPanel.onPreGainReset = [this]() {
+        const juce::String uid = chainViewUid();
+        if (uid.isNotEmpty()) sendLinkPreGainResetCommand(uid);
+        else { processorRef.getChainHost().resetPreGainToAuto(); processorRef.markStateDirty(); }
+    };
     // Manual reset of the running level tally: right-click the master knob.
+    // (The pre-gain moved to the rack-head knob; only the level tally reset
+    // remains here.)
     chainListPanel.masterKnob.onPopup = [this]()
     {
         if (chainViewUid().isNotEmpty()) return;
@@ -1999,8 +2015,8 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&chainListPanel.masterKnob),
             [safeThis](int r)
             {
-                if (safeThis == nullptr || r != 2) return;
-                safeThis->processorRef.getChainHost().resetAllLevels();
+                if (safeThis == nullptr) return;
+                if (r == 2) safeThis->processorRef.getChainHost().resetAllLevels();
             });
     };
     chainListPanel.masterKnob.setValue(processorRef.getChainHost().getMasterWet());
@@ -6517,25 +6533,28 @@ void EchoJayEditor::layOutLinkCtrls(juce::Rectangle<int> ctrlRect,
     const auto r = ctrlRect.reduced(0, 4);   // 22px segments in the 30px row
     if (r.getHeight() <= 0) return;
 
-    int wSeg = 52, cSeg = 62;
-    const int gap = 16;                      // between the two groups
-    const int need = 2 * wSeg + 2 * cSeg + gap;
+    // THREE groups since 18 Aug 2026: width, content, and fader mode.
+    int wSeg = 52, cSeg = 62, mSeg = 46;
+    const int gap = 16;                      // between groups
+    const int need = 2 * wSeg + 2 * cSeg + 2 * mSeg + 2 * gap;
     if (need > r.getWidth())
     {
-        const float k = (float)juce::jmax(1, r.getWidth() - gap)
-                      / (float)(2 * wSeg + 2 * cSeg);
-        wSeg = juce::jmax(30, (int)((float)wSeg * k));
-        cSeg = juce::jmax(34, (int)((float)cSeg * k));
+        const float k = (float)juce::jmax(1, r.getWidth() - 2 * gap)
+                      / (float)(2 * wSeg + 2 * cSeg + 2 * mSeg);
+        wSeg = juce::jmax(28, (int)((float)wSeg * k));
+        cSeg = juce::jmax(32, (int)((float)cSeg * k));
+        mSeg = juce::jmax(26, (int)((float)mSeg * k));
     }
 
-    // Two content segments since 8b: the meter left the toggle when it
-    // became permanent strip chrome.
-    const int ids[4]  = { kCtrlNarrow, kCtrlWide, kCtrlNumbers, kCtrlChain };
-    const int wids[4] = { wSeg, wSeg, cSeg, cSeg };
+    // Width | content | fader mode. Each group's zones are contiguous; a gap
+    // separates the groups; any zone that cannot fit is dropped whole (the
+    // mode toggle is the first to go on a very tight row, never clipped).
+    const int ids[6]  = { kCtrlNarrow, kCtrlWide, kCtrlNumbers, kCtrlChain, kCtrlPost, kCtrlPre };
+    const int wids[6] = { wSeg, wSeg, cSeg, cSeg, mSeg, mSeg };
     int x = r.getX();
-    for (int i = 0; i < 4; ++i)
+    for (int i = 0; i < 6; ++i)
     {
-        if (i == 2) x += gap;                // group separator
+        if (i == 2 || i == 4) x += gap;      // group separators
         const juce::Rectangle<int> z(x, r.getY(), wids[i], r.getHeight());
         if (z.getRight() > ctrlRect.getRight()) break;   // drop, never overlap
         out.push_back({ ids[i], z });
@@ -6579,6 +6598,23 @@ void EchoJayEditor::linkCtrlClicked(int id)
             // one-second lifespan but still a lie.
             refreshLinkRackCache(true);
             break;
+        case kCtrlPost:
+        case kCtrlPre:
+        {
+            // Repoint the strip. The faders are stateless (they read the value
+            // for the current mode every paint), so switching makes each fader
+            // jump to its channel's pre-gain and the numbers follow, with no
+            // second row and no per-channel state.
+            const auto m = (id == kCtrlPre) ? EchoJayProcessor::LinkFaderMode::Pre
+                                            : EchoJayProcessor::LinkFaderMode::Post;
+            if (p.linkFaderMode == m) return;
+            p.linkFaderMode = m;
+            p.markStateDirty();
+            linkMixerView_.dragAddr = {};   // never carry a drag across a mode flip
+            resized();
+            repaint();
+            break;
+        }
         default: break;
     }
 }
@@ -7223,6 +7259,32 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
         for (const auto& si : v.slots)
             if (si.name.trim() == lastAddDone_.name.trim())
             { pendingNote = "Added " + lastAddDone_.name + " to " + v.name + "."; break; }
+    }
+
+    // Pre-gain knob display refreshed EVERY tick, BEFORE the signature
+    // early-return below: preGainDb_ is not part of the panel signature (a
+    // pre-gain move never bumps the rack revision), so a reset or a remote
+    // change would otherwise never repaint the knob. Cheap: one setValue and
+    // a repaint, no rebuild. Skipped only while the user is dragging THIS
+    // knob, so the refresh never fights the gesture.
+    if (! chainListPanel.preGainKnob.isMouseButtonDown())
+    {
+        const juce::String pgUid = chainViewUid();
+        if (pgUid.isNotEmpty())
+        {
+            const float db = linkRowDisplayPreGain(pgUid);
+            bool userSet = false, known = true;
+            auto it = processorRef.linkRackCache.find(pgUid);
+            if (it != processorRef.linkRackCache.end() && it->second.rack.valid)
+            { userSet = it->second.rack.preGainUserSet; known = it->second.rack.preGainInputKnown; }
+            chainListPanel.setPreGainDisplay(db, userSet, known);
+        }
+        else
+        {
+            auto& ch = processorRef.getChainHost();
+            chainListPanel.setPreGainDisplay(ch.getPreGainDb(), ch.isPreGainUserSet(),
+                                             ch.getChainInLevels().known);
+        }
     }
 
     juce::String sig;
@@ -8393,7 +8455,7 @@ void EchoJayEditor::linkPendingFor(const juce::String& addr, bool& pending,
 }
 
 void EchoJayEditor::paintFaderLane(juce::Graphics& g, const StripGeom& sg,
-                                   float gDb)
+                                   float gDb, float lo, float hi)
 {
     const auto cap = sg.faderImg;              // the CAP AREA: full lane height
     if (cap.isEmpty()) return;
@@ -8413,9 +8475,9 @@ void EchoJayEditor::paintFaderLane(juce::Graphics& g, const StripGeom& sg,
     // ---- Ticks: MINOR every 2 dB, MAJOR every 6, zero emphasised, all
     // mapped by the SAME yFromGain the drag and the cap use.
     const int laneR = cap.getX() - 1;
-    for (int m = 12; m >= -24; m -= 2)
+    for (int m = (int) hi; m >= (int) lo; m -= 2)
     {
-        const int ty = yFromGain((float)m, cap);
+        const int ty = yFromGainRanged((float)m, cap, lo, hi);
         const bool major = (m % 6 == 0);
         const bool zero  = (m == 0);
         g.setColour(zero ? LinkConsole::label
@@ -8428,7 +8490,7 @@ void EchoJayEditor::paintFaderLane(juce::Graphics& g, const StripGeom& sg,
     // ---- The cap, cropped straight out of frame 64 and scaled UNIFORMLY
     // (height derives from width via faderCapH). Its centre is yFromGain's
     // answer, so ticks, drag and drawn cap cannot disagree.
-    const int cy   = yFromGain(gDb, cap);
+    const int cy   = yFromGainRanged(gDb, cap, lo, hi);
     const int capW = faderCapW(cap);
     // Centred in the cap area, so the drawn track shows either side of it.
     const juce::Rectangle<int> dest(cap.getCentreX() - capW / 2, cy - capH / 2,
@@ -8763,19 +8825,28 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             // filmstrip, travel band and tick lane as the channels, driven
             // by the processor's persisted value. No pending display: the
             // value applies immediately and paint reads it straight back.
-            const float gDb = processorRef.getBusGainDb();
-            paintFaderLane(g, sg, gDb);
+            const bool pre = linkFaderModeIsPre();
+            const float gDb = pre ? processorRef.getChainHost().getPreGainDb()
+                                  : processorRef.getBusGainDb();
+            paintFaderLane(g, sg, gDb, faderLo(), faderHi());
             // A restored non-zero trim must be VISIBLE on load, not a
             // surprise found by squinting at a cap: the value prints above
             // the fader whenever it is not unity.
-            if (std::abs(gDb) >= 0.05f)
             {
-                g.setColour(LinkConsole::caption);
-                g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
-                g.drawText(juce::String(gDb, 1),
-                           sg.faderImg.getX() - 4, sg.faderImg.getY() + 1,
-                           sg.faderImg.getWidth() + 8, 10,
-                           juce::Justification::centred);
+                const bool userSet = pre && processorRef.getChainHost().isPreGainUserSet();
+                const bool known   = !pre || processorRef.getChainHost().getChainInLevels().known;
+                juce::String txt;
+                if (std::abs(gDb) >= 0.05f) txt = juce::String(gDb, 1);
+                else if (pre && !known)     txt = "--";   // no level: not a confident 0
+                if (txt.isNotEmpty())
+                {
+                    // Amber marks a hand-set pre-gain (a build will not change
+                    // it) so the strip explains why builds stop adjusting it.
+                    g.setColour(userSet ? juce::Colour(0xfff59e0b) : LinkConsole::caption);
+                    g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
+                    g.drawText(txt, sg.faderImg.getX() - 4, sg.faderImg.getY() + 1,
+                               sg.faderImg.getWidth() + 8, 10, juce::Justification::centred);
+                }
             }
         }
         else if (entry != nullptr)
@@ -8786,14 +8857,16 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             // the cap holds the TARGET while a command is in flight rather
             // than snapping back and jumping on the ack.
             const bool dragging = (linkMixerView_.dragAddr == sg.addr);
+            const bool pre = linkFaderModeIsPre();
             const float gDb = dragging ? linkMixerView_.dragValue
-                                       : linkRowDisplayGain(sg.addr);
+                                       : (pre ? linkRowDisplayPreGain(sg.addr)
+                                              : linkRowDisplayGain(sg.addr));
 
             // The image rect is STORED (faderImg); its width is height/8 by
             // construction. The lane (sg.fader) runs the full band height:
             // a groove line continues the slot above and below the image so
             // the lane reads as one object sharing the meter's extent.
-            paintFaderLane(g, sg, gDb);
+            paintFaderLane(g, sg, gDb, faderLo(), faderHi());
         }
     }
 }
@@ -8860,13 +8933,20 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
             // hold a target against.
             if (sg.isBus)
             {
+                const bool pre = linkFaderModeIsPre();
                 if (numClicks >= 2)
                 {
-                    processorRef.setBusGainDb(0.0f);
+                    // Double-click zeroes. In Pre mode that also clears the
+                    // hand-set flag, so the next build can auto-set it again.
+                    if (pre) processorRef.getChainHost().resetPreGainToAuto();
+                    else     processorRef.setBusGainDb(0.0f);
+                    processorRef.markStateDirty();
                     repaint();
                     break;
                 }
-                processorRef.setBusGainDb(gainFromY(local.y, sg.faderImg));
+                const float v = gainFromYRanged(local.y, sg.faderImg, faderLo(), faderHi());
+                if (pre) { processorRef.getChainHost().setPreGainDb(v, true); processorRef.markStateDirty(); }
+                else     processorRef.setBusGainDb(v);
                 busFaderDragging_ = true;
                 busFaderLastY_    = local.y;
                 repaint();
@@ -8874,18 +8954,21 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
             }
             EchoJayProcessor::LinkDisplayEntry en;
             if (!findLinkEntryByAddr(sg.addr, en)) break;
+            const bool preR = linkFaderModeIsPre();
             if (numClicks >= 2)
             {
                 linkMixerView_.dragAddr = {};
-                sendLinkGainCommand(sg.addr, 0.0f);
+                if (preR) sendLinkPreGainCommand(sg.addr, 0.0f);
+                else      sendLinkGainCommand(sg.addr, 0.0f);
                 linkMixerView_.repaint();
                 break;
             }
             linkMixerView_.dragAddr       = sg.addr;
-            linkMixerView_.dragValue      = gainFromY(local.y, sg.faderImg);
+            linkMixerView_.dragValue      = gainFromYRanged(local.y, sg.faderImg, faderLo(), faderHi());
             linkMixerView_.lastDragY      = local.y;   // incremental anchor
             linkMixerView_.lastGainSendMs = juce::Time::getMillisecondCounter();
-            sendLinkGainCommand(sg.addr, linkMixerView_.dragValue);
+            if (preR) sendLinkPreGainCommand(sg.addr, linkMixerView_.dragValue);
+            else      sendLinkGainCommand(sg.addr, linkMixerView_.dragValue);
             linkMixerView_.repaint();
             break;
         }
@@ -9042,6 +9125,25 @@ juce::String EchoJayEditor::linkStripTooltip(const StripGeom& sg,
                             : "Channel meter (Link engine)";
 
         case StripHit::Fader:
+            if (linkFaderModeIsPre())
+            {
+                if (sg.isBus)
+                {
+                    auto& ch = processorRef.getChainHost();
+                    const bool us = ch.isPreGainUserSet();
+                    return "Pre-gain " + juce::String(ch.getPreGainDb(), 1) + " dB"
+                           + (us ? " (set by hand, builds will not change it)" : " (auto)")
+                           + " (drag; double-click = auto)";
+                }
+                const bool dragging = (linkMixerView_.dragAddr == sg.addr);
+                const float pgv = dragging ? linkMixerView_.dragValue : linkRowDisplayPreGain(sg.addr);
+                bool us = false;
+                auto it = processorRef.linkRackCache.find(sg.addr);
+                if (it != processorRef.linkRackCache.end()) us = it->second.rack.preGainUserSet;
+                return "Pre-gain " + juce::String(pgv, 1) + " dB"
+                       + (us ? " (set by hand, builds will not change it)" : "")
+                       + " (drag; double-click = 0)";
+            }
             if (sg.isBus)
                 return "Bus trim " + juce::String(processorRef.getBusGainDb(), 1)
                        + " dB (drag; shift = fine; double-click = 0)";
@@ -9192,10 +9294,13 @@ void EchoJayEditor::LinkMixerView::mouseDrag(const juce::MouseEvent& e)
     for (const auto& sg : owner->linkStripGeom_)
         if (sg.addr == dragAddr)
         {
-            const float rate = EchoJayEditor::gainPerPixel(sg.faderImg)
+            const bool pre = owner->linkFaderModeIsPre();
+            const float span = pre ? 48.0f : 36.0f;   // -24..+24 vs -24..+12
+            const float lo = -24.0f, hi = pre ? 24.0f : 12.0f;
+            const float rate = EchoJayEditor::gainPerPixelRanged(sg.faderImg, span)
                              * (e.mods.isShiftDown()
                                     ? EchoJayEditor::kFaderFineRatio : 1.0f);
-            dragValue = juce::jlimit(-24.0f, 12.0f,
+            dragValue = juce::jlimit(lo, hi,
                 std::round((dragValue + (float)(lastDragY - y) * rate) * 10.0f)
                     / 10.0f);
             break;
@@ -9205,7 +9310,8 @@ void EchoJayEditor::LinkMixerView::mouseDrag(const juce::MouseEvent& e)
     if (now - lastGainSendMs >= 100)
     {
         lastGainSendMs = now;
-        owner->sendLinkGainCommand(dragAddr, dragValue);
+        if (owner->linkFaderModeIsPre()) owner->sendLinkPreGainCommand(dragAddr, dragValue);
+        else                             owner->sendLinkGainCommand(dragAddr, dragValue);
     }
     repaint();
 }
@@ -9216,7 +9322,8 @@ void EchoJayEditor::LinkMixerView::mouseUp(const juce::MouseEvent&)
     // Always send the FINAL value on release (the throttle may have skipped
     // it); the pending entry then holds the fader at the target until the
     // Link acks.
-    owner->sendLinkGainCommand(dragAddr, dragValue);
+    if (owner->linkFaderModeIsPre()) owner->sendLinkPreGainCommand(dragAddr, dragValue);
+    else                             owner->sendLinkGainCommand(dragAddr, dragValue);
     dragAddr = {};
     repaint();
 }
@@ -9255,6 +9362,12 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
                 case kCtrlChain:   sel = processorRef.linkMixerContent
                                        == EchoJayProcessor::LinkMixerContent::Chain;
                                    label = "CHAIN";   break;
+                case kCtrlPost:    sel = processorRef.linkFaderMode
+                                       == EchoJayProcessor::LinkFaderMode::Post;
+                                   label = "POST";    break;
+                case kCtrlPre:     sel = processorRef.linkFaderMode
+                                       == EchoJayProcessor::LinkFaderMode::Pre;
+                                   label = "PRE";     break;
                 default: continue;
             }
             // Console grey: the pressed segment is a lifted fill with
@@ -26118,6 +26231,105 @@ void EchoJayEditor::sendLinkActiveCommand(const juce::String& linkAddr, bool act
 
 // Absolute gain set. The command carries the CURRENT (or in-flight) active so
 // it can never deactivate the Link, plus the new gainDb. Acked like Active.
+bool EchoJayEditor::linkFaderModeIsPre() const
+{
+    return processorRef.linkFaderMode == EchoJayProcessor::LinkFaderMode::Pre;
+}
+float EchoJayEditor::faderLo() const { return -24.0f; }
+float EchoJayEditor::faderHi() const { return linkFaderModeIsPre() ? 24.0f : 12.0f; }
+
+float EchoJayEditor::linkRowDisplayPreGain(const juce::String& linkAddr) const
+{
+    // Optimistic pending pre-gain until the sidecar mirror catches up.
+    for (const auto& p : linkCtrlPending_)
+        if (p.addr == linkAddr && p.isPreGain && !p.timedOut) return p.gainDb;
+    // The Link publishes its pre-gain in the rack sidecar (rack-<uid>.json),
+    // cached per uid. Absent (old Link or no rack) reads 0 = unity.
+    auto it = processorRef.linkRackCache.find(linkAddr);
+    if (it != processorRef.linkRackCache.end() && it->second.rack.valid)
+        return it->second.rack.preGainDb;
+    return 0.0f;
+}
+
+void EchoJayEditor::sendLinkPreGainCommand(const juce::String& linkAddr, float preGainDb)
+{
+    int err = 0;
+    juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty() || linkAddr.isEmpty()) return;
+    const juce::String& id = linkAddr;
+    preGainDb = juce::jlimit(-24.0f, 24.0f, preGainDb);
+
+    bool active = true;
+    for (const auto& li : processorRef.getLinkSlotInfos())
+    {
+        const juce::String a = li.uid.isNotEmpty() ? li.uid : LinkShm::makeSafeFilePart(li.name);
+        if (a == linkAddr) { active = li.active; break; }
+    }
+    for (const auto& p : linkCtrlPending_)
+        if (p.addr == linkAddr && !p.isGain && !p.isPreGain && !p.timedOut) active = p.target;
+
+    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    for (auto& p : linkCtrlPending_)
+        if (p.addr == linkAddr && p.seq >= seq) seq = p.seq + 1;
+
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",              1);
+    cmd->setProperty("seq",            seq);
+    cmd->setProperty("active",         active);      // echoed, never a toggle
+    cmd->setProperty("preGainDb",      (double)preGainDb);
+    cmd->setProperty("preGainUserSet", true);        // a fader move is a hand set
+    juce::File(dir + "ctrl-ack-" + id + ".json").deleteFile();
+    juce::File(dir + "ctrl-cmd-" + id + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+
+    linkCtrlPending_.erase(
+        std::remove_if(linkCtrlPending_.begin(), linkCtrlPending_.end(),
+                       [&](const LinkCtrlPending& p){ return p.addr == linkAddr && p.isPreGain; }),
+        linkCtrlPending_.end());
+    LinkCtrlPending pend; pend.addr = linkAddr; pend.seq = seq;
+    pend.isPreGain = true; pend.gainDb = preGainDb;
+    linkCtrlPending_.push_back(pend);
+
+    pollLinkCtrlAck(linkAddr, seq, 12);
+    repaint();
+}
+
+void EchoJayEditor::sendLinkPreGainResetCommand(const juce::String& linkAddr)
+{
+    // Double-click on a REMOTE rack head: clear the far end's hand-set flag
+    // so its next model build sets the pre-gain again. A dedicated field the
+    // Link maps to resetPreGainToAuto (setPreGainDb userSet=false cannot
+    // clear an existing userSet).
+    int err = 0;
+    juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty() || linkAddr.isEmpty()) return;
+    const juce::String& id = linkAddr;
+    bool active = true;
+    for (const auto& li : processorRef.getLinkSlotInfos())
+    {
+        const juce::String a = li.uid.isNotEmpty() ? li.uid : LinkShm::makeSafeFilePart(li.name);
+        if (a == linkAddr) { active = li.active; break; }
+    }
+    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    for (auto& p : linkCtrlPending_)
+        if (p.addr == linkAddr && p.seq >= seq) seq = p.seq + 1;
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",            1);
+    cmd->setProperty("seq",          seq);
+    cmd->setProperty("active",       active);
+    cmd->setProperty("preGainReset", true);
+    juce::File(dir + "ctrl-ack-" + id + ".json").deleteFile();
+    juce::File(dir + "ctrl-cmd-" + id + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+    // Drop any optimistic pre-gain pending: the value now comes from the mirror.
+    linkCtrlPending_.erase(
+        std::remove_if(linkCtrlPending_.begin(), linkCtrlPending_.end(),
+                       [&](const LinkCtrlPending& p){ return p.addr == linkAddr && p.isPreGain; }),
+        linkCtrlPending_.end());
+    pollLinkCtrlAck(linkAddr, seq, 12);
+    repaint();
+}
+
 void EchoJayEditor::sendLinkGainCommand(const juce::String& linkAddr, float gainDb)
 {
     int err = 0;
@@ -27730,6 +27942,12 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                     ch3.getNumSlots() > 0 ? juce::String()
                                           : "Failed: no plugins from this chain could load";
                 juce::String status = juce::String(ch3.getNumSlots()) + " slot(s) loaded";
+                // Pre-chain gain at BUILD (never on an edit): set the trim
+                // from the measured input so the signal arrives at the
+                // operating level, unless the user set it by hand. known ==
+                // false leaves it unset (visible). Fired once here, at build
+                // complete; the CHAIN LEVELS line then carries what it did.
+                ch3.computePreGainAtBuild();
                 // 1d: stage row down, result bubble up. Model "result" text
                 // only on a clean full build; otherwise compose factually.
                 safeThis->clearStageStatus();
@@ -29630,11 +29848,24 @@ void EchoJayEditor::mouseDrag(const juce::MouseEvent& e)
     // needed for a local value).
     if (!busFaderDragging_) return;
     const int y = e.getPosition().y;
-    const float rate = gainPerPixel(linkBusGeom_.faderImg)
+    const bool pre = linkFaderModeIsPre();
+    const float span = pre ? 48.0f : 36.0f;
+    const float lo = -24.0f, hi = pre ? 24.0f : 12.0f;
+    const float rate = gainPerPixelRanged(linkBusGeom_.faderImg, span)
                      * (e.mods.isShiftDown() ? kFaderFineRatio : 1.0f);
-    processorRef.setBusGainDb(juce::jlimit(-24.0f, 12.0f,
-        std::round((processorRef.getBusGainDb()
-                    + (float)(busFaderLastY_ - y) * rate) * 10.0f) / 10.0f));
+    if (pre)
+    {
+        auto& ch = processorRef.getChainHost();
+        ch.setPreGainDb(juce::jlimit(lo, hi,
+            std::round((ch.getPreGainDb() + (float)(busFaderLastY_ - y) * rate) * 10.0f) / 10.0f), true);
+        processorRef.markStateDirty();
+    }
+    else
+    {
+        processorRef.setBusGainDb(juce::jlimit(lo, hi,
+            std::round((processorRef.getBusGainDb()
+                        + (float)(busFaderLastY_ - y) * rate) * 10.0f) / 10.0f));
+    }
     busFaderLastY_ = y;
     repaint();
 }

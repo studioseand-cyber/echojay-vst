@@ -2889,7 +2889,13 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     // the mixer laid out is a layout choice worth writing into a project file.
     state->setProperty("linkMixerContent", (int)linkMixerContent);
     state->setProperty("linkMixerWide", linkMixerWide);
+    state->setProperty("linkFaderMode", (int)linkFaderMode);
     state->setProperty("busGainDb", busGainDb_.load(std::memory_order_relaxed));
+    // Pre-chain gain persists with the SESSION (source-specific, so it never
+    // travels in a shared chain: buildChainSlotsVar omits it). userSet rides
+    // along so a reopen keeps a hand-set value from being auto-overwritten.
+    state->setProperty("chainPreGainDb",      chainHost.getPreGainDb());
+    state->setProperty("chainPreGainUserSet", chainHost.isPreGainUserSet());
 
     // Serialise snapshots — copy under lock, serialise outside
     std::vector<CaptureSnapshot> snapsCopy;
@@ -3116,12 +3122,21 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
                     (int)obj->getProperty("linkMixerContent"));
             if (obj->hasProperty("linkMixerWide"))
                 linkMixerWide = (bool)obj->getProperty("linkMixerWide");
+            if (obj->hasProperty("linkFaderMode"))
+                linkFaderMode = ((int)obj->getProperty("linkFaderMode") == 1)
+                                    ? LinkFaderMode::Pre : LinkFaderMode::Post;
             // Bus trim: guarded and else-less (absent = older save = 0 dB
             // default untouched); snap the smoother so a restored trim does
             // not ramp in from unity on the first block.
             if (obj->hasProperty("busGainDb"))
                 setBusGainDb((float)(double)obj->getProperty("busGainDb"),
                              /*snapSmoothing=*/true);
+            // Pre-chain gain restored FROZEN (never recomputed on reopen).
+            // userSet first so setPreGainDb below records the right state.
+            if (obj->hasProperty("chainPreGainDb"))
+                chainHost.setPreGainDb((float)(double)obj->getProperty("chainPreGainDb"),
+                                       obj->hasProperty("chainPreGainUserSet")
+                                           && (bool)obj->getProperty("chainPreGainUserSet"));
             // Project prompt: saves that predate the flag derive from having
             // a name (named project = question already answered)
             if (obj->hasProperty("projectPromptDismissed"))

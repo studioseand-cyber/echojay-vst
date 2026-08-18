@@ -2862,6 +2862,14 @@ juce::String EchoJayAPI::buildChainLevelsInjection(const ChainHost& chainHost)
       << formatHeard(in.heardSeconds);
     if (in.windowSeconds < in.heardSeconds - 1.0f)
         b << " (~" << formatHeard(in.windowSeconds) << " described)";
+    // Pre-chain gain and the resulting operating level: EchoJay trims the
+    // input to a known operating level before the rack, so thresholds must be
+    // set against OPERATING, not the raw input. Only shown when a trim is in
+    // effect (a bare input line stays short when there is nothing to add).
+    const float pg = chainHost.getPreGainDb();
+    if (std::abs(pg) > 0.05f)
+        b << "; pre-gain " << (pg >= 0 ? "+" : "") << fmt1(pg)
+          << " dB, so OPERATING " << fmt1(in.levelDb + pg) << " LUFS (set thresholds against this)";
     if (out.known && chainHost.getNumSlots() > 0)
         b << "; output " << fmt1(out.levelDb) << " LUFS (out-in " << fmt1(out.levelDb - in.levelDb) << " dB)";
     b << "]";

@@ -231,6 +231,12 @@ void LinkProcessor::publishRackSidecar()
     rc.name      = effectiveDisplayName();
     rc.revision  = rev;
     rc.masterWet = chainHost.getMasterWet();
+    // Pre-chain gain mirror (18 Aug 2026): the main plugin's mixer shows and
+    // drives it in Pre mode. inputKnown so a strip with no level heard shows
+    // "unset" rather than a confident 0.
+    rc.preGainDb         = chainHost.getPreGainDb();
+    rc.preGainUserSet    = chainHost.isPreGainUserSet();
+    rc.preGainInputKnown = chainHost.getChainInLevels().known;
     {
         const auto infos = chainHost.getAllSlotInfos();
         for (int i = 0; i < (int) infos.size(); ++i)
@@ -571,6 +577,31 @@ void LinkProcessor::pollControlCommand()
     // Remote placement declaration (from the monitor row's placement control)
     if (obj->hasProperty("placement"))
         setPlacement((int)obj->getProperty("placement"));
+
+    // Remote pre-chain gain (18 Aug 2026, from the mixer's Pre mode). A fader
+    // move is a HAND set: userSet true so the next model build will not
+    // overwrite it. Additive field; an old Link never sees it. updateShmState
+    // republishes the sidecar (with the new value) and dirty-marks for save.
+    if (obj->hasProperty("preGainDb"))
+    {
+        const float g = (float)(double)obj->getProperty("preGainDb");
+        const bool userSet = ! obj->hasProperty("preGainUserSet")
+                             || (bool)obj->getProperty("preGainUserSet");
+        EchoJay_NSLog(("EJLinkState: remote set pre-gain=" + juce::String(g, 2)
+                       + " dB userSet=" + juce::String((int)userSet)
+                       + " (seq " + juce::String(seq) + ")").toRawUTF8());
+        chainHost.setPreGainDb(g, userSet);
+        updateShmState();
+    }
+    // Reset the pre-gain to auto (clears the hand-set flag; the next build
+    // sets it again). Its own field: setPreGainDb userSet=false cannot clear.
+    if (obj->hasProperty("preGainReset") && (bool)obj->getProperty("preGainReset"))
+    {
+        EchoJay_NSLog(("EJLinkState: remote reset pre-gain to auto (seq "
+                       + juce::String(seq) + ")").toRawUTF8());
+        chainHost.resetPreGainToAuto();
+        updateShmState();
+    }
 
     // ---- Remote editor open (stage 1) -------------------------------------
     // 1-BASED like every other slot reference on the wire (slot, to, after);

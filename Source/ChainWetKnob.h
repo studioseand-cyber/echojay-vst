@@ -160,9 +160,74 @@ protected:
                    + "% wet (double-click = 100%)");
     }
 
-private:
+protected:
     float value_          = 1.0f;
     float dragStartValue_ = 1.0f;
     float dragStartY_     = 0.0f;
     bool  enabled_        = true;
+};
+
+// ---------------------------------------------------------------------------
+// PreGainKnob: the rack-head pre-chain gain control (18 Aug 2026). Reuses
+// ChainWetKnob's filmstrip and drag, remapped onto -24..+24 dB. The dB figure
+// is drawn ALWAYS (not on hover), amber when the value was set by hand (a
+// build will not overwrite it) and grey when auto, "--" when no input level
+// has been heard rather than a confident 0. Shift = fine; double-click resets
+// to auto (onResetAuto). onChange still fires 0..1; the owner maps to dB.
+// ---------------------------------------------------------------------------
+struct PreGainKnob : ChainWetKnob
+{
+    static constexpr float kLoDb = -24.0f, kHiDb = 24.0f, kSpanDb = 48.0f;
+    bool userSet = false;      // set by the owner from the state / sidecar
+    bool inputKnown = true;    // false = no level heard: show "--"
+    std::function<void()> onResetAuto;   // double-click
+
+    static float dbFromV(float v)  { return kLoDb + v * kSpanDb; }
+    static float vFromDb(float db) { return juce::jlimit(0.0f, 1.0f, (db - kLoDb) / kSpanDb); }
+    float db() const { return dbFromV(getValue()); }
+    void  setDb(float db, bool notify = false) { setValue(vFromDb(db), notify); }
+
+    void paint(juce::Graphics& g) override
+    {
+        // Draw the knob without the base caption, then our own dB label.
+        const auto savedCap = caption;
+        caption = {};
+        ChainWetKnob::paint(g);
+        caption = savedCap;
+
+        const int capH = 10;
+        auto r = getLocalBounds().removeFromBottom(capH);
+        juce::String txt;
+        juce::Colour col;
+        const bool zeroish = std::abs(db()) < 0.05f;
+        if (! inputKnown && zeroish) { txt = "--";                col = juce::Colour(0xff8a94a6); }
+        else                          { txt = juce::String(db(), 1);
+                                        col = userSet ? juce::Colour(0xfff59e0b)   // amber: hand-set
+                                                      : juce::Colour(0xffa0a0b8); } // grey: auto
+        g.setColour(col);
+        g.setFont(juce::Font(juce::FontOptions(8.5f, juce::Font::bold)));
+        g.drawText(txt, r, juce::Justification::centred);
+    }
+
+    void mouseDrag(const juce::MouseEvent& e) override
+    {
+        if (e.mods.isPopupMenu()) return;
+        // 150 px = full range, same feel as the base; shift = 4x finer.
+        const float travel = e.mods.isShiftDown() ? 600.0f : 150.0f;
+        const float delta = (dragStartY_ - e.position.y) / travel;
+        setValue(dragStartValue_ + delta, true);
+    }
+
+    void mouseDoubleClick(const juce::MouseEvent&) override
+    {
+        if (onResetAuto) onResetAuto();
+    }
+
+protected:
+    void updateTooltip() override
+    {
+        setTooltip("Pre-gain " + juce::String(db(), 1) + " dB into the rack"
+                   + (userSet ? " (set by hand, builds will not change it)" : " (auto)")
+                   + " (drag; shift = fine; double-click = auto)");
+    }
 };

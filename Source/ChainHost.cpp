@@ -795,6 +795,9 @@ void ChainHost::prepare(double sampleRate, int blockSize)
     dryRingWrite_ = 0;
     masterWetSmooth_.reset(sampleRate, 0.05);
     masterWetSmooth_.setCurrentAndTargetValue(masterWet_.load(std::memory_order_relaxed));
+    preGainSmooth_.reset(sampleRate, 0.03);
+    preGainSmooth_.setCurrentAndTargetValue(
+        juce::Decibels::decibelsToGain(preGainDb_.load(std::memory_order_relaxed)));
     // Running level: cleared only when the sample rate CHANGES (see
     // SlotWetBlend::prepareToPlay for why not on every prepare)
     if (sampleRate != tallySr_)
@@ -827,6 +830,30 @@ void ChainHost::process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi
         chainInTally_.push(buffer.getReadPointer(0),
                            buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : nullptr,
                            buffer.getNumSamples());
+
+    // PRE-CHAIN GAIN, after the raw-input tally and before anything else, so
+    // chainInTally_ is the raw input and everything downstream (slot 1's input
+    // tally = the operating level, the graph, chainOutTally_) sees the trim.
+    // It is part of what EchoJay does, not a hidden compensation: a DAW bypass
+    // compares the raw input against pre-gain + chain.
+    {
+        const float target = juce::Decibels::decibelsToGain(preGainDb_.load(std::memory_order_relaxed));
+        preGainSmooth_.setTargetValue(target);
+        if (preGainSmooth_.isSmoothing())
+        {
+            const int nn = buffer.getNumSamples();
+            const int nc = buffer.getNumChannels();
+            for (int i = 0; i < nn; ++i)
+            {
+                const float g = preGainSmooth_.getNextValue();
+                for (int c = 0; c < nc; ++c) buffer.getWritePointer(c)[i] *= g;
+            }
+        }
+        else if (preGainSmooth_.getCurrentValue() != 1.0f)
+        {
+            buffer.applyGain(preGainSmooth_.getCurrentValue());
+        }
+    }
     if (!hasActiveSlots_.load())
     {
         // Passthrough: the chain output IS the input
@@ -2028,6 +2055,86 @@ void ChainHost::setHostTrackName(const juce::String& nameIn)
     else if (was.isEmpty())
         EchoJay_NSLog(("EJLevels: host track name \"" + name + "\"").toRawUTF8());
     restoredLevelsTrack_.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Pre-chain gain (headroom + operating level)
+// ---------------------------------------------------------------------------
+void ChainHost::setPreGainDb(float db, bool userSet)
+{
+    const float g = juce::jlimit(kPreGainMinDb, kPreGainMaxDb, db);
+    preGainDb_.store(g, std::memory_order_relaxed);
+    if (userSet) { preGainUserSet_ = true; preGainState_ = PreGainState::UserSet; }
+    else if (! preGainUserSet_)
+        preGainState_ = (std::abs(g) > 1.0e-3f) ? PreGainState::Auto : PreGainState::Off;
+    EchoJay_NSLog(("EJPreGain: set " + juce::String(g, 2) + " dB ("
+                   + juce::String(userSet ? "by the user" : "auto") + ")").toRawUTF8());
+}
+
+void ChainHost::resetPreGainToAuto()
+{
+    // Clear the hand-set flag, then recompute the auto value NOW (target
+    // minus the measured input) rather than zeroing: "reset to auto" means
+    // the auto headroom, not 0. computePreGainAtBuild leaves it at 0 with
+    // state NoLevel when no level is known, which is the honest unset.
+    preGainUserSet_ = false;
+    preGainDb_.store(0.0f, std::memory_order_relaxed);
+    preGainState_ = PreGainState::Off;
+    computePreGainAtBuild();   // sets Auto / Off / NoLevel from the current input
+    EchoJay_NSLog("EJPreGain: reset to auto");
+}
+
+void ChainHost::computePreGainAtBuild()
+{
+    // The user's hand-set value is never overwritten by a build.
+    if (preGainUserSet_)
+    {
+        EchoJay_NSLog(("EJPreGain: build kept the user's pre-gain "
+                       + juce::String(preGainDb_.load(std::memory_order_relaxed), 2) + " dB").toRawUTF8());
+        return;
+    }
+    const auto in = chainInTally_.snapshot();
+    if (! in.known)
+    {
+        // No level known: not set, no guess (the same rule as everything on
+        // the tally). Visible through the readout and the CHAIN LEVELS line.
+        preGainState_ = PreGainState::NoLevel;
+        EchoJay_NSLog("EJPreGain: build with no input level known, pre-gain not set");
+        return;
+    }
+    const float g = juce::jlimit(kPreGainMinDb, kPreGainMaxDb, kPreGainTargetLufs - in.levelDb);
+    preGainDb_.store(g, std::memory_order_relaxed);
+    preGainState_ = (std::abs(g) > 1.0e-3f) ? PreGainState::Auto : PreGainState::Off;
+    EchoJay_NSLog(("EJPreGain: build set " + juce::String(g, 2) + " dB to reach "
+                   + juce::String(kPreGainTargetLufs, 0) + " LUFS from input "
+                   + juce::String(in.levelDb, 2) + " LUFS (operating "
+                   + juce::String(in.levelDb + g, 2) + ")").toRawUTF8());
+}
+
+float ChainHost::getOperatingLevelLufs() const
+{
+    const auto in = chainInTally_.snapshot();
+    if (! in.known) return std::numeric_limits<float>::quiet_NaN();
+    return in.levelDb + preGainDb_.load(std::memory_order_relaxed);
+}
+
+ChainHost::PreGainReadout ChainHost::getPreGain() const
+{
+    PreGainReadout r;
+    r.db      = preGainDb_.load(std::memory_order_relaxed);
+    r.state   = preGainState_;
+    r.userSet = preGainUserSet_;
+    switch (preGainState_)
+    {
+        case PreGainState::Off:     r.text = std::abs(r.db) > 1.0e-3f
+                                        ? "Pre-gain: " + juce::String(r.db, 1) + " dB"
+                                        : "Pre-gain: 0.0 dB"; break;
+        case PreGainState::Auto:    r.text = "Pre-gain: " + juce::String(r.db, 1) + " dB (auto, to "
+                                        + juce::String(kPreGainTargetLufs, 0) + " LUFS)"; break;
+        case PreGainState::UserSet: r.text = "Pre-gain: " + juce::String(r.db, 1) + " dB (set by you)"; break;
+        case PreGainState::NoLevel: r.text = "Pre-gain: not set (input level not known yet)"; break;
+    }
+    return r;
 }
 
 juce::var ChainHost::getLevelsStateVar(const juce::String& trackName) const
