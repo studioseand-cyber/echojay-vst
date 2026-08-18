@@ -20521,7 +20521,17 @@ void EchoJayEditor::sendBriefAnswers(const juce::String& why)
         juce::String v;
         switch (briefCard_.kinds[i])
         {
-            case BriefCard::Kind::Option: v = briefCard_.answers[i]; ++nOpt; break;
+            case BriefCard::Kind::Option:
+            {
+                // Server resolves by axis id + 1-based option index, not text:
+                // the model words the card, so the label varies every run. idx
+                // is the option's position in the payload as received. Bare
+                // label stays as a fallback (the server still accepts it).
+                const int idx = q.labels.indexOf(briefCard_.answers[i]);
+                v = (idx >= 0 ? juce::String(idx + 1) + ". " : juce::String())
+                  + briefCard_.answers[i];
+                ++nOpt; break;
+            }
             case BriefCard::Kind::Typed:  v = "<typed> " + briefCard_.answers[i]; ++nTyped; break;
             case BriefCard::Kind::Skip:   v = kBriefSkipToken(); ++nSkip; break;
             case BriefCard::Kind::None:   ++nNone; continue;   // dismissed via X: no line
