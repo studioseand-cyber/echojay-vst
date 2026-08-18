@@ -21892,34 +21892,59 @@ void EchoJayEditor::composeSkippedAltFollowUp(const juce::StringArray& intendedN
 {
     altPromptOut.clear();
     altLabelOut.clear();
-    juce::StringArray failedNames, failedSpots, plainNames;
+
+    // intendedNames IS the designed order: every slot the build intended, in
+    // order, survivors and failures alike. The rack now holds only the
+    // survivors, renumbered, so anchoring a replacement by its old slot
+    // number is meaningless. That was the bug: several interior failures all
+    // collapsed onto the one surviving plugin before them, and the survivors
+    // that came AFTER them were never named, so a reverb designed last could
+    // land mid chain. Name each failure's designed position by BOTH surviving
+    // neighbours, and hand the model the whole designed order so it rebuilds
+    // that sequence instead of appending to what survived.
+    juce::StringArray failedNames, failedSpots, plainNames, orderParts;
     for (int i = 0; i < intendedNames.size(); ++i)
-        if (skippedPlain.contains(intendedNames[i]))
-        {
-            failedNames.add("\"" + intendedNames[i] + "\"");
-            plainNames.add(intendedNames[i]);
-            juce::String anchor = "at the start of the chain";
-            for (int pj = i - 1; pj >= 0; --pj)
-                if (!skippedPlain.contains(intendedNames[pj]))
-                {
-                    anchor = "right after \"" + intendedNames[pj] + "\"";
-                    break;
-                }
-            failedSpots.add("add a replacement for \""
-                + intendedNames[i] + "\" " + anchor);
-        }
+    {
+        const bool failed = skippedPlain.contains(intendedNames[i]);
+        orderParts.add(juce::String(i + 1) + ". \"" + intendedNames[i] + "\""
+                       + (failed ? " (FAILED, needs a replacement)"
+                                 : " (loaded, still in the rack)"));
+        if (!failed) continue;
+
+        failedNames.add("\"" + intendedNames[i] + "\"");
+        plainNames.add(intendedNames[i]);
+
+        juce::String prev, next;
+        for (int pj = i - 1; pj >= 0; --pj)
+            if (!skippedPlain.contains(intendedNames[pj])) { prev = intendedNames[pj]; break; }
+        for (int nj = i + 1; nj < intendedNames.size(); ++nj)
+            if (!skippedPlain.contains(intendedNames[nj])) { next = intendedNames[nj]; break; }
+
+        juce::String spot;
+        if (prev.isNotEmpty() && next.isNotEmpty())
+            spot = "between \"" + prev + "\" and \"" + next + "\"";
+        else if (prev.isNotEmpty())
+            spot = "after \"" + prev + "\", at the end";
+        else if (next.isNotEmpty())
+            spot = "before \"" + next + "\", at the start";
+        else
+            spot = "as the only plugin";
+        failedSpots.add("a replacement for \"" + intendedNames[i] + "\" " + spot);
+    }
     if (failedNames.isEmpty()) return;
-    altPromptOut = (failedNames.size() == 1
-                      ? "This plugin" : "These plugins")
+
+    altPromptOut = (failedNames.size() == 1 ? "This plugin" : "These plugins")
         + causeClause
         + failedNames.joinIntoString(", ")
-        + ". Do NOT propose them again. Suggest a DIFFERENT "
-          "plugin for each: "
+        + ". Do NOT propose them again. The chain was DESIGNED in this order: "
+        + orderParts.joinIntoString("; ")
+        + ". The plugins that loaded are still in my rack in that relative "
+          "order. Suggest a DIFFERENT plugin for each failed one and place "
+          "each so the finished chain keeps the designed order: "
         + failedSpots.joinIntoString("; ")
-        + ". Place them using my CURRENT CHAIN exactly as it "
-          "is NOW (the failed plugins never loaded, so earlier "
-          "numbering does not apply). Propose them together as "
-          "ONE chain edit.";
+        + ". Anchor every placement to the surviving plugins by name, not by "
+          "slot number, and do not move the plugins that loaded. Propose them "
+          "together as ONE chain edit against my current chain.";
     altLabelOut = (plainNames.size() == 1 ? "Find a replacement for "
                                           : "Find replacements for ")
                   + plainNames.joinIntoString(", ");
@@ -21944,17 +21969,42 @@ void EchoJayEditor::buildEditAltFollowUp(const juce::StringArray& results,
             plainNames.add(fop.name);
             // Name-anchored intent, never numeric positions: sibling ops in
             // this batch may have applied, so the original numbering is
-            // already stale here too.
+            // already stale here too. There is no designed order on the edit
+            // path; the op's own anchor IS the intent. A replace targets its
+            // slot by identity; an add targets the surviving baseSlot it goes
+            // after. Both-neighbour anchoring restates that anchor plus the
+            // next surviving slot, so the insertion is pinned between two live
+            // names, without inventing an order the request did not specify.
             if (fop.op == "replace" && fop.slot >= 0
                 && fop.slot < baseSlots.size())
                 failedChanges.add("replace \"" + baseSlots[fop.slot]
                     + "\" (still in the chain) with something else");
-            else if (fop.after >= 0 && fop.after < baseSlots.size())
-                failedChanges.add("add a replacement for \"" + fop.name
-                    + "\" right after \"" + baseSlots[fop.after] + "\"");
             else
+            {
+                const int after = fop.after;
+                juce::String prev, next;
+                if (after >= baseSlots.size() && !baseSlots.isEmpty())
+                    prev = baseSlots[baseSlots.size() - 1];              // append at end
+                else if (after >= 0 && after < baseSlots.size())
+                {
+                    prev = baseSlots[after];
+                    if (after + 1 < baseSlots.size()) next = baseSlots[after + 1];
+                }
+                else                                                     // insert first
+                    next = baseSlots.isEmpty() ? juce::String() : baseSlots[0];
+
+                juce::String spot;
+                if (prev.isNotEmpty() && next.isNotEmpty())
+                    spot = "between \"" + prev + "\" and \"" + next + "\"";
+                else if (prev.isNotEmpty())
+                    spot = "after \"" + prev + "\", at the end";
+                else if (next.isNotEmpty())
+                    spot = "before \"" + next + "\", at the start";
+                else
+                    spot = "as the only plugin";
                 failedChanges.add("add a replacement for \"" + fop.name
-                    + "\" at the start of the chain");
+                    + "\" " + spot);
+            }
         }
     if (failedNames.isEmpty()) return;
     altPromptOut = (failedNames.size() == 1
