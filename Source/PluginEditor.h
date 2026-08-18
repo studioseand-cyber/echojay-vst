@@ -122,6 +122,11 @@ private:
     
     void showLoginScreen();
     void showMainScreen();
+    // The complete top-bar header row, owned in ONE place so the login screen
+    // hides it as a whole. A control added to the row later is covered by
+    // adding it here; hiding a hand-picked subset in showLoginScreen was what
+    // let "+ New chat" and the "Full capture" label leak onto the login page.
+    void setHeaderRowVisible(bool v);
     void attemptLogin();
     void handleLogout();
     bool shouldShowChannelPrompt() const;

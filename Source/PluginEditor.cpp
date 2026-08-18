@@ -2642,6 +2642,17 @@ void EchoJayEditor::visibilityChanged()
 // Auth
 // ============================================================================
 
+void EchoJayEditor::setHeaderRowVisible(bool v)
+{
+    // The whole top-bar header row, in one list. This is the gate the login
+    // view flips; nothing in the row is hidden by hand anywhere else, so a
+    // control added here is covered on login by construction.
+    juce::Component* const row[] = { &channelTypeBox, &genreBox, &projectInput,
+                                     &scanBtn, &headerNewChatBtn, &captureBtn,
+                                     &captureTargetLabel, &detectedLabel };
+    for (auto* c : row) c->setVisible(v);
+}
+
 void EchoJayEditor::showLoginScreen()
 {
     currentScreen = Screen::Login;
@@ -2659,8 +2670,8 @@ void EchoJayEditor::showLoginScreen()
     browserLoginBtn.setVisible(true); browserLoginSub.setVisible(true);
     pairCodeLabel.setVisible(false); pairInfoLabel.setVisible(false); pairCancelBtn.setVisible(false);
 
-    juce::Component* mainComps[] = { &captureBtn, &scanBtn,
-        &channelTypeBox, &genreBox, &projectInput, &statusLabel, &durationLabel, &detectedLabel,
+    setHeaderRowVisible(false);   // the whole header row is off on the login view
+    juce::Component* mainComps[] = { &statusLabel, &durationLabel,
         &passLabel, &userLabel, &chatInput, &chatSendBtn, &chatScroll,
         &compareBtn, &settingsBtn, &playbackBtn, &wavSavedLabel, &upgradeBtn };
     for (auto* c : mainComps) c->setVisible(false);
@@ -2708,8 +2719,8 @@ void EchoJayEditor::showMainScreen()
     // updateOnboardingPrompts; showing them here regardless of currentTab
     // is what produced the Settings-strip/Meters-content/orphan-Send
     // composite after an account switch.
-    juce::Component* mainComps[] = { &captureBtn, &scanBtn,
-        &channelTypeBox, &genreBox, &projectInput, &statusLabel, &durationLabel, &detectedLabel,
+    setHeaderRowVisible(true);   // whole header row back on the main screen
+    juce::Component* mainComps[] = { &statusLabel, &durationLabel,
         &passLabel, &userLabel,
         &compareBtn, &settingsBtn, &wavSavedLabel };
     for (auto* c : mainComps) c->setVisible(true);
@@ -26285,7 +26296,7 @@ bool EchoJayEditor::linkFaderModeIsPre() const
 {
     return processorRef.linkFaderMode == EchoJayProcessor::LinkFaderMode::Pre;
 }
-float EchoJayEditor::faderLo() const { return -24.0f; }
+float EchoJayEditor::faderLo() const { return -24.0f; }   // == EchoJayFader::kMixerFaderMinDb (P17)
 float EchoJayEditor::faderHi() const { return linkFaderModeIsPre() ? 24.0f : 12.0f; }
 
 float EchoJayEditor::linkRowDisplayPreGain(const juce::String& linkAddr) const
