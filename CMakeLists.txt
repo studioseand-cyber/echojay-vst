@@ -719,7 +719,7 @@ endif()
 juce_add_console_app(ejextract PRODUCT_NAME "ejextract")
 
 target_sources(ejextract PRIVATE tools/ejextract/main.cpp)
-target_include_directories(ejextract PRIVATE tools/ejextract)
+target_include_directories(ejextract PRIVATE tools/ejextract Source)   # Source for EchoJayParamMaps.h (shared fp)
 
 target_compile_definitions(ejextract PRIVATE
     JUCE_PLUGINHOST_VST3=1
