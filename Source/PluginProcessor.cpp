@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "FaderTaper.h"   // shared mixer-fader mute taper (P17)
 #include "NativeClip.h"   // EchoJay_NSLog (memdiag)
 #include "EchoJayWorkspace.h"   // runRoundTripSelfTest (C1/C3 verify)
 #include "EedTempoClock.h"      // publishHostTempo (built-in tempo-synced devices)
@@ -531,7 +532,7 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     // Bus trim smoothing: the Link's 30ms ramp, same feel both sides
     busGainSmoothed_.reset(sampleRate, 0.030);
     busGainSmoothed_.setCurrentAndTargetValue(
-        juce::Decibels::decibelsToGain(busGainDb_.load(std::memory_order_relaxed)));
+        EchoJayFader::gainForDb(busGainDb_.load(std::memory_order_relaxed)));
     meterEngine.prepare(sampleRate, samplesPerBlock);
     captureEngine.prepare(sampleRate, samplesPerBlock);
     selfKeyEngine_.prepare(sampleRate, samplesPerBlock);   // §6.1 self key tap
@@ -2826,7 +2827,7 @@ bool EchoJayProcessor::applyBusGainSmoothed(juce::AudioBuffer<float>& buffer)
     // early-out for bit-transparency at 0 dB, per-sample ramp while
     // smoothing. No locks, no allocation.
     const float targetLin =
-        juce::Decibels::decibelsToGain(busGainDb_.load(std::memory_order_relaxed));
+        EchoJayFader::gainForDb(busGainDb_.load(std::memory_order_relaxed));
 
     if (busGainSnapPending_.exchange(false, std::memory_order_acq_rel))
         busGainSmoothed_.setCurrentAndTargetValue(targetLin);

@@ -1,6 +1,7 @@
 #include "LinkProcessor.h"
 #include "LinkEditor.h"
 #include "LinkShm.h"
+#include "FaderTaper.h"   // shared mixer-fader mute taper (P17)
 #include "NativeClip.h"   // EchoJay_NSLog — chain-build diagnostics
 #include "EedKeyDetectorProcessor.h"   // hosted-detector frame preference (Tier 1)
 
@@ -1137,7 +1138,7 @@ void LinkProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     // on prepare so a restored non-zero gain doesn't swell up from unity.
     gainSmoothed_.reset(sampleRate, 0.030);
     gainSmoothed_.setCurrentAndTargetValue(
-        juce::Decibels::decibelsToGain(gainDb_.load(std::memory_order_relaxed)));
+        EchoJayFader::gainForDb(gainDb_.load(std::memory_order_relaxed)));
     gainSnapPending_.store(false, std::memory_order_relaxed);
 
     // Always sync shm state from the message thread so that:
@@ -1317,7 +1318,7 @@ void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
 bool LinkProcessor::applyGainSmoothed(juce::AudioBuffer<float>& buffer)
 {
     const float targetLin =
-        juce::Decibels::decibelsToGain(gainDb_.load(std::memory_order_relaxed));
+        EchoJayFader::gainForDb(gainDb_.load(std::memory_order_relaxed));
 
     if (gainSnapPending_.exchange(false, std::memory_order_acq_rel))
         gainSmoothed_.setCurrentAndTargetValue(targetLin);
