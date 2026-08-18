@@ -4345,9 +4345,15 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
     // The deadman names the plugin by this, so it rides with the item too.
     juce::String identifier = items[idx].desc.fileOrIdentifier;
     bool         withholdState = items[idx].withholdState;
+    // The saved identity, carried by value for the apply-time re-check — never
+    // looked up by index afterwards, per the comment above.
+    juce::String savedFormat  = items[idx].savedFormat;
+    juce::String savedVersion = items[idx].savedVersion;
+    juce::String savedUid     = items[idx].savedUid;
     loadPluginAsync(items[idx].desc,
         [this, items = std::move(items), idx, wasBypassed, savedWet,
          stateB64, expectState, slotName, identifier, withholdState,
+         savedFormat, savedVersion, savedUid,
          onSlotSettled](const juce::String& err) mutable
         {
             if (err.isEmpty())
@@ -4360,7 +4366,8 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
                     // Withheld chunks were already explained by the note that
                     // decided it (restoreSavedChain); no second line here.
                     if (!withholdState)
-                        applyRestoredState(lastSlot, stateB64, expectState, slotName, identifier);
+                        applyRestoredState(lastSlot, stateB64, expectState, slotName,
+                                           identifier, savedFormat, savedVersion, savedUid);
                 }
             }
             else
@@ -4377,9 +4384,68 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
         });
 }
 
+bool ChainHost::stateFitsPlugin(const juce::PluginDescription& found,
+                                const juce::String& savedFormat,
+                                const juce::String& savedVersion,
+                                const juce::String& savedUid,
+                                const juce::String& slotName,
+                                juce::String* deferredNote) const
+{
+    if (deferredNote != nullptr) *deferredNote = {};
+
+    // ABSENT IS NO OPINION, on EITHER side. A field the saved chain never
+    // carried is an empty string; a thin VST3 row carries uid 0 and no version
+    // until it validates. Comparing against either would withhold a chain from
+    // its own plugin, so a field is only judged when BOTH sides carry it.
+    const bool foundUidKnown     = found.uniqueId != 0;
+    const bool foundVersionKnown = found.version.isNotEmpty();
+
+    // FORMAT. A chunk is format-bound: a VST3 chunk does not load into the AU
+    // build of the same plugin, and pushing it anyway is worse than pushing
+    // nothing — best case ignored, realistic case garbage parameters that
+    // sound wrong and look deliberate, worst case a dead host.
+    if (savedFormat.isNotEmpty() && ! savedFormat.equalsIgnoreCase(found.pluginFormatName))
+    {
+        addStateNote(slotName + ": saved as " + savedFormat + " but loaded here as "
+                     + found.pluginFormatName
+                     + ", so its settings were not applied (settings do not"
+                       " transfer between formats)");
+        return false;
+    }
+
+    // UID. Same name, same format, different plugin. A rescan can change a uid,
+    // but so can two plugins sharing a name, and we cannot tell which from
+    // here. Withholding costs one line of text; guessing costs the rack.
+    if (savedUid.isNotEmpty() && foundUidKnown && savedUid != juce::String(found.uniqueId))
+    {
+        addStateNote(slotName + ": this is a different build from the one saved,"
+                                " so its settings were not applied");
+        return false;
+    }
+
+    // VERSION. ATTEMPTED, deliberately, and said out loud — most plugins
+    // version their own chunks and tolerate an older one; some do not. The
+    // deadman in applyRestoredState covers the call, so the bad case is one
+    // plugin recorded and withheld on the next launch rather than a session
+    // that will not open. The note is DEFERRED to the caller, written only
+    // after the chunk applied, because "never claim a dial you did not
+    // perform" cuts both ways: we DID perform it, and the user should check it.
+    if (savedVersion.isNotEmpty() && foundVersionKnown && savedVersion != found.version)
+    {
+        if (deferredNote != nullptr)
+            *deferredNote = slotName + ": saved from version " + savedVersion
+                          + ", this machine has " + found.version
+                          + " — settings were applied, worth checking";
+    }
+    return true;
+}
+
 void ChainHost::applyRestoredState(int slotIdx, const juce::String& b64,
                                    bool expectState, const juce::String& slotName,
-                                   const juce::String& identifier)
+                                   const juce::String& identifier,
+                                   const juce::String& savedFormat,
+                                   const juce::String& savedVersion,
+                                   const juce::String& savedUid)
 {
     if (b64.isEmpty())
     {
@@ -4409,6 +4475,19 @@ void ChainHost::applyRestoredState(int slotIdx, const juce::String& b64,
         return;
     }
 
+    // THE AUTHORITATIVE RE-CHECK, against the description the plugin ACTUALLY
+    // loaded with — before the deadman marker, before the call. A thin VST3
+    // resolved to uid 0 at restore time, so the resolve-time check had no
+    // opinion; by now slots_[slotIdx].desc carries the validated uid, format
+    // and version, and this is the only place the saved identity can be judged
+    // against the real one. Same policy, one function. The version-differs note
+    // is deferred and written below, only once the chunk has applied.
+    juce::String versionNote;
+    if (slotIdx >= 0 && slotIdx < (int)slots_.size()
+        && ! stateFitsPlugin(slots_[(size_t)slotIdx].desc, savedFormat, savedVersion,
+                             savedUid, slotName, &versionNote))
+        return;   // the withhold note was written by stateFitsPlugin
+
     // THE DEADMAN, over the one call in this file that runs third-party code on
     // data we did not author. A try/catch cannot catch a segfault, and a plugin
     // mis-parsing a chunk segfaults — that is the whole failure mode. If this
@@ -4436,6 +4515,13 @@ void ChainHost::applyRestoredState(int slotIdx, const juce::String& b64,
 
     deadman.deleteFile();
     if (!applied) return;
+
+    // The version note, NOW: after the chunk applied and none of the four
+    // failure returns above (decode, null proc, throw, and the load failure in
+    // restoreNextSlot that never reaches here) fired. Written here rather than
+    // at resolve time so it can never stand next to a note saying the settings
+    // did NOT apply.
+    if (versionNote.isNotEmpty()) addStateNote(versionNote);
 
     // Seed the cache with what we just restored, so a save that happens
     // before the first capture round-trips this slot instead of nulling it.
@@ -4890,68 +4976,28 @@ void ChainHost::restoreSavedChain(const juce::var& slotsArr, const juce::var& st
                 item.stateBase64 = statesObj->getProperty(key).toString();
         }
 
-        // FORMAT, UID, VERSION. All three have been written since Session B
-        // (see the save side above) and none of them was ever read. A chunk is
-        // format-bound: a VST3 chunk does not load into the AU build of the same
-        // plugin, and pushing it anyway is worse than pushing nothing — best case
-        // ignored, realistic case garbage parameters that sound wrong and look
-        // deliberate, worst case a dead host.
+        // THE STATE-MATCH POLICY lives in stateFitsPlugin (one place, so it
+        // cannot drift). Here it runs against the RESOLVED description, which
+        // usefully declines a pointless load when the format is already wrong,
+        // but has no opinion on a thin VST3 row (uid 0, no version until its
+        // first load). applyRestoredState runs the SAME policy again against
+        // the description the plugin actually loaded with, where a thin row's
+        // real uid is finally known — that apply-time re-check is what closes
+        // the VST3-chunk-into-a-different-build hole this resolve-time call
+        // cannot see. The saved triplet rides on the item to that re-check.
         //
-        // ABSENT IS NOT A MISMATCH. A chain saved before a field existed carries
-        // an empty string, and an empty string must compare as "no opinion" or
-        // every legacy chain silently loses its settings. The same rule holds on
-        // the FOUND side: a thin VST3 row (validated on first load, not at scan)
-        // carries uid 0 and no version until then, and comparing a real saved uid
-        // against that 0 would withhold a chain from its own plugin.
-        //
-        // Decided only when there is a chunk to push: with nothing saved for the
-        // slot there is nothing to withhold and nothing to attempt, and a note
-        // saying settings "were applied" or "were not applied" would describe a
-        // dial that never happened.
-        bool withhold = false;
+        // Decided only when there is a chunk to push: with nothing saved for
+        // the slot there is nothing to withhold and nothing to attempt.
+        // deferredNote is deliberately null here: the version note is written
+        // by applyRestoredState after the chunk applies, never at resolve time
+        // (a note must not claim a dial that has not happened yet, or that a
+        // load failure downstream then contradicts).
+        item.savedFormat  = o->getProperty("format").toString().trim();
+        item.savedVersion = o->getProperty("version").toString().trim();
+        item.savedUid     = o->getProperty("uid").toString().trim();
         if (item.stateBase64.isNotEmpty())
-        {
-            const juce::String savedFormat  = o->getProperty("format").toString().trim();
-            const juce::String savedVersion = o->getProperty("version").toString().trim();
-            const juce::String savedUid     = o->getProperty("uid").toString().trim();
-            const juce::String foundUid (desc.uniqueId);
-            const bool foundUidKnown     = desc.uniqueId != 0;
-            const bool foundVersionKnown = desc.version.isNotEmpty();
-
-            if (savedFormat.isNotEmpty()
-                && ! savedFormat.equalsIgnoreCase(desc.pluginFormatName))
-            {
-                withhold = true;
-                addStateNote(name + ": saved as " + savedFormat + " but loaded here as "
-                             + desc.pluginFormatName
-                             + ", so its settings were not applied (settings do not"
-                               " transfer between formats)");
-            }
-            else if (savedUid.isNotEmpty() && foundUidKnown && savedUid != foundUid)
-            {
-                // Same name, same format, different plugin. A rescan can change a uid,
-                // but so can two plugins sharing a name, and we cannot tell which from
-                // here. Withholding costs one line of text; guessing costs the rack.
-                withhold = true;
-                addStateNote(name + ": this is a different build from the one saved,"
-                                    " so its settings were not applied");
-            }
-            else if (savedVersion.isNotEmpty() && foundVersionKnown
-                     && savedVersion != desc.version)
-            {
-                // ATTEMPTED, deliberately, and said out loud. Most plugins version their
-                // own chunks and tolerate an older one; some do not. The deadman in
-                // applyRestoredState now covers this call, so the bad case is one plugin
-                // recorded and withheld on the next launch rather than a session that
-                // will not open. The note exists because "never claim a dial you did
-                // not perform" cuts both ways: we DID perform it, and the user should
-                // still check it.
-                addStateNote(name + ": saved from version " + savedVersion
-                             + ", this machine has " + desc.version
-                             + " — settings were applied, worth checking");
-            }
-        }
-        item.withholdState = withhold;
+            item.withholdState = ! stateFitsPlugin(desc, item.savedFormat, item.savedVersion,
+                                                   item.savedUid, name);
         items.push_back(std::move(item));
     }
 

@@ -105,23 +105,47 @@ struct EchoJayStateMatchTestAccess
         std::lock_guard<std::mutex> lock (h.pluginsMutex_);
         h.entries_.add (d);
     }
+    /** The identity a past load captured (what loadPluginAsync consults before
+        validating a thin row). */
+    static void addKnown (ChainHost& h, const juce::PluginDescription& d)
+    {
+        std::lock_guard<std::mutex> lock (h.pluginsMutex_);
+        h.knownPlugins_.addType (d);
+    }
+    static void addFormat (ChainHost& h, std::unique_ptr<juce::AudioPluginFormat> f)
+    {
+        h.formatManager_.addFormat (std::move (f));
+    }
+    static juce::PluginDescription slotDesc (const ChainHost& h, int i)
+    {
+        return h.slots_[(size_t) i].desc;
+    }
 };
 
 namespace
 {
 using TA = EchoJayStateMatchTestAccess;
 
-class ProbeProcessor final : public juce::AudioProcessor
+/** An AudioPluginInstance (not a bare AudioProcessor) so the SAME class can
+    reach ChainHost two ways: as the built-in device the registry creates, and
+    as the instance ProbeFormat below hands to createPluginInstanceAsync — the
+    route a validated thin VST3 takes through completeLoad. */
+class ProbeProcessor final : public juce::AudioPluginInstance
 {
 public:
-    ProbeProcessor()
-        : juce::AudioProcessor (BusesProperties()
+    explicit ProbeProcessor (juce::PluginDescription d = {})
+        : juce::AudioPluginInstance (BusesProperties()
               .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-              .withOutput ("Output", juce::AudioChannelSet::stereo(), true)) {}
+              .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+          desc_ (std::move (d)) {}
 
     int value = 0;   // the one thing the chunk carries
 
-    const juce::String getName() const override { return kProbeName; }
+    void fillInPluginDescription (juce::PluginDescription& d) const override { d = desc_; }
+    const juce::String getName() const override
+    {
+        return desc_.name.isNotEmpty() ? desc_.name : juce::String (kProbeName);
+    }
     void prepareToPlay (double, int) override {}
     void releaseResources() override {}
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override {}
@@ -157,7 +181,87 @@ public:
         if (v == kThrowValue) throw std::runtime_error ("probe: chunk refused");
         value = v;
     }
+
+private:
+    juce::PluginDescription desc_;
 };
+
+// ---------------------------------------------------------------------------
+// The thin-VST3 stand-in: a plugin FORMAT that answers to the name "VST3" for
+// exactly one path. It is added to the host's format manager AFTER the real
+// VST3 format, and the real one declines the path (fileMightContainThisPluginType
+// requires an existing .vst3), so findFormatForDescription lands here. What
+// ChainHost then does — createPluginInstanceAsync -> completeLoad (inst,
+// fullDesc) -> slot.desc = fullDesc — is the same convergence point the
+// validation thread reaches through pollVST3Validation, with the entries_ row
+// still THIN (uid 0, no version) at resolve time. That is the shape under test.
+// ---------------------------------------------------------------------------
+constexpr const char* kThinName    = "EJ Thin Probe";
+constexpr const char* kThinPath    = "/nonexistent/EchoJayStateMatchTest/EJ Thin Probe.vst3";
+constexpr int         kThinUid     = 0x54484E50;   // 'THNP', the uid the load "discovers"
+// A UNIQUE format name. JUCE's manager refuses a second format called "VST3"
+// (jassertfalse in addFormat), and its real VST3 format cannot instantiate a
+// fake plugin. So the probe format has its own name and the enriched
+// description (from knownPlugins_) carries it, which is what routes
+// createPluginInstanceAsync here. See the section body for how the thin row
+// still advertises "VST3" so loadPluginAsync's enrichment gate fires.
+constexpr const char* kProbeFormat = "PVST3";
+
+class ProbeFormat final : public juce::AudioPluginFormat
+{
+public:
+    juce::String getName() const override { return kProbeFormat; }
+    void findAllTypesForFile (juce::OwnedArray<juce::PluginDescription>&, const juce::String&) override {}
+    bool fileMightContainThisPluginType (const juce::String& f) override { return f == kThinPath; }
+    juce::String getNameOfPluginFromIdentifier (const juce::String& f) override { return f; }
+    bool pluginNeedsRescanning (const juce::PluginDescription&) override { return false; }
+    bool doesPluginStillExist (const juce::PluginDescription&) override { return true; }
+    bool canScanForPlugins() const override { return false; }
+    bool isTrivialToScan() const override { return true; }
+    juce::StringArray searchPathsForPlugins (const juce::FileSearchPath&, bool, bool) override { return {}; }
+    juce::FileSearchPath getDefaultLocationsToSearch() override { return {}; }
+    bool requiresUnblockedMessageThreadDuringCreation (const juce::PluginDescription&) const override { return false; }
+    void createPluginInstance (const juce::PluginDescription& d, double, int,
+                               PluginCreationCallback cb) override
+    {
+        cb (std::make_unique<ProbeProcessor> (d), {});
+    }
+};
+
+/** The row the thin scan writes: name, format "VST3", path — nothing else.
+    Its format is "VST3" so loadPluginAsync takes the needs-validation branch
+    (version empty + format VST3), which is where the thin->validated
+    enrichment from knownPlugins_ happens; its uniqueId is 0, so the
+    resolve-time check in restoreSavedChain has no opinion, exactly as a real
+    thin VST3 row before its first load. */
+juce::PluginDescription thinRow()
+{
+    juce::PluginDescription d;
+    d.name             = kThinName;
+    d.pluginFormatName = "VST3";
+    d.fileOrIdentifier = kThinPath;
+    d.category         = "Effect";
+    return d;
+}
+
+/** What a past load captured for that bundle, sitting in knownPlugins_: the
+    real uid and version. Its format is the PROBE format, not "VST3", because
+    the enriched description is what createPluginInstanceAsync routes on, and
+    JUCE's real VST3 format cannot make a stand-in. The uid — the thing under
+    test — is the validated one either way. */
+juce::PluginDescription validatedRow (int uid = kThinUid, const juce::String& version = "2.0.0")
+{
+    juce::PluginDescription d;
+    d.name             = kThinName;
+    d.pluginFormatName = kProbeFormat;
+    d.fileOrIdentifier = kThinPath;
+    d.category         = "Effect";
+    d.manufacturerName = "EJ Test";
+    d.version          = version;
+    d.uniqueId         = uid;
+    d.deprecatedUid    = uid;
+    return d;
+}
 
 BuiltinDevice makeProbeDevice()
 {
@@ -231,6 +335,19 @@ void clearRack (ChainHost& h)
     for (int i = h.getNumSlots() - 1; i >= 0; --i) h.removeSlot (i);
 }
 
+/** Headless pump: JUCE mac messages and timers ride the main CFRunLoop
+    (same as tools/bridged_readback_test). Runs until pred() or ~5 s. */
+template <typename Pred>
+bool pumpUntil (Pred pred)
+{
+    for (int i = 0; i < 100; ++i)
+    {
+        if (pred()) return true;
+        CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.05, false);
+    }
+    return pred();
+}
+
 ProbeProcessor* probeInSlot0 (ChainHost& h)
 {
     return h.getNumSlots() > 0 ? dynamic_cast<ProbeProcessor*> (h.getSlotProcessor (0)) : nullptr;
@@ -242,6 +359,7 @@ struct Outcome
     bool             loaded  = false;
     bool             applied = false;   // the probe's value became the saved one
     int              calls   = 0;
+    int              loadedUid = 0;     // slots_[0].desc.uniqueId after the load
     juce::StringArray notes;
 };
 
@@ -267,6 +385,7 @@ const juce::String kProbeUidStr (kProbeUid);
 
 int main()
 {
+    std::setvbuf (stdout, nullptr, _IONBF, 0);   // a crash must not eat the lines before it
     std::printf ("state-chunk matching + deadman self-test\n");
 
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -490,18 +609,143 @@ int main()
                "thin row: a saved version against no version is not a mismatch", join (notesNow));
 
         // Let the validation fail and settle before the host goes away.
-        bool settled = false;
-        for (int i = 0; i < 100 && ! settled; ++i)
-        {
-            // Headless pump: JUCE mac messages and timers ride the main
-            // CFRunLoop (same as tools/bridged_readback_test).
-            CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.05, false);
-            settled = anyNoteContains (host.getStateNotes(), "could not load");
-        }
+        const bool settled = pumpUntil ([&] {
+            return anyNoteContains (host.getStateNotes(), "could not load"); });
         check (settled, "thin row: the missing bundle fails to load and says so",
                join (host.getStateNotes()));
         check (! TA::deadmanFile().existsAsFile(), "thin row: validation marker cleaned up");
         std::printf ("  ok    9. thin VST3 row -> no false mismatch\n");
+    }
+
+    // ================================================================
+    std::printf ("== the version note never survives a failed apply ==\n");
+    // §2: the "settings were applied, worth checking" line is written only
+    // AFTER the chunk applies. Force each failure path with a version that
+    // differs from the built-in probe's (1.0.0) and assert the line is absent.
+    {
+        ChainHost host;
+        const juce::String v = kBuiltinFormat;   // format matches, so version is the live field
+
+        // (a) base64 that does not decode -> "could not be read", no version note.
+        {
+            auto o = restoreOne (host, savedSlot (kProbeName, v, "0.9.0", kProbeUidStr),
+                                 stateFor ("!!! not base64 !!!"), savedValue);
+            check (anyNoteContains (o.notes, "could not be read"), "decode-fail: the decode note fires",
+                   join (o.notes));
+            check (! anyNoteContains (o.notes, "worth checking"),
+                   "decode-fail: NO version note", join (o.notes));
+            check (o.calls == 0, "decode-fail: setStateInformation not called");
+        }
+
+        // (b) the plugin throws on the chunk -> "rejected", no version note.
+        {
+            auto o = restoreOne (host, savedSlot (kProbeName, v, "0.9.0", kProbeUidStr),
+                                 stateFor (chunkFor (kThrowValue)), kThrowValue);
+            check (anyNoteContains (o.notes, "rejected its saved settings"),
+                   "throw: the rejection note fires", join (o.notes));
+            check (! anyNoteContains (o.notes, "worth checking"),
+                   "throw: NO version note (apply did not succeed)", join (o.notes));
+        }
+
+        // (c) the happy path with a version difference DOES get the note, so
+        //     (a) and (b) are proving absence, not a note that never fires.
+        {
+            auto o = restoreOne (host, savedSlot (kProbeName, v, "0.9.0", kProbeUidStr),
+                                 stateFor (chunk), savedValue);
+            check (o.applied && anyNoteContains (o.notes, "worth checking"),
+                   "control: a SUCCESSFUL version-differ still gets the note", join (o.notes));
+        }
+
+        clearRack (host);
+        std::printf ("  ok    version note is written iff the chunk applied\n");
+    }
+
+    // ================================================================
+    std::printf ("== thin VST3: the identity is known only AFTER the load ==\n");
+    // The shape CHAINHOST_FOLLOWUP_BRIEF §1 names as unreachable before the
+    // apply-time re-check:
+    //   - entries_ holds the THIN row (format VST3, uid 0, no version), so
+    //     resolveByName hands restoreSavedChain a description its check has no
+    //     opinion on — foundUidKnown is false.
+    //   - knownPlugins_ holds what the bundle validated as, with the real uid.
+    //     loadPluginAsync's needs-validation branch enriches the thin row from
+    //     it, so completeLoad runs with the validated description and
+    //     slots_[idx].desc carries the REAL uid.
+    // So the only place the saved uid can be compared against the truth is
+    // applyRestoredState, after the load. The saved slot leaves FORMAT empty
+    // on purpose: the probe's loaded format is a test-only name, and an empty
+    // saved format is "no opinion" on both sides, which isolates the uid as
+    // the single discriminator — the field this case is about.
+    {
+        auto restoreThin = [&] (int validatedUid, const juce::String& savedUid,
+                                const juce::String& b64, int savedValue) -> Outcome
+        {
+            // A fresh host per case: knownPlugins_/entries_ and the registered
+            // format are set up once here, so each case starts from the same
+            // thin state.
+            ChainHost host;
+            TA::addFormat (host, std::make_unique<ProbeFormat>());
+            TA::addEntry  (host, thinRow());
+            TA::addKnown  (host, validatedRow (validatedUid));
+            probeLog().reset();
+            // format empty, version empty: uid is the only field with an opinion.
+            host.restoreSavedChain (savedSlot (kThinName, {}, {}, savedUid),
+                                    stateFor (b64));
+            // createPluginInstanceAsync posts to the message thread.
+            pumpUntil ([&] { return host.getNumSlots() > 0
+                                 || anyNoteContains (host.getStateNotes(), "could not load"); });
+            Outcome o;
+            o.notes = host.getStateNotes();
+            o.calls = probeLog().setStateCalls;
+            if (auto* p = probeInSlot0 (host)) { o.loaded = true; o.applied = (p->value == savedValue); }
+            // Record what the load actually put on the slot, for the premise check.
+            o.loadedUid = host.getNumSlots() > 0 ? TA::slotDesc (host, 0).uniqueId : 0;
+            clearRack (host);
+            return o;
+        };
+
+        // The premise, asserted rather than assumed: the slot loaded through
+        // the enrichment route and slots_[0].desc carries the VALIDATED uid,
+        // not the thin 0. If this ever stops holding the two cases below prove
+        // nothing, so it is checked first.
+        {
+            auto o = restoreThin (kThinUid, juce::String (kThinUid), chunk, savedValue);
+            check (o.loaded, "thin premise: the stand-in loads through the enrichment route",
+                   join (o.notes));
+            check (o.loadedUid == kThinUid,
+                   "thin premise: slots_[0].desc carries the validated uid, not 0",
+                   juce::String (o.loadedUid));
+        }
+
+        // 10. Validated uid DIFFERS from the saved one -> withheld, one note,
+        //     setStateInformation never called. This FAILS against the code as
+        //     it stands (no apply-time re-check: the chunk is pushed into a
+        //     different build) and PASSES once §1 lands.
+        {
+            auto o = restoreThin (kThinUid, juce::String (kThinUid + 1), chunk, savedValue);
+            check (o.loaded, "thin uid differs: still loads");
+            const bool withheld = (o.calls == 0 && ! o.applied);
+            check (o.calls == 0, "thin uid differs: setStateInformation was NOT called",
+                   "calls=" + juce::String (o.calls));
+            check (! o.applied, "thin uid differs: settings NOT applied");
+            check (o.notes.size() == 1 && anyNoteContains (o.notes, "different build"),
+                   "thin uid differs: exactly one note, naming a different build", join (o.notes));
+            std::printf ("  %s  10. thin VST3, validated uid differs -> %s\n",
+                         withheld ? "ok  " : "FAIL",
+                         withheld ? "withheld (the §1 fix is in)"
+                                  : "PUSHED — this is the §1 gap, expected to fail pre-fix");
+        }
+
+        // 11. Validated uid MATCHES -> applied, silent. Guards against the
+        //     re-check over-correcting into the false withhold that the
+        //     found-side-absence rule (test 9) exists to prevent.
+        {
+            auto o = restoreThin (kThinUid, juce::String (kThinUid), chunk, savedValue);
+            check (o.loaded && o.applied && o.calls == 1, "thin uid matches: applied",
+                   "calls=" + juce::String (o.calls));
+            check (o.notes.isEmpty(), "thin uid matches: no note", join (o.notes));
+            std::printf ("  ok    11. thin VST3, validated uid matches -> applied, silent\n");
+        }
     }
 
     // ================================================================
