@@ -45,6 +45,9 @@ juce::File ChainHost::getBlacklistFile()  { return appSupportDir().getChildFile(
 juce::File ChainHost::getDeadmanFile()    { return appSupportDir().getChildFile("chain_load_deadman.txt"); }
 juce::File ChainHost::getStateOversizeFile() { return appSupportDir().getChildFile("chain_state_oversize.txt"); }
 
+// Recursive .vst3 collector, defined below; used by the scan above its definition.
+static void collectVst3BundlesRecursively(const juce::File& dir, juce::Array<juce::File>& out, int depthLeft);
+
 // ---------------------------------------------------------------------------
 // Death markers (17 Aug 2026). A mark is pushed before a call into a hosted
 // plugin that can take the process down and popped after it returns; the
@@ -1026,8 +1029,11 @@ void ChainHost::doRefresh()
             auto dir = paths[pi];
             if (!dir.isDirectory()) continue;
 
-            auto found = dir.findChildFiles(
-                juce::File::findDirectories | juce::File::findFiles, false, "*.vst3");
+            // Recursive since 18 Aug 2026 (was top level only): vendor
+            // subfolders (UA, Melda, Kilohearts, Soundtoys, Slate) hold most
+            // of the library. Depth 4 covers the measured nesting of 2 with room.
+            juce::Array<juce::File> found;
+            collectVst3BundlesRecursively(dir, found, 4);
 
             for (auto& f : found)
             {
@@ -1183,7 +1189,28 @@ void ChainHost::doRefresh()
 // same lowercasing and the same AU-first-wins semantics: a VST3 row is
 // skipped when any AU shares its lowercased name. Empty-filter callers
 // therefore see a list identical to the pre-relocation one.
-static juce::Array<juce::PluginDescription>
+static // Collect .vst3 bundles under a directory, RECURSIVELY (18 Aug 2026). The old
+// scan used findChildFiles(..., false, "*.vst3"), top level only, so 412
+// bundles inside vendor subfolders (Universal Audio, MeldaProduction,
+// Kilohearts, Soundtoys, Slate Digital) were never enumerated: 448 -> 860
+// here. A .vst3 is itself a directory, so this treats one as a LEAF and never
+// descends into it (a bundle's Contents never holds another plugin). Bounded
+// depth guards a pathological tree; measured nesting is 2.
+static void collectVst3BundlesRecursively(const juce::File& dir,
+                                          juce::Array<juce::File>& out,
+                                          int depthLeft)
+{
+    if (depthLeft < 0 || ! dir.isDirectory()) return;
+    for (auto& child : dir.findChildFiles(juce::File::findDirectories | juce::File::findFiles, false))
+    {
+        if (child.getFileName().endsWithIgnoreCase(".vst3"))
+            out.add(child);                                   // a bundle: a leaf, do not descend
+        else if (child.isDirectory())
+            collectVst3BundlesRecursively(child, out, depthLeft - 1);
+    }
+}
+
+juce::Array<juce::PluginDescription>
 collapseAuPreferring(const juce::Array<juce::PluginDescription>& rows)
 {
     std::unordered_set<std::string> auNames;
