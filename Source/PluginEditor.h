@@ -283,6 +283,11 @@ private:
     // not. dashView_ (native) stays as the offline/signed-out/load-failed
     // fallback beneath it. See reconcileDashboardWeb().
     std::unique_ptr<echojay::DashboardWeb> dashWeb_;
+    // Item 2: the native populated dashboard (dashView_) is RETIRED from display
+    // — shown ONLY signed-out. Signed-in, the webview is the surface; while it
+    // builds or after it fails this minimal native panel stands in (loading line
+    // / offline line), so the old dashboard never flashes before the webview.
+    juce::Label dashWebPanel_;
     bool dashWebLoaded_               = false;  // onLoadResult(true): webview shown over native
     bool dashWebFailedThisSelection_ = false;   // no retry until the next Dashboard selection
     void reconcileDashboardWeb();               // lazy construct/destroy of dashWeb_

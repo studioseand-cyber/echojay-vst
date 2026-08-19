@@ -96,3 +96,19 @@ failed webview to the native view; a WebView2-runtime-absent check should route
 the same way (skip construction entirely, like the signed-out case in
 `reconcileDashboardWeb`). Out of scope for the macOS stage — flagged here so
 whoever builds the Windows target does not discover it as a blank rectangle in QA.
+
+## 4. §7 offline chains list — consciously traded away (stage 3, item 2)
+
+The native `DashboardView` was §7's offline story: a disk-cached chains list you
+could still act on with no network. Item 2 retires that view from display — it
+now renders **only** the signed-out line. Signed-in, the webview is the surface;
+while it builds or after it fails, a minimal native panel stands in ("Loading
+your dashboard…" / "You're offline — go online to view your dashboard"), NOT the
+cached list.
+
+So **§7's "a chain you can load offline" is gone by product-owner decision.** The
+code (`DashboardTab.cpp`, `dashView_`, `tools/dashboard_test`) is still present
+and shipped — this is retirement-from-display only; deleting it wholesale is a
+separate, explicitly-approved commit. The redundant `openDashboardTab` fetch into
+the now-hidden `dashView_` is left in place for that small-diff reason and can be
+removed with the deletion.

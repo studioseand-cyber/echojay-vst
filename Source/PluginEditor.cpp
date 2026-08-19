@@ -452,6 +452,15 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     dashViewport_.setScrollBarsShown(true, false);
     dashViewport_.setScrollBarThickness(8);
     addChildComponent(dashViewport_);
+
+    // Item 2: the minimal native stand-in while the webview builds / after it
+    // fails. House empty-state styling (text2 @ 12.5, centred), no chrome.
+    dashWebPanel_.setJustificationType(juce::Justification::centred);
+    dashWebPanel_.setColour(juce::Label::textColourId, juce::Colour(0xffa0a0b8));
+    dashWebPanel_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+    dashWebPanel_.setFont(juce::Font(juce::FontOptions(12.5f)));
+    dashWebPanel_.setInterceptsMouseClicks(false, false);
+    addChildComponent(dashWebPanel_);
     dashView_.onNavigate = [this](const echojay::DashLink& l) { followDashLink(l); };
     dashView_.onOpenUrl  = [](const juce::String& url)
     {
@@ -16948,13 +16957,15 @@ void EchoJayEditor::resized()
                                       && !projectPromptVisible
                                       && !updateOverlay.isVisible()
                                       && !reviewOverlay.visibleState;
-        const bool webShown = (dashWeb_ != nullptr && dashWebLoaded_);
+        const bool webShown  = (dashWeb_ != nullptr && dashWebLoaded_);
+        const bool signedIn  = api.isLoggedIn();
+        const bool webFailed = signedIn && dashWebFailedThisSelection_;
 
-        // Native dashView_ is the FALLBACK surface: shown until the webview has
-        // loaded and taken over, and the surface offline/signed-out/load-failed
-        // falls back to (it stays up whenever the webview is absent or unloaded).
+        // Item 2: the native POPULATED dashboard (dashView_) is RETIRED from
+        // display — shown ONLY signed-out, so it can never flash the old
+        // dashboard before the webview. Signed-in it never appears.
         dashViewport_.setBounds (dashRect);
-        dashViewport_.setVisible (dashSurfaceShowable && !webShown);
+        dashViewport_.setVisible (dashSurfaceShowable && !signedIn);
 
         // Webview: same rect; visible only once it reports a successful load.
         if (dashWeb_ != nullptr)
@@ -16962,6 +16973,17 @@ void EchoJayEditor::resized()
             dashWeb_->setBounds (dashRect);
             dashWeb_->setVisible (dashSurfaceShowable && webShown);
         }
+
+        // Minimal native stand-in: a loading line while the webview builds, the
+        // offline line on failure / no network. §7's offline chains list is
+        // consciously traded away for this (MERGE_NOTES). Signed-out keeps its
+        // existing line on dashView_ above.
+        dashWebPanel_.setBounds (dashRect);
+        dashWebPanel_.setText (webFailed
+                                   ? juce::String::fromUTF8 ("You\xe2\x80\x99re offline \xe2\x80\x94 go online to view your dashboard")
+                                   : juce::String::fromUTF8 ("Loading your dashboard\xe2\x80\xa6"),
+                               juce::dontSendNotification);
+        dashWebPanel_.setVisible (dashSurfaceShowable && signedIn && !webShown);
 
         // Content width, then content height from the ONE geometry author.
         // layout() is pure in width, so calling it here and again from the
