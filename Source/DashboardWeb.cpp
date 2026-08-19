@@ -108,6 +108,12 @@ bool loadChainBusy (int numModalComponents, juce::int64 elapsedMs, juce::int64 w
     return numModalComponents > 0 || (elapsedMs >= 0 && elapsedMs < windowMs);
 }
 
+juce::String importedChainId (const juce::var& importResponse)
+{
+    auto* o = importResponse.getDynamicObject();
+    return o != nullptr ? o->getProperty ("chainId").toString() : juce::String();
+}
+
 // ===========================================================================
 // Inner — the JUCE webview, forwarding its callbacks out
 // ===========================================================================

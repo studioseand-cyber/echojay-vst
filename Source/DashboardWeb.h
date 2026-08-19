@@ -84,6 +84,13 @@ juce::String validateLoadChain (const juce::var& payload, LoadChainRequest& req)
 bool loadChainBusy (int numModalComponents, juce::int64 elapsedMs,
                     juce::int64 windowMs = 8000);
 
+/** The chainId an importShare response carries — PURE, so tools/dashweb_test
+    drives it. Works for a real import AND for importing YOUR OWN share, which
+    answers { imported:false, reason:'own_share', chainId } and is SUCCESS: the
+    id is exactly what the caller wants next (§5a). Empty if the response has no
+    chainId (a genuine error). A non-empty result is the success signal. */
+juce::String importedChainId (const juce::var& importResponse);
+
 // ---------------------------------------------------------------------------
 // DashboardWeb — owns ONE juce::WebBrowserComponent and its load lifecycle.
 //

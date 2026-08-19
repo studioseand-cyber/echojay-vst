@@ -45,6 +45,21 @@ Flow make (const juce::String& base, const juce::String& token, bool gate)
     f.gateEnabled = gate;
     return f;
 }
+
+// Build a one- or two-key JS-payload object (a juce::var DynamicObject).
+juce::var one (const char* k, juce::var v)
+{
+    auto o = std::make_unique<juce::DynamicObject>();
+    o->setProperty (k, std::move (v));
+    return juce::var (o.release());
+}
+juce::var two (const char* k1, juce::var v1, const char* k2, juce::var v2)
+{
+    auto o = std::make_unique<juce::DynamicObject>();
+    o->setProperty (k1, std::move (v1));
+    o->setProperty (k2, std::move (v2));
+    return juce::var (o.release());
+}
 } // namespace
 
 int main()
@@ -132,6 +147,83 @@ int main()
         g.advance (Out::NetworkError);                     // error during seed
         check (g.step == Step::Failed, "network error at Seed -> Failed");
         std::printf ("  ok    network error -> Failed at any step\n");
+    }
+
+    // ---- loadChain payload validation ---------------------------------------
+    {
+        using echojay::validateLoadChain;
+        using echojay::LoadChainRequest;
+
+        LoadChainRequest a;
+        check (validateLoadChain (one ("chainId", "abc-1_XY"), a).isEmpty()
+               && a.chainId == "abc-1_XY" && a.slug.isEmpty(),
+               "accepts { chainId } and fills it");
+        LoadChainRequest b;
+        check (validateLoadChain (one ("slug", "shareSlug_9"), b).isEmpty()
+               && b.slug == "shareSlug_9" && b.chainId.isEmpty(),
+               "accepts { slug } and fills it");
+
+        auto bad = [&] (juce::var p, const char* what)
+        {
+            LoadChainRequest r;
+            check (validateLoadChain (p, r) == "bad_payload", what);
+        };
+        bad (two ("chainId", "a", "slug", "b"),                   "rejects BOTH keys present");
+        bad (juce::var (new juce::DynamicObject()),              "rejects NEITHER key");
+        bad (one ("chainId", ""),                                "rejects empty chainId");
+        bad (one ("slug", ""),                                    "rejects empty slug");
+        bad (one ("chainId", juce::String::repeatedString ("a", 65)), "rejects over-length chainId (>64)");
+        bad (one ("slug",    juce::String::repeatedString ("a", 33)), "rejects over-length slug (>32)");
+        bad (one ("chainId", "has space"),                       "rejects an illegal character");
+        bad (one ("chainId", juce::var (123)),                   "rejects wrong type (number)");
+        bad (one ("slug",    juce::var (true)),                  "rejects wrong type (bool)");
+        bad (juce::var ("a bare string"),                        "rejects a non-object payload");
+        bad (juce::var(),                                         "rejects a void payload");
+        std::printf ("  ok    payload validation: two legal shapes, garbage rejected\n");
+    }
+
+    // ---- the busy guard: modal OR within-window, self-healing ---------------
+    {
+        using echojay::loadChainBusy;
+        check (loadChainBusy (0, 1000, 8000) == true,  "busy within the window");
+        check (loadChainBusy (0, 9000, 8000) == false, "not busy after the window expires");
+        check (loadChainBusy (1, 9000, 8000) == true,  "busy while a confirm modal is up (window irrelevant)");
+        check (loadChainBusy (2, 9000, 8000) == true,  "busy with multiple modals");
+
+        // cancel-then-reclick: while confirm A is up -> busy (modal); just after
+        // cancel but within the window -> still busy (self-heals, not permanent);
+        // after the window with no modal -> NOT busy, so the reclick resolves to
+        // a SECOND confirm rather than the old boolean's permanent silence.
+        check (loadChainBusy (1, 500,  8000) == true,  "cancel-reclick: confirm A up -> busy");
+        check (loadChainBusy (0, 500,  8000) == true,  "cancel-reclick: just cancelled, within window -> busy (self-heals)");
+        check (loadChainBusy (0, 9000, 8000) == false, "cancel-reclick: after window -> a second confirm, not silence");
+        std::printf ("  ok    busy = modal OR within-window; never permanent silence\n");
+    }
+
+    // ---- importedChainId: own_share resolves to success ---------------------
+    {
+        using echojay::importedChainId;
+
+        auto ownShare = [] {
+            auto o = std::make_unique<juce::DynamicObject>();
+            o->setProperty ("imported", false);
+            o->setProperty ("reason",   "own_share");
+            o->setProperty ("chainId",  "own1");
+            return juce::var (o.release());
+        }();
+        check (importedChainId (ownShare) == "own1",
+               "own_share {imported:false, reason:'own_share', chainId} -> chainId (SUCCESS)");
+        check (importedChainId (one ("chainId", "imp1")) == "imp1",
+               "real import { chainId } -> chainId");
+        check (importedChainId (one ("error", "not_found")).isEmpty(),
+               "error response (no chainId) -> empty");
+        check (importedChainId (juce::var()).isEmpty(),
+               "void response -> empty");
+        // A non-empty chainId is the bridge's success signal (§5a): both own_share
+        // and a real import yield the id to load next.
+        check (importedChainId (ownShare).isNotEmpty(),
+               "non-empty chainId is the success signal");
+        std::printf ("  ok    importedChainId: own_share is success, error is empty\n");
     }
 
     // ---- negative control ---------------------------------------------------

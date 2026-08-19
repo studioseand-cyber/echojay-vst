@@ -10165,8 +10165,7 @@ void EchoJayEditor::bridgeLoadChain(const juce::String& chainId, const juce::Str
             safe->api.importShare(slug, [safe](const juce::var& json, int sc)
             {
                 if (safe == nullptr) return;
-                juce::String cid;
-                if (auto* o = json.getDynamicObject()) cid = o->getProperty("chainId").toString();
+                const juce::String cid = echojay::importedChainId(json);  // own_share carries it too
                 if (sc >= 200 && sc < 300 && cid.isNotEmpty())
                     safe->bridgeOpenChainById(cid);
                 else
