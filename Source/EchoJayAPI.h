@@ -792,6 +792,18 @@ public:
         else if (cb) juce::MessageManager::callAsync([cb]{ cb(juce::var(), 401); });
     }
 
+    // POST /api/v2/shares/:slug/import -> { chainId } (copies slots+state into a
+    // chain of your own). importShare ON YOUR OWN SHARE is NOT an error: it
+    // answers { imported:false, reason:'own_share', chainId } and that chainId
+    // is exactly what the caller wants next (§5a). Either way the response
+    // carries `chainId`. Shaped like fetchChain/deleteChain; empty JSON body.
+    void importShare(const juce::String& slug,
+                     std::function<void(const juce::var&, int)> cb)
+    {
+        if (isLoggedIn()) postJSON("/api/v2/shares/" + slug + "/import", "{}", std::move(cb));
+        else if (cb) juce::MessageManager::callAsync([cb]{ cb(juce::var(), 401); });
+    }
+
     // DELETE /api/v2/chains/:id -> 200 { ok: true }. SOFT delete server side:
     // the row and its state blob survive so a mis-click stays recoverable by
     // hand, but every read filters it out, so the client treats it as gone.

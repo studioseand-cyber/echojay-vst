@@ -286,6 +286,17 @@ private:
     bool dashWebLoaded_               = false;  // onLoadResult(true): webview shown over native
     bool dashWebFailedThisSelection_ = false;   // no retry until the next Dashboard selection
     void reconcileDashboardWeb();               // lazy construct/destroy of dashWeb_
+
+    // Stage 3: the loadChain bridge. ONE in-flight guard (§8 idempotency): a
+    // second loadChain while one is pending answers "busy", so a double-fired
+    // click cannot stack two confirm dialogs or build the rack twice. Held true
+    // THROUGH openSavedChain's confirm; cleared on error and on the webview
+    // lifecycle (destroy on tab-away/success, construct on return) in
+    // reconcileDashboardWeb.
+    bool chainLoadInFlight_ = false;
+    void bridgeLoadChain(const juce::String& chainId, const juce::String& slug,
+                         std::function<void(bool accepted, juce::String reason)> answer);
+    void bridgeOpenChainById(const juce::String& chainId);   // fetch name, then the ONE loader
     juce::int64                dashFetchedAtMs_ = 0;   // 0 = never fetched
     int                        dashTtlSeconds_  = 60;  // from payload.ttl
     bool                       dashLoading_     = false;

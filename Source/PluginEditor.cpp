@@ -10056,6 +10056,7 @@ void EchoJayEditor::reconcileDashboardWeb()
     {
         dashWeb_.reset();
         dashWebLoaded_ = false;
+        chainLoadInFlight_ = false;   // a load that switched to the Chain tab has settled
         return;
     }
 
@@ -10071,7 +10072,21 @@ void EchoJayEditor::reconcileDashboardWeb()
     {
         dashWeb_ = std::make_unique<echojay::DashboardWeb>();
         addChildComponent (*dashWeb_);   // hidden until it loads; native stays up
+        chainLoadInFlight_ = false;      // fresh webview on (re)entering the Dashboard
         auto safe = juce::Component::SafePointer<EchoJayEditor> (this);
+
+        // Stage 3: the loadChain bridge. DashboardWeb has already validated the
+        // payload; the editor routes and answers (acknowledgement, not dial
+        // report). Set here, at construction, per DashboardWeb's own rule that
+        // the webview is recreated on every Dashboard selection.
+        dashWeb_->onLoadChain = [safe] (const juce::String& chainId,
+                                        const juce::String& slug,
+                                        echojay::DashboardWeb::Answer answer)
+        {
+            if (safe == nullptr) { if (answer) answer (false, "busy"); return; }
+            safe->bridgeLoadChain (chainId, slug, std::move (answer));
+        };
+
         dashWeb_->onLoadResult = [safe] (bool ok)
         {
             if (safe == nullptr) return;
@@ -10103,6 +10118,90 @@ void EchoJayEditor::reconcileDashboardWeb()
         };
         dashWeb_->start();
     }
+}
+
+// Stage 3: the loadChain bridge handler. DashboardWeb has already validated the
+// payload natively; this routes it — share import or direct — and converges on
+// the ONE loader, openSavedChain. NO slot iteration lives here (§5a one-loader
+// rule): openSavedChain owns the confirm, the format/uid/version matching, the
+// deadman and the per-slot notes.
+void EchoJayEditor::bridgeLoadChain(const juce::String& chainId, const juce::String& slug,
+                                    std::function<void(bool, juce::String)> answer)
+{
+    // §8 idempotency: one in-flight guard, held through openSavedChain's confirm.
+    // A double-fired click's second event answers busy — no second confirm, no
+    // second rack build. (Cleared on error below and on the webview lifecycle in
+    // reconcileDashboardWeb: destroy on the success tab-switch, construct on the
+    // next Dashboard entry.)
+    if (chainLoadInFlight_) { if (answer) answer(false, "busy"); return; }
+    chainLoadInFlight_ = true;
+
+    // Acknowledge the moment it is validated and handed off — NOT the dial
+    // report (the Chain tab shows per-slot notes natively, and the webview is
+    // gone by then).
+    if (answer) answer(true, {});
+
+    // DEFER: this runs inside the webview's own native-function callback, and the
+    // success path switches to the Chain tab, which DESTROYS this webview. Let
+    // that stack unwind first (use-after-free guard, same shape as the load-fail
+    // teardown above).
+    auto safe = juce::Component::SafePointer<EchoJayEditor>(this);
+    juce::MessageManager::callAsync([safe, chainId, slug]
+    {
+        if (safe == nullptr) return;
+        if (slug.isNotEmpty())
+        {
+            // Someone else's share: import to a chain of your own, then load it.
+            // { imported:false, reason:'own_share', chainId } IS success — the
+            // response carries chainId either way (§5a).
+            safe->api.importShare(slug, [safe](const juce::var& json, int sc)
+            {
+                if (safe == nullptr) return;
+                juce::String cid;
+                if (auto* o = json.getDynamicObject()) cid = o->getProperty("chainId").toString();
+                if (sc >= 200 && sc < 300 && cid.isNotEmpty())
+                    safe->bridgeOpenChainById(cid);
+                else
+                {
+                    safe->chainLoadInFlight_ = false;
+                    safe->setChainSaveStatus(EchoJayAPI::chainErrorMessage(json, sc));
+                }
+            });
+        }
+        else
+        {
+            safe->bridgeOpenChainById(chainId);
+        }
+    });
+}
+
+// Fetch the chain to get its NAME for the confirm wording, then converge on the
+// one loader. openSavedChain fetches again — a deliberate fetch-then-open, not a
+// bypass: every protection lives on that path, so the double fetch is the price
+// of not building a second loader (§5a).
+void EchoJayEditor::bridgeOpenChainById(const juce::String& chainId)
+{
+    auto safe = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.fetchChain(chainId, [safe, chainId](const juce::var& json, int sc)
+    {
+        if (safe == nullptr) return;
+        const auto err = EchoJayAPI::chainErrorMessage(json, sc);
+        if (err.isNotEmpty())
+        {
+            safe->chainLoadInFlight_ = false;
+            safe->setChainSaveStatus(err);
+            return;
+        }
+        juce::String name;
+        if (auto* o = json.getDynamicObject())
+            if (auto* c = o->getProperty("chain").getDynamicObject())
+                name = c->getProperty("name").toString();
+        // THE ONE LOADER — a third caller, deliberately the SAME two-argument
+        // openSavedChain the other callers use. See MERGE_NOTES §1: if the other
+        // branch's onFetchError/onSlotsParsed land here, this call must gain them
+        // too, or a bridge load silently loses them.
+        safe->openSavedChain(chainId, name);
+    });
 }
 
 void EchoJayEditor::openDashboardTab()

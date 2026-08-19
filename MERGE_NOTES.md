@@ -43,6 +43,16 @@ safeThis->openSavedChain(id, name, onFetchError, onSlotsParsed);
 confirm block itself merges cleanly; only the re-entry call needs the hands-on
 fix.
 
+**THIRD CALLER (stage 3, the loadChain bridge).** `EchoJayEditor::bridgeOpenChainById`
+(`PluginEditor.cpp`) now calls the **two-argument** `openSavedChain(chainId, name)`
+as the convergence point for dashboard-row loads. When the other branch's
+`onFetchError`/`onSlotsParsed` parameters land, **this call site needs the same
+treatment as the confirm re-entry above** — either pass the two callbacks
+through, or deliberately pass `{}` if a bridge load wants no recall reporting —
+but decide it, do not let the defaulted-parameter merge silently drop them. It is
+the same silent-merge shape: it compiles, produces no conflict marker, and only
+misbehaves at runtime.
+
 ## 2. Left alone deliberately — pre-existing, not introduced here
 
 Both were found while doing this work and correctly left untouched. Recorded
