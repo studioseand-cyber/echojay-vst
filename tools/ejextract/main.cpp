@@ -1145,8 +1145,103 @@ static int runInstantiateDesc (const juce::File& descFile, const juce::File& out
         return looksLikeLicenseError (error) ? 4 : 5;
     }
     const int pc = inst->getParameters().size();
+    auto live = inst->getPluginDescription();
+    if (live.pluginFormatName.isEmpty() || live.version.isEmpty()) live = d;
     std::cout << "OK\t" << d.name << "\tparams=" << pc << "\t" << ms << "ms\n";
     outDir.getChildFile ("probe.txt").replaceWithText ("OK " + d.name + " params=" + juce::String (pc) + " " + juce::String (ms) + "ms");
+    // Same id.json shape as runIdWorker, so tier_identity_gate reads the fp
+    // the same way whether the target is a bundle or a saved description.
+    juce::DynamicObject::Ptr o = new juce::DynamicObject();
+    o->setProperty ("ik", echojay::identityKeyForDescription (live));
+    o->setProperty ("ikSaved", echojay::identityKeyForDescription (d));      // from the saved enumeration
+    o->setProperty ("ikLive",  echojay::identityKeyForDescription (live));   // from the live instance
+    o->setProperty ("fp", echojay::fingerprintForDescription (live, pc));
+    juce::Array<juce::var> effects; effects.add (juce::var (o.get()));
+    juce::DynamicObject::Ptr root = new juce::DynamicObject();
+    root->setProperty ("effects", effects);
+    writeJsonFileAtomic (outDir.getChildFile ("id.json"), juce::var (root.get()));
+    return 0;
+}
+
+// Enumerate a bundle and emit every non-instrument class's description and
+// identity key, WITHOUT instantiating any (regardless of class count). Used by
+// the gate to obtain a shell sub-plugin's stored description under Rosetta,
+// the way the catalogue's enumerate pass would.
+static int runEnumerateOnly (const juce::String& pluginPath, const juce::File& outDir)
+{
+    juce::AudioPluginFormatManager fm;
+#if JUCE_PLUGINHOST_VST3
+    fm.addFormat (new juce::VST3PluginFormat());
+#endif
+#if JUCE_PLUGINHOST_AU && JUCE_MAC
+    fm.addFormat (new juce::AudioUnitPluginFormat());
+#endif
+    juce::OwnedArray<juce::PluginDescription> found;
+    for (int i = 0; i < fm.getNumFormats(); ++i)
+        fm.getFormat (i)->findAllTypesForFile (found, pluginPath);
+    if (found.isEmpty()) return 2;
+    juce::Array<juce::var> effects;
+    for (auto* d : found)
+    {
+        if (d->isInstrument) continue;
+        juce::DynamicObject::Ptr o = new juce::DynamicObject();
+        o->setProperty ("ik", echojay::identityKeyForDescription (*d));
+        if (auto x = d->createXml())
+            o->setProperty ("desc", x->toString (juce::XmlElement::TextFormat().singleLine()));
+        effects.add (juce::var (o.get()));
+    }
+    juce::DynamicObject::Ptr root = new juce::DynamicObject();
+    root->setProperty ("effects", effects);
+    writeJsonFileAtomic (outDir.getChildFile ("id.json"), juce::var (root.get()));
+    return effects.isEmpty() ? 6 : 0;
+}
+
+// Instantiate a BATCH of saved descriptions in ONE process, timing each. A
+// shell's sub-plugins share a framework (WavesLib) that the first instantiate
+// loads and the rest reuse, so this measures whether batching amortises the
+// per-plugin cost, and it is the shape the deep dial pass will take: load the
+// shell once, fingerprint many, so a hang costs one batch not the whole shell.
+static int runInstantiateBatch (const juce::File& descDir, const juce::File& outDir)
+{
+    juce::AudioPluginFormatManager fm;
+#if JUCE_PLUGINHOST_VST3
+    fm.addFormat (new juce::VST3PluginFormat());
+#endif
+#if JUCE_PLUGINHOST_AU && JUCE_MAC
+    fm.addFormat (new juce::AudioUnitPluginFormat());
+#endif
+    juce::Array<juce::var> out;
+    auto files = descDir.findChildFiles (juce::File::findFiles, false, "*.xml");
+    files.sort();
+    for (auto& f : files)
+    {
+        auto xml = juce::XmlDocument::parse (f);
+        if (xml == nullptr) continue;
+        juce::PluginDescription d;
+        if (! d.loadFromXml (*xml)) continue;
+        juce::String error;
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+        std::unique_ptr<juce::AudioPluginInstance> inst (
+            fm.createPluginInstance (d, 48000.0, 512, error));
+        const auto ms = (juce::int64) (juce::Time::getMillisecondCounterHiRes() - t0);
+        juce::DynamicObject::Ptr o = new juce::DynamicObject();
+        o->setProperty ("name", d.name);
+        o->setProperty ("ms", ms);
+        if (inst != nullptr)
+        {
+            auto live = inst->getPluginDescription();
+            if (live.pluginFormatName.isEmpty() || live.version.isEmpty()) live = d;
+            o->setProperty ("ok", true);
+            o->setProperty ("params", inst->getParameters().size());
+            o->setProperty ("fp", echojay::fingerprintForDescription (live, inst->getParameters().size()));
+            o->setProperty ("ikSaved", echojay::identityKeyForDescription (d));
+            o->setProperty ("ikLive",  echojay::identityKeyForDescription (live));
+        }
+        else { o->setProperty ("ok", false); o->setProperty ("error", error); }
+        out.add (juce::var (o.get()));
+        std::cout << (inst != nullptr ? "OK  " : "FAIL") << "\t" << ms << "ms\t" << d.name << "\n";
+    }
+    writeJsonFileAtomic (outDir.getChildFile ("batch.json"), juce::var (out));
     return 0;
 }
 
@@ -1428,6 +1523,14 @@ int main (int argc, char** argv)
     if (argc >= 4 && juce::String (argv[1]) == "--instantiate-desc")
         return runInstantiateDesc (juce::File (juce::String (juce::CharPointer_UTF8 (argv[2]))),
                                    juce::File (juce::String (juce::CharPointer_UTF8 (argv[3]))));
+
+    if (argc >= 4 && juce::String (argv[1]) == "--instantiate-batch")
+        return runInstantiateBatch (juce::File (juce::String (juce::CharPointer_UTF8 (argv[2]))),
+                                    juce::File (juce::String (juce::CharPointer_UTF8 (argv[3]))));
+
+    if (argc >= 4 && juce::String (argv[1]) == "--enumerate-only")
+        return runEnumerateOnly (juce::String (juce::CharPointer_UTF8 (argv[2])),
+                                 juce::File (juce::String (juce::CharPointer_UTF8 (argv[3]))));
 
     if (argc >= 3 && juce::String (argv[1]) == "--extract-list")
         return runExtractList (juce::File (juce::String (juce::CharPointer_UTF8 (argv[2]))),

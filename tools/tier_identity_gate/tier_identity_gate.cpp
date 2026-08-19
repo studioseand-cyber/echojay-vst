@@ -38,23 +38,37 @@ static void check (bool ok, const juce::String& name, const juce::String& detail
                                  << (detail.isNotEmpty() ? ("\n        " + detail) : juce::String()) << "\n"; }
 }
 
-// The in-process side: the fingerprint the plugin computes when it loads.
+static juce::String fpOfDescription (juce::AudioPluginFormatManager& fm,
+                                     const juce::PluginDescription& d, juce::String& whyEmpty)
+{
+    juce::String error;
+    std::unique_ptr<juce::AudioPluginInstance> inst (
+        fm.createPluginInstance (d, 48000.0, 512, error));
+    if (inst == nullptr) { whyEmpty = "instantiate failed: " + error; return {}; }
+    auto live = inst->getPluginDescription();
+    if (live.pluginFormatName.isEmpty() || live.version.isEmpty()) live = d;
+    return echojay::fingerprintForDescription (live, inst->getParameters().size());
+}
+
+// The in-process side: the fingerprint the plugin computes when it loads. A
+// ".xml" target is a SAVED description (the shell sub-plugin case, where the
+// identity comes from a stored enumeration rather than a fresh file scan);
+// anything else is a bundle path or AU identifier to enumerate.
 static juce::String inProcessFp (juce::AudioPluginFormatManager& fm, const juce::String& target,
                                  juce::String& whyEmpty)
 {
+    if (target.endsWithIgnoreCase (".xml"))
+    {
+        auto xml = juce::XmlDocument::parse (juce::File (target));
+        juce::PluginDescription d;
+        if (xml == nullptr || ! d.loadFromXml (*xml)) { whyEmpty = "saved desc did not load"; return {}; }
+        return fpOfDescription (fm, d, whyEmpty);
+    }
     juce::OwnedArray<juce::PluginDescription> found;
     for (int i = 0; i < fm.getNumFormats(); ++i)
         fm.getFormat (i)->findAllTypesForFile (found, target);
     if (found.isEmpty()) { whyEmpty = "no types enumerated"; return {}; }
-
-    juce::String error;
-    std::unique_ptr<juce::AudioPluginInstance> inst (
-        fm.createPluginInstance (*found[0], 48000.0, 512, error));
-    if (inst == nullptr) { whyEmpty = "instantiate failed: " + error; return {}; }
-
-    auto live = inst->getPluginDescription();
-    if (live.pluginFormatName.isEmpty() || live.version.isEmpty()) live = *found[0];
-    return echojay::fingerprintForDescription (live, inst->getParameters().size());
+    return fpOfDescription (fm, *found[0], whyEmpty);
 }
 
 // The worker side: the fingerprint ejextract emits for the same target.
@@ -64,8 +78,9 @@ static juce::String workerFp (const juce::String& ejextract, const juce::String&
     auto wd = juce::File::getSpecialLocation (juce::File::tempDirectory)
                 .getChildFile ("gate_" + juce::String (juce::Time::getHighResolutionTicks()));
     wd.createDirectory();
+    const juce::String mode = target.endsWithIgnoreCase (".xml") ? "--instantiate-desc" : "--id-worker";
     juce::ChildProcess p;
-    if (! p.start (juce::StringArray { ejextract, "--id-worker", target, wd.getFullPathName() }))
+    if (! p.start (juce::StringArray { ejextract, mode, target, wd.getFullPathName() }))
     { whyEmpty = "could not spawn ejextract"; wd.deleteRecursively(); return {}; }
     p.waitForProcessToFinish (150000);
 
@@ -76,6 +91,69 @@ static juce::String workerFp (const juce::String& ejextract, const juce::String&
     if (fp.isEmpty()) whyEmpty = "worker emitted no fp (id.json effects empty)";
     wd.deleteRecursively();
     return fp;
+}
+
+// Read the first effect object from an ejextract id.json.
+static juce::var firstEffect (const juce::File& dir)
+{
+    auto j = juce::JSON::parse (dir.getChildFile ("id.json").loadFileAsString());
+    if (auto* arr = j.getProperty ("effects", juce::var()).getArray())
+        if (! arr->isEmpty()) return (*arr)[0];
+    return {};
+}
+
+// The hard case, run entirely under Rosetta because the whole Waves library is
+// x86-only: a shell sub-plugin's identity comes from a STORED shell enumeration
+// (--enumerate-only), not a fresh file scan, and the catalogue keys the map on
+// that stored key while the DAW looks it up from the LIVE instance. If those
+// two keys fork, every Waves map misses. So: enumerate the shell, take one
+// sub-plugin's saved description, instantiate it, and assert the key from the
+// saved description equals the key from the live instance, and that a
+// fingerprint was produced. It fails LOUDLY if it cannot even enumerate, so the
+// gate is never silently green on the case that matters most.
+static void shellForkCase (const juce::String& ejextract, const juce::String& shellPath)
+{
+    const juce::String label = "ShellSub-VST3-Waves (Rosetta)";
+    auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                 .getChildFile ("gate_shell_" + juce::String (juce::Time::getHighResolutionTicks()));
+    auto wdEnum = tmp.getChildFile ("enum"); wdEnum.createDirectory();
+    auto wdInst = tmp.getChildFile ("inst"); wdInst.createDirectory();
+
+    auto runX86 = [&] (const juce::StringArray& extra, const juce::File& wd) -> bool
+    {
+        juce::StringArray a { "/usr/bin/arch", "-x86_64", ejextract };
+        a.addArray (extra);
+        a.add (wd.getFullPathName());
+        juce::ChildProcess p;
+        if (! p.start (a)) return false;
+        p.waitForProcessToFinish (150000);
+        return true;
+    };
+
+    if (! runX86 ({ "--enumerate-only", shellPath }, wdEnum))
+    { check (false, label, "could not spawn ejextract under Rosetta"); tmp.deleteRecursively(); return; }
+
+    auto eff = firstEffect (wdEnum);
+    const auto desc = eff.getProperty ("desc", juce::var()).toString();
+    if (desc.isEmpty())
+    { check (false, label, "shell enumerated no sub-plugins at " + shellPath + " (present? x86 slice?)"); tmp.deleteRecursively(); return; }
+
+    auto descFile = tmp.getChildFile ("sub.xml");
+    descFile.replaceWithText (desc);
+    if (! runX86 ({ "--instantiate-desc", descFile.getFullPathName() }, wdInst))
+    { check (false, label, "could not instantiate the saved sub-plugin under Rosetta"); tmp.deleteRecursively(); return; }
+
+    auto ie = firstEffect (wdInst);
+    const auto ikSaved = ie.getProperty ("ikSaved", juce::var()).toString();
+    const auto ikLive  = ie.getProperty ("ikLive",  juce::var()).toString();
+    const auto fp      = ie.getProperty ("fp",      juce::var()).toString();
+    if (ikSaved.isEmpty() || fp.isEmpty())
+        check (false, label, "instantiate produced no key/fp (ikSaved=" + ikSaved + " fp=" + fp.substring (0, 12) + ")");
+    else
+        check (ikSaved == ikLive, label, ikSaved == ikLive
+               ? juce::String()
+               : "saved key=" + ikSaved + "  live key=" + ikLive + " (the catalogue and the DAW would fork)");
+    tmp.deleteRecursively();
 }
 
 int main (int argc, char** argv)
@@ -123,6 +201,18 @@ int main (int argc, char** argv)
         else
             check (a == b, label, a == b ? juce::String()
                                          : "in-process=" + a + "\n        worker=     " + b);
+    }
+
+    // The shell sub-plugin case (Waves), run under Rosetta since the library is
+    // x86-only. Skipped only if no Waves shell is installed, and it says so.
+    {
+        const char* shells[] = {
+            "/Library/Audio/Plug-Ins/VST3/WaveShell1-VST3 12.6.vst3",
+            "/Library/Audio/Plug-Ins/VST3/WaveShell-VST3 9.6.vst3" };
+        juce::String present;
+        for (auto* s : shells) if (juce::File (s).exists()) { present = s; break; }
+        if (present.isNotEmpty()) shellForkCase (ejextract, present);
+        else std::cout << "  n/a   ShellSub-VST3-Waves (no Waves shell installed)\n";
     }
 
     std::cout << (failN == 0 ? "\nALL PASS\n" : "\nFAILED\n");
