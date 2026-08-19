@@ -185,22 +185,30 @@ int main()
     // ---- openChat payload validation ----------------------------------------
     {
         using echojay::validateOpenChat;
+        // non-empty chatId -> accepted and filled.
         juce::String c;
         check (validateOpenChat (one ("chatId", "chat_abc-1"), c).isEmpty() && c == "chat_abc-1",
                "openChat accepts { chatId } and fills it");
+        // EMPTY payload -> accepted, empty chatId (open Chat, nothing selected).
+        juce::String e1;
+        check (validateOpenChat (juce::var (new juce::DynamicObject()), e1).isEmpty() && e1.isEmpty(),
+               "openChat accepts {} -> no selection");
+        juce::String e2;
+        check (validateOpenChat (one ("chatId", ""), e2).isEmpty() && e2.isEmpty(),
+               "openChat accepts { chatId:'' } -> no selection");
+        // garbage still rejected.
         auto bad = [&] (juce::var p, const char* what)
         {
             juce::String cc;
             check (validateOpenChat (p, cc) == "bad_payload", what);
         };
-        bad (juce::var (new juce::DynamicObject()),               "openChat rejects no chatId");
-        bad (one ("chatId", ""),                                  "openChat rejects empty chatId");
         bad (one ("chatId", juce::String::repeatedString ("a", 65)), "openChat rejects over-length (>64)");
         bad (one ("chatId", "has space"),                        "openChat rejects illegal character");
-        bad (one ("chatId", juce::var (123)),                    "openChat rejects wrong type");
+        bad (one ("chatId", juce::var (123)),                    "openChat rejects non-string (number)");
+        bad (one ("chatId", juce::var()),                        "openChat rejects non-string (null)");
         bad (juce::var ("bare string"),                          "openChat rejects non-object");
-        bad (juce::var(),                                         "openChat rejects void");
-        std::printf ("  ok    openChat payload validation\n");
+        bad (juce::var(),                                         "openChat rejects void payload");
+        std::printf ("  ok    openChat: empty accepted, garbage rejected\n");
     }
 
     // ---- the busy guard: modal OR within-window, self-healing ---------------

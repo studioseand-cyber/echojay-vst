@@ -101,22 +101,31 @@ Use `slug` for someone else's shared chain (Trending / Recently shared /
 Featured / feed rows / message attachments); use `chainId` for the user's own
 chains. The plugin does the share-import for a `slug` itself.
 
-### `openChat` — `{ chatId: string }`
+### `openChat` — `{ chatId: string }` or **empty**
 
 Registered alongside `loadChain`; call it the same way:
 
 ```js
 const openChat = getNativeFunction("openChat");
-const result = await openChat({ chatId });   // { accepted:true } | { accepted:false, reason }
+await openChat({ chatId });   // open that chat
+await openChat({});           // open the Chat tab with NOTHING selected
 ```
 
-Payload: an object with a single `chatId` string — non-empty, ≤ 64 chars,
-`[A-Za-z0-9_-]` only, validated natively (`validateOpenChat`). The plugin
-switches to its native Chat tab and selects that chat. Like `loadChain` this is
-an **acknowledgement** (§4) — the tab switch destroys the webview, and there is
-nothing to report back. Same `busy` / `bad_payload` semantics as `loadChain`
-(§5), and the **same shared in-flight guard**: a `loadChain` in flight busies an
-`openChat` and vice versa (both navigate away and tear the webview down).
+Payload rules (validated natively, `validateOpenChat`):
+
+- **`{ chatId }`** — a non-empty string, ≤ 64 chars, `[A-Za-z0-9_-]` only →
+  switch to the Chat tab and select that chat.
+- **Empty — `{}` or `{ chatId: "" }`** → switch to the Chat tab with **nothing
+  selected**. Use this for the recent-chats **"See all"**, and for a project
+  tile whose `latestChatId` is **null** (§5c's fallback): send `{}`, **not**
+  `{ chatId: null }` — a non-string `chatId` (null, a number) is rejected as
+  `bad_payload`.
+
+Like `loadChain` this is an **acknowledgement** (§4) — the tab switch destroys
+the webview, and there is nothing to report back. Same `busy` / `bad_payload`
+semantics as `loadChain` (§5), and the **same shared in-flight guard**: a
+`loadChain` in flight busies an `openChat` and vice versa (both navigate away
+and tear the webview down).
 
 ## 3. Required page behaviour
 

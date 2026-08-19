@@ -105,11 +105,23 @@ juce::String validateLoadChain (const juce::var& payload, LoadChainRequest& req)
 
 juce::String validateOpenChat (const juce::var& payload, juce::String& chatId)
 {
+    chatId = {};
     auto* obj = payload.getDynamicObject();
-    if (obj == nullptr) return "bad_payload";
+    if (obj == nullptr) return "bad_payload";      // not an object
+
+    // EMPTY payload -> open the Chat tab with NOTHING selected: {} (no chatId)
+    // or {chatId:""}. Both yield an empty chatId, which the followDashLink chat
+    // branch already treats as "switch to Chat, no selection" (recent-chats
+    // "See all", and project tiles whose latestChatId is null — §5c fallback).
+    if (! obj->hasProperty ("chatId")) return {};
+
     const juce::var v = obj->getProperty ("chatId");
-    if (! v.isString() || ! isCleanId (v.toString(), 64)) return "bad_payload";
-    chatId = v.toString();
+    if (! v.isString()) return "bad_payload";       // present but wrong type (e.g. null, number)
+    const juce::String id = v.toString();
+    if (id.isEmpty()) return {};                    // {chatId:""} -> no selection
+
+    if (! isCleanId (id, 64)) return "bad_payload"; // non-empty: same validation as before
+    chatId = id;
     return {};
 }
 

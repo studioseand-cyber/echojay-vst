@@ -71,9 +71,11 @@ struct LoadChainRequest { juce::String chainId, slug; };
 juce::String validateLoadChain (const juce::var& payload, LoadChainRequest& req);
 
 /** Validate an openChat payload. Returns an empty string on success (and fills
-    `chatId`), or "bad_payload". Same hard native validation as loadChain: an
-    object with a `chatId` string, non-empty, <= 64 chars, [A-Za-z0-9_-] only.
-    Pure; tools/dashweb_test drives it. */
+    `chatId`), or "bad_payload". An EMPTY payload — {} or {chatId:""} — is valid
+    and means "open the Chat tab with nothing selected" (fills an empty chatId).
+    A PRESENT, non-empty chatId must be a string, <= 64 chars, [A-Za-z0-9_-]
+    only (same as loadChain's ids); a non-string chatId (null, number) is
+    rejected. Pure; tools/dashweb_test drives it. */
 juce::String validateOpenChat (const juce::var& payload, juce::String& chatId);
 
 /** The loadChain busy test — PURE, so tools/dashweb_test drives it. A request is
