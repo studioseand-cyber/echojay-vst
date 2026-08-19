@@ -4064,6 +4064,11 @@ private:
     juce::ListBox chatSidebar { {}, nullptr };
 
     void loadChatFromWorkspace(const juce::String& chatId);
+    // Scroll the chat sidebar so the active chat (currentChatId) lands in the
+    // top third. Used after a dashboard deep link selects a chat that may be
+    // far down the list, so "which chat am I on" is answerable at a glance.
+    // No-op if there is no active chat or no matching visible row.
+    void scrollChatSidebarToActive();
     void createNewChat();
     // ---- Stream ownership (14 Aug 2026: a stream belongs to a chat) ----
     // Re-establish the in-flight turn's provisional rendering (stage row or

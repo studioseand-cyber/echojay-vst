@@ -112,3 +112,35 @@ and shipped — this is retirement-from-display only; deleting it wholesale is a
 separate, explicitly-approved commit. The redundant `openDashboardTab` fetch into
 the now-hidden `dashView_` is left in place for that small-diff reason and can be
 removed with the deletion.
+
+## 5. Chat sidebar deep-link scroll — a new method + two one-line call sites
+
+Fixing "a dashboard deep link selects a chat but the sidebar doesn't scroll to
+it" adds a small method and calls it at exactly two sites, all in the chat-sidebar
+code the other machine (`integration/reasoning-plus-pitch`) may also touch:
+
+- **New method** `EchoJayEditor::scrollChatSidebarToActive()` — decl in
+  `PluginEditor.h` right after `loadChatFromWorkspace`; impl in `PluginEditor.cpp`
+  right *before* `loadChatFromWorkspace`. It scans `sidebarModel->rows` for the
+  `ChatRow` whose `id == currentChatId` and positions `chatSidebar`'s viewport so
+  that row lands in the top third. Pure read of existing state — if it collides,
+  keep one copy; there is nothing to reconcile.
+- **Two call sites**, each a single statement appended after an existing
+  `loadChatFromWorkspace(...)` call, inside the SAME `if (ch.id == …) { … }`:
+  - `followDashLink` chat branch (immediate path, workspace already loaded).
+  - the `pendingDashChatId_` consumption in `workspace.onLoaded` (parked path).
+  If either `loadChatFromWorkspace(...)` line moves or is rewritten on the other
+  branch, re-append `scrollChatSidebarToActive();` after it.
+
+Deliberately NOT wired into `loadChatFromWorkspace` itself: that is also the
+manual sidebar-click path, where the row is already on screen and an auto-scroll
+would be a jarring jump. The scroll is scoped to the deep-link entries only.
+
+The **editor-recreate restore path** (`if (ch.id == restoreId) …` a few lines
+above the parked block) was left untouched — same "which chat am I on" benefit
+would apply, but it is outside this fix's stated scope; add the same one-liner
+there if that becomes desired.
+
+The active-row styling was assessed and left as-is: an active `ChatRow` already
+draws a lighter `bg4` fill, a 3px `C::blue` left accent bar, and brighter text —
+unambiguous once on screen. The bug was purely off-screen position, not styling.

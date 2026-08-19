@@ -604,7 +604,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             const juce::String want = pendingDashChatId_;
             pendingDashChatId_.clear();
             for (const auto& ch : workspace.getChats())
-                if (ch.id == want) { loadChatFromWorkspace(want); break; }
+                if (ch.id == want) { loadChatFromWorkspace(want); scrollChatSidebarToActive(); break; }
         }
         repaint();
     };
@@ -10384,7 +10384,7 @@ void EchoJayEditor::followDashLink(const echojay::DashLink& link)
         // doing nothing.
         bool found = false;
         for (const auto& ch : workspace.getChats())
-            if (ch.id == link.id) { loadChatFromWorkspace(link.id); found = true; break; }
+            if (ch.id == link.id) { loadChatFromWorkspace(link.id); scrollChatSidebarToActive(); found = true; break; }
         if (!found) pendingDashChatId_ = link.id;
         return;
     }
@@ -11439,6 +11439,28 @@ void EchoJayEditor::paintChatSidebar(juce::Graphics& g, juce::Rectangle<int> are
         chatSidebarContent.setSize(w, juce::jmax(fullH, totalH));
 }
 #endif // old paintChatSidebar
+
+void EchoJayEditor::scrollChatSidebarToActive()
+{
+    if (sidebarModel == nullptr || currentChatId.isEmpty()) return;
+
+    int row = -1;
+    for (int i = 0; i < (int) sidebarModel->rows.size(); ++i)
+        if (sidebarModel->rows[(size_t) i].kind == ChatSidebarModel::Row::Kind::ChatRow
+            && sidebarModel->rows[(size_t) i].id == currentChatId)
+        { row = i; break; }
+    if (row < 0) return;   // active chat not a visible row (collapsed/absent)
+
+    // Land the row in the top third so its album/project header stays visible
+    // above it, rather than jammed against an edge. setViewPosition clamps to
+    // the content bounds; fall back to the safe "just get it on screen" API if
+    // the list has no height yet (called before layout).
+    if (auto* vp = chatSidebar.getViewport(); vp != nullptr && chatSidebar.getHeight() > 0)
+        vp->setViewPosition(0, juce::jmax(0, row * chatSidebar.getRowHeight()
+                                             - chatSidebar.getHeight() / 3));
+    else
+        chatSidebar.scrollToEnsureRowIsOnscreen(row);
+}
 
 void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
 {
