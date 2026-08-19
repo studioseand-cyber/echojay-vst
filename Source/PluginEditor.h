@@ -4208,7 +4208,8 @@ private:
     {
         // Crash and TooLarge rows carry a Re-enable control (each deletes the
         // row's line from its own file: chain_blacklist.txt, chain_state_oversize.txt)
-        enum Kind { Crash, TooLarge, IntelOnly, Vst2, NotScanned, Unreadable, FormatOnly } kind = Unreadable;
+        enum Kind { Crash, TooLarge, IntelOnly, Vst2, NotScanned, Unreadable, FormatOnly,
+                    HelperNote, Superseded } kind = Unreadable;
         static bool hasReenable(Kind k) noexcept { return k == Crash || k == TooLarge; }
         juce::String title;         // "Intel only, no Apple Silicon build installed"
         juce::String remedy;        // one line, only where a remedy exists

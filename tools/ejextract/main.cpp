@@ -1613,9 +1613,21 @@ int main (int argc, char** argv)
 
     if (argc < 3)
     {
-        std::cerr << "Usage: ejextract <plugin-path> <output-dir> | ejextract --bootstrap"
-                     " | ejextract --extract-list <listfile> [outDir]"
-                     " | ejextract --au-registry [outDir] [--enumerate]\n";
+        // Every mode listed. A usage string that omits half the modes is how a
+        // stale binary got mistaken for a current one across two machines: the
+        // list below must gain a line whenever a mode is added above.
+        std::cerr <<
+            "ejextract modes:\n"
+            "  <plugin-path> <output-dir>            sample-extract one plugin (worker)\n"
+            "  --bootstrap                           the post-install mapping sweep (consent-gated)\n"
+            "  --extract-list <listfile> [outDir]    sample-extract a list of plugins\n"
+            "  --au-registry [outDir] [--enumerate]  walk the AU registry\n"
+            "  --catalogue [outDir]                  P16 identity catalogue sweep (no network)\n"
+            "  --id-worker <target> <outDir>         one bundle: enumerate + fingerprint (catalogue worker)\n"
+            "  --enumerate-only <target> <outDir>    one bundle: enumerate identities, no instantiation\n"
+            "  --instantiate-desc <descXml> <outDir> instantiate one saved description, emit its fp\n"
+            "  --instantiate-batch <descDir> <outDir> instantiate many saved descriptions, timed\n"
+            "  --prep-check <target> <outDir>        param_count and fp, before vs after prepareToPlay\n";
         return 1;
     }
     return runWorker (juce::String (juce::CharPointer_UTF8 (argv[1])),

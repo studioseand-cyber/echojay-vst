@@ -12880,6 +12880,67 @@ void EchoJayEditor::rebuildSettingsWithheld()
                                                chainFormatFilter_, crashByFold, tooLargeByFold, nestedVst3,
                                                &settingsWithheldEnabledNames_, &settingsWithheldCannot_);
 
+    // Helper-catalogue health + supersession, appended as their own groups.
+    // These come from the out-of-process sweep (chain_health.json) and the
+    // version supersession, independent of host-format availability, so they
+    // are built directly rather than folded through classifyWithheld. Only the
+    // FAILURE states surface; loaded-not-verified (the whole working library)
+    // and shell (expected) stay dark.
+    {
+        std::map<juce::String, juce::String> nameByPath;
+        std::vector<juce::PluginDescription> entriesForSup;
+        if (auto ecFile = ChainHost::getEntriesCacheFile(); ecFile.existsAsFile())
+            if (auto doc = juce::XmlDocument::parse(ecFile); doc && doc->getTagName() == "CHAIN_ENTRIES")
+                for (auto* c : doc->getChildIterator())
+                {
+                    juce::PluginDescription d;
+                    if (d.loadFromXml(*c)) { nameByPath[d.fileOrIdentifier] = d.name; entriesForSup.push_back(d); }
+                }
+        auto nameForPath = [&](const juce::String& path) -> juce::String
+        {
+            if (auto f = nameByPath.find(path); f != nameByPath.end() && f->second.isNotEmpty()) return f->second;
+            return juce::File(path).getFileNameWithoutExtension();
+        };
+        struct HG { const char* state; const char* title; };
+        const HG order[] = {
+            { "crashed",             "crashed during the plugin scan (isolated out of process, the DAW was never at risk)" },
+            { "timed-out",           "timed out during the plugin scan, often a modal licence or trial dialog" },
+            { "load-failed-licence", "would not load, likely a licence or dongle not present, not a broken plugin" },
+            { "load-failed",         "failed to load during the plugin scan, not a licence issue" },
+            { "no-types",            "no plugin types found in the bundle" },
+        };
+        auto health = ch.getHealthSnapshot();
+        for (const auto& hg : order)
+        {
+            WithheldGroup g; g.kind = WithheldGroup::HelperNote; g.title = hg.title;
+            for (const auto& kv : health)
+            {
+                if (kv.second.state != hg.state) continue;
+                WithheldItem it; it.name = nameForPath(kv.first); it.path = kv.first;
+                it.detail = kv.second.reason;
+                if (kv.second.blockMs >= 10000)
+                    it.detail += (it.detail.isEmpty() ? juce::String() : juce::String("  "))
+                               + "(blocked " + juce::String((int)(kv.second.blockMs / 1000)) + "s)";
+                g.items.push_back(it);
+            }
+            std::sort(g.items.begin(), g.items.end(),
+                      [](const WithheldItem& a, const WithheldItem& b){ return a.name.compareIgnoreCase(b.name) < 0; });
+            if (! g.items.empty()) settingsWithheldGroups_.push_back(g);
+        }
+        WithheldGroup gs; gs.kind = WithheldGroup::Superseded;
+        gs.title = "an older version, superseded by a newer copy installed here (still available to rack by hand)";
+        for (const auto& d : entriesForSup)
+            if (ch.isSuperseded(d))
+            {
+                WithheldItem it; it.name = d.name; it.vendor = d.manufacturerName; it.path = d.fileOrIdentifier;
+                it.detail = "version " + d.version;
+                gs.items.push_back(it);
+            }
+        std::sort(gs.items.begin(), gs.items.end(),
+                  [](const WithheldItem& a, const WithheldItem& b){ return a.name.compareIgnoreCase(b.name) < 0; });
+        if (! gs.items.empty()) settingsWithheldGroups_.push_back(gs);
+    }
+
     // One Re-enable button per crash item and per too-large item
     int crashCount = 0;
     for (const auto& g : settingsWithheldGroups_) if (WithheldGroup::hasReenable(g.kind)) crashCount += (int) g.items.size();
