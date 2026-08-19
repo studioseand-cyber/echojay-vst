@@ -68,3 +68,21 @@ here so they are not rediscovered from scratch.
   above, so the built-in's name prints empty (`ChainHost: built-in "" added
   as slot N`). Log-only; no functional effect. Capture the name before the
   move to fix.
+
+## 3. Windows/WebView2 — a designed fallback is required before Windows ships (stage 2)
+
+Stage 2 flipped `JUCE_WEB_BROWSER=0 -> 1` and added the lazy webview Dashboard
+(`Source/DashboardWeb.*`, `PluginEditor` Dashboard blocks). **Everything measured
+and implemented is macOS/WKWebView.** On Windows, `juce::WebBrowserComponent` uses
+**WebView2, which requires the Evergreen Runtime** — pre-installed on Windows 11
+and most Windows 10 since 2021, but **not guaranteed** (parity spec §1b item 1).
+
+Before shipping Windows, this needs a **presence check at editor construction and
+a designed fallback — never a blank rectangle**: either the native-lite tab
+(the native `DashboardView` is already the fallback surface — signed-out /
+offline / load-failed — so wiring "runtime absent" to it is small) or an honest
+"open in browser" panel. `DashboardWeb`'s `onLoadResult(false)` already routes a
+failed webview to the native view; a WebView2-runtime-absent check should route
+the same way (skip construction entirely, like the signed-out case in
+`reconcileDashboardWeb`). Out of scope for the macOS stage — flagged here so
+whoever builds the Windows target does not discover it as a blank rectangle in QA.
