@@ -164,6 +164,14 @@ static juce::String sessionLoadKey(const juce::String& name, const juce::String&
 // Popout-only plugins — shared local list, normalised-name keyed. The cache
 // mtime-reloads so a mark made by one host is seen by the other immediately.
 // ---------------------------------------------------------------------------
+// Feed split (P16) runtime gate. Present => the chain feed narrows to the
+// dialable subset; ABSENT (the default) => today's full undifferentiated list
+// and no existence query fires at all. A file flag, matching popout_only, so
+// the switch is a touch/rm with no rebuild and no UI. This is the field kill
+// switch: if the endpoint answers wrongly or a vendor's identities stop
+// matching, the feed reverts to full by deleting one file.
+static juce::File feedSplitFlagFile() { return appSupportDir().getChildFile("feed_split_on.txt"); }
+
 static juce::File popoutOnlyFile() { return appSupportDir().getChildFile("popout_only.txt"); }
 static juce::StringArray& popoutOnlyCache() { static juce::StringArray c; return c; }
 static juce::Time& popoutOnlyLoadTime()     { static juce::Time t;        return t; }
@@ -4818,6 +4826,13 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
     recommendableEnabledIn_ = enabledCount;
     recommendableFormat_    = formatFilter;
 
+    // Feed-split mode, logged on every scan so which list the model saw is
+    // never a guess after the fact.
+    EchoJay_NSLog(("EJFeed: split MODE=" + juce::String(feedSplitEnabled()
+                       ? "ON (dialable subset)" : "OFF (full list)")
+                   + ", " + juce::String((int) recommendable_.size())
+                   + " recommendable").toRawUTF8());
+
     // Latch only when both inputs were real: a build against an empty entries
     // list (scan still running) or an unloaded scanner cache must not count
     // as resolved, or the retry paths would stop retrying too early.
@@ -4966,6 +4981,11 @@ bool ChainHost::dialStateSettled() const
 
 // The uid+manufacturer key, version dropped: the same key the server's
 // existence index and version-insensitive lookup use. uid 0 is no identity.
+bool ChainHost::feedSplitEnabled() const
+{
+    return feedSplitFlagFile().existsAsFile();
+}
+
 std::vector<echojay::IdentityRef> ChainHost::recommendableIdentityRefs() const
 {
     std::vector<echojay::IdentityRef> refs;

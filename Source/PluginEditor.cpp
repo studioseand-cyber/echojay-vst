@@ -22968,41 +22968,48 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
     bool hadFeed = false;
     auto& chainHost = processorRef.getChainHost();
 
-    // Feed split (P16): fire the existence-index query once per scan (async,
-    // gated on the key-set signature, never blocking this turn). Then build the
-    // feed from the DIALABLE subset when the index has answered; until it does,
-    // or on any non-200, stay on the full undifferentiated list rather than
-    // narrow to nothing.
-    maybeRefreshExistenceDialable(chainHost);
+    // Feed split (P16), behind a runtime kill switch (feed_split_on.txt, absent
+    // by default). OFF => today's full undifferentiated list and NO existence
+    // query fires, so the network is not touched at all. ON => fire the query
+    // once per scan (async, signature-gated, never blocking this turn) and
+    // build the feed from the DIALABLE subset once the index has answered.
     juce::StringArray recommendable;
-    if (chainHost.existenceQueried())
+    if (! chainHost.feedSplitEnabled())
     {
-        recommendable = chainHost.getDialableRecommendableNames();
-        if (recommendable.isEmpty())
-        {
-            // HARDENING 3: guard the zero. A clean answer that resolves a
-            // non-empty catalogue to zero dialable is far more likely a parse
-            // fault than the truth, so keep the full list. Built-ins are the
-            // right feed only when the machine genuinely has nothing
-            // recommendable, not when hundreds suddenly resolve to none.
-            const auto full = chainHost.getRecommendableNames();
-            if (! full.isEmpty())
-            {
-                EchoJay_NSLog(("EJFeed: existence index resolved "
-                               + juce::String(chainHost.recommendableCount())
-                               + " recommendable to ZERO dialable -- suspect a parse "
-                                 "fault, keeping the full list").toRawUTF8());
-                recommendable = full;
-            }
-            else
-            {
-                recommendable = ChainHost::builtinDeviceNames();
-            }
-        }
+        recommendable = chainHost.getRecommendableNames();
     }
     else
     {
-        recommendable = chainHost.getRecommendableNames();
+        maybeRefreshExistenceDialable(chainHost);
+        if (chainHost.existenceQueried())
+        {
+            recommendable = chainHost.getDialableRecommendableNames();
+            if (recommendable.isEmpty())
+            {
+                // HARDENING 3: guard the zero. A clean answer that resolves a
+                // non-empty catalogue to zero dialable is far more likely a
+                // parse fault than the truth, so keep the full list. Built-ins
+                // are the right feed only when the machine genuinely has nothing
+                // recommendable, not when hundreds suddenly resolve to none.
+                const auto full = chainHost.getRecommendableNames();
+                if (! full.isEmpty())
+                {
+                    EchoJay_NSLog(("EJFeed: existence index resolved "
+                                   + juce::String(chainHost.recommendableCount())
+                                   + " recommendable to ZERO dialable -- suspect a parse "
+                                     "fault, keeping the full list").toRawUTF8());
+                    recommendable = full;
+                }
+                else
+                {
+                    recommendable = ChainHost::builtinDeviceNames();
+                }
+            }
+        }
+        else
+        {
+            recommendable = chainHost.getRecommendableNames();
+        }
     }
     // targetLinkUid -> always relevant (ITEM 6, ASK-tap ordering): guarantees
     // a server-CUT plugin marker precedes the [TARGET CHANNEL] declaration,

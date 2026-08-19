@@ -199,6 +199,10 @@ public:
     // stores the dialable iks that came back; existenceQueried is false until a
     // successful reply, so a non-200 or a query in flight leaves the feed at
     // today's full-list behaviour rather than emptying it.
+    // Runtime kill switch for the whole feed split: a file flag
+    // (feed_split_on.txt in the app-support dir), ABSENT by default. Off means
+    // today's full undifferentiated list and NO existence query.
+    bool feedSplitEnabled() const;
     std::vector<echojay::IdentityRef> recommendableIdentityRefs() const;
     void setExistenceDialable (std::set<juce::String> dialableIks);
     bool existenceQueried() const { return existenceOk_; }
