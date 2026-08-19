@@ -296,7 +296,8 @@ struct WorkerResult
 // AU component identifier), optionally under a specific arch. The exit-code
 // classifier is the ONE place worker outcomes become ledger statuses.
 static WorkerResult runIsolatedWorkerOn (const juce::String& target, const juce::String& arch,
-                                         const juce::File& workDir, const juce::String& mode = {})
+                                         const juce::File& workDir, const juce::String& mode = {},
+                                         int timeoutMs = kPerPluginTimeoutMs)
 {
     const auto self = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
     juce::StringArray args;
@@ -314,10 +315,10 @@ static WorkerResult runIsolatedWorkerOn (const juce::String& target, const juce:
         r.status = "failed"; r.reason = "spawn failed";
         return r;
     }
-    if (! worker.waitForProcessToFinish (kPerPluginTimeoutMs))
+    if (! worker.waitForProcessToFinish (timeoutMs))
     {
         worker.kill();
-        r.status = "timeout"; r.reason = "killed after " + juce::String (kPerPluginTimeoutMs / 1000) + "s";
+        r.status = "timeout"; r.reason = "killed after " + juce::String (timeoutMs / 1000) + "s";
         r.elapsedMs = (juce::int64) (juce::Time::getMillisecondCounterHiRes() - t0);
         return r;
     }
@@ -1005,9 +1006,15 @@ static int runAuRegistry (const juce::File& outDir, bool enumerateOnly)
 // instance's own description XML plus its identity key and full fingerprint,
 // computed from EXACTLY the two sources ChainHost::completeLoad uses
 // (inst->getPluginDescription() and inst->getParameters().size()), so the
-// catalogue fp equals the in-DAW fp byte for byte. No sample sweep, no network.
-// Exit codes mirror runWorker so runIsolatedWorkerOn classifies them the same;
-// 6 = every type was an instrument (skipped, not a failure).
+// catalogue fp equals the in-DAW fp byte for byte (the gate test). No sample
+// sweep, no network.
+//
+// id.json is written INCREMENTALLY: the enumerated type COUNT is flushed
+// before the slow instantiation loop, and the banked effects are flushed as
+// they complete. So a WaveShell that holds hundreds of plugins and is killed
+// by the timeout still leaves a record of how many types it held and every
+// effect fingerprinted before the cut, instead of vanishing behind one line.
+// Exit codes mirror runWorker; 6 = every type was an instrument (skipped).
 static int runIdWorker (const juce::String& pluginPath, const juce::File& outDir)
 {
     juce::AudioPluginFormatManager fm;
@@ -1022,8 +1029,20 @@ static int runIdWorker (const juce::String& pluginPath, const juce::File& outDir
         fm.getFormat (i)->findAllTypesForFile (found, pluginPath);
     if (found.isEmpty()) return 2;   // no-types
 
+    const auto idFile = outDir.getChildFile ("id.json");
     juce::Array<juce::var> effects;
     int nInstr = 0, instFail = 0, licenseFail = 0;
+    auto flush = [&]
+    {
+        juce::DynamicObject::Ptr root = new juce::DynamicObject();
+        root->setProperty ("types", found.size());     // total enumerated, known up front
+        root->setProperty ("instruments", nInstr);
+        root->setProperty ("effects", effects);         // banked so far
+        writeJsonFileAtomic (idFile, juce::var (root.get()));
+    };
+    flush();   // type count on disk BEFORE the slow loop: a kill still shows it
+
+    int sinceFlush = 0;
     for (auto* d : found)
     {
         if (d->isInstrument) { ++nInstr; continue; }   // skip BEFORE instantiate
@@ -1042,15 +1061,12 @@ static int runIdWorker (const juce::String& pluginPath, const juce::File& outDir
         juce::DynamicObject::Ptr o = new juce::DynamicObject();
         o->setProperty ("ik", echojay::identityKeyForDescription (live));
         o->setProperty ("fp", echojay::fingerprintForDescription (live, pc));
-        o->setProperty ("param_count", pc);
         if (auto x = live.createXml())
             o->setProperty ("desc", x->toString (juce::XmlElement::TextFormat().singleLine()));
         effects.add (juce::var (o.get()));
+        if (++sinceFlush >= 10) { flush(); sinceFlush = 0; }   // bank in batches of 10
     }
-    juce::DynamicObject::Ptr root = new juce::DynamicObject();
-    root->setProperty ("effects", effects);
-    root->setProperty ("instruments", nInstr);
-    writeJsonFileAtomic (outDir.getChildFile ("id.json"), juce::var (root.get()));
+    flush();
 
     if (effects.size() > 0)           return 0;   // ok
     if (nInstr > 0 && instFail == 0)  return 6;    // all instruments, skipped
@@ -1071,26 +1087,64 @@ static void collectVst3Bundles (const juce::File& dir, juce::Array<juce::File>& 
     }
 }
 
+// Map a WorkerResult to a health state + reason. Separated so a timeout or
+// crash that still banked some effects becomes a PARTIAL, not a total loss.
+static void catalogueStateFor (const WorkerResult& r, int typesInBundle, int effectsBanked,
+                               int instruments, juce::String& state, juce::String& reason)
+{
+    if (r.status == "ok")                   { state = "loaded-not-verified"; reason = "loaded and fingerprinted"; }
+    else if (r.status == "instrument")      { state = "skipped-instrument";  reason = "instrument, not a chain effect"; }
+    else if (r.status == "no-types")        { state = "no-types";            reason = "no plugin types found in the bundle"; }
+    else if (r.status == "no-data")         { state = "no-data";             reason = "loaded but exposed nothing usable"; }
+    else if (r.status == "license-refused") { state = "load-failed-licence"; reason = "would not load, refused for authorisation or licence (usually a licence or iLok dongle not present, NOT a broken plugin)"; }
+    else if (r.status == "load-failed")     { state = "load-failed";         reason = "failed to load (not a licence issue)"; }
+    else if (r.status == "timeout")         { state = "timed-out";           reason = "blocked past the timeout, often a modal licence or trial dialog"; }
+    else                                    { state = "crashed";             reason = r.reason.isNotEmpty() ? r.reason : juce::String ("crashed while loading"); }
+
+    // A shell (or any multi-type bundle) that ran out of time or died AFTER
+    // banking some effects is a PARTIAL: the banked effects are kept and the
+    // remainder is named, so hundreds of plugins never disappear behind one
+    // timed-out line.
+    if ((r.status == "timeout" || r.status == "crashed") && effectsBanked > 0)
+    {
+        const int wanted = juce::jmax (effectsBanked, typesInBundle - instruments);
+        state  = "partial";
+        reason = "banked " + juce::String (effectsBanked) + " of " + juce::String (wanted)
+               + " effects before it " + r.status + "; " + juce::String (juce::jmax (0, wanted - effectsBanked))
+               + " not catalogued (the bundle holds " + juce::String (typesInBundle) + " types)";
+    }
+}
+
 // The install-time and rescan catalogue sweep. VST3 only in BUILD FIRST (AU
 // declares identity at the registry already; its param_count pass is the AU
-// half of BUILD SECOND). Four isolated workers at BACKGROUND QoS, so a sweep
-// that fires right after install does not fight the DAW the user just opened.
+// half of BUILD SECOND). Four isolated workers at a NICE-YIELD priority, and
+// LEDGER-BACKED so it resumes across a reboot: each bundle's record is saved
+// the moment its worker returns, and a re-run skips everything already done at
+// the same signature. The three catalogue files are reassembled from the
+// ledger periodically, so a partial catalogue is always on disk.
 static int runCatalogue (const juce::File& outDir)
 {
     // YIELD to the DAW, do not STARVE. Measured 18 Aug 2026: PRIO_DARWIN_BG
     // (true background QoS, efficiency-cores-only, throttled I/O) turned a
-    // 2.6-minute sweep into 87 minutes with 117 false timeouts, because it
-    // starved CPU-bound plugin instantiations that take 2 to 14s under Rosetta
-    // past the 120s cap. A plain nice value lowers priority so four concurrent
-    // workers defer to the DAW under contention, but keeps them on the
-    // performance cores so a slow Rosetta load still finishes. nice 10 is the
-    // yield; the workers, spawned via arch, inherit it. Do NOT switch this back
-    // to PRIO_DARWIN_BG: it was tried and it broke the sweep.
+    // 10.9-minute sweep into 87 minutes with 117 false timeouts, because it
+    // starved CPU-bound instantiations that take 2 to 14s under Rosetta past
+    // the 120s cap. nice 10 lowers priority so four concurrent workers defer
+    // to the DAW under contention, but keeps them on the performance cores.
+    // Do NOT switch this back to PRIO_DARWIN_BG: it was tried and it broke.
     setpriority (PRIO_PROCESS, 0, 10);
 
     outDir.createDirectory();
     auto workRoot = outDir.getChildFile ("scan_work");
     workRoot.deleteRecursively(); workRoot.createDirectory();
+    auto ledgerFile = outDir.getChildFile ("chain_scan_ledger.json");
+    const int curVer = echojay::ExtractorConfig{}.extractorVersion;
+
+    juce::var ledgerVar = readJsonFile (ledgerFile);
+    juce::DynamicObject::Ptr ledger = ledgerVar.getDynamicObject() != nullptr
+        ? juce::DynamicObject::Ptr (ledgerVar.getDynamicObject())
+        : juce::DynamicObject::Ptr (new juce::DynamicObject());
+    juce::DynamicObject::Ptr entries = ledger->getProperty ("bundles").getDynamicObject();
+    if (entries == nullptr) { entries = new juce::DynamicObject(); ledger->setProperty ("bundles", juce::var (entries.get())); }
 
     juce::Array<juce::File> bundles;
     {
@@ -1102,33 +1156,92 @@ static int runCatalogue (const juce::File& outDir)
     const int total = bundles.size();
     const auto startedAt = juce::Time::currentTimeMillis();
 
-    auto progressFile = outDir.getChildFile ("chain_scan_progress.json");
     juce::CriticalSection lock;
-    juce::KnownPluginList list;
-    juce::DynamicObject::Ptr health = new juce::DynamicObject();
-    juce::DynamicObject::Ptr id2fp  = new juce::DynamicObject();
-    int okN=0, instrN=0, crashN=0, timeoutN=0, notypesN=0, loadfailN=0, licN=0, otherN=0;
     std::atomic<int> next {0}, done {0};
     juce::String currentName;
 
-    auto writeProgress = [&] (const juce::String& current)
+    auto isDone = [&] (const juce::var& e, const juce::String& sig) -> bool
     {
-        juce::DynamicObject::Ptr p = new juce::DynamicObject();
-        p->setProperty ("total", total);
-        p->setProperty ("done", done.load());
-        p->setProperty ("current", current);
-        p->setProperty ("ok", okN);
-        p->setProperty ("instruments", instrN);
-        p->setProperty ("crashed", crashN);
-        p->setProperty ("timedOut", timeoutN);
-        p->setProperty ("noTypes", notypesN);
-        p->setProperty ("loadFailed", loadfailN + licN);
-        p->setProperty ("startedAt", startedAt);
-        p->setProperty ("updatedAt", juce::Time::currentTimeMillis());
-        p->setProperty ("finished", done.load() >= total);
-        writeJsonFileAtomic (progressFile, juce::var (p.get()));
+        const auto st = e.getProperty ("state", juce::var()).toString();
+        return e.getProperty ("sig", juce::var()).toString() == sig
+            && (int) e.getProperty ("ver", 0) == curVer
+            && st.isNotEmpty() && st != "started";
     };
-    writeProgress ({});
+    auto saveLedger = [&] { writeJsonFileAtomic (ledgerFile, juce::var (ledger.get())); };
+
+    auto reassemble = [&]   // caller holds lock
+    {
+        juce::KnownPluginList list;
+        juce::DynamicObject::Ptr id2fp  = new juce::DynamicObject();
+        juce::DynamicObject::Ptr health = new juce::DynamicObject();
+        for (auto& p : entries->getProperties())
+        {
+            const auto& e = p.value;
+            juce::DynamicObject::Ptr h = new juce::DynamicObject();
+            for (const char* k : { "state", "reason", "blockMs", "mtime", "types", "typesLost", "scannedAt" })
+                h->setProperty (juce::Identifier (k), e.getProperty (juce::Identifier (k), juce::var()));
+            health->setProperty (p.name, juce::var (h.get()));
+            if (auto* eff = e.getProperty ("effects", juce::var()).getArray())
+                for (auto& ev : *eff)
+                {
+                    const auto xml = ev.getProperty ("desc", juce::var()).toString();
+                    if (xml.isNotEmpty())
+                        if (auto x = juce::XmlDocument::parse (xml))
+                        { juce::PluginDescription pd; if (pd.loadFromXml (*x)) list.addType (pd); }
+                    const auto ik = ev.getProperty ("ik", juce::var()).toString();
+                    const auto fp = ev.getProperty ("fp", juce::var()).toString();
+                    if (ik.isNotEmpty() && fp.isNotEmpty()) id2fp->setProperty (juce::Identifier (ik), fp);
+                }
+        }
+        if (auto xml = list.createXml())
+        { auto tmp = outDir.getChildFile ("chain_plugins_scan.xml.tmp"); xml->writeTo (tmp);
+          tmp.moveFileTo (outDir.getChildFile ("chain_plugins_scan.xml")); }
+        juce::DynamicObject::Ptr fr = new juce::DynamicObject();
+        fr->setProperty ("identityToFp", juce::var (id2fp.get()));
+        writeJsonFileAtomic (outDir.getChildFile ("chain_fp_scan.json"), juce::var (fr.get()));
+        writeJsonFileAtomic (outDir.getChildFile ("chain_health.json"), juce::var (health.get()));
+    };
+
+    auto writeProgress = [&] (const juce::String& current)   // caller holds lock
+    {
+        int ok=0, instr=0, crashed=0, timedOut=0, notypes=0, loadfail=0, partial=0;
+        for (auto& p : entries->getProperties())
+        {
+            const auto st = p.value.getProperty ("state", juce::var()).toString();
+            if      (st == "loaded-not-verified") ++ok;
+            else if (st == "skipped-instrument")  ++instr;
+            else if (st == "crashed")             ++crashed;
+            else if (st == "timed-out")           ++timedOut;
+            else if (st == "no-types")            ++notypes;
+            else if (st == "load-failed" || st == "load-failed-licence") ++loadfail;
+            else if (st == "partial")             ++partial;
+        }
+        juce::DynamicObject::Ptr pr = new juce::DynamicObject();
+        pr->setProperty ("total", total);
+        pr->setProperty ("done", done.load());
+        pr->setProperty ("current", current);
+        pr->setProperty ("ok", ok);
+        pr->setProperty ("partial", partial);
+        pr->setProperty ("instruments", instr);
+        pr->setProperty ("crashed", crashed);
+        pr->setProperty ("timedOut", timedOut);
+        pr->setProperty ("noTypes", notypes);
+        pr->setProperty ("loadFailed", loadfail);
+        pr->setProperty ("startedAt", startedAt);
+        pr->setProperty ("updatedAt", juce::Time::currentTimeMillis());
+        pr->setProperty ("finished", done.load() >= total);
+        writeJsonFileAtomic (outDir.getChildFile ("chain_scan_progress.json"), juce::var (pr.get()));
+    };
+
+    // Count what the ledger already holds (resume): those bundles are not re-run.
+    {
+        const juce::ScopedLock sl (lock);
+        for (int i = 0; i < total; ++i)
+            if (isDone (entries->getProperty (juce::Identifier (bundles[i].getFullPathName())),
+                        bundleSignature (bundles[i])))
+                done.fetch_add (1);
+        writeProgress ({});
+    }
 
     auto worker = [&]
     {
@@ -1137,68 +1250,58 @@ static int runCatalogue (const juce::File& outDir)
             const int i = next.fetch_add (1);
             if (i >= total) break;
             const auto bundle = bundles[(int) i];
+            const auto key = bundle.getFullPathName();
+            const auto sig = bundleSignature (bundle);
             {
                 const juce::ScopedLock sl (lock);
+                if (isDone (entries->getProperty (juce::Identifier (key)), sig))
+                    continue;   // done at this signature on an earlier run: skip
+                juce::DynamicObject::Ptr s = new juce::DynamicObject();
+                s->setProperty ("sig", sig); s->setProperty ("ver", curVer); s->setProperty ("state", "started");
+                entries->setProperty (juce::Identifier (key), juce::var (s.get()));
+                saveLedger();
                 currentName = bundle.getFileNameWithoutExtension();
                 writeProgress (currentName);
             }
             auto wd = workRoot.getChildFile (juce::String (i));
             wd.createDirectory();
-            const auto r = runIsolatedWorkerOn (bundle.getFullPathName(), pickArch (bundle), wd, "--id-worker");
+            // A shell is not one plugin, it is hundreds: WaveShell-VST3 9.6
+            // holds 487, and findAllTypesForFile alone runs ~200s on it, past
+            // the 120s cap. A flat per-bundle timeout is the wrong instrument
+            // there, so shells get a much larger budget; the incremental id.json
+            // banks their sub-plugins as they fingerprint, and typesLost records
+            // any remainder, so a shell can never vanish behind one timed-out
+            // line.
+            const bool isShell = key.containsIgnoreCase ("WaveShell");
+            const auto r = runIsolatedWorkerOn (key, pickArch (bundle), wd, "--id-worker",
+                                                isShell ? 900 * 1000 : kPerPluginTimeoutMs);
+            const auto idJson = readJsonFile (wd.getChildFile ("id.json"));   // present even on a timeout (incremental)
 
-            // Health state: distinguish "probe never ran" style outcomes and
-            // keep a licence wall separate from a broken plugin. blockMs and
-            // the bundle mtime ride EVERY entry (mtime so an update invalidates
-            // it on the next sweep; blockMs so the panel can say "blocked 48s,
-            // often a licence or trial dialog" with no probe at all).
+            const int types = (int) idJson.getProperty ("types", 0);
+            const int instr = (int) idJson.getProperty ("instruments", 0);
+            juce::Array<juce::var> effects;
+            if (auto* eff = idJson.getProperty ("effects", juce::var()).getArray()) effects = *eff;
             juce::String state, reason;
-            if      (r.status == "ok")              { state = "loaded-not-verified"; reason = "loaded and fingerprinted"; }
-            else if (r.status == "instrument")      { state = "skipped-instrument";  reason = "instrument, not a chain effect"; }
-            else if (r.status == "no-types")        { state = "no-types";            reason = "no plugin types found in the bundle"; }
-            else if (r.status == "no-data")         { state = "no-data";             reason = "loaded but exposed nothing usable"; }
-            else if (r.status == "license-refused") { state = "load-failed-licence"; reason = "would not load, refused for authorisation or licence (usually a licence or iLok dongle not present, NOT a broken plugin)"; }
-            else if (r.status == "load-failed")     { state = "load-failed";         reason = "failed to load (not a licence issue)"; }
-            else if (r.status == "timeout")         { state = "timed-out";           reason = "blocked past the timeout, often a modal licence or trial dialog"; }
-            else                                    { state = "crashed";             reason = r.reason.isNotEmpty() ? r.reason : juce::String ("crashed while loading"); }
+            catalogueStateFor (r, types, effects.size(), instr, state, reason);
+            const int lost = juce::jmax (0, (types - instr) - effects.size());
 
-            juce::DynamicObject::Ptr h = new juce::DynamicObject();
-            h->setProperty ("state", state);
-            h->setProperty ("reason", reason);
-            h->setProperty ("blockMs", (juce::int64) r.elapsedMs);
-            h->setProperty ("mtime", bundle.getLastModificationTime().toMilliseconds());
-            h->setProperty ("scannedAt", juce::Time::currentTimeMillis());
-
-            auto idJson = readJsonFile (wd.getChildFile ("id.json"));
             {
                 const juce::ScopedLock sl (lock);
-                if (auto* eff = idJson.getProperty ("effects", juce::var()).getArray())
-                    for (auto& ev : *eff)
-                    {
-                        const auto xml = ev.getProperty ("desc", juce::var()).toString();
-                        if (xml.isNotEmpty())
-                            if (auto x = juce::XmlDocument::parse (xml))
-                            {
-                                juce::PluginDescription pd;
-                                if (pd.loadFromXml (*x)) list.addType (pd);
-                            }
-                        const auto ik = ev.getProperty ("ik", juce::var()).toString();
-                        const auto fp = ev.getProperty ("fp", juce::var()).toString();
-                        if (ik.isNotEmpty() && fp.isNotEmpty())
-                            id2fp->setProperty (juce::Identifier (ik), fp);
-                    }
-                if (r.status == "ok")                    ++okN;
-                else if (r.status == "instrument")       ++instrN;
-                else if (r.status == "no-types")         ++notypesN;
-                else if (r.status == "timeout")          ++timeoutN;
-                else if (r.status == "load-failed")      ++loadfailN;
-                else if (r.status == "license-refused")  ++licN;
-                else if (r.status == "crashed" || r.status == "failed") ++crashN;
-                else                                     ++otherN;
-                health->setProperty (juce::Identifier (bundle.getFullPathName()), juce::var (h.get()));
+                juce::DynamicObject::Ptr e = new juce::DynamicObject();
+                e->setProperty ("sig", sig); e->setProperty ("ver", curVer);
+                e->setProperty ("state", state); e->setProperty ("reason", reason);
+                e->setProperty ("blockMs", (juce::int64) r.elapsedMs);
+                e->setProperty ("mtime", bundle.getLastModificationTime().toMilliseconds());
+                e->setProperty ("types", types); e->setProperty ("typesLost", lost);
+                e->setProperty ("scannedAt", juce::Time::currentTimeMillis());
+                e->setProperty ("effects", effects);
+                entries->setProperty (juce::Identifier (key), juce::var (e.get()));
+                saveLedger();
+                done.fetch_add (1);
+                if (done.load() % 20 == 0) reassemble();   // periodic partial flush
+                writeProgress (currentName);
             }
             wd.deleteRecursively();
-            done.fetch_add (1);
-            { const juce::ScopedLock sl (lock); writeProgress (currentName); }
         }
     };
 
@@ -1206,29 +1309,27 @@ static int runCatalogue (const juce::File& outDir)
     for (int t = 0; t < 4; ++t) pool.emplace_back (worker);
     for (auto& th : pool) th.join();
     workRoot.deleteRecursively();
+    { const juce::ScopedLock sl (lock); reassemble(); writeProgress ({}); }
 
-    // Outputs, all atomic, all local. The helper OWNS these files: chain_
-    // plugins_scan.xml (its sole writer, unioned with the DAW's chain_plugins
-    // .xml at read time) and chain_health.json (the health + crash record the
-    // withheld panel reads).
-    if (auto xml = list.createXml())
+    int ok=0, part=0, instrN=0, crashN=0, toN=0, ntN=0, lfN=0, lostN=0;
+    for (auto& p : entries->getProperties())
     {
-        auto tmp = outDir.getChildFile ("chain_plugins_scan.xml.tmp");
-        xml->writeTo (tmp);
-        tmp.moveFileTo (outDir.getChildFile ("chain_plugins_scan.xml"));
+        const auto st = p.value.getProperty ("state", juce::var()).toString();
+        lostN += (int) p.value.getProperty ("typesLost", 0);
+        if      (st == "loaded-not-verified") ++ok;
+        else if (st == "partial")             ++part;
+        else if (st == "skipped-instrument")  ++instrN;
+        else if (st == "crashed")             ++crashN;
+        else if (st == "timed-out")           ++toN;
+        else if (st == "no-types")            ++ntN;
+        else if (st == "load-failed" || st == "load-failed-licence") ++lfN;
     }
-    { juce::DynamicObject::Ptr r = new juce::DynamicObject();
-      r->setProperty ("identityToFp", juce::var (id2fp.get()));
-      writeJsonFileAtomic (outDir.getChildFile ("chain_fp_scan.json"), juce::var (r.get())); }
-    writeJsonFileAtomic (outDir.getChildFile ("chain_health.json"), juce::var (health.get()));
-    writeProgress ({});
-
     const auto wallS = (juce::Time::currentTimeMillis() - startedAt) / 1000;
     std::cout << "catalogue: " << total << " bundles in " << wallS << "s"
-              << "  ok=" << okN << " instruments=" << instrN
-              << " crashed=" << crashN << " timedOut=" << timeoutN
-              << " noTypes=" << notypesN << " loadFailed=" << loadfailN
-              << " licence=" << licN << " other=" << otherN << "\n";
+              << "  ok=" << ok << " partial=" << part << " instruments=" << instrN
+              << " crashed=" << crashN << " timedOut=" << toN
+              << " noTypes=" << ntN << " loadFailed=" << lfN
+              << " typesLost=" << lostN << "\n";
     return 0;
 }
 
