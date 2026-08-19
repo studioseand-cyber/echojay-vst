@@ -23377,8 +23377,6 @@ void EchoJayEditor::handleChainRecall(const juce::String& id, const juce::String
     for (const auto& r : refs)
         if (r.id == id) { known = true; resolvedName = r.name; break; }
 
-    const int rackSlots = processorRef.getChainHost().getNumSlots();
-
     // ---- channel-mismatch advisory (15 Aug 2026) ----------------------
     // Consumed HERE, whatever happens next: the held text describes this
     // recall and must not leak into a later one. When it is present and a
@@ -23415,29 +23413,23 @@ void EchoJayEditor::handleChainRecall(const juce::String& id, const juce::String
         EchoJay_NSLog("EJRecall: mismatch advisory dropped - recall id refused,"
                       " nothing will load");
 
-    switch (EJRecall::decide(known, rackSlots))
+    if (! known)
     {
-        case EJRecall::Decision::Refuse:
-            EchoJay_NSLog(("EJRecall: resolved=no reason=id-not-in-local-list"
-                           " source=" + source).toRawUTF8());
-            appendLocalResultBubble(
-                (name.isNotEmpty() ? "\"" + name + "\"" : juce::String("That chain"))
-                + " isn't in your saved chains list, so nothing was loaded."
-                  " Open the Chains sidebar to see what is saved.");
-            return;
-
-        case EJRecall::Decision::LoadDirect:
-            EchoJay_NSLog(("EJRecall: resolved=yes reason=" + source).toRawUTF8());
-            EchoJay_NSLog("EJRecall: replace ask shown=no rack=0 answer=load");
-            recallLoadChain(id, resolvedName.isNotEmpty() ? resolvedName : name);
-            return;
-
-        case EJRecall::Decision::AskReplace:
-            EchoJay_NSLog(("EJRecall: resolved=yes reason=" + source).toRawUTF8());
-            presentRecallReplaceAsk(id, resolvedName.isNotEmpty() ? resolvedName : name,
-                                    rackSlots);
-            return;
+        EchoJay_NSLog(("EJRecall: resolved=no reason=id-not-in-local-list"
+                       " source=" + source).toRawUTF8());
+        appendLocalResultBubble(
+            (name.isNotEmpty() ? "\"" + name + "\"" : juce::String("That chain"))
+            + " isn't in your saved chains list, so nothing was loaded."
+              " Open the Chains sidebar to see what is saved.");
+        return;
     }
+
+    // Item 4: the AI recall now shares the ONE guarded entry, so it guards and
+    // targets the active view exactly as a manual recall does. Previously it
+    // counted only the main rack and always loaded there, which is how a recall
+    // replaced a Link's populated rack with no warning.
+    EchoJay_NSLog(("EJRecall: resolved=yes reason=" + source).toRawUTF8());
+    beginRecall(id, resolvedName.isNotEmpty() ? resolvedName : name);
 }
 
 // Ask before replacing, through the ASK shelf: the presentCompareScopeAsk
@@ -23445,6 +23437,35 @@ void EchoJayEditor::handleChainRecall(const juce::String& id, const juce::String
 // never send a chat turn. NOT showOkCancelBox and NOT any AlertWindow:
 // modals are banned on host-driven paths (in Logic the window opens BEHIND
 // the plugin and blocks all input; see the Link ack consumer's note).
+void EchoJayEditor::beginRecall(const juce::String& id, const juce::String& name)
+{
+    // ONE read of the active chain view, feeding both the guard and the target.
+    // Empty uid = the main rack; a uid = the Link currently being viewed.
+    const juce::String uid = chainViewUid();
+    const bool toLink = uid.isNotEmpty();
+    const auto view = toLink ? chainRackView() : ChainRackView{};
+    const int rackSlots = toLink ? (int) view.slots.size()
+                                 : processorRef.getChainHost().getNumSlots();
+
+    switch (EJRecall::decide(true, rackSlots))   // callers pass a known id
+    {
+        case EJRecall::Decision::AskReplace:
+            EchoJay_NSLog(("EJRecall: replace ask shown=yes rack=" + juce::String(rackSlots)
+                           + (toLink ? " target=link" : " target=main")).toRawUTF8());
+            presentRecallReplaceAsk(id, name, rackSlots, uid,
+                                    toLink ? view.name : juce::String());
+            return;
+        case EJRecall::Decision::LoadDirect:
+            EchoJay_NSLog(juce::String("EJRecall: replace ask shown=no rack=0 answer=load")
+                          .toRawUTF8());
+            if (toLink) recallLoadChainToLink(uid, id, name);
+            else        recallLoadChain(id, name);
+            return;
+        case EJRecall::Decision::Refuse:
+            return;   // decide() only refuses an unknown id; callers pass known
+    }
+}
+
 void EchoJayEditor::presentRecallReplaceAsk(const juce::String& id,
                                             const juce::String& name, int rackSlots,
                                             const juce::String& targetUid,
@@ -27879,8 +27900,8 @@ void EchoJayEditor::showSavedChainsMenu()
             {
                 if (safeThis == nullptr || choice <= 0
                     || choice > (int)ids.size()) return;
-                safeThis->openSavedChain(ids[(size_t)choice - 1],
-                                         names[(size_t)choice - 1]);
+                safeThis->beginRecall(ids[(size_t)choice - 1],   // Item 4: guarded + active-view target
+                                      names[(size_t)choice - 1]);
             });
     });
 }
@@ -27944,6 +27965,9 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
         {
             if (safeThis == nullptr) return;
             auto& ch = safeThis->processorRef.getChainHost();
+            // Item 4: archive the live rack BEFORE the clear, so a recall over a
+            // populated rack is recoverable from chain_archive/. No-op if empty.
+            ch.archiveCurrentRack("replaced by recall: " + name);
             for (int i = ch.getNumSlots() - 1; i >= 0; --i) ch.removeSlot(i);
             safeThis->chainSelectedSlot_ = -1;
             safeThis->chainListPanel.rebuild(ch.getAllSlotInfos(), -1);
@@ -30132,7 +30156,7 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         // the menu is for discovery.
         if (chainRowStarRects_[(size_t)i].contains(pos)) { toggleChainFavourite(i); return; }
         const auto& row = chainDisplayRows_[(size_t)i];
-        if (row.id.isNotEmpty()) openSavedChain(row.id, row.name);
+        if (row.id.isNotEmpty()) beginRecall(row.id, row.name);   // Item 4: guarded + active-view target
         return;
     }
 

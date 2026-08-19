@@ -847,6 +847,15 @@ public:
                            std::function<bool(const juce::String&)> isDisabledByName = {},
                            const juce::var& paramsObj = {});   // stateParams, keyed by saved n; see getCachedSlotParamsVar
 
+    // Item 4: snapshot the CURRENT rack to the chain_archive/ ring BEFORE it is
+    // overwritten, so a recall over a populated rack is recoverable. Serialises
+    // exactly what sendChainSave does (slots + per-slot state + stateParams),
+    // so restore is the existing restoreSavedChain path. No-op on an empty
+    // rack. Called from both the main clear (openSavedChain) and the Link clear
+    // (clearChainInternal): one method, both processes, so the two cannot
+    // drift. Kept as a count-bounded ring (20) with a total-size cap.
+    void archiveCurrentRack(const juce::String& label);
+
     // TWO CAP PAIRS, DELIBERATELY DIFFERENT. Both in decoded bytes.
     //
     // SESSION: written into the user's project file on every save. Was 128 KB

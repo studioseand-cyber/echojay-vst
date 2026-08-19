@@ -3092,6 +3092,12 @@ private:
                                  int rackSlots,
                                  const juce::String& targetUid  = {},
                                  const juce::String& targetName = {});
+    // Item 4: THE single recall entry. Reads the active chain view ONCE and
+    // uses it for both the overwrite guard (that rack's slot count) and the
+    // target (main vs the viewed Link), so guard and target cannot drift.
+    // Confirms before replacing a populated rack; the archive happens inside
+    // the clear regardless. Callers pass an id already known to be recallable.
+    void beginRecall(const juce::String& id, const juce::String& name);
     // The channel-mismatch advisory ask (15 Aug 2026): ONE client-authored
     // ASK whose question is the server's heads-up text and whose chips are
     // "Load it here" / "Choose another channel" - it replaces the plain

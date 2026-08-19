@@ -1431,6 +1431,11 @@ juce::PluginDescription LinkProcessor::resolveChainPlugin(const juce::String& na
 void LinkProcessor::clearChainInternal()
 {
     if (onChainAboutToChange) onChainAboutToChange();   // editors close first
+    // Item 4: archive the Link's live rack before it is replaced, the same
+    // protection the main rack gets. clearChainInternal is the whole-rack
+    // replace point (per-slot edits use removeSlot directly), so this fires on
+    // exactly the destructive event and no-ops on an empty rack.
+    chainHost.archiveCurrentRack("chain replaced (Link)");
     for (int i = chainHost.getNumSlots() - 1; i >= 0; --i)
         chainHost.removeSlot(i);
     chainModel.clear();

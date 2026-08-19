@@ -5898,6 +5898,55 @@ juce::var ChainHost::buildChainSlotsVar() const
     return juce::var(arr);
 }
 
+void ChainHost::archiveCurrentRack(const juce::String& label)
+{
+    if (slots_.empty()) return;   // nothing populated: nothing to protect
+
+    // Same capture path a deliberate library save uses (sendChainSave): force
+    // a fresh capture, then serialise slots + per-slot state + the VST3 param
+    // sidecar. Restore is the existing restoreSavedChain contract.
+    captureAllSlotStatesNow();
+
+    const juce::int64 now = juce::Time::getCurrentTime().toMilliseconds();
+
+    auto root = std::make_unique<juce::DynamicObject>();
+    root->setProperty("t",     (double) now);
+    root->setProperty("label", label);
+    root->setProperty("slots", buildChainSlotsVar());
+    if (auto state = getCachedSlotStatesVar(kApiStateMaxSlotBytes, kApiStateMaxTotalBytes,
+                                            "chain archive"); ! state.isVoid())
+        root->setProperty("state", state);
+    if (auto sp = getCachedSlotParamsVar(); ! sp.isVoid())
+        root->setProperty("stateParams", sp);
+
+    auto dir = appSupportDir().getChildFile("chain_archive");
+    dir.createDirectory();
+
+    auto safe = juce::File::createLegalFileName(label).substring(0, 40).trim();
+    if (safe.isEmpty()) safe = "rack";
+    auto f = dir.getChildFile(juce::String(now) + "_" + safe + ".json");
+    f.replaceWithText(juce::JSON::toString(juce::var(root.release()), true));
+
+    EchoJay_NSLog(("EJArchive: saved rack (" + juce::String((int) slots_.size())
+                   + " slots) before overwrite -> " + f.getFileName()).toRawUTF8());
+
+    // COUNT ring (keep newest 20) then a SIZE cap (prune oldest until under
+    // budget). The ms-epoch filename prefix sorts lexically == chronologically,
+    // so File's path order is oldest-first.
+    auto files = dir.findChildFiles(juce::File::findFiles, false, "*.json");
+    files.sort();
+    constexpr int kKeep = 20;
+    while (files.size() > kKeep) { files.getReference(0).deleteFile(); files.remove(0); }
+    constexpr juce::int64 kMaxBytes = 100LL * 1024 * 1024;
+    juce::int64 total = 0;
+    for (auto& e : files) total += e.getSize();
+    for (int i = 0; i < files.size() && total > kMaxBytes; ++i)
+    {
+        total -= files.getReference(i).getSize();
+        files.getReference(i).deleteFile();
+    }
+}
+
 void ChainHost::restoreSavedChain(const juce::var& slotsArr, const juce::var& stateObj,
                                   std::function<void()> onSlotSettled,
                                   std::function<bool(const juce::String&)> isDisabledByName,
