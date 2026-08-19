@@ -182,6 +182,27 @@ int main()
         std::printf ("  ok    payload validation: two legal shapes, garbage rejected\n");
     }
 
+    // ---- openChat payload validation ----------------------------------------
+    {
+        using echojay::validateOpenChat;
+        juce::String c;
+        check (validateOpenChat (one ("chatId", "chat_abc-1"), c).isEmpty() && c == "chat_abc-1",
+               "openChat accepts { chatId } and fills it");
+        auto bad = [&] (juce::var p, const char* what)
+        {
+            juce::String cc;
+            check (validateOpenChat (p, cc) == "bad_payload", what);
+        };
+        bad (juce::var (new juce::DynamicObject()),               "openChat rejects no chatId");
+        bad (one ("chatId", ""),                                  "openChat rejects empty chatId");
+        bad (one ("chatId", juce::String::repeatedString ("a", 65)), "openChat rejects over-length (>64)");
+        bad (one ("chatId", "has space"),                        "openChat rejects illegal character");
+        bad (one ("chatId", juce::var (123)),                    "openChat rejects wrong type");
+        bad (juce::var ("bare string"),                          "openChat rejects non-object");
+        bad (juce::var(),                                         "openChat rejects void");
+        std::printf ("  ok    openChat payload validation\n");
+    }
+
     // ---- the busy guard: modal OR within-window, self-healing ---------------
     {
         using echojay::loadChainBusy;

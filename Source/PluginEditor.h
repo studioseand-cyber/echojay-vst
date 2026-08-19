@@ -292,19 +292,22 @@ private:
     bool dashWebFailedThisSelection_ = false;   // no retry until the next Dashboard selection
     void reconcileDashboardWeb();               // lazy construct/destroy of dashWeb_
 
-    // Stage 3: the loadChain bridge guard (§8 idempotency). NOT a boolean — that
-    // leaks on two unobservable paths (a user cancelling openSavedChain's
+    // Stage 3: the bridge navigation guard (§8 idempotency), shared by loadChain
+    // AND openChat — both switch tabs and so tear down the webview. NOT a boolean
+    // (that leaks on two unobservable paths: a user cancelling openSavedChain's
     // confirm, and openSavedChain's own internal fetch failing). Instead a
     // request is busy if a modal is up OR the last accepted request was within
-    // the window (echojay::loadChainBusy). This holds the timestamp of the last
-    // accepted request; 0 means none. The modal test covers the confirm exactly;
-    // the window covers the async import/fetch and self-heals. Explicit resets to
-    // 0 (error paths, webview lifecycle in reconcileDashboardWeb) keep the common
-    // cases from waiting out the window.
-    juce::uint32 chainLoadAcceptedMs_ = 0;
+    // the window (echojay::loadChainBusy). Holds the timestamp of the last
+    // accepted bridge navigation; 0 means none. Explicit resets to 0 (error
+    // paths, webview lifecycle in reconcileDashboardWeb) keep the common cases
+    // from waiting out the window.
+    juce::uint32 bridgeNavAcceptedMs_ = 0;
+    bool bridgeAcceptOrBusy();   // true = busy (reject); false = stamped + accepted
     void bridgeLoadChain(const juce::String& chainId, const juce::String& slug,
                          std::function<void(bool accepted, juce::String reason)> answer);
     void bridgeOpenChainById(const juce::String& chainId);   // fetch name, then the ONE loader
+    void bridgeOpenChat(const juce::String& chatId,
+                        std::function<void(bool accepted, juce::String reason)> answer);
     juce::int64                dashFetchedAtMs_ = 0;   // 0 = never fetched
     int                        dashTtlSeconds_  = 60;  // from payload.ttl
     bool                       dashLoading_     = false;

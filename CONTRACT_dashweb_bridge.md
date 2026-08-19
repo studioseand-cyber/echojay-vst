@@ -7,10 +7,10 @@ shape below is quoted from the JUCE 8.0.12 source in the plugin
 (`modules/juce_gui_extra`), not recalled.
 
 The plugin loads `/dashboard?embed=plugin` in a `juce::WebBrowserComponent`
-(WKWebView on macOS) with native integration enabled and **exactly one** native
-function registered: `loadChain`. No other §8 function exists yet — an
-unregistered function is cleanly feature-detectable (see below); do not assume
-`openChat`, `openBrowser`, `setBadge`, etc. They arrive in later stages.
+(WKWebView on macOS) with native integration enabled and **two** native
+functions registered: `loadChain` and `openChat`. No other §8 function exists
+yet — an unregistered function is cleanly feature-detectable (see below); do not
+assume `openProject`, `openBrowser`, `setBadge`, etc. They arrive in later stages.
 
 ---
 
@@ -24,8 +24,11 @@ native function names are placed in
 array is:
 
 ```js
-window.__JUCE__.initialisationData.__juce__functions // => ["loadChain"]
+window.__JUCE__.initialisationData.__juce__functions // => ["loadChain", "openChat"]
 ```
+
+Feature-detect **each** function you call by name; do not assume that
+`loadChain` being present means everything is.
 
 In an ordinary browser `window.__JUCE__` is **undefined** (JUCE's
 `check_native_interop.js` only defines a placeholder with EMPTY arrays once the
@@ -68,6 +71,15 @@ Under the hood (JUCE `index.js`), the call emits a `__juce__invoke` event with
 the object. If you cannot use the frontend module, replicate that protocol
 exactly — but the module is the supported path.
 
+**Wire-protocol pin — re-verify on any JUCE upgrade.** The above (`__juce__invoke`
+with `{ name, params, resultId }` out, `__juce__complete` with `{ promiseId,
+result }` back, resolving the `getNativeFunction` promise) is read from JUCE
+**8.0.12** source (`modules/juce_gui_extra/native/javascript/index.js`,
+`misc/juce_WebBrowserComponent.cpp`). It is a private JUCE detail, not a stable
+API. **If the plugin's JUCE version changes, re-verify these event names and
+shapes against the new source before trusting this document** — a silent rename
+there breaks every bridge call with no compile error on either side.
+
 ### Payload — EXACTLY ONE of `chainId` / `slug`
 
 The first (and only meaningful) argument is a plain object. The plugin validates
@@ -88,6 +100,23 @@ it **hard, natively, before anything else** (`validateLoadChain` in
 Use `slug` for someone else's shared chain (Trending / Recently shared /
 Featured / feed rows / message attachments); use `chainId` for the user's own
 chains. The plugin does the share-import for a `slug` itself.
+
+### `openChat` — `{ chatId: string }`
+
+Registered alongside `loadChain`; call it the same way:
+
+```js
+const openChat = getNativeFunction("openChat");
+const result = await openChat({ chatId });   // { accepted:true } | { accepted:false, reason }
+```
+
+Payload: an object with a single `chatId` string — non-empty, ≤ 64 chars,
+`[A-Za-z0-9_-]` only, validated natively (`validateOpenChat`). The plugin
+switches to its native Chat tab and selects that chat. Like `loadChain` this is
+an **acknowledgement** (§4) — the tab switch destroys the webview, and there is
+nothing to report back. Same `busy` / `bad_payload` semantics as `loadChain`
+(§5), and the **same shared in-flight guard**: a `loadChain` in flight busies an
+`openChat` and vice versa (both navigate away and tear the webview down).
 
 ## 3. Required page behaviour
 
@@ -129,7 +158,7 @@ There are no other reasons this stage. Treat any unknown `reason` as
 
 ## 6. Not in this contract (later stages)
 
-`openChat`, `openProject`, `openBrowser` (with the allowlist re-check),
-`setBadge`, `focusChanged`, and messaging. Do not feature-detect or call them;
-they are not registered, so `bridgeHasLoadChain()`-style checks for them return
-false by design.
+`openProject`, `openBrowser` (with the allowlist re-check), `setBadge`,
+`focusChanged`, and messaging. Do not feature-detect or call them; they are not
+registered, so `__juce__functions.includes(...)` for them returns false by
+design.

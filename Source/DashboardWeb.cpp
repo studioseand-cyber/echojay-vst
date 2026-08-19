@@ -103,6 +103,16 @@ juce::String validateLoadChain (const juce::var& payload, LoadChainRequest& req)
     return {};
 }
 
+juce::String validateOpenChat (const juce::var& payload, juce::String& chatId)
+{
+    auto* obj = payload.getDynamicObject();
+    if (obj == nullptr) return "bad_payload";
+    const juce::var v = obj->getProperty ("chatId");
+    if (! v.isString() || ! isCleanId (v.toString(), 64)) return "bad_payload";
+    chatId = v.toString();
+    return {};
+}
+
 bool loadChainBusy (int numModalComponents, juce::int64 elapsedMs, juce::int64 windowMs)
 {
     return numModalComponents > 0 || (elapsedMs >= 0 && elapsedMs < windowMs);
@@ -202,6 +212,13 @@ DashboardWeb::DashboardWeb()
             {
                 if (safe == nullptr) { complete (juce::var()); return; }
                 safe->handleLoadChain (args, std::move (complete));
+            })
+        .withNativeFunction ("openChat",
+            [safe] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                if (safe == nullptr) { complete (juce::var()); return; }
+                safe->handleOpenChat (args, std::move (complete));
             });
 
     web_ = std::make_unique<Inner> (options);
@@ -318,6 +335,31 @@ void DashboardWeb::handleLoadChain (const juce::Array<juce::var>& args,
     // onLoadChain doc). completion may be called from any thread per JUCE; the
     // editor answers synchronously on the message thread.
     onLoadChain (req.chainId, req.slug,
+        [completion, reply] (bool accepted, juce::String r)
+        {
+            completion (reply (accepted, r));
+        });
+}
+
+void DashboardWeb::handleOpenChat (const juce::Array<juce::var>& args,
+                                   std::function<void (juce::var)> completion)
+{
+    auto reply = [] (bool accepted, const juce::String& reason)
+    {
+        auto o = std::make_unique<juce::DynamicObject>();
+        o->setProperty ("accepted", accepted);
+        if (! accepted) o->setProperty ("reason", reason);
+        return juce::var (o.release());
+    };
+
+    juce::String chatId;
+    const juce::var payload = args.isEmpty() ? juce::var() : args.getReference (0);
+    const auto reason = validateOpenChat (payload, chatId);
+    if (reason.isNotEmpty()) { completion (reply (false, reason)); return; }
+
+    if (onOpenChat == nullptr) { completion (reply (false, "bad_payload")); return; }
+
+    onOpenChat (chatId,
         [completion, reply] (bool accepted, juce::String r)
         {
             completion (reply (accepted, r));

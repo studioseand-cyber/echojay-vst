@@ -70,6 +70,12 @@ struct LoadChainRequest { juce::String chainId, slug; };
     violation returns "bad_payload". */
 juce::String validateLoadChain (const juce::var& payload, LoadChainRequest& req);
 
+/** Validate an openChat payload. Returns an empty string on success (and fills
+    `chatId`), or "bad_payload". Same hard native validation as loadChain: an
+    object with a `chatId` string, non-empty, <= 64 chars, [A-Za-z0-9_-] only.
+    Pure; tools/dashweb_test drives it. */
+juce::String validateOpenChat (const juce::var& payload, juce::String& chatId);
+
 /** The loadChain busy test — PURE, so tools/dashweb_test drives it. A request is
     busy if a modal is up (a confirm is showing) OR the last accepted request was
     within `windowMs`. Two tests, deliberately, because a single boolean leaks:
@@ -124,6 +130,12 @@ public:
     using Answer = std::function<void (bool accepted, juce::String reason)>;
     std::function<void (const juce::String& chainId, const juce::String& slug, Answer)> onLoadChain;
 
+    /** Stage 3 item 3: the editor's openChat handler. DashboardWeb validates the
+        payload natively (validateOpenChat) and forwards a clean chatId; the editor
+        routes it to the Chat tab (the followDashLink chat path). Same
+        acknowledgement + busy semantics as loadChain. */
+    std::function<void (const juce::String& chatId, Answer)> onOpenChat;
+
     /** Begin the load flow. Call once, after the component is added and shown. */
     void start();
 
@@ -145,6 +157,8 @@ private:
     // completion is juce::WebBrowserComponent::NativeFunctionCompletion, kept as
     // the raw std::function type so this header need not name WebBrowserComponent.
     void handleLoadChain (const juce::Array<juce::var>& args,
+                          std::function<void (juce::var)> completion);
+    void handleOpenChat  (const juce::Array<juce::var>& args,
                           std::function<void (juce::var)> completion);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DashboardWeb)

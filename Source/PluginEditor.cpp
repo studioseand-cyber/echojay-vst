@@ -10065,7 +10065,7 @@ void EchoJayEditor::reconcileDashboardWeb()
     {
         dashWeb_.reset();
         dashWebLoaded_ = false;
-        chainLoadAcceptedMs_ = 0;   // a load that switched to the Chain tab has settled
+        bridgeNavAcceptedMs_ = 0;   // a load that switched to the Chain tab has settled
         return;
     }
 
@@ -10081,7 +10081,7 @@ void EchoJayEditor::reconcileDashboardWeb()
     {
         dashWeb_ = std::make_unique<echojay::DashboardWeb>();
         addChildComponent (*dashWeb_);   // hidden until it loads; native stays up
-        chainLoadAcceptedMs_ = 0;      // fresh webview on (re)entering the Dashboard
+        bridgeNavAcceptedMs_ = 0;      // fresh webview on (re)entering the Dashboard
         auto safe = juce::Component::SafePointer<EchoJayEditor> (this);
 
         // Stage 3: the loadChain bridge. DashboardWeb has already validated the
@@ -10094,6 +10094,12 @@ void EchoJayEditor::reconcileDashboardWeb()
         {
             if (safe == nullptr) { if (answer) answer (false, "busy"); return; }
             safe->bridgeLoadChain (chainId, slug, std::move (answer));
+        };
+        dashWeb_->onOpenChat = [safe] (const juce::String& chatId,
+                                       echojay::DashboardWeb::Answer answer)
+        {
+            if (safe == nullptr) { if (answer) answer (false, "busy"); return; }
+            safe->bridgeOpenChat (chatId, std::move (answer));
         };
 
         dashWeb_->onLoadResult = [safe] (bool ok)
@@ -10134,24 +10140,32 @@ void EchoJayEditor::reconcileDashboardWeb()
 // the ONE loader, openSavedChain. NO slot iteration lives here (§5a one-loader
 // rule): openSavedChain owns the confirm, the format/uid/version matching, the
 // deadman and the per-slot notes.
-void EchoJayEditor::bridgeLoadChain(const juce::String& chainId, const juce::String& slug,
-                                    std::function<void(bool, juce::String)> answer)
+// The shared bridge-navigation guard (§8 idempotency), used by loadChain AND
+// openChat. Busy if a confirm modal is up OR the last accepted navigation was
+// within the window (echojay::loadChainBusy). Two tests, not a boolean: the
+// modal covers "a confirm is showing" (and the native webview can reach the
+// bridge past JUCE modality), the window covers the async work and self-heals
+// the two paths a boolean leaks — a user-cancel and openSavedChain's own
+// internal fetch failing. Returns true (busy, no stamp) or false (stamped +
+// accepted). Explicit resets to 0 (error paths, reconcileDashboardWeb) keep the
+// common cases from waiting out the window.
+bool EchoJayEditor::bridgeAcceptOrBusy()
 {
-    // §8 idempotency: busy if a confirm modal is up OR the last accepted request
-    // was within the window (echojay::loadChainBusy). Two tests, not a boolean:
-    // the modal covers "a confirm is showing" (and the native webview can reach
-    // this past JUCE modality), the window covers the async import/fetch and
-    // self-heals the two paths a boolean leaks — a user-cancel and
-    // openSavedChain's own internal fetch failing. Explicit resets below and in
-    // reconcileDashboardWeb keep the common cases from waiting out the window.
     const juce::int64 kWindowMs = 8000;
     const auto now = juce::Time::getMillisecondCounter();
     const int modals = juce::ModalComponentManager::getInstance()->getNumModalComponents();
-    const juce::int64 elapsed = (chainLoadAcceptedMs_ == 0)
+    const juce::int64 elapsed = (bridgeNavAcceptedMs_ == 0)
         ? kWindowMs   // none / cleared -> exactly at expiry -> not busy from the window
-        : (juce::int64) (juce::uint32) (now - chainLoadAcceptedMs_);
-    if (echojay::loadChainBusy(modals, elapsed, kWindowMs)) { if (answer) answer(false, "busy"); return; }
-    chainLoadAcceptedMs_ = now;
+        : (juce::int64) (juce::uint32) (now - bridgeNavAcceptedMs_);
+    if (echojay::loadChainBusy(modals, elapsed, kWindowMs)) return true;
+    bridgeNavAcceptedMs_ = now;
+    return false;
+}
+
+void EchoJayEditor::bridgeLoadChain(const juce::String& chainId, const juce::String& slug,
+                                    std::function<void(bool, juce::String)> answer)
+{
+    if (bridgeAcceptOrBusy()) { if (answer) answer(false, "busy"); return; }
 
     // Acknowledge the moment it is validated and handed off — NOT the dial
     // report (the Chain tab shows per-slot notes natively, and the webview is
@@ -10179,7 +10193,7 @@ void EchoJayEditor::bridgeLoadChain(const juce::String& chainId, const juce::Str
                     safe->bridgeOpenChainById(cid);
                 else
                 {
-                    safe->chainLoadAcceptedMs_ = 0;
+                    safe->bridgeNavAcceptedMs_ = 0;
                     safe->setChainSaveStatus(EchoJayAPI::chainErrorMessage(json, sc));
                 }
             });
@@ -10204,7 +10218,7 @@ void EchoJayEditor::bridgeOpenChainById(const juce::String& chainId)
         const auto err = EchoJayAPI::chainErrorMessage(json, sc);
         if (err.isNotEmpty())
         {
-            safe->chainLoadAcceptedMs_ = 0;
+            safe->bridgeNavAcceptedMs_ = 0;
             safe->setChainSaveStatus(err);
             return;
         }
@@ -10217,6 +10231,29 @@ void EchoJayEditor::bridgeOpenChainById(const juce::String& chainId)
         // branch's onFetchError/onSlotsParsed land here, this call must gain them
         // too, or a bridge load silently loses them.
         safe->openSavedChain(chainId, name);
+    });
+}
+
+// Item 3: openChat. DashboardWeb validated the chatId natively; route it to the
+// Chat tab through the existing followDashLink chat path (switchToTab(Chat) +
+// loadChatFromWorkspace, or park in pendingDashChatId_) — one path, no bypass.
+// Same acknowledgement + busy semantics as loadChain: the tab switch tears down
+// the webview, so it shares the bridge-navigation guard, and the work is
+// deferred so the webview isn't freed under its own native-function callback.
+void EchoJayEditor::bridgeOpenChat(const juce::String& chatId,
+                                   std::function<void(bool, juce::String)> answer)
+{
+    if (bridgeAcceptOrBusy()) { if (answer) answer(false, "busy"); return; }
+    if (answer) answer(true, {});
+
+    auto safe = juce::Component::SafePointer<EchoJayEditor>(this);
+    juce::MessageManager::callAsync([safe, chatId]
+    {
+        if (safe == nullptr) return;
+        echojay::DashLink l;
+        l.surface = "chat";
+        l.id      = chatId;
+        safe->followDashLink(l);
     });
 }
 
