@@ -64,10 +64,52 @@ juce::String DashboardWebFlow::advance (Outcome o)
 }
 
 // ===========================================================================
+// loadChain payload validation — pure, HARD, before anything else touches it
+// ===========================================================================
+static bool isCleanId (const juce::String& s, int maxLen)
+{
+    if (s.isEmpty() || s.length() > maxLen) return false;
+    for (int i = 0; i < s.length(); ++i)
+    {
+        const juce::juce_wchar c = s[i];
+        const bool ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+                     || (c >= '0' && c <= '9') || c == '-' || c == '_';
+        if (! ok) return false;
+    }
+    return true;
+}
+
+juce::String validateLoadChain (const juce::var& payload, LoadChainRequest& req)
+{
+    auto* obj = payload.getDynamicObject();
+    if (obj == nullptr) return "bad_payload";           // not an object
+
+    const bool hasC = obj->hasProperty ("chainId");
+    const bool hasS = obj->hasProperty ("slug");
+    if (hasC == hasS) return "bad_payload";             // both keys present, or neither
+
+    if (hasC)
+    {
+        const juce::var v = obj->getProperty ("chainId");
+        if (! v.isString() || ! isCleanId (v.toString(), 64)) return "bad_payload";
+        req.chainId = v.toString();
+    }
+    else
+    {
+        const juce::var v = obj->getProperty ("slug");
+        if (! v.isString() || ! isCleanId (v.toString(), 32)) return "bad_payload";
+        req.slug = v.toString();
+    }
+    return {};
+}
+
+// ===========================================================================
 // Inner — the JUCE webview, forwarding its callbacks out
 // ===========================================================================
 struct DashboardWeb::Inner : public juce::WebBrowserComponent
 {
+    explicit Inner (const Options& options) : juce::WebBrowserComponent (options) {}
+
     std::function<void (const juce::String&)> onFinished;
     std::function<void()>                     onNetError;
 
@@ -107,8 +149,24 @@ DashboardWeb::DashboardWeb()
         flow_.token = tokFile.loadFileAsString().trim();
    #endif
 
-    web_ = std::make_unique<Inner>();
     auto safe = juce::Component::SafePointer<DashboardWeb> (this);
+
+    // Stage 3 bridge: register EXACTLY ONE native function, loadChain (JUCE 8
+    // bindings). Not the rest of the §8 table — an unregistered call is cleanly
+    // feature-detectable from the page, while a stub answering "not implemented"
+    // is a liar the page must special-case. Native integration must be enabled
+    // for any binding to exist.
+    auto options = juce::WebBrowserComponent::Options{}
+        .withNativeIntegrationEnabled (true)
+        .withNativeFunction ("loadChain",
+            [safe] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                if (safe == nullptr) { complete (juce::var()); return; }
+                safe->handleLoadChain (args, std::move (complete));
+            });
+
+    web_ = std::make_unique<Inner> (options);
     web_->onFinished = [safe] (const juce::String&) { if (safe) safe->probe (1); };
     web_->onNetError = [safe] { if (safe) safe->advanceWith (DashboardWebFlow::Outcome::NetworkError); };
     addAndMakeVisible (*web_);
@@ -194,6 +252,38 @@ void DashboardWeb::finish (bool ok)
     // stage accepts the page's own session: the persistent WKWebsiteDataStore
     // holds it (measured to survive editor recreation), so the user signs in
     // once per machine.
+}
+
+void DashboardWeb::handleLoadChain (const juce::Array<juce::var>& args,
+                                    std::function<void (juce::var)> completion)
+{
+    // {accepted, reason?} — the acknowledgement shape the page awaits.
+    auto reply = [] (bool accepted, const juce::String& reason)
+    {
+        auto o = std::make_unique<juce::DynamicObject>();
+        o->setProperty ("accepted", accepted);
+        if (! accepted) o->setProperty ("reason", reason);
+        return juce::var (o.release());
+    };
+
+    // VALIDATE HARD, natively, before anything else. The first JS argument is
+    // the payload object; extra arguments are ignored.
+    LoadChainRequest req;
+    const juce::var payload = args.isEmpty() ? juce::var() : args.getReference (0);
+    const auto reason = validateLoadChain (payload, req);
+    if (reason.isNotEmpty()) { completion (reply (false, reason)); return; }
+
+    if (onLoadChain == nullptr) { completion (reply (false, "bad_payload")); return; }
+
+    // Forward the clean request; the editor routes it through openSavedChain and
+    // answers. The answer is the acknowledgement, not the dial report (see the
+    // onLoadChain doc). completion may be called from any thread per JUCE; the
+    // editor answers synchronously on the message thread.
+    onLoadChain (req.chainId, req.slug,
+        [completion, reply] (bool accepted, juce::String r)
+        {
+            completion (reply (accepted, r));
+        });
 }
 
 } // namespace echojay

@@ -56,6 +56,21 @@ struct DashboardWebFlow
 };
 
 // ---------------------------------------------------------------------------
+// Stage 3 bridge: the loadChain payload validator.
+// ---------------------------------------------------------------------------
+/** A validated loadChain request: exactly ONE of chainId / slug is non-empty. */
+struct LoadChainRequest { juce::String chainId, slug; };
+
+/** Validate a loadChain payload (the JS call's first argument). Returns an empty
+    string on success (and fills `req`), or the wire `reason` on failure. PURE —
+    no webview, no I/O; tools/dashweb_test drives it directly. The page is our own
+    page and it is still a page (§8), so this runs HARD before anything else.
+    Rules: an object with EXACTLY one of chainId / slug present; that one a
+    non-empty string; chainId <= 64 chars, slug <= 32; [A-Za-z0-9_-] only. Any
+    violation returns "bad_payload". */
+juce::String validateLoadChain (const juce::var& payload, LoadChainRequest& req);
+
+// ---------------------------------------------------------------------------
 // DashboardWeb — owns ONE juce::WebBrowserComponent and its load lifecycle.
 //
 // The editor talks to this class only; JUCE webview quirks stay inside it. The
@@ -77,6 +92,17 @@ public:
         retry until the next tab selection. */
     std::function<void (bool ok)> onLoadResult;
 
+    /** Stage 3 bridge: the editor's loadChain handler. DashboardWeb validates the
+        page's payload natively (validateLoadChain) and forwards a CLEAN request
+        (exactly one of chainId / slug non-empty); the editor routes it (share
+        import / direct) through the ONE openSavedChain loader and calls `answer`.
+        `answer` is an ACKNOWLEDGEMENT — {accepted, reason} — NOT per-slot dial
+        results: on success the plugin switches to the Chain tab, which destroys
+        this webview (lazy lifecycle), and the Chain tab shows the per-slot notes
+        natively. Answer true the moment the request is validated and handed off. */
+    using Answer = std::function<void (bool accepted, juce::String reason)>;
+    std::function<void (const juce::String& chainId, const juce::String& slug, Answer)> onLoadChain;
+
     /** Begin the load flow. Call once, after the component is added and shown. */
     void start();
 
@@ -92,6 +118,13 @@ private:
     void probe (int attemptsLeft);      // detect embed dashboard vs gate 404
     void advanceWith (DashboardWebFlow::Outcome o);
     void finish (bool ok);
+
+    // The registered `loadChain` native function: validates args, forwards to
+    // onLoadChain, and resolves the JS promise with {accepted, reason}. The
+    // completion is juce::WebBrowserComponent::NativeFunctionCompletion, kept as
+    // the raw std::function type so this header need not name WebBrowserComponent.
+    void handleLoadChain (const juce::Array<juce::var>& args,
+                          std::function<void (juce::var)> completion);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DashboardWeb)
 };
