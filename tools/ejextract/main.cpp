@@ -45,6 +45,20 @@
 // endpoint is read from auth.json when the user has ever logged in.
 static const char* kDefaultEndpoint = "https://www.echojay.ai";
 static constexpr int kPerPluginTimeoutMs = 120 * 1000;
+// The catalogue sweep gives each bundle longer than the bootstrap's 120s,
+// because a plugin SHELL (WaveShell and the like) enumerates dozens to
+// hundreds of classes in one findAllTypesForFile call: WaveShell-VST3 9.6
+// holds 487 and takes ~200s just to enumerate. The larger cap lets that
+// enumeration finish so the worker can SEE it is a shell (by count, below) and
+// switch to identity-only, name-independently. At nice 10 almost nothing else
+// runs past a few seconds, so the wider cap costs a genuine hang, of which the
+// clean run had none.
+static constexpr int kCatalogueTimeoutMs = 480 * 1000;   // measured: WaveShell 9.6 enumerates in ~292s; 300s was too tight
+// A bundle exposing more than this many classes is a shell. Measured: real
+// effect bundles carry 1 to a handful; shells carry dozens to hundreds. The
+// COUNT is the structural signal, not a vendor name in a conditional that
+// disarms the day Waves renames a bundle.
+static constexpr int kShellTypeThreshold = 30;
 // The endpoint accepts 500 fps, but they ride in a GET URL: 500 x 65 chars
 // is a ~32KB request line, which fails at the transport before the server
 // ever sees it (observed live: status 0 on a 351-fp batch). 100 fps is a
@@ -335,6 +349,7 @@ static WorkerResult runIsolatedWorkerOn (const juce::String& target, const juce:
         case 4:  r.status = "license-refused"; r.reason = "instantiation refused (auth/license)"; break;
         case 5:  r.status = "load-failed";     r.reason = "instantiation failed (non-license)";   break;
         case 6:  r.status = "instrument";      r.reason = "only instrument types, skipped";       break;
+        case 7:  r.status = "shell";           r.reason = "plugin shell, enumerated identity-only"; break;
         default: r.status = "crashed";         r.reason = "abnormal exit " + juce::String (r.exitCode); break;
     }
     return r;
@@ -1043,6 +1058,29 @@ static int runIdWorker (const juce::String& pluginPath, const juce::File& outDir
     flush();   // type count on disk BEFORE the slow loop: a kill still shows it
 
     int sinceFlush = 0;
+
+    // SHELL: enumerate-only. A shell's sub-plugins HANG on headless
+    // instantiation (measured: 0 of 487 banked after hours) and the host loads
+    // them THROUGH the shell, never standalone. So emit each class's identity
+    // for the picker (this un-thins the "Waves is invisible" gap) but never
+    // instantiate one. No param_count means no dialable fp: that is the honest
+    // ceiling for a shell until it is hosted for real.
+    if (found.size() > kShellTypeThreshold)
+    {
+        for (auto* d : found)
+        {
+            if (d->isInstrument) { ++nInstr; continue; }
+            juce::DynamicObject::Ptr o = new juce::DynamicObject();
+            o->setProperty ("ik", echojay::identityKeyForDescription (*d));
+            if (auto x = d->createXml())
+                o->setProperty ("desc", x->toString (juce::XmlElement::TextFormat().singleLine()));
+            effects.add (juce::var (o.get()));   // identity only, NO fp
+            if (++sinceFlush >= 25) { flush(); sinceFlush = 0; }
+        }
+        flush();
+        return 7;   // shell, identity-only
+    }
+
     for (auto* d : found)
     {
         if (d->isInstrument) { ++nInstr; continue; }   // skip BEFORE instantiate
@@ -1074,6 +1112,44 @@ static int runIdWorker (const juce::String& pluginPath, const juce::File& outDir
     return 3;                                      // instantiated, nothing usable
 }
 
+// Instantiate ONE plugin from a saved PluginDescription XML, in isolation.
+// Used to answer, per sub-plugin, whether a shell's contents can be
+// instantiated headless (and so fingerprinted and dialled) or genuinely hang,
+// without paying the shell's ~292s re-enumeration each time: the description
+// already carries the module path and class id. Reports the param count and
+// the time, so a caller can distinguish completes / hangs (killed by the outer
+// timeout) / crashes (abnormal exit).
+static int runInstantiateDesc (const juce::File& descFile, const juce::File& outDir)
+{
+    juce::AudioPluginFormatManager fm;
+#if JUCE_PLUGINHOST_VST3
+    fm.addFormat (new juce::VST3PluginFormat());
+#endif
+#if JUCE_PLUGINHOST_AU && JUCE_MAC
+    fm.addFormat (new juce::AudioUnitPluginFormat());
+#endif
+    auto xml = juce::XmlDocument::parse (descFile);
+    if (xml == nullptr) { std::cerr << "bad desc xml\n"; return 2; }
+    juce::PluginDescription d;
+    if (! d.loadFromXml (*xml)) { std::cerr << "desc did not load\n"; return 2; }
+
+    juce::String error;
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    std::unique_ptr<juce::AudioPluginInstance> inst (
+        fm.createPluginInstance (d, 48000.0, 512, error));
+    const auto ms = (juce::int64) (juce::Time::getMillisecondCounterHiRes() - t0);
+    if (inst == nullptr)
+    {
+        std::cout << "FAIL\t" << d.name << "\t" << ms << "ms\t" << error << "\n";
+        outDir.getChildFile ("probe.txt").replaceWithText ("FAIL " + d.name + " " + juce::String (ms) + "ms " + error);
+        return looksLikeLicenseError (error) ? 4 : 5;
+    }
+    const int pc = inst->getParameters().size();
+    std::cout << "OK\t" << d.name << "\tparams=" << pc << "\t" << ms << "ms\n";
+    outDir.getChildFile ("probe.txt").replaceWithText ("OK " + d.name + " params=" + juce::String (pc) + " " + juce::String (ms) + "ms");
+    return 0;
+}
+
 // Recursive VST3 walk (mirrors ChainHost::collectVst3BundlesRecursively, item-R
 // depth 4): vendor subfolders hold most of the library and are where the two
 // crashers (Omnisphere, ANA2) live.
@@ -1093,6 +1169,7 @@ static void catalogueStateFor (const WorkerResult& r, int typesInBundle, int eff
                                int instruments, juce::String& state, juce::String& reason)
 {
     if (r.status == "ok")                   { state = "loaded-not-verified"; reason = "loaded and fingerprinted"; }
+    else if (r.status == "shell")           { state = "shell";               reason = "plugin shell holding " + juce::String (effectsBanked) + " effects, enumerated for the picker but hosted through the shell, so not dialable standalone"; }
     else if (r.status == "instrument")      { state = "skipped-instrument";  reason = "instrument, not a chain effect"; }
     else if (r.status == "no-types")        { state = "no-types";            reason = "no plugin types found in the bundle"; }
     else if (r.status == "no-data")         { state = "no-data";             reason = "loaded but exposed nothing usable"; }
@@ -1265,16 +1342,12 @@ static int runCatalogue (const juce::File& outDir)
             }
             auto wd = workRoot.getChildFile (juce::String (i));
             wd.createDirectory();
-            // A shell is not one plugin, it is hundreds: WaveShell-VST3 9.6
-            // holds 487, and findAllTypesForFile alone runs ~200s on it, past
-            // the 120s cap. A flat per-bundle timeout is the wrong instrument
-            // there, so shells get a much larger budget; the incremental id.json
-            // banks their sub-plugins as they fingerprint, and typesLost records
-            // any remainder, so a shell can never vanish behind one timed-out
-            // line.
-            const bool isShell = key.containsIgnoreCase ("WaveShell");
+            // Every bundle gets the catalogue cap (300s), wide enough for a
+            // shell's ~200s enumeration to finish so the worker can recognise
+            // it by class count and switch to identity-only. No vendor-name
+            // conditional: the count is the signal.
             const auto r = runIsolatedWorkerOn (key, pickArch (bundle), wd, "--id-worker",
-                                                isShell ? 900 * 1000 : kPerPluginTimeoutMs);
+                                                kCatalogueTimeoutMs);
             const auto idJson = readJsonFile (wd.getChildFile ("id.json"));   // present even on a timeout (incremental)
 
             const int types = (int) idJson.getProperty ("types", 0);
@@ -1351,6 +1424,10 @@ int main (int argc, char** argv)
     if (argc >= 4 && juce::String (argv[1]) == "--id-worker")
         return runIdWorker (juce::String (juce::CharPointer_UTF8 (argv[2])),
                             juce::File (juce::String (juce::CharPointer_UTF8 (argv[3]))));
+
+    if (argc >= 4 && juce::String (argv[1]) == "--instantiate-desc")
+        return runInstantiateDesc (juce::File (juce::String (juce::CharPointer_UTF8 (argv[2]))),
+                                   juce::File (juce::String (juce::CharPointer_UTF8 (argv[3]))));
 
     if (argc >= 3 && juce::String (argv[1]) == "--extract-list")
         return runExtractList (juce::File (juce::String (juce::CharPointer_UTF8 (argv[2]))),
