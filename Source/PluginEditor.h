@@ -4001,6 +4001,14 @@ private:
     ChainRackView chainRackView() const;
     void refreshChainPanelForView(bool force);
     juce::String chainViewSig_;    // change detector for the remote refresh
+
+    // Feed split (P16): the existence-index query is fired once per scan, from
+    // the feed path, gated on the recommendable key-set signature so it never
+    // re-fires while the set is unchanged and never blocks a turn. In-flight
+    // guard stops a second turn double-firing before the first answers.
+    void maybeRefreshExistenceDialable(ChainHost& ch);
+    juce::String existenceKeysSig_;
+    bool existenceQueryInFlight_ = false;
     // Fix 3: the add's COMPLETION memory. The ok arm of pollLinkBlockAck
     // records the finished add here (then erases the pending); the derived
     // status line writes "Added ..." only once the sidecar cache actually

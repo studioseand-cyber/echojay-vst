@@ -22922,6 +22922,40 @@ bool EchoJayEditor::runChainGuidanceSelfTest()
     return ok;
 }
 
+void EchoJayEditor::maybeRefreshExistenceDialable(ChainHost& ch)
+{
+    // The existence index is a server query and needs a session; without one it
+    // 401s. Skip, and the feed stays the full list.
+    if (! api.isLoggedIn()) return;
+    if (existenceQueryInFlight_) return;
+
+    const auto refs = ch.recommendableIdentityRefs();
+    if (refs.empty()) return;
+
+    // Signature only changes when the recommendable identity set changes, i.e.
+    // once per scan. It is latched when a query for that set COMPLETES, success
+    // or failure, so a persistent non-200 re-asks once per scan, not per turn.
+    juce::String sig; sig << (int) refs.size();
+    for (const auto& r : refs) sig << ":" << r.ik;
+    if (sig == existenceKeysSig_) return;
+
+    existenceQueryInFlight_ = true;
+    // The callback fires on the message thread. ch (owned by the processor)
+    // outlives this editor; the editor may not, so its members are touched only
+    // behind a SafePointer.
+    juce::Component::SafePointer<EchoJayEditor> safe (this);
+    api.fetchDialableIdentities (refs,
+        [safe, sig, &ch] (bool ok, std::set<juce::String> dialable)
+        {
+            if (ok) ch.setExistenceDialable (std::move (dialable));
+            if (auto* self = safe.getComponent())
+            {
+                self->existenceQueryInFlight_ = false;
+                self->existenceKeysSig_ = sig;   // latch on completion, ok or 404
+            }
+        });
+}
+
 juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg,
                                                     bool alwaysAttach,
                                                     bool* hadChainFeedOut,
@@ -22933,7 +22967,43 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
     juce::String out;
     bool hadFeed = false;
     auto& chainHost = processorRef.getChainHost();
-    juce::StringArray recommendable = chainHost.getRecommendableNames();
+
+    // Feed split (P16): fire the existence-index query once per scan (async,
+    // gated on the key-set signature, never blocking this turn). Then build the
+    // feed from the DIALABLE subset when the index has answered; until it does,
+    // or on any non-200, stay on the full undifferentiated list rather than
+    // narrow to nothing.
+    maybeRefreshExistenceDialable(chainHost);
+    juce::StringArray recommendable;
+    if (chainHost.existenceQueried())
+    {
+        recommendable = chainHost.getDialableRecommendableNames();
+        if (recommendable.isEmpty())
+        {
+            // HARDENING 3: guard the zero. A clean answer that resolves a
+            // non-empty catalogue to zero dialable is far more likely a parse
+            // fault than the truth, so keep the full list. Built-ins are the
+            // right feed only when the machine genuinely has nothing
+            // recommendable, not when hundreds suddenly resolve to none.
+            const auto full = chainHost.getRecommendableNames();
+            if (! full.isEmpty())
+            {
+                EchoJay_NSLog(("EJFeed: existence index resolved "
+                               + juce::String(chainHost.recommendableCount())
+                               + " recommendable to ZERO dialable -- suspect a parse "
+                                 "fault, keeping the full list").toRawUTF8());
+                recommendable = full;
+            }
+            else
+            {
+                recommendable = ChainHost::builtinDeviceNames();
+            }
+        }
+    }
+    else
+    {
+        recommendable = chainHost.getRecommendableNames();
+    }
     // targetLinkUid -> always relevant (ITEM 6, ASK-tap ordering): guarantees
     // a server-CUT plugin marker precedes the [TARGET CHANNEL] declaration,
     // so userTypedPortion truncates to msg and the end-anchored tap tail

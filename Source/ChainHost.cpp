@@ -4964,20 +4964,49 @@ bool ChainHost::dialStateSettled() const
     return true;
 }
 
+// The uid+manufacturer key, version dropped: the same key the server's
+// existence index and version-insensitive lookup use. uid 0 is no identity.
+std::vector<echojay::IdentityRef> ChainHost::recommendableIdentityRefs() const
+{
+    std::vector<echojay::IdentityRef> refs;
+    std::set<juce::String> seen;
+    for (const auto& e : recommendable_)
+    {
+        if (e.desc.uniqueId == 0) continue;   // no uid: cannot be matched at the server
+        const auto ik = echojay::identityKeyForDescription (e.desc);
+        if (seen.insert (ik).second)
+            refs.push_back ({ ik, e.desc.manufacturerName });
+    }
+    return refs;
+}
+
+void ChainHost::setExistenceDialable (std::set<juce::String> keys)
+{
+    existenceDialable_ = std::move (keys);
+    existenceOk_ = true;
+    EchoJay_NSLog(("EJFeed: existence index applied, " + juce::String((int) existenceDialable_.size())
+                   + " dialable identit(ies)").toRawUTF8());
+}
+
 juce::StringArray ChainHost::getDialableRecommendableNames() const
 {
     juce::StringArray out;
     for (const auto& e : recommendable_)
     {
-        // Same join as buildMapFpsJson, through the same helper -- the two
-        // sites drifting apart is how the exact-key miss shipped in
-        // duplicate, and mapfps_test asserts structurally that neither has
-        // a direct identityToFp_ lookup again.
-        const auto fp = echojay::fpForIdentity(identityToFp_, e.desc);
-        if (fp.isEmpty()) continue;
-        auto m = paramMaps_.find(fp);
-        if (m != paramMaps_.end() && echojay::mapIsDialableForSignals(m->second))
-            out.addIfNotAlreadyThere(e.displayName);
+        // LOCAL: an fp resolved (same helper as buildMapFpsJson, so the two
+        // sites cannot drift; mapfps_test pins that) and a usable map present.
+        bool dialable = false;
+        if (const auto fp = echojay::fpForIdentity(identityToFp_, e.desc); fp.isNotEmpty())
+            if (auto m = paramMaps_.find(fp); m != paramMaps_.end() && echojay::mapIsDialableForSignals(m->second))
+                dialable = true;
+        // EXISTENCE INDEX: a map exists on the server for this plugin at SOME
+        // version, reachable through the server's version-insensitive lookup
+        // even with no local fp. This is what carries a fresh or a V15 machine,
+        // where the exact fp never matches the stored version.
+        if (! dialable && e.desc.uniqueId != 0)
+            if (existenceDialable_.count (echojay::identityKeyForDescription (e.desc)) > 0)
+                dialable = true;
+        if (dialable) out.addIfNotAlreadyThere (e.displayName);
     }
     return out;
 }

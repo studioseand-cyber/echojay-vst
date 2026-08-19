@@ -3,6 +3,7 @@
 #include "PluginScanner.h"
 #include "EedDeviceRegistry.h"
 #include "EchoJayLevelTally.h"
+#include "EchoJayParamMaps.h"   // echojay::IdentityRef for recommendableIdentityRefs
 #include <atomic>
 #include <map>
 #include <set>
@@ -190,6 +191,22 @@ public:
     // threshold (>=2 usable CORE semantics). Used by the dark 2.1 markers
     // and 2.4 dialFlags; shares echojay::mapIsDialableForSignals.
     juce::StringArray getDialableRecommendableNames() const;
+    // Feed split (P16). The model's list becomes the DIALABLE subset, but a
+    // fresh machine has no local fp, so dialability also consults the server's
+    // existence index (version-insensitive, one call per scan, cached here).
+    // recommendableIdentityRefs is the batch that call sends (each ik plus its
+    // separate manufacturer, per /api/params/lookup); setExistenceDialable
+    // stores the dialable iks that came back; existenceQueried is false until a
+    // successful reply, so a non-200 or a query in flight leaves the feed at
+    // today's full-list behaviour rather than emptying it.
+    std::vector<echojay::IdentityRef> recommendableIdentityRefs() const;
+    void setExistenceDialable (std::set<juce::String> dialableIks);
+    bool existenceQueried() const { return existenceOk_; }
+    int recommendableCount() const { return (int) recommendable_.size(); }
+private:
+    std::set<juce::String> existenceDialable_;   // dialable iks (format|uidHex|version) per the server
+    bool existenceOk_ = false;
+public:
 
     // Count stats from the last buildRecommendable() call.
     int getRecommendableCount()   const noexcept { return (int)recommendable_.size(); }

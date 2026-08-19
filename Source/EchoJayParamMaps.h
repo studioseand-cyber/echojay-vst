@@ -46,6 +46,16 @@ inline juce::String identityKeyForDescription (const juce::PluginDescription& de
     return desc.pluginFormatName + "|" + juce::String::toHexString (desc.uniqueId) + "|" + desc.version;
 }
 
+// One plugin as the /api/params/lookup body wants it: ik is
+// identityKeyForDescription (format|uidHex|version; the server ignores the
+// version segment in exists mode), and manufacturer is a SEPARATE field, not
+// part of ik. The dialable answer is matched back by ik.
+struct IdentityRef
+{
+    juce::String ik;
+    juce::String manufacturer;
+};
+
 // How fpForIdentity resolved (or refused) a lookup. One bucket per call,
 // so a caller counting these reconciles against its input count exactly.
 enum class FpLookup { exact, uidFallback, ambiguous, miss, noUid };

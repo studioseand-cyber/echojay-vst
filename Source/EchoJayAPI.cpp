@@ -514,6 +514,80 @@ void EchoJayAPI::getJSON(const juce::String& path,
     });
 }
 
+void EchoJayAPI::fetchDialableIdentities(const std::vector<echojay::IdentityRef>& plugins,
+                                        std::function<void(bool, std::set<juce::String>)> onComplete)
+{
+    auto cb = std::make_shared<std::function<void(bool, std::set<juce::String>)>>(std::move(onComplete));
+    if (plugins.empty()) { if (*cb) (*cb)(true, {}); return; }
+
+    // Batch at the server's documented ceiling of 500 plugins per request.
+    struct Agg { std::set<juce::String> dialable; int remaining = 0; bool anyFail = false; };
+    auto agg = std::make_shared<Agg>();
+    constexpr int kBatch = 500;
+
+    std::vector<std::vector<echojay::IdentityRef>> batches;
+    for (size_t i = 0; i < plugins.size(); i += (size_t) kBatch)
+        batches.emplace_back(plugins.begin() + (long) i,
+                             plugins.begin() + (long) juce::jmin(plugins.size(), i + (size_t) kBatch));
+    agg->remaining = (int) batches.size();
+
+    for (auto& b : batches)
+    {
+        // POST body: {"mode":"exists","plugins":[{"ik":..,"manufacturer":..}]}.
+        // GET is 405 by design (P20): an inventory does not belong in a URL.
+        // Built through juce::var so a manufacturer name with a quote or a
+        // backslash cannot break the JSON.
+        juce::Array<juce::var> pluginArr;
+        for (auto& r : b)
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty("ik", r.ik);
+            o->setProperty("manufacturer", r.manufacturer);
+            pluginArr.add(juce::var(o));
+        }
+        auto* root = new juce::DynamicObject();
+        root->setProperty("mode", "exists");
+        root->setProperty("plugins", pluginArr);
+        const auto body = juce::JSON::toString(juce::var(root), true);
+
+        // postJSON fires its completion on the message thread, so agg is only
+        // ever touched there: no lock needed across the batch callbacks.
+        postJSON("/api/params/lookup", body, [agg, cb](const juce::var& json, int sc)
+        {
+            // HARDENING 1: any non-200 (404, 405, 500, a proxy HTML page, a
+            // timeout that surfaces as 0) means "no answer" and keeps the full
+            // list. Only a clean 200 is allowed to narrow the feed.
+            if (sc != 200)
+            {
+                agg->anyFail = true;
+            }
+            else if (auto* results = json.getProperty("results", juce::var()).getArray())
+            {
+                for (auto& row : *results)
+                {
+                    // Dialable = a map exists at some version. exists alone only
+                    // says the plugin is known; mapped_versions is the map.
+                    const auto mv = row.getProperty("mapped_versions", juce::var());
+                    if (mv.isArray() && mv.getArray()->size() > 0)
+                        agg->dialable.insert(row.getProperty("ik", juce::var()).toString());
+                }
+            }
+            else
+            {
+                // HARDENING 2: a 200 whose body has no results array is a
+                // contract mismatch, not an empty answer. Log loudly and keep
+                // the full list rather than reading it as "nothing dialable".
+                agg->anyFail = true;
+                EchoJay_NSLog("EJFeed: /api/params/lookup 200 with no results array -- "
+                              "contract mismatch, keeping full list");
+            }
+
+            if (--agg->remaining == 0 && *cb)
+                (*cb)(! agg->anyFail, agg->dialable);
+        });
+    }
+}
+
 // ============ Auth ============
 
 void EchoJayAPI::login(const juce::String& email, const juce::String& password,

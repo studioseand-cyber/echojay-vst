@@ -4,7 +4,10 @@
 #include <memory>
 #include <atomic>
 #include <map>
+#include <set>
 #include <mutex>
+#include <vector>
+#include "EchoJayParamMaps.h"   // echojay::IdentityRef for fetchDialableIdentities
 
 class ChainHost;   // buildCurrentChainInjection reads the live rack
 namespace LinkShm { struct RackSidecar; }   // Phase R: targeted-injection overload
@@ -590,6 +593,16 @@ public:
     // [{"title","line"}...]. Cached to whats_new.json; on any failure the
     // last cache (then empty) is delivered — never an error state.
     void fetchWhatsNew(std::function<void(const juce::var&)> onComplete);
+    // Feed split (P16): the server existence index. POSTs the recommendable
+    // plugins (each ik = format|uidHex|version, plus a SEPARATE manufacturer
+    // field) to /api/params/lookup in mode "exists", batched at 500, and calls
+    // back with the iks that have a map at ANY version (mapped_versions
+    // non-empty). ok=false on ANY non-200 or on an unrecognised 200 body, so
+    // the caller degrades to the full list rather than an empty feed. Contract
+    // shared with the saas /api/params/lookup handler (verified live against
+    // echojay-dev): keep it in step, do not vary it silently.
+    void fetchDialableIdentities(const std::vector<echojay::IdentityRef>& plugins,
+                                 std::function<void(bool ok, std::set<juce::String> dialableIks)> onComplete);
 
     // Fetch settings from server
     void fetchSettings(std::function<void(bool success)> onComplete = nullptr);
