@@ -592,7 +592,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             if (restoreId.isNotEmpty() && !chatLoading
                 && (currentChatId.isEmpty() || currentChatId == restoreId))
                 for (const auto& ch : workspace.getChats())
-                    if (ch.id == restoreId) { loadChatFromWorkspace(restoreId); break; }
+                    if (ch.id == restoreId) { loadChatFromWorkspace(restoreId); scrollChatSidebarToActive(); break; }
         }
 
         // A dashboard chat deep link tapped before the workspace had loaded.

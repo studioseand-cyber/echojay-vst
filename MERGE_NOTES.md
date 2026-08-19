@@ -125,21 +125,19 @@ code the other machine (`integration/reasoning-plus-pitch`) may also touch:
   `ChatRow` whose `id == currentChatId` and positions `chatSidebar`'s viewport so
   that row lands in the top third. Pure read of existing state — if it collides,
   keep one copy; there is nothing to reconcile.
-- **Two call sites**, each a single statement appended after an existing
+- **Three call sites**, each a single statement appended after an existing
   `loadChatFromWorkspace(...)` call, inside the SAME `if (ch.id == …) { … }`:
   - `followDashLink` chat branch (immediate path, workspace already loaded).
   - the `pendingDashChatId_` consumption in `workspace.onLoaded` (parked path).
-  If either `loadChatFromWorkspace(...)` line moves or is rewritten on the other
+  - the active-chat restore in `workspace.onLoaded` (`if (ch.id == restoreId)`,
+    editor-recreate path — same "which chat am I on" benefit).
+  If any `loadChatFromWorkspace(...)` line moves or is rewritten on the other
   branch, re-append `scrollChatSidebarToActive();` after it.
 
 Deliberately NOT wired into `loadChatFromWorkspace` itself: that is also the
 manual sidebar-click path, where the row is already on screen and an auto-scroll
-would be a jarring jump. The scroll is scoped to the deep-link entries only.
-
-The **editor-recreate restore path** (`if (ch.id == restoreId) …` a few lines
-above the parked block) was left untouched — same "which chat am I on" benefit
-would apply, but it is outside this fix's stated scope; add the same one-liner
-there if that becomes desired.
+would be a jarring jump. The scroll is scoped to the deep-link / restore entries
+only.
 
 The active-row styling was assessed and left as-is: an active `ChatRow` already
 draws a lighter `bg4` fill, a 3px `C::blue` left accent bar, and brighter text —
