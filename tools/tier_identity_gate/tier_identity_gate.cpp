@@ -45,6 +45,13 @@ static juce::String fpOfDescription (juce::AudioPluginFormatManager& fm,
     std::unique_ptr<juce::AudioPluginInstance> inst (
         fm.createPluginInstance (d, 48000.0, 512, error));
     if (inst == nullptr) { whyEmpty = "instantiate failed: " + error; return {}; }
+    // PREPARE before fingerprinting, exactly as ChainHost::completeLoad does
+    // (it prepares the graph, then fingerprints). The worker does NOT prepare,
+    // so this side computes the prepared param_count and the worker the
+    // unprepared one: if a plugin's count moved on prepare, the two fps would
+    // differ and this gate would catch it. Today none do, which is the point.
+    inst->setPlayConfigDetails (2, 2, 48000.0, 512);
+    inst->prepareToPlay (48000.0, 512);
     auto live = inst->getPluginDescription();
     if (live.pluginFormatName.isEmpty() || live.version.isEmpty()) live = d;
     return echojay::fingerprintForDescription (live, inst->getParameters().size());
@@ -185,6 +192,10 @@ int main (int argc, char** argv)
     else
     {
         cases.set ("ProQ3-VST3-FabFilter", "/Library/Audio/Plug-Ins/VST3/FabFilter Pro-Q 3.vst3");
+        // A REAL third-party AU with a LARGE parameter count (358), so a fp
+        // computed from a zero or wrong count cannot pass unnoticed. Apple's
+        // Dynamics stays as a small smoke case; it is not the pin.
+        cases.set ("ProQ3-AU-FabFilter",   "/Library/Audio/Plug-Ins/Components/FabFilter Pro-Q 3.component");
         cases.set ("Dynamics-AU-Apple",    "AudioUnit:Effects/aufx,dcmp,appl");
     }
 

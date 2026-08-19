@@ -1147,6 +1147,10 @@ static int runInstantiateDesc (const juce::File& descFile, const juce::File& out
     const int pc = inst->getParameters().size();
     auto live = inst->getPluginDescription();
     if (live.pluginFormatName.isEmpty() || live.version.isEmpty()) live = d;
+    // The live parameter NAMES, in index order: the guard for version-insensitive
+    // map reuse compares these against the map's control names at the same index.
+    juce::Array<juce::var> pnames;
+    for (auto* p : inst->getParameters()) pnames.add (p->getName (128));
     std::cout << "OK\t" << d.name << "\tparams=" << pc << "\t" << ms << "ms\n";
     outDir.getChildFile ("probe.txt").replaceWithText ("OK " + d.name + " params=" + juce::String (pc) + " " + juce::String (ms) + "ms");
     // Same id.json shape as runIdWorker, so tier_identity_gate reads the fp
@@ -1156,10 +1160,62 @@ static int runInstantiateDesc (const juce::File& descFile, const juce::File& out
     o->setProperty ("ikSaved", echojay::identityKeyForDescription (d));      // from the saved enumeration
     o->setProperty ("ikLive",  echojay::identityKeyForDescription (live));   // from the live instance
     o->setProperty ("fp", echojay::fingerprintForDescription (live, pc));
+    o->setProperty ("paramNames", pnames);
     juce::Array<juce::var> effects; effects.add (juce::var (o.get()));
     juce::DynamicObject::Ptr root = new juce::DynamicObject();
     root->setProperty ("effects", effects);
     writeJsonFileAtomic (outDir.getChildFile ("id.json"), juce::var (root.get()));
+    return 0;
+}
+
+// Does param_count depend on prepareToPlay? Instantiate one target, read
+// getParameters().size() BEFORE prepare, call prepareToPlay, read it AFTER,
+// and fingerprint both ways. If they differ, scan-time fp (unprepared) and the
+// DAW's completeLoad fp (which prepares first) fork, and any map keyed on one
+// is unreachable from the other.
+static int runPrepCheck (const juce::String& target, const juce::File& outDir)
+{
+    juce::AudioPluginFormatManager fm;
+#if JUCE_PLUGINHOST_VST3
+    fm.addFormat (new juce::VST3PluginFormat());
+#endif
+#if JUCE_PLUGINHOST_AU && JUCE_MAC
+    fm.addFormat (new juce::AudioUnitPluginFormat());
+#endif
+    juce::OwnedArray<juce::PluginDescription> found;
+    for (int i = 0; i < fm.getNumFormats(); ++i)
+        fm.getFormat (i)->findAllTypesForFile (found, target);
+    if (found.isEmpty()) { std::cout << "no-types\n"; return 2; }
+    juce::String err;
+    std::unique_ptr<juce::AudioPluginInstance> inst (fm.createPluginInstance (*found[0], 48000.0, 512, err));
+    if (inst == nullptr) { std::cout << "instantiate failed: " << err << "\n"; return 5; }
+
+    auto live = inst->getPluginDescription();
+    if (live.pluginFormatName.isEmpty() || live.version.isEmpty()) live = *found[0];
+
+    const int before = inst->getParameters().size();
+    const auto fpBefore = echojay::fingerprintForDescription (live, before);
+
+    inst->setPlayConfigDetails (2, 2, 48000.0, 512);
+    inst->prepareToPlay (48000.0, 512);
+    const int after = inst->getParameters().size();
+    const auto fpAfter = echojay::fingerprintForDescription (live, after);
+
+    std::cout << found[0]->name << "\n"
+              << "  desc.version (goes into the fp): \"" << live.version << "\"\n"
+              << "  identityKey: " << echojay::identityKeyForDescription (live) << "\n"
+              << "  params before prepare: " << before << "\n"
+              << "  params after  prepare: " << after  << "\n"
+              << "  fp before: " << fpBefore << "\n"
+              << "  fp after:  " << fpAfter  << "\n"
+              << "  FORK: " << (fpBefore == fpAfter ? "no" : "YES") << "\n";
+    juce::DynamicObject::Ptr o = new juce::DynamicObject();
+    o->setProperty ("name", found[0]->name);
+    o->setProperty ("version", live.version);
+    o->setProperty ("before", before); o->setProperty ("after", after);
+    o->setProperty ("fpBefore", fpBefore); o->setProperty ("fpAfter", fpAfter);
+    o->setProperty ("fork", fpBefore != fpAfter);
+    writeJsonFileAtomic (outDir.getChildFile ("prep.json"), juce::var (o.get()));
     return 0;
 }
 
@@ -1527,6 +1583,10 @@ int main (int argc, char** argv)
     if (argc >= 4 && juce::String (argv[1]) == "--instantiate-batch")
         return runInstantiateBatch (juce::File (juce::String (juce::CharPointer_UTF8 (argv[2]))),
                                     juce::File (juce::String (juce::CharPointer_UTF8 (argv[3]))));
+
+    if (argc >= 4 && juce::String (argv[1]) == "--prep-check")
+        return runPrepCheck (juce::String (juce::CharPointer_UTF8 (argv[2])),
+                             juce::File (juce::String (juce::CharPointer_UTF8 (argv[3]))));
 
     if (argc >= 4 && juce::String (argv[1]) == "--enumerate-only")
         return runEnumerateOnly (juce::String (juce::CharPointer_UTF8 (argv[2])),
