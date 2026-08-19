@@ -27366,7 +27366,19 @@ bool EchoJayEditor::keyPressed(const juce::KeyPress& key)
 
     // Spacebar — stop capture or toggle AB playback
     if (key == juce::KeyPress::spaceKey && currentScreen == Screen::Main
-        && !channelPromptVisible && !genrePromptVisible)
+        && !channelPromptVisible && !genrePromptVisible
+        // Stage 2, keyboard: the guard above only covers named JUCE TextEditors;
+        // the webview is a native WKWebView, not one. Determined from the code
+        // (WebBrowserComponent::focusGainedWithDirection makes the WKWebView the
+        // macOS first responder, and this editor gets keys via component focus
+        // with no global listener), keyPressed should NOT fire while the user
+        // types in the page — the native view consumes the key. This gate is the
+        // defensive belt for the residual case where JUCE focus and the native
+        // first responder are momentarily out of sync: while the webview holds
+        // keyboard focus, space is the page's, never the transport's. The
+        // reliable long-term signal is the §8 focusChanged bridge, out of scope
+        // until messaging. Manual matrix (Part D) confirms empirically.
+        && !(dashWeb_ != nullptr && dashWeb_->hasKeyboardFocus(true)))
     {
         auto s = processorRef.getCaptureState();
         if (s == CaptureState::Capturing)
