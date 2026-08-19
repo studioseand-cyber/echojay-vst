@@ -15,6 +15,11 @@
 #include "CodecRender.h"
 #include "DashboardTab.h"
 
+// Stage 2: the lazy webview Dashboard surface. Full type in DashboardWeb.h,
+// included from PluginEditor.cpp; the header only needs the incomplete type for
+// the unique_ptr member (EchoJayEditor's dtor is out-of-line).
+namespace echojay { class DashboardWeb; }
+
 // TEMP DEBUG (25 Jul 2026, review-overlay z-order diagnosis) — remove with
 // the [zdbg] sites in PluginEditor.cpp.
 extern bool gEjReviewModalDbg;
@@ -272,6 +277,15 @@ private:
     // badge tempting and would be roughly a hundred times the cost per tick.
     juce::Viewport             dashViewport_;
     echojay::DashboardView     dashView_;
+    // Stage 2: the lazy webview surface. Constructed only while the Dashboard
+    // tab is showing (Screen::Main, no prompt/overlay, signed in) and DESTROYED
+    // on tab-away — destroy frees the resident WebKit processes, hiding does
+    // not. dashView_ (native) stays as the offline/signed-out/load-failed
+    // fallback beneath it. See reconcileDashboardWeb().
+    std::unique_ptr<echojay::DashboardWeb> dashWeb_;
+    bool dashWebLoaded_               = false;  // onLoadResult(true): webview shown over native
+    bool dashWebFailedThisSelection_ = false;   // no retry until the next Dashboard selection
+    void reconcileDashboardWeb();               // lazy construct/destroy of dashWeb_
     juce::int64                dashFetchedAtMs_ = 0;   // 0 = never fetched
     int                        dashTtlSeconds_  = 60;  // from payload.ttl
     bool                       dashLoading_     = false;

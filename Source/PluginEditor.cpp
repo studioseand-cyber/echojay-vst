@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "DashboardWeb.h"        // stage 2: the lazy webview Dashboard surface
 #include "EJStreamBlockParser.h" // incremental block parser (spec step 3/4)
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics (EJChat:)
 #include "EchoJayLogo.h"  // embedded logo PNG — Settings orb card glyph source
@@ -2853,6 +2854,11 @@ void EchoJayEditor::updateOnboardingPrompts()
     onboardingOverlay_.setVisible(anyPrompt);
     if (anyPrompt)
         onboardingOverlay_.toFront(false);   // topmost over ANY tab's children
+
+    // Stage 2: a prompt appearing/clearing (or a login change) changes whether
+    // the webview may exist. This pass runs on every such change, so reconcile
+    // its lazy lifecycle here as well as in resized().
+    reconcileDashboardWeb();
 
     // ---- identical chat/topbar treatment for all three ----
     const bool chatOk = currentScreen == Screen::Main && !anyPrompt
@@ -10034,8 +10040,54 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
 //  navigation. The view owns geometry and drawing and nothing else.
 // =============================================================================
 
+// Stage 2: lazy lifecycle for the webview surface. Construct ONE webview only
+// while the Dashboard tab is the showing Screen::Main surface with no prompt or
+// overlay up and the user signed in; DESTROY it the moment that stops being
+// true (tab switch, screen change) — and the unique_ptr destroys it on editor
+// teardown. Destroy, not setVisible(false): the ~103 MB is resident WebKit
+// processes and only destruction frees them. Idempotent, so it is safe to call
+// from resized() (tab switch/relayout) and updateOnboardingPrompts()
+// (prompt/login change) alike.
+void EchoJayEditor::reconcileDashboardWeb()
+{
+    const bool onDash = currentTab == Tab::Dashboard && currentScreen == Screen::Main
+                     && !compactMode && !visualOnlyMode;
+    if (! onDash)
+    {
+        dashWeb_.reset();
+        dashWebLoaded_ = false;
+        return;
+    }
+
+    const bool promptUp = channelPromptVisible || genrePromptVisible || projectPromptVisible
+                       || updateOverlay.isVisible() || reviewOverlay.visibleState;
+
+    // Signed out is handled by the native signed-out line — skip the webview
+    // entirely. A prompt up: wait (native shows under it); once constructed a
+    // prompt only HIDES the webview (resized()), it does not destroy it.
+    if (promptUp || ! api.isLoggedIn() || dashWebFailedThisSelection_) return;
+
+    if (dashWeb_ == nullptr)
+    {
+        dashWeb_ = std::make_unique<echojay::DashboardWeb>();
+        addChildComponent (*dashWeb_);   // hidden until it loads; native stays up
+        auto safe = juce::Component::SafePointer<EchoJayEditor> (this);
+        dashWeb_->onLoadResult = [safe] (bool ok)
+        {
+            if (safe == nullptr) return;
+            if (ok) safe->dashWebLoaded_ = true;             // swap native -> webview
+            else    safe->dashWebFailedThisSelection_ = true; // keep native, no retry
+            safe->resized();                                  // reflect the swap
+        };
+        dashWeb_->start();
+    }
+}
+
 void EchoJayEditor::openDashboardTab()
 {
+    // A fresh Dashboard selection re-arms the webview after an earlier failure.
+    dashWebFailedThisSelection_ = false;
+
     if (!api.isLoggedIn())
     {
         dashView_.setSignedOut(true);
@@ -16746,24 +16798,42 @@ void EchoJayEditor::resized()
     // lives INSIDE the single visibility expression, which therefore always
     // evaluates, both ways.
     {
+        // Stage 2: reconcile the webview's lazy lifecycle (construct on entering
+        // the Dashboard surface, destroy on leaving) BEFORE laying it out.
+        reconcileDashboardWeb();
+
         const int abOffD = abBarShowing ? kAbBarH : 0;
-        dashViewport_.setBounds(0, topH, mW,
-                                juce::jmax(50, b.getHeight() - topH - abOffD));
-        dashViewport_.setVisible(dashboardTab && currentScreen == Screen::Main
-                                 && !compactMode && !visualOnlyMode
-                                 // A prompt or overlay OUTRANKS tab content, and
-                                 // Dashboard is the default tab, so on a fresh
-                                 // instance the intake prompts (channel/genre/
-                                 // project = the onboarding overlay) landed UNDER
-                                 // the dashboard and could not be dismissed. Same
-                                 // set particleVisualHolder gates on; folded into
-                                 // the one visibility expression, never hidden
-                                 // from the prompt-showing code (the moved-bug
-                                 // shape this block warns about).
-                                 && !channelPromptVisible && !genrePromptVisible
-                                 && !projectPromptVisible
-                                 && !updateOverlay.isVisible()
-                                 && !reviewOverlay.visibleState);
+        const auto dashRect = juce::Rectangle<int> (0, topH, mW,
+                                  juce::jmax (50, b.getHeight() - topH - abOffD));
+
+        // THE ONE visibility expression, shared by BOTH the native and the
+        // webview surface. Same five prompt/overlay guards 0de7629 folded in —
+        // and they matter MORE now: the webview is a native NSView that beats
+        // all JUCE painting, so a prompt appearing MUST hide it (it cannot be
+        // out-z-ordered). A prompt or overlay OUTRANKS tab content; Dashboard is
+        // the default tab, so on a fresh instance an unguarded surface buries
+        // the intake prompts. Never hidden from the prompt-showing code (the
+        // moved-bug shape this block warns about).
+        const bool dashSurfaceShowable = dashboardTab && currentScreen == Screen::Main
+                                      && !compactMode && !visualOnlyMode
+                                      && !channelPromptVisible && !genrePromptVisible
+                                      && !projectPromptVisible
+                                      && !updateOverlay.isVisible()
+                                      && !reviewOverlay.visibleState;
+        const bool webShown = (dashWeb_ != nullptr && dashWebLoaded_);
+
+        // Native dashView_ is the FALLBACK surface: shown until the webview has
+        // loaded and taken over, and the surface offline/signed-out/load-failed
+        // falls back to (it stays up whenever the webview is absent or unloaded).
+        dashViewport_.setBounds (dashRect);
+        dashViewport_.setVisible (dashSurfaceShowable && !webShown);
+
+        // Webview: same rect; visible only once it reports a successful load.
+        if (dashWeb_ != nullptr)
+        {
+            dashWeb_->setBounds (dashRect);
+            dashWeb_->setVisible (dashSurfaceShowable && webShown);
+        }
 
         // Content width, then content height from the ONE geometry author.
         // layout() is pure in width, so calling it here and again from the
