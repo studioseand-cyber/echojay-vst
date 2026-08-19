@@ -10075,9 +10075,31 @@ void EchoJayEditor::reconcileDashboardWeb()
         dashWeb_->onLoadResult = [safe] (bool ok)
         {
             if (safe == nullptr) return;
-            if (ok) safe->dashWebLoaded_ = true;             // swap native -> webview
-            else    safe->dashWebFailedThisSelection_ = true; // keep native, no retry
-            safe->resized();                                  // reflect the swap
+            if (ok)
+            {
+                safe->dashWebLoaded_ = true;   // swap native -> webview
+                safe->resized();
+                return;
+            }
+            // FAILURE (gate 404 / network error): keep native, no retry until
+            // the next selection, and DESTROY the dead webview so its ~150 MB of
+            // resident WebKit processes do not sit behind the native view until
+            // tab-away — on precisely the path where the user gets nothing.
+            //
+            // DEFERRED, deliberately: this callback fires from inside the
+            // webview's own evaluateJavascript completion, so resetting dashWeb_
+            // on this stack would free the webview under itself (use-after-free).
+            // callAsync frees it on a later message-loop turn once that stack has
+            // unwound; the SafePointer makes a torn-down editor a no-op.
+            safe->dashWebFailedThisSelection_ = true;
+            juce::MessageManager::callAsync ([safe]
+            {
+                if (safe == nullptr) return;
+                safe->dashWeb_.reset();        // frees the resident WebKit processes
+                safe->dashWebLoaded_ = false;
+                safe->resized();               // native stays up (reconcile won't
+                                               // reconstruct: failed-this-selection)
+            });
         };
         dashWeb_->start();
     }
