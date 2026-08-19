@@ -5,6 +5,7 @@
 #include "EchoJayLevelTally.h"
 #include <atomic>
 #include <map>
+#include <set>
 #include <mutex>
 #include <memory>
 #include <thread>
@@ -988,6 +989,36 @@ private:
     // (param_maps_bootstrap.json, written by ejextract --bootstrap).
     // mtime-guarded; called at construction and from requestMapPrefetch.
     void mergeBootstrapMaps();
+    // Union the out-of-process catalogue (ejextract --catalogue, P16) into the
+    // DAW's state at READ time: chain_plugins_scan.xml (validated identities)
+    // into knownPlugins_, chain_fp_scan.json (identityToFp) into the fp index.
+    // One file per writer, unioned here, so the helper and the DAW never race.
+    void loadHelperCatalogue();
+    // Per-plugin supersession across shell versions: for entries that are the
+    // SAME plugin (format|uid|manufacturer, the same key the map lookup uses,
+    // NOT the display name) at more than one version, mark all but the newest
+    // superseded. "Superseded" means only "a strictly newer copy of this exact
+    // plugin exists here"; a plugin present at one version is never superseded.
+    // Nothing is deleted; the picker keeps everything.
+    void computeSupersessions();
+public:
+    // Per-bundle health written by the out-of-process catalogue
+    // (chain_health.json, keyed by fileOrIdentifier). The withheld panel reads
+    // the FAILURE states (crashed, timed-out, load-failed, load-failed-licence,
+    // shell); loaded-not-verified is stored but deliberately NOT surfaced,
+    // since marking the whole working library "not verified" before a verified
+    // state exists would libel it.
+    struct HealthEntry { juce::String state, reason; juce::int64 blockMs = 0; };
+    std::map<juce::String, HealthEntry> getHealthSnapshot() const;
+private:
+    std::map<juce::String, HealthEntry> health_;   // fileOrIdentifier -> entry
+    void reloadHealthFromDisk();
+    // Superseded by identityKey (format|uidHex|version). Read by the withheld
+    // panel and, once the server tier lands, by the feed.
+    std::set<juce::String> superseded_;
+public:
+    bool isSuperseded(const juce::PluginDescription& d) const;
+private:
     juce::Time bootstrapMergedMtime_;
 
     // Fingerprint pass state (message thread only, except the atomic)

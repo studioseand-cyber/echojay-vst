@@ -725,6 +725,7 @@ ChainHost::ChainHost()
     loadFromDisk();
     loadParamMapsFromDisk();
     mergeBootstrapMaps();
+    loadHelperCatalogue();
 
     consumeDeathMarks();
 }
@@ -997,6 +998,10 @@ void ChainHost::doRefresh()
     // (addToBlacklist), so memory never holds an entry the file lacks.
     reloadBlacklistFromDisk();
     reloadStateOversizeFromDisk();
+    // Union the helper's catalogue BEFORE the VST3 un-thin join below reads
+    // knownPlugins_, so a background sweep that finished since startup lands in
+    // this scan's rows rather than waiting for a restart.
+    loadHelperCatalogue();
 
     juce::Array<juce::PluginDescription> auEntries, vst3Entries;
 
@@ -1152,6 +1157,7 @@ void ChainHost::doRefresh()
         std::lock_guard<std::mutex> lk(pluginsMutex_);
         entries_ = collected;
     }
+    computeSupersessions();   // mark older-version duplicates now the rows are final
 
     // Persist the FULL entries list so the other host (main plugin / Link)
     // resolves against the same list without running its own scan. The
@@ -2712,6 +2718,177 @@ bool ChainHost::settleStaleRung(int i)
     return true;
 }
 
+void ChainHost::loadHelperCatalogue()
+{
+    // Blocker-1 THIRD option (the design's): the helper writes its OWN files and
+    // this is their sole reader; the DAW keeps writing chain_plugins.xml on its
+    // validated loads. No shared file, so no write race; addType and the
+    // identity-key map both dedup at read, so a plugin present in both files
+    // resolves once. Cost is one extra load here.
+    auto scanXml = getPluginListFile().getSiblingFile("chain_plugins_scan.xml");
+    if (scanXml.existsAsFile())
+        if (auto doc = juce::XmlDocument::parse(scanXml))
+        {
+            juce::KnownPluginList tmp;
+            tmp.recreateFromXml(*doc);
+            int added = 0;
+            {
+                std::lock_guard<std::mutex> lock(pluginsMutex_);
+                for (const auto& d : tmp.getTypes()) { knownPlugins_.addType(d); ++added; }
+            }
+            EchoJay_NSLog(("EJScan: helper catalogue unioned, " + juce::String(added)
+                           + " validated identit(ies) from chain_plugins_scan.xml").toRawUTF8());
+        }
+
+    // identityToFp from the helper: same shape and same read-merge as
+    // mergeBootstrapMaps' identityToFp block. First-writer-wins on a key, so the
+    // DAW's own load-captured fps are never overwritten by the catalogue.
+    auto fpScan = getParamMapsCacheFile().getSiblingFile("chain_fp_scan.json");
+    if (fpScan.existsAsFile())
+    {
+        auto root = juce::JSON::parse(fpScan.loadFileAsString());
+        int addedIds = 0;
+        if (auto* idx = root.getProperty("identityToFp", juce::var()).getDynamicObject())
+            for (auto& p : idx->getProperties())
+                if (identityToFp_.find(p.name.toString()) == identityToFp_.end())
+                {
+                    identityToFp_[p.name.toString()] = p.value.toString();
+                    ++addedIds;
+                }
+        if (addedIds > 0)
+            EchoJay_NSLog(("EJScan: " + juce::String(addedIds)
+                           + " helper fp(s) unioned from chain_fp_scan.json").toRawUTF8());
+    }
+
+    reloadHealthFromDisk();   // chain_health.json, read by the withheld panel
+}
+
+namespace {
+// Numeric version compare, component by component, a missing component read as
+// zero (so 12.0 and 12.0.0 are equal). Returns -1 (a<b), 0 (equal), 1 (a>b).
+// bothParsed is false if EITHER side has a non-numeric component or is empty;
+// the caller must then NOT order them, never guess. A STRING compare is wrong
+// here: lexically "9.6" > "12.6" because '9' > '1', which would supersede the
+// 12.x shell by the 9.6 one, exactly backwards.
+int compareVersionNumeric (const juce::String& a, const juce::String& b, bool& bothParsed)
+{
+    auto parse = [] (const juce::String& v, bool& ok)
+    {
+        std::vector<int> out;
+        juce::StringArray parts;
+        parts.addTokens (v.trim(), ".", "");
+        ok = parts.size() > 0 && v.trim().isNotEmpty();
+        for (auto& p : parts)
+        {
+            const auto t = p.trim();
+            if (t.isEmpty() || ! t.containsOnly ("0123456789")) ok = false;
+            out.push_back (t.getIntValue());
+        }
+        return out;
+    };
+    bool ao = false, bo = false;
+    const auto va = parse (a, ao), vb = parse (b, bo);
+    bothParsed = ao && bo;
+    const size_t n = juce::jmax (va.size(), vb.size());
+    for (size_t i = 0; i < n; ++i)
+    {
+        const int x = i < va.size() ? va[i] : 0;   // missing component = 0
+        const int y = i < vb.size() ? vb[i] : 0;
+        if (x != y) return x < y ? -1 : 1;
+    }
+    return 0;   // equal
+}
+} // namespace
+
+void ChainHost::reloadHealthFromDisk()
+{
+    // Sibling of chain_plugins.xml, written by ejextract --catalogue. Absent on
+    // a machine that has not swept yet: a no-op, not an error.
+    auto f = getPluginListFile().getSiblingFile("chain_health.json");
+    std::lock_guard<std::mutex> lock(pluginsMutex_);
+    health_.clear();
+    if (! f.existsAsFile()) return;
+    auto root = juce::JSON::parse(f.loadFileAsString());
+    if (auto* o = root.getDynamicObject())
+        for (auto& p : o->getProperties())
+            if (auto* e = p.value.getDynamicObject())
+            {
+                HealthEntry h;
+                h.state   = e->getProperty("state").toString();
+                h.reason  = e->getProperty("reason").toString();
+                h.blockMs = (juce::int64) e->getProperty("blockMs");
+                health_[p.name.toString()] = h;
+            }
+}
+
+std::map<juce::String, ChainHost::HealthEntry> ChainHost::getHealthSnapshot() const
+{
+    std::lock_guard<std::mutex> lock(pluginsMutex_);
+    return health_;
+}
+
+void ChainHost::computeSupersessions()
+{
+    std::lock_guard<std::mutex> lock (pluginsMutex_);
+    superseded_.clear();
+    // Group by format|uid|manufacturer, the SAME key the map lookup and the
+    // server tier use, NOT the display name. So a uid match with differing
+    // names is the same plugin (renamed across versions) and IS compared; a
+    // name match with differing uids lands in different groups and is NEVER
+    // collapsed, because it is two different plugins. uid 0 is no identity
+    // (every thin VST3 row is VST3|0|) and can never anchor a group.
+    std::map<juce::String, std::vector<const juce::PluginDescription*>> groups;
+    for (const auto& d : entries_)
+    {
+        if (d.uniqueId == 0) continue;
+        const auto key = d.pluginFormatName + "|"
+                       + juce::String::toHexString (d.uniqueId) + "|"
+                       + d.manufacturerName;
+        groups[key].push_back (&d);
+    }
+    int marked = 0, ambiguous = 0, multi = 0;
+    for (auto& kv : groups)
+    {
+        auto& g = kv.second;
+        if (g.size() < 2) continue;   // present at ONE version: never superseded
+        ++multi;
+        const juce::PluginDescription* newest = g.front();
+        bool comparable = true;
+        for (size_t i = 1; i < g.size(); ++i)
+        {
+            bool ok = false;
+            const int c = compareVersionNumeric (g[i]->version, newest->version, ok);
+            if (! ok) { comparable = false; break; }   // unparseable: leave the group alone
+            if (c > 0) newest = g[i];
+        }
+        if (! comparable) { ++ambiguous; continue; }
+        for (auto* d : g)
+        {
+            if (d == newest) continue;
+            bool ok = false;
+            if (compareVersionNumeric (d->version, newest->version, ok) < 0 && ok)   // STRICTLY older only
+            {
+                superseded_.insert (echojay::identityKeyForDescription (*d));
+                ++marked;
+                if (! namesMatchLoose (d->name, newest->name))
+                    EchoJay_NSLog(("EJScan: superseded \"" + d->name + "\" (" + d->version
+                                   + ") by \"" + newest->name + "\" (" + newest->version
+                                   + "), same uid renamed across versions").toRawUTF8());
+            }
+        }
+    }
+    EchoJay_NSLog(("EJScan: supersession " + juce::String(marked) + " older-version row(s) marked across "
+                   + juce::String(multi) + " multi-version plugin(s), "
+                   + juce::String(ambiguous) + " left alone (unparseable version)").toRawUTF8());
+}
+
+bool ChainHost::isSuperseded (const juce::PluginDescription& d) const
+{
+    if (d.uniqueId == 0) return false;
+    std::lock_guard<std::mutex> lock (pluginsMutex_);
+    return superseded_.count (echojay::identityKeyForDescription (d)) > 0;
+}
+
 void ChainHost::mergeBootstrapMaps()
 {
     // Read-only merge of the background mapper's output. The mapper owns
@@ -3917,6 +4094,7 @@ void ChainHost::maybeReloadEntriesCache()
             EchoJay_NSLog(("EJScan: " + juce::String(filled)
                            + " thin VST3 entr(ies) enriched from load-captured identities").toRawUTF8());
         }
+        computeSupersessions();
     }
     entriesCacheTime_ = mtime;
 }
@@ -4910,6 +5088,7 @@ void ChainHost::loadFromDisk()
                     EchoJay_NSLog(("EJScan: " + juce::String(filled)
                                    + " thin VST3 entr(ies) enriched from load-captured identities").toRawUTF8());
                 }
+                computeSupersessions();
             }
             entriesCacheTime_ = ecFile.getLastModificationTime();
         }
