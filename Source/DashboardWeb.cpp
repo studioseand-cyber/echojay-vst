@@ -124,6 +124,33 @@ struct DashboardWeb::Inner : public juce::WebBrowserComponent
     std::function<void (const juce::String&)> onFinished;
     std::function<void()>                     onNetError;
 
+    // SUPPRESS RELOAD-ON-RESHOW. JUCE's WebBrowserComponent reloads lastURL on
+    // EVERY visibility/parent-hierarchy change (parentHierarchyChanged /
+    // visibilityChanged -> Impl::checkWindowAssociation -> reloadLastURL). That
+    // reloads /dashboard?embed=plugin and resets our SPA to its initial route —
+    // discarding the deep community/messages state, its composer and its
+    // keyboard focus — and it flashes on every Link-window reparent. Allow the
+    // FIRST association WHILE SHOWING (that renders the already-loaded page), and
+    // suppress every one after: the loaded page stays resident across reshows.
+    // The NSView peer attach is the child NSViewComponent's job, NOT this
+    // method, so attachment is untouched. Each DashboardWeb construction gets a
+    // fresh flag, so the lazy destroy-on-tab-away / rebuild-on-return is intact.
+    bool firstShowAssociationDone_ = false;
+    bool allowAssociation()
+    {
+        if (firstShowAssociationDone_) return false;      // a reshow — suppress the reload
+        if (isShowing()) firstShowAssociationDone_ = true; // the one association that renders
+        return true;                                       // (non-showing calls are no-ops we pass through)
+    }
+    void visibilityChanged() override
+    {
+        if (allowAssociation()) juce::WebBrowserComponent::visibilityChanged();
+    }
+    void parentHierarchyChanged() override
+    {
+        if (allowAssociation()) juce::WebBrowserComponent::parentHierarchyChanged();
+    }
+
     void pageFinishedLoading (const juce::String& url) override
     {
         if (onFinished) onFinished (url);

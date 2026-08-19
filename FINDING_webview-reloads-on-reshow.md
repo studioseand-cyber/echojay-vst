@@ -69,3 +69,33 @@ as-shipped. This must be designed in before 1b, not discovered in QA.
   `visibilityChanged`, `reloadLastURL`), `juce_WebBrowserComponent_mac.mm:734`
   (`checkWindowAssociation` → `reloadLastURL` when showing).
 - Probe: single `goToURL` in the editor ctor; M3 logged 17 loads at CTOR=0.
+
+## FIXED (stage 3, item 1)
+
+`Source/DashboardWeb.cpp`, the `Inner : juce::WebBrowserComponent` subclass. It
+overrides `visibilityChanged()` and `parentHierarchyChanged()` and calls the base
+(which triggers `checkWindowAssociation → reloadLastURL`) **only for the first
+association while showing** — the one that renders the already-loaded page — and
+**suppresses every one after**, for the life of that construction. Non-showing
+calls pass through (they are `checkWindowAssociation` no-ops).
+
+- **The peer attach is untouched.** The NSView is attached by the child
+  `NSViewComponent` (`WKWebViewImpl`), not by `WebBrowserComponent`'s
+  `parentHierarchyChanged`, so suppressing the latter keeps attachment and the
+  initial `goToURL` load working.
+- **The lazy lifecycle is untouched.** Each `DashboardWeb` construction gets a
+  fresh flag, so destroy-on-tab-away and rebuild-on-return still reload cleanly;
+  only the *within-construction* reshow reloads are suppressed.
+
+What benefits, all from the same suppression:
+- **Deep state** — the community/messages route (and its half-typed composer)
+  survives a Link-window reparent instead of resetting to the dashboard home.
+- **Scroll position** — no longer needs WebKit to restore it across a reload;
+  the page is never reloaded, so it simply stays.
+- **The flash/blink** — the brief white reload on every re-show and every
+  Link-window switch is gone.
+
+Caveat under test (item 1's point 3): a reload only fires on reshow/reparent, so
+if typing is still dead while the view **stays put** in a composer, the residual
+cause is keyboard focus (the component's focus config or the click-to-focus path
+into the WKWebView), which becomes item 1b — not this fix.
