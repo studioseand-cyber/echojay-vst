@@ -162,6 +162,10 @@ target_sources(EchoJay PRIVATE
     # owns every rect it draws, so nothing on it can leak onto another tab.
     Source/DashboardTab.cpp
     Source/DashboardTab.h
+    # Stage 2: the lazy webview Dashboard surface (upgrade over DashboardTab's
+    # native view, which stays as the offline/signed-out/load-failed fallback).
+    Source/DashboardWeb.cpp
+    Source/DashboardWeb.h
 
     # --- built-in surgical EQ (feat/surgical-eq) ---
     Source/EqEngine.cpp
@@ -342,7 +346,7 @@ target_sources(EchoJay PRIVATE
 )
 
 target_compile_definitions(EchoJay PUBLIC
-    JUCE_WEB_BROWSER=0
+    JUCE_WEB_BROWSER=1   # Stage 2: the lazy webview Dashboard tab (DashboardWeb). Lifecycle keeps it free.
     JUCE_USE_CURL=1
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
@@ -366,6 +370,10 @@ target_link_libraries(EchoJay
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags
 )
+
+# Stage 2: JUCE_WEB_BROWSER=1 uses WKWebView behind WebBrowserComponent, which
+# needs WebKit linked on macOS.
+target_link_libraries(EchoJay PRIVATE "-framework WebKit")
 
 # --- Built-in device self-registration vs. the static linker -----------------
 # Built-in devices (Source/Eed*.cpp, SurgicalEq*) add themselves to

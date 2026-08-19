@@ -147,6 +147,13 @@ int EchoJayAPI::remoteChannelPromptsVersion = 0;
 juce::String EchoJayAPI::remoteIndividualChannelRules;
 juce::String EchoJayAPI::remoteIndividualChannelStyle;
 
+juce::String EchoJayAPI::pluginBaseUrl()
+{
+    // Same production host apiEndpoint defaults to, routed through the dev
+    // override so the webview and the API share whatever dev.json points at.
+    return transportEndpoint ("https://www.echojay.ai");
+}
+
 EchoJayAPI::EchoJayAPI()
 {
     loadSettings();

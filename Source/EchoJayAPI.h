@@ -135,7 +135,13 @@ class EchoJayAPI
 public:
     EchoJayAPI();
     ~EchoJayAPI();
-    
+
+    // The base URL the plugin talks to: dev.json's baseUrl under the dev
+    // transport, production otherwise. Exposed so the Dashboard webview
+    // (Source/DashboardWeb) loads the SAME host the API uses — never a second
+    // hardcoded server. Static: same answer for every instance.
+    static juce::String pluginBaseUrl();
+
     // ============ Auth ============
     
     // Login with email/password (async)
