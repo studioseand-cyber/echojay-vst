@@ -70,6 +70,20 @@ struct LoadChainRequest { juce::String chainId, slug; };
     violation returns "bad_payload". */
 juce::String validateLoadChain (const juce::var& payload, LoadChainRequest& req);
 
+/** The loadChain busy test — PURE, so tools/dashweb_test drives it. A request is
+    busy if a modal is up (a confirm is showing) OR the last accepted request was
+    within `windowMs`. Two tests, deliberately, because a single boolean leaks:
+    a user cancelling openSavedChain's confirm, and openSavedChain's own internal
+    fetch failing, both leave nothing to clear a flag. The modal test covers "a
+    confirm is showing" exactly and indefinitely — and it matters here because
+    the webview is a native NSView that JUCE modality may NOT block, so a click
+    can reach the bridge past the dialog. The timestamp covers the async
+    import/fetch window before the confirm and self-heals both leak paths.
+    `elapsedMs` is millis since the last accepted request (a value >= windowMs
+    means "none / cleared"). */
+bool loadChainBusy (int numModalComponents, juce::int64 elapsedMs,
+                    juce::int64 windowMs = 8000);
+
 // ---------------------------------------------------------------------------
 // DashboardWeb — owns ONE juce::WebBrowserComponent and its load lifecycle.
 //

@@ -10056,7 +10056,7 @@ void EchoJayEditor::reconcileDashboardWeb()
     {
         dashWeb_.reset();
         dashWebLoaded_ = false;
-        chainLoadInFlight_ = false;   // a load that switched to the Chain tab has settled
+        chainLoadAcceptedMs_ = 0;   // a load that switched to the Chain tab has settled
         return;
     }
 
@@ -10072,7 +10072,7 @@ void EchoJayEditor::reconcileDashboardWeb()
     {
         dashWeb_ = std::make_unique<echojay::DashboardWeb>();
         addChildComponent (*dashWeb_);   // hidden until it loads; native stays up
-        chainLoadInFlight_ = false;      // fresh webview on (re)entering the Dashboard
+        chainLoadAcceptedMs_ = 0;      // fresh webview on (re)entering the Dashboard
         auto safe = juce::Component::SafePointer<EchoJayEditor> (this);
 
         // Stage 3: the loadChain bridge. DashboardWeb has already validated the
@@ -10128,13 +10128,21 @@ void EchoJayEditor::reconcileDashboardWeb()
 void EchoJayEditor::bridgeLoadChain(const juce::String& chainId, const juce::String& slug,
                                     std::function<void(bool, juce::String)> answer)
 {
-    // §8 idempotency: one in-flight guard, held through openSavedChain's confirm.
-    // A double-fired click's second event answers busy — no second confirm, no
-    // second rack build. (Cleared on error below and on the webview lifecycle in
-    // reconcileDashboardWeb: destroy on the success tab-switch, construct on the
-    // next Dashboard entry.)
-    if (chainLoadInFlight_) { if (answer) answer(false, "busy"); return; }
-    chainLoadInFlight_ = true;
+    // §8 idempotency: busy if a confirm modal is up OR the last accepted request
+    // was within the window (echojay::loadChainBusy). Two tests, not a boolean:
+    // the modal covers "a confirm is showing" (and the native webview can reach
+    // this past JUCE modality), the window covers the async import/fetch and
+    // self-heals the two paths a boolean leaks — a user-cancel and
+    // openSavedChain's own internal fetch failing. Explicit resets below and in
+    // reconcileDashboardWeb keep the common cases from waiting out the window.
+    const juce::int64 kWindowMs = 8000;
+    const auto now = juce::Time::getMillisecondCounter();
+    const int modals = juce::ModalComponentManager::getInstance()->getNumModalComponents();
+    const juce::int64 elapsed = (chainLoadAcceptedMs_ == 0)
+        ? kWindowMs   // none / cleared -> exactly at expiry -> not busy from the window
+        : (juce::int64) (juce::uint32) (now - chainLoadAcceptedMs_);
+    if (echojay::loadChainBusy(modals, elapsed, kWindowMs)) { if (answer) answer(false, "busy"); return; }
+    chainLoadAcceptedMs_ = now;
 
     // Acknowledge the moment it is validated and handed off — NOT the dial
     // report (the Chain tab shows per-slot notes natively, and the webview is
@@ -10163,7 +10171,7 @@ void EchoJayEditor::bridgeLoadChain(const juce::String& chainId, const juce::Str
                     safe->bridgeOpenChainById(cid);
                 else
                 {
-                    safe->chainLoadInFlight_ = false;
+                    safe->chainLoadAcceptedMs_ = 0;
                     safe->setChainSaveStatus(EchoJayAPI::chainErrorMessage(json, sc));
                 }
             });
@@ -10188,7 +10196,7 @@ void EchoJayEditor::bridgeOpenChainById(const juce::String& chainId)
         const auto err = EchoJayAPI::chainErrorMessage(json, sc);
         if (err.isNotEmpty())
         {
-            safe->chainLoadInFlight_ = false;
+            safe->chainLoadAcceptedMs_ = 0;
             safe->setChainSaveStatus(err);
             return;
         }

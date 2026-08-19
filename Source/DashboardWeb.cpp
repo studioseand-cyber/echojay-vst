@@ -103,6 +103,11 @@ juce::String validateLoadChain (const juce::var& payload, LoadChainRequest& req)
     return {};
 }
 
+bool loadChainBusy (int numModalComponents, juce::int64 elapsedMs, juce::int64 windowMs)
+{
+    return numModalComponents > 0 || (elapsedMs >= 0 && elapsedMs < windowMs);
+}
+
 // ===========================================================================
 // Inner — the JUCE webview, forwarding its callbacks out
 // ===========================================================================

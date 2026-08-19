@@ -287,13 +287,16 @@ private:
     bool dashWebFailedThisSelection_ = false;   // no retry until the next Dashboard selection
     void reconcileDashboardWeb();               // lazy construct/destroy of dashWeb_
 
-    // Stage 3: the loadChain bridge. ONE in-flight guard (§8 idempotency): a
-    // second loadChain while one is pending answers "busy", so a double-fired
-    // click cannot stack two confirm dialogs or build the rack twice. Held true
-    // THROUGH openSavedChain's confirm; cleared on error and on the webview
-    // lifecycle (destroy on tab-away/success, construct on return) in
-    // reconcileDashboardWeb.
-    bool chainLoadInFlight_ = false;
+    // Stage 3: the loadChain bridge guard (§8 idempotency). NOT a boolean — that
+    // leaks on two unobservable paths (a user cancelling openSavedChain's
+    // confirm, and openSavedChain's own internal fetch failing). Instead a
+    // request is busy if a modal is up OR the last accepted request was within
+    // the window (echojay::loadChainBusy). This holds the timestamp of the last
+    // accepted request; 0 means none. The modal test covers the confirm exactly;
+    // the window covers the async import/fetch and self-heals. Explicit resets to
+    // 0 (error paths, webview lifecycle in reconcileDashboardWeb) keep the common
+    // cases from waiting out the window.
+    juce::uint32 chainLoadAcceptedMs_ = 0;
     void bridgeLoadChain(const juce::String& chainId, const juce::String& slug,
                          std::function<void(bool accepted, juce::String reason)> answer);
     void bridgeOpenChainById(const juce::String& chainId);   // fetch name, then the ONE loader
