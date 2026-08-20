@@ -3652,9 +3652,20 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
                        ? juce::String((int) std::lround(v)) : juce::String(v, 2);
         };
         const auto arrow = juce::String::fromUTF8(" \xe2\x86\x92 ");
-        juce::StringArray landedBits;
+        juce::StringArray landedBits, refusedBits;
         for (auto& r : report)
         {
+            // Range refusals name the mapped range ON THE CARD, inheriting
+            // applyOne's note VERBATIM ("asked 50.00, this control's range
+            // is [1.00 .. 7.00], left manual") rather than authoring a
+            // second sentence for the same fact — and never a version
+            // claim: the range is the MAP's, and updating the plugin would
+            // not change it.
+            if (r.outOfRange && r.note.isNotEmpty())
+            {
+                refusedBits.add(echojay::semanticLabel(r.semantic) + ": " + r.note);
+                continue;
+            }
             if (! r.applied || r.staleDisplayKept) continue;   // bridged: annotated upstream
             const auto label = echojay::semanticLabel(r.semantic);
             if (r.displayVerified && r.landedText.trim().isNotEmpty())
@@ -3673,19 +3684,23 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
             else
                 landedBits.add(label + arrow + r.requestedValue.toString());
         }
-        if (! landedBits.isEmpty())
+        if (! landedBits.isEmpty() || ! refusedBits.isEmpty())
         {
-            // Idempotent on re-apply (map arrival, re-dial): the previous
-            // Landed line is replaced, never stacked.
-            static const char* kLandedPrefix = "Landed: ";
+            // Idempotent on re-apply (map arrival, re-dial): previous
+            // Landed/Refused lines are replaced, never stacked.
+            static const char* kLandedPrefix  = "Landed: ";
+            static const char* kRefusedPrefix = "Refused: ";
             juce::StringArray kept;
             for (auto& line : juce::StringArray::fromLines(s.settings))
-                if (! line.startsWith(kLandedPrefix)) kept.add(line);
+                if (! line.startsWith(kLandedPrefix) && ! line.startsWith(kRefusedPrefix))
+                    kept.add(line);
             while (! kept.isEmpty() && kept[kept.size() - 1].trim().isEmpty())
                 kept.remove(kept.size() - 1);
-            const auto landedLine = kLandedPrefix + landedBits.joinIntoString(", ");
-            s.settings = kept.isEmpty() ? landedLine
-                                        : kept.joinIntoString("\n") + "\n" + landedLine;
+            if (! landedBits.isEmpty())
+                kept.add(kLandedPrefix + landedBits.joinIntoString(", "));
+            if (! refusedBits.isEmpty())
+                kept.add(kRefusedPrefix + refusedBits.joinIntoString("; "));
+            s.settings = kept.joinIntoString("\n");
             if (onSlotSettingsChanged) onSlotSettingsChanged();
         }
     }

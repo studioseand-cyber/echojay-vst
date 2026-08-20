@@ -21149,8 +21149,8 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
             if (!p.oor.isEmpty())
                 bubble += " " + p.oor.joinIntoString(" and ")
                         + (p.oor.size() == 1
-                               ? " asked a value outside this version's range - treat its card value as intent, not a number."
-                               : " asked values outside this version's range - treat their card values as intent, not numbers.");
+                               ? " asked a value outside its mapped range - the card names the range; treat the value as intent, not a number."
+                               : " asked values outside their mapped ranges - the card names the ranges; treat the values as intent, not numbers.");
         }
         if (!zeroParts.isEmpty())
         {
@@ -21160,7 +21160,7 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                            : " need hand-dialing - use the values on their cards.");
         }
         for (const auto& z : zeroOorParts)
-            bubble += " " + z.name + " asked values outside this version's range ("
+            bubble += " " + z.name + " asked values outside their mapped ranges ("
                     + z.oor.joinIntoString(", ")
                     + ") - nothing was dialled; treat its card values as intent rather than numbers.";
         if (!staleParts.isEmpty())
@@ -21438,8 +21438,8 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
             if (!p.oor.isEmpty())
                 bubble += " " + p.oor.joinIntoString(" and ")
                         + (p.oor.size() == 1
-                               ? " asked a value outside this version's range - treat its card value as intent, not a number."
-                               : " asked values outside this version's range - treat their card values as intent, not numbers.");
+                               ? " asked a value outside its mapped range - the card names the range; treat the value as intent, not a number."
+                               : " asked values outside their mapped ranges - the card names the ranges; treat the values as intent, not numbers.");
         }
         if (!zeroParts.isEmpty())
         {
@@ -21452,7 +21452,7 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
         for (const auto& z : zeroOorParts)
         {
             bubble += (bubble.isEmpty() ? juce::String() : juce::String(" "));
-            bubble += z.name + " asked values outside this version's range ("
+            bubble += z.name + " asked values outside their mapped ranges ("
                     + z.oor.joinIntoString(", ")
                     + ") - nothing was dialled; treat its card values as intent rather than numbers.";
         }
@@ -23578,6 +23578,33 @@ void EchoJayEditor::handleChainRecall(const juce::String& id, const juce::String
     beginRecall(id, resolvedName.isNotEmpty() ? resolvedName : name);
 }
 
+// Clipped name list for the replace-disclosure surfaces (20 Aug 2026): up
+// to maxShown names, then "+N more" — one vocabulary shared by every
+// surface that speaks about a rack, so two surfaces cannot phrase the same
+// rack differently.
+static juce::String clippedNameList (const juce::StringArray& names, int maxShown)
+{
+    juce::StringArray shown;
+    for (int i = 0; i < names.size() && i < maxShown; ++i) shown.add(names[i]);
+    juce::String out = shown.joinIntoString(", ");
+    if (names.size() > maxShown)
+        out << " +" << juce::String(names.size() - maxShown) << " more";
+    return out;
+}
+
+// THE ONE composer of the replace disclosure (20 Aug 2026, evening). The
+// build box and the recall ask each said "N plugins will be lost" in their
+// own words, the fix landed on one of them, and the other was found by
+// pressing the button — the two-authors shape, again. Every surface that
+// confirms clearing a populated rack composes its names line HERE. The
+// surrounding dialogue stays per-surface on purpose: the build path may use
+// an AlertWindow, the recall path must use the ASK shelf (no-modal rule
+// below), but the sentence naming what is lost has one author.
+static juce::String replacesClause (const juce::StringArray& rackNames)
+{
+    return "Replaces: " + clippedNameList(rackNames, 4);
+}
+
 // Ask before replacing, through the ASK shelf: the presentCompareScopeAsk
 // pattern, a client-authored ask whose chips are intercepted locally and
 // never send a chat turn. NOT showOkCancelBox and NOT any AlertWindow:
@@ -23620,11 +23647,28 @@ void EchoJayEditor::presentRecallReplaceAsk(const juce::String& id,
     const bool toLink = targetUid.isNotEmpty();
     const juce::String plugins =
         juce::String(rackSlots) + (rackSlots == 1 ? " plugin" : " plugins");
-    const juce::String question = toLink
+    // The names, derived HERE at ask-compose time from the target the ask
+    // is about — the true loaded instances for the main rack, the sidecar
+    // for a Link — so both callers get the disclosure without carrying it,
+    // and the sentence itself comes from the ONE composer (replacesClause).
+    juce::StringArray rackNames;
+    if (toLink)
+    {
+        for (const auto& rs : readLinkRackSidecar(targetUid).slots)
+            if (rs.name.isNotEmpty()) rackNames.add(rs.name);
+    }
+    else
+    {
+        for (const auto& si : processorRef.getChainHost().getAllSlotInfos())
+            if (si.name.isNotEmpty()) rackNames.add(si.name);
+    }
+    juce::String question = toLink
         ? "Load \"" + name + "\" onto \"" + targetName + "\"? That channel"
           " already has " + plugins + " racked, and loading replaces them."
         : "Load \"" + name + "\"? This channel already has " + plugins
           + " racked, and loading replaces them.";
+    if (! rackNames.isEmpty())
+        question += " " + replacesClause(rackNames) + ".";
 
     auto* root = new juce::DynamicObject();
     root->setProperty("question", question);
@@ -28207,20 +28251,6 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
     });
 }
 
-// Clipped name list for the replace-disclosure surfaces (20 Aug 2026): up
-// to maxShown names, then "+N more" — one vocabulary shared by the Replace
-// chain box and the build's archive label, so the two cannot phrase the
-// same rack differently.
-static juce::String clippedNameList (const juce::StringArray& names, int maxShown)
-{
-    juce::StringArray shown;
-    for (int i = 0; i < names.size() && i < maxShown; ++i) shown.add(names[i]);
-    juce::String out = shown.joinIntoString(", ");
-    if (names.size() > maxShown)
-        out << " +" << juce::String(names.size() - maxShown) << " more";
-    return out;
-}
-
 void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
 {
     // A failed build must land the user on the Chain page with an error, not
@@ -28590,8 +28620,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
         juce::AlertWindow::showOkCancelBox(
             juce::AlertWindow::QuestionIcon,
             "Replace chain?",
-            "Replaces: " + clippedNameList(current, 4)
-                + "\n\nBuild the AI chain?",
+            replacesClause(current) + "\n\nBuild the AI chain?",
             "Build", "Cancel", nullptr,
             juce::ModalCallbackFunction::create([doLoad](int result) mutable
             {
