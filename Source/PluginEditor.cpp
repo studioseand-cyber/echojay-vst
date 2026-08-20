@@ -28207,6 +28207,20 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
     });
 }
 
+// Clipped name list for the replace-disclosure surfaces (20 Aug 2026): up
+// to maxShown names, then "+N more" — one vocabulary shared by the Replace
+// chain box and the build's archive label, so the two cannot phrase the
+// same rack differently.
+static juce::String clippedNameList (const juce::StringArray& names, int maxShown)
+{
+    juce::StringArray shown;
+    for (int i = 0; i < names.size() && i < maxShown; ++i) shown.add(names[i]);
+    juce::String out = shown.joinIntoString(", ");
+    if (names.size() > maxShown)
+        out << " +" << juce::String(names.size() - maxShown) << " more";
+    return out;
+}
+
 void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
 {
     // A failed build must land the user on the Chain page with an error, not
@@ -28334,10 +28348,15 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
         // Archive the live rack BEFORE the clear, the same protection recall
         // (item 4) and the Link replace already have, so a build over a
         // populated rack is recoverable from chain_archive/. No-op if empty.
-        ch2.archiveCurrentRack("replaced by AI build: " + slots[0].name
-            + ((int) slots.size() > 1
-                   ? " +" + juce::String((int) slots.size() - 1) + " more"
-                   : juce::String()));
+        // Label names the INCOMING build (the archive's content is the old
+        // rack itself), through the same clip vocabulary the Replace box
+        // uses.
+        {
+            juce::StringArray incoming;
+            for (const auto& sl : slots) incoming.add(sl.name);
+            ch2.archiveCurrentRack("replaced by AI build: "
+                                   + clippedNameList(incoming, 1));
+        }
         int n = ch2.getNumSlots();
         for (int i = n - 1; i >= 0; --i) ch2.removeSlot(i);
         safeThis->chainSelectedSlot_ = -1;
@@ -28560,10 +28579,19 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
 
     if (ch.getNumSlots() > 0)
     {
+        // Disclosure at PRESS time from the true loaded instances (20 Aug
+        // 2026): "3 slot(s) will be cleared" never said WHICH rack was
+        // about to be lost. Composed here and not on the chat card at
+        // compose time, because the rack can change between reply and
+        // press, and a disclosure that can go stale is the same defect one
+        // layer down. Clipped so a large rack stays readable.
+        juce::StringArray current;
+        for (const auto& si : ch.getAllSlotInfos()) current.add(si.name);
         juce::AlertWindow::showOkCancelBox(
             juce::AlertWindow::QuestionIcon,
             "Replace chain?",
-            juce::String(ch.getNumSlots()) + " slot(s) will be cleared. Build the AI chain?",
+            "Replaces: " + clippedNameList(current, 4)
+                + "\n\nBuild the AI chain?",
             "Build", "Cancel", nullptr,
             juce::ModalCallbackFunction::create([doLoad](int result) mutable
             {

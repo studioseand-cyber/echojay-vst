@@ -3599,6 +3599,97 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
     else
         s.dialStatus = DialStatus::unusableMap;
 
+    // Card honesty (20 Aug 2026): the card read "attack 3ms, release 7ms"
+    // while the knobs went to positions 3 and 7 on a 1..7 scale — the
+    // model's imagined unit, never corrected by what the plugin received.
+    // Say what LANDED, in the three tiers the apply already decided, never
+    // a fourth:
+    //   - display-verified: the plugin's own display text is ground truth.
+    //   - bridged (staleDisplayKept): already annotated as unverifiable
+    //     upstream; nothing is added here.
+    //   - setread / unparseable display: the written value, in the MAP's
+    //     vocabulary.
+    // THE RULE: the card must never restate a unit the map does not
+    // declare. Where the map's unit is null or disagrees with the key's
+    // suffix, show the range instead. That is the whole of tonight's
+    // CLA-76 defect in one sentence.
+    {
+        auto entryFor = [&](const juce::String& key) -> juce::var
+        {
+            auto e = it->second.getProperty("params", juce::var())
+                               .getProperty(key, juce::var());
+            if (! e.isObject())
+                e = it->second.getProperty("controls", juce::var())
+                              .getProperty(key, juce::var());
+            return e;
+        };
+        auto declaredUnit = [](const juce::var& entry, const juce::String& key) -> juce::String
+        {
+            const auto u = entry.getProperty("unit", juce::var()).toString().trim();
+            if (u.isEmpty()) return {};
+            // A flat key's suffix implies a unit; when the map disagrees,
+            // the range speaks instead (the rule above).
+            struct SufUnit { const char* suf; const char* unit; };
+            for (const auto& su : { SufUnit{"_db","db"}, SufUnit{"_ms","ms"},
+                                    SufUnit{"_hz","hz"}, SufUnit{"_s","s"} })
+                if (key.endsWith(su.suf) && ! u.equalsIgnoreCase(su.unit))
+                    return {};
+            return u;
+        };
+        auto rangeOf = [](const juce::var& entry, float& lo, float& hi) -> bool
+        {
+            auto anchors = echojay::anchorsFromVar(entry);
+            if (anchors.isEmpty()) return false;
+            auto eff = echojay::dominantMonotonicTable(anchors);
+            if (! eff.ok) return false;
+            lo = hi = eff.table.getFirst()[0];
+            for (auto& a : eff.table) { lo = juce::jmin(lo, a[0]); hi = juce::jmax(hi, a[0]); }
+            return hi - lo > 1.0e-6f;
+        };
+        auto num = [](float v)
+        {
+            return std::abs(v - std::round(v)) < 1.0e-4f
+                       ? juce::String((int) std::lround(v)) : juce::String(v, 2);
+        };
+        const auto arrow = juce::String::fromUTF8(" \xe2\x86\x92 ");
+        juce::StringArray landedBits;
+        for (auto& r : report)
+        {
+            if (! r.applied || r.staleDisplayKept) continue;   // bridged: annotated upstream
+            const auto label = echojay::semanticLabel(r.semantic);
+            if (r.displayVerified && r.landedText.trim().isNotEmpty())
+            {
+                landedBits.add(label + arrow + "reads \"" + r.landedText.trim() + "\"");
+                continue;
+            }
+            const auto entry = entryFor(r.semantic);
+            const auto unit  = declaredUnit(entry, r.semantic);
+            float lo = 0.0f, hi = 0.0f;
+            if (unit.isNotEmpty())
+                landedBits.add(label + arrow + r.requestedValue.toString() + " " + unit);
+            else if (rangeOf(entry, lo, hi))
+                landedBits.add(label + arrow + r.requestedValue.toString()
+                               + " (this knob runs " + num(lo) + ".." + num(hi) + ")");
+            else
+                landedBits.add(label + arrow + r.requestedValue.toString());
+        }
+        if (! landedBits.isEmpty())
+        {
+            // Idempotent on re-apply (map arrival, re-dial): the previous
+            // Landed line is replaced, never stacked.
+            static const char* kLandedPrefix = "Landed: ";
+            juce::StringArray kept;
+            for (auto& line : juce::StringArray::fromLines(s.settings))
+                if (! line.startsWith(kLandedPrefix)) kept.add(line);
+            while (! kept.isEmpty() && kept[kept.size() - 1].trim().isEmpty())
+                kept.remove(kept.size() - 1);
+            const auto landedLine = kLandedPrefix + landedBits.joinIntoString(", ");
+            s.settings = kept.isEmpty() ? landedLine
+                                        : kept.joinIntoString("\n") + "\n" + landedLine;
+            if (onSlotSettingsChanged) onSlotSettingsChanged();
+        }
+    }
+
     // SUGGESTED SETTINGS display contract: auto-applied slots show
     // "Applied automatically" + a compact summary of what was set;
     // slots with nothing applied keep the prose guidance unchanged.
