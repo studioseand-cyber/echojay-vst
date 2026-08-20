@@ -2926,12 +2926,13 @@ private:
     int findNewestUnansweredAsk() const;
     // Mark every pending ask answered (any user send supersedes the question)
     void supersedePendingAsks();
-    // Recall-scoped supersede (20 Aug 2026): marks answered ONLY asks whose
-    // chips carry recall_* intents, so a second chain-row click replaces the
-    // pending recall ask without silently killing a pending model brief,
-    // ASK, or compare-scope ask. The blanket one above stays for the sites
-    // that mean "the user moved on from everything".
-    void supersedePendingRecallAsks();
+    // Replace-class supersede (20 Aug 2026): marks answered ONLY asks whose
+    // chips carry recall_* or build_* intents — one pending replace decision
+    // at a time, a second trigger replaces rather than stacks — without
+    // silently killing a pending model brief, ASK, or compare-scope ask.
+    // The blanket one above stays for the sites that mean "the user moved
+    // on from everything".
+    void supersedePendingReplaceAsks();
     // The ONE layout authority for the PILL shelf (height reservation + pill
     // placement); the paint pass draws only the background inside the rect
     // this produced, so the two cannot disagree. Flows the pills into rows
@@ -3188,7 +3189,26 @@ private:
     juce::String resolveLinkProposalAddr(const juce::String& linkId) const;
     void applyGainProposal(const GainCardZone& z);
     void showChainPluginPicker();                       // "+" button popup
-    void loadChainFromJson(const juce::String& chainJson);
+    // replaceConfirmed=true is the build_confirm chip's re-entry: parse and
+    // build without asking again. The default path over a populated rack
+    // presents the client-composed replace ask (presentBuildReplaceAsk) and
+    // returns — the AlertWindow confirm is gone (no-modal rule: Logic parks
+    // modals behind the plugin window).
+    void loadChainFromJson(const juce::String& chainJson, bool replaceConfirmed = false);
+    // The build path's replace confirm, recall's sibling: fixed client
+    // labels, replace or cancel ONLY (no append choice exists because no
+    // append path exists — the load path applies block settings to fresh
+    // instances, never state). Chip carries the chain json so the pending
+    // build survives an editor recreate the same way a recall ask does.
+    void presentBuildReplaceAsk(const juce::String& chainJson);
+    // THE ONE presenter for replace-class asks (build + recall): flips out
+    // of the chains list, supersedes the pending replace ask, appends +
+    // persists the ask message, logs, relayouts. Question wording and chip
+    // intents stay per-caller; the mechanism has one author.
+    void presentReplaceAsk(const juce::String& question,
+                           const juce::Array<juce::var>& choices,
+                           const juce::String& flipContext,
+                           const juce::String& shownLog);
 
     // ---- Link chain send side ----
     // Destination is never ambiguous under the router rule: a channel chat

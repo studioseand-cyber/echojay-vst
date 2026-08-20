@@ -20646,6 +20646,10 @@ bool EchoJayEditor::briefTakesTypedAnswer(const juce::String& typed)
     return true;
 }
 
+// Defined with the replace-ask family further down; the staleness guard in
+// the build_confirm branch below needs it before that point in the file.
+static juce::String clippedNameList (const juce::StringArray& names, int maxShown);
+
 void EchoJayEditor::onAskChipTapped(int i)
 {
     if (i < 0 || i >= (int) askChipVars.size() || i >= (int) askChipLabels.size()
@@ -20744,6 +20748,51 @@ void EchoJayEditor::onAskChipTapped(int i)
         {
             if (tuid.isNotEmpty()) recallLoadChainToLink(tuid, rid, rnm);
             else                   recallLoadChain(rid, rnm);
+        }
+        return;
+    }
+    // The build path's replace confirm (recall_confirm's sibling, 20 Aug
+    // 2026): the model pill ("Yes, build it") is the TRIGGER for this ask,
+    // not the consent. Confirm re-enters loadChainFromJson with
+    // replaceConfirmed=true — the block re-parses fresh, so nothing stale
+    // is captured across the ask.
+    if (intent == "build_confirm" || intent == "build_cancel")
+    {
+        logTap(intent);
+        const auto cj = askChipVars[(size_t) i].getProperty("build_chain_json",
+                                                            juce::var()).toString();
+        const int rackNow = processorRef.getChainHost().getNumSlots();
+        supersedePendingAsks();
+        askShelfVisible_ = false;
+        resized();
+        EchoJay_NSLog(("EJBuild: [build-ask] rack=" + juce::String(rackNow)
+                       + " answer="
+                       + (intent == "build_confirm" ? "replace" : "cancel")).toRawUTF8());
+        if (intent == "build_confirm" && cj.isNotEmpty())
+        {
+            // STALENESS GUARD: the question's "Replaces:" clause was
+            // composed when the ask was raised, and the rack can have
+            // changed since (the ask survives editor recreates). A consent
+            // that named a different rack does not build — it logs the
+            // mismatch and re-asks with the live names, superseding this
+            // ask through the one presenter.
+            const auto asked = askChipVars[(size_t) i]
+                                   .getProperty("build_rack_names", juce::var()).toString();
+            juce::StringArray nowNames;
+            for (const auto& si : processorRef.getChainHost().getAllSlotInfos())
+                if (si.name.isNotEmpty()) nowNames.add(si.name);
+            if (nowNames.joinIntoString("\n") != asked)
+            {
+                juce::StringArray askedArr;
+                askedArr.addLines(asked);
+                EchoJay_NSLog(("EJBuild: [build-ask] STALE rack - asked \""
+                               + clippedNameList(askedArr, 4) + "\", now \""
+                               + clippedNameList(nowNames, 4)
+                               + "\" - re-asking with the live names").toRawUTF8());
+                presentBuildReplaceAsk(cj);
+                return;
+            }
+            loadChainFromJson(cj, /*replaceConfirmed*/ true);
         }
         return;
     }
@@ -22956,34 +23005,86 @@ void EchoJayEditor::supersedePendingAsks()
     if (any) workspace.requestMutationSync();
 }
 
-void EchoJayEditor::supersedePendingRecallAsks()
+void EchoJayEditor::supersedePendingReplaceAsks()
 {
     // Scoped by INTENT PREFIX, not by message position: every client-authored
-    // recall chip carries a recall_* intent (recall_confirm / recall_cancel /
-    // recall_here / recall_switch), and nothing else does. A pending model
-    // brief or compare ask survives a chain-row click untouched.
+    // replace-class chip carries a recall_* intent (recall_confirm /
+    // recall_cancel / recall_here / recall_switch) or a build_* intent
+    // (build_confirm / build_cancel), and nothing else does. A pending model
+    // brief or compare ask survives untouched.
     if (pendingRecallMismatchAsk_)
     {
         pendingRecallMismatchAsk_ = false;
-        EchoJay_NSLog("EJRecall: mismatch ask dismissed without choosing (superseded by new recall ask)");
+        EchoJay_NSLog("EJRecall: mismatch ask dismissed without choosing (superseded by new replace ask)");
     }
     bool any = false;
     for (auto& m : chatMessages)
     {
         if (m.role != "assistant" || m.askData.isEmpty() || m.askAnswered) continue;
-        bool recall = false;
+        bool replaceClass = false;
         auto v = juce::JSON::parse(m.askData);   // held: getDynamicObject() must not outlive the var
         if (auto* o = v.getDynamicObject())
             if (auto* cs = o->getProperty("choices").getArray())
                 for (auto& cv : *cs)
-                    if (cv.getProperty("intent", juce::var()).toString().startsWith("recall_"))
-                    { recall = true; break; }
-        if (! recall) continue;
+                {
+                    const auto in = cv.getProperty("intent", juce::var()).toString();
+                    if (in.startsWith("recall_") || in.startsWith("build_"))
+                    { replaceClass = true; break; }
+                }
+        if (! replaceClass) continue;
         m.askAnswered = true;
         workspace.markAskAnswered(currentChatId, m.content);
         any = true;
     }
     if (any) workspace.requestMutationSync();
+}
+
+// THE ONE presenter for replace-class asks. Build and recall each compose
+// their own question and chips; everything mechanical — the chains-list
+// flip, the supersede, the append + persist, the log, the relayout — has
+// one author here, because the build box and the recall ask saying the same
+// thing in two implementations is what produced the count-not-names defect
+// and the invisible-ask defect in one week.
+void EchoJayEditor::presentReplaceAsk(const juce::String& question,
+                                      const juce::Array<juce::var>& choices,
+                                      const juce::String& flipContext,
+                                      const juce::String& shownLog)
+{
+    // The ask renders on the CONVERSATION surface; a trigger arriving with
+    // the Chains list showing would lay the chips out and have them hidden
+    // by the chains-mode block (the invisible-ask defect, 20 Aug 2026).
+    // Flip THROUGH THE EXISTING SETTER (it runs resized()+repaint() itself
+    // and clears nothing). Prefix and shape of the [ask-flip] line are the
+    // SHIPPED search contract — keep them byte-stable.
+    if (chainSidebarInChainsMode())
+    {
+        EchoJay_NSLog(("EJRecall: [ask-flip] chains list -> AI mode to show"
+                       " the replace ask (" + flipContext + ")").toRawUTF8());
+        setChainSidebarMode(false);
+    }
+    // A second trigger REPLACES the pending replace ask instead of stacking
+    // a twin; scoped, so a pending model brief or compare ask survives.
+    supersedePendingReplaceAsks();
+
+    auto* root = new juce::DynamicObject();
+    root->setProperty("question", question);
+    root->setProperty("choices", choices);
+    const juce::String askJson = juce::JSON::toString(juce::var(root), true);
+
+    ChatMsg cm;
+    cm.role    = "assistant";
+    cm.content = question;
+    cm.askData = askJson;
+    chatMessages.push_back(cm);
+    processorRef.chatHistory.push_back({ "assistant", question });
+    // Persist so the pending ask survives an editor recreate, exactly like
+    // the compare-scope ask.
+    if (currentChatId.isNotEmpty())
+        workspace.appendMessageToChat(currentChatId, "assistant", question,
+                                      {}, {}, {}, askJson, {});
+    EchoJay_NSLog(shownLog.toRawUTF8());
+    resized();
+    repaint();
 }
 
 LinkShm::RackSidecar EchoJayEditor::readLinkRackSidecar(const juce::String& uid) const
@@ -23683,30 +23784,9 @@ void EchoJayEditor::presentRecallReplaceAsk(const juce::String& id,
                                             const juce::String& targetUid,
                                             const juce::String& targetName)
 {
-    // The ask renders on the CONVERSATION surface. A chain-row click arrives
-    // with the Chains list showing, and resized()'s chains-mode block hides
-    // the ask chips two hundred lines after the shelf block lays them out —
-    // the invisible-ask defect of 20 Aug 2026. Flip to AI mode THROUGH THE
-    // EXISTING SETTER (it runs resized()+repaint() itself, and clears
-    // nothing: the rows and their cache survive the mode change), never a
-    // second ask surface. The log line exists so the next silent ask can be
-    // told apart from a flip that never ran.
-    if (chainSidebarInChainsMode())
-    {
-        // [ask-flip] is the Console search key: Kathy filters on message
-        // text, never process (Logic hosts AUs out of process under
-        // AUHostingServiceXPC), and "EJRecall:" alone matches a dozen
-        // event kinds. Unique in the tree — keep it that way.
-        EchoJay_NSLog(("EJRecall: [ask-flip] chains list -> AI mode to show"
-                       " the replace ask (chain \"" + name + "\")").toRawUTF8());
-        setChainSidebarMode(false);
-    }
-    // A second chain-row click REPLACES the pending recall ask instead of
-    // stacking a twin (two asks stacked in the Chat tab, 20 Aug). Scoped:
-    // only recall_* asks are superseded, a pending model brief or compare
-    // ask is not silently killed by a chain click.
-    supersedePendingRecallAsks();
-
+    // Flip-out-of-chains-list, supersede, append, persist, log, relayout all
+    // live in presentReplaceAsk — ONE author for the mechanics, this
+    // function owns only the recall wording and chips.
     const bool toLink = targetUid.isNotEmpty();
     const juce::String plugins =
         juce::String(rackSlots) + (rackSlots == 1 ? " plugin" : " plugins");
@@ -23733,8 +23813,6 @@ void EchoJayEditor::presentRecallReplaceAsk(const juce::String& id,
     if (! rackNames.isEmpty())
         question += " " + replacesClause(rackNames) + ".";
 
-    auto* root = new juce::DynamicObject();
-    root->setProperty("question", question);
     juce::Array<juce::var> choices;
     {
         auto* c = new juce::DynamicObject();
@@ -23757,26 +23835,62 @@ void EchoJayEditor::presentRecallReplaceAsk(const juce::String& id,
         c->setProperty("intent", "recall_cancel");
         choices.add(juce::var(c));
     }
-    root->setProperty("choices", choices);
-    const juce::String askJson = juce::JSON::toString(juce::var(root), true);
+    presentReplaceAsk(question, choices,
+                      "chain \"" + name + "\"",
+                      "EJRecall: replace ask shown=yes rack=" + juce::String(rackSlots)
+                          + (toLink ? " target=\"" + targetName + "\" uid=" + targetUid
+                                    : juce::String())
+                          + " answer=pending");
+}
 
-    ChatMsg cm;
-    cm.role    = "assistant";
-    cm.content = question;
-    cm.askData = askJson;
-    chatMessages.push_back(cm);
-    processorRef.chatHistory.push_back({ "assistant", question });
-    // Persist so the pending ask survives an editor recreate, exactly like
-    // the compare-scope ask.
-    if (currentChatId.isNotEmpty())
-        workspace.appendMessageToChat(currentChatId, "assistant", question,
-                                      {}, {}, {}, askJson, {});
-    EchoJay_NSLog(("EJRecall: replace ask shown=yes rack=" + juce::String(rackSlots)
-                   + (toLink ? " target=\"" + targetName + "\" uid=" + targetUid
-                             : juce::String())
-                   + " answer=pending").toRawUTF8());
-    resized();
-    repaint();
+void EchoJayEditor::presentBuildReplaceAsk(const juce::String& chainJson)
+{
+    // The doomed slots, from the TRUE loaded instances at ask time, through
+    // the one composer (replacesClause). Honest about mechanism, measured
+    // from the load path and not the block schema (20 Aug 2026): doLoad
+    // applies only setSlotSettings / setSlotStructuredSettings / setSlotWet
+    // to FRESH instances — no state travels — so a plugin listed in both
+    // racks returns rebuilt at the new chain's settings, and there is no
+    // append on this path. The chips offer only what the handler performs:
+    // replace or cancel.
+    juce::StringArray rackNames;
+    for (const auto& si : processorRef.getChainHost().getAllSlotInfos())
+        if (si.name.isNotEmpty()) rackNames.add(si.name);
+
+    const juce::String question =
+        "Build the AI chain? The current rack is cleared first and the new"
+        " chain is built from scratch - a plugin in both comes back at the"
+        " new chain's settings, not with its current state. "
+        + replacesClause(rackNames) + ".";
+
+    juce::Array<juce::var> choices;
+    {
+        auto* c = new juce::DynamicObject();
+        c->setProperty("label",  "Replace and build");
+        c->setProperty("intent", "build_confirm");
+        // The whole block rides the chip so the pending build survives an
+        // editor recreate exactly like a recall ask (askData is persisted
+        // and the chips are rebuilt from it) — a pending-build member would
+        // die with the editor and leave a chip that does nothing.
+        c->setProperty("build_chain_json", chainJson);
+        // The rack AS NAMED BY THIS QUESTION ('\n'-joined: names carry
+        // commas). The confirm compares against the live rack and a
+        // mismatch re-asks with fresh names instead of building — consent
+        // must name the rack that is actually lost, and time can pass
+        // between raise and tap (the ask survives editor recreates).
+        c->setProperty("build_rack_names", rackNames.joinIntoString("\n"));
+        choices.add(juce::var(c));
+    }
+    {
+        auto* c = new juce::DynamicObject();
+        c->setProperty("label",  "Keep current");
+        c->setProperty("intent", "build_cancel");
+        choices.add(juce::var(c));
+    }
+    presentReplaceAsk(question, choices,
+                      "build over " + clippedNameList(rackNames, 1),
+                      "EJBuild: [build-ask] replace ask shown=yes rack="
+                          + juce::String(rackNames.size()) + " answer=pending");
 }
 
 // The channel-mismatch ask: the server's heads-up text IS the question, and
@@ -28314,7 +28428,7 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
     });
 }
 
-void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
+void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replaceConfirmed)
 {
     // A failed build must land the user on the Chain page with an error, not
     // return silently (the click otherwise appears to do nothing).
@@ -28670,30 +28784,25 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
         });   // end deferred rack-clear
     };
 
-    if (ch.getNumSlots() > 0)
+    // Client-composed replace confirm in the recall family (20 Aug 2026,
+    // Kathy-authorised): the AlertWindow is GONE — Logic parks modals
+    // BEHIND the plugin window (the no-modal rule at beginRecall), which is
+    // how a confirm can be invisible while blocking. The model pill
+    // ("Yes, build it") is the TRIGGER for the ask, not the consent; the
+    // confirm chip re-enters here with replaceConfirmed=true and the block
+    // re-parses fresh, so nothing captured goes stale across the ask. Both
+    // decisions log, the recall pattern.
+    if (ch.getNumSlots() > 0 && ! replaceConfirmed)
     {
-        // Disclosure at PRESS time from the true loaded instances (20 Aug
-        // 2026): "3 slot(s) will be cleared" never said WHICH rack was
-        // about to be lost. Composed here and not on the chat card at
-        // compose time, because the rack can change between reply and
-        // press, and a disclosure that can go stale is the same defect one
-        // layer down. Clipped so a large rack stays readable.
-        juce::StringArray current;
-        for (const auto& si : ch.getAllSlotInfos()) current.add(si.name);
-        juce::AlertWindow::showOkCancelBox(
-            juce::AlertWindow::QuestionIcon,
-            "Replace chain?",
-            replacesClause(current) + "\n\nBuild the AI chain?",
-            "Build", "Cancel", nullptr,
-            juce::ModalCallbackFunction::create([doLoad](int result) mutable
-            {
-                if (result == 1) doLoad();
-            }));
+        presentBuildReplaceAsk(chainJson);
+        return;
     }
+    if (ch.getNumSlots() == 0)
+        EchoJay_NSLog("EJBuild: [build-ask] replace ask shown=no rack=0 answer=build");
     else
-    {
-        doLoad();
-    }
+        EchoJay_NSLog(("EJBuild: [build-ask] confirmed, building over rack="
+                       + juce::String(ch.getNumSlots())).toRawUTF8());
+    doLoad();
 }
 
 void EchoJayEditor::promptForFailedPlugins(juce::StringArray failed)
