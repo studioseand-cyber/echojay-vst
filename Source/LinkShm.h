@@ -946,6 +946,16 @@ struct RackSidecarSlot {
     // EQ is doing nothing. Absent key = unavailable, the same convention the
     // meter fields keep.
     std::vector<int16_t> curveDeciDb;
+    // Identity, so a Link-racked slot can enter the server's fingerprint union
+    // and be dialled (19 Aug 2026). Without these a Link slot reaches the
+    // server as a name with no fp and cannot be resolved to a map at all.
+    // Additive at v:1: written only when known, an old reader never asks. fp is
+    // the exact binary fingerprint; uid/version form the ik for the tiered
+    // fallback when a vendor update has moved the fp. AT THE END of the struct
+    // ON PURPOSE: RackSidecarSlot is positionally brace-initialised
+    // (LinkProcessor publishRackSidecar), so a new field goes last and is set
+    // by assignment, never spliced into the middle.
+    juce::String fp, uid, version;
 };
 struct RackSidecar {
     bool  valid = false;
@@ -1079,6 +1089,11 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
         so->setProperty("settings", s.settings);
         so->setProperty("bypassed", s.bypassed);
         so->setProperty("wet",      s.wet);
+        // Identity for the fingerprint union (additive at v:1, written only
+        // when known). See RackSidecarSlot.
+        if (s.fp.isNotEmpty())      so->setProperty("fp",      s.fp);
+        if (s.uid.isNotEmpty())     so->setProperty("uid",     s.uid);
+        if (s.version.isNotEmpty()) so->setProperty("version", s.version);
         // ADDITIVE AT v:1, and it must stay that way. `v` is an EXACT-match
         // reject in readRackSidecar below, not a minimum, so publishing v:2
         // would make an older main plugin discard the WHOLE sidecar and lose
@@ -1131,6 +1146,9 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
                 s.bypassed = (bool)so->getProperty("bypassed");
                 s.wet      = so->hasProperty("wet")
                                ? (float)(double)so->getProperty("wet") : 1.0f;
+                s.fp       = so->getProperty("fp").toString();
+                s.uid      = so->getProperty("uid").toString();
+                s.version  = so->getProperty("version").toString();
                 // Accepted ONLY at the exact published length. A short or long
                 // array is a version this reader does not understand, and half
                 // a curve drawn as a whole one would misplace every frequency

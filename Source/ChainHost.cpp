@@ -1349,6 +1349,17 @@ ChainHost::SlotInfo ChainHost::getSlotInfo(int i) const
              slots_[i].desc.pluginFormatName, slots_[i].wet };
 }
 
+ChainHost::SlotIdentity ChainHost::getSlotIdentity(int slot) const
+{
+    SlotIdentity id;
+    if (slot < 0 || slot >= (int) slots_.size()) return id;
+    const auto& s = slots_[(size_t) slot];
+    id.fp = s.fp;
+    if (s.desc.uniqueId != 0) id.uid = juce::String::toHexString(s.desc.uniqueId);
+    id.version = s.desc.version;
+    return id;
+}
+
 void ChainHost::setSlotSettings(int i, const juce::String& settings)
 {
     if (i < 0 || i >= (int)slots_.size()) return;

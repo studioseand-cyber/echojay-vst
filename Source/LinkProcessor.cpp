@@ -271,6 +271,10 @@ void LinkProcessor::publishRackSidecar()
                                  // reader never has to guess which entry it
                                  // describes. Every other slot leaves it empty.
                                  i == eqSlot ? curve : std::vector<int16_t>{} });
+            // Identity so the slot can enter the server's fp union and dial.
+            const auto id = chainHost.getSlotIdentity(i);
+            auto& back = rc.slots.back();
+            back.fp = id.fp; back.uid = id.uid; back.version = id.version;
         }
     }
     LinkShm::writeRackSidecar(resolvedDir, rc);

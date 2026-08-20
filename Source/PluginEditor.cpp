@@ -24531,7 +24531,37 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     // Per-fp exact controls exposure: say which binary each name is (rack
     // slots + scanned identities) so the server serves that fingerprint's
     // own controls entry rather than the AU/VST3 sibling intersection.
-    api.setNextChatMapFps(processorRef.getChainHost().buildMapFpsJson());
+    {
+        juce::var fpsVar = juce::JSON::parse(processorRef.getChainHost().buildMapFpsJson());
+        auto* fpsObj = fpsVar.getDynamicObject();
+        if (fpsObj == nullptr) { fpsObj = new juce::DynamicObject(); fpsVar = juce::var(fpsObj); }
+        // Item, 19 Aug: when a Link channel is in view, add its racked slots'
+        // name->fp from the sidecar, so a Link-racked slot enters the server's
+        // fingerprint union. Without this a Link slot reaches the server named
+        // but fp-less and cannot be dialled at all. Keyed by the sidecar name,
+        // which is exactly the name buildCurrentChainInjection prints.
+        if (const auto luid = chainViewUid(); luid.isNotEmpty())
+            for (const auto& s : readLinkRackSidecar(luid).slots)
+                if (s.fp.isNotEmpty() && s.name.isNotEmpty())
+                {
+                    // PRECEDENCE, made visible when it fires: buildMapFpsJson
+                    // deliberately OMITS a name whose fingerprint is ambiguous
+                    // (its conflicted removal), and this merge deliberately
+                    // overrides whatever that join produced, because a Link
+                    // sidecar entry is the exact loaded binary rather than a
+                    // name resolution. Both rules are right; the override must
+                    // not be invisible. Logged only on a real disagreement -
+                    // an agreeing overwrite carries no information.
+                    const auto prev = fpsObj->getProperty(s.name).toString();
+                    if (prev.isNotEmpty() && prev != s.fp)
+                        EchoJay_NSLog(("EJMapFps: [sidecar-override] \"" + s.name
+                                       + "\" " + prev.substring(0, 8) + " -> "
+                                       + s.fp.substring(0, 8)
+                                       + " (Link rack is the loaded binary)").toRawUTF8());
+                    fpsObj->setProperty(s.name, s.fp);
+                }
+        api.setNextChatMapFps(juce::JSON::toString(fpsVar, true));
+    }
     // 1d model-wait stage: generic-safe label only (the one-shot transport
     // has no sub-stages to report; a specific claim could desync).
     // 26 Jul 2026: ALWAYS "Thinking" here. hadChainFeed is true on

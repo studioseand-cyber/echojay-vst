@@ -241,6 +241,13 @@ public:
 
     int                      getNumSlots()    const noexcept;
     std::vector<SlotInfo>    getAllSlotInfos() const;
+
+    // Per-slot identity for the Link rack sidecar (item, 19 Aug 2026): the
+    // fingerprint computed at load, plus uid (hex) and version from the live
+    // description. Empty fields when the slot has no identity yet. Lets the
+    // Link publish enough for a racked slot to enter the server's fp union.
+    struct SlotIdentity { juce::String fp, uid, version; };
+    SlotIdentity getSlotIdentity(int slot) const;
     SlotInfo                 getSlotInfo(int i) const;
 
     void removeSlot(int i);
