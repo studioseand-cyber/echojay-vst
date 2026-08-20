@@ -1217,9 +1217,19 @@ private:
     // Non-clean-load paths keep their factual bubbles but still log
     // dial_miss events once dial state settles.
     void logDialMissesWhenSettled(int attemptsLeft);
-    // events.jsonl dial_miss writer (EchoJayEventLog schema v1).
+    // events.jsonl dial_miss writer (EchoJayEventLog schema v1). The four
+    // trailing fields are dial-3 (CONTRACT_racked_slot_controls.md A2/A7.2):
+    // key halves + denominator + its explicit source. requested < 0 writes
+    // no "requested" key, which marks the row OLD-shape and never shipped.
     void logDialMiss(const juce::String& plugin, const juce::String& fp,
-                     const juce::String& reason, const juce::StringArray& manual);
+                     const juce::String& reason, const juce::StringArray& manual,
+                     const juce::String& format = {}, const juce::String& uid = {},
+                     int requested = -1, const juce::String& requestedSource = {});
+    // dial-3 carrier (A7.3): the declined-name batch for THIS send, read
+    // from events.jsonl above the watermark. "" = nothing to ship. Sets
+    // pendingDeclineWatermark_; handleChatReply's success branch commits it.
+    juce::String buildDialDeclinesBatchJson();
+    juce::int64 pendingDeclineWatermark_ = -1;
     // Alt pill on PLAIN messages (result bubbles): height helper shared by
     // the measure and paint passes (edit cards carry their pill inside
     // editCardHeight; this returns 0 for them)

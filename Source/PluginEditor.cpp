@@ -21049,12 +21049,14 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
         // proof and the display disagreement must not vanish into the
         // applied count.
         if (!di.unconfirmed.isEmpty())
-            logDialMiss(di.name, di.fp, "stale_display_kept", di.unconfirmed);
+            logDialMiss(di.name, di.fp, "stale_display_kept", di.unconfirmed,
+                        di.format, di.uid, di.requestedCount, di.requestedSource);
         // Range refusals are recorded whatever the slot status: the bubble
         // must never say "use the values on its card" about a value the
         // card says will not map onto this version.
         if (!di.outOfRange.isEmpty())
-            logDialMiss(di.name, di.fp, "out_of_range", di.outOfRange);
+            logDialMiss(di.name, di.fp, "out_of_range", di.outOfRange,
+                        di.format, di.uid, di.requestedCount, di.requestedSource);
         switch (di.status)
         {
             case ChainHost::DialStatus::applied:
@@ -21062,9 +21064,11 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                 break;
             case ChainHost::DialStatus::partial:
                 partialParts.push_back({ di.name, di.manual, di.outOfRange });
-                logDialMiss(di.name, di.fp, "partial", di.manual);
+                logDialMiss(di.name, di.fp, "partial", di.manual,
+                            di.format, di.uid, di.requestedCount, di.requestedSource);
                 if (!di.readbackMiss.isEmpty())
-                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
+                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
+                                di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
             case ChainHost::DialStatus::noMap:
                 // Stale-map ladder, unmapped rung: the plugin loaded at a
@@ -21074,11 +21078,13 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                 if (di.staleIndexedFp.isNotEmpty())
                 {
                     staleParts.add(di.name);
-                    logDialMiss(di.name, di.fp, "stale_unmapped", di.manual);
+                    logDialMiss(di.name, di.fp, "stale_unmapped", di.manual,
+                                di.format, di.uid, di.requestedCount, di.requestedSource);
                     break;
                 }
                 zeroParts.add(di.name);
-                logDialMiss(di.name, di.fp, "no_map", di.manual);
+                logDialMiss(di.name, di.fp, "no_map", di.manual,
+                            di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
             case ChainHost::DialStatus::unusableMap:
                 if (!di.outOfRange.isEmpty())
@@ -21090,14 +21096,16 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                 zeroParts.add(di.name);
                 logDialMiss(di.name, di.fp, "unusable_map", di.manual);
                 if (!di.readbackMiss.isEmpty())
-                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
+                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
+                                di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
             case ChainHost::DialStatus::pending:
                 // Fetch never answered inside the cap: NEVER fall through to
                 // the model's success line - conservative wording, and the
                 // late apply (if it lands) updates the slot card anyway.
                 zeroParts.add(di.name);
-                logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual);
+                logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual,
+                            di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
             case ChainHost::DialStatus::none:
                 break;
@@ -21225,6 +21233,33 @@ void EchoJayEditor::composeStaleAltFollowUp(const juce::StringArray& staleNames,
 // built it, and reporting those would claim work this edit never did. Two
 // same-named slots are indistinguishable at this level - a name-level
 // approximation, accepted.
+// dial-3 (A7.2, "keys" source): requested-entry count of one edit op's
+// settings_structured — top-level flat keys, plus entries of "controls",
+// plus "bands" elements: the same granularity applySettings reports one
+// result per. Used for refine_dropped rows, whose names are removed
+// SERVER-side and never reach the client apply's report.size().
+static int structuredRequestCount (const juce::var& structured)
+{
+    auto* o = structured.getDynamicObject();
+    if (o == nullptr) return 0;
+    int n = 0;
+    for (auto& kv : o->getProperties())
+    {
+        const auto k = kv.name.toString();
+        if (k == "controls")
+        {
+            if (auto* co = kv.value.getDynamicObject()) n += co->getProperties().size();
+        }
+        else if (k == "bands")
+        {
+            if (auto* ba = kv.value.getArray()) n += ba->size();
+        }
+        else
+            ++n;
+    }
+    return n;
+}
+
 void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson,
                                                     int attemptsLeft)
 {
@@ -21276,14 +21311,25 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
             // Server-refused controls that rode the block back (ops that
             // went through Apply; receipt-consumed ops report their own).
             if (auto* dc = opv.getProperty("dropped_controls", juce::var()).getArray())
+            {
+                // dial-3 (A7.2): refine-dropped names never reach the client
+                // apply, so the denominator is the op's requested-entry
+                // count, source "keys". No slot identity here on purpose:
+                // slot indices may have shifted by the time this runs, and a
+                // wrong uid is worse than an empty one (the server counts
+                // format||name and flags it, per A2).
+                const int reqCount = structuredRequestCount(
+                    opv.getProperty("settings_structured", juce::var()));
                 for (auto& dv : *dc)
                     if (auto* dobj = dv.getDynamicObject())
                     {
                         serverDropped.add(dobj->getProperty("name").toString()
                             + " on " + plug + " (" + dobj->getProperty("reason").toString() + ")");
                         logDialMiss(plug, juce::String(), "refine_dropped",
-                                    { dobj->getProperty("name").toString() });
+                                    { dobj->getProperty("name").toString() },
+                                    juce::String(), juce::String(), reqCount, "keys");
                     }
+            }
         }
 
     juce::StringArray appliedNames, zeroParts, staleParts;
@@ -21293,9 +21339,11 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
     {
         if (!touchedNames.contains(di.name)) continue;
         if (!di.unconfirmed.isEmpty())   // bridged report-only: same record as the build path
-            logDialMiss(di.name, di.fp, "stale_display_kept", di.unconfirmed);
+            logDialMiss(di.name, di.fp, "stale_display_kept", di.unconfirmed,
+                        di.format, di.uid, di.requestedCount, di.requestedSource);
         if (!di.outOfRange.isEmpty())    // range refusals: same record as the build path
-            logDialMiss(di.name, di.fp, "out_of_range", di.outOfRange);
+            logDialMiss(di.name, di.fp, "out_of_range", di.outOfRange,
+                        di.format, di.uid, di.requestedCount, di.requestedSource);
         switch (di.status)
         {
             case ChainHost::DialStatus::applied:
@@ -21303,9 +21351,11 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 break;
             case ChainHost::DialStatus::partial:
                 partialParts.push_back({ di.name, di.manual, di.outOfRange });
-                logDialMiss(di.name, di.fp, "partial", di.manual);
+                logDialMiss(di.name, di.fp, "partial", di.manual,
+                            di.format, di.uid, di.requestedCount, di.requestedSource);
                 if (!di.readbackMiss.isEmpty())
-                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
+                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
+                                di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
             case ChainHost::DialStatus::noMap:
                 // Stale-map ladder, unmapped rung: same diversion as the
@@ -21313,11 +21363,13 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 if (di.staleIndexedFp.isNotEmpty())
                 {
                     staleParts.add(di.name);
-                    logDialMiss(di.name, di.fp, "stale_unmapped", di.manual);
+                    logDialMiss(di.name, di.fp, "stale_unmapped", di.manual,
+                                di.format, di.uid, di.requestedCount, di.requestedSource);
                     break;
                 }
                 zeroParts.add(di.name);
-                logDialMiss(di.name, di.fp, "no_map", di.manual);
+                logDialMiss(di.name, di.fp, "no_map", di.manual,
+                            di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
             case ChainHost::DialStatus::unusableMap:
                 if (!di.outOfRange.isEmpty())
@@ -21329,14 +21381,16 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 zeroParts.add(di.name);
                 logDialMiss(di.name, di.fp, "unusable_map", di.manual);
                 if (!di.readbackMiss.isEmpty())
-                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
+                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
+                                di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
             case ChainHost::DialStatus::pending:
                 // Fetch never answered inside the cap: NEVER fall through
                 // to the model's success line - conservative wording, and a
                 // late apply (if it lands) updates the slot card anyway.
                 zeroParts.add(di.name);
-                logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual);
+                logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual,
+                            di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
             case ChainHost::DialStatus::none:
                 // Touched and carried settings, yet nothing structured
@@ -21419,7 +21473,10 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 + (one ? " is in - dial it in by hand with the values on its card."
                        : " are in - dial them in by hand with the values on their cards.");
         for (auto& an : undialledNames)
-            logDialMiss(an, juce::String(), "edit_add_no_dial", {});
+            logDialMiss(an, juce::String(), "edit_add_no_dial", {},
+                        // A7.1 slotless: never loaded, no identity, requested 0;
+                        // the reader reports these on their own line, never in a rate.
+                        juce::String(), juce::String(), 0, juce::String());
     }
     if (!proseOnlySetNames.isEmpty())
     {
@@ -21430,7 +21487,8 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 + " - dial in the values on " + (one ? juce::String("its card by hand.")
                                                      : juce::String("their cards by hand."));
         for (auto& an : proseOnlySetNames)
-            logDialMiss(an, juce::String(), "edit_set_no_dial", {});
+            logDialMiss(an, juce::String(), "edit_set_no_dial", {},
+                        juce::String(), juce::String(), 0, juce::String());   // A7.1 slotless
     }
     if (!serverDropped.isEmpty())
     {
@@ -21540,22 +21598,28 @@ void EchoJayEditor::logDialMissesWhenSettled(int attemptsLeft)
     for (const auto& di : ch.getDialInfos())
     {
         if (di.status == ChainHost::DialStatus::noMap)
-            logDialMiss(di.name, di.fp, "no_map", di.manual);
+            logDialMiss(di.name, di.fp, "no_map", di.manual,
+                            di.format, di.uid, di.requestedCount, di.requestedSource);
         else if (di.status == ChainHost::DialStatus::unusableMap)
             logDialMiss(di.name, di.fp, "unusable_map", di.manual);
         else if (di.status == ChainHost::DialStatus::partial)
-            logDialMiss(di.name, di.fp, "partial", di.manual);
+            logDialMiss(di.name, di.fp, "partial", di.manual,
+                            di.format, di.uid, di.requestedCount, di.requestedSource);
         else if (di.status == ChainHost::DialStatus::pending)
-            logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual);
+            logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual,
+                            di.format, di.uid, di.requestedCount, di.requestedSource);
         if ((di.status == ChainHost::DialStatus::partial
              || di.status == ChainHost::DialStatus::unusableMap)
             && !di.readbackMiss.isEmpty())
-            logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
+            logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
+                                di.format, di.uid, di.requestedCount, di.requestedSource);
     }
 }
 
 void EchoJayEditor::logDialMiss(const juce::String& plugin, const juce::String& fp,
-                                const juce::String& reason, const juce::StringArray& manual)
+                                const juce::String& reason, const juce::StringArray& manual,
+                                const juce::String& format, const juce::String& uid,
+                                int requested, const juce::String& requestedSource)
 {
     // events.jsonl schema v1 (EchoJayEventLog.h): upload-ready field names.
     auto* f = new juce::DynamicObject();
@@ -21568,10 +21632,92 @@ void EchoJayEditor::logDialMiss(const juce::String& plugin, const juce::String& 
         for (auto& m2 : manual) arr.add(m2);
         f->setProperty("manual", arr);
     }
+    // dial-3 (A2/A7.2): key halves + denominator. "requested" present is
+    // the NEW-shape marker the batch builder ships on; absent rows are
+    // pre-contract history and are never retro-shipped (A2).
+    if (format.isNotEmpty())          f->setProperty("format", format);
+    if (uid.isNotEmpty())             f->setProperty("uid", uid);
+    if (requested >= 0)               f->setProperty("requested", requested);
+    if (requestedSource.isNotEmpty()) f->setProperty("requested_source", requestedSource);
     f->setProperty("turn_type", api.getLastResolvedTurnType());
     f->setProperty("auto_dial", api.getAutoDialMode());
     f->setProperty("app_version", juce::String(ProjectInfo::versionString));
     echojay::logClientEvent("dial_miss", juce::var(f));
+}
+
+// dial-3 watermark (A7.3): rows ship by timestamp, never byte offset — the
+// 1 MB rotation drops the oldest half and rewrites events.jsonl in place,
+// so an offset bookmark is invalidated by design.
+static juce::File dialDeclineWatermarkFile()
+{
+    return echojay::eventLogDir().getChildFile("dial_declines_watermark.txt");
+}
+
+juce::String EchoJayEditor::buildDialDeclinesBatchJson()
+{
+    pendingDeclineWatermark_ = -1;
+    const juce::int64 wm = dialDeclineWatermarkFile().loadFileAsString().trim().getLargeIntValue();
+    auto f = echojay::eventLogDir().getChildFile("events.jsonl");
+    if (! f.existsAsFile()) return {};
+
+    juce::StringArray lines;
+    lines.addLines(f.loadFileAsString());
+    juce::Array<juce::var> rows;   // file order == t ascending (append-only)
+    for (auto& ln : lines)
+    {
+        if (ln.trim().isEmpty()) continue;
+        auto ev = juce::JSON::parse(ln);
+        auto* eo = ev.getDynamicObject();
+        if (eo == nullptr) continue;
+        if (eo->getProperty("event").toString() != "dial_miss") continue;
+        const auto t = (juce::int64) (double) eo->getProperty("t");
+        if (t <= wm) continue;
+        // A2: rows without "requested" are pre-contract shape — skipped,
+        // never retro-shipped. The counter starts at this client.
+        if (! eo->hasProperty("requested")) continue;
+        // One wire row per declined NAME (A1); an event with no names
+        // (slotless reasons, A7.1) ships one row with name "".
+        auto addRow = [&rows, eo, t] (const juce::String& name)
+        {
+            auto* r = new juce::DynamicObject();
+            r->setProperty("name",   name);
+            r->setProperty("reason", eo->getProperty("reason"));
+            r->setProperty("format", eo->getProperty("format").toString());
+            r->setProperty("uid",    eo->getProperty("uid").toString());
+            if (const auto fpv = eo->getProperty("fp").toString(); fpv.isNotEmpty())
+                r->setProperty("fp", fpv);
+            r->setProperty("plugin", eo->getProperty("plugin"));
+            r->setProperty("requested", eo->getProperty("requested"));
+            r->setProperty("requestedSource", eo->getProperty("requested_source").toString());
+            r->setProperty("t", (double) t);
+            rows.add(juce::var(r));
+        };
+        auto* ma = eo->getProperty("manual").getArray();
+        if (ma != nullptr && ! ma->isEmpty())
+            for (auto& m : *ma) addRow(m.toString());
+        else
+            addRow({});
+    }
+    if (rows.isEmpty()) return {};
+
+    // A7.3 caps: backlog 256 — the OLDEST are dropped and COUNTED (the
+    // shipped rows' max t then moves the watermark past them, so a drop is
+    // permanent, never a silent re-queue). Per-turn 32, oldest first; the
+    // remainder stays above the watermark and rides the next turn.
+    int dropped = 0;
+    while (rows.size() > 256) { rows.remove(0); ++dropped; }
+    juce::Array<juce::var> ship;
+    for (int i = 0; i < rows.size() && i < 32; ++i) ship.add(rows.getReference(i));
+    juce::int64 maxT = -1;
+    for (auto& r : ship)
+        maxT = juce::jmax(maxT, (juce::int64) (double) r.getProperty("t", juce::var()));
+    pendingDeclineWatermark_ = maxT;
+
+    auto* env = new juce::DynamicObject();
+    env->setProperty("batch", juce::Uuid().toDashedString());  // A7.3: random per batch, dedupe key, deliberately NOT machine_id
+    env->setProperty("rows", juce::var(ship));
+    env->setProperty("dropped", dropped);
+    return juce::JSON::toString(juce::var(env), true);
 }
 
 
@@ -24562,6 +24708,12 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
                 }
         api.setNextChatMapFps(juce::JSON::toString(fpsVar, true));
     }
+    // dial-3 (A7.3): the declined-name batch rides THIS send's body,
+    // consumed at body build like mapFps — so the transport's internal
+    // limit-refresh retry resends WITHOUT the field rather than twice with
+    // it. The watermark moves only in handleChatReply's success branch; a
+    // failed send re-ships the same rows next turn under a new batch id.
+    api.setNextChatDialDeclines(buildDialDeclinesBatchJson());
     // 1d model-wait stage: generic-safe label only (the one-shot transport
     // has no sub-stages to report; a specific claim could desync).
     // 26 Jul 2026: ALWAYS "Thinking" here. hadChainFeed is true on
@@ -24831,6 +24983,16 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
     bool hadChainOpener = false;   // reply carried <<<ECHOJAY_CHAIN>>> (even truncated)
     if (success)
     {
+        // dial-3 (A7.3): the batch staged for this send reached the server —
+        // commit the watermark. On any non-success the pending value is
+        // simply abandoned; the next send restages the same rows (new batch
+        // id), so a failed send loses nothing.
+        if (pendingDeclineWatermark_ >= 0)
+        {
+            dialDeclineWatermarkFile().replaceWithText(
+                juce::String(pendingDeclineWatermark_) + "\n");
+            pendingDeclineWatermark_ = -1;
+        }
         hadChainOpener = EchoJayAPI::extractChainBlock(visibleReply, chainJson);
         if (EchoJayAPI::extractGainBlock(visibleReply, gainJson))
             EchoJay_NSLog("EJChat: gain proposal block received");

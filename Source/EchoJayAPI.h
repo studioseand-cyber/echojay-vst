@@ -295,6 +295,13 @@ public:
     void setNextChatMapFps(const juce::String& jsonObject)
     { nextChatMapFps_ = (jsonObject == "{}" ? juce::String() : jsonObject); }
 
+    // dial-3 declined-name batch (CONTRACT_racked_slot_controls.md A7.3):
+    // envelope {batch, rows, dropped}, staged by the editor per send,
+    // consumed at body build like mapFps. Empty stages nothing; a server
+    // without the field ignores it.
+    void setNextChatDialDeclines(const juce::String& jsonObject)
+    { nextChatDialDeclines_ = jsonObject; }
+
     // Step-5 selection signal (STREAMING_REASONING_SPEC section 7): does
     // the staged state say the NEXT send is a chain build? True when the
     // classifier bound intent "chain_generate", or the client staged that
@@ -344,6 +351,7 @@ public:
     {
         nextChatMeters_.clear();
         nextChatMapFps_.clear();
+        nextChatDialDeclines_.clear();
         nextChatTurnType_.clear();
         nextChatBusCount_ = 0;
         nextChatIsExplicitCapture_ = false;
@@ -992,6 +1000,7 @@ private:
     juce::String deviceId;
     juce::String nextChatMeters_;   // staged by setNextChatMeters()
     juce::String nextChatMapFps_;   // staged by setNextChatMapFps(); "" = none
+    juce::String nextChatDialDeclines_;  // dial-3 batch envelope; "" = none
     juce::String nextChatTurnType_; // staged by setNextChatTurnType(); "" = "chat"
     juce::StringArray nextDialFlags_; // see setNextDialFlags(); cleared per send
     juce::String nextClassifyIntent_, nextClassifyToken_; // setNextClassifyBinding()

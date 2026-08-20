@@ -171,6 +171,15 @@ public:
         juce::String      staleIndexedFp; // stale-map ladder: superseded fp,
                                           // "" = load matched the index
         juce::StringArray outOfRange;     // subset of manual: refused by range validation
+        // dial-3 (CONTRACT_racked_slot_controls.md A2/A3/A7.2): the counter
+        // key halves the client resolves, and the load-bearing denominator
+        // with its explicit source — "apply" (report.size() at the apply
+        // loop) or "keys" (pre-apply structured-entry count). The reason
+        // code implying the source is NOT good enough; the field travels.
+        juce::String      format;          // desc.pluginFormatName
+        juce::String      uid;             // hex uid, same rendering as getSlotIdentity; "" = none
+        int               requestedCount = 0;
+        juce::String      requestedSource;  // "apply" | "keys"
     };
     std::vector<SlotDialInfo> getDialInfos() const;
     // One line per slot, at the END of a build, saying what actually dialled.
@@ -930,6 +939,10 @@ private:
         juce::StringArray                    dialReadbackMiss;          // wrote wrong, reverted
         juce::StringArray                    dialUnconfirmed;           // written, display stale (bridged)
         int                                  dialAppliedCount = 0;
+        // dial-3 denominator (CONTRACT_racked_slot_controls.md A3/A7.2):
+        // report.size() from the LAST apply loop; -1 = the apply never ran,
+        // and getDialInfos derives the pre-apply key count instead.
+        int                                  dialRequestedCount = -1;
         // Stale-map ladder (12 Aug 2026): the superseded index fp when the
         // load diverged from the index ("" = no divergence), and whether the
         // rung has been announced. staleIndexedFp stays set on the unmapped

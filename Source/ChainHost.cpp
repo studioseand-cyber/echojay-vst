@@ -2539,6 +2539,9 @@ void ChainHost::setSlotStructuredSettings(int i, const juce::var& structured)
 
     slots_[(size_t)i].structuredSettings = structured;
     slots_[(size_t)i].structuredApplied  = false;
+    // New request, new denominator: a lingering count from the previous
+    // apply must not travel with this request's declines (dial-3 A3).
+    slots_[(size_t)i].dialRequestedCount = -1;
     applyStructuredIfReady(i, DialTrigger::settingsAttached);
 
     // Map not cached yet (first-ever encounter of this plugin): fetch just
@@ -3519,6 +3522,10 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
     s.dialReadbackMiss.clear();
     s.dialUnconfirmed.clear();
     s.dialOutOfRange.clear();
+    // dial-3 denominator (A3): the count of settings the model asked for,
+    // stored HERE because appliedCount + manual.size() is not a substitute
+    // (both dedupe through semanticLabel).
+    s.dialRequestedCount = (int) report.size();
     for (auto& r : report)
     {
         EchoJay_NSLog(("EJParamApply:   " + r.semantic + ": "
@@ -5029,6 +5036,27 @@ std::vector<ChainHost::SlotDialInfo> ChainHost::getDialInfos() const
         di.appliedCount = s.dialAppliedCount;
         di.staleIndexedFp = s.staleIndexedFp;
         di.outOfRange   = s.dialOutOfRange;
+        // dial-3 key halves + denominator (A2/A3/A7.2). uid rendered
+        // exactly as getSlotIdentity renders it, so the two surfaces
+        // cannot disagree about the same slot.
+        di.format = s.desc.pluginFormatName;
+        if (s.desc.uniqueId != 0)
+            di.uid = juce::String::toHexString(s.desc.uniqueId);
+        if (s.dialRequestedCount >= 0)
+        {
+            di.requestedCount  = s.dialRequestedCount;
+            di.requestedSource = "apply";
+        }
+        else
+        {
+            // The apply never ran (no_map / fetch timeout / stale rungs):
+            // the denominator is the pre-apply count of requested entries.
+            int n = 0;
+            if (auto* o = s.structuredSettings.getDynamicObject())
+                n = o->getProperties().size();
+            di.requestedCount  = n;
+            di.requestedSource = "keys";
+        }
         out.push_back(std::move(di));
     }
     return out;

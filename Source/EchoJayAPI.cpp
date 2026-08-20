@@ -1239,6 +1239,15 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
         body += ",\"mapFps\":" + nextChatMapFps_;
         nextChatMapFps_.clear();
     }
+    // dialDeclines (dial-3, A7.3): consumed per send exactly like mapFps,
+    // so the limit-refresh retry resends WITHOUT the field rather than
+    // twice with it. The editor moves the watermark only on the success
+    // callback, so a consumed-but-failed batch re-ships next turn.
+    if (nextChatDialDeclines_.isNotEmpty())
+    {
+        body += ",\"dialDeclines\":" + nextChatDialDeclines_;
+        nextChatDialDeclines_.clear();
+    }
     if (metersBlob.isNotEmpty())
     {
         // Raw passthrough — the blob is already a JSON object; splicing it in
