@@ -384,6 +384,21 @@ int main()
         check (buildRec.contains ("pushedNames"),
                "buildRecommendable collapses duplicate names into the duplicates counter");
 
+        // Model-number keying pin (20 Aug 2026). c3ad9be added the
+        // trailingModelNumber guard on 28 July with NO test, and it was
+        // silently bypassed for three weeks because the exact-match path
+        // short-circuits past it — buildRecommendable's stem keying handed
+        // "AMEK EQ 250" rows the EQ 200 entry the whole time. A pin that
+        // names the predicate is the difference between the guard existing
+        // and the guard being protected: simplifying the keying back to bare
+        // stems now fails here instead of shipping. This is a POOR SUBSTITUTE
+        // for behavioural coverage — the keying lives in lambdas inside the
+        // member function and cannot be exercised without extraction, which
+        // belongs to the identity-keying work (findVst3Alternative /
+        // popoutOnlyKey), not to this pin.
+        check (buildRec.contains ("trailingModelNumber"),
+               "buildRecommendable keys the feed map through the c3ad9be model-number predicate");
+
         // Stale-map ladder wiring: the decisions must come from the pinned
         // pure functions above, not a re-derived inline comparison, or the
         // table this test asserts stops describing the shipped behaviour.
