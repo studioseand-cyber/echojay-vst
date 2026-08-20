@@ -2926,6 +2926,12 @@ private:
     int findNewestUnansweredAsk() const;
     // Mark every pending ask answered (any user send supersedes the question)
     void supersedePendingAsks();
+    // Recall-scoped supersede (20 Aug 2026): marks answered ONLY asks whose
+    // chips carry recall_* intents, so a second chain-row click replaces the
+    // pending recall ask without silently killing a pending model brief,
+    // ASK, or compare-scope ask. The blanket one above stays for the sites
+    // that mean "the user moved on from everything".
+    void supersedePendingRecallAsks();
     // The ONE layout authority for the PILL shelf (height reservation + pill
     // placement); the paint pass draws only the background inside the rect
     // this produced, so the two cannot disagree. Flows the pills into rows

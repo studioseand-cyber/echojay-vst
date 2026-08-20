@@ -21307,6 +21307,15 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
             if ((opName == "add" || opName == "replace") && !carries)
                 undialledNames.addIfNotAlreadyThere(plug);
             if (opName == "set" && !carries)
+                // NOT a client defect when this fires on a dialable plugin
+                // (Kathy's "attack 7, release 7", 20 Aug 2026): exposure on
+                // edit paths is scoped server-side to plugins the TYPED text
+                // names (userNamedMappedPlugins), so an unnamed racked slot
+                // gets no [CONTROLS] line and the model must not invent
+                // names — and the ten dual maps would have dialled flat.
+                // Known pessimism, owned by dial-4: see
+                // HANDOVER/CONTRACT_racked_slot_controls.md §0a and §2.2a
+                // before filing this as a bug here.
                 proseOnlySetNames.addIfNotAlreadyThere(plug);
             // Server-refused controls that rode the block back (ops that
             // went through Apply; receipt-consumed ops report their own).
@@ -22947,6 +22956,36 @@ void EchoJayEditor::supersedePendingAsks()
     if (any) workspace.requestMutationSync();
 }
 
+void EchoJayEditor::supersedePendingRecallAsks()
+{
+    // Scoped by INTENT PREFIX, not by message position: every client-authored
+    // recall chip carries a recall_* intent (recall_confirm / recall_cancel /
+    // recall_here / recall_switch), and nothing else does. A pending model
+    // brief or compare ask survives a chain-row click untouched.
+    if (pendingRecallMismatchAsk_)
+    {
+        pendingRecallMismatchAsk_ = false;
+        EchoJay_NSLog("EJRecall: mismatch ask dismissed without choosing (superseded by new recall ask)");
+    }
+    bool any = false;
+    for (auto& m : chatMessages)
+    {
+        if (m.role != "assistant" || m.askData.isEmpty() || m.askAnswered) continue;
+        bool recall = false;
+        auto v = juce::JSON::parse(m.askData);   // held: getDynamicObject() must not outlive the var
+        if (auto* o = v.getDynamicObject())
+            if (auto* cs = o->getProperty("choices").getArray())
+                for (auto& cv : *cs)
+                    if (cv.getProperty("intent", juce::var()).toString().startsWith("recall_"))
+                    { recall = true; break; }
+        if (! recall) continue;
+        m.askAnswered = true;
+        workspace.markAskAnswered(currentChatId, m.content);
+        any = true;
+    }
+    if (any) workspace.requestMutationSync();
+}
+
 LinkShm::RackSidecar EchoJayEditor::readLinkRackSidecar(const juce::String& uid) const
 {
     int err = 0;
@@ -23644,6 +23683,30 @@ void EchoJayEditor::presentRecallReplaceAsk(const juce::String& id,
                                             const juce::String& targetUid,
                                             const juce::String& targetName)
 {
+    // The ask renders on the CONVERSATION surface. A chain-row click arrives
+    // with the Chains list showing, and resized()'s chains-mode block hides
+    // the ask chips two hundred lines after the shelf block lays them out —
+    // the invisible-ask defect of 20 Aug 2026. Flip to AI mode THROUGH THE
+    // EXISTING SETTER (it runs resized()+repaint() itself, and clears
+    // nothing: the rows and their cache survive the mode change), never a
+    // second ask surface. The log line exists so the next silent ask can be
+    // told apart from a flip that never ran.
+    if (chainSidebarInChainsMode())
+    {
+        // [ask-flip] is the Console search key: Kathy filters on message
+        // text, never process (Logic hosts AUs out of process under
+        // AUHostingServiceXPC), and "EJRecall:" alone matches a dozen
+        // event kinds. Unique in the tree — keep it that way.
+        EchoJay_NSLog(("EJRecall: [ask-flip] chains list -> AI mode to show"
+                       " the replace ask (chain \"" + name + "\")").toRawUTF8());
+        setChainSidebarMode(false);
+    }
+    // A second chain-row click REPLACES the pending recall ask instead of
+    // stacking a twin (two asks stacked in the Chat tab, 20 Aug). Scoped:
+    // only recall_* asks are superseded, a pending model brief or compare
+    // ask is not silently killed by a chain click.
+    supersedePendingRecallAsks();
+
     const bool toLink = targetUid.isNotEmpty();
     const juce::String plugins =
         juce::String(rackSlots) + (rackSlots == 1 ? " plugin" : " plugins");
