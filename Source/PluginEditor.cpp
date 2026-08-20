@@ -28139,6 +28139,13 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
         {
         if (safeThis == nullptr) return;
         auto& ch2 = safeThis->processorRef.getChainHost();
+        // Archive the live rack BEFORE the clear, the same protection recall
+        // (item 4) and the Link replace already have, so a build over a
+        // populated rack is recoverable from chain_archive/. No-op if empty.
+        ch2.archiveCurrentRack("replaced by AI build: " + slots[0].name
+            + ((int) slots.size() > 1
+                   ? " +" + juce::String((int) slots.size() - 1) + " more"
+                   : juce::String()));
         int n = ch2.getNumSlots();
         for (int i = n - 1; i >= 0; --i) ch2.removeSlot(i);
         safeThis->chainSelectedSlot_ = -1;

@@ -4711,22 +4711,49 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
     // Build a normalized-name → PluginDescription map from the loadable entries.
     // If multiple entries share the same normalized name, keep the first (alphabetically
     // stable since entries_ is already sorted).
+    //
+    // MODEL-NUMBER KEYING (20 Aug 2026). normalizeName strips a trailing
+    // all-digits token as a version, so "AMEK EQ 200" and "AMEK EQ 250" (and
+    // "CLA-76" against any other CLA-<digits>) collapsed to ONE stem here,
+    // and first-wins handed every such scanner row whichever entry sorted
+    // first — the defect c3ad9be fixed in resolveByName/namesMatchLoose,
+    // still live at the site where the collision is actually made. The
+    // predicate is REUSED (trailingModelNumber), not redefined: the primary
+    // key carries the stripped number back, and the bare stem stays as a
+    // fallback slot so a number on only one side still tolerates the strip
+    // ("Saturn 2" offered for a "Saturn" row) — the tolerance the resolver
+    // ladder keeps. A stem hit is guarded at lookup by the same
+    // both-sides-differ rule before it counts.
     std::unordered_map<std::string, juce::PluginDescription> nameMap;
-    nameMap.reserve((size_t)loadable.size() * 2);
+    nameMap.reserve((size_t)loadable.size() * 4);
+    auto modelKey = [](const juce::String& n) -> std::string
+    {
+        auto k = normalizeName(n);
+        const auto num = trailingModelNumber(n);
+        if (num.isNotEmpty()) k = k + "\n" + num;   // '\n' cannot survive a stem
+        return k.toStdString();
+    };
+    auto insertName = [&nameMap, &modelKey](const juce::String& n,
+                                            const juce::PluginDescription& d)
+    {
+        const std::string keyed = modelKey(n);
+        if (nameMap.find(keyed) == nameMap.end())
+            nameMap[keyed] = d;
+        const std::string stem = normalizeName(n).toStdString();
+        if (stem != keyed && nameMap.find(stem) == nameMap.end())
+            nameMap[stem] = d;
+    };
     for (const auto& d : loadable)
     {
-        std::string key = normalizeName(d.name).toStdString();
-        if (nameMap.find(key) == nameMap.end())
-            nameMap[key] = d;
+        insertName(d.name, d);
         // Variant-suffix secondary key: WaveShell AUs register per-variant
         // component names ("Abbey Road Plates (s)"/"(m)") while the Settings
         // scanner lists the curated suffix-less name ("Abbey Road Plates").
         // Without this key the exact map missed them, the plugin dropped out
         // of the AI feed entirely, and the model told the user a plugin
         // RUNNING IN THEIR RACK was "not in your available plugins".
-        std::string baseKey = normalizeName(stripParenthetical(d.name)).toStdString();
-        if (baseKey != key && nameMap.find(baseKey) == nameMap.end())
-            nameMap[baseKey] = d;
+        const auto base = stripParenthetical(d.name);
+        if (base != d.name) insertName(base, d);
     }
 
     // Filter enabled scanner plugins and resolve against the map
@@ -4751,6 +4778,24 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
     int duplicateNames = 0;
     std::vector<RecommendableEntry> resolved;
 
+    // Model-keyed slot first (exact product), then the bare stem guarded by
+    // the c3ad9be predicate: a stem hit whose entry carries a DIFFERENT
+    // trailing number than this row is a different product, not a resolution.
+    auto lookupName = [&nameMap, &modelKey](const juce::String& n)
+    {
+        auto it = nameMap.find(modelKey(n));
+        if (it != nameMap.end()) return it;
+        it = nameMap.find(normalizeName(n).toStdString());
+        if (it != nameMap.end())
+        {
+            const auto numIn = trailingModelNumber(stripParenthetical(n));
+            const auto numEn = trailingModelNumber(stripParenthetical(it->second.name));
+            if (numIn.isNotEmpty() && numEn.isNotEmpty() && numIn != numEn)
+                return nameMap.end();
+        }
+        return it;
+    };
+
     for (const auto& sp : allPlugins)
     {
         if (!sp.enabled)
@@ -4761,17 +4806,12 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
         }
         ++enabledCount;
 
-        // Try exact normalized name
-        std::string key = normalizeName(sp.name).toStdString();
-        auto it = nameMap.find(key);
+        // Try exact normalized name (model-keyed, stem-guarded — see lookupName)
+        auto it = lookupName(sp.name);
 
         // If not found, try without manufacturer prefix ("Fab Filter: Pro-Q 3" → "pro q 3")
         if (it == nameMap.end() && sp.name.containsChar(':'))
-        {
-            juce::String afterColon = sp.name.fromFirstOccurrenceOf(":", false, false).trim();
-            key = normalizeName(afterColon).toStdString();
-            it = nameMap.find(key);
-        }
+            it = lookupName(sp.name.fromFirstOccurrenceOf(":", false, false).trim());
 
         if (it != nameMap.end())
         {
@@ -4782,6 +4822,20 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
                                     // is lost, only the repeat.
                 continue;
             }
+            // TRIPWIRE (20 Aug 2026): a feed row whose display name is not
+            // its description's name is a RENAME — the model is offered one
+            // name and the loader will be handed another's binary. The AMEK
+            // collision shipped exactly this shape for weeks with no line
+            // saying so; this is the client analogue of the server's
+            // [injected-block-leak] alarm. One line per divergent row, both
+            // names, every build. (WaveShell variant-suffix rows trip it by
+            // construction — "Abbey Road Plates" -> "... (s)" — which is a
+            // rename too; the line names both so the benign shape is
+            // recognisable on sight.)
+            if (sp.name != it->second.name)
+                EchoJay_NSLog(("EJScan: [feed-rename] scanner \"" + sp.name
+                               + "\" -> entry \"" + it->second.name + "\" ["
+                               + it->second.pluginFormatName + "]").toRawUTF8());
             resolved.push_back({ sp.name, it->second });
         }
     }
