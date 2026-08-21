@@ -40,8 +40,18 @@ struct DashboardWebFlow
     Step step = Step::LoadEmbed;
     // Auth handoff (CONTRACT_dashboard_auth_handoff.md §2): the minted
     // /go#t=...&to=... path. The fragment carries a single-use 120 s token;
-    // it is navigated once and never stored anywhere else.
+    // it is navigated once (via the hop script below, NEVER via goToURL) and
+    // never stored anywhere else.
     juce::String handoffPath;
+
+    // First navigation of the handoff — a fragment-free path on the same
+    // host (see the hop comment below this struct for why a hop exists).
+    // Deliberately UNROUTED: vercel.json has no catch-all rewrite, so this
+    // serves the platform's small 404 page. That is fine ON PURPOSE — the
+    // hop page's content is irrelevant; it is only a browsing context to
+    // run location.replace from, and a 404 is the cheapest document the
+    // host can produce.
+    static constexpr const char* handoffHopPath = "/go-hop";
 
     /** URL to load to ENTER the current step ("" at terminal steps). */
     juce::String currentUrl() const;
@@ -62,6 +72,62 @@ struct DashboardWebFlow
 
     static const char* stepName (Step s);
 };
+
+// ---------------------------------------------------------------------------
+// Handoff hop + finish-log redaction — pure, HEADER-INLINE so that
+// tools/dashweb_test compiles them directly and never pairs a new lib symbol
+// with the previous build's lib (the stale-lib trap, third sighting).
+//
+// WHY A HOP EXISTS AT ALL: juce_WebBrowserComponent_mac.mm:64 percent-encodes
+// EVERY goToURL string with URLQueryAllowedCharacterSet, a set that excludes
+// '#' and '%'. A /go#t=... URL therefore reaches WebKit as /go%23t=... — the
+// fragment destroyed, the token moved into the PATH, and go.html's script
+// running with an empty location.hash (measured live 21 Aug 2026,
+// dash-poll.log 14:49:39). So the fragment must never pass through goToURL:
+// navigate first to a cheap fragment-free page on the same host, then issue
+// the real navigation as JS — location.replace keeps the fragment intact and
+// client-side (a fragment is never transmitted to a server, which is the
+// contract's whole reason for using one).
+//
+// The hop must NOT be /go itself: replacing /go with /go#t=... is a
+// same-document fragment change — nothing reloads, and go.html reads
+// location.hash exactly once, at parse time, with no hashchange listener
+// (verified in public/go.html, 21 Aug 2026). Any OTHER same-host document
+// works, whatever its content.
+//
+// THE REAL FIX IS IN JUCE — escape only when URLWithString fails, instead of
+// unconditionally. That is a fork of a module we do not own: a decision, not
+// a repair. Until it is made, this workaround exists BECAUSE of mm:64, not
+// because anybody liked two navigations.
+// ---------------------------------------------------------------------------
+
+/** The JS for the handoff's second navigation: an absolute location.replace
+    to base+goPath with the fragment intact. Single quotes and backslashes in
+    the URL are escaped so composed URL content cannot break out of the
+    script literal. PURE — tools/dashweb_test drives it. */
+inline juce::String handoffHopScript (const juce::String& base, const juce::String& goPath)
+{
+    const auto url = (base + goPath).replace ("\\", "\\\\").replace ("'", "\\'");
+    return "location.replace('" + url + "');";
+}
+
+/** Redact a load-finish URL for logging. Cuts at the FIRST of a raw '#' or a
+    percent-encoded '%23': the first redactor keyed on a literal '#' alone,
+    and when JUCE's goToURL escaping moved the fragment into the path as
+    %23t=..., two raw tokens reached dash-poll.log (21 Aug 2026 — single-use
+    and expired, the design's own backstop, but the rule is no tokens in
+    logs). Everything from the cut onward is replaced by its length. PURE —
+    tools/dashweb_test drives it, with the live leak's exact shape as a
+    fixture. */
+inline juce::String redactedFinishUrl (const juce::String& url)
+{
+    int cut = url.indexOfChar ('#');
+    const int enc = url.indexOfIgnoreCase ("%23");
+    if (enc >= 0 && (cut < 0 || enc < cut)) cut = enc;
+    if (cut < 0) return url + " no-fragment";
+    return url.substring (0, cut) + " frag=<redacted,"
+         + juce::String (url.length() - cut) + "ch>";
+}
 
 // ---------------------------------------------------------------------------
 // Stage 3 bridge: the loadChain payload validator.
@@ -152,11 +218,15 @@ public:
     void start();
 
     /** Auth handoff entry (contract §2, the ONLY path that signs the webview
-        in): navigate to the minted /go#... path; go.html redeems, writes
-        ej-token to localStorage, and lands on the bound path. Callable again
-        on the SAME live webview for the editor's one re-mint (§5, redeem
-        fails). The token in the fragment is never logged (loadCurrent
-        redacts it) and never persisted plugin-side. */
+        in): two navigations — the fragment-free hop page via goToURL, then
+        the minted /go#... path via handoffHopScript (JS location.replace),
+        because goToURL destroys fragments (see the hop comment above);
+        go.html redeems, writes ej-token to localStorage, and lands on the
+        bound path. Callable again on the SAME live webview for the editor's
+        one re-mint (§5, redeem fails). The token in the fragment is never
+        logged (redactedFinishUrl covers raw AND %23-encoded forms) and never
+        persisted plugin-side. The redeem budget is armed HERE, at entry —
+        never on observing a particular path. */
     void startWithHandoff (const juce::String& goPath);
 
     void resized() override;
@@ -172,6 +242,23 @@ private:
     void probe (int attemptsLeft);      // detect embed dashboard vs gate 404
     void advanceWith (DashboardWebFlow::Outcome o);
     void finish (bool ok);
+    // Handoff verdict machinery (21 Aug 2026, after the 14:03 mislabel):
+    // the embed probe judged the handoff from /go's own load-finish — a
+    // two-navigation sequence scored on its first page, so "redeem was
+    // slow" and "redeem failed" were one observation, four tokens burned
+    // proving nothing. handleFinish records EVERY load-finish with its
+    // path, anchors the verdict to the TARGET's load-finish, and splits
+    // the two failures: no target landing inside the redeem budget
+    // (reason "no_landing", the only one worth a re-mint) vs target
+    // reached but the marker never renders ("no_marker", never re-mint).
+    void handleFinish (const juce::String& url);
+    void pollMarker();
+    void finishDirect (bool ok, const juce::String& reason);
+    juce::String handoffTargetPath_;      // path of the bound target ("/dashboard")
+    bool         handoffTargetReached_ = false;
+    bool         handoffHopDone_       = false;  // hop finished; replace issued
+    int          markerPolls_ = 0;
+    int          handoffGen_  = 0;        // invalidates timers across re-mints
 
     // The registered `loadChain` native function: validates args, forwards to
     // onLoadChain, and resolves the JS promise with {accepted, reason}. The

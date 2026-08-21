@@ -255,6 +255,46 @@ int main()
         std::printf ("  ok    importedChainId: own_share is success, error is empty\n");
     }
 
+    // ---- handoff hop + finish-log redaction (the goToURL escaping workaround)
+    // juce_WebBrowserComponent_mac.mm:64 percent-encodes every goToURL string,
+    // destroying '#' fragments — so the LoadHandoff step loads a fragment-free
+    // HOP and the fragment rides ONLY the JS location.replace. See the hop
+    // comment in DashboardWeb.h.
+    {
+        using echojay::handoffHopScript;
+        using echojay::redactedFinishUrl;
+
+        auto f = make (base, tok, true);
+        f.step = Step::LoadHandoff;
+        f.handoffPath = "/go#t=FAKETOKEN123&to=%2Fdashboard";
+        check (f.currentUrl() == base + juce::String (Flow::handoffHopPath),
+               "LoadHandoff loads the HOP url, not the /go#... url");
+        check (! f.currentUrl().containsChar ('#'),
+               "the hop URL carries NO fragment (nothing for goToURL to destroy)");
+
+        const auto js = handoffHopScript (base, f.handoffPath);
+        check (js.contains ("#t=FAKETOKEN123&to=%2Fdashboard"),
+               "the hop script carries the fragment INTACT");
+        check (js.startsWith ("location.replace('") && js.endsWith ("');"),
+               "the hop script is a single location.replace");
+        check (handoffHopScript (base, "/go#t=a'b").contains ("a\\'b"),
+               "a single quote in URL content is escaped, not a breakout");
+
+        // Redaction: the raw '#' form AND the %23-encoded form that leaked
+        // live on 21 Aug 2026 (the first redactor keyed on '#' alone). The
+        // encoded fixture is the leak's exact shape.
+        const auto raw = redactedFinishUrl (base + "/go#t=SECRETRAW&to=%2Fdashboard");
+        check (! raw.contains ("SECRETRAW") && raw.contains ("frag=<redacted,"),
+               "raw '#' fragment is redacted");
+        const auto enc = redactedFinishUrl (base + "/go%23t=SECRETENC&to=%252Fdashboard");
+        check (! enc.contains ("SECRETENC") && enc.contains ("frag=<redacted,"),
+               "%23-encoded fragment is redacted (the live leak's shape)");
+        check (redactedFinishUrl (base + "/dashboard")
+                   == base + "/dashboard no-fragment",
+               "no fragment -> ' no-fragment', URL untouched");
+        std::printf ("  ok    handoff hop: fragment rides JS only; redactor catches %%23\n");
+    }
+
     // ---- negative control ---------------------------------------------------
     {
         const int before = failures;

@@ -10361,13 +10361,17 @@ void EchoJayEditor::reconcileDashboardWeb()
                 safe->resized();
                 return;
             }
-            // §5, the redeem-failed class: the webview landed but the probe
-            // found no dashboard (go.html stuck on /go — token expired or
-            // consumed). ONE re-mint, navigated on the SAME live webview,
-            // then stop. go.html's own two-minute fallback copy is a
-            // baffling thing to meet inside a plugin, so the second failure
-            // gets plugin wording instead.
-            if (reason == "not_dashboard" && ! safe->dashRemintUsed_)
+            // The two handoff failures are DIFFERENT and only one deserves a
+            // retry (21 Aug, after four tokens burned re-running one race):
+            //   no_landing — no load-finish on the bound target inside the
+            //     redeem budget: the redeem genuinely did not happen. ONE
+            //     re-mint, on the SAME live webview, then stop.
+            //   no_marker — the target landed (the redeem WORKED) and the
+            //     page never rendered its marker. NEVER re-mint: a fresh
+            //     token re-runs the same race and proves nothing. Its own
+            //     landing value; the distinction lives in the log, the
+            //     panel keeps one simple sentence for both.
+            if (reason == "no_landing" && ! safe->dashRemintUsed_)
             {
                 safe->dashRemintUsed_ = true;
                 auto safe2 = safe;
@@ -10377,13 +10381,13 @@ void EchoJayEditor::reconcileDashboardWeb()
                     safe2->dashMintStatus_ = sc;
                     if (sc == 200 && goPath.isNotEmpty() && safe2->dashWeb_ != nullptr)
                     { safe2->dashWeb_->startWithHandoff(goPath); return; }
-                    safe2->failDashboardSurface("redeem_failed",
+                    safe2->failDashboardSurface("no_landing",
                         juce::String::fromUTF8("Couldn\xe2\x80\x99t sign the dashboard in \xe2\x80\x94 reopen the tab to try again."));
                 });
                 return;
             }
-            // Network error keeps the existing offline panel line; a spent
-            // re-mint that still cannot land gets the plugin wording.
+            // Network error keeps the existing offline panel line; every
+            // other terminal reason logs itself verbatim as the landing.
             // failDashboardSurface destroys the webview DEFERRED — this
             // callback fires from inside the webview's own
             // evaluateJavascript completion, and freeing it on this stack
@@ -10392,7 +10396,7 @@ void EchoJayEditor::reconcileDashboardWeb()
             if (reason == "net")
                 safe->failDashboardSurface("net", juce::String());
             else
-                safe->failDashboardSurface("redeem_failed",
+                safe->failDashboardSurface(reason,
                     juce::String::fromUTF8("Couldn\xe2\x80\x99t sign the dashboard in \xe2\x80\x94 reopen the tab to try again."));
         };
         // Contract §2: mint on every navigation into the surface, never
@@ -10412,6 +10416,15 @@ void EchoJayEditor::reconcileDashboardWeb()
 // is ever visible. §5 behaviours live here and in onLoadResult above.
 void EchoJayEditor::beginDashboardHandoff()
 {
+    // ENTRY line, BEFORE the mint (21 Aug 2026): a flow that never starts
+    // and a flow that hangs were the same observation twice in one day. An
+    // instrument that only speaks on its outcome is silent on its null.
+    // Emitted to BOTH sinks on purpose — the terminal [dash-handoff] lines
+    // go to the unified log while the [dashweb] navigation lines go to
+    // dash-poll.log, and that split is exactly how "zero EJDash lines" read
+    // as "never ran" while the file log held the whole story.
+    EchoJay_NSLog(("EJDash: [dash-handoff] begin entry=" + dashEntry_).toRawUTF8());
+    ejDashLog("[dash-handoff] begin entry=" + dashEntry_);
     auto safe = juce::Component::SafePointer<EchoJayEditor>(this);
     api.mintDashboardHandoff([safe](int sc, juce::String goPath)
     {
