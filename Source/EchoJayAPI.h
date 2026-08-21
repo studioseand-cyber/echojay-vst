@@ -1033,9 +1033,13 @@ private:
                                       const juce::String& systemPrompt,
                                       const juce::String& meterJsonBlob);
     // tools/mapfps_test ONLY (CONTRACT_history_resend_pin.md, 21 Aug 2026):
-    // the history-resend pin must run THIS function, not a reimplementation,
-    // and it is deliberately private. One named hook rather than a
-    // "#define private public" in the test.
+    // the history-resend pin must run THIS function, not a reimplementation
+    // — the server's brief suppression counts plugin names in history it
+    // assumes arrives at full length, and only the shipped composer can
+    // prove that. The function stays deliberately private; a friend grant
+    // can only be written inside the class definition, which is why this
+    // one test line lives in a shipping header rather than in test code.
+    // One named hook, never "#define private public".
     friend struct EchoJayAPIRequestPin;
 
     // streamChat's internals: the gate+build half (shared with the
