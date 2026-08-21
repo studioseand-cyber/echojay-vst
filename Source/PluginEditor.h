@@ -2431,6 +2431,11 @@ private:
 
         void rebuild(const std::vector<ChainHost::SlotInfo>& slots, int selIdx)
         {
+            // Instant-dismiss diagnosis (21 Aug 2026): timestamp every panel
+            // rebuild so it can be interleaved with EJPicker lines — a
+            // rebuild landing between "shown" and "destroyed" names itself.
+            EchoJay_NSLog(("EJPanel: rebuild slots=" + juce::String((int) slots.size())
+                           + " sel=" + juce::String(selIdx)).toRawUTF8());
             slotInfos = slots;
             if ((int)slotInfos.size() > kMaxSlots)
                 slotInfos.resize(kMaxSlots);

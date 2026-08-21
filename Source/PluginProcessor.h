@@ -469,6 +469,12 @@ public:
     // bypasses through its one restore path), instances parked in the pool.
     void borrowRelease();
     void renewBorrowLease();                         // scope:"rack", slot:0
+    void borrowTick();          // renew + ring re-bind (the 1s timer's body)
+    /** Set when the borrow released ITSELF (ring lost past tolerance) —
+        consumed once by whichever editor next ticks, shown in words. A
+        self-release must never be silent. */
+    juce::String takeBorrowAutoReleaseReason()
+    { return std::exchange(borrowAutoReleaseReason_, juce::String()); }
     struct BorrowSession {
         juce::String uid, leaseId;
         std::atomic<bool> active   { false };
@@ -483,6 +489,8 @@ private:
     juce::LinearSmoothedValue<float> borrowSoloMix_ { 0.0f };
     struct BorrowLeaseTimer;
     std::unique_ptr<BorrowLeaseTimer> borrowLeaseTimer_;
+    int          borrowRingLostTicks_ = 0;           // message thread only
+    juce::String borrowAutoReleaseReason_;           // message thread only
 public:
 
     // ---- Rack lock (21 Aug 2026, RACK_BORROW_REQUIREMENTS §4) -------------

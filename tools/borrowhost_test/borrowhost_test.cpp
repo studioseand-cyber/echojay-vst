@@ -21,6 +21,7 @@
 #include <JuceHeader.h>
 #include "ChainHost.h"
 #include "EedDeviceRegistry.h"
+#include "LinkShm.h"   // BorrowRing — the stale-ring decision (finding #3)
 
 #include <cstdio>
 #include <cstdlib>
@@ -287,6 +288,43 @@ int main()
            "grinch instantiated FRESH (counter 2 -> 3); probe still reused",
            juce::String (host.borrowFreshInstantiations()));
     check (host.getNumSlots() == 2, "rack complete despite the fallback");
+
+    // =======================================================================
+    std::printf ("== BorrowRing: stale binding -> sound or a stated release ==\n");
+    {
+        using BR = LinkShm::BorrowRing;
+        check (BR::poll (2, 2, 0) == BR::Verdict::Bound,
+               "ring found where bound: stay");
+        check (BR::poll (2, 5, 0) == BR::Verdict::Rebind,
+               "ring found elsewhere: REBIND (sound continues), never trust engage's index");
+        check (BR::poll (2, -1, 0) == BR::Verdict::Lost,
+               "ring gone, first tick: tolerated (Link may be re-registering)");
+        check (BR::poll (2, -1, LinkShm::kBorrowRingMaxLostTicks - 1) == BR::Verdict::Release,
+               "ring gone past tolerance: RELEASE — the third state, silence, does not exist");
+        // The release SPEAKS: the processor's Release arm must set the
+        // auto-release reason the editor shows, pinned by source.
+        std::ifstream fp2 ("Source/PluginProcessor.cpp");
+        std::stringstream sp2; sp2 << fp2.rdbuf();
+        const juce::String psrc (sp2.str());
+        const int tick = psrc.indexOf ("void EchoJayProcessor::borrowTick");
+        const int tickEnd = tick >= 0 ? psrc.indexOf (tick, "\n}\n") : -1;
+        const auto tickBody = (tick >= 0 && tickEnd > tick)
+                                ? psrc.substring (tick, tickEnd) : juce::String();
+        check (tickBody.isNotEmpty(), "borrowTick located");
+        check (tickBody.contains ("BorrowRing::poll"),
+               "the tick decides through the pinned pure gate");
+        check (tickBody.contains ("borrowAutoReleaseReason_ ="),
+               "the self-release sets the spoken reason (never silent)");
+        // And the release affordance survives a view snap: the one-author
+        // affordance includes borrowActive(), pinned by source.
+        std::ifstream fe2 ("Source/PluginEditor.cpp");
+        std::stringstream se2; se2 << fe2.rdbuf();
+        const juce::String esrc (se2.str());
+        check (esrc.contains ("|| processorRef.borrowActive()"),
+               "the RELEASE button is reachable from every chain view");
+        check (esrc.contains ("takeBorrowAutoReleaseReason"),
+               "the editor consumes and shows the self-release reason");
+    }
 
     // =======================================================================
     std::printf ("== rack mix on the borrowed host ==\n");

@@ -7424,6 +7424,7 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
     juce::String sig;
     sig << chainViewUid() << "|" << v.revision << "|" << (int) v.valid
         << (int) v.offline << (int) writeLocked << (int) v.borrowed
+        << (int) processorRef.borrowActive()   // the release affordance's input
         << "|" << (int) v.slots.size() << "|"
         << chainSelectedSlot_ << "|" << pendingNote << "|" << lockLine;
     if (!force && sig == chainViewSig_) return;
@@ -7451,11 +7452,19 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
             if (auto it = processorRef.linkRackCache.find(chainViewUid());
                 it != processorRef.linkRackCache.end())
                 capable = it->second.rack.borrowCapable;
+        // A LIVE BORROW keeps its release reachable from EVERY chain view
+        // (hands-on finding #3): a selection snap must never strand a borrow
+        // whose only exit is closing the window.
         const bool showBorrow = v.borrowed
+            || processorRef.borrowActive()
             || (v.remote && v.valid && !v.offline && capable
                 && processorRef.rackLockHeldFor(chainViewUid()));
         chainListPanel.borrowBtn.setVisible(showBorrow);
-        chainListPanel.borrowBtn.setButtonText(v.borrowed ? "RELEASE" : "BORROW");
+        chainListPanel.borrowBtn.setButtonText(
+            !processorRef.borrowActive() ? "BORROW"
+            : v.borrowed ? "RELEASE"
+            : "RELEASE " + processorRef.resolveLinkDisplayName(
+                               processorRef.borrowUid()).toUpperCase());
     }
     if (noData)
     {
@@ -7601,17 +7610,21 @@ void EchoJayEditor::showChainRackMenu()
 // ---------------------------------------------------------------------------
 void EchoJayEditor::toggleBorrow()
 {
-    const juce::String uid = chainViewUid();
-    if (processorRef.borrowHostIfActiveFor(uid) != nullptr)
+    // Release acts on the LIVE borrow whatever rack the view shows — the
+    // button stays reachable from every view precisely so a selection snap
+    // cannot strand the borrow (finding #3).
+    if (processorRef.borrowActive())
     {
+        const juce::String owner =
+            processorRef.resolveLinkDisplayName(processorRef.borrowUid());
         processorRef.borrowRelease();
-        chainListPanel.statusText = "Released - " +
-            processorRef.resolveLinkDisplayName(uid) + " owns its rack again. "
-            "Edits here were NOT applied (Apply comes in a later step).";
+        chainListPanel.statusText = "Released - " + owner
+            + " owns its rack again. Edits here were NOT applied (Apply "
+              "comes in a later step).";
         refreshChainPanelForView(true);
         return;
     }
-    startBorrow(uid);
+    startBorrow(chainViewUid());
 }
 
 void EchoJayEditor::startBorrow(const juce::String& uid)
@@ -20699,6 +20712,14 @@ void EchoJayEditor::timerCallback()
         processorRef.borrowActive() ? processorRef.borrowUid()
         : currentTab == Tab::Chain && chainListPanel.isVisible()
             ? chainViewUid() : juce::String());
+
+    // A borrow that released ITSELF says so in words, wherever the user is
+    // looking — a self-release must never be silent (finding #3).
+    if (auto reason = processorRef.takeBorrowAutoReleaseReason(); reason.isNotEmpty())
+    {
+        chainListPanel.statusText = reason;
+        refreshChainPanelForView(true);
+    }
 
     if (currentTab == Tab::Chain && chainListPanel.isVisible())
     {

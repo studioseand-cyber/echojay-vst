@@ -1006,6 +1006,26 @@ static constexpr int kLinkTransferMaxTotalBytes = 16 * 1024 * 1024;
 // the Link's engage arm and the test; its old-binary arm is not hypothetical
 // — an old binary never parses `scope`, sees slot1 == 0, and its own
 // slot-validity check refuses the engage. Same outcome, proven both ways.
+// The borrow's ring binding is re-resolved every renew tick rather than
+// trusted from engage (hands-on finding #3: a sample-rate change can remap
+// the Link slots and a stale binding goes SILENT while the lease still holds
+// the Link dry). Pure decision, pinned in borrowhost_test: found again →
+// stay/rebind; not found → tolerate kBorrowRingMaxLostTicks consecutive
+// ticks (the Link may be re-registering), then RELEASE WITH WORDS — a
+// borrow must produce sound or a stated release, never silence.
+static constexpr int kBorrowRingMaxLostTicks = 3;   // ~3s at the renew cadence
+struct BorrowRing
+{
+    enum class Verdict { Bound, Rebind, Lost, Release };
+    static Verdict poll (int currentSlot, int foundSlot, int lostTicksSoFar)
+    {
+        if (foundSlot >= 0)
+            return foundSlot == currentSlot ? Verdict::Bound : Verdict::Rebind;
+        return lostTicksSoFar + 1 >= kBorrowRingMaxLostTicks ? Verdict::Release
+                                                             : Verdict::Lost;
+    }
+};
+
 struct LeaseScope
 {
     enum class Engage { Refuse, Slot, Rack };

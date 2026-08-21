@@ -17,6 +17,7 @@
 // ---------------------------------------------------------------------------
 #include <JuceHeader.h>
 #include "ChainHost.h"
+#include "NativeClip.h"   // EchoJay_NSLog — instant-dismiss diagnosis (21 Aug 2026)
 
 class ChainPluginPicker : public juce::Component,
                           private juce::ListBoxModel,
@@ -40,6 +41,12 @@ public:
     ChainPluginPicker(juce::Array<juce::PluginDescription> items, PickFn onPick)
         : all_(std::move(items)), onPick_(std::move(onPick))
     {
+        // Instant-dismiss diagnosis (21 Aug 2026): the CallOutBox's OWN
+        // dismissal (outside click, focus fight) never passes through
+        // dismiss() below — the DESTRUCTOR is the one witness every death
+        // path shares. Interleave these EJPicker lines with EJPanel:
+        // rebuild in the unified log to name the actor.
+        EchoJay_NSLog("EJPicker: shown");
         setSize(440, 500);
         search_.setTextToShowWhenEmpty("Search plugins: name, vendor, AU / VST3, or what a built-in does", juce::Colour(0xff6b7280));
         search_.setFont(juce::Font(juce::FontOptions(13.0f)));
@@ -203,8 +210,12 @@ private:
         dismiss();   // this may destroy us: nothing below touches members
         fn(d);
     }
+public:
+    ~ChainPluginPicker() override { EchoJay_NSLog("EJPicker: destroyed"); }
+private:
     void dismiss()
     {
+        EchoJay_NSLog("EJPicker: self-dismiss (Esc or pick)");
         if (box_ != nullptr) { auto* b = box_; box_ = nullptr; b->dismiss(); }
     }
 

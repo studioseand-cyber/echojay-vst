@@ -1650,8 +1650,62 @@ struct EchoJayProcessor::BorrowLeaseTimer : juce::Timer
 {
     EchoJayProcessor& p;
     explicit BorrowLeaseTimer(EchoJayProcessor& proc) : p(proc) {}
-    void timerCallback() override { p.renewBorrowLease(); }
+    void timerCallback() override { p.borrowTick(); }
 };
+
+void EchoJayProcessor::borrowTick()
+{
+    if (!borrowActive()) return;
+    renewBorrowLease();
+
+    // RING RE-BIND, every tick (hands-on finding #3): the slot index bound
+    // at engage is not trusted — a sample-rate change or Link re-register
+    // can remap activeLinkSlots, and a stale binding is SILENT while the
+    // lease still holds the Link dry. Re-resolve by uid; tolerate a short
+    // gap (the Link may be mid-re-register); past tolerance, release WITH
+    // WORDS through the reason the editor shows.
+    int found = -1;
+    for (int i = 0; i < kMaxLinkSlots; ++i)
+        if (activeLinkSlots[i].map != nullptr
+            && activeLinkSlots[i].uid == borrowSession_.uid)
+            { found = i; break; }
+    switch (LinkShm::BorrowRing::poll(
+                borrowSession_.ringSlot.load(std::memory_order_relaxed),
+                found, borrowRingLostTicks_))
+    {
+        case LinkShm::BorrowRing::Verdict::Bound:
+            borrowRingLostTicks_ = 0;
+            break;
+        case LinkShm::BorrowRing::Verdict::Rebind:
+        {
+            borrowRingLostTicks_ = 0;
+            const juce::SpinLock::ScopedLockType sl(activeLinkSlots[found].lock);
+            if (activeLinkSlots[found].map != nullptr)
+                LinkShm::ringSeekForward(activeLinkSlots[found].map, kEditCushionFrames);
+            borrowSession_.ringSlot.store(found, std::memory_order_relaxed);
+            EchoJay_NSLog(("EJBorrow: ring re-bound to slot "
+                           + juce::String(found)).toRawUTF8());
+            break;
+        }
+        case LinkShm::BorrowRing::Verdict::Lost:
+            ++borrowRingLostTicks_;
+            EchoJay_NSLog(("EJBorrow: ring lost, tick " + juce::String(borrowRingLostTicks_)
+                           + " of " + juce::String(LinkShm::kBorrowRingMaxLostTicks)).toRawUTF8());
+            break;
+        case LinkShm::BorrowRing::Verdict::Release:
+        {
+            const juce::String name = resolveLinkDisplayName(borrowSession_.uid);
+            borrowRingLostTicks_ = 0;
+            borrowRelease();
+            borrowAutoReleaseReason_ =
+                "Borrow released: " + name + "'s audio stream went away and "
+                "did not come back. The Link owns its rack again; nothing "
+                "was applied.";
+            EchoJay_NSLog("EJBorrow: SELF-RELEASED - ring gone past tolerance");
+            break;
+        }
+    }
+}
 
 ChainHost* EchoJayProcessor::borrowHost()
 {
@@ -1710,6 +1764,7 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
             LinkShm::ringSeekForward(activeLinkSlots[ringSlot].map, kEditCushionFrames);
     }
     borrowSession_.ringSlot.store(ringSlot, std::memory_order_relaxed);
+    borrowRingLostTicks_ = 0;
     borrowSession_.active.store(true, std::memory_order_relaxed);
 
     renewBorrowLease();                              // the file appears NOW
