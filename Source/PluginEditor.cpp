@@ -2528,6 +2528,11 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
 }
 
 EchoJayEditor::~EchoJayEditor() {
+    // Rack lock: the editor IS the gate — no editor, no claim. Clearing the
+    // declaration deletes the lock file now; the 3s expiry covers the crash
+    // path where this line never runs.
+    processorRef.setRackLockWant({});
+
     // Session C: drop the processor's callback into this editor BEFORE any
     // other teardown. The poll keeps running (that is the point), so a tick
     // landing after this line must not reach a half-destroyed editor. This is
@@ -7325,6 +7330,32 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
         }
     }
 
+    // Rack lock status — a render input like everything else here. TWO
+    // DISTINCT REFUSALS by design: FCFS names another owner and does not
+    // clear by waiting; the recency wait names the Link and clears on its
+    // own. They must never share one string.
+    juce::String lockLine;
+    bool writeLocked = false;
+    if (v.remote)
+        switch (processorRef.rackLockState())
+        {
+            case EchoJayProcessor::RackLockState::Held: break;
+            case EchoJayProcessor::RackLockState::HeldByOther:
+                writeLocked = true;
+                lockLine = "This rack is locked by "
+                         + processorRef.rackLockOtherOwner()
+                         + " - it frees up when that window deselects it.";
+                break;
+            case EchoJayProcessor::RackLockState::WaitRecency:
+                writeLocked = true;
+                lockLine = v.name + " was just edited in its own window - "
+                           "this clears on its own in a few seconds.";
+                break;
+            case EchoJayProcessor::RackLockState::Idle:
+                writeLocked = true;   // acquiring; one tick at most
+                break;
+        }
+
     // NO DATA is a state of the view, decided once and used by the signature,
     // the status line and the (single) rebuild below.
     const bool noData = v.remote && !v.valid;
@@ -7344,8 +7375,8 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
     // why their authors call with force = true.
     juce::String sig;
     sig << chainViewUid() << "|" << v.revision << "|" << (int) v.valid
-        << (int) v.offline << "|" << (int) v.slots.size() << "|"
-        << chainSelectedSlot_ << "|" << pendingNote;
+        << (int) v.offline << (int) writeLocked << "|" << (int) v.slots.size() << "|"
+        << chainSelectedSlot_ << "|" << pendingNote << "|" << lockLine;
     if (!force && sig == chainViewSig_) return;
     chainViewSig_ = sig;
 
@@ -7359,6 +7390,8 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
     chainListPanel.remote        = v.remote;
     chainListPanel.remoteName    = v.name;
     chainListPanel.remoteOffline = v.offline;
+    chainListPanel.remoteWriteLocked  = writeLocked;
+    chainListPanel.remoteWriteLockWhy = lockLine;
     if (noData)
     {
         // NO DATA, said in words, and NOT an empty rack. The panel is given
@@ -7389,6 +7422,14 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
         {
             chainListPanel.statusText = pendingNote;
             lastAddLine_ = pendingNote;
+        }
+        else if (lockLine.isNotEmpty())
+        {
+            // The lock refusal explains itself on the status line. Below an
+            // in-flight op's note (that is a result, this is a standing
+            // state) and never remembered as lastAddLine_ — it retires by
+            // the signature moving when the lock state does.
+            chainListPanel.statusText = lockLine;
         }
         else if (lastAddLine_.isNotEmpty()
                  && chainListPanel.statusText == lastAddLine_)
@@ -7496,6 +7537,16 @@ void EchoJayEditor::sendRackEdit(const juce::String& uid, int slotIdx, bool isRe
         // This is also the offline rule the Chain tab needs: refused, with a
         // reason, never queued for later.
         fail("Not applied: this Link is not connected right now - nothing was changed.");
+        return;
+    }
+    // Rack lock: same one-writer rule as sendRackAdd, same two wordings.
+    if (!processorRef.rackLockHeldFor(uid))
+    {
+        fail(processorRef.rackLockState() == EchoJayProcessor::RackLockState::HeldByOther
+                 ? "Not applied: this rack is locked by "
+                     + processorRef.rackLockOtherOwner() + "."
+                 : "Not applied: this rack was just edited in its own window - "
+                   "try again in a few seconds.");
         return;
     }
 
@@ -8015,6 +8066,18 @@ void EchoJayEditor::sendRackAdd(const juce::String& uid, const juce::String& plu
     if (!connected)
     {
         fail("Not added: this Link is not connected right now - nothing was changed.");
+        return;
+    }
+    // Rack lock: one writer at a time — a main that does not hold this rack
+    // does not write it. Distinct wording per refusal (never one string for
+    // two causes).
+    if (!processorRef.rackLockHeldFor(uid))
+    {
+        fail(processorRef.rackLockState() == EchoJayProcessor::RackLockState::HeldByOther
+                 ? "Not added: this rack is locked by "
+                     + processorRef.rackLockOtherOwner() + "."
+                 : "Not added: this rack was just edited in its own window - "
+                   "try again in a few seconds.");
         return;
     }
 
@@ -20287,6 +20350,15 @@ void EchoJayEditor::timerCallback()
     //  The LOCAL rack costs nothing here: its signature only moves when its
     //  slot count does, and every local mutation already rebuilds inline.
     // -------------------------------------------------------------------------
+    // Rack lock: the editor's declaration of "actively showing". Idempotent
+    // setter, every tick — Chain tab showing a Link's rack claims it; any
+    // other tab (or the local rack) clears it, which deletes the lock file
+    // immediately. Editor destruction clears it too; a crash is covered by
+    // the 3s expiry. This is the "editor gates" half of the design.
+    processorRef.setRackLockWant(
+        currentTab == Tab::Chain && chainListPanel.isVisible()
+            ? chainViewUid() : juce::String());
+
     if (currentTab == Tab::Chain && chainListPanel.isVisible())
     {
         if (chainViewUid().isNotEmpty()) refreshLinkRackCache(false);

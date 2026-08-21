@@ -576,6 +576,17 @@ public:
         {
             auto& model = proc.getChainModel();
             selectedIdx = juce::jlimit(-1, (int)model.size() - 1, selectedIdx);
+            // Rack lock (21 Aug 2026): rack-wide read-only while a main's
+            // Chain tab shows this rack. STRUCTURE AND MIX ONLY — selection
+            // and hosted editors stay live (locking parameter writes is a
+            // claim the code cannot keep). pollRackLock calls
+            // notifyChainModel on every transition, so this rebuild runs on
+            // lock and on release, exactly like the lease's engage path.
+            const juce::String lockOwner = proc.rackLockOwner();
+            const juce::String lockWhy = lockOwner.isNotEmpty()
+                ? "Selected in the rack on \"" + lockOwner
+                    + "\" - deselect there to edit here."
+                : juce::String();
 
             for (auto& bl : blocks) stripContent.removeChildComponent(bl.get());
             blocks.clear();
@@ -628,10 +639,28 @@ public:
                     bl->wetKnob.setVisible(false);
                     bl->setAlpha(0.55f);
                 }
+                // Rack lock: the whole rack's structure/mix controls go dead,
+                // named tooltip on each. onSelect stays wired — selection and
+                // opening editors are deliberately NOT locked.
+                if (lockOwner.isNotEmpty())
+                {
+                    for (auto* b : { &bl->bypassBtn, &bl->removeBtn,
+                                     &bl->prevBtn, &bl->nextBtn })
+                    { b->setEnabled(false); b->setTooltip(lockWhy); }
+                    bl->wetKnob.setVisible(false);
+                    bl->setAlpha(0.55f);
+                }
                 stripContent.addAndMakeVisible(*bl);
                 blocks.push_back(std::move(bl));
             }
             layoutStrip();
+            // Rack lock: master MIX and "+" are mix/structure writes. The
+            // processor guard is the backstop; this stops the gesture ever
+            // starting (a knob that moves then snaps back reads as a bug).
+            addBlock.setEnabled(lockOwner.isEmpty());
+            addBlock.setTooltip(lockWhy);
+            masterKnob.setInterceptsMouseClicks(lockOwner.isEmpty(), lockOwner.isEmpty());
+            masterKnob.setAlpha(lockOwner.isEmpty() ? 1.0f : 0.55f);
             masterKnob.setValue(proc.getChainMasterWet());
             {
                 auto& ch = proc.getChainHost();
@@ -690,6 +719,22 @@ public:
             g.fillRoundedRectangle(area.toFloat(), 8.0f);
             g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.3f));
             g.drawRoundedRectangle(area.toFloat().reduced(0.5f), 8.0f, 1.0f);
+
+            // Rack lock overlay banner: names the owner and says how to
+            // release. Paint only — it must never block clicks, because
+            // selection and hosted editors stay live under the lock.
+            {
+                const juce::String lockOwner = proc.rackLockOwner();
+                if (lockOwner.isNotEmpty())
+                {
+                    g.setColour(juce::Colour(0xffFFB020));
+                    g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+                    g.drawText("Selected in the rack on \"" + lockOwner
+                                   + "\" - deselect there to edit here.",
+                               8, kNameRowH + 2, getWidth() - 16, 16,
+                               juce::Justification::centred, true);
+                }
+            }
 
             // Name row — selected plugin, centred
             if (haveSel)

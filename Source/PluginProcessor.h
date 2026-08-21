@@ -450,6 +450,30 @@ public:
     void renewEditLease();          // the 1s writer
     struct EditLeaseTimer;
     std::unique_ptr<EditLeaseTimer> editLeaseTimer_;
+
+    // ---- Rack lock (21 Aug 2026, RACK_BORROW_REQUIREMENTS §4) -------------
+    // PROCESSOR renews, EDITOR gates: the editor declares which rack its
+    // Chain tab is actively showing (empty = none), this class writes/renews
+    // racklock-<uid>.json at 1s while it holds, deletes it the moment the
+    // declaration clears, and lets the 3s expiry cover a crash. UI-only:
+    // nothing here touches audio, bypass or the Active toggle. All state is
+    // message-thread only, like the edit-session lease around it.
+    enum class RackLockState { Idle, Held, WaitRecency, HeldByOther };
+    void setRackLockWant(const juce::String& uid);   // editor's declaration
+    RackLockState rackLockState() const { return rackLockState_; }
+    juce::String  rackLockOtherOwner() const { return rackLockOtherOwner_; }
+    bool rackLockHeldFor(const juce::String& uid) const
+    { return rackLockState_ == RackLockState::Held && rackLockHeldUid_ == uid; }
+    void rackLockTick();            // the 1s state machine (public for the timer)
+private:
+    struct RackLockTimer;
+    std::unique_ptr<RackLockTimer> rackLockTimer_;
+    juce::String  rackLockWantUid_, rackLockHeldUid_, rackLockOtherOwner_;
+    juce::String  rackLockId_;      // stable identity for FCFS, minted on first use
+    RackLockState rackLockState_ = RackLockState::Idle;
+    juce::String  rackLockMyName() const;
+    void          rackLockReleaseFile();
+public:
     void startCapture();
     void stopCapture();
     void resetCapture();

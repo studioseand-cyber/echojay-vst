@@ -125,6 +125,7 @@ void LinkProcessor::timerCallback()
     {
         pollChainCommand();
         pollEditLease();
+        pollRackLock();
         pollControlCommand();
         pollKeyCommand();
         pollSessionProjectName();
@@ -275,6 +276,10 @@ void LinkProcessor::publishRackSidecar()
             const auto id = chainHost.getSlotIdentity(i);
             auto& back = rc.slots.back();
             back.fp = id.fp; back.uid = id.uid; back.version = id.version;
+            // Rack lock recency: the Link's last LOCAL rack edit rides every
+            // slot (assigned by name, after the positional init, like the
+            // identity trio above).
+            back.lastEditMs = lastLocalRackEditMs_;
         }
     }
     LinkShm::writeRackSidecar(resolvedDir, rc);
@@ -464,6 +469,38 @@ void LinkProcessor::pollSessionProjectName()
 // toggle (same updateShmState path, same dirty-marking so it persists),
 // then the ack confirms the applied state.
 // ---------------------------------------------------------------------------
+void LinkProcessor::pollRackLock()
+{
+    // ~100ms cadence, message thread — same shape as pollEditLease: the FILE
+    // is the claim, freshness decides, and the transition is what acts.
+    if (instanceUid_.isEmpty() || resolvedDir.isEmpty()) return;
+    juce::String id, owner;
+    double age = 1.0e12;
+    LinkShm::readRackLockFile(resolvedDir, instanceUid_, id, owner, age);
+    const auto claim = LinkShm::RackLock::read(id, age, {});   // a Link never owns
+    const juce::String newOwner =
+        claim == LinkShm::RackLock::Claim::Other
+            ? (owner.isNotEmpty() ? owner : juce::String("another EchoJay"))
+            : juce::String();
+    if (newOwner == rackLockOwner_) return;
+    EchoJay_NSLog((newOwner.isNotEmpty()
+                       ? "EJRackLock: locked by \"" + newOwner + "\""
+                       : "EJRackLock: released (was \"" + rackLockOwner_ + "\")")
+                      .toRawUTF8());
+    rackLockOwner_ = newOwner;
+    notifyChainModel();   // the editor re-renders the rack UI locked/unlocked
+}
+
+bool LinkProcessor::rackLockGuard(const char* op)
+{
+    if (rackLockOwner_.isEmpty()) return false;
+    // The refusal asserts itself: from outside, a guard that returned early
+    // is indistinguishable from one that refused — this line is the witness.
+    EchoJay_NSLog(("EJRackLock: refused " + juce::String(op)
+                   + " - rack is selected on \"" + rackLockOwner_ + "\"").toRawUTF8());
+    return true;
+}
+
 void LinkProcessor::pollEditLease()
 {
     // ~100ms cadence, message thread. The FILE is the lease (see LinkShm.h):
@@ -1716,6 +1753,12 @@ bool LinkProcessor::isPluginDisabledByName(const juce::String& name) const
 void LinkProcessor::addChainPluginManually(const juce::PluginDescription& desc,
                                            std::function<void(const juce::String&)> done)
 {
+    if (rackLockGuard("add"))
+    {
+        if (done) done("This rack is selected on \"" + rackLockOwner_
+                       + "\" - deselect there to edit here.");
+        return;
+    }
     if ((int)chainModel.size() >= kMaxChainSlots)
     {
         if (done) done("Chain is full (" + juce::String(kMaxChainSlots) + " slots max)");
@@ -1739,6 +1782,7 @@ void LinkProcessor::addChainPluginManually(const juce::PluginDescription& desc,
         slot.name    = name;
         slot.hostIdx = chainHost.getNumSlots() - 1;
         chainModel.push_back(slot);
+        stampLocalRackEdit();
         // Latency: chainHost.onChainChanged already ran updateChainLatency
         // during the graph rebuild. notifyChainModel refreshes the editor
         // and marks host state dirty — the same path command builds use.
@@ -1749,6 +1793,7 @@ void LinkProcessor::addChainPluginManually(const juce::PluginDescription& desc,
 
 void LinkProcessor::removeChainSlot(int idx)
 {
+    if (rackLockGuard("remove")) return;
     if (idx < 0 || idx >= (int)chainModel.size()) return;
     if (onChainAboutToChange) onChainAboutToChange();
     int hostIdx = chainModel[(size_t)idx].hostIdx;
@@ -1759,11 +1804,13 @@ void LinkProcessor::removeChainSlot(int idx)
             if (s.hostIdx > hostIdx) --s.hostIdx;
     }
     chainModel.erase(chainModel.begin() + idx);
+    stampLocalRackEdit();
     notifyChainModel();
 }
 
 void LinkProcessor::moveChainSlot(int idx, int dir)
 {
+    if (rackLockGuard("move")) return;
     int j = idx + dir;
     if (idx < 0 || idx >= (int)chainModel.size()) return;
     if (j < 0 || j >= (int)chainModel.size()) return;
@@ -1778,26 +1825,31 @@ void LinkProcessor::moveChainSlot(int idx, int dir)
         std::swap(a.hostIdx, b.hostIdx);
     }
     std::swap(a, b);
+    stampLocalRackEdit();
     notifyChainModel();
 }
 
 void LinkProcessor::toggleChainSlotBypass(int idx)
 {
+    if (rackLockGuard("bypass")) return;
     if (idx < 0 || idx >= (int)chainModel.size()) return;
     auto& s = chainModel[(size_t)idx];
     s.bypassed = !s.bypassed;
     if (s.hostIdx >= 0)
         chainHost.setSlotBypassed(s.hostIdx, s.bypassed);
+    stampLocalRackEdit();
     notifyChainModel();
 }
 
 void LinkProcessor::setChainSlotWet(int idx, float wet01)
 {
+    if (rackLockGuard("slot wet")) return;
     if (idx < 0 || idx >= (int)chainModel.size()) return;
     auto& s = chainModel[(size_t)idx];
     s.wet = juce::jlimit(0.0f, 1.0f, wet01);   // model copy = serialisation source
     if (s.hostIdx >= 0)
         chainHost.setSlotWet(s.hostIdx, s.wet);
+    stampLocalRackEdit();
 }
 
 float LinkProcessor::getChainSlotWet(int idx) const

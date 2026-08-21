@@ -201,7 +201,13 @@ public:
     // state without being spammed during the drag.
     void  setChainSlotWet(int idx, float wet01);
     float getChainSlotWet(int idx) const;
-    void  setChainMasterWet(float wet01) { chainHost.setMasterWet(wet01); }
+    void  setChainMasterWet(float wet01)
+    {
+        // Rack lock: master wet is a mix write, locked with structure.
+        if (rackLockGuard("master wet")) return;
+        chainHost.setMasterWet(wet01);
+        stampLocalRackEdit();
+    }
     float getChainMasterWet() const      { return chainHost.getMasterWet(); }
     void  commitChainWetChange();
 
@@ -472,6 +478,29 @@ private:
     // message-thread state. leasePriorBypass_ is what the restore restores:
     // the bypass the USER had before the lease, not blanket false.
     void pollEditLease();
+
+public:
+    // ---- Rack lock (21 Aug 2026, RACK_BORROW_REQUIREMENTS §4) -------------
+    // UI-ONLY ownership: while a main's editor shows this rack, the six local
+    // mutation entry points refuse and the editor greys. NEVER audio: no
+    // bypass, no Active, nothing in the graph. The ctrl-cmd path is NOT
+    // guarded here — that is the lock OWNER'S write path.
+    // Empty = unlocked; else the owning main's display name for the overlay.
+    juce::String rackLockOwner() const { return rackLockOwner_; }
+    // true = refused (and said so in the log — a guard that can silently do
+    // nothing must assert that it did something).
+    bool rackLockGuard(const char* op);
+    // Stamp a LOCAL rack edit for the recency rule. Local only, never remote
+    // ops: deriving this from chainRevision would also stamp the main's own
+    // edits and make it wait out itself after releasing.
+    void stampLocalRackEdit()
+    { lastLocalRackEditMs_ = (double) juce::Time::currentTimeMillis(); }
+
+private:
+    void pollRackLock();
+    juce::String rackLockOwner_;             // message thread only
+    double       lastLocalRackEditMs_ = 0.0; // message thread only
+
     LinkShm::LeaseGate leaseGate_;
     std::atomic<bool>  leaseActive_ { false };
     int                leaseSlot0_       = -1;

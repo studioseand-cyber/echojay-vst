@@ -956,6 +956,14 @@ struct RackSidecarSlot {
     // (LinkProcessor publishRackSidecar), so a new field goes last and is set
     // by assignment, never spliced into the middle.
     juce::String fp, uid, version;
+    // Rack lock recency transport (21 Aug 2026): wallclock ms of the Link's
+    // last LOCAL rack edit — the six LinkProcessor UI mutations, never a
+    // remote op, or the main would wait out its own edits after releasing.
+    // 0 = never / written by a build that predates the field, which reads as
+    // "quiet" (racklock_test asserts the field genuinely round-trips, so a
+    // systemic zero cannot masquerade as a pass). LAST, after the identity
+    // strings, same positional-init rule as above.
+    double lastEditMs = 0.0;
 };
 struct RackSidecar {
     bool  valid = false;
@@ -1069,6 +1077,96 @@ struct LeaseGate
     }
 };
 
+// =============================================================================
+//  Rack lock — racklock-<uid>.json (21 Aug 2026)
+//
+//  The UI-only ownership claim from RACK_BORROW_REQUIREMENTS §4: while a main
+//  plugin's editor is actively SHOWING a Link's rack in its Chain tab, that
+//  Link's own rack UI goes read-only. Same thinking as the edit lease —
+//  heartbeat (renew ~1s), expiry (3s), processor-renewed / editor-gated,
+//  deleted on clean release — but a SIBLING file, never a field in the
+//  sidecar: the clearing path must work independently of the state file,
+//  because clearing is what has to work when everything else has gone wrong.
+//  NEVER an audio change: no bypass, no Active toggle, nothing in a graph.
+// =============================================================================
+static constexpr double kRackLockRenewMs   = 1000.0;
+static constexpr double kRackLockExpireMs  = 3000.0;
+// Reverse contention: a LOCAL rack edit on the Link inside this window makes
+// the main wait (and auto-acquire when quiet). Recency, not window state —
+// Link windows sit open idle all day.
+static constexpr double kRackLockRecencyMs = 10000.0;
+
+inline juce::String racklockPath(const juce::String& dir, const juce::String& uid)
+{
+    return dir + "racklock-" + uid + ".json";
+}
+
+// ONE author for the file format, both sides and the test read/write through
+// these. owner is a display name for the overlay ("Selected in the rack on
+// <owner>"), lockId is the identity FCFS compares.
+inline void writeRackLockFile(const juce::String& dir, const juce::String& uid,
+                              const juce::String& lockId, const juce::String& owner)
+{
+    auto* o = new juce::DynamicObject();
+    o->setProperty("v",      1);
+    o->setProperty("lockId", lockId);
+    o->setProperty("owner",  owner);
+    o->setProperty("tMs",    juce::Time::currentTimeMillis());
+    juce::File(racklockPath(dir, uid))
+        .replaceWithText(juce::JSON::toString(juce::var(o), true));
+}
+
+inline bool readRackLockFile(const juce::String& dir, const juce::String& uid,
+                             juce::String& lockIdOut, juce::String& ownerOut,
+                             double& ageMsOut)
+{
+    lockIdOut.clear(); ownerOut.clear(); ageMsOut = 1.0e12;   // absent = infinitely stale
+    juce::File f(racklockPath(dir, uid));
+    if (!f.existsAsFile()) return false;
+    auto v = juce::JSON::parse(f.loadFileAsString());
+    auto* o = v.getDynamicObject();
+    if (o == nullptr || (int) o->getProperty("v") != 1) return false;
+    lockIdOut = o->getProperty("lockId").toString();
+    ownerOut  = o->getProperty("owner").toString();
+    ageMsOut  = (double) juce::Time::currentTimeMillis()
+                  - (double) (juce::int64) o->getProperty("tMs");
+    return true;
+}
+
+// The PURE decisions, LeaseGate-style, so racklock_test can pin them with no
+// processor in the room.
+struct RackLock
+{
+    // What the file says, from any reader's point of view. myId empty (the
+    // Link side never owns) makes any fresh claim Other.
+    enum class Claim { Free, Mine, Other };
+    static Claim read(const juce::String& fileId, double ageMs, const juce::String& myId)
+    {
+        if (fileId.isEmpty() || ageMs >= kRackLockExpireMs) return Claim::Free;
+        return (myId.isNotEmpty() && fileId == myId) ? Claim::Mine : Claim::Other;
+    }
+
+    // The main's acquire decision each renew tick. lastEditMs is the newest
+    // slot stamp from the sidecar (0 = no local edit ever recorded).
+    enum class Acquire {
+        Take,          // write/renew the file: we hold it
+        WaitRecency,   // the Link was edited moments ago; clears by waiting
+        HeldByOther,   // FCFS: another main holds it; wait for release/expiry
+    };
+    static Acquire decide(Claim claim, bool alreadyHolding,
+                          double nowMs, double lastEditMs)
+    {
+        // A fresh FOREIGN id always wins, even over a holder — it can only
+        // appear if our renewals lapsed past expiry, and two writers is the
+        // one state this file exists to prevent. Yield; FCFS re-runs.
+        if (claim == Claim::Other) return Acquire::HeldByOther;
+        if (alreadyHolding)        return Acquire::Take;   // renewal
+        if (lastEditMs > 0.0 && nowMs - lastEditMs < kRackLockRecencyMs)
+            return Acquire::WaitRecency;
+        return Acquire::Take;
+    }
+};
+
 inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
 {
     auto* obj = new juce::DynamicObject();
@@ -1112,6 +1210,9 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
         }
         if (s.controlled)
             so->setProperty("controlled", true);
+        // Additive at v:1, written only when a local edit has ever happened.
+        if (s.lastEditMs > 0.0)
+            so->setProperty("lastEditMs", s.lastEditMs);
         slots.add(juce::var(so));
     }
     obj->setProperty("slots", slots);
@@ -1164,6 +1265,8 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
                     }
                 s.controlled = so->hasProperty("controlled")
                                  && (bool) so->getProperty("controlled");
+                s.lastEditMs = so->hasProperty("lastEditMs")
+                                 ? (double) so->getProperty("lastEditMs") : 0.0;
                 if (s.name.isNotEmpty()) rc.slots.push_back(std::move(s));
             }
     rc.valid = rc.uid == uid && rc.revision >= 0;

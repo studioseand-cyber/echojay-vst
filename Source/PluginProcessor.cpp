@@ -471,6 +471,9 @@ EchoJayProcessor::~EchoJayProcessor()
         }
         editEnd(false);
     }
+    // Rack lock: delete rather than expire — same reason as the lease above.
+    // setRackLockWant({}) stops the renew timer and deletes the lock file.
+    setRackLockWant({});
     ejTeardownLog("~EchoJayProcessor enter");
     stopTimer();   // §6.1 scheduler — no arm can fire into teardown
 
@@ -1559,6 +1562,112 @@ struct EchoJayProcessor::EditLeaseTimer : juce::Timer
     explicit EditLeaseTimer(EchoJayProcessor& proc) : p(proc) {}
     void timerCallback() override { p.renewEditLease(); }
 };
+
+// ---------------------------------------------------------------------------
+// Rack lock — the main side. See LinkShm.h (RackLock) for the pure decisions
+// and RACK_BORROW_REQUIREMENTS §4 for the design record.
+// ---------------------------------------------------------------------------
+struct EchoJayProcessor::RackLockTimer : juce::Timer
+{
+    EchoJayProcessor& p;
+    explicit RackLockTimer(EchoJayProcessor& proc) : p(proc) {}
+    void timerCallback() override { p.rackLockTick(); }
+};
+
+juce::String EchoJayProcessor::rackLockMyName() const
+{
+    // The overlay names the owner; a track name is the most recognisable
+    // identity a main has. Fallback stays honest rather than blank.
+    const juce::String t = chainHost.getHostTrackName();
+    return t.isNotEmpty() ? "EchoJay on \"" + t + "\"" : juce::String("another EchoJay");
+}
+
+void EchoJayProcessor::rackLockReleaseFile()
+{
+    if (rackLockHeldUid_.isEmpty()) return;
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isNotEmpty())
+        juce::File(LinkShm::racklockPath(dir, rackLockHeldUid_)).deleteFile();
+    EchoJay_NSLog(("EJRackLock: released uid=" + rackLockHeldUid_).toRawUTF8());
+    rackLockHeldUid_.clear();
+}
+
+void EchoJayProcessor::setRackLockWant(const juce::String& uid)
+{
+    if (uid == rackLockWantUid_) return;
+    // A change of target releases the old lock NOW — clean delete beats a 3s
+    // expiry every time the release path is reachable.
+    if (rackLockHeldUid_.isNotEmpty() && rackLockHeldUid_ != uid)
+        rackLockReleaseFile();
+    rackLockWantUid_ = uid;
+    if (uid.isEmpty())
+    {
+        rackLockState_ = RackLockState::Idle;
+        rackLockOtherOwner_.clear();
+        if (rackLockTimer_) rackLockTimer_->stopTimer();
+        return;
+    }
+    if (rackLockId_.isEmpty())
+        rackLockId_ = juce::Uuid().toString();
+    rackLockTick();   // attempt NOW, not in 1s — mirrors renewEditLease
+    if (rackLockTimer_ == nullptr)
+        rackLockTimer_ = std::make_unique<RackLockTimer>(*this);
+    rackLockTimer_->startTimer((int) LinkShm::kRackLockRenewMs);
+}
+
+void EchoJayProcessor::rackLockTick()
+{
+    if (rackLockWantUid_.isEmpty()) { rackLockReleaseFile(); return; }
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty()) return;
+
+    juce::String fileId, fileOwner;
+    double ageMs = 1.0e12;
+    LinkShm::readRackLockFile(dir, rackLockWantUid_, fileId, fileOwner, ageMs);
+    const auto claim = LinkShm::RackLock::read(fileId, ageMs, rackLockId_);
+
+    // Recency reads the sidecar's slot stamps — the Link's last LOCAL edit.
+    double lastEditMs = 0.0;
+    {
+        const auto rc = LinkShm::readRackSidecar(dir, rackLockWantUid_);
+        for (const auto& s : rc.slots)
+            lastEditMs = juce::jmax(lastEditMs, s.lastEditMs);
+    }
+    const bool holding = rackLockState_ == RackLockState::Held
+                       && rackLockHeldUid_ == rackLockWantUid_;
+    const auto prev = rackLockState_;
+    switch (LinkShm::RackLock::decide(claim, holding,
+                                      (double) juce::Time::currentTimeMillis(),
+                                      lastEditMs))
+    {
+        case LinkShm::RackLock::Acquire::Take:
+            LinkShm::writeRackLockFile(dir, rackLockWantUid_, rackLockId_,
+                                       rackLockMyName());
+            rackLockHeldUid_ = rackLockWantUid_;
+            rackLockState_   = RackLockState::Held;
+            rackLockOtherOwner_.clear();
+            if (prev != RackLockState::Held)
+                EchoJay_NSLog(("EJRackLock: acquired uid=" + rackLockHeldUid_).toRawUTF8());
+            break;
+        case LinkShm::RackLock::Acquire::WaitRecency:
+            rackLockState_ = RackLockState::WaitRecency;
+            rackLockOtherOwner_.clear();
+            if (prev != RackLockState::WaitRecency)
+                EchoJay_NSLog("EJRackLock: waiting - the Link was edited moments ago");
+            break;
+        case LinkShm::RackLock::Acquire::HeldByOther:
+            rackLockState_      = RackLockState::HeldByOther;
+            rackLockOtherOwner_ = fileOwner.isNotEmpty() ? fileOwner
+                                                         : juce::String("another EchoJay");
+            rackLockHeldUid_.clear();   // a fresh foreign id supersedes us
+            if (prev != RackLockState::HeldByOther)
+                EchoJay_NSLog(("EJRackLock: held by \"" + rackLockOtherOwner_
+                               + "\"").toRawUTF8());
+            break;
+    }
+}
 
 void EchoJayProcessor::editBegin(const juce::String& uid, int slot0,
                                  const juce::String& name, const juce::String& fmt,

@@ -1872,6 +1872,11 @@ private:
         std::function<void(int)> onRemoteEditorRequest;
         juce::String remoteName;     // the Link's display name, for the note
         bool         remoteOffline = false;
+        // Rack lock: TRUE while viewing a remote rack this main does not
+        // hold — remote edit affordances disable, tooltip says why. Set only
+        // by refreshChainPanelForView (the one author), like the flags above.
+        bool         remoteWriteLocked = false;
+        juce::String remoteWriteLockWhy;
         std::function<void(int)>        onSelectSlot;
         std::function<void(int)>        onRemoveSlot;
         std::function<void(int)>        onBypassSlot;
@@ -2459,6 +2464,13 @@ private:
                     bl->removeBtn.setEnabled(false);
                     bl->bypassBtn.setTooltip(off);
                     bl->removeBtn.setTooltip(off);
+                }
+                if (remoteWriteLocked)
+                {
+                    bl->bypassBtn.setEnabled(false);
+                    bl->removeBtn.setEnabled(false);
+                    bl->bypassBtn.setTooltip(remoteWriteLockWhy);
+                    bl->removeBtn.setTooltip(remoteWriteLockWhy);
                 }
                 stripContent.addAndMakeVisible(*bl);
                 blocks.push_back(std::move(bl));
