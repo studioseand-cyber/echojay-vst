@@ -1826,8 +1826,13 @@ private:
         // Whole-rack borrow (step 2): visible only when the view is a
         // borrow-capable Link's rack this main holds the lock on. Text and
         // visibility are the one author's (refreshChainPanelForView).
-        juce::TextButton      borrowBtn { "BORROW" };
+        juce::TextButton      borrowBtn { "EDIT RACK" };
         std::function<void()> onBorrowClick;
+        // The route override (finding: solo routing depends on what the main
+        // is). Text IS the active mode; a click flips it. Visible only while
+        // an edit-rack session is live; both set by the one author.
+        juce::TextButton      borrowRouteBtn { "HEARD: REPLACES OUTPUT" };
+        std::function<void()> onBorrowRouteClick;
         std::function<void()> onRackClick;
         static constexpr int  kRackSelW = 150;   // reserved left of the strip
 
@@ -1947,11 +1952,21 @@ private:
             addAndMakeVisible(rackBtn);
             borrowBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
             borrowBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffFFB020));
-            borrowBtn.setTooltip("Borrow this rack: the Link streams dry and the whole "
-                                 "chain runs here, solo, editable. Release hands it back. "
-                                 "Nothing is written to the Link until Apply (a later step).");
+            borrowBtn.setTooltip("Edit this rack here: the Link streams dry and its whole "
+                                 "chain runs in this window, soloed, editable. Release "
+                                 "hands it back. Nothing is written to the Link until "
+                                 "Apply (a later step).");
             borrowBtn.onClick = [this] { if (onBorrowClick) onBorrowClick(); };
             addChildComponent(borrowBtn);   // one author shows it
+            borrowRouteBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
+            borrowRouteBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff8fd3a8));
+            borrowRouteBtn.setTooltip("Where the edited rack's solo lands: through this "
+                                      "channel's own chain (the Mix/Master Bus default, so "
+                                      "the master processing stays in the ear), or replacing "
+                                      "this channel's output (every other channel's default). "
+                                      "Click to flip.");
+            borrowRouteBtn.onClick = [this] { if (onBorrowRouteClick) onBorrowRouteClick(); };
+            addChildComponent(borrowRouteBtn);
 
             addAndMakeVisible(stripView);
             stripView.setViewedComponent(&stripContent, false);
@@ -2670,6 +2685,7 @@ private:
             // reservation at the right end.
             rackBtn.setBounds(8, getHeight() - kStripH + 8, kRackSelW - 16, 24);
             borrowBtn.setBounds(8, getHeight() - kStripH + 36, kRackSelW - 16, 22);
+            borrowRouteBtn.setBounds(8, getHeight() - kStripH + 60, kRackSelW - 16, 14);
             // Pre-gain knob at the HEAD of the strip, left of the first block:
             // its position says what it does (the signal enters here). Shown
             // in local AND remote (a selected rack has a pre-gain too), so it

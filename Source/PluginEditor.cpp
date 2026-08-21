@@ -1936,7 +1936,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         // committed back and would falsify the chain. Refused with a reason.
         if (processorRef.borrowHostIfActiveFor(uid) != nullptr)
         {
-            chainListPanel.statusText = "A borrowed rack keeps its shape - "
+            chainListPanel.statusText = "An edited rack keeps its shape - "
                 "bypass and settings edit here; structure stays the Link's.";
             chainListPanel.repaint();
             return;
@@ -2077,6 +2077,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // disagree with the mixer.
     chainListPanel.onRackClick = [this] { showChainRackMenu(); };
     chainListPanel.onBorrowClick = [this] { toggleBorrow(); };
+    chainListPanel.onBorrowRouteClick = [this] {
+        processorRef.toggleBorrowRoute();
+        chainListPanel.statusText = processorRef.borrowRouteThroughMain()
+            ? "Now heard THROUGH this channel's own chain."
+            : "Now REPLACING this channel's output.";
+        refreshChainPanelForView(true);   // the button text is the mode
+    };
     chainListPanel.onRemoteEditorRequest = [this](int slotIdx)
     {
         const juce::String uid = chainViewUid();
@@ -7286,7 +7293,7 @@ EchoJayEditor::ChainRackView EchoJayEditor::chainRackView() const
         v.valid    = true;
         v.remote   = false;
         v.borrowed = true;
-        v.name     = processorRef.resolveLinkDisplayName(uid) + " (borrowed)";
+        v.name     = processorRef.resolveLinkDisplayName(uid) + " (editing)";
         v.revision = bh->getChainRevision();
         return v;
     }
@@ -7461,10 +7468,14 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
                 && processorRef.rackLockHeldFor(chainViewUid()));
         chainListPanel.borrowBtn.setVisible(showBorrow);
         chainListPanel.borrowBtn.setButtonText(
-            !processorRef.borrowActive() ? "BORROW"
-            : v.borrowed ? "RELEASE"
+            !processorRef.borrowActive() ? "EDIT RACK"
             : "RELEASE " + processorRef.resolveLinkDisplayName(
                                processorRef.borrowUid()).toUpperCase());
+        // The route override, visible only while editing; text IS the mode.
+        chainListPanel.borrowRouteBtn.setVisible(processorRef.borrowActive());
+        chainListPanel.borrowRouteBtn.setButtonText(
+            processorRef.borrowRouteThroughMain() ? "HEARD: THROUGH THIS CHAIN"
+                                                  : "HEARD: REPLACES OUTPUT");
     }
     if (noData)
     {
@@ -7638,14 +7649,14 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
     // sidecar valid, and the Link ANNOUNCES borrowCapable — an old binary
     // is never engaged, so it can never half-engage.
     if (! processorRef.rackLockHeldFor(uid))
-    { say("Cannot borrow: this rack's lock is not held here."); return; }
+    { say("Cannot edit this rack: its lock is not held here."); return; }
     auto it = processorRef.linkRackCache.find(uid);
     if (it == processorRef.linkRackCache.end() || !it->second.valid)
-    { say("Cannot borrow: this Link has not published its rack."); return; }
+    { say("Cannot edit this rack: this Link has not published it."); return; }
     if (! it->second.rack.borrowCapable)
-    { say("Cannot borrow: " + processorRef.resolveLinkDisplayName(uid)
-          + " is running an older EchoJay Link that cannot lend its rack. "
-            "Update it."); return; }
+    { say("Cannot edit this rack: " + processorRef.resolveLinkDisplayName(uid)
+          + " is running an older EchoJay Link that cannot hand its rack "
+            "over. Update it."); return; }
 
     struct PullState {
         juce::String uid;
@@ -7661,8 +7672,8 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
     st->slots     = it->second.rack.slots;
     st->masterWet = it->second.rack.masterWet;
     st->baseSeq   = (int) (juce::Time::currentTimeMillis() / 1000);
-    say("Borrowing " + processorRef.resolveLinkDisplayName(uid) + ": reading "
-        + juce::String((int) st->slots.size()) + " plugin(s)...");
+    say("Reading " + juce::String((int) st->slots.size()) + " plugin(s) from "
+        + processorRef.resolveLinkDisplayName(uid) + "...");
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     auto finish = std::make_shared<std::function<void()>>();
@@ -7676,12 +7687,12 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
         // §5e, decided: refuse with a named list — no partial borrow. A rack
         // minus a slot is a chain that does not exist.
         if (! st->failures.isEmpty())
-        { say2("Not borrowed - " + juce::String(st->failures.size())
+        { say2("Cannot edit this rack - " + juce::String(st->failures.size())
                + " plugin(s) could not come across: "
                + st->failures.joinIntoString("; ")
                + ". Nothing was engaged."); return; }
         if (st->totalBytes > (juce::int64) LinkShm::kLinkTransferMaxTotalBytes)
-        { say2("Not borrowed - the rack's settings total "
+        { say2("Cannot edit this rack - its settings total "
                + juce::File::descriptionOfSizeInBytes(st->totalBytes)
                + ", over the "
                + juce::File::descriptionOfSizeInBytes((juce::int64) LinkShm::kLinkTransferMaxTotalBytes)
@@ -7729,7 +7740,7 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
                 juce::String why = bh2->getStateNotes().joinIntoString("; ");
                 p2.borrowRelease();
                 safeThis->chainListPanel.statusText =
-                    "Borrow released - the chain could not be rebuilt here ("
+                    "Released - the chain could not be rebuilt here ("
                     + juce::String(bh2->getNumSlots()) + " of "
                     + juce::String(want) + " loaded): " + why;
                 safeThis->refreshChainPanelForView(true);
@@ -7751,10 +7762,13 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
                 bh2->setSlotSettings(i, st->slots[(size_t) i].settings);
             p2.borrowAudioOn();
             safeThis->chainListPanel.statusText =
-                "Borrowed " + p2.resolveLinkDisplayName(st->uid)
-                + " - SOLO. You are hearing that channel through the borrowed "
-                  "chain, live. Edits are audible and UNCOMMITTED; Release "
-                  "hands the rack back unchanged.";
+                "Editing " + p2.resolveLinkDisplayName(st->uid)
+                + " here - soloed, "
+                + (p2.borrowRouteThroughMain()
+                       ? juce::String("heard through this channel's own chain. ")
+                       : juce::String("replacing this channel's output. "))
+                + "Edits are audible and UNCOMMITTED; Release hands it back "
+                  "unchanged.";
             safeThis->refreshChainPanelForView(true);
         });
         // Empty rack: no slots to settle, engage the (dry) solo directly.
@@ -27434,7 +27448,7 @@ void EchoJayEditor::showChainPluginPicker()
             if (safeThis->processorRef.borrowHostIfActiveFor(rackUid) != nullptr)
             {
                 safeThis->chainListPanel.statusText =
-                    "A borrowed rack keeps its shape - bypass and settings "
+                    "An edited rack keeps its shape - bypass and settings "
                     "edit here; structure stays the Link's.";
                 safeThis->chainListPanel.repaint();
                 return;

@@ -327,6 +327,37 @@ int main()
     }
 
     // =======================================================================
+    std::printf ("== BorrowRoute: where the solo lands, both routes gated ==\n");
+    {
+        using RT = LinkShm::BorrowRoute;
+        check ( RT::throughMainChain (true,  false), "Mix/Master Bus default: THROUGH the main's chain");
+        check (!RT::throughMainChain (false, false), "every other channel default: REPLACES the output");
+        check (!RT::throughMainChain (true,  true),  "override on a bus: replaces");
+        check ( RT::throughMainChain (false, true),  "override elsewhere: through");
+        // BOTH routes exist in processBlock, complementary on one read —
+        // pinned by source so neither site can vanish or double-fire.
+        std::ifstream fp3 ("Source/PluginProcessor.cpp");
+        std::stringstream sp3; sp3 << fp3.rdbuf();
+        const juce::String psrc3 (sp3.str());
+        check (psrc3.contains ("const bool borrowThrough = borrowRouteThroughMain();"),
+               "the route is read ONCE per block");
+        check (psrc3.contains ("if (borrowThrough)\n        applyBorrowSoloMix(buffer);"),
+               "through-main site present (before chainHost.process)");
+        check (psrc3.contains ("if (!borrowThrough)\n        applyBorrowSoloMix(buffer);"),
+               "replace-after site present (after chainHost.process)");
+        // The banner SAYS the mode, both wordings live in the editor.
+        std::ifstream fe3 ("Source/PluginEditor.cpp");
+        std::stringstream se3; se3 << fe3.rdbuf();
+        const juce::String esrc3 (se3.str());
+        check (esrc3.contains ("heard through this channel's own chain"),
+               "banner wording: through-main present");
+        check (esrc3.contains ("replacing this channel's output"),
+               "banner wording: replace-after present");
+        check (esrc3.contains ("toggleBorrowRoute"),
+               "the visible override is wired");
+    }
+
+    // =======================================================================
     std::printf ("== rack mix on the borrowed host ==\n");
     {
         // Functional half of finding #1's gate: the borrowed host reports

@@ -1006,6 +1006,17 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         wasReceivingAudio = true;
     }
 
+    // ===== Step 2 BORROW SOLO, through-main route ========================
+    // On a Mix/Master Bus main the borrowed channel must be HEARD THROUGH
+    // the main's own chain (losing the master processing was the hands-on
+    // volume jump); crossfading here, before chainHost.process, sends it
+    // through. Every other channel type replaces AFTER the chain instead
+    // (a borrowed vocal must not run through a guitar track's chain). One
+    // read per block so the two sites cannot both fire.
+    const bool borrowThrough = borrowRouteThroughMain();
+    if (borrowThrough)
+        applyBorrowSoloMix(buffer);
+
     // CHAIN: pass audio through hosted plugin (graph handles passthrough if none loaded)
     {
         juce::MidiBuffer emptyMidi;
@@ -1144,33 +1155,11 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         }
     }
 
-    // ===== Step 2 BORROW SOLO: the borrowed chain replaces the mix =======
-    // Same crossfade idiom as the edit-session solo below, its own fields:
-    // a borrow (Link B) and a slot edit session (Link A) can coexist, so
-    // they must not share a scratch buffer or a ramp.
-    {
-        const bool on = borrowSession_.audioOn.load(std::memory_order_acquire);
-        borrowSoloMix_.setTargetValue(on ? 1.0f : 0.0f);
-        if (on || borrowSoloMix_.getCurrentValue() > 0.0001f)
-        {
-            const int nS = buffer.getNumSamples();
-            const bool have = borrowHost_ != nullptr
-                           && borrowBuf_.getNumSamples() >= nS;
-            for (int i = 0; i < nS; ++i)
-            {
-                const float g = borrowSoloMix_.getNextValue();
-                for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-                {
-                    const float solo = have
-                        ? borrowBuf_.getSample(std::min(ch, 1), i) : 0.0f;
-                    float* out = buffer.getWritePointer(ch);
-                    out[i] = out[i] * (1.0f - g) + solo * g;
-                }
-            }
-        }
-        else
-            borrowSoloMix_.skip(buffer.getNumSamples());
-    }
+    // ===== Step 2 BORROW SOLO, replace-after route =======================
+    // The through-main route ran BEFORE chainHost.process instead; exactly
+    // one of the two sites fires per block (borrowThrough, read once above).
+    if (!borrowThrough)
+        applyBorrowSoloMix(buffer);
 
     // ===== Stage 1 SOLO: the last word on the buffer =====================
     // While a remote edit session runs, the mix is REPLACED by the edited
@@ -1698,13 +1687,42 @@ void EchoJayProcessor::borrowTick()
             borrowRingLostTicks_ = 0;
             borrowRelease();
             borrowAutoReleaseReason_ =
-                "Borrow released: " + name + "'s audio stream went away and "
-                "did not come back. The Link owns its rack again; nothing "
-                "was applied.";
+                "Released: " + name + "'s audio stream went away and did "
+                "not come back. The Link owns its rack again; nothing was "
+                "applied.";
             EchoJay_NSLog("EJBorrow: SELF-RELEASED - ring gone past tolerance");
             break;
         }
     }
+}
+
+// The borrow solo crossfade — one implementation, two call sites in
+// processBlock (through-main before chainHost.process, replace-after after
+// it), exactly one firing per block. Same idiom as the edit-session solo,
+// its own fields: a borrow and a slot edit session can coexist.
+void EchoJayProcessor::applyBorrowSoloMix(juce::AudioBuffer<float>& buffer)
+{
+    const bool on = borrowSession_.audioOn.load(std::memory_order_acquire);
+    borrowSoloMix_.setTargetValue(on ? 1.0f : 0.0f);
+    if (on || borrowSoloMix_.getCurrentValue() > 0.0001f)
+    {
+        const int nS = buffer.getNumSamples();
+        const bool have = borrowHost_ != nullptr
+                       && borrowBuf_.getNumSamples() >= nS;
+        for (int i = 0; i < nS; ++i)
+        {
+            const float g = borrowSoloMix_.getNextValue();
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+            {
+                const float solo = have
+                    ? borrowBuf_.getSample(std::min(ch, 1), i) : 0.0f;
+                float* out = buffer.getWritePointer(ch);
+                out[i] = out[i] * (1.0f - g) + solo * g;
+            }
+        }
+    }
+    else
+        borrowSoloMix_.skip(buffer.getNumSamples());
 }
 
 ChainHost* EchoJayProcessor::borrowHost()
@@ -1765,6 +1783,7 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
     }
     borrowSession_.ringSlot.store(ringSlot, std::memory_order_relaxed);
     borrowRingLostTicks_ = 0;
+    borrowRouteFlip_.store(false, std::memory_order_relaxed);   // default per channel type
     borrowSession_.active.store(true, std::memory_order_relaxed);
 
     renewBorrowLease();                              // the file appears NOW

@@ -470,6 +470,16 @@ public:
     void borrowRelease();
     void renewBorrowLease();                         // scope:"rack", slot:0
     void borrowTick();          // renew + ring re-bind (the 1s timer's body)
+    /** Where the borrowed solo lands: through the main's own chain (Mix/
+        Master Bus default) or replacing the output after it (every other
+        channel type). The flip is the visible override; reset at engage. */
+    bool borrowRouteThroughMain() const
+    {
+        return LinkShm::BorrowRoute::throughMainChain(
+            channelType == ChannelType::FullMix || channelType == ChannelType::MasterBus,
+            borrowRouteFlip_.load(std::memory_order_relaxed));
+    }
+    void toggleBorrowRoute() { borrowRouteFlip_.store(!borrowRouteFlip_.load(), std::memory_order_relaxed); }
     /** Set when the borrow released ITSELF (ring lost past tolerance) —
         consumed once by whichever editor next ticks, shown in words. A
         self-release must never be silent. */
@@ -491,6 +501,8 @@ private:
     std::unique_ptr<BorrowLeaseTimer> borrowLeaseTimer_;
     int          borrowRingLostTicks_ = 0;           // message thread only
     juce::String borrowAutoReleaseReason_;           // message thread only
+    std::atomic<bool> borrowRouteFlip_ { false };    // the visible override
+    void applyBorrowSoloMix(juce::AudioBuffer<float>& buffer);
 public:
 
     // ---- Rack lock (21 Aug 2026, RACK_BORROW_REQUIREMENTS §4) -------------

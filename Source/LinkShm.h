@@ -1014,6 +1014,19 @@ static constexpr int kLinkTransferMaxTotalBytes = 16 * 1024 * 1024;
 // ticks (the Link may be re-registering), then RELEASE WITH WORDS — a
 // borrow must produce sound or a stated release, never silence.
 static constexpr int kBorrowRingMaxLostTicks = 3;   // ~3s at the renew cadence
+
+// Where the borrowed solo lands (hands-on decision, 21 Aug 2026): on a Mix
+// Bus or Master Bus main, the borrowed channel feeds INTO the main's own
+// chain — soloing a channel on the mix bus must not lose the master
+// processing. On every other channel type it REPLACES the output after the
+// main's chain — a borrowed vocal must not run through a guitar track's
+// chain. Sub-buses (Vocal Bus, Drum Bus, ...) are "other". The user flip
+// overrides either default; pure, pinned in borrowhost_test.
+struct BorrowRoute
+{
+    static bool throughMainChain (bool mixOrMasterBus, bool userFlip)
+    { return mixOrMasterBus != userFlip; }
+};
 struct BorrowRing
 {
     enum class Verdict { Bound, Rebind, Lost, Release };
