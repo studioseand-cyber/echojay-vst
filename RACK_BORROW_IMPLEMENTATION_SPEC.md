@@ -82,6 +82,20 @@ Constructed with a `Borrowed` mode flag that changes exactly three things
    convention. Death marks are the one deliberate exception: they are
    process-scoped and mutex-shared by design (survey b), and a borrowed
    plugin crashing the host is exactly what they exist to record.
+   KNOWN UNGUARDED STATIC WRITER (recorded at step 1): `markPopoutOnly`
+   writes the machine-wide `popout_only.txt` flag and is `static`, so it
+   cannot carry the per-instance mode guard. Acceptable because it is not on
+   this list, no borrowed-mode code path calls it, and `borrowhost_test`'s
+   byte-identical gate covers its file regardless — if a borrowed path ever
+   grows a call to it, the gate fails before the convention is trusted.
+   DEATH-MARK ATTRIBUTION (verified at step 1): a borrowed plugin's mark is
+   `phase \t path \t name` — no rack identity — and the primary's
+   consumption blacklists by plugin path with "crashed the host during
+   <phase> (deadman)"; every user-facing surface (the load refusal, the
+   withheld panel) names the PLUGIN and the phase, never a rack. Nothing
+   points at the wrong rack — the attribution is plugin-scoped and machine-
+   wide by design, so no fix; at most a future nicety is a "state restore
+   (borrowed)" phase string, additive.
 3. **The latency hard block** — the correctness requirement, not a cost
    saving: a borrowed instance's `onChainChanged` must NEVER reach
    `setLatencySamples`. Wired as a hard block: in borrowed mode the host does
@@ -122,6 +136,18 @@ end of `processBlock` is unchanged. Specifics:
   mitigation: the borrowed host processes ONLY while a borrow is engaged and
   soloed; there is no idle cost.
 - Ring cushion/re-seek behavior is inherited unchanged from Stage 1.
+- **Parked-node cost, measured at step 1**: prepareToPlay on the borrowed
+  graph, empty pool 0.008 ms vs ten parked 0.022 ms — render-sequence
+  rebuild cost grows linearly with pool size by construction (the sequence
+  includes every node; suspension is checked at RENDER time,
+  juce_AudioProcessorGraph.cpp:887) and is trivial at that slope. THE
+  CAVEAT THE PROBES CANNOT MEASURE: graph PREPARE is not gated by
+  suspension, so a sample-rate change calls every parked REAL plugin's own
+  `prepareToPlay` — a pool full of samplers re-allocating could stall where
+  ten trivial probes did not. Step 2's hands-on battery includes a
+  sample-rate change with a real-plugin pool; the named mitigation if it
+  stalls is a pool flush on sample-rate change (parked instances demote to
+  the graveyard — reuse lost for them, stall avoided, never-free preserved).
 
 ## 4. Transfer, matching, and the lock
 

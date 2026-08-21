@@ -26,6 +26,8 @@
 #include <cstdlib>
 #include <unistd.h>
 #include <map>
+#include <fstream>
+#include <sstream>
 
 /** The friend declared in ChainHost.h — reaches the PRIVATE guarded writers
     so the read-only enforcement is proven by calling them, not by hoping no
@@ -293,6 +295,65 @@ int main()
     check (primary.hostReportableLatencySamples() >= 0,
            "Primary host answers normally",
            juce::String (primary.hostReportableLatencySamples()));
+    // NO NEGATIVE LATENCY CAN REACH setLatencySamples: the value domain is
+    // exactly {-1} ∪ [0, ∞) — asserted above for both modes — and the ONE
+    // mirror site is gated on >= 0, asserted here BY SOURCE (the mapfps
+    // precedent) so a future edit cannot drop the gate silently.
+    {
+        std::ifstream fp ("Source/PluginProcessor.cpp");
+        std::stringstream sp; sp << fp.rdbuf();
+        const juce::String src (sp.str());
+        const int site = src.indexOf ("hostReportableLatencySamples(); lat >= 0)");
+        check (site >= 0,
+               "the setLatencySamples mirror site is gated on lat >= 0 (by source)");
+        check (! src.contains ("setLatencySamples(chainHost.getTotalLatencySamples())"),
+               "no ungated getTotalLatencySamples mirror remains (by source)");
+    }
+
+    // =======================================================================
+    std::printf ("== parked-node cost: prepareToPlay, empty pool vs 10 parked ==\n");
+    {
+        // A fresh borrowed host so the counters above stay untouched.
+        ChainHost timing (ChainHost::Mode::Borrowed);
+        timing.prepare (48000.0, 512);
+
+        auto prepMs = [&timing] (double sr)
+        {
+            const double t0 = juce::Time::getMillisecondCounterHiRes();
+            timing.prepare (sr, 512);
+            return juce::Time::getMillisecondCounterHiRes() - t0;
+        };
+        const double emptyMs = prepMs (44100.0);
+
+        // Park ten: a ten-slot probe rack, borrowed fresh then released.
+        {
+            juce::Array<juce::var> arr;
+            for (int n = 1; n <= 10; ++n)
+            {
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("n", n);
+                o->setProperty ("plugin", "EJ Borrow Probe");
+                o->setProperty ("bypassed", false);
+                arr.add (juce::var (o));
+            }
+            timing.restoreSavedChain (juce::var (arr), juce::var());
+            timing.releaseBorrowToPool();
+        }
+        check (timing.borrowPoolCount() == 10, "ten instances parked",
+               juce::String (timing.borrowPoolCount()));
+
+        const double tenSr1 = prepMs (48000.0);   // sample-rate change, full pool
+        const double tenSr2 = prepMs (44100.0);   // and back
+        std::printf ("  prepareToPlay: empty pool %.3f ms | 10 parked %.3f ms / %.3f ms\n",
+                     emptyMs, tenSr1, tenSr2);
+        // The render sequence includes every node — suspension is checked at
+        // RENDER time (juce_AudioProcessorGraph.cpp:887) — so rebuild cost
+        // grows with pool size by construction. The gate is the stall guard:
+        // a sample-rate change with a full pool must stay far from audible.
+        check (tenSr1 < 250.0 && tenSr2 < 250.0,
+               "sample-rate change with a full pool does not stall (< 250 ms)",
+               juce::String (juce::jmax (tenSr1, tenSr2), 3) + " ms");
+    }
 
     // =======================================================================
     std::printf ("== shared files byte-identical after the whole cycle ==\n");
