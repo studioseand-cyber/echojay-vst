@@ -15,6 +15,7 @@ const char* DashboardWebFlow::stepName (Step s)
         case Step::LoadEmbed:          return "LoadEmbed";
         case Step::Seed:               return "Seed";
         case Step::LoadEmbedAfterSeed: return "LoadEmbedAfterSeed";
+        case Step::LoadHandoff:        return "LoadHandoff";
         case Step::Done:               return "Done";
         case Step::Failed:             return "Failed";
     }
@@ -28,6 +29,7 @@ juce::String DashboardWebFlow::currentUrl() const
         case Step::LoadEmbed:
         case Step::LoadEmbedAfterSeed: return embedUrl();
         case Step::Seed:               return seedUrl();
+        case Step::LoadHandoff:        return base + handoffPath;
         case Step::Done:
         case Step::Failed:             return {};
     }
@@ -54,6 +56,15 @@ juce::String DashboardWebFlow::advance (Outcome o)
 
         case Step::LoadEmbedAfterSeed:
             step = (o == Outcome::Dashboard) ? Step::Done : Step::Failed;  // 2nd 404 = fail
+            break;
+
+        case Step::LoadHandoff:
+            // Handoff path (contract §2): go.html either landed the bound
+            // page or it did not. NO seed fallthrough from here - the seed
+            // gates VISIBILITY, the handoff gates IDENTITY (§4), and the
+            // editor owns the one re-mint (§5) by calling startWithHandoff
+            // again with a fresh token.
+            step = (o == Outcome::Dashboard) ? Step::Done : Step::Failed;
             break;
 
         case Step::Done:
@@ -253,15 +264,27 @@ void DashboardWeb::start()
     loadCurrent();
 }
 
+void DashboardWeb::startWithHandoff (const juce::String& goPath)
+{
+    finished_ = false;
+    flow_.handoffPath = goPath;
+    flow_.step = DashboardWebFlow::Step::LoadHandoff;
+    loadCurrent();
+}
+
 void DashboardWeb::loadCurrent()
 {
     const auto url = flow_.currentUrl();
     if (url.isEmpty() || web_ == nullptr) return;
 
-    // Log the step; the v2preview token value is redacted, never logged.
+    // Log the step; the v2preview token value is redacted, never logged —
+    // and so is the handoff token in the /go fragment (single-use, but a
+    // log line outlives its 120 s TTL and the rule is no tokens in logs).
     juce::String safeUrl = url;
     const int vp = safeUrl.indexOf ("v2preview=");
     if (vp >= 0) safeUrl = safeUrl.substring (0, vp) + "v2preview=<redacted>";
+    const int ht = safeUrl.indexOf ("#t=");
+    if (ht >= 0) safeUrl = safeUrl.substring (0, ht) + "#t=<redacted>";
     ejDashLog (juce::String ("[dashweb] load ")
                + DashboardWebFlow::stepName (flow_.step) + " " + safeUrl);
 
@@ -301,6 +324,7 @@ void DashboardWeb::probe (int attemptsLeft)
 void DashboardWeb::advanceWith (DashboardWebFlow::Outcome o)
 {
     if (finished_) return;
+    lastOutcome_ = o;
     flow_.advance (o);
     if (flow_.isTerminal()) { finish (flow_.succeeded()); return; }
     loadCurrent();
@@ -310,8 +334,14 @@ void DashboardWeb::finish (bool ok)
 {
     if (finished_) return;
     finished_ = true;
-    ejDashLog (juce::String ("[dashweb] result=") + (ok ? "loaded" : "failed"));
-    if (onLoadResult) onLoadResult (ok);
+    // The reason the editor branches on (contract §5): "net" never re-mints,
+    // "not_dashboard" on the handoff path is the redeem-failed class and
+    // earns exactly one re-mint.
+    const juce::String reason = ok ? "dashboard"
+        : (lastOutcome_ == DashboardWebFlow::Outcome::NetworkError ? "net" : "not_dashboard");
+    ejDashLog (juce::String ("[dashweb] result=") + (ok ? "loaded" : "failed")
+               + " reason=" + reason);
+    if (onLoadResult) onLoadResult (ok, reason);
 
     // TODO (handoff auto-signin, a later slice): if the page shows its login
     // form, mint a one-time handoff and hand the token to the page so the user

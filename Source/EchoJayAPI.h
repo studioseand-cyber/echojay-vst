@@ -301,6 +301,14 @@ public:
     void setNextChatMapFps(const juce::String& jsonObject)
     { nextChatMapFps_ = (jsonObject == "{}" ? juce::String() : jsonObject); }
 
+    // Dashboard auth handoff (CONTRACT_dashboard_auth_handoff.md §2): mint a
+    // single-use 120 s handoff for the webview. Minted FRESH on every entry
+    // to the dashboard surface, never stockpiled; the callback gets the raw
+    // HTTP status (200/401/404/5xx, 0 = unreachable) and on 200 the
+    // "/go#t=...&to=..." path. The token inside it is never logged and never
+    // stored beyond the immediate navigation.
+    void mintDashboardHandoff(std::function<void(int statusCode, juce::String goPath)> onDone);
+
     // dial-3 declined-name batch (CONTRACT_racked_slot_controls.md A7.3):
     // envelope {batch, rows, dropped}, staged by the editor per send,
     // consumed at body build like mapFps. Empty stages nothing; a server

@@ -17,7 +17,11 @@ namespace echojay
 // ---------------------------------------------------------------------------
 struct DashboardWebFlow
 {
-    enum class Step    { LoadEmbed, Seed, LoadEmbedAfterSeed, Done, Failed };
+    // LoadHandoff is LAST on purpose: dashweb_test compiles this header and
+    // links the previously built lib's advance(), and inserting an
+    // enumerator mid-list shifts Done/Failed under that pairing (the
+    // stale-lib trap, third sighting). Appending keeps every existing value.
+    enum class Step    { LoadEmbed, Seed, LoadEmbedAfterSeed, Done, Failed, LoadHandoff };
     enum class Outcome { Dashboard, NotDashboard, NetworkError };
 
     juce::String base;                  // scheme+host, NO trailing slash, NO path
@@ -34,6 +38,10 @@ struct DashboardWebFlow
                                          + juce::URL::addEscapeChars (token, true); }
 
     Step step = Step::LoadEmbed;
+    // Auth handoff (CONTRACT_dashboard_auth_handoff.md §2): the minted
+    // /go#t=...&to=... path. The fragment carries a single-use 120 s token;
+    // it is navigated once and never stored anywhere else.
+    juce::String handoffPath;
 
     /** URL to load to ENTER the current step ("" at terminal steps). */
     juce::String currentUrl() const;
@@ -115,11 +123,13 @@ public:
     DashboardWeb();
     ~DashboardWeb() override;
 
-    /** Fired once per start(): true when the embed dashboard loaded, false on a
-        gate 404 (after any seed attempt) or a network error. The editor keeps
-        the native view up until true, and on false stays native and does not
-        retry until the next tab selection. */
-    std::function<void (bool ok)> onLoadResult;
+    /** Fired once per start()/startWithHandoff(): ok=true when the dashboard
+        loaded. On failure `reason` distinguishes the two classes the editor
+        must treat differently (contract §5): "net" (network error - offline
+        line, no retry) vs "not_dashboard" (landed but the probe found no
+        dashboard - on the handoff path this is the redeem-failed class and
+        the editor re-mints ONCE). ok=true carries reason "dashboard". */
+    std::function<void (bool ok, const juce::String& reason)> onLoadResult;
 
     /** Stage 3 bridge: the editor's loadChain handler. DashboardWeb validates the
         page's payload natively (validateLoadChain) and forwards a CLEAN request
@@ -141,6 +151,14 @@ public:
     /** Begin the load flow. Call once, after the component is added and shown. */
     void start();
 
+    /** Auth handoff entry (contract §2, the ONLY path that signs the webview
+        in): navigate to the minted /go#... path; go.html redeems, writes
+        ej-token to localStorage, and lands on the bound path. Callable again
+        on the SAME live webview for the editor's one re-mint (§5, redeem
+        fails). The token in the fragment is never logged (loadCurrent
+        redacts it) and never persisted plugin-side. */
+    void startWithHandoff (const juce::String& goPath);
+
     void resized() override;
 
 private:
@@ -148,6 +166,7 @@ private:
     std::unique_ptr<Inner> web_;
     DashboardWebFlow       flow_;
     bool                   finished_ = false;
+    DashboardWebFlow::Outcome lastOutcome_ = DashboardWebFlow::Outcome::NetworkError; // feeds finish()'s reason
 
     void loadCurrent();
     void probe (int attemptsLeft);      // detect embed dashboard vs gate 404

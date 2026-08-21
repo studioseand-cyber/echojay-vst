@@ -116,6 +116,25 @@ juce::String EchoJayAPI::transportHeaders()
     return {};
 }
 
+// ============ Dashboard auth handoff (CONTRACT_dashboard_auth_handoff.md §2) ==
+// Mint a single-use, 120-second handoff for the webview. maxAttempts=1 on
+// purpose: §5 gives the FLOW exactly one retry on 5xx/unreachable and the
+// editor counts it — a transport-level auto-retry here would stack with
+// that and mint tokens nobody navigates to. The response's token is inside
+// the returned /go# path and is never logged (DashboardWeb redacts "#t=");
+// nothing here stores it.
+void EchoJayAPI::mintDashboardHandoff(std::function<void(int, juce::String)> onDone)
+{
+    postJSON("/api/v2/handoff", "{\"to\":\"/dashboard\"}",
+        [onDone](const juce::var& json, int statusCode)
+        {
+            juce::String goPath;
+            if (statusCode == 200)
+                goPath = json.getProperty("url", juce::var()).toString();
+            if (onDone) onDone(statusCode, goPath);
+        }, /*maxAttempts*/ 1);
+}
+
 // ============ Failure-path logging ============
 //
 // Every non-2xx response gets one line naming the endpoint, the status and

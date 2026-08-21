@@ -296,6 +296,19 @@ private:
     bool dashWebLoaded_               = false;  // onLoadResult(true): webview shown over native
     bool dashWebFailedThisSelection_ = false;   // no retry until the next Dashboard selection
     void reconcileDashboardWeb();               // lazy construct/destroy of dashWeb_
+    // Dashboard auth handoff (CONTRACT_dashboard_auth_handoff.md §2/§5).
+    // beginDashboardHandoff is the ONE mint-and-navigate driver every entry
+    // funnels into; failDashboardSurface is the one author of the failure
+    // behaviours (message on the panel, failed-selection latch, deferred
+    // webview destroy, the [dash-handoff] terminal log line). State resets
+    // per Dashboard selection in reconcileDashboardWeb's construct branch.
+    void beginDashboardHandoff();
+    void failDashboardSurface(const juce::String& landing, const juce::String& panelMsg);
+    juce::String dashEntry_ { "tab" };   // tab | deeplink | recreate
+    juce::String dashPanelMsg_;          // overrides the panel copy when set
+    int  dashMintStatus_   = 0;          // last mint HTTP status, for the log
+    bool dashMintRetried_  = false;      // §5: 5xx/unreachable gets ONE retry
+    bool dashRemintUsed_   = false;      // §5: redeem failure gets ONE re-mint
 
     // Stage 3: the bridge navigation guard (§8 idempotency), shared by loadChain
     // AND openChat — both switch tabs and so tear down the webview. NOT a boolean

@@ -445,6 +445,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // to the default. A fresh instance reads 0, which is Dashboard.
     currentTab = static_cast<Tab>(juce::jlimit(0, kTabCount - 1,
                                                processorRef.lastTabIndex));
+    if (currentTab == Tab::Dashboard) dashEntry_ = "recreate";   // [dash-handoff] entry attribution
 
     // ---- Session C: the Dashboard tab -----------------------------------
     // ONE child component owns the whole surface. It scrolls, so the layout
@@ -10319,6 +10320,13 @@ void EchoJayEditor::reconcileDashboardWeb()
         dashWeb_ = std::make_unique<echojay::DashboardWeb>();
         addChildComponent (*dashWeb_);   // hidden until it loads; native stays up
         bridgeNavAcceptedMs_ = 0;      // fresh webview on (re)entering the Dashboard
+        // Auth-handoff state, per selection (contract §2/§5): a fresh entry
+        // gets a fresh mint, one fresh retry allowance, one fresh re-mint
+        // allowance, and a clean panel.
+        dashMintRetried_ = false;
+        dashRemintUsed_  = false;
+        dashMintStatus_  = 0;
+        dashPanelMsg_.clear();
         auto safe = juce::Component::SafePointer<EchoJayEditor> (this);
 
         // Stage 3: the loadChain bridge. DashboardWeb has already validated the
@@ -10339,37 +10347,136 @@ void EchoJayEditor::reconcileDashboardWeb()
             safe->bridgeOpenChat (chatId, std::move (answer));
         };
 
-        dashWeb_->onLoadResult = [safe] (bool ok)
+        dashWeb_->onLoadResult = [safe] (bool ok, const juce::String& reason)
         {
             if (safe == nullptr) return;
             if (ok)
             {
+                EchoJay_NSLog(("EJDash: [dash-handoff] entry=" + safe->dashEntry_
+                               + " mint=" + juce::String(safe->dashMintStatus_)
+                               + " remint=" + juce::String(safe->dashRemintUsed_ ? 1 : 0)
+                               + " landing=dashboard").toRawUTF8());
+                safe->dashEntry_ = "tab";
                 safe->dashWebLoaded_ = true;   // swap native -> webview
                 safe->resized();
                 return;
             }
-            // FAILURE (gate 404 / network error): keep native, no retry until
-            // the next selection, and DESTROY the dead webview so its ~150 MB of
-            // resident WebKit processes do not sit behind the native view until
-            // tab-away — on precisely the path where the user gets nothing.
-            //
-            // DEFERRED, deliberately: this callback fires from inside the
-            // webview's own evaluateJavascript completion, so resetting dashWeb_
-            // on this stack would free the webview under itself (use-after-free).
-            // callAsync frees it on a later message-loop turn once that stack has
-            // unwound; the SafePointer makes a torn-down editor a no-op.
-            safe->dashWebFailedThisSelection_ = true;
-            juce::MessageManager::callAsync ([safe]
+            // §5, the redeem-failed class: the webview landed but the probe
+            // found no dashboard (go.html stuck on /go — token expired or
+            // consumed). ONE re-mint, navigated on the SAME live webview,
+            // then stop. go.html's own two-minute fallback copy is a
+            // baffling thing to meet inside a plugin, so the second failure
+            // gets plugin wording instead.
+            if (reason == "not_dashboard" && ! safe->dashRemintUsed_)
             {
-                if (safe == nullptr) return;
-                safe->dashWeb_.reset();        // frees the resident WebKit processes
-                safe->dashWebLoaded_ = false;
-                safe->resized();               // native stays up (reconcile won't
-                                               // reconstruct: failed-this-selection)
-            });
+                safe->dashRemintUsed_ = true;
+                auto safe2 = safe;
+                safe->api.mintDashboardHandoff([safe2](int sc, juce::String goPath)
+                {
+                    if (safe2 == nullptr) return;
+                    safe2->dashMintStatus_ = sc;
+                    if (sc == 200 && goPath.isNotEmpty() && safe2->dashWeb_ != nullptr)
+                    { safe2->dashWeb_->startWithHandoff(goPath); return; }
+                    safe2->failDashboardSurface("redeem_failed",
+                        juce::String::fromUTF8("Couldn\xe2\x80\x99t sign the dashboard in \xe2\x80\x94 reopen the tab to try again."));
+                });
+                return;
+            }
+            // Network error keeps the existing offline panel line; a spent
+            // re-mint that still cannot land gets the plugin wording.
+            // failDashboardSurface destroys the webview DEFERRED — this
+            // callback fires from inside the webview's own
+            // evaluateJavascript completion, and freeing it on this stack
+            // would be a use-after-free (the original destroy path's rule,
+            // kept).
+            if (reason == "net")
+                safe->failDashboardSurface("net", juce::String());
+            else
+                safe->failDashboardSurface("redeem_failed",
+                    juce::String::fromUTF8("Couldn\xe2\x80\x99t sign the dashboard in \xe2\x80\x94 reopen the tab to try again."));
         };
-        dashWeb_->start();
+        // Contract §2: mint on every navigation into the surface, never
+        // stockpile — this replaces the direct start() with mint-then-
+        // navigate, and every entry funnels through this one construct.
+        beginDashboardHandoff();
     }
+}
+
+// The ONE mint-and-navigate driver (CONTRACT_dashboard_auth_handoff.md §2).
+// Every entry into the dashboard surface — tab click, deep link, editor
+// recreate — funnels through reconcileDashboardWeb into here, so "mint on
+// every navigation" is this single call site and never-stockpile falls out
+// of the destroy-on-leave lifecycle. The mint is async (postJSON worker,
+// alive-guarded message-thread callback): nothing blocks the UI thread and
+// the panel shows "Loading your dashboard…" throughout, so no blank webview
+// is ever visible. §5 behaviours live here and in onLoadResult above.
+void EchoJayEditor::beginDashboardHandoff()
+{
+    auto safe = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.mintDashboardHandoff([safe](int sc, juce::String goPath)
+    {
+        if (safe == nullptr) return;
+        safe->dashMintStatus_ = sc;
+        if (sc == 200 && goPath.isNotEmpty())
+        {
+            if (safe->dashWeb_ != nullptr)
+                safe->dashWeb_->startWithHandoff(goPath);
+            return;
+        }
+        if (sc == 404)
+        {
+            // NOT an error (§5): the dashboard flags are dark for this
+            // account. Say so plainly, do not retry, do not navigate.
+            safe->failDashboardSurface("not_enabled",
+                juce::String::fromUTF8("The dashboard isn\xe2\x80\x99t enabled for this account yet."));
+            return;
+        }
+        if (sc == 401)
+        {
+            // The PLUGIN's own JWT expired (§5): route to the plugin's own
+            // login. A login inside the webview cannot fix the plugin's
+            // token — sending the user there would be a loop with no exit.
+            safe->failDashboardSurface("login_required", juce::String());
+            safe->showLoginScreen();
+            return;
+        }
+        if (! safe->dashMintRetried_)
+        {
+            // 5xx or unreachable (§5): exactly one retry.
+            safe->dashMintRetried_ = true;
+            safe->beginDashboardHandoff();
+            return;
+        }
+        safe->failDashboardSurface("unreachable",
+            juce::String::fromUTF8("Couldn\xe2\x80\x99t reach ")
+                + juce::URL(EchoJayAPI::pluginBaseUrl()).getDomain()
+                + juce::String::fromUTF8(" \xe2\x80\x94 check your connection and reopen the tab."));
+    });
+}
+
+// The one author of the dashboard-surface failure behaviours (§5): the
+// terminal [dash-handoff] line, the panel copy, the no-retry latch for this
+// selection, and the DEFERRED webview destroy (never on the caller's stack —
+// onLoadResult arrives from inside the webview's own JS completion).
+void EchoJayEditor::failDashboardSurface(const juce::String& landing,
+                                         const juce::String& panelMsg)
+{
+    EchoJay_NSLog(("EJDash: [dash-handoff] entry=" + dashEntry_
+                   + " mint=" + juce::String(dashMintStatus_)
+                   + " remint=" + juce::String(dashRemintUsed_ ? 1 : 0)
+                   + " landing=" + landing).toRawUTF8());
+    dashEntry_ = "tab";
+    if (panelMsg.isNotEmpty()) dashPanelMsg_ = panelMsg;
+    dashWebFailedThisSelection_ = true;
+    auto safe = juce::Component::SafePointer<EchoJayEditor>(this);
+    juce::MessageManager::callAsync ([safe]
+    {
+        if (safe == nullptr) return;
+        safe->dashWeb_.reset();        // frees the resident WebKit processes
+        safe->dashWebLoaded_ = false;
+        safe->resized();               // native/panel stays up (reconcile won't
+                                       // reconstruct: failed-this-selection)
+    });
 }
 
 // Stage 3: the loadChain bridge handler. DashboardWeb has already validated the
@@ -10647,7 +10754,7 @@ void EchoJayEditor::followDashLink(const echojay::DashLink& link)
     if (s == "visualiser")  { switchToTab(Tab::Visualisation); return; }
     if (s == "compare")     { switchToTab(Tab::Compare);       return; }
     if (s == "settings")    { switchToTab(Tab::Settings);      return; }
-    if (s == "dashboard")   { switchToTab(Tab::Dashboard);     return; }
+    if (s == "dashboard")   { dashEntry_ = "deeplink"; switchToTab(Tab::Dashboard); return; }
 
     // surface == "web" never reaches here: the view renders those as text and
     // builds no zone for them, because there is no plugin-to-web token path
@@ -17877,7 +17984,12 @@ void EchoJayEditor::resized()
         // consciously traded away for this (MERGE_NOTES). Signed-out keeps its
         // existing line on dashView_ above.
         dashWebPanel_.setBounds (dashRect);
-        dashWebPanel_.setText (webFailed
+        // Handoff failure copy wins when set (§5: not-enabled / unreachable /
+        // redeem-failed each get their own words); the offline line covers
+        // the net class; "Loading…" covers mint-in-flight and page load.
+        dashWebPanel_.setText (dashPanelMsg_.isNotEmpty()
+                                   ? dashPanelMsg_
+                                   : webFailed
                                    ? juce::String::fromUTF8 ("You\xe2\x80\x99re offline \xe2\x80\x94 go online to view your dashboard")
                                    : juce::String::fromUTF8 ("Loading your dashboard\xe2\x80\xa6"),
                                juce::dontSendNotification);
