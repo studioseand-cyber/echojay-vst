@@ -45,6 +45,7 @@
 #include "EedDeviceRegistry.h"
 
 #include <cstdio>
+#include <unistd.h>   // getpid — the per-pid death-mark file name
 #include <cstdlib>
 #include <stdexcept>
 
@@ -170,9 +171,13 @@ public:
     {
         auto& log = probeLog();
         ++log.setStateCalls;
-        // Observed from INSIDE the call: this is the window the deadman exists
-        // to cover, and the only place its presence can be witnessed.
-        const auto marker = TA::deadmanFile();
+        // Observed from INSIDE the call: this is the window the death mark
+        // exists to cover, and the only place its presence can be witnessed.
+        // Since the trunk merge (21 Aug 2026) the mark is a per-pid file of
+        // tab-separated "phase\tpath\tname" lines, not the old single-path
+        // deadman file.
+        const auto marker = TA::deadmanFile().getSiblingFile (
+            "chain_load_deadman." + juce::String ((int) getpid()) + ".txt");
         log.markerExisted = marker.existsAsFile();
         log.markerText    = marker.loadFileAsString();
 
@@ -506,15 +511,21 @@ int main()
                                  stateFor (chunk), savedValue);
             check (o.calls == 1 && probeLog().markerExisted,
                    "deadman: the marker exists INSIDE setStateInformation");
-            // Read the way the consumer reads it (StringArray::fromLines, then
-            // trim): File::replaceWithText writes "\r\n" line endings by default,
-            // and the consumer's tolerance of that is part of what is under test.
-            const auto lines = juce::StringArray::fromLines (probeLog().markerText);
-            check (lines.size() == 2
-                   && lines[0].trim() == kProbeIdentifier
-                   && lines[1].trim() == "state restore",
-                   "deadman: identifier then phase", join (lines));
-            check (! TA::deadmanFile().existsAsFile(),
+            // The mark line is "phase\tpath\tname" (see writeDeathMarksLocked);
+            // parse it the way consumeDeathMarks does — tokenise on tab, trim.
+            juce::StringArray lines;
+            for (const auto& l : juce::StringArray::fromLines (probeLog().markerText))
+                if (l.trim().isNotEmpty()) lines.add (l);
+            juce::StringArray cols;
+            if (lines.size() == 1) cols.addTokens (lines[0], "\t", "");
+            check (lines.size() == 1 && cols.size() >= 3
+                   && cols[0].trim() == "state restore"
+                   && cols[1].trim() == kProbeIdentifier
+                   && cols[2].trim() == kProbeName,
+                   "deadman: phase, identifier, name on one mark line", join (lines));
+            check (! TA::deadmanFile().getSiblingFile (
+                        "chain_load_deadman." + juce::String ((int) getpid()) + ".txt")
+                        .existsAsFile(),
                    "deadman: the marker is gone after the call returns");
             std::printf ("  ok    A2. marker present inside the call, gone after\n");
         }
@@ -527,7 +538,10 @@ int main()
             check (o.loaded && o.calls == 1 && ! o.applied, "rejected chunk: attempted, not applied");
             check (anyNoteContains (o.notes, "rejected its saved settings"),
                    "rejected chunk: named", join (o.notes));
-            check (! TA::deadmanFile().existsAsFile(), "rejected chunk: marker cleaned up");
+            check (! TA::deadmanFile().getSiblingFile (
+                        "chain_load_deadman." + juce::String ((int) getpid()) + ".txt")
+                        .existsAsFile(),
+                   "rejected chunk: marker cleaned up");
             std::printf ("  ok    A2. a thrown rejection is noted and leaves no marker\n");
         }
 
@@ -613,7 +627,10 @@ int main()
             return anyNoteContains (host.getStateNotes(), "could not load"); });
         check (settled, "thin row: the missing bundle fails to load and says so",
                join (host.getStateNotes()));
-        check (! TA::deadmanFile().existsAsFile(), "thin row: validation marker cleaned up");
+        check (! TA::deadmanFile().getSiblingFile (
+                    "chain_load_deadman." + juce::String ((int) getpid()) + ".txt")
+                    .existsAsFile(),
+               "thin row: validation marker cleaned up");
         std::printf ("  ok    9. thin VST3 row -> no false mismatch\n");
     }
 
