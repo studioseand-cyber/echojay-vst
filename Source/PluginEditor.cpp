@@ -10279,11 +10279,15 @@ void EchoJayEditor::bridgeOpenChainById(const juce::String& chainId)
         if (auto* o = json.getDynamicObject())
             if (auto* c = o->getProperty("chain").getDynamicObject())
                 name = c->getProperty("name").toString();
-        // THE ONE LOADER — a third caller, deliberately the SAME two-argument
-        // openSavedChain the other callers use. See MERGE_NOTES §1: if the other
-        // branch's onFetchError/onSlotsParsed land here, this call must gain them
-        // too, or a bridge load silently loses them.
-        safe->openSavedChain(chainId, name);
+        // THE ONE LOADER — a third caller, deliberately the SAME openSavedChain
+        // the other callers use. MERGE_NOTES §1, decided at merge: EMPTY hooks
+        // on purpose. onFetchError duplicates what this path already has — both
+        // this fetch and openSavedChain's own report failures via
+        // setChainSaveStatus, on the Chain tab the user lands on after the
+        // bridge navigation — and a second error surface would be worse than
+        // none. onSlotsParsed feeds recall's watchdog summary, which has no
+        // consumer on a bridge load.
+        safe->openSavedChain(chainId, name, {}, {});
     });
 }
 
@@ -27426,12 +27430,16 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
         dlg->addButton("Replace", 1);
         dlg->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
         dlg->enterModalState(true,
-            juce::ModalCallbackFunction::create([safeThis, dlg, id, name](int result)
+            juce::ModalCallbackFunction::create([safeThis, dlg, id, name,
+                                                 onFetchError, onSlotsParsed](int result)
             {
                 delete dlg;
                 if (safeThis == nullptr || result != 1) return;
                 safeThis->chainOpenReplaceConfirmed_ = true;
-                safeThis->openSavedChain(id, name);
+                // MERGE_NOTES §1: the re-entry FORWARDS the hooks it was called
+                // with — a recall that passes through this confirm must keep its
+                // error reporting and slots-parsed hook.
+                safeThis->openSavedChain(id, name, onFetchError, onSlotsParsed);
             }));
         return;
     }
@@ -29644,7 +29652,11 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         // the menu is for discovery.
         if (chainRowStarRects_[(size_t)i].contains(pos)) { toggleChainFavourite(i); return; }
         const auto& row = chainDisplayRows_[(size_t)i];
-        if (row.id.isNotEmpty()) openSavedChain(row.id, row.name);
+        // MERGE_NOTES §1, decided at merge: EMPTY hooks on purpose. A row click
+        // happens ON the Chain tab, where openSavedChain's setChainSaveStatus
+        // already shows any fetch error in the user's line of sight; recall's
+        // chat-bubble reporting and slots watchdog have no place here.
+        if (row.id.isNotEmpty()) openSavedChain(row.id, row.name, {}, {});
         return;
     }
 
