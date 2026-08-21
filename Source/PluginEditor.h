@@ -1387,6 +1387,29 @@ private:
     juce::String findOrCreateChannelChatId(const juce::String& linkUid,
                                            const juce::String& linkNameNow);
     juce::Rectangle<int> chatBoxRect_;
+    // ---- Reaper key-routing hint [key-hint] --------------------------------
+    // Reaper's -[REAPERapp sendEvent:] resolves the space bar as a transport
+    // accelerator BEFORE the plugin NSView is offered the key (its "user is
+    // typing" test is isKindOfClass NSTextView/NSTextField, which a JUCE view
+    // is not), and no code fix exists plugin-side: JUCE's VST3 wrapper never
+    // implements IPlugView::onKeyDown (SDK default returns kResultFalse), the
+    // REAPER named-config-parm API has no keyboard entry (vocabulary dumped
+    // from the 7.x binary, 21 Aug 2026), and the per-FX WAK chunk flag is only
+    // reachable by track-chunk surgery that can reinstantiate ourselves. So:
+    // tell the user, by name — Reaper only, added-by-name if another host is
+    // ever reported, never by category. Retires on DISMISS, not on show: the
+    // hint is for the moment the user types and gets no spaces, which is
+    // after the strip appeared, and a user who has not pressed Got it has
+    // not read it. The marker file counts every show ("shows") so an absurd
+    // count with no dismissal reads as "strip invisible", a different
+    // defect. Both events log under [key-hint].
+    juce::Label      keyHintLabel_;
+    juce::TextButton keyHintDismissBtn_ { "Got it" };
+    bool             keyHintActive_ = false;
+    void maybeShowReaperKeyHint();     // ctor: host + marker-file gate
+    void syncReaperKeyHint();          // 20 Hz pass: bounds + visibility
+    void dismissReaperKeyHint();       // click: hide, persist, log
+    static juce::File keyHintMarkerFile();
     bool lastPillEligible_ = false;    // timer change-detect -> resized()
     juce::String lastLockedUid_;       // } active-chat target: a live<->offline
     bool lastLockedLive_ = false;      // } flip changes pill TEXT WIDTH -> relayout

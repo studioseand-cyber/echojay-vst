@@ -1749,6 +1749,28 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // by design (RESET, not sticky) — every main chat opens untargeted.
     addChildComponent(chatTargetBtn);
 
+    // [key-hint] Reaper-only keyboard-routing hint (why + scope rules: the
+    // member comment in PluginEditor.h). The wording names the SETTING and
+    // where it lives, spelled the way Reaper's own menu spells it, because
+    // "your host is intercepting keys" helps nobody.
+    keyHintLabel_.setText("Reaper takes the space bar for transport. "
+                          "Right-click EchoJay in the FX chain and turn on "
+                          "\"Send all keyboard input to plug-in\".",
+                          juce::dontSendNotification);
+    keyHintLabel_.setFont(juce::Font(juce::FontOptions(11.5f)));
+    keyHintLabel_.setJustificationType(juce::Justification::centredLeft);
+    keyHintLabel_.setColour(juce::Label::textColourId, C::text);
+    keyHintLabel_.setColour(juce::Label::backgroundColourId, C::bg4);
+    keyHintLabel_.setColour(juce::Label::outlineColourId, C::amber.withAlpha(0.55f));
+    keyHintLabel_.setMinimumHorizontalScale(1.0f);   // wrap, never squash
+    addChildComponent(keyHintLabel_);
+    keyHintDismissBtn_.setColour(juce::TextButton::buttonColourId, C::amber.withAlpha(0.18f));
+    keyHintDismissBtn_.setColour(juce::TextButton::textColourOnId,  C::amber);
+    keyHintDismissBtn_.setColour(juce::TextButton::textColourOffId, C::amber);
+    keyHintDismissBtn_.onClick = [this] { dismissReaperKeyHint(); };
+    addChildComponent(keyHintDismissBtn_);
+    maybeShowReaperKeyHint();
+
     // "Aa" text-size toggle sits in the chat header. Cycles a preset list
     // of scales so users can bump chat readability without a settings trip.
     // Uses a subtle filled background so users can actually spot it.
@@ -2945,6 +2967,9 @@ void EchoJayEditor::updateOnboardingPrompts()
     chatInput.setVisible(chatOk);
     chatSendBtn.setVisible(chatOk);
     chatTextSizeBtn.setVisible(chatOk);
+    // [key-hint] rides the same per-tick authority as the composer it sits
+    // over, so every tab/overlay rule above applies to it for free.
+    syncReaperKeyHint();
     compareBtn.setEnabled(!anyPrompt);
     captureBtn.setEnabled(!anyPrompt);
     settingsBtn.setEnabled(!anyPrompt);
@@ -23402,6 +23427,95 @@ void EchoJayEditor::layoutChatBox(juce::Rectangle<int> box)
     chatModelLabel.setBounds(r.reduced(4, 0));
     chatModelLabel.setVisible(chatInput.isVisible()
                               && chatModelLabel.getText().isNotEmpty());
+}
+
+// ---- [key-hint] Reaper keyboard-routing hint --------------------------------
+// Scope and mechanism: the member comment in PluginEditor.h. All four
+// functions are deliberately dumb — the ONLY intelligence is "is the host
+// Reaper" and "has this install seen the hint".
+
+juce::File EchoJayEditor::keyHintMarkerFile()
+{
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+               .getChildFile("Application Support/EchoJay/key_hint_reaper.json");
+}
+
+void EchoJayEditor::maybeShowReaperKeyHint()
+{
+    // Reaper BY NAME (hostFilename contains "reaper",
+    // juce_PluginHostType.cpp) — never "VST3" and never "not Logic". If
+    // another host is ever reported it gets added by name, not by category.
+    if (! juce::PluginHostType().isReaper()) return;
+
+    // Retire on DISMISS, not on show (21 Aug 2026 correction): the hint is
+    // for the moment the user types and gets no spaces, which is AFTER the
+    // strip appeared — retiring on show can spend it on an occasion nobody
+    // was looking. A user who has not pressed Got it has not read it.
+    auto marker = keyHintMarkerFile();
+    auto v = juce::JSON::parse(marker.loadFileAsString());
+    auto* existing = v.getDynamicObject();
+    if (existing != nullptr && existing->hasProperty("dismissed")) return;
+
+    keyHintActive_ = true;
+    // The marker still records every show: "shown" = first, "shows" = count.
+    // If the count ever reaches something absurd with no dismissal, the
+    // strip is INVISIBLE rather than ignored — a different defect, and one
+    // hit twice this week.
+    juce::DynamicObject::Ptr obj = existing != nullptr ? existing
+                                                       : new juce::DynamicObject();
+    const auto now = juce::Time::getCurrentTime().toISO8601(true);
+    if (! obj->hasProperty("shown")) obj->setProperty("shown", now);
+    const int shows = (int) obj->getProperty("shows") + 1;
+    obj->setProperty("shows", shows);
+    obj->setProperty("last_shown", now);
+    marker.getParentDirectory().createDirectory();
+    marker.replaceWithText(juce::JSON::toString(juce::var(obj.get()), true) + "\n");
+    EchoJay_NSLog(("EJHint: [key-hint] shown host=Reaper shows="
+                   + juce::String(shows)).toRawUTF8());
+}
+
+void EchoJayEditor::syncReaperKeyHint()
+{
+    const bool show = keyHintActive_ && chatInput.isVisible();
+    if (show)
+    {
+        // Floating strip anchored above the composer box (chatBoxRect_ is
+        // the ONE geometry truth) — no surface's height math is touched.
+        constexpr int kH = 56, kBtnW = 58;
+        auto strip = juce::Rectangle<int>(chatBoxRect_.getX(),
+                                          chatBoxRect_.getY() - kH - 4,
+                                          chatBoxRect_.getWidth(), kH);
+        const bool wasVisible = keyHintLabel_.isVisible();
+        keyHintDismissBtn_.setBounds(strip.removeFromRight(kBtnW)
+                                          .withSizeKeepingCentre(kBtnW - 8, 22));
+        keyHintLabel_.setBounds(strip);
+        if (! wasVisible)
+        {
+            // Front once, on appearance — the modal overlay path never gets
+            // here (chatOk is false while any prompt is up), so this cannot
+            // sit over an overlay.
+            keyHintLabel_.toFront(false);
+            keyHintDismissBtn_.toFront(false);
+        }
+    }
+    keyHintLabel_.setVisible(show);
+    keyHintDismissBtn_.setVisible(show);
+}
+
+void EchoJayEditor::dismissReaperKeyHint()
+{
+    keyHintActive_ = false;
+    keyHintLabel_.setVisible(false);
+    keyHintDismissBtn_.setVisible(false);
+
+    auto marker = keyHintMarkerFile();
+    auto v = juce::JSON::parse(marker.loadFileAsString());
+    juce::DynamicObject::Ptr obj = v.getDynamicObject() != nullptr
+                                       ? v.getDynamicObject()
+                                       : new juce::DynamicObject();
+    obj->setProperty("dismissed", juce::Time::getCurrentTime().toISO8601(true));
+    marker.replaceWithText(juce::JSON::toString(juce::var(obj.get()), true) + "\n");
+    EchoJay_NSLog("EJHint: [key-hint] dismissed");
 }
 
 void EchoJayEditor::showChatTargetMenu()
