@@ -29,6 +29,7 @@
 #include "EchoJayParamApply.h"
 #include "EchoJayHistoryTrim.h"
 #include "EchoJayChannelChats.h"
+#include "EchoJayAPI.h"          // history-resend pin runs the REAL buildChatRequestBody
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
 #include <fstream>
@@ -50,6 +51,18 @@ static juce::PluginDescription makeDesc (const juce::String& format, int uid, co
     d.version          = version;
     return d;
 }
+
+// The one named door through EchoJayAPI's private section (friend in the
+// header, CONTRACT_history_resend_pin.md): the pin runs the SHIPPED
+// buildChatRequestBody from the linked lib, never a copy of it.
+struct EchoJayAPIRequestPin
+{
+    static juce::String compose (EchoJayAPI& a, const juce::StringArray& roles,
+                                 const juce::StringArray& contents)
+    {
+        return a.buildChatRequestBody (roles, contents, "sys", {});
+    }
+};
 
 // Function body by signature: from the signature line to the first line
 // that is exactly "}" at column 0. Every ChainHost method ends that way.
@@ -384,6 +397,21 @@ int main()
         check (buildRec.contains ("pushedNames"),
                "buildRecommendable collapses duplicate names into the duplicates counter");
 
+        // Model-number keying pin (20 Aug 2026). c3ad9be added the
+        // trailingModelNumber guard on 28 July with NO test, and it was
+        // silently bypassed for three weeks because the exact-match path
+        // short-circuits past it — buildRecommendable's stem keying handed
+        // "AMEK EQ 250" rows the EQ 200 entry the whole time. A pin that
+        // names the predicate is the difference between the guard existing
+        // and the guard being protected: simplifying the keying back to bare
+        // stems now fails here instead of shipping. This is a POOR SUBSTITUTE
+        // for behavioural coverage — the keying lives in lambdas inside the
+        // member function and cannot be exercised without extraction, which
+        // belongs to the identity-keying work (findVst3Alternative /
+        // popoutOnlyKey), not to this pin.
+        check (buildRec.contains ("trailingModelNumber"),
+               "buildRecommendable keys the feed map through the c3ad9be model-number predicate");
+
         // Stale-map ladder wiring: the decisions must come from the pinned
         // pure functions above, not a re-derived inline comparison, or the
         // table this test asserts stops describing the shipped behaviour.
@@ -564,6 +592,117 @@ int main()
                    "buildChatRequestBody decides through trimChatHistory");
             check (! body.contains ("maxPayloadBytes"),
                    "the shared payload budget (newest charged against history) is gone");
+        }
+
+        // ---- History resend pin (CONTRACT_history_resend_pin.md, 21 Aug
+        // 2026, saas-authored). The server's offer_accepted brief
+        // suppression counts registry-resolvable plugin names in the prior
+        // assistant turn AS RESENT ON THE CHAT BODY (threshold 3); a client
+        // that truncates history starves the count and the suppression
+        // silently never fires — no error, just the brief-after-consent
+        // defect back with everything green. These four run the REAL
+        // buildChatRequestBody through the one friend hook, never a
+        // reimplementation. Case 1 is equality WITH length on purpose:
+        // "contains" would pass on a truncated string.
+        {
+            // THE COPY, NOT A MODEL (contract's own words): the real
+            // proposal turn, verbatim from the saas suite's fixture
+            // (scripts/test-chain-briefs.mjs; store provenance
+            // preview:ej:replies:2026-08-21, t=1787292066245,
+            // rid=44rnh-1787292040906-9e61d094ada3, 1,575 chars). Both
+            // repos pin the same artefact. No historyStripMarkers text and
+            // no "\n\n[" anywhere in it, so nothing strips.
+            const juce::String prose = juce::String::fromUTF8(R"EJFIX(Here's a solid mix bus chain for what you're working on. The current three slots are being replaced entirely, so this is a full rebuild.
+
+The order is: tonal shaping first, then glue compression, then multiband control for the low end and upper mids, then harmonic texture, then a true-peak limiter at the end.
+
+Slot 1 - AMEK EQ 200. A musical, console-style EQ to shape the tonal balance before anything squeezes it. High-pass around 30 Hz to clear subsonic garbage, a gentle low-mid scoop around 300-400 Hz if the mix is thick, and a small high shelf lift around 12 kHz for air.
+
+Slot 2 - SSL Native Bus Compressor 2. The classic glue compressor. 4:1 ratio, attack around 30 ms so the transients breathe through, release on auto, threshold set to about 2-4 dB of gain reduction on the loudest sections. This is the glue.
+
+Slot 3 - Drawmer 1973. A three-band compressor to handle anything the bus comp misses in specific frequency zones - tighten the low end without touching the mids, or pull back a harsh upper mid if the mix needs it.
+
+Slot 4 - Black Box Analog Design HG-2. Second or third harmonic saturation to give the bus warmth and density. Drive it lightly - you want the colour, not obvious distortion.
+
+Slot 5 - Newfangled Elevate. Adaptive limiting and loudness maximiser at the end of the chain. Set your ceiling to -0.3 dBTP with true-peak on, and use it to bring the mix to a competitive loudness without squashing the dynamics the compressors preserved.
+
+That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put that together as a chain?)EJFIX");
+            check (prose.length() == 1575,
+                   "the artefact is intact: 1,575 chars as stored",
+                   juce::String (prose.length()));
+
+            // Compose a real request whose history holds the assistant turn
+            // under test, and return what the wire carries for it. Three
+            // tiny turns: nothing trims (count cap 12, byte budget 24000),
+            // so the messages array is [system, user, assistant, newest].
+            auto sentAssistant = [] (const juce::String& assistantTurn) -> juce::String
+            {
+                EchoJayAPI api;
+                juce::StringArray roles    { "user", "assistant", "user" };
+                juce::StringArray contents { "build me a mix bus", assistantTurn, "yes" };
+                const auto body = EchoJayAPIRequestPin::compose (api, roles, contents);
+                auto v = juce::JSON::parse (body);
+                auto msgs = v.getProperty ("messages", juce::var());
+                if (msgs.size() != 4
+                    || msgs[2].getProperty ("role", juce::var()).toString() != "assistant")
+                    return "<<WRONG SHAPE: " + juce::String (msgs.size()) + " messages>>";
+                return msgs[2].getProperty ("content", juce::var()).toString();
+            };
+
+            // 1. Full-length survival: byte-identical AND equal length.
+            {
+                const auto sent = sentAssistant (prose);
+                check (sent.length() == prose.length() && sent == prose,
+                       "history assistant turn resends byte-identical at full length",
+                       "sent " + juce::String (sent.length()) + " of "
+                           + juce::String (prose.length()) + " chars");
+            }
+            // 2. The strip boundary is markers, not length: cut exactly AT
+            //    the marker, every byte before it intact — a future "tidy"
+            //    length cap cannot hide inside the strip.
+            {
+                const auto marker = EchoJayAPI::historyStripMarkers()[0];
+                const auto sent = sentAssistant (prose + marker
+                                    + " - injection contents that must not resend]");
+                check (sent == prose,
+                       "history strip cuts exactly at the marker, prose before it byte-identical",
+                       "sent " + juce::String (sent.length()) + " chars, expected "
+                           + juce::String (prose.length()));
+            }
+            // 3. CURRENT BEHAVIOUR, PINNED: assistant turns are stripped
+            //    too — strippedContent() has no role check — so a marker
+            //    LITERAL (with its \n\n prefix) inside assistant prose cuts
+            //    the turn there. The server tolerates either behaviour but
+            //    counts names in exactly this text, so whichever holds must
+            //    not change silently. A bracket phrase WITHOUT the newline
+            //    prefix is not a marker and survives whole.
+            {
+                const auto marker = EchoJayAPI::historyStripMarkers()[4]; // "\n\n[CURRENT CHAIN"
+                const auto cut = sentAssistant (prose + marker + " echoed injection text");
+                check (cut == prose,
+                       "assistant turns are marker-stripped too (current behaviour, pinned)");
+                const juce::String inlinePhrase = "see the [CURRENT CHAIN block above for slots. ";
+                const auto kept = sentAssistant (prose + inlinePhrase);
+                check (kept == prose + inlinePhrase,
+                       "a bracket phrase without the newline prefix is not a marker and survives");
+            }
+            // 4. The classify carrier stays separate: the chat body builder
+            //    never composes priorAssistant — the short excerpt class is
+            //    legal on the classify body and only there. The behavioural
+            //    half of this pin is case 1 above (full length on the chat
+            //    array); this half pins that the two carriers share no code.
+            {
+                std::ifstream fapi2 ("Source/EchoJayAPI.cpp");
+                std::stringstream sapi2;
+                sapi2 << fapi2.rdbuf();
+                const juce::String apiSrc2 (sapi2.str());
+                const auto bodyFn2 = functionBody (apiSrc2,
+                    "juce::String EchoJayAPI::buildChatRequestBody");
+                check (bodyFn2.isNotEmpty() && ! bodyFn2.contains ("priorAssistant"),
+                       "chat body builder never composes priorAssistant");
+                check (apiSrc2.contains ("setProperty(\"priorAssistant\", req.priorAssistant)"),
+                       "the classify carrier composes priorAssistant at its own site");
+            }
         }
     }
 

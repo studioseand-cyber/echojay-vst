@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "DashboardWeb.h"        // stage 2: the lazy webview Dashboard surface
+#include "ChainPluginPicker.h"   // P13: the searchable "+" picker (shared with the Link)
 #include "EJStreamBlockParser.h" // incremental block parser (spec step 3/4)
 #include "EJRecall.h"            // saved-chain recall decision logic (pure)
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics (EJChat:)
@@ -1796,15 +1797,52 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     };
     addChildComponent(upgradeBtn);
 
-    // CHAIN tab — determine which plugin format is loadable in this host.
-    // Hosting a VST3 from inside an AU sandbox (Logic) is blocked by the OS; hosting
-    // an AU from inside a VST3 host is equally unsupported. Filter to only the format
-    // that matches our own wrapper so users never see dead entries.
+    // CHAIN tab: the chain feed is filtered to the plugin format that matches
+    // our own wrapper (AU inside an AU host, VST3 inside a VST3 host).
+    //
+    // This comment used to say the OS blocks hosting a VST3 from inside an AU
+    // sandbox. That was never measured, and on 17 Aug 2026 it was measured
+    // false: the dev-mode "/vst3test" command instantiated FabFilter Pro-Q 3
+    // (VST3) inside Logic's AUHostingServiceXPC_arrow process seven times out
+    // of seven, 150 to 441 ms each, 519 parameters, 4 in / 2 out, latency 0,
+    // then released it. So VST3 hosting inside the AU host process is not
+    // blocked at instantiate.
+    //
+    // How far that evidence goes: a headless instantiate and release only.
+    // Untested are the paths that would actually hurt: an editor open for an
+    // hour, audio running through the instance, and session state saved and
+    // restored across a host relaunch. Until those are measured the filter
+    // stays as it is; this is a policy kept on purpose, not a limit of the OS.
+    // Hosting an AU from inside a VST3 host is likewise unmeasured.
+    //
+    // The experiment that measures them (17 Aug 2026): with dev_mode AND
+    // ~/Library/EchoJay/vst3_in_au_host present (ChainHost::
+    // vst3InAuHostExperiment), an AU instance runs with an EMPTY filter, the
+    // standalone code path, so the model feed and the withheld panel see the
+    // VST3-only names; the picker and the add menu additionally keep BOTH
+    // builds of a same-named pair (chainOfferBothBuilds_, rows labelled by
+    // format), which is how "Pro-Q 3 [VST3]" is rackable beside "Pro-Q 3
+    // [AU]". Off by default everywhere. Loading was never filtered.
     switch (processorRef.wrapperType)
     {
-        case juce::AudioProcessor::wrapperType_AudioUnit: chainFormatFilter_ = "AudioUnit"; break;
+        case juce::AudioProcessor::wrapperType_AudioUnit:
+            chainOfferBothBuilds_ = ChainHost::vst3InAuHostExperiment();
+            chainFormatFilter_    = chainOfferBothBuilds_ ? juce::String() : juce::String("AudioUnit");
+            break;
         case juce::AudioProcessor::wrapperType_VST3:      chainFormatFilter_ = "VST3";      break;
-        default: break; // Standalone / unknown — show all
+        case juce::AudioProcessor::wrapperType_AAX:
+            // Pro Tools (17 Aug 2026). A named case, not the old fallthrough.
+            // EchoJay's AAX build is macOS only, and on a Mac the format that
+            // is both hostable and DIALABLE is the AudioUnit: a VST3 offered
+            // here has no fingerprint until it is racked, so it can be placed
+            // but never set (measured, HANDOVER/measurements/protools_dial.out),
+            // and the fallthrough was silently offering exactly those
+            // un-dialable VST3-only names. So AAX takes the same filter as
+            // Logic. Whether an AU inline-hosts inside Pro Tools' AAX host is
+            // unmeasured, the same open question the AU host carries generally.
+            chainFormatFilter_ = "AudioUnit";
+            break;
+        default: break; // Standalone / unknown: show all
     }
     chainListModel = std::make_unique<ChainPluginListModel>();
     chainListModel->onRowSelected = [this](int) { /* selection handled at load time */ };
@@ -1953,6 +1991,44 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chainListPanel.onMasterWet = [this](float v) {
         if (chainViewUid().isNotEmpty()) return;
         processorRef.getChainHost().setMasterWet(v);
+    };
+    // Pre-chain gain: driven by the rack-head PreGainKnob (18 Aug 2026),
+    // replacing the master-knob menu items (that menu was on the wrong
+    // control and absent in some views). Routed local vs remote by which
+    // rack the panel shows. A drag is a HAND set (build will not overwrite).
+    chainListPanel.onPreGain = [this](float db) {
+        const juce::String uid = chainViewUid();
+        if (uid.isNotEmpty()) sendLinkPreGainCommand(uid, db);
+        else { processorRef.getChainHost().setPreGainDb(db, true); processorRef.markStateDirty(); }
+    };
+    chainListPanel.onPreGainReset = [this]() {
+        const juce::String uid = chainViewUid();
+        if (uid.isNotEmpty()) sendLinkPreGainResetCommand(uid);
+        else { processorRef.getChainHost().resetPreGainToAuto(); processorRef.markStateDirty(); }
+    };
+    // Manual reset of the running level tally: right-click the master knob.
+    // (The pre-gain moved to the rack-head knob; only the level tally reset
+    // remains here.)
+    chainListPanel.masterKnob.onPopup = [this]()
+    {
+        if (chainViewUid().isNotEmpty()) return;
+        juce::PopupMenu m;
+        m.addSectionHeader("Running level");
+        {
+            const auto in = processorRef.getChainHost().getChainInLevels();
+            m.addItem(1, in.known ? "Input " + juce::String(in.levelDb, 1) + " LUFS, heard "
+                                        + EchoJayAPI::formatHeard(in.heardSeconds)
+                                  : juce::String("No level known yet (heard "
+                                        + EchoJayAPI::formatHeard(in.heardSeconds) + ")"), false);
+        }
+        m.addItem(2, "Reset level tally");
+        auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+        m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&chainListPanel.masterKnob),
+            [safeThis](int r)
+            {
+                if (safeThis == nullptr) return;
+                if (r == 2) safeThis->processorRef.getChainHost().resetAllLevels();
+            });
     };
     chainListPanel.masterKnob.setValue(processorRef.getChainHost().getMasterWet());
     addChildComponent(chainListPanel);
@@ -2577,6 +2653,17 @@ void EchoJayEditor::visibilityChanged()
 // Auth
 // ============================================================================
 
+void EchoJayEditor::setHeaderRowVisible(bool v)
+{
+    // The whole top-bar header row, in one list. This is the gate the login
+    // view flips; nothing in the row is hidden by hand anywhere else, so a
+    // control added here is covered on login by construction.
+    juce::Component* const row[] = { &channelTypeBox, &genreBox, &projectInput,
+                                     &scanBtn, &headerNewChatBtn, &captureBtn,
+                                     &captureTargetLabel, &detectedLabel };
+    for (auto* c : row) c->setVisible(v);
+}
+
 void EchoJayEditor::showLoginScreen()
 {
     currentScreen = Screen::Login;
@@ -2594,8 +2681,8 @@ void EchoJayEditor::showLoginScreen()
     browserLoginBtn.setVisible(true); browserLoginSub.setVisible(true);
     pairCodeLabel.setVisible(false); pairInfoLabel.setVisible(false); pairCancelBtn.setVisible(false);
 
-    juce::Component* mainComps[] = { &captureBtn, &scanBtn,
-        &channelTypeBox, &genreBox, &projectInput, &statusLabel, &durationLabel, &detectedLabel,
+    setHeaderRowVisible(false);   // the whole header row is off on the login view
+    juce::Component* mainComps[] = { &statusLabel, &durationLabel,
         &passLabel, &userLabel, &chatInput, &chatSendBtn, &chatScroll,
         &compareBtn, &settingsBtn, &playbackBtn, &wavSavedLabel, &upgradeBtn };
     for (auto* c : mainComps) c->setVisible(false);
@@ -2643,8 +2730,8 @@ void EchoJayEditor::showMainScreen()
     // updateOnboardingPrompts; showing them here regardless of currentTab
     // is what produced the Settings-strip/Meters-content/orphan-Send
     // composite after an account switch.
-    juce::Component* mainComps[] = { &captureBtn, &scanBtn,
-        &channelTypeBox, &genreBox, &projectInput, &statusLabel, &durationLabel, &detectedLabel,
+    setHeaderRowVisible(true);   // whole header row back on the main screen
+    juce::Component* mainComps[] = { &statusLabel, &durationLabel,
         &passLabel, &userLabel,
         &compareBtn, &settingsBtn, &wavSavedLabel };
     for (auto* c : mainComps) c->setVisible(true);
@@ -6473,25 +6560,28 @@ void EchoJayEditor::layOutLinkCtrls(juce::Rectangle<int> ctrlRect,
     const auto r = ctrlRect.reduced(0, 4);   // 22px segments in the 30px row
     if (r.getHeight() <= 0) return;
 
-    int wSeg = 52, cSeg = 62;
-    const int gap = 16;                      // between the two groups
-    const int need = 2 * wSeg + 2 * cSeg + gap;
+    // THREE groups since 18 Aug 2026: width, content, and fader mode.
+    int wSeg = 52, cSeg = 62, mSeg = 46;
+    const int gap = 16;                      // between groups
+    const int need = 2 * wSeg + 2 * cSeg + 2 * mSeg + 2 * gap;
     if (need > r.getWidth())
     {
-        const float k = (float)juce::jmax(1, r.getWidth() - gap)
-                      / (float)(2 * wSeg + 2 * cSeg);
-        wSeg = juce::jmax(30, (int)((float)wSeg * k));
-        cSeg = juce::jmax(34, (int)((float)cSeg * k));
+        const float k = (float)juce::jmax(1, r.getWidth() - 2 * gap)
+                      / (float)(2 * wSeg + 2 * cSeg + 2 * mSeg);
+        wSeg = juce::jmax(28, (int)((float)wSeg * k));
+        cSeg = juce::jmax(32, (int)((float)cSeg * k));
+        mSeg = juce::jmax(26, (int)((float)mSeg * k));
     }
 
-    // Two content segments since 8b: the meter left the toggle when it
-    // became permanent strip chrome.
-    const int ids[4]  = { kCtrlNarrow, kCtrlWide, kCtrlNumbers, kCtrlChain };
-    const int wids[4] = { wSeg, wSeg, cSeg, cSeg };
+    // Width | content | fader mode. Each group's zones are contiguous; a gap
+    // separates the groups; any zone that cannot fit is dropped whole (the
+    // mode toggle is the first to go on a very tight row, never clipped).
+    const int ids[6]  = { kCtrlNarrow, kCtrlWide, kCtrlNumbers, kCtrlChain, kCtrlPost, kCtrlPre };
+    const int wids[6] = { wSeg, wSeg, cSeg, cSeg, mSeg, mSeg };
     int x = r.getX();
-    for (int i = 0; i < 4; ++i)
+    for (int i = 0; i < 6; ++i)
     {
-        if (i == 2) x += gap;                // group separator
+        if (i == 2 || i == 4) x += gap;      // group separators
         const juce::Rectangle<int> z(x, r.getY(), wids[i], r.getHeight());
         if (z.getRight() > ctrlRect.getRight()) break;   // drop, never overlap
         out.push_back({ ids[i], z });
@@ -6535,6 +6625,23 @@ void EchoJayEditor::linkCtrlClicked(int id)
             // one-second lifespan but still a lie.
             refreshLinkRackCache(true);
             break;
+        case kCtrlPost:
+        case kCtrlPre:
+        {
+            // Repoint the strip. The faders are stateless (they read the value
+            // for the current mode every paint), so switching makes each fader
+            // jump to its channel's pre-gain and the numbers follow, with no
+            // second row and no per-channel state.
+            const auto m = (id == kCtrlPre) ? EchoJayProcessor::LinkFaderMode::Pre
+                                            : EchoJayProcessor::LinkFaderMode::Post;
+            if (p.linkFaderMode == m) return;
+            p.linkFaderMode = m;
+            p.markStateDirty();
+            linkMixerView_.dragAddr = {};   // never carry a drag across a mode flip
+            resized();
+            repaint();
+            break;
+        }
         default: break;
     }
 }
@@ -7179,6 +7286,32 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
         for (const auto& si : v.slots)
             if (si.name.trim() == lastAddDone_.name.trim())
             { pendingNote = "Added " + lastAddDone_.name + " to " + v.name + "."; break; }
+    }
+
+    // Pre-gain knob display refreshed EVERY tick, BEFORE the signature
+    // early-return below: preGainDb_ is not part of the panel signature (a
+    // pre-gain move never bumps the rack revision), so a reset or a remote
+    // change would otherwise never repaint the knob. Cheap: one setValue and
+    // a repaint, no rebuild. Skipped only while the user is dragging THIS
+    // knob, so the refresh never fights the gesture.
+    if (! chainListPanel.preGainKnob.isMouseButtonDown())
+    {
+        const juce::String pgUid = chainViewUid();
+        if (pgUid.isNotEmpty())
+        {
+            const float db = linkRowDisplayPreGain(pgUid);
+            bool userSet = false, known = true;
+            auto it = processorRef.linkRackCache.find(pgUid);
+            if (it != processorRef.linkRackCache.end() && it->second.rack.valid)
+            { userSet = it->second.rack.preGainUserSet; known = it->second.rack.preGainInputKnown; }
+            chainListPanel.setPreGainDisplay(db, userSet, known);
+        }
+        else
+        {
+            auto& ch = processorRef.getChainHost();
+            chainListPanel.setPreGainDisplay(ch.getPreGainDb(), ch.isPreGainUserSet(),
+                                             ch.getChainInLevels().known);
+        }
     }
 
     juce::String sig;
@@ -8396,7 +8529,7 @@ void EchoJayEditor::linkPendingFor(const juce::String& addr, bool& pending,
 }
 
 void EchoJayEditor::paintFaderLane(juce::Graphics& g, const StripGeom& sg,
-                                   float gDb)
+                                   float gDb, float lo, float hi)
 {
     const auto cap = sg.faderImg;              // the CAP AREA: full lane height
     if (cap.isEmpty()) return;
@@ -8416,9 +8549,9 @@ void EchoJayEditor::paintFaderLane(juce::Graphics& g, const StripGeom& sg,
     // ---- Ticks: MINOR every 2 dB, MAJOR every 6, zero emphasised, all
     // mapped by the SAME yFromGain the drag and the cap use.
     const int laneR = cap.getX() - 1;
-    for (int m = 12; m >= -24; m -= 2)
+    for (int m = (int) hi; m >= (int) lo; m -= 2)
     {
-        const int ty = yFromGain((float)m, cap);
+        const int ty = yFromGainRanged((float)m, cap, lo, hi);
         const bool major = (m % 6 == 0);
         const bool zero  = (m == 0);
         g.setColour(zero ? LinkConsole::label
@@ -8431,7 +8564,7 @@ void EchoJayEditor::paintFaderLane(juce::Graphics& g, const StripGeom& sg,
     // ---- The cap, cropped straight out of frame 64 and scaled UNIFORMLY
     // (height derives from width via faderCapH). Its centre is yFromGain's
     // answer, so ticks, drag and drawn cap cannot disagree.
-    const int cy   = yFromGain(gDb, cap);
+    const int cy   = yFromGainRanged(gDb, cap, lo, hi);
     const int capW = faderCapW(cap);
     // Centred in the cap area, so the drawn track shows either side of it.
     const juce::Rectangle<int> dest(cap.getCentreX() - capW / 2, cy - capH / 2,
@@ -8766,19 +8899,28 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             // filmstrip, travel band and tick lane as the channels, driven
             // by the processor's persisted value. No pending display: the
             // value applies immediately and paint reads it straight back.
-            const float gDb = processorRef.getBusGainDb();
-            paintFaderLane(g, sg, gDb);
+            const bool pre = linkFaderModeIsPre();
+            const float gDb = pre ? processorRef.getChainHost().getPreGainDb()
+                                  : processorRef.getBusGainDb();
+            paintFaderLane(g, sg, gDb, faderLo(), faderHi());
             // A restored non-zero trim must be VISIBLE on load, not a
             // surprise found by squinting at a cap: the value prints above
             // the fader whenever it is not unity.
-            if (std::abs(gDb) >= 0.05f)
             {
-                g.setColour(LinkConsole::caption);
-                g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
-                g.drawText(juce::String(gDb, 1),
-                           sg.faderImg.getX() - 4, sg.faderImg.getY() + 1,
-                           sg.faderImg.getWidth() + 8, 10,
-                           juce::Justification::centred);
+                const bool userSet = pre && processorRef.getChainHost().isPreGainUserSet();
+                const bool known   = !pre || processorRef.getChainHost().getChainInLevels().known;
+                juce::String txt;
+                if (std::abs(gDb) >= 0.05f) txt = juce::String(gDb, 1);
+                else if (pre && !known)     txt = "--";   // no level: not a confident 0
+                if (txt.isNotEmpty())
+                {
+                    // Amber marks a hand-set pre-gain (a build will not change
+                    // it) so the strip explains why builds stop adjusting it.
+                    g.setColour(userSet ? juce::Colour(0xfff59e0b) : LinkConsole::caption);
+                    g.setFont(juce::Font(juce::FontOptions(7.0f, juce::Font::bold)));
+                    g.drawText(txt, sg.faderImg.getX() - 4, sg.faderImg.getY() + 1,
+                               sg.faderImg.getWidth() + 8, 10, juce::Justification::centred);
+                }
             }
         }
         else if (entry != nullptr)
@@ -8789,14 +8931,16 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             // the cap holds the TARGET while a command is in flight rather
             // than snapping back and jumping on the ack.
             const bool dragging = (linkMixerView_.dragAddr == sg.addr);
+            const bool pre = linkFaderModeIsPre();
             const float gDb = dragging ? linkMixerView_.dragValue
-                                       : linkRowDisplayGain(sg.addr);
+                                       : (pre ? linkRowDisplayPreGain(sg.addr)
+                                              : linkRowDisplayGain(sg.addr));
 
             // The image rect is STORED (faderImg); its width is height/8 by
             // construction. The lane (sg.fader) runs the full band height:
             // a groove line continues the slot above and below the image so
             // the lane reads as one object sharing the meter's extent.
-            paintFaderLane(g, sg, gDb);
+            paintFaderLane(g, sg, gDb, faderLo(), faderHi());
         }
     }
 }
@@ -8863,13 +9007,20 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
             // hold a target against.
             if (sg.isBus)
             {
+                const bool pre = linkFaderModeIsPre();
                 if (numClicks >= 2)
                 {
-                    processorRef.setBusGainDb(0.0f);
+                    // Double-click zeroes. In Pre mode that also clears the
+                    // hand-set flag, so the next build can auto-set it again.
+                    if (pre) processorRef.getChainHost().resetPreGainToAuto();
+                    else     processorRef.setBusGainDb(0.0f);
+                    processorRef.markStateDirty();
                     repaint();
                     break;
                 }
-                processorRef.setBusGainDb(gainFromY(local.y, sg.faderImg));
+                const float v = gainFromYRanged(local.y, sg.faderImg, faderLo(), faderHi());
+                if (pre) { processorRef.getChainHost().setPreGainDb(v, true); processorRef.markStateDirty(); }
+                else     processorRef.setBusGainDb(v);
                 busFaderDragging_ = true;
                 busFaderLastY_    = local.y;
                 repaint();
@@ -8877,18 +9028,21 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
             }
             EchoJayProcessor::LinkDisplayEntry en;
             if (!findLinkEntryByAddr(sg.addr, en)) break;
+            const bool preR = linkFaderModeIsPre();
             if (numClicks >= 2)
             {
                 linkMixerView_.dragAddr = {};
-                sendLinkGainCommand(sg.addr, 0.0f);
+                if (preR) sendLinkPreGainCommand(sg.addr, 0.0f);
+                else      sendLinkGainCommand(sg.addr, 0.0f);
                 linkMixerView_.repaint();
                 break;
             }
             linkMixerView_.dragAddr       = sg.addr;
-            linkMixerView_.dragValue      = gainFromY(local.y, sg.faderImg);
+            linkMixerView_.dragValue      = gainFromYRanged(local.y, sg.faderImg, faderLo(), faderHi());
             linkMixerView_.lastDragY      = local.y;   // incremental anchor
             linkMixerView_.lastGainSendMs = juce::Time::getMillisecondCounter();
-            sendLinkGainCommand(sg.addr, linkMixerView_.dragValue);
+            if (preR) sendLinkPreGainCommand(sg.addr, linkMixerView_.dragValue);
+            else      sendLinkGainCommand(sg.addr, linkMixerView_.dragValue);
             linkMixerView_.repaint();
             break;
         }
@@ -9045,6 +9199,25 @@ juce::String EchoJayEditor::linkStripTooltip(const StripGeom& sg,
                             : "Channel meter (Link engine)";
 
         case StripHit::Fader:
+            if (linkFaderModeIsPre())
+            {
+                if (sg.isBus)
+                {
+                    auto& ch = processorRef.getChainHost();
+                    const bool us = ch.isPreGainUserSet();
+                    return "Pre-gain " + juce::String(ch.getPreGainDb(), 1) + " dB"
+                           + (us ? " (set by hand, builds will not change it)" : " (auto)")
+                           + " (drag; double-click = auto)";
+                }
+                const bool dragging = (linkMixerView_.dragAddr == sg.addr);
+                const float pgv = dragging ? linkMixerView_.dragValue : linkRowDisplayPreGain(sg.addr);
+                bool us = false;
+                auto it = processorRef.linkRackCache.find(sg.addr);
+                if (it != processorRef.linkRackCache.end()) us = it->second.rack.preGainUserSet;
+                return "Pre-gain " + juce::String(pgv, 1) + " dB"
+                       + (us ? " (set by hand, builds will not change it)" : "")
+                       + " (drag; double-click = 0)";
+            }
             if (sg.isBus)
                 return "Bus trim " + juce::String(processorRef.getBusGainDb(), 1)
                        + " dB (drag; shift = fine; double-click = 0)";
@@ -9195,10 +9368,13 @@ void EchoJayEditor::LinkMixerView::mouseDrag(const juce::MouseEvent& e)
     for (const auto& sg : owner->linkStripGeom_)
         if (sg.addr == dragAddr)
         {
-            const float rate = EchoJayEditor::gainPerPixel(sg.faderImg)
+            const bool pre = owner->linkFaderModeIsPre();
+            const float span = pre ? 48.0f : 36.0f;   // -24..+24 vs -24..+12
+            const float lo = -24.0f, hi = pre ? 24.0f : 12.0f;
+            const float rate = EchoJayEditor::gainPerPixelRanged(sg.faderImg, span)
                              * (e.mods.isShiftDown()
                                     ? EchoJayEditor::kFaderFineRatio : 1.0f);
-            dragValue = juce::jlimit(-24.0f, 12.0f,
+            dragValue = juce::jlimit(lo, hi,
                 std::round((dragValue + (float)(lastDragY - y) * rate) * 10.0f)
                     / 10.0f);
             break;
@@ -9208,7 +9384,8 @@ void EchoJayEditor::LinkMixerView::mouseDrag(const juce::MouseEvent& e)
     if (now - lastGainSendMs >= 100)
     {
         lastGainSendMs = now;
-        owner->sendLinkGainCommand(dragAddr, dragValue);
+        if (owner->linkFaderModeIsPre()) owner->sendLinkPreGainCommand(dragAddr, dragValue);
+        else                             owner->sendLinkGainCommand(dragAddr, dragValue);
     }
     repaint();
 }
@@ -9219,7 +9396,8 @@ void EchoJayEditor::LinkMixerView::mouseUp(const juce::MouseEvent&)
     // Always send the FINAL value on release (the throttle may have skipped
     // it); the pending entry then holds the fader at the target until the
     // Link acks.
-    owner->sendLinkGainCommand(dragAddr, dragValue);
+    if (owner->linkFaderModeIsPre()) owner->sendLinkPreGainCommand(dragAddr, dragValue);
+    else                             owner->sendLinkGainCommand(dragAddr, dragValue);
     dragAddr = {};
     repaint();
 }
@@ -9258,6 +9436,12 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
                 case kCtrlChain:   sel = processorRef.linkMixerContent
                                        == EchoJayProcessor::LinkMixerContent::Chain;
                                    label = "CHAIN";   break;
+                case kCtrlPost:    sel = processorRef.linkFaderMode
+                                       == EchoJayProcessor::LinkFaderMode::Post;
+                                   label = "POST";    break;
+                case kCtrlPre:     sel = processorRef.linkFaderMode
+                                       == EchoJayProcessor::LinkFaderMode::Pre;
+                                   label = "PRE";     break;
                 default: continue;
             }
             // Console grey: the pressed segment is a lifted fill with
@@ -10055,7 +10239,7 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
                 if (ch.getNumPlugins() == 0 && !ch.isScanning())
                     ch.startScan();
                 // Keep list model populated for the picker popup
-                chainListModel->items = ch.getFilteredPlugins({}, chainFormatFilter_);
+                chainListModel->items = ch.getFilteredPlugins({}, chainFormatFilter_, !chainOfferBothBuilds_);
                 // Rebuild rack strip from current chain state
                 chainListPanel.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
                 chainListPanel.masterKnob.setValue(ch.getMasterWet());
@@ -12625,31 +12809,303 @@ EchoJayEditor::WithheldLayout EchoJayEditor::withheldSectionLayout(int sx, int s
     const int labelGap = 18;
     wl.labelY = sy;
     int y = sy + labelGap;
-    const bool any = !settingsWithheld_.empty();
-    const int toggleW = any ? 92 : 0;
-    wl.summary = { sx, y, sw - (any ? toggleW + 8 : 0), 24 };
-    if (any) wl.toggle = { sx + sw - toggleW, y, toggleW, 24 };
-    y += 24 + 6;
-    if (any && settingsWithheldExpanded_)
+    const bool any = !settingsWithheldGroups_.empty();
+    const int toggleW = any ? 100 : 0;
+    wl.headline = { sx, y, sw - (any ? toggleW + 8 : 0), 22 };
+    if (any) wl.toggle = { sx + sw - toggleW, y, toggleW, 22 };
+    y += 22;
+    wl.denominator = { sx, y, sw, 16 };
+    y += 16 + 4;
+    for (const auto& gr : settingsWithheldGroups_)
     {
-        if (settingsWithheldArch_ > 0)
-        {
-            wl.note = { sx, y, sw, 44 };
-            y += 44 + 4;
-        }
-        wl.rowsY = y;
-        y += kWithheldRowH * (int) settingsWithheld_.size();
+        WithheldLayout::Group g;
+        g.titleY = y; y += kWithheldGroupH;
+        if (gr.remedy.isNotEmpty())      { g.remedyY = y;  y += 16; }
+        if (gr.vendorsLine.isNotEmpty()) { g.vendorsY = y; y += 16; }
+        g.itemsY = y;
+        if (settingsWithheldExpanded_) y += kWithheldRowH * (int) gr.items.size();
+        y += 4;
+        wl.groups.push_back(g);
     }
-    else
-        wl.rowsY = y;
     wl.endY = y + 8;
     return wl;
 }
 
+// A name folded for "is this bundle the same plugin": lowercase, alphanumerics
+// only. Classification aid ONLY (which panel group a no-entry name falls in);
+// the availability verdict itself comes from ChainHost::resolveByName.
+static juce::String withheldFold(const juce::String& s)
+{
+    juce::String out;
+    for (auto c : s.toLowerCase())
+        if (juce::CharacterFunctions::isLetterOrDigit(c)) out << juce::String::charToString(c);
+    return out;
+}
+juce::String EchoJayEditor::foldPluginName(const juce::String& s) { return withheldFold(s); }
+
+// Token signature for the twin merge (below): lowercase tokens split on
+// punctuation, hyphens NEXT TO A DIGIT joining ("C-18" -> "c18", "C673-A" ->
+// "c673a"), vendor tokens dropped.
+static juce::StringArray withheldTokens(const juce::String& name, const juce::String& vendor)
+{
+    juce::String n;
+    {
+        const auto low = name.toLowerCase();
+        for (int i = 0; i < low.length(); ++i)
+        {
+            const auto c = low[i];
+            if (c == '-' && ((i > 0 && juce::CharacterFunctions::isDigit(low[i - 1]))
+                          || (i + 1 < low.length() && juce::CharacterFunctions::isDigit(low[i + 1]))))
+                continue;
+            n << juce::String::charToString(c);
+        }
+    }
+    juce::StringArray out; juce::String cur;
+    auto flush = [&] { if (cur.isNotEmpty()) { out.add(cur); cur.clear(); } };
+    for (auto c : n) { if (juce::CharacterFunctions::isLetterOrDigit(c)) cur << juce::String::charToString(c); else flush(); }
+    flush();
+    const juce::String v = withheldFold(vendor);
+    juce::StringArray kept;
+    for (auto& t : out) if (withheldFold(t) != v) kept.add(t);
+    return kept;
+}
+static bool withheldIsNum(const juce::String& t) { return t.isNotEmpty() && t.containsOnly("0123456789"); }
+// Same product by signature: same token count; each token maps to a distinct
+// token of the other: digits equal exactly, letters equal, or a short
+// abbreviation (<= 5 chars) that prefixes the long one, dropping at least four
+// letters and no digit ("comp" / "compressor" yes; "serum" / "serumfx" no, a
+// suffix is another product; "soothe" / "soothe2" no). Or the two fold to the
+// same string once vendor tokens go.
+static bool withheldSameProduct(const juce::StringArray& a, const juce::StringArray& b)
+{
+    if (a.isEmpty() || b.isEmpty()) return false;
+    if (withheldFold(a.joinIntoString("")) == withheldFold(b.joinIntoString(""))) return true;
+    if (a.size() != b.size()) return false;
+    std::vector<bool> used((size_t) b.size(), false);
+    for (auto& ta : a)
+    {
+        bool hit = false;
+        for (int j = 0; j < b.size() && !hit; ++j)
+        {
+            if (used[(size_t) j]) continue;
+            const auto& tb = b[j];
+            bool ok = ta == tb;
+            if (!ok && !withheldIsNum(ta) && !withheldIsNum(tb))
+            {
+                const auto& sh = ta.length() <= tb.length() ? ta : tb;
+                const auto& lo = ta.length() <= tb.length() ? tb : ta;
+                const auto rest = lo.substring(sh.length());
+                ok = sh.length() <= 5 && lo.startsWith(sh) && rest.length() >= 4 && !rest.containsAnyOf("0123456789");
+            }
+            if (ok) { used[(size_t) j] = true; hit = true; }
+        }
+        if (!hit) return false;
+    }
+    return true;
+}
+
+std::vector<EchoJayEditor::WithheldGroup>
+EchoJayEditor::classifyWithheld(const std::vector<ScannedPlugin>& plugins, const ChainHost& ch,
+                                const juce::String& hostFmt,
+                                const std::map<juce::String, WithheldItem>& crashByFold,
+                                const std::map<juce::String, WithheldItem>& tooLargeByFold,
+                                const std::set<juce::String>& nestedVst3,
+                                int* enabledNamesOut, int* cannotOut)
+{
+    // Enabled Settings rows, one verdict per plugin. Rows collapse when they
+    // fold to the same key after a leading vendor prefix equal to the row's
+    // own manufacturer is dropped ("FabFilter Pro-Q 3" VST3 row and "Pro-Q 3"
+    // AU row are one plugin; "EchoBoyJr" and "EchoBoy Jr" too). Every name
+    // variant is kept and every one is asked, so a plugin is available when
+    // ANY of its rows resolves in this host, whichever spelling the AU
+    // registry or the VST3 bundle used.
+    // Parenthesised variants ("Pro-C (SC)", "Pro-C (SC Mono)") are ONE
+    // product to update, so the parenthetical leaves the key too
+    // (ChainHost::stripParenthetical, the resolver's own rule).
+    struct NameRow { juce::String name, vendor; juce::StringArray names, formats; };
+    std::map<juce::String, NameRow> byName;   // fold -> row
+    auto keyOf = [](const ScannedPlugin& p)
+    {
+        juce::String n = ChainHost::stripParenthetical(p.name.trim());
+        const juce::String vend = p.manufacturer.trim();
+        if (vend.isNotEmpty() && n.length() > vend.length() + 1 && n.startsWithIgnoreCase(vend + " "))
+            n = n.substring(vend.length() + 1).trim();
+        return foldPluginName(n);
+    };
+    // Vendor as the AU registry spells it where the same folded vendor has an
+    // AU row (the scanner's VST3 rows carry folder-derived, title-cased
+    // strings: "Mcdsp" beside the registry's "McDSP"); otherwise the scanner's
+    // string verbatim; empty stays empty. The scanner's no-vendor sentinel is
+    // the literal "Unknown" (PluginScanner.cpp), and that is empty here too.
+    auto vendorOf = [](const ScannedPlugin& p)
+    {
+        const juce::String v = p.manufacturer.trim();
+        return v == "Unknown" ? juce::String() : v;
+    };
+    std::map<juce::String, juce::String> vendorDisplay;
+    for (const auto& p : plugins)
+    {
+        const juce::String v = vendorOf(p);
+        if (v.isEmpty()) continue;
+        const juce::String k = foldPluginName(v);
+        auto it = vendorDisplay.find(k);
+        if (it == vendorDisplay.end()) vendorDisplay[k] = v;
+        else if (p.format == "AU" || p.format.contains("AU")) it->second = v;   // registry spelling wins
+    }
+    auto showVendor = [&](const juce::String& v)
+    {
+        const juce::String t = v.trim() == "Unknown" ? juce::String() : v.trim();
+        if (t.isEmpty()) return juce::String();
+        auto it = vendorDisplay.find(foldPluginName(t));
+        return it != vendorDisplay.end() ? it->second : t;
+    };
+    for (const auto& p : plugins)
+    {
+        if (!p.enabled) continue;
+        auto& r = byName[keyOf(p)];
+        if (r.name.isEmpty()) { r.name = ChainHost::stripParenthetical(p.name.trim()); r.vendor = showVendor(p.manufacturer); }
+        r.names.addIfNotAlreadyThere(p.name);
+        r.names.addIfNotAlreadyThere(ChainHost::stripParenthetical(p.name.trim()));
+        r.formats.addIfNotAlreadyThere(p.format);
+    }
+    // The twin merge: a row that resolves nowhere in this host but is the
+    // same product as a row that DOES (same folded vendor, token signature
+    // above) is that product's Intel/VST2 build, and the product is
+    // available. Merged into the available row; every merge is logged.
+    {
+        std::map<juce::String, std::vector<juce::String>> availByVendor;   // vendor fold -> available keys
+        for (auto& kv : byName)
+        {
+            bool avail = false;
+            for (const auto& nm : kv.second.names)
+            {
+                const bool a = ch.resolveByName(nm, "AudioUnit").name.isNotEmpty();
+                const bool v = ch.resolveByName(nm, "VST3").name.isNotEmpty();
+                if (hostFmt == "AudioUnit" ? a : hostFmt == "VST3" ? v : (a || v)) { avail = true; break; }
+            }
+            if (avail) availByVendor[foldPluginName(kv.second.vendor)].push_back(kv.first);
+        }
+        std::vector<juce::String> merged;
+        for (auto& kv : byName)
+        {
+            const juce::String vk = foldPluginName(kv.second.vendor);
+            auto it = availByVendor.find(vk);
+            if (it == availByVendor.end()) continue;
+            if (std::find(it->second.begin(), it->second.end(), kv.first) != it->second.end()) continue;   // itself available
+            const auto sig = withheldTokens(kv.second.name, kv.second.vendor);
+            for (const auto& availKey : it->second)
+            {
+                auto& target = byName[availKey];
+                if (withheldSameProduct(sig, withheldTokens(target.name, target.vendor)))
+                {
+                    EchoJay_NSLog(("EJScan: withheld panel merged \"" + kv.second.name + "\" into \"" + target.name
+                                   + "\" (" + target.vendor + "), same product by token signature").toRawUTF8());
+                    for (const auto& nm : kv.second.names) target.names.addIfNotAlreadyThere(nm);
+                    for (const auto& f : kv.second.formats) target.formats.addIfNotAlreadyThere(f);
+                    merged.push_back(kv.first);
+                    break;
+                }
+            }
+        }
+        for (const auto& k : merged) byName.erase(k);
+    }
+    if (enabledNamesOut) *enabledNamesOut = (int) byName.size();
+
+    WithheldGroup gCrash, gLarge, gIntel, gVst2, gNot, gUnr, gFmt;
+    gCrash.kind = WithheldGroup::Crash;      gCrash.title = "disabled after a crash";
+    gIntel.kind = WithheldGroup::IntelOnly;  gIntel.title = kEjProcessIsArm ? "Intel only, no Apple Silicon build installed"
+                                                                            : "Apple Silicon only, no Intel build installed";
+    gIntel.remedy = kEjProcessIsArm ? "Update these to Apple Silicon builds and they will work. Until then only a host running under Rosetta can load them."
+                                    : "These need this host to run natively on Apple Silicon.";
+    gLarge.kind = WithheldGroup::TooLarge;   gLarge.title = "settings too large to save (over the "
+                                                          + juce::File::descriptionOfSizeInBytes((juce::int64) ChainHost::kSessionStateMaxSlotBytes)
+                                                          + " per-plugin session limit)";
+    gLarge.remedy = "A chain holding one of these could not be saved with the project. Re-enable offers it again on the next scan.";
+    gVst2.kind  = WithheldGroup::Vst2;       gVst2.title  = "VST2, which EchoJay cannot host in any host";
+    gNot.kind   = WithheldGroup::NotScanned; gNot.title   = "in a vendor subfolder the chain scan does not enter yet";
+    gUnr.kind   = WithheldGroup::Unreadable; gUnr.title   = "not matched to anything the chain list can load (a name mismatch, or a bundle that could not be read)";
+    gFmt.kind   = WithheldGroup::FormatOnly; gFmt.title   = hostFmt == "AudioUnit" ? "usable in a VST3 host such as Reaper, not in this AU host"
+                                                          : hostFmt == "VST3"      ? "usable in an AU host such as Logic, not in this VST3 host"
+                                                                                   : "usable in another host format only";
+    std::map<juce::String, int> intelVendors;
+    for (const auto& kv : byName)
+    {
+        const auto& r = kv.second;
+        // Ask the resolver for EVERY spelling; keep the strongest answer per
+        // format (found beats withheld beats miss; crash beats architecture)
+        bool foundAU = false, foundV = false;
+        ChainHost::WithholdReason wAU = ChainHost::WithholdReason::None, wV = ChainHost::WithholdReason::None;
+        auto stronger = [](ChainHost::WithholdReason a, ChainHost::WithholdReason b)
+        {
+            auto rank = [](ChainHost::WithholdReason w) { return w == ChainHost::WithholdReason::CrashBlacklisted ? 3 : w == ChainHost::WithholdReason::SettingsTooLarge ? 2 : w == ChainHost::WithholdReason::ArchitectureIncompatible ? 1 : 0; };
+            return rank(a) >= rank(b) ? a : b;
+        };
+        for (const auto& nm : r.names)
+        {
+            ChainHost::WithholdReason a = ChainHost::WithholdReason::None, v = ChainHost::WithholdReason::None;
+            if (ch.resolveByName(nm, "AudioUnit", nullptr, &a).name.isNotEmpty()) foundAU = true; else wAU = stronger(wAU, a);
+            if (ch.resolveByName(nm, "VST3",      nullptr, &v).name.isNotEmpty()) foundV  = true; else wV  = stronger(wV, v);
+        }
+        const bool foundHost  = hostFmt == "AudioUnit" ? foundAU : hostFmt == "VST3" ? foundV : (foundAU || foundV);
+        const bool foundOther = hostFmt == "AudioUnit" ? foundV  : hostFmt == "VST3" ? foundAU : false;
+        if (foundHost) continue;   // AVAILABLE: a route reaches the feed here
+        WithheldItem it; it.name = r.name; it.vendor = r.vendor;
+        if (foundOther) { gFmt.items.push_back(it); continue; }
+        if (wAU == ChainHost::WithholdReason::CrashBlacklisted || wV == ChainHost::WithholdReason::CrashBlacklisted)
+        {
+            if (auto f = crashByFold.find(kv.first); f != crashByFold.end()) gCrash.items.push_back(f->second);
+            else gCrash.items.push_back(it);
+            continue;
+        }
+        if (wAU == ChainHost::WithholdReason::SettingsTooLarge || wV == ChainHost::WithholdReason::SettingsTooLarge)
+        {
+            if (auto f = tooLargeByFold.find(kv.first); f != tooLargeByFold.end()) gLarge.items.push_back(f->second);
+            else gLarge.items.push_back(it);
+            continue;
+        }
+        if (wAU == ChainHost::WithholdReason::ArchitectureIncompatible || wV == ChainHost::WithholdReason::ArchitectureIncompatible)
+        {
+            gIntel.items.push_back(it);
+            if (r.vendor.isNotEmpty()) ++intelVendors[r.vendor];
+            continue;
+        }
+        bool onlyVst2 = true;
+        for (const auto& f : r.formats) if (f != "VST") onlyVst2 = false;
+        if (onlyVst2) { gVst2.items.push_back(it); continue; }
+        bool nested = nestedVst3.count(kv.first) > 0;
+        for (const auto& nm : r.names) if (nestedVst3.count(foldPluginName(nm))) nested = true;
+        if (nested) { gNot.items.push_back(it); continue; }
+        gUnr.items.push_back(it);
+    }
+    {
+        std::vector<std::pair<int, juce::String>> v;
+        for (auto& kv : intelVendors) v.push_back({ kv.second, kv.first });
+        std::sort(v.rbegin(), v.rend());
+        juce::StringArray parts;
+        for (size_t i = 0; i < v.size() && i < 8; ++i) parts.add(v[i].second + " " + juce::String(v[i].first));
+        if (v.size() > 8) parts.add("and " + juce::String((int) v.size() - 8) + " more");
+        gIntel.vendorsLine = parts.joinIntoString(", ");
+    }
+    auto sortItems = [](WithheldGroup& g) { std::sort(g.items.begin(), g.items.end(), [](const WithheldItem& a, const WithheldItem& b) { return a.name.compareIgnoreCase(b.name) < 0; }); };
+    std::vector<WithheldGroup> out;
+    int cannot = 0;
+    for (auto* g : { &gCrash, &gLarge, &gIntel, &gVst2, &gNot, &gUnr, &gFmt })
+    {
+        sortItems(*g);
+        if (g->items.empty()) continue;
+        if (g->kind != WithheldGroup::FormatOnly) cannot += (int) g->items.size();
+        out.push_back(*g);
+    }
+    if (cannotOut) *cannotOut = cannot;
+    return out;
+}
+
 void EchoJayEditor::rebuildSettingsWithheld()
 {
-    settingsWithheld_.clear();
-    settingsWithheldArch_ = settingsWithheldCrash_ = 0;
+    settingsWithheldGroups_.clear();
+    settingsWithheldEnabledNames_ = 0;
+    settingsWithheldCannot_ = 0;
+    auto& ch = processorRef.getChainHost();
 
     // Blacklist line stamps (path TAB reason TAB ISO date; bare paths are the
     // pre-format form and carry no date). Read for the date only; the
@@ -12675,80 +13131,153 @@ void EchoJayEditor::rebuildSettingsWithheld()
             dateByPath[path] = date;
         }
     }
-
-    auto& ch = processorRef.getChainHost();
-    auto ecFile = ChainHost::getEntriesCacheFile();
-    if (ecFile.existsAsFile())
-    {
-        if (auto doc = juce::XmlDocument::parse(ecFile);
-            doc != nullptr && doc->getTagName() == "CHAIN_ENTRIES")
-        {
+    // Crash-blacklisted rows come from the entries cache (any format: a
+    // crashed plugin is a crashed plugin whichever host is asking), because
+    // the Re-enable control needs the bundle path.
+    // Too-large rows the same way (path for Re-enable, bytes for the detail).
+    std::map<juce::String, WithheldItem> crashByFold, tooLargeByFold;
+    if (auto ecFile = ChainHost::getEntriesCacheFile(); ecFile.existsAsFile())
+        if (auto doc = juce::XmlDocument::parse(ecFile); doc != nullptr && doc->getTagName() == "CHAIN_ENTRIES")
             for (auto* c : doc->getChildIterator())
             {
                 juce::PluginDescription d;
                 if (!d.loadFromXml(*c)) continue;
-                // The per-host view, exactly as the feed sites apply it
-                if (chainFormatFilter_.isNotEmpty() && d.pluginFormatName != chainFormatFilter_)
-                    continue;
                 const auto why = ch.withholdReason(d);
-                if (!ChainHost::isWithheld(why)) continue;   // None and Unreadable are offered
-                WithheldRow row;
-                row.name   = d.name;
-                row.path   = d.fileOrIdentifier;
-                row.reason = why;
                 if (why == ChainHost::WithholdReason::CrashBlacklisted)
                 {
-                    ++settingsWithheldCrash_;
-                    if (auto it = dateByPath.find(row.path); it != dateByPath.end())
-                        row.date = it->second;
+                    WithheldItem it; it.name = d.name; it.vendor = d.manufacturerName; it.path = d.fileOrIdentifier;
+                    if (auto f = dateByPath.find(it.path); f != dateByPath.end()) it.date = f->second;
+                    crashByFold[foldPluginName(d.name)] = it;
                 }
-                else
-                    ++settingsWithheldArch_;
-                settingsWithheld_.push_back(std::move(row));
+                else if (why == ChainHost::WithholdReason::SettingsTooLarge)
+                {
+                    WithheldItem it; it.name = d.name; it.vendor = d.manufacturerName; it.path = d.fileOrIdentifier;
+                    it.detail = juce::File::descriptionOfSizeInBytes((juce::int64) ch.oversizeStateBytes(it.path))
+                              + " at its defaults, limit "
+                              + juce::File::descriptionOfSizeInBytes((juce::int64) ChainHost::kSessionStateMaxSlotBytes);
+                    tooLargeByFold[foldPluginName(d.name)] = it;
+                }
             }
-        }
-    }
-    // Crash rows first (they have a control), then by name
-    std::stable_sort(settingsWithheld_.begin(), settingsWithheld_.end(),
-        [](const WithheldRow& a, const WithheldRow& b)
-        {
-            const bool ca = a.reason == ChainHost::WithholdReason::CrashBlacklisted;
-            const bool cb = b.reason == ChainHost::WithholdReason::CrashBlacklisted;
-            if (ca != cb) return ca;
-            return a.name.compareIgnoreCase(b.name) < 0;
-        });
 
-    // One Re-enable button per crash row, in row order
-    while (settingsReenableBtns_.size() < (size_t) settingsWithheldCrash_)
+    // .vst3 bundles ONE level below the VST3 folders: the chain scan walks the
+    // folder non-recursively (ChainHost.cpp, findChildFiles(..., false)), so
+    // these never become entries. That is a scan defect (P2's), and a name
+    // that lives there is reported as "not scanned yet", never as unreadable.
+    std::set<juce::String> nestedVst3;
+    {
+        juce::Array<juce::File> roots { juce::File("/Library/Audio/Plug-Ins/VST3"),
+                                        juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+                                            .getChildFile("Library/Audio/Plug-Ins/VST3") };
+        for (auto& root : roots)
+            if (root.isDirectory())
+                for (auto& sub : root.findChildFiles(juce::File::findDirectories, false))
+                    if (!sub.hasFileExtension(".vst3"))
+                        for (auto& b : sub.findChildFiles(juce::File::findDirectories | juce::File::findFiles, false, "*.vst3"))
+                            nestedVst3.insert(foldPluginName(b.getFileNameWithoutExtension()));
+    }
+
+    settingsWithheldGroups_ = classifyWithheld(processorRef.getPluginScanner().getPlugins(), ch,
+                                               chainFormatFilter_, crashByFold, tooLargeByFold, nestedVst3,
+                                               &settingsWithheldEnabledNames_, &settingsWithheldCannot_);
+
+    // Helper-catalogue health + supersession, appended as their own groups.
+    // These come from the out-of-process sweep (chain_health.json) and the
+    // version supersession, independent of host-format availability, so they
+    // are built directly rather than folded through classifyWithheld. Only the
+    // FAILURE states surface; loaded-not-verified (the whole working library)
+    // and shell (expected) stay dark.
+    {
+        std::map<juce::String, juce::String> nameByPath;
+        std::vector<juce::PluginDescription> entriesForSup;
+        if (auto ecFile = ChainHost::getEntriesCacheFile(); ecFile.existsAsFile())
+            if (auto doc = juce::XmlDocument::parse(ecFile); doc && doc->getTagName() == "CHAIN_ENTRIES")
+                for (auto* c : doc->getChildIterator())
+                {
+                    juce::PluginDescription d;
+                    if (d.loadFromXml(*c)) { nameByPath[d.fileOrIdentifier] = d.name; entriesForSup.push_back(d); }
+                }
+        auto nameForPath = [&](const juce::String& path) -> juce::String
+        {
+            if (auto f = nameByPath.find(path); f != nameByPath.end() && f->second.isNotEmpty()) return f->second;
+            return juce::File(path).getFileNameWithoutExtension();
+        };
+        struct HG { const char* state; const char* title; };
+        const HG order[] = {
+            { "crashed",             "crashed during the plugin scan (isolated out of process, the DAW was never at risk)" },
+            { "timed-out",           "timed out during the plugin scan, often a modal licence or trial dialog" },
+            { "load-failed-licence", "would not load, likely a licence or dongle not present, not a broken plugin" },
+            { "load-failed",         "failed to load during the plugin scan, not a licence issue" },
+            { "no-types",            "no plugin types found in the bundle" },
+        };
+        auto health = ch.getHealthSnapshot();
+        for (const auto& hg : order)
+        {
+            WithheldGroup g; g.kind = WithheldGroup::HelperNote; g.title = hg.title;
+            for (const auto& kv : health)
+            {
+                if (kv.second.state != hg.state) continue;
+                WithheldItem it; it.name = nameForPath(kv.first); it.path = kv.first;
+                it.detail = kv.second.reason;
+                if (kv.second.blockMs >= 10000)
+                    it.detail += (it.detail.isEmpty() ? juce::String() : juce::String("  "))
+                               + "(blocked " + juce::String((int)(kv.second.blockMs / 1000)) + "s)";
+                g.items.push_back(it);
+            }
+            std::sort(g.items.begin(), g.items.end(),
+                      [](const WithheldItem& a, const WithheldItem& b){ return a.name.compareIgnoreCase(b.name) < 0; });
+            if (! g.items.empty()) settingsWithheldGroups_.push_back(g);
+        }
+        WithheldGroup gs; gs.kind = WithheldGroup::Superseded;
+        gs.title = "an older version, superseded by a newer copy installed here (still available to rack by hand)";
+        for (const auto& d : entriesForSup)
+            if (ch.isSuperseded(d))
+            {
+                WithheldItem it; it.name = d.name; it.vendor = d.manufacturerName; it.path = d.fileOrIdentifier;
+                it.detail = "version " + d.version;
+                gs.items.push_back(it);
+            }
+        std::sort(gs.items.begin(), gs.items.end(),
+                  [](const WithheldItem& a, const WithheldItem& b){ return a.name.compareIgnoreCase(b.name) < 0; });
+        if (! gs.items.empty()) settingsWithheldGroups_.push_back(gs);
+    }
+
+    // One Re-enable button per crash item and per too-large item
+    int crashCount = 0;
+    for (const auto& g : settingsWithheldGroups_) if (WithheldGroup::hasReenable(g.kind)) crashCount += (int) g.items.size();
+    while (settingsReenableBtns_.size() < (size_t) crashCount)
     {
         auto b = std::make_unique<juce::TextButton>("Re-enable");
         b->setVisible(false);
         settingsContent_.addChildComponent(*b);
         settingsReenableBtns_.push_back(std::move(b));
     }
-    for (size_t bi = 0, ri = 0; ri < settingsWithheld_.size(); ++ri)
     {
-        if (settingsWithheld_[ri].reason != ChainHost::WithholdReason::CrashBlacklisted) continue;
-        if (bi >= settingsReenableBtns_.size()) break;
-        const int rowIdx = (int) ri;
-        settingsReenableBtns_[bi]->onClick = [this, rowIdx]() { reenableWithheldRow(rowIdx); };
-        ++bi;
+        size_t bi = 0;
+        for (size_t gi = 0; gi < settingsWithheldGroups_.size(); ++gi)
+            if (WithheldGroup::hasReenable(settingsWithheldGroups_[gi].kind))
+                for (size_t ii = 0; ii < settingsWithheldGroups_[gi].items.size() && bi < settingsReenableBtns_.size(); ++ii, ++bi)
+                {
+                    const int G = (int) gi, I = (int) ii;
+                    settingsReenableBtns_[bi]->onClick = [this, G, I]() { reenableWithheldItem(G, I); };
+                }
     }
-    for (size_t bi = (size_t) settingsWithheldCrash_; bi < settingsReenableBtns_.size(); ++bi)
+    for (size_t bi = (size_t) crashCount; bi < settingsReenableBtns_.size(); ++bi)
         settingsReenableBtns_[bi]->setVisible(false);
 
-    EchoJay_NSLog(("EJScan: settings withheld section, " + juce::String(settingsWithheld_.size())
-                   + " row(s): " + juce::String(settingsWithheldCrash_) + " crash-blacklisted, "
-                   + juce::String(settingsWithheldArch_) + " architecture"
-                   + (chainFormatFilter_.isNotEmpty() ? " [" + chainFormatFilter_ + "]"
-                                                      : juce::String())).toRawUTF8());
+    juce::String logLine = "EJScan: settings withheld section [" + (chainFormatFilter_.isEmpty() ? juce::String("all") : chainFormatFilter_)
+                         + "]: " + juce::String(settingsWithheldCannot_) + " of " + juce::String(settingsWithheldEnabledNames_)
+                         + " enabled names cannot be used here:";
+    for (const auto& g : settingsWithheldGroups_) logLine << " " << (int) g.items.size() << " " << g.title << ";";
+    EchoJay_NSLog(logLine.toRawUTF8());
 }
 
-void EchoJayEditor::reenableWithheldRow(int idx)
+void EchoJayEditor::reenableWithheldItem(int groupIdx, int itemIdx)
 {
-    if (idx < 0 || idx >= (int) settingsWithheld_.size()) return;
-    auto& row = settingsWithheld_[(size_t) idx];
-    if (row.reason != ChainHost::WithholdReason::CrashBlacklisted || row.reenabled) return;
+    if (groupIdx < 0 || groupIdx >= (int) settingsWithheldGroups_.size()) return;
+    auto& g = settingsWithheldGroups_[(size_t) groupIdx];
+    if (!WithheldGroup::hasReenable(g.kind) || itemIdx < 0 || itemIdx >= (int) g.items.size()) return;
+    auto& row = g.items[(size_t) itemIdx];
+    if (row.reenabled || row.path.isEmpty()) return;
 
     // Delete THIS row's line from chain_blacklist.txt and nothing else: the
     // file is read fresh here and written back minus one line, never from a
@@ -12757,7 +13286,8 @@ void EchoJayEditor::reenableWithheldRow(int idx)
     // is what re-enables the plugin, without a host restart), and the
     // in-memory gate keeps refusing the load until then. Comment lines and
     // bare pre-format paths pass through unchanged.
-    auto bl = chainBlacklistFile();
+    // The same edit for a too-large row, on ITS file (chain_state_oversize.txt).
+    auto bl = g.kind == WithheldGroup::TooLarge ? ChainHost::getStateOversizeFile() : chainBlacklistFile();
     int removed = 0;
     if (bl.existsAsFile())
     {
@@ -12772,8 +13302,6 @@ void EchoJayEditor::reenableWithheldRow(int idx)
             }
             kept.add(raw);
         }
-        // Drop the trailing empty element fromLines leaves behind a final
-        // newline, then end the file with one newline as the writer does.
         while (!kept.isEmpty() && kept[kept.size() - 1].trim().isEmpty()) kept.remove(kept.size() - 1);
         bl.replaceWithText(kept.joinIntoString("\n") + "\n");
     }
@@ -12867,67 +13395,66 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
         const auto wl = withheldSectionLayout(x, y, w);
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-        g.drawText("WITHHELD FROM THE CHAIN LIST", x, wl.labelY, w, 14,
-                   juce::Justification::centredLeft);
-        // Summary line
+        g.drawText("WITHHELD FROM THE CHAIN LIST", x, wl.labelY, w, 14, juce::Justification::centredLeft);
+        // Headline: the count WITH its denominator, or the null only when
+        // every group is empty
         {
-            juce::String sum;
-            if (settingsWithheld_.empty())
-                sum = "Nothing is withheld from the chain list.";
+            juce::String head;
+            if (settingsWithheldGroups_.empty())
+                head = "Nothing is withheld from the chain list: every plugin you have ticked can be used here.";
+            else if (settingsWithheldCannot_ > 0)
+                head = juce::String(settingsWithheldCannot_) + " of your " + juce::String(settingsWithheldEnabledNames_)
+                     + " enabled plugins cannot be used in this host";
             else
-            {
-                juce::StringArray parts;
-                if (settingsWithheldCrash_ > 0)
-                    parts.add(juce::String(settingsWithheldCrash_) + " disabled after a crash");
-                if (settingsWithheldArch_ > 0)
-                    parts.add(juce::String(settingsWithheldArch_) + " cannot run in this host ("
-                              + (kEjProcessIsArm ? "Intel only" : "Apple Silicon only") + ")");
-                sum = juce::String(settingsWithheld_.size()) + " withheld: "
-                    + parts.joinIntoString(", ");
-            }
-            g.setColour(C::text2);
-            g.setFont(juce::Font(juce::FontOptions(11.5f)));
-            g.drawText(sum, wl.summary, juce::Justification::centredLeft, true);
+                head = "Every plugin you have ticked can be used here; some are usable only in another host format";
+            g.setColour(settingsWithheldGroups_.empty() ? C::text2 : C::text);
+            g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+            g.drawText(head, wl.headline, juce::Justification::centredLeft, true);
         }
-        if (!wl.note.isEmpty())
         {
-            // Said ONCE, here, where the user can act on it.
-            const juce::String note = kEjProcessIsArm
-                ? "The Intel-only rows are VST3 builds with no Apple Silicon slice. This host is "
-                  "running natively on Apple Silicon, which costs most of a legacy VST3 library; "
-                  "to use them, run the host under Rosetta. Nothing here changes your ticks."
-                : "The Apple Silicon-only rows are VST3 builds with no Intel slice, and this host "
-                  "is running as an Intel process (Rosetta); to use them, run the host natively. "
-                  "Nothing here changes your ticks.";
+            const juce::String den = "Counted by plugin name across the " + juce::String(settingsWithheldEnabledNames_)
+                                   + " plugins ticked above, each asked whether any of its builds can load in this "
+                                   + (chainFormatFilter_ == "AudioUnit" ? juce::String("AU") : chainFormatFilter_ == "VST3" ? juce::String("VST3") : juce::String(""))
+                                   + " host. Your ticks are not changed here.";
             g.setColour(C::text3);
-            g.setFont(juce::Font(juce::FontOptions(11.0f)));
-            g.drawFittedText(note, wl.note, juce::Justification::topLeft, 3, 1.0f);
+            g.setFont(juce::Font(juce::FontOptions(10.5f)));
+            g.drawText(den, wl.denominator, juce::Justification::centredLeft, true);
         }
-        if (settingsWithheldExpanded_)
+        for (size_t gi = 0; gi < settingsWithheldGroups_.size() && gi < wl.groups.size(); ++gi)
         {
-            int ry = wl.rowsY;
-            g.setFont(juce::Font(juce::FontOptions(11.5f)));
-            for (const auto& row : settingsWithheld_)
+            const auto& gr = settingsWithheldGroups_[gi];
+            const auto& gl = wl.groups[gi];
+            const bool fmtOnly = gr.kind == WithheldGroup::FormatOnly;
+            // "  165  Intel only, ..."
+            g.setColour(fmtOnly ? C::text2 : C::text);
+            g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+            g.drawText(juce::String((int) gr.items.size()), x, gl.titleY, 40, kWithheldGroupH, juce::Justification::centredRight);
+            g.setFont(juce::Font(juce::FontOptions(12.0f)));
+            g.drawText(gr.title, x + 48, gl.titleY, w - 48, kWithheldGroupH, juce::Justification::centredLeft, true);
+            g.setColour(C::text3);
+            g.setFont(juce::Font(juce::FontOptions(10.5f)));
+            if (gl.remedyY >= 0)  g.drawText(gr.remedy,      x + 48, gl.remedyY,  w - 48, 16, juce::Justification::centredLeft, true);
+            if (gl.vendorsY >= 0) g.drawText(gr.vendorsLine, x + 48, gl.vendorsY, w - 48, 16, juce::Justification::centredLeft, true);
+            if (settingsWithheldExpanded_)
             {
-                const bool crash = row.reason == ChainHost::WithholdReason::CrashBlacklisted;
-                juce::String why;
-                if (crash)
-                    why = row.reenabled ? juce::String("re-enabled, back after the next Scan Now")
-                        : "disabled after a crash" + (row.date.isNotEmpty() ? ", " + row.date
-                                                                             : juce::String());
-                else
-                    why = juce::String("cannot run in this host, ")
-                        + (kEjProcessIsArm ? "Intel only" : "Apple Silicon only");
-                // Greyed row: the name in muted text, the reason dimmer still
-                const int rowW = crash ? w - 100 : w;
-                juce::Rectangle<int> rr(x, ry, rowW, kWithheldRowH);
-                g.setColour(row.reenabled ? C::text2 : C::text3);
-                const int nameW = juce::jmin(rowW / 2,
-                    juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), row.name) + 4);
-                g.drawText(row.name, rr.removeFromLeft(nameW), juce::Justification::centredLeft, true);
-                g.setColour(C::text3.withAlpha(0.75f));
-                g.drawText(why, rr.reduced(8, 0), juce::Justification::centredLeft, true);
-                ry += kWithheldRowH;
+                int ry = gl.itemsY;
+                g.setFont(juce::Font(juce::FontOptions(11.0f)));
+                for (const auto& it : gr.items)
+                {
+                    const int rowW = WithheldGroup::hasReenable(gr.kind) ? w - 100 : w;
+                    juce::Rectangle<int> rr(x + 48, ry, rowW - 48, kWithheldRowH);
+                    juce::String line = it.name;
+                    if (it.vendor.isNotEmpty() && !it.name.containsIgnoreCase(it.vendor)) line << "  " << it.vendor;
+                    if (gr.kind == WithheldGroup::Crash)
+                        line << (it.reenabled ? "  (re-enabled, back after the next Scan Now)"
+                                              : it.date.isNotEmpty() ? "  (" + it.date + ")" : juce::String());
+                    else if (gr.kind == WithheldGroup::TooLarge)
+                        line << (it.reenabled ? "  (re-enabled, back after the next Scan Now)"
+                                              : it.detail.isNotEmpty() ? "  (" + it.detail + ")" : juce::String());
+                    g.setColour(it.reenabled ? C::text2 : C::text3);
+                    g.drawText(line, rr, juce::Justification::centredLeft, true);
+                    ry += kWithheldRowH;
+                }
             }
         }
     }
@@ -18289,24 +18816,23 @@ void EchoJayEditor::resized()
                 const auto wl = withheldSectionLayout(sx, sy, sw);
                 settingsWithheldToggleBtn_.setBounds(wl.toggle);
                 settingsWithheldToggleBtn_.setVisible(!wl.toggle.isEmpty());
-                settingsWithheldToggleBtn_.setButtonText(
-                    settingsWithheldExpanded_ ? "Hide"
-                                              : "Show " + juce::String(settingsWithheld_.size()));
-                int ry = wl.rowsY;
+                settingsWithheldToggleBtn_.setButtonText(settingsWithheldExpanded_ ? "Hide names" : "Show names");
                 size_t bi = 0;
-                for (size_t ri = 0; ri < settingsWithheld_.size(); ++ri)
+                for (size_t gi = 0; gi < settingsWithheldGroups_.size() && gi < wl.groups.size(); ++gi)
                 {
-                    const auto& row = settingsWithheld_[ri];
-                    if (row.reason == ChainHost::WithholdReason::CrashBlacklisted
-                        && bi < settingsReenableBtns_.size())
+                    const auto& gr = settingsWithheldGroups_[gi];
+                    if (!WithheldGroup::hasReenable(gr.kind)) continue;
+                    int ry = wl.groups[gi].itemsY;
+                    for (const auto& it : gr.items)
                     {
+                        if (bi >= settingsReenableBtns_.size()) break;
                         auto& rb = *settingsReenableBtns_[bi++];
-                        rb.setBounds(sx + sw - 92, ry + 2, 92, kWithheldRowH - 4);
+                        rb.setBounds(sx + sw - 92, ry + 1, 92, kWithheldRowH - 2);
                         rb.setVisible(settingsWithheldExpanded_);
-                        rb.setEnabled(!row.reenabled);
-                        rb.setButtonText(row.reenabled ? "Re-enabled" : "Re-enable");
+                        rb.setEnabled(!it.reenabled && it.path.isNotEmpty());
+                        rb.setButtonText(it.reenabled ? "Re-enabled" : "Re-enable");
+                        ry += kWithheldRowH;
                     }
-                    ry += kWithheldRowH;
                 }
                 for (; bi < settingsReenableBtns_.size(); ++bi)
                     settingsReenableBtns_[bi]->setVisible(false);
@@ -18854,7 +19380,7 @@ void EchoJayEditor::timerCallback()
         if (wasScanning)
         {
             // Keep the picker popup's model fresh while a scan streams in.
-            chainListModel->items = ch.getFilteredPlugins({}, chainFormatFilter_);
+            chainListModel->items = ch.getFilteredPlugins({}, chainFormatFilter_, !chainOfferBothBuilds_);
         }
         else
         {
@@ -19115,7 +19641,7 @@ void EchoJayEditor::timerCallback()
                 ch.requestMapPrefetch();
             }
             if (chainListModel)
-                chainListModel->items = ch.getFilteredPlugins({}, chainFormatFilter_);
+                chainListModel->items = ch.getFilteredPlugins({}, chainFormatFilter_, !chainOfferBothBuilds_);
             rebuildSettingsWithheld();
             const juce::String msg = "Rescanned: " + juce::String(n)
                                    + " plugin" + (n == 1 ? "" : "s") + " in the chain list";
@@ -20400,7 +20926,17 @@ void EchoJayEditor::sendBriefAnswers(const juce::String& why)
         juce::String v;
         switch (briefCard_.kinds[i])
         {
-            case BriefCard::Kind::Option: v = briefCard_.answers[i]; ++nOpt; break;
+            case BriefCard::Kind::Option:
+            {
+                // Server resolves by axis id + 1-based option index, not text:
+                // the model words the card, so the label varies every run. idx
+                // is the option's position in the payload as received. Bare
+                // label stays as a fallback (the server still accepts it).
+                const int idx = q.labels.indexOf(briefCard_.answers[i]);
+                v = (idx >= 0 ? juce::String(idx + 1) + ". " : juce::String())
+                  + briefCard_.answers[i];
+                ++nOpt; break;
+            }
             case BriefCard::Kind::Typed:  v = "<typed> " + briefCard_.answers[i]; ++nTyped; break;
             case BriefCard::Kind::Skip:   v = kBriefSkipToken(); ++nSkip; break;
             case BriefCard::Kind::None:   ++nNone; continue;   // dismissed via X: no line
@@ -20454,6 +20990,10 @@ bool EchoJayEditor::briefTakesTypedAnswer(const juce::String& typed)
     return true;
 }
 
+// Defined with the replace-ask family further down; the staleness guard in
+// the build_confirm branch below needs it before that point in the file.
+static juce::String clippedNameList (const juce::StringArray& names, int maxShown);
+
 void EchoJayEditor::onAskChipTapped(int i)
 {
     if (i < 0 || i >= (int) askChipVars.size() || i >= (int) askChipLabels.size()
@@ -20495,7 +21035,10 @@ void EchoJayEditor::onAskChipTapped(int i)
     if (intent == "cmp_anyway" || intent == "cmp_numbers")
     {
         logTap("compare_scope");
-        supersedePendingAsks();     // marks + persists askAnswered
+        // P57, one class over: answering the compare ask voids only cmp_*
+        // asks - a pending brief or model ASK card survives and
+        // re-presents, same rule as the replace answers.
+        supersedePendingAsksByIntent({ "cmp_" });
         askShelfVisible_ = false;
         resized();
         runAICompareWith(compareTop_, compareBot_,
@@ -20539,7 +21082,10 @@ void EchoJayEditor::onAskChipTapped(int i)
         const juce::String tuid = co ? co->getProperty("recall_target_uid").toString() : juce::String();
         const juce::String tnm  = co ? co->getProperty("recall_target_name").toString() : juce::String();
         const int rackNow = processorRef.getChainHost().getNumSlots();
-        supersedePendingAsks();
+        // P57 answer side: scoped like the presenter side. A brief is a
+        // question the model asked the user; answering a replace ask must
+        // not void it.
+        supersedePendingReplaceAsks();
         askShelfVisible_ = false;
         resized();
         EchoJay_NSLog(("EJRecall: replace ask shown=yes rack="
@@ -20552,6 +21098,54 @@ void EchoJayEditor::onAskChipTapped(int i)
         {
             if (tuid.isNotEmpty()) recallLoadChainToLink(tuid, rid, rnm);
             else                   recallLoadChain(rid, rnm);
+        }
+        return;
+    }
+    // The build path's replace confirm (recall_confirm's sibling, 20 Aug
+    // 2026): the model pill ("Yes, build it") is the TRIGGER for this ask,
+    // not the consent. Confirm re-enters loadChainFromJson with
+    // replaceConfirmed=true — the block re-parses fresh, so nothing stale
+    // is captured across the ask.
+    if (intent == "build_confirm" || intent == "build_cancel")
+    {
+        logTap(intent);
+        const auto cj = askChipVars[(size_t) i].getProperty("build_chain_json",
+                                                            juce::var()).toString();
+        const int rackNow = processorRef.getChainHost().getNumSlots();
+        // P57 answer side: scoped like the presenter side. A brief is a
+        // question the model asked the user; answering a replace ask must
+        // not void it.
+        supersedePendingReplaceAsks();
+        askShelfVisible_ = false;
+        resized();
+        EchoJay_NSLog(("EJBuild: [build-ask] rack=" + juce::String(rackNow)
+                       + " answer="
+                       + (intent == "build_confirm" ? "replace" : "cancel")).toRawUTF8());
+        if (intent == "build_confirm" && cj.isNotEmpty())
+        {
+            // STALENESS GUARD: the question's "Replaces:" clause was
+            // composed when the ask was raised, and the rack can have
+            // changed since (the ask survives editor recreates). A consent
+            // that named a different rack does not build — it logs the
+            // mismatch and re-asks with the live names, superseding this
+            // ask through the one presenter.
+            const auto asked = askChipVars[(size_t) i]
+                                   .getProperty("build_rack_names", juce::var()).toString();
+            juce::StringArray nowNames;
+            for (const auto& si : processorRef.getChainHost().getAllSlotInfos())
+                if (si.name.isNotEmpty()) nowNames.add(si.name);
+            if (nowNames.joinIntoString("\n") != asked)
+            {
+                juce::StringArray askedArr;
+                askedArr.addLines(asked);
+                EchoJay_NSLog(("EJBuild: [build-ask] STALE rack - asked \""
+                               + clippedNameList(askedArr, 4) + "\", now \""
+                               + clippedNameList(nowNames, 4)
+                               + "\" - re-asking with the live names").toRawUTF8());
+                presentBuildReplaceAsk(cj);
+                return;
+            }
+            loadChainFromJson(cj, /*replaceConfirmed*/ true);
         }
         return;
     }
@@ -20578,7 +21172,7 @@ void EchoJayEditor::onAskChipTapped(int i)
         // confirmation follows only if THIS rack is non-empty, the
         // same rule the direct recall path applies.
         pendingRecallMismatchAsk_ = false;   // answered, not dismissed
-        supersedePendingAsks();
+        supersedePendingReplaceAsks();       // P57: a pending brief survives
         askShelfVisible_ = false;
         resized();
         const int rackNow = processorRef.getChainHost().getNumSlots();
@@ -20599,7 +21193,7 @@ void EchoJayEditor::onAskChipTapped(int i)
         if (rid.isNotEmpty())
         {
             logTap("recall_id");
-            supersedePendingAsks();
+            supersedePendingReplaceAsks();   // P57: a pending brief survives
             askShelfVisible_ = false;
             resized();
             handleChainRecall(rid, askChipLabels[(size_t) i]);
@@ -20857,12 +21451,14 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
         // proof and the display disagreement must not vanish into the
         // applied count.
         if (!di.unconfirmed.isEmpty())
-            logDialMiss(di.name, di.fp, "stale_display_kept", di.unconfirmed);
+            logDialMiss(di.name, di.fp, "stale_display_kept", di.unconfirmed,
+                        di.format, di.uid, di.requestedCount, di.requestedSource);
         // Range refusals are recorded whatever the slot status: the bubble
         // must never say "use the values on its card" about a value the
         // card says will not map onto this version.
         if (!di.outOfRange.isEmpty())
-            logDialMiss(di.name, di.fp, "out_of_range", di.outOfRange);
+            logDialMiss(di.name, di.fp, "out_of_range", di.outOfRange,
+                        di.format, di.uid, di.requestedCount, di.requestedSource);
         switch (di.status)
         {
             case ChainHost::DialStatus::applied:
@@ -20870,9 +21466,11 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                 break;
             case ChainHost::DialStatus::partial:
                 partialParts.push_back({ di.name, di.manual, di.outOfRange });
-                logDialMiss(di.name, di.fp, "partial", di.manual);
+                logDialMiss(di.name, di.fp, "partial", di.manual,
+                            di.format, di.uid, di.requestedCount, di.requestedSource);
                 if (!di.readbackMiss.isEmpty())
-                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
+                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
+                                di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
             case ChainHost::DialStatus::noMap:
                 // Stale-map ladder, unmapped rung: the plugin loaded at a
@@ -20882,11 +21480,13 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                 if (di.staleIndexedFp.isNotEmpty())
                 {
                     staleParts.add(di.name);
-                    logDialMiss(di.name, di.fp, "stale_unmapped", di.manual);
+                    logDialMiss(di.name, di.fp, "stale_unmapped", di.manual,
+                                di.format, di.uid, di.requestedCount, di.requestedSource);
                     break;
                 }
                 zeroParts.add(di.name);
-                logDialMiss(di.name, di.fp, "no_map", di.manual);
+                logDialMiss(di.name, di.fp, "no_map", di.manual,
+                            di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
             case ChainHost::DialStatus::unusableMap:
                 if (!di.outOfRange.isEmpty())
@@ -20898,14 +21498,16 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                 zeroParts.add(di.name);
                 logDialMiss(di.name, di.fp, "unusable_map", di.manual);
                 if (!di.readbackMiss.isEmpty())
-                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
+                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
+                                di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
             case ChainHost::DialStatus::pending:
                 // Fetch never answered inside the cap: NEVER fall through to
                 // the model's success line - conservative wording, and the
                 // late apply (if it lands) updates the slot card anyway.
                 zeroParts.add(di.name);
-                logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual);
+                logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual,
+                            di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
             case ChainHost::DialStatus::none:
                 break;
@@ -20949,8 +21551,8 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
             if (!p.oor.isEmpty())
                 bubble += " " + p.oor.joinIntoString(" and ")
                         + (p.oor.size() == 1
-                               ? " asked a value outside this version's range - treat its card value as intent, not a number."
-                               : " asked values outside this version's range - treat their card values as intent, not numbers.");
+                               ? " asked a value outside its mapped range - the card names the range; treat the value as intent, not a number."
+                               : " asked values outside their mapped ranges - the card names the ranges; treat the values as intent, not numbers.");
         }
         if (!zeroParts.isEmpty())
         {
@@ -20960,7 +21562,7 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                            : " need hand-dialing - use the values on their cards.");
         }
         for (const auto& z : zeroOorParts)
-            bubble += " " + z.name + " asked values outside this version's range ("
+            bubble += " " + z.name + " asked values outside their mapped ranges ("
                     + z.oor.joinIntoString(", ")
                     + ") - nothing was dialled; treat its card values as intent rather than numbers.";
         if (!staleParts.isEmpty())
@@ -21033,6 +21635,33 @@ void EchoJayEditor::composeStaleAltFollowUp(const juce::StringArray& staleNames,
 // built it, and reporting those would claim work this edit never did. Two
 // same-named slots are indistinguishable at this level - a name-level
 // approximation, accepted.
+// dial-3 (A7.2, "keys" source): requested-entry count of one edit op's
+// settings_structured — top-level flat keys, plus entries of "controls",
+// plus "bands" elements: the same granularity applySettings reports one
+// result per. Used for refine_dropped rows, whose names are removed
+// SERVER-side and never reach the client apply's report.size().
+static int structuredRequestCount (const juce::var& structured)
+{
+    auto* o = structured.getDynamicObject();
+    if (o == nullptr) return 0;
+    int n = 0;
+    for (auto& kv : o->getProperties())
+    {
+        const auto k = kv.name.toString();
+        if (k == "controls")
+        {
+            if (auto* co = kv.value.getDynamicObject()) n += co->getProperties().size();
+        }
+        else if (k == "bands")
+        {
+            if (auto* ba = kv.value.getArray()) n += ba->size();
+        }
+        else
+            ++n;
+    }
+    return n;
+}
+
 void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson,
                                                     int attemptsLeft)
 {
@@ -21080,18 +21709,38 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
             if ((opName == "add" || opName == "replace") && !carries)
                 undialledNames.addIfNotAlreadyThere(plug);
             if (opName == "set" && !carries)
+                // NOT a client defect when this fires on a dialable plugin
+                // (Kathy's "attack 7, release 7", 20 Aug 2026): exposure on
+                // edit paths is scoped server-side to plugins the TYPED text
+                // names (userNamedMappedPlugins), so an unnamed racked slot
+                // gets no [CONTROLS] line and the model must not invent
+                // names — and the ten dual maps would have dialled flat.
+                // Known pessimism, owned by dial-4: see
+                // HANDOVER/CONTRACT_racked_slot_controls.md §0a and §2.2a
+                // before filing this as a bug here.
                 proseOnlySetNames.addIfNotAlreadyThere(plug);
             // Server-refused controls that rode the block back (ops that
             // went through Apply; receipt-consumed ops report their own).
             if (auto* dc = opv.getProperty("dropped_controls", juce::var()).getArray())
+            {
+                // dial-3 (A7.2): refine-dropped names never reach the client
+                // apply, so the denominator is the op's requested-entry
+                // count, source "keys". No slot identity here on purpose:
+                // slot indices may have shifted by the time this runs, and a
+                // wrong uid is worse than an empty one (the server counts
+                // format||name and flags it, per A2).
+                const int reqCount = structuredRequestCount(
+                    opv.getProperty("settings_structured", juce::var()));
                 for (auto& dv : *dc)
                     if (auto* dobj = dv.getDynamicObject())
                     {
                         serverDropped.add(dobj->getProperty("name").toString()
                             + " on " + plug + " (" + dobj->getProperty("reason").toString() + ")");
                         logDialMiss(plug, juce::String(), "refine_dropped",
-                                    { dobj->getProperty("name").toString() });
+                                    { dobj->getProperty("name").toString() },
+                                    juce::String(), juce::String(), reqCount, "keys");
                     }
+            }
         }
 
     juce::StringArray appliedNames, zeroParts, staleParts;
@@ -21101,9 +21750,11 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
     {
         if (!touchedNames.contains(di.name)) continue;
         if (!di.unconfirmed.isEmpty())   // bridged report-only: same record as the build path
-            logDialMiss(di.name, di.fp, "stale_display_kept", di.unconfirmed);
+            logDialMiss(di.name, di.fp, "stale_display_kept", di.unconfirmed,
+                        di.format, di.uid, di.requestedCount, di.requestedSource);
         if (!di.outOfRange.isEmpty())    // range refusals: same record as the build path
-            logDialMiss(di.name, di.fp, "out_of_range", di.outOfRange);
+            logDialMiss(di.name, di.fp, "out_of_range", di.outOfRange,
+                        di.format, di.uid, di.requestedCount, di.requestedSource);
         switch (di.status)
         {
             case ChainHost::DialStatus::applied:
@@ -21111,9 +21762,11 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 break;
             case ChainHost::DialStatus::partial:
                 partialParts.push_back({ di.name, di.manual, di.outOfRange });
-                logDialMiss(di.name, di.fp, "partial", di.manual);
+                logDialMiss(di.name, di.fp, "partial", di.manual,
+                            di.format, di.uid, di.requestedCount, di.requestedSource);
                 if (!di.readbackMiss.isEmpty())
-                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
+                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
+                                di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
             case ChainHost::DialStatus::noMap:
                 // Stale-map ladder, unmapped rung: same diversion as the
@@ -21121,11 +21774,13 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 if (di.staleIndexedFp.isNotEmpty())
                 {
                     staleParts.add(di.name);
-                    logDialMiss(di.name, di.fp, "stale_unmapped", di.manual);
+                    logDialMiss(di.name, di.fp, "stale_unmapped", di.manual,
+                                di.format, di.uid, di.requestedCount, di.requestedSource);
                     break;
                 }
                 zeroParts.add(di.name);
-                logDialMiss(di.name, di.fp, "no_map", di.manual);
+                logDialMiss(di.name, di.fp, "no_map", di.manual,
+                            di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
             case ChainHost::DialStatus::unusableMap:
                 if (!di.outOfRange.isEmpty())
@@ -21137,14 +21792,16 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 zeroParts.add(di.name);
                 logDialMiss(di.name, di.fp, "unusable_map", di.manual);
                 if (!di.readbackMiss.isEmpty())
-                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
+                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
+                                di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
             case ChainHost::DialStatus::pending:
                 // Fetch never answered inside the cap: NEVER fall through
                 // to the model's success line - conservative wording, and a
                 // late apply (if it lands) updates the slot card anyway.
                 zeroParts.add(di.name);
-                logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual);
+                logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual,
+                            di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
             case ChainHost::DialStatus::none:
                 // Touched and carried settings, yet nothing structured
@@ -21192,8 +21849,8 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
             if (!p.oor.isEmpty())
                 bubble += " " + p.oor.joinIntoString(" and ")
                         + (p.oor.size() == 1
-                               ? " asked a value outside this version's range - treat its card value as intent, not a number."
-                               : " asked values outside this version's range - treat their card values as intent, not numbers.");
+                               ? " asked a value outside its mapped range - the card names the range; treat the value as intent, not a number."
+                               : " asked values outside their mapped ranges - the card names the ranges; treat the values as intent, not numbers.");
         }
         if (!zeroParts.isEmpty())
         {
@@ -21206,7 +21863,7 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
         for (const auto& z : zeroOorParts)
         {
             bubble += (bubble.isEmpty() ? juce::String() : juce::String(" "));
-            bubble += z.name + " asked values outside this version's range ("
+            bubble += z.name + " asked values outside their mapped ranges ("
                     + z.oor.joinIntoString(", ")
                     + ") - nothing was dialled; treat its card values as intent rather than numbers.";
         }
@@ -21227,7 +21884,10 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 + (one ? " is in - dial it in by hand with the values on its card."
                        : " are in - dial them in by hand with the values on their cards.");
         for (auto& an : undialledNames)
-            logDialMiss(an, juce::String(), "edit_add_no_dial", {});
+            logDialMiss(an, juce::String(), "edit_add_no_dial", {},
+                        // A7.1 slotless: never loaded, no identity, requested 0;
+                        // the reader reports these on their own line, never in a rate.
+                        juce::String(), juce::String(), 0, juce::String());
     }
     if (!proseOnlySetNames.isEmpty())
     {
@@ -21238,7 +21898,8 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 + " - dial in the values on " + (one ? juce::String("its card by hand.")
                                                      : juce::String("their cards by hand."));
         for (auto& an : proseOnlySetNames)
-            logDialMiss(an, juce::String(), "edit_set_no_dial", {});
+            logDialMiss(an, juce::String(), "edit_set_no_dial", {},
+                        juce::String(), juce::String(), 0, juce::String());   // A7.1 slotless
     }
     if (!serverDropped.isEmpty())
     {
@@ -21348,22 +22009,28 @@ void EchoJayEditor::logDialMissesWhenSettled(int attemptsLeft)
     for (const auto& di : ch.getDialInfos())
     {
         if (di.status == ChainHost::DialStatus::noMap)
-            logDialMiss(di.name, di.fp, "no_map", di.manual);
+            logDialMiss(di.name, di.fp, "no_map", di.manual,
+                            di.format, di.uid, di.requestedCount, di.requestedSource);
         else if (di.status == ChainHost::DialStatus::unusableMap)
             logDialMiss(di.name, di.fp, "unusable_map", di.manual);
         else if (di.status == ChainHost::DialStatus::partial)
-            logDialMiss(di.name, di.fp, "partial", di.manual);
+            logDialMiss(di.name, di.fp, "partial", di.manual,
+                            di.format, di.uid, di.requestedCount, di.requestedSource);
         else if (di.status == ChainHost::DialStatus::pending)
-            logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual);
+            logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual,
+                            di.format, di.uid, di.requestedCount, di.requestedSource);
         if ((di.status == ChainHost::DialStatus::partial
              || di.status == ChainHost::DialStatus::unusableMap)
             && !di.readbackMiss.isEmpty())
-            logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss);
+            logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
+                                di.format, di.uid, di.requestedCount, di.requestedSource);
     }
 }
 
 void EchoJayEditor::logDialMiss(const juce::String& plugin, const juce::String& fp,
-                                const juce::String& reason, const juce::StringArray& manual)
+                                const juce::String& reason, const juce::StringArray& manual,
+                                const juce::String& format, const juce::String& uid,
+                                int requested, const juce::String& requestedSource)
 {
     // events.jsonl schema v1 (EchoJayEventLog.h): upload-ready field names.
     auto* f = new juce::DynamicObject();
@@ -21376,10 +22043,92 @@ void EchoJayEditor::logDialMiss(const juce::String& plugin, const juce::String& 
         for (auto& m2 : manual) arr.add(m2);
         f->setProperty("manual", arr);
     }
+    // dial-3 (A2/A7.2): key halves + denominator. "requested" present is
+    // the NEW-shape marker the batch builder ships on; absent rows are
+    // pre-contract history and are never retro-shipped (A2).
+    if (format.isNotEmpty())          f->setProperty("format", format);
+    if (uid.isNotEmpty())             f->setProperty("uid", uid);
+    if (requested >= 0)               f->setProperty("requested", requested);
+    if (requestedSource.isNotEmpty()) f->setProperty("requested_source", requestedSource);
     f->setProperty("turn_type", api.getLastResolvedTurnType());
     f->setProperty("auto_dial", api.getAutoDialMode());
     f->setProperty("app_version", juce::String(ProjectInfo::versionString));
     echojay::logClientEvent("dial_miss", juce::var(f));
+}
+
+// dial-3 watermark (A7.3): rows ship by timestamp, never byte offset — the
+// 1 MB rotation drops the oldest half and rewrites events.jsonl in place,
+// so an offset bookmark is invalidated by design.
+static juce::File dialDeclineWatermarkFile()
+{
+    return echojay::eventLogDir().getChildFile("dial_declines_watermark.txt");
+}
+
+juce::String EchoJayEditor::buildDialDeclinesBatchJson()
+{
+    pendingDeclineWatermark_ = -1;
+    const juce::int64 wm = dialDeclineWatermarkFile().loadFileAsString().trim().getLargeIntValue();
+    auto f = echojay::eventLogDir().getChildFile("events.jsonl");
+    if (! f.existsAsFile()) return {};
+
+    juce::StringArray lines;
+    lines.addLines(f.loadFileAsString());
+    juce::Array<juce::var> rows;   // file order == t ascending (append-only)
+    for (auto& ln : lines)
+    {
+        if (ln.trim().isEmpty()) continue;
+        auto ev = juce::JSON::parse(ln);
+        auto* eo = ev.getDynamicObject();
+        if (eo == nullptr) continue;
+        if (eo->getProperty("event").toString() != "dial_miss") continue;
+        const auto t = (juce::int64) (double) eo->getProperty("t");
+        if (t <= wm) continue;
+        // A2: rows without "requested" are pre-contract shape — skipped,
+        // never retro-shipped. The counter starts at this client.
+        if (! eo->hasProperty("requested")) continue;
+        // One wire row per declined NAME (A1); an event with no names
+        // (slotless reasons, A7.1) ships one row with name "".
+        auto addRow = [&rows, eo, t] (const juce::String& name)
+        {
+            auto* r = new juce::DynamicObject();
+            r->setProperty("name",   name);
+            r->setProperty("reason", eo->getProperty("reason"));
+            r->setProperty("format", eo->getProperty("format").toString());
+            r->setProperty("uid",    eo->getProperty("uid").toString());
+            if (const auto fpv = eo->getProperty("fp").toString(); fpv.isNotEmpty())
+                r->setProperty("fp", fpv);
+            r->setProperty("plugin", eo->getProperty("plugin"));
+            r->setProperty("requested", eo->getProperty("requested"));
+            r->setProperty("requestedSource", eo->getProperty("requested_source").toString());
+            r->setProperty("t", (double) t);
+            rows.add(juce::var(r));
+        };
+        auto* ma = eo->getProperty("manual").getArray();
+        if (ma != nullptr && ! ma->isEmpty())
+            for (auto& m : *ma) addRow(m.toString());
+        else
+            addRow({});
+    }
+    if (rows.isEmpty()) return {};
+
+    // A7.3 caps: backlog 256 — the OLDEST are dropped and COUNTED (the
+    // shipped rows' max t then moves the watermark past them, so a drop is
+    // permanent, never a silent re-queue). Per-turn 32, oldest first; the
+    // remainder stays above the watermark and rides the next turn.
+    int dropped = 0;
+    while (rows.size() > 256) { rows.remove(0); ++dropped; }
+    juce::Array<juce::var> ship;
+    for (int i = 0; i < rows.size() && i < 32; ++i) ship.add(rows.getReference(i));
+    juce::int64 maxT = -1;
+    for (auto& r : ship)
+        maxT = juce::jmax(maxT, (juce::int64) (double) r.getProperty("t", juce::var()));
+    pendingDeclineWatermark_ = maxT;
+
+    auto* env = new juce::DynamicObject();
+    env->setProperty("batch", juce::Uuid().toDashedString());  // A7.3: random per batch, dedupe key, deliberately NOT machine_id
+    env->setProperty("rows", juce::var(ship));
+    env->setProperty("dropped", dropped);
+    return juce::JSON::toString(juce::var(env), true);
 }
 
 
@@ -21782,34 +22531,59 @@ void EchoJayEditor::composeSkippedAltFollowUp(const juce::StringArray& intendedN
 {
     altPromptOut.clear();
     altLabelOut.clear();
-    juce::StringArray failedNames, failedSpots, plainNames;
+
+    // intendedNames IS the designed order: every slot the build intended, in
+    // order, survivors and failures alike. The rack now holds only the
+    // survivors, renumbered, so anchoring a replacement by its old slot
+    // number is meaningless. That was the bug: several interior failures all
+    // collapsed onto the one surviving plugin before them, and the survivors
+    // that came AFTER them were never named, so a reverb designed last could
+    // land mid chain. Name each failure's designed position by BOTH surviving
+    // neighbours, and hand the model the whole designed order so it rebuilds
+    // that sequence instead of appending to what survived.
+    juce::StringArray failedNames, failedSpots, plainNames, orderParts;
     for (int i = 0; i < intendedNames.size(); ++i)
-        if (skippedPlain.contains(intendedNames[i]))
-        {
-            failedNames.add("\"" + intendedNames[i] + "\"");
-            plainNames.add(intendedNames[i]);
-            juce::String anchor = "at the start of the chain";
-            for (int pj = i - 1; pj >= 0; --pj)
-                if (!skippedPlain.contains(intendedNames[pj]))
-                {
-                    anchor = "right after \"" + intendedNames[pj] + "\"";
-                    break;
-                }
-            failedSpots.add("add a replacement for \""
-                + intendedNames[i] + "\" " + anchor);
-        }
+    {
+        const bool failed = skippedPlain.contains(intendedNames[i]);
+        orderParts.add(juce::String(i + 1) + ". \"" + intendedNames[i] + "\""
+                       + (failed ? " (FAILED, needs a replacement)"
+                                 : " (loaded, still in the rack)"));
+        if (!failed) continue;
+
+        failedNames.add("\"" + intendedNames[i] + "\"");
+        plainNames.add(intendedNames[i]);
+
+        juce::String prev, next;
+        for (int pj = i - 1; pj >= 0; --pj)
+            if (!skippedPlain.contains(intendedNames[pj])) { prev = intendedNames[pj]; break; }
+        for (int nj = i + 1; nj < intendedNames.size(); ++nj)
+            if (!skippedPlain.contains(intendedNames[nj])) { next = intendedNames[nj]; break; }
+
+        juce::String spot;
+        if (prev.isNotEmpty() && next.isNotEmpty())
+            spot = "between \"" + prev + "\" and \"" + next + "\"";
+        else if (prev.isNotEmpty())
+            spot = "after \"" + prev + "\", at the end";
+        else if (next.isNotEmpty())
+            spot = "before \"" + next + "\", at the start";
+        else
+            spot = "as the only plugin";
+        failedSpots.add("a replacement for \"" + intendedNames[i] + "\" " + spot);
+    }
     if (failedNames.isEmpty()) return;
-    altPromptOut = (failedNames.size() == 1
-                      ? "This plugin" : "These plugins")
+
+    altPromptOut = (failedNames.size() == 1 ? "This plugin" : "These plugins")
         + causeClause
         + failedNames.joinIntoString(", ")
-        + ". Do NOT propose them again. Suggest a DIFFERENT "
-          "plugin for each: "
+        + ". Do NOT propose them again. The chain was DESIGNED in this order: "
+        + orderParts.joinIntoString("; ")
+        + ". The plugins that loaded are still in my rack in that relative "
+          "order. Suggest a DIFFERENT plugin for each failed one and place "
+          "each so the finished chain keeps the designed order: "
         + failedSpots.joinIntoString("; ")
-        + ". Place them using my CURRENT CHAIN exactly as it "
-          "is NOW (the failed plugins never loaded, so earlier "
-          "numbering does not apply). Propose them together as "
-          "ONE chain edit.";
+        + ". Anchor every placement to the surviving plugins by name, not by "
+          "slot number, and do not move the plugins that loaded. Propose them "
+          "together as ONE chain edit against my current chain.";
     altLabelOut = (plainNames.size() == 1 ? "Find a replacement for "
                                           : "Find replacements for ")
                   + plainNames.joinIntoString(", ");
@@ -21834,17 +22608,42 @@ void EchoJayEditor::buildEditAltFollowUp(const juce::StringArray& results,
             plainNames.add(fop.name);
             // Name-anchored intent, never numeric positions: sibling ops in
             // this batch may have applied, so the original numbering is
-            // already stale here too.
+            // already stale here too. There is no designed order on the edit
+            // path; the op's own anchor IS the intent. A replace targets its
+            // slot by identity; an add targets the surviving baseSlot it goes
+            // after. Both-neighbour anchoring restates that anchor plus the
+            // next surviving slot, so the insertion is pinned between two live
+            // names, without inventing an order the request did not specify.
             if (fop.op == "replace" && fop.slot >= 0
                 && fop.slot < baseSlots.size())
                 failedChanges.add("replace \"" + baseSlots[fop.slot]
                     + "\" (still in the chain) with something else");
-            else if (fop.after >= 0 && fop.after < baseSlots.size())
-                failedChanges.add("add a replacement for \"" + fop.name
-                    + "\" right after \"" + baseSlots[fop.after] + "\"");
             else
+            {
+                const int after = fop.after;
+                juce::String prev, next;
+                if (after >= baseSlots.size() && !baseSlots.isEmpty())
+                    prev = baseSlots[baseSlots.size() - 1];              // append at end
+                else if (after >= 0 && after < baseSlots.size())
+                {
+                    prev = baseSlots[after];
+                    if (after + 1 < baseSlots.size()) next = baseSlots[after + 1];
+                }
+                else                                                     // insert first
+                    next = baseSlots.isEmpty() ? juce::String() : baseSlots[0];
+
+                juce::String spot;
+                if (prev.isNotEmpty() && next.isNotEmpty())
+                    spot = "between \"" + prev + "\" and \"" + next + "\"";
+                else if (prev.isNotEmpty())
+                    spot = "after \"" + prev + "\", at the end";
+                else if (next.isNotEmpty())
+                    spot = "before \"" + next + "\", at the start";
+                else
+                    spot = "as the only plugin";
                 failedChanges.add("add a replacement for \"" + fop.name
-                    + "\" at the start of the chain");
+                    + "\" " + spot);
+            }
         }
     if (failedNames.isEmpty()) return;
     altPromptOut = (failedNames.size() == 1
@@ -22559,6 +23358,97 @@ void EchoJayEditor::supersedePendingAsks()
     if (any) workspace.requestMutationSync();
 }
 
+// The prefix core (P57): marks answered ONLY asks whose chips carry an
+// intent starting with one of the given prefixes. Every client-authored ask
+// class has its own prefix vocabulary (recall_*, build_*, cmp_*) and
+// model-authored asks carry none of them, so a pending brief or model ASK
+// card always survives a scoped supersede.
+void EchoJayEditor::supersedePendingAsksByIntent(std::initializer_list<const char*> prefixes)
+{
+    bool any = false;
+    for (auto& m : chatMessages)
+    {
+        if (m.role != "assistant" || m.askData.isEmpty() || m.askAnswered) continue;
+        bool inClass = false;
+        auto v = juce::JSON::parse(m.askData);   // held: getDynamicObject() must not outlive the var
+        if (auto* o = v.getDynamicObject())
+            if (auto* cs = o->getProperty("choices").getArray())
+                for (auto& cv : *cs)
+                {
+                    const auto in = cv.getProperty("intent", juce::var()).toString();
+                    for (auto* p : prefixes)
+                        if (in.startsWith(p)) { inClass = true; break; }
+                    if (inClass) break;
+                }
+        if (! inClass) continue;
+        m.askAnswered = true;
+        workspace.markAskAnswered(currentChatId, m.content);
+        any = true;
+    }
+    if (any) workspace.requestMutationSync();
+}
+
+void EchoJayEditor::supersedePendingReplaceAsks()
+{
+    // Replace-class only: recall_* (recall_confirm / recall_cancel /
+    // recall_here / recall_switch) and build_* (build_confirm /
+    // build_cancel). The mismatch flag belongs to this class.
+    if (pendingRecallMismatchAsk_)
+    {
+        pendingRecallMismatchAsk_ = false;
+        EchoJay_NSLog("EJRecall: mismatch ask dismissed without choosing (superseded by new replace ask)");
+    }
+    supersedePendingAsksByIntent({ "recall_", "build_" });
+}
+
+// THE ONE presenter for replace-class asks. Build and recall each compose
+// their own question and chips; everything mechanical — the chains-list
+// flip, the supersede, the append + persist, the log, the relayout — has
+// one author here, because the build box and the recall ask saying the same
+// thing in two implementations is what produced the count-not-names defect
+// and the invisible-ask defect in one week.
+void EchoJayEditor::presentReplaceAsk(const juce::String& question,
+                                      const juce::Array<juce::var>& choices,
+                                      const juce::String& flipContext,
+                                      const juce::String& shownLog)
+{
+    // The ask renders on the CONVERSATION surface; a trigger arriving with
+    // the Chains list showing would lay the chips out and have them hidden
+    // by the chains-mode block (the invisible-ask defect, 20 Aug 2026).
+    // Flip THROUGH THE EXISTING SETTER (it runs resized()+repaint() itself
+    // and clears nothing). Prefix and shape of the [ask-flip] line are the
+    // SHIPPED search contract — keep them byte-stable.
+    if (chainSidebarInChainsMode())
+    {
+        EchoJay_NSLog(("EJRecall: [ask-flip] chains list -> AI mode to show"
+                       " the replace ask (" + flipContext + ")").toRawUTF8());
+        setChainSidebarMode(false);
+    }
+    // A second trigger REPLACES the pending replace ask instead of stacking
+    // a twin; scoped, so a pending model brief or compare ask survives.
+    supersedePendingReplaceAsks();
+
+    auto* root = new juce::DynamicObject();
+    root->setProperty("question", question);
+    root->setProperty("choices", choices);
+    const juce::String askJson = juce::JSON::toString(juce::var(root), true);
+
+    ChatMsg cm;
+    cm.role    = "assistant";
+    cm.content = question;
+    cm.askData = askJson;
+    chatMessages.push_back(cm);
+    processorRef.chatHistory.push_back({ "assistant", question });
+    // Persist so the pending ask survives an editor recreate, exactly like
+    // the compare-scope ask.
+    if (currentChatId.isNotEmpty())
+        workspace.appendMessageToChat(currentChatId, "assistant", question,
+                                      {}, {}, {}, askJson, {});
+    EchoJay_NSLog(shownLog.toRawUTF8());
+    resized();
+    repaint();
+}
+
 LinkShm::RackSidecar EchoJayEditor::readLinkRackSidecar(const juce::String& uid) const
 {
     int err = 0;
@@ -22680,6 +23570,40 @@ bool EchoJayEditor::runChainGuidanceSelfTest()
     return ok;
 }
 
+void EchoJayEditor::maybeRefreshExistenceDialable(ChainHost& ch)
+{
+    // The existence index is a server query and needs a session; without one it
+    // 401s. Skip, and the feed stays the full list.
+    if (! api.isLoggedIn()) return;
+    if (existenceQueryInFlight_) return;
+
+    const auto refs = ch.recommendableIdentityRefs();
+    if (refs.empty()) return;
+
+    // Signature only changes when the recommendable identity set changes, i.e.
+    // once per scan. It is latched when a query for that set COMPLETES, success
+    // or failure, so a persistent non-200 re-asks once per scan, not per turn.
+    juce::String sig; sig << (int) refs.size();
+    for (const auto& r : refs) sig << ":" << r.ik;
+    if (sig == existenceKeysSig_) return;
+
+    existenceQueryInFlight_ = true;
+    // The callback fires on the message thread. ch (owned by the processor)
+    // outlives this editor; the editor may not, so its members are touched only
+    // behind a SafePointer.
+    juce::Component::SafePointer<EchoJayEditor> safe (this);
+    api.fetchDialableIdentities (refs,
+        [safe, sig, &ch] (bool ok, std::set<juce::String> dialable)
+        {
+            if (ok) ch.setExistenceDialable (std::move (dialable));
+            if (auto* self = safe.getComponent())
+            {
+                self->existenceQueryInFlight_ = false;
+                self->existenceKeysSig_ = sig;   // latch on completion, ok or 404
+            }
+        });
+}
+
 juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg,
                                                     bool alwaysAttach,
                                                     bool* hadChainFeedOut,
@@ -22691,7 +23615,50 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
     juce::String out;
     bool hadFeed = false;
     auto& chainHost = processorRef.getChainHost();
-    juce::StringArray recommendable = chainHost.getRecommendableNames();
+
+    // Feed split (P16), behind a runtime kill switch (feed_split_on.txt, absent
+    // by default). OFF => today's full undifferentiated list and NO existence
+    // query fires, so the network is not touched at all. ON => fire the query
+    // once per scan (async, signature-gated, never blocking this turn) and
+    // build the feed from the DIALABLE subset once the index has answered.
+    juce::StringArray recommendable;
+    if (! chainHost.feedSplitEnabled())
+    {
+        recommendable = chainHost.getRecommendableNames();
+    }
+    else
+    {
+        maybeRefreshExistenceDialable(chainHost);
+        if (chainHost.existenceQueried())
+        {
+            recommendable = chainHost.getDialableRecommendableNames();
+            if (recommendable.isEmpty())
+            {
+                // HARDENING 3: guard the zero. A clean answer that resolves a
+                // non-empty catalogue to zero dialable is far more likely a
+                // parse fault than the truth, so keep the full list. Built-ins
+                // are the right feed only when the machine genuinely has nothing
+                // recommendable, not when hundreds suddenly resolve to none.
+                const auto full = chainHost.getRecommendableNames();
+                if (! full.isEmpty())
+                {
+                    EchoJay_NSLog(("EJFeed: existence index resolved "
+                                   + juce::String(chainHost.recommendableCount())
+                                   + " recommendable to ZERO dialable -- suspect a parse "
+                                     "fault, keeping the full list").toRawUTF8());
+                    recommendable = full;
+                }
+                else
+                {
+                    recommendable = ChainHost::builtinDeviceNames();
+                }
+            }
+        }
+        else
+        {
+            recommendable = chainHost.getRecommendableNames();
+        }
+    }
     // targetLinkUid -> always relevant (ITEM 6, ASK-tap ordering): guarantees
     // a server-CUT plugin marker precedes the [TARGET CHANNEL] declaration,
     // so userTypedPortion truncates to msg and the end-anchored tap tail
@@ -22901,14 +23868,29 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
             // "[CURRENT RACK" collides with nothing in the api tree.
             // Stripped from history via historyStripMarkers(), same as its
             // non-empty sibling.
+            // P61: no longer reserves "from scratch" for the empty case -
+            // a build over a POPULATED rack is also from scratch (the rack
+            // is cleared first), and the old contrast taught the opposite.
             out += "\n\n[CURRENT RACK EMPTY - the user's rack has NO plugins"
                    " loaded right now. This is a positive statement of"
                    " emptiness, not missing data: no chain exists to edit or"
                    " reference (a recall or build may have loaded nothing,"
-                   " whatever was discussed earlier), so treat any chain"
-                   " request as building from scratch and never propose"
-                   " edit ops against slots you believe are loaded.]";
+                   " whatever was discussed earlier), so a chain request"
+                   " starts from nothing here - exactly as a build does on"
+                   " ANY rack, since building always clears the rack first -"
+                   " and never propose edit ops against slots you believe"
+                   " are loaded.]";
             EchoJay_NSLog("EJChat: CURRENT RACK EMPTY declaration attached (0 slots)");
+        }
+        // [CHAIN LEVELS]: the chain input (and output) running level, on the
+        // same arm as the rack block, empty rack included (a build on an
+        // empty rack needs the input level most). Per-slot figures ride
+        // inside the [CURRENT CHAIN] slot lines above.
+        {
+            const juce::String lv = EchoJayAPI::buildChainLevelsInjection(chainHost);
+            out += lv;
+            EchoJay_NSLog(("EJLevels: CHAIN LEVELS marker attached, " + juce::String(lv.length())
+                           + " chars: " + lv.substring(0, 160).replace("\n", " ")).toRawUTF8());
         }
     }
 
@@ -23048,8 +24030,6 @@ void EchoJayEditor::handleChainRecall(const juce::String& id, const juce::String
     for (const auto& r : refs)
         if (r.id == id) { known = true; resolvedName = r.name; break; }
 
-    const int rackSlots = processorRef.getChainHost().getNumSlots();
-
     // ---- channel-mismatch advisory (15 Aug 2026) ----------------------
     // Consumed HERE, whatever happens next: the held text describes this
     // recall and must not leak into a later one. When it is present and a
@@ -23086,29 +24066,50 @@ void EchoJayEditor::handleChainRecall(const juce::String& id, const juce::String
         EchoJay_NSLog("EJRecall: mismatch advisory dropped - recall id refused,"
                       " nothing will load");
 
-    switch (EJRecall::decide(known, rackSlots))
+    if (! known)
     {
-        case EJRecall::Decision::Refuse:
-            EchoJay_NSLog(("EJRecall: resolved=no reason=id-not-in-local-list"
-                           " source=" + source).toRawUTF8());
-            appendLocalResultBubble(
-                (name.isNotEmpty() ? "\"" + name + "\"" : juce::String("That chain"))
-                + " isn't in your saved chains list, so nothing was loaded."
-                  " Open the Chains sidebar to see what is saved.");
-            return;
-
-        case EJRecall::Decision::LoadDirect:
-            EchoJay_NSLog(("EJRecall: resolved=yes reason=" + source).toRawUTF8());
-            EchoJay_NSLog("EJRecall: replace ask shown=no rack=0 answer=load");
-            recallLoadChain(id, resolvedName.isNotEmpty() ? resolvedName : name);
-            return;
-
-        case EJRecall::Decision::AskReplace:
-            EchoJay_NSLog(("EJRecall: resolved=yes reason=" + source).toRawUTF8());
-            presentRecallReplaceAsk(id, resolvedName.isNotEmpty() ? resolvedName : name,
-                                    rackSlots);
-            return;
+        EchoJay_NSLog(("EJRecall: resolved=no reason=id-not-in-local-list"
+                       " source=" + source).toRawUTF8());
+        appendLocalResultBubble(
+            (name.isNotEmpty() ? "\"" + name + "\"" : juce::String("That chain"))
+            + " isn't in your saved chains list, so nothing was loaded."
+              " Open the Chains sidebar to see what is saved.");
+        return;
     }
+
+    // Item 4: the AI recall now shares the ONE guarded entry, so it guards and
+    // targets the active view exactly as a manual recall does. Previously it
+    // counted only the main rack and always loaded there, which is how a recall
+    // replaced a Link's populated rack with no warning.
+    EchoJay_NSLog(("EJRecall: resolved=yes reason=" + source).toRawUTF8());
+    beginRecall(id, resolvedName.isNotEmpty() ? resolvedName : name);
+}
+
+// Clipped name list for the replace-disclosure surfaces (20 Aug 2026): up
+// to maxShown names, then "+N more" — one vocabulary shared by every
+// surface that speaks about a rack, so two surfaces cannot phrase the same
+// rack differently.
+static juce::String clippedNameList (const juce::StringArray& names, int maxShown)
+{
+    juce::StringArray shown;
+    for (int i = 0; i < names.size() && i < maxShown; ++i) shown.add(names[i]);
+    juce::String out = shown.joinIntoString(", ");
+    if (names.size() > maxShown)
+        out << " +" << juce::String(names.size() - maxShown) << " more";
+    return out;
+}
+
+// THE ONE composer of the replace disclosure (20 Aug 2026, evening). The
+// build box and the recall ask each said "N plugins will be lost" in their
+// own words, the fix landed on one of them, and the other was found by
+// pressing the button — the two-authors shape, again. Every surface that
+// confirms clearing a populated rack composes its names line HERE. The
+// surrounding dialogue stays per-surface on purpose: the build path may use
+// an AlertWindow, the recall path must use the ASK shelf (no-modal rule
+// below), but the sentence naming what is lost has one author.
+static juce::String replacesClause (const juce::StringArray& rackNames)
+{
+    return "Replaces: " + clippedNameList(rackNames, 4);
 }
 
 // Ask before replacing, through the ASK shelf: the presentCompareScopeAsk
@@ -23116,22 +24117,69 @@ void EchoJayEditor::handleChainRecall(const juce::String& id, const juce::String
 // never send a chat turn. NOT showOkCancelBox and NOT any AlertWindow:
 // modals are banned on host-driven paths (in Logic the window opens BEHIND
 // the plugin and blocks all input; see the Link ack consumer's note).
+void EchoJayEditor::beginRecall(const juce::String& id, const juce::String& name)
+{
+    // ONE read of the active chain view, feeding both the guard and the target.
+    // Empty uid = the main rack; a uid = the Link currently being viewed.
+    const juce::String uid = chainViewUid();
+    const bool toLink = uid.isNotEmpty();
+    const auto view = toLink ? chainRackView() : ChainRackView{};
+    const int rackSlots = toLink ? (int) view.slots.size()
+                                 : processorRef.getChainHost().getNumSlots();
+
+    switch (EJRecall::decide(true, rackSlots))   // callers pass a known id
+    {
+        case EJRecall::Decision::AskReplace:
+            EchoJay_NSLog(("EJRecall: replace ask shown=yes rack=" + juce::String(rackSlots)
+                           + (toLink ? " target=link" : " target=main")).toRawUTF8());
+            presentRecallReplaceAsk(id, name, rackSlots, uid,
+                                    toLink ? view.name : juce::String());
+            return;
+        case EJRecall::Decision::LoadDirect:
+            EchoJay_NSLog(juce::String("EJRecall: replace ask shown=no rack=0 answer=load")
+                          .toRawUTF8());
+            if (toLink) recallLoadChainToLink(uid, id, name);
+            else        recallLoadChain(id, name);
+            return;
+        case EJRecall::Decision::Refuse:
+            return;   // decide() only refuses an unknown id; callers pass known
+    }
+}
+
 void EchoJayEditor::presentRecallReplaceAsk(const juce::String& id,
                                             const juce::String& name, int rackSlots,
                                             const juce::String& targetUid,
                                             const juce::String& targetName)
 {
+    // Flip-out-of-chains-list, supersede, append, persist, log, relayout all
+    // live in presentReplaceAsk — ONE author for the mechanics, this
+    // function owns only the recall wording and chips.
     const bool toLink = targetUid.isNotEmpty();
     const juce::String plugins =
         juce::String(rackSlots) + (rackSlots == 1 ? " plugin" : " plugins");
-    const juce::String question = toLink
+    // The names, derived HERE at ask-compose time from the target the ask
+    // is about — the true loaded instances for the main rack, the sidecar
+    // for a Link — so both callers get the disclosure without carrying it,
+    // and the sentence itself comes from the ONE composer (replacesClause).
+    juce::StringArray rackNames;
+    if (toLink)
+    {
+        for (const auto& rs : readLinkRackSidecar(targetUid).slots)
+            if (rs.name.isNotEmpty()) rackNames.add(rs.name);
+    }
+    else
+    {
+        for (const auto& si : processorRef.getChainHost().getAllSlotInfos())
+            if (si.name.isNotEmpty()) rackNames.add(si.name);
+    }
+    juce::String question = toLink
         ? "Load \"" + name + "\" onto \"" + targetName + "\"? That channel"
           " already has " + plugins + " racked, and loading replaces them."
         : "Load \"" + name + "\"? This channel already has " + plugins
           + " racked, and loading replaces them.";
+    if (! rackNames.isEmpty())
+        question += " " + replacesClause(rackNames) + ".";
 
-    auto* root = new juce::DynamicObject();
-    root->setProperty("question", question);
     juce::Array<juce::var> choices;
     {
         auto* c = new juce::DynamicObject();
@@ -23154,26 +24202,62 @@ void EchoJayEditor::presentRecallReplaceAsk(const juce::String& id,
         c->setProperty("intent", "recall_cancel");
         choices.add(juce::var(c));
     }
-    root->setProperty("choices", choices);
-    const juce::String askJson = juce::JSON::toString(juce::var(root), true);
+    presentReplaceAsk(question, choices,
+                      "chain \"" + name + "\"",
+                      "EJRecall: replace ask shown=yes rack=" + juce::String(rackSlots)
+                          + (toLink ? " target=\"" + targetName + "\" uid=" + targetUid
+                                    : juce::String())
+                          + " answer=pending");
+}
 
-    ChatMsg cm;
-    cm.role    = "assistant";
-    cm.content = question;
-    cm.askData = askJson;
-    chatMessages.push_back(cm);
-    processorRef.chatHistory.push_back({ "assistant", question });
-    // Persist so the pending ask survives an editor recreate, exactly like
-    // the compare-scope ask.
-    if (currentChatId.isNotEmpty())
-        workspace.appendMessageToChat(currentChatId, "assistant", question,
-                                      {}, {}, {}, askJson, {});
-    EchoJay_NSLog(("EJRecall: replace ask shown=yes rack=" + juce::String(rackSlots)
-                   + (toLink ? " target=\"" + targetName + "\" uid=" + targetUid
-                             : juce::String())
-                   + " answer=pending").toRawUTF8());
-    resized();
-    repaint();
+void EchoJayEditor::presentBuildReplaceAsk(const juce::String& chainJson)
+{
+    // The doomed slots, from the TRUE loaded instances at ask time, through
+    // the one composer (replacesClause). Honest about mechanism, measured
+    // from the load path and not the block schema (20 Aug 2026): doLoad
+    // applies only setSlotSettings / setSlotStructuredSettings / setSlotWet
+    // to FRESH instances — no state travels — so a plugin listed in both
+    // racks returns rebuilt at the new chain's settings, and there is no
+    // append on this path. The chips offer only what the handler performs:
+    // replace or cancel.
+    juce::StringArray rackNames;
+    for (const auto& si : processorRef.getChainHost().getAllSlotInfos())
+        if (si.name.isNotEmpty()) rackNames.add(si.name);
+
+    const juce::String question =
+        "Build the AI chain? The current rack is cleared first and the new"
+        " chain is built from scratch - a plugin in both comes back at the"
+        " new chain's settings, not with its current state. "
+        + replacesClause(rackNames) + ".";
+
+    juce::Array<juce::var> choices;
+    {
+        auto* c = new juce::DynamicObject();
+        c->setProperty("label",  "Replace and build");
+        c->setProperty("intent", "build_confirm");
+        // The whole block rides the chip so the pending build survives an
+        // editor recreate exactly like a recall ask (askData is persisted
+        // and the chips are rebuilt from it) — a pending-build member would
+        // die with the editor and leave a chip that does nothing.
+        c->setProperty("build_chain_json", chainJson);
+        // The rack AS NAMED BY THIS QUESTION ('\n'-joined: names carry
+        // commas). The confirm compares against the live rack and a
+        // mismatch re-asks with fresh names instead of building — consent
+        // must name the rack that is actually lost, and time can pass
+        // between raise and tap (the ask survives editor recreates).
+        c->setProperty("build_rack_names", rackNames.joinIntoString("\n"));
+        choices.add(juce::var(c));
+    }
+    {
+        auto* c = new juce::DynamicObject();
+        c->setProperty("label",  "Keep current");
+        c->setProperty("intent", "build_cancel");
+        choices.add(juce::var(c));
+    }
+    presentReplaceAsk(question, choices,
+                      "build over " + clippedNameList(rackNames, 1),
+                      "EJBuild: [build-ask] replace ask shown=yes rack="
+                          + juce::String(rackNames.size()) + " answer=pending");
 }
 
 // The channel-mismatch ask: the server's heads-up text IS the question, and
@@ -23287,6 +24371,10 @@ void EchoJayEditor::recallLoadChainToLink(const juce::String& linkUid,
                     eo->setProperty("name", pn);
                     if ((bool) so->getProperty("bypassed"))
                         eo->setProperty("bypassed", true);
+                    // Per-slot wet/dry travels with the recall (the Link's
+                    // command parser reads "wet" 0..1; absent = 1.0)
+                    if (so->hasProperty("wet"))
+                        eo->setProperty("wet", juce::jlimit(0.0, 1.0, (double) so->getProperty("wet")));
                     const int n = so->hasProperty("n") ? (int) so->getProperty("n") : (i + 1);
                     if (statesObj != nullptr)
                     {
@@ -23316,6 +24404,13 @@ void EchoJayEditor::recallLoadChainToLink(const juce::String& linkUid,
 
 void EchoJayEditor::recallLoadChain(const juce::String& id, const juce::String& name)
 {
+    // MERGE (21 Aug): every path into here has ALREADY settled consent — the
+    // recall replace ask was confirmed, or EJRecall::decide saw an empty rack.
+    // openSavedChain carries its own AlertWindow confirm (the dashboard-branch
+    // guard for callers that do not go through beginRecall, e.g. the bridge);
+    // pre-setting the flag here is what the confirm re-entry itself does, and
+    // it stops the user being asked twice in a row for one load.
+    chainOpenReplaceConfirmed_ = true;
     auto fetchFailed = std::make_shared<bool>(false);
     auto intended    = std::make_shared<juce::StringArray>();
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
@@ -23801,6 +24896,49 @@ juce::String EchoJayEditor::maybeRunKeyPrecondition(const juce::String& typedMsg
 // DEV ONLY. See the header. Applies a hand-written eq_bands JSON straight to
 // the built-in EQ slot so the exact-apply path can be proven from the app
 // before the backend contract that emits eq_bands is deployed.
+void EchoJayEditor::handleDevVst3Test(const juce::String& name)
+{
+    auto say = [this](const juce::String& t)
+    {
+        chainListPanel.statusText = t; chainListPanel.repaint();
+        EchoJay_NSLog(("EJVst3Test: " + t).toRawUTF8());
+    };
+    auto& ch = processorRef.getChainHost();
+    if (name.isEmpty()) { say("usage: /vst3test <plugin name> (a VST3 that resolves; the format filter is bypassed on purpose)"); return; }
+    juce::String log; ChainHost::WithholdReason why = ChainHost::WithholdReason::None;
+    auto desc = ch.resolveByName(name, "VST3", &log, &why);
+    if (desc.name.isEmpty())
+    {
+        say("vst3test: \"" + name + "\" did not resolve as a VST3 (" + log + ")"
+            + (ChainHost::isWithheld(why) ? " " + ChainHost::withholdReasonText(why) : juce::String()));
+        return;
+    }
+    say("vst3test: instantiating \"" + desc.name + "\" [" + desc.pluginFormatName + "] from " + desc.fileOrIdentifier
+        + " inside this " + (chainFormatFilter_.isEmpty() ? juce::String("standalone") : chainFormatFilter_) + " host process...");
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    ch.asyncCreatePlugin(desc, [safeThis, desc, t0](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
+    {
+        if (safeThis == nullptr) return;
+        const int ms = (int) (juce::Time::getMillisecondCounterHiRes() - t0);
+        juce::String t;
+        if (inst != nullptr)
+        {
+            t = "vst3test: LOADED \"" + desc.name + "\" in " + juce::String(ms) + " ms: "
+              + juce::String(inst->getParameters().size()) + " parameters, "
+              + juce::String(inst->getTotalNumInputChannels()) + " in / "
+              + juce::String(inst->getTotalNumOutputChannels()) + " out, latency "
+              + juce::String(inst->getLatencySamples()) + ". The instance is released now; nothing was racked.";
+            inst.reset();
+        }
+        else
+            t = "vst3test: FAILED \"" + desc.name + "\" after " + juce::String(ms) + " ms: "
+              + (err.isEmpty() ? juce::String("(no error text from the format)") : err);
+        safeThis->chainListPanel.statusText = t; safeThis->chainListPanel.repaint();
+        EchoJay_NSLog(("EJVst3Test: " + t).toRawUTF8());
+    });
+}
+
 void EchoJayEditor::handleDevEqTest(const juce::String& jsonArg)
 {
     auto& ch = processorRef.getChainHost();
@@ -23847,6 +24985,16 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     if (msg.startsWithIgnoreCase("/eqtest") && ChainHost::devModeActive())
     {
         handleDevEqTest(msg.fromFirstOccurrenceOf("/eqtest", false, true).trim());
+        return;
+    }
+    // DEV ONLY (17 Aug 2026): measures the sandbox claim behind the AU-host
+    // format filter. Instantiates a VST3 inside THIS process regardless of
+    // the filter and reports what happened; changes no policy. Result and
+    // its limits are recorded at the chainFormatFilter_ switch in the ctor
+    // (Pro-Q 3 loaded seven of seven inside Logic's AU host process).
+    if (msg.startsWithIgnoreCase("/vst3test") && ChainHost::devModeActive())
+    {
+        handleDevVst3Test(msg.fromFirstOccurrenceOf("/vst3test", false, true).trim());
         return;
     }
 
@@ -24124,7 +25272,43 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     // Per-fp exact controls exposure: say which binary each name is (rack
     // slots + scanned identities) so the server serves that fingerprint's
     // own controls entry rather than the AU/VST3 sibling intersection.
-    api.setNextChatMapFps(processorRef.getChainHost().buildMapFpsJson());
+    {
+        juce::var fpsVar = juce::JSON::parse(processorRef.getChainHost().buildMapFpsJson());
+        auto* fpsObj = fpsVar.getDynamicObject();
+        if (fpsObj == nullptr) { fpsObj = new juce::DynamicObject(); fpsVar = juce::var(fpsObj); }
+        // Item, 19 Aug: when a Link channel is in view, add its racked slots'
+        // name->fp from the sidecar, so a Link-racked slot enters the server's
+        // fingerprint union. Without this a Link slot reaches the server named
+        // but fp-less and cannot be dialled at all. Keyed by the sidecar name,
+        // which is exactly the name buildCurrentChainInjection prints.
+        if (const auto luid = chainViewUid(); luid.isNotEmpty())
+            for (const auto& s : readLinkRackSidecar(luid).slots)
+                if (s.fp.isNotEmpty() && s.name.isNotEmpty())
+                {
+                    // PRECEDENCE, made visible when it fires: buildMapFpsJson
+                    // deliberately OMITS a name whose fingerprint is ambiguous
+                    // (its conflicted removal), and this merge deliberately
+                    // overrides whatever that join produced, because a Link
+                    // sidecar entry is the exact loaded binary rather than a
+                    // name resolution. Both rules are right; the override must
+                    // not be invisible. Logged only on a real disagreement -
+                    // an agreeing overwrite carries no information.
+                    const auto prev = fpsObj->getProperty(s.name).toString();
+                    if (prev.isNotEmpty() && prev != s.fp)
+                        EchoJay_NSLog(("EJMapFps: [sidecar-override] \"" + s.name
+                                       + "\" " + prev.substring(0, 8) + " -> "
+                                       + s.fp.substring(0, 8)
+                                       + " (Link rack is the loaded binary)").toRawUTF8());
+                    fpsObj->setProperty(s.name, s.fp);
+                }
+        api.setNextChatMapFps(juce::JSON::toString(fpsVar, true));
+    }
+    // dial-3 (A7.3): the declined-name batch rides THIS send's body,
+    // consumed at body build like mapFps — so the transport's internal
+    // limit-refresh retry resends WITHOUT the field rather than twice with
+    // it. The watermark moves only in handleChatReply's success branch; a
+    // failed send re-ships the same rows next turn under a new batch id.
+    api.setNextChatDialDeclines(buildDialDeclinesBatchJson());
     // 1d model-wait stage: generic-safe label only (the one-shot transport
     // has no sub-stages to report; a specific claim could desync).
     // 26 Jul 2026: ALWAYS "Thinking" here. hadChainFeed is true on
@@ -24394,6 +25578,16 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
     bool hadChainOpener = false;   // reply carried <<<ECHOJAY_CHAIN>>> (even truncated)
     if (success)
     {
+        // dial-3 (A7.3): the batch staged for this send reached the server —
+        // commit the watermark. On any non-success the pending value is
+        // simply abandoned; the next send restages the same rows (new batch
+        // id), so a failed send loses nothing.
+        if (pendingDeclineWatermark_ >= 0)
+        {
+            dialDeclineWatermarkFile().replaceWithText(
+                juce::String(pendingDeclineWatermark_) + "\n");
+            pendingDeclineWatermark_ = -1;
+        }
         hadChainOpener = EchoJayAPI::extractChainBlock(visibleReply, chainJson);
         if (EchoJayAPI::extractGainBlock(visibleReply, gainJson))
             EchoJay_NSLog("EJChat: gain proposal block received");
@@ -25609,7 +26803,7 @@ void EchoJayEditor::openRecallChannelChooser(int chipIdx)
             const auto nameIt       = nameByUid.find(uid);
             const juce::String disp = nameIt != nameByUid.end() ? nameIt->second : uid;
             safeThis->pendingRecallMismatchAsk_ = false;   // answered, not dismissed
-            safeThis->supersedePendingAsks();
+            safeThis->supersedePendingReplaceAsks();       // P57: a pending brief survives
             safeThis->askShelfVisible_ = false;
             safeThis->resized();
             const auto rack  = safeThis->readLinkRackSidecar(uid);
@@ -25653,7 +26847,7 @@ void EchoJayEditor::switchChannelCarryingRequest(const juce::String& uid)
     // pending path, and this reads from it.
     const juce::String request = newestUserRequest();
 
-    supersedePendingAsks();          // marks + persists askAnswered
+    supersedePendingReplaceAsks();   // P57 (recall switch): a pending brief survives
     askShelfVisible_ = false;
 
     openChannelByUid(uid);           // <-- THE SWITCH
@@ -25696,30 +26890,16 @@ void EchoJayEditor::switchChannelCarryingRequest(const juce::String& uid)
 void EchoJayEditor::showChainPluginPicker()
 {
     auto& ch = processorRef.getChainHost();
-    auto plugins = ch.getFilteredPlugins("", chainFormatFilter_);
+    auto plugins = ch.getFilteredPlugins("", chainFormatFilter_, !chainOfferBothBuilds_);
     if (plugins.isEmpty()) return;
 
-    juce::PopupMenu menu;
-    // Search hint as disabled header
-    menu.addSectionHeader("ADD PLUGIN TO CHAIN");
-
-    for (int i = 0; i < plugins.size(); ++i)
-    {
-        const auto& p = plugins.getReference(i);
-        bool isAU = p.pluginFormatName == "AudioUnit";
-        juce::String label = p.name + "  [" + (isAU ? "AU" : "VST3") + "]";
-        menu.addItem(i + 1, label);
-    }
-
+    // P13 (17 Aug 2026): the searchable picker (ChainPluginPicker.h) in
+    // place of a 1400-row PopupMenu; type to filter, keyboard first.
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    menu.showMenuAsync(
-        juce::PopupMenu::Options()
-            .withTargetComponent(&chainListPanel)
-            .withMaximumNumColumns(1)
-            .withMinimumNumColumns(1),
-        [safeThis, plugins](int result)
+    ChainPluginPicker::show(chainListPanel.addBlock, plugins,
+        [safeThis](const juce::PluginDescription& picked)
         {
-            if (safeThis == nullptr || result <= 0 || result > plugins.size()) return;
+            if (safeThis == nullptr) return;
             // REMOTE ADD forks here. The op adds BY NAME, so it is the raw
             // picker name that travels, NOT preferInlineHostableDesc's
             // possible AU-to-VST3 swap: that swap exists so the editor can be
@@ -25734,12 +26914,12 @@ void EchoJayEditor::showChainPluginPicker()
                 // by refreshChainPanelForView from the pending list and the
                 // sidecar cache, one author. Writing "Adding..." from a
                 // second place is how the line got orphaned mid-sentence.
-                safeThis->sendRackAdd(rackUid, plugins[result - 1].name);
+                safeThis->sendRackAdd(rackUid, picked.name);
                 return;
             }
             auto& ch2 = safeThis->processorRef.getChainHost();
-            // NEW instantiation — popout-only AUs may swap to their VST3 build
-            auto desc = ch2.preferInlineHostableDesc(plugins[result - 1]);
+            // NEW instantiation: popout-only AUs may swap to their VST3 build
+            auto desc = ch2.preferInlineHostableDesc(picked);
             safeThis->chainListPanel.statusText = "Loading " + desc.name + "...";
             safeThis->chainListPanel.repaint();
 
@@ -26068,6 +27248,105 @@ void EchoJayEditor::sendLinkActiveCommand(const juce::String& linkAddr, bool act
 
 // Absolute gain set. The command carries the CURRENT (or in-flight) active so
 // it can never deactivate the Link, plus the new gainDb. Acked like Active.
+bool EchoJayEditor::linkFaderModeIsPre() const
+{
+    return processorRef.linkFaderMode == EchoJayProcessor::LinkFaderMode::Pre;
+}
+float EchoJayEditor::faderLo() const { return -24.0f; }   // == EchoJayFader::kMixerFaderMinDb (P17)
+float EchoJayEditor::faderHi() const { return linkFaderModeIsPre() ? 24.0f : 12.0f; }
+
+float EchoJayEditor::linkRowDisplayPreGain(const juce::String& linkAddr) const
+{
+    // Optimistic pending pre-gain until the sidecar mirror catches up.
+    for (const auto& p : linkCtrlPending_)
+        if (p.addr == linkAddr && p.isPreGain && !p.timedOut) return p.gainDb;
+    // The Link publishes its pre-gain in the rack sidecar (rack-<uid>.json),
+    // cached per uid. Absent (old Link or no rack) reads 0 = unity.
+    auto it = processorRef.linkRackCache.find(linkAddr);
+    if (it != processorRef.linkRackCache.end() && it->second.rack.valid)
+        return it->second.rack.preGainDb;
+    return 0.0f;
+}
+
+void EchoJayEditor::sendLinkPreGainCommand(const juce::String& linkAddr, float preGainDb)
+{
+    int err = 0;
+    juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty() || linkAddr.isEmpty()) return;
+    const juce::String& id = linkAddr;
+    preGainDb = juce::jlimit(-24.0f, 24.0f, preGainDb);
+
+    bool active = true;
+    for (const auto& li : processorRef.getLinkSlotInfos())
+    {
+        const juce::String a = li.uid.isNotEmpty() ? li.uid : LinkShm::makeSafeFilePart(li.name);
+        if (a == linkAddr) { active = li.active; break; }
+    }
+    for (const auto& p : linkCtrlPending_)
+        if (p.addr == linkAddr && !p.isGain && !p.isPreGain && !p.timedOut) active = p.target;
+
+    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    for (auto& p : linkCtrlPending_)
+        if (p.addr == linkAddr && p.seq >= seq) seq = p.seq + 1;
+
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",              1);
+    cmd->setProperty("seq",            seq);
+    cmd->setProperty("active",         active);      // echoed, never a toggle
+    cmd->setProperty("preGainDb",      (double)preGainDb);
+    cmd->setProperty("preGainUserSet", true);        // a fader move is a hand set
+    juce::File(dir + "ctrl-ack-" + id + ".json").deleteFile();
+    juce::File(dir + "ctrl-cmd-" + id + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+
+    linkCtrlPending_.erase(
+        std::remove_if(linkCtrlPending_.begin(), linkCtrlPending_.end(),
+                       [&](const LinkCtrlPending& p){ return p.addr == linkAddr && p.isPreGain; }),
+        linkCtrlPending_.end());
+    LinkCtrlPending pend; pend.addr = linkAddr; pend.seq = seq;
+    pend.isPreGain = true; pend.gainDb = preGainDb;
+    linkCtrlPending_.push_back(pend);
+
+    pollLinkCtrlAck(linkAddr, seq, 12);
+    repaint();
+}
+
+void EchoJayEditor::sendLinkPreGainResetCommand(const juce::String& linkAddr)
+{
+    // Double-click on a REMOTE rack head: clear the far end's hand-set flag
+    // so its next model build sets the pre-gain again. A dedicated field the
+    // Link maps to resetPreGainToAuto (setPreGainDb userSet=false cannot
+    // clear an existing userSet).
+    int err = 0;
+    juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty() || linkAddr.isEmpty()) return;
+    const juce::String& id = linkAddr;
+    bool active = true;
+    for (const auto& li : processorRef.getLinkSlotInfos())
+    {
+        const juce::String a = li.uid.isNotEmpty() ? li.uid : LinkShm::makeSafeFilePart(li.name);
+        if (a == linkAddr) { active = li.active; break; }
+    }
+    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    for (auto& p : linkCtrlPending_)
+        if (p.addr == linkAddr && p.seq >= seq) seq = p.seq + 1;
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",            1);
+    cmd->setProperty("seq",          seq);
+    cmd->setProperty("active",       active);
+    cmd->setProperty("preGainReset", true);
+    juce::File(dir + "ctrl-ack-" + id + ".json").deleteFile();
+    juce::File(dir + "ctrl-cmd-" + id + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+    // Drop any optimistic pre-gain pending: the value now comes from the mirror.
+    linkCtrlPending_.erase(
+        std::remove_if(linkCtrlPending_.begin(), linkCtrlPending_.end(),
+                       [&](const LinkCtrlPending& p){ return p.addr == linkAddr && p.isPreGain; }),
+        linkCtrlPending_.end());
+    pollLinkCtrlAck(linkAddr, seq, 12);
+    repaint();
+}
+
 void EchoJayEditor::sendLinkGainCommand(const juce::String& linkAddr, float gainDb)
 {
     int err = 0;
@@ -27296,6 +28575,14 @@ void EchoJayEditor::sendChainSave(const juce::String& id, const juce::String& na
     root->setProperty("slots",  slots);
     if (!state.isVoid())
         root->setProperty("state", state);
+    // VST3 parameter values beside the state (17 Aug 2026), a SIBLING key so
+    // `state` keeps its base64-per-slot contract. SERVER DEPENDENCY, named:
+    // createChain/patch in lib/dash/chains.js destructure a fixed key set and
+    // drop the rest, so until the server accepts, stores and returns
+    // `stateParams` (object keyed by 1-based n, string values), a shared
+    // chain carries the blob only, exactly as today.
+    if (auto stateParams = ch.getCachedSlotParamsVar(); !stateParams.isVoid())
+        root->setProperty("stateParams", stateParams);
     const auto body = juce::JSON::toString(juce::var(root.release()), true);
 
     chainSaveInFlight_ = true;
@@ -27400,8 +28687,8 @@ void EchoJayEditor::showSavedChainsMenu()
             {
                 if (safeThis == nullptr || choice <= 0
                     || choice > (int)ids.size()) return;
-                safeThis->openSavedChain(ids[(size_t)choice - 1],
-                                         names[(size_t)choice - 1]);
+                safeThis->beginRecall(ids[(size_t)choice - 1],   // Item 4: guarded + active-view target
+                                      names[(size_t)choice - 1]);
             });
     });
 }
@@ -27458,12 +28745,14 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
             return;
         }
 
-        juce::var slots, state;
+        juce::var slots, state, stateParams;
         if (auto* obj = json.getDynamicObject())
             if (auto* c = obj->getProperty("chain").getDynamicObject())
             {
                 slots = c->getProperty("slots");
                 state = c->getProperty("state");
+                // Present only once the server carries it (see sendChainSave)
+                if (c->hasProperty("stateParams")) stateParams = c->getProperty("stateParams");
             }
         if (!slots.isArray())
         {
@@ -27492,10 +28781,13 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
         // its editor lets a final UI timer fire into freed state. Same
         // discipline the AI chain build uses.
         safeThis->chainListPanel.closeAllEditors();
-        juce::Timer::callAfterDelay(80, [safeThis, slots, state, id, name]
+        juce::Timer::callAfterDelay(80, [safeThis, slots, state, stateParams, id, name]
         {
             if (safeThis == nullptr) return;
             auto& ch = safeThis->processorRef.getChainHost();
+            // Item 4: archive the live rack BEFORE the clear, so a recall over a
+            // populated rack is recoverable from chain_archive/. No-op if empty.
+            ch.archiveCurrentRack("replaced by recall: " + name);
             for (int i = ch.getNumSlots() - 1; i >= 0; --i) ch.removeSlot(i);
             safeThis->chainSelectedSlot_ = -1;
             safeThis->chainListPanel.rebuild(ch.getAllSlotInfos(), -1);
@@ -27532,7 +28824,8 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
                     if (ChainHost::namesMatchLoose(resolvedName, p.name))
                         return ! sc.isPluginEnabled(p.uid);
                 return false;
-            });
+            },
+            stateParams);   // VST3 parameter values beside the state, when the server carries them
 
             safeThis->processorRef.savedChainId   = id;
             safeThis->processorRef.savedChainName = name;
@@ -27542,7 +28835,7 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
     });
 }
 
-void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
+void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replaceConfirmed)
 {
     // A failed build must land the user on the Chain page with an error, not
     // return silently (the click otherwise appears to do nothing).
@@ -27564,7 +28857,9 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
     juce::StringArray recommNames = ch.getRecommendableNames();
 
     // Collect names+settings from chain JSON, filtering to only those in recommendable
-    struct SlotSpec { juce::String name; juce::String settings; juce::var structured; };
+    // wetPct: the model's slot-level "wet_pct" (0..100) or -1 when absent,
+    // which means "leave the knob alone" (a fresh slot starts at 1.0).
+    struct SlotSpec { juce::String name; juce::String settings; juce::var structured; float wetPct = -1.0f; };
     std::vector<SlotSpec> slots;
     juce::StringArray droppedDisabled;
     juce::StringArray droppedUnknown;
@@ -27580,6 +28875,18 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
         // settings_structured (server-validated): drives the auto-apply
         // path; void/absent means prose-only for this slot.
         juce::var structured  = entryObj->getProperty("settings_structured");
+        // Slot wet/dry from the model (16 Aug 2026): "wet_pct" 0..100 on the
+        // slot object. Numbers clamp; anything else is absent and logged.
+        float wetPct = -1.0f;
+        if (entryObj->hasProperty("wet_pct"))
+        {
+            const auto wv = entryObj->getProperty("wet_pct");
+            if (wv.isDouble() || wv.isInt() || wv.isInt64())
+                wetPct = juce::jlimit(0.0f, 100.0f, (float)(double) wv);
+            else
+                EchoJay_NSLog(("EJChain: wet_pct on \"" + name + "\" is not a number ("
+                               + wv.toString() + "); ignored").toRawUTF8());
+        }
         bool found = false;
         for (auto& r : recommNames)
             if (ChainHost::namesMatchLoose(name, r)) { found = true; break; }
@@ -27602,7 +28909,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                 else          found = true;
             }
         }
-        if (found) slots.push_back({ name, settings, structured });
+        if (found) slots.push_back({ name, settings, structured, wetPct });
         else if (!droppedDisabled.contains(name))
         {
             // A name neither list resolves was previously a DBG line and
@@ -27652,6 +28959,18 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
         {
         if (safeThis == nullptr) return;
         auto& ch2 = safeThis->processorRef.getChainHost();
+        // Archive the live rack BEFORE the clear, the same protection recall
+        // (item 4) and the Link replace already have, so a build over a
+        // populated rack is recoverable from chain_archive/. No-op if empty.
+        // Label names the INCOMING build (the archive's content is the old
+        // rack itself), through the same clip vocabulary the Replace box
+        // uses.
+        {
+            juce::StringArray incoming;
+            for (const auto& sl : slots) incoming.add(sl.name);
+            ch2.archiveCurrentRack("replaced by AI build: "
+                                   + clippedNameList(incoming, 1));
+        }
         int n = ch2.getNumSlots();
         for (int i = n - 1; i >= 0; --i) ch2.removeSlot(i);
         safeThis->chainSelectedSlot_ = -1;
@@ -27688,6 +29007,12 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                     ch3.getNumSlots() > 0 ? juce::String()
                                           : "Failed: no plugins from this chain could load";
                 juce::String status = juce::String(ch3.getNumSlots()) + " slot(s) loaded";
+                // Pre-chain gain at BUILD (never on an edit): set the trim
+                // from the measured input so the signal arrives at the
+                // operating level, unless the user set it by hand. known ==
+                // false leaves it unset (visible). Fired once here, at build
+                // complete; the CHAIN LEVELS line then carries what it did.
+                ch3.computePreGainAtBuild();
                 // 1d: stage row down, result bubble up. Model "result" text
                 // only on a clean full build; otherwise compose factually.
                 safeThis->clearStageStatus();
@@ -27787,6 +29112,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
             juce::String name     = slots[i].name;
             juce::String settings = slots[i].settings;
             juce::var structured  = slots[i].structured;
+            const float wetPct    = slots[i].wetPct;
             // Status first, load on the NEXT runloop turn: instantiation
             // blocks the message thread, so the paint must get through
             // before the stall or the progress label never shows.
@@ -27794,11 +29120,11 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                 + juce::String(i + 1) + " of " + juce::String((int)slots.size()) + ")...";
             safeThis->setStageStatus(safeThis->chainListPanel.statusText);   // 1d shimmer
             safeThis->chainListPanel.repaint();
-            juce::Timer::callAfterDelay(30, [safeThis, name, settings, structured, skipped, loadNextPtr]() mutable
+            juce::Timer::callAfterDelay(30, [safeThis, name, settings, structured, wetPct, skipped, loadNextPtr]() mutable
             {
                 if (safeThis == nullptr) return;
                 safeThis->processorRef.getChainHost().loadByRecommendedName(name,
-                    [safeThis, name, settings, structured, skipped, loadNextPtr](const juce::String& err) mutable
+                    [safeThis, name, settings, structured, wetPct, skipped, loadNextPtr](const juce::String& err) mutable
                     {
                         if (safeThis == nullptr) return;
                         if (err.isNotEmpty())
@@ -27845,6 +29171,15 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
                                                "This is a SERVER/model-side gap, not a dial "
                                                "failure.").toRawUTF8());
                             }
+                            // Slot wet/dry from the block: EchoJay's own
+                            // blend, applied to the slot that just loaded;
+                            // absent leaves it at the default.
+                            if (wetPct >= 0.0f)
+                            {
+                                ch4.setSlotWet(ch4.getNumSlots() - 1, wetPct / 100.0f);
+                                EchoJay_NSLog(("EJChain: wet_pct " + juce::String(wetPct, 1)
+                                               + " applied to \"" + name + "\"").toRawUTF8());
+                            }
                             // Progressive: the rack grows a row per loaded slot
                             safeThis->chainListPanel.rebuild(ch4.getAllSlotInfos(), -1);
                         }
@@ -27856,22 +29191,25 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson)
         });   // end deferred rack-clear
     };
 
-    if (ch.getNumSlots() > 0)
+    // Client-composed replace confirm in the recall family (20 Aug 2026,
+    // Kathy-authorised): the AlertWindow is GONE — Logic parks modals
+    // BEHIND the plugin window (the no-modal rule at beginRecall), which is
+    // how a confirm can be invisible while blocking. The model pill
+    // ("Yes, build it") is the TRIGGER for the ask, not the consent; the
+    // confirm chip re-enters here with replaceConfirmed=true and the block
+    // re-parses fresh, so nothing captured goes stale across the ask. Both
+    // decisions log, the recall pattern.
+    if (ch.getNumSlots() > 0 && ! replaceConfirmed)
     {
-        juce::AlertWindow::showOkCancelBox(
-            juce::AlertWindow::QuestionIcon,
-            "Replace chain?",
-            juce::String(ch.getNumSlots()) + " slot(s) will be cleared. Build the AI chain?",
-            "Build", "Cancel", nullptr,
-            juce::ModalCallbackFunction::create([doLoad](int result) mutable
-            {
-                if (result == 1) doLoad();
-            }));
+        presentBuildReplaceAsk(chainJson);
+        return;
     }
+    if (ch.getNumSlots() == 0)
+        EchoJay_NSLog("EJBuild: [build-ask] replace ask shown=no rack=0 answer=build");
     else
-    {
-        doLoad();
-    }
+        EchoJay_NSLog(("EJBuild: [build-ask] confirmed, building over rack="
+                       + juce::String(ch.getNumSlots())).toRawUTF8());
+    doLoad();
 }
 
 void EchoJayEditor::promptForFailedPlugins(juce::StringArray failed)
@@ -29590,11 +30928,24 @@ void EchoJayEditor::mouseDrag(const juce::MouseEvent& e)
     // needed for a local value).
     if (!busFaderDragging_) return;
     const int y = e.getPosition().y;
-    const float rate = gainPerPixel(linkBusGeom_.faderImg)
+    const bool pre = linkFaderModeIsPre();
+    const float span = pre ? 48.0f : 36.0f;
+    const float lo = -24.0f, hi = pre ? 24.0f : 12.0f;
+    const float rate = gainPerPixelRanged(linkBusGeom_.faderImg, span)
                      * (e.mods.isShiftDown() ? kFaderFineRatio : 1.0f);
-    processorRef.setBusGainDb(juce::jlimit(-24.0f, 12.0f,
-        std::round((processorRef.getBusGainDb()
-                    + (float)(busFaderLastY_ - y) * rate) * 10.0f) / 10.0f));
+    if (pre)
+    {
+        auto& ch = processorRef.getChainHost();
+        ch.setPreGainDb(juce::jlimit(lo, hi,
+            std::round((ch.getPreGainDb() + (float)(busFaderLastY_ - y) * rate) * 10.0f) / 10.0f), true);
+        processorRef.markStateDirty();
+    }
+    else
+    {
+        processorRef.setBusGainDb(juce::jlimit(lo, hi,
+            std::round((processorRef.getBusGainDb()
+                        + (float)(busFaderLastY_ - y) * rate) * 10.0f) / 10.0f));
+    }
     busFaderLastY_ = y;
     repaint();
 }
@@ -29652,11 +31003,10 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         // the menu is for discovery.
         if (chainRowStarRects_[(size_t)i].contains(pos)) { toggleChainFavourite(i); return; }
         const auto& row = chainDisplayRows_[(size_t)i];
-        // MERGE_NOTES §1, decided at merge: EMPTY hooks on purpose. A row click
-        // happens ON the Chain tab, where openSavedChain's setChainSaveStatus
-        // already shows any fetch error in the user's line of sight; recall's
-        // chat-bubble reporting and slots watchdog have no place here.
-        if (row.id.isNotEmpty()) openSavedChain(row.id, row.name, {}, {});
+        // MERGE (21 Aug): the trunk's beginRecall supersedes the direct
+        // openSavedChain call this branch had here — the row click now gets
+        // the recall replace ask AND recallLoadChain's full reporting hooks.
+        if (row.id.isNotEmpty()) beginRecall(row.id, row.name);   // Item 4: guarded + active-view target
         return;
     }
 

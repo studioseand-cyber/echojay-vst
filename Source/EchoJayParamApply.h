@@ -983,6 +983,28 @@ inline void applyBands (juce::AudioPluginInstance& plugin, const juce::var& map,
 // Apply all semantic settings for one plugin slot.
 //   map      : the plugin's map object (from maps/<fp>.json), the whole thing
 //   settings : EchoJay's structured settings, e.g. { "ratio":"4:1", "attack_ms":30 }
+// Control-name normalisation, applied on BOTH the name the model sends and the
+// map/live name it is matched against, so the two agree when they differ only
+// in whitespace. Trim, then collapse every internal run of whitespace (space,
+// tab, newline) to a single space. "Global\nStrength" (a real control name on a
+// shipping plugin) and a double-spaced "Input  Gain" both round-trip. It must
+// run on both ends or not at all: normalising one side only would turn a match
+// into a miss. The plugin sends its live paramNames through this same function.
+inline juce::String normalizeControlName (const juce::String& raw)
+{
+    juce::String out;
+    auto cp = raw.trim().getCharPointer();
+    bool lastWasSpace = false;
+    for (juce::juce_wchar c; (c = cp.getAndAdvance()) != 0;)
+    {
+        const bool ws = (c == ' ' || c == '\t' || c == '\n'
+                      || c == '\r' || c == '\f' || c == 0x0b);
+        if (ws) { if (! lastWasSpace) { out << ' '; lastWasSpace = true; } }
+        else    { out << c; lastWasSpace = false; }
+    }
+    return out;
+}
+
 // Returns one ApplyResult per requested setting. Band-class semantics that the
 // flat map cannot serve (a suppressed freq_hz/gain_db on a multiband plugin)
 // are diverted to the band matcher instead of a flat decline; an explicit
@@ -1078,9 +1100,15 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
             auto entry = mapControls.getProperty (kv.name, juce::var());
             if (! entry.isObject())
                 if (auto* mo = mapControls.getDynamicObject())
+                {
+                    // Whitespace- and case-insensitive rescue: a name that
+                    // differs only in run-length whitespace (or case) still
+                    // matches. Both sides go through normalizeControlName.
+                    const auto want = normalizeControlName (name);
                     for (auto& mk : mo->getProperties())
-                        if (mk.name.toString().equalsIgnoreCase (name))
+                        if (normalizeControlName (mk.name.toString()).equalsIgnoreCase (want))
                         { entry = mk.value; break; }
+                }
             if (! entry.isObject())
             {
                 ApplyResult r; r.semantic = name;

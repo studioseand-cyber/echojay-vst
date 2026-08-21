@@ -946,12 +946,30 @@ struct RackSidecarSlot {
     // EQ is doing nothing. Absent key = unavailable, the same convention the
     // meter fields keep.
     std::vector<int16_t> curveDeciDb;
+    // Identity, so a Link-racked slot can enter the server's fingerprint union
+    // and be dialled (19 Aug 2026). Without these a Link slot reaches the
+    // server as a name with no fp and cannot be resolved to a map at all.
+    // Additive at v:1: written only when known, an old reader never asks. fp is
+    // the exact binary fingerprint; uid/version form the ik for the tiered
+    // fallback when a vendor update has moved the fp. AT THE END of the struct
+    // ON PURPOSE: RackSidecarSlot is positionally brace-initialised
+    // (LinkProcessor publishRackSidecar), so a new field goes last and is set
+    // by assignment, never spliced into the middle.
+    juce::String fp, uid, version;
 };
 struct RackSidecar {
     bool  valid = false;
     juce::String uid, name;
     int   revision = -1;
     float masterWet = 1.0f;
+    // Pre-chain gain (18 Aug 2026): mirrored so the mixer can show and drive
+    // each channel's pre-gain in Pre mode. Additive keys at v:1; an old
+    // reader ignores them and preGainDb stays 0 (unity, benign). userSet says
+    // the value was set by hand (a build will not overwrite it) so the strip
+    // can mark it; inputKnown gates the "no level, no confident 0" display.
+    float preGainDb = 0.0f;
+    bool  preGainUserSet = false;
+    bool  preGainInputKnown = false;
     std::vector<RackSidecarSlot> slots;
 };
 
@@ -1059,6 +1077,9 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
     obj->setProperty("name",      rc.name);
     obj->setProperty("revision",  rc.revision);
     obj->setProperty("masterWet", rc.masterWet);
+    obj->setProperty("preGainDb",        rc.preGainDb);
+    obj->setProperty("preGainUserSet",   rc.preGainUserSet);
+    obj->setProperty("preGainInputKnown", rc.preGainInputKnown);
     juce::Array<juce::var> slots;
     for (const auto& s : rc.slots)
     {
@@ -1068,6 +1089,11 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
         so->setProperty("settings", s.settings);
         so->setProperty("bypassed", s.bypassed);
         so->setProperty("wet",      s.wet);
+        // Identity for the fingerprint union (additive at v:1, written only
+        // when known). See RackSidecarSlot.
+        if (s.fp.isNotEmpty())      so->setProperty("fp",      s.fp);
+        if (s.uid.isNotEmpty())     so->setProperty("uid",     s.uid);
+        if (s.version.isNotEmpty()) so->setProperty("version", s.version);
         // ADDITIVE AT v:1, and it must stay that way. `v` is an EXACT-match
         // reject in readRackSidecar below, not a minimum, so publishing v:2
         // would make an older main plugin discard the WHOLE sidecar and lose
@@ -1106,6 +1132,9 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
     rc.revision  = (int)obj->getProperty("revision");
     rc.masterWet = obj->hasProperty("masterWet")
                      ? (float)(double)obj->getProperty("masterWet") : 1.0f;
+    rc.preGainDb        = obj->hasProperty("preGainDb") ? (float)(double)obj->getProperty("preGainDb") : 0.0f;
+    rc.preGainUserSet   = obj->hasProperty("preGainUserSet") && (bool)obj->getProperty("preGainUserSet");
+    rc.preGainInputKnown = obj->hasProperty("preGainInputKnown") && (bool)obj->getProperty("preGainInputKnown");
     if (auto* arr = obj->getProperty("slots").getArray())
         for (auto& sv : *arr)
             if (auto* so = sv.getDynamicObject())
@@ -1117,6 +1146,9 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
                 s.bypassed = (bool)so->getProperty("bypassed");
                 s.wet      = so->hasProperty("wet")
                                ? (float)(double)so->getProperty("wet") : 1.0f;
+                s.fp       = so->getProperty("fp").toString();
+                s.uid      = so->getProperty("uid").toString();
+                s.version  = so->getProperty("version").toString();
                 // Accepted ONLY at the exact published length. A short or long
                 // array is a version this reader does not understand, and half
                 // a curve drawn as a whole one would misplace every frequency

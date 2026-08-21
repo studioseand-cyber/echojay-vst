@@ -1,4 +1,5 @@
 #include "LinkEditor.h"
+#include "ChainPluginPicker.h"   // P13: the searchable "+" picker (shared with the main plugin)
 #include "EchoJayLogo.h"
 #include "EchoJayFieldStyle.h"   // EchoJayChrome::kFieldCorner (shared field radius)
 
@@ -213,6 +214,7 @@ LinkEditor::~LinkEditor()
 
 void LinkEditor::timerCallback()
 {
+    chainPanel.syncPreGain();   // keep the Link's own pre-gain knob live
     // Repaint only when the mono fold-down note appears/disappears/changes, so
     // steady-state playback never triggers a repaint (which could flicker the
     // hosted native editor). Both status lines (mini in paint(), full in the
@@ -502,25 +504,12 @@ void LinkEditor::showChainPluginPicker()
             avail.add(p);
     if (avail.isEmpty()) return;
 
-    juce::PopupMenu menu;
-    menu.addSectionHeader("ADD PLUGIN TO CHAIN");
-    for (int i = 0; i < avail.size(); ++i)
-    {
-        const auto& p = avail.getReference(i);
-        bool isAU = p.pluginFormatName == "AudioUnit";
-        menu.addItem(i + 1, p.name + "  [" + (isAU ? "AU" : "VST3") + "]");
-    }
-
+    // P13 (17 Aug 2026): the searchable picker shared with the main plugin
     auto safeThis = juce::Component::SafePointer<LinkEditor>(this);
-    menu.showMenuAsync(
-        juce::PopupMenu::Options()
-            .withTargetComponent(&chainPanel)
-            .withMaximumNumColumns(1)
-            .withMinimumNumColumns(1),
-        [safeThis, avail](int result)
+    ChainPluginPicker::show(chainPanel.addBlock, avail,
+        [safeThis](const juce::PluginDescription& desc)
         {
-            if (safeThis == nullptr || result <= 0 || result > avail.size()) return;
-            auto desc = avail[result - 1];
+            if (safeThis == nullptr) return;
             safeThis->chainPanel.statusText = "Loading " + desc.name + "...";
             safeThis->chainPanel.repaint();
 

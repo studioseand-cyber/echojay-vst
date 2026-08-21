@@ -457,6 +457,13 @@ private:
     // lag.
     std::vector<int16_t> lastComputedCurve_;
     std::vector<int16_t> lastPublishedCurve_;
+    // Pre-gain is EchoJay's own gain, not a hosted parameter, so it emits no
+    // change notification (same reason the EQ curve is POLLED). Tracked here
+    // so publishRackSidecar republishes when it moves, from ANY source (the
+    // Link's own knob or a remote command), keeping the ONE mirror current.
+    float lastPublishedPreGainDb_       = 0.0f;
+    bool  lastPublishedPreGainUserSet_  = false;
+    bool  lastPublishedPreGainInputKnown_ = false;
     double lastCurveChangeMs_ = 0.0;
     void publishRackSidecar();
     // ---- Edit lease (stage 1 remote editing) ------------------------------

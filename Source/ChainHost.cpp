@@ -14,6 +14,8 @@
  #include <libproc.h>
  #include <dlfcn.h>
  #include <unistd.h>
+ #include <signal.h>      // kill(pid, 0): is the process that wrote a death marker still alive
+ #include <cerrno>
  #include <sys/param.h>   // MAXCOMLEN
  #include <mach-o/dyld.h>     // _dyld_get_image_header: the process cputype (arch gate)
  #include <mach-o/fat.h>      // FAT_MAGIC, fat_arch (arch gate)
@@ -41,6 +43,122 @@ juce::File ChainHost::getEntriesCacheFile() { return appSupportDir().getChildFil
 juce::File ChainHost::getParamMapsCacheFile() { return appSupportDir().getChildFile("param_maps.json"); }
 juce::File ChainHost::getBlacklistFile()  { return appSupportDir().getChildFile("chain_blacklist.txt"); }
 juce::File ChainHost::getDeadmanFile()    { return appSupportDir().getChildFile("chain_load_deadman.txt"); }
+juce::File ChainHost::getStateOversizeFile() { return appSupportDir().getChildFile("chain_state_oversize.txt"); }
+
+// Recursive .vst3 collector, defined below; used by the scan above its definition.
+static void collectVst3BundlesRecursively(const juce::File& dir, juce::Array<juce::File>& out, int depthLeft);
+
+// ---------------------------------------------------------------------------
+// Death markers (17 Aug 2026). A mark is pushed before a call into a hosted
+// plugin that can take the process down and popped after it returns; the
+// live set is written to chain_load_deadman.<pid>.txt, one line per mark
+// (phase, path, name). A file whose pid is no longer running was left by a
+// process that died with those calls in flight, and the next ChainHost to
+// construct on this machine turns each line into a chain_blacklist.txt row
+// ("crashed the host during <phase> (deadman)"), which withholds the plugin
+// at feed and at load from then on. Per-pid files because Logic constructs
+// EchoJay instances at any moment: instance 5's constructor must not consume
+// a mark instance 1 is holding mid-load in the same process. The old single
+// chain_load_deadman.txt (validation only, path only) is still consumed.
+//
+// Covered: instantiate on every route (asyncCreatePlugin, held through the
+// caller's callback so completeLoad's graph insert and prepareToPlay are
+// inside it), thin-VST3 validation, setStateInformation on restore and on
+// the same-plugin replace, and createEditor. NOT covered, on purpose: a
+// death while processing or while an editor is open. Those windows hold N
+// racked plugins and no attribution; blacklisting all of them would punish
+// good plugins for a sibling's crash or a force-quit, and Logic kills the
+// AU host on quit without running destructors, so a "racked at death"
+// record would fire falsely on every launch.
+// ---------------------------------------------------------------------------
+namespace {
+struct DeathMark { int id; juce::String phase, path, name; };
+std::mutex& deathMarkMutex() { static std::mutex m; return m; }
+std::vector<DeathMark>& deathMarks() { static std::vector<DeathMark> v; return v; }
+juce::File deathMarkFile()
+{
+    return appSupportDir().getChildFile("chain_load_deadman." + juce::String((int) getpid()) + ".txt");
+}
+// Caller holds deathMarkMutex()
+void writeDeathMarksLocked()
+{
+    auto f = deathMarkFile();
+    if (deathMarks().empty()) { f.deleteFile(); return; }
+    juce::String out;
+    for (const auto& m : deathMarks())
+        out << m.phase << "\t" << m.path << "\t" << m.name << "\n";
+    f.getParentDirectory().createDirectory();
+    f.replaceWithText(out);
+}
+int pushDeathMark(const juce::String& phase, const juce::PluginDescription& d)
+{
+    if (d.fileOrIdentifier.isEmpty()) return 0;   // built-ins: nothing to blacklist
+    std::lock_guard<std::mutex> lk(deathMarkMutex());
+    static int nextId = 1;
+    const int id = nextId++;
+    deathMarks().push_back({ id, phase, d.fileOrIdentifier, d.name });
+    writeDeathMarksLocked();
+    return id;
+}
+void popDeathMark(int id)
+{
+    if (id == 0) return;
+    std::lock_guard<std::mutex> lk(deathMarkMutex());
+    auto& v = deathMarks();
+    v.erase(std::remove_if(v.begin(), v.end(), [id](const DeathMark& m) { return m.id == id; }), v.end());
+    writeDeathMarksLocked();
+}
+bool processAlive(int pid)
+{
+    if (pid <= 0) return false;
+    if (::kill((pid_t) pid, 0) == 0) return true;
+    return errno == EPERM;   // exists, not ours: alive
+}
+} // namespace
+
+// Consume every marker file left by a dead process. Runs in the ChainHost
+// constructor (main plugin and Link alike: the blacklist is machine-wide).
+void ChainHost::consumeDeathMarks()
+{
+    // Legacy single-path file (validation deadman before 17 Aug 2026).
+    // FIRST LINE ONLY: the dashboard-branch builds wrote a second line naming
+    // the phase ("state restore"); reading the whole file as one identifier
+    // would blacklist a string no plugin path can ever match.
+    auto legacy = getDeadmanFile();
+    if (legacy.existsAsFile())
+    {
+        auto lines = juce::StringArray::fromLines(legacy.loadFileAsString());
+        const juce::String crashed = lines.size() > 0 ? lines[0].trim() : juce::String();
+        const juce::String phase   = lines.size() > 1 ? lines[1].trim() : juce::String("load");
+        if (crashed.isNotEmpty())
+            addToBlacklist(crashed,
+                           phase == "state restore"
+                               ? juce::String("crashed the host restoring its saved settings (deadman)")
+                               : juce::String("crashed the host during load (deadman)"));
+        legacy.deleteFile();
+    }
+    for (const auto& f : appSupportDir().findChildFiles(juce::File::findFiles, false, "chain_load_deadman.*.txt"))
+    {
+        const int pid = f.getFileName().fromFirstOccurrenceOf("chain_load_deadman.", false, false)
+                                       .upToFirstOccurrenceOf(".txt", false, false).getIntValue();
+        if (pid == (int) getpid()) continue;     // ours: live marks, by definition
+        if (processAlive(pid)) continue;         // another live host process
+        juce::StringArray lines;
+        lines.addLines(f.loadFileAsString());
+        for (const auto& line : lines)
+        {
+            juce::StringArray cols;
+            cols.addTokens(line, "\t", "");
+            if (cols.size() < 2 || cols[1].trim().isEmpty()) continue;
+            const juce::String phase = cols[0].trim(), path = cols[1].trim();
+            const juce::String name  = cols.size() > 2 ? cols[2].trim() : path;
+            EchoJay_NSLog(("EJScan: deadman: \"" + name + "\" was in flight (" + phase
+                           + ") when host process " + juce::String(pid) + " died; added to chain_blacklist.txt").toRawUTF8());
+            addToBlacklist(path, "crashed the host during " + phase + " (deadman)");
+        }
+        f.deleteFile();
+    }
+}
 
 // Session load-failure key (see ChainHost.h: deliberately NOT persisted —
 // a load failure means "could not authorise right now", e.g. iLok absent,
@@ -54,6 +172,14 @@ static juce::String sessionLoadKey(const juce::String& name, const juce::String&
 // Popout-only plugins — shared local list, normalised-name keyed. The cache
 // mtime-reloads so a mark made by one host is seen by the other immediately.
 // ---------------------------------------------------------------------------
+// Feed split (P16) runtime gate. Present => the chain feed narrows to the
+// dialable subset; ABSENT (the default) => today's full undifferentiated list
+// and no existence query fires at all. A file flag, matching popout_only, so
+// the switch is a touch/rm with no rebuild and no UI. This is the field kill
+// switch: if the endpoint answers wrongly or a vendor's identities stop
+// matching, the feed reverts to full by deleting one file.
+static juce::File feedSplitFlagFile() { return appSupportDir().getChildFile("feed_split_on.txt"); }
+
 static juce::File popoutOnlyFile() { return appSupportDir().getChildFile("popout_only.txt"); }
 static juce::StringArray& popoutOnlyCache() { static juce::StringArray c; return c; }
 static juce::Time& popoutOnlyLoadTime()     { static juce::Time t;        return t; }
@@ -496,8 +622,27 @@ public:
     {
         smooth_.reset(sampleRate, 0.05);
         smooth_.setCurrentAndTargetValue(wet_ ? wet_->load(std::memory_order_relaxed) : 1.0f);
+        // The tallies clear ONLY on a sample-rate change (a new source, or a
+        // re-prepare that changes what a sample means). Hosts re-prepare on
+        // buffer-size changes and transport events too, and a tally that
+        // forgot the track on every play would never reach its floor.
+        if (sampleRate != tallySr_)
+        {
+            tallySr_ = sampleRate;
+            inTally_.prepare(sampleRate);
+            outTally_.prepare(sampleRate);
+        }
     }
     void releaseResources() override {}
+
+    // Running level on BOTH legs (17 Aug 2026): inputs 2/3 are this slot's
+    // input (the dry tap), inputs 0/1 the plugin's output. Measured before
+    // the fully-wet early-out below, so a slot at 100% is measured too.
+    // Cost is a few flops per sample; see EchoJayLevelTally.h.
+    const echojay::LevelTally& inTally()  const { return inTally_; }
+    const echojay::LevelTally& outTally() const { return outTally_; }
+    void resetTallies() { inTally_.reset(); outTally_.reset(); }
+    void restoreTallies(const juce::var& in, const juce::var& out) { inTally_.fromVar(in); outTally_.fromVar(out); }
 
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override
     {
@@ -506,6 +651,13 @@ public:
         smooth_.setTargetValue(target);
 
         const int n = buffer.getNumSamples();
+        {
+            const int nch = buffer.getNumChannels();
+            if (nch >= 1)
+                outTally_.push(buffer.getReadPointer(0), nch >= 2 ? buffer.getReadPointer(1) : nullptr, n);
+            if (nch >= 3)
+                inTally_.push(buffer.getReadPointer(2), nch >= 4 ? buffer.getReadPointer(3) : nullptr, n);
+        }
         // Fully wet and settled: output channels 0/1 already hold the wet
         // signal in-place — nothing to do (zero cost at the default setting).
         if (!smooth_.isSmoothing() && target >= 0.9995f)
@@ -542,6 +694,11 @@ public:
 private:
     std::shared_ptr<std::atomic<float>> wet_;
     juce::SmoothedValue<float>          smooth_;
+    // Plain (dBFS RMS) on the slot legs: a threshold is set in the units the
+    // detector sees, and out minus in cancels any weighting anyway.
+    echojay::LevelTally                 inTally_  { echojay::LevelTally::Weighting::Plain };
+    echojay::LevelTally                 outTally_ { echojay::LevelTally::Weighting::Plain };
+    double                              tallySr_ = 0.0;
 };
 
 // Defined up here, not with the rest of the settings-cache code below:
@@ -554,11 +711,27 @@ struct ChainHost::StateCacheTimer : juce::Timer
     ChainHost& owner;
 };
 
+// Runtime latency rebuild (16 Aug 2026). triggerAsyncUpdate is safe from
+// the audio thread; handleAsyncUpdate lands on the message thread and only
+// (re)starts the debounce, so a burst of latencyChanged notifications
+// collapses into one timer callback, which is the one place the graph is
+// touched.
+struct ChainHost::LatencyRebuilder : juce::AsyncUpdater, juce::Timer
+{
+    explicit LatencyRebuilder(ChainHost& o) : owner(o) {}
+    ~LatencyRebuilder() override { cancelPendingUpdate(); stopTimer(); }
+    void handleAsyncUpdate() override { startTimer(kDebounceMs); }
+    void timerCallback() override { stopTimer(); owner.rebuildForLatencyIfChanged(); }
+    static constexpr int kDebounceMs = 80;
+    ChainHost& owner;
+};
+
 ChainHost::ChainHost()
 {
     juce::addDefaultFormatsToManager(formatManager_);
 
     graph_ = std::make_unique<juce::AudioProcessorGraph>();
+    latencyRebuilder_ = std::make_unique<LatencyRebuilder>(*this);
 
     using IOProc = juce::AudioProcessorGraph::AudioGraphIOProcessor;
     inputNode_  = graph_->addNode(std::make_unique<IOProc>(IOProc::audioInputNode));
@@ -568,26 +741,9 @@ ChainHost::ChainHost()
     loadFromDisk();
     loadParamMapsFromDisk();
     mergeBootstrapMaps();
+    loadHelperCatalogue();
 
-    auto deadman = getDeadmanFile();
-    if (deadman.existsAsFile())
-    {
-        // TWO LINES since 2.26.5: identifier, then phase. A file written by an
-        // older build has one line, and an ABSENT phase means "load" — which is
-        // the only phase that existed when it was written. Absent is not a new
-        // state; it is the old one, and it must keep blacklisting exactly as it
-        // did before.
-        auto lines = juce::StringArray::fromLines(deadman.loadFileAsString());
-        const juce::String crashed = lines.size() > 0 ? lines[0].trim() : juce::String();
-        const juce::String phase   = lines.size() > 1 ? lines[1].trim() : juce::String("load");
-
-        if (crashed.isNotEmpty())
-            addToBlacklist(crashed,
-                           phase == "state restore"
-                               ? juce::String("crashed the host restoring its saved settings (deadman)")
-                               : juce::String("crashed the host during load (deadman)"));
-        deadman.deleteFile();
-    }
+    consumeDeathMarks();
 }
 
 // Process-lifetime store for hosted plugin instances — INTENTIONALLY leaked
@@ -614,6 +770,7 @@ ChainHost::~ChainHost()
     // design, so a listener left attached would be a call into freed memory
     // the first time a stray plugin timer fired.
     if (stateCacheTimer_) stateCacheTimer_->stopTimer();
+    if (latencyRebuilder_) { latencyRebuilder_->cancelPendingUpdate(); latencyRebuilder_->stopTimer(); }
     stateCacheEnabled_ = false;
     for (int i = 0; i < (int)slots_.size(); ++i)
         detachHostedListener(i);
@@ -655,6 +812,17 @@ void ChainHost::prepare(double sampleRate, int blockSize)
     dryRingWrite_ = 0;
     masterWetSmooth_.reset(sampleRate, 0.05);
     masterWetSmooth_.setCurrentAndTargetValue(masterWet_.load(std::memory_order_relaxed));
+    preGainSmooth_.reset(sampleRate, 0.03);
+    preGainSmooth_.setCurrentAndTargetValue(
+        juce::Decibels::decibelsToGain(preGainDb_.load(std::memory_order_relaxed)));
+    // Running level: cleared only when the sample rate CHANGES (see
+    // SlotWetBlend::prepareToPlay for why not on every prepare)
+    if (sampleRate != tallySr_)
+    {
+        tallySr_ = sampleRate;
+        chainInTally_.prepare(sampleRate);
+        chainOutTally_.prepare(sampleRate);
+    }
 
     graph_->setPlayConfigDetails(2, 2, sampleRate, blockSize);
     graph_->prepareToPlay(sampleRate, blockSize);
@@ -672,8 +840,46 @@ void ChainHost::process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi
     // An empty AudioProcessorGraph with only IO nodes can drop audio under
     // certain prepare/rebuild orderings; bypassing it avoids that entirely.
     // (Also means master wet/dry costs nothing on an empty chain.)
-    if (!prepared_ || !graph_ || !hasActiveSlots_.load())
+    if (!prepared_ || !graph_) return;
+    // Running level at the chain INPUT, before anything, including on an
+    // empty rack: a build on an empty rack still needs to know the level.
+    if (buffer.getNumChannels() >= 1)
+        chainInTally_.push(buffer.getReadPointer(0),
+                           buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : nullptr,
+                           buffer.getNumSamples());
+
+    // PRE-CHAIN GAIN, after the raw-input tally and before anything else, so
+    // chainInTally_ is the raw input and everything downstream (slot 1's input
+    // tally = the operating level, the graph, chainOutTally_) sees the trim.
+    // It is part of what EchoJay does, not a hidden compensation: a DAW bypass
+    // compares the raw input against pre-gain + chain.
+    {
+        const float target = juce::Decibels::decibelsToGain(preGainDb_.load(std::memory_order_relaxed));
+        preGainSmooth_.setTargetValue(target);
+        if (preGainSmooth_.isSmoothing())
+        {
+            const int nn = buffer.getNumSamples();
+            const int nc = buffer.getNumChannels();
+            for (int i = 0; i < nn; ++i)
+            {
+                const float g = preGainSmooth_.getNextValue();
+                for (int c = 0; c < nc; ++c) buffer.getWritePointer(c)[i] *= g;
+            }
+        }
+        else if (preGainSmooth_.getCurrentValue() != 1.0f)
+        {
+            buffer.applyGain(preGainSmooth_.getCurrentValue());
+        }
+    }
+    if (!hasActiveSlots_.load())
+    {
+        // Passthrough: the chain output IS the input
+        if (buffer.getNumChannels() >= 1)
+            chainOutTally_.push(buffer.getReadPointer(0),
+                                buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : nullptr,
+                                buffer.getNumSamples());
         return;   // buffer passes through untouched
+    }
 
     const int n   = buffer.getNumSamples();
     const int chs = juce::jmin(2, buffer.getNumChannels());
@@ -708,6 +914,7 @@ void ChainHost::process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi
         if (ringOk) dryRingWrite_ = (dryRingWrite_ + n) % kDryRingLen;
         masterWetSmooth_.skip(n);
         graph_->processBlock(buffer, midi);
+        chainOutTally_.push(buffer.getReadPointer(0), chs >= 2 ? buffer.getReadPointer(1) : nullptr, n);
         return;
     }
 
@@ -743,6 +950,8 @@ void ChainHost::process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi
             out[i] = out[i] * w + dryScratch_.getReadPointer(c)[i] * (1.0f - w);
         }
     }
+    // Running level at the chain OUTPUT: post master wet, pre bus trim
+    chainOutTally_.push(buffer.getReadPointer(0), chs >= 2 ? buffer.getReadPointer(1) : nullptr, n);
 }
 
 // ---------------------------------------------------------------------------
@@ -804,6 +1013,11 @@ void ChainHost::doRefresh()
     // replace the in-memory set because every add persists immediately
     // (addToBlacklist), so memory never holds an entry the file lacks.
     reloadBlacklistFromDisk();
+    reloadStateOversizeFromDisk();
+    // Union the helper's catalogue BEFORE the VST3 un-thin join below reads
+    // knownPlugins_, so a background sweep that finished since startup lands in
+    // this scan's rows rather than waiting for a restart.
+    loadHelperCatalogue();
 
     juce::Array<juce::PluginDescription> auEntries, vst3Entries;
 
@@ -863,8 +1077,11 @@ void ChainHost::doRefresh()
             auto dir = paths[pi];
             if (!dir.isDirectory()) continue;
 
-            auto found = dir.findChildFiles(
-                juce::File::findDirectories | juce::File::findFiles, false, "*.vst3");
+            // Recursive since 18 Aug 2026 (was top level only): vendor
+            // subfolders (UA, Melda, Kilohearts, Soundtoys, Slate) hold most
+            // of the library. Depth 4 covers the measured nesting of 2 with room.
+            juce::Array<juce::File> found;
+            collectVst3BundlesRecursively(dir, found, 4);
 
             for (auto& f : found)
             {
@@ -956,6 +1173,7 @@ void ChainHost::doRefresh()
         std::lock_guard<std::mutex> lk(pluginsMutex_);
         entries_ = collected;
     }
+    computeSupersessions();   // mark older-version duplicates now the rows are final
 
     // Persist the FULL entries list so the other host (main plugin / Link)
     // resolves against the same list without running its own scan. The
@@ -1020,7 +1238,28 @@ void ChainHost::doRefresh()
 // same lowercasing and the same AU-first-wins semantics: a VST3 row is
 // skipped when any AU shares its lowercased name. Empty-filter callers
 // therefore see a list identical to the pre-relocation one.
-static juce::Array<juce::PluginDescription>
+static // Collect .vst3 bundles under a directory, RECURSIVELY (18 Aug 2026). The old
+// scan used findChildFiles(..., false, "*.vst3"), top level only, so 412
+// bundles inside vendor subfolders (Universal Audio, MeldaProduction,
+// Kilohearts, Soundtoys, Slate Digital) were never enumerated: 448 -> 860
+// here. A .vst3 is itself a directory, so this treats one as a LEAF and never
+// descends into it (a bundle's Contents never holds another plugin). Bounded
+// depth guards a pathological tree; measured nesting is 2.
+static void collectVst3BundlesRecursively(const juce::File& dir,
+                                          juce::Array<juce::File>& out,
+                                          int depthLeft)
+{
+    if (depthLeft < 0 || ! dir.isDirectory()) return;
+    for (auto& child : dir.findChildFiles(juce::File::findDirectories | juce::File::findFiles, false))
+    {
+        if (child.getFileName().endsWithIgnoreCase(".vst3"))
+            out.add(child);                                   // a bundle: a leaf, do not descend
+        else if (child.isDirectory())
+            collectVst3BundlesRecursively(child, out, depthLeft - 1);
+    }
+}
+
+juce::Array<juce::PluginDescription>
 collapseAuPreferring(const juce::Array<juce::PluginDescription>& rows)
 {
     std::unordered_set<std::string> auNames;
@@ -1045,7 +1284,8 @@ int ChainHost::getNumPlugins() const
 
 juce::Array<juce::PluginDescription> ChainHost::getFilteredPlugins(
     const juce::String& filter,
-    const juce::String& formatFilter) const
+    const juce::String& formatFilter,
+    bool collapseTwins) const
 {
     std::lock_guard<std::mutex> lock(pluginsMutex_);
     juce::Array<juce::PluginDescription> result;
@@ -1069,9 +1309,9 @@ juce::Array<juce::PluginDescription> ChainHost::getFilteredPlugins(
     }
 
     juce::Array<juce::PluginDescription> collapsed;
-    if (formatFilter.isEmpty())
+    if (formatFilter.isEmpty() && collapseTwins)
         collapsed = collapseAuPreferring(entries_);
-    const auto& rows = formatFilter.isEmpty() ? collapsed : entries_;
+    const auto& rows = (formatFilter.isEmpty() && collapseTwins) ? collapsed : entries_;
 
     for (auto& d : rows)
     {
@@ -1115,6 +1355,17 @@ ChainHost::SlotInfo ChainHost::getSlotInfo(int i) const
     if (i < 0 || i >= (int)slots_.size()) return { {}, false, {}, {}, 1.0f };
     return { slots_[i].desc.name, slots_[i].bypassed, slots_[i].settings,
              slots_[i].desc.pluginFormatName, slots_[i].wet };
+}
+
+ChainHost::SlotIdentity ChainHost::getSlotIdentity(int slot) const
+{
+    SlotIdentity id;
+    if (slot < 0 || slot >= (int) slots_.size()) return id;
+    const auto& s = slots_[(size_t) slot];
+    id.fp = s.fp;
+    if (s.desc.uniqueId != 0) id.uid = juce::String::toHexString(s.desc.uniqueId);
+    id.version = s.desc.version;
+    return id;
 }
 
 void ChainHost::setSlotSettings(int i, const juce::String& settings)
@@ -1171,6 +1422,18 @@ std::vector<ChainHost::ChainEditOp> ChainHost::parseChainEditOps(
         // raw var — setSlotStructuredSettings ignores a void/non-object, so ops
         // without it behave exactly as before.
         op.structuredSettings = eo->getProperty("settings_structured");
+        // Slot wet/dry from the model: "wet_pct" 0..100. Numbers clamp;
+        // anything else is absent (the knob is left alone) and logged, so
+        // a wrong type never silently reads as 0% or 100%.
+        if (eo->hasProperty("wet_pct"))
+        {
+            const auto wv = eo->getProperty("wet_pct");
+            if (wv.isDouble() || wv.isInt() || wv.isInt64())
+                op.wetPct = juce::jlimit(0.0f, 100.0f, (float)(double) wv);
+            else
+                EchoJay_NSLog(("EJEdit: wet_pct on op \"" + op.op + "\" is not a number ("
+                               + wv.toString() + "); ignored").toRawUTF8());
+        }
         if (auto* nsObj = eo->getProperty("no_such").getDynamicObject())
         {
             op.noSuchTerm = nsObj->getProperty("term").toString();
@@ -1240,6 +1503,10 @@ juce::String ChainHost::describeEditOp(const ChainEditOp& op,
              + " (slot " + juce::String(op.slot + 1) + ") to position " + juce::String(op.to + 1);
     if (op.op == "bypass")
         return juce::String(op.on ? "\xe2\x8f\xbb bypass " : "\xe2\x8f\xbb un-bypass ")
+             + slotName(op.slot) + " (slot " + juce::String(op.slot + 1) + ")";
+    if (op.op == "set_wet")
+        return juce::String::fromUTF8("\xe2\x97\x90 set wet ")
+             + juce::String(juce::roundToInt(juce::jmax(0.0f, op.wetPct))) + "% on "
              + slotName(op.slot) + " (slot " + juce::String(op.slot + 1) + ")";
     if (op.op == "set")
     {
@@ -1415,6 +1682,13 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
                 if (op.settings.isEmpty() && op.structuredSettings.getDynamicObject() == nullptr)
                     return bad("set without any settings");
             }
+            else if (op.op == "set_wet")
+            {
+                // Slot wet/dry only (16 Aug 2026): EchoJay's own blend on an
+                // EXISTING slot, never a plugin parameter, never the instance.
+                if (!validSlot(op.slot)) return bad(slotLabel(op.slot) + " does not exist");
+                if (op.wetPct < 0.0f) return bad("set_wet without a wet_pct (0 to 100)");
+            }
             else return bad("unknown operation \"" + op.op + "\"");
         }
     }
@@ -1474,6 +1748,8 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
             label = "Reordering the chain...";
         else if (op.op == "bypass")
             label = op.on ? "Bypassing a slot..." : "Un-bypassing a slot...";
+        else if (op.op == "set_wet")
+            label = "Setting wet/dry...";
         else if (op.op == "set")
         {
             const int cur = (op.slot >= 0 && op.slot < (int)st->map.size())
@@ -1538,6 +1814,17 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
         if (cur < 0) return failAndStop("bypass failed: slot no longer present");
         setSlotBypassed(cur, op.on);
         finishOpAndContinue(juce::String(op.on ? "bypassed " : "un-bypassed ")
+                            + slots_[(size_t)cur].desc.name);
+        return;
+    }
+    if (op.op == "set_wet")
+    {
+        const int cur = curOf(op.slot);
+        if (cur < 0) return failAndStop("set_wet failed: slot no longer present");
+        setSlotWet(cur, op.wetPct / 100.0f);
+        EchoJay_NSLog(("EJEdit: set_wet slot=" + juce::String(cur + 1) + " \""
+                       + slots_[(size_t)cur].desc.name + "\" wet=" + juce::String(op.wetPct, 1) + "%").toRawUTF8());
+        finishOpAndContinue("set wet " + juce::String(juce::roundToInt(op.wetPct)) + "% on "
                             + slots_[(size_t)cur].desc.name);
         return;
     }
@@ -1647,6 +1934,10 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
                     setSlotSettings(slotIdx, theOp.settings);
                 if (theOp.structuredSettings.getDynamicObject() != nullptr)
                     setSlotStructuredSettings(slotIdx, theOp.structuredSettings);
+                // wet_pct riding an add/replace: EchoJay's own blend on the
+                // slot that just loaded; absent leaves the default (1.0).
+                if (theOp.wetPct >= 0.0f)
+                    setSlotWet(slotIdx, theOp.wetPct / 100.0f);
             };
 
             if (theOp.op == "add")
@@ -1699,9 +1990,13 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
                 if (samePlugin && oldState.getSize() > 0)
                     if (auto* newNode = slots_[(size_t)oldCur].node.get())
                         if (auto* newProc = newNode->getProcessor())
+                        {
+                            const int mark = pushDeathMark("state restore", desc);
                             try { newProc->setStateInformation(oldState.getData(),
                                                                (int)oldState.getSize()); }
                             catch (...) {}
+                            popDeathMark(mark);
+                        }
 
                 applyOpSettings(oldCur);
                 finish(samePlugin
@@ -1739,6 +2034,214 @@ float ChainHost::getSlotWet(int i) const
 {
     if (i < 0 || i >= (int)slots_.size()) return 1.0f;
     return slots_[(size_t)i].wet;
+}
+
+ChainHost::SlotLevels ChainHost::getSlotLevels(int i) const
+{
+    SlotLevels out;
+    if (i < 0 || i >= (int)slots_.size()) return out;
+    const auto& s = slots_[(size_t)i];
+    if (s.bypassed || !s.blendNode) return out;   // not in circuit: not measured
+    if (auto* b = dynamic_cast<SlotWetBlend*>(s.blendNode->getProcessor()))
+    {
+        out.in  = b->inTally().snapshot();
+        out.out = b->outTally().snapshot();
+        out.measured = true;
+    }
+    return out;
+}
+
+void ChainHost::resetAllLevels()
+{
+    chainInTally_.reset();
+    chainOutTally_.reset();
+    for (auto& s : slots_)
+        if (s.blendNode)
+            if (auto* b = dynamic_cast<SlotWetBlend*>(s.blendNode->getProcessor()))
+                b->resetTallies();
+    pendingSlotLevels_.clear();
+    EchoJay_NSLog("EJLevels: all level tallies reset");
+}
+
+void ChainHost::setHostTrackName(const juce::String& nameIn)
+{
+    const juce::String name = nameIn.trim();
+    const juce::String was  = hostTrackName_;
+    hostTrackName_ = name;
+    if (name.isEmpty()) return;
+    // Two orderings of the same guard: the name changed under a live
+    // instance (copied to another track, or the track renamed: a rename
+    // costs one reset, which is the cheap direction), or the host named the
+    // track AFTER a restore that carried another track's tally.
+    if (was.isNotEmpty() && was != name)
+    {
+        EchoJay_NSLog(("EJLevels: host track name changed \"" + was + "\" -> \"" + name
+                       + "\": level tallies reset").toRawUTF8());
+        resetAllLevels();
+    }
+    else if (was.isEmpty() && restoredLevelsTrack_.isNotEmpty() && restoredLevelsTrack_ != name)
+    {
+        EchoJay_NSLog(("EJLevels: restored tally was measured on \"" + restoredLevelsTrack_
+                       + "\", host now names this track \"" + name + "\": level tallies reset").toRawUTF8());
+        resetAllLevels();
+    }
+    else if (was.isEmpty())
+        EchoJay_NSLog(("EJLevels: host track name \"" + name + "\"").toRawUTF8());
+    restoredLevelsTrack_.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Pre-chain gain (headroom + operating level)
+// ---------------------------------------------------------------------------
+void ChainHost::setPreGainDb(float db, bool userSet)
+{
+    const float g = juce::jlimit(kPreGainMinDb, kPreGainMaxDb, db);
+    preGainDb_.store(g, std::memory_order_relaxed);
+    if (userSet) { preGainUserSet_ = true; preGainState_ = PreGainState::UserSet; }
+    else if (! preGainUserSet_)
+        preGainState_ = (std::abs(g) > 1.0e-3f) ? PreGainState::Auto : PreGainState::Off;
+    EchoJay_NSLog(("EJPreGain: set " + juce::String(g, 2) + " dB ("
+                   + juce::String(userSet ? "by the user" : "auto") + ")").toRawUTF8());
+}
+
+void ChainHost::resetPreGainToAuto()
+{
+    // Clear the hand-set flag, then recompute the auto value NOW (target
+    // minus the measured input) rather than zeroing: "reset to auto" means
+    // the auto headroom, not 0. computePreGainAtBuild leaves it at 0 with
+    // state NoLevel when no level is known, which is the honest unset.
+    preGainUserSet_ = false;
+    preGainDb_.store(0.0f, std::memory_order_relaxed);
+    preGainState_ = PreGainState::Off;
+    computePreGainAtBuild();   // sets Auto / Off / NoLevel from the current input
+    EchoJay_NSLog("EJPreGain: reset to auto");
+}
+
+void ChainHost::computePreGainAtBuild()
+{
+    // The user's hand-set value is never overwritten by a build.
+    if (preGainUserSet_)
+    {
+        EchoJay_NSLog(("EJPreGain: build kept the user's pre-gain "
+                       + juce::String(preGainDb_.load(std::memory_order_relaxed), 2) + " dB").toRawUTF8());
+        return;
+    }
+    const auto in = chainInTally_.snapshot();
+    if (! in.known)
+    {
+        // No level known: not set, no guess (the same rule as everything on
+        // the tally). Visible through the readout and the CHAIN LEVELS line.
+        preGainState_ = PreGainState::NoLevel;
+        EchoJay_NSLog("EJPreGain: build with no input level known, pre-gain not set");
+        return;
+    }
+    const float g = juce::jlimit(kPreGainMinDb, kPreGainMaxDb, kPreGainTargetLufs - in.levelDb);
+    preGainDb_.store(g, std::memory_order_relaxed);
+    preGainState_ = (std::abs(g) > 1.0e-3f) ? PreGainState::Auto : PreGainState::Off;
+    EchoJay_NSLog(("EJPreGain: build set " + juce::String(g, 2) + " dB to reach "
+                   + juce::String(kPreGainTargetLufs, 0) + " LUFS from input "
+                   + juce::String(in.levelDb, 2) + " LUFS (operating "
+                   + juce::String(in.levelDb + g, 2) + ")").toRawUTF8());
+}
+
+float ChainHost::getOperatingLevelLufs() const
+{
+    const auto in = chainInTally_.snapshot();
+    if (! in.known) return std::numeric_limits<float>::quiet_NaN();
+    return in.levelDb + preGainDb_.load(std::memory_order_relaxed);
+}
+
+ChainHost::PreGainReadout ChainHost::getPreGain() const
+{
+    PreGainReadout r;
+    r.db      = preGainDb_.load(std::memory_order_relaxed);
+    r.state   = preGainState_;
+    r.userSet = preGainUserSet_;
+    switch (preGainState_)
+    {
+        case PreGainState::Off:     r.text = std::abs(r.db) > 1.0e-3f
+                                        ? "Pre-gain: " + juce::String(r.db, 1) + " dB"
+                                        : "Pre-gain: 0.0 dB"; break;
+        case PreGainState::Auto:    r.text = "Pre-gain: " + juce::String(r.db, 1) + " dB (auto, to "
+                                        + juce::String(kPreGainTargetLufs, 0) + " LUFS)"; break;
+        case PreGainState::UserSet: r.text = "Pre-gain: " + juce::String(r.db, 1) + " dB (set by you)"; break;
+        case PreGainState::NoLevel: r.text = "Pre-gain: not set (input level not known yet)"; break;
+    }
+    return r;
+}
+
+juce::var ChainHost::getLevelsStateVar(const juce::String& trackName) const
+{
+    auto* o = new juce::DynamicObject();
+    o->setProperty("v", 1);
+    o->setProperty("trackName", trackName);
+    o->setProperty("in",  chainInTally_.toVar());
+    o->setProperty("out", chainOutTally_.toVar());
+    juce::Array<juce::var> arr;
+    for (int i = 0; i < (int)slots_.size(); ++i)
+    {
+        const auto& s = slots_[(size_t)i];
+        auto* b = s.blendNode ? dynamic_cast<SlotWetBlend*>(s.blendNode->getProcessor()) : nullptr;
+        if (b == nullptr) continue;   // never in circuit: nothing measured, nothing saved
+        auto* so = new juce::DynamicObject();
+        so->setProperty("n",   i + 1);   // the slot number chainSlotsXml writes it as
+        so->setProperty("in",  b->inTally().toVar());
+        so->setProperty("out", b->outTally().toVar());
+        arr.add(juce::var(so));
+    }
+    o->setProperty("slots", arr);
+    return juce::var(o);
+}
+
+void ChainHost::setPendingLevelsState(const juce::var& v, const juce::String& currentTrackName)
+{
+    pendingSlotLevels_.clear();
+    auto* o = v.getDynamicObject();
+    if (o == nullptr) return;
+    const juce::String savedTrack = o->getProperty("trackName").toString().trim();
+    const juce::String nowTrack   = currentTrackName.trim();
+    // THE GUARD (load-bearing, not defensive): a level tally describes a
+    // source. If this host names tracks and the names differ, the saved
+    // tally is somebody else's channel (the plugin was copied) and starts
+    // empty rather than inheriting a confidently wrong level. Names that
+    // are both empty (a host that names no track) let it through; the
+    // heard/window figures and the decay bound the damage there.
+    if (savedTrack.isNotEmpty() && nowTrack.isNotEmpty() && savedTrack != nowTrack)
+    {
+        EchoJay_NSLog(("EJLevels: saved tally discarded, it was measured on track \"" + savedTrack
+                       + "\" and this is \"" + nowTrack + "\"").toRawUTF8());
+        return;
+    }
+    if (savedTrack.isEmpty() && nowTrack.isEmpty())
+    {
+        // Neither side can name the track, so nothing can say whether this
+        // is the channel the tally was measured on: DISCARDED, not restored.
+        // Bounded-wrong is still wrong, and a copied plugin inheriting a
+        // level is the exact failure this instrument exists to prevent. The
+        // cost is three seconds of playing after a reopen, which the feature
+        // asks for anyway. An Ableton user reading "no level known" after a
+        // reopen finds the reason here.
+        EchoJay_NSLog("EJLevels: saved tally DISCARDED: neither the session nor the host names this "
+                      "track (this host reports no track name), so the tally cannot be tied to a "
+                      "source; it restarts on the next few seconds of playing");
+        return;
+    }
+    // Remember what the restored tally was measured on: if the host names
+    // this track later and it differs, setHostTrackName resets.
+    restoredLevelsTrack_ = nowTrack.isEmpty() ? savedTrack : juce::String();
+    int slotsPending = 0;
+    if (auto* arr = o->getProperty("slots").getArray())
+        for (auto& sv : *arr)
+            if (auto* so = sv.getDynamicObject())
+            {
+                const int n = (int) so->getProperty("n");
+                if (n >= 1) { pendingSlotLevels_[n] = { so->getProperty("in"), so->getProperty("out") }; ++slotsPending; }
+            }
+    const bool inOk  = chainInTally_.fromVar(o->getProperty("in"));
+    const bool outOk = chainOutTally_.fromVar(o->getProperty("out"));
+    EchoJay_NSLog(("EJLevels: pending restore, chain in=" + juce::String(inOk ? "y" : "n")
+                   + " out=" + juce::String(outOk ? "y" : "n") + " slots=" + juce::String(slotsPending)
+                   + " track=\"" + savedTrack + "\"").toRawUTF8());
 }
 
 std::vector<ChainHost::ApplyReport>
@@ -1845,7 +2348,11 @@ juce::AudioProcessorEditor* ChainHost::createEditorForSlot(int i)
     try
     {
         auto* proc = slots_[i].node->getProcessor();
-        return proc ? proc->createEditor() : nullptr;
+        if (proc == nullptr) return nullptr;
+        const int mark = pushDeathMark("editor creation", slots_[i].desc);
+        auto* ed = proc->createEditor();
+        popDeathMark(mark);
+        return ed;
     }
     catch (...) { return nullptr; }
 }
@@ -1853,6 +2360,22 @@ juce::AudioProcessorEditor* ChainHost::createEditorForSlot(int i)
 // ---------------------------------------------------------------------------
 // Async load (appends to chain)
 // ---------------------------------------------------------------------------
+void ChainHost::asyncCreatePlugin(const juce::PluginDescription& d,
+    std::function<void(std::unique_ptr<juce::AudioPluginInstance>, const juce::String&)> cb)
+{
+    // Death mark up for the instantiate, and held THROUGH the caller's
+    // callback: completeLoad inserts the node and prepares the graph in
+    // there, and a plugin that dies in prepareToPlay died at instantiate for
+    // every purpose the blacklist serves.
+    const int mark = pushDeathMark("instantiate", d);
+    formatManager_.createPluginInstanceAsync(d, sampleRate_, blockSize_,
+        [mark, cb = std::move(cb)](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
+        {
+            if (cb) cb(std::move(inst), err);
+            popDeathMark(mark);
+        });
+}
+
 void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
                               const juce::PluginDescription& desc)
 {
@@ -1864,6 +2387,31 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
     slot.desc     = desc;
     slot.bypassed = false;
     slots_.push_back(std::move(slot));
+    // A VST3 build inside an AU host is told in the rack, on every route
+    // (session restore, shared chain, picker, model): the chain that comes
+    // back is the chain that was saved, and it is not silent about it.
+    if (hostPluginFormat_ == "AudioUnit" && desc.pluginFormatName == "VST3")
+        addStateNote(desc.name + ": the VST3 build, hosted inside this AU host."
+                     " Experimental; the chain list offers VST3s here only while"
+                     " vst3_in_au_host is on");
+    // Second net for SettingsTooLarge (the fingerprint pass is the first):
+    // a plugin fingerprinted before this measurement existed is measured at
+    // its first rack. Default state, right after instantiate; the slot stays
+    // racked for this session and is withheld from the list from now on.
+    if (!isBuiltinDescription(desc))
+        if (auto* p = slots_.back().node ? slots_.back().node->getProcessor() : nullptr)
+        {
+            juce::MemoryBlock st;
+            try { p->getStateInformation(st); } catch (...) { st.reset(); }
+            if ((int) st.getSize() > kSessionStateMaxSlotBytes)
+            {
+                recordStateOversize(desc.fileOrIdentifier, (int) st.getSize(), desc.name, "first rack");
+                addStateNote(desc.name + ": its settings are " + juce::File::descriptionOfSizeInBytes((juce::int64) st.getSize())
+                             + " at their defaults, over the " + juce::File::descriptionOfSizeInBytes((juce::int64) kSessionStateMaxSlotBytes)
+                             + " a session can save per plugin, so a chain holding it cannot be saved with the project;"
+                               " it stays racked now and is withheld from the chain list from here on");
+            }
+        }
     bumpChainRevision();
     rebuildGraph();
     if (prepared_)
@@ -1999,6 +2547,9 @@ void ChainHost::setSlotStructuredSettings(int i, const juce::var& structured)
 
     slots_[(size_t)i].structuredSettings = structured;
     slots_[(size_t)i].structuredApplied  = false;
+    // New request, new denominator: a lingering count from the previous
+    // apply must not travel with this request's declines (dial-3 A3).
+    slots_[(size_t)i].dialRequestedCount = -1;
     applyStructuredIfReady(i, DialTrigger::settingsAttached);
 
     // Map not cached yet (first-ever encounter of this plugin): fetch just
@@ -2195,6 +2746,177 @@ bool ChainHost::settleStaleRung(int i)
     if (! s.settings.startsWith(note))
         s.settings = s.settings.isEmpty() ? note : note + "\n" + s.settings;
     return true;
+}
+
+void ChainHost::loadHelperCatalogue()
+{
+    // Blocker-1 THIRD option (the design's): the helper writes its OWN files and
+    // this is their sole reader; the DAW keeps writing chain_plugins.xml on its
+    // validated loads. No shared file, so no write race; addType and the
+    // identity-key map both dedup at read, so a plugin present in both files
+    // resolves once. Cost is one extra load here.
+    auto scanXml = getPluginListFile().getSiblingFile("chain_plugins_scan.xml");
+    if (scanXml.existsAsFile())
+        if (auto doc = juce::XmlDocument::parse(scanXml))
+        {
+            juce::KnownPluginList tmp;
+            tmp.recreateFromXml(*doc);
+            int added = 0;
+            {
+                std::lock_guard<std::mutex> lock(pluginsMutex_);
+                for (const auto& d : tmp.getTypes()) { knownPlugins_.addType(d); ++added; }
+            }
+            EchoJay_NSLog(("EJScan: helper catalogue unioned, " + juce::String(added)
+                           + " validated identit(ies) from chain_plugins_scan.xml").toRawUTF8());
+        }
+
+    // identityToFp from the helper: same shape and same read-merge as
+    // mergeBootstrapMaps' identityToFp block. First-writer-wins on a key, so the
+    // DAW's own load-captured fps are never overwritten by the catalogue.
+    auto fpScan = getParamMapsCacheFile().getSiblingFile("chain_fp_scan.json");
+    if (fpScan.existsAsFile())
+    {
+        auto root = juce::JSON::parse(fpScan.loadFileAsString());
+        int addedIds = 0;
+        if (auto* idx = root.getProperty("identityToFp", juce::var()).getDynamicObject())
+            for (auto& p : idx->getProperties())
+                if (identityToFp_.find(p.name.toString()) == identityToFp_.end())
+                {
+                    identityToFp_[p.name.toString()] = p.value.toString();
+                    ++addedIds;
+                }
+        if (addedIds > 0)
+            EchoJay_NSLog(("EJScan: " + juce::String(addedIds)
+                           + " helper fp(s) unioned from chain_fp_scan.json").toRawUTF8());
+    }
+
+    reloadHealthFromDisk();   // chain_health.json, read by the withheld panel
+}
+
+namespace {
+// Numeric version compare, component by component, a missing component read as
+// zero (so 12.0 and 12.0.0 are equal). Returns -1 (a<b), 0 (equal), 1 (a>b).
+// bothParsed is false if EITHER side has a non-numeric component or is empty;
+// the caller must then NOT order them, never guess. A STRING compare is wrong
+// here: lexically "9.6" > "12.6" because '9' > '1', which would supersede the
+// 12.x shell by the 9.6 one, exactly backwards.
+int compareVersionNumeric (const juce::String& a, const juce::String& b, bool& bothParsed)
+{
+    auto parse = [] (const juce::String& v, bool& ok)
+    {
+        std::vector<int> out;
+        juce::StringArray parts;
+        parts.addTokens (v.trim(), ".", "");
+        ok = parts.size() > 0 && v.trim().isNotEmpty();
+        for (auto& p : parts)
+        {
+            const auto t = p.trim();
+            if (t.isEmpty() || ! t.containsOnly ("0123456789")) ok = false;
+            out.push_back (t.getIntValue());
+        }
+        return out;
+    };
+    bool ao = false, bo = false;
+    const auto va = parse (a, ao), vb = parse (b, bo);
+    bothParsed = ao && bo;
+    const size_t n = juce::jmax (va.size(), vb.size());
+    for (size_t i = 0; i < n; ++i)
+    {
+        const int x = i < va.size() ? va[i] : 0;   // missing component = 0
+        const int y = i < vb.size() ? vb[i] : 0;
+        if (x != y) return x < y ? -1 : 1;
+    }
+    return 0;   // equal
+}
+} // namespace
+
+void ChainHost::reloadHealthFromDisk()
+{
+    // Sibling of chain_plugins.xml, written by ejextract --catalogue. Absent on
+    // a machine that has not swept yet: a no-op, not an error.
+    auto f = getPluginListFile().getSiblingFile("chain_health.json");
+    std::lock_guard<std::mutex> lock(pluginsMutex_);
+    health_.clear();
+    if (! f.existsAsFile()) return;
+    auto root = juce::JSON::parse(f.loadFileAsString());
+    if (auto* o = root.getDynamicObject())
+        for (auto& p : o->getProperties())
+            if (auto* e = p.value.getDynamicObject())
+            {
+                HealthEntry h;
+                h.state   = e->getProperty("state").toString();
+                h.reason  = e->getProperty("reason").toString();
+                h.blockMs = (juce::int64) e->getProperty("blockMs");
+                health_[p.name.toString()] = h;
+            }
+}
+
+std::map<juce::String, ChainHost::HealthEntry> ChainHost::getHealthSnapshot() const
+{
+    std::lock_guard<std::mutex> lock(pluginsMutex_);
+    return health_;
+}
+
+void ChainHost::computeSupersessions()
+{
+    std::lock_guard<std::mutex> lock (pluginsMutex_);
+    superseded_.clear();
+    // Group by format|uid|manufacturer, the SAME key the map lookup and the
+    // server tier use, NOT the display name. So a uid match with differing
+    // names is the same plugin (renamed across versions) and IS compared; a
+    // name match with differing uids lands in different groups and is NEVER
+    // collapsed, because it is two different plugins. uid 0 is no identity
+    // (every thin VST3 row is VST3|0|) and can never anchor a group.
+    std::map<juce::String, std::vector<const juce::PluginDescription*>> groups;
+    for (const auto& d : entries_)
+    {
+        if (d.uniqueId == 0) continue;
+        const auto key = d.pluginFormatName + "|"
+                       + juce::String::toHexString (d.uniqueId) + "|"
+                       + d.manufacturerName;
+        groups[key].push_back (&d);
+    }
+    int marked = 0, ambiguous = 0, multi = 0;
+    for (auto& kv : groups)
+    {
+        auto& g = kv.second;
+        if (g.size() < 2) continue;   // present at ONE version: never superseded
+        ++multi;
+        const juce::PluginDescription* newest = g.front();
+        bool comparable = true;
+        for (size_t i = 1; i < g.size(); ++i)
+        {
+            bool ok = false;
+            const int c = compareVersionNumeric (g[i]->version, newest->version, ok);
+            if (! ok) { comparable = false; break; }   // unparseable: leave the group alone
+            if (c > 0) newest = g[i];
+        }
+        if (! comparable) { ++ambiguous; continue; }
+        for (auto* d : g)
+        {
+            if (d == newest) continue;
+            bool ok = false;
+            if (compareVersionNumeric (d->version, newest->version, ok) < 0 && ok)   // STRICTLY older only
+            {
+                superseded_.insert (echojay::identityKeyForDescription (*d));
+                ++marked;
+                if (! namesMatchLoose (d->name, newest->name))
+                    EchoJay_NSLog(("EJScan: superseded \"" + d->name + "\" (" + d->version
+                                   + ") by \"" + newest->name + "\" (" + newest->version
+                                   + "), same uid renamed across versions").toRawUTF8());
+            }
+        }
+    }
+    EchoJay_NSLog(("EJScan: supersession " + juce::String(marked) + " older-version row(s) marked across "
+                   + juce::String(multi) + " multi-version plugin(s), "
+                   + juce::String(ambiguous) + " left alone (unparseable version)").toRawUTF8());
+}
+
+bool ChainHost::isSuperseded (const juce::PluginDescription& d) const
+{
+    if (d.uniqueId == 0) return false;
+    std::lock_guard<std::mutex> lock (pluginsMutex_);
+    return superseded_.count (echojay::identityKeyForDescription (d)) > 0;
 }
 
 void ChainHost::mergeBootstrapMaps()
@@ -2808,6 +3530,10 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
     s.dialReadbackMiss.clear();
     s.dialUnconfirmed.clear();
     s.dialOutOfRange.clear();
+    // dial-3 denominator (A3): the count of settings the model asked for,
+    // stored HERE because appliedCount + manual.size() is not a substitute
+    // (both dedupe through semanticLabel).
+    s.dialRequestedCount = (int) report.size();
     for (auto& r : report)
     {
         EchoJay_NSLog(("EJParamApply:   " + r.semantic + ": "
@@ -2880,6 +3606,112 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         s.dialStatus = DialStatus::partial;
     else
         s.dialStatus = DialStatus::unusableMap;
+
+    // Card honesty (20 Aug 2026): the card read "attack 3ms, release 7ms"
+    // while the knobs went to positions 3 and 7 on a 1..7 scale — the
+    // model's imagined unit, never corrected by what the plugin received.
+    // Say what LANDED, in the three tiers the apply already decided, never
+    // a fourth:
+    //   - display-verified: the plugin's own display text is ground truth.
+    //   - bridged (staleDisplayKept): already annotated as unverifiable
+    //     upstream; nothing is added here.
+    //   - setread / unparseable display: the written value, in the MAP's
+    //     vocabulary.
+    // THE RULE: the card must never restate a unit the map does not
+    // declare. Where the map's unit is null or disagrees with the key's
+    // suffix, show the range instead. That is the whole of tonight's
+    // CLA-76 defect in one sentence.
+    {
+        auto entryFor = [&](const juce::String& key) -> juce::var
+        {
+            auto e = it->second.getProperty("params", juce::var())
+                               .getProperty(key, juce::var());
+            if (! e.isObject())
+                e = it->second.getProperty("controls", juce::var())
+                              .getProperty(key, juce::var());
+            return e;
+        };
+        auto declaredUnit = [](const juce::var& entry, const juce::String& key) -> juce::String
+        {
+            const auto u = entry.getProperty("unit", juce::var()).toString().trim();
+            if (u.isEmpty()) return {};
+            // A flat key's suffix implies a unit; when the map disagrees,
+            // the range speaks instead (the rule above).
+            struct SufUnit { const char* suf; const char* unit; };
+            for (const auto& su : { SufUnit{"_db","db"}, SufUnit{"_ms","ms"},
+                                    SufUnit{"_hz","hz"}, SufUnit{"_s","s"} })
+                if (key.endsWith(su.suf) && ! u.equalsIgnoreCase(su.unit))
+                    return {};
+            return u;
+        };
+        auto rangeOf = [](const juce::var& entry, float& lo, float& hi) -> bool
+        {
+            auto anchors = echojay::anchorsFromVar(entry);
+            if (anchors.isEmpty()) return false;
+            auto eff = echojay::dominantMonotonicTable(anchors);
+            if (! eff.ok) return false;
+            lo = hi = eff.table.getFirst()[0];
+            for (auto& a : eff.table) { lo = juce::jmin(lo, a[0]); hi = juce::jmax(hi, a[0]); }
+            return hi - lo > 1.0e-6f;
+        };
+        auto num = [](float v)
+        {
+            return std::abs(v - std::round(v)) < 1.0e-4f
+                       ? juce::String((int) std::lround(v)) : juce::String(v, 2);
+        };
+        const auto arrow = juce::String::fromUTF8(" \xe2\x86\x92 ");
+        juce::StringArray landedBits, refusedBits;
+        for (auto& r : report)
+        {
+            // Range refusals name the mapped range ON THE CARD, inheriting
+            // applyOne's note VERBATIM ("asked 50.00, this control's range
+            // is [1.00 .. 7.00], left manual") rather than authoring a
+            // second sentence for the same fact — and never a version
+            // claim: the range is the MAP's, and updating the plugin would
+            // not change it.
+            if (r.outOfRange && r.note.isNotEmpty())
+            {
+                refusedBits.add(echojay::semanticLabel(r.semantic) + ": " + r.note);
+                continue;
+            }
+            if (! r.applied || r.staleDisplayKept) continue;   // bridged: annotated upstream
+            const auto label = echojay::semanticLabel(r.semantic);
+            if (r.displayVerified && r.landedText.trim().isNotEmpty())
+            {
+                landedBits.add(label + arrow + "reads \"" + r.landedText.trim() + "\"");
+                continue;
+            }
+            const auto entry = entryFor(r.semantic);
+            const auto unit  = declaredUnit(entry, r.semantic);
+            float lo = 0.0f, hi = 0.0f;
+            if (unit.isNotEmpty())
+                landedBits.add(label + arrow + r.requestedValue.toString() + " " + unit);
+            else if (rangeOf(entry, lo, hi))
+                landedBits.add(label + arrow + r.requestedValue.toString()
+                               + " (this knob runs " + num(lo) + ".." + num(hi) + ")");
+            else
+                landedBits.add(label + arrow + r.requestedValue.toString());
+        }
+        if (! landedBits.isEmpty() || ! refusedBits.isEmpty())
+        {
+            // Idempotent on re-apply (map arrival, re-dial): previous
+            // Landed/Refused lines are replaced, never stacked.
+            static const char* kLandedPrefix  = "Landed: ";
+            static const char* kRefusedPrefix = "Refused: ";
+            juce::StringArray kept;
+            for (auto& line : juce::StringArray::fromLines(s.settings))
+                if (! line.startsWith(kLandedPrefix) && ! line.startsWith(kRefusedPrefix))
+                    kept.add(line);
+            while (! kept.isEmpty() && kept[kept.size() - 1].trim().isEmpty())
+                kept.remove(kept.size() - 1);
+            if (! landedBits.isEmpty())
+                kept.add(kLandedPrefix + landedBits.joinIntoString(", "));
+            if (! refusedBits.isEmpty())
+                kept.add(kRefusedPrefix + refusedBits.joinIntoString("; "));
+            s.settings = kept.joinIntoString("\n");
+            if (onSlotSettingsChanged) onSlotSettingsChanged();
+        }
+    }
 
     // SUGGESTED SETTINGS display contract: auto-applied slots show
     // "Applied automatically" + a compact summary of what was set;
@@ -3012,6 +3844,17 @@ void ChainHost::fingerprintNext()
                 EchoJay_NSLog(("EJFpPass: (" + juce::String(n) + "/"
                                + juce::String(fpQueueTotal_) + ") " + desc.name
                                + " -> " + fp.substring(0, 12)).toRawUTF8());
+                // The instance is up anyway: measure its default-state size,
+                // so a plugin whose settings can never be saved is withheld
+                // before it reaches the picker (17 Aug 2026). Default state
+                // only: a sampler grows with the content the user loads, and
+                // that growth is reported by the capture note at rack time.
+                {
+                    juce::MemoryBlock st;
+                    try { inst->getStateInformation(st); } catch (...) { st.reset(); }
+                    if ((int) st.getSize() > kSessionStateMaxSlotBytes)
+                        recordStateOversize(desc.fileOrIdentifier, (int) st.getSize(), desc.name, "fingerprint pass");
+                }
                 inst.reset();   // release immediately; the instance was only for param_count
             }
             else
@@ -3035,7 +3878,7 @@ static void pollVST3Validation(
     ChainHost* host,
     std::shared_ptr<struct VST3ValState> vs,
     juce::PluginDescription desc,
-    juce::File deadman,
+    int validationMark,
     std::function<void(const juce::String&)> cb,
     int ticksLeft);
 
@@ -3049,13 +3892,13 @@ static void pollVST3Validation(
     ChainHost* host,
     std::shared_ptr<VST3ValState> vs,
     juce::PluginDescription desc,
-    juce::File deadman,
+    int validationMark,
     std::function<void(const juce::String&)> cb,
     int ticksLeft)
 {
     if (vs->done.load())
     {
-        deadman.deleteFile();
+        popDeathMark(validationMark);
         juce::PluginDescription fullDesc;
         bool found = false;
         {
@@ -3077,13 +3920,16 @@ static void pollVST3Validation(
 
     if (ticksLeft <= 0)
     {
+        // Blacklisted here and now; the mark comes down so the next launch
+        // does not record the same event a second time under another reason.
+        popDeathMark(validationMark);
         host->addToBlacklist(desc.fileOrIdentifier, "validation timed out");
         cb("Timed out loading \"" + desc.name + "\": added to skip list");
         return;
     }
 
-    juce::Timer::callAfterDelay(100, [host, vs, desc, deadman, cb, ticksLeft]() mutable {
-        pollVST3Validation(host, vs, desc, deadman, cb, ticksLeft - 1);
+    juce::Timer::callAfterDelay(100, [host, vs, desc, validationMark, cb, ticksLeft]() mutable {
+        pollVST3Validation(host, vs, desc, validationMark, cb, ticksLeft - 1);
     });
 }
 
@@ -3191,8 +4037,9 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
 
     if (!needsValidation)
     {
-        formatManager_.createPluginInstanceAsync(
-            fullDesc, sampleRate_, blockSize_,
+        // Through asyncCreatePlugin, so the death mark covers this branch
+        // (AU, and VST3s already validated) and not only the fp pass.
+        asyncCreatePlugin(fullDesc,
             [this, callback, fullDesc](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
             {
                 if (!inst)
@@ -3210,10 +4057,9 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
         return;
     }
 
-    // Thin VST3: validate in detached thread, poll on message thread
-    appSupportDir().createDirectory();
-    auto deadman = getDeadmanFile();
-    deadman.replaceWithText(desc.fileOrIdentifier + "\nload");
+    // Thin VST3: validate in detached thread, poll on message thread. The
+    // death mark stands in for the old single-path deadman file.
+    const int validationMark = pushDeathMark("validation", desc);
 
     auto* vst3Fmt = getFormatByName("VST3");
     if (!vst3Fmt) { callback("VST3 format not available"); return; }
@@ -3233,7 +4079,7 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
         }
     }).detach();
 
-    pollVST3Validation(this, vs, desc, deadman, callback, 100);
+    pollVST3Validation(this, vs, desc, validationMark, callback, 100);
 }
 
 // ---------------------------------------------------------------------------
@@ -3265,6 +4111,13 @@ void ChainHost::rebuildGraph()
 
     hasActiveSlots_.store(!active.empty());
 
+    // The latencies this build bakes into the dry-leg delays; the runtime
+    // latency watch compares against these (rebuildForLatencyIfChanged).
+    builtLatencies_.assign(slots_.size(), 0);
+    for (size_t si = 0; si < slots_.size(); ++si)
+        if (slots_[si].node && slots_[si].node->getProcessor())
+            builtLatencies_[si] = slots_[si].node->getProcessor()->getLatencySamples();
+
     if (active.empty())
     {
         // Pure passthrough — also skip graph in process() for safety
@@ -3292,6 +4145,30 @@ void ChainHost::rebuildGraph()
     // (passthrough) so the blend never mixes against silence — the same
     // intent as the old uncovered-channel passthrough at the chain tail.
     juce::AudioProcessorGraph::NodeID prev = inputNode_->nodeID;   // always 2-out
+    // Running-level bookkeeping: a slot whose PREDECESSOR changed since the
+    // last build (moved, a slot inserted before it, the previous slot
+    // bypassed) now sees a different signal, so its tallies restart; a slot
+    // whose input is the same signal keeps its history. Recorded per slot
+    // index in slots_ order; a slot that was not active last time has no
+    // record and starts fresh when it becomes active.
+    std::vector<juce::AudioProcessorGraph::NodeID> preds(slots_.size());
+    for (auto& stage : active)
+    {
+        for (size_t si = 0; si < slots_.size(); ++si)
+            if (slots_[si].node && slots_[si].node->nodeID == stage.plugin)
+            {
+                preds[si] = prev;
+                const bool changed = si >= builtPredecessors_.size()
+                                  || !(builtPredecessors_[si] == prev);
+                if (changed && slots_[si].blendNode)
+                    if (auto* b = dynamic_cast<SlotWetBlend*>(slots_[si].blendNode->getProcessor()))
+                        b->resetTallies();
+                break;
+            }
+        prev = stage.blend;
+    }
+    builtPredecessors_ = preds;
+    prev = inputNode_->nodeID;
     for (auto& stage : active)
     {
         int nIn  = channelsOf(stage.plugin, true);
@@ -3357,6 +4234,7 @@ void ChainHost::maybeReloadEntriesCache()
             EchoJay_NSLog(("EJScan: " + juce::String(filled)
                            + " thin VST3 entr(ies) enriched from load-captured identities").toRawUTF8());
         }
+        computeSupersessions();
     }
     entriesCacheTime_ = mtime;
 }
@@ -3821,6 +4699,9 @@ ChainHost::WithholdReason ChainHost::withholdReasonLocked(const juce::PluginDesc
     // slices say, and the reason the user can act on is the blacklist line.
     if (d.fileOrIdentifier.isNotEmpty() && blacklist_.contains(d.fileOrIdentifier))
         return WithholdReason::CrashBlacklisted;
+    // Settings too large to save: its own file, its own reason (any format)
+    if (d.fileOrIdentifier.isNotEmpty() && stateOversize_.find(d.fileOrIdentifier) != stateOversize_.end())
+        return WithholdReason::SettingsTooLarge;
     // VST3 rows only. AU rows are never judged and built-ins never reach
     // entries_ (compiled in, exempt by construction).
     if (d.pluginFormatName == "VST3")
@@ -3852,6 +4733,11 @@ juce::String ChainHost::withholdReasonText(WithholdReason r)
         case WithholdReason::ArchitectureIncompatible:
             return "is installed but its VST3 has no " + processArchName()
                  + " build, so it cannot run in this host";
+        case WithholdReason::SettingsTooLarge:
+            return "is withheld: its settings at their defaults are larger than the "
+                 + juce::File::descriptionOfSizeInBytes((juce::int64) kSessionStateMaxSlotBytes)
+                 + " a session can save per plugin, so a chain holding it could not be saved "
+                   "(chain_state_oversize.txt; deleting its line there offers it again)";
         case WithholdReason::Unreadable:
         case WithholdReason::None:
             break;
@@ -3957,22 +4843,49 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
     // Build a normalized-name → PluginDescription map from the loadable entries.
     // If multiple entries share the same normalized name, keep the first (alphabetically
     // stable since entries_ is already sorted).
+    //
+    // MODEL-NUMBER KEYING (20 Aug 2026). normalizeName strips a trailing
+    // all-digits token as a version, so "AMEK EQ 200" and "AMEK EQ 250" (and
+    // "CLA-76" against any other CLA-<digits>) collapsed to ONE stem here,
+    // and first-wins handed every such scanner row whichever entry sorted
+    // first — the defect c3ad9be fixed in resolveByName/namesMatchLoose,
+    // still live at the site where the collision is actually made. The
+    // predicate is REUSED (trailingModelNumber), not redefined: the primary
+    // key carries the stripped number back, and the bare stem stays as a
+    // fallback slot so a number on only one side still tolerates the strip
+    // ("Saturn 2" offered for a "Saturn" row) — the tolerance the resolver
+    // ladder keeps. A stem hit is guarded at lookup by the same
+    // both-sides-differ rule before it counts.
     std::unordered_map<std::string, juce::PluginDescription> nameMap;
-    nameMap.reserve((size_t)loadable.size() * 2);
+    nameMap.reserve((size_t)loadable.size() * 4);
+    auto modelKey = [](const juce::String& n) -> std::string
+    {
+        auto k = normalizeName(n);
+        const auto num = trailingModelNumber(n);
+        if (num.isNotEmpty()) k = k + "\n" + num;   // '\n' cannot survive a stem
+        return k.toStdString();
+    };
+    auto insertName = [&nameMap, &modelKey](const juce::String& n,
+                                            const juce::PluginDescription& d)
+    {
+        const std::string keyed = modelKey(n);
+        if (nameMap.find(keyed) == nameMap.end())
+            nameMap[keyed] = d;
+        const std::string stem = normalizeName(n).toStdString();
+        if (stem != keyed && nameMap.find(stem) == nameMap.end())
+            nameMap[stem] = d;
+    };
     for (const auto& d : loadable)
     {
-        std::string key = normalizeName(d.name).toStdString();
-        if (nameMap.find(key) == nameMap.end())
-            nameMap[key] = d;
+        insertName(d.name, d);
         // Variant-suffix secondary key: WaveShell AUs register per-variant
         // component names ("Abbey Road Plates (s)"/"(m)") while the Settings
         // scanner lists the curated suffix-less name ("Abbey Road Plates").
         // Without this key the exact map missed them, the plugin dropped out
         // of the AI feed entirely, and the model told the user a plugin
         // RUNNING IN THEIR RACK was "not in your available plugins".
-        std::string baseKey = normalizeName(stripParenthetical(d.name)).toStdString();
-        if (baseKey != key && nameMap.find(baseKey) == nameMap.end())
-            nameMap[baseKey] = d;
+        const auto base = stripParenthetical(d.name);
+        if (base != d.name) insertName(base, d);
     }
 
     // Filter enabled scanner plugins and resolve against the map
@@ -3997,6 +4910,24 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
     int duplicateNames = 0;
     std::vector<RecommendableEntry> resolved;
 
+    // Model-keyed slot first (exact product), then the bare stem guarded by
+    // the c3ad9be predicate: a stem hit whose entry carries a DIFFERENT
+    // trailing number than this row is a different product, not a resolution.
+    auto lookupName = [&nameMap, &modelKey](const juce::String& n)
+    {
+        auto it = nameMap.find(modelKey(n));
+        if (it != nameMap.end()) return it;
+        it = nameMap.find(normalizeName(n).toStdString());
+        if (it != nameMap.end())
+        {
+            const auto numIn = trailingModelNumber(stripParenthetical(n));
+            const auto numEn = trailingModelNumber(stripParenthetical(it->second.name));
+            if (numIn.isNotEmpty() && numEn.isNotEmpty() && numIn != numEn)
+                return nameMap.end();
+        }
+        return it;
+    };
+
     for (const auto& sp : allPlugins)
     {
         if (!sp.enabled)
@@ -4007,17 +4938,12 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
         }
         ++enabledCount;
 
-        // Try exact normalized name
-        std::string key = normalizeName(sp.name).toStdString();
-        auto it = nameMap.find(key);
+        // Try exact normalized name (model-keyed, stem-guarded — see lookupName)
+        auto it = lookupName(sp.name);
 
         // If not found, try without manufacturer prefix ("Fab Filter: Pro-Q 3" → "pro q 3")
         if (it == nameMap.end() && sp.name.containsChar(':'))
-        {
-            juce::String afterColon = sp.name.fromFirstOccurrenceOf(":", false, false).trim();
-            key = normalizeName(afterColon).toStdString();
-            it = nameMap.find(key);
-        }
+            it = lookupName(sp.name.fromFirstOccurrenceOf(":", false, false).trim());
 
         if (it != nameMap.end())
         {
@@ -4028,6 +4954,20 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
                                     // is lost, only the repeat.
                 continue;
             }
+            // TRIPWIRE (20 Aug 2026): a feed row whose display name is not
+            // its description's name is a RENAME — the model is offered one
+            // name and the loader will be handed another's binary. The AMEK
+            // collision shipped exactly this shape for weeks with no line
+            // saying so; this is the client analogue of the server's
+            // [injected-block-leak] alarm. One line per divergent row, both
+            // names, every build. (WaveShell variant-suffix rows trip it by
+            // construction — "Abbey Road Plates" -> "... (s)" — which is a
+            // rename too; the line names both so the benign shape is
+            // recognisable on sight.)
+            if (sp.name != it->second.name)
+                EchoJay_NSLog(("EJScan: [feed-rename] scanner \"" + sp.name
+                               + "\" -> entry \"" + it->second.name + "\" ["
+                               + it->second.pluginFormatName + "]").toRawUTF8());
             resolved.push_back({ sp.name, it->second });
         }
     }
@@ -4071,6 +5011,13 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
     recommendable_          = std::move(resolved);
     recommendableEnabledIn_ = enabledCount;
     recommendableFormat_    = formatFilter;
+
+    // Feed-split mode, logged on every scan so which list the model saw is
+    // never a guess after the fact.
+    EchoJay_NSLog(("EJFeed: split MODE=" + juce::String(feedSplitEnabled()
+                       ? "ON (dialable subset)" : "OFF (full list)")
+                   + ", " + juce::String((int) recommendable_.size())
+                   + " recommendable").toRawUTF8());
 
     // Latch only when both inputs were real: a build against an empty entries
     // list (scan still running) or an unloaded scanner cache must not count
@@ -4203,6 +5150,27 @@ std::vector<ChainHost::SlotDialInfo> ChainHost::getDialInfos() const
         di.appliedCount = s.dialAppliedCount;
         di.staleIndexedFp = s.staleIndexedFp;
         di.outOfRange   = s.dialOutOfRange;
+        // dial-3 key halves + denominator (A2/A3/A7.2). uid rendered
+        // exactly as getSlotIdentity renders it, so the two surfaces
+        // cannot disagree about the same slot.
+        di.format = s.desc.pluginFormatName;
+        if (s.desc.uniqueId != 0)
+            di.uid = juce::String::toHexString(s.desc.uniqueId);
+        if (s.dialRequestedCount >= 0)
+        {
+            di.requestedCount  = s.dialRequestedCount;
+            di.requestedSource = "apply";
+        }
+        else
+        {
+            // The apply never ran (no_map / fetch timeout / stale rungs):
+            // the denominator is the pre-apply count of requested entries.
+            int n = 0;
+            if (auto* o = s.structuredSettings.getDynamicObject())
+                n = o->getProperties().size();
+            di.requestedCount  = n;
+            di.requestedSource = "keys";
+        }
         out.push_back(std::move(di));
     }
     return out;
@@ -4218,20 +5186,54 @@ bool ChainHost::dialStateSettled() const
     return true;
 }
 
+// The uid+manufacturer key, version dropped: the same key the server's
+// existence index and version-insensitive lookup use. uid 0 is no identity.
+bool ChainHost::feedSplitEnabled() const
+{
+    return feedSplitFlagFile().existsAsFile();
+}
+
+std::vector<echojay::IdentityRef> ChainHost::recommendableIdentityRefs() const
+{
+    std::vector<echojay::IdentityRef> refs;
+    std::set<juce::String> seen;
+    for (const auto& e : recommendable_)
+    {
+        if (e.desc.uniqueId == 0) continue;   // no uid: cannot be matched at the server
+        const auto ik = echojay::identityKeyForDescription (e.desc);
+        if (seen.insert (ik).second)
+            refs.push_back ({ ik, e.desc.manufacturerName });
+    }
+    return refs;
+}
+
+void ChainHost::setExistenceDialable (std::set<juce::String> keys)
+{
+    existenceDialable_ = std::move (keys);
+    existenceOk_ = true;
+    EchoJay_NSLog(("EJFeed: existence index applied, " + juce::String((int) existenceDialable_.size())
+                   + " dialable identit(ies)").toRawUTF8());
+}
+
 juce::StringArray ChainHost::getDialableRecommendableNames() const
 {
     juce::StringArray out;
     for (const auto& e : recommendable_)
     {
-        // Same join as buildMapFpsJson, through the same helper -- the two
-        // sites drifting apart is how the exact-key miss shipped in
-        // duplicate, and mapfps_test asserts structurally that neither has
-        // a direct identityToFp_ lookup again.
-        const auto fp = echojay::fpForIdentity(identityToFp_, e.desc);
-        if (fp.isEmpty()) continue;
-        auto m = paramMaps_.find(fp);
-        if (m != paramMaps_.end() && echojay::mapIsDialableForSignals(m->second))
-            out.addIfNotAlreadyThere(e.displayName);
+        // LOCAL: an fp resolved (same helper as buildMapFpsJson, so the two
+        // sites cannot drift; mapfps_test pins that) and a usable map present.
+        bool dialable = false;
+        if (const auto fp = echojay::fpForIdentity(identityToFp_, e.desc); fp.isNotEmpty())
+            if (auto m = paramMaps_.find(fp); m != paramMaps_.end() && echojay::mapIsDialableForSignals(m->second))
+                dialable = true;
+        // EXISTENCE INDEX: a map exists on the server for this plugin at SOME
+        // version, reachable through the server's version-insensitive lookup
+        // even with no local fp. This is what carries a fresh or a V15 machine,
+        // where the exact fp never matches the stored version.
+        if (! dialable && e.desc.uniqueId != 0)
+            if (existenceDialable_.count (echojay::identityKeyForDescription (e.desc)) > 0)
+                dialable = true;
+        if (dialable) out.addIfNotAlreadyThere (e.displayName);
     }
     return out;
 }
@@ -4342,11 +5344,74 @@ void ChainHost::loadFromDisk()
                     EchoJay_NSLog(("EJScan: " + juce::String(filled)
                                    + " thin VST3 entr(ies) enriched from load-captured identities").toRawUTF8());
                 }
+                computeSupersessions();
             }
             entriesCacheTime_ = ecFile.getLastModificationTime();
         }
     }
     reloadBlacklistFromDisk();
+    reloadStateOversizeFromDisk();
+}
+
+// ---------------------------------------------------------------------------
+// Settings too large to save: chain_state_oversize.txt is the authority
+// (path<TAB>bytes<TAB>ISO date). Read at construction and at every scan,
+// like the blacklist; deleting a line offers the plugin again on the next
+// scan. Written by recordStateOversize only.
+// ---------------------------------------------------------------------------
+void ChainHost::reloadStateOversizeFromDisk()
+{
+    juce::StringArray lines;
+    if (auto f = getStateOversizeFile(); f.existsAsFile())
+        lines = juce::StringArray::fromLines(f.loadFileAsString());
+    std::lock_guard<std::mutex> lock(pluginsMutex_);
+    stateOversize_.clear();
+    for (auto& raw : lines)
+    {
+        auto line = raw.trim();
+        if (line.isEmpty() || line.startsWithChar('#')) continue;
+        auto path  = line.upToFirstOccurrenceOf("\t", false, false).trim();
+        auto rest  = line.fromFirstOccurrenceOf("\t", false, false).trim();
+        const int bytes = rest.upToFirstOccurrenceOf("\t", false, false).trim().getIntValue();
+        if (path.isEmpty() || bytes <= 0) continue;
+        stateOversize_[path] = bytes;
+    }
+}
+
+int ChainHost::oversizeStateBytes(const juce::String& path) const
+{
+    std::lock_guard<std::mutex> lock(pluginsMutex_);
+    auto it = stateOversize_.find(path);
+    return it == stateOversize_.end() ? 0 : it->second;
+}
+
+void ChainHost::recordStateOversize(const juce::String& path, int bytes, const juce::String& name, const juce::String& where)
+{
+    if (path.isEmpty() || bytes <= kSessionStateMaxSlotBytes) return;
+    {
+        std::lock_guard<std::mutex> lock(pluginsMutex_);
+        auto it = stateOversize_.find(path);
+        if (it != stateOversize_.end() && it->second >= bytes) return;   // already recorded, no smaller
+        stateOversize_[path] = bytes;
+    }
+    auto f = getStateOversizeFile();
+    juce::String text = f.existsAsFile() ? f.loadFileAsString() : juce::String();
+    if (text.isEmpty())
+        text = "# EchoJay: plugins whose settings at their defaults are larger than the per-plugin\n"
+               "# session cap, so a chain holding them could not be saved with the project.\n"
+               "# They are withheld from the chain list. Deleting a line offers that plugin again\n"
+               "# on the next scan. Format: path<TAB>bytes<TAB>ISO date.\n";
+    // one line per path: drop an older line for the same path
+    juce::StringArray kept;
+    for (auto& raw : juce::StringArray::fromLines(text))
+        if (raw.trim().isEmpty() || raw.startsWithChar('#') || raw.upToFirstOccurrenceOf("\t", false, false).trim() != path)
+            if (raw.trim().isNotEmpty()) kept.add(raw);
+    kept.add(path + "\t" + juce::String(bytes) + "\t" + juce::Time::getCurrentTime().toISO8601(true));
+    f.getParentDirectory().createDirectory();
+    f.replaceWithText(kept.joinIntoString("\n") + "\n");
+    EchoJay_NSLog(("EJScan: \"" + name + "\" settings are " + juce::File::descriptionOfSizeInBytes((juce::int64) bytes)
+                   + " at their defaults, over the " + juce::File::descriptionOfSizeInBytes((juce::int64) kSessionStateMaxSlotBytes)
+                   + " per-plugin session cap (" + where + "); recorded in chain_state_oversize.txt, withheld from the chain list").toRawUTF8());
 }
 
 // ---------------------------------------------------------------------------
@@ -4386,10 +5451,11 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
     juce::String savedFormat  = items[idx].savedFormat;
     juce::String savedVersion = items[idx].savedVersion;
     juce::String savedUid     = items[idx].savedUid;
+    juce::var slotParams = items[idx].params;
     loadPluginAsync(items[idx].desc,
         [this, items = std::move(items), idx, wasBypassed, savedWet,
          stateB64, expectState, slotName, identifier, withholdState,
-         savedFormat, savedVersion, savedUid,
+         savedFormat, savedVersion, savedUid, slotParams,
          onSlotSettled](const juce::String& err) mutable
         {
             if (err.isEmpty())
@@ -4404,6 +5470,20 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
                     if (!withholdState)
                         applyRestoredState(lastSlot, stateB64, expectState, slotName,
                                            identifier, savedFormat, savedVersion, savedUid);
+                    // Blob first, then the JUCE-side parameter values (VST3
+                    // only): see getCachedSlotParamsVar in the header.
+                    // applyRestoredParams re-checks identity (uid + format)
+                    // itself, so it runs even when the chunk was withheld.
+                    applyRestoredParams(lastSlot, slotParams, slotName);
+                    // Running level saved for this slot number (session
+                    // restore only; a saved-chain load has nothing pending)
+                    if (auto it = pendingSlotLevels_.find(idx + 1); it != pendingSlotLevels_.end())
+                    {
+                        if (auto* b = slots_[(size_t) lastSlot].blendNode
+                                        ? dynamic_cast<SlotWetBlend*>(slots_[(size_t) lastSlot].blendNode->getProcessor()) : nullptr)
+                            b->restoreTallies(it->second.first, it->second.second);
+                        pendingSlotLevels_.erase(it);
+                    }
                 }
             }
             else
@@ -4512,7 +5592,7 @@ void ChainHost::applyRestoredState(int slotIdx, const juce::String& b64,
     }
 
     // THE AUTHORITATIVE RE-CHECK, against the description the plugin ACTUALLY
-    // loaded with — before the deadman marker, before the call. A thin VST3
+    // loaded with — before the death mark, before the call. A thin VST3
     // resolved to uid 0 at restore time, so the resolve-time check had no
     // opinion; by now slots_[slotIdx].desc carries the validated uid, format
     // and version, and this is the only place the saved identity can be judged
@@ -4524,18 +5604,14 @@ void ChainHost::applyRestoredState(int slotIdx, const juce::String& b64,
                              savedUid, slotName, &versionNote))
         return;   // the withhold note was written by stateFitsPlugin
 
-    // THE DEADMAN, over the one call in this file that runs third-party code on
-    // data we did not author. A try/catch cannot catch a segfault, and a plugin
-    // mis-parsing a chunk segfaults — that is the whole failure mode. If this
-    // call never returns, the marker survives the crash and the next launch
-    // blacklists the plugin naming THIS phase, so the user gets one bad plugin
-    // withheld rather than a session that will not open twice.
-    //
-    // Written per slot, not per chain: the identifier has to be the plugin that
-    // actually died, not the last one in the list.
-    appSupportDir().createDirectory();
-    auto deadman = getDeadmanFile();
-    deadman.replaceWithText(identifier + "\nstate restore");
+    // THE DEATH MARK, over the one call in this file that runs third-party
+    // code on data we did not author. A try/catch cannot catch a segfault, and
+    // a plugin mis-parsing a chunk segfaults — that is the whole failure mode.
+    // If this call never returns, the mark survives the crash and the next
+    // launch blacklists the plugin naming THIS phase. Per slot, not per chain:
+    // the mark has to name the plugin that actually died.
+    const int mark = (slotIdx >= 0 && slotIdx < (int)slots_.size())
+                       ? pushDeathMark("state restore", slots_[(size_t)slotIdx].desc) : 0;
 
     bool applied = false;
     try
@@ -4545,11 +5621,12 @@ void ChainHost::applyRestoredState(int slotIdx, const juce::String& b64,
     }
     catch (...)
     {
+        popDeathMark(mark);
         addStateNote(slotName + ": rejected its saved settings,"
                                 " so it loaded at its defaults");
     }
+    popDeathMark(mark);
 
-    deadman.deleteFile();
     if (!applied) return;
 
     // The version note, NOW: after the chunk applied and none of the four
@@ -4573,8 +5650,77 @@ void ChainHost::applyRestoredState(int slotIdx, const juce::String& b64,
     }
 }
 
+void ChainHost::applyRestoredParams(int slotIdx, const juce::var& params, const juce::String& slotName)
+{
+    if (params.isVoid()) return;                        // absent: nothing, the old restore
+    if (slotIdx < 0 || slotIdx >= (int)slots_.size()) return;
+
+    // Identity gate. The entry must be the {uid,format,plugin,params} object;
+    // a bare string (no identity) or a missing / non-integer uid is skipped,
+    // never applied. The values apply only when the plugin that actually
+    // resolved into this slot IS the one they were saved for.
+    auto* entry = params.getDynamicObject();
+    if (entry == nullptr) return;                       // a bare string value: no identity, skip
+    const juce::var uidVar = entry->getProperty("uid");
+    if (! uidVar.isString()) return;                    // missing / non-string uid: no identity, skip
+    const juce::String savedUid  = uidVar.toString();
+    if (savedUid.isEmpty()) return;                     // empty uid: no identity, skip
+    const juce::String savedFmt  = entry->getProperty("format").toString();
+    const juce::String savedName = entry->getProperty("plugin").toString();
+    const juce::String payload   = entry->getProperty("params").toString();
+    if (payload.isEmpty()) return;
+
+    // String compare, byte-identical to the slot uid buildChainSlotsVar writes
+    // (juce::String(uniqueId)); the server keys stateParams to slots the same way.
+    const auto& slotDesc = slots_[(size_t)slotIdx].desc;
+    if (juce::String(slotDesc.uniqueId) != savedUid || slotDesc.pluginFormatName != savedFmt)
+    {
+        addStateNote(slotName + ": its saved parameter values were for \"" + savedName + "\" ("
+                     + savedFmt + "), not the plugin in this slot, so they were not applied");
+        return;
+    }
+    auto* proc = getSlotProcessor(slotIdx);
+    if (proc == nullptr) return;
+    const juce::String& params2 = payload;   // the "id=value,..." string, below
+
+    // ID -> parameter, once
+    std::unordered_map<std::string, juce::AudioProcessorParameter*> byId;
+    for (auto* p : proc->getParameters())
+        if (auto* hp = dynamic_cast<juce::HostedAudioProcessorParameter*>(p))
+            byId.emplace(hp->getParameterID().toStdString(), p);
+
+    int applied = 0, listed = 0, unknown = 0;
+    juce::StringArray pairs;
+    pairs.addTokens(params2, ",", "");
+    for (const auto& pr : pairs)
+    {
+        const int eq = pr.indexOfChar('=');
+        if (eq <= 0) continue;
+        ++listed;
+        auto it = byId.find(pr.substring(0, eq).toStdString());
+        if (it == byId.end()) { ++unknown; continue; }   // a parameter this build no longer has
+        const float v = juce::jlimit(0.0f, 1.0f, (float) pr.substring(eq + 1).getDoubleValue());
+        // setValueNotifyingHost: JUCE's cache and dispatcher, so the
+        // controller sees it now and the processor at the next process call.
+        // Only where it differs, so a value the blob already carried is not
+        // re-sent (and a plugin that derives a value from its own state keeps
+        // it when the cache agrees).
+        if (std::abs(it->second->getValue() - v) > 1.0e-6f)
+        {
+            it->second->setValueNotifyingHost(v);
+            ++applied;
+        }
+    }
+    EchoJay_NSLog(("EJChain: \"" + slotName + "\" restored " + juce::String(applied) + " parameter value(s) beside its state ("
+                   + juce::String(listed) + " listed, " + juce::String(unknown) + " unknown to this build)").toRawUTF8());
+    if (listed > 0 && unknown == listed)
+        addStateNote(slotName + ": none of its saved parameter values matched this build of the plugin,"
+                                " so only its saved state was applied");
+}
+
 void ChainHost::tryRestoreSlotsFromXml(const juce::String& xml,
-                                       const juce::var& slotStates)
+                                       const juce::var& slotStates,
+                                       const juce::var& slotParams)
 {
     if (xml.isEmpty()) return;
     auto root = juce::XmlDocument::parse(xml);
@@ -4593,6 +5739,7 @@ void ChainHost::tryRestoreSlotsFromXml(const juce::String& xml,
     // before hosted settings were persisted, which is the common case and
     // restores exactly as it always did.
     auto* statesObj = slotStates.getDynamicObject();
+    auto* paramsObj = slotParams.getDynamicObject();   // absent on every session before 17 Aug 2026
 
     std::vector<RestoreItem> items;
     for (auto* child : root->getChildIterator())
@@ -4613,6 +5760,12 @@ void ChainHost::tryRestoreSlotsFromXml(const juce::String& xml,
             const juce::String key ((int)items.size() + 1);
             if (statesObj->hasProperty(key))
                 item.stateBase64 = statesObj->getProperty(key).toString();
+        }
+        if (paramsObj != nullptr)
+        {
+            const juce::String key ((int)items.size() + 1);
+            if (paramsObj->hasProperty(key))
+                item.params = paramsObj->getProperty(key);   // the {uid,format,plugin,params} object
         }
         items.push_back(std::move(item));
     }
@@ -4643,6 +5796,46 @@ void ChainHost::setStateCacheEnabled(bool shouldBeEnabled)
         stateCacheTimer_ = std::make_unique<StateCacheTimer>(*this);
     stateCacheTimer_->startTimer(kStateTickMs);
     noteHostedChange();   // first capture on the next settled tick
+}
+
+void ChainHost::onHostedLatencyChanged() noexcept
+{
+    // Any thread (a plugin may report a latency change from its own UI or
+    // from the audio thread): nothing but a thread-safe trigger.
+    if (latencyRebuilder_) latencyRebuilder_->triggerAsyncUpdate();
+}
+
+void ChainHost::rebuildForLatencyIfChanged()
+{
+    // Message thread, after the debounce. Rebuild ONLY if some slot's
+    // reported latency differs from what the graph was built with: a
+    // notification that changes nothing costs nothing, and a burst for one
+    // switch already collapsed into this one call.
+    bool changed = false;
+    juce::String detail;
+    for (size_t si = 0; si < slots_.size(); ++si)
+    {
+        auto* p = slots_[si].node ? slots_[si].node->getProcessor() : nullptr;
+        if (p == nullptr) continue;
+        const int now  = p->getLatencySamples();
+        const int was  = si < builtLatencies_.size() ? builtLatencies_[si] : -1;
+        if (now != was)
+        {
+            changed = true;
+            detail << (detail.isEmpty() ? "" : ", ") << slots_[si].desc.name << " " << was << "->" << now;
+        }
+    }
+    if (!changed) return;
+    EchoJay_NSLog(("EJChain: hosted latency changed at runtime (" + detail
+                   + "); rebuilding the graph so the wet/dry dry legs and the host "
+                     "latency follow it").toRawUTF8());
+    // Same rebuild every structural op takes: reconnects, the render
+    // sequence re-bakes the delays from the new latencies, onChainChanged
+    // re-mirrors getTotalLatencySamples into the host. Audible cost at the
+    // instant: the new dry-leg delay buffers start empty, so a partially
+    // wet slot loses its dry component for the plugin's latency (about
+    // 20 ms at 1000 samples), once; a fully wet slot hears nothing.
+    rebuildGraph();
 }
 
 void ChainHost::noteHostedChange() noexcept
@@ -4809,19 +6002,43 @@ void ChainHost::captureSlotState(int i, double nowMs)
     // here: capping at storage time would silently make the API's larger cap
     // unreachable and there would be no second capture path to fall back on.
     const int  bytes    = (int)mb.getSize();
-    const bool oversize = bytes > kApiStateMaxSlotBytes;
+    const bool oversize = bytes > kStateStoreMaxSlotBytes;
     juce::String b64;
     if (bytes > 0 && !oversize)
         b64 = juce::Base64::toBase64(mb.getData(), mb.getSize());
+
+    // VST3 only: the JUCE-side parameter values, read from the CACHE
+    // (AudioProcessorParameter::getValue, the edited value), never from the
+    // plugin's own state (stale until the next process call). See
+    // getCachedSlotParamsVar in the header. Built off the lock, like the blob.
+    juce::String params;
+    if (slots_[(size_t)i].desc.pluginFormatName == "VST3")
+    {
+        juce::MemoryOutputStream ps;
+        bool first = true;
+        for (auto* p : proc->getParameters())
+        {
+            auto* hp = dynamic_cast<juce::HostedAudioProcessorParameter*>(p);
+            if (hp == nullptr) continue;
+            const auto id = hp->getParameterID();
+            if (id.isEmpty() || id.containsAnyOf("=,")) continue;
+            if (!first) ps.writeByte(',');
+            first = false;
+            ps << id << "=" << juce::String((double) p->getValue(), 7);
+        }
+        params = ps.toString();
+        if (params.length() > kApiStateMaxSlotBytes) params.clear();   // never seen; a list, not a blob
+    }
 
     juce::String note;
     {
         std::lock_guard<std::mutex> lock(stateCacheMutex_);
         auto& s = slots_[(size_t)i];
-        s.lastKnownState = b64;
-        s.lastKnownBytes = oversize ? 0 : bytes;
-        s.lastCaptureMs  = cost;
-        s.capturedAtMs   = nowMs;
+        s.lastKnownState  = b64;
+        s.lastKnownBytes  = oversize ? 0 : bytes;
+        s.lastKnownParams = params;
+        s.lastCaptureMs   = cost;
+        s.capturedAtMs    = nowMs;
 
         // Backoff. An expensive slot earns a long minimum interval so one
         // sampler cannot make the whole cache thrash; a slot over the cap is
@@ -4840,7 +6057,7 @@ void ChainHost::captureSlotState(int i, double nowMs)
             note = s.desc.name + ": settings are "
                  + juce::File::descriptionOfSizeInBytes((juce::int64)bytes)
                  + ", over the " + juce::File::descriptionOfSizeInBytes(
-                       (juce::int64)kApiStateMaxSlotBytes)
+                       (juce::int64)kStateStoreMaxSlotBytes)
                  + " limit, so they will not be saved";
         }
         else if (!oversize && s.oversizeReported)
@@ -4849,6 +6066,36 @@ void ChainHost::captureSlotState(int i, double nowMs)
         }
     }
     if (note.isNotEmpty()) addStateNote(note);
+}
+
+juce::var ChainHost::getCachedSlotParamsVar() const
+{
+    // Strings the cache already holds, nothing else (safe in a save callback)
+    std::lock_guard<std::mutex> lock(stateCacheMutex_);
+    auto* obj = new juce::DynamicObject();
+    int n = 0;
+    for (int i = 0; i < (int)slots_.size(); ++i)
+    {
+        const auto& s = slots_[(size_t)i];
+        if (s.desc.pluginFormatName != "VST3" || s.lastKnownParams.isEmpty()) continue;
+        // Identity-carrying object form (server contract, 17 Aug 2026): the
+        // values apply on restore ONLY if the plugin that resolves into the
+        // slot is the same one, so its identity travels with them. uid is a
+        // STRING, juce::String(desc.uniqueId), byte-identical to what
+        // buildChainSlotsVar writes for the slot's own uid: the server's
+        // normalizeSlots runs every slot field through str(), so the slot
+        // uid is a string by contract and an integer here would compare
+        // against null. So this side matches it: a string compare on restore.
+        auto* e = new juce::DynamicObject();
+        e->setProperty("uid",    juce::String(s.desc.uniqueId));
+        e->setProperty("format", s.desc.pluginFormatName);
+        e->setProperty("plugin", s.desc.name);
+        e->setProperty("params", s.lastKnownParams);
+        obj->setProperty(juce::String(i + 1), juce::var(e));
+        ++n;
+    }
+    juce::var out(obj);
+    return n > 0 ? out : juce::var();
 }
 
 juce::var ChainHost::getCachedSlotStatesVar(int maxSlotBytes,
@@ -4944,6 +6191,13 @@ juce::var ChainHost::buildChainSlotsVar() const
         o->setProperty("version",      s.desc.version);
         o->setProperty("uid",          juce::String(s.desc.uniqueId));
         o->setProperty("bypassed",     s.bypassed);
+        // Per-slot wet/dry (16 Aug 2026): a shared chain used to lose the
+        // knob and reopen fully wet, the opposite of this product's
+        // subtle-by-default. Written always; a reader treats absent as 1.0,
+        // so chains saved before this line behave exactly as they did.
+        // NOTE the server's slot normaliser (lib/dash/chains.js) whitelists
+        // keys and drops this one until it learns it.
+        o->setProperty("wet",          (double) s.wet);
         // The AI's prose dial-in guidance is the closest thing this rack has
         // to a role, and it is display text rather than a short label, so it
         // is NOT sent as one. An absent role is honest; an invented one would
@@ -4957,9 +6211,59 @@ juce::var ChainHost::buildChainSlotsVar() const
     return juce::var(arr);
 }
 
+void ChainHost::archiveCurrentRack(const juce::String& label)
+{
+    if (slots_.empty()) return;   // nothing populated: nothing to protect
+
+    // Same capture path a deliberate library save uses (sendChainSave): force
+    // a fresh capture, then serialise slots + per-slot state + the VST3 param
+    // sidecar. Restore is the existing restoreSavedChain contract.
+    captureAllSlotStatesNow();
+
+    const juce::int64 now = juce::Time::getCurrentTime().toMilliseconds();
+
+    auto root = std::make_unique<juce::DynamicObject>();
+    root->setProperty("t",     (double) now);
+    root->setProperty("label", label);
+    root->setProperty("slots", buildChainSlotsVar());
+    if (auto state = getCachedSlotStatesVar(kApiStateMaxSlotBytes, kApiStateMaxTotalBytes,
+                                            "chain archive"); ! state.isVoid())
+        root->setProperty("state", state);
+    if (auto sp = getCachedSlotParamsVar(); ! sp.isVoid())
+        root->setProperty("stateParams", sp);
+
+    auto dir = appSupportDir().getChildFile("chain_archive");
+    dir.createDirectory();
+
+    auto safe = juce::File::createLegalFileName(label).substring(0, 40).trim();
+    if (safe.isEmpty()) safe = "rack";
+    auto f = dir.getChildFile(juce::String(now) + "_" + safe + ".json");
+    f.replaceWithText(juce::JSON::toString(juce::var(root.release()), true));
+
+    EchoJay_NSLog(("EJArchive: saved rack (" + juce::String((int) slots_.size())
+                   + " slots) before overwrite -> " + f.getFileName()).toRawUTF8());
+
+    // COUNT ring (keep newest 20) then a SIZE cap (prune oldest until under
+    // budget). The ms-epoch filename prefix sorts lexically == chronologically,
+    // so File's path order is oldest-first.
+    auto files = dir.findChildFiles(juce::File::findFiles, false, "*.json");
+    files.sort();
+    constexpr int kKeep = 20;
+    while (files.size() > kKeep) { files.getReference(0).deleteFile(); files.remove(0); }
+    constexpr juce::int64 kMaxBytes = 100LL * 1024 * 1024;
+    juce::int64 total = 0;
+    for (auto& e : files) total += e.getSize();
+    for (int i = 0; i < files.size() && total > kMaxBytes; ++i)
+    {
+        total -= files.getReference(i).getSize();
+        files.getReference(i).deleteFile();
+    }
+}
+
 void ChainHost::restoreSavedChain(const juce::var& slotsArr, const juce::var& stateObj,
                                   std::function<void()> onSlotSettled,
-                                  std::function<bool(const juce::String&)> isDisabledByName)
+                                  std::function<bool(const juce::String&)> isDisabledByName,
+                                  const juce::var& paramsObj)
 {
     auto* arr = slotsArr.getArray();
     if (arr == nullptr || arr->isEmpty()) return;
@@ -4967,6 +6271,7 @@ void ChainHost::restoreSavedChain(const juce::var& slotsArr, const juce::var& st
     // One load, one clean slate: notes are about the chain now on screen.
     clearStateNotes();
     auto* statesObj = stateObj.getDynamicObject();
+    auto* paramsMap = paramsObj.getDynamicObject();   // stateParams; absent until the server carries it
 
     std::vector<RestoreItem> items;
     for (int i = 0; i < arr->size(); ++i)
@@ -5010,11 +6315,12 @@ void ChainHost::restoreSavedChain(const juce::var& slotsArr, const juce::var& st
         RestoreItem item;
         item.desc     = desc;
         item.bypassed = (bool)o->getProperty("bypassed");
-        // The shared chain format carries no wet/dry, so a saved chain
-        // restores fully wet. Session restore keeps wet because its own XML
-        // has it. Stated here so the difference is a known gap and not a
-        // mystery the next reader has to rediscover.
-        item.wet         = 1.0f;
+        // Per-slot wet/dry: carried since 16 Aug 2026 (a chain saved
+        // before then, or one the server normalised without it, has no
+        // "wet" and restores fully wet, exactly as before).
+        item.wet         = o->hasProperty("wet")
+                             ? juce::jlimit(0.0f, 1.0f, (float)(double) o->getProperty("wet"))
+                             : 1.0f;
         item.expectState = (statesObj != nullptr);
         if (statesObj != nullptr)
         {
@@ -5045,6 +6351,12 @@ void ChainHost::restoreSavedChain(const juce::var& slotsArr, const juce::var& st
         if (item.stateBase64.isNotEmpty())
             item.withholdState = ! stateFitsPlugin(desc, item.savedFormat, item.savedVersion,
                                                    item.savedUid, name);
+        if (paramsMap != nullptr)
+        {
+            const juce::String key (n);
+            if (paramsMap->hasProperty(key))
+                item.params = paramsMap->getProperty(key);   // the {uid,format,plugin,params} object
+        }
         items.push_back(std::move(item));
     }
 

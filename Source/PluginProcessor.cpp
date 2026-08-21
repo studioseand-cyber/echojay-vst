@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "FaderTaper.h"   // shared mixer-fader mute taper (P17)
 #include "NativeClip.h"   // EchoJay_NSLog (memdiag)
 #include "EchoJayWorkspace.h"   // runRoundTripSelfTest (C1/C3 verify)
 #include "EedTempoClock.h"      // publishHostTempo (built-in tempo-synced devices)
@@ -336,6 +337,25 @@ EchoJayProcessor::EchoJayProcessor()
     // class and captures live in LinkProcessor::chainModelToVar instead.
     chainHost.setStateCacheEnabled(true);
 
+    // Which wrapper this instance is (for the rack note in completeLoad),
+    // and the one-time, loud log for the VST3-in-AU-host experiment.
+    chainHost.setHostPluginFormat(wrapperType == wrapperType_AudioUnit ? juce::String("AudioUnit")
+                                : wrapperType == wrapperType_VST3      ? juce::String("VST3")
+                                                                       : juce::String());
+    if (wrapperType == wrapperType_AudioUnit && ChainHost::vst3InAuHostExperiment())
+    {
+        static bool loggedOnce = false;   // once per host process, not per instance
+        if (!loggedOnce)
+        {
+            loggedOnce = true;
+            EchoJay_NSLog("EJVst3InAu: EXPERIMENT ON. ~/Library/EchoJay/vst3_in_au_host is set (with dev_mode): "
+                          "VST3 plugins are OFFERED in the chain list and the model feed inside this AU host. "
+                          "Experimental. Sessions and chains built with it hold VST3 slots: with the flag off "
+                          "they still restore on this machine (the load path does not check format) and the "
+                          "rack says so; on a machine without those VST3s they are skipped with a rack note.");
+        }
+    }
+
     // Defer plugin cache loading to background so constructor returns fast.
     // Tracked on loadThread (a std::thread member) so the destructor can join
     // it — see ~EchoJayProcessor. Bails immediately if shutdown began.
@@ -512,7 +532,7 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     // Bus trim smoothing: the Link's 30ms ramp, same feel both sides
     busGainSmoothed_.reset(sampleRate, 0.030);
     busGainSmoothed_.setCurrentAndTargetValue(
-        juce::Decibels::decibelsToGain(busGainDb_.load(std::memory_order_relaxed)));
+        EchoJayFader::gainForDb(busGainDb_.load(std::memory_order_relaxed)));
     meterEngine.prepare(sampleRate, samplesPerBlock);
     captureEngine.prepare(sampleRate, samplesPerBlock);
     selfKeyEngine_.prepare(sampleRate, samplesPerBlock);   // §6.1 self key tap
@@ -1150,8 +1170,29 @@ void EchoJayProcessor::setChannelTypePromptDismissed(bool dismissed)
 // ============ Self key detection (§6.1) ============
 // The Link's §5.1 scheduler on the main plugin's own channel, gated on the
 // DECLARED ROLE being a music bus. Message thread, 1 Hz.
+void EchoJayProcessor::updateTrackProperties(const TrackProperties& props)
+{
+    if (!props.name.has_value()) return;   // colour-only update carries no name
+    const juce::String n = juce::String(*props.name).trim();
+    {
+        const juce::ScopedLock sl(hostTrackNameLock_);
+        if (hostTrackNamePending_ == n) return;
+        hostTrackNamePending_ = n;
+    }
+    hostTrackNameDirty_.store(true, std::memory_order_release);
+}
+
+void EchoJayProcessor::applyHostTrackNameIfDirty()
+{
+    if (!hostTrackNameDirty_.exchange(false, std::memory_order_acq_rel)) return;
+    juce::String n;
+    { const juce::ScopedLock sl(hostTrackNameLock_); n = hostTrackNamePending_; }
+    chainHost.setHostTrackName(n);   // the guard (change, or late first name) lives there
+}
+
 void EchoJayProcessor::timerCallback()
 {
+    applyHostTrackNameIfDirty();
     scheduleSelfKeyPass();
 
     // Keep the KeyFeed alive without an editor. EchoJay Pitch follows the
@@ -2786,7 +2827,7 @@ bool EchoJayProcessor::applyBusGainSmoothed(juce::AudioBuffer<float>& buffer)
     // early-out for bit-transparency at 0 dB, per-sample ramp while
     // smoothing. No locks, no allocation.
     const float targetLin =
-        juce::Decibels::decibelsToGain(busGainDb_.load(std::memory_order_relaxed));
+        EchoJayFader::gainForDb(busGainDb_.load(std::memory_order_relaxed));
 
     if (busGainSnapPending_.exchange(false, std::memory_order_acq_rel))
         busGainSmoothed_.setCurrentAndTargetValue(targetLin);
@@ -2849,7 +2890,13 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     // the mixer laid out is a layout choice worth writing into a project file.
     state->setProperty("linkMixerContent", (int)linkMixerContent);
     state->setProperty("linkMixerWide", linkMixerWide);
+    state->setProperty("linkFaderMode", (int)linkFaderMode);
     state->setProperty("busGainDb", busGainDb_.load(std::memory_order_relaxed));
+    // Pre-chain gain persists with the SESSION (source-specific, so it never
+    // travels in a shared chain: buildChainSlotsVar omits it). userSet rides
+    // along so a reopen keeps a hand-set value from being auto-overwritten.
+    state->setProperty("chainPreGainDb",      chainHost.getPreGainDb());
+    state->setProperty("chainPreGainUserSet", chainHost.isPreGainUserSet());
 
     // Serialise snapshots — copy under lock, serialise outside
     std::vector<CaptureSnapshot> snapsCopy;
@@ -2992,6 +3039,15 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
                               "this session");
     if (!chainSlotState.isVoid())
         state->setProperty("chainSlotState", chainSlotState);
+    // VST3 parameter values beside the blob (17 Aug 2026): a SIBLING key, so
+    // chainSlotState keeps its per-slot base64 strings and an older build
+    // reads it exactly as before. Absent when no VST3 slot has one.
+    if (auto chainSlotParams = chainHost.getCachedSlotParamsVar(); !chainSlotParams.isVoid())
+        state->setProperty("chainSlotParams", chainSlotParams);
+    // Running level tally (17 Aug 2026): a sibling key, never inside the
+    // frozen chainSlotsXml. Carries the host track name for the restore
+    // guard. An older build ignores it.
+    state->setProperty("chainLevels", chainHost.getLevelsStateVar(chainHost.getHostTrackName()));
     state->setProperty("chainWarningDismissed", chainHost.chainWarningDismissed);
     // Saved chain identity: written only when there IS one, so a session
     // with no saved chain grows no keys and still reads identically in an
@@ -3067,12 +3123,21 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
                     (int)obj->getProperty("linkMixerContent"));
             if (obj->hasProperty("linkMixerWide"))
                 linkMixerWide = (bool)obj->getProperty("linkMixerWide");
+            if (obj->hasProperty("linkFaderMode"))
+                linkFaderMode = ((int)obj->getProperty("linkFaderMode") == 1)
+                                    ? LinkFaderMode::Pre : LinkFaderMode::Post;
             // Bus trim: guarded and else-less (absent = older save = 0 dB
             // default untouched); snap the smoother so a restored trim does
             // not ramp in from unity on the first block.
             if (obj->hasProperty("busGainDb"))
                 setBusGainDb((float)(double)obj->getProperty("busGainDb"),
                              /*snapSmoothing=*/true);
+            // Pre-chain gain restored FROZEN (never recomputed on reopen).
+            // userSet first so setPreGainDb below records the right state.
+            if (obj->hasProperty("chainPreGainDb"))
+                chainHost.setPreGainDb((float)(double)obj->getProperty("chainPreGainDb"),
+                                       obj->hasProperty("chainPreGainUserSet")
+                                           && (bool)obj->getProperty("chainPreGainUserSet"));
             // Project prompt: saves that predate the flag derive from having
             // a name (named project = question already answered)
             if (obj->hasProperty("projectPromptDismissed"))
@@ -3256,11 +3321,33 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
         juce::var chainSlotState;
         if (obj->hasProperty("chainSlotState"))
             chainSlotState = obj->getProperty("chainSlotState");
+        juce::var chainSlotParams;   // absent on every session before 17 Aug 2026: nothing applied
+        if (obj->hasProperty("chainSlotParams"))
+            chainSlotParams = obj->getProperty("chainSlotParams");
+        // Running level tally: chain in/out land at once, per-slot tallies
+        // are held pending and land as each slot restores. Guarded by the
+        // host track name inside setPendingLevelsState; the name the host
+        // has reported so far (if any) is what it is compared against.
+        juce::var chainLevels;
+        if (obj->hasProperty("chainLevels"))
+            chainLevels = obj->getProperty("chainLevels");
 
         if (slotsXml.isNotEmpty())
         {
-            juce::MessageManager::callAsync([this, slotsXml, chainSlotState] {
-                chainHost.tryRestoreSlotsFromXml(slotsXml, chainSlotState);
+            juce::MessageManager::callAsync([this, slotsXml, chainSlotState, chainSlotParams, chainLevels] {
+                applyHostTrackNameIfDirty();
+                if (!chainLevels.isVoid())
+                    chainHost.setPendingLevelsState(chainLevels, chainHost.getHostTrackName());
+                chainHost.tryRestoreSlotsFromXml(slotsXml, chainSlotState, chainSlotParams);
+            });
+        }
+        else if (!chainLevels.isVoid())
+        {
+            // No slots to restore, but the chain in/out tally still describes
+            // this track's level (an empty rack build wants it)
+            juce::MessageManager::callAsync([this, chainLevels] {
+                applyHostTrackNameIfDirty();
+                chainHost.setPendingLevelsState(chainLevels, chainHost.getHostTrackName());
             });
         }
         else if (chainLoadedDescXml.isNotEmpty())

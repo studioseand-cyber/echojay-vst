@@ -127,6 +127,11 @@ private:
     
     void showLoginScreen();
     void showMainScreen();
+    // The complete top-bar header row, owned in ONE place so the login screen
+    // hides it as a whole. A control added to the row later is covered by
+    // adding it here; hiding a hand-picked subset in showLoginScreen was what
+    // let "+ New chat" and the "Full capture" label leak onto the login page.
+    void setHeaderRowVisible(bool v);
     void attemptLogin();
     void handleLogout();
     bool shouldShowChannelPrompt() const;
@@ -1248,9 +1253,19 @@ private:
     // Non-clean-load paths keep their factual bubbles but still log
     // dial_miss events once dial state settles.
     void logDialMissesWhenSettled(int attemptsLeft);
-    // events.jsonl dial_miss writer (EchoJayEventLog schema v1).
+    // events.jsonl dial_miss writer (EchoJayEventLog schema v1). The four
+    // trailing fields are dial-3 (CONTRACT_racked_slot_controls.md A2/A7.2):
+    // key halves + denominator + its explicit source. requested < 0 writes
+    // no "requested" key, which marks the row OLD-shape and never shipped.
     void logDialMiss(const juce::String& plugin, const juce::String& fp,
-                     const juce::String& reason, const juce::StringArray& manual);
+                     const juce::String& reason, const juce::StringArray& manual,
+                     const juce::String& format = {}, const juce::String& uid = {},
+                     int requested = -1, const juce::String& requestedSource = {});
+    // dial-3 carrier (A7.3): the declined-name batch for THIS send, read
+    // from events.jsonl above the watermark. "" = nothing to ship. Sets
+    // pendingDeclineWatermark_; handleChatReply's success branch commits it.
+    juce::String buildDialDeclinesBatchJson();
+    juce::int64 pendingDeclineWatermark_ = -1;
     // Alt pill on PLAIN messages (result bubbles): height helper shared by
     // the measure and paint passes (edit cards carry their pill inside
     // editCardHeight; this returns 0 for them)
@@ -1579,6 +1594,7 @@ private:
     // resolver rebuilt), where a release build can see it.
     // Restricts the list to plugins loadable in this wrapper format.
     juce::String chainFormatFilter_;
+    bool chainOfferBothBuilds_ = false;   // VST3-in-AU-host experiment: picker keeps AU and VST3 twins
     // Scan sequencing (13 Aug 2026): the header's Scan Now runs the
     // validating PluginScanner, and the chain scan (ChainHost) rides its
     // COMPLETION, not alongside it, because the chain scan's VST3 rows read
@@ -1642,6 +1658,7 @@ private:
         static constexpr int kBlockGap = 26;   // connector-line gap between blocks
         static constexpr int kAddW     = 40;   // "+" block
         static constexpr int kMasterW  = 62;   // fixed master MIX knob area, right of strip
+        static constexpr int kPreGainW = 56;   // fixed pre-gain knob area, HEAD of the strip (where signal enters)
 
         // Compact rounded block in the bottom strip — name + B/X/</> controls.
         // Clicking anywhere else on the block selects it (shows editor above).
@@ -1758,6 +1775,7 @@ private:
         StripContent     stripContent;
         juce::TextButton addBlock { "+" };
         ChainWetKnob     masterKnob;   // whole-chain wet/dry, fixed right of strip
+        PreGainKnob      preGainKnob;  // pre-chain headroom gain, HEAD of strip (local + remote)
         std::vector<std::unique_ptr<Block>> blocks;
         std::vector<ChainHost::SlotInfo>    slotInfos;
         int selectedIdx = -1;
@@ -1858,6 +1876,17 @@ private:
         std::function<void()>           onAddClick;
         std::function<void(int, float)> onSlotWet;    // slot idx, wet 0..1
         std::function<void(float)>      onMasterWet;  // wet 0..1
+        std::function<void(float)>      onPreGain;    // pre-gain, ABSOLUTE dB (owner routes local vs remote)
+        std::function<void()>           onPreGainReset;   // double-click = reset to auto
+        // Owner-driven display state for the pre-gain knob (refreshed each tick
+        // and on rebuild). Kept here so paint reads it back with no lookups.
+        void setPreGainDisplay(float db, bool userSet, bool inputKnown)
+        {
+            preGainKnob.userSet = userSet;
+            preGainKnob.inputKnown = inputKnown;
+            preGainKnob.setDb(db, false);   // no notify: display only
+            preGainKnob.repaint();
+        }
         std::function<juce::AudioProcessorEditor*(int)> onCreateEditor;
 
         ChainListPanel()
@@ -1919,6 +1948,15 @@ private:
             masterKnob.caption = "MIX";
             masterKnob.onChange = [this](float v) { if (onMasterWet) onMasterWet(v); };
             addAndMakeVisible(masterKnob);
+
+            // Pre-gain knob at the rack head. onChange gives 0..1; map to the
+            // absolute dB and hand it to the owner, which routes it to the
+            // local chain host or a remote Link. A drag is a HAND set.
+            preGainKnob.caption = "PRE";
+            preGainKnob.onChange = [this](float v01)
+            { if (onPreGain) onPreGain(PreGainKnob::dbFromV(v01)); };
+            preGainKnob.onResetAuto = [this] { if (onPreGainReset) onPreGainReset(); };
+            addAndMakeVisible(preGainKnob);
 
             popBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xcc0E1020));
             popBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
@@ -2599,8 +2637,13 @@ private:
             // narrow the window gets. Same shape as the master knob's
             // reservation at the right end.
             rackBtn.setBounds(8, getHeight() - kStripH + 8, kRackSelW - 16, 24);
-            stripView.setBounds(kRackSelW, getHeight() - kStripH,
-                                juce::jmax(50, getWidth() - kMasterW - kRackSelW),
+            // Pre-gain knob at the HEAD of the strip, left of the first block:
+            // its position says what it does (the signal enters here). Shown
+            // in local AND remote (a selected rack has a pre-gain too), so it
+            // is not gated on !remote the way the master MIX knob is.
+            preGainKnob.setBounds(kRackSelW + 6, getHeight() - kStripH + 6, 44, 54);
+            stripView.setBounds(kRackSelW + kPreGainW, getHeight() - kStripH,
+                                juce::jmax(50, getWidth() - kMasterW - kRackSelW - kPreGainW),
                                 kStripH);
             masterKnob.setBounds(getWidth() - kMasterW + 9,
                                  getHeight() - kStripH + 6, 44, 54);
@@ -2924,6 +2967,18 @@ private:
     int findNewestUnansweredAsk() const;
     // Mark every pending ask answered (any user send supersedes the question)
     void supersedePendingAsks();
+    // Replace-class supersede (20 Aug 2026): marks answered ONLY asks whose
+    // chips carry recall_* or build_* intents — one pending replace decision
+    // at a time, a second trigger replaces rather than stacks — without
+    // silently killing a pending model brief, ASK, or compare-scope ask.
+    // The blanket one above stays for the sites that mean "the user moved
+    // on from everything".
+    void supersedePendingReplaceAsks();
+    // The prefix core the scoped supersedes share (P57): recall_*/build_*
+    // for the replace class, cmp_* for the compare answer. The blanket one
+    // stays for the user-send sites that mean "moved on from everything" -
+    // :24683 is how a TYPED answer to a brief resolves at all.
+    void supersedePendingAsksByIntent(std::initializer_list<const char*> prefixes);
     // The ONE layout authority for the PILL shelf (height reservation + pill
     // placement); the paint pass draws only the background inside the rect
     // this produced, so the two cannot disagree. Flows the pills into rows
@@ -3100,6 +3155,12 @@ private:
                                  int rackSlots,
                                  const juce::String& targetUid  = {},
                                  const juce::String& targetName = {});
+    // Item 4: THE single recall entry. Reads the active chain view ONCE and
+    // uses it for both the overwrite guard (that rack's slot count) and the
+    // target (main vs the viewed Link), so guard and target cannot drift.
+    // Confirms before replacing a populated rack; the archive happens inside
+    // the clear regardless. Callers pass an id already known to be recallable.
+    void beginRecall(const juce::String& id, const juce::String& name);
     // The channel-mismatch advisory ask (15 Aug 2026): ONE client-authored
     // ASK whose question is the server's heads-up text and whose chips are
     // "Load it here" / "Choose another channel" - it replaces the plain
@@ -3174,7 +3235,26 @@ private:
     juce::String resolveLinkProposalAddr(const juce::String& linkId) const;
     void applyGainProposal(const GainCardZone& z);
     void showChainPluginPicker();                       // "+" button popup
-    void loadChainFromJson(const juce::String& chainJson);
+    // replaceConfirmed=true is the build_confirm chip's re-entry: parse and
+    // build without asking again. The default path over a populated rack
+    // presents the client-composed replace ask (presentBuildReplaceAsk) and
+    // returns — the AlertWindow confirm is gone (no-modal rule: Logic parks
+    // modals behind the plugin window).
+    void loadChainFromJson(const juce::String& chainJson, bool replaceConfirmed = false);
+    // The build path's replace confirm, recall's sibling: fixed client
+    // labels, replace or cancel ONLY (no append choice exists because no
+    // append path exists — the load path applies block settings to fresh
+    // instances, never state). Chip carries the chain json so the pending
+    // build survives an editor recreate the same way a recall ask does.
+    void presentBuildReplaceAsk(const juce::String& chainJson);
+    // THE ONE presenter for replace-class asks (build + recall): flips out
+    // of the chains list, supersedes the pending replace ask, appends +
+    // persists the ask message, logs, relayouts. Question wording and chip
+    // intents stay per-caller; the mechanism has one author.
+    void presentReplaceAsk(const juce::String& question,
+                           const juce::Array<juce::var>& choices,
+                           const juce::String& flipContext,
+                           const juce::String& shownLog);
 
     // ---- Link chain send side ----
     // Destination is never ambiguous under the router rule: a channel chat
@@ -3236,6 +3316,7 @@ private:
         bool target = false;
         bool timedOut = false;
         bool isGain = false;    // this pending is a gain change (else Active)
+        bool isPreGain = false; // a PRE-chain gain change (mixer Pre mode)
         float gainDb = 0.0f;    // desired gain for optimistic row display
     };
     std::vector<LinkCtrlPending> linkCtrlPending_;
@@ -3487,20 +3568,28 @@ private:
     /** dB<->y for the fader rect, mapped across the artwork's cap travel
         band (see above). Same range (-24..+12), same 0.1 dB snap. Pure,
         shared by the drag, the travel ticks and the fallback thumb. */
-    static float gainFromY(int y, juce::Rectangle<int> capArea)
+    // Range-aware mapping (18 Aug 2026): POST spans -24..+12 (the output
+    // fader), PRE spans -24..+24 (headroom). The lane travel is the same
+    // pixels, so PRE is coarser dB/pixel (a legitimate wider range); the
+    // 0.1 dB snap keeps precision. The old two-arg forms delegate to the
+    // POST range so every existing caller is unchanged.
+    static float gainFromYRanged(int y, juce::Rectangle<int> capArea, float lo, float hi)
     {
         const float top = faderTravelTop(capArea), bot = faderTravelBot(capArea);
         const float f = juce::jlimit(0.0f, 1.0f,
             (bot - (float)y) / juce::jmax(1.0f, bot - top));
-        return juce::jlimit(-24.0f, 12.0f,
-            std::round((-24.0f + f * 36.0f) * 10.0f) / 10.0f);
+        return juce::jlimit(lo, hi, std::round((lo + f * (hi - lo)) * 10.0f) / 10.0f);
     }
-    static int yFromGain(float db, juce::Rectangle<int> capArea)
+    static int yFromGainRanged(float db, juce::Rectangle<int> capArea, float lo, float hi)
     {
         const float top = faderTravelTop(capArea), bot = faderTravelBot(capArea);
-        const float f = juce::jlimit(0.0f, 1.0f, (db + 24.0f) / 36.0f);
+        const float f = juce::jlimit(0.0f, 1.0f, (db - lo) / juce::jmax(1.0f, hi - lo));
         return (int)std::round(bot - f * (bot - top));
     }
+    static float gainFromY(int y, juce::Rectangle<int> capArea)
+    { return gainFromYRanged(y, capArea, -24.0f, 12.0f); }
+    static int yFromGain(float db, juce::Rectangle<int> capArea)
+    { return yFromGainRanged(db, capArea, -24.0f, 12.0f); }
     /** dB per pixel of travel, derived from the SAME travel constants as
         gainFromY/yFromGain and held to them by the self-test, so fine and
         coarse drags agree about where a dB lives; the fine modifier only
@@ -3508,11 +3597,17 @@ private:
         cannot consume gainFromY deltas directly: those clamp at the travel
         rails, and a FINE drag whose cursor has passed a rail while its
         value has not would stall. */
-    static float gainPerPixel(juce::Rectangle<int> capArea)
+    static float gainPerPixelRanged(juce::Rectangle<int> capArea, float span)
     {
-        return 36.0f / juce::jmax(1.0f, faderTravelBot(capArea)
-                                      - faderTravelTop(capArea));
+        return span / juce::jmax(1.0f, faderTravelBot(capArea)
+                                     - faderTravelTop(capArea));
     }
+    static float gainPerPixel(juce::Rectangle<int> capArea)
+    { return gainPerPixelRanged(capArea, 36.0f); }
+    // Fader value range for the current mixer fader mode. POST is the output
+    // fader (-24..+12); PRE is the pre-chain headroom range (-24..+24).
+    float faderLo() const;
+    float faderHi() const;
     /** Shift = fine drag at one eighth speed. */
     static constexpr float kFaderFineRatio = 1.0f / 8.0f;
 
@@ -3536,7 +3631,8 @@ private:
     // kCtrlMeter (11) retired in 8b with the meter mode; the id is not
     // reused so an old log line can never be misread against a new control.
     static constexpr int kCtrlNarrow  = 0, kCtrlWide  = 1,
-                         kCtrlNumbers = 10, kCtrlChain = 12;
+                         kCtrlNumbers = 10, kCtrlChain = 12,
+                         kCtrlPost = 13, kCtrlPre = 14;   // fader mode (18 Aug 2026)
     /** Pure. Segments get fixed preferred widths, shrink proportionally to a
         pressable floor if the rect is tight, and any zone that still cannot
         fit inside the rect is DROPPED rather than clipped into an overlap. */
@@ -3665,7 +3761,8 @@ private:
                         const EchoJayProcessor::LinkDisplayEntry* entry);
     /** The drawn track, its ticks and the cap sprite at `gDb`. ONE painter
         for the channel strips and the bus, so the two cannot drift. */
-    void paintFaderLane(juce::Graphics& g, const StripGeom& sg, float gDb);
+    void paintFaderLane(juce::Graphics& g, const StripGeom& sg, float gDb,
+                        float lo = -24.0f, float hi = 12.0f);
     /** Routes one press through stripHitAt. `local` is in sg's space.
         numClicks carries the double-click (fader reset to 0 dB). */
     void linkStripMouseDown(const StripGeom& sg, juce::Point<int> local,
@@ -3992,6 +4089,14 @@ private:
     ChainRackView chainRackView() const;
     void refreshChainPanelForView(bool force);
     juce::String chainViewSig_;    // change detector for the remote refresh
+
+    // Feed split (P16): the existence-index query is fired once per scan, from
+    // the feed path, gated on the recommendable key-set signature so it never
+    // re-fires while the set is unchanged and never blocks a turn. In-flight
+    // guard stops a second turn double-firing before the first answers.
+    void maybeRefreshExistenceDialable(ChainHost& ch);
+    juce::String existenceKeysSig_;
+    bool existenceQueryInFlight_ = false;
     // Fix 3: the add's COMPLETION memory. The ok arm of pollLinkBlockAck
     // records the finished add here (then erases the pending); the derived
     // status line writes "Added ..." only once the sidecar cache actually
@@ -4014,6 +4119,12 @@ private:
     // Remote gain: ctrl-cmd carrying the CURRENT active + a new absolute
     // gainDb field, acked like Active. Authority stays with the Link.
     void sendLinkGainCommand(const juce::String& linkAddr, float gainDb);
+    // Pre-chain gain (mixer Pre mode). A fader move is a HAND set (userSet).
+    void sendLinkPreGainCommand(const juce::String& linkAddr, float preGainDb);
+    void sendLinkPreGainResetCommand(const juce::String& linkAddr);
+    float linkRowDisplayPreGain(const juce::String& linkAddr) const;
+    // True when the mixer faders are repointed to the pre-chain gain.
+    bool  linkFaderModeIsPre() const;
     // Remote placement declaration (0 unset, 1 bus, 2 insert) via ctrl-cmd.
     void sendLinkPlacementCommand(const juce::String& linkAddr, int placement);
     void showLinkPlacementMenu(const juce::String& linkAddr);
@@ -4160,49 +4271,89 @@ private:
     // row (left cluster), same quiet link style as Help & Support
     juce::TextButton settingsManualBtn { "Manual" };
 
-    // ---- Settings: WITHHELD FROM THE CHAIN LIST (16 Aug 2026) ----
-    // A native arm64 host offers 118 of 449 VST3 rows and, before this,
-    // nothing in the product said where the other 331 went. This section
-    // renders every row ChainHost withholds from THIS host's chain list,
-    // greyed, with the reason ChainHost gives (withholdReason: read, never
-    // reimplemented) and, for a crash-blacklisted row, a Re-enable control
-    // that deletes its line from chain_blacklist.txt (the file is the
-    // authority; the next scan re-reads it, no restart). Architecture rows
-    // carry no control: it is not a choice, and the note above the rows
-    // says the one thing that changes it (running the host under Rosetta),
-    // once, here. Unreadable rows are KEPT by ChainHost and are not withheld,
-    // so they are not listed. The user's own ticks are never touched.
-    // Rows come from the shared entries cache (ChainHost::getEntriesCacheFile,
-    // the same file entries_ is loaded from) so no ChainHost API had to grow.
-    struct WithheldRow
+    // ---- Settings: WITHHELD FROM THE CHAIN LIST (16 Aug 2026, redefined 17 Aug) ----
+    // A plugin is WITHHELD when the user has ticked it in Settings and no
+    // route in THIS host reaches the chain feed. Not when one of its rows
+    // was dropped: a plugin whose Intel-only VST3 is withheld but whose AU
+    // loads is available and must not appear here. The denominator is the
+    // ticked Settings rows counted by plugin name (the collapse the feed
+    // uses), and it is stated on screen. One verdict per name, first that
+    // applies, from the SHIPPING resolver (ChainHost::resolveByName asked
+    // for AudioUnit and for VST3; the predicate is never reimplemented):
+    //   available     this host's format resolves               -> absent
+    //   FormatOnly    only the OTHER format resolves             -> host-dependent, its own group
+    //   Crash         a route is crash-blacklisted               -> Re-enable control
+    //   IntelOnly     a route is architecture-withheld            -> the one group with a remedy
+    //   Vst2          only VST2 rows exist                        -> EchoJay hosts no VST2 anywhere
+    //   NotScanned    a .vst3 of that name sits in a vendor       -> a scan defect (P2), named as such
+    //                 subfolder the chain scan does not enter
+    //   Unreadable    nothing resolves and nothing explains it    -> "could not be read as a plugin"
+    // The 17 Aug census on Sean's Mac under Logic: 807 enabled names, 165
+    // Intel-only, 88 VST2, 21 not scanned, 14 format-only, 519 in the feed.
+    // The previous section applied the host's format filter before counting
+    // and therefore read "nothing is withheld" under Logic while 331 VST3
+    // rows were withheld: it said the opposite of the truth.
+    struct WithheldItem
     {
-        juce::String name, path;
-        ChainHost::WithholdReason reason = ChainHost::WithholdReason::None;
-        juce::String date;          // from the blacklist line's ISO stamp, may be empty
-        bool reenabled = false;     // line deleted this session; back after the next scan
+        juce::String name, vendor, path;
+        juce::String date;          // crash rows: from the blacklist line's ISO stamp, may be empty
+        juce::String detail;        // too-large rows: "1.1 MB at its defaults, limit 4 MB"
+        bool reenabled = false;     // crash / too-large rows: line deleted this session
     };
-    std::vector<WithheldRow> settingsWithheld_;
-    int  settingsWithheldArch_  = 0;
-    int  settingsWithheldCrash_ = 0;
+    struct WithheldGroup
+    {
+        // Crash and TooLarge rows carry a Re-enable control (each deletes the
+        // row's line from its own file: chain_blacklist.txt, chain_state_oversize.txt)
+        enum Kind { Crash, TooLarge, IntelOnly, Vst2, NotScanned, Unreadable, FormatOnly,
+                    HelperNote, Superseded } kind = Unreadable;
+        static bool hasReenable(Kind k) noexcept { return k == Crash || k == TooLarge; }
+        juce::String title;         // "Intel only, no Apple Silicon build installed"
+        juce::String remedy;        // one line, only where a remedy exists
+        juce::String vendorsLine;   // "IK Multimedia 46, iZotope 36, ..." (IntelOnly)
+        std::vector<WithheldItem> items;
+    };
+    std::vector<WithheldGroup> settingsWithheldGroups_;   // only non-empty groups, in the order above
+    int  settingsWithheldEnabledNames_ = 0;   // the denominator: ticked plugins counted by name
+    int  settingsWithheldCannot_ = 0;         // sum of the groups that cannot be used in THIS host
     bool settingsWithheldExpanded_ = false;
-    juce::TextButton settingsWithheldToggleBtn_ { "Show" };
+    juce::TextButton settingsWithheldToggleBtn_ { "Show names" };
     std::vector<std::unique_ptr<juce::TextButton>> settingsReenableBtns_;
-    static constexpr int kWithheldRowH = 22;
+    static constexpr int kWithheldRowH = 18;
+    static constexpr int kWithheldGroupH = 20;
     // ONE geometry for resized() and paintSettingsView (the two must agree,
     // as every other Settings section's paint mirrors its layout).
     struct WithheldLayout
     {
         int labelY = 0;                     // section label (14px)
-        juce::Rectangle<int> summary;       // one-line count summary
-        juce::Rectangle<int> toggle;        // Show/Hide button, empty when nothing is withheld
-        juce::Rectangle<int> note;          // architecture note, empty when collapsed or none
-        int rowsY = 0;                      // first row top when expanded
+        juce::Rectangle<int> headline;      // "N of your M enabled plugins cannot be used in this host"
+        juce::Rectangle<int> denominator;   // how N and M were counted
+        juce::Rectangle<int> toggle;        // Show/Hide names, empty when nothing is withheld
+        struct Group { int titleY = 0, remedyY = -1, vendorsY = -1, itemsY = 0; };
+        std::vector<Group> groups;          // parallel to settingsWithheldGroups_
         int endY  = 0;                      // next section starts here
     };
     WithheldLayout withheldSectionLayout(int sx, int sy, int sw) const;
     void rebuildSettingsWithheld();
-    void reenableWithheldRow(int idx);
+    // The verdict, as a pure function of its inputs so a harness can run the
+    // SHIPPING classification against real caches (no copy of the rules).
+    // hostFmt = "AudioUnit" | "VST3" | ""; crashByFold = crash rows from the
+    // entries cache keyed by folded name; nestedVst3 = folded names of the
+    // .vst3 bundles in vendor subfolders. Returns only non-empty groups.
+    static std::vector<WithheldGroup> classifyWithheld(const std::vector<ScannedPlugin>& plugins,
+                                                       const ChainHost& ch,
+                                                       const juce::String& hostFmt,
+                                                       const std::map<juce::String, WithheldItem>& crashByFold,
+                                                       const std::map<juce::String, WithheldItem>& tooLargeByFold,
+                                                       const std::set<juce::String>& nestedVst3,
+                                                       int* enabledNamesOut, int* cannotOut);
+    static juce::String foldPluginName(const juce::String& s);
+    void reenableWithheldItem(int groupIdx, int itemIdx);
     static juce::File chainBlacklistFile();
+    // Section 5 (17 Aug 2026): the sandbox claim, measured not assumed.
+    // dev_mode "/vst3test <name>" instantiates a resolved VST3 through
+    // ChainHost::asyncCreatePlugin regardless of the host format filter and
+    // reports what actually happened. Changes no policy.
+    void handleDevVst3Test(const juce::String& name);
 
     // Scrollable Settings: the settings-only children live inside
     // settingsContent_, viewed through settingsViewport_. resized() stays

@@ -121,6 +121,7 @@ target_sources(EchoJay PRIVATE
     Source/PluginEditor.h
     Source/ChainHost.cpp
     Source/ChainHost.h
+    Source/ChainPluginPicker.h
     ${ECHOJAY_NATIVE_SOURCES}
     Source/AUEnumerator.h
     Source/NativeClip.h
@@ -485,6 +486,7 @@ target_sources(EchoJayLink PRIVATE
     # Chain hosting — shared with the main plugin (phase 1)
     Source/ChainHost.cpp
     Source/ChainHost.h
+    Source/ChainPluginPicker.h
     ${ECHOJAY_NATIVE_SOURCES}
     Source/AUEnumerator.h
     Source/PluginScanner.h
@@ -725,7 +727,7 @@ endif()
 juce_add_console_app(ejextract PRODUCT_NAME "ejextract")
 
 target_sources(ejextract PRIVATE tools/ejextract/main.cpp)
-target_include_directories(ejextract PRIVATE tools/ejextract)
+target_include_directories(ejextract PRIVATE tools/ejextract Source)   # Source for EchoJayParamMaps.h (shared fp)
 
 target_compile_definitions(ejextract PRIVATE
     JUCE_PLUGINHOST_VST3=1

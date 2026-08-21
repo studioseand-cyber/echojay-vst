@@ -148,6 +148,14 @@ public:
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
+    // The host's name for this track (Logic's context name, VST3 channel
+    // context). Read for the running level tally's source guard: a name
+    // CHANGE resets the tally, and the saved tally is discarded on restore
+    // when the names differ (ChainHost::setPendingLevelsState). Any thread
+    // (the AU property listener fires off the message thread): stash + flag,
+    // applied by the 1 Hz timer on the message thread, exactly as the Link
+    // does it (LinkProcessor::updateTrackProperties).
+    void updateTrackProperties(const TrackProperties& props) override;
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
     juce::AudioProcessorEditor* createEditor() override;
@@ -643,6 +651,14 @@ public:
         return saved == 2 ? LinkMixerContent::Chain : LinkMixerContent::Numbers;
     }
     LinkMixerContent linkMixerContent = LinkMixerContent::Numbers;
+
+    // Mixer fader mode (18 Aug 2026): Post = each fader controls its channel's
+    // post-chain output level (as always); Pre = each fader controls that
+    // channel's PRE-chain gain (headroom into the rack). Per Link, persisted.
+    // The meters stay post-chain in both: you trim the input while watching
+    // the output. Repoints the ONE strip, never a second row.
+    enum class LinkFaderMode { Post = 0, Pre = 1 };
+    LinkFaderMode linkFaderMode = LinkFaderMode::Post;
     bool linkMixerWide = false;        // false = narrow strips (the reference)
 
     /** LINK MIXER rack cache (step 9). ON THE PROCESSOR, not the editor,
@@ -840,6 +856,11 @@ private:
     int      selfKeyStallTicks_    = 0;
     void timerCallback() override;                 // 1 Hz: the scheduler
     void scheduleSelfKeyPass();
+    // Track name from updateTrackProperties (see there); the timer applies it
+    juce::CriticalSection hostTrackNameLock_;
+    juce::String          hostTrackNamePending_;
+    std::atomic<bool>     hostTrackNameDirty_ { false };
+    void applyHostTrackNameIfDirty();              // message thread
 
     // Background WAV save thread — destructor waits for it to finish
     std::unique_ptr<juce::Thread> saveThread;

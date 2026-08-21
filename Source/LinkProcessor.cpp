@@ -1,6 +1,7 @@
 #include "LinkProcessor.h"
 #include "LinkEditor.h"
 #include "LinkShm.h"
+#include "FaderTaper.h"   // shared mixer-fader mute taper (P17)
 #include "NativeClip.h"   // EchoJay_NSLog — chain-build diagnostics
 #include "EedKeyDetectorProcessor.h"   // hosted-detector frame preference (Tier 1)
 
@@ -205,8 +206,19 @@ void LinkProcessor::publishRackSidecar()
     }
     const bool curveMoved = (curve != lastPublishedCurve_);
 
-    if (!revMoved && !epMoved && !curveMoved) return;
-    if (!revMoved)
+    // Pre-gain moved (value, hand-set flag, or input-known state), polled the
+    // same way as the curve because it fires no notification. Publishing on
+    // an input-known transition lets a stale "--" on the main plugin resolve
+    // to the real figure once audio is heard.
+    const float pgDb    = chainHost.getPreGainDb();
+    const bool  pgUser  = chainHost.isPreGainUserSet();
+    const bool  pgKnown = chainHost.getChainInLevels().known;
+    const bool preGainMoved = (pgDb    != lastPublishedPreGainDb_)
+                           || (pgUser  != lastPublishedPreGainUserSet_)
+                           || (pgKnown != lastPublishedPreGainInputKnown_);
+
+    if (!revMoved && !epMoved && !curveMoved && !preGainMoved) return;
+    if (!revMoved && !preGainMoved)
     {
         // A settle test ALONE would starve under sustained automation: a host
         // automating an EQ emits changes every block, so the "last change"
@@ -223,6 +235,9 @@ void LinkProcessor::publishRackSidecar()
     lastPublishedRackRev_ = rev;
     lastPublishedEpoch_   = epoch;
     lastPublishedCurve_   = curve;
+    lastPublishedPreGainDb_        = pgDb;
+    lastPublishedPreGainUserSet_   = pgUser;
+    lastPublishedPreGainInputKnown_ = pgKnown;
     lastRackPublishMs_    = nowMs;
 
     LinkShm::RackSidecar rc;
@@ -231,6 +246,12 @@ void LinkProcessor::publishRackSidecar()
     rc.name      = effectiveDisplayName();
     rc.revision  = rev;
     rc.masterWet = chainHost.getMasterWet();
+    // Pre-chain gain mirror (18 Aug 2026): the main plugin's mixer shows and
+    // drives it in Pre mode. inputKnown so a strip with no level heard shows
+    // "unset" rather than a confident 0.
+    rc.preGainDb         = pgDb;
+    rc.preGainUserSet    = pgUser;
+    rc.preGainInputKnown = pgKnown;
     {
         const auto infos = chainHost.getAllSlotInfos();
         for (int i = 0; i < (int) infos.size(); ++i)
@@ -250,6 +271,10 @@ void LinkProcessor::publishRackSidecar()
                                  // reader never has to guess which entry it
                                  // describes. Every other slot leaves it empty.
                                  i == eqSlot ? curve : std::vector<int16_t>{} });
+            // Identity so the slot can enter the server's fp union and dial.
+            const auto id = chainHost.getSlotIdentity(i);
+            auto& back = rc.slots.back();
+            back.fp = id.fp; back.uid = id.uid; back.version = id.version;
         }
     }
     LinkShm::writeRackSidecar(resolvedDir, rc);
@@ -571,6 +596,31 @@ void LinkProcessor::pollControlCommand()
     // Remote placement declaration (from the monitor row's placement control)
     if (obj->hasProperty("placement"))
         setPlacement((int)obj->getProperty("placement"));
+
+    // Remote pre-chain gain (18 Aug 2026, from the mixer's Pre mode). A fader
+    // move is a HAND set: userSet true so the next model build will not
+    // overwrite it. Additive field; an old Link never sees it. updateShmState
+    // republishes the sidecar (with the new value) and dirty-marks for save.
+    if (obj->hasProperty("preGainDb"))
+    {
+        const float g = (float)(double)obj->getProperty("preGainDb");
+        const bool userSet = ! obj->hasProperty("preGainUserSet")
+                             || (bool)obj->getProperty("preGainUserSet");
+        EchoJay_NSLog(("EJLinkState: remote set pre-gain=" + juce::String(g, 2)
+                       + " dB userSet=" + juce::String((int)userSet)
+                       + " (seq " + juce::String(seq) + ")").toRawUTF8());
+        chainHost.setPreGainDb(g, userSet);
+        updateShmState();
+    }
+    // Reset the pre-gain to auto (clears the hand-set flag; the next build
+    // sets it again). Its own field: setPreGainDb userSet=false cannot clear.
+    if (obj->hasProperty("preGainReset") && (bool)obj->getProperty("preGainReset"))
+    {
+        EchoJay_NSLog(("EJLinkState: remote reset pre-gain to auto (seq "
+                       + juce::String(seq) + ")").toRawUTF8());
+        chainHost.resetPreGainToAuto();
+        updateShmState();
+    }
 
     // ---- Remote editor open (stage 1) -------------------------------------
     // 1-BASED like every other slot reference on the wire (slot, to, after);
@@ -1092,7 +1142,7 @@ void LinkProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     // on prepare so a restored non-zero gain doesn't swell up from unity.
     gainSmoothed_.reset(sampleRate, 0.030);
     gainSmoothed_.setCurrentAndTargetValue(
-        juce::Decibels::decibelsToGain(gainDb_.load(std::memory_order_relaxed)));
+        EchoJayFader::gainForDb(gainDb_.load(std::memory_order_relaxed)));
     gainSnapPending_.store(false, std::memory_order_relaxed);
 
     // Always sync shm state from the message thread so that:
@@ -1272,7 +1322,7 @@ void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
 bool LinkProcessor::applyGainSmoothed(juce::AudioBuffer<float>& buffer)
 {
     const float targetLin =
-        juce::Decibels::decibelsToGain(gainDb_.load(std::memory_order_relaxed));
+        EchoJayFader::gainForDb(gainDb_.load(std::memory_order_relaxed));
 
     if (gainSnapPending_.exchange(false, std::memory_order_acq_rel))
         gainSmoothed_.setCurrentAndTargetValue(targetLin);
@@ -1345,6 +1395,11 @@ juce::String LinkProcessor::chainFormatFilter() const
     {
         case juce::AudioProcessor::wrapperType_AudioUnit: return "AudioUnit";
         case juce::AudioProcessor::wrapperType_VST3:      return "VST3";
+        // AAX (Pro Tools, macOS only) takes the same filter as the AU host:
+        // AU is the format that is both hostable and dialable on a Mac, so a
+        // named case, not the old fallthrough (mirrors the main plugin's
+        // chainFormatFilter_ switch in PluginEditor.cpp).
+        case juce::AudioProcessor::wrapperType_AAX:       return "AudioUnit";
         default:                                          return {};
     }
 }
@@ -1380,6 +1435,11 @@ juce::PluginDescription LinkProcessor::resolveChainPlugin(const juce::String& na
 void LinkProcessor::clearChainInternal()
 {
     if (onChainAboutToChange) onChainAboutToChange();   // editors close first
+    // Item 4: archive the Link's live rack before it is replaced, the same
+    // protection the main rack gets. clearChainInternal is the whole-rack
+    // replace point (per-slot edits use removeSlot directly), so this fires on
+    // exactly the destructive event and no-ops on an empty rack.
+    chainHost.archiveCurrentRack("chain replaced (Link)");
     for (int i = chainHost.getNumSlots() - 1; i >= 0; --i)
         chainHost.removeSlot(i);
     chainModel.clear();
@@ -1927,6 +1987,16 @@ void LinkProcessor::pollChainCommand()
                 if (eo->hasProperty("wet"))
                     item.wet = juce::jlimit(0.0f, 1.0f,
                                             (float)(double) eo->getProperty("wet"));
+                // The model's slot-level "wet_pct" (0..100) on a chain block
+                // built to this Link (16 Aug 2026): same knob, same default;
+                // a non-number is absent. "wet" (0..1, recall/restore) wins
+                // if both are present, which no sender does.
+                else if (eo->hasProperty("wet_pct"))
+                {
+                    const auto wv = eo->getProperty("wet_pct");
+                    if (wv.isDouble() || wv.isInt() || wv.isInt64())
+                        item.wet = juce::jlimit(0.0f, 1.0f, (float)(double) wv / 100.0f);
+                }
                 if (item.name.isNotEmpty())
                     spec.push_back(std::move(item));
             }

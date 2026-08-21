@@ -39,11 +39,26 @@
 #include <sys/stat.h>   // ::chmod for machine_id (0600)
 
 #include "EchoJayParamExtractor.h"
+#include "EchoJayParamMaps.h"   // fingerprintForDescription / identityKeyForDescription: the SAME fp the plugin computes, so the catalogue and the in-DAW load agree (the gate test)
 
 // Same default the plugin compiles in (Source/EchoJayAPI.cpp); the real
 // endpoint is read from auth.json when the user has ever logged in.
 static const char* kDefaultEndpoint = "https://www.echojay.ai";
 static constexpr int kPerPluginTimeoutMs = 120 * 1000;
+// The catalogue sweep gives each bundle longer than the bootstrap's 120s,
+// because a plugin SHELL (WaveShell and the like) enumerates dozens to
+// hundreds of classes in one findAllTypesForFile call: WaveShell-VST3 9.6
+// holds 487 and takes ~200s just to enumerate. The larger cap lets that
+// enumeration finish so the worker can SEE it is a shell (by count, below) and
+// switch to identity-only, name-independently. At nice 10 almost nothing else
+// runs past a few seconds, so the wider cap costs a genuine hang, of which the
+// clean run had none.
+static constexpr int kCatalogueTimeoutMs = 480 * 1000;   // measured: WaveShell 9.6 enumerates in ~292s; 300s was too tight
+// A bundle exposing more than this many classes is a shell. Measured: real
+// effect bundles carry 1 to a handful; shells carry dozens to hundreds. The
+// COUNT is the structural signal, not a vendor name in a conditional that
+// disarms the day Waves renames a bundle.
+static constexpr int kShellTypeThreshold = 30;
 // The endpoint accepts 500 fps, but they ride in a GET URL: 500 x 65 chars
 // is a ~32KB request line, which fails at the transport before the server
 // ever sees it (observed live: status 0 on a 351-fp batch). 100 fps is a
@@ -295,12 +310,14 @@ struct WorkerResult
 // AU component identifier), optionally under a specific arch. The exit-code
 // classifier is the ONE place worker outcomes become ledger statuses.
 static WorkerResult runIsolatedWorkerOn (const juce::String& target, const juce::String& arch,
-                                         const juce::File& workDir)
+                                         const juce::File& workDir, const juce::String& mode = {},
+                                         int timeoutMs = kPerPluginTimeoutMs)
 {
     const auto self = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
     juce::StringArray args;
     if (arch.isNotEmpty()) { args.add ("/usr/bin/arch"); args.add ("-" + arch); }
     args.add (self.getFullPathName());
+    if (mode.isNotEmpty()) args.add (mode);   // e.g. "--id-worker" for the identity catalogue
     args.add (target);
     args.add (workDir.getFullPathName());
 
@@ -312,10 +329,10 @@ static WorkerResult runIsolatedWorkerOn (const juce::String& target, const juce:
         r.status = "failed"; r.reason = "spawn failed";
         return r;
     }
-    if (! worker.waitForProcessToFinish (kPerPluginTimeoutMs))
+    if (! worker.waitForProcessToFinish (timeoutMs))
     {
         worker.kill();
-        r.status = "timeout"; r.reason = "killed after " + juce::String (kPerPluginTimeoutMs / 1000) + "s";
+        r.status = "timeout"; r.reason = "killed after " + juce::String (timeoutMs / 1000) + "s";
         r.elapsedMs = (juce::int64) (juce::Time::getMillisecondCounterHiRes() - t0);
         return r;
     }
@@ -331,6 +348,8 @@ static WorkerResult runIsolatedWorkerOn (const juce::String& target, const juce:
         case 3:  r.status = "no-data";         r.reason = "instantiated, nothing extractable";break;
         case 4:  r.status = "license-refused"; r.reason = "instantiation refused (auth/license)"; break;
         case 5:  r.status = "load-failed";     r.reason = "instantiation failed (non-license)";   break;
+        case 6:  r.status = "instrument";      r.reason = "only instrument types, skipped";       break;
+        case 7:  r.status = "shell";           r.reason = "plugin shell, enumerated identity-only"; break;
         default: r.status = "crashed";         r.reason = "abnormal exit " + juce::String (r.exitCode); break;
     }
     return r;
@@ -984,12 +1003,594 @@ static int runAuRegistry (const juce::File& outDir, bool enumerateOnly)
 }
 
 // ---------------------------------------------------------------------------
+// ===========================================================================
+// IDENTITY CATALOGUE (P16 BUILD FIRST). A SEPARATE entrypoint from the
+// --bootstrap driver, and it MUST stay separate. This path enumerates and
+// fingerprints for the LOCAL catalogue only. It makes ZERO network calls: no
+// httpGet, no httpPostJson, ever. Identity is computed locally and shared with
+// nobody, so there is nothing to consent to and no reason to gate it. Do NOT
+// fold this back into runBootstrap() to "simplify": the bootstrap fetches maps
+// and can contribute samples upstream, both of which send data off the
+// machine, and merging the two would put identity behind a consent gate and
+// leak the plugin inventory in a URL query. The two are kept apart on purpose.
+// ===========================================================================
+
+// Worker, identity mode. Enumerate, SKIP instruments (never a chain slot, so
+// the instantiate that has crashed the DAW on them is never reached), and
+// instantiate each effect ONCE for its param_count. Emits, per effect, the
+// instance's own description XML plus its identity key and full fingerprint,
+// computed from EXACTLY the two sources ChainHost::completeLoad uses
+// (inst->getPluginDescription() and inst->getParameters().size()), so the
+// catalogue fp equals the in-DAW fp byte for byte (the gate test). No sample
+// sweep, no network.
+//
+// id.json is written INCREMENTALLY: the enumerated type COUNT is flushed
+// before the slow instantiation loop, and the banked effects are flushed as
+// they complete. So a WaveShell that holds hundreds of plugins and is killed
+// by the timeout still leaves a record of how many types it held and every
+// effect fingerprinted before the cut, instead of vanishing behind one line.
+// Exit codes mirror runWorker; 6 = every type was an instrument (skipped).
+static int runIdWorker (const juce::String& pluginPath, const juce::File& outDir)
+{
+    juce::AudioPluginFormatManager fm;
+#if JUCE_PLUGINHOST_VST3
+    fm.addFormat (new juce::VST3PluginFormat());
+#endif
+#if JUCE_PLUGINHOST_AU && JUCE_MAC
+    fm.addFormat (new juce::AudioUnitPluginFormat());
+#endif
+    juce::OwnedArray<juce::PluginDescription> found;
+    for (int i = 0; i < fm.getNumFormats(); ++i)
+        fm.getFormat (i)->findAllTypesForFile (found, pluginPath);
+    if (found.isEmpty()) return 2;   // no-types
+
+    const auto idFile = outDir.getChildFile ("id.json");
+    juce::Array<juce::var> effects;
+    int nInstr = 0, instFail = 0, licenseFail = 0;
+    auto flush = [&]
+    {
+        juce::DynamicObject::Ptr root = new juce::DynamicObject();
+        root->setProperty ("types", found.size());     // total enumerated, known up front
+        root->setProperty ("instruments", nInstr);
+        root->setProperty ("effects", effects);         // banked so far
+        writeJsonFileAtomic (idFile, juce::var (root.get()));
+    };
+    flush();   // type count on disk BEFORE the slow loop: a kill still shows it
+
+    int sinceFlush = 0;
+
+    // SHELL: enumerate-only. A shell's sub-plugins HANG on headless
+    // instantiation (measured: 0 of 487 banked after hours) and the host loads
+    // them THROUGH the shell, never standalone. So emit each class's identity
+    // for the picker (this un-thins the "Waves is invisible" gap) but never
+    // instantiate one. No param_count means no dialable fp: that is the honest
+    // ceiling for a shell until it is hosted for real.
+    if (found.size() > kShellTypeThreshold)
+    {
+        for (auto* d : found)
+        {
+            if (d->isInstrument) { ++nInstr; continue; }
+            juce::DynamicObject::Ptr o = new juce::DynamicObject();
+            o->setProperty ("ik", echojay::identityKeyForDescription (*d));
+            if (auto x = d->createXml())
+                o->setProperty ("desc", x->toString (juce::XmlElement::TextFormat().singleLine()));
+            effects.add (juce::var (o.get()));   // identity only, NO fp
+            if (++sinceFlush >= 25) { flush(); sinceFlush = 0; }
+        }
+        flush();
+        return 7;   // shell, identity-only
+    }
+
+    for (auto* d : found)
+    {
+        if (d->isInstrument) { ++nInstr; continue; }   // skip BEFORE instantiate
+        juce::String error;
+        std::unique_ptr<juce::AudioPluginInstance> inst (
+            fm.createPluginInstance (*d, 48000.0, 512, error));
+        if (inst == nullptr)
+        {
+            ++instFail;
+            if (looksLikeLicenseError (error)) ++licenseFail;
+            continue;
+        }
+        juce::PluginDescription live = inst->getPluginDescription();
+        if (live.pluginFormatName.isEmpty() || live.version.isEmpty()) live = *d;
+        const int pc = inst->getParameters().size();
+        juce::DynamicObject::Ptr o = new juce::DynamicObject();
+        o->setProperty ("ik", echojay::identityKeyForDescription (live));
+        o->setProperty ("fp", echojay::fingerprintForDescription (live, pc));
+        if (auto x = live.createXml())
+            o->setProperty ("desc", x->toString (juce::XmlElement::TextFormat().singleLine()));
+        effects.add (juce::var (o.get()));
+        if (++sinceFlush >= 10) { flush(); sinceFlush = 0; }   // bank in batches of 10
+    }
+    flush();
+
+    if (effects.size() > 0)           return 0;   // ok
+    if (nInstr > 0 && instFail == 0)  return 6;    // all instruments, skipped
+    if (instFail > 0)                 return licenseFail > 0 ? 4 : 5;
+    return 3;                                      // instantiated, nothing usable
+}
+
+// Instantiate ONE plugin from a saved PluginDescription XML, in isolation.
+// Used to answer, per sub-plugin, whether a shell's contents can be
+// instantiated headless (and so fingerprinted and dialled) or genuinely hang,
+// without paying the shell's ~292s re-enumeration each time: the description
+// already carries the module path and class id. Reports the param count and
+// the time, so a caller can distinguish completes / hangs (killed by the outer
+// timeout) / crashes (abnormal exit).
+static int runInstantiateDesc (const juce::File& descFile, const juce::File& outDir)
+{
+    juce::AudioPluginFormatManager fm;
+#if JUCE_PLUGINHOST_VST3
+    fm.addFormat (new juce::VST3PluginFormat());
+#endif
+#if JUCE_PLUGINHOST_AU && JUCE_MAC
+    fm.addFormat (new juce::AudioUnitPluginFormat());
+#endif
+    auto xml = juce::XmlDocument::parse (descFile);
+    if (xml == nullptr) { std::cerr << "bad desc xml\n"; return 2; }
+    juce::PluginDescription d;
+    if (! d.loadFromXml (*xml)) { std::cerr << "desc did not load\n"; return 2; }
+
+    juce::String error;
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    std::unique_ptr<juce::AudioPluginInstance> inst (
+        fm.createPluginInstance (d, 48000.0, 512, error));
+    const auto ms = (juce::int64) (juce::Time::getMillisecondCounterHiRes() - t0);
+    if (inst == nullptr)
+    {
+        std::cout << "FAIL\t" << d.name << "\t" << ms << "ms\t" << error << "\n";
+        outDir.getChildFile ("probe.txt").replaceWithText ("FAIL " + d.name + " " + juce::String (ms) + "ms " + error);
+        return looksLikeLicenseError (error) ? 4 : 5;
+    }
+    const int pc = inst->getParameters().size();
+    auto live = inst->getPluginDescription();
+    if (live.pluginFormatName.isEmpty() || live.version.isEmpty()) live = d;
+    // The live parameter NAMES, in index order: the guard for version-insensitive
+    // map reuse compares these against the map's control names at the same index.
+    juce::Array<juce::var> pnames;
+    for (auto* p : inst->getParameters()) pnames.add (p->getName (128));
+    std::cout << "OK\t" << d.name << "\tparams=" << pc << "\t" << ms << "ms\n";
+    outDir.getChildFile ("probe.txt").replaceWithText ("OK " + d.name + " params=" + juce::String (pc) + " " + juce::String (ms) + "ms");
+    // Same id.json shape as runIdWorker, so tier_identity_gate reads the fp
+    // the same way whether the target is a bundle or a saved description.
+    juce::DynamicObject::Ptr o = new juce::DynamicObject();
+    o->setProperty ("ik", echojay::identityKeyForDescription (live));
+    o->setProperty ("ikSaved", echojay::identityKeyForDescription (d));      // from the saved enumeration
+    o->setProperty ("ikLive",  echojay::identityKeyForDescription (live));   // from the live instance
+    o->setProperty ("fp", echojay::fingerprintForDescription (live, pc));
+    o->setProperty ("paramNames", pnames);
+    juce::Array<juce::var> effects; effects.add (juce::var (o.get()));
+    juce::DynamicObject::Ptr root = new juce::DynamicObject();
+    root->setProperty ("effects", effects);
+    writeJsonFileAtomic (outDir.getChildFile ("id.json"), juce::var (root.get()));
+    return 0;
+}
+
+// Does param_count depend on prepareToPlay? Instantiate one target, read
+// getParameters().size() BEFORE prepare, call prepareToPlay, read it AFTER,
+// and fingerprint both ways. If they differ, scan-time fp (unprepared) and the
+// DAW's completeLoad fp (which prepares first) fork, and any map keyed on one
+// is unreachable from the other.
+static int runPrepCheck (const juce::String& target, const juce::File& outDir)
+{
+    juce::AudioPluginFormatManager fm;
+#if JUCE_PLUGINHOST_VST3
+    fm.addFormat (new juce::VST3PluginFormat());
+#endif
+#if JUCE_PLUGINHOST_AU && JUCE_MAC
+    fm.addFormat (new juce::AudioUnitPluginFormat());
+#endif
+    juce::OwnedArray<juce::PluginDescription> found;
+    for (int i = 0; i < fm.getNumFormats(); ++i)
+        fm.getFormat (i)->findAllTypesForFile (found, target);
+    if (found.isEmpty()) { std::cout << "no-types\n"; return 2; }
+    juce::String err;
+    std::unique_ptr<juce::AudioPluginInstance> inst (fm.createPluginInstance (*found[0], 48000.0, 512, err));
+    if (inst == nullptr) { std::cout << "instantiate failed: " << err << "\n"; return 5; }
+
+    auto live = inst->getPluginDescription();
+    if (live.pluginFormatName.isEmpty() || live.version.isEmpty()) live = *found[0];
+
+    const int before = inst->getParameters().size();
+    const auto fpBefore = echojay::fingerprintForDescription (live, before);
+
+    inst->setPlayConfigDetails (2, 2, 48000.0, 512);
+    inst->prepareToPlay (48000.0, 512);
+    const int after = inst->getParameters().size();
+    const auto fpAfter = echojay::fingerprintForDescription (live, after);
+
+    std::cout << found[0]->name << "\n"
+              << "  desc.version (goes into the fp): \"" << live.version << "\"\n"
+              << "  identityKey: " << echojay::identityKeyForDescription (live) << "\n"
+              << "  params before prepare: " << before << "\n"
+              << "  params after  prepare: " << after  << "\n"
+              << "  fp before: " << fpBefore << "\n"
+              << "  fp after:  " << fpAfter  << "\n"
+              << "  FORK: " << (fpBefore == fpAfter ? "no" : "YES") << "\n";
+    juce::DynamicObject::Ptr o = new juce::DynamicObject();
+    o->setProperty ("name", found[0]->name);
+    o->setProperty ("version", live.version);
+    o->setProperty ("before", before); o->setProperty ("after", after);
+    o->setProperty ("fpBefore", fpBefore); o->setProperty ("fpAfter", fpAfter);
+    o->setProperty ("fork", fpBefore != fpAfter);
+    writeJsonFileAtomic (outDir.getChildFile ("prep.json"), juce::var (o.get()));
+    return 0;
+}
+
+// Enumerate a bundle and emit every non-instrument class's description and
+// identity key, WITHOUT instantiating any (regardless of class count). Used by
+// the gate to obtain a shell sub-plugin's stored description under Rosetta,
+// the way the catalogue's enumerate pass would.
+static int runEnumerateOnly (const juce::String& pluginPath, const juce::File& outDir)
+{
+    juce::AudioPluginFormatManager fm;
+#if JUCE_PLUGINHOST_VST3
+    fm.addFormat (new juce::VST3PluginFormat());
+#endif
+#if JUCE_PLUGINHOST_AU && JUCE_MAC
+    fm.addFormat (new juce::AudioUnitPluginFormat());
+#endif
+    juce::OwnedArray<juce::PluginDescription> found;
+    for (int i = 0; i < fm.getNumFormats(); ++i)
+        fm.getFormat (i)->findAllTypesForFile (found, pluginPath);
+    if (found.isEmpty()) return 2;
+    juce::Array<juce::var> effects;
+    for (auto* d : found)
+    {
+        if (d->isInstrument) continue;
+        juce::DynamicObject::Ptr o = new juce::DynamicObject();
+        o->setProperty ("ik", echojay::identityKeyForDescription (*d));
+        if (auto x = d->createXml())
+            o->setProperty ("desc", x->toString (juce::XmlElement::TextFormat().singleLine()));
+        effects.add (juce::var (o.get()));
+    }
+    juce::DynamicObject::Ptr root = new juce::DynamicObject();
+    root->setProperty ("effects", effects);
+    writeJsonFileAtomic (outDir.getChildFile ("id.json"), juce::var (root.get()));
+    return effects.isEmpty() ? 6 : 0;
+}
+
+// Instantiate a BATCH of saved descriptions in ONE process, timing each. A
+// shell's sub-plugins share a framework (WavesLib) that the first instantiate
+// loads and the rest reuse, so this measures whether batching amortises the
+// per-plugin cost, and it is the shape the deep dial pass will take: load the
+// shell once, fingerprint many, so a hang costs one batch not the whole shell.
+static int runInstantiateBatch (const juce::File& descDir, const juce::File& outDir)
+{
+    juce::AudioPluginFormatManager fm;
+#if JUCE_PLUGINHOST_VST3
+    fm.addFormat (new juce::VST3PluginFormat());
+#endif
+#if JUCE_PLUGINHOST_AU && JUCE_MAC
+    fm.addFormat (new juce::AudioUnitPluginFormat());
+#endif
+    juce::Array<juce::var> out;
+    auto files = descDir.findChildFiles (juce::File::findFiles, false, "*.xml");
+    files.sort();
+    for (auto& f : files)
+    {
+        auto xml = juce::XmlDocument::parse (f);
+        if (xml == nullptr) continue;
+        juce::PluginDescription d;
+        if (! d.loadFromXml (*xml)) continue;
+        juce::String error;
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+        std::unique_ptr<juce::AudioPluginInstance> inst (
+            fm.createPluginInstance (d, 48000.0, 512, error));
+        const auto ms = (juce::int64) (juce::Time::getMillisecondCounterHiRes() - t0);
+        juce::DynamicObject::Ptr o = new juce::DynamicObject();
+        o->setProperty ("name", d.name);
+        o->setProperty ("ms", ms);
+        if (inst != nullptr)
+        {
+            auto live = inst->getPluginDescription();
+            if (live.pluginFormatName.isEmpty() || live.version.isEmpty()) live = d;
+            o->setProperty ("ok", true);
+            o->setProperty ("params", inst->getParameters().size());
+            o->setProperty ("fp", echojay::fingerprintForDescription (live, inst->getParameters().size()));
+            o->setProperty ("ikSaved", echojay::identityKeyForDescription (d));
+            o->setProperty ("ikLive",  echojay::identityKeyForDescription (live));
+        }
+        else { o->setProperty ("ok", false); o->setProperty ("error", error); }
+        out.add (juce::var (o.get()));
+        std::cout << (inst != nullptr ? "OK  " : "FAIL") << "\t" << ms << "ms\t" << d.name << "\n";
+    }
+    writeJsonFileAtomic (outDir.getChildFile ("batch.json"), juce::var (out));
+    return 0;
+}
+
+// Recursive VST3 walk (mirrors ChainHost::collectVst3BundlesRecursively, item-R
+// depth 4): vendor subfolders hold most of the library and are where the two
+// crashers (Omnisphere, ANA2) live.
+static void collectVst3Bundles (const juce::File& dir, juce::Array<juce::File>& out, int depth)
+{
+    if (depth < 0 || ! dir.isDirectory()) return;
+    for (auto& f : dir.findChildFiles (juce::File::findDirectories | juce::File::findFiles, false))
+    {
+        if (f.getFileName().endsWithIgnoreCase (".vst3")) out.add (f);
+        else if (f.isDirectory())                         collectVst3Bundles (f, out, depth - 1);
+    }
+}
+
+// Map a WorkerResult to a health state + reason. Separated so a timeout or
+// crash that still banked some effects becomes a PARTIAL, not a total loss.
+static void catalogueStateFor (const WorkerResult& r, int typesInBundle, int effectsBanked,
+                               int instruments, juce::String& state, juce::String& reason)
+{
+    if (r.status == "ok")                   { state = "loaded-not-verified"; reason = "loaded and fingerprinted"; }
+    else if (r.status == "shell")           { state = "shell";               reason = "plugin shell holding " + juce::String (effectsBanked) + " effects, enumerated for the picker but hosted through the shell, so not dialable standalone"; }
+    else if (r.status == "instrument")      { state = "skipped-instrument";  reason = "instrument, not a chain effect"; }
+    else if (r.status == "no-types")        { state = "no-types";            reason = "no plugin types found in the bundle"; }
+    else if (r.status == "no-data")         { state = "no-data";             reason = "loaded but exposed nothing usable"; }
+    else if (r.status == "license-refused") { state = "load-failed-licence"; reason = "would not load, refused for authorisation or licence (usually a licence or iLok dongle not present, NOT a broken plugin)"; }
+    else if (r.status == "load-failed")     { state = "load-failed";         reason = "failed to load (not a licence issue)"; }
+    else if (r.status == "timeout")         { state = "timed-out";           reason = "blocked past the timeout, often a modal licence or trial dialog"; }
+    else                                    { state = "crashed";             reason = r.reason.isNotEmpty() ? r.reason : juce::String ("crashed while loading"); }
+
+    // A shell (or any multi-type bundle) that ran out of time or died AFTER
+    // banking some effects is a PARTIAL: the banked effects are kept and the
+    // remainder is named, so hundreds of plugins never disappear behind one
+    // timed-out line.
+    if ((r.status == "timeout" || r.status == "crashed") && effectsBanked > 0)
+    {
+        const int wanted = juce::jmax (effectsBanked, typesInBundle - instruments);
+        state  = "partial";
+        reason = "banked " + juce::String (effectsBanked) + " of " + juce::String (wanted)
+               + " effects before it " + r.status + "; " + juce::String (juce::jmax (0, wanted - effectsBanked))
+               + " not catalogued (the bundle holds " + juce::String (typesInBundle) + " types)";
+    }
+}
+
+// The install-time and rescan catalogue sweep. VST3 only in BUILD FIRST (AU
+// declares identity at the registry already; its param_count pass is the AU
+// half of BUILD SECOND). Four isolated workers at a NICE-YIELD priority, and
+// LEDGER-BACKED so it resumes across a reboot: each bundle's record is saved
+// the moment its worker returns, and a re-run skips everything already done at
+// the same signature. The three catalogue files are reassembled from the
+// ledger periodically, so a partial catalogue is always on disk.
+static int runCatalogue (const juce::File& outDir)
+{
+    // YIELD to the DAW, do not STARVE. Measured 18 Aug 2026: PRIO_DARWIN_BG
+    // (true background QoS, efficiency-cores-only, throttled I/O) turned a
+    // 10.9-minute sweep into 87 minutes with 117 false timeouts, because it
+    // starved CPU-bound instantiations that take 2 to 14s under Rosetta past
+    // the 120s cap. nice 10 lowers priority so four concurrent workers defer
+    // to the DAW under contention, but keeps them on the performance cores.
+    // Do NOT switch this back to PRIO_DARWIN_BG: it was tried and it broke.
+    setpriority (PRIO_PROCESS, 0, 10);
+
+    outDir.createDirectory();
+    auto workRoot = outDir.getChildFile ("scan_work");
+    workRoot.deleteRecursively(); workRoot.createDirectory();
+    auto ledgerFile = outDir.getChildFile ("chain_scan_ledger.json");
+    const int curVer = echojay::ExtractorConfig{}.extractorVersion;
+
+    juce::var ledgerVar = readJsonFile (ledgerFile);
+    juce::DynamicObject::Ptr ledger = ledgerVar.getDynamicObject() != nullptr
+        ? juce::DynamicObject::Ptr (ledgerVar.getDynamicObject())
+        : juce::DynamicObject::Ptr (new juce::DynamicObject());
+    juce::DynamicObject::Ptr entries = ledger->getProperty ("bundles").getDynamicObject();
+    if (entries == nullptr) { entries = new juce::DynamicObject(); ledger->setProperty ("bundles", juce::var (entries.get())); }
+
+    juce::Array<juce::File> bundles;
+    {
+        juce::VST3PluginFormat vst3;
+        auto locs = vst3.getDefaultLocationsToSearch();
+        for (int i = 0; i < locs.getNumPaths(); ++i)
+            collectVst3Bundles (locs[i], bundles, 4);
+    }
+    const int total = bundles.size();
+    const auto startedAt = juce::Time::currentTimeMillis();
+
+    juce::CriticalSection lock;
+    std::atomic<int> next {0}, done {0};
+    juce::String currentName;
+
+    auto isDone = [&] (const juce::var& e, const juce::String& sig) -> bool
+    {
+        const auto st = e.getProperty ("state", juce::var()).toString();
+        return e.getProperty ("sig", juce::var()).toString() == sig
+            && (int) e.getProperty ("ver", 0) == curVer
+            && st.isNotEmpty() && st != "started";
+    };
+    auto saveLedger = [&] { writeJsonFileAtomic (ledgerFile, juce::var (ledger.get())); };
+
+    auto reassemble = [&]   // caller holds lock
+    {
+        juce::KnownPluginList list;
+        juce::DynamicObject::Ptr id2fp  = new juce::DynamicObject();
+        juce::DynamicObject::Ptr health = new juce::DynamicObject();
+        for (auto& p : entries->getProperties())
+        {
+            const auto& e = p.value;
+            juce::DynamicObject::Ptr h = new juce::DynamicObject();
+            for (const char* k : { "state", "reason", "blockMs", "mtime", "types", "typesLost", "scannedAt" })
+                h->setProperty (juce::Identifier (k), e.getProperty (juce::Identifier (k), juce::var()));
+            health->setProperty (p.name, juce::var (h.get()));
+            if (auto* eff = e.getProperty ("effects", juce::var()).getArray())
+                for (auto& ev : *eff)
+                {
+                    const auto xml = ev.getProperty ("desc", juce::var()).toString();
+                    if (xml.isNotEmpty())
+                        if (auto x = juce::XmlDocument::parse (xml))
+                        { juce::PluginDescription pd; if (pd.loadFromXml (*x)) list.addType (pd); }
+                    const auto ik = ev.getProperty ("ik", juce::var()).toString();
+                    const auto fp = ev.getProperty ("fp", juce::var()).toString();
+                    if (ik.isNotEmpty() && fp.isNotEmpty()) id2fp->setProperty (juce::Identifier (ik), fp);
+                }
+        }
+        if (auto xml = list.createXml())
+        { auto tmp = outDir.getChildFile ("chain_plugins_scan.xml.tmp"); xml->writeTo (tmp);
+          tmp.moveFileTo (outDir.getChildFile ("chain_plugins_scan.xml")); }
+        juce::DynamicObject::Ptr fr = new juce::DynamicObject();
+        fr->setProperty ("identityToFp", juce::var (id2fp.get()));
+        writeJsonFileAtomic (outDir.getChildFile ("chain_fp_scan.json"), juce::var (fr.get()));
+        writeJsonFileAtomic (outDir.getChildFile ("chain_health.json"), juce::var (health.get()));
+    };
+
+    auto writeProgress = [&] (const juce::String& current)   // caller holds lock
+    {
+        int ok=0, instr=0, crashed=0, timedOut=0, notypes=0, loadfail=0, partial=0;
+        for (auto& p : entries->getProperties())
+        {
+            const auto st = p.value.getProperty ("state", juce::var()).toString();
+            if      (st == "loaded-not-verified") ++ok;
+            else if (st == "skipped-instrument")  ++instr;
+            else if (st == "crashed")             ++crashed;
+            else if (st == "timed-out")           ++timedOut;
+            else if (st == "no-types")            ++notypes;
+            else if (st == "load-failed" || st == "load-failed-licence") ++loadfail;
+            else if (st == "partial")             ++partial;
+        }
+        juce::DynamicObject::Ptr pr = new juce::DynamicObject();
+        pr->setProperty ("total", total);
+        pr->setProperty ("done", done.load());
+        pr->setProperty ("current", current);
+        pr->setProperty ("ok", ok);
+        pr->setProperty ("partial", partial);
+        pr->setProperty ("instruments", instr);
+        pr->setProperty ("crashed", crashed);
+        pr->setProperty ("timedOut", timedOut);
+        pr->setProperty ("noTypes", notypes);
+        pr->setProperty ("loadFailed", loadfail);
+        pr->setProperty ("startedAt", startedAt);
+        pr->setProperty ("updatedAt", juce::Time::currentTimeMillis());
+        pr->setProperty ("finished", done.load() >= total);
+        writeJsonFileAtomic (outDir.getChildFile ("chain_scan_progress.json"), juce::var (pr.get()));
+    };
+
+    // Count what the ledger already holds (resume): those bundles are not re-run.
+    {
+        const juce::ScopedLock sl (lock);
+        for (int i = 0; i < total; ++i)
+            if (isDone (entries->getProperty (juce::Identifier (bundles[i].getFullPathName())),
+                        bundleSignature (bundles[i])))
+                done.fetch_add (1);
+        writeProgress ({});
+    }
+
+    auto worker = [&]
+    {
+        for (;;)
+        {
+            const int i = next.fetch_add (1);
+            if (i >= total) break;
+            const auto bundle = bundles[(int) i];
+            const auto key = bundle.getFullPathName();
+            const auto sig = bundleSignature (bundle);
+            {
+                const juce::ScopedLock sl (lock);
+                if (isDone (entries->getProperty (juce::Identifier (key)), sig))
+                    continue;   // done at this signature on an earlier run: skip
+                juce::DynamicObject::Ptr s = new juce::DynamicObject();
+                s->setProperty ("sig", sig); s->setProperty ("ver", curVer); s->setProperty ("state", "started");
+                entries->setProperty (juce::Identifier (key), juce::var (s.get()));
+                saveLedger();
+                currentName = bundle.getFileNameWithoutExtension();
+                writeProgress (currentName);
+            }
+            auto wd = workRoot.getChildFile (juce::String (i));
+            wd.createDirectory();
+            // Every bundle gets the catalogue cap (300s), wide enough for a
+            // shell's ~200s enumeration to finish so the worker can recognise
+            // it by class count and switch to identity-only. No vendor-name
+            // conditional: the count is the signal.
+            const auto r = runIsolatedWorkerOn (key, pickArch (bundle), wd, "--id-worker",
+                                                kCatalogueTimeoutMs);
+            const auto idJson = readJsonFile (wd.getChildFile ("id.json"));   // present even on a timeout (incremental)
+
+            const int types = (int) idJson.getProperty ("types", 0);
+            const int instr = (int) idJson.getProperty ("instruments", 0);
+            juce::Array<juce::var> effects;
+            if (auto* eff = idJson.getProperty ("effects", juce::var()).getArray()) effects = *eff;
+            juce::String state, reason;
+            catalogueStateFor (r, types, effects.size(), instr, state, reason);
+            const int lost = juce::jmax (0, (types - instr) - effects.size());
+
+            {
+                const juce::ScopedLock sl (lock);
+                juce::DynamicObject::Ptr e = new juce::DynamicObject();
+                e->setProperty ("sig", sig); e->setProperty ("ver", curVer);
+                e->setProperty ("state", state); e->setProperty ("reason", reason);
+                e->setProperty ("blockMs", (juce::int64) r.elapsedMs);
+                e->setProperty ("mtime", bundle.getLastModificationTime().toMilliseconds());
+                e->setProperty ("types", types); e->setProperty ("typesLost", lost);
+                e->setProperty ("scannedAt", juce::Time::currentTimeMillis());
+                e->setProperty ("effects", effects);
+                entries->setProperty (juce::Identifier (key), juce::var (e.get()));
+                saveLedger();
+                done.fetch_add (1);
+                if (done.load() % 20 == 0) reassemble();   // periodic partial flush
+                writeProgress (currentName);
+            }
+            wd.deleteRecursively();
+        }
+    };
+
+    std::vector<std::thread> pool;
+    for (int t = 0; t < 4; ++t) pool.emplace_back (worker);
+    for (auto& th : pool) th.join();
+    workRoot.deleteRecursively();
+    { const juce::ScopedLock sl (lock); reassemble(); writeProgress ({}); }
+
+    int ok=0, part=0, instrN=0, crashN=0, toN=0, ntN=0, lfN=0, lostN=0;
+    for (auto& p : entries->getProperties())
+    {
+        const auto st = p.value.getProperty ("state", juce::var()).toString();
+        lostN += (int) p.value.getProperty ("typesLost", 0);
+        if      (st == "loaded-not-verified") ++ok;
+        else if (st == "partial")             ++part;
+        else if (st == "skipped-instrument")  ++instrN;
+        else if (st == "crashed")             ++crashN;
+        else if (st == "timed-out")           ++toN;
+        else if (st == "no-types")            ++ntN;
+        else if (st == "load-failed" || st == "load-failed-licence") ++lfN;
+    }
+    const auto wallS = (juce::Time::currentTimeMillis() - startedAt) / 1000;
+    std::cout << "catalogue: " << total << " bundles in " << wallS << "s"
+              << "  ok=" << ok << " partial=" << part << " instruments=" << instrN
+              << " crashed=" << crashN << " timedOut=" << toN
+              << " noTypes=" << ntN << " loadFailed=" << lfN
+              << " typesLost=" << lostN << "\n";
+    return 0;
+}
+
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
     if (argc >= 2 && juce::String (argv[1]) == "--bootstrap")
         return runBootstrap();
+
+    // Identity catalogue (P16). ZERO network, distinct from --bootstrap; see
+    // the banner comment above runIdWorker. --catalogue is the driver the
+    // installer LaunchAgent and the in-plugin rescan run; --id-worker is the
+    // per-bundle child it spawns.
+    if (argc >= 2 && juce::String (argv[1]) == "--catalogue")
+        return runCatalogue (argc >= 3 ? juce::File (juce::String (juce::CharPointer_UTF8 (argv[2])))
+                                       : echojayDir());
+
+    if (argc >= 4 && juce::String (argv[1]) == "--id-worker")
+        return runIdWorker (juce::String (juce::CharPointer_UTF8 (argv[2])),
+                            juce::File (juce::String (juce::CharPointer_UTF8 (argv[3]))));
+
+    if (argc >= 4 && juce::String (argv[1]) == "--instantiate-desc")
+        return runInstantiateDesc (juce::File (juce::String (juce::CharPointer_UTF8 (argv[2]))),
+                                   juce::File (juce::String (juce::CharPointer_UTF8 (argv[3]))));
+
+    if (argc >= 4 && juce::String (argv[1]) == "--instantiate-batch")
+        return runInstantiateBatch (juce::File (juce::String (juce::CharPointer_UTF8 (argv[2]))),
+                                    juce::File (juce::String (juce::CharPointer_UTF8 (argv[3]))));
+
+    if (argc >= 4 && juce::String (argv[1]) == "--prep-check")
+        return runPrepCheck (juce::String (juce::CharPointer_UTF8 (argv[2])),
+                             juce::File (juce::String (juce::CharPointer_UTF8 (argv[3]))));
+
+    if (argc >= 4 && juce::String (argv[1]) == "--enumerate-only")
+        return runEnumerateOnly (juce::String (juce::CharPointer_UTF8 (argv[2])),
+                                 juce::File (juce::String (juce::CharPointer_UTF8 (argv[3]))));
 
     if (argc >= 3 && juce::String (argv[1]) == "--extract-list")
         return runExtractList (juce::File (juce::String (juce::CharPointer_UTF8 (argv[2]))),
@@ -1012,9 +1613,21 @@ int main (int argc, char** argv)
 
     if (argc < 3)
     {
-        std::cerr << "Usage: ejextract <plugin-path> <output-dir> | ejextract --bootstrap"
-                     " | ejextract --extract-list <listfile> [outDir]"
-                     " | ejextract --au-registry [outDir] [--enumerate]\n";
+        // Every mode listed. A usage string that omits half the modes is how a
+        // stale binary got mistaken for a current one across two machines: the
+        // list below must gain a line whenever a mode is added above.
+        std::cerr <<
+            "ejextract modes:\n"
+            "  <plugin-path> <output-dir>            sample-extract one plugin (worker)\n"
+            "  --bootstrap                           the post-install mapping sweep (consent-gated)\n"
+            "  --extract-list <listfile> [outDir]    sample-extract a list of plugins\n"
+            "  --au-registry [outDir] [--enumerate]  walk the AU registry\n"
+            "  --catalogue [outDir]                  P16 identity catalogue sweep (no network)\n"
+            "  --id-worker <target> <outDir>         one bundle: enumerate + fingerprint (catalogue worker)\n"
+            "  --enumerate-only <target> <outDir>    one bundle: enumerate identities, no instantiation\n"
+            "  --instantiate-desc <descXml> <outDir> instantiate one saved description, emit its fp\n"
+            "  --instantiate-batch <descDir> <outDir> instantiate many saved descriptions, timed\n"
+            "  --prep-check <target> <outDir>        param_count and fp, before vs after prepareToPlay\n";
         return 1;
     }
     return runWorker (juce::String (juce::CharPointer_UTF8 (argv[1])),

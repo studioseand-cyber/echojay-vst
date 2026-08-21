@@ -4,7 +4,10 @@
 #include <memory>
 #include <atomic>
 #include <map>
+#include <set>
 #include <mutex>
+#include <vector>
+#include "EchoJayParamMaps.h"   // echojay::IdentityRef for fetchDialableIdentities
 
 class ChainHost;   // buildCurrentChainInjection reads the live rack
 namespace LinkShm { struct RackSidecar; }   // Phase R: targeted-injection overload
@@ -298,6 +301,13 @@ public:
     void setNextChatMapFps(const juce::String& jsonObject)
     { nextChatMapFps_ = (jsonObject == "{}" ? juce::String() : jsonObject); }
 
+    // dial-3 declined-name batch (CONTRACT_racked_slot_controls.md A7.3):
+    // envelope {batch, rows, dropped}, staged by the editor per send,
+    // consumed at body build like mapFps. Empty stages nothing; a server
+    // without the field ignores it.
+    void setNextChatDialDeclines(const juce::String& jsonObject)
+    { nextChatDialDeclines_ = jsonObject; }
+
     // Step-5 selection signal (STREAMING_REASONING_SPEC section 7): does
     // the staged state say the NEXT send is a chain build? True when the
     // classifier bound intent "chain_generate", or the client staged that
@@ -347,6 +357,7 @@ public:
     {
         nextChatMeters_.clear();
         nextChatMapFps_.clear();
+        nextChatDialDeclines_.clear();
         nextChatTurnType_.clear();
         nextChatBusCount_ = 0;
         nextChatIsExplicitCapture_ = false;
@@ -596,6 +607,16 @@ public:
     // [{"title","line"}...]. Cached to whats_new.json; on any failure the
     // last cache (then empty) is delivered — never an error state.
     void fetchWhatsNew(std::function<void(const juce::var&)> onComplete);
+    // Feed split (P16): the server existence index. POSTs the recommendable
+    // plugins (each ik = format|uidHex|version, plus a SEPARATE manufacturer
+    // field) to /api/params/lookup in mode "exists", batched at 500, and calls
+    // back with the iks that have a map at ANY version (mapped_versions
+    // non-empty). ok=false on ANY non-200 or on an unrecognised 200 body, so
+    // the caller degrades to the full list rather than an empty feed. Contract
+    // shared with the saas /api/params/lookup handler (verified live against
+    // echojay-dev): keep it in step, do not vary it silently.
+    void fetchDialableIdentities(const std::vector<echojay::IdentityRef>& plugins,
+                                 std::function<void(bool ok, std::set<juce::String> dialableIks)> onComplete);
 
     // Fetch settings from server
     void fetchSettings(std::function<void(bool success)> onComplete = nullptr);
@@ -673,8 +694,23 @@ public:
     // byte-identical either way (server classifier + history strip key on
     // it).
     static juce::String buildCurrentChainInjection(const ChainHost& chainHost);
+    // slotLevelNotes: optional per-slot running-level clause (index-parallel
+    // with rack.slots; an empty string draws nothing for that slot). Only the
+    // local-rack adapter fills it today; a Link's rack carries no tally yet.
     static juce::String buildCurrentChainInjection(const LinkShm::RackSidecar& rack,
-                                                   const juce::String& channelLabel);
+                                                   const juce::String& channelLabel,
+                                                   const juce::StringArray* slotLevelNotes = nullptr);
+    // Running level (LevelTally, 17 Aug 2026), rendered for the model.
+    //   formatLevelClause: one point, "in -19.2 dBFS RMS (p90 -15.5), peak
+    //     -6.0, crest 12 dB, heard 2m10s (describes ~2m10s)" or the loud null
+    //     "no level known (heard 1 s)". Never a default number.
+    //   buildChainLevelsInjection: the "[CHAIN LEVELS ...]" marker for the
+    //     chain input and output; rides the same arm as [CURRENT CHAIN] /
+    //     [CURRENT RACK EMPTY], listed in historyStripMarkers, below every
+    //     cache breakpoint by construction (it varies per turn).
+    static juce::String formatHeard(float seconds);
+    static juce::String formatSlotLevelNote(const ChainHost& chainHost, int slot);
+    static juce::String buildChainLevelsInjection(const ChainHost& chainHost);
 
     // Parse the chain block out of an assistant reply.
     // Returns true and fills chainJsonOut if a block (complete or truncated) is present.
@@ -982,6 +1018,7 @@ private:
     juce::String deviceId;
     juce::String nextChatMeters_;   // staged by setNextChatMeters()
     juce::String nextChatMapFps_;   // staged by setNextChatMapFps(); "" = none
+    juce::String nextChatDialDeclines_;  // dial-3 batch envelope; "" = none
     juce::String nextChatTurnType_; // staged by setNextChatTurnType(); "" = "chat"
     juce::StringArray nextDialFlags_; // see setNextDialFlags(); cleared per send
     juce::String nextClassifyIntent_, nextClassifyToken_; // setNextClassifyBinding()
@@ -1013,6 +1050,15 @@ private:
                                       const juce::StringArray& contents,
                                       const juce::String& systemPrompt,
                                       const juce::String& meterJsonBlob);
+    // tools/mapfps_test ONLY (CONTRACT_history_resend_pin.md, 21 Aug 2026):
+    // the history-resend pin must run THIS function, not a reimplementation
+    // — the server's brief suppression counts plugin names in history it
+    // assumes arrives at full length, and only the shipped composer can
+    // prove that. The function stays deliberately private; a friend grant
+    // can only be written inside the class definition, which is why this
+    // one test line lives in a shipping header rather than in test code.
+    // One named hook, never "#define private public".
+    friend struct EchoJayAPIRequestPin;
 
     // streamChat's internals: the gate+build half (shared with the
     // limit-refresh retry, which must reuse the SAME handle so a cancel

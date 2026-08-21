@@ -521,6 +521,80 @@ void EchoJayAPI::getJSON(const juce::String& path,
     });
 }
 
+void EchoJayAPI::fetchDialableIdentities(const std::vector<echojay::IdentityRef>& plugins,
+                                        std::function<void(bool, std::set<juce::String>)> onComplete)
+{
+    auto cb = std::make_shared<std::function<void(bool, std::set<juce::String>)>>(std::move(onComplete));
+    if (plugins.empty()) { if (*cb) (*cb)(true, {}); return; }
+
+    // Batch at the server's documented ceiling of 500 plugins per request.
+    struct Agg { std::set<juce::String> dialable; int remaining = 0; bool anyFail = false; };
+    auto agg = std::make_shared<Agg>();
+    constexpr int kBatch = 500;
+
+    std::vector<std::vector<echojay::IdentityRef>> batches;
+    for (size_t i = 0; i < plugins.size(); i += (size_t) kBatch)
+        batches.emplace_back(plugins.begin() + (long) i,
+                             plugins.begin() + (long) juce::jmin(plugins.size(), i + (size_t) kBatch));
+    agg->remaining = (int) batches.size();
+
+    for (auto& b : batches)
+    {
+        // POST body: {"mode":"exists","plugins":[{"ik":..,"manufacturer":..}]}.
+        // GET is 405 by design (P20): an inventory does not belong in a URL.
+        // Built through juce::var so a manufacturer name with a quote or a
+        // backslash cannot break the JSON.
+        juce::Array<juce::var> pluginArr;
+        for (auto& r : b)
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty("ik", r.ik);
+            o->setProperty("manufacturer", r.manufacturer);
+            pluginArr.add(juce::var(o));
+        }
+        auto* root = new juce::DynamicObject();
+        root->setProperty("mode", "exists");
+        root->setProperty("plugins", pluginArr);
+        const auto body = juce::JSON::toString(juce::var(root), true);
+
+        // postJSON fires its completion on the message thread, so agg is only
+        // ever touched there: no lock needed across the batch callbacks.
+        postJSON("/api/params/lookup", body, [agg, cb](const juce::var& json, int sc)
+        {
+            // HARDENING 1: any non-200 (404, 405, 500, a proxy HTML page, a
+            // timeout that surfaces as 0) means "no answer" and keeps the full
+            // list. Only a clean 200 is allowed to narrow the feed.
+            if (sc != 200)
+            {
+                agg->anyFail = true;
+            }
+            else if (auto* results = json.getProperty("results", juce::var()).getArray())
+            {
+                for (auto& row : *results)
+                {
+                    // Dialable = a map exists at some version. exists alone only
+                    // says the plugin is known; mapped_versions is the map.
+                    const auto mv = row.getProperty("mapped_versions", juce::var());
+                    if (mv.isArray() && mv.getArray()->size() > 0)
+                        agg->dialable.insert(row.getProperty("ik", juce::var()).toString());
+                }
+            }
+            else
+            {
+                // HARDENING 2: a 200 whose body has no results array is a
+                // contract mismatch, not an empty answer. Log loudly and keep
+                // the full list rather than reading it as "nothing dialable".
+                agg->anyFail = true;
+                EchoJay_NSLog("EJFeed: /api/params/lookup 200 with no results array -- "
+                              "contract mismatch, keeping full list");
+            }
+
+            if (--agg->remaining == 0 && *cb)
+                (*cb)(! agg->anyFail, agg->dialable);
+        });
+    }
+}
+
 // ============ Auth ============
 
 void EchoJayAPI::login(const juce::String& email, const juce::String& password,
@@ -1171,6 +1245,15 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
     {
         body += ",\"mapFps\":" + nextChatMapFps_;
         nextChatMapFps_.clear();
+    }
+    // dialDeclines (dial-3, A7.3): consumed per send exactly like mapFps,
+    // so the limit-refresh retry resends WITHOUT the field rather than
+    // twice with it. The editor moves the watermark only on the success
+    // callback, so a consumed-but-failed batch re-ships next turn.
+    if (nextChatDialDeclines_.isNotEmpty())
+    {
+        body += ",\"dialDeclines\":" + nextChatDialDeclines_;
+        nextChatDialDeclines_.clear();
     }
     if (metersBlob.isNotEmpty())
     {
@@ -2611,7 +2694,10 @@ const juce::StringArray& EchoJayAPI::historyStripMarkers()
         // The empty-rack declaration (15 Aug 2026): deliberately NOT a
         // "[CURRENT CHAIN" prefix - the server keys hasCurrentChain on that
         // exact string and an empty rack must stay chain-absent there.
-        "\n\n[CURRENT RACK EMPTY"
+        "\n\n[CURRENT RACK EMPTY",
+        // The running level marker (17 Aug 2026): rides after the rack
+        // block on the same arm, varies per turn, never belongs in history.
+        "\n\n[CHAIN LEVELS"
     };
     return markers;
 }
@@ -2802,17 +2888,87 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const ChainHost& chainHost)
 {
     // Adapter: fill a RackSidecar from the live local rack and let the ONE
     // formatter below author the block (Phase R anti-drift discipline).
+    // The per-slot running level rides beside it as notes, index-parallel,
+    // so the sidecar's wire struct is untouched.
     LinkShm::RackSidecar rack;
     rack.valid     = true;
     rack.revision  = chainHost.getChainRevision();
     rack.masterWet = chainHost.getMasterWet();
+    juce::StringArray notes;
+    int i = 0;
     for (const auto& s : chainHost.getAllSlotInfos())
+    {
         rack.slots.push_back({ s.name, s.format, s.settings, s.bypassed, s.wet });
-    return buildCurrentChainInjection(rack, juce::String());
+        notes.add(formatSlotLevelNote(chainHost, i++));
+    }
+    return buildCurrentChainInjection(rack, juce::String(), &notes);
+}
+
+// ---- running level, rendered ----------------------------------------------
+juce::String EchoJayAPI::formatHeard(float seconds)
+{
+    const int s = juce::jmax(0, juce::roundToInt(seconds));
+    if (s < 60) return juce::String(s) + "s";
+    const int m = s / 60, r = s % 60;
+    return juce::String(m) + "m" + (r > 0 ? juce::String(r) + "s" : juce::String());
+}
+
+static juce::String fmt1(float v) { return juce::String(v, 1); }
+
+juce::String EchoJayAPI::formatSlotLevelNote(const ChainHost& chainHost, int slot)
+{
+    const auto lv = chainHost.getSlotLevels(slot);
+    if (!lv.measured) return {};   // bypassed / not in circuit: nothing to say
+    // THE LOUD NULL: below the floor the model reads these words, never a
+    // number. Both legs must be known before any figure is written.
+    if (!lv.in.known || !lv.out.known)
+        return "level: no level known (heard " + formatHeard(juce::jmax(lv.in.heardSeconds, lv.out.heardSeconds)) + ")";
+    // Compact on purpose: this rides every slot line of every chain turn.
+    // in level, in p90 and peak (what a threshold is set against), out
+    // level, and out-in measured (on a compressor this IS the reduction).
+    juce::String n;
+    n << "in " << fmt1(lv.in.levelDb) << " dBFS RMS (p90 " << fmt1(lv.in.p90) << ", pk " << fmt1(lv.in.peakDb)
+      << "), out " << fmt1(lv.out.levelDb) << ", out-in " << fmt1(lv.out.levelDb - lv.in.levelDb) << " dB"
+      << ", heard " << formatHeard(lv.in.heardSeconds);
+    if (lv.in.windowSeconds < lv.in.heardSeconds - 1.0f)
+        n << " (~" << formatHeard(lv.in.windowSeconds) << " described)";
+    return n;
+}
+
+juce::String EchoJayAPI::buildChainLevelsInjection(const ChainHost& chainHost)
+{
+    const auto in  = chainHost.getChainInLevels();
+    const auto out = chainHost.getChainOutLevels();
+    juce::String b;
+    b << "\n\n[CHAIN LEVELS - measured while the user played (BS.1770 gated, K-weighted; heard = gated"
+         " audio so far, described = how much the figures reflect). Set thresholds against INPUT p90, never a guess: ";
+    if (!in.known)
+    {
+        b << "no level known (heard " << formatHeard(in.heardSeconds) << "); do not assume one, say so if a setting depends on it.]";
+        return b;
+    }
+    b << "input " << fmt1(in.levelDb) << " LUFS (p10 " << fmt1(in.p10) << ", p90 " << fmt1(in.p90)
+      << "), peak " << fmt1(in.peakDb) << " dBFS, crest " << fmt1(in.crestDb) << " dB, heard "
+      << formatHeard(in.heardSeconds);
+    if (in.windowSeconds < in.heardSeconds - 1.0f)
+        b << " (~" << formatHeard(in.windowSeconds) << " described)";
+    // Pre-chain gain and the resulting operating level: EchoJay trims the
+    // input to a known operating level before the rack, so thresholds must be
+    // set against OPERATING, not the raw input. Only shown when a trim is in
+    // effect (a bare input line stays short when there is nothing to add).
+    const float pg = chainHost.getPreGainDb();
+    if (std::abs(pg) > 0.05f)
+        b << "; pre-gain " << (pg >= 0 ? "+" : "") << fmt1(pg)
+          << " dB, so OPERATING " << fmt1(in.levelDb + pg) << " LUFS (set thresholds against this)";
+    if (out.known && chainHost.getNumSlots() > 0)
+        b << "; output " << fmt1(out.levelDb) << " LUFS (out-in " << fmt1(out.levelDb - in.levelDb) << " dB)";
+    b << "]";
+    return b;
 }
 
 juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& rack,
-                                                    const juce::String& channelLabel)
+                                                    const juce::String& channelLabel,
+                                                    const juce::StringArray* slotLevelNotes)
 {
     if (!rack.valid || rack.slots.empty()) return {};
 
@@ -2826,18 +2982,32 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& 
     const juce::String owner = channelLabel.isEmpty()
         ? juce::String("the user's rack right now")
         : "the rack on the user's \"" + channelLabel + "\" Link channel right now";
+    // P61 (21 Aug 2026): the old header taught an append that does not
+    // exist. "treat it as an edit ... not a new chain from scratch" was
+    // unscoped, and "fill NEW slots" implied slots get added to the listed
+    // set - Kathy's rack of three was replaced by four and the model had
+    // reasoned honestly from these words. The edit instruction is now
+    // scoped to EDIT OPERATIONS BY NAME, and the header states what a
+    // build actually does. The server's [CHAIN BUILD SEMANTICS] clause
+    // says the same thing and STAYS until this is shipped, installed and
+    // verified (two copies briefly agreeing is fine; the prefix
+    // "[CURRENT CHAIN" is server-keyed and byte-stable).
     juce::String block;
     block << juce::String::fromUTF8("\n\n[CURRENT CHAIN \xe2\x80\x94 ") << owner
           << ", in signal-flow "
           << "order; slot numbers are 1-based (the first slot is slot 1). "
-          << "When the user asks to change THIS chain (add/remove/swap/"
-          << "reorder), treat it as an edit of these slots, not a new chain "
-          << "from scratch. Every slot listed here is loaded and running and "
-          << "may ALWAYS be referenced and edited (remove/move/bypass/"
-          << "replace), regardless of AVAILABLE PLUGINS membership or any "
-          << "auto-dial restriction " << juce::String::fromUTF8("\xe2\x80\x94")
-          << " those only govern which plugins may "
-          << "fill NEW slots.]\n";
+          << "EDIT OPERATIONS (a CHAIN_EDIT block: add/remove/swap/reorder/"
+          << "bypass/set) act on these slots in place. A CHAIN BLOCK is not "
+          << "an edit: building replaces this ENTIRE rack " << juce::String::fromUTF8("\xe2\x80\x94")
+          << " every slot listed here is removed first, and a plugin "
+          << "appearing in both racks returns at the new block's settings, "
+          << "not with its current state. Every slot listed here is loaded "
+          << "and running and may ALWAYS be referenced and edited, "
+          << "regardless of AVAILABLE PLUGINS membership or any auto-dial "
+          << "restriction " << juce::String::fromUTF8("\xe2\x80\x94")
+          << " those govern only which plugins an edit may ADD or a build "
+          << "may include, never whether an existing slot can be "
+          << "addressed.]\n";
     for (int i = 0; i < (int)rack.slots.size(); ++i)
     {
         const auto& s = rack.slots[(size_t)i];
@@ -2845,6 +3015,8 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& 
         if (s.bypassed) block << ", BYPASSED";
         if (s.wet < 0.995f)
             block << ", wet " << juce::roundToInt(s.wet * 100.0f) << "%";
+        if (slotLevelNotes != nullptr && i < slotLevelNotes->size() && (*slotLevelNotes)[i].isNotEmpty())
+            block << "; " << (*slotLevelNotes)[i];
         block << ")";
         auto settings = s.settings.trim();
         if (settings.isNotEmpty())
