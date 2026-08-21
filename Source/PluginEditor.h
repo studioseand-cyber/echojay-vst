@@ -1569,11 +1569,6 @@ private:
     juce::String chainSaveStatus_;
     juce::uint32 chainSaveStatusAt_ = 0;
     bool         chainSaveInFlight_ = false;
-    // Set by the unsaved-rack confirm's OK and consumed (cleared) by the very
-    // next openSavedChain call, which is made synchronously from that same
-    // callback: it lets the confirmed re-entry skip the confirm without a
-    // second signature. Never true across a runloop turn.
-    bool         chainOpenReplaceConfirmed_ = false;
     void setChainSaveStatus(const juce::String& s);
     // Left edge of the Save button, stored by resized() and CONSUMED by
     // paint(). Height reservation rule: resized() is the sole geometry
@@ -3161,6 +3156,13 @@ private:
     // Confirms before replacing a populated rack; the archive happens inside
     // the clear regardless. Callers pass an id already known to be recallable.
     void beginRecall(const juce::String& id, const juce::String& name);
+    // The saved-chain/dashboard entry's wording for the SAME replace ask
+    // (merge, 21 Aug — replaces the AlertWindow confirm that lived inside
+    // openSavedChain). Third thin wrapper beside presentRecallReplaceAsk and
+    // presentBuildReplaceAsk: wording + chips only, mechanics stay in
+    // presentReplaceAsk. Main rack only — the bridge's historical target.
+    void presentOpenChainReplaceAsk(const juce::String& id,
+                                    const juce::String& name, int rackSlots);
     // The channel-mismatch advisory ask (15 Aug 2026): ONE client-authored
     // ASK whose question is the server's heads-up text and whose chips are
     // "Load it here" / "Choose another channel" - it replaces the plain

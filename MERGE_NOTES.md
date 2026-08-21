@@ -1,5 +1,24 @@
 # Merge notes — `feat/dashboard-tab`
 
+> **RESOLVED AT MERGE (21 Aug 2026), supersedes §1 below.** The trunk's
+> `presentReplaceAsk` (178d1c9: shared recall/build presenter, plugin-naming
+> `replacesClause`, stale-rack recompose, `[ask-flip]`/`[build-ask]` logging)
+> and this branch's AlertWindow confirm inside `openSavedChain` (7b3b456 +
+> 0e557c1) were BOTH alive after the merge, and the recall path asked twice in
+> a row. Consolidated on `presentReplaceAsk`: the AlertWindow confirm,
+> `chainOpenReplaceConfirmed_` and its `std::exchange` guard are deleted;
+> `openSavedChain` is now a pure loader with exactly one caller
+> (`recallLoadChain`, which carries the §1 hooks). The saved-chain/dashboard
+> entry asks through a third thin wrapper, `presentOpenChainReplaceAsk` —
+> wording + chips only, intent class `recall_` (the supersede scope; the
+> dashboard is an entry point, logged as `entry=dashboard`, not an intent
+> class). Every rack-destroying path reaches the one presenter: chain-row
+> click and saved-chains menu via `beginRecall`, the bridge via the wrapper
+> (or direct load on an empty rack), chat recall via the recall machinery,
+> the AI build via `presentBuildReplaceAsk`. §1's hook-threading survives
+> inside `recallLoadChain`; the confirm re-entry it describes no longer
+> exists.
+
 Written for whoever merges this branch with
 `integration/reasoning-plus-pitch` (the second Mac, audio path). This branch
 is the state-chunk-matching + deadman work (CHAINHOST_BRIEF and

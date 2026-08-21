@@ -10463,15 +10463,21 @@ void EchoJayEditor::bridgeOpenChainById(const juce::String& chainId)
         if (auto* o = json.getDynamicObject())
             if (auto* c = o->getProperty("chain").getDynamicObject())
                 name = c->getProperty("name").toString();
-        // THE ONE LOADER — a third caller, deliberately the SAME openSavedChain
-        // the other callers use. MERGE_NOTES §1, decided at merge: EMPTY hooks
-        // on purpose. onFetchError duplicates what this path already has — both
-        // this fetch and openSavedChain's own report failures via
-        // setChainSaveStatus, on the Chain tab the user lands on after the
-        // bridge navigation — and a second error surface would be worse than
-        // none. onSlotsParsed feeds recall's watchdog summary, which has no
-        // consumer on a bridge load.
-        safe->openSavedChain(chainId, name, {}, {});
+        // CONSOLIDATED (merge, 21 Aug): the AlertWindow confirm that used to
+        // sit inside openSavedChain is gone; the bridge asks through the ONE
+        // shared presenter via its own thin wording wrapper, then loads
+        // through recallLoadChain -> openSavedChain like every other recall.
+        // MAIN RACK, as this path always was — restoreSavedChain fills the
+        // plugin's own ChainHost, so the guard reads the same rack it
+        // replaces.
+        const int rackSlots = safe->processorRef.getChainHost().getNumSlots();
+        if (rackSlots == 0)
+        {
+            EchoJay_NSLog("EJRecall: replace ask shown=no rack=0 entry=dashboard answer=load");
+            safe->recallLoadChain(chainId, name);
+        }
+        else
+            safe->presentOpenChainReplaceAsk(chainId, name, rackSlots);
     });
 }
 
@@ -24210,6 +24216,52 @@ void EchoJayEditor::presentRecallReplaceAsk(const juce::String& id,
                           + " answer=pending");
 }
 
+void EchoJayEditor::presentOpenChainReplaceAsk(const juce::String& id,
+                                               const juce::String& name, int rackSlots)
+{
+    // Wording + chips only; the mechanics (flip, scoped supersede, append,
+    // persist, log, relayout) live in presentReplaceAsk, and the answer path
+    // is the recall_confirm handler unchanged.
+    //
+    // INTENT CLASS recall_, DELIBERATELY. Supersede is scoped by intent
+    // prefix (recall_/build_ are the replace class, cmp_ compare); a
+    // saved-chain prefix of its own would compose a correct-looking ask that
+    // no later replace ask supersedes and that supersedes nothing — two asks
+    // stacked, neither clearing the other. The saved-chain path IS recall by
+    // intent; the dashboard is a different ENTRY POINT to the same intent,
+    // and the entry point rides the log payload below, not the intent class.
+    const juce::String plugins =
+        juce::String(rackSlots) + (rackSlots == 1 ? " plugin" : " plugins");
+    juce::StringArray rackNames;
+    for (const auto& si : processorRef.getChainHost().getAllSlotInfos())
+        if (si.name.isNotEmpty()) rackNames.add(si.name);
+    juce::String question =
+        "Open \"" + name + "\"? This channel already has " + plugins
+        + " racked, and opening replaces them.";
+    if (! rackNames.isEmpty())
+        question += " " + replacesClause(rackNames) + ".";
+
+    juce::Array<juce::var> choices;
+    {
+        auto* c = new juce::DynamicObject();
+        c->setProperty("label",       "Open it");
+        c->setProperty("intent",      "recall_confirm");
+        c->setProperty("recall_id",   id);
+        c->setProperty("recall_name", name);
+        choices.add(juce::var(c));
+    }
+    {
+        auto* c = new juce::DynamicObject();
+        c->setProperty("label",  "Keep current");
+        c->setProperty("intent", "recall_cancel");
+        choices.add(juce::var(c));
+    }
+    presentReplaceAsk(question, choices,
+                      "chain \"" + name + "\"",
+                      "EJRecall: replace ask shown=yes rack=" + juce::String(rackSlots)
+                          + " entry=dashboard answer=pending");
+}
+
 void EchoJayEditor::presentBuildReplaceAsk(const juce::String& chainJson)
 {
     // The doomed slots, from the TRUE loaded instances at ask time, through
@@ -24404,13 +24456,6 @@ void EchoJayEditor::recallLoadChainToLink(const juce::String& linkUid,
 
 void EchoJayEditor::recallLoadChain(const juce::String& id, const juce::String& name)
 {
-    // MERGE (21 Aug): every path into here has ALREADY settled consent — the
-    // recall replace ask was confirmed, or EJRecall::decide saw an empty rack.
-    // openSavedChain carries its own AlertWindow confirm (the dashboard-branch
-    // guard for callers that do not go through beginRecall, e.g. the bridge);
-    // pre-setting the flag here is what the confirm re-entry itself does, and
-    // it stops the user being asked twice in a row for one load.
-    chainOpenReplaceConfirmed_ = true;
     auto fetchFailed = std::make_shared<bool>(false);
     auto intended    = std::make_shared<juce::StringArray>();
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
@@ -28699,38 +28744,13 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
 {
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
 
-    // THE UNSAVED-RACK CONFIRM, here and not at the callers, so the dashboard,
-    // feed rows and message attachments inherit it by reaching this path.
-    // Only when there is something to lose: an empty rack loads silently.
-    // The wording says what WILL happen, not what the state is.
-    if (const int n = processorRef.getChainHost().getNumSlots();
-        // std::exchange first so the flag ALWAYS clears, even when n == 0: && short-circuits, and a stale true must never outlive one call.
-        ! std::exchange(chainOpenReplaceConfirmed_, false) && n > 0)
-    {
-        auto* dlg = new juce::AlertWindow(
-            "Open Chain",
-            "Opening \"" + name + "\" replaces the "
-            + (n == 1 ? juce::String("plugin now in the rack, and its")
-                      : juce::String(n) + " plugins now in the rack, and their")
-            + " current settings go with " + (n == 1 ? "it." : "them."),
-            juce::MessageBoxIconType::WarningIcon);
-        dlg->addButton("Replace", 1);
-        dlg->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
-        dlg->enterModalState(true,
-            juce::ModalCallbackFunction::create([safeThis, dlg, id, name,
-                                                 onFetchError, onSlotsParsed](int result)
-            {
-                delete dlg;
-                if (safeThis == nullptr || result != 1) return;
-                safeThis->chainOpenReplaceConfirmed_ = true;
-                // MERGE_NOTES §1: the re-entry FORWARDS the hooks it was called
-                // with — a recall that passes through this confirm must keep its
-                // error reporting and slots-parsed hook.
-                safeThis->openSavedChain(id, name, onFetchError, onSlotsParsed);
-            }));
-        return;
-    }
-
+    // NO CONFIRM HERE (merge, 21 Aug). The replace confirmation is
+    // presentReplaceAsk — ONE implementation, shared by recall and build,
+    // which names the plugins about to be cleared and recomposes at confirm
+    // against a stale rack. Every caller that can destroy a non-empty rack
+    // reaches it via beginRecall BEFORE this loader runs; this function is
+    // the loader only. (The AlertWindow confirm that lived here, 7b3b456 +
+    // 0e557c1, was consolidated away — two confirms asked twice in a row.)
     setChainSaveStatus(juce::String::fromUTF8("Opening \"") + name
                        + juce::String::fromUTF8("\"\xe2\x80\xa6"));
 
