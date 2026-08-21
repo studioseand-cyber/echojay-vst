@@ -26,6 +26,13 @@
 class ChainHost : private juce::AudioProcessorListener
 {
 public:
+    /** tools/state_match_test reaches the deadman file, the blacklist and the
+        entries pool through this. UNCONDITIONAL, no EJ_SELFTEST guard, for the
+        reason PluginEditor.h gives at its own test friends: a define that
+        changes a header between translation units fails as memory corruption,
+        while a friend declaration changes no layout, size or vtable. */
+    friend struct EchoJayStateMatchTestAccess;
+
     // Lightweight slot description safe to copy to the UI thread
     struct SlotInfo {
         juce::String name;
@@ -942,13 +949,56 @@ private:
     // which the user is told about. False on every pre-existing session,
     // where there is nothing to have lost and a note would be pure noise.
     struct RestoreItem { juce::PluginDescription desc; bool bypassed; float wet = 1.0f;
-                         juce::String stateBase64; bool expectState = false; };
+                         juce::String stateBase64; bool expectState = false;
+                         /** Set by restoreSavedChain when the chunk must NOT be
+                             pushed. The session-XML path leaves it false: there the
+                             description came from the same file as the chunk, so
+                             format and uid match by construction. */
+                         bool withholdState = false;
+                         /** The saved slot's identity, carried so applyRestoredState
+                             can re-check against the description the plugin ACTUALLY
+                             loaded with. A thin VST3 carries uid 0 until it validates,
+                             so the resolve-time check in restoreSavedChain has no
+                             opinion on it and the apply-time re-check is the only
+                             place the comparison can be made at all. Empty means the
+                             saved chain did not carry the field: still no opinion, on
+                             either side. */
+                         juce::String savedFormat, savedVersion, savedUid; };
     // onSlotSettled: see restoreSavedChain. Empty for a session restore,
     // which builds its rack before any editor exists to watch it.
     void restoreNextSlot(std::vector<RestoreItem> items, int idx,
                          std::function<void()> onSlotSettled = {});
+    // identifier: the plugin's fileOrIdentifier, written into the deadman
+    // marker around the setStateInformation call so a crash there is
+    // blacklisted by name on the next launch (see the marker in the .cpp).
+    // savedFormat/Version/Uid: the saved slot's identity, re-checked here
+    // against the description the plugin ACTUALLY loaded with (stateFitsPlugin)
+    // before the chunk is pushed — the only place a thin VST3's real identity
+    // is known. See RestoreItem.
     void applyRestoredState(int slotIdx, const juce::String& b64,
-                            bool expectState, const juce::String& slotName);
+                            bool expectState, const juce::String& slotName,
+                            const juce::String& identifier,
+                            const juce::String& savedFormat,
+                            const juce::String& savedVersion,
+                            const juce::String& savedUid);
+
+    /** THE state-match policy, in one place, so it cannot drift between the
+        resolve-time call and the apply-time call — three copies is how one of
+        them ends up pushing a VST3 chunk into an AU. Returns true when the
+        chunk may be pushed. Writes at most one note: the format or uid
+        MISMATCH note, which withholds. The version-differs case does NOT
+        withhold and its note is DEFERRED — returned through `deferredNote`
+        (when non-null) so the caller writes it only after the chunk actually
+        applied, because it claims a dial was performed. `found` is the
+        description the plugin loaded with where that is known
+        (applyRestoredState) and the resolved candidate where it is not
+        (restoreSavedChain). Absent on EITHER side is no opinion. */
+    bool stateFitsPlugin(const juce::PluginDescription& found,
+                         const juce::String& savedFormat,
+                         const juce::String& savedVersion,
+                         const juce::String& savedUid,
+                         const juce::String& slotName,
+                         juce::String* deferredNote = nullptr) const;
 
     // ---- Hosted settings cache internals ---------------------------------
     // Debounce: capture 2s after the last observed change, so one knob drag

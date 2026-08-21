@@ -15,6 +15,11 @@
 #include "CodecRender.h"
 #include "DashboardTab.h"
 
+// Stage 2: the lazy webview Dashboard surface. Full type in DashboardWeb.h,
+// included from PluginEditor.cpp; the header only needs the incomplete type for
+// the unique_ptr member (EchoJayEditor's dtor is out-of-line).
+namespace echojay { class DashboardWeb; }
+
 // TEMP DEBUG (25 Jul 2026, review-overlay z-order diagnosis) — remove with
 // the [zdbg] sites in PluginEditor.cpp.
 extern bool gEjReviewModalDbg;
@@ -272,6 +277,37 @@ private:
     // badge tempting and would be roughly a hundred times the cost per tick.
     juce::Viewport             dashViewport_;
     echojay::DashboardView     dashView_;
+    // Stage 2: the lazy webview surface. Constructed only while the Dashboard
+    // tab is showing (Screen::Main, no prompt/overlay, signed in) and DESTROYED
+    // on tab-away — destroy frees the resident WebKit processes, hiding does
+    // not. dashView_ (native) stays as the offline/signed-out/load-failed
+    // fallback beneath it. See reconcileDashboardWeb().
+    std::unique_ptr<echojay::DashboardWeb> dashWeb_;
+    // Item 2: the native populated dashboard (dashView_) is RETIRED from display
+    // — shown ONLY signed-out. Signed-in, the webview is the surface; while it
+    // builds or after it fails this minimal native panel stands in (loading line
+    // / offline line), so the old dashboard never flashes before the webview.
+    juce::Label dashWebPanel_;
+    bool dashWebLoaded_               = false;  // onLoadResult(true): webview shown over native
+    bool dashWebFailedThisSelection_ = false;   // no retry until the next Dashboard selection
+    void reconcileDashboardWeb();               // lazy construct/destroy of dashWeb_
+
+    // Stage 3: the bridge navigation guard (§8 idempotency), shared by loadChain
+    // AND openChat — both switch tabs and so tear down the webview. NOT a boolean
+    // (that leaks on two unobservable paths: a user cancelling openSavedChain's
+    // confirm, and openSavedChain's own internal fetch failing). Instead a
+    // request is busy if a modal is up OR the last accepted request was within
+    // the window (echojay::loadChainBusy). Holds the timestamp of the last
+    // accepted bridge navigation; 0 means none. Explicit resets to 0 (error
+    // paths, webview lifecycle in reconcileDashboardWeb) keep the common cases
+    // from waiting out the window.
+    juce::uint32 bridgeNavAcceptedMs_ = 0;
+    bool bridgeAcceptOrBusy();   // true = busy (reject); false = stamped + accepted
+    void bridgeLoadChain(const juce::String& chainId, const juce::String& slug,
+                         std::function<void(bool accepted, juce::String reason)> answer);
+    void bridgeOpenChainById(const juce::String& chainId);   // fetch name, then the ONE loader
+    void bridgeOpenChat(const juce::String& chatId,
+                        std::function<void(bool accepted, juce::String reason)> answer);
     juce::int64                dashFetchedAtMs_ = 0;   // 0 = never fetched
     int                        dashTtlSeconds_  = 60;  // from payload.ttl
     bool                       dashLoading_     = false;
@@ -1518,6 +1554,11 @@ private:
     juce::String chainSaveStatus_;
     juce::uint32 chainSaveStatusAt_ = 0;
     bool         chainSaveInFlight_ = false;
+    // Set by the unsaved-rack confirm's OK and consumed (cleared) by the very
+    // next openSavedChain call, which is made synchronously from that same
+    // callback: it lets the confirmed re-entry skip the confirm without a
+    // second signature. Never true across a runloop turn.
+    bool         chainOpenReplaceConfirmed_ = false;
     void setChainSaveStatus(const juce::String& s);
     // Left edge of the Save button, stored by resized() and CONSUMED by
     // paint(). Height reservation rule: resized() is the sole geometry
@@ -4271,6 +4312,11 @@ private:
     juce::ListBox chatSidebar { {}, nullptr };
 
     void loadChatFromWorkspace(const juce::String& chatId);
+    // Scroll the chat sidebar so the active chat (currentChatId) lands in the
+    // top third. Used after a dashboard deep link selects a chat that may be
+    // far down the list, so "which chat am I on" is answerable at a glance.
+    // No-op if there is no active chat or no matching visible row.
+    void scrollChatSidebarToActive();
     void createNewChat();
     // ---- Stream ownership (14 Aug 2026: a stream belongs to a chat) ----
     // Re-establish the in-flight turn's provisional rendering (stage row or

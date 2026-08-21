@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "DashboardWeb.h"        // stage 2: the lazy webview Dashboard surface
 #include "EJStreamBlockParser.h" // incremental block parser (spec step 3/4)
 #include "EJRecall.h"            // saved-chain recall decision logic (pure)
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics (EJChat:)
@@ -453,6 +454,15 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     dashViewport_.setScrollBarsShown(true, false);
     dashViewport_.setScrollBarThickness(8);
     addChildComponent(dashViewport_);
+
+    // Item 2: the minimal native stand-in while the webview builds / after it
+    // fails. House empty-state styling (text2 @ 12.5, centred), no chrome.
+    dashWebPanel_.setJustificationType(juce::Justification::centred);
+    dashWebPanel_.setColour(juce::Label::textColourId, juce::Colour(0xffa0a0b8));
+    dashWebPanel_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+    dashWebPanel_.setFont(juce::Font(juce::FontOptions(12.5f)));
+    dashWebPanel_.setInterceptsMouseClicks(false, false);
+    addChildComponent(dashWebPanel_);
     dashView_.onNavigate = [this](const echojay::DashLink& l) { followDashLink(l); };
     dashView_.onOpenUrl  = [](const juce::String& url)
     {
@@ -584,7 +594,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             if (restoreId.isNotEmpty() && !chatLoading
                 && (currentChatId.isEmpty() || currentChatId == restoreId))
                 for (const auto& ch : workspace.getChats())
-                    if (ch.id == restoreId) { loadChatFromWorkspace(restoreId); break; }
+                    if (ch.id == restoreId) { loadChatFromWorkspace(restoreId); scrollChatSidebarToActive(); break; }
         }
 
         // A dashboard chat deep link tapped before the workspace had loaded.
@@ -596,7 +606,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             const juce::String want = pendingDashChatId_;
             pendingDashChatId_.clear();
             for (const auto& ch : workspace.getChats())
-                if (ch.id == want) { loadChatFromWorkspace(want); break; }
+                if (ch.id == want) { loadChatFromWorkspace(want); scrollChatSidebarToActive(); break; }
         }
         repaint();
     };
@@ -2819,6 +2829,11 @@ void EchoJayEditor::updateOnboardingPrompts()
     onboardingOverlay_.setVisible(anyPrompt);
     if (anyPrompt)
         onboardingOverlay_.toFront(false);   // topmost over ANY tab's children
+
+    // Stage 2: a prompt appearing/clearing (or a login change) changes whether
+    // the webview may exist. This pass runs on every such change, so reconcile
+    // its lazy lifecycle here as well as in resized().
+    reconcileDashboardWeb();
 
     // ---- identical chat/topbar treatment for all three ----
     const bool chatOk = currentScreen == Screen::Main && !anyPrompt
@@ -10087,8 +10102,219 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
 //  navigation. The view owns geometry and drawing and nothing else.
 // =============================================================================
 
+// Stage 2: lazy lifecycle for the webview surface. Construct ONE webview only
+// while the Dashboard tab is the showing Screen::Main surface with no prompt or
+// overlay up and the user signed in; DESTROY it the moment that stops being
+// true (tab switch, screen change) — and the unique_ptr destroys it on editor
+// teardown. Destroy, not setVisible(false): the ~103 MB is resident WebKit
+// processes and only destruction frees them. Idempotent, so it is safe to call
+// from resized() (tab switch/relayout) and updateOnboardingPrompts()
+// (prompt/login change) alike.
+void EchoJayEditor::reconcileDashboardWeb()
+{
+    const bool onDash = currentTab == Tab::Dashboard && currentScreen == Screen::Main
+                     && !compactMode && !visualOnlyMode;
+    if (! onDash)
+    {
+        dashWeb_.reset();
+        dashWebLoaded_ = false;
+        bridgeNavAcceptedMs_ = 0;   // a load that switched to the Chain tab has settled
+        return;
+    }
+
+    const bool promptUp = channelPromptVisible || genrePromptVisible || projectPromptVisible
+                       || updateOverlay.isVisible() || reviewOverlay.visibleState;
+
+    // Signed out is handled by the native signed-out line — skip the webview
+    // entirely. A prompt up: wait (native shows under it); once constructed a
+    // prompt only HIDES the webview (resized()), it does not destroy it.
+    if (promptUp || ! api.isLoggedIn() || dashWebFailedThisSelection_) return;
+
+    if (dashWeb_ == nullptr)
+    {
+        dashWeb_ = std::make_unique<echojay::DashboardWeb>();
+        addChildComponent (*dashWeb_);   // hidden until it loads; native stays up
+        bridgeNavAcceptedMs_ = 0;      // fresh webview on (re)entering the Dashboard
+        auto safe = juce::Component::SafePointer<EchoJayEditor> (this);
+
+        // Stage 3: the loadChain bridge. DashboardWeb has already validated the
+        // payload; the editor routes and answers (acknowledgement, not dial
+        // report). Set here, at construction, per DashboardWeb's own rule that
+        // the webview is recreated on every Dashboard selection.
+        dashWeb_->onLoadChain = [safe] (const juce::String& chainId,
+                                        const juce::String& slug,
+                                        echojay::DashboardWeb::Answer answer)
+        {
+            if (safe == nullptr) { if (answer) answer (false, "busy"); return; }
+            safe->bridgeLoadChain (chainId, slug, std::move (answer));
+        };
+        dashWeb_->onOpenChat = [safe] (const juce::String& chatId,
+                                       echojay::DashboardWeb::Answer answer)
+        {
+            if (safe == nullptr) { if (answer) answer (false, "busy"); return; }
+            safe->bridgeOpenChat (chatId, std::move (answer));
+        };
+
+        dashWeb_->onLoadResult = [safe] (bool ok)
+        {
+            if (safe == nullptr) return;
+            if (ok)
+            {
+                safe->dashWebLoaded_ = true;   // swap native -> webview
+                safe->resized();
+                return;
+            }
+            // FAILURE (gate 404 / network error): keep native, no retry until
+            // the next selection, and DESTROY the dead webview so its ~150 MB of
+            // resident WebKit processes do not sit behind the native view until
+            // tab-away — on precisely the path where the user gets nothing.
+            //
+            // DEFERRED, deliberately: this callback fires from inside the
+            // webview's own evaluateJavascript completion, so resetting dashWeb_
+            // on this stack would free the webview under itself (use-after-free).
+            // callAsync frees it on a later message-loop turn once that stack has
+            // unwound; the SafePointer makes a torn-down editor a no-op.
+            safe->dashWebFailedThisSelection_ = true;
+            juce::MessageManager::callAsync ([safe]
+            {
+                if (safe == nullptr) return;
+                safe->dashWeb_.reset();        // frees the resident WebKit processes
+                safe->dashWebLoaded_ = false;
+                safe->resized();               // native stays up (reconcile won't
+                                               // reconstruct: failed-this-selection)
+            });
+        };
+        dashWeb_->start();
+    }
+}
+
+// Stage 3: the loadChain bridge handler. DashboardWeb has already validated the
+// payload natively; this routes it — share import or direct — and converges on
+// the ONE loader, openSavedChain. NO slot iteration lives here (§5a one-loader
+// rule): openSavedChain owns the confirm, the format/uid/version matching, the
+// deadman and the per-slot notes.
+// The shared bridge-navigation guard (§8 idempotency), used by loadChain AND
+// openChat. Busy if a confirm modal is up OR the last accepted navigation was
+// within the window (echojay::loadChainBusy). Two tests, not a boolean: the
+// modal covers "a confirm is showing" (and the native webview can reach the
+// bridge past JUCE modality), the window covers the async work and self-heals
+// the two paths a boolean leaks — a user-cancel and openSavedChain's own
+// internal fetch failing. Returns true (busy, no stamp) or false (stamped +
+// accepted). Explicit resets to 0 (error paths, reconcileDashboardWeb) keep the
+// common cases from waiting out the window.
+bool EchoJayEditor::bridgeAcceptOrBusy()
+{
+    const juce::int64 kWindowMs = 8000;
+    const auto now = juce::Time::getMillisecondCounter();
+    const int modals = juce::ModalComponentManager::getInstance()->getNumModalComponents();
+    const juce::int64 elapsed = (bridgeNavAcceptedMs_ == 0)
+        ? kWindowMs   // none / cleared -> exactly at expiry -> not busy from the window
+        : (juce::int64) (juce::uint32) (now - bridgeNavAcceptedMs_);
+    if (echojay::loadChainBusy(modals, elapsed, kWindowMs)) return true;
+    bridgeNavAcceptedMs_ = now;
+    return false;
+}
+
+void EchoJayEditor::bridgeLoadChain(const juce::String& chainId, const juce::String& slug,
+                                    std::function<void(bool, juce::String)> answer)
+{
+    if (bridgeAcceptOrBusy()) { if (answer) answer(false, "busy"); return; }
+
+    // Acknowledge the moment it is validated and handed off — NOT the dial
+    // report (the Chain tab shows per-slot notes natively, and the webview is
+    // gone by then).
+    if (answer) answer(true, {});
+
+    // DEFER: this runs inside the webview's own native-function callback, and the
+    // success path switches to the Chain tab, which DESTROYS this webview. Let
+    // that stack unwind first (use-after-free guard, same shape as the load-fail
+    // teardown above).
+    auto safe = juce::Component::SafePointer<EchoJayEditor>(this);
+    juce::MessageManager::callAsync([safe, chainId, slug]
+    {
+        if (safe == nullptr) return;
+        if (slug.isNotEmpty())
+        {
+            // Someone else's share: import to a chain of your own, then load it.
+            // { imported:false, reason:'own_share', chainId } IS success — the
+            // response carries chainId either way (§5a).
+            safe->api.importShare(slug, [safe](const juce::var& json, int sc)
+            {
+                if (safe == nullptr) return;
+                const juce::String cid = echojay::importedChainId(json);  // own_share carries it too
+                if (sc >= 200 && sc < 300 && cid.isNotEmpty())
+                    safe->bridgeOpenChainById(cid);
+                else
+                {
+                    safe->bridgeNavAcceptedMs_ = 0;
+                    safe->setChainSaveStatus(EchoJayAPI::chainErrorMessage(json, sc));
+                }
+            });
+        }
+        else
+        {
+            safe->bridgeOpenChainById(chainId);
+        }
+    });
+}
+
+// Fetch the chain to get its NAME for the confirm wording, then converge on the
+// one loader. openSavedChain fetches again — a deliberate fetch-then-open, not a
+// bypass: every protection lives on that path, so the double fetch is the price
+// of not building a second loader (§5a).
+void EchoJayEditor::bridgeOpenChainById(const juce::String& chainId)
+{
+    auto safe = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.fetchChain(chainId, [safe, chainId](const juce::var& json, int sc)
+    {
+        if (safe == nullptr) return;
+        const auto err = EchoJayAPI::chainErrorMessage(json, sc);
+        if (err.isNotEmpty())
+        {
+            safe->bridgeNavAcceptedMs_ = 0;
+            safe->setChainSaveStatus(err);
+            return;
+        }
+        juce::String name;
+        if (auto* o = json.getDynamicObject())
+            if (auto* c = o->getProperty("chain").getDynamicObject())
+                name = c->getProperty("name").toString();
+        // THE ONE LOADER — a third caller, deliberately the SAME two-argument
+        // openSavedChain the other callers use. See MERGE_NOTES §1: if the other
+        // branch's onFetchError/onSlotsParsed land here, this call must gain them
+        // too, or a bridge load silently loses them.
+        safe->openSavedChain(chainId, name);
+    });
+}
+
+// Item 3: openChat. DashboardWeb validated the chatId natively; route it to the
+// Chat tab through the existing followDashLink chat path (switchToTab(Chat) +
+// loadChatFromWorkspace, or park in pendingDashChatId_) — one path, no bypass.
+// Same acknowledgement + busy semantics as loadChain: the tab switch tears down
+// the webview, so it shares the bridge-navigation guard, and the work is
+// deferred so the webview isn't freed under its own native-function callback.
+void EchoJayEditor::bridgeOpenChat(const juce::String& chatId,
+                                   std::function<void(bool, juce::String)> answer)
+{
+    if (bridgeAcceptOrBusy()) { if (answer) answer(false, "busy"); return; }
+    if (answer) answer(true, {});
+
+    auto safe = juce::Component::SafePointer<EchoJayEditor>(this);
+    juce::MessageManager::callAsync([safe, chatId]
+    {
+        if (safe == nullptr) return;
+        echojay::DashLink l;
+        l.surface = "chat";
+        l.id      = chatId;
+        safe->followDashLink(l);
+    });
+}
+
 void EchoJayEditor::openDashboardTab()
 {
+    // A fresh Dashboard selection re-arms the webview after an earlier failure.
+    dashWebFailedThisSelection_ = false;
+
     if (!api.isLoggedIn())
     {
         dashView_.setSignedOut(true);
@@ -10211,7 +10437,7 @@ void EchoJayEditor::followDashLink(const echojay::DashLink& link)
         // doing nothing.
         bool found = false;
         for (const auto& ch : workspace.getChats())
-            if (ch.id == link.id) { loadChatFromWorkspace(link.id); found = true; break; }
+            if (ch.id == link.id) { loadChatFromWorkspace(link.id); scrollChatSidebarToActive(); found = true; break; }
         if (!found) pendingDashChatId_ = link.id;
         return;
     }
@@ -11266,6 +11492,28 @@ void EchoJayEditor::paintChatSidebar(juce::Graphics& g, juce::Rectangle<int> are
         chatSidebarContent.setSize(w, juce::jmax(fullH, totalH));
 }
 #endif // old paintChatSidebar
+
+void EchoJayEditor::scrollChatSidebarToActive()
+{
+    if (sidebarModel == nullptr || currentChatId.isEmpty()) return;
+
+    int row = -1;
+    for (int i = 0; i < (int) sidebarModel->rows.size(); ++i)
+        if (sidebarModel->rows[(size_t) i].kind == ChatSidebarModel::Row::Kind::ChatRow
+            && sidebarModel->rows[(size_t) i].id == currentChatId)
+        { row = i; break; }
+    if (row < 0) return;   // active chat not a visible row (collapsed/absent)
+
+    // Land the row in the top third so its album/project header stays visible
+    // above it, rather than jammed against an edge. setViewPosition clamps to
+    // the content bounds; fall back to the safe "just get it on screen" API if
+    // the list has no height yet (called before layout).
+    if (auto* vp = chatSidebar.getViewport(); vp != nullptr && chatSidebar.getHeight() > 0)
+        vp->setViewPosition(0, juce::jmax(0, row * chatSidebar.getRowHeight()
+                                             - chatSidebar.getHeight() / 3));
+    else
+        chatSidebar.scrollToEnsureRowIsOnscreen(row);
+}
 
 void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
 {
@@ -17055,11 +17303,55 @@ void EchoJayEditor::resized()
     // lives INSIDE the single visibility expression, which therefore always
     // evaluates, both ways.
     {
+        // Stage 2: reconcile the webview's lazy lifecycle (construct on entering
+        // the Dashboard surface, destroy on leaving) BEFORE laying it out.
+        reconcileDashboardWeb();
+
         const int abOffD = abBarShowing ? kAbBarH : 0;
-        dashViewport_.setBounds(0, topH, mW,
-                                juce::jmax(50, b.getHeight() - topH - abOffD));
-        dashViewport_.setVisible(dashboardTab && currentScreen == Screen::Main
-                                 && !compactMode && !visualOnlyMode);
+        const auto dashRect = juce::Rectangle<int> (0, topH, mW,
+                                  juce::jmax (50, b.getHeight() - topH - abOffD));
+
+        // THE ONE visibility expression, shared by BOTH the native and the
+        // webview surface. Same five prompt/overlay guards 0de7629 folded in —
+        // and they matter MORE now: the webview is a native NSView that beats
+        // all JUCE painting, so a prompt appearing MUST hide it (it cannot be
+        // out-z-ordered). A prompt or overlay OUTRANKS tab content; Dashboard is
+        // the default tab, so on a fresh instance an unguarded surface buries
+        // the intake prompts. Never hidden from the prompt-showing code (the
+        // moved-bug shape this block warns about).
+        const bool dashSurfaceShowable = dashboardTab && currentScreen == Screen::Main
+                                      && !compactMode && !visualOnlyMode
+                                      && !channelPromptVisible && !genrePromptVisible
+                                      && !projectPromptVisible
+                                      && !updateOverlay.isVisible()
+                                      && !reviewOverlay.visibleState;
+        const bool webShown  = (dashWeb_ != nullptr && dashWebLoaded_);
+        const bool signedIn  = api.isLoggedIn();
+        const bool webFailed = signedIn && dashWebFailedThisSelection_;
+
+        // Item 2: the native POPULATED dashboard (dashView_) is RETIRED from
+        // display — shown ONLY signed-out, so it can never flash the old
+        // dashboard before the webview. Signed-in it never appears.
+        dashViewport_.setBounds (dashRect);
+        dashViewport_.setVisible (dashSurfaceShowable && !signedIn);
+
+        // Webview: same rect; visible only once it reports a successful load.
+        if (dashWeb_ != nullptr)
+        {
+            dashWeb_->setBounds (dashRect);
+            dashWeb_->setVisible (dashSurfaceShowable && webShown);
+        }
+
+        // Minimal native stand-in: a loading line while the webview builds, the
+        // offline line on failure / no network. §7's offline chains list is
+        // consciously traded away for this (MERGE_NOTES). Signed-out keeps its
+        // existing line on dashView_ above.
+        dashWebPanel_.setBounds (dashRect);
+        dashWebPanel_.setText (webFailed
+                                   ? juce::String::fromUTF8 ("You\xe2\x80\x99re offline \xe2\x80\x94 go online to view your dashboard")
+                                   : juce::String::fromUTF8 ("Loading your dashboard\xe2\x80\xa6"),
+                               juce::dontSendNotification);
+        dashWebPanel_.setVisible (dashSurfaceShowable && signedIn && !webShown);
 
         // Content width, then content height from the ONE geometry author.
         // layout() is pure in width, so calling it here and again from the
@@ -27115,6 +27407,35 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
                                    std::function<void(const juce::StringArray&)> onSlotsParsed)
 {
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+
+    // THE UNSAVED-RACK CONFIRM, here and not at the callers, so the dashboard,
+    // feed rows and message attachments inherit it by reaching this path.
+    // Only when there is something to lose: an empty rack loads silently.
+    // The wording says what WILL happen, not what the state is.
+    if (const int n = processorRef.getChainHost().getNumSlots();
+        // std::exchange first so the flag ALWAYS clears, even when n == 0: && short-circuits, and a stale true must never outlive one call.
+        ! std::exchange(chainOpenReplaceConfirmed_, false) && n > 0)
+    {
+        auto* dlg = new juce::AlertWindow(
+            "Open Chain",
+            "Opening \"" + name + "\" replaces the "
+            + (n == 1 ? juce::String("plugin now in the rack, and its")
+                      : juce::String(n) + " plugins now in the rack, and their")
+            + " current settings go with " + (n == 1 ? "it." : "them."),
+            juce::MessageBoxIconType::WarningIcon);
+        dlg->addButton("Replace", 1);
+        dlg->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+        dlg->enterModalState(true,
+            juce::ModalCallbackFunction::create([safeThis, dlg, id, name](int result)
+            {
+                delete dlg;
+                if (safeThis == nullptr || result != 1) return;
+                safeThis->chainOpenReplaceConfirmed_ = true;
+                safeThis->openSavedChain(id, name);
+            }));
+        return;
+    }
+
     setChainSaveStatus(juce::String::fromUTF8("Opening \"") + name
                        + juce::String::fromUTF8("\"\xe2\x80\xa6"));
 
@@ -29213,7 +29534,19 @@ bool EchoJayEditor::keyPressed(const juce::KeyPress& key)
 
     // Spacebar — stop capture or toggle AB playback
     if (key == juce::KeyPress::spaceKey && currentScreen == Screen::Main
-        && !channelPromptVisible && !genrePromptVisible)
+        && !channelPromptVisible && !genrePromptVisible
+        // Stage 2, keyboard: the guard above only covers named JUCE TextEditors;
+        // the webview is a native WKWebView, not one. Determined from the code
+        // (WebBrowserComponent::focusGainedWithDirection makes the WKWebView the
+        // macOS first responder, and this editor gets keys via component focus
+        // with no global listener), keyPressed should NOT fire while the user
+        // types in the page — the native view consumes the key. This gate is the
+        // defensive belt for the residual case where JUCE focus and the native
+        // first responder are momentarily out of sync: while the webview holds
+        // keyboard focus, space is the page's, never the transport's. The
+        // reliable long-term signal is the §8 focusChanged bridge, out of scope
+        // until messaging. Manual matrix (Part D) confirms empirically.
+        && !(dashWeb_ != nullptr && dashWeb_->hasKeyboardFocus(true)))
     {
         auto s = processorRef.getCaptureState();
         if (s == CaptureState::Capturing)

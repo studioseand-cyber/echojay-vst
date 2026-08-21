@@ -135,7 +135,13 @@ class EchoJayAPI
 public:
     EchoJayAPI();
     ~EchoJayAPI();
-    
+
+    // The base URL the plugin talks to: dev.json's baseUrl under the dev
+    // transport, production otherwise. Exposed so the Dashboard webview
+    // (Source/DashboardWeb) loads the SAME host the API uses — never a second
+    // hardcoded server. Static: same answer for every instance.
+    static juce::String pluginBaseUrl();
+
     // ============ Auth ============
     
     // Login with email/password (async)
@@ -801,6 +807,18 @@ public:
                     std::function<void(const juce::var&, int)> cb)
     {
         if (isLoggedIn()) getJSON("/api/v2/chains/" + id, std::move(cb));
+        else if (cb) juce::MessageManager::callAsync([cb]{ cb(juce::var(), 401); });
+    }
+
+    // POST /api/v2/shares/:slug/import -> { chainId } (copies slots+state into a
+    // chain of your own). importShare ON YOUR OWN SHARE is NOT an error: it
+    // answers { imported:false, reason:'own_share', chainId } and that chainId
+    // is exactly what the caller wants next (§5a). Either way the response
+    // carries `chainId`. Shaped like fetchChain/deleteChain; empty JSON body.
+    void importShare(const juce::String& slug,
+                     std::function<void(const juce::var&, int)> cb)
+    {
+        if (isLoggedIn()) postJSON("/api/v2/shares/" + slug + "/import", "{}", std::move(cb));
         else if (cb) juce::MessageManager::callAsync([cb]{ cb(juce::var(), 401); });
     }
 
