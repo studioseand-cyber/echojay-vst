@@ -506,7 +506,7 @@ void LinkEditor::showChainPluginPicker()
 
     // P13 (17 Aug 2026): the searchable picker shared with the main plugin
     auto safeThis = juce::Component::SafePointer<LinkEditor>(this);
-    ChainPluginPicker::show(chainPanel.addBlock, avail,
+    ChainPluginPicker::show(chainPanel.addBlock, *this, avail,
         [safeThis](const juce::PluginDescription& desc)
         {
             if (safeThis == nullptr) return;

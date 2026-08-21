@@ -104,12 +104,23 @@ public:
         g.drawText("up/down select   Return add   Esc close", hint_, juce::Justification::centredRight);
     }
 
-    // Show in a CallOutBox pointing at `target`. The box owns the picker.
-    static void show(juce::Component& target, juce::Array<juce::PluginDescription> items, PickFn onPick)
+    // Show in a CallOutBox pointing at `target`, EMBEDDED in `parent` (the
+    // plugin editor). PARENTED ON PURPOSE (21 Aug 2026): a desktop-parented
+    // CallOutBox inside the AU hosting XPC process is killed ~200ms after
+    // opening by JUCE's foreground watchdog (CallOutBoxCallback::
+    // timerCallback dismisses when isForegroundOrEmbeddedProcess is false,
+    // and a background XPC process is never the foreground app). An embedded
+    // box passes that check. Fits: the box (~470x540 with chrome) is inside
+    // both editors' 900x580 minimum. Never pass nullptr here again.
+    static void show(juce::Component& target, juce::Component& parent,
+                     juce::Array<juce::PluginDescription> items, PickFn onPick)
     {
         auto picker = std::make_unique<ChainPluginPicker>(std::move(items), std::move(onPick));
         auto* raw = picker.get();
-        auto& box = juce::CallOutBox::launchAsynchronously(std::move(picker), target.getScreenBounds(), nullptr);
+        auto& box = juce::CallOutBox::launchAsynchronously(
+            std::move(picker),
+            parent.getLocalArea(&target, target.getLocalBounds()),
+            &parent);
         box.setDismissalMouseClicksAreAlwaysConsumed(true);
         raw->box_ = &box;
     }

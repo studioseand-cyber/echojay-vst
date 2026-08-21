@@ -358,6 +358,31 @@ int main()
     }
 
     // =======================================================================
+    std::printf ("== desktop-window watchdog: both surfaces parented ==\n");
+    {
+        // A desktop-parented CallOutBox/PopupMenu inside the AU hosting XPC
+        // process is dismissed ~200ms in by JUCE's foreground watchdog
+        // (juce_CallOutBox.cpp CallOutBoxCallback::timerCallback). The two
+        // fixed surfaces must stay EMBEDDED, pinned by source.
+        auto slurp = [] (const char* p)
+        { std::ifstream f (p); std::stringstream s; s << f.rdbuf(); return juce::String (s.str()); };
+        const auto picker = slurp ("Source/ChainPluginPicker.h");
+        check (picker.contains ("&parent);")
+                 && ! picker.contains ("target.getScreenBounds(), nullptr)"),
+               "the plugin picker's CallOutBox is parented, never desktop");
+        const auto ed = slurp ("Source/PluginEditor.cpp");
+        check (ed.contains ("ChainPluginPicker::show(chainListPanel.addBlock, *this"),
+               "the main editor passes itself as the picker's parent");
+        check (slurp ("Source/LinkEditor.cpp")
+                   .contains ("ChainPluginPicker::show(chainPanel.addBlock, *this"),
+               "the Link editor passes itself as the picker's parent");
+        const int rackMenu = ed.indexOf ("withTargetComponent(chainListPanel.rackBtn)");
+        check (rackMenu >= 0
+                 && ed.substring (rackMenu, rackMenu + 200).contains ("withParentComponent(this)"),
+               "the rack selector menu is parented to the editor");
+    }
+
+    // =======================================================================
     std::printf ("== rack mix on the borrowed host ==\n");
     {
         // Functional half of finding #1's gate: the borrowed host reports

@@ -7551,7 +7551,12 @@ void EchoJayEditor::showChainRackMenu()
         uids.push_back(e.info.uid);
     }
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(chainListPanel.rackBtn),
+    // withParentComponent: same foreground-watchdog defect as the picker's
+    // CallOutBox — a desktop-parented menu inside the background AU hosting
+    // process dismisses on its own. Embedded menus do not.
+    m.showMenuAsync(juce::PopupMenu::Options()
+                        .withTargetComponent(chainListPanel.rackBtn)
+                        .withParentComponent(this),
         [safeThis, uids](int r)
         {
             if (safeThis == nullptr || r <= 0) return;
@@ -27432,7 +27437,7 @@ void EchoJayEditor::showChainPluginPicker()
     // P13 (17 Aug 2026): the searchable picker (ChainPluginPicker.h) in
     // place of a 1400-row PopupMenu; type to filter, keyboard first.
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    ChainPluginPicker::show(chainListPanel.addBlock, plugins,
+    ChainPluginPicker::show(chainListPanel.addBlock, *this, plugins,
         [safeThis](const juce::PluginDescription& picked)
         {
             if (safeThis == nullptr) return;
