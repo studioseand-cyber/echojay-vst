@@ -1823,6 +1823,11 @@ private:
             the left end of the rack strip, labelling the blocks beside it,
             mirroring the master MIX knob at the other end. */
         juce::TextButton      rackBtn { "RACK" };
+        // Whole-rack borrow (step 2): visible only when the view is a
+        // borrow-capable Link's rack this main holds the lock on. Text and
+        // visibility are the one author's (refreshChainPanelForView).
+        juce::TextButton      borrowBtn { "BORROW" };
+        std::function<void()> onBorrowClick;
         std::function<void()> onRackClick;
         static constexpr int  kRackSelW = 150;   // reserved left of the strip
 
@@ -1940,6 +1945,13 @@ private:
                                "The Link mixer follows the same selection.");
             rackBtn.onClick = [this] { if (onRackClick) onRackClick(); };
             addAndMakeVisible(rackBtn);
+            borrowBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
+            borrowBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffFFB020));
+            borrowBtn.setTooltip("Borrow this rack: the Link streams dry and the whole "
+                                 "chain runs here, solo, editable. Release hands it back. "
+                                 "Nothing is written to the Link until Apply (a later step).");
+            borrowBtn.onClick = [this] { if (onBorrowClick) onBorrowClick(); };
+            addChildComponent(borrowBtn);   // one author shows it
 
             addAndMakeVisible(stripView);
             stripView.setViewedComponent(&stripContent, false);
@@ -2652,6 +2664,7 @@ private:
             // narrow the window gets. Same shape as the master knob's
             // reservation at the right end.
             rackBtn.setBounds(8, getHeight() - kStripH + 8, kRackSelW - 16, 24);
+            borrowBtn.setBounds(8, getHeight() - kStripH + 36, kRackSelW - 16, 22);
             // Pre-gain knob at the HEAD of the strip, left of the first block:
             // its position says what it does (the signal enters here). Shown
             // in local AND remote (a selected rack has a pre-gain too), so it
@@ -4090,9 +4103,10 @@ private:
         the panel must render differently. */
     struct ChainRackView {
         std::vector<ChainHost::SlotInfo> slots;
-        bool valid   = false;      // false = no readable sidecar
-        bool remote  = false;
-        bool offline = false;
+        bool valid    = false;     // false = no readable sidecar
+        bool remote   = false;
+        bool borrowed = false;     // step 2: the view is the borrowed host
+        bool offline  = false;
         juce::String name;         // display name of the rack's owner
         int  revision = -1;
     };
@@ -4132,6 +4146,9 @@ private:
     juce::String lastAddLine_;     // the author's own last write, so it can
                                    // retire text that stopped being true
     void showChainRackMenu();
+    // Whole-rack borrow, step 2 (solo, no commit).
+    void toggleBorrow();
+    void startBorrow(const juce::String& uid);
 
     std::map<juce::String, LinkStripState> linkStripStates_;
     LinkStripState linkHostStrip_;         // the Mix Bus (this instance) row

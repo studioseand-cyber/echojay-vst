@@ -1919,6 +1919,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 return processorRef.editCreateEditor();
             return nullptr;
         }
+        // Borrowed view: the plugin lives in the borrowed host — its editor
+        // opens from there, which is the whole point of solo borrow.
+        if (auto* bh = processorRef.borrowHostIfActiveFor(chainViewUid()))
+            return bh->createEditorForSlot(i);
         return processorRef.getChainHost().createEditorForSlot(i);
     };
     chainListPanel.onSelectSlot = [this](int i) { chainSelectedSlot_ = i; };
@@ -1927,6 +1931,16 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         // destroy (the AMEK EQ 250 segfault); a remote remove needs none of
         // that, because nothing in this process is being destroyed.
         const juce::String uid = chainViewUid();
+        // Borrow (step 2): STRUCTURE stays out of scope — settings and
+        // bypass are the borrow's edits; a removed slot could not be
+        // committed back and would falsify the chain. Refused with a reason.
+        if (processorRef.borrowHostIfActiveFor(uid) != nullptr)
+        {
+            chainListPanel.statusText = "A borrowed rack keeps its shape - "
+                "bypass and settings edit here; structure stays the Link's.";
+            chainListPanel.repaint();
+            return;
+        }
         if (uid.isNotEmpty()) { sendRackEdit(uid, i, true); return; }
         auto& ch = processorRef.getChainHost();
         if (i < 0 || i >= ch.getNumSlots() || chainRemovePending_) return;
@@ -1957,6 +1971,16 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         // a line after this test, which is why the local path cannot pick up
         // remote behaviour.
         const juce::String uid = chainViewUid();
+        // Borrow: bypass acts on the BORROWED chain, locally — this is the
+        // engagement check's control (bypass the borrowed rack, hear dry).
+        if (auto* bh = processorRef.borrowHostIfActiveFor(uid))
+        {
+            if (i < 0 || i >= bh->getNumSlots()) return;
+            bh->setSlotBypassed(i, !bh->getSlotInfo(i).bypassed);
+            refreshChainPanelForView(false);   // borrowed revision is in the sig
+            repaint();
+            return;
+        }
         if (uid.isNotEmpty()) { sendRackEdit(uid, i, false); return; }
         auto& ch = processorRef.getChainHost();
         if (i < 0 || i >= ch.getNumSlots()) return;
@@ -1967,7 +1991,8 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chainListPanel.onMoveSlot = [this](int i, int dir) {
         // Stage 2: the move op exists but is not wired this pass. Disabled in
         // the panel; guarded here so a remote view can never reorder the
-        // LOCAL rack by mistake.
+        // LOCAL rack by mistake. A BORROWED view keeps its shape too (order
+        // is what the borrow exists to preserve), same guard.
         if (chainViewUid().isNotEmpty()) return;
         auto& ch = processorRef.getChainHost();
         int j = i + dir;
@@ -1988,12 +2013,19 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chainListPanel.onSlotWet = [this](int i, float v) {
         // Stage 2. There is no wet op, so a remote rack must not silently
         // write the LOCAL one; the knob is hidden in remote mode and this
-        // guard is the second lock on the same door.
-        if (chainViewUid().isNotEmpty()) return;
+        // guard is the second lock on the same door. A BORROWED rack is
+        // local-editable: wet writes go to the borrowed host.
+        const juce::String uid = chainViewUid();
+        if (auto* bh = processorRef.borrowHostIfActiveFor(uid))
+        { bh->setSlotWet(i, v); return; }
+        if (uid.isNotEmpty()) return;
         processorRef.getChainHost().setSlotWet(i, v);
     };
     chainListPanel.onMasterWet = [this](float v) {
-        if (chainViewUid().isNotEmpty()) return;
+        const juce::String uid = chainViewUid();
+        if (auto* bh = processorRef.borrowHostIfActiveFor(uid))
+        { bh->setMasterWet(v); return; }
+        if (uid.isNotEmpty()) return;
         processorRef.getChainHost().setMasterWet(v);
     };
     // Pre-chain gain: driven by the rack-head PreGainKnob (18 Aug 2026),
@@ -2044,6 +2076,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // label is derived from chainViewUid() on every refresh, so it cannot
     // disagree with the mixer.
     chainListPanel.onRackClick = [this] { showChainRackMenu(); };
+    chainListPanel.onBorrowClick = [this] { toggleBorrow(); };
     chainListPanel.onRemoteEditorRequest = [this](int slotIdx)
     {
         const juce::String uid = chainViewUid();
@@ -7243,6 +7276,21 @@ EchoJayEditor::ChainRackView EchoJayEditor::chainRackView() const
         return v;
     }
 
+    // BORROWED VIEW (step 2): while this uid's rack is borrowed, the view IS
+    // the borrowed host — local editing semantics against the borrowed
+    // chain, rendered by the same one author. Not remote: the plugins are
+    // HERE now, and bypass/wet act on them directly.
+    if (auto* bh = processorRef.borrowHostIfActiveFor(uid))
+    {
+        v.slots    = bh->getAllSlotInfos();
+        v.valid    = true;
+        v.remote   = false;
+        v.borrowed = true;
+        v.name     = processorRef.resolveLinkDisplayName(uid) + " (borrowed)";
+        v.revision = bh->getChainRevision();
+        return v;
+    }
+
     v.remote = true;
     // Name and connectivity come from the SAME display list the mixer reads,
     // so a Link is called one thing on both surfaces.
@@ -7375,7 +7423,8 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
     // why their authors call with force = true.
     juce::String sig;
     sig << chainViewUid() << "|" << v.revision << "|" << (int) v.valid
-        << (int) v.offline << (int) writeLocked << "|" << (int) v.slots.size() << "|"
+        << (int) v.offline << (int) writeLocked << (int) v.borrowed
+        << "|" << (int) v.slots.size() << "|"
         << chainSelectedSlot_ << "|" << pendingNote << "|" << lockLine;
     if (!force && sig == chainViewSig_) return;
     chainViewSig_ = sig;
@@ -7392,6 +7441,22 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
     chainListPanel.remoteOffline = v.offline;
     chainListPanel.remoteWriteLocked  = writeLocked;
     chainListPanel.remoteWriteLockWhy = lockLine;
+    // Borrow affordance (step 2), one author: offered ONLY against a Link
+    // that announces borrowCapable — an old binary is never offered, so it
+    // can never half-engage (the wire-level refusal is the belt; this is
+    // the braces, both pinned in the gates).
+    {
+        bool capable = false;
+        if (v.remote && v.valid)
+            if (auto it = processorRef.linkRackCache.find(chainViewUid());
+                it != processorRef.linkRackCache.end())
+                capable = it->second.rack.borrowCapable;
+        const bool showBorrow = v.borrowed
+            || (v.remote && v.valid && !v.offline && capable
+                && processorRef.rackLockHeldFor(chainViewUid()));
+        chainListPanel.borrowBtn.setVisible(showBorrow);
+        chainListPanel.borrowBtn.setButtonText(v.borrowed ? "RELEASE" : "BORROW");
+    }
     if (noData)
     {
         // NO DATA, said in words, and NOT an empty rack. The panel is given
@@ -7525,6 +7590,221 @@ void EchoJayEditor::showChainRackMenu()
             }
             safeThis->refreshChainPanelForView(true);
         });
+}
+
+// ---------------------------------------------------------------------------
+// Whole-rack borrow, step 2 — engage (pull all, build, solo) and release.
+// SOLO ONLY, NO COMMIT: nothing here writes state back to the Link. The only
+// Link-bound writes are the pull COMMANDS (reads by protocol) and the lease
+// file the processor renews; borrowhost_test pins the absence of any commit
+// key by source.
+// ---------------------------------------------------------------------------
+void EchoJayEditor::toggleBorrow()
+{
+    const juce::String uid = chainViewUid();
+    if (processorRef.borrowHostIfActiveFor(uid) != nullptr)
+    {
+        processorRef.borrowRelease();
+        chainListPanel.statusText = "Released - " +
+            processorRef.resolveLinkDisplayName(uid) + " owns its rack again. "
+            "Edits here were NOT applied (Apply comes in a later step).";
+        refreshChainPanelForView(true);
+        return;
+    }
+    startBorrow(uid);
+}
+
+void EchoJayEditor::startBorrow(const juce::String& uid)
+{
+    auto say = [this](const juce::String& t)
+    { chainListPanel.statusText = t; chainListPanel.repaint(); };
+
+    if (uid.isEmpty() || processorRef.borrowActive()) return;
+    // The offer gate, re-checked at the entry (the button's visibility is
+    // the same author's, but a guard beats a convention): lock held,
+    // sidecar valid, and the Link ANNOUNCES borrowCapable — an old binary
+    // is never engaged, so it can never half-engage.
+    if (! processorRef.rackLockHeldFor(uid))
+    { say("Cannot borrow: this rack's lock is not held here."); return; }
+    auto it = processorRef.linkRackCache.find(uid);
+    if (it == processorRef.linkRackCache.end() || !it->second.valid)
+    { say("Cannot borrow: this Link has not published its rack."); return; }
+    if (! it->second.rack.borrowCapable)
+    { say("Cannot borrow: " + processorRef.resolveLinkDisplayName(uid)
+          + " is running an older EchoJay Link that cannot lend its rack. "
+            "Update it."); return; }
+
+    struct PullState {
+        juce::String uid;
+        std::vector<LinkShm::RackSidecarSlot> slots;
+        juce::StringArray states;          // b64 per slot, parallel
+        int idx = 0, baseSeq = 0;
+        juce::int64 totalBytes = 0;
+        juce::StringArray failures;        // named list for the §5e refusal
+    };
+    auto st = std::make_shared<PullState>();
+    st->uid     = uid;
+    st->slots   = it->second.rack.slots;
+    st->baseSeq = (int) (juce::Time::currentTimeMillis() / 1000);
+    say("Borrowing " + processorRef.resolveLinkDisplayName(uid) + ": reading "
+        + juce::String((int) st->slots.size()) + " plugin(s)...");
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    auto finish = std::make_shared<std::function<void()>>();
+    auto step   = std::make_shared<std::function<void()>>();
+
+    *finish = [safeThis, st]()
+    {
+        if (safeThis == nullptr) return;
+        auto say2 = [&](const juce::String& t)
+        { safeThis->chainListPanel.statusText = t; safeThis->chainListPanel.repaint(); };
+        // §5e, decided: refuse with a named list — no partial borrow. A rack
+        // minus a slot is a chain that does not exist.
+        if (! st->failures.isEmpty())
+        { say2("Not borrowed - " + juce::String(st->failures.size())
+               + " plugin(s) could not come across: "
+               + st->failures.joinIntoString("; ")
+               + ". Nothing was engaged."); return; }
+        if (st->totalBytes > (juce::int64) LinkShm::kLinkTransferMaxTotalBytes)
+        { say2("Not borrowed - the rack's settings total "
+               + juce::File::descriptionOfSizeInBytes(st->totalBytes)
+               + ", over the "
+               + juce::File::descriptionOfSizeInBytes((juce::int64) LinkShm::kLinkTransferMaxTotalBytes)
+               + " whole-chain budget. Nothing was engaged."); return; }
+
+        auto& proc = safeThis->processorRef;
+        const juce::String leaseId =
+            st->uid + "-rack-" + juce::String(juce::Time::currentTimeMillis());
+        proc.borrowEngageBegin(st->uid, leaseId);
+        auto* bh = proc.borrowHost();
+
+        juce::Array<juce::var> slotsArr;
+        auto* statesObj = new juce::DynamicObject();
+        for (int i = 0; i < (int) st->slots.size(); ++i)
+        {
+            const auto& s = st->slots[(size_t) i];
+            auto* o = new juce::DynamicObject();
+            o->setProperty("n",        i + 1);
+            o->setProperty("plugin",   s.name);
+            o->setProperty("bypassed", s.bypassed);
+            o->setProperty("wet",      s.wet);
+            // Identity rides for stateFitsPlugin's match + apply-time re-check.
+            if (s.format.isNotEmpty())  o->setProperty("format",  s.format);
+            if (s.uid.isNotEmpty())     o->setProperty("uid",     s.uid);
+            if (s.version.isNotEmpty()) o->setProperty("version", s.version);
+            slotsArr.add(juce::var(o));
+            if (st->states[i].isNotEmpty())
+                statesObj->setProperty(juce::String(i + 1), st->states[i]);
+        }
+        const int want = (int) st->slots.size();
+        auto settled = std::make_shared<int>(0);
+        // isDisabledByName deliberately {}: the borrow mirrors the LINK's
+        // rack, not this machine's disabled list.
+        bh->restoreSavedChain(juce::var(slotsArr), juce::var(statesObj),
+            [safeThis, st, want, settled]()
+        {
+            if (safeThis == nullptr) return;
+            if (++(*settled) < want) { safeThis->refreshChainPanelForView(true); return; }
+            auto& p2 = safeThis->processorRef;
+            auto* bh2 = p2.borrowHost();
+            // The honesty gate before any sound: every slot loaded, or the
+            // whole borrow backs out — a partial chain is §2's falsified mix.
+            if (bh2->getNumSlots() != want)
+            {
+                juce::String why = bh2->getStateNotes().joinIntoString("; ");
+                p2.borrowRelease();
+                safeThis->chainListPanel.statusText =
+                    "Borrow released - the chain could not be rebuilt here ("
+                    + juce::String(bh2->getNumSlots()) + " of "
+                    + juce::String(want) + " loaded): " + why;
+                safeThis->refreshChainPanelForView(true);
+                return;
+            }
+            p2.borrowAudioOn();
+            safeThis->chainListPanel.statusText =
+                "Borrowed " + p2.resolveLinkDisplayName(st->uid)
+                + " - SOLO. You are hearing that channel through the borrowed "
+                  "chain, live. Edits are audible and UNCOMMITTED; Release "
+                  "hands the rack back unchanged.";
+            safeThis->refreshChainPanelForView(true);
+        });
+        // Empty rack: no slots to settle, engage the (dry) solo directly.
+        if (want == 0)
+        {
+            proc.borrowAudioOn();
+            safeThis->refreshChainPanelForView(true);
+        }
+    };
+
+    *step = [safeThis, st, step, finish]()
+    {
+        if (safeThis == nullptr) return;
+        if (st->idx >= (int) st->slots.size()) { (*finish)(); return; }
+        int err = 0;
+        const juce::String dir = LinkShm::resolveDir(err);
+        if (dir.isEmpty())
+        { st->failures.add("shared Link folder unavailable"); (*finish)(); return; }
+        const int seq = st->baseSeq + st->idx;
+        auto* cmd = new juce::DynamicObject();
+        cmd->setProperty("v",             1);
+        cmd->setProperty("seq",           seq);
+        cmd->setProperty("pullSlotState", st->idx + 1);
+        juce::File(dir + "ctrl-ack-" + st->uid + ".json").deleteFile();
+        juce::File(dir + "ctrl-cmd-" + st->uid + ".json")
+            .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+
+        auto poll = std::make_shared<std::function<void(int)>>();
+        *poll = [safeThis, st, step, finish, poll, seq, dir](int attemptsLeft)
+        {
+            juce::Timer::callAfterDelay(250, [safeThis, st, step, finish, poll, seq, dir, attemptsLeft]
+            {
+                if (safeThis == nullptr) return;
+                const juce::String slotName =
+                    st->idx < (int) st->slots.size()
+                        ? st->slots[(size_t) st->idx].name : juce::String("?");
+                juce::File ack(dir + "ctrl-ack-" + st->uid + ".json");
+                if (ack.existsAsFile())
+                {
+                    auto v = juce::JSON::parse(ack.loadFileAsString());
+                    if (auto* o = v.getDynamicObject(); o != nullptr
+                        && (int) o->getProperty("seq") == seq)
+                    {
+                        ack.deleteFile();
+                        if (! o->hasProperty("pulledState"))
+                        {
+                            // Old-Link echo-absence: the refusal arm, named.
+                            st->failures.add(slotName + " (this Link's build "
+                                             "cannot hand plugins over)");
+                        }
+                        else if (! (bool) o->getProperty("pulledState"))
+                            st->failures.add(slotName + " ("
+                                + o->getProperty("slotStateErr").toString() + ")");
+                        else
+                        {
+                            const juce::String b64 = o->getProperty("slotState").toString();
+                            st->states.set(st->idx, b64);
+                            st->totalBytes += (juce::int64) b64.length() * 3 / 4;
+                        }
+                        ++st->idx;
+                        (*step)();
+                        return;
+                    }
+                }
+                if (attemptsLeft <= 1)
+                {
+                    st->failures.add(slotName + " (no answer from the Link)");
+                    ++st->idx;
+                    (*step)();
+                    return;
+                }
+                (*poll)(attemptsLeft - 1);
+            });
+        };
+        (*poll)(20);
+    };
+    for (int i = 0; i <= (int) st->slots.size(); ++i)
+        st->states.add({});            // pre-sized; set(idx) then overwrites
+    (*step)();
 }
 
 void EchoJayEditor::sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemove)
@@ -20396,8 +20676,12 @@ void EchoJayEditor::timerCallback()
     // other tab (or the local rack) clears it, which deletes the lock file
     // immediately. Editor destruction clears it too; a crash is covered by
     // the 3s expiry. This is the "editor gates" half of the design.
+    // A live borrow PINS the lock to its own uid (spec §4): switching tabs
+    // or racks mid-borrow must not drop the lock while the lease holds, or
+    // the Link's UI would unlock under an engaged borrow.
     processorRef.setRackLockWant(
-        currentTab == Tab::Chain && chainListPanel.isVisible()
+        processorRef.borrowActive() ? processorRef.borrowUid()
+        : currentTab == Tab::Chain && chainListPanel.isVisible()
             ? chainViewUid() : juce::String());
 
     if (currentTab == Tab::Chain && chainListPanel.isVisible())
@@ -27109,6 +27393,15 @@ void EchoJayEditor::showChainPluginPicker()
             // swapped name would also ask the Link for a build it may not
             // have, turning a working add into a spurious refusal.
             const juce::String rackUid = safeThis->chainViewUid();
+            // Borrow: structure stays the Link's (same refusal as remove).
+            if (safeThis->processorRef.borrowHostIfActiveFor(rackUid) != nullptr)
+            {
+                safeThis->chainListPanel.statusText =
+                    "A borrowed rack keeps its shape - bypass and settings "
+                    "edit here; structure stays the Link's.";
+                safeThis->chainListPanel.repaint();
+                return;
+            }
             if (rackUid.isNotEmpty())
             {
                 // NO direct status write here (fix 3): the line is DERIVED

@@ -476,6 +476,10 @@ EchoJayProcessor::~EchoJayProcessor()
         }
         editEnd(false);
     }
+    // Borrow: a dying host releases cleanly — lease deleted so the Link
+    // restores its bypasses NOW rather than at the 3s expiry. No state is
+    // written back (step 2 has no commit path at all).
+    borrowRelease();
     // Rack lock: delete rather than expire — same reason as the lease above.
     // setRackLockWant({}) stops the renew timer and deletes the lock file.
     setRackLockWant({});
@@ -554,6 +558,12 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     hostSampleRate_      = sampleRate;
     hostSamplesPerBlock_ = samplesPerBlock;
     chainHost.prepare(sampleRate, samplesPerBlock);
+    // Borrow solo crossfade: a REAL 30ms ramp (the busGainSmoothed_ idiom
+    // above — note editSoloMix_ never got this and is instant, recorded as
+    // a pre-existing Stage 1 defect, not fixed in step 2).
+    borrowSoloMix_.reset(sampleRate, 0.030);
+    if (borrowHost_ != nullptr)
+        borrowHost_->prepare(sampleRate, samplesPerBlock);
 }
 
 void EchoJayProcessor::releaseResources()
@@ -871,6 +881,38 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                 // end-of-block overwrite. Capture cannot also be running
                 // (mutual exclusion at both start sites), so stealing the
                 // slot from the drain corrupts nothing.
+                // Step 2 BORROW: this Link's ring belongs to the borrow
+                // session — consume into the borrow scratch and run the
+                // whole borrowed CHAIN on it, unconditionally (no
+                // try-and-skip: the borrowed host is a session-long member
+                // and its graph carries the same prepare/process
+                // synchronization the main chainHost's does — spec §3).
+                if (li == borrowSession_.ringSlot.load(std::memory_order_relaxed)
+                    && borrowSession_.audioOn.load(std::memory_order_acquire))
+                {
+                    const int want = buffer.getNumSamples();
+                    if (borrowBuf_.getNumSamples() >= want && borrowHost_ != nullptr)
+                    {
+                        auto* hdr = LinkShm::ringHeader(ls.map);
+                        if (LinkShm::loadAcquire(&hdr->writeIdx)
+                              - LinkShm::loadRelaxed(&hdr->readIdx) > kEditReseekTrip)
+                            LinkShm::ringSeekForward(ls.map, kEditCushionFrames);
+                        const uint32_t n = LinkShm::ringConsume(ls.map,
+                                              borrowBuf_.getWritePointer(0),
+                                              borrowBuf_.getWritePointer(1), want);
+                        ls.framesRead.fetch_add((int64_t) n, std::memory_order_relaxed);
+                        for (int ch = 0; ch < 2; ++ch)
+                            if ((int) n < want)
+                                borrowBuf_.clear(ch, (int) n, want - (int) n);
+                        juce::MidiBuffer noMidi;
+                        // The whole borrowed chain, in order, on the dry stream.
+                        juce::AudioBuffer<float> view(borrowBuf_.getArrayOfWritePointers(),
+                                                      2, 0, want);
+                        borrowHost_->process(view, noMidi);
+                    }
+                    ls.lock.exit();
+                    continue;
+                }
                 if (li == editSession_.ringSlot.load(std::memory_order_relaxed)
                     && editSession_.audioOn.load(std::memory_order_acquire))
                 {
@@ -1098,6 +1140,34 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                 while (st > curST && !capMaxShortTerm.compare_exchange_weak(curST, st)) {}
             }
         }
+    }
+
+    // ===== Step 2 BORROW SOLO: the borrowed chain replaces the mix =======
+    // Same crossfade idiom as the edit-session solo below, its own fields:
+    // a borrow (Link B) and a slot edit session (Link A) can coexist, so
+    // they must not share a scratch buffer or a ramp.
+    {
+        const bool on = borrowSession_.audioOn.load(std::memory_order_acquire);
+        borrowSoloMix_.setTargetValue(on ? 1.0f : 0.0f);
+        if (on || borrowSoloMix_.getCurrentValue() > 0.0001f)
+        {
+            const int nS = buffer.getNumSamples();
+            const bool have = borrowHost_ != nullptr
+                           && borrowBuf_.getNumSamples() >= nS;
+            for (int i = 0; i < nS; ++i)
+            {
+                const float g = borrowSoloMix_.getNextValue();
+                for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                {
+                    const float solo = have
+                        ? borrowBuf_.getSample(std::min(ch, 1), i) : 0.0f;
+                    float* out = buffer.getWritePointer(ch);
+                    out[i] = out[i] * (1.0f - g) + solo * g;
+                }
+            }
+        }
+        else
+            borrowSoloMix_.skip(buffer.getNumSamples());
     }
 
     // ===== Stage 1 SOLO: the last word on the buffer =====================
@@ -1567,6 +1637,114 @@ struct EchoJayProcessor::EditLeaseTimer : juce::Timer
     explicit EditLeaseTimer(EchoJayProcessor& proc) : p(proc) {}
     void timerCallback() override { p.renewEditLease(); }
 };
+
+// ---------------------------------------------------------------------------
+// Whole-rack borrow, step 2 — solo only, no commit. Nothing here writes
+// state back to the Link: the ONLY file this session writes is the lease
+// (renewBorrowLease), and the only deletion is that same file on release.
+// borrowhost_test pins that by source.
+// ---------------------------------------------------------------------------
+struct EchoJayProcessor::BorrowLeaseTimer : juce::Timer
+{
+    EchoJayProcessor& p;
+    explicit BorrowLeaseTimer(EchoJayProcessor& proc) : p(proc) {}
+    void timerCallback() override { p.renewBorrowLease(); }
+};
+
+ChainHost* EchoJayProcessor::borrowHost()
+{
+    if (borrowHost_ == nullptr)
+    {
+        borrowHost_ = std::make_unique<ChainHost>(ChainHost::Mode::Borrowed);
+        borrowHost_->prepare(hostSampleRate_ > 0 ? hostSampleRate_ : 44100.0,
+                             hostSamplesPerBlock_ > 0 ? hostSamplesPerBlock_ : 512);
+    }
+    return borrowHost_.get();
+}
+
+ChainHost* EchoJayProcessor::borrowHostIfActiveFor(const juce::String& uid)
+{
+    return (borrowActive() && borrowSession_.uid == uid) ? borrowHost_.get() : nullptr;
+}
+
+void EchoJayProcessor::renewBorrowLease()
+{
+    if (!borrowActive()) return;
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty()) return;
+    auto* o = new juce::DynamicObject();
+    o->setProperty("v",       1);
+    o->setProperty("leaseId", borrowSession_.leaseId);
+    // slot 0 + scope "rack": a capable Link engages the whole rack; an old
+    // binary never parses scope, sees slot 0, and its own validity check
+    // refuses — it cannot half-engage (LeaseScope, pinned in racklock_test).
+    o->setProperty("slot",    0);
+    o->setProperty("scope",   "rack");
+    o->setProperty("tMs",     juce::Time::currentTimeMillis());
+    juce::File(LinkShm::leasePath(dir, borrowSession_.uid))
+        .replaceWithText(juce::JSON::toString(juce::var(o), true));
+}
+
+void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
+                                         const juce::String& leaseId)
+{
+    if (borrowActive() || uid.isEmpty()) return;
+    borrowHost();                                    // exists + prepared
+    borrowBuf_.setSize(2, 8192);                     // allocated HERE, never on audio
+    borrowSession_.uid     = uid;
+    borrowSession_.leaseId = leaseId;
+
+    // Bind the ring, editBegin's idiom: seek to the cushion so the audition
+    // starts near live rather than at the backlog.
+    int ringSlot = -1;
+    for (int i = 0; i < kMaxLinkSlots; ++i)
+        if (activeLinkSlots[i].map != nullptr && activeLinkSlots[i].uid == uid)
+            { ringSlot = i; break; }
+    if (ringSlot >= 0)
+    {
+        const juce::SpinLock::ScopedLockType sl(activeLinkSlots[ringSlot].lock);
+        if (activeLinkSlots[ringSlot].map != nullptr)
+            LinkShm::ringSeekForward(activeLinkSlots[ringSlot].map, kEditCushionFrames);
+    }
+    borrowSession_.ringSlot.store(ringSlot, std::memory_order_relaxed);
+    borrowSession_.active.store(true, std::memory_order_relaxed);
+
+    renewBorrowLease();                              // the file appears NOW
+    if (borrowLeaseTimer_ == nullptr)
+        borrowLeaseTimer_ = std::make_unique<BorrowLeaseTimer>(*this);
+    borrowLeaseTimer_->startTimer((int) LinkShm::kLeaseRenewMs);
+    EchoJay_NSLog(("EJBorrow: engaged uid=" + uid + " ringSlot="
+                   + juce::String(ringSlot)).toRawUTF8());
+}
+
+void EchoJayProcessor::borrowAudioOn()
+{
+    if (!borrowActive()) return;
+    borrowSession_.audioOn.store(true, std::memory_order_release);
+}
+
+void EchoJayProcessor::borrowRelease()
+{
+    if (!borrowActive()) return;
+    // Ramp out first (the AMEK lesson): audioOn drops the crossfade target
+    // to 0; the graph itself stays alive (session-long host), so there is
+    // no instance teardown racing the audio thread here at all.
+    borrowSession_.audioOn.store(false, std::memory_order_release);
+    if (borrowLeaseTimer_) borrowLeaseTimer_->stopTimer();
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isNotEmpty())
+        juce::File(LinkShm::leasePath(dir, borrowSession_.uid)).deleteFile();
+    borrowSession_.active.store(false, std::memory_order_relaxed);
+    const juce::String uid = borrowSession_.uid;
+    borrowSession_.uid.clear();
+    borrowSession_.leaseId.clear();
+    borrowSession_.ringSlot.store(-1, std::memory_order_relaxed);
+    if (borrowHost_) borrowHost_->releaseBorrowToPool();
+    EchoJay_NSLog(("EJBorrow: released uid=" + uid
+                   + " (lease deleted; Link restores its own bypasses)").toRawUTF8());
+}
 
 // ---------------------------------------------------------------------------
 // Rack lock — the main side. See LinkShm.h (RackLock) for the pure decisions

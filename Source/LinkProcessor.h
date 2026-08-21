@@ -505,6 +505,10 @@ private:
     std::atomic<bool>  leaseActive_ { false };
     int                leaseSlot0_       = -1;
     bool               leasePriorBypass_ = false;
+    // Whole-rack lease (step 2): the saved bypass of EVERY slot, restored by
+    // the same Expire/Release arm the slot lease uses. Message thread only.
+    bool               rackLeaseActive_ = false;
+    std::vector<bool>  rackLeasePrior_;
 
     juce::String effectiveFilePart() const;
     juce::String chainInstanceId() const;

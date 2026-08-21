@@ -451,6 +451,40 @@ public:
     struct EditLeaseTimer;
     std::unique_ptr<EditLeaseTimer> editLeaseTimer_;
 
+    // ---- Whole-rack borrow, step 2 (RACK_BORROW_IMPLEMENTATION_SPEC §3/§4)
+    // Solo only, NO COMMIT: edits are audible and uncommitted; nothing in
+    // this step writes state back to the Link (step 3 owns Apply). The
+    // borrowed host is session-long (spec §1); the session engages/releases.
+    ChainHost*   borrowHost();                       // lazy, Mode::Borrowed
+    ChainHost*   borrowHostIfActiveFor(const juce::String& uid);
+    bool         borrowActive() const noexcept
+    { return borrowSession_.active.load(std::memory_order_relaxed); }
+    juce::String borrowUid() const { return borrowSession_.uid; }
+    // Engage half A (message thread): create/prepare the host, bind the ring,
+    // start the rack-scoped lease renew. The EDITOR builds the rack (pulls +
+    // restore) before calling borrowAudioOn().
+    void borrowEngageBegin(const juce::String& uid, const juce::String& leaseId);
+    void borrowAudioOn();
+    // Release: audio off (ramped), lease file deleted (Link restores all
+    // bypasses through its one restore path), instances parked in the pool.
+    void borrowRelease();
+    void renewBorrowLease();                         // scope:"rack", slot:0
+    struct BorrowSession {
+        juce::String uid, leaseId;
+        std::atomic<bool> active   { false };
+        std::atomic<bool> audioOn  { false };
+        std::atomic<int>  ringSlot { -1 };
+    };
+    BorrowSession borrowSession_;
+private:
+    std::unique_ptr<ChainHost> borrowHost_;
+    juce::AudioBuffer<float>   borrowBuf_;
+    juce::SpinLock             borrowLock_;
+    juce::LinearSmoothedValue<float> borrowSoloMix_ { 0.0f };
+    struct BorrowLeaseTimer;
+    std::unique_ptr<BorrowLeaseTimer> borrowLeaseTimer_;
+public:
+
     // ---- Rack lock (21 Aug 2026, RACK_BORROW_REQUIREMENTS §4) -------------
     // PROCESSOR renews, EDITOR gates: the editor declares which rack its
     // Chain tab is actively showing (empty = none), this class writes/renews

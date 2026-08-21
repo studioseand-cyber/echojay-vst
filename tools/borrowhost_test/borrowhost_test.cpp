@@ -311,6 +311,46 @@ int main()
     }
 
     // =======================================================================
+    std::printf ("== step 2: no write-back to the Link, pinned by source ==\n");
+    {
+        // The borrow paths must contain NO commit vocabulary: step 3 owns
+        // Apply, and step 2's contract is that nothing writes state back.
+        // Region-located first — a check that greps an absent region passes
+        // on nothing, which is the silent-no-op failure mode.
+        auto sourceOf = [] (const char* path)
+        {
+            std::ifstream f (path); std::stringstream s; s << f.rdbuf();
+            return juce::String (s.str());
+        };
+        auto region = [] (const juce::String& src, const char* fromMark,
+                          const char* toMark) -> juce::String
+        {
+            const int a = src.indexOf (fromMark);
+            const int b = a >= 0 ? src.indexOf (a, toMark) : -1;
+            return (a >= 0 && b > a) ? src.substring (a, b) : juce::String();
+        };
+        const auto procRegion = region (sourceOf ("Source/PluginProcessor.cpp"),
+            "Whole-rack borrow, step 2", "Rack lock \xe2\x80\x94 the main side");
+        const auto edRegion = region (sourceOf ("Source/PluginEditor.cpp"),
+            "Whole-rack borrow, step 2", "sendBlockEdit");
+        check (procRegion.isNotEmpty(), "processor borrow region located");
+        check (edRegion.isNotEmpty(),   "editor borrow region located");
+        for (const char* key : { "commitState", "commitSlot", "editOps" })
+        {
+            check (! procRegion.contains (key),
+                   juce::String ("processor borrow code has no \"") + key + "\"");
+            check (! edRegion.contains (key),
+                   juce::String ("editor borrow code has no \"") + key + "\"");
+        }
+        // And the only Link-bound writes are the lease + the pull command.
+        check (edRegion.contains ("pullSlotState")
+                 && ! edRegion.contains ("replaceWithText(juce::JSON::toString(juce::var(cmd), true));\n    juce::File(dir + \"ctrl-cmd"),
+               "editor borrow writes only the pull command to ctrl-cmd");
+        check (procRegion.contains ("leasePath"),
+               "processor borrow writes only the lease file");
+    }
+
+    // =======================================================================
     std::printf ("== parked-node cost: prepareToPlay, empty pool vs 10 parked ==\n");
     {
         // A fresh borrowed host so the counters above stay untouched.

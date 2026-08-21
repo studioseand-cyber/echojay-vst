@@ -742,13 +742,19 @@ ChainHost::ChainHost(Mode mode) : mode_(mode)
 
     rebuildGraph(); // passthrough (no slots yet)
 
-    // BORROWED MODE skips the constructor's disk work wholesale (spec §2.1):
-    // plugin resolution rides the PRIMARY host's lists read-only, and even
-    // death-mark CONSUMPTION stays the primary's job — a borrowed host is
-    // created lazily after a primary exists, and consuming here would race
-    // it for the same marker files.
+    // BORROWED MODE (spec §2.1): plugin resolution rides the PRIMARY's lists
+    // read-only — implemented as reading the same shared files the primary
+    // wrote (loadFromDisk and the blacklist are pure reads; the read-only
+    // rule bans WRITES). Skipped: param maps, bootstrap, helper catalogue,
+    // the scan thread, and death-mark CONSUMPTION — that stays the primary's
+    // job; a borrowed host is created lazily after a primary exists, and
+    // consuming here would race it for the same marker files.
     if (mode_ == Mode::Borrowed)
+    {
+        loadFromDisk();
+        reloadBlacklistFromDisk();
         return;
+    }
 
     loadFromDisk();
     loadParamMapsFromDisk();

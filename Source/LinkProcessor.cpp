@@ -244,6 +244,7 @@ void LinkProcessor::publishRackSidecar()
     LinkShm::RackSidecar rc;
     rc.valid     = true;
     rc.uid       = instanceUid_;
+    rc.borrowCapable = true;   // this binary honors the rack-scoped lease
     rc.name      = effectiveDisplayName();
     rc.revision  = rev;
     rc.masterWet = chainHost.getMasterWet();
@@ -267,7 +268,7 @@ void LinkProcessor::publishRackSidecar()
                                  // still holds the lease is the teardown
                                  // signal).
                                  leaseActive_.load(std::memory_order_relaxed)
-                                     && i == leaseSlot0_,
+                                     && (rackLeaseActive_ || i == leaseSlot0_),
                                  // The curve rides on the EQ's OWN slot, so a
                                  // reader never has to guess which entry it
                                  // describes. Every other slot leaves it empty.
@@ -509,6 +510,7 @@ void LinkProcessor::pollEditLease()
 
     juce::String fileId;
     int          fileSlot1 = 0;
+    bool         fileScopeRack = false;
     double       ageMs     = 1.0e12;   // absent reads as infinitely stale
     juce::File f(LinkShm::leasePath(resolvedDir, instanceUid_));
     if (f.existsAsFile())
@@ -518,6 +520,7 @@ void LinkProcessor::pollEditLease()
         {
             fileId    = o->getProperty("leaseId").toString();
             fileSlot1 = (int) o->getProperty("slot");
+            fileScopeRack = o->getProperty("scope").toString() == "rack";
             ageMs     = (double) juce::Time::currentTimeMillis()
                           - (double) (juce::int64) o->getProperty("tMs");
         }
@@ -533,8 +536,36 @@ void LinkProcessor::pollEditLease()
     {
         case LinkShm::LeaseGate::Engage:
         {
+            // THE SCOPE DECISION, through the shared pure helper (step 2):
+            // rack scope on a capable binary engages the whole rack; on an
+            // old binary the same file (slot 0, scope unparsed) falls into
+            // the slot arm and refuses — proven equivalent in racklock_test.
+            const auto scoped = LinkShm::LeaseScope::decide(
+                fileScopeRack, /*binarySupportsRack*/ true,
+                leaseGate_.activeSlot1, chainHost.getNumSlots());
+            if (scoped == LinkShm::LeaseScope::Engage::Rack)
+            {
+                // WHOLE-RACK ENGAGE: save every slot's bypass, bypass all
+                // once, stream dry. setSlotBypassed bumps the revision, so
+                // the sidecar republishes with every slot controlled.
+                rackLeasePrior_.clear();
+                for (int i = 0; i < chainHost.getNumSlots(); ++i)
+                {
+                    rackLeasePrior_.push_back(chainHost.getSlotInfo(i).bypassed);
+                    chainHost.setSlotBypassed(i, true);
+                }
+                rackLeaseActive_ = true;
+                leaseSlot0_      = -1;
+                leaseActive_.store(true, std::memory_order_relaxed);
+                notifyChainModel();
+                EchoJay_NSLog(("EJLease: RACK engaged, " +
+                               juce::String((int) rackLeasePrior_.size())
+                               + " slot(s) bypassed, streaming dry").toRawUTF8());
+                break;
+            }
             const int slot0 = leaseGate_.activeSlot1 - 1;
-            if (slot0 < 0 || slot0 >= chainHost.getNumSlots())
+            if (scoped == LinkShm::LeaseScope::Engage::Refuse
+                || slot0 < 0 || slot0 >= chainHost.getNumSlots())
             {
                 // A lease naming a slot this rack does not have engages
                 // NOTHING: force the gate back to idle so a later valid
@@ -560,14 +591,28 @@ void LinkProcessor::pollEditLease()
         case LinkShm::LeaseGate::Release:
         {
             // ONE restore path for every ending -- clean release, expiry
-            // after a crash, a new id superseding a dead session. Restore
-            // the bypass the user actually had, drop the flags, republish.
+            // after a crash, a new id superseding a dead session -- and for
+            // BOTH scopes: the rack arm restores every slot's saved bypass,
+            // the slot arm restores its one, through this same switch case.
             leaseActive_.store(false, std::memory_order_relaxed);
-            if (leaseSlot0_ >= 0 && leaseSlot0_ < chainHost.getNumSlots())
+            if (rackLeaseActive_)
+            {
+                for (int i = 0; i < chainHost.getNumSlots()
+                                && i < (int) rackLeasePrior_.size(); ++i)
+                    chainHost.setSlotBypassed(i, rackLeasePrior_[(size_t) i]);
+                EchoJay_NSLog(("EJLease: RACK released/expired - "
+                               + juce::String((int) rackLeasePrior_.size())
+                               + " slot bypass state(s) restored").toRawUTF8());
+                rackLeaseActive_ = false;
+                rackLeasePrior_.clear();
+            }
+            else if (leaseSlot0_ >= 0 && leaseSlot0_ < chainHost.getNumSlots())
+            {
                 chainHost.setSlotBypassed(leaseSlot0_, leasePriorBypass_);
+                EchoJay_NSLog("EJLease: released/expired - slot restored");
+            }
             leaseSlot0_ = -1;
             notifyChainModel();
-            EchoJay_NSLog("EJLease: released/expired - slot restored");
             break;
         }
         case LinkShm::LeaseGate::Hold:
@@ -686,11 +731,11 @@ void LinkProcessor::pollControlCommand()
             try { proc->getStateInformation(mb); } catch (...) { threw = true; }
             if (threw)
                 pullErr = "this plugin refused to hand over its settings";
-            else if ((int) mb.getSize() > ChainHost::kApiStateMaxSlotBytes)
+            else if ((int) mb.getSize() > LinkShm::kLinkTransferMaxSlotBytes)
                 pullErr = "this plugin's settings are "
                         + juce::File::descriptionOfSizeInBytes((juce::int64) mb.getSize())
                         + ", over the "
-                        + juce::File::descriptionOfSizeInBytes((juce::int64) ChainHost::kApiStateMaxSlotBytes)
+                        + juce::File::descriptionOfSizeInBytes((juce::int64) LinkShm::kLinkTransferMaxSlotBytes)
                         + " limit, too large to carry";
             else
                 pulledB64 = LinkShm::stateToB64(mb);
@@ -699,13 +744,13 @@ void LinkProcessor::pollControlCommand()
             // and bytes handed to the transport after encoding. The transport
             // is ONE ctrl-ack JSON file, NOT chunked, no framing beyond JSON
             // string quoting; its only cap is the raw-size gate above
-            // (ChainHost::kApiStateMaxSlotBytes, enforced BEFORE encoding).
+            // (LinkShm::kLinkTransferMaxSlotBytes, enforced BEFORE encoding).
             EchoJay_NSLog(("EJPull[" + juce::String(seq) + "] link: raw="
                            + juce::String((juce::int64) mb.getSize())
                            + " bytes from getStateInformation; encoded="
                            + juce::String(pulledB64.length())
                            + " b64 chars; cap="
-                           + juce::String(ChainHost::kApiStateMaxSlotBytes)
+                           + juce::String(LinkShm::kLinkTransferMaxSlotBytes)
                            + " raw bytes; transport=single ctrl-ack JSON, unchunked"
                            + (pullErr.isNotEmpty() ? "; REFUSED: " + pullErr
                                                    : juce::String())).toRawUTF8());

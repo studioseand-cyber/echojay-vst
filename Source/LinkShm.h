@@ -978,7 +978,44 @@ struct RackSidecar {
     float preGainDb = 0.0f;
     bool  preGainUserSet = false;
     bool  preGainInputKnown = false;
+    // Whole-rack borrow capability (step 2, 21 Aug 2026). Additive at v:1:
+    // written true by a binary that honors the rack-scoped lease; absent
+    // reads false, and a main NEVER offers borrow against false — an old
+    // Link must not half-engage (see LeaseScope below for the wire-level
+    // belt to this braces).
+    bool  borrowCapable = false;
     std::vector<RackSidecarSlot> slots;
+};
+
+// =============================================================================
+//  Whole-rack borrow: the third state-transfer tier and the lease scope
+//  (RACK_BORROW_IMPLEMENTATION_SPEC §4/§5, step 2)
+// =============================================================================
+// The Link pull is a LOCAL file between two processes — document-class, not
+// request-class. Its own named pair (spec §5/3c, decided): initialized to the
+// session tier's values, free to diverge, and NEVER aligned with the API tier
+// (anything that leaves the machine keeps kApiState*). Slot cap enforced
+// Link-side before encoding; the TOTAL is a whole-chain budget enforced
+// main-side across the rack pull (over → the borrow REFUSES with a named
+// list, §5e — no partial borrow).
+static constexpr int kLinkTransferMaxSlotBytes  = 4 * 1024 * 1024;
+static constexpr int kLinkTransferMaxTotalBytes = 16 * 1024 * 1024;
+
+// The lease's rack scope rides the EXISTING lease file additively: a rack
+// lease writes scope:"rack" and slot:0. The pure decision below is shared by
+// the Link's engage arm and the test; its old-binary arm is not hypothetical
+// — an old binary never parses `scope`, sees slot1 == 0, and its own
+// slot-validity check refuses the engage. Same outcome, proven both ways.
+struct LeaseScope
+{
+    enum class Engage { Refuse, Slot, Rack };
+    static Engage decide (bool scopeIsRack, bool binarySupportsRack,
+                          int slot1, int numSlots)
+    {
+        if (scopeIsRack)
+            return binarySupportsRack ? Engage::Rack : Engage::Refuse;
+        return (slot1 >= 1 && slot1 <= numSlots) ? Engage::Slot : Engage::Refuse;
+    }
 };
 
 inline juce::String rackSidecarPath(const juce::String& dir, const juce::String& uid)
@@ -1178,6 +1215,7 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
     obj->setProperty("preGainDb",        rc.preGainDb);
     obj->setProperty("preGainUserSet",   rc.preGainUserSet);
     obj->setProperty("preGainInputKnown", rc.preGainInputKnown);
+    if (rc.borrowCapable) obj->setProperty("borrowCapable", true);
     juce::Array<juce::var> slots;
     for (const auto& s : rc.slots)
     {
@@ -1236,6 +1274,7 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
     rc.preGainDb        = obj->hasProperty("preGainDb") ? (float)(double)obj->getProperty("preGainDb") : 0.0f;
     rc.preGainUserSet   = obj->hasProperty("preGainUserSet") && (bool)obj->getProperty("preGainUserSet");
     rc.preGainInputKnown = obj->hasProperty("preGainInputKnown") && (bool)obj->getProperty("preGainInputKnown");
+    rc.borrowCapable     = obj->hasProperty("borrowCapable") && (bool)obj->getProperty("borrowCapable");
     if (auto* arr = obj->getProperty("slots").getArray())
         for (auto& sv : *arr)
             if (auto* so = sv.getDynamicObject())

@@ -77,6 +77,44 @@ int main (int argc, char** argv)
                "absent field reads 0 (old-writer sidecar)");
     }
 
+    std::printf ("== borrowCapable transport (step 2) ==\n");
+    {
+        // Written true by a capable binary; ABSENT reads false — a main
+        // never offers borrow against false, so an old Link is never
+        // engaged (the braces; LeaseScope below is the belt).
+        LinkShm::RackSidecar rc;
+        rc.valid = true; rc.uid = "testuid03"; rc.name = "Cap"; rc.revision = 1;
+        rc.borrowCapable = true;
+        LinkShm::writeRackSidecar (dir, rc);
+        check (LinkShm::readRackSidecar (dir, "testuid03").borrowCapable,
+               "borrowCapable true round-trips");
+        rc.uid = "testuid04"; rc.borrowCapable = false;
+        LinkShm::writeRackSidecar (dir, rc);
+        check (! LinkShm::readRackSidecar (dir, "testuid04").borrowCapable,
+               "absent key reads NOT capable (old-writer sidecar)");
+    }
+
+    std::printf ("== LeaseScope: the rack-scope engage decision (step 2) ==\n");
+    {
+        using LS = LinkShm::LeaseScope;
+        check (LS::decide (true,  true,  0, 3) == LS::Engage::Rack,
+               "rack scope on a capable binary: whole-rack engage");
+        check (LS::decide (true,  false, 0, 3) == LS::Engage::Refuse,
+               "rack scope on an incapable binary: REFUSE (never half-engage)");
+        // THE OLD-BINARY EQUIVALENCE, the refusal arm proven: an old binary
+        // never parses `scope`, so a rack lease (slot 0) falls into its slot
+        // arm — and slot 0 is invalid there. Same refusal, no new code
+        // needed on the old side.
+        check (LS::decide (false, false, 0, 3) == LS::Engage::Refuse,
+               "old binary reading a rack lease (slot 0, scope unparsed): REFUSE");
+        check (LS::decide (false, true,  2, 3) == LS::Engage::Slot,
+               "plain slot lease still engages the slot arm");
+        check (LS::decide (false, true,  4, 3) == LS::Engage::Refuse,
+               "slot beyond the rack refuses, as ever");
+        check (LS::decide (false, true,  0, 0) == LS::Engage::Refuse,
+               "slot lease against an empty rack refuses");
+    }
+
     std::printf ("== RackLock::read ==\n");
     {
         check (RL::read ({},        0.0,    "me") == RL::Claim::Free,  "absent file: Free");
