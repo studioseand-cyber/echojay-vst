@@ -79,6 +79,19 @@ identity fields) should close it. Note the rack lock REDUCES its exposure —
 while a main holds the lock the Link cannot reorder underneath an in-flight
 op — but the mismatch-window between two mains' FCFS handoffs remains.
 
+**3f. The rack selection is soft while its channel has no chat.** The Chain
+tab's rack view, the rack lock and the chat channel are ONE selection
+(`effectiveChannelUid`, PluginEditor.cpp) by design — but for a channel with no
+chat the selection is held as `pendingChannelUid`, which applies only while
+`currentChatId` is empty. Any chat activation from any of the chat system's
+writers (sidebar click, deep link, editor-recreate restore, edit-card target
+switch) silently snaps the selection — and with it the rack view AND the rack
+lock — to that chat's channel. KNOWN LATENT HOLE, deliberately not fixed with
+the rack lock (21 Aug 2026). Whole-rack borrow leans on this selection being
+stable while a rack is held, so the borrow spec inherits it as a stated
+problem: either the borrow pins its own uid for the borrow's duration, or the
+pending selection gets a harder home.
+
 ## 4. Decided
 
 **Ownership is a UI lock, never an audio change.** While a main holds a Link's

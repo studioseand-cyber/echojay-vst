@@ -7470,17 +7470,58 @@ void EchoJayEditor::showChainRackMenu()
         [safeThis, uids](int r)
         {
             if (safeThis == nullptr || r <= 0) return;
+            // EVERY arm logs, including the silent ones (21 Aug 2026): the
+            // hands-on stuck-lock repro showed a rack selection that never
+            // reached the writer, and nothing said so — a step that can
+            // silently do nothing must assert that it did something.
+            const juce::String cur = safeThis->effectiveChannelUid();
             if (r == 1)
             {
-                // The mixer's bus arm, guard included.
-                if (safeThis->effectiveChannelUid().isNotEmpty())
+                if (cur.isNotEmpty())
+                {
+                    EchoJay_NSLog(("EJRackSel: row=bus resolved=(main) current="
+                                   + cur + " -> switching to main").toRawUTF8());
                     safeThis->resetToMainContext();
+                }
+                else
+                    EchoJay_NSLog("EJRackSel: row=bus resolved=(main) "
+                                  "current=(main) -> already here, click swallowed");
+                safeThis->refreshChainPanelForView(true);
+                return;
+            }
+            const size_t i = (size_t) (r - 2);
+            const juce::String clicked = i < uids.size() ? uids[i] : juce::String();
+            // RE-VERIFY BY UID AT CLICK, never by row index alone: uids was
+            // built at menu-OPEN, and the registry can churn between open
+            // and click. The uid the row carried must still name a listed
+            // Link NOW, or the click is refused with a reason rather than
+            // selecting a rack that no longer exists.
+            bool listedNow = false;
+            for (const auto& e : safeThis->processorRef.getLinkDisplayList())
+                if (e.info.uid.isNotEmpty() && e.info.uid == clicked)
+                { listedNow = true; break; }
+            const juce::String curLbl = cur.isEmpty() ? juce::String("(main)") : cur;
+            if (clicked.isEmpty() || !listedNow)
+            {
+                EchoJay_NSLog(("EJRackSel: row=" + juce::String((int) i)
+                               + " resolved=" + (clicked.isEmpty() ? "(none)" : clicked)
+                               + " current=" + curLbl
+                               + " -> REFUSED, uid no longer listed (registry moved "
+                                 "between menu open and click)").toRawUTF8());
+                return;
+            }
+            if (clicked == cur)
+            {
+                EchoJay_NSLog(("EJRackSel: row=" + juce::String((int) i)
+                               + " resolved=" + clicked + " current=" + curLbl
+                               + " -> already here, click swallowed").toRawUTF8());
             }
             else
             {
-                const size_t i = (size_t) (r - 2);
-                if (i < uids.size() && uids[i] != safeThis->effectiveChannelUid())
-                    safeThis->openChannelByUid(uids[i]);
+                EchoJay_NSLog(("EJRackSel: row=" + juce::String((int) i)
+                               + " resolved=" + clicked + " current=" + curLbl
+                               + " -> switching").toRawUTF8());
+                safeThis->openChannelByUid(clicked);
             }
             safeThis->refreshChainPanelForView(true);
         });
