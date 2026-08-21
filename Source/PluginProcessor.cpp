@@ -1591,6 +1591,11 @@ void EchoJayProcessor::rackLockReleaseFile()
         juce::File(LinkShm::racklockPath(dir, rackLockHeldUid_)).deleteFile();
     EchoJay_NSLog(("EJRackLock: released uid=" + rackLockHeldUid_).toRawUTF8());
     rackLockHeldUid_.clear();
+    // Reset the STATE with the hold. Leaving it at Held made the next
+    // acquire's transition invisible on a direct rack->rack switch (prev ==
+    // Held, so the acquired log never fired) — a successful acquire and a
+    // failed one must not both read as silence.
+    rackLockState_ = RackLockState::Idle;
 }
 
 void EchoJayProcessor::setRackLockWant(const juce::String& uid)
