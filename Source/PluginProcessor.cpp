@@ -558,9 +558,11 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     hostSampleRate_      = sampleRate;
     hostSamplesPerBlock_ = samplesPerBlock;
     chainHost.prepare(sampleRate, samplesPerBlock);
-    // Borrow solo crossfade: a REAL 30ms ramp (the busGainSmoothed_ idiom
-    // above — note editSoloMix_ never got this and is instant, recorded as
-    // a pre-existing Stage 1 defect, not fixed in step 2).
+    // Solo crossfades, BOTH a real 30ms ramp (the busGainSmoothed_ idiom
+    // above). editSoloMix_ had never been given one — Stage 1's "~30ms"
+    // comment was aspirational and its engage/release was an instant step,
+    // i.e. a click, in the exact path the solo battery listens through.
+    editSoloMix_.reset(sampleRate, 0.030);
     borrowSoloMix_.reset(sampleRate, 0.030);
     if (borrowHost_ != nullptr)
         borrowHost_->prepare(sampleRate, samplesPerBlock);
