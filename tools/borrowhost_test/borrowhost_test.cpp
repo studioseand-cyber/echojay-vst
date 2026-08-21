@@ -289,6 +289,25 @@ int main()
     check (host.getNumSlots() == 2, "rack complete despite the fallback");
 
     // =======================================================================
+    std::printf ("== rack mix on the borrowed host ==\n");
+    {
+        // Functional half of finding #1's gate: the borrowed host reports
+        // the adopted master wet, keeps it across a release/re-borrow, and
+        // its own pre-gain stays neutral (the stream carries the Link's).
+        host.setMasterWet (0.7f);
+        check (std::abs (host.getMasterWet() - 0.7f) < 1.0e-6f,
+               "borrowed host reports the adopted master wet",
+               juce::String (host.getMasterWet(), 3));
+        check (std::abs (host.getPreGainDb()) < 1.0e-6f,
+               "borrowed host pre-gain stays neutral (never adopted)",
+               juce::String (host.getPreGainDb(), 3));
+        host.releaseBorrowToPool();
+        borrowRack (host);
+        check (std::abs (host.getMasterWet() - 0.7f) < 1.0e-6f,
+               "master wet survives release/re-borrow until re-adopted");
+    }
+
+    // =======================================================================
     std::printf ("== latency hard block ==\n");
     check (host.hostReportableLatencySamples() == -1,
            "Borrowed host REFUSES the latency mirror (-1)");
@@ -342,6 +361,18 @@ int main()
             check (! edRegion.contains (key),
                    juce::String ("editor borrow code has no \"") + key + "\"");
         }
+        // THE RACK'S MIX CARRIES (hands-on finding #1): the borrow adopts the
+        // sidecar's masterWet (inaudible on a bypassed rack's stream, so it
+        // must be applied here) and deliberately does NOT adopt preGainDb —
+        // the ring is written after the Link's ChainHost::process, so the
+        // dry stream already carries pre-gain and adopting it would double
+        // it. Both pinned by source so neither can silently flip.
+        check (edRegion.contains ("setMasterWet(st->masterWet)"),
+               "editor borrow ADOPTS the rack's master wet");
+        check (! edRegion.contains ("setPreGainDb"),
+               "editor borrow does NOT adopt pre-gain (the stream carries it)");
+        check (edRegion.contains ("setSlotSettings"),
+               "editor borrow carries the per-slot guidance text");
         // And the only Link-bound writes are the lease + the pull command.
         check (edRegion.contains ("pullSlotState")
                  && ! edRegion.contains ("replaceWithText(juce::JSON::toString(juce::var(cmd), true));\n    juce::File(dir + \"ctrl-cmd"),

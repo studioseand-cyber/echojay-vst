@@ -7638,14 +7638,16 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
         juce::String uid;
         std::vector<LinkShm::RackSidecarSlot> slots;
         juce::StringArray states;          // b64 per slot, parallel
+        float masterWet = 1.0f;            // the rack's mix, carried across
         int idx = 0, baseSeq = 0;
         juce::int64 totalBytes = 0;
         juce::StringArray failures;        // named list for the §5e refusal
     };
     auto st = std::make_shared<PullState>();
-    st->uid     = uid;
-    st->slots   = it->second.rack.slots;
-    st->baseSeq = (int) (juce::Time::currentTimeMillis() / 1000);
+    st->uid       = uid;
+    st->slots     = it->second.rack.slots;
+    st->masterWet = it->second.rack.masterWet;
+    st->baseSeq   = (int) (juce::Time::currentTimeMillis() / 1000);
     say("Borrowing " + processorRef.resolveLinkDisplayName(uid) + ": reading "
         + juce::String((int) st->slots.size()) + " plugin(s)...");
 
@@ -7720,6 +7722,20 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
                 safeThis->refreshChainPanelForView(true);
                 return;
             }
+            // THE RACK'S MIX comes across too (hands-on finding #1): master
+            // wet is inaudible on the STREAM — with every Link slot bypassed
+            // its dry/wet mixes identical signals — so the borrowed host must
+            // apply it, or the chain runs full-wet and the premise ("you are
+            // hearing the Link's sound") breaks. PRE-GAIN is deliberately NOT
+            // adopted: the ring is written AFTER the Link's ChainHost::process
+            // (LinkProcessor.cpp ringProduce follows chainHost.process), and
+            // pre-gain is pre-graph, not a slot — the dry stream already
+            // carries it, and adopting it here would apply it twice.
+            bh2->setMasterWet(st->masterWet);
+            // The per-slot guidance text rides for display parity (the
+            // settings card would otherwise read empty on a borrowed slot).
+            for (int i = 0; i < want && i < (int) st->slots.size(); ++i)
+                bh2->setSlotSettings(i, st->slots[(size_t) i].settings);
             p2.borrowAudioOn();
             safeThis->chainListPanel.statusText =
                 "Borrowed " + p2.resolveLinkDisplayName(st->uid)
