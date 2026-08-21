@@ -42,6 +42,17 @@ session-long instance POOL underneath.**
   cycles, not distinct racks. Ten sessions of hopping between two racks that
   share five plugins costs five instances, forever, which is the minimum any
   design can achieve under §3a.
+- **Reuse is proven by content, not assumed** (amendment, 21 Aug 2026): the
+  whole memory argument rests on a parked instance being as good as a fresh
+  one, so `borrowhost_test` pins it — a REUSED instance seeded with a state
+  blob must be parameter-identical to a FRESH instance seeded with the same
+  blob (same parameter count, same values, same state read-back). A plugin
+  that fails this check **falls back to fresh instantiation**: its identity
+  is marked pool-ineligible for the session (the failed instance parks
+  unreusable, the old leaked-store fate), every later borrow of it
+  instantiates fresh, and the log names it — so a stateful-across-reuse
+  plugin degrades to today's per-cycle cost for ITSELF only, loudly, instead
+  of silently poisoning a borrowed rack with residue from a previous borrow.
 - `leakedNodeStore()` itself is not modified (brief §4e forbids it); it keeps
   covering the main host's removals. The pool is the borrowed host's own
   parking lot with the same never-free rule.
@@ -89,13 +100,23 @@ in `processBlock`, PluginProcessor.cpp ~898) the borrowed host's
 `process(editBuf_, noMidi)` runs instead. The solo crossfade overwrite at the
 end of `processBlock` is unchanged. Specifics:
 
-- **No try-and-skip for the whole chain** (survey e1). The main's own
-  `chainHost.process(buffer)` already runs unconditionally — the graph's
-  internal prepare/process locking handles message-thread mutation, proven by
-  the live-add path. The borrowed host is called the same unconditional way
-  for its ring slot. The `editLock_` tryEnter idiom existed because
-  `editInst_` is a swappable pointer; a session-long host member is not, so
-  the idiom (and its gappy-time hazard) does not carry over.
+- **No try-and-skip for the whole chain** (survey e1). The borrowed host is
+  called unconditionally for its ring slot, like the main's own
+  `chainHost.process(buffer)`. The real synchronization question is not a
+  swappable pointer — it is **a chain being built and torn down on the
+  message thread inside a host whose graph the audio thread is concurrently
+  processing**: borrow-engage loads N plugins one by one, release tears the
+  rack down, both while `processBlock` keeps running. That exact concurrency
+  is what the MAIN host already survives daily — `loadPluginAsync` →
+  `rebuildGraph` → re-prepare during playback (the live-add path, the AI
+  build's progressive loads, recall's clear-then-restore), all riding
+  `AudioProcessorGraph`'s internal prepare/process synchronization. The
+  borrowed host is the same class using the same graph machinery under the
+  same threading contract, so it inherits the same guarantee rather than
+  needing a tryEnter of its own. Because this claim is load-bearing, it gets
+  its own hands-on proof: **engage a borrow DURING playback** (and release
+  during playback) with audio running through both paths — no glitch beyond
+  the designed crossfade, no assertion, no dropout on the main's own chain.
 - **CPU is named, not hidden** (survey e2): both chains run in one
   `processBlock` on the main track's core. The spec accepts this with one
   mitigation: the borrowed host processes ONLY while a borrow is engaged and
@@ -139,6 +160,21 @@ reopen can re-seed. Deselect without Apply asks — through `presentReplaceAsk`,
 the one confirm implementation — "apply these edits to <Link>, or discard?"
 Nothing silent in either direction.
 
+**Lease death mid-borrow — recovery offer, never unstated loss** (amendment,
+21 Aug 2026): if the rack-scoped lease expires under a live borrow (the Link
+restored itself — its process relaunched, renewals lapsed, or a foreign claim
+superseded), the borrow disengages audio immediately (the Link owns the
+sound, same rule as the slot lease), but the uncommitted edits are CAPTURED
+first — the `editEnd(keepState)` precedent, rack-wide: every slot's current
+state is kept locally. The UI then says exactly what happened and what is
+held: "<Link> took its rack back — your edits are kept. Re-borrow to
+continue from them, Apply to send them now, or Discard." Apply from kept
+state runs the normal per-slot commit filtering (§5c) against the Link's
+CURRENT rack — if the rack changed shape while control was lost, the
+mismatching slots refuse by identity, named, rather than writing into the
+wrong plugin. The one thing that never happens is the edits evaporating with
+only a released overlay to show for it.
+
 **§3c the Link transfer tier — recommend a THIRD named pair, set today to the
 session tier's values.** The pull is a local JSON file between two processes:
 no HTTP body limit, no Postgres row — request-class caps (256 KB/slot) are
@@ -148,7 +184,13 @@ never align the two existing tiers — is honored by giving this third consumer
 its OWN constants (`kLinkTransferMaxSlotBytes/Total`), initialized to the
 session values (4 MB / 16 MB: it is a document-class transfer, the user's own
 machine, bounded by what a session may carry) and free to diverge later.
-Anything that leaves the machine keeps the API tier untouched.
+Anything that leaves the machine keeps the API tier untouched. CONFIRMED BY
+CONTENT (ChainHost.h): `kSessionStateMaxTotalBytes` is the 16 MB
+**whole-chain budget across all slots**, sitting beside the 4 MB per-slot
+cap — same Slot/Total shape as the API tier. So §5e's refusal arithmetic is
+per-slot 4 MB and rack-total 16 MB: a 16-slot rack of ordinary states fits
+with room; only a rack genuinely carrying more than a session itself could
+save is refused.
 
 **§5c withheld slots at rack scale — recommend loud, up front, and
 commit-guarded.** A banner on the borrowed rack the moment the build settles:
@@ -191,8 +233,10 @@ default.
   ChainHost writes NOTHING — run a build/borrow/release cycle in a sandboxed
   HOME (the `state_match_test` disk-guard idiom) and assert every shared file
   is byte-identical after; assert the pool reuses by identity (second borrow
-  of the same rack instantiates zero new); assert the latency block (mode
-  flag set → latency mirror refused).
+  of the same rack instantiates zero new) AND by content (§1: reused-and-
+  seeded parameter-identical to fresh-and-seeded, with the pool-ineligible
+  fallback arm exercised by a deliberately failing stub device); assert the
+  latency block (mode flag set → latency mirror refused).
 - Codec and identity matching: already pinned (`ringseek_test`,
   `state_match_test`); NOT re-proven per §6 of the requirements — the shared
   machinery is the proof surface.
