@@ -2933,6 +2933,11 @@ private:
     // The blanket one above stays for the sites that mean "the user moved
     // on from everything".
     void supersedePendingReplaceAsks();
+    // The prefix core the scoped supersedes share (P57): recall_*/build_*
+    // for the replace class, cmp_* for the compare answer. The blanket one
+    // stays for the user-send sites that mean "moved on from everything" -
+    // :24683 is how a TYPED answer to a brief resolves at all.
+    void supersedePendingAsksByIntent(std::initializer_list<const char*> prefixes);
     // The ONE layout authority for the PILL shelf (height reservation + pill
     // placement); the paint pass draws only the background inside the rect
     // this produced, so the two cannot disagree. Flows the pills into rows

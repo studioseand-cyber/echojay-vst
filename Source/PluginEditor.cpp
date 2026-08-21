@@ -20691,7 +20691,10 @@ void EchoJayEditor::onAskChipTapped(int i)
     if (intent == "cmp_anyway" || intent == "cmp_numbers")
     {
         logTap("compare_scope");
-        supersedePendingAsks();     // marks + persists askAnswered
+        // P57, one class over: answering the compare ask voids only cmp_*
+        // asks - a pending brief or model ASK card survives and
+        // re-presents, same rule as the replace answers.
+        supersedePendingAsksByIntent({ "cmp_" });
         askShelfVisible_ = false;
         resized();
         runAICompareWith(compareTop_, compareBot_,
@@ -20735,7 +20738,10 @@ void EchoJayEditor::onAskChipTapped(int i)
         const juce::String tuid = co ? co->getProperty("recall_target_uid").toString() : juce::String();
         const juce::String tnm  = co ? co->getProperty("recall_target_name").toString() : juce::String();
         const int rackNow = processorRef.getChainHost().getNumSlots();
-        supersedePendingAsks();
+        // P57 answer side: scoped like the presenter side. A brief is a
+        // question the model asked the user; answering a replace ask must
+        // not void it.
+        supersedePendingReplaceAsks();
         askShelfVisible_ = false;
         resized();
         EchoJay_NSLog(("EJRecall: replace ask shown=yes rack="
@@ -20762,7 +20768,10 @@ void EchoJayEditor::onAskChipTapped(int i)
         const auto cj = askChipVars[(size_t) i].getProperty("build_chain_json",
                                                             juce::var()).toString();
         const int rackNow = processorRef.getChainHost().getNumSlots();
-        supersedePendingAsks();
+        // P57 answer side: scoped like the presenter side. A brief is a
+        // question the model asked the user; answering a replace ask must
+        // not void it.
+        supersedePendingReplaceAsks();
         askShelfVisible_ = false;
         resized();
         EchoJay_NSLog(("EJBuild: [build-ask] rack=" + juce::String(rackNow)
@@ -20819,7 +20828,7 @@ void EchoJayEditor::onAskChipTapped(int i)
         // confirmation follows only if THIS rack is non-empty, the
         // same rule the direct recall path applies.
         pendingRecallMismatchAsk_ = false;   // answered, not dismissed
-        supersedePendingAsks();
+        supersedePendingReplaceAsks();       // P57: a pending brief survives
         askShelfVisible_ = false;
         resized();
         const int rackNow = processorRef.getChainHost().getNumSlots();
@@ -20840,7 +20849,7 @@ void EchoJayEditor::onAskChipTapped(int i)
         if (rid.isNotEmpty())
         {
             logTap("recall_id");
-            supersedePendingAsks();
+            supersedePendingReplaceAsks();   // P57: a pending brief survives
             askShelfVisible_ = false;
             resized();
             handleChainRecall(rid, askChipLabels[(size_t) i]);
@@ -23005,38 +23014,47 @@ void EchoJayEditor::supersedePendingAsks()
     if (any) workspace.requestMutationSync();
 }
 
-void EchoJayEditor::supersedePendingReplaceAsks()
+// The prefix core (P57): marks answered ONLY asks whose chips carry an
+// intent starting with one of the given prefixes. Every client-authored ask
+// class has its own prefix vocabulary (recall_*, build_*, cmp_*) and
+// model-authored asks carry none of them, so a pending brief or model ASK
+// card always survives a scoped supersede.
+void EchoJayEditor::supersedePendingAsksByIntent(std::initializer_list<const char*> prefixes)
 {
-    // Scoped by INTENT PREFIX, not by message position: every client-authored
-    // replace-class chip carries a recall_* intent (recall_confirm /
-    // recall_cancel / recall_here / recall_switch) or a build_* intent
-    // (build_confirm / build_cancel), and nothing else does. A pending model
-    // brief or compare ask survives untouched.
-    if (pendingRecallMismatchAsk_)
-    {
-        pendingRecallMismatchAsk_ = false;
-        EchoJay_NSLog("EJRecall: mismatch ask dismissed without choosing (superseded by new replace ask)");
-    }
     bool any = false;
     for (auto& m : chatMessages)
     {
         if (m.role != "assistant" || m.askData.isEmpty() || m.askAnswered) continue;
-        bool replaceClass = false;
+        bool inClass = false;
         auto v = juce::JSON::parse(m.askData);   // held: getDynamicObject() must not outlive the var
         if (auto* o = v.getDynamicObject())
             if (auto* cs = o->getProperty("choices").getArray())
                 for (auto& cv : *cs)
                 {
                     const auto in = cv.getProperty("intent", juce::var()).toString();
-                    if (in.startsWith("recall_") || in.startsWith("build_"))
-                    { replaceClass = true; break; }
+                    for (auto* p : prefixes)
+                        if (in.startsWith(p)) { inClass = true; break; }
+                    if (inClass) break;
                 }
-        if (! replaceClass) continue;
+        if (! inClass) continue;
         m.askAnswered = true;
         workspace.markAskAnswered(currentChatId, m.content);
         any = true;
     }
     if (any) workspace.requestMutationSync();
+}
+
+void EchoJayEditor::supersedePendingReplaceAsks()
+{
+    // Replace-class only: recall_* (recall_confirm / recall_cancel /
+    // recall_here / recall_switch) and build_* (build_confirm /
+    // build_cancel). The mismatch flag belongs to this class.
+    if (pendingRecallMismatchAsk_)
+    {
+        pendingRecallMismatchAsk_ = false;
+        EchoJay_NSLog("EJRecall: mismatch ask dismissed without choosing (superseded by new replace ask)");
+    }
+    supersedePendingAsksByIntent({ "recall_", "build_" });
 }
 
 // THE ONE presenter for replace-class asks. Build and recall each compose
@@ -23506,13 +23524,18 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
             // "[CURRENT RACK" collides with nothing in the api tree.
             // Stripped from history via historyStripMarkers(), same as its
             // non-empty sibling.
+            // P61: no longer reserves "from scratch" for the empty case -
+            // a build over a POPULATED rack is also from scratch (the rack
+            // is cleared first), and the old contrast taught the opposite.
             out += "\n\n[CURRENT RACK EMPTY - the user's rack has NO plugins"
                    " loaded right now. This is a positive statement of"
                    " emptiness, not missing data: no chain exists to edit or"
                    " reference (a recall or build may have loaded nothing,"
-                   " whatever was discussed earlier), so treat any chain"
-                   " request as building from scratch and never propose"
-                   " edit ops against slots you believe are loaded.]";
+                   " whatever was discussed earlier), so a chain request"
+                   " starts from nothing here - exactly as a build does on"
+                   " ANY rack, since building always clears the rack first -"
+                   " and never propose edit ops against slots you believe"
+                   " are loaded.]";
             EchoJay_NSLog("EJChat: CURRENT RACK EMPTY declaration attached (0 slots)");
         }
         // [CHAIN LEVELS]: the chain input (and output) running level, on the
@@ -26429,7 +26452,7 @@ void EchoJayEditor::openRecallChannelChooser(int chipIdx)
             const auto nameIt       = nameByUid.find(uid);
             const juce::String disp = nameIt != nameByUid.end() ? nameIt->second : uid;
             safeThis->pendingRecallMismatchAsk_ = false;   // answered, not dismissed
-            safeThis->supersedePendingAsks();
+            safeThis->supersedePendingReplaceAsks();       // P57: a pending brief survives
             safeThis->askShelfVisible_ = false;
             safeThis->resized();
             const auto rack  = safeThis->readLinkRackSidecar(uid);
@@ -26473,7 +26496,7 @@ void EchoJayEditor::switchChannelCarryingRequest(const juce::String& uid)
     // pending path, and this reads from it.
     const juce::String request = newestUserRequest();
 
-    supersedePendingAsks();          // marks + persists askAnswered
+    supersedePendingReplaceAsks();   // P57 (recall switch): a pending brief survives
     askShelfVisible_ = false;
 
     openChannelByUid(uid);           // <-- THE SWITCH

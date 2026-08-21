@@ -2975,18 +2975,32 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& 
     const juce::String owner = channelLabel.isEmpty()
         ? juce::String("the user's rack right now")
         : "the rack on the user's \"" + channelLabel + "\" Link channel right now";
+    // P61 (21 Aug 2026): the old header taught an append that does not
+    // exist. "treat it as an edit ... not a new chain from scratch" was
+    // unscoped, and "fill NEW slots" implied slots get added to the listed
+    // set - Kathy's rack of three was replaced by four and the model had
+    // reasoned honestly from these words. The edit instruction is now
+    // scoped to EDIT OPERATIONS BY NAME, and the header states what a
+    // build actually does. The server's [CHAIN BUILD SEMANTICS] clause
+    // says the same thing and STAYS until this is shipped, installed and
+    // verified (two copies briefly agreeing is fine; the prefix
+    // "[CURRENT CHAIN" is server-keyed and byte-stable).
     juce::String block;
     block << juce::String::fromUTF8("\n\n[CURRENT CHAIN \xe2\x80\x94 ") << owner
           << ", in signal-flow "
           << "order; slot numbers are 1-based (the first slot is slot 1). "
-          << "When the user asks to change THIS chain (add/remove/swap/"
-          << "reorder), treat it as an edit of these slots, not a new chain "
-          << "from scratch. Every slot listed here is loaded and running and "
-          << "may ALWAYS be referenced and edited (remove/move/bypass/"
-          << "replace), regardless of AVAILABLE PLUGINS membership or any "
-          << "auto-dial restriction " << juce::String::fromUTF8("\xe2\x80\x94")
-          << " those only govern which plugins may "
-          << "fill NEW slots.]\n";
+          << "EDIT OPERATIONS (a CHAIN_EDIT block: add/remove/swap/reorder/"
+          << "bypass/set) act on these slots in place. A CHAIN BLOCK is not "
+          << "an edit: building replaces this ENTIRE rack " << juce::String::fromUTF8("\xe2\x80\x94")
+          << " every slot listed here is removed first, and a plugin "
+          << "appearing in both racks returns at the new block's settings, "
+          << "not with its current state. Every slot listed here is loaded "
+          << "and running and may ALWAYS be referenced and edited, "
+          << "regardless of AVAILABLE PLUGINS membership or any auto-dial "
+          << "restriction " << juce::String::fromUTF8("\xe2\x80\x94")
+          << " those govern only which plugins an edit may ADD or a build "
+          << "may include, never whether an existing slot can be "
+          << "addressed.]\n";
     for (int i = 0; i < (int)rack.slots.size(); ++i)
     {
         const auto& s = rack.slots[(size_t)i];
