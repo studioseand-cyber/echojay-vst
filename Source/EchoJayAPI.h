@@ -1032,6 +1032,11 @@ private:
                                       const juce::StringArray& contents,
                                       const juce::String& systemPrompt,
                                       const juce::String& meterJsonBlob);
+    // tools/mapfps_test ONLY (CONTRACT_history_resend_pin.md, 21 Aug 2026):
+    // the history-resend pin must run THIS function, not a reimplementation,
+    // and it is deliberately private. One named hook rather than a
+    // "#define private public" in the test.
+    friend struct EchoJayAPIRequestPin;
 
     // streamChat's internals: the gate+build half (shared with the
     // limit-refresh retry, which must reuse the SAME handle so a cancel
