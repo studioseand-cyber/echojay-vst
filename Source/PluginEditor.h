@@ -1546,6 +1546,11 @@ private:
     // chain as displayRows_[i]. Authored by resized(), never by paint().
     std::vector<ChainRow>              chainDisplayRows_;
     std::vector<juce::Rectangle<int>>  chainRowRects_;
+    // [shelf-overlap] one-shot latch (P66 part 2b): the ask shelf is exempt
+    // from the chains-mode hide and relies on the chatScrollBottom formula
+    // chain to keep chain rows clear of it; if a row rect ever intersects
+    // the shelf rect anyway, resized() logs it ONCE per editor instance.
+    bool chainShelfOverlapLogged_ = false;
     std::vector<juce::Rectangle<int>>  chainRowStarRects_;
     // -1 = not a row (a group heading occupies the slot instead).
     std::vector<int>                   chainRowIsHeading_;

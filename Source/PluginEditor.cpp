@@ -12032,6 +12032,15 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
         }
 
         layoutChatMessages();
+        // Relayout AFTER the restore (P66 part 1, 21 Aug 2026): the resized()
+        // above ran against the PREVIOUS chat's messages, and the ask shelf
+        // is positioned only inside resized()'s shelf block — so a restored
+        // unanswered ask appeared only when some unrelated relayout happened
+        // by (a window resize, a tab switch, the content height timer). This
+        // pass sees the restored list: the shelf lays out NOW, and the
+        // scroll-to-bottom below lands on the real content height instead of
+        // the previous chat's.
+        resized();
         // Scroll to bottom, and RE-PIN: opening a chat always starts at the
         // newest message with the follow behaviour on. Save/restore guard,
         // same re-entrancy rule as followBottomIfPinned.
@@ -18685,8 +18694,38 @@ void EchoJayEditor::resized()
                 chainBuildBtns[(size_t)i].setVisible(false);
             for (int i = 0; i < kMaxWavePlayBtns; ++i)
                 wavePlayOverlays[(size_t)i].setVisible(false);
-            for (auto& ab : askChipBtns) ab->setVisible(false);
-            briefCard_.setVisible(false);
+
+            // THE EXEMPTION (P66 part 2b, 21 Aug 2026): the ask chips and the
+            // brief card are NOT hidden here. This block hides chat FURNITURE;
+            // an unanswered ask is not furniture, it is a question waiting on
+            // the user, and a mode must never hide a pending question — the
+            // invisible-ask defect arrived twice in one week through two
+            // doors (a trigger landing in chains mode, fixed by the
+            // presentReplaceAsk flip; and an editor recreate restoring into
+            // chains mode, which this exemption fixes without yanking the
+            // user out of the mode they chose). Geometry is safe by
+            // RESERVATION, not floating: the shelf block above authored
+            // askShelfRect_, chatScrollBottom stepped itself above the shelf
+            // (the ONE formula chain), and listBottom == chatScrollBottom
+            // clamped the rows — so no chain row is laid under the shelf.
+
+            // The instrument for that claim ([shelf-overlap], once per
+            // editor instance): this block has produced four overlap bugs,
+            // so the invariant is checked at runtime rather than assumed.
+            // It is NOT pinned headlessly on purpose — the invariant lives
+            // in resized()'s block ordering, which no pure extract can
+            // witness; a headless test of the formula would re-derive the
+            // formula and pass by construction.
+            if (askShelfVisible_ && !chainShelfOverlapLogged_)
+                for (const auto& rr : chainRowRects_)
+                    if (!rr.isEmpty() && rr.intersects(askShelfRect_))
+                    {
+                        chainShelfOverlapLogged_ = true;
+                        EchoJay_NSLog(("EJChains: [shelf-overlap] chain row "
+                                       + rr.toString() + " intersects ask shelf "
+                                       + askShelfRect_.toString()).toRawUTF8());
+                        break;
+                    }
         }
     }
     // Content height from THE single source (measureChatContentHeight), the
