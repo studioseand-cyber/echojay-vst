@@ -777,6 +777,25 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "latestChannelChatId decides through latestChatForLink");
             check (! edSrc.contains ("findChannelChatId"),
                    "the first-match lookup name is gone from PluginEditor.cpp");
+
+            // ONE AUTHOR for the chain panel (21 Aug 2026). Fourteen call
+            // sites once rebuilt chainListPanel directly from the LOCAL rack
+            // with no look at the active view, which is how the panel showed
+            // the main instance's plugins under a Link's RACK: header. Every
+            // render now funnels through refreshChainPanelForView — the one
+            // site that derives slots, header, remote flags and status
+            // together. This check is what stops author #2 accumulating
+            // again: if it fails, route the new render request through
+            // refreshChainPanelForView (force=true only when no revision or
+            // signature input moved) instead of calling rebuild directly.
+            {
+                int rebuilds = 0;
+                for (int p = 0; (p = edSrc.indexOf (p, "chainListPanel.rebuild(")) >= 0; ++p)
+                    ++rebuilds;
+                check (rebuilds == 1,
+                       "chainListPanel.rebuild( has exactly ONE author in "
+                       "PluginEditor.cpp (found " + juce::String (rebuilds) + ")");
+            }
         }
     }
 

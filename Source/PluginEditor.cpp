@@ -826,8 +826,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         chainHostRef.onSlotSettingsChanged = [safeThis]()
         {
             if (safeThis == nullptr) return;
-            auto& ch = safeThis->processorRef.getChainHost();
-            safeThis->chainListPanel.rebuild(ch.getAllSlotInfos(), -1);
+            // force = true, NAMED: this callback IS the change detector.
+            // Map arrivals and capture settles change the rendered settings
+            // text and dial status without moving the chain revision (or any
+            // counter the signature reads), so the signature cannot see them.
+            // (This also stops deselecting the slot on every capture, which
+            // the old direct rebuild(-1) here did.)
+            safeThis->refreshChainPanelForView(true);
         };
     }
 
@@ -1941,8 +1946,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             ch2.removeSlot(i);
             safeThis->chainSelectedSlot_ =
                 juce::jlimit(-1, ch2.getNumSlots() - 1, safeThis->chainSelectedSlot_);
-            safeThis->chainListPanel.rebuild(ch2.getAllSlotInfos(),
-                                             safeThis->chainSelectedSlot_);
+            safeThis->refreshChainPanelForView(false);
             safeThis->repaint();
         });
     };
@@ -1957,7 +1961,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         auto& ch = processorRef.getChainHost();
         if (i < 0 || i >= ch.getNumSlots()) return;
         ch.setSlotBypassed(i, !ch.getSlotInfo(i).bypassed);
-        chainListPanel.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
+        refreshChainPanelForView(false);   // bypass bumps the revision
         repaint();
     };
     chainListPanel.onMoveSlot = [this](int i, int dir) {
@@ -1974,7 +1978,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         if (chainSelectedSlot_ == i)      newSel = j;
         else if (chainSelectedSlot_ == j) newSel = i;
         chainSelectedSlot_ = juce::jlimit(0, ch.getNumSlots() - 1, newSel);
-        chainListPanel.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
+        refreshChainPanelForView(false);   // moveSlot bumps the revision
         repaint();
     };
     chainListPanel.onAddClick = [this] { showChainPluginPicker(); };
@@ -7217,13 +7221,20 @@ EchoJayEditor::ChainRackView EchoJayEditor::chainRackView() const
     const juce::String uid = chainViewUid();
     if (uid.isEmpty())
     {
-        // THE LOCAL PATH, byte for byte what the Chain tab did before this
-        // pass: straight off the host's own ChainHost, synchronous, valid by
-        // construction. Nothing about the remote path can reach it.
-        v.slots  = processorRef.getChainHost().getAllSlotInfos();
-        v.valid  = true;
-        v.remote = false;
-        v.name   = "this instance";
+        // THE LOCAL PATH: straight off the host's own ChainHost, synchronous,
+        // valid by construction. Nothing about the remote path can reach it.
+        // The revision is the local ChainHost's own counter (bumped on every
+        // add, remove, move, bypass, wet and load), so the change detector in
+        // refreshChainPanelForView sees local structure move exactly as it
+        // sees a Link's published revision move. Before this (21 Aug 2026)
+        // the local arm left revision at -1, the signature was blind to
+        // local changes, and fourteen call sites compensated by rebuilding
+        // the panel directly — the multi-author bug.
+        v.slots    = processorRef.getChainHost().getAllSlotInfos();
+        v.valid    = true;
+        v.remote   = false;
+        v.name     = "this instance";
+        v.revision = processorRef.getChainHost().getChainRevision();
         return v;
     }
 
@@ -7314,9 +7325,27 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
         }
     }
 
+    // NO DATA is a state of the view, decided once and used by the signature,
+    // the status line and the (single) rebuild below.
+    const bool noData = v.remote && !v.valid;
+    // Clamp BEFORE the signature: the selection is a render input, so the
+    // change detector must see it move (a restore that resets it, an add
+    // that selects the new slot).
+    if (! noData)
+        chainSelectedSlot_ = juce::jlimit(-1, (int) v.slots.size() - 1, chainSelectedSlot_);
+
+    // The signature covers every render input: view identity, structure
+    // (revision — local bumps ride ChainHost::bumpChainRevision, remote ones
+    // the sidecar's published revision), honesty states, slot count,
+    // selection, and the derived status note. DELIBERATELY NOT the hosted
+    // change epoch: it moves every block under automation and would turn the
+    // 20Hz tick into a rebuild storm. Settings-only changes (map arrivals,
+    // capture settles, the `set` edit op) move no counter at all, which is
+    // why their authors call with force = true.
     juce::String sig;
     sig << chainViewUid() << "|" << v.revision << "|" << (int) v.valid
-        << (int) v.offline << "|" << (int) v.slots.size() << "|" << pendingNote;
+        << (int) v.offline << "|" << (int) v.slots.size() << "|"
+        << chainSelectedSlot_ << "|" << pendingNote;
     if (!force && sig == chainViewSig_) return;
     chainViewSig_ = sig;
 
@@ -7330,7 +7359,7 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
     chainListPanel.remote        = v.remote;
     chainListPanel.remoteName    = v.name;
     chainListPanel.remoteOffline = v.offline;
-    if (v.remote && !v.valid)
+    if (noData)
     {
         // NO DATA, said in words, and NOT an empty rack. The panel is given
         // no slots and the reason is stated; an empty strip alone would read
@@ -7338,12 +7367,17 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
         chainListPanel.statusText =
             v.name + " has not published its rack yet. Nothing is shown because "
             "there is nothing to read, which is not the same as an empty rack.";
-        chainListPanel.rebuild({}, -1);
     }
-    else
+    // THE ONE REBUILD. Every panel render in this file funnels through this
+    // call — the flags above, the header below and the slots move together,
+    // so the panel can never show one view's rows under another view's
+    // header (the three-rows-under-RACK:-VOCAL defect, 21 Aug 2026). The
+    // gate asserts this call site is unique; do not add another. Local
+    // mutations stay at their sites and request a render here instead.
+    chainListPanel.rebuild(noData ? std::vector<ChainHost::SlotInfo>{} : v.slots,
+                           noData ? -1 : chainSelectedSlot_);
+    if (! noData)
     {
-        chainSelectedSlot_ = juce::jlimit(-1, (int) v.slots.size() - 1, chainSelectedSlot_);
-        chainListPanel.rebuild(v.slots, chainSelectedSlot_);
         // rebuild() sets its own remote note; an in-flight, refused or
         // just-completed edit is more urgent, so it overwrites afterwards.
         // The author REMEMBERS what it wrote (lastAddLine_) so that when the
@@ -10240,8 +10274,10 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
                     ch.startScan();
                 // Keep list model populated for the picker popup
                 chainListModel->items = ch.getFilteredPlugins({}, chainFormatFilter_, !chainOfferBothBuilds_);
-                // Rebuild rack strip from current chain state
-                chainListPanel.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
+                // Render the rack strip for the current view; the signature
+                // sees a real change (or the first pass), so force is not
+                // needed and the detector stays exercised.
+                refreshChainPanelForView(false);
                 chainListPanel.masterKnob.setValue(ch.getMasterWet());
                 // Rebuild resolver
                 ch.buildRecommendable(processorRef.getPluginScanner().getPlugins(), chainFormatFilter_);
@@ -22487,8 +22523,9 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
             auto& ch2 = safeThis->processorRef.getChainHost();
             safeThis->chainSelectedSlot_ =
                 juce::jlimit(-1, ch2.getNumSlots() - 1, safeThis->chainSelectedSlot_);
-            safeThis->chainListPanel.rebuild(ch2.getAllSlotInfos(),
-                                             safeThis->chainSelectedSlot_);
+            // force = true, NAMED: the `set` edit op applies settings only —
+            // no structural change, no revision bump, signature blind.
+            safeThis->refreshChainPanelForView(true);
 
             // Result stage (1d, dedup decision): the retired card keeps the
             // factual summary; a result bubble appears ONLY when it says
@@ -25011,7 +25048,9 @@ void EchoJayEditor::handleDevEqTest(const juce::String& jsonArg)
     chatInput.clear();
 
     // Reflect any band change the apply made in an open editor / rack card.
-    chainListPanel.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
+    // force = true, NAMED: an EQ band apply is settings-only — it moves no
+    // revision, so the signature cannot see it.
+    refreshChainPanelForView(true);
     resized();
     repaint();
 }
@@ -25880,8 +25919,9 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
                     }
                     else
                         cm.editData = remaining;
-                    chainListPanel.rebuild(processorRef.getChainHost().getAllSlotInfos(),
-                                           chainSelectedSlot_);
+                    // force = true, NAMED: card-apply is settings-only — no
+                    // revision bump, signature blind.
+                    refreshChainPanelForView(true);
                 }
                 cm.editBaseRevision = processorRef.getChainHost().getChainRevision();
             }
@@ -26984,8 +27024,10 @@ void EchoJayEditor::showChainPluginPicker()
                 int newSlot = ch3.getNumSlots() - 1;
                 safeThis->chainSelectedSlot_ = newSlot;
                 safeThis->chainListPanel.statusText = {};
-                // rebuild() selects the new slot and opens its editor inline
-                safeThis->chainListPanel.rebuild(ch3.getAllSlotInfos(), safeThis->chainSelectedSlot_);
+                // completeLoad bumped the revision and the selection moved:
+                // the signature sees both, and the render selects the new
+                // slot and opens its editor inline.
+                safeThis->refreshChainPanelForView(false);
                 safeThis->resized();
                 safeThis->repaint();
             });
@@ -28824,7 +28866,7 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
             ch.archiveCurrentRack("replaced by recall: " + name);
             for (int i = ch.getNumSlots() - 1; i >= 0; --i) ch.removeSlot(i);
             safeThis->chainSelectedSlot_ = -1;
-            safeThis->chainListPanel.rebuild(ch.getAllSlotInfos(), -1);
+            safeThis->refreshChainPanelForView(false);   // removeSlot bumped per slot
 
             // The SAME restore path a session reload takes. The callback
             // fires after every slot attempt, so the rack fills in visibly
@@ -28837,8 +28879,7 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
                 auto& ch2 = safeThis->processorRef.getChainHost();
                 if (safeThis->chainSelectedSlot_ < 0 && ch2.getNumSlots() > 0)
                     safeThis->chainSelectedSlot_ = 0;
-                safeThis->chainListPanel.rebuild(ch2.getAllSlotInfos(),
-                                                 safeThis->chainSelectedSlot_);
+                safeThis->refreshChainPanelForView(false);   // per-slot loads bump the revision
                 // Per-slot degradation, visible as it happens: a plugin that
                 // would not load, or settings that would not restore, is
                 // named here. A silent default is the one outcome the user
@@ -29016,7 +29057,8 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
         // first plugin, so the page never sits on the old chain looking
         // frozen while slots instantiate (instantiation blocks the message
         // thread per plugin, so between-stall paints are all the user gets).
-        safeThis->chainListPanel.rebuild(ch2.getAllSlotInfos(), -1);
+        // removeSlot bumped per slot and the selection moved to -1 above.
+        safeThis->refreshChainPanelForView(false);
         safeThis->chainListPanel.statusText = "Loading " + slots[0].name
             + " (1 of " + juce::String((int)slots.size()) + ")...";
         safeThis->chainListPanel.repaint();
@@ -29034,7 +29076,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
             {
                 auto& ch3 = safeThis->processorRef.getChainHost();
                 safeThis->chainSelectedSlot_ = ch3.getNumSlots() > 0 ? 0 : -1;
-                safeThis->chainListPanel.rebuild(ch3.getAllSlotInfos(), safeThis->chainSelectedSlot_);
+                safeThis->refreshChainPanelForView(false);   // loads bumped the revision
                 // Every slot failing must not strand the Loading text; the
                 // "Failed" prefix picks up the panel's error style.
                 safeThis->chainListPanel.statusText =
@@ -29215,7 +29257,9 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
                                                + " applied to \"" + name + "\"").toRawUTF8());
                             }
                             // Progressive: the rack grows a row per loaded slot
-                            safeThis->chainListPanel.rebuild(ch4.getAllSlotInfos(), -1);
+                            // (completeLoad bumped; selection stays -1 from
+                            // the build-start clear)
+                            safeThis->refreshChainPanelForView(false);
                         }
                         (*loadNextPtr)();
                     });
@@ -30285,9 +30329,9 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
                         }
                         else
                             cm.editData = remaining;
-                        auto& chS2 = safeThis2->processorRef.getChainHost();
-                        safeThis2->chainListPanel.rebuild(chS2.getAllSlotInfos(),
-                                                          safeThis2->chainSelectedSlot_);
+                        // force = true, NAMED: card-apply is settings-only —
+                        // no revision bump, signature blind.
+                        safeThis2->refreshChainPanelForView(true);
                     }
                     cm.editBaseRevision = safeThis2->processorRef.getChainHost().getChainRevision();
                 }
