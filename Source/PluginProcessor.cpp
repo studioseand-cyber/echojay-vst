@@ -320,7 +320,12 @@ EchoJayProcessor::EchoJayProcessor()
 
     chainHost.onChainChanged = [this]
     {
-        setLatencySamples(chainHost.getTotalLatencySamples());
+        // Through the hard-block accessor, never getTotalLatencySamples
+        // directly: a Borrowed host answers -1 here and must never reach
+        // setLatencySamples (RACK_BORROW_IMPLEMENTATION_SPEC §2.3). This
+        // host is Primary, so the gate is structural, not behavioral.
+        if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
+            setLatencySamples(lat);
         // The chain now produces different audio, so the held true peak / peak /
         // overs describe a signal that no longer exists (they were contradicting
         // a capture taken seconds later). Drop those holds; integrated LUFS / LRA

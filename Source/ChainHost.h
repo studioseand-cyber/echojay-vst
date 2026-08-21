@@ -35,6 +35,7 @@ public:
         changes a header between translation units fails as memory corruption,
         while a friend declaration changes no layout, size or vtable. */
     friend struct EchoJayStateMatchTestAccess;
+    friend struct EchoJayBorrowHostTestAccess;
 
     // Lightweight slot description safe to copy to the UI thread
     struct SlotInfo {
@@ -45,8 +46,44 @@ public:
         float wet = 1.0f;       // per-slot wet/dry (0..1, 1 = fully wet)
     };
 
-    ChainHost();
+    // ---- Mode (RACK_BORROW_IMPLEMENTATION_SPEC §2, 21 Aug 2026) -----------
+    // Primary is today's ChainHost, unchanged. Borrowed is the constrained
+    // second-host mode for whole-rack borrow: skipped constructor loads,
+    // read-only on every shared file (death MARKS excepted — process-scoped
+    // by design; even their CONSUMPTION stays the primary's job), an
+    // identity-keyed reuse pool instead of the write-only graveyard, and the
+    // latency hard block below.
+    enum class Mode { Primary, Borrowed };
+    explicit ChainHost(Mode mode = Mode::Primary);
     ~ChainHost() override;
+    bool isBorrowed() const noexcept { return mode_ == Mode::Borrowed; }
+
+    /** Host latency mirroring, REFUSED in Borrowed mode (spec §2.3): the
+        host-reported latency is the main rack's alone — a borrowed chain's
+        latency lives on a side stream the host cannot compensate. Returns
+        -1 (and logs) on a borrowed host; callers gate on >= 0. This is the
+        hard block, not a convention: setLatencySamples must be fed from
+        HERE, never from getTotalLatencySamples directly. */
+    int hostReportableLatencySamples() const;
+
+    // ---- Borrow pool (Borrowed mode only; spec §1) ------------------------
+    // Released slots park IN the graph, disconnected and SUSPENDED (the
+    // graph skips suspended nodes — juce_AudioProcessorGraph.cpp:887), keyed
+    // by plugin identity for reuse. A removed Node::Ptr can never re-enter a
+    // graph (addNode only takes a fresh unique_ptr), which is why parking
+    // stays in-graph rather than in the graveyard. Nothing is ever freed —
+    // §3a's rule is untouched; parked instances are findable instead of
+    // only leaked. Growth bound: distinct plugin identities ever borrowed.
+    void releaseBorrowToPool();          // park every slot, clear the rack
+    int  borrowPoolCount() const noexcept { return (int) borrowPoolTotal_; }
+    int  borrowFreshInstantiations() const noexcept { return borrowFresh_; }
+    /** The named fallback: this identity failed reuse verification — every
+        later borrow instantiates fresh (its parked instances are never
+        popped again), and the marking logs. */
+    void markBorrowPoolIneligible(const juce::PluginDescription& d,
+                                  const juce::String& why);
+    bool isBorrowPoolIneligible(const juce::PluginDescription& d) const
+    { return borrowPoolIneligible_.contains(borrowPoolKey(d)); }
 
     // ---- Audio thread hooks -----------------------------------------------
     void prepare(double sampleRate, int blockSize);
@@ -1117,6 +1154,29 @@ private:
     // close; disposing the instance makes that a use-after-free crash.
     // Freed only when the ChainHost itself is destroyed.
     std::vector<juce::AudioProcessorGraph::Node::Ptr> graveyard_;
+
+    // ---- Borrow mode internals (spec §1/§2) -------------------------------
+    const Mode mode_ = Mode::Primary;
+    struct BorrowPoolEntry {
+        juce::AudioProcessorGraph::Node::Ptr node;
+        juce::PluginDescription desc;
+    };
+    // Keyed by identity; entries stay members of graph_, suspended.
+    std::map<juce::String, std::vector<BorrowPoolEntry>> borrowPool_;
+    size_t            borrowPoolTotal_ = 0;
+    juce::StringArray borrowPoolIneligible_;
+    int               borrowFresh_ = 0;      // fresh instantiations, for the gate
+    // Node ids of slots that came FROM the pool this borrow — a seed failure
+    // on one of these is a REUSE failure (marks ineligible); on a fresh
+    // instance it is just a bad state.
+    std::set<juce::uint32> borrowReusedNodeIds_;
+    static juce::String borrowPoolKey(const juce::PluginDescription& d)
+    {
+        // format|identifier|uid — the same identity stateFitsPlugin matches on.
+        return d.pluginFormatName + "|" + d.fileOrIdentifier + "|"
+             + juce::String(d.uniqueId != 0 ? d.uniqueId : d.deprecatedUid);
+    }
+    bool borrowTryReuseInto(const juce::PluginDescription& canonicalDesc);
 
     bool   prepared_  = false;
     std::atomic<bool> hasActiveSlots_ { false };  // true when ≥1 non-bypassed slot exists

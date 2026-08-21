@@ -1,0 +1,52 @@
+#!/bin/bash
+# Build + run the borrowed-mode ChainHost gate against the real
+# ChainHost (CHAINHOST_BRIEF Part D).
+# Usage: ./build_and_run.sh   (from anywhere; requires build/ to exist and the
+#                              EchoJay SharedCode lib to be built)
+#
+# Same shape as tools/dashboard_test/build_and_run.sh: lift the real compile
+# flags for ChainHost.cpp out of build/compile_commands.json so the test TU
+# sees exactly the JUCE module defines and include paths the plugin is built
+# with, then link the Release SharedCode static lib for the symbols. It links
+# the lib rather than recompiling ChainHost.cpp so the code under test is the
+# object code that ships.
+#
+# HOME IS SANDBOXED for the run. ChainHost persists under
+# ~/Library/Application Support/EchoJay and the deadman cases write a marker
+# there and blacklist a path; the binary refuses to start unless JUCE's
+# app-data directory resolves under EJ_STATE_TEST_HOME, so a bare run cannot
+# touch the real EchoJay folder.
+set -e
+cd "$(dirname "$0")/../.."
+SCRATCH=$(mktemp -d)
+trap 'rm -rf "$SCRATCH"' EXIT
+python3 - "$SCRATCH" <<'PYEOF'
+import json, sys, shlex, subprocess, os
+scratch = sys.argv[1]
+cc = json.load(open('build/compile_commands.json'))
+entry = [e for e in cc if e['file'].endswith('Source/ChainHost.cpp')
+                        and 'CMakeFiles/EchoJay.dir' in e['command']][0]
+args = shlex.split(entry['command'])
+out, skip = [], False
+for a in args[1:]:
+    if skip: skip = False; continue
+    if a in ('-c', '-o'): skip = (a == '-o'); continue
+    if a.endswith('ChainHost.cpp') or a.endswith('.o'): continue
+    out.append(a)
+cmd = (['clang++'] + out + ['-I', os.path.abspath('Source'),
+        'tools/borrowhost_test/borrowhost_test.cpp',
+        'build/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a',
+        '-framework','Cocoa','-framework','CoreAudio','-framework','CoreMIDI',
+        '-framework','AudioToolbox','-framework','Accelerate','-framework','QuartzCore',
+        '-framework','IOKit','-framework','Security','-framework','WebKit',
+        '-framework','Metal','-framework','MetalKit','-framework','CoreAudioKit',
+        '-framework','UniformTypeIdentifiers','-framework','AVFoundation',
+        '-framework','CoreMedia','-framework','AVKit','-lcurl',
+        '-o', f'{scratch}/borrowhost_test'])
+r = subprocess.run(cmd, capture_output=True, text=True)
+if r.returncode:
+    print(r.stderr[-4000:])
+    sys.exit(1)
+PYEOF
+mkdir -p "$SCRATCH/home"
+HOME="$SCRATCH/home" EJ_STATE_TEST_HOME="$SCRATCH/home" "$SCRATCH/borrowhost_test"

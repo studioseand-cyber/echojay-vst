@@ -214,6 +214,9 @@ bool ChainHost::isPopoutOnly(const juce::String& pluginName, const juce::String&
 
 void ChainHost::markPopoutOnly(const juce::String& pluginName, const juce::String& format)
 {
+    // Static (machine-wide flag), so it cannot carry the borrowed read-only
+    // guard; not on the spec §2.2 shared-file list, and no borrowed-mode
+    // path calls it — the byte-identical gate still covers the file.
     popoutOnlyReloadIfStale();
     auto key = popoutOnlyKey(pluginName, format);
     if (key.startsWith("|") || popoutOnlyCache().contains(key)) return;
@@ -726,7 +729,7 @@ struct ChainHost::LatencyRebuilder : juce::AsyncUpdater, juce::Timer
     ChainHost& owner;
 };
 
-ChainHost::ChainHost()
+ChainHost::ChainHost(Mode mode) : mode_(mode)
 {
     juce::addDefaultFormatsToManager(formatManager_);
 
@@ -738,6 +741,15 @@ ChainHost::ChainHost()
     outputNode_ = graph_->addNode(std::make_unique<IOProc>(IOProc::audioOutputNode));
 
     rebuildGraph(); // passthrough (no slots yet)
+
+    // BORROWED MODE skips the constructor's disk work wholesale (spec §2.1):
+    // plugin resolution rides the PRIMARY host's lists read-only, and even
+    // death-mark CONSUMPTION stays the primary's job — a borrowed host is
+    // created lazily after a primary exists, and consuming here would race
+    // it for the same marker files.
+    if (mode_ == Mode::Borrowed)
+        return;
+
     loadFromDisk();
     loadParamMapsFromDisk();
     mergeBootstrapMaps();
@@ -1004,7 +1016,10 @@ void ChainHost::setScanStatus(const juce::String& s)
 }
 
 void ChainHost::doRefresh()
-{
+{    // Borrowed mode is READ-ONLY on every shared file (spec §2.2): one
+    // writer per file, and the primary host is it.
+    if (mode_ == Mode::Borrowed) return;
+
     struct Finally { ChainHost* h; ~Finally() { h->scanning_.store(false); } } fin{this};
 
     // The FILE is the authority at scan time: deleting a line from
@@ -2382,6 +2397,8 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
     // Any successful load clears a stale session load-failure mark
     sessionLoadFailed_.removeString(sessionLoadKey(desc.name, desc.pluginFormatName));
 
+    if (mode_ == Mode::Borrowed) ++borrowFresh_;   // the gate's counter
+
     ChainSlot slot;
     slot.node     = graph_->addNode(std::move(inst));
     slot.desc     = desc;
@@ -3749,7 +3766,10 @@ void ChainHost::loadParamMapsFromDisk()
 }
 
 void ChainHost::saveParamMapsToDisk()
-{
+{    // Borrowed mode is READ-ONLY on every shared file (spec §2.2): one
+    // writer per file, and the primary host is it.
+    if (mode_ == Mode::Borrowed) return;
+
     juce::DynamicObject::Ptr idx = new juce::DynamicObject();
     for (auto& kv : identityToFp_) idx->setProperty(juce::Identifier(kv.first), kv.second);
     juce::DynamicObject::Ptr maps = new juce::DynamicObject();
@@ -3933,6 +3953,109 @@ static void pollVST3Validation(
     });
 }
 
+// ---------------------------------------------------------------------------
+// Borrow pool (Borrowed mode only) — RACK_BORROW_IMPLEMENTATION_SPEC §1.
+// ---------------------------------------------------------------------------
+int ChainHost::hostReportableLatencySamples() const
+{
+    if (mode_ == Mode::Borrowed)
+    {
+        // THE HARD BLOCK (spec §2.3): a borrowed chain's latency must never
+        // reach setLatencySamples — the host would delay the main's channel
+        // by latency it does not experience. Refused, loudly, not advisory.
+        EchoJay_NSLog("EJBorrow: latency mirror REFUSED - a borrowed host "
+                      "never reaches setLatencySamples");
+        return -1;
+    }
+    return getTotalLatencySamples();
+}
+
+void ChainHost::markBorrowPoolIneligible(const juce::PluginDescription& d,
+                                         const juce::String& why)
+{
+    const auto key = borrowPoolKey(d);
+    if (borrowPoolIneligible_.contains(key)) return;
+    borrowPoolIneligible_.add(key);
+    // The named fallback, said out loud (spec §1): this plugin pays today's
+    // per-cycle cost for ITSELF only; everything else keeps the bound.
+    EchoJay_NSLog(("EJBorrowPool: \"" + d.name + "\" failed reuse verification ("
+                   + why + ") - pool-ineligible this session, later borrows "
+                   "instantiate fresh").toRawUTF8());
+}
+
+void ChainHost::releaseBorrowToPool()
+{
+    if (mode_ != Mode::Borrowed || !graph_) return;
+    for (int i = 0; i < (int) slots_.size(); ++i)
+    {
+        auto& s = slots_[(size_t) i];
+        if (s.node == nullptr) continue;
+        // Same discipline as removeSlot: no listener may outlive its slot.
+        detachHostedListener(i);
+        // Park IN the graph, disconnected (rebuildGraph below only wires
+        // slots_) and SUSPENDED — the graph skips suspended nodes, so a
+        // parked rack costs one flag check per node per block, not audio.
+        if (auto* p = s.node->getProcessor()) p->suspendProcessing(true);
+        borrowPool_[borrowPoolKey(s.desc)].push_back({ s.node, s.desc });
+        ++borrowPoolTotal_;
+        // The wet-blend node is OURS — destroy for real, as removeSlot does.
+        if (s.blendNode) graph_->removeNode(s.blendNode->nodeID);
+    }
+    slots_.clear();
+    borrowReusedNodeIds_.clear();
+    bumpChainRevision();
+    rebuildGraph();
+    if (prepared_)
+    {
+        graph_->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+        graph_->prepareToPlay(sampleRate_, blockSize_);
+    }
+    EchoJay_NSLog(("EJBorrowPool: rack released, " + juce::String((int) borrowPoolTotal_)
+                   + " instance(s) parked").toRawUTF8());
+}
+
+bool ChainHost::borrowTryReuseInto(const juce::PluginDescription& canonicalDesc)
+{
+    if (mode_ != Mode::Borrowed) return false;
+    const auto key = borrowPoolKey(canonicalDesc);
+    if (borrowPoolIneligible_.contains(key)) return false;   // fresh, by verdict
+    auto it = borrowPool_.find(key);
+    if (it == borrowPool_.end() || it->second.empty()) return false;
+
+    BorrowPoolEntry entry = std::move(it->second.back());
+    it->second.pop_back();
+    --borrowPoolTotal_;
+    if (auto* p = entry.node->getProcessor())
+    {
+        p->suspendProcessing(false);
+        p->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+    }
+    ChainSlot slot;
+    slot.node = std::move(entry.node);
+    slot.desc = entry.desc;
+    slot.bypassed = false;
+    slots_.push_back(std::move(slot));
+    borrowReusedNodeIds_.insert(slots_.back().node->nodeID.uid);
+
+    bumpChainRevision();
+    rebuildGraph();
+    if (prepared_)
+    {
+        graph_->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+        graph_->prepareToPlay(sampleRate_, blockSize_);
+    }
+    const int idx = (int) slots_.size() - 1;
+    applyStructuredIfReady(idx, DialTrigger::slotLoaded);
+    if (stateCacheEnabled_)
+    {
+        attachHostedListener(idx);
+        captureSlotState(idx, juce::Time::getMillisecondCounterHiRes());
+    }
+    EchoJay_NSLog(("EJBorrowPool: \"" + canonicalDesc.name + "\" REUSED from the "
+                   "pool as slot " + juce::String(idx) + " (0 new instances)").toRawUTF8());
+    return true;
+}
+
 juce::String ChainHost::loadBuiltinNow(const juce::PluginDescription& desc)
 {
     if (!graph_) return "chain graph not ready";
@@ -3944,9 +4067,16 @@ juce::String ChainHost::loadBuiltinNow(const juce::PluginDescription& desc)
     if (device == nullptr)
         return "unknown built-in device \"" + desc.name + "\"";
 
+    // Borrowed mode: the pool first — a parked identical instance is reused
+    // instead of constructing (spec §1: growth bounds at distinct identities).
+    if (mode_ == Mode::Borrowed
+        && borrowTryReuseInto(BuiltinDeviceRegistry::descriptionFor(*device)))
+        return {};
+
     std::unique_ptr<juce::AudioProcessor> proc = device->create();
     if (!proc)
         return "built-in device \"" + desc.name + "\" failed to construct";
+    if (mode_ == Mode::Borrowed) ++borrowFresh_;
 
     proc->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
 
@@ -3998,6 +4128,15 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
     {
         const auto err = loadBuiltinNow(desc);
         if (callback) callback(err);
+        return;
+    }
+
+    // Borrowed mode: the pool first, same rule as the builtin branch inside
+    // loadBuiltinNow. The key is the resolved description's identity, which
+    // arrives through the same resolution path on every borrow.
+    if (mode_ == Mode::Borrowed && borrowTryReuseInto(desc))
+    {
+        if (callback) callback({});
         return;
     }
 
@@ -4452,7 +4591,10 @@ bool ChainHost::isBlacklisted(const juce::String& path) const
 }
 
 void ChainHost::addToBlacklist(const juce::String& path, const juce::String& reason)
-{
+{    // Borrowed mode is READ-ONLY on every shared file (spec §2.2): one
+    // writer per file, and the primary host is it.
+    if (mode_ == Mode::Borrowed) return;
+
     juce::String bl;
     {
         std::lock_guard<std::mutex> lock(pluginsMutex_);
@@ -5284,7 +5426,10 @@ void ChainHost::loadByRecommendedName(const juce::String& name,
 // Persistence — plugin list cache
 // ---------------------------------------------------------------------------
 void ChainHost::saveToDisk() const
-{
+{    // Borrowed mode is READ-ONLY on every shared file (spec §2.2): one
+    // writer per file, and the primary host is it.
+    if (mode_ == Mode::Borrowed) return;
+
     appSupportDir().createDirectory();
     std::lock_guard<std::mutex> lock(pluginsMutex_);
     auto xml = knownPlugins_.createXml();
@@ -5386,7 +5531,10 @@ int ChainHost::oversizeStateBytes(const juce::String& path) const
 }
 
 void ChainHost::recordStateOversize(const juce::String& path, int bytes, const juce::String& name, const juce::String& where)
-{
+{    // Borrowed mode is READ-ONLY on every shared file (spec §2.2): one
+    // writer per file, and the primary host is it.
+    if (mode_ == Mode::Borrowed) return;
+
     if (path.isEmpty() || bytes <= kSessionStateMaxSlotBytes) return;
     {
         std::lock_guard<std::mutex> lock(pluginsMutex_);
@@ -5626,6 +5774,32 @@ void ChainHost::applyRestoredState(int slotIdx, const juce::String& b64,
                                 " so it loaded at its defaults");
     }
     popDeathMark(mark);
+
+    // Reuse verification, production arm (spec §1): a seed failing on an
+    // instance that came FROM the pool is a REUSE failure — that identity
+    // goes pool-ineligible for the session and later borrows instantiate
+    // fresh, loudly. On a fresh instance the same failure is just a bad
+    // state and marks nothing.
+    if (mode_ == Mode::Borrowed && slotIdx >= 0 && slotIdx < (int) slots_.size()
+        && slots_[(size_t) slotIdx].node != nullptr
+        && borrowReusedNodeIds_.count(slots_[(size_t) slotIdx].node->nodeID.uid) > 0)
+    {
+        bool readbackOk = applied;
+        if (applied)
+        {
+            // Self-check: a reused instance that accepted the seed must be
+            // able to read its state back. Empty or throwing readback means
+            // reuse left it incoherent even though setState "succeeded".
+            juce::MemoryBlock rb;
+            try { proc->getStateInformation(rb); }
+            catch (...) { rb.reset(); }
+            readbackOk = rb.getSize() > 0;
+        }
+        if (! readbackOk)
+            markBorrowPoolIneligible(slots_[(size_t) slotIdx].desc,
+                                     applied ? "state readback failed after reuse seed"
+                                             : "rejected its state on reuse");
+    }
 
     if (!applied) return;
 
@@ -6212,7 +6386,10 @@ juce::var ChainHost::buildChainSlotsVar() const
 }
 
 void ChainHost::archiveCurrentRack(const juce::String& label)
-{
+{    // Borrowed mode is READ-ONLY on every shared file (spec §2.2): one
+    // writer per file, and the primary host is it.
+    if (mode_ == Mode::Borrowed) return;
+
     if (slots_.empty()) return;   // nothing populated: nothing to protect
 
     // Same capture path a deliberate library save uses (sendChainSave): force
