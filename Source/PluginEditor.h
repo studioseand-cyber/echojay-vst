@@ -1181,22 +1181,22 @@ private:
     // THE shared display source: both text-layout passes (measure + paint)
     // MUST get their string from here so heights and pixels cannot disagree.
     //
-    // Edit turns show the CARD ONLY (9 Aug 2026): the preamble is written
-    // before the outcome exists, so it can only ever be a prediction
-    // rendered as a statement - "Dialling Ratio to 4" sat above three
-    // surfaces saying nothing was written. Instruction is a ceiling, never
-    // a floor: four rounds of it were each absorbed at the surface and none
-    // guaranteed. The card is the one place proposal grammar is TRUE,
-    // because it has an Apply button and speaks before the outcome by
-    // design. Keyed on editData non-empty, so blockless replies (declines,
-    // advice, ASK) keep their prose untouched. PLUGIN DISPLAY ONLY: the
-    // model still writes the preamble (protocol unchanged, other clients
-    // unaffected); the web app renders its own and is a separate, later
-    // decision.
+    // Edit turns render PROSE + CARD, in that order (21 Aug 2026, reversing
+    // the 9 Aug card-only rule). The 9 Aug decision suppressed the preamble
+    // because it was a prediction rendered as a statement ("Dialling Ratio
+    // to 4" above three surfaces saying nothing was written) and four
+    // rounds of instruction had not held. The contract has since inverted
+    // that ground: the preamble is MANDATORY and forward-looking by rule
+    // ("nothing has happened yet"), and it is the ONE carrier of the
+    // honesty content the card cannot hold — the card says "Release 4",
+    // only the prose says the user asked in milliseconds, this knob has no
+    // milliseconds, and 4 is a ballpark estimate. Suppressing it here
+    // deleted the caveat and left the card sounding certain about an
+    // estimate — the exact failure the honesty rule exists to remove. So:
+    // no special case. A block-only reply (empty content after extraction)
+    // still renders card-alone via textH == 0 in both passes.
     static const juce::String& displayedText(const ChatMsg& m)
     {
-        static const juce::String kCardOnly;
-        if (m.role == "assistant" && m.editData.isNotEmpty()) return kCardOnly;
         return m.displayText.isNotEmpty() ? m.displayText : m.content;
     }
     bool chatLoading = false;
