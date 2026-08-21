@@ -5,19 +5,35 @@
 > `replacesClause`, stale-rack recompose, `[ask-flip]`/`[build-ask]` logging)
 > and this branch's AlertWindow confirm inside `openSavedChain` (7b3b456 +
 > 0e557c1) were BOTH alive after the merge, and the recall path asked twice in
-> a row. Consolidated on `presentReplaceAsk`: the AlertWindow confirm,
-> `chainOpenReplaceConfirmed_` and its `std::exchange` guard are deleted;
-> `openSavedChain` is now a pure loader with exactly one caller
-> (`recallLoadChain`, which carries the §1 hooks). The saved-chain/dashboard
-> entry asks through a third thin wrapper, `presentOpenChainReplaceAsk` —
-> wording + chips only, intent class `recall_` (the supersede scope; the
-> dashboard is an entry point, logged as `entry=dashboard`, not an intent
-> class). Every rack-destroying path reaches the one presenter: chain-row
-> click and saved-chains menu via `beginRecall`, the bridge via the wrapper
-> (or direct load on an empty rack), chat recall via the recall machinery,
-> the AI build via `presentBuildReplaceAsk`. §1's hook-threading survives
-> inside `recallLoadChain`; the confirm re-entry it describes no longer
-> exists.
+> a row. Consolidated on `presentReplaceAsk`, guarded AT THE CHOKE POINT: the
+> AlertWindow confirm, `chainOpenReplaceConfirmed_` and its `std::exchange`
+> guard are deleted, and `openSavedChain` keeps the guard where the
+> AlertWindow sat — every main-rack open (recall, chain-row click,
+> saved-chains menu, stage-3 bridge, any future entrant) funnels through it,
+> so no caller list can go stale. On a non-empty rack it raises
+> `presentOpenChainReplaceAsk` — third thin wrapper beside the recall and
+> build ones, `replacesClause` reused, intent class `recall_` (the supersede
+> scope; entry points are telemetry on the entrant's log line, never a new
+> prefix) — and returns; the confirm chip re-enters via
+> `recallLoadChain(id, name, replaceConfirmed=true)` →
+> `openSavedChain(..., true)`, mirroring `loadChainFromJson`'s
+> `replaceConfirmed` idiom. `beginRecall` keeps only the where-to-load
+> decision; its LINK branch still asks through `presentRecallReplaceAsk`
+> (now Link-only) because a Link's rack never passes through
+> `openSavedChain`. The AI build path keeps `presentBuildReplaceAsk`,
+> separate as before — it does not route through `openSavedChain`. §1's
+> hook-threading survives inside `recallLoadChain`; the confirm re-entry §1
+> describes no longer exists.
+
+> **LINK WORK HAZARD — `LinkShm::RackSidecarSlot` is POSITIONALLY
+> BRACE-INITIALISED.** Any field added must go LAST, after the other Mac's
+> sidecar-identity fields, or every initialiser shifts silently — it compiles
+> and puts values in the wrong members. Occupied regions on their tree:
+> `LinkShm.h:948-960`, `:1090-1096`, `:1145-1152`; `LinkProcessor.cpp:271-278`;
+> `ChainHost.cpp:1352-1363`. Adjacent-hunk pairs to watch when merging Link
+> work: our `applyRestoredState` ~`:4443` against their `buildRecommendable`
+> `:4662`, and our `runNextEditOp` ~`:1412` against their `getSlotIdentity`
+> `:1352`.
 
 Written for whoever merges this branch with
 `integration/reasoning-plus-pitch` (the second Mac, audio path). This branch

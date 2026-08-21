@@ -10463,21 +10463,14 @@ void EchoJayEditor::bridgeOpenChainById(const juce::String& chainId)
         if (auto* o = json.getDynamicObject())
             if (auto* c = o->getProperty("chain").getDynamicObject())
                 name = c->getProperty("name").toString();
-        // CONSOLIDATED (merge, 21 Aug): the AlertWindow confirm that used to
-        // sit inside openSavedChain is gone; the bridge asks through the ONE
-        // shared presenter via its own thin wording wrapper, then loads
-        // through recallLoadChain -> openSavedChain like every other recall.
-        // MAIN RACK, as this path always was — restoreSavedChain fills the
-        // plugin's own ChainHost, so the guard reads the same rack it
-        // replaces.
-        const int rackSlots = safe->processorRef.getChainHost().getNumSlots();
-        if (rackSlots == 0)
-        {
-            EchoJay_NSLog("EJRecall: replace ask shown=no rack=0 entry=dashboard answer=load");
-            safe->recallLoadChain(chainId, name);
-        }
-        else
-            safe->presentOpenChainReplaceAsk(chainId, name, rackSlots);
+        // THE ONE LOADER (merge, 21 Aug): the bridge calls openSavedChain like
+        // every other entrant, and the replace confirmation is the choke-point
+        // guard at the top of openSavedChain — nothing for this caller to
+        // remember. Hooks {} on purpose: the fetch errors here and in
+        // openSavedChain both surface via setChainSaveStatus on the Chain tab
+        // the bridge lands on, and a second error surface is worse than none.
+        EchoJay_NSLog("EJRecall: begin entry=dashboard target=main");
+        safe->openSavedChain(chainId, name, {}, {});
     });
 }
 
@@ -21103,7 +21096,9 @@ void EchoJayEditor::onAskChipTapped(int i)
         if (intent == "recall_confirm" && rid.isNotEmpty())
         {
             if (tuid.isNotEmpty()) recallLoadChainToLink(tuid, rid, rnm);
-            else                   recallLoadChain(rid, rnm);
+            // The chip tap IS the answer to the replace ask — re-enter past
+            // the openSavedChain guard or the same question comes right back.
+            else                   recallLoadChain(rid, rnm, /*replaceConfirmed*/ true);
         }
         return;
     }
@@ -21181,17 +21176,13 @@ void EchoJayEditor::onAskChipTapped(int i)
         supersedePendingReplaceAsks();       // P57: a pending brief survives
         askShelfVisible_ = false;
         resized();
-        const int rackNow = processorRef.getChainHost().getNumSlots();
         EchoJay_NSLog(("EJRecall: mismatch ask branch=load-here rack="
-                       + juce::String(rackNow)).toRawUTF8());
+                       + juce::String(processorRef.getChainHost().getNumSlots())).toRawUTF8());
         if (rid.isEmpty()) return;
-        if (rackNow == 0)
-        {
-            EchoJay_NSLog("EJRecall: replace ask shown=no rack=0 answer=load");
-            recallLoadChain(rid, rnm);
-        }
-        else
-            presentRecallReplaceAsk(rid, rnm, rackNow);
+        // The channel decision is made; the replace confirmation is the
+        // openSavedChain choke point's, raised there if this rack is
+        // non-empty (merge, 21 Aug — no per-caller ask any more).
+        recallLoadChain(rid, rnm);
         return;
     }
     {
@@ -24125,27 +24116,34 @@ static juce::String replacesClause (const juce::StringArray& rackNames)
 // the plugin and blocks all input; see the Link ack consumer's note).
 void EchoJayEditor::beginRecall(const juce::String& id, const juce::String& name)
 {
-    // ONE read of the active chain view, feeding both the guard and the target.
+    // ONE read of the active chain view, deciding WHERE the load goes.
     // Empty uid = the main rack; a uid = the Link currently being viewed.
+    // beginRecall owns only that where-to-load decision (merge, 21 Aug): the
+    // MAIN-rack replace confirmation lives at the openSavedChain choke point,
+    // so the main branch just loads and lets the guard there ask. The LINK
+    // branch keeps its ask HERE because a Link's rack never passes through
+    // openSavedChain — the choke point cannot see it.
     const juce::String uid = chainViewUid();
     const bool toLink = uid.isNotEmpty();
-    const auto view = toLink ? chainRackView() : ChainRackView{};
-    const int rackSlots = toLink ? (int) view.slots.size()
-                                 : processorRef.getChainHost().getNumSlots();
-
+    if (! toLink)
+    {
+        EchoJay_NSLog("EJRecall: begin target=main (replace guard at openSavedChain)");
+        recallLoadChain(id, name);
+        return;
+    }
+    const auto view = chainRackView();
+    const int rackSlots = (int) view.slots.size();
     switch (EJRecall::decide(true, rackSlots))   // callers pass a known id
     {
         case EJRecall::Decision::AskReplace:
             EchoJay_NSLog(("EJRecall: replace ask shown=yes rack=" + juce::String(rackSlots)
-                           + (toLink ? " target=link" : " target=main")).toRawUTF8());
-            presentRecallReplaceAsk(id, name, rackSlots, uid,
-                                    toLink ? view.name : juce::String());
+                           + " target=link").toRawUTF8());
+            presentRecallReplaceAsk(id, name, rackSlots, uid, view.name);
             return;
         case EJRecall::Decision::LoadDirect:
             EchoJay_NSLog(juce::String("EJRecall: replace ask shown=no rack=0 answer=load")
                           .toRawUTF8());
-            if (toLink) recallLoadChainToLink(uid, id, name);
-            else        recallLoadChain(id, name);
+            recallLoadChainToLink(uid, id, name);
             return;
         case EJRecall::Decision::Refuse:
             return;   // decide() only refuses an unknown id; callers pass known
@@ -24219,17 +24217,20 @@ void EchoJayEditor::presentRecallReplaceAsk(const juce::String& id,
 void EchoJayEditor::presentOpenChainReplaceAsk(const juce::String& id,
                                                const juce::String& name, int rackSlots)
 {
-    // Wording + chips only; the mechanics (flip, scoped supersede, append,
-    // persist, log, relayout) live in presentReplaceAsk, and the answer path
-    // is the recall_confirm handler unchanged.
+    // Raised by the openSavedChain choke-point guard, for EVERY main-rack
+    // saved-chain open (recall, chain row, menu, bridge). Wording + chips
+    // only; the mechanics (flip, scoped supersede, append, persist, log,
+    // relayout) live in presentReplaceAsk, and the answer path is the
+    // recall_confirm handler, which re-enters recallLoadChain with
+    // replaceConfirmed=true.
     //
     // INTENT CLASS recall_, DELIBERATELY. Supersede is scoped by intent
     // prefix (recall_/build_ are the replace class, cmp_ compare); a
     // saved-chain prefix of its own would compose a correct-looking ask that
     // no later replace ask supersedes and that supersedes nothing — two asks
     // stacked, neither clearing the other. The saved-chain path IS recall by
-    // intent; the dashboard is a different ENTRY POINT to the same intent,
-    // and the entry point rides the log payload below, not the intent class.
+    // intent; an entry point (dashboard, row click) is telemetry and rides
+    // the ENTRANT'S log line, never the intent class.
     const juce::String plugins =
         juce::String(rackSlots) + (rackSlots == 1 ? " plugin" : " plugins");
     juce::StringArray rackNames;
@@ -24259,7 +24260,7 @@ void EchoJayEditor::presentOpenChainReplaceAsk(const juce::String& id,
     presentReplaceAsk(question, choices,
                       "chain \"" + name + "\"",
                       "EJRecall: replace ask shown=yes rack=" + juce::String(rackSlots)
-                          + " entry=dashboard answer=pending");
+                          + " target=main answer=pending");
 }
 
 void EchoJayEditor::presentBuildReplaceAsk(const juce::String& chainJson)
@@ -24454,7 +24455,8 @@ void EchoJayEditor::recallLoadChainToLink(const juce::String& linkUid,
     });
 }
 
-void EchoJayEditor::recallLoadChain(const juce::String& id, const juce::String& name)
+void EchoJayEditor::recallLoadChain(const juce::String& id, const juce::String& name,
+                                    bool replaceConfirmed)
 {
     auto fetchFailed = std::make_shared<bool>(false);
     auto intended    = std::make_shared<juce::StringArray>();
@@ -24474,7 +24476,8 @@ void EchoJayEditor::recallLoadChain(const juce::String& id, const juce::String& 
               " been deleted on another device. Nothing was loaded."
             : "\"" + name + "\" could not be loaded: " + err);
     },
-        [intended](const juce::StringArray& names) { *intended = names; });
+        [intended](const juce::StringArray& names) { *intended = names; },
+        replaceConfirmed);
     // Loaded/skipped summary, watchdog-style: the restore has no single
     // completion event (onSlotSettled fires per slot), and the AI build
     // path's 6s dial summary is the precedent. Skips stay reported to the
@@ -28740,17 +28743,28 @@ void EchoJayEditor::showSavedChainsMenu()
 
 void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& name,
                                    std::function<void(int, const juce::String&)> onFetchError,
-                                   std::function<void(const juce::StringArray&)> onSlotsParsed)
+                                   std::function<void(const juce::StringArray&)> onSlotsParsed,
+                                   bool replaceConfirmed)
 {
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
 
-    // NO CONFIRM HERE (merge, 21 Aug). The replace confirmation is
-    // presentReplaceAsk — ONE implementation, shared by recall and build,
-    // which names the plugins about to be cleared and recomposes at confirm
-    // against a stale rack. Every caller that can destroy a non-empty rack
-    // reaches it via beginRecall BEFORE this loader runs; this function is
-    // the loader only. (The AlertWindow confirm that lived here, 7b3b456 +
-    // 0e557c1, was consolidated away — two confirms asked twice in a row.)
+    // THE REPLACE CONFIRMATION, at the choke point (merge, 21 Aug). It sits
+    // here, not at the callers, because every main-rack open — recall, the
+    // chain-row click, the saved-chains menu, the stage-3 bridge, and any
+    // future entrant — funnels through this function; a guard here cannot be
+    // left off a caller list. The ask itself is the ONE shared presenter
+    // (presentReplaceAsk) via the thin wording wrapper below; the confirm
+    // chip re-enters with replaceConfirmed=true, mirroring
+    // loadChainFromJson's idiom. (The AlertWindow that used to sit here,
+    // 7b3b456 + 0e557c1, is consolidated away — AlertWindow is banned on
+    // host-driven paths anyway, per the Logic behind-the-window rule.)
+    if (const int n = processorRef.getChainHost().getNumSlots();
+        ! replaceConfirmed && n > 0)
+    {
+        presentOpenChainReplaceAsk(id, name, n);
+        return;
+    }
+
     setChainSaveStatus(juce::String::fromUTF8("Opening \"") + name
                        + juce::String::fromUTF8("\"\xe2\x80\xa6"));
 

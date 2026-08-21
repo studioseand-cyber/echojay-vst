@@ -1467,9 +1467,17 @@ private:
     // validated, with the INTENDED plugin names in saved order. The recall
     // path needs the order for the alternatives offer's surviving-neighbour
     // anchors; nothing else exposes it after the fetch callback ends.
+    // THE choke point for opening a saved chain into the main rack — recall,
+    // the chain-row click, the saved-chains menu and the stage-3 bridge all
+    // arrive here, so the replace confirmation lives HERE (merge, 21 Aug):
+    // a guard at the single entry cannot be left off a future caller the way
+    // a per-caller list can. replaceConfirmed mirrors loadChainFromJson's
+    // idiom — false raises the ask (presentOpenChainReplaceAsk) on a
+    // non-empty rack and returns; the ask's confirm re-enters with true.
     void openSavedChain(const juce::String& id, const juce::String& name,
                         std::function<void(int statusCode, const juce::String& err)> onFetchError = {},
-                        std::function<void(const juce::StringArray& intendedNames)> onSlotsParsed = {});
+                        std::function<void(const juce::StringArray& intendedNames)> onSlotsParsed = {},
+                        bool replaceConfirmed = false);
     // Transient one-liner in the chain header ("Saved \"X\""). Past tense is
     // legitimate because saving IS something the user did, but it says only
     // that a chain was saved and never implies anything about the sound.
@@ -3156,11 +3164,11 @@ private:
     // Confirms before replacing a populated rack; the archive happens inside
     // the clear regardless. Callers pass an id already known to be recallable.
     void beginRecall(const juce::String& id, const juce::String& name);
-    // The saved-chain/dashboard entry's wording for the SAME replace ask
-    // (merge, 21 Aug — replaces the AlertWindow confirm that lived inside
-    // openSavedChain). Third thin wrapper beside presentRecallReplaceAsk and
+    // The main-rack replace ask raised by openSavedChain's choke-point guard
+    // (merge, 21 Aug — replaces the AlertWindow confirm that lived there).
+    // Third thin wrapper beside presentRecallReplaceAsk (now Link-only) and
     // presentBuildReplaceAsk: wording + chips only, mechanics stay in
-    // presentReplaceAsk. Main rack only — the bridge's historical target.
+    // presentReplaceAsk, intent class recall_.
     void presentOpenChainReplaceAsk(const juce::String& id,
                                     const juce::String& name, int rackSlots);
     // The channel-mismatch advisory ask (15 Aug 2026): ONE client-authored
@@ -3197,7 +3205,10 @@ private:
     // get their own message (404 = deleted elsewhere), and a 6s watchdog
     // logs the loaded/skipped summary (the restore has no single completion
     // event; the AI build path's dial-summary watchdog is the precedent).
-    void recallLoadChain(const juce::String& id, const juce::String& name);
+    // replaceConfirmed=true only from the replace-ask's confirm chip: the
+    // user has answered, so the re-entry must not raise the ask again.
+    void recallLoadChain(const juce::String& id, const juce::String& name,
+                         bool replaceConfirmed = false);
     // ONE alternatives composer for skipped/failed slots (14 Aug 2026),
     // factored out of the AI build path's inline block so the recall path
     // reuses it instead of growing a second one. intendedNames is the
