@@ -8031,8 +8031,20 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
                 p2.clearBorrowKept();
             }
             p2.borrowAudioOn();
+            // §5c's loud banner: withheld = the RECORDED fact per slot.
+            int withheldN = 0;
+            for (int i = 0; i < (int) p2.borrowSlotRecords_.size(); ++i)
+                if (p2.borrowSlotRecords_[(size_t) i].hadState
+                    && ! bh2->borrowSlotSeededWithState(i)) ++withheldN;
             safeThis->chainListPanel.statusText =
-                "Editing " + p2.resolveLinkDisplayName(st->uid)
+                (withheldN > 0
+                     ? juce::String(withheldN) + " of " + juce::String(want)
+                       + " plugins arrived WITHOUT "
+                       + p2.resolveLinkDisplayName(st->uid)
+                       + "'s real settings (running at defaults; never "
+                         "written back). "
+                     : juce::String())
+                + "Editing " + p2.resolveLinkDisplayName(st->uid)
                 + " here - soloed, "
                 + (p2.borrowRouteThroughMain()
                        ? juce::String("heard through this channel's own chain. ")

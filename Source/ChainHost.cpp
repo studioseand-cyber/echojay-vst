@@ -4023,6 +4023,33 @@ void ChainHost::releaseBorrowToPool()
                    + " instance(s) parked").toRawUTF8());
 }
 
+#if ECHOJAY_DEV_TRANSPORT
+namespace {
+// DEV-ONLY forced withhold (22 Aug 2026): on this machine the real withhold
+// cannot be produced by hand — same plugin collection, identity always
+// matches — so ~/.echojay/dev.json may name ONE slot (1-based, key
+// "forceWithholdSlot") whose borrow seed is deliberately failed, exercising
+// the user-facing withheld path in a DAW: defaults + banner + never written
+// back. Read once per process, like the dev transport itself. This symbol
+// CANNOT exist in a non-DEV build — the whole block compiles away, and
+// borrowhost_test proves the OFF binary carries no trace of it.
+int devForceWithholdSlot1()
+{
+    static const int s = []
+    {
+        auto f = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+                     .getChildFile(".echojay").getChildFile("dev.json");
+        if (! f.existsAsFile()) return 0;
+        auto v = juce::JSON::parse(f.loadFileAsString());
+        if (auto* o = v.getDynamicObject())
+            return (int) o->getProperty("forceWithholdSlot");
+        return 0;
+    }();
+    return s;
+}
+} // namespace
+#endif
+
 void ChainHost::captureBorrowDefaultState(int slotIdx)
 {
     if (mode_ != Mode::Borrowed || slotIdx < 0
@@ -5819,6 +5846,21 @@ void ChainHost::applyRestoredState(int slotIdx, const juce::String& b64,
     // the mark has to name the plugin that actually died.
     const int mark = (slotIdx >= 0 && slotIdx < (int)slots_.size())
                        ? pushDeathMark("state restore", slots_[(size_t)slotIdx].desc) : 0;
+
+#if ECHOJAY_DEV_TRANSPORT
+    // DEV-ONLY forced withhold: fail this slot's seed exactly as a real
+    // refusal would — note written, seed fact NOT recorded, so everything
+    // downstream (banner, verdicts, Apply's filter) runs the true path.
+    if (mode_ == Mode::Borrowed && devForceWithholdSlot1() == slotIdx + 1)
+    {
+        popDeathMark(mark);
+        addStateNote(slotName + ": [DEV forceWithholdSlot] seed deliberately"
+                                " failed - running at defaults");
+        EchoJay_NSLog(("EJBorrow: DEV forceWithholdSlot fired on slot "
+                       + juce::String(slotIdx + 1)).toRawUTF8());
+        return;
+    }
+#endif
 
     bool applied = false;
     try

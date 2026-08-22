@@ -789,6 +789,85 @@ int main()
         check (identical, "every shared file byte-identical (borrowed wrote nothing)", diff);
     }
 
+    std::printf ("== DEV forceWithholdSlot: cannot exist in a non-DEV build ==\n");
+    {
+        // This suite compiles and links against build/ (DEV OFF) — the
+        // right vantage to prove the hook's absence. A debug affordance
+        // that can reach a release build is a worse bug than the one it
+        // tests.
+#if defined (ECHOJAY_DEV_TRANSPORT) && ECHOJAY_DEV_TRANSPORT
+        check (false, "this suite must build with ECHOJAY_DEV_TRANSPORT OFF "
+                      "for the cannot-exist proof to mean anything");
+#else
+        check (true, "suite built with DEV transport OFF (the proof vantage)");
+#endif
+        // BINARY: the OFF-built SharedCode lib carries no trace of the hook.
+        {
+            std::ifstream lib ("build/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a",
+                               std::ios::binary);
+            check (lib.good(), "OFF-built SharedCode lib found");
+            const std::string needle = "forceWithholdSlot";
+            std::vector<char> buf (1 << 20);
+            std::string carry;
+            bool found = false;
+            while (lib.good() && ! found)
+            {
+                lib.read (buf.data(), (std::streamsize) buf.size());
+                const auto got = (size_t) lib.gcount();
+                if (got == 0) break;
+                std::string chunk = carry + std::string (buf.data(), got);
+                if (chunk.find (needle) != std::string::npos) found = true;
+                carry = chunk.size() >= needle.size()
+                          ? chunk.substr (chunk.size() - needle.size() + 1) : chunk;
+            }
+            check (! found, "the OFF binary contains ZERO trace of the hook");
+        }
+        // SOURCE: outside #if ECHOJAY_DEV_TRANSPORT regions, zero mentions.
+        {
+            std::ifstream f ("Source/ChainHost.cpp");
+            std::stringstream s; s << f.rdbuf();
+            juce::String src (s.str());
+            juce::String outside;
+            int pos = 0;
+            for (;;)
+            {
+                const int a = src.indexOf (pos, "#if ECHOJAY_DEV_TRANSPORT");
+                if (a < 0) { outside += src.substring (pos); break; }
+                outside += src.substring (pos, a);
+                const int b = src.indexOf (a, "#endif");
+                if (b < 0) break;
+                pos = b + 6;
+            }
+            check (! outside.contains ("forceWithholdSlot"),
+                   "every source mention sits inside a DEV guard");
+        }
+        // FUNCTIONAL: a dev.json naming a slot is INERT here — the seed
+        // applies and the fact records, because the hook does not exist.
+        {
+            const juce::File devDir = juce::File (appData).getParentDirectory()
+                                          .getParentDirectory().getChildFile (".echojay");
+            devDir.createDirectory();
+            devDir.getChildFile ("dev.json")
+                  .replaceWithText ("{\"forceWithholdSlot\": 1}");
+            host.releaseBorrowToPool();
+            juce::Array<juce::var> arr;
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("n", 1);
+            o->setProperty ("plugin", "EJ Borrow Probe");
+            o->setProperty ("bypassed", false);
+            arr.add (juce::var (o));
+            auto* so = new juce::DynamicObject();
+            so->setProperty ("1", chunkFor (555));
+            host.restoreSavedChain (juce::var (arr), juce::var (so));
+            auto* pp = probeIn (host, 0);
+            check (pp != nullptr && pp->value == 555,
+                   "with forceWithholdSlot=1 in dev.json, the OFF build seeds anyway");
+            check (host.borrowSlotSeededWithState (0),
+                   "and records the fact — the hook is genuinely absent, not dormant");
+            devDir.getChildFile ("dev.json").deleteFile();
+        }
+    }
+
     std::printf ("== negative control ==\n");
     {
         const int beforeN = failures;
