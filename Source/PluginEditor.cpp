@@ -1908,6 +1908,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // "Add to Chain" — appends the selected list entry as a new slot
 
     chainListPanel.onCreateEditor = [this](int i) -> juce::AudioProcessorEditor* {
+        // ORDER IS LOAD-BEARING (bug, 22 Aug 2026): the borrowed-view check
+        // must run BEFORE the remote guard — a borrowed view's uid is
+        // non-empty, so the guard's early nullptr made this arm dead code
+        // and no plugin in an edited rack could open its editor. Pinned by
+        // source in borrowhost_test.
+        if (auto* bh = processorRef.borrowHostIfActiveFor(chainViewUid()))
+            return bh->createEditorForSlot(i);
         // A remote rack cannot render the LINK'S instance here (it lives in
         // that process slot) -- but a live edit session's slot has a LOCAL
         // editing copy, and its editor is the whole point of stage 1.
@@ -1919,10 +1926,6 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 return processorRef.editCreateEditor();
             return nullptr;
         }
-        // Borrowed view: the plugin lives in the borrowed host — its editor
-        // opens from there, which is the whole point of solo borrow.
-        if (auto* bh = processorRef.borrowHostIfActiveFor(chainViewUid()))
-            return bh->createEditorForSlot(i);
         return processorRef.getChainHost().createEditorForSlot(i);
     };
     chainListPanel.onSelectSlot = [this](int i) { chainSelectedSlot_ = i; };

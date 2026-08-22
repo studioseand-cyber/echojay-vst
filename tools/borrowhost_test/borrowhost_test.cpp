@@ -464,6 +464,21 @@ int main()
                "the ask states changed / committing / untouched in words");
         check (ed3.contains ("{ \"recall_\", \"build_\", \"apply_\" }"),
                "apply_ is in the replace-ask supersede class");
+        // onCreateEditor ORDER (bug, 22 Aug 2026): the borrowed-host branch
+        // must come BEFORE the remote guard, or it is dead code behind the
+        // guard's early nullptr — exactly what a source pin catches and a
+        // functional test might not. Pin: within the handler, the borrow
+        // check's offset precedes the remote guard's.
+        {
+            const int handler = ed3.indexOf ("chainListPanel.onCreateEditor");
+            const auto body = handler >= 0 ? ed3.substring (handler, handler + 1400)
+                                           : juce::String();
+            const int borrowArm = body.indexOf ("borrowHostIfActiveFor(chainViewUid())");
+            const int remoteArm = body.indexOf ("chainViewUid().isNotEmpty()");
+            check (handler >= 0 && borrowArm >= 0 && remoteArm >= 0
+                     && borrowArm < remoteArm,
+                   "onCreateEditor reaches the borrowed host BEFORE the remote guard");
+        }
         const auto pr3 = slurp2 ("Source/PluginProcessor.cpp");
         check (pr3.contains ("if (keepEdits) captureBorrowKept();"),
                "keep-releases capture the edits (continuous keep)");
