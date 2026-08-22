@@ -380,6 +380,35 @@ int main()
         check (rackMenu >= 0
                  && ed.substring (rackMenu, rackMenu + 200).contains ("withParentComponent(this)"),
                "the rack selector menu is parented to the editor");
+
+        // THE FULL SWEEP (22 Aug 2026): every showMenuAsync in the plugin's
+        // UI must be parented — the watchdog doesn't care which menu it is.
+        // `showMenuAsync(opts` is allowed because the shared opts variable is
+        // itself pinned parented below. Same for CallOutBoxes: no desktop
+        // (nullptr-parent) launch anywhere.
+        int unparented = 0;
+        for (const char* path : { "Source/PluginEditor.cpp", "Source/LinkEditor.cpp",
+                                  "Source/PluginEditor.h", "Source/LinkEditor.h",
+                                  "Source/ChainPluginPicker.h" })
+        {
+            const auto s = slurp (path);
+            for (int p = 0; (p = s.indexOf (p, "showMenuAsync")) >= 0; ++p)
+            {
+                const auto seg = s.substring (p, p + 320);
+                if (! seg.contains ("withParentComponent")
+                    && ! seg.startsWith ("showMenuAsync(opts"))
+                    ++unparented;
+            }
+            for (int p = 0; (p = s.indexOf (p, "launchAsynchronously")) >= 0; ++p)
+                if (s.substring (p, p + 320).upToFirstOccurrenceOf (");", false, false)
+                      .contains ("nullptr"))
+                    ++unparented;
+        }
+        check (unparented == 0,
+               "EVERY menu and CallOutBox is parented (full sweep)",
+               juce::String (unparented) + " unparented");
+        check (ed.contains ("withTargetComponent(&intakeMoreBtn).withParentComponent(this)"),
+               "the shared opts variable is parented at its definition");
     }
 
     // =======================================================================

@@ -2059,7 +2059,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         }
         m.addItem(2, "Reset level tally");
         auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-        m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&chainListPanel.masterKnob),
+        m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&chainListPanel.masterKnob).withParentComponent(this),
             [safeThis](int r)
             {
                 if (safeThis == nullptr) return;
@@ -3281,7 +3281,7 @@ void EchoJayEditor::showIntakeMoreMenu()
 {
     const int page = onboardingOverlay_.currentPage;
     juce::PopupMenu menu;
-    auto opts = juce::PopupMenu::Options().withTargetComponent(&intakeMoreBtn);
+    auto opts = juce::PopupMenu::Options().withTargetComponent(&intakeMoreBtn).withParentComponent(this);
     if (page == 2)
     {
         for (int gi = 0; gi < kGenreGroupCount; ++gi)
@@ -4162,7 +4162,7 @@ void EchoJayEditor::showScanMenu(juce::Component* target)
     }
 
     juce::Component::SafePointer<EchoJayEditor> safeThis(this);
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(target),
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(target).withParentComponent(this),
         [safeThis](int result) {
             if (safeThis == nullptr) return;
             auto* scanner = &safeThis->processorRef.getPluginScanner();
@@ -5123,7 +5123,7 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
     juce::StringArray orphansToClear = orphanReviewIds;
 
     menu.showMenuAsync(
-        juce::PopupMenu::Options().withTargetComponent(&btn),
+        juce::PopupMenu::Options().withTargetComponent(&btn).withParentComponent(this),
         [safeThis, isTop, orphansToClear](int result)
         {
             if (safeThis == nullptr || result == 0) return;
@@ -25110,6 +25110,7 @@ void EchoJayEditor::showKeySourceMenu()
     m.showMenuAsync(
         juce::PopupMenu::Options()
             .withTargetComponent(this)
+            .withParentComponent(this)
             .withTargetScreenArea(localAreaToGlobal(keySourceMenuRect_)),
         [safeThis, snapshot] (int result)
         {
@@ -27268,7 +27269,8 @@ void EchoJayEditor::openChannelChooser(int chipIdx)
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     menu.showMenuAsync(
-        juce::PopupMenu::Options().withTargetComponent(askChipBtns[(size_t) chipIdx].get()),
+        juce::PopupMenu::Options().withTargetComponent(askChipBtns[(size_t) chipIdx].get())
+            .withParentComponent(this),
         [safeThis, ordered](int result)
         {
             if (safeThis == nullptr || result <= 0 || result > ordered.size()) return;
@@ -27329,7 +27331,8 @@ void EchoJayEditor::openRecallChannelChooser(int chipIdx)
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     menu.showMenuAsync(
-        juce::PopupMenu::Options().withTargetComponent(askChipBtns[(size_t) chipIdx].get()),
+        juce::PopupMenu::Options().withTargetComponent(askChipBtns[(size_t) chipIdx].get())
+            .withParentComponent(this),
         [safeThis, ordered, nameByUid, rid, rnm](int result)
         {
             if (safeThis == nullptr) return;
@@ -28311,7 +28314,7 @@ void EchoJayEditor::showLinkPlacementMenu(const juce::String& linkAddr)
     m.addItem(2, "Channel", true, cur == 2);
     m.addItem(3, "Send",    true, cur == 3);
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    m.showMenuAsync(juce::PopupMenu::Options(),
+    m.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
         [safeThis, linkAddr](int r)
         {
             if (safeThis == nullptr || r == 0) return;
@@ -28394,7 +28397,7 @@ void EchoJayEditor::showLinkGainMenu(const juce::String& linkAddr)
     }
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    m.showMenuAsync(juce::PopupMenu::Options(),
+    m.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
         [safeThis, linkAddr, busInteg](int r)
         {
             if (safeThis == nullptr || r == 0) return;
@@ -28777,6 +28780,7 @@ void EchoJayEditor::showChainRowMenu(int displayIdx)
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this)
+                        .withParentComponent(this)
                         .withTargetScreenArea({ juce::Desktop::getMousePosition().x,
                                                 juce::Desktop::getMousePosition().y, 1, 1 }),
         [safeThis, displayIdx, row](int choice)
@@ -29234,7 +29238,8 @@ void EchoJayEditor::showSavedChainsMenu()
         }
 
         menu.showMenuAsync(juce::PopupMenu::Options()
-                               .withTargetComponent(&safeThis->chainOpenBtn),
+                               .withTargetComponent(&safeThis->chainOpenBtn)
+                               .withParentComponent(safeThis.getComponent()),
             [safeThis, ids, names](int choice)
             {
                 if (safeThis == nullptr || choice <= 0
@@ -31893,7 +31898,7 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
             sizeMenu.addItem(2, "Small (900 x 580)");
             sizeMenu.addItem(3, "Default (1170 x 696)");
             sizeMenu.addItem(4, "Large (1400 x 860)");
-            sizeMenu.showMenuAsync(juce::PopupMenu::Options(),
+            sizeMenu.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
                 [this](int result) {
                     if (result == 2) setSize(900, 580);
                     else if (result == 3) setSize(1170, 696);
@@ -31914,7 +31919,7 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         sizeMenu.addItem(2, "Default (900 x 580)");
         sizeMenu.addItem(3, "Large (1080 x 696)");
         sizeMenu.addItem(4, "Extra Large (1260 x 812)");
-        sizeMenu.showMenuAsync(juce::PopupMenu::Options(),
+        sizeMenu.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
             [this](int result) {
                 if (result == 2) setSize(900, 580);
                 else if (result == 3) setSize(1080, 696);
@@ -31964,7 +31969,8 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
                 menu.addItem(1, "Rename \"" + snaps[(size_t)idx].name + "\"");
                 menu.addItem(2, "Delete Pass");
                 auto* targetBox = slot.box;
-                menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(*targetBox),
+                menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(*targetBox)
+                                       .withParentComponent(this),
                     [this, idx, targetBox](int result) {
                         if (result == 1) {
                             auto snaps2 = processorRef.getSnapshots();
