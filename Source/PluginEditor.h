@@ -4173,6 +4173,7 @@ private:
     std::vector<std::pair<bool, bool>> borrowSlotVerdicts();  // {withheld, edited}
     void presentBorrowApplyAsk(const LinkShm::BorrowCommit::Plan& plan);
     void runBorrowApply();
+    void runStructureApply();   // phase 2: built + gated, no UI reaches it yet
 
     std::map<juce::String, LinkStripState> linkStripStates_;
     LinkStripState linkHostStrip_;         // the Mix Bus (this instance) row

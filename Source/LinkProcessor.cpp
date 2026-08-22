@@ -135,6 +135,17 @@ void LinkProcessor::timerCallback()
     // scheduler whose shortest interval is 30 s.
     if (heartbeatDivider_ % 30 == 0)
         schedulePassiveKeyPass();
+    // Structure-plan journal check (phase 2): AFTER the DAW's session
+    // restore has settled — the restore runs at instantiation and this is
+    // the first quiet 1s tick after it — and at most once per process (the
+    // journal's delete-on-completion makes a rerun read absent anyway).
+    if (!planJournalChecked_ && heartbeatDivider_ % 30 == 0
+        && !resolvedDir.isEmpty() && instanceUid_.isNotEmpty())
+    {
+        planJournalChecked_ = true;
+        if (chainHost.planJournalRestoreIfPresent(resolvedDir, instanceUid_))
+            notifyChainModel();
+    }
     publishMeterFrame();
 
     // One-shot arming note for the position stamps (stage 0), off the audio
@@ -245,6 +256,7 @@ void LinkProcessor::publishRackSidecar()
     rc.valid     = true;
     rc.uid       = instanceUid_;
     rc.borrowCapable = true;   // this binary honors the rack-scoped lease
+    rc.structureEditCapable = true;   // and can journal/apply a structure plan
     rc.name      = effectiveDisplayName();
     rc.revision  = rev;
     rc.masterWet = chainHost.getMasterWet();
@@ -757,6 +769,27 @@ void LinkProcessor::pollControlCommand()
         }
     }
 
+    // ---- Structure plan (phase 2): verify, journal, two-phase apply --------
+    bool planAttempted = false;
+    ChainHost::PlanResult planResult;
+    if (obj->hasProperty("structPlan"))
+    {
+        planAttempted = true;
+        LinkShm::StructureEdit::Plan plan;
+        LinkShm::StructureEdit::PreImages ignored;
+        if (LinkShm::StructureEdit::planFromVar(obj->getProperty("structPlan"),
+                                                plan, ignored))
+            planResult = chainHost.applyStructurePlan(resolvedDir, plan);
+        else
+            planResult.reasons.add("the plan could not be read");
+        EchoJay_NSLog(("EJPlan[" + juce::String(seq) + "] link: applied="
+                       + juce::String(planResult.ok ? "Y" : "N")
+                       + " restored=" + juce::String(planResult.restored ? "Y" : "N")
+                       + (planResult.failedAt.isNotEmpty()
+                              ? " failedAt=" + planResult.failedAt : juce::String()))
+                          .toRawUTF8());
+    }
+
     // ---- Commit (stage 1): the edited state comes home ---------------------
     // Guarded by baseSlots exactly like structural edits: the rack the main
     // plugin was looking at must still be THIS rack, or the state could land
@@ -840,6 +873,16 @@ void LinkProcessor::pollControlCommand()
     {
         ack->setProperty("committedSlot", commitOk);
         if (!commitOk) ack->setProperty("commitErr", commitErr);
+    }
+    if (planAttempted)
+    {
+        ack->setProperty("planApplied",  planResult.ok);
+        ack->setProperty("planRestored", planResult.restored);
+        if (planResult.failedAt.isNotEmpty())
+            ack->setProperty("planFailedAt", planResult.failedAt);
+        juce::Array<juce::var> rs;
+        for (const auto& why : planResult.reasons) rs.add(why);
+        ack->setProperty("planReasons", rs);
     }
     {
         juce::File af(resolvedDir + "ctrl-ack-" + id + ".json");

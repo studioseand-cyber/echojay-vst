@@ -984,6 +984,10 @@ struct RackSidecar {
     // Link must not half-engage (see LeaseScope below for the wire-level
     // belt to this braces).
     bool  borrowCapable = false;
+    // Structure editing capability (phase 2): a Link that can journal and
+    // apply a structure plan announces it; absent reads false and a main
+    // never sends a plan — the never-half-see pattern, again.
+    bool  structureEditCapable = false;
     std::vector<RackSidecarSlot> slots;
 };
 
@@ -1128,6 +1132,7 @@ namespace StructureEdit
         int to   = -1;             // Move: target index; Create: insert index
         juce::String name;         // display + honesty
         juce::String stateB64;     // Create seed / Commit payload
+        SlotIdentity identity;     // phase 2: the applier keys staging/park by this
     };
 
     // What the plan computation is TOLD about each current slot. originIndex
@@ -1172,7 +1177,8 @@ namespace StructureEdit
         for (int i = (int) base.size() - 1; i >= 0; --i)
             if (! survives[(size_t) i])
             {
-                p.ops.push_back ({ OpType::Remove, i, -1, base[(size_t) i].name, {} });
+                p.ops.push_back ({ OpType::Remove, i, -1, base[(size_t) i].name, {},
+                                   base[(size_t) i] });
                 ++p.removing;
             }
 
@@ -1194,7 +1200,8 @@ namespace StructureEdit
             work.erase (work.begin() + fromPos);
             work.insert (work.begin() + pos, origin);
             p.ops.push_back ({ OpType::Move, fromPos, pos,
-                               base[(size_t) origin].name, {} });
+                               base[(size_t) origin].name, {},
+                               base[(size_t) origin] });
             ++p.moving;
         }
 
@@ -1205,7 +1212,8 @@ namespace StructureEdit
             {
                 p.ops.push_back ({ OpType::Create, -1, i,
                                    current[(size_t) i].identity.name,
-                                   current[(size_t) i].stateB64 });
+                                   current[(size_t) i].stateB64,
+                                   current[(size_t) i].identity });
                 ++p.creating;
             }
 
@@ -1218,7 +1226,7 @@ namespace StructureEdit
             if (! c.edited) { ++p.untouched; continue; }
             if (c.withheld) { ++p.withheldEdited; continue; }
             p.ops.push_back ({ OpType::Commit, i, -1,
-                               c.identity.name, c.stateB64 });
+                               c.identity.name, c.stateB64, c.identity });
             ++p.committing;
         }
         return p;
@@ -1275,6 +1283,7 @@ namespace StructureEdit
             o->setProperty ("to",   op.to);
             o->setProperty ("name", op.name);
             if (op.stateB64.isNotEmpty()) o->setProperty ("state", op.stateB64);
+            o->setProperty ("identity", identityToVar (op.identity));
             opsArr.add (juce::var (o));
         }
         root->setProperty ("ops", opsArr);
@@ -1302,7 +1311,8 @@ namespace StructureEdit
                                           (int) oo->getProperty ("from"),
                                           (int) oo->getProperty ("to"),
                                           oo->getProperty ("name").toString(),
-                                          oo->getProperty ("state").toString() });
+                                          oo->getProperty ("state").toString(),
+                                          identityFromVar (oo->getProperty ("identity")) });
         if (auto* arr = o->getProperty ("preShape").getArray())
             for (auto& e : *arr) preOut.shape.push_back (identityFromVar (e));
         if (auto* arr = o->getProperty ("preStates").getArray())
@@ -1567,6 +1577,7 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
     obj->setProperty("preGainUserSet",   rc.preGainUserSet);
     obj->setProperty("preGainInputKnown", rc.preGainInputKnown);
     if (rc.borrowCapable) obj->setProperty("borrowCapable", true);
+    if (rc.structureEditCapable) obj->setProperty("structureEditCapable", true);
     juce::Array<juce::var> slots;
     for (const auto& s : rc.slots)
     {
@@ -1626,6 +1637,7 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
     rc.preGainUserSet   = obj->hasProperty("preGainUserSet") && (bool)obj->getProperty("preGainUserSet");
     rc.preGainInputKnown = obj->hasProperty("preGainInputKnown") && (bool)obj->getProperty("preGainInputKnown");
     rc.borrowCapable     = obj->hasProperty("borrowCapable") && (bool)obj->getProperty("borrowCapable");
+    rc.structureEditCapable = obj->hasProperty("structureEditCapable") && (bool)obj->getProperty("structureEditCapable");
     if (auto* arr = obj->getProperty("slots").getArray())
         for (auto& sv : *arr)
             if (auto* so = sv.getDynamicObject())

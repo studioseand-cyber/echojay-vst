@@ -7,6 +7,7 @@
 #include <atomic>
 #include <map>
 #include <set>
+#include "LinkShm.h"   // StructureEdit plan/journal types (phase 2)
 #include <mutex>
 #include <memory>
 #include <thread>
@@ -82,6 +83,32 @@ public:
         popped again), and the marking logs. */
     void markBorrowPoolIneligible(const juce::PluginDescription& d,
                                   const juce::String& why);
+    // ---- Structure plan engine, phase 2 (RACK_STRUCTURE_EDIT_SPEC) --------
+    // Runs on the LINK's (Primary) host. Two phases: STAGE instantiates
+    // every Create detached (staging park keyed by identity, so a retry
+    // instantiates zero new); MUTATE applies removes (parked re-attachably),
+    // moves, creates, commits — any mid-mutate failure restores wholesale
+    // from the journal's absolute pre-images. The journal is written before
+    // the first mutation and deleted only on completion or completed
+    // restore, so the launch-time check runs at most once.
+    struct PlanResult {
+        bool ok = false;
+        bool restored = false;              // rollback ran (rack = pre-images)
+        juce::String failedAt;              // op description on failure
+        juce::StringArray reasons;          // per-slot named reasons (Phase A)
+    };
+    std::vector<LinkShm::StructureEdit::SlotIdentity> liveIdentity() const;
+    LinkShm::StructureEdit::PreImages planCapturePreImages() const;
+    PlanResult applyStructurePlan(const juce::String& journalDir,
+                                  const LinkShm::StructureEdit::Plan& plan);
+    /** Launch-time journal check. Call AFTER the session restore settles —
+        the DAW's restore runs first mechanically; this runs once per
+        journal and WINS on divergence, with a note naming both truths.
+        Returns true when a restore ran. */
+    bool planJournalRestoreIfPresent(const juce::String& journalDir,
+                                     const juce::String& uid);
+    int  planFreshInstantiations() const noexcept { return planFresh_; }
+
     /** Step 3, the RECORDED FACT (22 Aug 2026): was this slot actually
         seeded with the Link's state? Set by applyRestoredState at the
         moment the chunk applies, cleared on release. Apply reads THIS,
@@ -1207,6 +1234,16 @@ private:
     std::map<juce::uint32, juce::MemoryBlock> borrowDefaultStates_;
     std::vector<BorrowPoolEntry> borrowPoolRetired_;   // alive, never reused
     void captureBorrowDefaultState(int slotIdx);
+    // Plan engine internals: the reattachable-park mechanics, shared with
+    // the borrow pool's storage (same never-free rule, same identity keys).
+    void parkSlotReattachable(int i);
+    bool tryReattachParked(const juce::PluginDescription& d, int insertAt);
+    bool planStageOne(const juce::PluginDescription& d, juce::String& whyNot);
+    void planRestoreFromPreImages(const LinkShm::StructureEdit::PreImages& pre);
+    // The plan's park: staging AND reattachable removals, keyed by the
+    // plan's identity vocabulary (name|uid-decimal). Never freed, ever.
+    std::map<juce::String, std::vector<BorrowPoolEntry>> planPark_;
+    int  planFresh_ = 0;
     static juce::String borrowPoolKey(const juce::PluginDescription& d)
     {
         // format|identifier|uid — the same identity stateFitsPlugin matches on.

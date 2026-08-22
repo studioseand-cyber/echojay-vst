@@ -8135,6 +8135,136 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
     (*step)();
 }
 
+// ---------------------------------------------------------------------------
+// Structure Apply, phase 2 — the SENDER. No UI reaches this yet (the
+// add/remove affordances on a borrowed rack come in phase 3, so the mutation
+// code is provable before a user can touch it). Commit-only plans until
+// then; the Link-side applier handles full plans regardless.
+// ---------------------------------------------------------------------------
+void EchoJayEditor::runStructureApply()
+{
+    auto& proc = processorRef;
+    const juce::String uid = proc.borrowUid();
+    if (uid.isEmpty()) return;
+    auto it = proc.linkRackCache.find(uid);
+    // Capability, the never-half-see gate: a Link that cannot journal a
+    // plan never receives one.
+    if (it == proc.linkRackCache.end()
+        || LinkShm::StructureEdit::accept(it->second.rack.structureEditCapable)
+               != LinkShm::StructureEdit::Accept::Proceed)
+    {
+        chainListPanel.statusText =
+            "Cannot apply structure changes: this Link's build cannot journal "
+            "a plan. Update it. Your session is still live.";
+        chainListPanel.repaint();
+        return;
+    }
+
+    // The plan, from RECORDED facts (verdicts + records), never recomputed
+    // policy. baseIdentity from the sidecar snapshot, hex uid through the
+    // one seam — inside SlotIdentity::fromSidecar.
+    std::vector<LinkShm::StructureEdit::SlotIdentity> base;
+    for (const auto& s : it->second.rack.slots)
+        base.push_back(LinkShm::StructureEdit::SlotIdentity::fromSidecar(s));
+    const auto verdicts = borrowSlotVerdicts();
+    auto* bh = proc.borrowHost();
+    std::vector<LinkShm::StructureEdit::CurrentSlot> current;
+    for (int i = 0; i < (int) verdicts.size() && i < (int) base.size(); ++i)
+    {
+        juce::String nowB64;
+        if (auto* p = bh->getSlotProcessor(i))
+        {
+            juce::MemoryBlock mb;
+            try { p->getStateInformation(mb); } catch (...) { mb.reset(); }
+            if (mb.getSize() > 0) nowB64 = LinkShm::stateToB64(mb);
+        }
+        current.push_back({ base[(size_t) i], i,
+                            verdicts[(size_t) i].second,
+                            verdicts[(size_t) i].first, nowB64 });
+    }
+    const auto plan = LinkShm::StructureEdit::computePlan(uid, base, current);
+
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty())
+    {
+        chainListPanel.statusText = "Cannot apply: the shared Link folder is "
+            "unavailable. Your session is still live.";
+        chainListPanel.repaint();
+        return;
+    }
+    const int seq = (int) (juce::Time::currentTimeMillis() / 1000);
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",   1);
+    cmd->setProperty("seq", seq);
+    cmd->setProperty("structPlan",
+        LinkShm::StructureEdit::planToVar(plan, {}));
+    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();
+    juce::File(dir + "ctrl-cmd-" + uid + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    auto poll = std::make_shared<std::function<void(int)>>();
+    *poll = [safeThis, uid, seq, dir, poll](int left)
+    {
+        juce::Timer::callAfterDelay(250, [safeThis, uid, seq, dir, poll, left]
+        {
+            if (safeThis == nullptr) return;
+            auto& p2 = safeThis->processorRef;
+            const juce::String name = p2.resolveLinkDisplayName(uid);
+            juce::File ack(dir + "ctrl-ack-" + uid + ".json");
+            if (ack.existsAsFile())
+            {
+                auto v = juce::JSON::parse(ack.loadFileAsString());
+                if (auto* o = v.getDynamicObject(); o != nullptr
+                    && (int) o->getProperty("seq") == seq)
+                {
+                    ack.deleteFile();
+                    if ((bool) o->getProperty("planApplied"))
+                    {
+                        // The one success path: applied whole, released.
+                        p2.clearBorrowKept();
+                        p2.borrowRelease(false);
+                        safeThis->chainListPanel.statusText =
+                            "Applied to " + name + " - the whole plan, or none "
+                            "of it. " + name + " owns its rack again.";
+                        safeThis->refreshChainPanelForView(true);
+                        return;
+                    }
+                    // FAILURE NEVER RELEASES (spec amendment 1): the Link
+                    // rolled back or refused; the user's shape and settings
+                    // are still here — fix the cause and retry.
+                    juce::String reasons;
+                    if (auto* rs = o->getProperty("planReasons").getArray())
+                        for (auto& r : *rs)
+                            reasons << (reasons.isEmpty() ? "" : "; ")
+                                    << r.toString();
+                    safeThis->chainListPanel.statusText =
+                        "Apply failed - " + reasons + ". "
+                        + ((bool) o->getProperty("planRestored")
+                               ? name + " was restored to exactly its "
+                                 "pre-Apply rack. "
+                               : name + "'s rack was not touched. ")
+                        + "Your session is still live - fix the cause and "
+                          "Apply again.";
+                    safeThis->refreshChainPanelForView(true);
+                    return;
+                }
+            }
+            if (left <= 1)
+            {
+                safeThis->chainListPanel.statusText =
+                    "Apply got no answer from " + name + " - nothing may have "
+                    "changed there. Your session is still live.";
+                safeThis->refreshChainPanelForView(true);
+                return;
+            }
+            (*poll)(left - 1);
+        });
+    };
+    (*poll)(20);
+}
+
 void EchoJayEditor::sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemove)
 {
     // A THIN WRAPPER since the Chain tab gained remote editing: this resolves

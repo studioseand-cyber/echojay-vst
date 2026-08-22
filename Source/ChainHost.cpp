@@ -4050,6 +4050,311 @@ int devForceWithholdSlot1()
 } // namespace
 #endif
 
+// ===========================================================================
+//  Structure plan engine, phase 2 (RACK_STRUCTURE_EDIT_SPEC). Runs on the
+//  LINK's Primary host, message thread. Staging and removal parks share one
+//  container keyed by the PLAN's identity vocabulary (name|uid-decimal), and
+//  everything parked stays alive — §3a everywhere.
+// ===========================================================================
+namespace
+{
+    juce::String planKeyOf(const LinkShm::StructureEdit::SlotIdentity& id)
+    { return id.name.trim() + "|" + id.uid; }
+}
+
+std::vector<LinkShm::StructureEdit::SlotIdentity> ChainHost::liveIdentity() const
+{
+    std::vector<LinkShm::StructureEdit::SlotIdentity> out;
+    for (const auto& s : slots_)
+        out.push_back({ s.desc.name,
+                        s.desc.uniqueId != 0 ? juce::String(s.desc.uniqueId)
+                                             : juce::String(),
+                        s.fp });
+    return out;
+}
+
+LinkShm::StructureEdit::PreImages ChainHost::planCapturePreImages() const
+{
+    LinkShm::StructureEdit::PreImages pre;
+    pre.shape = liveIdentity();
+    for (const auto& s : slots_)
+    {
+        juce::String b64;
+        if (s.node != nullptr)
+            if (auto* p = s.node->getProcessor())
+            {
+                juce::MemoryBlock mb;
+                try { p->getStateInformation(mb); } catch (...) { mb.reset(); }
+                if (mb.getSize() > 0) b64 = LinkShm::stateToB64(mb);
+            }
+        pre.states.add(b64);
+    }
+    return pre;
+}
+
+void ChainHost::parkSlotReattachable(int i)
+{
+    if (i < 0 || i >= (int) slots_.size() || !graph_) return;
+    auto& s = slots_[(size_t) i];
+    detachHostedListener(i);
+    if (s.node != nullptr)
+    {
+        if (auto* p = s.node->getProcessor()) p->suspendProcessing(true);
+        planPark_[planKeyOf({ s.desc.name,
+                              s.desc.uniqueId != 0 ? juce::String(s.desc.uniqueId)
+                                                   : juce::String(), s.fp })]
+            .push_back({ s.node, s.desc });
+    }
+    if (s.blendNode) graph_->removeNode(s.blendNode->nodeID);
+    slots_.erase(slots_.begin() + i);
+    bumpChainRevision();
+    rebuildGraph();
+    if (prepared_)
+    {
+        graph_->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+        graph_->prepareToPlay(sampleRate_, blockSize_);
+    }
+}
+
+bool ChainHost::tryReattachParked(const juce::PluginDescription& d, int insertAt)
+{
+    const auto key = planKeyOf({ d.name,
+                                 d.uniqueId != 0 ? juce::String(d.uniqueId)
+                                                 : juce::String(), {} });
+    auto it = planPark_.find(key);
+    if (it == planPark_.end() || it->second.empty()) return false;
+    BorrowPoolEntry entry = std::move(it->second.back());
+    it->second.pop_back();
+    if (auto* p = entry.node->getProcessor())
+    {
+        p->suspendProcessing(false);
+        p->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+    }
+    ChainSlot slot;
+    slot.node = std::move(entry.node);
+    slot.desc = entry.desc;
+    slot.bypassed = false;
+    insertAt = juce::jlimit(0, (int) slots_.size(), insertAt);
+    slots_.insert(slots_.begin() + insertAt, std::move(slot));
+    bumpChainRevision();
+    rebuildGraph();
+    if (prepared_)
+    {
+        graph_->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+        graph_->prepareToPlay(sampleRate_, blockSize_);
+    }
+    return true;
+}
+
+bool ChainHost::planStageOne(const juce::PluginDescription& d, juce::String& whyNot)
+{
+    // Already staged/parked by identity: a retried Apply instantiates zero
+    // new (spec amendment 3).
+    const auto key = planKeyOf({ d.name,
+                                 d.uniqueId != 0 ? juce::String(d.uniqueId)
+                                                 : juce::String(), {} });
+    if (auto it = planPark_.find(key); it != planPark_.end() && ! it->second.empty())
+        return true;
+    if (d.fileOrIdentifier.isNotEmpty() && isBlacklisted(d.fileOrIdentifier))
+    { whyNot = d.name + " is on this machine's crash skip list"; return false; }
+
+    std::unique_ptr<juce::AudioProcessor> proc;
+    if (isBuiltinDescription(d))
+    {
+        if (const auto* dev = BuiltinDeviceRegistry::instance().findForDescription(d);
+            dev != nullptr && dev->create)
+            proc = dev->create();
+        if (proc == nullptr)
+        { whyNot = d.name + " is a built-in this build does not carry"; return false; }
+    }
+    else
+    {
+        const int mark = pushDeathMark("plan stage", d);
+        juce::String err;
+        auto inst = formatManager_.createPluginInstance(d, sampleRate_ > 0 ? sampleRate_ : 44100.0,
+                                                        blockSize_ > 0 ? blockSize_ : 512, err);
+        popDeathMark(mark);
+        if (inst == nullptr)
+        { whyNot = d.name + " could not load right now ("
+                 + (err.isNotEmpty() ? err : juce::String("no reason given")) + ")";
+          return false; }
+        proc = std::move(inst);
+    }
+    proc->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+    proc->suspendProcessing(true);                    // detached: parked, silent
+    auto node = graph_ ? graph_->addNode(std::move(proc)) : nullptr;
+    if (node == nullptr) { whyNot = d.name + " could not join the graph"; return false; }
+    planPark_[key].push_back({ node, d });
+    ++planFresh_;
+    return true;
+}
+
+void ChainHost::planRestoreFromPreImages(const LinkShm::StructureEdit::PreImages& pre)
+{
+    // Wholesale: park everything, rebuild the pre-image shape from the park
+    // (nothing was freed, so every instance is findable), reseed pre states.
+    for (int i = (int) slots_.size() - 1; i >= 0; --i)
+        parkSlotReattachable(i);
+    for (int i = 0; i < (int) pre.shape.size(); ++i)
+    {
+        juce::PluginDescription d;
+        d.name = pre.shape[(size_t) i].name;
+        d.uniqueId = pre.shape[(size_t) i].uid.getIntValue();
+        if (! tryReattachParked(d, i))
+        {
+            // Not parked — the LAUNCH restore path: after a crash nothing
+            // is parked, so the restore instantiates from identity and
+            // reseeds. Only a plugin gone from the machine is a lost slot,
+            // and that is said out loud.
+            juce::String why;
+            juce::PluginDescription rd = resolveByName(d.name, {});
+            if (rd.name.isEmpty()) rd = d;
+            if (! planStageOne(rd, why) || ! tryReattachParked(rd, i))
+            {
+                addStateNote(d.name + ": could not be restored after the "
+                             "interrupted restructure ("
+                             + (why.isNotEmpty() ? why : juce::String("not loadable"))
+                             + ") - this slot was lost");
+                EchoJay_NSLog(("EJPlan: restore could not rebuild \""
+                               + d.name + "\" - slot lost").toRawUTF8());
+                continue;
+            }
+        }
+        const auto& b64 = pre.states[i];
+        if (b64.isNotEmpty() && i < (int) slots_.size())
+            if (auto* p = getSlotProcessor(i))
+            {
+                juce::MemoryBlock mb;
+                if (LinkShm::stateFromB64(b64, mb) && mb.getSize() > 0)
+                { try { p->setStateInformation(mb.getData(), (int) mb.getSize()); }
+                  catch (...) {} }
+            }
+    }
+}
+
+ChainHost::PlanResult ChainHost::applyStructurePlan(
+    const juce::String& journalDir, const LinkShm::StructureEdit::Plan& plan)
+{
+    using namespace LinkShm::StructureEdit;
+    PlanResult r;
+
+    // The identity guard, first and absolute (spec §5).
+    if (verifyBaseIdentity(plan.baseIdentity, liveIdentity()) != BaseCheck::Match)
+    { r.failedAt = "base identity"; r.reasons.add(
+          "the rack is not the one this plan was made for - nothing was changed");
+      return r; }
+
+    // PHASE A: stage every Create, detached. Any failure aborts with ZERO
+    // mutations and per-slot named reasons (spec §2).
+    for (const auto& op : plan.ops)
+        if (op.type == OpType::Create)
+        {
+            juce::PluginDescription d;
+            d.name = op.identity.name;
+            d.uniqueId = op.identity.uid.getIntValue();
+            if (isBuiltinDescription(resolveByName(op.name, {})))
+                d = resolveByName(op.name, {});
+            juce::String why;
+            if (! planStageOne(d.name.isNotEmpty() ? d : resolveByName(op.name, {}), why))
+                r.reasons.add(why);
+        }
+    if (! r.reasons.isEmpty()) { r.failedAt = "stage"; return r; }
+
+    // Journal BEFORE the first mutation (spec §1).
+    const auto pre = planCapturePreImages();
+    writeJournal(journalDir, plan, pre);
+
+    // PHASE B: mutate, in the plan's order. Any failure restores wholesale.
+    for (const auto& op : plan.ops)
+    {
+        bool ok = true;
+        juce::String why;
+        switch (op.type)
+        {
+            case OpType::Remove:
+                if (op.from >= 0 && op.from < (int) slots_.size())
+                    parkSlotReattachable(op.from);
+                else { ok = false; why = "remove index out of range"; }
+                break;
+            case OpType::Move:
+            {
+                int cur = op.from;
+                while (ok && cur > op.to)  { moveSlot(cur, -1); --cur; }
+                while (ok && cur < op.to)  { moveSlot(cur, +1); ++cur; }
+                break;
+            }
+            case OpType::Create:
+            {
+                juce::PluginDescription d;
+                d.name = op.identity.name;
+                d.uniqueId = op.identity.uid.getIntValue();
+                if (! tryReattachParked(d, op.to))
+                { ok = false; why = "staged instance vanished"; break; }
+                if (op.stateB64.isNotEmpty())
+                    if (auto* p = getSlotProcessor(juce::jmin(op.to, (int) slots_.size() - 1)))
+                    {
+                        juce::MemoryBlock mb;
+                        if (LinkShm::stateFromB64(op.stateB64, mb) && mb.getSize() > 0)
+                        { try { p->setStateInformation(mb.getData(), (int) mb.getSize()); }
+                          catch (...) { ok = false; why = op.name + " refused its seed"; } }
+                    }
+                break;
+            }
+            case OpType::Commit:
+            {
+                auto* p = getSlotProcessor(op.from);
+                juce::MemoryBlock mb;
+                if (p == nullptr || ! LinkShm::stateFromB64(op.stateB64, mb)
+                    || mb.getSize() == 0)
+                { ok = false; why = op.name + ": commit state unreadable"; break; }
+                const int mark = pushDeathMark("state restore",
+                                               slots_[(size_t) op.from].desc);
+                try { p->setStateInformation(mb.getData(), (int) mb.getSize()); }
+                catch (...) { ok = false; why = op.name + " refused the settings"; }
+                popDeathMark(mark);
+                break;
+            }
+        }
+        if (! ok)
+        {
+            planRestoreFromPreImages(pre);
+            juce::File(journalPath(journalDir, plan.uid)).deleteFile();
+            r.restored = true;
+            r.failedAt = why;
+            r.reasons.add(why + " - the rack was restored to exactly its "
+                          "pre-Apply state");
+            return r;
+        }
+    }
+    juce::File(journalPath(journalDir, plan.uid)).deleteFile();
+    r.ok = true;
+    return r;
+}
+
+bool ChainHost::planJournalRestoreIfPresent(const juce::String& journalDir,
+                                            const juce::String& uid)
+{
+    using namespace LinkShm::StructureEdit;
+    Plan p;
+    PreImages pre;
+    if (! readJournal(journalDir, uid, p, pre)) return false;
+    // Divergence: the session snapshot lost to the journal — say so with
+    // both truths named (spec amendment 2).
+    const bool diverged =
+        verifyBaseIdentity(pre.shape, liveIdentity()) != BaseCheck::Match;
+    planRestoreFromPreImages(pre);
+    juce::File(journalPath(journalDir, uid)).deleteFile();
+    addStateNote(diverged
+        ? juce::String("a restructure was interrupted; this rack was restored "
+                       "from its pre-Apply state (the session had saved a "
+                       "different shape)")
+        : juce::String("a restructure was interrupted; this rack was restored "
+                       "from its pre-Apply state"));
+    EchoJay_NSLog(("EJPlan: journal restore ran (diverged="
+                   + juce::String(diverged ? "Y" : "N") + ")").toRawUTF8());
+    return true;
+}
+
 void ChainHost::captureBorrowDefaultState(int slotIdx)
 {
     if (mode_ != Mode::Borrowed || slotIdx < 0

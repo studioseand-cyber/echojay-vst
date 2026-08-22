@@ -509,6 +509,7 @@ private:
     // the same Expire/Release arm the slot lease uses. Message thread only.
     bool               rackLeaseActive_ = false;
     std::vector<bool>  rackLeasePrior_;
+    bool               planJournalChecked_ = false;   // once per process
 
     juce::String effectiveFilePart() const;
     juce::String chainInstanceId() const;

@@ -789,6 +789,179 @@ int main()
         check (identical, "every shared file byte-identical (borrowed wrote nothing)", diff);
     }
 
+    std::printf ("== structure plan applier, phase 2 (the five held gates) ==\n");
+    {
+        using namespace LinkShm::StructureEdit;
+        const juce::String planDir = juce::File (appData).getParentDirectory()
+                                         .getChildFile ("plansandbox")
+                                         .getFullPathName() + "/";
+        juce::File (planDir).createDirectory();
+
+        // A Primary rack: [probe(seeded 41), grinch(seeded 42)] — grinch's
+        // poison is 666, these are fine.
+        auto buildRack = [&] (ChainHost& h) {
+            for (int i = h.getNumSlots() - 1; i >= 0; --i) h.removeSlot (i);
+            juce::Array<juce::var> arr;
+            int n = 1;
+            for (const char* nm : { "EJ Borrow Probe", "EJ Borrow Grinch" })
+            {
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("n", n++);
+                o->setProperty ("plugin", nm);
+                o->setProperty ("bypassed", false);
+                arr.add (juce::var (o));
+            }
+            auto* so = new juce::DynamicObject();
+            so->setProperty ("1", chunkFor (41));
+            so->setProperty ("2", chunkFor (42));
+            h.restoreSavedChain (juce::var (arr), juce::var (so));
+        };
+        buildRack (primary);
+        const auto snapId = [&] (ChainHost& h) {
+            juce::String s;
+            for (const auto& li : h.liveIdentity()) s << li.name << "|" << li.uid << ";";
+            for (int i = 0; i < h.getNumSlots(); ++i)
+            {
+                juce::MemoryBlock mb;
+                if (auto* p = h.getSlotProcessor (i))
+                    try { p->getStateInformation (mb); } catch (...) {}
+                s << juce::String ((juce::int64) mb.getSize()) << ","
+                  << juce::String (mb.getSize() ? (int) *(const int*) mb.getData() : -1) << ";";
+            }
+            return s;
+        };
+        const auto base = primary.liveIdentity();
+
+        // GATE 1: Phase A stages first; an abort leaves the rack
+        // byte-identical with per-slot named reasons.
+        {
+            const auto before = snapId (primary);
+            std::vector<CurrentSlot> cur = {
+                { base[0], 0, false, false, {} },   // survivor
+                                                    // slot 1 removed
+                { { "No Such Plugin 9000", {}, {} }, -1, false, false, "seed" },
+            };
+            auto plan = computePlan ("uid-p2", base, cur);
+            const auto r = primary.applyStructurePlan (planDir, plan);
+            check (! r.ok && r.failedAt == "stage",
+                   "Phase A abort: failed at stage, before any mutation");
+            check (r.reasons.size() == 1 && r.reasons[0].contains ("No Such Plugin 9000"),
+                   "the reason names the plugin", r.reasons.joinIntoString ("; "));
+            check (snapId (primary) == before,
+                   "the rack is BYTE-IDENTICAL after the abort (zero mutations)");
+            check (! juce::File (journalPath (planDir, "uid-p2")).existsAsFile(),
+                   "no journal was even written — the abort precedes it");
+        }
+
+        // GATE 4 (+ rollback): a removal parks RE-ATTACHABLY — rollback
+        // un-removes the SAME instance, proven by pointer identity.
+        {
+            auto* probeBefore = primary.getSlotProcessor (0);
+            std::vector<CurrentSlot> cur = {
+                { base[1], 1, /*edited*/ true, false, "%%%not-base64%%%" },
+            };  // removes probe(0), then commits garbage to grinch -> mid-B fail
+            auto plan = computePlan ("uid-p2", base, cur);
+            const auto r = primary.applyStructurePlan (planDir, plan);
+            check (! r.ok && r.restored,
+                   "mid-mutate failure ROLLED BACK", r.failedAt);
+            check (primary.getNumSlots() == 2
+                     && primary.getSlotProcessor (0) == probeBefore,
+                   "the removed slot came back as the SAME instance (pointer-"
+                   "identical): parked re-attachably, zero new");
+            check (! juce::File (journalPath (planDir, "uid-p2")).existsAsFile(),
+                   "the journal was consumed by the rollback");
+            auto* pp = probeIn (primary, 0);
+            check (pp != nullptr && pp->value == 41,
+                   "and its state survived the round trip");
+        }
+
+        // GATE 5: a retried Apply's Phase A instantiates ZERO new — the
+        // staging park keys by identity.
+        {
+            std::vector<CurrentSlot> cur = {
+                { base[0], 0, false, false, {} },
+                { base[1], 1, false, false, {} },
+                { { "EJ Borrow Sulk", juce::String (0x454A4253), {} },
+                  -1, false, false, chunkFor (7) },
+                { { "No Such Plugin 9000", {}, {} }, -1, false, false, {} },
+            };
+            auto plan = computePlan ("uid-p2", base, cur);
+            const int fresh0 = primary.planFreshInstantiations();
+            (void) primary.applyStructurePlan (planDir, plan);   // aborts at stage
+            const int fresh1 = primary.planFreshInstantiations();
+            (void) primary.applyStructurePlan (planDir, plan);   // retry
+            const int fresh2 = primary.planFreshInstantiations();
+            check (fresh1 == fresh0 + 1 && fresh2 == fresh1,
+                   "retry instantiated ZERO new (sulk staged once, reused)",
+                   juce::String (fresh1 - fresh0) + " then "
+                     + juce::String (fresh2 - fresh1));
+        }
+
+        // Success path: remove + create + commit applies whole; journal gone.
+        {
+            std::vector<CurrentSlot> cur = {
+                { base[1], 1, true, false, chunkFor (52) },     // grinch edited
+                { { "EJ Borrow Sulk", juce::String (0x454A4253), {} },
+                  -1, false, false, chunkFor (7) },             // staged already
+            };
+            auto plan = computePlan ("uid-p2", base, cur);
+            const auto r = primary.applyStructurePlan (planDir, plan);
+            check (r.ok, "a full plan (remove+create+commit) applies whole",
+                   r.failedAt + " " + r.reasons.joinIntoString ("; "));
+            check (primary.getNumSlots() == 2
+                     && primary.getSlotInfo (1).name == "EJ Borrow Sulk",
+                   "the shape is the plan's shape");
+            check (! juce::File (journalPath (planDir, "uid-p2")).existsAsFile(),
+                   "the journal is deleted on completion");
+        }
+
+        // GATE 3: journal restore — after-session ordering is the caller's
+        // contract (LinkProcessor's first quiet tick); at-most-once and
+        // divergence-wins-with-a-note are proven here.
+        {
+            const auto preShape  = primary.liveIdentity();
+            auto pre = primary.planCapturePreImages();
+            Plan jp; jp.uid = "uid-p2"; jp.baseIdentity = preShape;
+            writeJournal (planDir, jp, pre);
+            // Mangle the rack (the divergent "session restore" outcome).
+            buildRack (primary);
+            primary.clearStateNotes();
+            check (primary.planJournalRestoreIfPresent (planDir, "uid-p2"),
+                   "an uncompleted journal restores on the post-settle check");
+            check (verifyBaseIdentity (primary.liveIdentity(), preShape)
+                       == BaseCheck::Match,
+                   "THE JOURNAL WON: the rack is the pre-image shape, not the "
+                   "session's");
+            bool noted = false;
+            for (auto& nte : primary.getStateNotes())
+                if (nte.contains ("different shape")) noted = true;
+            check (noted, "the divergence note names both truths");
+            check (! primary.planJournalRestoreIfPresent (planDir, "uid-p2"),
+                   "a second check is a no-op: restore runs AT MOST ONCE");
+        }
+
+        // GATE 2, by source: no rollback/refusal path releases the borrow.
+        {
+            std::ifstream f ("Source/PluginEditor.cpp");
+            std::stringstream ss; ss << f.rdbuf();
+            const juce::String src (ss.str());
+            const int fn  = src.indexOf ("void EchoJayEditor::runStructureApply");
+            const int end = fn >= 0 ? src.indexOf (fn, "\nvoid EchoJayEditor::sendBlockEdit") : -1;
+            const auto body = (fn >= 0 && end > fn) ? src.substring (fn, end)
+                                                    : juce::String();
+            check (body.isNotEmpty(), "runStructureApply located");
+            const int successRelease = body.indexOf ("borrowRelease(false)");
+            check (successRelease >= 0
+                     && body.indexOf (successRelease + 1, "borrowRelease") < 0,
+                   "borrowRelease appears ONCE, on the success path only — "
+                   "rollback and refusal keep the session live");
+            check (body.contains ("Your session is still live"),
+                   "every failure banner says the session is live");
+            check (body.contains ("structureEditCapable"),
+                   "the capability gate precedes the send");
+        }
+    }
+
     std::printf ("== DEV forceWithholdSlot: cannot exist in a non-DEV build ==\n");
     {
         // This suite compiles and links against build/ (DEV OFF) — the
