@@ -2040,10 +2040,17 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chainListPanel.onMoveSlot = [this](int i, int dir) {
         // Phase 3: a borrowed rack reorders locally when the Link announced
         // structure capability; a remote view still never reorders the
-        // LOCAL rack, and an old Link's borrow keeps its shape.
-        if (auto* bh = processorRef.borrowHostIfActiveFor(chainViewUid());
-            bh != nullptr && processorRef.borrowStructureCapable_)
+        // LOCAL rack, and an old Link's borrow keeps its shape — SAID, not
+        // silent (silent-does-nothing is the selector-bug failure mode).
+        if (auto* bh = processorRef.borrowHostIfActiveFor(chainViewUid()))
         {
+            if (! processorRef.borrowStructureCapable_)
+            {
+                chainListPanel.statusText = "An edited rack keeps its shape - "
+                    "bypass and settings edit here; structure stays the Link's.";
+                chainListPanel.repaint();
+                return;
+            }
             int j2 = i + dir;
             if (i < 0 || i >= bh->getNumSlots() || j2 < 0 || j2 >= bh->getNumSlots())
                 return;

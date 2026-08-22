@@ -981,8 +981,12 @@ int main()
         check (capForks >= 5,
                "capability forks the affordances, the ask and the send",
                juce::String (capForks));
-        check (oldWording >= 2,
-               "the settings-only wording survives for older Links",
+        // THREE sites — remove, add AND move. Move's refusal was silent
+        // before phase 3; silent-does-nothing is the selector-bug failure
+        // mode, so an incapable Link's move now says why, same words.
+        check (oldWording >= 3,
+               "the settings-only wording survives for older Links "
+               "(remove, add, move — never silent)",
                juce::String (oldWording));
         // EVERY op appears in the confirm, by name, with the withheld-removal
         // line the spec demands.
