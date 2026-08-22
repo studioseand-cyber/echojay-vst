@@ -84,15 +84,16 @@ struct BorrowProbe final : juce::AudioProcessor
     { if (size >= (int) sizeof (int)) std::memcpy (&value, data, sizeof (int)); }
 };
 
-// The grinch: honest on its FIRST seed, throws on every later one — i.e. a
-// plugin whose state machinery does not survive reuse. Exercises the
-// pool-ineligible fallback arm.
+// The grinch: a SEED-refuser — accepts any state except the poison value,
+// so pool resets succeed but a poisoned pull seed throws. Exercises the
+// failed-reuse-seed -> pool-ineligible arm.
 struct BorrowGrinch final : juce::AudioProcessor
 {
     BorrowGrinch() : juce::AudioProcessor (BusesProperties()
         .withInput ("In", juce::AudioChannelSet::stereo(), true)
         .withOutput ("Out", juce::AudioChannelSet::stereo(), true)) {}
-    int value = 0, seeds = 0;
+    static constexpr int kPoison = 666;
+    int value = 0;
     const juce::String getName() const override { return "EJ Borrow Grinch"; }
     void prepareToPlay (double, int) override {}
     void releaseResources() override {}
@@ -111,7 +112,41 @@ struct BorrowGrinch final : juce::AudioProcessor
     { d.setSize (sizeof (int)); d.copyFrom (&value, 0, sizeof (int)); }
     void setStateInformation (const void* data, int size) override
     {
-        if (++seeds >= 2) throw std::runtime_error ("grinch: no reuse for you");
+        int v = 0;
+        if (size >= (int) sizeof (int)) std::memcpy (&v, data, sizeof (int));
+        if (v == kPoison) throw std::runtime_error ("grinch: poison refused");
+        value = v;
+    }
+};
+
+// The sulk: a RESET-refuser — throws on every setState after its first, so
+// its pool reset fails and it must be retired + ineligible + fresh, never
+// reused dirty.
+struct BorrowSulk final : juce::AudioProcessor
+{
+    BorrowSulk() : juce::AudioProcessor (BusesProperties()
+        .withInput ("In", juce::AudioChannelSet::stereo(), true)
+        .withOutput ("Out", juce::AudioChannelSet::stereo(), true)) {}
+    int value = 0, sets = 0;
+    const juce::String getName() const override { return "EJ Borrow Sulk"; }
+    void prepareToPlay (double, int) override {}
+    void releaseResources() override {}
+    void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override {}
+    double getTailLengthSeconds() const override { return 0.0; }
+    bool acceptsMidi() const override { return false; }
+    bool producesMidi() const override { return false; }
+    juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+    bool hasEditor() const override { return false; }
+    int getNumPrograms() override { return 1; }
+    int getCurrentProgram() override { return 0; }
+    const juce::String getProgramName (int) override { return {}; }
+    void changeProgramName (int, const juce::String&) override {}
+    void setCurrentProgram (int) override {}
+    void getStateInformation (juce::MemoryBlock& d) override
+    { d.setSize (sizeof (int)); d.copyFrom (&value, 0, sizeof (int)); }
+    void setStateInformation (const void* data, int size) override
+    {
+        if (++sets >= 2) throw std::runtime_error ("sulk: no resets");
         if (size >= (int) sizeof (int)) std::memcpy (&value, data, sizeof (int));
     }
 };
@@ -131,6 +166,9 @@ const BuiltinDeviceRegistrar probeReg {
 const BuiltinDeviceRegistrar grinchReg {
     makeDevice ("EJ Borrow Grinch", "echojay:test:borrowgrinch", 0x454A4247,
                 [] { return std::make_unique<BorrowGrinch>(); }) };
+const BuiltinDeviceRegistrar sulkReg {
+    makeDevice ("EJ Borrow Sulk", "echojay:test:borrowsulk", 0x454A4253,
+                [] { return std::make_unique<BorrowSulk>(); }) };
 
 int failures = 0;
 void check (bool ok, const juce::String& what, const juce::String& detail = {})
@@ -176,9 +214,9 @@ std::map<juce::String, juce::MemoryBlock> snapshotDir (const juce::File& root)
     return out;
 }
 
-void borrowRack (ChainHost& h)
+void borrowRack (ChainHost& h, int grinchV = 99)
 {
-    h.restoreSavedChain (slotsVar(), stateVar (4242, 99));
+    h.restoreSavedChain (slotsVar(), stateVar (4242, grinchV));
 }
 
 BorrowProbe*  probeIn  (ChainHost& h, int i) { return dynamic_cast<BorrowProbe*>  (h.getSlotProcessor (i)); }
@@ -246,7 +284,7 @@ int main()
            juce::String (host.borrowPoolCount()));
 
     std::printf ("== borrow #2: reuse, zero new ==\n");
-    borrowRack (host);
+    borrowRack (host, BorrowGrinch::kPoison);
     check (host.getNumSlots() == 2, "two slots rebuilt");
     check (host.borrowFreshInstantiations() == 2,
            "borrow #2 instantiated ZERO new (counter still 2)",
@@ -283,7 +321,7 @@ int main()
     std::printf ("== borrow #3: ineligible instantiates fresh ==\n");
     host.releaseBorrowToPool();
     host.clearStateNotes();
-    borrowRack (host);
+    borrowRack (host, BorrowGrinch::kPoison);
     check (host.borrowFreshInstantiations() == 3,
            "grinch instantiated FRESH (counter 2 -> 3); probe still reused",
            juce::String (host.borrowFreshInstantiations()));
@@ -479,6 +517,51 @@ int main()
                    "raw hex uid withholds (the old bug, pinned as the reason)");
             check (! host.borrowSlotSeededWithState (0),
                    "an unseeded slot's FACT reads false — the verdict Apply reads");
+            // RESET-BEFORE-SEED (22 Aug 2026): the reused instance carried
+            // 777 from the previous borrow; with the seed withheld it must
+            // hold DEFAULTS — the previous rack's settings wearing this
+            // rack's name is worse than defaults, because it sounds like a
+            // working chain.
+            {
+                auto* pp = probeIn (host, 0);
+                check (pp != nullptr && pp->value == kProbeValueDefault,
+                       "a reused-then-unseeded slot holds DEFAULTS, never the "
+                       "prior borrow's state",
+                       pp != nullptr ? juce::String (pp->value) : juce::String ("null"));
+            }
+        }
+
+        // THE RESET-REFUSER ARM: a plugin whose state machinery breaks on
+        // reuse fails the pool RESET, is retired + marked ineligible, and
+        // every later borrow instantiates fresh — never reused dirty.
+        {
+            auto sulkRack = [&] (int v) {
+                host.releaseBorrowToPool();
+                juce::Array<juce::var> arr;
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("n", 1);
+                o->setProperty ("plugin", "EJ Borrow Sulk");
+                o->setProperty ("bypassed", false);
+                arr.add (juce::var (o));
+                auto* so = new juce::DynamicObject();
+                so->setProperty ("1", chunkFor (v));
+                host.restoreSavedChain (juce::var (arr), juce::var (so));
+            };
+            const int freshBefore = host.borrowFreshInstantiations();
+            sulkRack (11);                       // fresh, first set: seeds fine
+            sulkRack (22);                       // reuse -> RESET throws -> retire+fresh
+            check (host.borrowFreshInstantiations() == freshBefore + 2,
+                   "reset-refuser: retired and instantiated FRESH on re-borrow",
+                   juce::String (host.borrowFreshInstantiations() - freshBefore));
+            juce::PluginDescription sd;
+            sd.pluginFormatName = kEchoJayBuiltinFormat;
+            sd.fileOrIdentifier = "echojay:test:borrowsulk";
+            sd.uniqueId         = 0x454A4253;
+            check (host.isBorrowPoolIneligible (sd),
+                   "reset-refuser marked ineligible (no retire dance every cycle)");
+            auto* sp = dynamic_cast<BorrowSulk*> (host.getSlotProcessor (0));
+            check (sp != nullptr && sp->value == 22,
+                   "the fresh instance seeded correctly — never the dirty reuse");
         }
 
         // The Apply-time withheld verdict is the SAME policy, QUIET: no

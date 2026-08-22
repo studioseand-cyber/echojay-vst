@@ -1198,6 +1198,15 @@ private:
     // instance it is just a bad state.
     std::set<juce::uint32> borrowReusedNodeIds_;
     std::set<juce::uint32> borrowSeededNodeIds_;   // the seed FACT, per node
+    // The instance's PRISTINE state, captured at fresh instantiation before
+    // any seed or dial (22 Aug 2026): a pooled instance remembers its last
+    // borrow's settings, so reuse RESETS to this before seeding — a failed
+    // seed then leaves true defaults, never another channel's sound wearing
+    // this rack's name. An instance with no capturable default is retired
+    // from the pool rather than reused dirty.
+    std::map<juce::uint32, juce::MemoryBlock> borrowDefaultStates_;
+    std::vector<BorrowPoolEntry> borrowPoolRetired_;   // alive, never reused
+    void captureBorrowDefaultState(int slotIdx);
     static juce::String borrowPoolKey(const juce::PluginDescription& d)
     {
         // format|identifier|uid — the same identity stateFitsPlugin matches on.

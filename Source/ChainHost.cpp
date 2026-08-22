@@ -2410,6 +2410,8 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
     slot.desc     = desc;
     slot.bypassed = false;
     slots_.push_back(std::move(slot));
+    // Pristine default, captured BEFORE any seed or dial (borrow reset).
+    captureBorrowDefaultState((int) slots_.size() - 1);
     // A VST3 build inside an AU host is told in the rack, on every route
     // (session restore, shared chain, picker, model): the chain that comes
     // back is the chain that was saved, and it is not silent about it.
@@ -4021,6 +4023,20 @@ void ChainHost::releaseBorrowToPool()
                    + " instance(s) parked").toRawUTF8());
 }
 
+void ChainHost::captureBorrowDefaultState(int slotIdx)
+{
+    if (mode_ != Mode::Borrowed || slotIdx < 0
+        || slotIdx >= (int) slots_.size() || slots_[(size_t) slotIdx].node == nullptr)
+        return;
+    if (auto* p = slots_[(size_t) slotIdx].node->getProcessor())
+    {
+        juce::MemoryBlock mb;
+        try { p->getStateInformation(mb); } catch (...) { mb.reset(); }
+        if (mb.getSize() > 0)
+            borrowDefaultStates_[slots_[(size_t) slotIdx].node->nodeID.uid] = std::move(mb);
+    }
+}
+
 bool ChainHost::borrowTryReuseInto(const juce::PluginDescription& canonicalDesc)
 {
     if (mode_ != Mode::Borrowed) return false;
@@ -4032,6 +4048,39 @@ bool ChainHost::borrowTryReuseInto(const juce::PluginDescription& canonicalDesc)
     BorrowPoolEntry entry = std::move(it->second.back());
     it->second.pop_back();
     --borrowPoolTotal_;
+    // RESET BEFORE SEEDING (22 Aug 2026): the parked instance still holds
+    // the PREVIOUS borrow's settings, and a failed seed on top of those
+    // would leave another channel's sound wearing this rack's name — worse
+    // than defaults, because it sounds like a working chain. Reseed the
+    // pristine default captured at fresh instantiation; an instance with no
+    // default, or one that refuses it, is RETIRED (kept alive, never
+    // reused) and the caller instantiates fresh.
+    {
+        auto* p = entry.node->getProcessor();
+        auto dIt = p != nullptr
+                     ? borrowDefaultStates_.find(entry.node->nodeID.uid)
+                     : borrowDefaultStates_.end();
+        bool resetOk = false;
+        if (dIt != borrowDefaultStates_.end() && dIt->second.getSize() > 0)
+        {
+            try { p->setStateInformation(dIt->second.getData(),
+                                         (int) dIt->second.getSize());
+                  resetOk = true; }
+            catch (...) {}
+        }
+        if (! resetOk)
+        {
+            EchoJay_NSLog(("EJBorrowPool: \"" + canonicalDesc.name + "\" could "
+                           "not be reset to defaults - retired from the pool, "
+                           "instantiating fresh").toRawUTF8());
+            borrowPoolRetired_.push_back(std::move(entry));
+            // Ineligible too: a reset-refuser would otherwise pay the
+            // retire dance every cycle; this way later borrows go fresh
+            // directly — today's per-cycle cost for ITSELF only.
+            markBorrowPoolIneligible(canonicalDesc, "could not be reset to defaults");
+            return false;
+        }
+    }
     if (auto* p = entry.node->getProcessor())
     {
         p->suspendProcessing(false);
@@ -4097,6 +4146,8 @@ juce::String ChainHost::loadBuiltinNow(const juce::PluginDescription& desc)
     slot.desc     = BuiltinDeviceRegistry::descriptionFor(*device);
     slot.bypassed = false;
     slots_.push_back(std::move(slot));
+    // Pristine default, captured BEFORE any seed or dial (borrow reset).
+    captureBorrowDefaultState((int) slots_.size() - 1);
 
     bumpChainRevision();
     rebuildGraph();
