@@ -1068,6 +1068,271 @@ struct BorrowCommit
     }
 };
 
+// =============================================================================
+//  Structure editing, phase 1 (RACK_STRUCTURE_EDIT_SPEC, 22 Aug 2026):
+//  the PLAN and the JOURNAL — pure computation and file format only. No UI,
+//  no Link-side applier, no audio; phase 2 wires these into the transport.
+// =============================================================================
+namespace StructureEdit
+{
+    // Per-slot identity for the guard (spec §5): name always compared, uid
+    // and fp only when BOTH sides carry them (absent-is-no-opinion — the
+    // stateFitsPlugin grammar). uid is DECIMAL here, normalized from the
+    // sidecar's hex at construction — the encoding that shipped a feature
+    // which couldn't write is not allowed to recur.
+    struct SlotIdentity
+    {
+        juce::String name, uid, fp;
+        static SlotIdentity fromSidecar (const RackSidecarSlot& s)
+        {
+            return { s.name, sidecarUidToStateUid (s.uid), s.fp };
+        }
+        bool matches (const SlotIdentity& other) const
+        {
+            if (name.trim() != other.name.trim()) return false;
+            if (uid.isNotEmpty() && other.uid.isNotEmpty() && uid != other.uid)
+                return false;
+            if (fp.isNotEmpty() && other.fp.isNotEmpty() && fp != other.fp)
+                return false;
+            return true;
+        }
+    };
+
+    // The identity guard (spec §5). Count first, then per-index identity.
+    // §3e's same-name swap is CAUGHT here: names match after a swap, but
+    // per-index uid/fp do not.
+    enum class BaseCheck { Match, CountMismatch, IdentityMismatch };
+    inline BaseCheck verifyBaseIdentity (const std::vector<SlotIdentity>& planBase,
+                                         const std::vector<SlotIdentity>& live)
+    {
+        if (planBase.size() != live.size()) return BaseCheck::CountMismatch;
+        for (size_t i = 0; i < planBase.size(); ++i)
+            if (! planBase[i].matches (live[i]))
+                return BaseCheck::IdentityMismatch;
+        return BaseCheck::Match;
+    }
+
+    // Capability (spec §0): an old Link never sees a plan. Trivial and pure
+    // so the refusal arm is pinnable.
+    enum class Accept { Proceed, RefuseIncapable };
+    inline Accept accept (bool structureEditCapable)
+    { return structureEditCapable ? Accept::Proceed : Accept::RefuseIncapable; }
+
+    // The ordered ops (spec §3). Leave* classes are not ops — they are the
+    // absence of one; the plan reports their counts for the confirm.
+    enum class OpType { Remove, Move, Create, Commit };
+    struct Op
+    {
+        OpType type {};
+        int from = -1;             // Remove/Move/Commit: index at op time
+        int to   = -1;             // Move: target index; Create: insert index
+        juce::String name;         // display + honesty
+        juce::String stateB64;     // Create seed / Commit payload
+    };
+
+    // What the plan computation is TOLD about each current slot. originIndex
+    // is the base index this slot came from, -1 for a slot created in the
+    // main. The withheld/edited flags are the RECORDED facts from the borrow
+    // session, never recomputed here.
+    struct CurrentSlot
+    {
+        SlotIdentity identity;
+        int  originIndex = -1;
+        bool edited = false, withheld = false;
+        juce::String stateB64;     // current state (Create seed / Commit)
+    };
+
+    struct Plan
+    {
+        juce::String uid;                       // the Link
+        std::vector<SlotIdentity> baseIdentity; // the guard's snapshot
+        std::vector<Op> ops;                    // ordered: Removes, Moves, Creates, Commits
+        int changed = 0, committing = 0, creating = 0, removing = 0,
+            moving = 0, withheldEdited = 0, untouched = 0;
+    };
+
+    // The plan computation, deterministic by construction (spec §3 order:
+    // removes descending, then moves to target order, then creates at their
+    // positions, then commits). Withheld beats edited, always — a withheld
+    // slot never yields a Commit, moved or not.
+    inline Plan computePlan (const juce::String& uid,
+                             const std::vector<SlotIdentity>& base,
+                             const std::vector<CurrentSlot>& current)
+    {
+        Plan p;
+        p.uid = uid;
+        p.baseIdentity = base;
+
+        // Removes: base indices no current slot originates from, descending
+        // so earlier removes cannot shift later ones.
+        std::vector<bool> survives (base.size(), false);
+        for (const auto& c : current)
+            if (c.originIndex >= 0 && c.originIndex < (int) base.size())
+                survives[(size_t) c.originIndex] = true;
+        for (int i = (int) base.size() - 1; i >= 0; --i)
+            if (! survives[(size_t) i])
+            {
+                p.ops.push_back ({ OpType::Remove, i, -1, base[(size_t) i].name, {} });
+                ++p.removing;
+            }
+
+        // Moves: bring the survivors into the current order. The working
+        // model mirrors what the applier will hold after the removes.
+        std::vector<int> work;                     // base origin per position
+        for (size_t i = 0; i < base.size(); ++i)
+            if (survives[i]) work.push_back ((int) i);
+        std::vector<int> target;                   // survivor origins, current order
+        for (const auto& c : current)
+            if (c.originIndex >= 0) target.push_back (c.originIndex);
+        for (int pos = 0; pos < (int) target.size(); ++pos)
+        {
+            if (work[(size_t) pos] == target[(size_t) pos]) continue;
+            int fromPos = pos + 1;
+            while (fromPos < (int) work.size()
+                   && work[(size_t) fromPos] != target[(size_t) pos]) ++fromPos;
+            const int origin = work[(size_t) fromPos];
+            work.erase (work.begin() + fromPos);
+            work.insert (work.begin() + pos, origin);
+            p.ops.push_back ({ OpType::Move, fromPos, pos,
+                               base[(size_t) origin].name, {} });
+            ++p.moving;
+        }
+
+        // Creates: at their final positions, ascending (earlier inserts make
+        // later target indices correct).
+        for (int i = 0; i < (int) current.size(); ++i)
+            if (current[(size_t) i].originIndex < 0)
+            {
+                p.ops.push_back ({ OpType::Create, -1, i,
+                                   current[(size_t) i].identity.name,
+                                   current[(size_t) i].stateB64 });
+                ++p.creating;
+            }
+
+        // Commits: edited survivors, withheld NEVER (spec §3 / §5c).
+        for (int i = 0; i < (int) current.size(); ++i)
+        {
+            const auto& c = current[(size_t) i];
+            if (c.originIndex < 0) continue;       // Create seeds itself
+            if (c.edited) ++p.changed;
+            if (! c.edited) { ++p.untouched; continue; }
+            if (c.withheld) { ++p.withheldEdited; continue; }
+            p.ops.push_back ({ OpType::Commit, i, -1,
+                               c.identity.name, c.stateB64 });
+            ++p.committing;
+        }
+        return p;
+    }
+
+    // -------------------------------------------------------------------
+    //  The journal (spec §1): plan + ABSOLUTE pre-images, written before
+    //  the first mutation, deleted only on completion. Pre-images are the
+    //  whole shape and every state — restore is wholesale replacement, so
+    //  replaying it is idempotent by construction (and gated anyway).
+    // -------------------------------------------------------------------
+    struct PreImages
+    {
+        std::vector<SlotIdentity> shape;
+        juce::StringArray states;              // parallel, "" = none held
+    };
+
+    inline juce::String journalPath (const juce::String& dir, const juce::String& uid)
+    { return dir + "structplan-" + uid + ".json"; }
+
+    inline juce::var identityToVar (const SlotIdentity& s)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("name", s.name);
+        if (s.uid.isNotEmpty()) o->setProperty ("uid", s.uid);
+        if (s.fp.isNotEmpty())  o->setProperty ("fp",  s.fp);
+        return juce::var (o);
+    }
+    inline SlotIdentity identityFromVar (const juce::var& v)
+    {
+        SlotIdentity s;
+        if (auto* o = v.getDynamicObject())
+        {
+            s.name = o->getProperty ("name").toString();
+            s.uid  = o->getProperty ("uid").toString();
+            s.fp   = o->getProperty ("fp").toString();
+        }
+        return s;
+    }
+
+    inline juce::var planToVar (const Plan& p, const PreImages& pre)
+    {
+        auto* root = new juce::DynamicObject();
+        root->setProperty ("v",   1);
+        root->setProperty ("uid", p.uid);
+        juce::Array<juce::var> baseArr, opsArr, shapeArr;
+        for (const auto& s : p.baseIdentity) baseArr.add (identityToVar (s));
+        root->setProperty ("baseIdentity", baseArr);
+        for (const auto& op : p.ops)
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("type", (int) op.type);
+            o->setProperty ("from", op.from);
+            o->setProperty ("to",   op.to);
+            o->setProperty ("name", op.name);
+            if (op.stateB64.isNotEmpty()) o->setProperty ("state", op.stateB64);
+            opsArr.add (juce::var (o));
+        }
+        root->setProperty ("ops", opsArr);
+        for (const auto& s : pre.shape) shapeArr.add (identityToVar (s));
+        root->setProperty ("preShape", shapeArr);
+        juce::Array<juce::var> preStates;
+        for (const auto& st : pre.states) preStates.add (st);
+        root->setProperty ("preStates", preStates);
+        return juce::var (root);
+    }
+
+    inline bool planFromVar (const juce::var& v, Plan& pOut, PreImages& preOut)
+    {
+        auto* o = v.getDynamicObject();
+        if (o == nullptr || (int) o->getProperty ("v") != 1) return false;
+        pOut = {};
+        preOut = {};
+        pOut.uid = o->getProperty ("uid").toString();
+        if (auto* arr = o->getProperty ("baseIdentity").getArray())
+            for (auto& e : *arr) pOut.baseIdentity.push_back (identityFromVar (e));
+        if (auto* arr = o->getProperty ("ops").getArray())
+            for (auto& e : *arr)
+                if (auto* oo = e.getDynamicObject())
+                    pOut.ops.push_back ({ (OpType) (int) oo->getProperty ("type"),
+                                          (int) oo->getProperty ("from"),
+                                          (int) oo->getProperty ("to"),
+                                          oo->getProperty ("name").toString(),
+                                          oo->getProperty ("state").toString() });
+        if (auto* arr = o->getProperty ("preShape").getArray())
+            for (auto& e : *arr) preOut.shape.push_back (identityFromVar (e));
+        if (auto* arr = o->getProperty ("preStates").getArray())
+            for (auto& e : *arr) preOut.states.add (e.toString());
+        return true;
+    }
+
+    inline void writeJournal (const juce::String& dir, const Plan& p,
+                              const PreImages& pre)
+    {
+        juce::File (journalPath (dir, p.uid))
+            .replaceWithText (juce::JSON::toString (planToVar (p, pre), true));
+    }
+    inline bool readJournal (const juce::String& dir, const juce::String& uid,
+                             Plan& pOut, PreImages& preOut)
+    {
+        juce::File f (journalPath (dir, uid));
+        if (! f.existsAsFile()) return false;
+        return planFromVar (juce::JSON::parse (f.loadFileAsString()), pOut, preOut);
+    }
+
+    // The restore, as a pure model transform: ABSOLUTE pre-images replace
+    // the rack wholesale. Feeding the output back in yields itself — the
+    // idempotence the journal's crash-retry depends on, gated in
+    // structplan_test rather than trusted.
+    struct RackModel { std::vector<SlotIdentity> shape; juce::StringArray states; };
+    inline RackModel restoreFromJournal (const PreImages& pre, const RackModel&)
+    { return { pre.shape, pre.states }; }
+}
+
 // Where the borrowed solo lands (hands-on decision, 21 Aug 2026): on a Mix
 // Bus or Master Bus main, the borrowed channel feeds INTO the main's own
 // chain — soloing a channel on the mix bus must not lose the master
