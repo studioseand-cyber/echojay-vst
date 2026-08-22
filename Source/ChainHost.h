@@ -82,6 +82,19 @@ public:
         popped again), and the marking logs. */
     void markBorrowPoolIneligible(const juce::PluginDescription& d,
                                   const juce::String& why);
+    /** Step 3: the Apply-time withheld verdict — the SAME stateFitsPlugin
+        policy that withheld the pull, run against the same saved triplet,
+        QUIET (no note: this is a verdict read, not an apply). */
+    bool borrowSlotWithheld(int i, const juce::String& savedFormat,
+                            const juce::String& savedVersion,
+                            const juce::String& savedUid) const
+    {
+        if (i < 0 || i >= (int) slots_.size()) return false;
+        return ! stateFitsPlugin(slots_[(size_t) i].desc, savedFormat,
+                                 savedVersion, savedUid,
+                                 slots_[(size_t) i].desc.name,
+                                 nullptr, /*noteOnWithhold*/ false);
+    }
     bool isBorrowPoolIneligible(const juce::PluginDescription& d) const
     { return borrowPoolIneligible_.contains(borrowPoolKey(d)); }
 
@@ -1315,7 +1328,8 @@ private:
                          const juce::String& savedVersion,
                          const juce::String& savedUid,
                          const juce::String& slotName,
-                         juce::String* deferredNote = nullptr) const;
+                         juce::String* deferredNote = nullptr,
+                         bool noteOnWithhold = true) const;
 
     // ---- Hosted settings cache internals ---------------------------------
     // Debounce: capture 2s after the last observed change, so one knob drag

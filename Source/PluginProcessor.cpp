@@ -477,9 +477,9 @@ EchoJayProcessor::~EchoJayProcessor()
         editEnd(false);
     }
     // Borrow: a dying host releases cleanly — lease deleted so the Link
-    // restores its bypasses NOW rather than at the 3s expiry. No state is
-    // written back (step 2 has no commit path at all).
-    borrowRelease();
+    // restores its bypasses NOW rather than at the 3s expiry. keepEdits: a
+    // teardown is never an implicit discard.
+    borrowRelease(true);
     // Rack lock: delete rather than expire — same reason as the lease above.
     // setRackLockWant({}) stops the renew timer and deletes the lock file.
     setRackLockWant({});
@@ -1685,11 +1685,12 @@ void EchoJayProcessor::borrowTick()
         {
             const juce::String name = resolveLinkDisplayName(borrowSession_.uid);
             borrowRingLostTicks_ = 0;
-            borrowRelease();
+            borrowRelease(true);   // a lease death is never an implicit discard
             borrowAutoReleaseReason_ =
                 "Released: " + name + "'s audio stream went away and did "
                 "not come back. The Link owns its rack again; nothing was "
-                "applied.";
+                "applied, and your edits are KEPT - press EDIT RACK on it "
+                "again to continue from them.";
             EchoJay_NSLog("EJBorrow: SELF-RELEASED - ring gone past tolerance");
             break;
         }
@@ -1800,9 +1801,32 @@ void EchoJayProcessor::borrowAudioOn()
     borrowSession_.audioOn.store(true, std::memory_order_release);
 }
 
-void EchoJayProcessor::borrowRelease()
+void EchoJayProcessor::captureBorrowKept()
+{
+    if (!borrowActive() || borrowHost_ == nullptr) return;
+    borrowKept_ = {};
+    borrowKept_.uid = borrowSession_.uid;
+    for (int i = 0; i < borrowHost_->getNumSlots(); ++i)
+    {
+        juce::String b64;
+        if (auto* p = borrowHost_->getSlotProcessor(i))
+        {
+            juce::MemoryBlock mb;
+            try { p->getStateInformation(mb); } catch (...) { mb.reset(); }
+            if (mb.getSize() > 0) b64 = LinkShm::stateToB64(mb);
+        }
+        borrowKept_.names.add(borrowHost_->getSlotInfo(i).name);
+        borrowKept_.states.add(b64);
+    }
+    EchoJay_NSLog(("EJBorrow: kept " + juce::String(borrowKept_.states.size())
+                   + " slot state(s) for uid=" + borrowKept_.uid).toRawUTF8());
+}
+
+void EchoJayProcessor::borrowRelease(bool keepEdits)
 {
     if (!borrowActive()) return;
+    if (keepEdits) captureBorrowKept();
+    borrowSlotRecords_.clear();
     // Ramp out first (the AMEK lesson): audioOn drops the crossfade target
     // to 0; the graph itself stays alive (session-long host), so there is
     // no instance teardown racing the audio thread here at all.

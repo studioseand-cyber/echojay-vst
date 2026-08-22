@@ -1015,6 +1015,47 @@ static constexpr int kLinkTransferMaxTotalBytes = 16 * 1024 * 1024;
 // borrow must produce sound or a stated release, never silence.
 static constexpr int kBorrowRingMaxLostTicks = 3;   // ~3s at the renew cadence
 
+// Step 3 (22 Aug 2026): WHAT APPLY WRITES, decided per slot by one pure
+// gate. The hard rule (spec §5c, decided): a WITHHELD slot — one whose
+// state never arrived because the identity match refused it — is NEVER
+// written back, edited or not: its local instance runs defaults plus
+// whatever the user did to defaults, and committing that would stomp the
+// Link's real settings. An UNEDITED slot (current state byte-equal to the
+// post-seed baseline) is left untouched too: Apply writes exactly what the
+// user changed, nothing else. The Link's state can only change through a
+// commit payload, so proving the plan is proving the Link untouched.
+struct BorrowCommit
+{
+    enum class Action { Commit, LeaveWithheld, LeaveUnedited };
+    static Action classify (bool withheld, bool edited)
+    {
+        if (withheld) return Action::LeaveWithheld;   // beats edited, always
+        return edited ? Action::Commit : Action::LeaveUnedited;
+    }
+    struct Plan
+    {
+        std::vector<Action> actions;
+        int changed = 0;          // slots the user edited (incl. withheld ones)
+        int committing = 0;       // what Apply will actually write
+        int withheldEdited = 0;   // edited but never written (the asymmetry)
+        int untouched = 0;        // unedited, left alone
+    };
+    static Plan plan (const std::vector<std::pair<bool, bool>>& slots) // {withheld, edited}
+    {
+        Plan p;
+        for (const auto& [withheld, edited] : slots)
+        {
+            const auto a = classify (withheld, edited);
+            p.actions.push_back (a);
+            if (edited) ++p.changed;
+            if (a == Action::Commit) ++p.committing;
+            else if (withheld && edited) ++p.withheldEdited;
+            if (! edited) ++p.untouched;
+        }
+        return p;
+    }
+};
+
 // Where the borrowed solo lands (hands-on decision, 21 Aug 2026): on a Mix
 // Bus or Master Bus main, the borrowed channel feeds INTO the main's own
 // chain — soloing a channel on the mix bus must not lose the master

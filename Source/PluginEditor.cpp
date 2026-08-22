@@ -7624,6 +7624,31 @@ void EchoJayEditor::showChainRackMenu()
 // file the processor renews; borrowhost_test pins the absence of any commit
 // key by source.
 // ---------------------------------------------------------------------------
+// The per-slot verdicts, computed the ONE way (step 3): withheld re-runs
+// stateFitsPlugin against the SAME saved triplet that withheld the pull;
+// edited is a byte-diff against the post-seed baseline.
+std::vector<std::pair<bool, bool>> EchoJayEditor::borrowSlotVerdicts()
+{
+    std::vector<std::pair<bool, bool>> out;
+    auto* bh = processorRef.borrowHost();
+    const auto& recs = processorRef.borrowSlotRecords_;
+    for (int i = 0; i < bh->getNumSlots() && i < (int) recs.size(); ++i)
+    {
+        const auto& r = recs[(size_t) i];
+        const bool withheld = bh->borrowSlotWithheld(
+            i, r.savedFormat, r.savedVersion, r.savedUid);
+        juce::String nowB64;
+        if (auto* p = bh->getSlotProcessor(i))
+        {
+            juce::MemoryBlock mb;
+            try { p->getStateInformation(mb); } catch (...) { mb.reset(); }
+            if (mb.getSize() > 0) nowB64 = LinkShm::stateToB64(mb);
+        }
+        out.emplace_back(withheld, nowB64 != r.baselineB64);
+    }
+    return out;
+}
+
 void EchoJayEditor::toggleBorrow()
 {
     // Release acts on the LIVE borrow whatever rack the view shows — the
@@ -7631,16 +7656,188 @@ void EchoJayEditor::toggleBorrow()
     // cannot strand the borrow (finding #3).
     if (processorRef.borrowActive())
     {
+        // EXPLICIT APPLY, never an implicit commit on deselect (§5a): with
+        // uncommitted edits, the release asks first — apply or discard —
+        // through the one confirm implementation. Without edits, release.
+        const auto plan = LinkShm::BorrowCommit::plan(borrowSlotVerdicts());
+        if (plan.changed > 0)
+        {
+            presentBorrowApplyAsk(plan);
+            return;
+        }
         const juce::String owner =
             processorRef.resolveLinkDisplayName(processorRef.borrowUid());
-        processorRef.borrowRelease();
+        processorRef.clearBorrowKept();
+        processorRef.borrowRelease(false);
         chainListPanel.statusText = "Released - " + owner
-            + " owns its rack again. Edits here were NOT applied (Apply "
-              "comes in a later step).";
+            + " owns its rack again. Nothing was changed on either side.";
         refreshChainPanelForView(true);
         return;
     }
     startBorrow(chainViewUid());
+}
+
+void EchoJayEditor::presentBorrowApplyAsk(const LinkShm::BorrowCommit::Plan& plan)
+{
+    // Fourth thin wrapper on the ONE presenter — wording + chips only,
+    // intent class apply_ (inside the replace-ask supersede class, never an
+    // unscoped prefix). THE ASYMMETRY IN WORDS, before anything is written:
+    // changed N, committing C, leaving the rest untouched — and edited-but-
+    // withheld slots named as never-written (§5c's hard rule, said aloud).
+    const juce::String name =
+        processorRef.resolveLinkDisplayName(processorRef.borrowUid());
+    const int total = (int) plan.actions.size();
+    juce::String question =
+        "You changed " + juce::String(plan.changed) + " of "
+        + juce::String(total) + " plugin" + (total == 1 ? "" : "s") + " on "
+        + name + ". Apply writes " + juce::String(plan.committing)
+        + " back to " + name;
+    if (plan.withheldEdited > 0)
+        question += " - the other " + juce::String(plan.withheldEdited)
+                  + " arrived without " + name + "'s real settings and "
+                    "will NEVER be written over them";
+    question += "; " + juce::String(plan.untouched) + " unchanged plugin"
+              + (plan.untouched == 1 ? "" : "s") + " stay"
+              + (plan.untouched == 1 ? "s" : "") + " untouched.";
+
+    juce::Array<juce::var> choices;
+    for (auto [label, intent] : { std::pair<const char*, const char*>
+             { "Apply & Release", "apply_confirm" },
+             { "Discard & Release", "apply_discard" },
+             { "Keep editing", "apply_keep" } })
+    {
+        auto* c = new juce::DynamicObject();
+        c->setProperty("label",  label);
+        c->setProperty("intent", intent);
+        choices.add(juce::var(c));
+    }
+    presentReplaceAsk(question, choices,
+                      "apply to \"" + name + "\"",
+                      "EJApply: ask shown changed=" + juce::String(plan.changed)
+                          + " committing=" + juce::String(plan.committing)
+                          + " withheldEdited=" + juce::String(plan.withheldEdited)
+                          + " answer=pending");
+}
+
+void EchoJayEditor::runBorrowApply()
+{
+    // Sequential per-slot committer, the pull sequencer's shape. ONLY slots
+    // the plan marks Commit are ever sent — the Link's state can only change
+    // through a commit payload, so the filter IS the untouched guarantee.
+    auto& proc = processorRef;
+    const juce::String uid = proc.borrowUid();
+    if (uid.isEmpty()) return;
+    auto it = proc.linkRackCache.find(uid);
+    // baseSlots: the Link's live rack names, order and all — STABLE under
+    // the rack lock (the Link's structure writes are refused while we hold
+    // it), which is what makes rack-scale Apply safe where per-slot wasn't.
+    juce::Array<juce::var> baseSlots;
+    if (it != proc.linkRackCache.end())
+        for (const auto& rs : it->second.rack.slots)
+            baseSlots.add(rs.name);
+
+    struct ApplyState {
+        juce::String uid, name;
+        juce::Array<juce::var> baseSlots;
+        std::vector<std::pair<int, juce::String>> payloads;   // slot0, b64
+        int idx = 0, baseSeq = 0, ok = 0;
+        juce::StringArray failures;
+    };
+    auto st = std::make_shared<ApplyState>();
+    st->uid = uid;
+    st->name = proc.resolveLinkDisplayName(uid);
+    st->baseSlots = baseSlots;
+    st->baseSeq = (int) (juce::Time::currentTimeMillis() / 1000);
+
+    const auto plan = LinkShm::BorrowCommit::plan(borrowSlotVerdicts());
+    auto* bh = proc.borrowHost();
+    for (int i = 0; i < (int) plan.actions.size(); ++i)
+    {
+        if (plan.actions[(size_t) i] != LinkShm::BorrowCommit::Action::Commit)
+            continue;
+        juce::MemoryBlock mb;
+        if (auto* p = bh->getSlotProcessor(i))
+            try { p->getStateInformation(mb); } catch (...) { mb.reset(); }
+        const juce::String nm = bh->getSlotInfo(i).name;
+        if (mb.getSize() == 0)
+        { st->failures.add(nm + " (could not read its settings)"); continue; }
+        if ((int) mb.getSize() > LinkShm::kLinkTransferMaxSlotBytes)
+        { st->failures.add(nm + " (settings over the transfer cap)"); continue; }
+        st->payloads.emplace_back(i, LinkShm::stateToB64(mb));
+    }
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    auto finish = std::make_shared<std::function<void()>>();
+    auto step   = std::make_shared<std::function<void()>>();
+    *finish = [safeThis, st]()
+    {
+        if (safeThis == nullptr) return;
+        auto& p2 = safeThis->processorRef;
+        p2.clearBorrowKept();          // committed (or named as failed) — not kept
+        p2.borrowRelease(false);
+        safeThis->chainListPanel.statusText =
+            "Applied " + juce::String(st->ok) + " plugin"
+            + (st->ok == 1 ? "'s" : "s'") + " settings to " + st->name
+            + (st->failures.isEmpty()
+                   ? juce::String(". ")
+                   : " - NOT applied: " + st->failures.joinIntoString("; ") + ". ")
+            + st->name + " owns its rack again.";
+        safeThis->refreshChainPanelForView(true);
+    };
+    *step = [safeThis, st, step, finish]()
+    {
+        if (safeThis == nullptr) return;
+        if (st->idx >= (int) st->payloads.size()) { (*finish)(); return; }
+        int err = 0;
+        const juce::String dir = LinkShm::resolveDir(err);
+        if (dir.isEmpty())
+        { st->failures.add("shared Link folder unavailable"); (*finish)(); return; }
+        const auto& [slot0, b64] = st->payloads[(size_t) st->idx];
+        const int seq = st->baseSeq + st->idx;
+        auto* cmd = new juce::DynamicObject();
+        cmd->setProperty("v",           1);
+        cmd->setProperty("seq",         seq);
+        cmd->setProperty("commitSlot",  slot0 + 1);
+        cmd->setProperty("commitState", b64);
+        cmd->setProperty("baseSlots",   st->baseSlots);
+        juce::File(dir + "ctrl-ack-" + st->uid + ".json").deleteFile();
+        juce::File(dir + "ctrl-cmd-" + st->uid + ".json")
+            .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+        auto poll = std::make_shared<std::function<void(int)>>();
+        *poll = [safeThis, st, step, finish, poll, seq, dir, slot0](int left)
+        {
+            juce::Timer::callAfterDelay(250, [safeThis, st, step, finish, poll, seq, dir, slot0, left]
+            {
+                if (safeThis == nullptr) return;
+                const juce::String nm = st->idx < (int) st->payloads.size()
+                    ? safeThis->processorRef.borrowHost()->getSlotInfo(slot0).name
+                    : juce::String("?");
+                juce::File ack(dir + "ctrl-ack-" + st->uid + ".json");
+                if (ack.existsAsFile())
+                {
+                    auto v = juce::JSON::parse(ack.loadFileAsString());
+                    if (auto* o = v.getDynamicObject(); o != nullptr
+                        && (int) o->getProperty("seq") == seq)
+                    {
+                        ack.deleteFile();
+                        if (o->hasProperty("committedSlot")
+                            && (bool) o->getProperty("committedSlot")) ++st->ok;
+                        else st->failures.add(nm + " ("
+                            + o->getProperty("commitErr").toString() + ")");
+                        ++st->idx;
+                        (*step)();
+                        return;
+                    }
+                }
+                if (left <= 1)
+                { st->failures.add(nm + " (no answer from the Link)");
+                  ++st->idx; (*step)(); return; }
+                (*poll)(left - 1);
+            });
+        };
+        (*poll)(20);
+    };
+    (*step)();
 }
 
 void EchoJayEditor::startBorrow(const juce::String& uid)
@@ -7765,6 +7962,49 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
             // settings card would otherwise read empty on a borrowed slot).
             for (int i = 0; i < want && i < (int) st->slots.size(); ++i)
                 bh2->setSlotSettings(i, st->slots[(size_t) i].settings);
+            // STEP 3 BOOKKEEPING: the saved identity triplet (Apply re-runs
+            // the same stateFitsPlugin verdict that withheld the pull) and
+            // the post-seed BASELINE — captured NOW, before any kept-edit
+            // overlay, so "edited" means "differs from the Link's sound".
+            p2.borrowSlotRecords_.clear();
+            for (int i = 0; i < want && i < (int) st->slots.size(); ++i)
+            {
+                EchoJayProcessor::BorrowSlotRecord r;
+                const auto& s = st->slots[(size_t) i];
+                r.name = s.name; r.savedFormat = s.format;
+                r.savedVersion = s.version; r.savedUid = s.uid;
+                if (auto* pr = bh2->getSlotProcessor(i))
+                {
+                    juce::MemoryBlock mb;
+                    try { pr->getStateInformation(mb); } catch (...) { mb.reset(); }
+                    if (mb.getSize() > 0) r.baselineB64 = LinkShm::stateToB64(mb);
+                }
+                p2.borrowSlotRecords_.push_back(std::move(r));
+            }
+            // CONTINUOUS KEEP, the restore half: an interrupted session's
+            // uncommitted edits come back, and it says so. Name-checked per
+            // index so a changed rack cannot receive the wrong state.
+            bool restoredKept = false;
+            if (p2.borrowKept_.uid == st->uid)
+            {
+                for (int i = 0; i < want
+                                && i < p2.borrowKept_.states.size(); ++i)
+                {
+                    if (p2.borrowKept_.names[i].trim()
+                            != bh2->getSlotInfo(i).name.trim()
+                        || p2.borrowKept_.states[i].isEmpty()) continue;
+                    juce::MemoryBlock mb;
+                    if (! LinkShm::stateFromB64(p2.borrowKept_.states[i], mb)
+                        || mb.getSize() == 0) continue;
+                    if (auto* pr = bh2->getSlotProcessor(i))
+                    {
+                        try { pr->setStateInformation(mb.getData(), (int) mb.getSize());
+                              restoredKept = true; }
+                        catch (...) {}
+                    }
+                }
+                p2.clearBorrowKept();
+            }
             p2.borrowAudioOn();
             safeThis->chainListPanel.statusText =
                 "Editing " + p2.resolveLinkDisplayName(st->uid)
@@ -7772,8 +8012,11 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
                 + (p2.borrowRouteThroughMain()
                        ? juce::String("heard through this channel's own chain. ")
                        : juce::String("replacing this channel's output. "))
-                + "Edits are audible and UNCOMMITTED; Release hands it back "
-                  "unchanged.";
+                + (restoredKept
+                       ? juce::String("Your uncommitted edits from the "
+                             "interrupted session were RESTORED. ")
+                       : juce::String())
+                + "Edits are audible and uncommitted until Apply.";
             safeThis->refreshChainPanelForView(true);
         });
         // Empty rack: no slots to settle, engage the (dry) solo directly.
@@ -21558,6 +21801,37 @@ void EchoJayEditor::onAskChipTapped(int i)
     //                   intent): the tap IS the disambiguation;
     //                   route it through handleChainRecall, which
     //                   still asks before replacing a non-empty rack.
+    // STEP 3: the Apply & Release ask's chips. Entirely client-side, no
+    // chat turn. Confirm commits the plan then releases; discard releases
+    // and clears the kept edits (the user's explicit choice of loss);
+    // keep-editing just closes the shelf and the session continues.
+    if (intent == "apply_confirm" || intent == "apply_discard"
+        || intent == "apply_keep")
+    {
+        logTap(intent);
+        supersedePendingReplaceAsks();
+        askShelfVisible_ = false;
+        resized();
+        if (intent == "apply_confirm")
+        {
+            EchoJay_NSLog("EJApply: answer=apply");
+            runBorrowApply();
+        }
+        else if (intent == "apply_discard")
+        {
+            EchoJay_NSLog("EJApply: answer=discard");
+            const juce::String owner =
+                processorRef.resolveLinkDisplayName(processorRef.borrowUid());
+            processorRef.clearBorrowKept();
+            processorRef.borrowRelease(false);
+            chainListPanel.statusText = "Released - your edits were discarded. "
+                + owner + " owns its rack again, unchanged.";
+            refreshChainPanelForView(true);
+        }
+        else
+            EchoJay_NSLog("EJApply: answer=keep-editing");
+        return;
+    }
     if (intent == "recall_confirm" || intent == "recall_cancel")
     {
         logTap(intent);
@@ -23878,14 +24152,16 @@ void EchoJayEditor::supersedePendingAsksByIntent(std::initializer_list<const cha
 void EchoJayEditor::supersedePendingReplaceAsks()
 {
     // Replace-class only: recall_* (recall_confirm / recall_cancel /
-    // recall_here / recall_switch) and build_* (build_confirm /
-    // build_cancel). The mismatch flag belongs to this class.
+    // recall_here / recall_switch), build_* (build_confirm / build_cancel)
+    // and apply_* (step 3's Apply & Release ask — IN the class on purpose:
+    // an unscoped prefix is the two-stacked-asks trap the rack-lock brief
+    // named). The mismatch flag belongs to this class.
     if (pendingRecallMismatchAsk_)
     {
         pendingRecallMismatchAsk_ = false;
         EchoJay_NSLog("EJRecall: mismatch ask dismissed without choosing (superseded by new replace ask)");
     }
-    supersedePendingAsksByIntent({ "recall_", "build_" });
+    supersedePendingAsksByIntent({ "recall_", "build_", "apply_" });
 }
 
 // THE ONE presenter for replace-class asks. Build and recall each compose

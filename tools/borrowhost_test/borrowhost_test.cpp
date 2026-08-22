@@ -412,6 +412,66 @@ int main()
     }
 
     // =======================================================================
+    std::printf ("== step 3: Apply's per-slot filter — the Link untouched ==\n");
+    {
+        using BC = LinkShm::BorrowCommit;
+        check (BC::classify (false, true)  == BC::Action::Commit,
+               "edited + clean: COMMIT");
+        check (BC::classify (true,  true)  == BC::Action::LeaveWithheld,
+               "edited + WITHHELD: never written (the hard rule beats the edit)");
+        check (BC::classify (false, false) == BC::Action::LeaveUnedited,
+               "unedited + clean: untouched");
+        check (BC::classify (true,  false) == BC::Action::LeaveWithheld,
+               "unedited + withheld: untouched");
+        // The 4-combo rack: exactly ONE commit, and it is the edited+clean
+        // slot — the writer-level proof that untouched slots stay untouched
+        // (the Link's state changes only through a commit payload).
+        const auto plan = BC::plan ({ {false, true}, {true, true},
+                                      {false, false}, {true, false} });
+        int commits = 0;
+        for (auto a : plan.actions) if (a == BC::Action::Commit) ++commits;
+        check (commits == 1 && plan.actions[0] == BC::Action::Commit,
+               "4-combo rack: exactly one payload, the edited+clean slot");
+        check (plan.changed == 2 && plan.committing == 1
+                 && plan.withheldEdited == 1 && plan.untouched == 2,
+               "the asymmetry counts: changed 2, committing 1, "
+               "withheld-edited 1, untouched 2");
+
+        // The Apply-time withheld verdict is the SAME policy, QUIET: no
+        // state note from a verdict read.
+        host.clearStateNotes();
+        const int notesBefore = host.getStateNotes().size();
+        check (host.borrowSlotWithheld (0, "VST3", "9.9", "12345"),
+               "mismatching triplet reads withheld (same stateFitsPlugin policy)");
+        check (! host.borrowSlotWithheld (0, {}, {}, {}),
+               "absent triplet is no opinion, not withheld");
+        check (host.getStateNotes().size() == notesBefore,
+               "verdict reads write NO user-facing notes");
+
+        // Source pins: the committer sends ONLY Commit-classified slots; the
+        // ask states the asymmetry; discard clears the kept edits; every
+        // keep-release captures them; apply_ rides the replace supersede
+        // class (never an unscoped prefix).
+        auto slurp2 = [] (const char* p)
+        { std::ifstream f (p); std::stringstream s; s << f.rdbuf(); return juce::String (s.str()); };
+        const auto ed3 = slurp2 ("Source/PluginEditor.cpp");
+        check (ed3.contains ("!= LinkShm::BorrowCommit::Action::Commit)\n            continue;"),
+               "runBorrowApply sends ONLY Commit-classified slots (by source)");
+        check (ed3.contains ("will NEVER be written over them"),
+               "the ask names the withheld-edited slots as never-written");
+        check (ed3.contains ("\"You changed \"") && ed3.contains ("stay")
+                 && ed3.contains ("untouched.\""),
+               "the ask states changed / committing / untouched in words");
+        check (ed3.contains ("{ \"recall_\", \"build_\", \"apply_\" }"),
+               "apply_ is in the replace-ask supersede class");
+        const auto pr3 = slurp2 ("Source/PluginProcessor.cpp");
+        check (pr3.contains ("if (keepEdits) captureBorrowKept();"),
+               "keep-releases capture the edits (continuous keep)");
+        check (pr3.contains ("borrowRelease(true);   // a lease death is never an implicit discard"),
+               "lease death keeps, never discards");
+    }
+
+    // =======================================================================
     std::printf ("== rack mix on the borrowed host ==\n");
     {
         // Functional half of finding #1's gate: the borrowed host reports
@@ -477,12 +537,22 @@ int main()
             "Whole-rack borrow, step 2", "sendBlockEdit");
         check (procRegion.isNotEmpty(), "processor borrow region located");
         check (edRegion.isNotEmpty(),   "editor borrow region located");
+        // Step 3 upgraded this contract: the PROCESSOR borrow code still
+        // never commits, and the EDITOR's commit vocabulary is confined to
+        // runBorrowApply — the one filtered committer. Outside it, the
+        // borrow region stays commit-free, so engage/release/pull can never
+        // grow a write-back path.
+        const int rba    = edRegion.indexOf ("void EchoJayEditor::runBorrowApply");
+        const int rbaEnd = rba >= 0 ? edRegion.indexOf (rba, "\n}\n") : -1;
+        check (rba >= 0 && rbaEnd > rba, "runBorrowApply located inside the borrow region");
+        const auto edOutside = edRegion.substring (0, juce::jmax (0, rba))
+                             + edRegion.substring (juce::jmax (0, rbaEnd));
         for (const char* key : { "commitState", "commitSlot", "editOps" })
         {
             check (! procRegion.contains (key),
                    juce::String ("processor borrow code has no \"") + key + "\"");
-            check (! edRegion.contains (key),
-                   juce::String ("editor borrow code has no \"") + key + "\"");
+            check (! edOutside.contains (key),
+                   juce::String ("editor borrow code outside runBorrowApply has no \"") + key + "\"");
         }
         // THE RACK'S MIX CARRIES (hands-on finding #1): the borrow adopts the
         // sidecar's masterWet (inaudible on a bypassed rack's stream, so it

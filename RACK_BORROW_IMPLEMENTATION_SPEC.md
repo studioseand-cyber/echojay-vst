@@ -172,6 +172,19 @@ end of `processBlock` is unchanged. Specifics:
   expiry restores ALL slot bypasses from saved state, same one-restore-path
   rule the slot lease keeps today.
 
+## 4b. Why Apply is safe: the rack lock is load-bearing, not a courtesy
+
+Recorded at step 3 (22 Aug 2026), so nobody later removes the lock thinking
+it is only UI politeness: **the rack lock is what makes rack-scale Apply
+safe.** Every commit payload rides `baseSlots` (names-in-order), verified by
+the Link at apply time — and per-slot Stage 1 lived with the staleness
+window where the Link's user could reorder between capture and apply. Under
+a whole-rack edit the lock refuses the Link's local structure writes, and
+the rack lease refuses remote `editOps`, so the rack the main captured
+`baseSlots` from **cannot change shape** for the lease's duration. The
+same-name-swap hole (§3e) cannot bite here either — nothing can swap. Remove
+the lock and Apply inherits every per-slot staleness hazard at rack scale.
+
 ## 5. The five open items — recommendations, each with its reasoning
 
 **§5a commit model — recommend explicit Apply & Release, with continuous

@@ -5659,7 +5659,8 @@ bool ChainHost::stateFitsPlugin(const juce::PluginDescription& found,
                                 const juce::String& savedVersion,
                                 const juce::String& savedUid,
                                 const juce::String& slotName,
-                                juce::String* deferredNote) const
+                                juce::String* deferredNote,
+                                bool noteOnWithhold) const
 {
     if (deferredNote != nullptr) *deferredNote = {};
 
@@ -5676,7 +5677,7 @@ bool ChainHost::stateFitsPlugin(const juce::PluginDescription& found,
     // sound wrong and look deliberate, worst case a dead host.
     if (savedFormat.isNotEmpty() && ! savedFormat.equalsIgnoreCase(found.pluginFormatName))
     {
-        addStateNote(slotName + ": saved as " + savedFormat + " but loaded here as "
+        if (noteOnWithhold) addStateNote(slotName + ": saved as " + savedFormat + " but loaded here as "
                      + found.pluginFormatName
                      + ", so its settings were not applied (settings do not"
                        " transfer between formats)");
@@ -5688,7 +5689,7 @@ bool ChainHost::stateFitsPlugin(const juce::PluginDescription& found,
     // here. Withholding costs one line of text; guessing costs the rack.
     if (savedUid.isNotEmpty() && foundUidKnown && savedUid != juce::String(found.uniqueId))
     {
-        addStateNote(slotName + ": this is a different build from the one saved,"
+        if (noteOnWithhold) addStateNote(slotName + ": this is a different build from the one saved,"
                                 " so its settings were not applied");
         return false;
     }

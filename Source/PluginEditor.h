@@ -4167,9 +4167,12 @@ private:
     juce::String lastAddLine_;     // the author's own last write, so it can
                                    // retire text that stopped being true
     void showChainRackMenu();
-    // Whole-rack borrow, step 2 (solo, no commit).
+    // Whole-rack borrow: step 2 (solo) + step 3 (Apply & Release).
     void toggleBorrow();
     void startBorrow(const juce::String& uid);
+    std::vector<std::pair<bool, bool>> borrowSlotVerdicts();  // {withheld, edited}
+    void presentBorrowApplyAsk(const LinkShm::BorrowCommit::Plan& plan);
+    void runBorrowApply();
 
     std::map<juce::String, LinkStripState> linkStripStates_;
     LinkStripState linkHostStrip_;         // the Mix Bus (this instance) row

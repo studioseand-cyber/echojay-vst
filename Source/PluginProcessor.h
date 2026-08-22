@@ -467,7 +467,29 @@ public:
     void borrowAudioOn();
     // Release: audio off (ramped), lease file deleted (Link restores all
     // bypasses through its one restore path), instances parked in the pool.
-    void borrowRelease();
+    // keepEdits=true (auto-release, editor/processor teardown) captures every
+    // slot's current state into borrowKept_ FIRST — the continuous-keep
+    // promise: a crash or lease death loses nothing. User Apply/Discard pass
+    // false: the edits were committed, or the user explicitly chose loss.
+    void borrowRelease(bool keepEdits = false);
+
+    // ---- Step 3: Apply & Release bookkeeping (message thread only) --------
+    // Per-slot record from engage: the saved identity triplet (the SAME
+    // fields stateFitsPlugin withheld the pull by — Apply re-runs the same
+    // verdict) and the post-seed BASELINE state, so "edited" means "byte-
+    // differs from what the Link sounds like", not "differs from a pull that
+    // may have been empty".
+    struct BorrowSlotRecord {
+        juce::String name, savedFormat, savedVersion, savedUid, baselineB64;
+    };
+    std::vector<BorrowSlotRecord> borrowSlotRecords_;
+    // Uncommitted edits captured at a keep-release; re-borrowing the same
+    // uid restores them (and says so). Cleared by Apply, Discard, or the
+    // restore itself.
+    struct BorrowKept { juce::String uid; juce::StringArray names, states; };
+    BorrowKept borrowKept_;
+    void captureBorrowKept();
+    void clearBorrowKept() { borrowKept_ = {}; }
     void renewBorrowLease();                         // scope:"rack", slot:0
     void borrowTick();          // renew + ring re-bind (the 1s timer's body)
     /** Where the borrowed solo lands: through the main's own chain (Mix/
