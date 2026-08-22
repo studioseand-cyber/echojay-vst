@@ -510,6 +510,18 @@ private:
     bool               rackLeaseActive_ = false;
     std::vector<bool>  rackLeasePrior_;
     bool               planJournalChecked_ = false;   // once per process
+public:
+    /** Phase 3: is a structure-plan journal active for this Link? Drives
+        the lock overlay's restructuring line — the statement that the
+        shape flicker underneath is deliberate, not corruption. */
+    bool structPlanJournalPresent() const
+    {
+        return resolvedDir.isNotEmpty() && instanceUid_.isNotEmpty()
+            && juce::File(LinkShm::StructureEdit::journalPath(resolvedDir,
+                                                              instanceUid_))
+                   .existsAsFile();
+    }
+private:
 
     juce::String effectiveFilePart() const;
     juce::String chainInstanceId() const;

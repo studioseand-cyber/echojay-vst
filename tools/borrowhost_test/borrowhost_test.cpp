@@ -957,9 +957,54 @@ int main()
                    "rollback and refusal keep the session live");
             check (body.contains ("Your session is still live"),
                    "every failure banner says the session is live");
-            check (body.contains ("structureEditCapable"),
+            // Phase 3 moved the gate to the ENGAGE-TIME SNAPSHOT (a Link
+            // that flips capability mid-session must not half-see a plan),
+            // so the pin tracks accept() over the snapshot, not the sidecar.
+            check (body.contains ("StructureEdit::accept")
+                     && body.contains ("borrowStructureCapable_"),
                    "the capability gate precedes the send");
         }
+    }
+
+    std::printf ("== phase 3: affordances and words, pinned by source ==\n");
+    {
+        auto slurp3 = [] (const char* p)
+        { std::ifstream f (p); std::stringstream s; s << f.rdbuf(); return juce::String (s.str()); };
+        const auto ed = slurp3 ("Source/PluginEditor.cpp");
+        // CAPABILITY gates every affordance, and the old wording survives in
+        // the incapable arm — an older Link keeps settings-only behaviour.
+        int capForks = 0, oldWording = 0;
+        for (int p = 0; (p = ed.indexOf (p, "borrowStructureCapable_")) >= 0; ++p)
+            ++capForks;
+        for (int p = 0; (p = ed.indexOf (p, "An edited rack keeps its shape")) >= 0; ++p)
+            ++oldWording;
+        check (capForks >= 5,
+               "capability forks the affordances, the ask and the send",
+               juce::String (capForks));
+        check (oldWording >= 2,
+               "the settings-only wording survives for older Links",
+               juce::String (oldWording));
+        // EVERY op appears in the confirm, by name, with the withheld-removal
+        // line the spec demands.
+        const int ask = ed.indexOf ("void EchoJayEditor::presentStructureApplyAsk");
+        const auto askBody = ask >= 0 ? ed.substring (ask, ask + 3500) : juce::String();
+        check (askBody.contains ("\" Adding: \"")
+                 && askBody.contains ("\" Removing: \"")
+                 && askBody.contains ("\" Moving \""),
+               "the confirm states adds, removes and moves in words");
+        check (askBody.contains ("removing deletes settings "),
+               "removing a withheld slot gets its own line (never-saw)");
+        check (askBody.contains ("The whole plan applies, or none of it."),
+               "the confirm states the atomicity promise");
+        // The chip routes the commit vehicle by capability.
+        check (ed.contains ("if (processorRef.borrowStructureCapable_) runStructureApply();"),
+               "apply_confirm routes: capable -> plan, older -> per-slot commits");
+        // The Link overlay gains the restructuring line while a journal is
+        // active.
+        check (slurp3 ("Source/LinkEditor.h").contains ("is restructuring this rack"),
+               "the Link overlay states the restructure while a plan runs");
+        check (slurp3 ("Source/LinkProcessor.h").contains ("structPlanJournalPresent"),
+               "driven by journal presence, not a guess");
     }
 
     std::printf ("== DEV forceWithholdSlot: cannot exist in a non-DEV build ==\n");

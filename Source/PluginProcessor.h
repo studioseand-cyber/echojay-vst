@@ -491,6 +491,28 @@ public:
     BorrowKept borrowKept_;
     void captureBorrowKept();
     void clearBorrowKept() { borrowKept_ = {}; }
+
+    // ---- Phase 3: structure-edit session state (message thread only) ------
+    // Per CURRENT borrowed slot: which base slot it came from (-1 = created
+    // in the main). The records stay base-indexed and immutable; this map is
+    // what reorders/removes/adds mutate, and what the plan reads.
+    std::vector<int> borrowSlotOrigin_;
+    // Created slots' identity, keyed by their position in borrowSlotOrigin_
+    // being -1: name + decimal uid captured at add time.
+    std::vector<LinkShm::StructureEdit::SlotIdentity> borrowCreatedIdentity_;
+    // The base identity snapshot from engage (the plan guard's truth).
+    std::vector<LinkShm::StructureEdit::SlotIdentity> borrowBaseIdentity_;
+    // Capability snapshot at engage: structure ops offered only against a
+    // Link that announced structureEditCapable THEN — never re-read mid-
+    // session, so an old Link keeps settings-only behaviour throughout.
+    bool borrowStructureCapable_ = false;
+    // Removed-withheld memory: names of removed slots whose settings never
+    // arrived — the confirm gives these their own line (spec: deleting
+    // settings the user never saw). Checked AT removal (the node's seeded
+    // fact dies with the slot).
+    juce::StringArray borrowRemovedWithheld_;
+    // Removed base names for the confirm's Removing line.
+    juce::StringArray borrowRemovedNames_;
     void renewBorrowLease();                         // scope:"rack", slot:0
     void borrowTick();          // renew + ring re-bind (the 1s timer's body)
     /** Where the borrowed solo lands: through the main's own chain (Mix/

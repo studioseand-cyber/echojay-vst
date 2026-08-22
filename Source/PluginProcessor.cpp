@@ -1827,6 +1827,12 @@ void EchoJayProcessor::borrowRelease(bool keepEdits)
     if (!borrowActive()) return;
     if (keepEdits) captureBorrowKept();
     borrowSlotRecords_.clear();
+    borrowSlotOrigin_.clear();
+    borrowCreatedIdentity_.clear();
+    borrowBaseIdentity_.clear();
+    borrowRemovedWithheld_.clear();
+    borrowRemovedNames_.clear();
+    borrowStructureCapable_ = false;
     // Ramp out first (the AMEK lesson): audioOn drops the crossfade target
     // to 0; the graph itself stays alive (session-long host), so there is
     // no instance teardown racing the audio thread here at all.

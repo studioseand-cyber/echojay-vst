@@ -1934,14 +1934,60 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         // destroy (the AMEK EQ 250 segfault); a remote remove needs none of
         // that, because nothing in this process is being destroyed.
         const juce::String uid = chainViewUid();
-        // Borrow (step 2): STRUCTURE stays out of scope — settings and
-        // bypass are the borrow's edits; a removed slot could not be
-        // committed back and would falsify the chain. Refused with a reason.
-        if (processorRef.borrowHostIfActiveFor(uid) != nullptr)
+        // Phase 3: a structure-capable Link's borrow removes locally and the
+        // plan carries it home; an older Link's borrow keeps its shape —
+        // the step-2 refusal, word for word, because that Link cannot
+        // journal a plan and must never half-see one.
+        if (auto* bh = processorRef.borrowHostIfActiveFor(uid))
         {
-            chainListPanel.statusText = "An edited rack keeps its shape - "
-                "bypass and settings edit here; structure stays the Link's.";
-            chainListPanel.repaint();
+            if (! processorRef.borrowStructureCapable_)
+            {
+                chainListPanel.statusText = "An edited rack keeps its shape - "
+                    "bypass and settings edit here; structure stays the Link's.";
+                chainListPanel.repaint();
+                return;
+            }
+            if (i < 0 || i >= bh->getNumSlots() || chainRemovePending_) return;
+            // Same 80ms deferred destroy as the local body (AMEK EQ 250
+            // segfault) — the removed-withheld memory and the origin erase
+            // ride the SAME callback as the removal, so the session vectors
+            // can never say "removed" about a slot that is still there.
+            chainRemovePending_ = true;
+            chainListPanel.noteSlotRemoved(i);
+            auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+            juce::Timer::callAfterDelay(80, [safeThis, i] {
+                if (safeThis == nullptr) return;
+                safeThis->chainRemovePending_ = false;
+                auto& p3 = safeThis->processorRef;
+                auto* bh2 = p3.borrowHost();
+                if (bh2 == nullptr || i < 0 || i >= bh2->getNumSlots()) return;
+                // REMOVED-WITHHELD MEMORY, checked at removal time (spec
+                // §4): after the erase the origin row is gone and the fact
+                // with it. A created slot (origin -1) leaves no memory —
+                // nothing of the Link's dies with it.
+                auto& org = p3.borrowSlotOrigin_;
+                const int origin = i < (int) org.size() ? org[(size_t) i] : -1;
+                if (origin >= 0)
+                {
+                    const juce::String nm = bh2->getSlotInfo(i).name;
+                    p3.borrowRemovedNames_.add(nm);
+                    if (origin < (int) p3.borrowSlotRecords_.size()
+                        && p3.borrowSlotRecords_[(size_t) origin].hadState
+                        && ! bh2->borrowSlotSeededWithState(i))
+                        p3.borrowRemovedWithheld_.add(nm);
+                }
+                if (i < (int) org.size())
+                    org.erase(org.begin() + i);
+                auto& cid = p3.borrowCreatedIdentity_;
+                if (i < (int) cid.size())
+                    cid.erase(cid.begin() + i);
+                bh2->removeSlot(i);
+                safeThis->chainSelectedSlot_ =
+                    juce::jlimit(-1, bh2->getNumSlots() - 1,
+                                 safeThis->chainSelectedSlot_);
+                safeThis->refreshChainPanelForView(false);
+                safeThis->repaint();
+            });
             return;
         }
         if (uid.isNotEmpty()) { sendRackEdit(uid, i, true); return; }
@@ -1992,10 +2038,30 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         repaint();
     };
     chainListPanel.onMoveSlot = [this](int i, int dir) {
-        // Stage 2: the move op exists but is not wired this pass. Disabled in
-        // the panel; guarded here so a remote view can never reorder the
-        // LOCAL rack by mistake. A BORROWED view keeps its shape too (order
-        // is what the borrow exists to preserve), same guard.
+        // Phase 3: a borrowed rack reorders locally when the Link announced
+        // structure capability; a remote view still never reorders the
+        // LOCAL rack, and an old Link's borrow keeps its shape.
+        if (auto* bh = processorRef.borrowHostIfActiveFor(chainViewUid());
+            bh != nullptr && processorRef.borrowStructureCapable_)
+        {
+            int j2 = i + dir;
+            if (i < 0 || i >= bh->getNumSlots() || j2 < 0 || j2 >= bh->getNumSlots())
+                return;
+            chainListPanel.noteSlotMoved(i, j2);
+            bh->moveSlot(i, dir);
+            auto& org = processorRef.borrowSlotOrigin_;
+            auto& cid = processorRef.borrowCreatedIdentity_;
+            if (i < (int) org.size() && j2 < (int) org.size())
+            { std::swap(org[(size_t) i], org[(size_t) j2]);
+              std::swap(cid[(size_t) i], cid[(size_t) j2]); }
+            int newSel = chainSelectedSlot_;
+            if (chainSelectedSlot_ == i)       newSel = j2;
+            else if (chainSelectedSlot_ == j2) newSel = i;
+            chainSelectedSlot_ = juce::jlimit(0, bh->getNumSlots() - 1, newSel);
+            refreshChainPanelForView(false);
+            repaint();
+            return;
+        }
         if (chainViewUid().isNotEmpty()) return;
         auto& ch = processorRef.getChainHost();
         int j = i + dir;
@@ -7635,9 +7701,19 @@ std::vector<std::pair<bool, bool>> EchoJayEditor::borrowSlotVerdicts()
     std::vector<std::pair<bool, bool>> out;
     auto* bh = processorRef.borrowHost();
     const auto& recs = processorRef.borrowSlotRecords_;
-    for (int i = 0; i < bh->getNumSlots() && i < (int) recs.size(); ++i)
+    const auto& origins = processorRef.borrowSlotOrigin_;
+    for (int i = 0; i < bh->getNumSlots() && i < (int) origins.size(); ++i)
     {
-        const auto& r = recs[(size_t) i];
+        const int origin = origins[(size_t) i];
+        if (origin < 0)
+        {
+            // Created in the main: always a change, never withheld (the
+            // Link never had it — spec §3's Create class).
+            out.emplace_back(false, true);
+            continue;
+        }
+        if (origin >= (int) recs.size()) { out.emplace_back(false, false); continue; }
+        const auto& r = recs[(size_t) origin];
         // THE RECORDED FACT, never a recomputed policy (22 Aug 2026):
         // withheld means "a state was pulled and the seed did not apply it".
         // A slot the Link had no state for is NOT withheld — committing
@@ -7677,13 +7753,28 @@ void EchoJayEditor::toggleBorrow()
     if (processorRef.borrowActive())
     {
         // EXPLICIT APPLY, never an implicit commit on deselect (§5a): with
-        // uncommitted edits, the release asks first — apply or discard —
-        // through the one confirm implementation. Without edits, release.
-        const auto plan = LinkShm::BorrowCommit::plan(borrowSlotVerdicts());
-        if (plan.changed > 0)
+        // uncommitted edits OR shape changes, the release asks first through
+        // the one confirm implementation. Capability routes the ask: a
+        // structure-capable Link gets the plan-worded ask; an older Link
+        // keeps the settings-only ask, and never sees a plan.
+        if (processorRef.borrowStructureCapable_)
         {
-            presentBorrowApplyAsk(plan);
-            return;
+            const auto splan = buildStructurePlan();
+            if (! splan.ops.empty() || splan.changed > 0
+                || ! processorRef.borrowRemovedNames_.isEmpty())
+            {
+                presentStructureApplyAsk(splan);
+                return;
+            }
+        }
+        else
+        {
+            const auto plan = LinkShm::BorrowCommit::plan(borrowSlotVerdicts());
+            if (plan.changed > 0)
+            {
+                presentBorrowApplyAsk(plan);
+                return;
+            }
         }
         const juce::String owner =
             processorRef.resolveLinkDisplayName(processorRef.borrowUid());
@@ -7875,6 +7966,7 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
     auto it = processorRef.linkRackCache.find(uid);
     if (it == processorRef.linkRackCache.end() || !it->second.valid)
     { say("Cannot edit this rack: this Link has not published it."); return; }
+    const bool structCapable = it->second.rack.structureEditCapable;
     if (! it->second.rack.borrowCapable)
     { say("Cannot edit this rack: " + processorRef.resolveLinkDisplayName(uid)
           + " is running an older EchoJay Link that cannot hand its rack "
@@ -7888,12 +7980,14 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
         int idx = 0, baseSeq = 0;
         juce::int64 totalBytes = 0;
         juce::StringArray failures;        // named list for the §5e refusal
+        bool structCapable = false;        // snapshot: offered only if announced
     };
     auto st = std::make_shared<PullState>();
     st->uid       = uid;
     st->slots     = it->second.rack.slots;
     st->masterWet = it->second.rack.masterWet;
     st->baseSeq   = (int) (juce::Time::currentTimeMillis() / 1000);
+    st->structCapable = structCapable;
     say("Reading " + juce::String((int) st->slots.size()) + " plugin(s) from "
         + processorRef.resolveLinkDisplayName(uid) + "...");
 
@@ -8006,6 +8100,21 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
                 }
                 p2.borrowSlotRecords_.push_back(std::move(r));
             }
+            // Phase 3 session state: 1:1 origins at engage, the base
+            // identity snapshot (hex uid through the one seam), and the
+            // capability snapshot — an old Link keeps settings-only
+            // behaviour for the whole session.
+            p2.borrowSlotOrigin_.clear();
+            p2.borrowBaseIdentity_.clear();
+            p2.borrowCreatedIdentity_.assign((size_t) want, {});
+            for (int i = 0; i < want && i < (int) st->slots.size(); ++i)
+            {
+                p2.borrowSlotOrigin_.push_back(i);
+                p2.borrowBaseIdentity_.push_back(
+                    LinkShm::StructureEdit::SlotIdentity::fromSidecar(
+                        st->slots[(size_t) i]));
+            }
+            p2.borrowStructureCapable_ = st->structCapable;
             // CONTINUOUS KEEP, the restore half: an interrupted session's
             // uncommitted edits come back, and it says so. Name-checked per
             // index so a changed rack cannot receive the wrong state.
@@ -8141,35 +8250,18 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
 // code is provable before a user can touch it). Commit-only plans until
 // then; the Link-side applier handles full plans regardless.
 // ---------------------------------------------------------------------------
-void EchoJayEditor::runStructureApply()
+LinkShm::StructureEdit::Plan EchoJayEditor::buildStructurePlan()
 {
+    // From the SESSION SNAPSHOTS (base identity captured at engage, origins
+    // mutated by the affordances) — never re-read from the cache, so a
+    // mid-session republish cannot shear the plan from what the user did.
     auto& proc = processorRef;
-    const juce::String uid = proc.borrowUid();
-    if (uid.isEmpty()) return;
-    auto it = proc.linkRackCache.find(uid);
-    // Capability, the never-half-see gate: a Link that cannot journal a
-    // plan never receives one.
-    if (it == proc.linkRackCache.end()
-        || LinkShm::StructureEdit::accept(it->second.rack.structureEditCapable)
-               != LinkShm::StructureEdit::Accept::Proceed)
-    {
-        chainListPanel.statusText =
-            "Cannot apply structure changes: this Link's build cannot journal "
-            "a plan. Update it. Your session is still live.";
-        chainListPanel.repaint();
-        return;
-    }
-
-    // The plan, from RECORDED facts (verdicts + records), never recomputed
-    // policy. baseIdentity from the sidecar snapshot, hex uid through the
-    // one seam — inside SlotIdentity::fromSidecar.
-    std::vector<LinkShm::StructureEdit::SlotIdentity> base;
-    for (const auto& s : it->second.rack.slots)
-        base.push_back(LinkShm::StructureEdit::SlotIdentity::fromSidecar(s));
-    const auto verdicts = borrowSlotVerdicts();
     auto* bh = proc.borrowHost();
+    const auto& base    = proc.borrowBaseIdentity_;
+    const auto& origins = proc.borrowSlotOrigin_;
+    const auto verdicts = borrowSlotVerdicts();
     std::vector<LinkShm::StructureEdit::CurrentSlot> current;
-    for (int i = 0; i < (int) verdicts.size() && i < (int) base.size(); ++i)
+    for (int i = 0; i < (int) origins.size() && i < (int) verdicts.size(); ++i)
     {
         juce::String nowB64;
         if (auto* p = bh->getSlotProcessor(i))
@@ -8178,11 +8270,85 @@ void EchoJayEditor::runStructureApply()
             try { p->getStateInformation(mb); } catch (...) { mb.reset(); }
             if (mb.getSize() > 0) nowB64 = LinkShm::stateToB64(mb);
         }
-        current.push_back({ base[(size_t) i], i,
-                            verdicts[(size_t) i].second,
-                            verdicts[(size_t) i].first, nowB64 });
+        const int o = origins[(size_t) i];
+        current.push_back({
+            o >= 0 && o < (int) base.size()
+                ? base[(size_t) o]
+                : proc.borrowCreatedIdentity_[(size_t) i],
+            o, verdicts[(size_t) i].second, verdicts[(size_t) i].first,
+            nowB64 });
     }
-    const auto plan = LinkShm::StructureEdit::computePlan(uid, base, current);
+    return LinkShm::StructureEdit::computePlan(proc.borrowUid(), base, current);
+}
+
+void EchoJayEditor::presentStructureApplyAsk(const LinkShm::StructureEdit::Plan& plan)
+{
+    // Phase 3: THE SHAPE IN WORDS, not just counts — every op appears by
+    // name, and removing a withheld slot gets its own line (it deletes
+    // settings the user never saw). Fifth thin wrapper on the one presenter,
+    // same apply_ intents; the chip handler routes by capability.
+    auto& proc = processorRef;
+    const juce::String name = proc.resolveLinkDisplayName(proc.borrowUid());
+    juce::StringArray adds;
+    for (const auto& op : plan.ops)
+        if (op.type == LinkShm::StructureEdit::OpType::Create)
+            adds.add(op.name);
+    juce::String q = "Apply your changes to " + name + "?";
+    if (! adds.isEmpty())
+        q += " Adding: " + adds.joinIntoString(", ") + ".";
+    if (! proc.borrowRemovedNames_.isEmpty())
+        q += " Removing: " + proc.borrowRemovedNames_.joinIntoString(", ") + ".";
+    if (! proc.borrowRemovedWithheld_.isEmpty())
+        q += " NOTE - " + proc.borrowRemovedWithheld_.joinIntoString(", ")
+           + (proc.borrowRemovedWithheld_.size() == 1 ? " arrived" : " arrived")
+           + " without " + name + "'s real settings: removing deletes settings "
+             "you never saw.";
+    if (plan.moving > 0)
+        q += " Moving " + juce::String(plan.moving) + " slot"
+           + (plan.moving == 1 ? "" : "s") + " into your order.";
+    q += " Settings: you changed " + juce::String(plan.changed)
+       + ", Apply writes " + juce::String(plan.committing) + " back";
+    if (plan.withheldEdited > 0)
+        q += " - " + juce::String(plan.withheldEdited)
+           + " arrived without real settings and will NEVER be written over them";
+    q += "; " + juce::String(plan.untouched) + " unchanged stay untouched. "
+         "The whole plan applies, or none of it.";
+
+    juce::Array<juce::var> choices;
+    for (auto [label, intent] : { std::pair<const char*, const char*>
+             { "Apply & Release", "apply_confirm" },
+             { "Discard & Release", "apply_discard" },
+             { "Keep editing", "apply_keep" } })
+    {
+        auto* c = new juce::DynamicObject();
+        c->setProperty("label",  label);
+        c->setProperty("intent", intent);
+        choices.add(juce::var(c));
+    }
+    presentReplaceAsk(q, choices, "apply to \"" + name + "\"",
+        "EJApply: structure ask shown adds=" + juce::String(adds.size())
+            + " removes=" + juce::String(proc.borrowRemovedNames_.size())
+            + " moves=" + juce::String(plan.moving)
+            + " commits=" + juce::String(plan.committing) + " answer=pending");
+}
+
+void EchoJayEditor::runStructureApply()
+{
+    auto& proc = processorRef;
+    const juce::String uid = proc.borrowUid();
+    if (uid.isEmpty()) return;
+    // Capability, the never-half-see gate: the SNAPSHOT from engage — a
+    // Link that cannot journal a plan never receives one.
+    if (LinkShm::StructureEdit::accept(proc.borrowStructureCapable_)
+            != LinkShm::StructureEdit::Accept::Proceed)
+    {
+        chainListPanel.statusText =
+            "Cannot apply structure changes: this Link's build cannot journal "
+            "a plan. Update it. Your session is still live.";
+        chainListPanel.repaint();
+        return;
+    }
+    const auto plan = buildStructurePlan();
 
     int err = 0;
     const juce::String dir = LinkShm::resolveDir(err);
@@ -21982,7 +22148,11 @@ void EchoJayEditor::onAskChipTapped(int i)
         if (intent == "apply_confirm")
         {
             EchoJay_NSLog("EJApply: answer=apply");
-            runBorrowApply();
+            // Capability routes the commit vehicle: a structure-capable
+            // Link gets the journaled plan; an older Link keeps the
+            // per-slot commits and never sees a plan.
+            if (processorRef.borrowStructureCapable_) runStructureApply();
+            else                                      runBorrowApply();
         }
         else if (intent == "apply_discard")
         {
@@ -27895,13 +28065,50 @@ void EchoJayEditor::showChainPluginPicker()
             // swapped name would also ask the Link for a build it may not
             // have, turning a working add into a spurious refusal.
             const juce::String rackUid = safeThis->chainViewUid();
-            // Borrow: structure stays the Link's (same refusal as remove).
-            if (safeThis->processorRef.borrowHostIfActiveFor(rackUid) != nullptr)
+            // Phase 3: a structure-capable Link's borrow adds locally — the
+            // plan's Create op carries the new slot home; an older Link
+            // keeps the settings-only refusal, word for word.
+            if (auto* bh0 = safeThis->processorRef.borrowHostIfActiveFor(rackUid))
             {
-                safeThis->chainListPanel.statusText =
-                    "An edited rack keeps its shape - bypass and settings "
-                    "edit here; structure stays the Link's.";
+                if (! safeThis->processorRef.borrowStructureCapable_)
+                {
+                    safeThis->chainListPanel.statusText =
+                        "An edited rack keeps its shape - bypass and settings "
+                        "edit here; structure stays the Link's.";
+                    safeThis->chainListPanel.repaint();
+                    return;
+                }
+                auto desc0 = bh0->preferInlineHostableDesc(picked);
+                safeThis->chainListPanel.statusText = "Loading " + desc0.name + "...";
                 safeThis->chainListPanel.repaint();
+                bh0->loadPluginAsync(desc0, [safeThis](const juce::String& err)
+                {
+                    if (safeThis == nullptr) return;
+                    auto* bh2 = safeThis->processorRef.borrowHost();
+                    if (bh2 == nullptr) return;
+                    if (err.isNotEmpty())
+                    {
+                        safeThis->chainListPanel.statusText = "Failed: " + err;
+                        safeThis->chainListPanel.repaint();
+                        return;
+                    }
+                    const int newSlot = bh2->getNumSlots() - 1;
+                    // CREATE class (spec §3): origin -1, identity recorded
+                    // from the LIVE instance so the plan's Create op names
+                    // exactly what the Link must stage — or refuse whole.
+                    auto& p3 = safeThis->processorRef;
+                    p3.borrowSlotOrigin_.push_back(-1);
+                    const auto live = bh2->liveIdentity();
+                    p3.borrowCreatedIdentity_.push_back(
+                        newSlot >= 0 && newSlot < (int) live.size()
+                            ? live[(size_t) newSlot]
+                            : LinkShm::StructureEdit::SlotIdentity{});
+                    safeThis->chainSelectedSlot_ = newSlot;
+                    safeThis->chainListPanel.statusText = {};
+                    safeThis->refreshChainPanelForView(false);
+                    safeThis->resized();
+                    safeThis->repaint();
+                });
                 return;
             }
             if (rackUid.isNotEmpty())

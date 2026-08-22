@@ -733,6 +733,13 @@ public:
                                    + "\" - deselect there to edit here.",
                                8, kNameRowH + 2, getWidth() - 16, 16,
                                juce::Justification::centred, true);
+                    // Phase 3: while a structure plan's journal is active,
+                    // the overlay says the shape flicker underneath is
+                    // deliberate, not corruption.
+                    if (proc.structPlanJournalPresent())
+                        g.drawText(lockOwner + " is restructuring this rack...",
+                                   8, kNameRowH + 18, getWidth() - 16, 14,
+                                   juce::Justification::centred, true);
                 }
             }
 
