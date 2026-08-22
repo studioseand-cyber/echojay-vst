@@ -48,6 +48,18 @@ drive rollback over IPC adds a failure mode for nothing. The user sees one
 statement: "Apply failed at <op> (<reason>) — <Link> was restored to exactly
 its pre-Apply rack. Your edits are still here, uncommitted."
 
+**A rollback must not release the borrow** (amendment, 22 Aug 2026). The
+failure was the LINK'S side; the user's shape and settings still exist,
+intact, in the main's borrowed host. So on a Phase-A abort or a mid-plan
+rollback, the borrow STAYS LIVE with edits kept — the lock held, the lease
+renewed, the session editable — and the user can fix the cause (un-blacklist,
+authorize, drop the offending slot) and retry Apply. A rollback that also
+released would roll back the Link AND orphan the user's work in the same
+stroke — the worst of both, and exactly the shape §5a's explicit-Apply rule
+exists to forbid. Gated: the rollback/refusal paths must not reach
+borrowRelease (by source, the runBorrowApply idiom), and the failure banner
+must say the session is still live.
+
 **The crash case** (an instantiation kills the host — §2 below): no rollback
 can run in a dead process. The journal is the answer, by the deadman's own
 idiom: the Link's next launch finds an uncompleted plan journal, restores the
@@ -56,6 +68,31 @@ seeing ack silence then the restored sidecar, reports the crash and the
 restoration honestly. The one non-restorable window — a crash *during the
 journal restore itself* — is the same residual the deadman accepts, and it
 blacklists the plugin that caused it.
+
+**Journal restore vs the Link's session restore** (amendment, 22 Aug 2026):
+a relaunch after a mid-plan crash has TWO sources of truth — the DAW's
+session state for the Link's rack, and the journal's pre-images. Precedence
+and ordering, defined so a rack is never silently restored twice:
+
+- **Ordering**: the session restore runs first, mechanically — the DAW
+  pushes state at instantiation and that cannot be reordered. The journal
+  check runs AFTER the session restore settles (the same
+  post-restore point `consumeDeathMarks` anchors to), and it runs at most
+  once per journal: the journal is deleted only on completed restore, so a
+  crash during the restore retries it next launch — idempotent because the
+  pre-images are ABSOLUTE (full shape + full states), never deltas.
+- **Precedence: the journal wins.** The session snapshot is whatever the
+  DAW last saved — which can predate the borrow entirely, or worse, be a
+  Cmd-S taken MID-PLAN, capturing the half-mutated rack the whole design
+  exists to prevent. The journal's pre-images are the newest
+  user-legitimate state of the rack by construction (captured at plan
+  start, after every earlier completed Apply). Where the two disagree, the
+  journal overwrites, absolutely.
+- **What the user is told**: one Link-side state note naming both — "a
+  restructure was interrupted; this rack was restored from its pre-Apply
+  state (the session had saved a different shape)" when they differ, and
+  the plain interrupted-restore note when they don't. Silence is the
+  failure mode this paragraph exists to prevent.
 
 ## 2. Instantiation on the Link — stage first, mutate second
 
@@ -76,8 +113,26 @@ world: its blacklist reads the same shared file (agreement by construction),
 yet enforcement is at ITS load, and the spec treats the Link's answer as the
 only one that counts.
 
-Cost note: a staged-then-aborted instance parks (never free) — a failed
-Apply costs the memory of its adds. Named, accepted, same §3a economics.
+Cost note: a staged-then-aborted instance parks (never free) — but
+**keyed by identity, the borrowed pool's own idiom** (amendment, 22 Aug
+2026): the Link's staging park uses the same identity key
+(format|identifier|uid) and the same reset-before-reuse contract as the
+main's pool, so a user retrying a failed Apply three times pays ONE
+instance per added plugin, not three — the second attempt's Phase A
+reuses the first attempt's staged instances. Growth bounds at distinct
+identities staged, same §3a economics as everywhere else.
+
+**The risk ranking, stated because it changes the design's center of
+gravity** (amendment, 22 Aug 2026): every plugin in a Create op has
+ALREADY loaded successfully in this process, in the borrowed host, on
+this machine — the user is adding something they are hearing right now.
+So Phase A's failure modes rank: blacklist divergence and authorization
+(the iLok-class "cannot right now") overwhelmingly first; crash-on-load a
+rare arm, because a plugin that crashes on load would have crashed the
+borrowed host before the user could ever add it. The journal/crash
+machinery of §1 exists and is gated, but the spec deliberately does NOT
+design the common path around it: the expected failure is a named refusal
+in Phase A with zero mutations, cheap to hit and cheap to retry.
 
 ## 3. The class model — Create joins Commit and Withheld
 
@@ -169,12 +224,18 @@ back — the Link-side user deserves the same honesty as the main-side one.
 
 The plan applier's classes and ordering are pure and pinned like
 `BorrowCommit`; the journal round-trips (write → restore → byte-identical
-pre-images); phase-A-abort leaves a synthetic rack byte-identical; the
-re-attachable park proves a remove/un-remove cycle instantiates zero new;
-the identity guard's arms (absent-is-no-opinion per field, same-name swap
+pre-images) and is idempotent (restore, crash, restore again — same rack);
+phase-A-abort leaves a synthetic rack byte-identical; the re-attachable park
+proves a remove/un-remove cycle instantiates zero new; **the staging park
+reuses by identity (a retried Apply's Phase A instantiates zero new)**; the
+identity guard's arms (absent-is-no-opinion per field, same-name swap
 CAUGHT — the §3e case as a passing test at last); capability refusal for a
-sidecar without `structureEditCapable`. Hands-on: kill the Link mid-plan and
-verify the journal restore by content on relaunch.
+sidecar without `structureEditCapable`; **rollback and Phase-A refusal never
+reach borrowRelease (by source) and their banners state the session is
+live**; journal-vs-session precedence (a divergent session snapshot loses to
+the journal, with the note present). Hands-on: kill the Link mid-plan and
+verify the journal restore by content on relaunch — including once with a
+mid-plan Cmd-S, the divergence case.
 
 ## 8. Out of scope
 
