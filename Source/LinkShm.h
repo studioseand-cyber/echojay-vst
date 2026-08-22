@@ -1024,6 +1024,18 @@ static constexpr int kBorrowRingMaxLostTicks = 3;   // ~3s at the renew cadence
 // post-seed baseline) is left untouched too: Apply writes exactly what the
 // user changed, nothing else. The Link's state can only change through a
 // commit payload, so proving the plan is proving the Link untouched.
+// The sidecar's slot uid is HEX (getSlotIdentity's toHexString — built for
+// the server's fp union), but stateFitsPlugin compares DECIMAL
+// (String(found.uniqueId)). Feeding one into the other withheld EVERY
+// slot with a known uid — seed and Apply alike (22 Aug 2026, the
+// zero-commits round). ONE converter, used by every consumer that hands a
+// sidecar uid to the state-match policy; empty stays empty (no opinion).
+inline juce::String sidecarUidToStateUid (const juce::String& hexUid)
+{
+    if (hexUid.isEmpty()) return {};
+    return juce::String (hexUid.getHexValue32());
+}
+
 struct BorrowCommit
 {
     enum class Action { Commit, LeaveWithheld, LeaveUnedited };

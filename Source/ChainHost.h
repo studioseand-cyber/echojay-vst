@@ -82,9 +82,23 @@ public:
         popped again), and the marking logs. */
     void markBorrowPoolIneligible(const juce::PluginDescription& d,
                                   const juce::String& why);
-    /** Step 3: the Apply-time withheld verdict — the SAME stateFitsPlugin
-        policy that withheld the pull, run against the same saved triplet,
-        QUIET (no note: this is a verdict read, not an apply). */
+    /** Step 3, the RECORDED FACT (22 Aug 2026): was this slot actually
+        seeded with the Link's state? Set by applyRestoredState at the
+        moment the chunk applies, cleared on release. Apply reads THIS,
+        never a recomputed policy — a policy re-run can answer differently
+        from what happened (it did: the hex/decimal uid round), and
+        "withheld" means exactly "we did not seed this slot with the Link's
+        state", nothing else. */
+    bool borrowSlotSeededWithState(int i) const
+    {
+        return i >= 0 && i < (int) slots_.size()
+            && slots_[(size_t) i].node != nullptr
+            && borrowSeededNodeIds_.count(slots_[(size_t) i].node->nodeID.uid) > 0;
+    }
+
+    /** The recomputed-policy verdict, kept for DIAGNOSTICS only — the
+        commit decision reads borrowSlotSeededWithState above. QUIET (no
+        note: a verdict read, not an apply). */
     bool borrowSlotWithheld(int i, const juce::String& savedFormat,
                             const juce::String& savedVersion,
                             const juce::String& savedUid) const
@@ -1183,6 +1197,7 @@ private:
     // on one of these is a REUSE failure (marks ineligible); on a fresh
     // instance it is just a bad state.
     std::set<juce::uint32> borrowReusedNodeIds_;
+    std::set<juce::uint32> borrowSeededNodeIds_;   // the seed FACT, per node
     static juce::String borrowPoolKey(const juce::PluginDescription& d)
     {
         // format|identifier|uid — the same identity stateFitsPlugin matches on.

@@ -7638,8 +7638,12 @@ std::vector<std::pair<bool, bool>> EchoJayEditor::borrowSlotVerdicts()
     for (int i = 0; i < bh->getNumSlots() && i < (int) recs.size(); ++i)
     {
         const auto& r = recs[(size_t) i];
-        const bool withheld = bh->borrowSlotWithheld(
-            i, r.savedFormat, r.savedVersion, r.savedUid);
+        // THE RECORDED FACT, never a recomputed policy (22 Aug 2026):
+        // withheld means "a state was pulled and the seed did not apply it".
+        // A slot the Link had no state for is NOT withheld — committing
+        // edits to it writes nothing over anything.
+        const bool seeded   = bh->borrowSlotSeededWithState(i);
+        const bool withheld = r.hadState && ! seeded;
         juce::String nowB64;
         if (auto* p = bh->getSlotProcessor(i))
         {
@@ -7647,7 +7651,20 @@ std::vector<std::pair<bool, bool>> EchoJayEditor::borrowSlotVerdicts()
             try { p->getStateInformation(mb); } catch (...) { mb.reset(); }
             if (mb.getSize() > 0) nowB64 = LinkShm::stateToB64(mb);
         }
-        out.emplace_back(withheld, nowB64 != r.baselineB64);
+        const bool edited = nowB64 != r.baselineB64;
+        // THE DIAGNOSTIC the zero-commit round was missing: one line per
+        // slot at classify time — verdict, why, edit, action.
+        const auto action = LinkShm::BorrowCommit::classify(withheld, edited);
+        EchoJay_NSLog(("EJApply: slot " + juce::String(i) + " \"" + r.name
+            + "\" hadState=" + (r.hadState ? "Y" : "N")
+            + " seeded=" + (seeded ? "Y" : "N")
+            + " -> withheld=" + (withheld ? "Y" : "N")
+            + (withheld ? " (pulled state was never seeded)" : "")
+            + " edited=" + (edited ? "Y" : "N")
+            + " action=" + (action == LinkShm::BorrowCommit::Action::Commit ? "COMMIT"
+                            : action == LinkShm::BorrowCommit::Action::LeaveWithheld
+                                ? "LEAVE-WITHHELD" : "LEAVE-UNEDITED")).toRawUTF8());
+        out.emplace_back(withheld, edited);
     }
     return out;
 }
@@ -7919,9 +7936,13 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
             o->setProperty("plugin",   s.name);
             o->setProperty("bypassed", s.bypassed);
             o->setProperty("wet",      s.wet);
-            // Identity rides for stateFitsPlugin's match + apply-time re-check.
+            // Identity rides for stateFitsPlugin's match + apply-time
+            // re-check. The sidecar uid is HEX (server-oriented); the state
+            // policy compares decimal — converted HERE, the one consumer
+            // seam, or every known-uid slot withholds its own state.
             if (s.format.isNotEmpty())  o->setProperty("format",  s.format);
-            if (s.uid.isNotEmpty())     o->setProperty("uid",     s.uid);
+            if (s.uid.isNotEmpty())
+                o->setProperty("uid", LinkShm::sidecarUidToStateUid(s.uid));
             if (s.version.isNotEmpty()) o->setProperty("version", s.version);
             slotsArr.add(juce::var(o));
             if (st->states[i].isNotEmpty())
@@ -7976,6 +7997,7 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
                 const auto& s = st->slots[(size_t) i];
                 r.name = s.name; r.savedFormat = s.format;
                 r.savedVersion = s.version; r.savedUid = s.uid;
+                r.hadState = st->states[i].isNotEmpty();
                 if (auto* pr = bh2->getSlotProcessor(i))
                 {
                     juce::MemoryBlock mb;

@@ -437,6 +437,50 @@ int main()
                "the asymmetry counts: changed 2, committing 1, "
                "withheld-edited 1, untouched 2");
 
+        // THE ZERO-COMMITS ROUND'S GATE GAP, closed (22 Aug 2026): the
+        // synthetic rack used DECIMAL uid strings; the real sidecar
+        // publishes HEX (getSlotIdentity's toHexString), and feeding hex
+        // into stateFitsPlugin's decimal compare withheld every known-uid
+        // slot — seed and Apply alike. The converter is the one seam.
+        {
+            const juce::String hexUid = juce::String::toHexString (0x454A4250);
+            check (LinkShm::sidecarUidToStateUid (hexUid)
+                       == juce::String (0x454A4250),
+                   "sidecar HEX uid converts to the state policy's decimal");
+            check (LinkShm::sidecarUidToStateUid ({}).isEmpty(),
+                   "empty uid stays empty (no opinion, not zero)");
+            // The REAL-shaped seed: identity as the sidecar publishes it,
+            // through the converter — must seed. The raw hex form must
+            // withhold, documenting exactly why the converter exists.
+            // Distinct sentinel per run: a pooled instance REMEMBERS its
+            // last value, so reusing one sentinel cannot tell "seeded now"
+            // from "remembered from the pool".
+            auto seedWith = [&] (const juce::String& uidField, int sentinel) {
+                host.releaseBorrowToPool();
+                juce::Array<juce::var> arr;
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("n", 1);
+                o->setProperty ("plugin", "EJ Borrow Probe");
+                o->setProperty ("bypassed", false);
+                o->setProperty ("format", kEchoJayBuiltinFormat);
+                o->setProperty ("uid", uidField);
+                arr.add (juce::var (o));
+                auto* so = new juce::DynamicObject();
+                so->setProperty ("1", chunkFor (sentinel));
+                host.restoreSavedChain (juce::var (arr), juce::var (so));
+                auto* pp = probeIn (host, 0);
+                return pp != nullptr && pp->value == sentinel;
+            };
+            check (seedWith (LinkShm::sidecarUidToStateUid (hexUid), 777),
+                   "REAL-shaped identity (converted hex uid) SEEDS the state");
+            check (host.borrowSlotSeededWithState (0),
+                   "and the seed FACT is recorded on the slot");
+            check (! seedWith (hexUid, 888),
+                   "raw hex uid withholds (the old bug, pinned as the reason)");
+            check (! host.borrowSlotSeededWithState (0),
+                   "an unseeded slot's FACT reads false — the verdict Apply reads");
+        }
+
         // The Apply-time withheld verdict is the SAME policy, QUIET: no
         // state note from a verdict read.
         host.clearStateNotes();
@@ -479,6 +523,15 @@ int main()
                      && borrowArm < remoteArm,
                    "onCreateEditor reaches the borrowed host BEFORE the remote guard");
         }
+        // The verdict reads the RECORDED FACT, never a recomputed policy,
+        // the converter guards the seed seam, and every classify logs.
+        check (ed3.contains ("bh->borrowSlotSeededWithState(i)")
+                 && ! ed3.contains ("borrowSlotWithheld(\n            i,"),
+               "Apply's verdict reads the seed fact (by source)");
+        check (ed3.contains ("LinkShm::sidecarUidToStateUid(s.uid)"),
+               "the seed converts the sidecar's hex uid (by source)");
+        check (ed3.contains ("EJApply: slot "),
+               "one diagnostic line per slot at classify time (by source)");
         const auto pr3 = slurp2 ("Source/PluginProcessor.cpp");
         check (pr3.contains ("if (keepEdits) captureBorrowKept();"),
                "keep-releases capture the edits (continuous keep)");

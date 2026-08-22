@@ -481,6 +481,7 @@ public:
     // may have been empty".
     struct BorrowSlotRecord {
         juce::String name, savedFormat, savedVersion, savedUid, baselineB64;
+        bool hadState = false;   // a state was pulled for this slot
     };
     std::vector<BorrowSlotRecord> borrowSlotRecords_;
     // Uncommitted edits captured at a keep-release; re-borrowing the same

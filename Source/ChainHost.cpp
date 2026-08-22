@@ -4009,6 +4009,7 @@ void ChainHost::releaseBorrowToPool()
     }
     slots_.clear();
     borrowReusedNodeIds_.clear();
+    borrowSeededNodeIds_.clear();
     bumpChainRevision();
     rebuildGraph();
     if (prepared_)
@@ -5809,6 +5810,13 @@ void ChainHost::applyRestoredState(int slotIdx, const juce::String& b64,
     }
 
     if (!applied) return;
+
+    // The seed FACT, recorded at the only place it happens (step 3): this
+    // slot now carries the restored state. Apply's withheld verdict reads
+    // this, never a recomputed policy.
+    if (mode_ == Mode::Borrowed && slotIdx >= 0 && slotIdx < (int) slots_.size()
+        && slots_[(size_t) slotIdx].node != nullptr)
+        borrowSeededNodeIds_.insert(slots_[(size_t) slotIdx].node->nodeID.uid);
 
     // The version note, NOW: after the chunk applied and none of the four
     // failure returns above (decode, null proc, throw, and the load failure in
