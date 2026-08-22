@@ -4176,6 +4176,12 @@ private:
     LinkShm::StructureEdit::Plan buildStructurePlan();   // from session snapshots
     void presentStructureApplyAsk(const LinkShm::StructureEdit::Plan& plan);
     void runStructureApply();   // phase 3: the Apply path for capable Links
+    // ONE COMPUTATION (23 Aug 2026, the lost-add defect): the plan built at
+    // ask time is the plan Apply sends — held here across the confirm so the
+    // ask can never describe one plan while the send computes another.
+    LinkShm::StructureEdit::Plan pendingStructPlan_;
+    bool pendingStructPlanValid_ = false;
+    bool borrowSessionShapeDirty() const;   // creates/removes/reorders exist
 
     std::map<juce::String, LinkStripState> linkStripStates_;
     LinkStripState linkHostStrip_;         // the Mix Bus (this instance) row

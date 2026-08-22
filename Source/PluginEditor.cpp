@@ -7715,7 +7715,13 @@ std::vector<std::pair<bool, bool>> EchoJayEditor::borrowSlotVerdicts()
         if (origin < 0)
         {
             // Created in the main: always a change, never withheld (the
-            // Link never had it — spec §3's Create class).
+            // Link never had it — spec §3's Create class). LOGGED like
+            // every other slot — a diagnostic that skips slots is how the
+            // lost-add read as "only two verdict lines".
+            EchoJay_NSLog(("EJApply: slot " + juce::String(i) + " \""
+                + bh->getSlotInfo(i).name + "\" CREATED here - no pulled "
+                  "state, never withheld, edited by definition -> CREATE")
+                .toRawUTF8());
             out.emplace_back(false, true);
             continue;
         }
@@ -7752,6 +7758,20 @@ std::vector<std::pair<bool, bool>> EchoJayEditor::borrowSlotVerdicts()
     return out;
 }
 
+// Shape-dirty from the SESSION FACTS, independently of the plan: any created
+// slot (origin -1), any recorded removal, or any reorder. A tail removal
+// leaves origins identity-shaped, which is why removedNames is checked too.
+// This is the cross-check that catches a plan computing empty against a
+// session that says otherwise — the two must never disagree silently.
+bool EchoJayEditor::borrowSessionShapeDirty() const
+{
+    if (! processorRef.borrowRemovedNames_.isEmpty()) return true;
+    const auto& org = processorRef.borrowSlotOrigin_;
+    for (size_t i = 0; i < org.size(); ++i)
+        if (org[i] != (int) i) return true;   // created (-1) or reordered
+    return false;
+}
+
 void EchoJayEditor::toggleBorrow()
 {
     // Release acts on the LIVE borrow whatever rack the view shows — the
@@ -7766,11 +7786,37 @@ void EchoJayEditor::toggleBorrow()
         // keeps the settings-only ask, and never sees a plan.
         if (processorRef.borrowStructureCapable_)
         {
+            // ONE COMPUTATION (23 Aug 2026): the plan built HERE is the plan
+            // Apply sends — pendingStructPlan_ carries it across the confirm.
+            // Rebuilding at send time is how an add was lost: the ask said
+            // adds=1, the send computed empty, and the release was silent.
+            pendingStructPlanValid_ = false;
             const auto splan = buildStructurePlan();
-            if (! splan.ops.empty() || splan.changed > 0
-                || ! processorRef.borrowRemovedNames_.isEmpty())
+            if (! splan.ops.empty() || splan.changed > 0)
             {
+                pendingStructPlan_ = splan;
+                pendingStructPlanValid_ = true;
                 presentStructureApplyAsk(splan);
+                return;
+            }
+            // An EMPTY plan from a shape-dirty session is a DEFECT, said
+            // loudly, session kept live — never a silent release. The log
+            // carries the arithmetic that names the inconsistent input.
+            if (borrowSessionShapeDirty())
+            {
+                auto* bh = processorRef.borrowHost();
+                EchoJay_NSLog(("EJStruct: DEFECT empty plan from shape-dirty "
+                    "session: slots=" + juce::String(bh ? bh->getNumSlots() : -1)
+                    + " origins=" + juce::String((int) processorRef.borrowSlotOrigin_.size())
+                    + " records=" + juce::String((int) processorRef.borrowSlotRecords_.size())
+                    + " base=" + juce::String((int) processorRef.borrowBaseIdentity_.size())
+                    + " removedNames=" + juce::String(processorRef.borrowRemovedNames_.size()))
+                    .toRawUTF8());
+                chainListPanel.statusText = "Release found a defect: your "
+                    "shape changes computed into an EMPTY plan. Nothing was "
+                    "sent and nothing was released - your session is still "
+                    "live. Please report this.";
+                chainListPanel.repaint();
                 return;
             }
         }
@@ -8296,20 +8342,31 @@ void EchoJayEditor::presentStructureApplyAsk(const LinkShm::StructureEdit::Plan&
     // same apply_ intents; the chip handler routes by capability.
     auto& proc = processorRef;
     const juce::String name = proc.resolveLinkDisplayName(proc.borrowUid());
-    juce::StringArray adds;
+    // EVERY list renders from the PLAN'S OPS — the plan this ask is asking
+    // about is the plan Apply will send, and nothing here reads a second
+    // session copy that could disagree (two sources is how the add was lost).
+    juce::StringArray adds, removes;
     for (const auto& op : plan.ops)
+    {
         if (op.type == LinkShm::StructureEdit::OpType::Create)
             adds.add(op.name);
+        if (op.type == LinkShm::StructureEdit::OpType::Remove)
+            removes.add(op.name);
+    }
+    // The withheld-removal memory is a session FACT (recorded at removal
+    // time) — but it only speaks for names the PLAN actually removes.
+    juce::StringArray removedWithheld;
+    for (const auto& nm : proc.borrowRemovedWithheld_)
+        if (removes.contains(nm)) removedWithheld.add(nm);
     juce::String q = "Apply your changes to " + name + "?";
     if (! adds.isEmpty())
         q += " Adding: " + adds.joinIntoString(", ") + ".";
-    if (! proc.borrowRemovedNames_.isEmpty())
-        q += " Removing: " + proc.borrowRemovedNames_.joinIntoString(", ") + ".";
-    if (! proc.borrowRemovedWithheld_.isEmpty())
-        q += " NOTE - " + proc.borrowRemovedWithheld_.joinIntoString(", ")
-           + (proc.borrowRemovedWithheld_.size() == 1 ? " arrived" : " arrived")
-           + " without " + name + "'s real settings: removing deletes settings "
-             "you never saw.";
+    if (! removes.isEmpty())
+        q += " Removing: " + removes.joinIntoString(", ") + ".";
+    if (! removedWithheld.isEmpty())
+        q += " NOTE - " + removedWithheld.joinIntoString(", ")
+           + " arrived without " + name + "'s real settings: removing "
+             "deletes settings you never saw.";
     if (plan.moving > 0)
         q += " Moving " + juce::String(plan.moving) + " slot"
            + (plan.moving == 1 ? "" : "s") + " into your order.";
@@ -8333,8 +8390,8 @@ void EchoJayEditor::presentStructureApplyAsk(const LinkShm::StructureEdit::Plan&
         choices.add(juce::var(c));
     }
     presentReplaceAsk(q, choices, "apply to \"" + name + "\"",
-        "EJApply: structure ask shown adds=" + juce::String(adds.size())
-            + " removes=" + juce::String(proc.borrowRemovedNames_.size())
+        "EJApply: structure ask shown adds=" + juce::String(plan.creating)
+            + " removes=" + juce::String(plan.removing)
             + " moves=" + juce::String(plan.moving)
             + " commits=" + juce::String(plan.committing) + " answer=pending");
 }
@@ -8355,7 +8412,34 @@ void EchoJayEditor::runStructureApply()
         chainListPanel.repaint();
         return;
     }
-    const auto plan = buildStructurePlan();
+    // ONE COMPUTATION: send EXACTLY the plan the ask rendered and the user
+    // confirmed. Recomputing here is the lost-add defect — the ask said
+    // adds=1, the recomputation said empty, and the empty plan applied
+    // trivially and released. If no confirmed plan is pending, refuse.
+    if (! pendingStructPlanValid_)
+    {
+        chainListPanel.statusText = "Apply had no confirmed plan to send - "
+            "nothing was sent. Your session is still live; release again to "
+            "review and Apply.";
+        chainListPanel.repaint();
+        return;
+    }
+    const auto plan = pendingStructPlan_;
+    pendingStructPlanValid_ = false;
+    if (plan.ops.empty())
+    {
+        // The ask never presents an empty plan; reaching here is a defect.
+        EchoJay_NSLog(("EJStruct: DEFECT empty plan reached Apply: origins="
+            + juce::String((int) proc.borrowSlotOrigin_.size())
+            + " records=" + juce::String((int) proc.borrowSlotRecords_.size())
+            + " base=" + juce::String((int) proc.borrowBaseIdentity_.size()))
+            .toRawUTF8());
+        chainListPanel.statusText = "Apply found a defect: the confirmed "
+            "plan is EMPTY. Nothing was sent and nothing was released - "
+            "your session is still live. Please report this.";
+        chainListPanel.repaint();
+        return;
+    }
 
     int err = 0;
     const juce::String dir = LinkShm::resolveDir(err);
@@ -22164,6 +22248,7 @@ void EchoJayEditor::onAskChipTapped(int i)
         else if (intent == "apply_discard")
         {
             EchoJay_NSLog("EJApply: answer=discard");
+            pendingStructPlanValid_ = false;
             const juce::String owner =
                 processorRef.resolveLinkDisplayName(processorRef.borrowUid());
             processorRef.clearBorrowKept();
@@ -22173,7 +22258,12 @@ void EchoJayEditor::onAskChipTapped(int i)
             refreshChainPanelForView(true);
         }
         else
+        {
             EchoJay_NSLog("EJApply: answer=keep-editing");
+            // The confirmed plan dies with the ask: further edits mean the
+            // next RELEASE computes (and renders) a fresh one.
+            pendingStructPlanValid_ = false;
+        }
         return;
     }
     if (intent == "recall_confirm" || intent == "recall_cancel")
@@ -28110,6 +28200,16 @@ void EchoJayEditor::showChainPluginPicker()
                         newSlot >= 0 && newSlot < (int) live.size()
                             ? live[(size_t) newSlot]
                             : LinkShm::StructureEdit::SlotIdentity{});
+                    // A created slot has a RECORD like every other slot
+                    // (defect, 23 Aug 2026: the lost add — a slot without a
+                    // record is invisible to every records-bounded consumer,
+                    // and the bound was doing its job against inconsistent
+                    // inputs). Nothing was pulled: hadState=false so it can
+                    // never read as withheld, and the EMPTY baseline makes
+                    // it edited by definition.
+                    EchoJayProcessor::BorrowSlotRecord cr;
+                    cr.name = bh2->getSlotInfo(newSlot).name;
+                    p3.borrowSlotRecords_.push_back(std::move(cr));
                     safeThis->chainSelectedSlot_ = newSlot;
                     safeThis->chainListPanel.statusText = {};
                     safeThis->refreshChainPanelForView(false);

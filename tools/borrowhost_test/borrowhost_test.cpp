@@ -990,13 +990,19 @@ int main()
                juce::String (oldWording));
         // EVERY op appears in the confirm, by name, with the withheld-removal
         // line the spec demands.
-        const int ask = ed.indexOf ("void EchoJayEditor::presentStructureApplyAsk");
-        const auto askBody = ask >= 0 ? ed.substring (ask, ask + 3500) : juce::String();
+        auto bodyOf = [&ed] (const char* sig)
+        {
+            const int at = ed.indexOf (sig);
+            if (at < 0) return juce::String();
+            const int end = ed.indexOf (at, "\n}");
+            return ed.substring (at, end > at ? end : at + 6000);
+        };
+        const auto askBody = bodyOf ("void EchoJayEditor::presentStructureApplyAsk");
         check (askBody.contains ("\" Adding: \"")
                  && askBody.contains ("\" Removing: \"")
                  && askBody.contains ("\" Moving \""),
                "the confirm states adds, removes and moves in words");
-        check (askBody.contains ("removing deletes settings "),
+        check (askBody.contains ("deletes settings you never saw"),
                "removing a withheld slot gets its own line (never-saw)");
         check (askBody.contains ("The whole plan applies, or none of it."),
                "the confirm states the atomicity promise");
@@ -1009,6 +1015,53 @@ int main()
                "the Link overlay states the restructure while a plan runs");
         check (slurp3 ("Source/LinkProcessor.h").contains ("structPlanJournalPresent"),
                "driven by journal presence, not a guess");
+
+        // ---- The lost-add class (23 Aug 2026): one computation, loud on
+        // ---- disagreement, and a record for every slot.
+        // ONE COMPUTATION: buildStructurePlan has exactly ONE call site (the
+        // ask, in toggleBorrow); Apply sends the CONFIRMED pendingStructPlan_
+        // and never recomputes. Two computations at two times, with session
+        // state mutating between, is how the ask said adds=1 and the send
+        // computed empty.
+        int planCalls = 0;
+        for (int p = 0; (p = ed.indexOf (p, "= buildStructurePlan()")) >= 0; ++p)
+            ++planCalls;
+        check (planCalls == 1,
+               "the plan is computed ONCE, at ask time", juce::String (planCalls));
+        const auto rsaBody = bodyOf ("void EchoJayEditor::runStructureApply");
+        check (rsaBody.contains ("pendingStructPlan_")
+                 && ! rsaBody.contains ("buildStructurePlan"),
+               "Apply sends the confirmed plan, never a recomputed one");
+        // THE ASK RENDERS THE PLAN IT WILL SEND: every list derives from
+        // plan.ops; no second session copy that could disagree.
+        check (askBody.contains ("OpType::Remove")
+                 && ! askBody.contains ("proc.borrowRemovedNames_"),
+               "the ask's removes come from the plan's ops, not a session copy");
+        // EMPTY PLAN, DIRTY SHAPE = a said-aloud defect that keeps the
+        // session live — at BOTH decision points (release-time and Apply).
+        int defectLines = 0;
+        for (int p = 0; (p = ed.indexOf (p, "EJStruct: DEFECT empty plan")) >= 0; ++p)
+            ++defectLines;
+        check (ed.contains ("borrowSessionShapeDirty") && defectLines >= 2,
+               "an empty plan against a dirty shape refuses loudly, twice over",
+               juce::String (defectLines));
+        const auto tbBody = bodyOf ("void EchoJayEditor::toggleBorrow");
+        check (tbBody.contains ("pendingStructPlan_ = splan;")
+                 && tbBody.contains ("pendingStructPlanValid_ = true;")
+                 && tbBody.contains ("presentStructureApplyAsk(splan)"),
+               "the ask stores the very plan it presents");
+        // A CREATED SLOT HAS A RECORD: exactly two record-push sites —
+        // engage (pulled slots) and the borrowed add (created slots).
+        int recPush = 0;
+        for (int p = 0; (p = ed.indexOf (p, "borrowSlotRecords_.push_back")) >= 0; ++p)
+            ++recPush;
+        check (recPush == 2,
+               "every slot gets a record: engage AND the borrowed add",
+               juce::String (recPush));
+        // And the verdict diagnostic covers created slots — a log that
+        // skips slots is how the contradiction hid.
+        check (ed.contains ("CREATED here - no pulled "),
+               "the per-slot diagnostic logs created slots too");
     }
 
     std::printf ("== DEV forceWithholdSlot: cannot exist in a non-DEV build ==\n");
