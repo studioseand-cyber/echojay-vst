@@ -15,6 +15,7 @@
 #include "CodecRender.h"
 #include "DashboardTab.h"
 #include "EJDialTally.h"
+#include "EJDialMissRows.h"
 
 // Stage 2: the lazy webview Dashboard surface. Full type in DashboardWeb.h,
 // included from PluginEditor.cpp; the header only needs the incomplete type for
@@ -1276,6 +1277,15 @@ private:
                      const juce::String& format = {}, const juce::String& uid = {},
                      int requested = -1, const juce::String& requestedSource = {},
                      bool builtinSlot = false);
+    // A9 step 1: THE dial-miss emitter. Every settle walker calls this and
+    // NONE of them calls logDialMiss directly any more — the reason set has
+    // one author (echojay::dialMissRowsFor, EJDialMissRows.h) so three turn
+    // types cannot report three different row populations for one slot state.
+    // The walkers keep only their own bubble composition, which genuinely
+    // does differ between them. Non-walker callers of logDialMiss (the two
+    // refine sites) are untouched: their rows are per-dropped-name and carry
+    // no SlotDialInfo.
+    void emitDialMissRows(const ChainHost::SlotDialInfo& di);
     // dial-3 carrier (A7.3): the declined-name batch for THIS send, read
     // from events.jsonl above the watermark. "" = nothing to ship. Sets
     // pendingDeclineWatermark_; handleChatReply's success branch commits it.

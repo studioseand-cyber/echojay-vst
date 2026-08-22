@@ -21637,19 +21637,12 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
         // walker and logDialMissesWhenSettled are if/else alternatives at
         // their call site, and the edit walker is a different turn type.
         noteDialTallyFromInfo(di);
-        // Written-but-display-stale (bridged report-only) is recorded
-        // queryably whatever the slot status: the write was kept on norm
-        // proof and the display disagreement must not vanish into the
-        // applied count.
-        if (!di.unconfirmed.isEmpty())
-            logDialMiss(di.name, di.fp, "stale_display_kept", di.unconfirmed,
-                        di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
-        // Range refusals are recorded whatever the slot status: the bubble
-        // must never say "use the values on its card" about a value the
-        // card says will not map onto this version.
-        if (!di.outOfRange.isEmpty())
-            logDialMiss(di.name, di.fp, "out_of_range", di.outOfRange,
-                        di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
+        // A9 step 1: rows here, bubble below. This walker no longer decides
+        // WHICH reasons a slot state produces — one author, three callers.
+        emitDialMissRows(di);
+        // Bubble composition ONLY. These branches genuinely differ between
+        // the build and edit walkers (and walker 3 composes no bubble at
+        // all), which is why the row set moved out and this stayed.
         switch (di.status)
         {
             case ChainHost::DialStatus::applied:
@@ -21657,50 +21650,31 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                 break;
             case ChainHost::DialStatus::partial:
                 partialParts.push_back({ di.name, di.manual, di.outOfRange });
-                logDialMiss(di.name, di.fp, "partial", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
-                if (!di.readbackMiss.isEmpty())
-                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
-                                di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                 break;
             case ChainHost::DialStatus::noMap:
                 // Stale-map ladder, unmapped rung: the plugin loaded at a
-                // version the corpus has no mapping for. Its wording names
-                // the actual reason, and only this shape earns the
-                // suggest-an-alternative pill below.
+                // version the corpus has no mapping for. Only this shape
+                // earns the suggest-an-alternative pill below.
                 if (di.staleIndexedFp.isNotEmpty())
                 {
                     staleParts.add(di.name);
-                    logDialMiss(di.name, di.fp, "stale_unmapped", di.manual,
-                                di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                     break;
                 }
                 zeroParts.add(di.name);
-                logDialMiss(di.name, di.fp, "no_map", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                 break;
             case ChainHost::DialStatus::unusableMap:
                 if (!di.outOfRange.isEmpty())
                 {
                     zeroOorParts.push_back({ di.name, di.manual, di.outOfRange });
-                    logDialMiss(di.name, di.fp, "unusable_map", di.manual,
-                                di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                     break;
                 }
                 zeroParts.add(di.name);
-                logDialMiss(di.name, di.fp, "unusable_map", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
-                if (!di.readbackMiss.isEmpty())
-                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
-                                di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                 break;
             case ChainHost::DialStatus::pending:
                 // Fetch never answered inside the cap: NEVER fall through to
                 // the model's success line - conservative wording, and the
                 // late apply (if it lands) updates the slot card anyway.
                 zeroParts.add(di.name);
-                logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                 break;
             case ChainHost::DialStatus::none:
                 break;
@@ -21934,12 +21908,10 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
         if (!touchedNames.contains(di.name)) continue;
         // dial-4 A8: population for the touched slots, beside their rows.
         noteDialTallyFromInfo(di);
-        if (!di.unconfirmed.isEmpty())   // bridged report-only: same record as the build path
-            logDialMiss(di.name, di.fp, "stale_display_kept", di.unconfirmed,
-                        di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
-        if (!di.outOfRange.isEmpty())    // range refusals: same record as the build path
-            logDialMiss(di.name, di.fp, "out_of_range", di.outOfRange,
-                        di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
+        // A9 step 1: rows here (one author), bubble below. This walker used
+        // to compose the same reason set by hand; the edit path and the build
+        // path can no longer disagree about one slot state.
+        emitDialMissRows(di);
         switch (di.status)
         {
             case ChainHost::DialStatus::applied:
@@ -21947,11 +21919,6 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 break;
             case ChainHost::DialStatus::partial:
                 partialParts.push_back({ di.name, di.manual, di.outOfRange });
-                logDialMiss(di.name, di.fp, "partial", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
-                if (!di.readbackMiss.isEmpty())
-                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
-                                di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                 break;
             case ChainHost::DialStatus::noMap:
                 // Stale-map ladder, unmapped rung: same diversion as the
@@ -21959,36 +21926,23 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 if (di.staleIndexedFp.isNotEmpty())
                 {
                     staleParts.add(di.name);
-                    logDialMiss(di.name, di.fp, "stale_unmapped", di.manual,
-                                di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                     break;
                 }
                 zeroParts.add(di.name);
-                logDialMiss(di.name, di.fp, "no_map", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                 break;
             case ChainHost::DialStatus::unusableMap:
                 if (!di.outOfRange.isEmpty())
                 {
                     zeroOorParts.push_back({ di.name, di.manual, di.outOfRange });
-                    logDialMiss(di.name, di.fp, "unusable_map", di.manual,
-                                di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                     break;
                 }
                 zeroParts.add(di.name);
-                logDialMiss(di.name, di.fp, "unusable_map", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
-                if (!di.readbackMiss.isEmpty())
-                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
-                                di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                 break;
             case ChainHost::DialStatus::pending:
                 // Fetch never answered inside the cap: NEVER fall through
                 // to the model's success line - conservative wording, and a
                 // late apply (if it lands) updates the slot card anyway.
                 zeroParts.add(di.name);
-                logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                 break;
             case ChainHost::DialStatus::none:
                 // Touched and carried settings, yet nothing structured
@@ -22213,24 +22167,27 @@ void EchoJayEditor::logDialMissesWhenSettled(int attemptsLeft)
     {
         // dial-4 A8: population, beside the rows (see the build walker).
         noteDialTallyFromInfo(di);
-        if (di.status == ChainHost::DialStatus::noMap)
-            logDialMiss(di.name, di.fp, "no_map", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
-        else if (di.status == ChainHost::DialStatus::unusableMap)
-            logDialMiss(di.name, di.fp, "unusable_map", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
-        else if (di.status == ChainHost::DialStatus::partial)
-            logDialMiss(di.name, di.fp, "partial", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
-        else if (di.status == ChainHost::DialStatus::pending)
-            logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
-        if ((di.status == ChainHost::DialStatus::partial
-             || di.status == ChainHost::DialStatus::unusableMap)
-            && !di.readbackMiss.isEmpty())
-            logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
-                                di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
+        // A9 step 1: this walker composes NO bubble, so the shared emitter is
+        // its whole body now. It previously hand-rolled a SHORTER reason set
+        // than the other two — no stale_display_kept, no out_of_range, and a
+        // stale-ladder noMap reported as plain "no_map" — so a dirty-load
+        // build reported strictly less than a clean one about identical slot
+        // state. That gap closes by construction here.
+        emitDialMissRows(di);
     }
+}
+
+// A9 step 1 (22 Aug 2026): the ONE dial-miss emitter. The reason set is
+// derived by echojay::dialMissRowsFor (EJDialMissRows.h, pure and pinned in
+// tools/mapfps_test); this function only turns those rows into events. Every
+// field comes off the same SlotDialInfo, so two callers handed identical slot
+// state write identical rows — which is the property the three walkers had
+// lost. See the header for what had drifted and why it mattered.
+void EchoJayEditor::emitDialMissRows(const ChainHost::SlotDialInfo& di)
+{
+    for (const auto& row : echojay::dialMissRowsFor(di))
+        logDialMiss(di.name, di.fp, row.reason, row.names,
+                    di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
 }
 
 void EchoJayEditor::logDialMiss(const juce::String& plugin, const juce::String& fp,

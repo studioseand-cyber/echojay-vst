@@ -26,6 +26,7 @@
 
 #include <JuceHeader.h>
 #include "EJDialTally.h"         // dial-4 A8: header-inline, the shipped tally
+#include "EJDialMissRows.h"      // A9 step 1: header-inline, the shipped row set
 #include "EchoJayParamMaps.h"
 #include "EchoJayParamApply.h"
 #include "EchoJayHistoryTrim.h"
@@ -955,6 +956,121 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "A8.1a: getDialInfos' keys fallback uses the shared entry count");
             check (chSrc.contains ("s.dialRequestedCount >= 0 && s.dialStatus != DialStatus::unusableMap"),
                    "A8.8: unusableMap is keys-sourced by designation at getDialInfos");
+        }
+    }
+
+    // ---- A9 step 1: ONE dial-miss row author, three callers -----------------
+    // Three settle walkers used to compose this row set by hand and had
+    // drifted apart; the divergence was invisible because they are per-turn
+    // ALTERNATIVES, so no single turn could show two of them disagreeing.
+    {
+        std::cout << "A9 step 1 dial-miss row set:\n";
+        using Status = ChainHost::DialStatus;   // ChainHost is GLOBAL, not echojay::
+
+        auto slot = [] (Status st,
+                        juce::StringArray manual      = {},
+                        juce::StringArray outOfRange  = {},
+                        juce::StringArray readbackMiss = {},
+                        juce::StringArray unconfirmed  = {},
+                        juce::String staleIndexedFp    = {})
+        {
+            ChainHost::SlotDialInfo di;
+            di.name            = "Solid EQ";
+            di.fp              = "733068b9";
+            di.format          = "VST3";
+            di.uid             = "1a9dbcc1";
+            di.status          = st;
+            di.manual          = manual;
+            di.outOfRange      = outOfRange;
+            di.readbackMiss    = readbackMiss;
+            di.unconfirmed     = unconfirmed;
+            di.staleIndexedFp  = staleIndexedFp;
+            di.requestedCount  = 1;
+            di.requestedSource = "keys";
+            return di;
+        };
+        auto render = [] (const ChainHost::SlotDialInfo& di)
+        {
+            juce::String s;
+            for (const auto& r : echojay::dialMissRowsFor (di))
+                s << (s.isEmpty() ? "" : ";") << r.reason << "[" << r.names.joinIntoString (",") << "]";
+            return s;
+        };
+
+        // PIN 1: the 21688 break. A slot carrying BOTH a range refusal and a
+        // readback mismatch used to report only the range refusal — the
+        // readback row's existence depended on an unrelated field being
+        // empty. Both findings are now reported, every time.
+        {
+            const auto di = slot (Status::unusableMap, { "Default" }, { "Attack" }, { "Default" });
+            const auto got = render (di);
+            check (got.contains ("readback_mismatch[Default]"),
+                   "A9: readbackMiss + outOfRange together STILL emits the readback row",
+                   "got " + got);
+            check (got.contains ("out_of_range[Attack]") && got.contains ("unusable_map[Default]"),
+                   "A9: the range refusal and the verdict ride alongside it", "got " + got);
+            check (echojay::dialMissRowsFor (di).size() == 3,
+                   "A9: exactly three rows, none suppressing another",
+                   "got " + juce::String ((int) echojay::dialMissRowsFor (di).size()));
+        }
+        // ...and with outOfRange EMPTY the readback row is unchanged: the fix
+        // adds a row to one case, it does not move the other.
+        check (render (slot (Status::unusableMap, { "Default" }, {}, { "Default" }))
+                   == "unusable_map[Default];readback_mismatch[Default]",
+               "A9: the outOfRange-empty case is untouched by the fix");
+
+        // PIN 2: the full reason set, so a caller cannot omit one. These are
+        // exactly the reasons walker 3 used to drop on the floor.
+        check (render (slot (Status::partial, { "attack" }, {}, {}, { "release" }))
+                   == "stale_display_kept[release];partial[attack]",
+               "A9: stale_display_kept is in the shared set (walker 3 omitted it)");
+        check (render (slot (Status::noMap, { "ratio" }, { "attack" }))
+                   == "out_of_range[attack];no_map[ratio]",
+               "A9: out_of_range is in the shared set (walker 3 omitted it)");
+        check (render (slot (Status::noMap, { "ratio" }, {}, {}, {}, "deadbeef"))
+                   == "stale_unmapped[ratio]",
+               "A9: a stale-ladder noMap is stale_unmapped (walker 3 said no_map)");
+        check (render (slot (Status::pending, { "ratio" })) == "map_fetch_timeout[ratio]",
+               "A9: pending maps to map_fetch_timeout");
+        check (render (slot (Status::applied)).isEmpty()
+               && render (slot (Status::none)).isEmpty(),
+               "A9: a clean or untouched slot emits nothing");
+        // The presence condition for the readback evidence: readbackMiss can
+        // still hold the PREVIOUS apply's labels on a slot a later sweep
+        // re-marked noMap/pending (it is cleared only inside the apply loop),
+        // and a row asserting a readback this turn never performed would be a
+        // stale claim. This is a presence test, NOT the outOfRange coupling.
+        check (! render (slot (Status::noMap, { "x" }, {}, { "stale" })).contains ("readback_mismatch"),
+               "A9: no readback row under a verdict whose apply never ran this turn");
+
+        // PIN 3, structural: all three walkers route through the one emitter
+        // and none of them builds a slot row by hand. Keyed on the
+        // slot-derived call shape `logDialMiss(di.name` — the slotless rows
+        // (edit_add_no_dial, edit_set_no_dial) and the two refine sites
+        // legitimately still call logDialMiss and must NOT be caught here.
+        {
+            std::ifstream fed ("Source/PluginEditor.cpp");
+            std::stringstream sed_;
+            sed_ << fed.rdbuf();
+            const juce::String edSrc (sed_.str());
+
+            const char* walkers[] = { "void EchoJayEditor::finishChainBubbleWhenDialSettled",
+                                      "void EchoJayEditor::finishEditBubbleWhenDialSettled",
+                                      "void EchoJayEditor::logDialMissesWhenSettled" };
+            for (const char* w : walkers)
+            {
+                const auto body = functionBody (edSrc, w);
+                const juce::String nm (juce::String (w).fromLastOccurrenceOf ("::", false, false));
+                check (body.isNotEmpty(), juce::String ("A9: found walker ") + nm);
+                check (body.contains ("emitDialMissRows(di);"),
+                       "A9: " + nm + " emits through the shared author");
+                check (! body.contains ("logDialMiss(di.name"),
+                       "A9: " + nm + " builds NO slot row by hand");
+            }
+            // The emitter itself is the only place a slot row is written.
+            check (functionBody (edSrc, "void EchoJayEditor::emitDialMissRows")
+                       .contains ("echojay::dialMissRowsFor(di)"),
+                   "A9: the emitter derives its reasons from the shared author");
         }
     }
 
