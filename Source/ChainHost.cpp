@@ -2,6 +2,7 @@
 #include "ChainHost.h"
 #include "EchoJayParamApply.h"
 #include "EchoJayParamMaps.h"
+#include "EJDialTally.h"          // dial-4 A8: requestedEntryCount, the A7.2 keys semantic
 #include "SurgicalEqProcessor.h"   // built-in EQ device (see kBuiltinFormat)
 #include "LinkShm.h"               // the EQ curve's grid, clamp and point count
 #include "AUEnumerator.h"
@@ -5138,9 +5139,13 @@ std::vector<ChainHost::SlotDialInfo> ChainHost::getDialInfos() const
 {
     std::vector<SlotDialInfo> out;
     out.reserve(slots_.size());
-    for (const auto& s : slots_)
+    for (int i = 0; i < (int) slots_.size(); ++i)
     {
+        const auto& s = slots_[(size_t) i];
         SlotDialInfo di;
+        // dial-4 A8.1b: status cannot distinguish a built-in (its apply sets
+        // applied/partial/unusableMap too), so the flag travels explicitly.
+        di.builtin      = isBuiltinSlot(i);
         di.name         = s.desc.name;
         di.fp           = s.fp;
         di.status       = s.dialStatus;
@@ -5156,19 +5161,27 @@ std::vector<ChainHost::SlotDialInfo> ChainHost::getDialInfos() const
         di.format = s.desc.pluginFormatName;
         if (s.desc.uniqueId != 0)
             di.uid = juce::String::toHexString(s.desc.uniqueId);
-        if (s.dialRequestedCount >= 0)
+        // A8.8: unusableMap is keys-sourced BY DESIGNATION, even when the
+        // apply loop ran (report empty, or everything manual): its report
+        // count is 0 or short on exactly the turns the reason describes, and
+        // requested 0 both hid the row from the batch builder and would be
+        // barred from every rate by the A7.1 reader rule. The pre-apply entry
+        // count is the honest denominator for "map exists, nothing usable".
+        if (s.dialRequestedCount >= 0 && s.dialStatus != DialStatus::unusableMap)
         {
             di.requestedCount  = s.dialRequestedCount;
             di.requestedSource = "apply";
         }
         else
         {
-            // The apply never ran (no_map / fetch timeout / stale rungs):
-            // the denominator is the pre-apply count of requested entries.
-            int n = 0;
-            if (auto* o = s.structuredSettings.getDynamicObject())
-                n = o->getProperties().size();
-            di.requestedCount  = n;
+            // The apply never ran (no_map / fetch timeout / stale rungs), or
+            // unusableMap per above: the denominator is the pre-apply count
+            // of requested entries — A7.2's entry semantic via the ONE shared
+            // implementation (A8.1a: the old top-level property count here
+            // made a controls object with five entries count as one, so the
+            // tally would inherit a denominator the rows' numerator can
+            // structurally exceed).
+            di.requestedCount  = echojay::requestedEntryCount(s.structuredSettings);
             di.requestedSource = "keys";
         }
         out.push_back(std::move(di));

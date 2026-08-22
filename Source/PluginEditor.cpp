@@ -21632,19 +21632,24 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
     std::vector<PartialPart> partialParts, zeroOorParts;
     for (const auto& di : ch.getDialInfos())
     {
+        // dial-4 A8: population, counted where the rows are logged so the
+        // two derive from the same snapshot. Once per slot-turn — this
+        // walker and logDialMissesWhenSettled are if/else alternatives at
+        // their call site, and the edit walker is a different turn type.
+        noteDialTallyFromInfo(di);
         // Written-but-display-stale (bridged report-only) is recorded
         // queryably whatever the slot status: the write was kept on norm
         // proof and the display disagreement must not vanish into the
         // applied count.
         if (!di.unconfirmed.isEmpty())
             logDialMiss(di.name, di.fp, "stale_display_kept", di.unconfirmed,
-                        di.format, di.uid, di.requestedCount, di.requestedSource);
+                        di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
         // Range refusals are recorded whatever the slot status: the bubble
         // must never say "use the values on its card" about a value the
         // card says will not map onto this version.
         if (!di.outOfRange.isEmpty())
             logDialMiss(di.name, di.fp, "out_of_range", di.outOfRange,
-                        di.format, di.uid, di.requestedCount, di.requestedSource);
+                        di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
         switch (di.status)
         {
             case ChainHost::DialStatus::applied:
@@ -21653,10 +21658,10 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
             case ChainHost::DialStatus::partial:
                 partialParts.push_back({ di.name, di.manual, di.outOfRange });
                 logDialMiss(di.name, di.fp, "partial", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource);
+                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                 if (!di.readbackMiss.isEmpty())
                     logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
-                                di.format, di.uid, di.requestedCount, di.requestedSource);
+                                di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                 break;
             case ChainHost::DialStatus::noMap:
                 // Stale-map ladder, unmapped rung: the plugin loaded at a
@@ -21667,25 +21672,27 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                 {
                     staleParts.add(di.name);
                     logDialMiss(di.name, di.fp, "stale_unmapped", di.manual,
-                                di.format, di.uid, di.requestedCount, di.requestedSource);
+                                di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                     break;
                 }
                 zeroParts.add(di.name);
                 logDialMiss(di.name, di.fp, "no_map", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource);
+                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                 break;
             case ChainHost::DialStatus::unusableMap:
                 if (!di.outOfRange.isEmpty())
                 {
                     zeroOorParts.push_back({ di.name, di.manual, di.outOfRange });
-                    logDialMiss(di.name, di.fp, "unusable_map", di.manual);
+                    logDialMiss(di.name, di.fp, "unusable_map", di.manual,
+                                di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                     break;
                 }
                 zeroParts.add(di.name);
-                logDialMiss(di.name, di.fp, "unusable_map", di.manual);
+                logDialMiss(di.name, di.fp, "unusable_map", di.manual,
+                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                 if (!di.readbackMiss.isEmpty())
                     logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
-                                di.format, di.uid, di.requestedCount, di.requestedSource);
+                                di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                 break;
             case ChainHost::DialStatus::pending:
                 // Fetch never answered inside the cap: NEVER fall through to
@@ -21693,7 +21700,7 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                 // late apply (if it lands) updates the slot card anyway.
                 zeroParts.add(di.name);
                 logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource);
+                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                 break;
             case ChainHost::DialStatus::none:
                 break;
@@ -21822,30 +21829,13 @@ void EchoJayEditor::composeStaleAltFollowUp(const juce::StringArray& staleNames,
 // same-named slots are indistinguishable at this level - a name-level
 // approximation, accepted.
 // dial-3 (A7.2, "keys" source): requested-entry count of one edit op's
-// settings_structured — top-level flat keys, plus entries of "controls",
-// plus "bands" elements: the same granularity applySettings reports one
-// result per. Used for refine_dropped rows, whose names are removed
-// SERVER-side and never reach the client apply's report.size().
+// settings_structured. Used for refine_dropped rows, whose names are removed
+// SERVER-side and never reach the client apply's report.size(). Since A8.1a
+// the semantic has ONE implementation, shared with getDialInfos' fallback,
+// so the two keys-sourced sites cannot diverge again.
 static int structuredRequestCount (const juce::var& structured)
 {
-    auto* o = structured.getDynamicObject();
-    if (o == nullptr) return 0;
-    int n = 0;
-    for (auto& kv : o->getProperties())
-    {
-        const auto k = kv.name.toString();
-        if (k == "controls")
-        {
-            if (auto* co = kv.value.getDynamicObject()) n += co->getProperties().size();
-        }
-        else if (k == "bands")
-        {
-            if (auto* ba = kv.value.getArray()) n += ba->size();
-        }
-        else
-            ++n;
-    }
-    return n;
+    return echojay::requestedEntryCount (structured);
 }
 
 void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson,
@@ -21917,6 +21907,12 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 // format||name and flags it, per A2).
                 const int reqCount = structuredRequestCount(
                     opv.getProperty("settings_structured", juce::var()));
+                // dial-4 A8.1a: this op's apply ALSO runs (its surviving
+                // settings reach applyStructuredIfReady, whose walker bumps
+                // applies) — so this site contributes the dropped entries'
+                // count ONLY. Bumping applies here too is the double-count
+                // the mapfps_test pin exists for.
+                noteDialTallyRefine(plug, /*opReachesApply*/ true, dc->size());
                 for (auto& dv : *dc)
                     if (auto* dobj = dv.getDynamicObject())
                     {
@@ -21924,7 +21920,8 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                             + " on " + plug + " (" + dobj->getProperty("reason").toString() + ")");
                         logDialMiss(plug, juce::String(), "refine_dropped",
                                     { dobj->getProperty("name").toString() },
-                                    juce::String(), juce::String(), reqCount, "keys");
+                                    juce::String(), juce::String(), reqCount, "keys",
+                                    ChainHost::isBuiltinName(plug));
                     }
             }
         }
@@ -21935,12 +21932,14 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
     for (const auto& di : ch.getDialInfos())
     {
         if (!touchedNames.contains(di.name)) continue;
+        // dial-4 A8: population for the touched slots, beside their rows.
+        noteDialTallyFromInfo(di);
         if (!di.unconfirmed.isEmpty())   // bridged report-only: same record as the build path
             logDialMiss(di.name, di.fp, "stale_display_kept", di.unconfirmed,
-                        di.format, di.uid, di.requestedCount, di.requestedSource);
+                        di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
         if (!di.outOfRange.isEmpty())    // range refusals: same record as the build path
             logDialMiss(di.name, di.fp, "out_of_range", di.outOfRange,
-                        di.format, di.uid, di.requestedCount, di.requestedSource);
+                        di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
         switch (di.status)
         {
             case ChainHost::DialStatus::applied:
@@ -21949,10 +21948,10 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
             case ChainHost::DialStatus::partial:
                 partialParts.push_back({ di.name, di.manual, di.outOfRange });
                 logDialMiss(di.name, di.fp, "partial", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource);
+                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                 if (!di.readbackMiss.isEmpty())
                     logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
-                                di.format, di.uid, di.requestedCount, di.requestedSource);
+                                di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                 break;
             case ChainHost::DialStatus::noMap:
                 // Stale-map ladder, unmapped rung: same diversion as the
@@ -21961,25 +21960,27 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 {
                     staleParts.add(di.name);
                     logDialMiss(di.name, di.fp, "stale_unmapped", di.manual,
-                                di.format, di.uid, di.requestedCount, di.requestedSource);
+                                di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                     break;
                 }
                 zeroParts.add(di.name);
                 logDialMiss(di.name, di.fp, "no_map", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource);
+                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                 break;
             case ChainHost::DialStatus::unusableMap:
                 if (!di.outOfRange.isEmpty())
                 {
                     zeroOorParts.push_back({ di.name, di.manual, di.outOfRange });
-                    logDialMiss(di.name, di.fp, "unusable_map", di.manual);
+                    logDialMiss(di.name, di.fp, "unusable_map", di.manual,
+                                di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                     break;
                 }
                 zeroParts.add(di.name);
-                logDialMiss(di.name, di.fp, "unusable_map", di.manual);
+                logDialMiss(di.name, di.fp, "unusable_map", di.manual,
+                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                 if (!di.readbackMiss.isEmpty())
                     logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
-                                di.format, di.uid, di.requestedCount, di.requestedSource);
+                                di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                 break;
             case ChainHost::DialStatus::pending:
                 // Fetch never answered inside the cap: NEVER fall through
@@ -21987,7 +21988,7 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 // late apply (if it lands) updates the slot card anyway.
                 zeroParts.add(di.name);
                 logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource);
+                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
                 break;
             case ChainHost::DialStatus::none:
                 // Touched and carried settings, yet nothing structured
@@ -22158,10 +22159,26 @@ juce::String EchoJayEditor::consumeSuggestionSetsAtReceipt(const juce::String& e
                                          : " couldn't be set by name on ")
                     + infos[(size_t) idx].name
                     + " - the values are on its card to dial by hand.");
+                // dial-4 A8.1a: a receipt-consumed op NEVER reaches the apply
+                // pipeline, so this is its only site — it bumps applies AND
+                // carries the dropped entries' count.
+                noteDialTallyRefine(infos[(size_t) idx].name,
+                                    /*opReachesApply*/ false, dc->size());
+                // dial-4 A8.8: requested rides the row, or the batch builder
+                // skips it as pre-contract shape and the reason stays
+                // censored — receipt-path refine_dropped had never shipped a
+                // single row in the life of the counter. A consumed op's
+                // settings_structured is void by the suggestionOnly test, so
+                // the op's requested-entry count (A7.2) reduces to the
+                // dropped entries themselves: dc->size(), source "keys" —
+                // the same count the tally accumulated one line up. No slot
+                // identity, same reasoning as the Apply-path site.
                 for (auto& dv : *dc)
                     if (auto* dobj = dv.getDynamicObject())
                         logDialMiss(infos[(size_t) idx].name, juce::String(),
-                                    "refine_dropped", { dobj->getProperty("name").toString() });
+                                    "refine_dropped", { dobj->getProperty("name").toString() },
+                                    juce::String(), juce::String(), dc->size(), "keys",
+                                    ChainHost::isBuiltinName(infos[(size_t) idx].name));
             }
         }
     }
@@ -22194,30 +22211,42 @@ void EchoJayEditor::logDialMissesWhenSettled(int attemptsLeft)
                                             : "dial NOT settled, retry budget exhausted");
     for (const auto& di : ch.getDialInfos())
     {
+        // dial-4 A8: population, beside the rows (see the build walker).
+        noteDialTallyFromInfo(di);
         if (di.status == ChainHost::DialStatus::noMap)
             logDialMiss(di.name, di.fp, "no_map", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource);
+                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
         else if (di.status == ChainHost::DialStatus::unusableMap)
-            logDialMiss(di.name, di.fp, "unusable_map", di.manual);
+            logDialMiss(di.name, di.fp, "unusable_map", di.manual,
+                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
         else if (di.status == ChainHost::DialStatus::partial)
             logDialMiss(di.name, di.fp, "partial", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource);
+                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
         else if (di.status == ChainHost::DialStatus::pending)
             logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource);
+                            di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
         if ((di.status == ChainHost::DialStatus::partial
              || di.status == ChainHost::DialStatus::unusableMap)
             && !di.readbackMiss.isEmpty())
             logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
-                                di.format, di.uid, di.requestedCount, di.requestedSource);
+                                di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
     }
 }
 
 void EchoJayEditor::logDialMiss(const juce::String& plugin, const juce::String& fp,
                                 const juce::String& reason, const juce::StringArray& manual,
                                 const juce::String& format, const juce::String& uid,
-                                int requested, const juce::String& requestedSource)
+                                int requested, const juce::String& requestedSource,
+                                bool builtinSlot)
 {
+    // dial-4 A8.1b (corrected 22 Aug): built-ins leave the ROWS as well as
+    // the tally — refused HERE, at the one emitter, so the walkers cannot
+    // disagree about it. A built-in failing to take a setting is a real
+    // failure with a different cause and no map in it; folding it into a
+    // map-path rate would swamp what this instrument measures. Slot walkers
+    // pass di.builtin; name-only sites pass ChainHost::isBuiltinName;
+    // slotless reasons (A7.1) have no slot to be built-in and default false.
+    if (! echojay::dialRowAdmits(builtinSlot)) return;
     // events.jsonl schema v1 (EchoJayEventLog.h): upload-ready field names.
     auto* f = new juce::DynamicObject();
     f->setProperty("plugin", plugin);
@@ -22250,15 +22279,70 @@ static juce::File dialDeclineWatermarkFile()
     return echojay::eventLogDir().getChildFile("dial_declines_watermark.txt");
 }
 
+// dial-4 A8.4: the attempt tally lives beside the watermark, in the same
+// client store, so it survives exactly what the watermark survives (editor
+// recreate included — the in-memory copy is a lazily loaded cache of this).
+static juce::File dialTallyFile()
+{
+    return echojay::eventLogDir().getChildFile("dial_attempt_tally.json");
+}
+
+void EchoJayEditor::loadDialTallyIfNeeded()
+{
+    if (dialTallyLoaded_) return;
+    dialTallyLoaded_ = true;
+    auto f = dialTallyFile();
+    if (f.existsAsFile())
+        dialTally_ = echojay::DialAttemptTally::fromAttemptsVar(
+            juce::JSON::parse(f.loadFileAsString()));
+}
+
+void EchoJayEditor::saveDialTally()
+{
+    auto f = dialTallyFile();
+    f.getParentDirectory().createDirectory();
+    f.replaceWithText(juce::JSON::toString(dialTally_.toAttemptsVar(), true) + "\n");
+}
+
+// The settle-walker site: one settled slot-turn, clean included — this is
+// what makes the denominator marginal rather than conditional (A8's whole
+// reason). Status `none` is not a slot-turn (no settings this turn), and a
+// built-in never enters (A8.1b, via the same dialTallyAdmits the pin tests).
+void EchoJayEditor::noteDialTallyFromInfo(const ChainHost::SlotDialInfo& di)
+{
+    if (di.status == ChainHost::DialStatus::none) return;
+    loadDialTallyIfNeeded();
+    echojay::noteDialApplySite(dialTally_, di.format, di.uid,
+                               di.requestedCount, di.builtin);
+    saveDialTally();
+}
+
+// The refine sites: dropped_controls entries, absent from report.size() by
+// construction. opReachesApply is A8.1a's once-rule — the Apply-path site
+// passes true (the apply site bumps applies for that slot-turn), the
+// receipt-consumed site passes false (this is its only site).
+void EchoJayEditor::noteDialTallyRefine(const juce::String& pluginName,
+                                        bool opReachesApply, int droppedCount)
+{
+    loadDialTallyIfNeeded();
+    echojay::noteDialRefineSite(dialTally_, opReachesApply, droppedCount,
+                                ChainHost::isBuiltinName(pluginName));
+    saveDialTally();
+}
+
 juce::String EchoJayEditor::buildDialDeclinesBatchJson()
 {
     pendingDeclineWatermark_ = -1;
+    // dial-4 A8.4: a fresh stage voids any previous unshipped stage, exactly
+    // as the watermark line above does — the tally itself is untouched until
+    // the SUCCESS handler subtracts what actually shipped.
+    dialTallyPendingShip_ = false;
+    pendingShippedTally_  = {};
     const juce::int64 wm = dialDeclineWatermarkFile().loadFileAsString().trim().getLargeIntValue();
     auto f = echojay::eventLogDir().getChildFile("events.jsonl");
-    if (! f.existsAsFile()) return {};
 
     juce::StringArray lines;
-    lines.addLines(f.loadFileAsString());
+    if (f.existsAsFile()) lines.addLines(f.loadFileAsString());
     juce::Array<juce::var> rows;   // file order == t ascending (append-only)
     for (auto& ln : lines)
     {
@@ -22295,8 +22379,6 @@ juce::String EchoJayEditor::buildDialDeclinesBatchJson()
         else
             addRow({});
     }
-    if (rows.isEmpty()) return {};
-
     // A7.3 caps: backlog 256 — the OLDEST are dropped and COUNTED (the
     // shipped rows' max t then moves the watermark past them, so a drop is
     // permanent, never a silent re-queue). Per-turn 32, oldest first; the
@@ -22308,12 +22390,44 @@ juce::String EchoJayEditor::buildDialDeclinesBatchJson()
     juce::int64 maxT = -1;
     for (auto& r : ship)
         maxT = juce::jmax(maxT, (juce::int64) (double) r.getProperty("t", juce::var()));
-    pendingDeclineWatermark_ = maxT;
+    pendingDeclineWatermark_ = maxT;   // -1 when no rows: nothing to commit
+
+    // dial-4 A8: the attempt tally rides the same envelope. Staged as a
+    // SNAPSHOT (consumed-at-build, the mapFps pattern — a transport retry
+    // cannot ship it twice); the success handler subtracts exactly this
+    // snapshot, so applies accumulated between stage and success survive.
+    // Cap 32 entries per turn (A8.1); overflow waits for the next turn,
+    // never truncates silently.
+    loadDialTallyIfNeeded();
+    juce::var attemptsVar;
+    {
+        echojay::DialAttemptTally staged;
+        for (const auto& e : dialTally_.entries)
+        {
+            if (e.applies == 0 && e.requested == 0) continue;
+            if ((int) staged.entries.size() >= 32) break;   // overflow rides next turn
+            staged.entries.push_back(e);
+        }
+        if (! staged.empty())
+        {
+            attemptsVar           = staged.toAttemptsVar();
+            pendingShippedTally_  = std::move(staged);
+            dialTallyPendingShip_ = true;
+        }
+    }
+
+    // A8.1: the envelope ships whenever attempts is non-empty, EVEN with
+    // rows empty — clean-only stretches are the whole disease; a tally that
+    // only rides decline turns reproduces the conditional denominator one
+    // level up.
+    if (ship.isEmpty() && ! dialTallyPendingShip_) return {};
 
     auto* env = new juce::DynamicObject();
     env->setProperty("batch", juce::Uuid().toDashedString());  // A7.3: random per batch, dedupe key, deliberately NOT machine_id
     env->setProperty("rows", juce::var(ship));
     env->setProperty("dropped", dropped);
+    if (dialTallyPendingShip_)
+        env->setProperty("attempts", attemptsVar);
     return juce::JSON::toString(juce::var(env), true);
 }
 
@@ -25913,6 +26027,17 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
             dialDeclineWatermarkFile().replaceWithText(
                 juce::String(pendingDeclineWatermark_) + "\n");
             pendingDeclineWatermark_ = -1;
+        }
+        // dial-4 A8.4: reset ONLY on send success, and by SUBTRACTING the
+        // staged snapshot — never by clearing, so slot-turns accumulated
+        // between stage and this reply survive into the next batch. A failed
+        // send never reaches here; the untouched tally rides the next turn.
+        if (dialTallyPendingShip_)
+        {
+            dialTally_.subtract(pendingShippedTally_);
+            saveDialTally();
+            pendingShippedTally_  = {};
+            dialTallyPendingShip_ = false;
         }
         hadChainOpener = EchoJayAPI::extractChainBlock(visibleReply, chainJson);
         if (EchoJayAPI::extractGainBlock(visibleReply, gainJson))

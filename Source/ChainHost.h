@@ -187,6 +187,12 @@ public:
         juce::String      uid;             // hex uid, same rendering as getSlotIdentity; "" = none
         int               requestedCount = 0;
         juce::String      requestedSource;  // "apply" | "keys"
+        // dial-4 A8.1b: the built-in exclusion needs the distinction AT the
+        // settle walkers, and dial STATUS cannot carry it — the built-in
+        // apply sets applied/partial/unusableMap exactly like a third-party
+        // slot. APPENDED last (stale-lib ABI: test TUs pair this header with
+        // the previous build's lib until the next full build).
+        bool              builtin = false;
     };
     std::vector<SlotDialInfo> getDialInfos() const;
     // One line per slot, at the END of a build, saying what actually dialled.

@@ -14,6 +14,7 @@
 #include "EchoJayWorkspace.h"
 #include "CodecRender.h"
 #include "DashboardTab.h"
+#include "EJDialTally.h"
 
 // Stage 2: the lazy webview Dashboard surface. Full type in DashboardWeb.h,
 // included from PluginEditor.cpp; the header only needs the incomplete type for
@@ -1273,12 +1274,28 @@ private:
     void logDialMiss(const juce::String& plugin, const juce::String& fp,
                      const juce::String& reason, const juce::StringArray& manual,
                      const juce::String& format = {}, const juce::String& uid = {},
-                     int requested = -1, const juce::String& requestedSource = {});
+                     int requested = -1, const juce::String& requestedSource = {},
+                     bool builtinSlot = false);
     // dial-3 carrier (A7.3): the declined-name batch for THIS send, read
     // from events.jsonl above the watermark. "" = nothing to ship. Sets
     // pendingDeclineWatermark_; handleChatReply's success branch commits it.
     juce::String buildDialDeclinesBatchJson();
     juce::int64 pendingDeclineWatermark_ = -1;
+    // dial-4 A8: the attempt tally — a DELTA since the last successful send,
+    // file-persisted beside the watermark (it survives what the watermark
+    // survives, including an editor recreate), staged into the A7.3 envelope
+    // at body build, subtracted only on send success. Accumulated at the
+    // settle walkers (noteDialTallyFromInfo, once per slot-turn) and the two
+    // refine sites (noteDialTallyRefine); built-ins never enter (A8.1b).
+    echojay::DialAttemptTally dialTally_;
+    echojay::DialAttemptTally pendingShippedTally_;   // staged subset, awaiting success
+    bool dialTallyLoaded_      = false;               // lazy one-shot file load
+    bool dialTallyPendingShip_ = false;
+    void loadDialTallyIfNeeded();
+    void saveDialTally();
+    void noteDialTallyFromInfo(const ChainHost::SlotDialInfo& di);
+    void noteDialTallyRefine(const juce::String& pluginName, bool opReachesApply,
+                             int droppedCount);
     // Alt pill on PLAIN messages (result bubbles): height helper shared by
     // the measure and paint passes (edit cards carry their pill inside
     // editCardHeight; this returns 0 for them)

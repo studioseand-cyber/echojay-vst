@@ -25,6 +25,7 @@
 */
 
 #include <JuceHeader.h>
+#include "EJDialTally.h"         // dial-4 A8: header-inline, the shipped tally
 #include "EchoJayParamMaps.h"
 #include "EchoJayParamApply.h"
 #include "EchoJayHistoryTrim.h"
@@ -777,6 +778,183 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "latestChannelChatId decides through latestChatForLink");
             check (! edSrc.contains ("findChannelChatId"),
                    "the first-match lookup name is gone from PluginEditor.cpp");
+        }
+    }
+
+    // ---- dial-4 A8: the attempt tally, the two contract pins -----------------
+    // CONTRACT_racked_slot_controls.md A8.1a / A8.1b name these two pins
+    // explicitly; the built-in one is client-enforced and server-unverifiable,
+    // so this suite is the only place it can ever be caught.
+    {
+        std::cout << "dial-4 A8 attempt tally:\n";
+        using echojay::DialAttemptTally;
+
+        // PIN 1 (A8.1a): one slot-turn that touches BOTH sites — the apply
+        // walker (surviving settings, report.size()==3) and the refine site
+        // (2 entries refine-dropped before the apply). applies must increment
+        // EXACTLY once while requested carries both sites' counts. The
+        // natural implementation bumps at each site and double-counts the
+        // population while leaving requested correct: the rate survives and
+        // the readability number lies.
+        {
+            DialAttemptTally t;
+            echojay::noteDialApplySite  (t, "AudioUnit", "3d30727d", 3, /*builtin*/ false);
+            echojay::noteDialRefineSite (t, /*opReachesApply*/ true, 2, /*builtin*/ false);
+            check (t.totalApplies() == 1,
+                   "A8.1a both-sites slot-turn: applies incremented exactly once",
+                   "applies=" + juce::String (t.totalApplies()));
+            check (t.totalRequested() == 5,
+                   "A8.1a both-sites slot-turn: requested carries both sites' counts (3+2)",
+                   "requested=" + juce::String (t.totalRequested()));
+            // The refine contribution is identityless BY DESIGN (its rows are
+            // too): it counts under format|| and the server flags it.
+            check (t.entryFor ("AudioUnit", "3d30727d").applies == 1
+                   && t.entryFor ("", "").applies == 0
+                   && t.entryFor ("", "").requested == 2,
+                   "A8.1a refine contribution is requested-only, under the empty identity");
+        }
+        // The receipt-consumed op never reaches the apply: its refine site is
+        // its ONLY site, so there it does bump.
+        {
+            DialAttemptTally t;
+            echojay::noteDialRefineSite (t, /*opReachesApply*/ false, 4, /*builtin*/ false);
+            check (t.totalApplies() == 1 && t.totalRequested() == 4,
+                   "A8.1a receipt-consumed op: the refine site bumps, once");
+        }
+
+        // PIN 2 (A8.1b): a built-in slot-turn contributes NOTHING — not to
+        // applies, not to requested, through either site. A client that gets
+        // this wrong biases every mixed-rack rate downward with no signal
+        // anywhere, and most racks carry built-ins.
+        {
+            DialAttemptTally t;
+            echojay::noteDialApplySite  (t, "EchoJay", "", 6, /*builtin*/ true);
+            echojay::noteDialRefineSite (t, false, 3,        /*builtin*/ true);
+            check (t.empty(), "A8.1b built-in slot-turn contributes nothing to the tally");
+            check (echojay::dialTallyAdmits (false) && ! echojay::dialTallyAdmits (true),
+                   "A8.1b admission rule: third-party in, built-in out");
+            // Corrected 22 Aug (Sean's ruling): built-ins leave the ROWS as
+            // well, so the clause's premise becomes true. The server cannot
+            // catch a violation — an empty uid is also a legitimate
+            // unknown-third-party shape — so this pin is the only witness.
+            check (echojay::dialRowAdmits (false) && ! echojay::dialRowAdmits (true),
+                   "A8.1b row admission: same rule, rows side");
+        }
+
+        // A8.1a NORMALIZATION: the keys-path count is A7.2's ENTRY semantic
+        // — flat keys, plus entries of "controls", plus "bands" elements —
+        // through the ONE shared implementation. The defect this pins out:
+        // getDialInfos' fallback counted top-level properties, so a controls
+        // object with five entries counted as ONE and the denominator
+        // diverged structurally on exactly the slots the apply never saw.
+        {
+            auto obj = [] { return new juce::DynamicObject(); };
+            juce::var flat (obj());
+            flat.getDynamicObject()->setProperty ("attack_ms", 3);
+            flat.getDynamicObject()->setProperty ("ratio", 4);
+            check (echojay::requestedEntryCount (flat) == 2,
+                   "entry count: flat keys count one each");
+
+            juce::var five (obj());
+            {
+                auto* co = obj();
+                for (int i = 0; i < 5; ++i)
+                    co->setProperty ("c" + juce::String (i), i);
+                five.getDynamicObject()->setProperty ("controls", juce::var (co));
+            }
+            check (echojay::requestedEntryCount (five) == 5,
+                   "entry count: a controls object with five entries is FIVE, not one",
+                   "got " + juce::String (echojay::requestedEntryCount (five)));
+
+            juce::var mixed (obj());
+            mixed.getDynamicObject()->setProperty ("mix_pct", 30);
+            {
+                auto* co = obj();
+                co->setProperty ("Threshold", -18);
+                co->setProperty ("Ratio", 4);
+                mixed.getDynamicObject()->setProperty ("controls", juce::var (co));
+                juce::Array<juce::var> bands;
+                bands.add (juce::var (obj()));
+                bands.add (juce::var (obj()));
+                mixed.getDynamicObject()->setProperty ("bands", juce::var (bands));
+            }
+            check (echojay::requestedEntryCount (mixed) == 5,
+                   "entry count: flat + controls entries + bands elements (1+2+2)",
+                   "got " + juce::String (echojay::requestedEntryCount (mixed)));
+            check (echojay::requestedEntryCount (juce::var()) == 0,
+                   "entry count: non-object counts zero");
+        }
+
+        // Lifecycle: round-trip (persistence shape) and subtract-on-success
+        // (A8.4: applies accumulated between stage and success survive).
+        {
+            DialAttemptTally t;
+            echojay::noteDialApplySite (t, "AudioUnit", "aa", 5, false);
+            echojay::noteDialApplySite (t, "VST3",      "bb", 2, false);
+            auto rt = DialAttemptTally::fromAttemptsVar (t.toAttemptsVar());
+            check (rt.totalApplies() == 2 && rt.totalRequested() == 7
+                   && rt.entryFor ("VST3", "bb").requested == 2,
+                   "tally round-trips through its wire/persist shape");
+
+            auto staged = t;                                   // snapshot at body build
+            echojay::noteDialApplySite (t, "AudioUnit", "aa", 4, false);  // lands mid-flight
+            t.subtract (staged);                               // send succeeded
+            check (t.totalApplies() == 1 && t.totalRequested() == 4
+                   && t.entryFor ("AudioUnit", "aa").applies == 1,
+                   "subtract-on-success keeps slot-turns accumulated between stage and reply");
+            t.subtract (t);
+            check (t.entries.empty(), "fully shipped tally drops to no entries");
+        }
+
+        // Structural: the wiring uses the policy functions with the RIGHT
+        // once-rule arguments — the double-count lives at the call sites,
+        // not in the struct, so the sites are pinned by source.
+        {
+            std::ifstream fed ("Source/PluginEditor.cpp");
+            std::stringstream sed_;
+            sed_ << fed.rdbuf();
+            const juce::String edSrc (sed_.str());
+            check (edSrc.contains ("noteDialTallyRefine(plug, /*opReachesApply*/ true"),
+                   "apply-path refine site passes opReachesApply=true (requested-only)");
+            check (edSrc.contains ("/*opReachesApply*/ false, dc->size())"),
+                   "receipt-consumed refine site passes opReachesApply=false (its only site)");
+            check (edSrc.contains ("noteDialTallyFromInfo(di);"),
+                   "the settle walkers accumulate the population beside the rows");
+
+            // A8.1b rows side: the exclusion lives at the ONE emitter, and
+            // every slot-walker call carries di.builtin — a full-form call
+            // still ending at requestedSource would be a site the refusal
+            // cannot see.
+            check (edSrc.contains ("if (! echojay::dialRowAdmits(builtinSlot)) return;"),
+                   "A8.1b: logDialMiss refuses built-in rows via dialRowAdmits");
+            check (edSrc.contains ("di.requestedCount, di.requestedSource, di.builtin);"),
+                   "A8.1b: slot walkers pass di.builtin into the row emitter");
+            check (! edSrc.contains ("di.requestedCount, di.requestedSource);"),
+                   "A8.1b: no walker row call left without the builtin flag");
+
+            // A8.8: the two censored reasons now carry requested, so the
+            // batch builder's pre-contract skip cannot silently eat them.
+            // unusable_map rides the walkers' full-form call (above); the
+            // receipt-path refine row carries its op entry count, dc->size().
+            check (! edSrc.contains ("\"unusable_map\", di.manual);"),
+                   "A8.8: no bare unusable_map row call remains (requested now rides)");
+            check (edSrc.contains ("juce::String(), juce::String(), dc->size(), \"keys\","),
+                   "A8.8: receipt-path refine row ships requested=dc->size(), source keys");
+        }
+        // The keys-path count semantic, wired: getDialInfos' fallback goes
+        // through the shared entry-count implementation (not the top-level
+        // property count), and unusableMap is keys-designated even when the
+        // apply loop ran (A8.8 — report 0 hid the row; A7.1 bars requested 0
+        // from every rate).
+        {
+            std::ifstream fch ("Source/ChainHost.cpp");
+            std::stringstream sch_;
+            sch_ << fch.rdbuf();
+            const juce::String chSrc (sch_.str());
+            check (chSrc.contains ("echojay::requestedEntryCount(s.structuredSettings)"),
+                   "A8.1a: getDialInfos' keys fallback uses the shared entry count");
+            check (chSrc.contains ("s.dialRequestedCount >= 0 && s.dialStatus != DialStatus::unusableMap"),
+                   "A8.8: unusableMap is keys-sourced by designation at getDialInfos");
         }
     }
 
