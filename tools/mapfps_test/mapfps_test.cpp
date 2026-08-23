@@ -928,7 +928,11 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             // cannot see.
             check (edSrc.contains ("if (! echojay::dialRowAdmits(builtinSlot)) return;"),
                    "A8.1b: logDialMiss refuses built-in rows via dialRowAdmits");
-            check (edSrc.contains ("di.requestedCount, di.requestedSource, di.builtin);"),
+            // A9 §7: this literal changed when also_reasons was appended after
+            // di.builtin. The BEHAVIOUR it guards is unchanged — the emitter
+            // must still pass di.builtin — so the literal moves and the
+            // mutation check re-proves it goes red.
+            check (edSrc.contains ("di.builtin, row.alsoReasons);"),
                    "A8.1b: slot walkers pass di.builtin into the row emitter");
             check (! edSrc.contains ("di.requestedCount, di.requestedSource);"),
                    "A8.1b: no walker row call left without the builtin flag");
@@ -1007,17 +1011,24 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (got.contains ("readback_mismatch[Default]"),
                    "A9: readbackMiss + outOfRange together STILL emits the readback row",
                    "got " + got);
-            check (got.contains ("out_of_range[Attack]") && got.contains ("unusable_map[Default]"),
-                   "A9: the range refusal and the verdict ride alongside it", "got " + got);
-            check (echojay::dialMissRowsFor (di).size() == 3,
-                   "A9: exactly three rows, none suppressing another",
+            // UPDATED BY STEP 2. Step 1 asserted a standalone unusable_map row
+            // beside these two; the partition folds that verdict into each
+            // control's row as also_reasons, so two controls give two rows and
+            // the rollup claims neither. The 21688 guarantee this pin exists
+            // for is untouched: the readback row is still here.
+            check (got.contains ("out_of_range[Attack]") && ! got.contains ("unusable_map["),
+                   "A9: the range refusal rides its own row and the verdict claims neither",
+                   "got " + got);
+            check (echojay::dialMissRowsFor (di).size() == 2,
+                   "A9: two controls, two rows, neither suppressing the other",
                    "got " + juce::String ((int) echojay::dialMissRowsFor (di).size()));
         }
-        // ...and with outOfRange EMPTY the readback row is unchanged: the fix
-        // adds a row to one case, it does not move the other.
+        // ...and with outOfRange EMPTY the readback row is still the only row
+        // for that control. Step 1 expected a separate unusable_map row here;
+        // step 2 carries it as also_reasons instead (pinned below).
         check (render (slot (Status::unusableMap, { "Default" }, {}, { "Default" }))
-                   == "unusable_map[Default];readback_mismatch[Default]",
-               "A9: the outOfRange-empty case is untouched by the fix");
+                   == "readback_mismatch[Default]",
+               "A9: the outOfRange-empty case is one row for the one control");
 
         // PIN 2: the full reason set, so a caller cannot omit one. These are
         // exactly the reasons walker 3 used to drop on the floor.
@@ -1071,6 +1082,128 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (functionBody (edSrc, "void EchoJayEditor::emitDialMissRows")
                        .contains ("echojay::dialMissRowsFor(di)"),
                    "A9: the emitter derives its reasons from the shared author");
+        }
+    }
+
+    // ---- A9 step 2: the partition ------------------------------------------
+    // One declined CONTROL, one row. Further reasons for that same control
+    // ride as also_reasons. The key is control identity — index when >= 0,
+    // else the label — so one control that failed twice merges, while two
+    // controls that failed differently stay apart.
+    {
+        std::cout << "A9 step 2 partition:\n";
+        using Status = ChainHost::DialStatus;
+
+        // Fixtures are the four label arrays, which is all the emitter reads.
+        // An index-keyed per-control carrier was built for this and stripped:
+        // the only state where it changes the answer is one control carrying
+        // two causes, and that state has no code path (the causes are
+        // exclusive per result, and one parameter cannot be reached twice
+        // under one semanticLabel).
+        auto slotWith = [] (Status st, juce::StringArray manual,
+                            juce::StringArray readbackMiss = {},
+                            juce::StringArray outOfRange   = {},
+                            juce::StringArray unconfirmed  = {})
+        {
+            ChainHost::SlotDialInfo di;
+            di.name = "Solid EQ"; di.fp = "733068b9";
+            di.format = "VST3";   di.uid = "1a9dbcc1";
+            di.status = st;
+            di.manual       = std::move (manual);
+            di.readbackMiss = std::move (readbackMiss);
+            di.outOfRange   = std::move (outOfRange);
+            di.unconfirmed  = std::move (unconfirmed);
+            di.requestedCount = 1; di.requestedSource = "keys";
+            return di;
+        };
+        // reason[names]{also,reasons} — also_reasons made visible, because its
+        // ABSENCE is one of the things being pinned.
+        auto show = [] (const ChainHost::SlotDialInfo& di)
+        {
+            juce::String s;
+            for (const auto& r : echojay::dialMissRowsFor (di))
+            {
+                s << (s.isEmpty() ? "" : ";") << r.reason << "[" << r.names.joinIntoString (",") << "]";
+                if (! r.alsoReasons.isEmpty()) s << "{" << r.alsoReasons.joinIntoString (",") << "}";
+            }
+            return s;
+        };
+
+        // PIN 1 — the Solid EQ case exactly (events.jsonl:166-167). One
+        // control, unusableMap verdict plus readbackMiss: ONE row, reason
+        // readback_mismatch, also_reasons ["unusable_map"]. Two rows here is
+        // the over-unity that put the identity's rate at 2.00 (§1b).
+        {
+            const auto di = slotWith (Status::unusableMap, { "Default" }, { "Default" });
+            check (show (di) == "readback_mismatch[Default]{unusable_map}",
+                   "A9.2 PIN1 Solid EQ: one row, readback_mismatch, also unusable_map",
+                   "got " + show (di));
+            check (echojay::dialMissRowsFor (di).size() == 1,
+                   "A9.2 PIN1 Solid EQ: exactly one row for the one control");
+        }
+
+        // PIN 2 — the same overlap under `partial`, the largest reason in the
+        // corpus (§1a). A control in both manual and readbackMiss is ONE row.
+        {
+            const auto di = slotWith (Status::partial, { "attack" }, { "attack" });
+            check (show (di) == "readback_mismatch[attack]{partial}",
+                   "A9.2 PIN2 partial: manual + readbackMiss yields one row",
+                   "got " + show (di));
+        }
+
+        // PIN 3 — TWO CONTROLS, TWO ROWS. One band refused for range, another
+        // band landed wrong; both collapse to the label "freq". It reads like
+        // a contradiction of PIN 1 and is not: PIN 1 stops ONE control being
+        // reported twice, this keeps TWO controls from being reported once.
+        // Partitioning on the label alone would turn an accidentally correct 2
+        // into a newly wrong 1 (§2).
+        {
+            const auto di = slotWith (Status::partial, { "freq" }, { "freq" }, { "freq" });
+            check (echojay::dialMissRowsFor (di).size() == 2,
+                   "A9.2 PIN3 two causes on one label yield TWO rows",
+                   "got " + juce::String ((int) echojay::dialMissRowsFor (di).size())
+                   + " -> " + show (di));
+            check (show (di).contains ("out_of_range[freq]")
+                   && show (di).contains ("readback_mismatch[freq]"),
+                   "A9.2 PIN3 both causes survive under one name",
+                   "got " + show (di));
+            // PIN 3b WAS HERE AND IS DELIBERATELY GONE. It asserted that two
+            // controls sharing a label under ONE cause stay one row. That
+            // cannot be written as a fixture: addIfNotAlreadyThere collapsed
+            // the two into a single array entry upstream
+            // (ChainHost.cpp, the four addIfNotAlreadyThere calls), so a
+            // SlotDialInfo carrying "two controls, same cause, same label" is
+            // indistinguishable from one carrying one control. The property is
+            // therefore STRUCTURAL rather than tested — the emitter cannot
+            // un-collapse what it cannot see — and the undercount it protects
+            // is pre-existing and parked (§2). A pin here would have asserted
+            // a fixture's shape, not the code's behaviour.
+        }
+
+        // PIN 4 — a control with one reason carries no also_reasons KEY at
+        // all. Not an empty array: absence must stay distinguishable.
+        {
+            const auto di = slotWith (Status::partial, { "ratio" });   // verdict only, no cause
+            check (show (di) == "partial[ratio]",
+                   "A9.2 PIN4: a single-reason row carries no also_reasons",
+                   "got " + show (di));
+            check (echojay::dialMissRowsFor (di)[0].alsoReasons.isEmpty(),
+                   "A9.2 PIN4: alsoReasons is empty, so logDialMiss writes no key");
+        }
+
+        // Wiring: the emitter passes alsoReasons, and logDialMiss writes the
+        // key only when non-empty.
+        {
+            std::ifstream fed ("Source/PluginEditor.cpp");
+            std::stringstream sed_;
+            sed_ << fed.rdbuf();
+            const juce::String edSrc (sed_.str());
+            check (edSrc.contains ("di.builtin, row.alsoReasons);"),
+                   "A9.2: the emitter passes each row's alsoReasons");
+            check (edSrc.contains ("if (! alsoReasons.isEmpty())"),
+                   "A9.2: logDialMiss writes also_reasons only when non-empty");
+            check (edSrc.contains ("r->setProperty(\"also_reasons\", ar);"),
+                   "A9.2: the batch builder carries also_reasons onto the wire row");
         }
     }
 

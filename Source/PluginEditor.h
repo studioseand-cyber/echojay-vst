@@ -1276,7 +1276,12 @@ private:
                      const juce::String& reason, const juce::StringArray& manual,
                      const juce::String& format = {}, const juce::String& uid = {},
                      int requested = -1, const juce::String& requestedSource = {},
-                     bool builtinSlot = false);
+                     bool builtinSlot = false,
+                     // A9 §2: further reasons for the SAME control, ranked.
+                     // Empty writes no key at all — the wire must not carry an
+                     // empty array, so absence stays distinguishable from
+                     // "one reason and nothing else applied".
+                     const juce::StringArray& alsoReasons = {});
     // A9 step 1: THE dial-miss emitter. Every settle walker calls this and
     // NONE of them calls logDialMiss directly any more — the reason set has
     // one author (echojay::dialMissRowsFor, EJDialMissRows.h) so three turn

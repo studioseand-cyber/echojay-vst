@@ -22187,14 +22187,15 @@ void EchoJayEditor::emitDialMissRows(const ChainHost::SlotDialInfo& di)
 {
     for (const auto& row : echojay::dialMissRowsFor(di))
         logDialMiss(di.name, di.fp, row.reason, row.names,
-                    di.format, di.uid, di.requestedCount, di.requestedSource, di.builtin);
+                    di.format, di.uid, di.requestedCount, di.requestedSource,
+                    di.builtin, row.alsoReasons);
 }
 
 void EchoJayEditor::logDialMiss(const juce::String& plugin, const juce::String& fp,
                                 const juce::String& reason, const juce::StringArray& manual,
                                 const juce::String& format, const juce::String& uid,
                                 int requested, const juce::String& requestedSource,
-                                bool builtinSlot)
+                                bool builtinSlot, const juce::StringArray& alsoReasons)
 {
     // dial-4 A8.1b (corrected 22 Aug): built-ins leave the ROWS as well as
     // the tally — refused HERE, at the one emitter, so the walkers cannot
@@ -22218,6 +22219,17 @@ void EchoJayEditor::logDialMiss(const juce::String& plugin, const juce::String& 
     // dial-3 (A2/A7.2): key halves + denominator. "requested" present is
     // the NEW-shape marker the batch builder ships on; absent rows are
     // pre-contract history and are never retro-shipped (A2).
+    // A9 §2: the partition's second half. Written ONLY when non-empty, in the
+    // same conditional-field idiom as fp/format/uid — an empty array on the
+    // wire would make "one reason applied" indistinguishable from "several
+    // applied and we dropped them". Slotless and refine-site rows never pass
+    // this, and §2 binds the server never to expect it on them.
+    if (! alsoReasons.isEmpty())
+    {
+        juce::Array<juce::var> ar;
+        for (auto& a : alsoReasons) ar.add(a);
+        f->setProperty("also_reasons", ar);
+    }
     if (format.isNotEmpty())          f->setProperty("format", format);
     if (uid.isNotEmpty())             f->setProperty("uid", uid);
     if (requested >= 0)               f->setProperty("requested", requested);
@@ -22327,6 +22339,12 @@ juce::String EchoJayEditor::buildDialDeclinesBatchJson()
             r->setProperty("plugin", eo->getProperty("plugin"));
             r->setProperty("requested", eo->getProperty("requested"));
             r->setProperty("requestedSource", eo->getProperty("requested_source").toString());
+            // A9 §2: carried through only when the event has it, so a row with
+            // one reason reaches the server with no key rather than an empty
+            // array. The explosion below is now 1 name -> 1 row, because the
+            // partition already made the event per-control.
+            if (const auto ar = eo->getProperty("also_reasons"); ar.isArray())
+                r->setProperty("also_reasons", ar);
             r->setProperty("t", (double) t);
             rows.add(juce::var(r));
         };
