@@ -165,7 +165,33 @@ public:
     //   noMap       — no local map for this fingerprint, nothing written
     //   unusableMap — map exists but none of the REQUESTED semantics were
     //                 writable, nothing written
-    enum class DialStatus { none, pending, applied, partial, noMap, unusableMap };
+    // A9 step 3: `unusableMap` is RETIRED, not reassigned, and is gone from
+    // this enum rather than kept as a spare — an enum value carrying a retired
+    // name is a store holding a fact we have declared false. It had FOUR
+    // producers with four different owners, and the name described only one:
+    //
+    //   mapNoCoverage           ChainHost.cpp, report.empty(). The map covered
+    //                           none of what was asked. No write attempted.
+    //                           Corpus-side.
+    //   writesRejected          ChainHost.cpp, the final else. The map covered
+    //                           it, writes were attempted, none stuck. Host or
+    //                           plugin-side. The ONLY one that can pair with
+    //                           readback_mismatch (A9 §1c), because it is the
+    //                           only one that wrote anything.
+    //   mapIdentityMismatch     the map's own `fp` FIELD disagrees with the
+    //                           slot's live fingerprint, so the apply is
+    //                           refused wholesale before the map's contents are
+    //                           ever read. Not "poor coverage" — coverage
+    //                           UNASSESSED. Keying/transport/cache-side.
+    //   builtinPayloadUnmatched a built-in device is present and the payload
+    //                           resolved neither accepted shape (flat semantic
+    //                           bag vs {"params":{...}} or its array form).
+    //                           No map is involved at all. Payload-shape-side.
+    //                           An ENUM VALUE ONLY: it has no wire reason, and
+    //                           a pin asserts the emitter yields zero rows.
+    enum class DialStatus { none, pending, applied, partial, noMap,
+                            mapNoCoverage, writesRejected,
+                            mapIdentityMismatch, builtinPayloadUnmatched };
     struct SlotDialInfo {
         juce::String      name;
         juce::String      fp;          // fingerprint (for event logging)

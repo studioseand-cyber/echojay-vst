@@ -3236,7 +3236,10 @@ void ChainHost::logDialSummary(const juce::String& reason) const
             case DialStatus::applied:     return "applied";
             case DialStatus::partial:     return "partial";
             case DialStatus::noMap:       return "noMap";
-            case DialStatus::unusableMap: return "unusableMap";
+            case DialStatus::mapNoCoverage:           return "mapNoCoverage";
+            case DialStatus::writesRejected:          return "writesRejected";
+            case DialStatus::mapIdentityMismatch:     return "mapIdentityMismatch";
+            case DialStatus::builtinPayloadUnmatched: return "builtinPayloadUnmatched";
         }
         return "?";
     };
@@ -3413,7 +3416,11 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
             // failure is a shape mismatch and the keys ARE the diagnosis: a
             // flat semantic bag ({"low_cut_freq_hz":80,...}) is the anchor-path
             // shape and the device wants {"params":{...}} or its array form.
-            s.dialStatus = DialStatus::unusableMap;
+            // A9 step 3: its OWN value. No map exists on this path at all
+            // (a built-in deliberately never gets a fingerprint), so neither
+            // "the map covered nothing" nor "the writes were rejected" is a
+            // true sentence about it. Enum value only — no wire reason.
+            s.dialStatus = DialStatus::builtinPayloadUnmatched;
             juce::StringArray got;
             if (auto* o = s.structuredSettings.getDynamicObject())
                 for (auto& kv : o->getProperties()) got.add(kv.name.toString());
@@ -3491,7 +3498,13 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
                        + " vs map.fp " + (mapFp.isEmpty() ? juce::String("(missing)")
                                                           : mapFp.substring(0, 12))
                        + ", apply refused").toRawUTF8());
-        s.dialStatus = DialStatus::unusableMap;
+        // A9 step 3: NOT mapNoCoverage. The apply is refused here BEFORE
+        // applyStructuredSettings is called, so the map's contents are never
+        // read and its coverage is unassessed rather than poor. The owner is
+        // keying/transport/cache, which is the one failure on this list that
+        // says OUR pipeline is broken; folding it into a corpus-quality or a
+        // vendor-behaviour bucket would hide it behind the wrong reader.
+        s.dialStatus = DialStatus::mapIdentityMismatch;
         return;
     }
 
@@ -3600,13 +3613,16 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
     // would still overclaim (the spiff class of bug).
     s.dialAppliedCount = (int) appliedSummary.size();
     if (report.empty())
-        s.dialStatus = DialStatus::unusableMap;   // structured present, nothing requested survived
+        s.dialStatus = DialStatus::mapNoCoverage; // structured present, nothing requested survived
     else if (s.dialManual.isEmpty())
         s.dialStatus = DialStatus::applied;
     else if (s.dialAppliedCount > 0)
         s.dialStatus = DialStatus::partial;
     else
-        s.dialStatus = DialStatus::unusableMap;
+        // The map covered it and the writes were ATTEMPTED — this is the only
+        // status that wrote anything, which is why it is the only one the
+        // emitter lets pair with readback_mismatch (A9 §1c).
+        s.dialStatus = DialStatus::writesRejected;
 
     // Card honesty (20 Aug 2026): the card read "attack 3ms, release 7ms"
     // while the knobs went to positions 3 and 7 on a 1..7 scale — the
@@ -5167,7 +5183,14 @@ std::vector<ChainHost::SlotDialInfo> ChainHost::getDialInfos() const
         // requested 0 both hid the row from the batch builder and would be
         // barred from every rate by the A7.1 reader rule. The pre-apply entry
         // count is the honest denominator for "map exists, nothing usable".
-        if (s.dialRequestedCount >= 0 && s.dialStatus != DialStatus::unusableMap)
+        // A9 step 3: the exact translation of the old
+        // "!= DialStatus::unusableMap" — all four values that name inherited,
+        // so the A8.8 designation covers every one of them (§3a).
+        const bool wasUnusableMap = (s.dialStatus == DialStatus::mapNoCoverage
+                                  || s.dialStatus == DialStatus::writesRejected
+                                  || s.dialStatus == DialStatus::mapIdentityMismatch
+                                  || s.dialStatus == DialStatus::builtinPayloadUnmatched);
+        if (s.dialRequestedCount >= 0 && ! wasUnusableMap)
         {
             di.requestedCount  = s.dialRequestedCount;
             di.requestedSource = "apply";

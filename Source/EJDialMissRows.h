@@ -87,15 +87,16 @@ struct DialMissRow
 //          control", "A9.2 PIN2 partial: manual + readbackMiss yields one row",
 //          "A9: two controls, two rows, neither suppressing the other"
 //   S5  stop the verdict riding as also_reasons
-//       -> "A9.2 PIN1 Solid EQ: one row, readback_mismatch, also unusable_map",
+//       -> "A9.2 PIN1 Solid EQ: one row, readback_mismatch, also writes_rejected",
 //          "A9.2 PIN2 partial: manual + readbackMiss yields one row"
 //   S6  key the partition on the LABEL alone (cause rows skip a claimed label)
 //       -> "A9.2 PIN3 two causes on one label yield TWO rows",
 //          "A9.2 PIN3 both causes survive under one name"
 //
-// If you are here for step 3: splitting unusable_map into map_no_coverage and
-// writes_rejected is a change to `verdict` below and to §2's table in the
-// contract. It needs no rank lookup either.
+// Step 3 has since landed and needed no rank lookup either: unusable_map
+// split FOUR ways (see the DialStatus comment in ChainHost.h), and every one
+// of those is a `verdict` case below, decided by the status the apply already
+// set rather than inferred from whether some array happens to be empty.
 // ----------------------------------------------------------------------------
 
 /** The complete, ordered row set for one slot's SETTLED dial state.
@@ -129,7 +130,23 @@ inline std::vector<DialMissRow> dialMissRowsFor (const ChainHost::SlotDialInfo& 
         case ChainHost::DialStatus::noMap:
             verdict = di.staleIndexedFp.isNotEmpty() ? "stale_unmapped" : "no_map";
             break;
-        case ChainHost::DialStatus::unusableMap: verdict = "unusable_map";      break;
+        // A9 step 3. `unusable_map` is RETIRED: it is not emitted here or
+        // anywhere else, and it is not in DialStatus either. Historical rows
+        // carrying it stay ambiguous between these causes and the server must
+        // never merge them into one (§3).
+        case ChainHost::DialStatus::mapNoCoverage:
+            verdict = "map_no_coverage";       break;
+        case ChainHost::DialStatus::writesRejected:
+            verdict = "writes_rejected";       break;
+        case ChainHost::DialStatus::mapIdentityMismatch:
+            verdict = "map_identity_mismatch"; break;
+        // ENUM VALUE, NOT A WIRE REASON. A built-in whose payload matched
+        // neither accepted shape gets no verdict, so this function yields ZERO
+        // rows for it. That is asserted by a pin, NOT left to A8.1b's built-in
+        // refusal in logDialMiss: the refusal is a second line of defence at
+        // the wire, and two reasons that cannot fire look exactly like two
+        // reasons that never happen.
+        case ChainHost::DialStatus::builtinPayloadUnmatched:                    break;
         case ChainHost::DialStatus::pending:     verdict = "map_fetch_timeout"; break;
         case ChainHost::DialStatus::applied:
         case ChainHost::DialStatus::none:                                       break;
@@ -141,8 +158,15 @@ inline std::vector<DialMissRow> dialMissRowsFor (const ChainHost::SlotDialInfo& 
     // carrying the PREVIOUS apply's labels; a row there would assert a
     // readback this turn never performed. That is a presence-of-evidence
     // condition, NOT the outOfRange coupling A9 removed. Do not ungate it.
+    // A9 step 3 TIGHTENS this. It used to read `partial || unusableMap`, and
+    // unusableMap has since split four ways — only ONE of which wrote
+    // anything. §1c: "Only 3609 can pair with readback_mismatch, because only
+    // 3609 attempted a write." mapNoCoverage attempted none, and
+    // mapIdentityMismatch refused the map before reading it, so a readback row
+    // under either would assert evidence that turn never gathered. This is the
+    // tightening the old status could not express.
     const bool readbackAllowed = (di.status == ChainHost::DialStatus::partial
-                               || di.status == ChainHost::DialStatus::unusableMap);
+                               || di.status == ChainHost::DialStatus::writesRejected);
 
     // ---- 1. One row per (label, cause), read straight off the three arrays --
     // The partition key is (label, cause), and no per-control carrier is

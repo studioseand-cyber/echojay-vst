@@ -68,6 +68,30 @@ struct EchoJayAPIRequestPin
 
 // Function body by signature: from the signature line to the first line
 // that is exactly "}" at column 0. Every ChainHost method ends that way.
+// A9 step 3. A "no path emits X" pin that greps RAW source cannot tell code
+// from prose, so it reddens on the very comments that explain why X is retired
+// — and the honest fix is to give the pin the subject it claims, not to censor
+// the documentation. Strips // to end-of-line and /* */ blocks. String literals
+// containing "//" would be mangled, which is fine: no pin using this looks for
+// one, and the alternative is a full lexer for a grep.
+static juce::String codeOnly (const juce::String& source)
+{
+    juce::String out;
+    const auto raw = source.toStdString();
+    bool inLine = false, inBlock = false;
+    for (size_t i = 0; i < raw.size(); ++i)
+    {
+        const char c = raw[i];
+        const char n = (i + 1 < raw.size()) ? raw[i + 1] : '\0';
+        if (inLine)          { if (c == '\n') { inLine = false; out << c; } continue; }
+        if (inBlock)         { if (c == '*' && n == '/') { inBlock = false; ++i; } continue; }
+        if (c == '/' && n == '/') { inLine  = true; ++i; continue; }
+        if (c == '/' && n == '*') { inBlock = true; ++i; continue; }
+        out << c;
+    }
+    return out;
+}
+
 static juce::String functionBody (const juce::String& source, const juce::String& signature)
 {
     const int start = source.indexOf (signature);
@@ -958,8 +982,12 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             const juce::String chSrc (sch_.str());
             check (chSrc.contains ("echojay::requestedEntryCount(s.structuredSettings)"),
                    "A8.1a: getDialInfos' keys fallback uses the shared entry count");
-            check (chSrc.contains ("s.dialRequestedCount >= 0 && s.dialStatus != DialStatus::unusableMap"),
-                   "A8.8: unusableMap is keys-sourced by designation at getDialInfos");
+            // A9 §7 shape, second instance: this literal moved because step 3
+            // split unusableMap four ways. The BEHAVIOUR it guards is
+            // unchanged — all four inherit the keys designation (§3a) — so the
+            // literal follows the code and the mutation re-proves it goes red.
+            check (chSrc.contains ("s.dialRequestedCount >= 0 && ! wasUnusableMap"),
+                   "A8.8: the ex-unusableMap statuses are keys-sourced by designation");
         }
     }
 
@@ -1006,7 +1034,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // readback row's existence depended on an unrelated field being
         // empty. Both findings are now reported, every time.
         {
-            const auto di = slot (Status::unusableMap, { "Default" }, { "Attack" }, { "Default" });
+            const auto di = slot (Status::writesRejected, { "Default" }, { "Attack" }, { "Default" });
             const auto got = render (di);
             check (got.contains ("readback_mismatch[Default]"),
                    "A9: readbackMiss + outOfRange together STILL emits the readback row",
@@ -1026,7 +1054,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // ...and with outOfRange EMPTY the readback row is still the only row
         // for that control. Step 1 expected a separate unusable_map row here;
         // step 2 carries it as also_reasons instead (pinned below).
-        check (render (slot (Status::unusableMap, { "Default" }, {}, { "Default" }))
+        check (render (slot (Status::writesRejected, { "Default" }, {}, { "Default" }))
                    == "readback_mismatch[Default]",
                "A9: the outOfRange-empty case is one row for the one control");
 
@@ -1130,13 +1158,19 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         };
 
         // PIN 1 — the Solid EQ case exactly (events.jsonl:166-167). One
-        // control, unusableMap verdict plus readbackMiss: ONE row, reason
-        // readback_mismatch, also_reasons ["unusable_map"]. Two rows here is
+        // control, the verdict plus readbackMiss: ONE row, reason
+        // readback_mismatch, also_reasons ["writes_rejected"]. Two rows here is
         // the over-unity that put the identity's rate at 2.00 (§1b).
+        //
+        // STEP 3 MADE THIS DUE. §6 step 2 said the also_reasons value would be
+        // ["unusable_map"] at step 2 and become ["writes_rejected"] "only after
+        // step 3 splits the reason". The measured row carried manual
+        // ["Default"], so the result loop ran and it was the 3609 case, which
+        // is now writesRejected.
         {
-            const auto di = slotWith (Status::unusableMap, { "Default" }, { "Default" });
-            check (show (di) == "readback_mismatch[Default]{unusable_map}",
-                   "A9.2 PIN1 Solid EQ: one row, readback_mismatch, also unusable_map",
+            const auto di = slotWith (Status::writesRejected, { "Default" }, { "Default" });
+            check (show (di) == "readback_mismatch[Default]{writes_rejected}",
+                   "A9.2 PIN1 Solid EQ: one row, readback_mismatch, also writes_rejected",
                    "got " + show (di));
             check (echojay::dialMissRowsFor (di).size() == 1,
                    "A9.2 PIN1 Solid EQ: exactly one row for the one control");
@@ -1204,6 +1238,137 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "A9.2: logDialMiss writes also_reasons only when non-empty");
             check (edSrc.contains ("r->setProperty(\"also_reasons\", ar);"),
                    "A9.2: the batch builder carries also_reasons onto the wire row");
+        }
+    }
+
+    // ---- A9 step 3: unusable_map splits four ways, and the name retires ----
+    // The old value had FOUR producers with four different owners and the name
+    // described only the first. Each now reaches its own status at the site
+    // that knows the fact, so the reason is a DECISION rather than an inference
+    // from whether some array happens to be empty — which was the same defect
+    // A9 step 1 removed (§1d: a row's identity must not depend on an unrelated
+    // field).
+    {
+        std::cout << "A9 step 3 unusable_map split:\n";
+        using Status = ChainHost::DialStatus;
+
+        auto s3 = [] (Status st, juce::StringArray manual = {},
+                      juce::StringArray readbackMiss = {})
+        {
+            ChainHost::SlotDialInfo di;
+            di.name = "Solid EQ"; di.fp = "733068b9";
+            di.format = "VST3";   di.uid = "1a9dbcc1";
+            di.status = st;
+            di.manual = std::move (manual);
+            di.readbackMiss = std::move (readbackMiss);
+            di.requestedCount = 1; di.requestedSource = "keys";
+            return di;
+        };
+        auto render3 = [] (const ChainHost::SlotDialInfo& di)
+        {
+            juce::String out;
+            for (const auto& r : echojay::dialMissRowsFor (di))
+                out << (out.isEmpty() ? "" : ";") << r.reason
+                    << "[" << r.names.joinIntoString (",") << "]";
+            return out;
+        };
+
+        // PIN 1 — the 3603 case reaches map_no_coverage. report.empty(), so
+        // the result loop never ran and `manual` is necessarily empty; the
+        // rollup row is the only thing there is to say (§2).
+        check (render3 (s3 (Status::mapNoCoverage, { "Default" })) == "map_no_coverage[Default]",
+               "A9.3 PIN1: the 3603 case reaches map_no_coverage",
+               "got " + render3 (s3 (Status::mapNoCoverage, { "Default" })));
+
+        // PIN 2 — the 3609 case reaches writes_rejected.
+        check (render3 (s3 (Status::writesRejected, { "Default" })) == "writes_rejected[Default]",
+               "A9.3 PIN2: the 3609 case reaches writes_rejected",
+               "got " + render3 (s3 (Status::writesRejected, { "Default" })));
+
+        // PIN 3 — the 3494 case reaches map_identity_mismatch. The map does not
+        // belong to this plugin and was refused before its contents were read,
+        // so neither of the other two is a true sentence about it.
+        check (render3 (s3 (Status::mapIdentityMismatch, { "Default" }))
+                   == "map_identity_mismatch[Default]",
+               "A9.3 PIN3: the 3494 case reaches map_identity_mismatch",
+               "got " + render3 (s3 (Status::mapIdentityMismatch, { "Default" })));
+
+        // PIN 4 — §1c, the tightening the old status could not express. Only
+        // the case that ATTEMPTED a write may pair with readback_mismatch. A
+        // readback row under the other two would assert evidence that turn
+        // never gathered.
+        check (render3 (s3 (Status::writesRejected, { "x" }, { "x" })) == "readback_mismatch[x]",
+               "A9.3 PIN4: writes_rejected DOES pair with readback_mismatch",
+               "got " + render3 (s3 (Status::writesRejected, { "x" }, { "x" })));
+        check (render3 (s3 (Status::mapNoCoverage, { "x" }, { "x" })) == "map_no_coverage[x]",
+               "A9.3 PIN4: map_no_coverage never pairs with readback_mismatch",
+               "got " + render3 (s3 (Status::mapNoCoverage, { "x" }, { "x" })));
+        check (render3 (s3 (Status::mapIdentityMismatch, { "x" }, { "x" }))
+                   == "map_identity_mismatch[x]",
+               "A9.3 PIN4: map_identity_mismatch never pairs with readback_mismatch",
+               "got " + render3 (s3 (Status::mapIdentityMismatch, { "x" }, { "x" })));
+
+        // PIN 5 — 3416 emits NO ROW AT ALL. builtinPayloadUnmatched is an enum
+        // value with no wire reason.
+        //
+        // THE FIXTURE IS DELIBERATELY HOSTILE. A built-in slot never fills
+        // dialManual (only the mapped apply loop at ChainHost.cpp does), so the
+        // REALISTIC fixture has every array empty — and would emit nothing
+        // whatever the verdict, making the pin vacuous and unable to go red.
+        // Handing it labels it cannot really have is what makes the missing
+        // verdict the ONLY thing stopping the row, so the pin has a subject.
+        check (echojay::dialMissRowsFor (s3 (Status::builtinPayloadUnmatched,
+                                             { "Default", "Attack" })).empty(),
+               "A9.3 PIN5: builtinPayloadUnmatched yields ZERO rows from the emitter",
+               "got " + render3 (s3 (Status::builtinPayloadUnmatched, { "Default", "Attack" })));
+        // ...and the realistic all-empty case too, so the pin covers both.
+        check (echojay::dialMissRowsFor (s3 (Status::builtinPayloadUnmatched)).empty(),
+               "A9.3 PIN5: a real built-in slot (all arrays empty) yields zero rows");
+
+        // PIN 6 — the name is RETIRED, not reassigned: no path emits the
+        // literal, and the enum does not carry the value either. A retired name
+        // left in the enum is a store holding a fact we have declared false.
+        {
+            std::ifstream fh ("Source/ChainHost.h");
+            std::stringstream sh_; sh_ << fh.rdbuf();
+            const juce::String chHdr (sh_.str());
+            std::ifstream fc ("Source/ChainHost.cpp");
+            std::stringstream sc_; sc_ << fc.rdbuf();
+            const juce::String chSrc3 (sc_.str());
+            std::ifstream fr ("Source/EJDialMissRows.h");
+            std::stringstream sr_; sr_ << fr.rdbuf();
+            const juce::String rowSrc (sr_.str());
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se_; se_ << fe.rdbuf();
+            const juce::String edSrc3 (se_.str());
+
+            // codeOnly, not raw: the retired name SHOULD still appear in the
+            // comments that record why it was retired, and in the historical
+            // prose already scattered through ChainHost. What must not survive
+            // is a line of code.
+            check (! codeOnly (rowSrc).contains ("\"unusable_map\""),
+                   "A9.3 PIN6: the emitter emits no unusable_map reason");
+            check (! codeOnly (edSrc3).contains ("\"unusable_map\""),
+                   "A9.3 PIN6: no walker emits an unusable_map reason");
+            check (! codeOnly (chHdr).contains ("unusableMap"),
+                   "A9.3 PIN6: DialStatus no longer carries the retired value");
+            check (! codeOnly (chSrc3).contains ("DialStatus::unusableMap"),
+                   "A9.3 PIN6: no site assigns or reads the retired status");
+            // ...and the stripper is not vacuously passing: it must still SEE
+            // the four live assignments, and must still find the retired name
+            // in the raw text it just filtered out of the code.
+            check (chHdr.contains ("unusableMap") && chSrc3.contains ("DialStatus::unusableMap"),
+                   "A9.3 PIN6: the retired name survives in PROSE (so the pin above has a subject)");
+
+            // The four assignment sites, each named where the fact is known.
+            check (chSrc3.contains ("s.dialStatus = DialStatus::mapNoCoverage;"),
+                   "A9.3 PIN7: 3603 assigns mapNoCoverage");
+            check (chSrc3.contains ("s.dialStatus = DialStatus::writesRejected;"),
+                   "A9.3 PIN7: 3609 assigns writesRejected");
+            check (chSrc3.contains ("s.dialStatus = DialStatus::mapIdentityMismatch;"),
+                   "A9.3 PIN7: 3494 assigns mapIdentityMismatch");
+            check (chSrc3.contains ("s.dialStatus = DialStatus::builtinPayloadUnmatched;"),
+                   "A9.3 PIN7: 3416 assigns builtinPayloadUnmatched");
         }
     }
 

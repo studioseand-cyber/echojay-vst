@@ -21662,7 +21662,15 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                 }
                 zeroParts.add(di.name);
                 break;
-            case ChainHost::DialStatus::unusableMap:
+            // A9 step 3: unusableMap split four ways. BUBBLE COMPOSITION IS
+            // UNCHANGED — all four compose exactly as the one value did, so
+            // this commit moves the reason vocabulary and not a word of what
+            // the user reads. Listed separately rather than fallen through so
+            // a later change to one of them cannot silently take the other three.
+            case ChainHost::DialStatus::mapNoCoverage:
+            case ChainHost::DialStatus::writesRejected:
+            case ChainHost::DialStatus::mapIdentityMismatch:
+            case ChainHost::DialStatus::builtinPayloadUnmatched:
                 if (!di.outOfRange.isEmpty())
                 {
                     zeroOorParts.push_back({ di.name, di.manual, di.outOfRange });
@@ -21930,7 +21938,15 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 }
                 zeroParts.add(di.name);
                 break;
-            case ChainHost::DialStatus::unusableMap:
+            // A9 step 3: unusableMap split four ways. BUBBLE COMPOSITION IS
+            // UNCHANGED — all four compose exactly as the one value did, so
+            // this commit moves the reason vocabulary and not a word of what
+            // the user reads. Listed separately rather than fallen through so
+            // a later change to one of them cannot silently take the other three.
+            case ChainHost::DialStatus::mapNoCoverage:
+            case ChainHost::DialStatus::writesRejected:
+            case ChainHost::DialStatus::mapIdentityMismatch:
+            case ChainHost::DialStatus::builtinPayloadUnmatched:
                 if (!di.outOfRange.isEmpty())
                 {
                     zeroOorParts.push_back({ di.name, di.manual, di.outOfRange });
