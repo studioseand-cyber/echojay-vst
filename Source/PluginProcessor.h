@@ -1069,6 +1069,7 @@ private:
 
     // Resolved shared directory (message thread, set once in ensureLinkRegistryOpen)
     juce::String linkResolvedDir;
+    juce::int64  lastFileReapMs_ = 0;   // dead-uid file sweep throttle (~5 min)
 
     // Registry mapping (message thread)
     void*  linkRegMap = nullptr;
@@ -1100,7 +1101,8 @@ private:
     void disconnectAllLinkSlotsNow();  // destructor
 
     // Stale detection (message thread)
-    struct SlotProbeState { uint32_t lastHb = 0; int staleCycles = 0; };
+    struct SlotProbeState { uint32_t lastHb = 0; int staleCycles = 0;
+                            LinkShm::RegLiveness live; };
     std::array<SlotProbeState, kMaxLinkSlots> slotProbeStates;
 
     // UI snapshot (message thread only)

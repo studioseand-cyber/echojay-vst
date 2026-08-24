@@ -69,6 +69,20 @@ restoration honestly. The one non-restorable window — a crash *during the
 journal restore itself* — is the same residual the deadman accepts, and it
 blacklists the plugin that caused it.
 
+**KNOWN HOLE (25 Aug 2026): the crash-recovery arm does not survive a
+relaunch.** The journal is keyed `structplan-<uid>.json` and the Link's uid
+is per-launch, so the paragraph above overstates the guarantee: a relaunched
+Link looks up its NEW uid and never finds the journal a crash orphaned under
+the old one. Phase 2's crash guarantee therefore covers SAME-PROCESS
+recovery only (the launch-time check in a process that did not die, e.g.
+editor teardown/reopen inside one hosting-service lifetime). This was gated
+and believed complete, and it is not — the gates prove the restore works
+when the journal is FOUND; nothing proved it would be found. Orphaned
+journals are deliberately spared by the dead-uid file reaper (deleting one
+is deleting someone's rollback). The fix direction is uid persistence
+(LINK_UID_PERSISTENCE_SPEC.md) or identity-based journal adoption at
+launch; neither is built, by ruling, until the uid question is decided.
+
 **Journal restore vs the Link's session restore** (amendment, 22 Aug 2026):
 a relaunch after a mid-plan crash has TWO sources of truth — the DAW's
 session state for the Link's rack, and the journal's pre-images. Precedence

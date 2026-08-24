@@ -408,6 +408,73 @@ inline juce::String makeAudioFilename(const juce::String& linkName)
 static inline const char* kRegistryFilename = "registry_v2.bin";
 
 // =============================================================================
+//  Registry liveness (25 Aug 2026): a slot is LISTED only after its heartbeat
+//  has been observed to CLIMB. inUse alone lists ghosts: a killed Link's slot
+//  keeps inUse=1 with a frozen heartbeat until the ~30s reaper, and the
+//  selector showed five dead rows settling to two. Pure so the decision is
+//  gateable without a processor; the same observation feeds the reaper.
+// =============================================================================
+struct RegLiveness
+{
+    uint32_t lastHb = 0;
+    bool     seen   = false;    // at least one observation exists
+    bool     proven = false;    // the heartbeat has climbed since first seen
+    bool observe (uint32_t hb)  // returns proven as of this observation
+    {
+        if (seen && hb != lastHb) proven = true;
+        lastHb = hb;
+        seen   = true;
+        return proven;
+    }
+};
+
+// =============================================================================
+//  Dead-uid file reaper (25 Aug 2026): the Link's uid is per-launch, so
+//  uid-keyed files accumulate forever (62 dead rack sidecars on one machine).
+//  A dead uid can never be addressed again, so deletion is safe by
+//  construction — gated by NOT-live and an mtime grace window (a Link
+//  mid-launch has fresh files and an unproven heartbeat).
+//
+//  structplan-*.json IS SPARED ENTIRELY: a journal is someone's rollback,
+//  and no grace window makes deleting one a safe judgement.
+//
+//  Audio rings are name-keyed, not uid-keyed ("audio_drums.bin"), so they
+//  reap against the set of ring FILENAMES referenced by registry slots —
+//  never by parsing a uid out of the name.
+// =============================================================================
+inline int reapDeadUidFiles (const juce::String& dir,
+                             const juce::StringArray& liveUids,
+                             const juce::StringArray& liveAudioFiles,
+                             juce::int64 nowMs, juce::int64 graceMs)
+{
+    int reaped = 0;
+    static const char* uidPatterns[] = { "rack-*.json", "racklock-*.json",
+        "lease-*.json", "ctrl-cmd-*.json", "ctrl-ack-*.json",
+        "chain-cmd-*.json", "chain-ack-*.json" };
+    for (auto* pat : uidPatterns)
+        for (auto& f : juce::File (dir).findChildFiles (juce::File::findFiles,
+                                                        false, pat))
+        {
+            const auto uid = f.getFileName()
+                                 .fromLastOccurrenceOf ("-", false, false)
+                                 .upToLastOccurrenceOf (".", false, false);
+            if (uid.isEmpty() || liveUids.contains (uid)) continue;
+            if (nowMs - f.getLastModificationTime().toMilliseconds() < graceMs)
+                continue;
+            if (f.deleteFile()) ++reaped;
+        }
+    for (auto& f : juce::File (dir).findChildFiles (juce::File::findFiles,
+                                                    false, "audio_*.bin"))
+    {
+        if (liveAudioFiles.contains (f.getFileName())) continue;
+        if (nowMs - f.getLastModificationTime().toMilliseconds() < graceMs)
+            continue;
+        if (f.deleteFile()) ++reaped;
+    }
+    return reaped;
+}
+
+// =============================================================================
 //  Low-level file mmap helpers
 // =============================================================================
 

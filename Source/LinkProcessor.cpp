@@ -64,7 +64,28 @@ LinkProcessor::~LinkProcessor()
     stopTimer();
     // Audio thread guaranteed stopped before destructor
     releaseRegistrySlot();
+    // CLEAN-EXIT HYGIENE (25 Aug 2026): the uid is per-launch, so this
+    // instance's uid-keyed files are unreachable the moment it dies —
+    // delete them here rather than leaving them for the reaper (crashes
+    // still litter; the main's sweep is the backstop). structplan is NOT
+    // deleted: a lingering journal is a rollback, and completion already
+    // deletes it. NOT in releaseRegistrySlot — that also runs on live
+    // re-claims mid-session.
+    if (instanceUid_.isNotEmpty() && resolvedDir.isNotEmpty())
+    {
+        for (const auto& p : { "rack-" + instanceUid_ + ".json",
+                               "racklock-" + instanceUid_ + ".json",
+                               "lease-" + instanceUid_ + ".json",
+                               "ctrl-cmd-" + instanceUid_ + ".json",
+                               "ctrl-ack-" + instanceUid_ + ".json",
+                               "chain-cmd-" + instanceUid_ + ".json",
+                               "chain-ack-" + instanceUid_ + ".json" })
+            juce::File(resolvedDir + p).deleteFile();
+    }
+    const juce::String ringPath = shmOpenedKey;   // full path, set at openRing
     closeRingNow();
+    if (ringPath.isNotEmpty())
+        juce::File(ringPath).deleteFile();
     LinkShm::closeRegistry(regMap, regFd);
     regMap = nullptr; regFd = -1;
 }

@@ -1253,6 +1253,83 @@ int main()
                "and the substitute's uid differs - the wrong identity to send");
     }
 
+    std::printf ("== selector liveness + dead-uid file reaper ==\n");
+    {
+        // LIVENESS BEFORE LISTING, the pure decision: a frozen heartbeat is
+        // never proven; a climb proves; proof persists across later ties.
+        LinkShm::RegLiveness rl;
+        check (! rl.observe (7), "first sight proves nothing");
+        check (! rl.observe (7), "a frozen heartbeat never proves");
+        check (rl.observe (8),   "a climb proves liveness");
+        check (rl.observe (8),   "proof persists across a tied read");
+        LinkShm::RegLiveness rl2;
+        check (! rl2.observe (0) && ! rl2.observe (0),
+               "a ghost stuck at zero is never listed");
+
+        // THE REAPER, functionally, in the sandbox: dead-uid files older
+        // than grace die; fresh files and live uids survive; structplan is
+        // spared ENTIRELY (someone's rollback); audio rings reap by the
+        // registry's referenced FILENAMES, never by parsing names.
+        juce::File rdir = juce::File (appData).getChildFile ("EJReapTest");
+        rdir.createDirectory();
+        auto mk = [&rdir] (const char* n) { rdir.getChildFile (n)
+                                                .replaceWithText ("x"); };
+        mk ("rack-deaddead01.json");       // dead uid, old      -> reaped
+        mk ("rack-livelive01.json");       // live uid           -> spared
+        mk ("rack-freshfresh1.json");      // dead uid, fresh    -> spared
+        mk ("structplan-deaddead01.json"); // journal, dead, old -> SPARED
+        mk ("ctrl-cmd-deaddead01.json");   // dead uid, old      -> reaped
+        mk ("audio_untitled_dead.bin");    // unreferenced ring  -> reaped
+        mk ("audio_drums.bin");            // referenced ring    -> spared
+        const juce::int64 now = juce::Time::currentTimeMillis();
+        const juce::int64 old = now - (60 * 60 * 1000);
+        for (const char* n : { "rack-deaddead01.json",
+                               "structplan-deaddead01.json",
+                               "ctrl-cmd-deaddead01.json",
+                               "audio_untitled_dead.bin", "audio_drums.bin",
+                               "rack-livelive01.json" })
+            rdir.getChildFile (n).setLastModificationTime (juce::Time (old));
+        const int reaped = LinkShm::reapDeadUidFiles (
+            rdir.getFullPathName() + "/", { "livelive01" },
+            { "audio_drums.bin" }, now, 10 * 60 * 1000);
+        check (reaped == 3, "exactly the three dead files reaped",
+               juce::String (reaped));
+        check (! rdir.getChildFile ("rack-deaddead01.json").exists()
+                 && ! rdir.getChildFile ("ctrl-cmd-deaddead01.json").exists()
+                 && ! rdir.getChildFile ("audio_untitled_dead.bin").exists(),
+               "dead uid files and the orphan ring are gone");
+        check (rdir.getChildFile ("rack-livelive01.json").exists(),
+               "a live uid's files survive, however old");
+        check (rdir.getChildFile ("rack-freshfresh1.json").exists(),
+               "a fresh file survives the grace window");
+        check (rdir.getChildFile ("structplan-deaddead01.json").exists(),
+               "structplan is SPARED entirely - a journal is a rollback");
+        check (rdir.getChildFile ("audio_drums.bin").exists(),
+               "a registry-referenced ring survives");
+
+        // Pins: the listing gates on the pure helper; the Link's destructor
+        // cleans its own uid files but never structplan; the reaper's uid
+        // pattern list cannot quietly grow a structplan entry.
+        auto slurpR = [] (const char* p)
+        { std::ifstream f (p); std::stringstream s; s << f.rdbuf();
+          return juce::String (s.str()); };
+        check (slurpR ("Source/PluginProcessor.cpp")
+                   .contains ("if (! ps.live.observe(snap.heartbeat))"),
+               "the selector lists only heartbeat-proven slots");
+        const auto lpR = slurpR ("Source/LinkProcessor.cpp");
+        const int dtor = lpR.indexOf ("LinkProcessor::~LinkProcessor");
+        const auto dtorBody = dtor >= 0 ? lpR.substring (dtor, dtor + 1800)
+                                        : juce::String();
+        check (dtorBody.contains ("rack-\" + instanceUid_")
+                 && ! dtorBody.contains ("structplan-\" + instanceUid_"),
+               "the Link deletes its own uid files on clean exit, journal excepted");
+        const auto sh = slurpR ("Source/LinkShm.h");
+        const int up = sh.indexOf ("uidPatterns[]");
+        const auto upArm = up >= 0 ? sh.substring (up, up + 400) : juce::String();
+        check (up >= 0 && ! upArm.contains ("structplan"),
+               "the reaper's pattern list carries no structplan entry");
+    }
+
     std::printf ("== DEV forceWithholdSlot: cannot exist in a non-DEV build ==\n");
     {
         // This suite compiles and links against build/ (DEV OFF) — the

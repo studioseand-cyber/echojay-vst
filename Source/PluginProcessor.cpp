@@ -3942,6 +3942,16 @@ void EchoJayProcessor::refreshLinkRegistry()
             ps.staleCycles = 0;
         }
 
+        // LIVENESS BEFORE LISTING (25 Aug 2026): inUse alone lists ghosts —
+        // a killed Link's slot keeps inUse=1 with a frozen heartbeat until
+        // the ~30s reaper, and the selector showed five dead rows. A slot
+        // appears only once its heartbeat is OBSERVED TO CLIMB (a live Link
+        // bumps ~1Hz; we poll ~2Hz, so real rows appear within a second or
+        // two). The reap threshold above is unchanged — it reclaims the
+        // slot; this only gates what the user is shown.
+        if (! ps.live.observe(snap.heartbeat))
+            continue;
+
         // Connect the audio ring only while the Link's capture role is
         // ACTIVE — inactive Links stay registered (visible, remotely
         // re-activatable) but publish no ring
@@ -3986,6 +3996,35 @@ void EchoJayProcessor::refreshLinkRegistry()
     }
 
     linkSlotInfos = std::move(newInfos);
+
+    // DEAD-FILE REAP (25 Aug 2026), throttled to one sweep per 5 minutes per
+    // process: uid-keyed files whose uid no REGISTERED slot carries (proven
+    // or not — a just-registering Link is protected twice, by registration
+    // and by the 10-minute mtime grace) are litter from dead per-launch
+    // uids and can never be addressed again. structplan-*.json is spared
+    // inside the reaper itself. Deletes are idempotent, so several mains
+    // sweeping concurrently is benign.
+    {
+        const juce::int64 nowMs = juce::Time::currentTimeMillis();
+        if (nowMs - lastFileReapMs_ > 5 * 60 * 1000)
+        {
+            lastFileReapMs_ = nowMs;
+            juce::StringArray liveUids, liveRings;
+            for (int i = 0; i < kMaxLinkSlots; ++i)
+            {
+                LinkShm::SlotSnapshot snap;
+                if (! LinkShm::readSlot(linkRegMap, i, snap)) continue;
+                if (snap.instanceUid.isNotEmpty()) liveUids.add(snap.instanceUid);
+                if (snap.audioFilename.isNotEmpty()) liveRings.add(snap.audioFilename);
+            }
+            const int reaped = LinkShm::reapDeadUidFiles(
+                linkResolvedDir, liveUids, liveRings, nowMs, 10 * 60 * 1000);
+            if (reaped > 0)
+                EchoJay_NSLog(("EJReap: removed " + juce::String(reaped)
+                    + " dead-uid file(s); live uids=" + juce::String(liveUids.size()))
+                    .toRawUTF8());
+        }
+    }
 
     // Update consumer diagnostics
     consumerDiag.activeSlotCount = (int)linkSlotInfos.size();
