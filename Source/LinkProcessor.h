@@ -532,6 +532,7 @@ private:
     // this processor — the command goes through the same path as the local
     // toggle (linkOn + updateShmState + dirty-mark).
     int  lastAppliedCtrlSeq_ = 0;
+    int  lastRefusedLoggedCtrlSeq_ = -1;   // refusal log dedupe (10Hz re-read)
     void pollControlCommand();
 
     // Session project/genre follow (see projectName/genre above)

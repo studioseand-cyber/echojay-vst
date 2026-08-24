@@ -8398,14 +8398,29 @@ void EchoJayEditor::presentStructureApplyAsk(const LinkShm::StructureEdit::Plan&
 
 void EchoJayEditor::runStructureApply()
 {
+    // EVERY return between answer=apply and the send SPEAKS IN BOTH
+    // CHANNELS — a log line for the reviewer and a banner for the user
+    // (24 Aug 2026: three silent answer=apply attempts; a banner without a
+    // log is invisible in a log review, and a bare return is invisible in
+    // both).
     auto& proc = processorRef;
     const juce::String uid = proc.borrowUid();
-    if (uid.isEmpty()) return;
+    if (uid.isEmpty())
+    {
+        EchoJay_NSLog("EJStruct: DEFECT apply with no live session uid - "
+                      "nothing sent");
+        chainListPanel.statusText = "Apply found no live session - nothing "
+            "was sent. Please report this.";
+        chainListPanel.repaint();
+        return;
+    }
     // Capability, the never-half-see gate: the SNAPSHOT from engage — a
     // Link that cannot journal a plan never receives one.
     if (LinkShm::StructureEdit::accept(proc.borrowStructureCapable_)
             != LinkShm::StructureEdit::Accept::Proceed)
     {
+        EchoJay_NSLog(("EJStruct: refused send uid=" + uid
+                       + " - Link not structure-capable").toRawUTF8());
         chainListPanel.statusText =
             "Cannot apply structure changes: this Link's build cannot journal "
             "a plan. Update it. Your session is still live.";
@@ -8418,6 +8433,8 @@ void EchoJayEditor::runStructureApply()
     // trivially and released. If no confirmed plan is pending, refuse.
     if (! pendingStructPlanValid_)
     {
+        EchoJay_NSLog(("EJStruct: refused send uid=" + uid
+                       + " - no confirmed plan pending").toRawUTF8());
         chainListPanel.statusText = "Apply had no confirmed plan to send - "
             "nothing was sent. Your session is still live; release again to "
             "review and Apply.";
@@ -8445,6 +8462,8 @@ void EchoJayEditor::runStructureApply()
     const juce::String dir = LinkShm::resolveDir(err);
     if (dir.isEmpty())
     {
+        EchoJay_NSLog(("EJStruct: refused send uid=" + uid
+                       + " - shared Link folder unavailable").toRawUTF8());
         chainListPanel.statusText = "Cannot apply: the shared Link folder is "
             "unavailable. Your session is still live.";
         chainListPanel.repaint();
@@ -8456,9 +8475,25 @@ void EchoJayEditor::runStructureApply()
     cmd->setProperty("seq", seq);
     cmd->setProperty("structPlan",
         LinkShm::StructureEdit::planToVar(plan, {}));
+    // THE SEND LOGS BEFORE IT WRITES, unconditionally — this line is what
+    // separates "never sent" from "sent and waiting" in a log review, and
+    // that distinction is the whole diagnosis.
+    EchoJay_NSLog(("EJStruct: send uid=" + uid
+                   + " ops=" + juce::String((int) plan.ops.size())
+                   + " seq=" + juce::String(seq)).toRawUTF8());
     juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();
-    juce::File(dir + "ctrl-cmd-" + uid + ".json")
-        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+    if (! juce::File(dir + "ctrl-cmd-" + uid + ".json")
+            .replaceWithText(juce::JSON::toString(juce::var(cmd), true)))
+    {
+        // A failed write is the perfect silent failure: no cmd on disk, no
+        // Link receipt, a poll that can only time out. Checked and SAID.
+        EchoJay_NSLog(("EJStruct: cmd write FAILED uid=" + uid
+                       + " seq=" + juce::String(seq)).toRawUTF8());
+        chainListPanel.statusText = "Apply could not write the command file - "
+            "nothing was sent. Your session is still live.";
+        chainListPanel.repaint();
+        return;
+    }
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     auto poll = std::make_shared<std::function<void(int)>>();
@@ -8466,19 +8501,36 @@ void EchoJayEditor::runStructureApply()
     {
         juce::Timer::callAfterDelay(250, [safeThis, uid, seq, dir, poll, left]
         {
-            if (safeThis == nullptr) return;
+            if (safeThis == nullptr)
+            {
+                // The editor died mid-wait: no banner is possible, but the
+                // log must not go quiet — this was a wordless path.
+                EchoJay_NSLog(("EJStruct: ack poll abandoned (editor "
+                    "destroyed) uid=" + uid + " seq=" + juce::String(seq))
+                    .toRawUTF8());
+                return;
+            }
             auto& p2 = safeThis->processorRef;
             const juce::String name = p2.resolveLinkDisplayName(uid);
             juce::File ack(dir + "ctrl-ack-" + uid + ".json");
             if (ack.existsAsFile())
             {
                 auto v = juce::JSON::parse(ack.loadFileAsString());
-                if (auto* o = v.getDynamicObject(); o != nullptr
-                    && (int) o->getProperty("seq") == seq)
+                auto* o = v.getDynamicObject();
+                if (o != nullptr && (int) o->getProperty("seq") != seq)
+                    // A stale or foreign ack on the channel is a diagnosis
+                    // in itself (the seconds-resolution seq can collide) —
+                    // name it, keep polling.
+                    EchoJay_NSLog(("EJStruct: stale ack uid=" + uid
+                        + " got seq=" + o->getProperty("seq").toString()
+                        + " want=" + juce::String(seq)).toRawUTF8());
+                if (o != nullptr && (int) o->getProperty("seq") == seq)
                 {
                     ack.deleteFile();
                     if ((bool) o->getProperty("planApplied"))
                     {
+                        EchoJay_NSLog(("EJStruct: ack applied uid=" + uid
+                            + " seq=" + juce::String(seq)).toRawUTF8());
                         // The one success path: applied whole, released.
                         p2.clearBorrowKept();
                         p2.borrowRelease(false);
@@ -8496,6 +8548,10 @@ void EchoJayEditor::runStructureApply()
                         for (auto& r : *rs)
                             reasons << (reasons.isEmpty() ? "" : "; ")
                                     << r.toString();
+                    EchoJay_NSLog(("EJStruct: ack FAILED uid=" + uid
+                        + " seq=" + juce::String(seq)
+                        + " restored=" + ((bool) o->getProperty("planRestored") ? "Y" : "N")
+                        + " reasons=" + reasons).toRawUTF8());
                     safeThis->chainListPanel.statusText =
                         "Apply failed - " + reasons + ". "
                         + ((bool) o->getProperty("planRestored")
@@ -8510,6 +8566,9 @@ void EchoJayEditor::runStructureApply()
             }
             if (left <= 1)
             {
+                EchoJay_NSLog(("EJStruct: NO ACK uid=" + uid
+                    + " seq=" + juce::String(seq)
+                    + " after 10s - the Link never answered").toRawUTF8());
                 safeThis->chainListPanel.statusText =
                     "Apply got no answer from " + name + " - nothing may have "
                     "changed there. Your session is still live.";
@@ -8519,7 +8578,10 @@ void EchoJayEditor::runStructureApply()
             (*poll)(left - 1);
         });
     };
-    (*poll)(20);
+    // 40 x 250ms = 10s: Phase A stages REAL plugin instances (blocking
+    // createPluginInstance per Create), so the Link can legitimately take
+    // seconds before it can ack. The timeout SPEAKS when it fires.
+    (*poll)(40);
 }
 
 void EchoJayEditor::sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemove)

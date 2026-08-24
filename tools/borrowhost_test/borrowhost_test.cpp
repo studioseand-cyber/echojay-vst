@@ -1062,6 +1062,42 @@ int main()
         // skips slots is how the contradiction hid.
         check (ed.contains ("CREATED here - no pulled "),
                "the per-slot diagnostic logs created slots too");
+
+        // ---- The silent-Apply class (24 Aug 2026): three answer=apply
+        // ---- attempts with no log line and no UI change. Every path
+        // ---- between the answer and the send now speaks in BOTH channels.
+        const auto rsa2 = bodyOf ("void EchoJayEditor::runStructureApply");
+        // The send logs BEFORE it writes — the line that separates "never
+        // sent" from "sent and waiting".
+        const int sendLog  = rsa2.indexOf ("EJStruct: send uid=");
+        const int cmdWrite = rsa2.indexOf ("replaceWithText");
+        check (sendLog >= 0 && cmdWrite > sendLog,
+               "the send logs unconditionally BEFORE writing the command");
+        // The write's result is checked and a failure is said aloud.
+        check (rsa2.contains ("cmd write FAILED"),
+               "a failed command write speaks instead of timing out mutely");
+        // Every early return names itself in the log as well as the banner.
+        check (rsa2.contains ("no live session uid")
+                 && rsa2.contains ("not structure-capable")
+                 && rsa2.contains ("no confirmed plan pending")
+                 && rsa2.contains ("folder unavailable"),
+               "every pre-send return logs its reason");
+        // Every terminal poll outcome speaks: applied, failed, timeout,
+        // abandoned editor — and a stale ack is named while polling.
+        check (rsa2.contains ("EJStruct: ack applied")
+                 && rsa2.contains ("EJStruct: ack FAILED")
+                 && rsa2.contains ("EJStruct: NO ACK")
+                 && rsa2.contains ("EJStruct: ack poll abandoned")
+                 && rsa2.contains ("EJStruct: stale ack"),
+               "every ack-poll outcome logs, timeout included");
+        // The Link says which side dropped a plan: receipt logged BEFORE
+        // the parse, and both silent drop arms in the dispatcher speak.
+        const auto lp = slurp3 ("Source/LinkProcessor.cpp");
+        check (lp.contains ("] link: plan received"),
+               "the Link logs plan receipt before parsing or applying");
+        check (lp.contains ("REFUSED ctrl-cmd")
+                 && lp.contains ("UNPARSEABLE ctrl-cmd"),
+               "the ctrl dispatcher's drop arms speak, never silent");
     }
 
     std::printf ("== DEV forceWithholdSlot: cannot exist in a non-DEV build ==\n");

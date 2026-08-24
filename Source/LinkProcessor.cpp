@@ -649,12 +649,35 @@ void LinkProcessor::pollControlCommand()
 
     auto v = juce::JSON::parse(cmdFile.loadFileAsString());
     auto* obj = v.getDynamicObject();
-    if (obj == nullptr) { cmdFile.deleteFile(); return; }
+    if (obj == nullptr)
+    {
+        // A cmd that does not parse is DROPPED — said once, since the file
+        // is deleted (24 Aug 2026: every drop on this channel speaks; a
+        // silent drop here is indistinguishable from "never sent").
+        EchoJay_NSLog("EJCtrl: link dropped UNPARSEABLE ctrl-cmd (deleted)");
+        cmdFile.deleteFile();
+        return;
+    }
 
     int ver = (int)obj->getProperty("v");
     int seq = (int)obj->getProperty("seq");
     if (ver != 1 || seq == lastAppliedCtrlSeq_ || seq == 0)
+    {
+        // REFUSED, and it says so — once per distinct seq, because the file
+        // is NOT deleted here and this poll re-reads it at ~10Hz. Note the
+        // leak itself: a refused cmd wedges the channel until overwritten.
+        if (seq != lastRefusedLoggedCtrlSeq_)
+        {
+            lastRefusedLoggedCtrlSeq_ = seq;
+            EchoJay_NSLog(("EJCtrl: link REFUSED ctrl-cmd ver="
+                + juce::String(ver) + " seq=" + juce::String(seq)
+                + " lastApplied=" + juce::String(lastAppliedCtrlSeq_)
+                + (obj->hasProperty("structPlan") ? " (carried a structPlan)"
+                                                  : juce::String())
+                + " - file left on disk").toRawUTF8());
+        }
         return;
+    }
 
     lastAppliedCtrlSeq_ = seq;
     cmdFile.deleteFile();   // consumed
@@ -774,6 +797,12 @@ void LinkProcessor::pollControlCommand()
     ChainHost::PlanResult planResult;
     if (obj->hasProperty("structPlan"))
     {
+        // RECEIPT, logged BEFORE the parse and the apply — so a run's log
+        // says which side dropped a plan: no "send" line = main never sent;
+        // send but no "received" = transport or this dispatcher; received
+        // but no "applied" = the apply hung or died.
+        EchoJay_NSLog(("EJPlan[" + juce::String(seq)
+                       + "] link: plan received").toRawUTF8());
         planAttempted = true;
         LinkShm::StructureEdit::Plan plan;
         LinkShm::StructureEdit::PreImages ignored;
