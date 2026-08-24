@@ -7812,10 +7812,10 @@ void EchoJayEditor::toggleBorrow()
                     + " base=" + juce::String((int) processorRef.borrowBaseIdentity_.size())
                     + " removedNames=" + juce::String(processorRef.borrowRemovedNames_.size()))
                     .toRawUTF8());
-                chainListPanel.statusText = "Release found a defect: your "
-                    "shape changes computed into an EMPTY plan. Nothing was "
-                    "sent and nothing was released - your session is still "
-                    "live. Please report this.";
+                chainListPanel.statusText = "Your session is still live. "
+                    "Release found a defect: your shape changes computed "
+                    "into an EMPTY plan - nothing was sent or released. "
+                    "Please report this.";
                 chainListPanel.repaint();
                 return;
             }
@@ -8423,8 +8423,8 @@ void EchoJayEditor::runStructureApply()
         EchoJay_NSLog(("EJStruct: refused send uid=" + uid
                        + " - Link not structure-capable").toRawUTF8());
         chainListPanel.statusText =
-            "Cannot apply structure changes: this Link's build cannot journal "
-            "a plan. Update it. Your session is still live.";
+            "Your session is still live. Cannot apply structure changes: this "
+            "Link's build cannot journal a plan. Update it.";
         chainListPanel.repaint();
         return;
     }
@@ -8436,8 +8436,8 @@ void EchoJayEditor::runStructureApply()
     {
         EchoJay_NSLog(("EJStruct: refused send uid=" + uid
                        + " - no confirmed plan pending").toRawUTF8());
-        chainListPanel.statusText = "Apply had no confirmed plan to send - "
-            "nothing was sent. Your session is still live; release again to "
+        chainListPanel.statusText = "Your session is still live. Apply had no "
+            "confirmed plan to send - nothing was sent; release again to "
             "review and Apply.";
         chainListPanel.repaint();
         return;
@@ -8452,9 +8452,9 @@ void EchoJayEditor::runStructureApply()
             + " records=" + juce::String((int) proc.borrowSlotRecords_.size())
             + " base=" + juce::String((int) proc.borrowBaseIdentity_.size()))
             .toRawUTF8());
-        chainListPanel.statusText = "Apply found a defect: the confirmed "
-            "plan is EMPTY. Nothing was sent and nothing was released - "
-            "your session is still live. Please report this.";
+        chainListPanel.statusText = "Your session is still live. Apply found "
+            "a defect: the confirmed plan is EMPTY - nothing was sent or "
+            "released. Please report this.";
         chainListPanel.repaint();
         return;
     }
@@ -8465,8 +8465,8 @@ void EchoJayEditor::runStructureApply()
     {
         EchoJay_NSLog(("EJStruct: refused send uid=" + uid
                        + " - shared Link folder unavailable").toRawUTF8());
-        chainListPanel.statusText = "Cannot apply: the shared Link folder is "
-            "unavailable. Your session is still live.";
+        chainListPanel.statusText = "Your session is still live. Cannot apply: "
+            "the shared Link folder is unavailable.";
         chainListPanel.repaint();
         return;
     }
@@ -8490,8 +8490,8 @@ void EchoJayEditor::runStructureApply()
         // Link receipt, a poll that can only time out. Checked and SAID.
         EchoJay_NSLog(("EJStruct: cmd write FAILED uid=" + uid
                        + " seq=" + juce::String(seq)).toRawUTF8());
-        chainListPanel.statusText = "Apply could not write the command file - "
-            "nothing was sent. Your session is still live.";
+        chainListPanel.statusText = "Your session is still live. Apply could not "
+            "write the command file - nothing was sent.";
         chainListPanel.repaint();
         return;
     }
@@ -8539,9 +8539,9 @@ void EchoJayEditor::runStructureApply()
                             + " seq=" + juce::String(seq)
                             + " why=" + why).toRawUTF8());
                         safeThis->chainListPanel.statusText =
-                            "Apply was refused by " + name + "'s transport - "
-                            + why + ". Nothing was applied. Your session is "
-                            "still live.";
+                            "Your session is still live. Apply was refused by "
+                            + name + "'s transport - " + why
+                            + ". Nothing was applied.";
                         safeThis->refreshChainPanelForView(true);
                         return;
                     }
@@ -8570,14 +8570,17 @@ void EchoJayEditor::runStructureApply()
                         + " seq=" + juce::String(seq)
                         + " restored=" + ((bool) o->getProperty("planRestored") ? "Y" : "N")
                         + " reasons=" + reasons).toRawUTF8());
+                    // SESSION STATE FIRST (24 Aug 2026: the status line
+                    // truncated before this sentence, so a working refusal
+                    // read as a hang and Apply was pressed four times).
                     safeThis->chainListPanel.statusText =
-                        "Apply failed - " + reasons + ". "
+                        "Your session is still live. Apply failed - "
+                        + reasons + ". "
                         + ((bool) o->getProperty("planRestored")
                                ? name + " was restored to exactly its "
                                  "pre-Apply rack. "
                                : name + "'s rack was not touched. ")
-                        + "Your session is still live - fix the cause and "
-                          "Apply again.";
+                        + "Fix the cause and Apply again.";
                     safeThis->refreshChainPanelForView(true);
                     return;
                 }
@@ -8588,8 +8591,8 @@ void EchoJayEditor::runStructureApply()
                     + " seq=" + juce::String(seq)
                     + " after 10s - the Link never answered").toRawUTF8());
                 safeThis->chainListPanel.statusText =
-                    "Apply got no answer from " + name + " - nothing may have "
-                    "changed there. Your session is still live.";
+                    "Your session is still live. Apply got no answer from "
+                    + name + " - nothing may have changed there.";
                 safeThis->refreshChainPanelForView(true);
                 return;
             }
@@ -28258,7 +28261,7 @@ void EchoJayEditor::showChainPluginPicker()
                 auto desc0 = bh0->preferInlineHostableDesc(picked);
                 safeThis->chainListPanel.statusText = "Loading " + desc0.name + "...";
                 safeThis->chainListPanel.repaint();
-                bh0->loadPluginAsync(desc0, [safeThis](const juce::String& err)
+                bh0->loadPluginAsync(desc0, [safeThis, picked](const juce::String& err)
                 {
                     if (safeThis == nullptr) return;
                     auto* bh2 = safeThis->processorRef.borrowHost();
@@ -28271,24 +28274,31 @@ void EchoJayEditor::showChainPluginPicker()
                     }
                     const int newSlot = bh2->getNumSlots() - 1;
                     // CREATE class (spec §3): origin -1, identity recorded
-                    // from the LIVE instance so the plan's Create op names
-                    // exactly what the Link must stage — or refuse whole.
+                    // from the PICKED descriptor, never the live instance
+                    // (24 Aug 2026: Apply failed at stage, four runs).
+                    // preferInlineHostableDesc may have SWAPPED to a variant
+                    // for THIS process's hosting convenience; liveIdentity()
+                    // reads the swap, and the Link is then asked for a build
+                    // it may not have — the very trap the sendRackAdd
+                    // comment below warns about. The substitute hosts here;
+                    // the plan carries what the user picked.
                     auto& p3 = safeThis->processorRef;
                     p3.borrowSlotOrigin_.push_back(-1);
-                    const auto live = bh2->liveIdentity();
                     p3.borrowCreatedIdentity_.push_back(
-                        newSlot >= 0 && newSlot < (int) live.size()
-                            ? live[(size_t) newSlot]
-                            : LinkShm::StructureEdit::SlotIdentity{});
+                        LinkShm::StructureEdit::SlotIdentity{
+                            picked.name,
+                            juce::String(picked.uniqueId), {} });
                     // A created slot has a RECORD like every other slot
                     // (defect, 23 Aug 2026: the lost add — a slot without a
                     // record is invisible to every records-bounded consumer,
                     // and the bound was doing its job against inconsistent
                     // inputs). Nothing was pulled: hadState=false so it can
                     // never read as withheld, and the EMPTY baseline makes
-                    // it edited by definition.
+                    // it edited by definition. Named as PICKED, same as the
+                    // identity — the ask and the removal memory must speak
+                    // the user's name for it, not the substitute's.
                     EchoJayProcessor::BorrowSlotRecord cr;
-                    cr.name = bh2->getSlotInfo(newSlot).name;
+                    cr.name = picked.name;
                     p3.borrowSlotRecords_.push_back(std::move(cr));
                     safeThis->chainSelectedSlot_ = newSlot;
                     safeThis->chainListPanel.statusText = {};

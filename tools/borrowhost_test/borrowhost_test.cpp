@@ -1131,6 +1131,33 @@ int main()
             check (jrArm.contains ("syncModelAfterStructuralChange"),
                    "the launch journal restore syncs the model too");
         }
+        // ---- The picked plugin, not the substitute (24 Aug 2026: Apply
+        // ---- failed at stage, four runs — the main swapped to an
+        // ---- inline-hostable variant for its own hosting, liveIdentity()
+        // ---- read the swap, and the Link was asked for a build it may
+        // ---- not have). The Create identity comes from `picked`, period.
+        {
+            const int addAt = ed.indexOf ("CREATE class (spec §3)");
+            const auto addArm = addAt >= 0 ? ed.substring (addAt, addAt + 1800)
+                                           : juce::String();
+            check (addArm.contains ("picked.name")
+                     && addArm.contains ("juce::String(picked.uniqueId)")
+                     && ! addArm.contains ("->liveIdentity()"),
+                   "the Create identity is the PICKED plugin, never the substitute");
+        }
+        // ---- Session-state-first banners (24 Aug 2026: the status line
+        // ---- truncated before "Your session is still live", a working
+        // ---- refusal read as a hang, Apply was pressed four times).
+        check (rsa2.contains ("Your session is still live. Apply failed"),
+               "the failure banner LEADS with the session state");
+        {
+            int tailStates = 0;   // any Apply banner still ENDING with it
+            for (int p = 0; (p = rsa2.indexOf (p, "Your session is still live.\"")) >= 0; ++p)
+                ++tailStates;
+            check (tailStates == 0,
+                   "no Apply banner buries the session state at the end",
+                   juce::String (tailStates));
+        }
         // SEQ IS COLLISION-PROOF, one author: no ctrl sender stamps a
         // seconds-resolution seq any more (the two remaining
         // currentTimeMillis()/1000 sites are the what's-new dismissal
@@ -1171,6 +1198,38 @@ int main()
         // already applied from the previous run.
         check (prev >= (int) (t0 / 1000),
                "seqs never fall below wall seconds (restart monotonicity)");
+    }
+
+    std::printf ("== the hosting substitute CAN differ from the picked plugin ==\n");
+    {
+        // FUNCTIONAL half of the picked-vs-substitute gate: prove the swap
+        // is real — a popout-only AU with a catalogue VST3 build comes back
+        // as a DIFFERENT descriptor (name, uid, format). This is the
+        // identity a plan must never carry; the source pin above holds the
+        // add path to `picked`.
+        juce::File shared2 = juce::File (appData).getChildFile ("EchoJay");
+        juce::KnownPluginList kl;
+        juce::PluginDescription v3;
+        v3.name = "EJ Popout Probe Stereo";
+        v3.pluginFormatName = "VST3";
+        v3.fileOrIdentifier = "/nonexistent/EJPopoutProbe.vst3";
+        v3.uniqueId = 0x50505631;
+        kl.addType (v3);
+        if (auto xml = kl.createXml())
+            shared2.getChildFile ("chain_plugins.xml")
+                   .replaceWithText (xml->toString (juce::XmlElement::TextFormat()));
+        ChainHost::markPopoutOnly ("EJ Popout Probe (s)", "AudioUnit");
+        ChainHost differHost;                     // fresh ctor loads the catalogue
+        juce::PluginDescription au;
+        au.name = "EJ Popout Probe (s)";
+        au.pluginFormatName = "AudioUnit";
+        au.uniqueId = 0x50505541;
+        const auto sub = differHost.preferInlineHostableDesc (au);
+        check (sub.pluginFormatName == "VST3" && sub.name != au.name,
+               "a popout-only AU swaps to its VST3 build for local hosting",
+               sub.name);
+        check (sub.uniqueId != au.uniqueId,
+               "and the substitute's uid differs - the wrong identity to send");
     }
 
     std::printf ("== DEV forceWithholdSlot: cannot exist in a non-DEV build ==\n");
