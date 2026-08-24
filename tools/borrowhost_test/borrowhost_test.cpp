@@ -1098,6 +1098,61 @@ int main()
         check (lp.contains ("REFUSED ctrl-cmd")
                  && lp.contains ("UNPARSEABLE ctrl-cmd"),
                "the ctrl dispatcher's drop arms speak, never silent");
+
+        // ---- Consume and answer, always (24 Aug 2026 ruling): a refused
+        // ---- ctrl-cmd is DELETED and ACKED with its reason — silence is
+        // ---- never a valid response, and no refused file wedges the
+        // ---- channel at 10Hz.
+        check (lp.contains ("consumed and answered")
+                 && lp.contains ("r->setProperty(\"refused\", why);")
+                 && ! lp.contains ("file left on disk"),
+               "every refusal consumes the file and answers with a reason");
+        check (lp.contains ("duplicate seq, already applied")
+                 && lp.contains ("seq 0 invalid")
+                 && lp.contains ("unsupported"),
+               "every refusal class is named: dup seq, zero seq, bad version");
+        check (rsa2.contains ("EJStruct: ack REFUSED"),
+               "the main names a transport refusal to the user and the log");
+        // SEQ IS COLLISION-PROOF, one author: no ctrl sender stamps a
+        // seconds-resolution seq any more (the two remaining
+        // currentTimeMillis()/1000 sites are the what's-new dismissal
+        // timestamps, not seqs), and no hand-rolled baseSeq offsets remain.
+        int secStamps = 0, seqCalls = 0;
+        for (int p = 0; (p = ed.indexOf (p, "currentTimeMillis() / 1000")) >= 0; ++p)
+            ++secStamps;
+        for (int p = 0; (p = ed.indexOf (p, "LinkShm::nextCtrlSeq()")) >= 0; ++p)
+            ++seqCalls;
+        check (secStamps == 2 && seqCalls >= 14 && ! ed.contains ("baseSeq"),
+               "one seq author: every sender uses nextCtrlSeq",
+               juce::String (secStamps) + "/" + juce::String (seqCalls));
+    }
+
+    std::printf ("== nextCtrlSeq: distinct under same-millisecond bursts ==\n");
+    {
+        // The ruling's gate: two commands issued in the same millisecond get
+        // distinct seqs. A tight 1000-call burst spans well under a second,
+        // so it contains hundreds of same-millisecond pairs; every value
+        // must be strictly increasing (distinct AND monotonic).
+        const juce::int64 t0 = juce::Time::currentTimeMillis();
+        int prev = LinkShm::nextCtrlSeq();
+        bool strictly = true;
+        for (int i = 0; i < 999; ++i)
+        {
+            const int s = LinkShm::nextCtrlSeq();
+            if (s <= prev) { strictly = false; break; }
+            prev = s;
+        }
+        const juce::int64 spanMs = juce::Time::currentTimeMillis() - t0;
+        check (strictly,
+               "1000-call burst: every seq strictly greater than the last");
+        check (spanMs < 1000,
+               "the burst really was sub-second (same-ms pairs guaranteed)",
+               juce::String (spanMs) + "ms");
+        // And the seed keeps restart monotonicity: values sit at or above
+        // wall seconds, so a relaunched main cannot reissue a seq a Link
+        // already applied from the previous run.
+        check (prev >= (int) (t0 / 1000),
+               "seqs never fall below wall seconds (restart monotonicity)");
     }
 
     std::printf ("== DEV forceWithholdSlot: cannot exist in a non-DEV build ==\n");

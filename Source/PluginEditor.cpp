@@ -7904,14 +7904,13 @@ void EchoJayEditor::runBorrowApply()
         juce::String uid, name;
         juce::Array<juce::var> baseSlots;
         std::vector<std::pair<int, juce::String>> payloads;   // slot0, b64
-        int idx = 0, baseSeq = 0, ok = 0;
+        int idx = 0, ok = 0;
         juce::StringArray failures;
     };
     auto st = std::make_shared<ApplyState>();
     st->uid = uid;
     st->name = proc.resolveLinkDisplayName(uid);
     st->baseSlots = baseSlots;
-    st->baseSeq = (int) (juce::Time::currentTimeMillis() / 1000);
 
     const auto plan = LinkShm::BorrowCommit::plan(borrowSlotVerdicts());
     auto* bh = proc.borrowHost();
@@ -7957,7 +7956,7 @@ void EchoJayEditor::runBorrowApply()
         if (dir.isEmpty())
         { st->failures.add("shared Link folder unavailable"); (*finish)(); return; }
         const auto& [slot0, b64] = st->payloads[(size_t) st->idx];
-        const int seq = st->baseSeq + st->idx;
+        const int seq = LinkShm::nextCtrlSeq();
         auto* cmd = new juce::DynamicObject();
         cmd->setProperty("v",           1);
         cmd->setProperty("seq",         seq);
@@ -8030,7 +8029,7 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
         std::vector<LinkShm::RackSidecarSlot> slots;
         juce::StringArray states;          // b64 per slot, parallel
         float masterWet = 1.0f;            // the rack's mix, carried across
-        int idx = 0, baseSeq = 0;
+        int idx = 0;
         juce::int64 totalBytes = 0;
         juce::StringArray failures;        // named list for the §5e refusal
         bool structCapable = false;        // snapshot: offered only if announced
@@ -8039,7 +8038,6 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
     st->uid       = uid;
     st->slots     = it->second.rack.slots;
     st->masterWet = it->second.rack.masterWet;
-    st->baseSeq   = (int) (juce::Time::currentTimeMillis() / 1000);
     st->structCapable = structCapable;
     say("Reading " + juce::String((int) st->slots.size()) + " plugin(s) from "
         + processorRef.resolveLinkDisplayName(uid) + "...");
@@ -8234,7 +8232,7 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
         const juce::String dir = LinkShm::resolveDir(err);
         if (dir.isEmpty())
         { st->failures.add("shared Link folder unavailable"); (*finish)(); return; }
-        const int seq = st->baseSeq + st->idx;
+        const int seq = LinkShm::nextCtrlSeq();
         auto* cmd = new juce::DynamicObject();
         cmd->setProperty("v",             1);
         cmd->setProperty("seq",           seq);
@@ -8469,7 +8467,7 @@ void EchoJayEditor::runStructureApply()
         chainListPanel.repaint();
         return;
     }
-    const int seq = (int) (juce::Time::currentTimeMillis() / 1000);
+    const int seq = LinkShm::nextCtrlSeq();
     auto* cmd = new juce::DynamicObject();
     cmd->setProperty("v",   1);
     cmd->setProperty("seq", seq);
@@ -8527,6 +8525,23 @@ void EchoJayEditor::runStructureApply()
                 if (o != nullptr && (int) o->getProperty("seq") == seq)
                 {
                     ack.deleteFile();
+                    // The transport itself can refuse (consume-and-answer
+                    // ruling): duplicate seq, bad version, malformed. Named
+                    // to the user and the log; the session stays live.
+                    if (o->hasProperty("refused"))
+                    {
+                        const juce::String why =
+                            o->getProperty("refused").toString();
+                        EchoJay_NSLog(("EJStruct: ack REFUSED uid=" + uid
+                            + " seq=" + juce::String(seq)
+                            + " why=" + why).toRawUTF8());
+                        safeThis->chainListPanel.statusText =
+                            "Apply was refused by " + name + "'s transport - "
+                            + why + ". Nothing was applied. Your session is "
+                            "still live.";
+                        safeThis->refreshChainPanelForView(true);
+                        return;
+                    }
                     if ((bool) o->getProperty("planApplied"))
                     {
                         EchoJay_NSLog(("EJStruct: ack applied uid=" + uid
@@ -8730,7 +8745,7 @@ void EchoJayEditor::beginRemoteEditSession(const juce::String& uid, int slot0)
     juce::String dir = LinkShm::resolveDir(err);
     if (dir.isEmpty())
     { say("Cannot reach " + name + ": the shared Link folder is unavailable."); return; }
-    int seq = (int) (juce::Time::currentTimeMillis() / 1000);
+    int seq = LinkShm::nextCtrlSeq();
     for (auto& pnd : linkCtrlPending_)
         if (pnd.addr == uid && pnd.seq >= seq) seq = pnd.seq + 1;
     auto* cmd = new juce::DynamicObject();
@@ -8979,7 +8994,7 @@ void EchoJayEditor::commitAndReleaseEditSession()
     juce::String dir = LinkShm::resolveDir(err);
     if (dir.isEmpty())
     { say("Shared Link folder unavailable - still editing, nothing sent."); return; }
-    int seq = (int) (juce::Time::currentTimeMillis() / 1000);
+    int seq = LinkShm::nextCtrlSeq();
     for (auto& pnd : linkCtrlPending_)
         if (pnd.addr == uid && pnd.seq >= seq) seq = pnd.seq + 1;
     auto* cmd = new juce::DynamicObject();
@@ -9068,7 +9083,7 @@ void EchoJayEditor::sendOpenSlotEditor(const juce::String& uid, int slotIdx)
         return;
     }
 
-    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    int seq = LinkShm::nextCtrlSeq();
     for (auto& p : linkCtrlPending_)
         if (p.addr == uid && p.seq >= seq) seq = p.seq + 1;
 
@@ -15715,7 +15730,7 @@ void EchoJayEditor::triggerKeyReanalyse()
         if (dir.isEmpty()) return;
         auto* cmd = new juce::DynamicObject();
         cmd->setProperty("v",   1);
-        cmd->setProperty("seq", (int) (juce::Time::currentTimeMillis() / 1000));
+        cmd->setProperty("seq", LinkShm::nextCtrlSeq());
         juce::File(dir + "key-ack-" + target->uid + ".json").deleteFile();
         juce::File(dir + "key-cmd-" + target->uid + ".json")
             .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
@@ -24021,7 +24036,7 @@ int EchoJayEditor::sendChainEditToLink(const juce::String& linkUid,
     // Mirror of sendChainToLink, v:2: ops + baseSlots pass through verbatim
     // (the Link re-parses via the same ChainHost::parseChainEditOps and runs
     // its own baseSlots staleness check — guard #2).
-    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    int seq = LinkShm::nextCtrlSeq();
     auto* cmd = new juce::DynamicObject();
     cmd->setProperty("v",          2);
     cmd->setProperty("seq",        seq);
@@ -28364,7 +28379,7 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
 
     // Chain entries pass through as-is (name/role/settings) — the Link
     // resolves names and applies plugin_disabled.json on its side.
-    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    int seq = LinkShm::nextCtrlSeq();
     auto* cmd = new juce::DynamicObject();
     cmd->setProperty("v",          1);
     cmd->setProperty("seq",        seq);
@@ -28591,7 +28606,7 @@ void EchoJayEditor::sendLinkActiveCommand(const juce::String& linkAddr, bool act
     if (dir.isEmpty() || linkAddr.isEmpty()) return;
     const juce::String& id = linkAddr;
 
-    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    int seq = LinkShm::nextCtrlSeq();
     for (auto& p : linkCtrlPending_)
         if (p.addr == linkAddr && p.seq >= seq)
             seq = p.seq + 1;   // same-second re-toggle: keep seq advancing
@@ -28659,7 +28674,7 @@ void EchoJayEditor::sendLinkPreGainCommand(const juce::String& linkAddr, float p
     for (const auto& p : linkCtrlPending_)
         if (p.addr == linkAddr && !p.isGain && !p.isPreGain && !p.timedOut) active = p.target;
 
-    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    int seq = LinkShm::nextCtrlSeq();
     for (auto& p : linkCtrlPending_)
         if (p.addr == linkAddr && p.seq >= seq) seq = p.seq + 1;
 
@@ -28701,7 +28716,7 @@ void EchoJayEditor::sendLinkPreGainResetCommand(const juce::String& linkAddr)
         const juce::String a = li.uid.isNotEmpty() ? li.uid : LinkShm::makeSafeFilePart(li.name);
         if (a == linkAddr) { active = li.active; break; }
     }
-    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    int seq = LinkShm::nextCtrlSeq();
     for (auto& p : linkCtrlPending_)
         if (p.addr == linkAddr && p.seq >= seq) seq = p.seq + 1;
     auto* cmd = new juce::DynamicObject();
@@ -28742,7 +28757,7 @@ void EchoJayEditor::sendLinkGainCommand(const juce::String& linkAddr, float gain
     for (const auto& p : linkCtrlPending_)
         if (p.addr == linkAddr && !p.isGain && !p.timedOut) active = p.target;
 
-    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    int seq = LinkShm::nextCtrlSeq();
     for (auto& p : linkCtrlPending_)
         if (p.addr == linkAddr && p.seq >= seq) seq = p.seq + 1;
 
@@ -29092,7 +29107,7 @@ void EchoJayEditor::sendLinkPlacementCommand(const juce::String& linkAddr, int p
     for (const auto& p : linkCtrlPending_)
         if (p.addr == linkAddr && !p.isGain && !p.timedOut) active = p.target;
 
-    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    int seq = LinkShm::nextCtrlSeq();
     for (auto& p : linkCtrlPending_)
         if (p.addr == linkAddr && p.seq >= seq) seq = p.seq + 1;
 

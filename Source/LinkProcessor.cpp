@@ -647,37 +647,38 @@ void LinkProcessor::pollControlCommand()
     juce::File cmdFile(resolvedDir + "ctrl-cmd-" + id + ".json");
     if (!cmdFile.existsAsFile()) return;
 
+    // CONSUME AND ANSWER, ALWAYS (24 Aug 2026 ruling): a command is
+    // consumed exactly once and always answered — ver mismatch, duplicate
+    // seq, malformed, all of them. Silence is never a valid response; a
+    // refused-but-kept file wedged this channel at 10Hz and left the
+    // sender's poll blind until its timeout.
+    auto refuseCmd = [&](const juce::String& why, int rseq)
+    {
+        cmdFile.deleteFile();
+        auto* r = new juce::DynamicObject();
+        r->setProperty("v",       1);
+        r->setProperty("seq",     rseq);
+        r->setProperty("refused", why);
+        juce::File(resolvedDir + "ctrl-ack-" + id + ".json")
+            .replaceWithText(juce::JSON::toString(juce::var(r), true));
+        EchoJay_NSLog(("EJCtrl: link REFUSED ctrl-cmd (" + why + ") seq="
+            + juce::String(rseq)
+            + " lastApplied=" + juce::String(lastAppliedCtrlSeq_)
+            + " - consumed and answered").toRawUTF8());
+    };
+
     auto v = juce::JSON::parse(cmdFile.loadFileAsString());
     auto* obj = v.getDynamicObject();
-    if (obj == nullptr)
-    {
-        // A cmd that does not parse is DROPPED — said once, since the file
-        // is deleted (24 Aug 2026: every drop on this channel speaks; a
-        // silent drop here is indistinguishable from "never sent").
-        EchoJay_NSLog("EJCtrl: link dropped UNPARSEABLE ctrl-cmd (deleted)");
-        cmdFile.deleteFile();
-        return;
-    }
+    if (obj == nullptr) { refuseCmd("UNPARSEABLE ctrl-cmd", 0); return; }
 
     int ver = (int)obj->getProperty("v");
     int seq = (int)obj->getProperty("seq");
-    if (ver != 1 || seq == lastAppliedCtrlSeq_ || seq == 0)
-    {
-        // REFUSED, and it says so — once per distinct seq, because the file
-        // is NOT deleted here and this poll re-reads it at ~10Hz. Note the
-        // leak itself: a refused cmd wedges the channel until overwritten.
-        if (seq != lastRefusedLoggedCtrlSeq_)
-        {
-            lastRefusedLoggedCtrlSeq_ = seq;
-            EchoJay_NSLog(("EJCtrl: link REFUSED ctrl-cmd ver="
-                + juce::String(ver) + " seq=" + juce::String(seq)
-                + " lastApplied=" + juce::String(lastAppliedCtrlSeq_)
-                + (obj->hasProperty("structPlan") ? " (carried a structPlan)"
-                                                  : juce::String())
-                + " - file left on disk").toRawUTF8());
-        }
-        return;
-    }
+    if (ver != 1)
+    { refuseCmd("version " + juce::String(ver) + " unsupported", seq); return; }
+    if (seq == 0)
+    { refuseCmd("seq 0 invalid", seq); return; }
+    if (seq == lastAppliedCtrlSeq_)
+    { refuseCmd("duplicate seq, already applied", seq); return; }
 
     lastAppliedCtrlSeq_ = seq;
     cmdFile.deleteFile();   // consumed

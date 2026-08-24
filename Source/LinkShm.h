@@ -1040,6 +1040,26 @@ inline juce::String sidecarUidToStateUid (const juce::String& hexUid)
     return juce::String (hexUid.getHexValue32());
 }
 
+// ---------------------------------------------------------------------------
+// Ctrl-cmd seq, collision-proof (24 Aug 2026): the seconds-resolution stamp
+// meant two commands in one second shared a seq and the second was refused
+// as a duplicate — silently, which read as "Apply does nothing". ONE author
+// for every command seq this process issues: seeded at wall seconds so a
+// restart stays monotonic against a Link's remembered lastApplied, and
+// strictly increasing per call so two commands issued in the same
+// MILLISECOND still get distinct seqs (gated functionally, not trusted).
+// ---------------------------------------------------------------------------
+inline int nextCtrlSeq()
+{
+    static std::atomic<int> last { 0 };
+    const int now = (int) (juce::Time::currentTimeMillis() / 1000);
+    int prev = last.load();
+    int next;
+    do { next = juce::jmax (now, prev + 1); }
+    while (! last.compare_exchange_weak (prev, next));
+    return next;
+}
+
 struct BorrowCommit
 {
     enum class Action { Commit, LeaveWithheld, LeaveUnedited };
