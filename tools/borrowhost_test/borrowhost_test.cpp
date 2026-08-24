@@ -1113,6 +1113,24 @@ int main()
                "every refusal class is named: dup seq, zero seq, bad version");
         check (rsa2.contains ("EJStruct: ack REFUSED"),
                "the main names a transport refusal to the user and the log");
+        // ---- Display parity (24 Aug 2026: applied=Y, stale rack UI): a
+        // ---- plan applied through the Link's dispatcher notifies its
+        // ---- model UNCONDITIONALLY — applied and rolled-back both change
+        // ---- the shape — and the launch journal restore notifies too.
+        {
+            const int rcv = lp.indexOf ("] link: plan received");
+            const auto planArm = rcv >= 0 ? lp.substring (rcv, rcv + 1400)
+                                          : juce::String();
+            const int applyAt  = planArm.indexOf ("applyStructurePlan");
+            const int notifyAt = planArm.indexOf ("notifyChainModel();");
+            check (applyAt >= 0 && notifyAt > applyAt,
+                   "a dispatched plan notifies the model, every outcome");
+            const int jr = lp.indexOf ("planJournalRestoreIfPresent");
+            const auto jrArm = jr >= 0 ? lp.substring (jr, jr + 200)
+                                       : juce::String();
+            check (jrArm.contains ("notifyChainModel()"),
+                   "the launch journal restore repaints too");
+        }
         // SEQ IS COLLISION-PROOF, one author: no ctrl sender stamps a
         // seconds-resolution seq any more (the two remaining
         // currentTimeMillis()/1000 sites are the what's-new dismissal

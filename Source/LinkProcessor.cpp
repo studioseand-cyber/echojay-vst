@@ -809,7 +809,16 @@ void LinkProcessor::pollControlCommand()
         LinkShm::StructureEdit::PreImages ignored;
         if (LinkShm::StructureEdit::planFromVar(obj->getProperty("structPlan"),
                                                 plan, ignored))
+        {
             planResult = chainHost.applyStructurePlan(resolvedDir, plan);
+            // EVERY plan outcome repaints (24 Aug 2026: applied=Y with a
+            // stale rack UI): applied changed the shape; a rollback tore it
+            // down and rebuilt it back. Either way the editor's model and
+            // the host's snapshot are stale — notify UNCONDITIONALLY here,
+            // not on the success arm. (The launch-time journal restore has
+            // its own notify; together all three outcomes repaint.)
+            notifyChainModel();
+        }
         else
             planResult.reasons.add("the plan could not be read");
         EchoJay_NSLog(("EJPlan[" + juce::String(seq) + "] link: applied="
