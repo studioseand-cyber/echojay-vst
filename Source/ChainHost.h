@@ -96,6 +96,10 @@ public:
         bool restored = false;              // rollback ran (rack = pre-images)
         juce::String failedAt;              // op description on failure
         juce::StringArray reasons;          // per-slot named reasons (Phase A)
+        std::vector<int> finalOrigin;       // ok only: per final slot, the
+                                            // pre-plan index it came from
+                                            // (-1 = created) — the lease's
+                                            // prior remap maps through this
     };
     std::vector<LinkShm::StructureEdit::SlotIdentity> liveIdentity() const;
     LinkShm::StructureEdit::PreImages planCapturePreImages() const;

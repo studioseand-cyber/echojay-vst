@@ -1153,6 +1153,10 @@ namespace StructureEdit
         juce::String name;         // display + honesty
         juce::String stateB64;     // Create seed / Commit payload
         SlotIdentity identity;     // phase 2: the applier keys staging/park by this
+        bool bypassed = false;     // Create: the bypass state the user gave the
+                                   // slot in the main — carried so the lease's
+                                   // prior remap has a truth for created slots
+                                   // (never a default, never "not restored")
     };
 
     // What the plan computation is TOLD about each current slot. originIndex
@@ -1165,6 +1169,9 @@ namespace StructureEdit
         int  originIndex = -1;
         bool edited = false, withheld = false;
         juce::String stateB64;     // current state (Create seed / Commit)
+        bool bypassedNow = false;  // live bypass in the main's borrowed host —
+                                   // rides the Create op (field added LAST:
+                                   // existing positional inits stay valid)
     };
 
     struct Plan
@@ -1233,7 +1240,8 @@ namespace StructureEdit
                 p.ops.push_back ({ OpType::Create, -1, i,
                                    current[(size_t) i].identity.name,
                                    current[(size_t) i].stateB64,
-                                   current[(size_t) i].identity });
+                                   current[(size_t) i].identity,
+                                   current[(size_t) i].bypassedNow });
                 ++p.creating;
             }
 
@@ -1304,6 +1312,7 @@ namespace StructureEdit
             o->setProperty ("name", op.name);
             if (op.stateB64.isNotEmpty()) o->setProperty ("state", op.stateB64);
             o->setProperty ("identity", identityToVar (op.identity));
+            o->setProperty ("byp", op.bypassed);
             opsArr.add (juce::var (o));
         }
         root->setProperty ("ops", opsArr);
@@ -1332,7 +1341,8 @@ namespace StructureEdit
                                           (int) oo->getProperty ("to"),
                                           oo->getProperty ("name").toString(),
                                           oo->getProperty ("state").toString(),
-                                          identityFromVar (oo->getProperty ("identity")) });
+                                          identityFromVar (oo->getProperty ("identity")),
+                                          (bool) oo->getProperty ("byp") });
         if (auto* arr = o->getProperty ("preShape").getArray())
             for (auto& e : *arr) preOut.shape.push_back (identityFromVar (e));
         if (auto* arr = o->getProperty ("preStates").getArray())

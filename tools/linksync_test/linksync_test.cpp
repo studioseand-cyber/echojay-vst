@@ -70,6 +70,19 @@ static BuiltinDevice makeProbe()
 }
 static const BuiltinDeviceRegistrar probeReg { makeProbe() };
 
+// The friend declared in LinkProcessor.h — drives the REAL rack-lease arms
+// (engage saves priors and bypasses all; release restores), so the gate
+// proves the shipping code, not a re-implementation.
+struct EchoJayLinkSyncTestAccess
+{
+    static void engage (LinkProcessor& p)  { p.rackLeaseEngage(); }
+    static void release (LinkProcessor& p)
+    {
+        p.leaseActive_.store (false, std::memory_order_relaxed);
+        p.rackLeaseRelease();
+    }
+};
+
 static int failures = 0;
 static void check (bool ok, const juce::String& what,
                    const juce::String& detail = {})
@@ -168,6 +181,89 @@ int main()
            "after refusal the models still agree",
            juce::String (host.getNumSlots()) + "/"
              + juce::String ((int) proc.getChainModel().size()));
+
+    // ---- lease + plan: bypass restore is plan-aware -----------------------
+    // The 24 Aug defect: priors are captured per index before the plan, the
+    // plan shifts indices, and every plugin came back bypassed. Engage with
+    // MIXED bypass, apply a plan that removes and creates, release — every
+    // surviving slot must match its pre-borrow state, the created slot must
+    // match what the plan said, and mid-lease the MODEL (what the editor
+    // renders and what persists) must never record the lease's dry rack.
+    std::printf ("== lease + plan: bypass survives a reshape ==\n");
+    {
+        // Rack is 3 probes from the arms above. Pre-borrow: [off, BYP, off].
+        host.setSlotBypassed (0, false);
+        host.setSlotBypassed (1, true);
+        host.setSlotBypassed (2, false);
+        EchoJayLinkSyncTestAccess::engage (proc);
+        bool allDry = true;
+        for (int i = 0; i < host.getNumSlots(); ++i)
+            if (! host.getSlotInfo (i).bypassed) allDry = false;
+        check (allDry, "engage bypassed every slot (dry rack)");
+
+        // The plan, THROUGH computePlan (byp must ride from CurrentSlot):
+        // remove pre-borrow slot 1 (the bypassed one), create one at the
+        // end whose plan-carried bypass is TRUE.
+        const auto base2 = host.liveIdentity();
+        std::vector<SE::CurrentSlot> cur;
+        cur.push_back ({ base2[0], 0, false, false, {}, false });
+        cur.push_back ({ base2[2], 2, false, false, {}, false });
+        cur.push_back ({ SE::SlotIdentity { "EJ Sync Probe",
+                             juce::String (0x454A5350), {} },
+                         -1, true, false, {}, /*bypassedNow*/ true });
+        auto plan2 = SE::computePlan ("linksync-test", base2, cur);
+        check (plan2.removing == 1 && plan2.creating == 1,
+               "the plan removes one and creates one");
+        // The wire carries the bypass: serialize and read back like the
+        // real transport does, and apply the DESERIALIZED plan.
+        SE::Plan wire; SE::PreImages preIgnored;
+        check (SE::planFromVar (SE::planToVar (plan2, {}), wire, preIgnored),
+               "the plan round-trips the wire");
+        bool bypOnWire = false;
+        for (const auto& op : wire.ops)
+            if (op.type == SE::OpType::Create && op.bypassed) bypOnWire = true;
+        check (bypOnWire, "the Create op's bypass survives serialization");
+
+        const auto res3 = proc.applyStructurePlanAndSync (dir, wire);
+        check (res3.ok, "the reshape applied mid-lease",
+               res3.reasons.joinIntoString ("; "));
+        allDry = true;
+        for (int i = 0; i < host.getNumSlots(); ++i)
+            if (! host.getSlotInfo (i).bypassed) allDry = false;
+        check (allDry, "the lease's dry rack held through the reshape "
+                       "(created slot included)");
+        // THE GENERAL RULE, mid-lease: the model records the TRUE states,
+        // not the lease's temporary bypass — because the model persists.
+        const auto& m = proc.getChainModel();
+        check ((int) m.size() == 3
+                 && m[0].bypassed == false
+                 && m[1].bypassed == false
+                 && m[2].bypassed == true,
+               "mid-lease the model holds the TRUE bypass states, remapped",
+               juce::String (m.size() >= 3
+                   ? juce::String ((int) m[0].bypassed)
+                       + juce::String ((int) m[1].bypassed)
+                       + juce::String ((int) m[2].bypassed)
+                   : juce::String ("short")));
+
+        EchoJayLinkSyncTestAccess::release (proc);
+        // Survivors: pre-borrow slot 0 (off) and slot 2 (off), now at 0/1;
+        // the created slot takes the plan's TRUE.
+        check (host.getSlotInfo (0).bypassed == false
+                 && host.getSlotInfo (1).bypassed == false
+                 && host.getSlotInfo (2).bypassed == true,
+               "after release every survivor matches its pre-borrow bypass "
+               "and the created slot matches the plan",
+               juce::String ((int) host.getSlotInfo (0).bypassed)
+                   + juce::String ((int) host.getSlotInfo (1).bypassed)
+                   + juce::String ((int) host.getSlotInfo (2).bypassed));
+        const auto& m2 = proc.getChainModel();
+        check ((int) m2.size() == 3
+                 && m2[0].bypassed == false
+                 && m2[1].bypassed == false
+                 && m2[2].bypassed == true,
+               "and the model agrees after release");
+    }
 
     // ---- negative control -------------------------------------------------
     check (false, "NEGATIVE CONTROL - this line is SUPPOSED to fail");

@@ -341,6 +341,11 @@ private:
     // Every structural mutation path calls this — a path that skips it is
     // the two-models-disagree defect again.
     void syncModelAfterStructuralChange();
+    // The rack-lease arms, extracted from the poll switch so linksync_test
+    // drives the REAL engage/restore code, not a test-local copy.
+    void rackLeaseEngage();
+    void rackLeaseRelease();
+    friend struct EchoJayLinkSyncTestAccess;
     void notifyChainModel();
     juce::PluginDescription resolveChainPlugin(const juce::String& name) const;
     static juce::StringArray loadDisabledUids();

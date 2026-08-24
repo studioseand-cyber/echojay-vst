@@ -8327,7 +8327,10 @@ LinkShm::StructureEdit::Plan EchoJayEditor::buildStructurePlan()
                 ? base[(size_t) o]
                 : proc.borrowCreatedIdentity_[(size_t) i],
             o, verdicts[(size_t) i].second, verdicts[(size_t) i].first,
-            nowB64 });
+            nowB64,
+            // The live bypass — rides the Create op so the Link's lease
+            // restore has a truth for a slot that predates no lease.
+            bh->getSlotInfo(i).bypassed });
     }
     return LinkShm::StructureEdit::computePlan(proc.borrowUid(), base, current);
 }

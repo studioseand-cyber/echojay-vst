@@ -4265,6 +4265,11 @@ ChainHost::PlanResult ChainHost::applyStructurePlan(
     writeJournal(journalDir, plan, pre);
 
     // PHASE B: mutate, in the plan's order. Any failure restores wholesale.
+    // originSim mirrors every mutation so the caller learns, per FINAL slot,
+    // which pre-plan index it came from (-1 = created) — the lease's prior
+    // remap maps through it and cannot be fooled by shifted indices.
+    std::vector<int> originSim;
+    for (int i = 0; i < (int) slots_.size(); ++i) originSim.push_back(i);
     for (const auto& op : plan.ops)
     {
         bool ok = true;
@@ -4273,14 +4278,23 @@ ChainHost::PlanResult ChainHost::applyStructurePlan(
         {
             case OpType::Remove:
                 if (op.from >= 0 && op.from < (int) slots_.size())
+                {
                     parkSlotReattachable(op.from);
+                    originSim.erase(originSim.begin() + op.from);
+                }
                 else { ok = false; why = "remove index out of range"; }
                 break;
             case OpType::Move:
             {
                 int cur = op.from;
-                while (ok && cur > op.to)  { moveSlot(cur, -1); --cur; }
-                while (ok && cur < op.to)  { moveSlot(cur, +1); ++cur; }
+                while (ok && cur > op.to)
+                { moveSlot(cur, -1);
+                  std::swap(originSim[(size_t) cur], originSim[(size_t) cur - 1]);
+                  --cur; }
+                while (ok && cur < op.to)
+                { moveSlot(cur, +1);
+                  std::swap(originSim[(size_t) cur], originSim[(size_t) cur + 1]);
+                  ++cur; }
                 break;
             }
             case OpType::Create:
@@ -4290,6 +4304,14 @@ ChainHost::PlanResult ChainHost::applyStructurePlan(
                 d.uniqueId = op.identity.uid.getIntValue();
                 if (! tryReattachParked(d, op.to))
                 { ok = false; why = "staged instance vanished"; break; }
+                originSim.insert(originSim.begin()
+                                     + juce::jmin(op.to, (int) originSim.size()),
+                                 -1);
+                // The plan's bypass truth for the created slot (the state the
+                // user gave it in the main); under a rack lease the caller
+                // reads it into the remapped priors, then re-bypasses.
+                setSlotBypassed(juce::jmin(op.to, (int) slots_.size() - 1),
+                                op.bypassed);
                 if (op.stateB64.isNotEmpty())
                     if (auto* p = getSlotProcessor(juce::jmin(op.to, (int) slots_.size() - 1)))
                     {
@@ -4328,6 +4350,7 @@ ChainHost::PlanResult ChainHost::applyStructurePlan(
     }
     juce::File(journalPath(journalDir, plan.uid)).deleteFile();
     r.ok = true;
+    r.finalOrigin = std::move(originSim);
     return r;
 }
 

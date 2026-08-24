@@ -560,22 +560,7 @@ void LinkProcessor::pollEditLease()
                 leaseGate_.activeSlot1, chainHost.getNumSlots());
             if (scoped == LinkShm::LeaseScope::Engage::Rack)
             {
-                // WHOLE-RACK ENGAGE: save every slot's bypass, bypass all
-                // once, stream dry. setSlotBypassed bumps the revision, so
-                // the sidecar republishes with every slot controlled.
-                rackLeasePrior_.clear();
-                for (int i = 0; i < chainHost.getNumSlots(); ++i)
-                {
-                    rackLeasePrior_.push_back(chainHost.getSlotInfo(i).bypassed);
-                    chainHost.setSlotBypassed(i, true);
-                }
-                rackLeaseActive_ = true;
-                leaseSlot0_      = -1;
-                leaseActive_.store(true, std::memory_order_relaxed);
-                notifyChainModel();
-                EchoJay_NSLog(("EJLease: RACK engaged, " +
-                               juce::String((int) rackLeasePrior_.size())
-                               + " slot(s) bypassed, streaming dry").toRawUTF8());
+                rackLeaseEngage();
                 break;
             }
             const int slot0 = leaseGate_.activeSlot1 - 1;
@@ -612,14 +597,7 @@ void LinkProcessor::pollEditLease()
             leaseActive_.store(false, std::memory_order_relaxed);
             if (rackLeaseActive_)
             {
-                for (int i = 0; i < chainHost.getNumSlots()
-                                && i < (int) rackLeasePrior_.size(); ++i)
-                    chainHost.setSlotBypassed(i, rackLeasePrior_[(size_t) i]);
-                EchoJay_NSLog(("EJLease: RACK released/expired - "
-                               + juce::String((int) rackLeasePrior_.size())
-                               + " slot bypass state(s) restored").toRawUTF8());
-                rackLeaseActive_ = false;
-                rackLeasePrior_.clear();
+                rackLeaseRelease();
             }
             else if (leaseSlot0_ >= 0 && leaseSlot0_ < chainHost.getNumSlots())
             {
@@ -1621,7 +1599,19 @@ void LinkProcessor::resyncChainModelFromHost()
         auto info = chainHost.getSlotInfo(i);
         ChainSlotSpec s;
         s.name     = info.name;
-        s.bypassed = info.bypassed;
+        // THE GENERAL RULE (24 Aug 2026): lease bypass is the LEASE'S
+        // business and never reaches the Link's own saved state — chainModel
+        // is what the editor renders AND what persists, and a persisted
+        // lease-bypass means a crash mid-borrow leaves the rack silently
+        // switched off. Under a lease the model records the TRUE state (the
+        // saved prior), not the lease's temporary dry rack.
+        if (rackLeaseActive_ && i < (int) rackLeasePrior_.size())
+            s.bypassed = rackLeasePrior_[(size_t) i];
+        else if (! rackLeaseActive_ && leaseSlot0_ == i
+                 && leaseActive_.load(std::memory_order_relaxed))
+            s.bypassed = leasePriorBypass_;
+        else
+            s.bypassed = info.bypassed;
         s.hostIdx  = i;
         s.wet      = info.wet;
         s.settings = info.settings;
@@ -1632,6 +1622,43 @@ void LinkProcessor::resyncChainModelFromHost()
         next.push_back(std::move(s));
     }
     chainModel = std::move(next);
+}
+
+void LinkProcessor::rackLeaseEngage()
+{
+    // WHOLE-RACK ENGAGE: save every slot's bypass, bypass all once, stream
+    // dry. setSlotBypassed bumps the revision, so the sidecar republishes
+    // with every slot controlled. Extracted so linksync_test drives the
+    // REAL arm, not a test-local copy.
+    rackLeasePrior_.clear();
+    for (int i = 0; i < chainHost.getNumSlots(); ++i)
+    {
+        rackLeasePrior_.push_back(chainHost.getSlotInfo(i).bypassed);
+        chainHost.setSlotBypassed(i, true);
+    }
+    rackLeaseActive_ = true;
+    leaseSlot0_      = -1;
+    leaseActive_.store(true, std::memory_order_relaxed);
+    notifyChainModel();
+    EchoJay_NSLog(("EJLease: RACK engaged, " +
+                   juce::String((int) rackLeasePrior_.size())
+                   + " slot(s) bypassed, streaming dry").toRawUTF8());
+}
+
+void LinkProcessor::rackLeaseRelease()
+{
+    for (int i = 0; i < chainHost.getNumSlots()
+                    && i < (int) rackLeasePrior_.size(); ++i)
+        chainHost.setSlotBypassed(i, rackLeasePrior_[(size_t) i]);
+    EchoJay_NSLog(("EJLease: RACK released/expired - "
+                   + juce::String((int) rackLeasePrior_.size())
+                   + " slot bypass state(s) restored").toRawUTF8());
+    rackLeaseActive_ = false;
+    rackLeasePrior_.clear();
+    // The model re-reads the restored truth: without this, a sync that ran
+    // mid-lease would leave the editor (and the SAVED state) claiming the
+    // lease's bypass long after the lease ended.
+    resyncChainModelFromHost();
 }
 
 void LinkProcessor::syncModelAfterStructuralChange()
@@ -1649,8 +1676,34 @@ ChainHost::PlanResult LinkProcessor::applyStructurePlanAndSync(
     const juce::String& dir, const LinkShm::StructureEdit::Plan& plan)
 {
     auto res = chainHost.applyStructurePlan(dir, plan);
+    if (res.ok && rackLeaseActive_)
+    {
+        // PLAN-AWARE PRIOR REMAP (24 Aug 2026: every plugin came back
+        // bypassed): the priors were captured per index before the plan,
+        // and the plan shifts indices. Each prior follows the SLOT it
+        // belongs to, through the plan's own finalOrigin record; a created
+        // slot's prior is the bypass state the plan carried for it (read
+        // from the slot, where Phase B just wrote it) — never a default
+        // and never "not restored". Then the lease's dry rack is
+        // re-asserted, created slots included.
+        std::vector<bool> np;
+        for (int i = 0; i < (int) res.finalOrigin.size(); ++i)
+        {
+            const int o = res.finalOrigin[(size_t) i];
+            np.push_back(o >= 0 && o < (int) rackLeasePrior_.size()
+                             ? (bool) rackLeasePrior_[(size_t) o]
+                             : chainHost.getSlotInfo(i).bypassed);
+        }
+        rackLeasePrior_ = std::move(np);
+        for (int i = 0; i < chainHost.getNumSlots(); ++i)
+            chainHost.setSlotBypassed(i, true);
+        EchoJay_NSLog(("EJLease: priors remapped through the plan ("
+                       + juce::String((int) rackLeasePrior_.size())
+                       + " slots), dry rack re-asserted").toRawUTF8());
+    }
     // UNCONDITIONAL: applied changed the shape, a rollback tore it down
-    // and rebuilt it — the editor-facing model is stale either way.
+    // and rebuilt it — the editor-facing model is stale either way. Runs
+    // AFTER the remap so the sync records the lease's TRUE priors.
     syncModelAfterStructuralChange();
     return res;
 }
