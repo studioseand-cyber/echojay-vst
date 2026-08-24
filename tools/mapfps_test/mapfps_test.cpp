@@ -1819,6 +1819,61 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         }
     }
 
+    // ---- 6c fallback: suppression must not be undone by borrowing the card --
+    // THE TURN THAT FAILED. slotParamReads said index 3 was "3.3"; the model's
+    // line read "Applied automatically\nVol 7". The suppression had WORKED --
+    // every tier entry had a live read and was dropped -- and the empty result
+    // hit 6a's fallback, which served the card string carrying the very number
+    // just removed. Empty meant two different things and the reader could not
+    // tell them apart.
+    {
+        std::cout << "6c fallback (empty tiers + a live read):\n";
+        std::ifstream fap ("Source/EchoJayAPI.cpp");
+        std::stringstream sap; sap << fap.rdbuf();
+        const auto apiRaw = juce::String (sap.str());
+        const auto api = codeOnly (apiRaw);
+        std::ifstream fch ("Source/ChainHost.cpp");
+        std::stringstream sch; sch << fch.rdbuf();
+        const auto ch = codeOnly (juce::String (sch.str()));
+
+        // PIN A — the decision is "was this slot read?", never "is the string
+        // empty?". Both halves pinned, because the second is what regressed.
+        check (api.contains ("const bool slotWasRead = (slotHasLiveReads != nullptr"),
+               "6cF PIN A: the reader asks whether the slot was READ");
+        check (api.contains (": (slotWasRead ? juce::String() : s.settings.trim());"),
+               "6cF PIN A: a slot that WAS read emits nothing rather than the card string");
+        check (! api.contains ("(*slotModelSettings)[i].trim().isNotEmpty())\n"
+                               "                            ? (*slotModelSettings)[i].trim()\n"
+                               "                            : s.settings.trim();"),
+               "6cF PIN A: the emptiness-keyed fallback is gone");
+
+        // PIN B — THE readFailed FALLBACK SURVIVES, unchanged. There the card
+        // really is the only source, and 8d leaves the model where the
+        // deployed 6b sentence still applies.
+        check (ch.contains ("return ! s.liveReadFailed && ! s.liveReads.isEmpty();"),
+               "6cF PIN B: a readFailed slot reports NO live reads, so it still falls back");
+        check (ch.contains ("if (s.liveReadFailed) return false;"),
+               "6cF PIN B: and its per-control echo is still kept");
+
+        // PIN C — the flag actually travels. A correct rule that never reaches
+        // the formatter is the shape that produced this bug in the first place.
+        check (ch.contains ("slotHasLiveReads(i) });")
+               && ch.contains ("modelSettingsForSlot(i), slotHasLiveReads(i) };"),
+               "6cF PIN C: SlotInfo carries the flag from both readers");
+        check (api.contains ("hasLiveReads.add(s.hasLiveReads);")
+               && api.contains ("&hasLiveReads);"),
+               "6cF PIN C: the adapter fills it and passes it index-parallel");
+
+        // PIN D — THE PROSE. s.settings carries setSlotSettings' description,
+        // which 6a deliberately kept out of the model's string; the same
+        // fallback had been reintroducing it. Closing the fallback closes both
+        // the value and the prose, and only where a reading exists.
+        check (ch.contains ("clearModelTiers(slots_[i]);"),
+               "6cF PIN D: setSlotSettings still clears the tiers (prose is not tiering)");
+        check (api.contains ("slotWasRead ? juce::String()"),
+               "6cF PIN D: so a read slot gets neither the card's value NOR its prose");
+    }
+
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";
     return failN == 0 ? 0 : 1;
 }

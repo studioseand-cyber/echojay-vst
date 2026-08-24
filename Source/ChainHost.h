@@ -61,6 +61,21 @@ public:
         // paths (prose guidance, stale-map notes, built-in applies) no tiering
         // was ever computed, so there is nothing being concealed.
         juce::String settingsForModel;
+        // TRUE when this slot's parameters were actually read this turn.
+        //
+        // It exists to stop an EMPTY settingsForModel meaning two things. The
+        // 6a fallback served the card string whenever the model string was
+        // empty, which was right while "empty" could only mean "no tiering was
+        // computed". Suppression added a second cause: every tier entry had a
+        // live read and was correctly dropped. The fallback then handed the
+        // model the card's raw value -- the exact number the suppression had
+        // just removed. Measured: reads said Vol was 3.3, the card said
+        // "Applied automatically\nVol 7", and the reply used 7.
+        //
+        // So the reader must ask "was there a reading?", not "is the string
+        // empty?". A slot with a reading composes from the tiers alone; a slot
+        // without one still falls back, because there the card is all we have.
+        bool hasLiveReads = false;
     };
 
     ChainHost();
@@ -192,6 +207,8 @@ public:
     // hasLiveReadForIndex() answers the suppression question from it.
     void refreshSlotParamReads();
     bool hasLiveReadForIndex(int slot, int paramIndex) const;
+    // Did this slot answer the sweep at all? See SlotInfo::hasLiveReads.
+    bool slotHasLiveReads(int slot) const;
 
     // The model's settings line for one slot, composed HERE because this is
     // the only place the echo (authored at apply time) and the live reads

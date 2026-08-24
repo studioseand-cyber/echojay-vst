@@ -1350,17 +1350,18 @@ std::vector<ChainHost::SlotInfo> ChainHost::getAllSlotInfos() const
     {
         const auto& s = slots_[(size_t)i];
         result.push_back({ s.desc.name, s.bypassed, s.settings,
-                           s.desc.pluginFormatName, s.wet, modelSettingsForSlot(i) });
+                           s.desc.pluginFormatName, s.wet, modelSettingsForSlot(i),
+                           slotHasLiveReads(i) });
     }
     return result;
 }
 
 ChainHost::SlotInfo ChainHost::getSlotInfo(int i) const
 {
-    if (i < 0 || i >= (int)slots_.size()) return { {}, false, {}, {}, 1.0f, {} };
+    if (i < 0 || i >= (int)slots_.size()) return { {}, false, {}, {}, 1.0f, {}, false };
     return { slots_[i].desc.name, slots_[i].bypassed, slots_[i].settings,
              slots_[i].desc.pluginFormatName, slots_[i].wet,
-             modelSettingsForSlot(i) };
+             modelSettingsForSlot(i), slotHasLiveReads(i) };
 }
 
 ChainHost::SlotIdentity ChainHost::getSlotIdentity(int slot) const
@@ -5149,6 +5150,13 @@ void ChainHost::refreshSlotParamReads()
         s.liveReads = echojay::readAllParamDisplays(getSlotProcessor(i),
                                                     s.liveReadFailed, s.liveParamCount);
     }
+}
+
+bool ChainHost::slotHasLiveReads(int slot) const
+{
+    if (slot < 0 || slot >= (int) slots_.size()) return false;
+    const auto& s = slots_[(size_t) slot];
+    return ! s.liveReadFailed && ! s.liveReads.isEmpty();
 }
 
 bool ChainHost::hasLiveReadForIndex(int slot, int paramIndex) const

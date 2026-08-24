@@ -2965,14 +2965,17 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const ChainHost& chainHost)
     // sidecar still carries s.settings so the Link app's own readers are
     // untouched; the formatter prefers this array for the model's line.
     juce::StringArray modelSettings;
+    juce::Array<bool>  hasLiveReads;
     int i = 0;
     for (const auto& s : chainHost.getAllSlotInfos())
     {
         rack.slots.push_back({ s.name, s.format, s.settings, s.bypassed, s.wet });
         modelSettings.add(s.settingsForModel);
+        hasLiveReads.add(s.hasLiveReads);
         notes.add(formatSlotLevelNote(chainHost, i++));
     }
-    return buildCurrentChainInjection(rack, juce::String(), &notes, &modelSettings);
+    return buildCurrentChainInjection(rack, juce::String(), &notes, &modelSettings,
+                                      &hasLiveReads);
 }
 
 // ---- running level, rendered ----------------------------------------------
@@ -3040,7 +3043,8 @@ juce::String EchoJayAPI::buildChainLevelsInjection(const ChainHost& chainHost)
 juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& rack,
                                                     const juce::String& channelLabel,
                                                     const juce::StringArray* slotLevelNotes,
-                                                    const juce::StringArray* slotModelSettings)
+                                                    const juce::StringArray* slotModelSettings,
+                                                    const juce::Array<bool>* slotHasLiveReads)
 {
     if (!rack.valid || rack.slots.empty()) return {};
 
@@ -3096,10 +3100,26 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& 
         // one when it exists. When it does not, the slot never had a tiering
         // computed (prose only, a stale-map rung, a built-in, or a rack that
         // arrived over the Link wire) and the card's string is all there is.
-        const auto picked = (slotModelSettings != nullptr && i < slotModelSettings->size()
-                         && (*slotModelSettings)[i].trim().isNotEmpty())
-                            ? (*slotModelSettings)[i].trim()
-                            : s.settings.trim();
+        // THE FALLBACK IS CONDITIONED ON A READING, NOT ON EMPTINESS.
+        //
+        // An empty model string used to mean one thing, "no tiering was
+        // computed", and borrowing the card string was right. Suppression gave
+        // it a second meaning: every entry had a live read and was correctly
+        // dropped. Falling back there handed the model the card's raw
+        // value -- the very number just suppressed -- and it used it.
+        //
+        // So: a slot that answered the sweep composes from its tiers alone and
+        // emits NOTHING when they are empty. A slot that did not answer
+        // (readFailed, or no reads at all) still falls back, because the card
+        // is then the only source there is. That also keeps setSlotSettings'
+        // PROSE out of the model's string wherever a reading exists, which the
+        // same fallback had been quietly reintroducing.
+        const bool slotWasRead = (slotHasLiveReads != nullptr && i < slotHasLiveReads->size()
+                                  && (*slotHasLiveReads)[i]);
+        const auto modelText = (slotModelSettings != nullptr && i < slotModelSettings->size())
+                                 ? (*slotModelSettings)[i].trim() : juce::String();
+        const auto picked = modelText.isNotEmpty() ? modelText
+                          : (slotWasRead ? juce::String() : s.settings.trim());
         // ONE clip for whichever string was picked, and it SAYS SO when it
         // cuts. The old form dropped the tail behind a bare ellipsis, and the
         // unverified group lives at the tail — so a silent cut removed exactly

@@ -725,7 +725,12 @@ public:
     static juce::String buildCurrentChainInjection(const LinkShm::RackSidecar& rack,
                                                    const juce::String& channelLabel,
                                                    const juce::StringArray* slotLevelNotes = nullptr,
-                                                   const juce::StringArray* slotModelSettings = nullptr);
+                                                   const juce::StringArray* slotModelSettings = nullptr,
+    // slotHasLiveReads: index-parallel again. TRUE means this slot's
+    // parameters were read this turn, so an EMPTY model string means
+    // "everything was suppressed" and NOT "no tiering exists" -- and the card
+    // string must not be borrowed. Null (the Link path) falls back as before.
+                                                   const juce::Array<bool>* slotHasLiveReads = nullptr);
     // Running level (LevelTally, 17 Aug 2026), rendered for the model.
     //   formatLevelClause: one point, "in -19.2 dBFS RMS (p90 -15.5), peak
     //     -6.0, crest 12 dB, heard 2m10s (describes ~2m10s)" or the loud null
