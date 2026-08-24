@@ -1242,7 +1242,13 @@ private:
     // the borrow pool's storage (same never-free rule, same identity keys).
     void parkSlotReattachable(int i);
     bool tryReattachParked(const juce::PluginDescription& d, int insertAt);
-    bool planStageOne(const juce::PluginDescription& d, juce::String& whyNot);
+    // alreadyClaimed: how many parked instances of this key the CALLER's plan
+    // has spoken for so far — the retry-dedupe ("a retried Apply instantiates
+    // zero new") must not conflate a re-run with a plan that genuinely needs
+    // TWO of the same plugin (24 Aug 2026: dup-Create "staged instance
+    // vanished", found by the cross-format gate).
+    bool planStageOne(const juce::PluginDescription& d, juce::String& whyNot,
+                      int alreadyClaimed = 0);
     void planRestoreFromPreImages(const LinkShm::StructureEdit::PreImages& pre);
     // The plan's park: staging AND reattachable removals, keyed by the
     // plan's identity vocabulary (name|uid-decimal). Never freed, ever.

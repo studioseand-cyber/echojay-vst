@@ -54,9 +54,11 @@ struct SyncProbe : juce::AudioProcessor
     void setCurrentProgram (int) override {}
     const juce::String getProgramName (int) override { return {}; }
     void changeProgramName (int, const juce::String&) override {}
+    int value = 0;   // observable state: seeded vs defaults is provable
     void getStateInformation (juce::MemoryBlock& mb) override
-    { int v = 7; mb.append (&v, sizeof (int)); }
-    void setStateInformation (const void*, int) override {}
+    { mb.append (&value, sizeof (int)); }
+    void setStateInformation (const void* data, int size) override
+    { if (size >= (int) sizeof (int)) std::memcpy (&value, data, sizeof (int)); }
 };
 
 static BuiltinDevice makeProbe()
@@ -263,6 +265,60 @@ int main()
                  && m2[1].bypassed == false
                  && m2[2].bypassed == true,
                "and the model agrees after release");
+    }
+
+    // ---- a cross-format Create never seeds silently -----------------------
+    // The main may host a SUBSTITUTE build (preferInlineHostableDesc), so a
+    // Create's blob can come from a different format than what this rack
+    // stages. State is format-specific: only a matching format seeds; a
+    // mismatch arrives at DEFAULTS and says so, in the withheld voice (§5c).
+    std::printf ("== cross-format Create: defaults, said aloud ==\n");
+    {
+        host.clearStateNotes();
+        const auto base3 = host.liveIdentity();
+        const juce::String stagedFmt = host.getSlotInfo (0).format;
+        auto blob = [] (int v)
+        { juce::MemoryBlock mb; mb.append (&v, sizeof (int));
+          return LinkShm::stateToB64 (mb); };
+        std::vector<SE::CurrentSlot> cur3;
+        for (int i = 0; i < (int) base3.size(); ++i)
+            cur3.push_back ({ base3[(size_t) i], i, false, false, {}, false, {} });
+        const SE::SlotIdentity probeId { "EJ Sync Probe",
+                                         juce::String (0x454A5350), {} };
+        // One Create whose state matches the staged format (must seed)...
+        cur3.push_back ({ probeId, -1, true, false, blob (42), false,
+                          stagedFmt });
+        // ...and one whose state claims a format this rack does not stage
+        // (must arrive at defaults, with a named note).
+        cur3.push_back ({ probeId, -1, true, false, blob (99), false,
+                          "VST3" });
+        auto plan3 = SE::computePlan ("linksync-test", base3, cur3);
+        SE::Plan wire3; SE::PreImages pre3;
+        check (SE::planFromVar (SE::planToVar (plan3, {}), wire3, pre3),
+               "the cross-format plan round-trips the wire");
+        bool fmtOnWire = false;
+        for (const auto& op : wire3.ops)
+            if (op.type == SE::OpType::Create && op.stateFormat == "VST3")
+                fmtOnWire = true;
+        check (fmtOnWire, "the state's format survives serialization");
+        const auto res4 = proc.applyStructurePlanAndSync (dir, wire3);
+        check (res4.ok, "the plan applied (a format mismatch is honesty, "
+                        "not failure)", res4.reasons.joinIntoString ("; "));
+        const int n4 = host.getNumSlots();
+        check (n4 == 5, "both created slots exist", juce::String (n4));
+        auto* seeded = dynamic_cast<SyncProbe*> (host.getSlotProcessor (3));
+        auto* dflt   = dynamic_cast<SyncProbe*> (host.getSlotProcessor (4));
+        check (seeded != nullptr && seeded->value == 42,
+               "the matching-format Create SEEDED",
+               seeded ? juce::String (seeded->value) : juce::String ("null"));
+        check (dflt != nullptr && dflt->value == 0,
+               "the cross-format Create arrived at DEFAULTS, never seeded",
+               dflt ? juce::String (dflt->value) : juce::String ("null"));
+        const auto notes = host.getStateNotes().joinIntoString (" | ");
+        check (notes.contains ("EJ Sync Probe")
+                 && notes.contains ("running at defaults")
+                 && notes.contains ("settings do not travel across formats"),
+               "and it says so, in the withheld voice", notes);
     }
 
     // ---- negative control -------------------------------------------------

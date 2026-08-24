@@ -8330,7 +8330,12 @@ LinkShm::StructureEdit::Plan EchoJayEditor::buildStructurePlan()
             nowB64,
             // The live bypass — rides the Create op so the Link's lease
             // restore has a truth for a slot that predates no lease.
-            bh->getSlotInfo(i).bypassed });
+            bh->getSlotInfo(i).bypassed,
+            // The live instance's FORMAT: nowB64 came out of it, and the
+            // main may be hosting a substitute build — the Link seeds a
+            // Create only when this matches what it stages (§5c across
+            // formats; a blob never crosses formats silently).
+            bh->getSlotInfo(i).format });
     }
     return LinkShm::StructureEdit::computePlan(proc.borrowUid(), base, current);
 }

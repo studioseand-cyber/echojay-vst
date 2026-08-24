@@ -1157,6 +1157,11 @@ namespace StructureEdit
                                    // slot in the main — carried so the lease's
                                    // prior remap has a truth for created slots
                                    // (never a default, never "not restored")
+        juce::String stateFormat;  // Create: the format of the instance whose
+                                   // state seeded stateB64 (the main may host a
+                                   // SUBSTITUTE build) — state is format-
+                                   // specific, and the applier seeds only on a
+                                   // match; empty = no opinion (seed)
     };
 
     // What the plan computation is TOLD about each current slot. originIndex
@@ -1172,6 +1177,9 @@ namespace StructureEdit
         bool bypassedNow = false;  // live bypass in the main's borrowed host —
                                    // rides the Create op (field added LAST:
                                    // existing positional inits stay valid)
+        juce::String stateFormat;  // the live instance's format — rides the
+                                   // Create op so a substitute's blob can
+                                   // never seed a different format's build
     };
 
     struct Plan
@@ -1241,7 +1249,8 @@ namespace StructureEdit
                                    current[(size_t) i].identity.name,
                                    current[(size_t) i].stateB64,
                                    current[(size_t) i].identity,
-                                   current[(size_t) i].bypassedNow });
+                                   current[(size_t) i].bypassedNow,
+                                   current[(size_t) i].stateFormat });
                 ++p.creating;
             }
 
@@ -1313,6 +1322,8 @@ namespace StructureEdit
             if (op.stateB64.isNotEmpty()) o->setProperty ("state", op.stateB64);
             o->setProperty ("identity", identityToVar (op.identity));
             o->setProperty ("byp", op.bypassed);
+            if (op.stateFormat.isNotEmpty())
+                o->setProperty ("stateFmt", op.stateFormat);
             opsArr.add (juce::var (o));
         }
         root->setProperty ("ops", opsArr);
@@ -1342,7 +1353,8 @@ namespace StructureEdit
                                           oo->getProperty ("name").toString(),
                                           oo->getProperty ("state").toString(),
                                           identityFromVar (oo->getProperty ("identity")),
-                                          (bool) oo->getProperty ("byp") });
+                                          (bool) oo->getProperty ("byp"),
+                                          oo->getProperty ("stateFmt").toString() });
         if (auto* arr = o->getProperty ("preShape").getArray())
             for (auto& e : *arr) preOut.shape.push_back (identityFromVar (e));
         if (auto* arr = o->getProperty ("preStates").getArray())

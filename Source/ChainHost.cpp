@@ -4146,14 +4146,18 @@ bool ChainHost::tryReattachParked(const juce::PluginDescription& d, int insertAt
     return true;
 }
 
-bool ChainHost::planStageOne(const juce::PluginDescription& d, juce::String& whyNot)
+bool ChainHost::planStageOne(const juce::PluginDescription& d, juce::String& whyNot,
+                             int alreadyClaimed)
 {
     // Already staged/parked by identity: a retried Apply instantiates zero
-    // new (spec amendment 3).
+    // new (spec amendment 3) — but only BEYOND what this plan has already
+    // claimed of the same key, or a plan creating two of one plugin gets
+    // one instance and Phase B finds the park empty for the second.
     const auto key = planKeyOf({ d.name,
                                  d.uniqueId != 0 ? juce::String(d.uniqueId)
                                                  : juce::String(), {} });
-    if (auto it = planPark_.find(key); it != planPark_.end() && ! it->second.empty())
+    if (auto it = planPark_.find(key); it != planPark_.end()
+        && (int) it->second.size() > alreadyClaimed)
         return true;
     if (d.fileOrIdentifier.isNotEmpty() && isBlacklisted(d.fileOrIdentifier))
     { whyNot = d.name + " is on this machine's crash skip list"; return false; }
@@ -4245,7 +4249,10 @@ ChainHost::PlanResult ChainHost::applyStructurePlan(
       return r; }
 
     // PHASE A: stage every Create, detached. Any failure aborts with ZERO
-    // mutations and per-slot named reasons (spec §2).
+    // mutations and per-slot named reasons (spec §2). claimed counts per
+    // key so a plan creating TWO of one plugin stages two instances — the
+    // retry-dedupe inside planStageOne only skips beyond this plan's claims.
+    std::map<juce::String, int> claimed;
     for (const auto& op : plan.ops)
         if (op.type == OpType::Create)
         {
@@ -4254,9 +4261,17 @@ ChainHost::PlanResult ChainHost::applyStructurePlan(
             d.uniqueId = op.identity.uid.getIntValue();
             if (isBuiltinDescription(resolveByName(op.name, {})))
                 d = resolveByName(op.name, {});
+            const auto stageDesc = d.name.isNotEmpty() ? d
+                                                       : resolveByName(op.name, {});
+            const auto key = planKeyOf({ stageDesc.name,
+                                         stageDesc.uniqueId != 0
+                                             ? juce::String(stageDesc.uniqueId)
+                                             : juce::String(), {} });
             juce::String why;
-            if (! planStageOne(d.name.isNotEmpty() ? d : resolveByName(op.name, {}), why))
+            if (! planStageOne(stageDesc, why, claimed[key]))
                 r.reasons.add(why);
+            else
+                ++claimed[key];
         }
     if (! r.reasons.isEmpty()) { r.failedAt = "stage"; return r; }
 
@@ -4313,13 +4328,36 @@ ChainHost::PlanResult ChainHost::applyStructurePlan(
                 setSlotBypassed(juce::jmin(op.to, (int) slots_.size() - 1),
                                 op.bypassed);
                 if (op.stateB64.isNotEmpty())
-                    if (auto* p = getSlotProcessor(juce::jmin(op.to, (int) slots_.size() - 1)))
+                {
+                    const int at = juce::jmin(op.to, (int) slots_.size() - 1);
+                    // §5c ACROSS FORMATS (24 Aug 2026): plugin state is
+                    // format-specific, and the main may have hosted a
+                    // SUBSTITUTE build — its blob must never seed a
+                    // different format's build here. Mismatch = the slot
+                    // arrives at DEFAULTS and SAYS so, in the withheld
+                    // voice; only a matching (or unstated) format seeds.
+                    const auto stagedFmt = getSlotInfo(at).format;
+                    if (op.stateFormat.isNotEmpty()
+                        && op.stateFormat != stagedFmt)
+                    {
+                        addStateNote(op.name + " was added WITHOUT its "
+                            "settings (running at defaults): they came from "
+                            "a " + op.stateFormat + " build and this rack "
+                            "loads the " + stagedFmt + " build - settings "
+                            "do not travel across formats");
+                        EchoJay_NSLog(("EJPlan: Create \"" + op.name
+                            + "\" seeded at DEFAULTS - state format "
+                            + op.stateFormat + " != staged " + stagedFmt)
+                            .toRawUTF8());
+                    }
+                    else if (auto* p = getSlotProcessor(at))
                     {
                         juce::MemoryBlock mb;
                         if (LinkShm::stateFromB64(op.stateB64, mb) && mb.getSize() > 0)
                         { try { p->setStateInformation(mb.getData(), (int) mb.getSize()); }
                           catch (...) { ok = false; why = op.name + " refused its seed"; } }
                     }
+                }
                 break;
             }
             case OpType::Commit:
