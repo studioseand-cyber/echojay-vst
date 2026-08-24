@@ -179,6 +179,30 @@ public:
     // join because its absence is silent.
     juce::String buildSlotParamReadsJson() const;
 
+    // ONE SWEEP PER TURN, AND BOTH CONSUMERS USE IT (24 Aug 2026).
+    //
+    // This is not a convenience. The defect it fixes is TWO STORES FOR ONE
+    // CONTROL: slotParamReads said Vol was 8.2 and the settings echo said 3.7,
+    // both in the same body, and the model quoted the stale one despite its
+    // "not verified" label. If the injection suppressed on one read while the
+    // body shipped a different read, the disagreement would simply move.
+    //
+    // refreshSlotParamReads() takes the sweep and caches it;
+    // buildSlotParamReadsJson() serialises THAT CACHE rather than re-reading;
+    // hasLiveReadForIndex() answers the suppression question from it.
+    void refreshSlotParamReads();
+    bool hasLiveReadForIndex(int slot, int paramIndex) const;
+
+    // The model's settings line for one slot, composed HERE because this is
+    // the only place the echo (authored at apply time) and the live reads
+    // (taken at send time) are both in hand. Where a live read exists for a
+    // control, its echoed value is REMOVED: two numbers for one control is
+    // worse than either alone. Refused entries always keep their number --
+    // "asked 50.00, range is [1.00..7.00], left manual" is the record of a
+    // rejected request, not a claim about current state, and it is the only
+    // place that number exists.
+    juce::String modelSettingsForSlot(int slot) const;
+
     // ---- Apply-time honesty (26 Jul 2026) ----
     // Per-slot auto-dial outcome. The result bubble may only relay the
     // model's "result" line when every slot that carried structuredSettings
@@ -526,7 +550,17 @@ public:
     struct ApplyReport { juce::String semantic; bool applied; float normalized; juce::String note;
                          juce::String landedText; bool displayVerified = false; bool readbackMismatch = false;
                          bool staleDisplayKept = false; juce::var requestedValue;
-                         bool outOfRange = false; };
+                         bool outOfRange = false;
+                         // THE PARAMETER INDEX, revived 24 Aug. A9's contract
+                         // recorded that ApplyResult carries it and that it was
+                         // dropped at this boundary, and wrote down the trail
+                         // "for anyone who needs it later". 6c needs it: the
+                         // echo's entries are labelled with semanticLabel(),
+                         // which strips units and underscores, so a label
+                         // cannot be turned back into a map key ("low cut freq"
+                         // from "low_cut_freq_hz" is guesswork) and the live
+                         // reads are index-keyed. -1 where no index exists.
+                         int index = -1; };
     std::vector<ApplyReport> applyStructuredSettings (int slotIndex,
                                                       const juce::var& structuredSettings,
                                                       const juce::var& map);
@@ -984,16 +1018,44 @@ public:
     int    blockSize_  = 512;
 
 private:
+    struct ChainSlot;   // defined immediately below
+    // Clears every part of the model's tiered copy. A member, because
+    // ChainSlot is private; static, because it touches nothing else.
+    static void clearModelTiers(ChainSlot& s);
+    // One definition each; see ChainHost.cpp.
+    static const char* const kLandedPrefix;
+    static const char* const kAskedPrefix;
+    static const char* const kRefusedPrefix;
+
     struct ChainSlot {
         juce::AudioProcessorGraph::Node::Ptr node;
         juce::PluginDescription              desc;
         bool                                 bypassed = false;
         juce::String                         settings;   // AI-suggested dial-in guidance
-        // The model's tiered copy; see SlotInfo::settingsForModel for why the
-        // two exist. Written by exactly ONE site (the tiered block in
-        // applyStructuredIfReady) and cleared by every other writer of
-        // `settings`, so a dial echo can never outlive the map it describes.
-        juce::String                         settingsForModel;
+        // The model's tiered copy, held STRUCTURED rather than composed.
+        //
+        // It used to be a joined string built at apply time. 6c's suppression
+        // needs to drop individual entries that now have a live read, and the
+        // reads do not exist until send time -- so composing early would mean
+        // re-splitting a joined string later, which is the packed-string
+        // escaping problem this project keeps refusing. The entries are kept
+        // apart until modelSettingsForSlot() composes them.
+        //
+        // The PARTITION is still authored in exactly one place (the tiered
+        // block in applyStructuredIfReady). Only the assembly moved.
+        // Refused entries carry no index: they are never suppressed.
+        juce::StringArray                    modelLandedBits;
+        juce::Array<int>                     modelLandedIdx;
+        juce::StringArray                    modelAskedBits;
+        juce::Array<int>                     modelAskedIdx;
+        juce::StringArray                    modelRefusedBits;
+        // Cached live reads for this slot, index-parallel with the plugin's
+        // parameters. EMPTY means no sweep has been taken (or it failed), and
+        // that is the case where the echo must be KEPT: then it is the only
+        // source we have.
+        juce::StringArray                    liveReads;
+        bool                                 liveReadFailed = false;
+        int                                  liveParamCount = 0;   // TRUE count, so truncated is knowable
         // Per-slot wet/dry: `wet` is the persisted value; `wetShared` is the
         // audio-thread copy read by this slot's SlotWetBlend graph node.
         // Both created lazily in rebuildGraph(), removed in removeSlot().

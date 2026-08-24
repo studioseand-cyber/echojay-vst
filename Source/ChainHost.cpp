@@ -1346,9 +1346,12 @@ std::vector<ChainHost::SlotInfo> ChainHost::getAllSlotInfos() const
 {
     std::vector<SlotInfo> result;
     result.reserve(slots_.size());
-    for (auto& s : slots_)
+    for (int i = 0; i < (int)slots_.size(); ++i)
+    {
+        const auto& s = slots_[(size_t)i];
         result.push_back({ s.desc.name, s.bypassed, s.settings,
-                           s.desc.pluginFormatName, s.wet, s.settingsForModel });
+                           s.desc.pluginFormatName, s.wet, modelSettingsForSlot(i) });
+    }
     return result;
 }
 
@@ -1357,7 +1360,7 @@ ChainHost::SlotInfo ChainHost::getSlotInfo(int i) const
     if (i < 0 || i >= (int)slots_.size()) return { {}, false, {}, {}, 1.0f, {} };
     return { slots_[i].desc.name, slots_[i].bypassed, slots_[i].settings,
              slots_[i].desc.pluginFormatName, slots_[i].wet,
-             slots_[i].settingsForModel };
+             modelSettingsForSlot(i) };
 }
 
 ChainHost::SlotIdentity ChainHost::getSlotIdentity(int slot) const
@@ -1377,7 +1380,7 @@ void ChainHost::setSlotSettings(int i, const juce::String& settings)
     slots_[i].settings = settings;
     // New prose for this slot: any dial echo it had describes an older
     // request. Clear it rather than let it outlive its map (see the field).
-    slots_[i].settingsForModel.clear();
+    clearModelTiers(slots_[i]);
 }
 
 // ---------------------------------------------------------------------------
@@ -2282,7 +2285,8 @@ ChainHost::applyStructuredSettings (int slotIndex,
     for (auto& r : results)
         out.push_back ({ r.semantic, r.applied, r.normalized, r.note,
                          r.landedText, r.displayVerified, r.readbackMismatch,
-                         r.staleDisplayKept, r.requestedValue, r.outOfRange });
+                         r.staleDisplayKept, r.requestedValue, r.outOfRange,
+                         r.index });
 
     return out;
 }
@@ -2733,7 +2737,7 @@ bool ChainHost::settleStaleRung(int i)
             if (! s.settings.startsWith(note))
             {
                 s.settings = s.settings.isEmpty() ? note : note + "\n" + s.settings;
-                s.settingsForModel.clear();   // stale-map rung: the echo's map no longer applies
+                clearModelTiers(s);   // stale-map rung: the echo's map no longer applies
                 changed = true;
             }
         }
@@ -2753,7 +2757,7 @@ bool ChainHost::settleStaleRung(int i)
     if (! s.settings.startsWith(note))
     {
         s.settings = s.settings.isEmpty() ? note : note + "\n" + s.settings;
-        s.settingsForModel.clear();   // stale-map rung: no mapping, no tiering
+        clearModelTiers(s);   // stale-map rung: no mapping, no tiering
     }
     return true;
 }
@@ -3096,7 +3100,7 @@ juce::String ChainHost::devApplyEqJson(int slotIndex, const juce::String& json)
         slots_[(size_t)slotIndex].settings = "Applied automatically\n" + summary;
         // No tiering was computed on this path, so the model must not keep an
         // older one beside a newer card.
-        slots_[(size_t)slotIndex].settingsForModel.clear();
+        clearModelTiers(slots_[(size_t)slotIndex]);
         slots_[(size_t)slotIndex].dialAppliedCount = applied;
         slots_[(size_t)slotIndex].dialStatus =
             (skipped > 0) ? DialStatus::partial : DialStatus::applied;
@@ -3416,7 +3420,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         if (summary.isNotEmpty())
         {
             s.settings   = "Applied automatically\n" + summary;
-            s.settingsForModel.clear();   // built-in: no map, no tiering
+            clearModelTiers(s);   // built-in: no map, no tiering
             // Honest verdict, same contract as the mapped path: anything the
             // device could not place (the EQ was full, an id was unknown) is
             // partial, not success.
@@ -3710,6 +3714,10 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         };
         const auto arrow = juce::String::fromUTF8(" \xe2\x86\x92 ");
         juce::StringArray landedBits, askedBits, refusedBits;
+        // Index beside each SUPPRESSIBLE entry, so injection-build time can ask
+        // "does this control have a live read?" without inverting a lossy
+        // label. Refused entries need none: they are never suppressed.
+        juce::Array<int> landedIdx, askedIdx;
         for (auto& r : report)
         {
             // Range refusals name the mapped range ON THE CARD, inheriting
@@ -3728,6 +3736,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
             if (r.displayVerified && r.landedText.trim().isNotEmpty())
             {
                 landedBits.add(label + arrow + "reads \"" + r.landedText.trim() + "\"");
+                landedIdx.add(r.index);
                 continue;
             }
             // NO VERIFIED LANDING FOR THIS CONTROL. It goes on the asked line,
@@ -3738,12 +3747,12 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
             const auto unit  = declaredUnit(entry, r.semantic);
             float lo = 0.0f, hi = 0.0f;
             if (unit.isNotEmpty())
-                askedBits.add(label + arrow + r.requestedValue.toString() + " " + unit);
+                { askedBits.add(label + arrow + r.requestedValue.toString() + " " + unit); askedIdx.add(r.index); }
             else if (rangeOf(entry, lo, hi))
-                askedBits.add(label + arrow + r.requestedValue.toString()
-                              + " (this knob runs " + num(lo) + ".." + num(hi) + ")");
+                { askedBits.add(label + arrow + r.requestedValue.toString()
+                              + " (this knob runs " + num(lo) + ".." + num(hi) + ")"); askedIdx.add(r.index); }
             else
-                askedBits.add(label + arrow + r.requestedValue.toString());
+                { askedBits.add(label + arrow + r.requestedValue.toString()); askedIdx.add(r.index); }
         }
         if (! landedBits.isEmpty() || ! askedBits.isEmpty() || ! refusedBits.isEmpty())
         {
@@ -3751,9 +3760,6 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
             // Landed/Asked/Refused lines are replaced, never stacked. The
             // asked prefix MUST be stripped here too, or a re-dial stacks a
             // second unverified line under the first.
-            static const char* kLandedPrefix  = "Landed: ";
-            static const char* kAskedPrefix   = "Asked, not verified: ";
-            static const char* kRefusedPrefix = "Refused: ";
             juce::StringArray kept;
             for (auto& line : juce::StringArray::fromLines(s.settings))
                 if (! line.startsWith(kLandedPrefix) && ! line.startsWith(kAskedPrefix)
@@ -3785,14 +3791,14 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
             // inside a field about control values is the same conflation this
             // whole contract removes: description read as state.
             //
-            // And excluding it is not a removal, it is declining to ADD. After
-            // a successful dial the writer below replaces s.settings outright,
-            // so the prose reaches the model on NO turn today; carrying `kept`
-            // here would have introduced it. Parity, measured, not preferred.
-            //
-            // The stale-map notes are unaffected: those paths clear this field
-            // and the reader falls back to s.settings, which still carries them.
-            s.settingsForModel = tierLines.joinIntoString("\n");
+            // STORED STRUCTURED, NOT COMPOSED. The entries stay apart until
+            // modelSettingsForSlot() assembles them at injection-build time,
+            // because that is the only moment both the echo and the live reads
+            // are in hand. Composing here and re-splitting there would be the
+            // packed-string escaping problem again.
+            s.modelLandedBits  = landedBits;   s.modelLandedIdx = landedIdx;
+            s.modelAskedBits   = askedBits;    s.modelAskedIdx  = askedIdx;
+            s.modelRefusedBits = refusedBits;
             if (onSlotSettingsChanged) onSlotSettingsChanged();
         }
     }
@@ -5117,25 +5123,105 @@ juce::StringArray ChainHost::getRecommendableNames() const
     return names;
 }
 
+// So the five non-tiered writers of `settings` invalidate every part of the
+// model's copy, not whichever field someone remembered.
+// THE TIER PREFIXES, defined once. They are written by the card composer at
+// apply time and by modelSettingsForSlot at injection time, and a literal
+// duplicated across two sites is a rename waiting to desynchronise them.
+const char* const ChainHost::kLandedPrefix  = "Landed: ";
+const char* const ChainHost::kAskedPrefix   = "Asked, not verified: ";
+const char* const ChainHost::kRefusedPrefix = "Refused: ";
+
+void ChainHost::clearModelTiers(ChainSlot& s)
+{
+    s.modelLandedBits.clear();  s.modelLandedIdx.clear();
+    s.modelAskedBits.clear();   s.modelAskedIdx.clear();
+    s.modelRefusedBits.clear();
+}
+
+void ChainHost::refreshSlotParamReads()
+{
+    for (int i = 0; i < (int) slots_.size(); ++i)
+    {
+        auto& s = slots_[(size_t) i];
+        // THE ONE SWEEP, through the shared header read so the pins exercise
+        // these bytes rather than a copy of them.
+        s.liveReads = echojay::readAllParamDisplays(getSlotProcessor(i),
+                                                    s.liveReadFailed, s.liveParamCount);
+    }
+}
+
+bool ChainHost::hasLiveReadForIndex(int slot, int paramIndex) const
+{
+    if (slot < 0 || slot >= (int) slots_.size()) return false;
+    if (paramIndex < 0) return false;               // no index, no join, keep the echo
+    const auto& s = slots_[(size_t) slot];
+    if (s.liveReadFailed) return false;             // the echo is the only source
+    if (paramIndex >= s.liveReads.size()) return false;   // beyond the sweep, or none taken
+    // An EMPTY read is not a live value. The plugin answered with nothing, so
+    // the echo is still the only number anyone has for this control.
+    return s.liveReads[paramIndex].trim().isNotEmpty();
+}
+
+juce::String ChainHost::modelSettingsForSlot(int slot) const
+{
+    if (slot < 0 || slot >= (int) slots_.size()) return {};
+    const auto& s = slots_[(size_t) slot];
+
+    // SUPPRESSION, and it is conditional on an ACTUAL read. A control whose
+    // index has a non-empty live read loses its echoed value entirely: the
+    // read is now the better source and two numbers for one control is worse
+    // than either alone. Everything else is kept untouched -- a readFailed
+    // slot, an index the sweep never reached, a control with no index, and
+    // every refused entry.
+    auto keep = [this, slot](const juce::StringArray& bits, const juce::Array<int>& idx)
+    {
+        juce::StringArray out;
+        for (int i = 0; i < bits.size(); ++i)
+        {
+            const int pi = i < idx.size() ? idx[i] : -1;
+            if (! hasLiveReadForIndex(slot, pi)) out.add(bits[i]);
+        }
+        return out;
+    };
+    const auto landed = keep(s.modelLandedBits, s.modelLandedIdx);
+    const auto asked  = keep(s.modelAskedBits,  s.modelAskedIdx);
+
+    juce::StringArray lines;
+    if (! landed.isEmpty())              lines.add(kLandedPrefix + landed.joinIntoString(", "));
+    if (! asked.isEmpty())               lines.add(kAskedPrefix + asked.joinIntoString(", "));
+    // NEVER SUPPRESSED. A refusal is a record of a request that was rejected,
+    // not a claim about where the knob sits, and the number it names exists
+    // nowhere else.
+    if (! s.modelRefusedBits.isEmpty())  lines.add(kRefusedPrefix + s.modelRefusedBits.joinIntoString("; "));
+    return lines.joinIntoString("\n");
+}
+
 juce::String ChainHost::buildSlotParamReadsJson() const
 {
     juce::Array<juce::var> arr;
     for (int i = 0; i < (int) slots_.size(); ++i)
     {
-        auto* proc = getSlotProcessor(i);
-        const auto name = slots_[(size_t) i].desc.name;
-        // THE SLOT APPEARS EITHER WAY (8d), and the decision lives in the
-        // header so a pin can drive it with a null processor. No instance --
-        // still loading, refused to load, no hosted processor -- is
-        // readFailed, NOT an absent entry: 8d gives absence its own meaning
-        // ("stale client or old build, print exactly as today"), so a slot
-        // that exists and could not be read must not borrow it.
-        // Logged here; the note stays clean, which leaves the model in
-        // exactly today's position where the deployed 6b sentence applies.
-        if (proc == nullptr)
+        const auto& s = slots_[(size_t) i];
+        const auto name = s.desc.name;
+        // SERIALISES THE CACHED SWEEP, never a fresh read. The suppression at
+        // injection time and the values on the wire must come from the SAME
+        // sweep, or the two-stores defect this fixes simply moves: the echo
+        // would be dropped on one number and a different number shipped.
+        //
+        // THE SLOT APPEARS EITHER WAY (8d). No instance is readFailed, NOT an
+        // absent entry: 8d gives absence its own meaning ("stale client or old
+        // build, print exactly as today"), so a slot that exists and could not
+        // be read must not borrow it. Logged; the note stays clean.
+        if (s.liveReadFailed)
             EchoJay_NSLog(("EJParamReads: slot " + juce::String(i + 1) + " (\"" + name
                            + "\") readFailed -- no hosted instance").toRawUTF8());
-        arr.add(echojay::slotParamReadsFor(i + 1, name, proc));   // 1-based, as [CURRENT CHAIN] prints
+        arr.add(echojay::slotParamReadsVar(
+            i + 1,                                  // 1-based, as [CURRENT CHAIN] prints
+            name,
+            s.liveParamCount,                       // TRUE count: drives `truncated`
+            [&s](int p) { return s.liveReads[p]; },
+            s.liveReadFailed));
     }
     if (arr.isEmpty()) return {};
     return juce::JSON::toString(juce::var(arr), true);

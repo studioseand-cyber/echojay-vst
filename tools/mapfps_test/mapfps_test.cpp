@@ -1415,21 +1415,22 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             // from the one composition above.
             n = 0; at = 0;
             while ((at = code.indexOf (at, "tierLines")) >= 0) { ++n; at += 1; }
-            // one declaration, three adds, one addArray to the card, one join
-            // to the model: six. A seventh means a second consumer nobody
-            // reviewed; a fifth means one of the tiers stopped being carried.
-            check (n == 6, "6a PIN1: tierLines has exactly its six known uses",
+            // one declaration, three adds, one addArray to the card: five.
+            // The model no longer takes a joined string here -- it takes the
+            // structured tiers and composes at injection time, which is the
+            // only moment the live reads exist to suppress against.
+            check (n == 5, "6a PIN1: tierLines has exactly its five known uses",
                    "found " + juce::String (n));
         }
         check (codeOnly (ch).contains ("kept.addArray(tierLines);")
-               && codeOnly (ch).contains ("s.settingsForModel = tierLines.joinIntoString(\"\\n\");"),
+               && codeOnly (ch).contains ("s.modelLandedBits  = landedBits;"),
                "6a PIN1: both consumers take the SAME tier lines");
         // THE PROSE IS THE MODEL'S TO NOT HAVE (24 Aug). The card keeps
         // `kept`, which opens with setSlotSettings' description; the model
         // takes the tiers alone. If these ever converge again, description is
         // being handed back as state.
         check (codeOnly (ch).contains ("s.settings = kept.joinIntoString(\"\\n\");")
-               && ! codeOnly (ch).contains ("s.settingsForModel = kept"),
+               && ! codeOnly (ch).contains ("modelLandedBits  = kept"),
                "6a PIN1: the card keeps the prose and the model does not");
 
         // PIN 2 — THE CARD IS UNTOUCHED. The 9 Aug writer must survive
@@ -1480,12 +1481,15 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         {
             int n = 0, at = 0;
             const auto code = codeOnly (ch);
-            while ((at = code.indexOf (at, "settingsForModel.clear()")) >= 0) { ++n; at += 1; }
-            check (n == 5, "6a PIN5: all five non-tiered settings writers clear the model copy",
-                   "found " + juce::String (n) + " of 5");
+            while ((at = code.indexOf (at, "clearModelTiers(")) >= 0) { ++n; at += 1; }
+            // five call sites plus the definition; the declaration is in the
+            // header and is not counted here.
+            check (n == 6, "6a PIN5: all five non-tiered settings writers clear the model copy",
+                   "found " + juce::String (n) + " (want 5 sites + 1 definition)");
         }
         check (codeOnly (chH).contains ("juce::String settingsForModel;"),
                "6a PIN5: SlotInfo carries the field to its readers");
+
 
         // PIN 6 — TRUNCATION ANNOUNCES ITSELF. Behavioural, against the
         // SHIPPED helper (header-inline, so this compiles the same bytes the
@@ -1612,11 +1616,12 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             // source for the readFailed call, and a mutation that dead-coded
             // the branch left the call in place and the pin green. The
             // decision moved into the header so it can be DRIVEN, not read.
-            const auto nullJs = juce::JSON::toString (
-                echojay::slotParamReadsFor (4, "Gone", nullptr), true);
-            check (nullJs.contains ("\"readFailed\": true")
-                   && nullJs.contains ("\"reads\": {}"),
-                   "6c PIN2b: a NULL processor produces a readFailed slot", "got " + nullJs);
+            bool failed = false; int total = -1;
+            const auto none = echojay::readAllParamDisplays (nullptr, failed, total);
+            check (failed && none.isEmpty() && total == 0,
+                   "6c PIN2b: a NULL processor reads as readFailed with nothing",
+                   "failed=" + juce::String ((int) failed) + " n=" + juce::String (none.size())
+                   + " total=" + juce::String (total));
         }
 
         // PIN 3, structural — the client does NOT select, and the values do not
@@ -1627,14 +1632,13 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             std::ifstream fch ("Source/ChainHost.cpp");
             std::stringstream sch; sch << fch.rdbuf();
             const auto ch = codeOnly (juce::String (sch.str()));
-            check (ch.contains ("echojay::slotParamReadsFor("),
+            check (ch.contains ("echojay::readAllParamDisplays(getSlotProcessor(i),"),
+                   "6c PIN3: the sweep goes through the ONE shared read");
+            check (ch.contains ("echojay::slotParamReadsVar("),
                    "6c PIN3: ChainHost serialises through the one shared helper");
-            // NOT anchored on the /*readFailed*/ argument comment: codeOnly()
-            // strips it, so the first version of this pin failed on its own
-            // stripper rather than on the code. Anchor on the call and on the
-            // log line, both of which survive comment stripping.
-            check (ch.contains ("arr.add(echojay::slotParamReadsFor(i + 1, name, proc));"),
-                   "6c PIN3: EVERY slot is added, unconditionally");
+            // Anchored on code, not on the /*readFailed*/ argument comment:
+            // codeOnly() strips comments, so an earlier version of this pin
+            // failed on its own stripper rather than on the code.
             check (! ch.contains ("if (proc == nullptr) continue;"),
                    "6c PIN3: no slot is dropped for having no instance");
             check (ch.contains ("readFailed -- no hosted instance"),
@@ -1701,14 +1705,17 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                         render();
                         const auto after = ps[idx]->getCurrentValueAsText().trim();
 
-                        // THROUGH slotParamReadsFor, THE SHIPPED PATH. An
-                        // earlier version passed its own reader lambda to
-                        // slotParamReadsVar, so it exercised a COPY of the read
-                        // and a mutation that stopped the shipped reader ever
-                        // touching the instance left this pin green. The one
-                        // pin this contract exists for cannot be the one
-                        // testing a reimplementation of the thing under test.
-                        auto v = echojay::slotParamReadsFor (1, "bx_blackdist2", inst.get());
+                        // THE SHIPPED SEQUENCE: the same read ChainHost's
+                        // sweep makes, then the same serialiser it feeds. An
+                        // earlier version passed its OWN reader lambda, so it
+                        // exercised a copy and a mutation that stopped the
+                        // shipped reader touching the instance left this pin
+                        // green. The one pin this contract exists for cannot
+                        // be the one testing a reimplementation.
+                        bool rf = false; int total = 0;
+                        const auto disp = echojay::readAllParamDisplays (inst.get(), rf, total);
+                        auto v = echojay::slotParamReadsVar (1, "bx_blackdist2", total,
+                                    [&disp] (int i) { return disp[i]; }, rf);
                         const auto js = juce::JSON::toString (v, true);
 
                         check (after != before,
@@ -1730,6 +1737,85 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                     inst->releaseResources();
                 }
             }
+        }
+    }
+
+    // ---- 6c suppression: one control, one number --------------------------
+    // Measured defect: slotParamReads said index 3 was "8.2" (the user's knob)
+    // and [CURRENT CHAIN] said "Asked, not verified: Vol -> 3.7", both in the
+    // same body, and the reply quoted 3.7. Labelling the stale one did not
+    // save it. Where a live read exists, the echo carries NO value.
+    {
+        std::cout << "6c suppression (one control, one number):\n";
+        std::ifstream fch ("Source/ChainHost.cpp");
+        std::stringstream sch; sch << fch.rdbuf();
+        const auto ch = codeOnly (juce::String (sch.str()));
+        std::ifstream fed ("Source/PluginEditor.cpp");
+        std::stringstream sed_; sed_ << fed.rdbuf();
+        const auto ed = codeOnly (juce::String (sed_.str()));
+
+        // PIN A — the suppression is CONDITIONAL on an actual read, and the
+        // three ways it must NOT fire are each explicit.
+        check (ch.contains ("if (paramIndex < 0) return false;"),
+               "6cS PIN A: no index means no join, so the echo is KEPT");
+        check (ch.contains ("if (s.liveReadFailed) return false;"),
+               "6cS PIN A: a readFailed slot KEEPS its echo (only source we have)");
+        check (ch.contains ("if (paramIndex >= s.liveReads.size()) return false;"),
+               "6cS PIN A: an index the sweep never reached KEEPS its echo");
+        check (ch.contains ("return s.liveReads[paramIndex].trim().isNotEmpty();"),
+               "6cS PIN A: an EMPTY read is not a live value, so the echo is kept");
+
+        // PIN B — REFUSED entries are never suppressed. "asked 50.00, range is
+        // [1.00..7.00], left manual" records a rejected request, not a claim
+        // about where the knob sits, and that number exists nowhere else.
+        {
+            const auto body = functionBody (juce::String (sch.str()),
+                                            "juce::String ChainHost::modelSettingsForSlot");
+            check (body.isNotEmpty(), "6cS PIN B: found the composer");
+            check (body.contains ("keep(s.modelLandedBits, s.modelLandedIdx)")
+                   && body.contains ("keep(s.modelAskedBits,  s.modelAskedIdx)"),
+                   "6cS PIN B: Landed and Asked are filtered");
+            check (! body.contains ("keep(s.modelRefusedBits"),
+                   "6cS PIN B: Refused is NEVER filtered");
+            check (body.contains ("modelRefusedBits.isEmpty())  lines.add(kRefusedPrefix"),
+                   "6cS PIN B: Refused rides untouched, with its number");
+        }
+
+        // PIN C — ONE SWEEP, and it is taken before the injection is built.
+        // If the injection suppressed on one read and the body shipped a
+        // different read, the two-stores defect would move rather than go.
+        check (ed.contains ("chainHost.refreshSlotParamReads();"),
+               "6cS PIN C: the sweep is taken at the injection site");
+        check (ch.contains ("[&s](int p) { return s.liveReads[p]; }"),
+               "6cS PIN C: the wire serialises the SAME cache the suppression read");
+        {
+            int n = 0, at = 0;
+            while ((at = ch.indexOf (at, "getCurrentValueAsText")) >= 0) { ++n; at += 1; }
+            check (n == 0, "6cS PIN C: ChainHost.cpp takes no read of its own",
+                   "found " + juce::String (n));
+        }
+
+        // PIN D — THE CARD IS UNTOUCHED. The 6a split exists so this change
+        // cannot reach it, and these are the two lines that would have to move
+        // for it to have done so.
+        check (ch.contains ("s.settings = kept.joinIntoString(\"\\n\");"),
+               "6cS PIN D: the card's tiered writer is byte-identical");
+        check (ch.contains ("s.settings = \"Applied automatically\\n\" + appliedSummary.joinIntoString(\", \");"),
+               "6cS PIN D: the card's applied writer is byte-identical");
+        check (ch.contains ("auto line = echojay::formatSemanticSetting(r.semantic, r.requestedValue);"),
+               "6cS PIN D: the card still echoes the REQUESTED value (9 Aug rule)");
+
+        // PIN E — ONE AUTHOR. The tiering is still decided in the apply-time
+        // block; the composer only drops entries and joins. If it ever grew a
+        // decision about what a value IS, that would be a second author.
+        check (ch.contains ("s.modelLandedBits  = landedBits;"),
+               "6cS PIN E: the partition is authored at apply time, as before");
+        {
+            const auto body = functionBody (juce::String (sch.str()),
+                                            "juce::String ChainHost::modelSettingsForSlot");
+            check (! body.contains ("requestedValue") && ! body.contains ("landedText")
+                   && ! body.contains ("semanticLabel"),
+                   "6cS PIN E: the composer decides nothing about VALUES, only what to drop");
         }
     }
 

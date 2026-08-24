@@ -23995,6 +23995,16 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
     juce::String out;
     bool hadFeed = false;
     auto& chainHost = processorRef.getChainHost();
+    // ONE SWEEP PER TURN, TAKEN HERE, USED TWICE (24 Aug 2026). The injection
+    // below suppresses an echoed value wherever a live read exists, and
+    // sendChatMessage serialises the same cache onto the wire further down.
+    // Both must see the SAME numbers: the defect being fixed is two stores
+    // disagreeing about one control, and re-reading at each consumer would
+    // move that disagreement rather than remove it. This is also the only
+    // point in the send flow that runs BEFORE the injection is built --
+    // setNextChatParamReads is ~84 lines later, so a sweep taken there would
+    // arrive after [CURRENT CHAIN] had already been composed.
+    chainHost.refreshSlotParamReads();
 
     // Feed split (P16), behind a runtime kill switch (feed_split_on.txt, absent
     // by default). OFF => today's full undifferentiated list and NO existence

@@ -82,32 +82,35 @@ inline juce::var slotParamReadsVar (int slot1Based,
     return juce::var (entry.get());
 }
 
-/** The whole per-slot decision, including "no instance means readFailed".
+/** Read every parameter's display text off one hosted processor.
 
-    IT LIVES HERE RATHER THAN AT THE CALL SITE so a pin can drive it with a
-    null processor. The first version put the null check in ChainHost.cpp and
-    pinned it by searching the source for the readFailed call; a mutation that
-    dead-coded the branch left that call in place and the pin stayed green.
-    A pin that asserts a line EXISTS cannot tell you it RUNS.
+    THE SHIPPED READ, and it lives here so a pin drives the same bytes the
+    plugin runs. An earlier arrangement had the turn-D pin supply its own
+    reader lambda; a mutation that stopped the shipped reader ever touching the
+    instance left that pin green, which is the one pin this contract exists for.
+
+    A null processor is readFailed: `totalOut` stays 0 and the array is empty.
+    That is deliberately not the same as an empty result from a live plugin.
 */
-inline juce::var slotParamReadsFor (int slot1Based,
-                                    const juce::String& pluginName,
-                                    juce::AudioProcessor* proc)
+inline juce::StringArray readAllParamDisplays (juce::AudioProcessor* proc,
+                                               bool& readFailedOut,
+                                               int& totalParamsOut)
 {
-    if (proc == nullptr)
-        return slotParamReadsVar (slot1Based, pluginName, 0,
-                                  [] (int) { return juce::String(); }, true);
+    juce::StringArray out;
+    readFailedOut  = (proc == nullptr);
+    totalParamsOut = 0;
+    if (proc == nullptr) return out;
 
     auto& params = proc->getParameters();
-    return slotParamReadsVar (slot1Based, pluginName, params.size(),
-        [&params] (int p) -> juce::String
-        {
-            // The same call the apply path already makes on this loaded
-            // instance (EchoJayParamApply.h), on the same thread. Measured
-            // 0.4 us per read; 245 params cost 0.089 ms.
-            return params[p] != nullptr ? params[p]->getCurrentValueAsText()
-                                        : juce::String();
-        });
+    totalParamsOut = params.size();
+    const int n = juce::jmin (totalParamsOut, kMaxParamReadsPerSlot);
+    for (int i = 0; i < n; ++i)
+        // The same call the apply path already makes on this loaded instance
+        // (EchoJayParamApply.h), on the same thread. Measured 0.4 us per read;
+        // 245 params cost 0.089 ms.
+        out.add (params[i] != nullptr ? params[i]->getCurrentValueAsText()
+                                      : juce::String());
+    return out;
 }
 
 } // namespace echojay
