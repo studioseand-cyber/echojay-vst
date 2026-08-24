@@ -1,5 +1,6 @@
 #include "EchoJayBridgedAU.h"   // FIRST: pulls CoreFoundation before JUCE (Point ambiguity)
 #include "ChainHost.h"
+#include "EJParamReads.h"    // 6c section 8: one slot's current reads, header-inline for the pins
 #include "EchoJayParamApply.h"
 #include "EchoJayParamMaps.h"
 #include "EJDialTally.h"          // dial-4 A8: requestedEntryCount, the A7.2 keys semantic
@@ -5114,6 +5115,30 @@ juce::StringArray ChainHost::getRecommendableNames() const
     for (const auto& e : recommendable_)
         names.add(e.displayName);
     return names;
+}
+
+juce::String ChainHost::buildSlotParamReadsJson() const
+{
+    juce::Array<juce::var> arr;
+    for (int i = 0; i < (int) slots_.size(); ++i)
+    {
+        auto* proc = getSlotProcessor(i);
+        const auto name = slots_[(size_t) i].desc.name;
+        // THE SLOT APPEARS EITHER WAY (8d), and the decision lives in the
+        // header so a pin can drive it with a null processor. No instance --
+        // still loading, refused to load, no hosted processor -- is
+        // readFailed, NOT an absent entry: 8d gives absence its own meaning
+        // ("stale client or old build, print exactly as today"), so a slot
+        // that exists and could not be read must not borrow it.
+        // Logged here; the note stays clean, which leaves the model in
+        // exactly today's position where the deployed 6b sentence applies.
+        if (proc == nullptr)
+            EchoJay_NSLog(("EJParamReads: slot " + juce::String(i + 1) + " (\"" + name
+                           + "\") readFailed -- no hosted instance").toRawUTF8());
+        arr.add(echojay::slotParamReadsFor(i + 1, name, proc));   // 1-based, as [CURRENT CHAIN] prints
+    }
+    if (arr.isEmpty()) return {};
+    return juce::JSON::toString(juce::var(arr), true);
 }
 
 juce::String ChainHost::buildMapFpsJson(int maxEntries) const

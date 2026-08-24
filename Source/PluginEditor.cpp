@@ -25734,6 +25734,13 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
                 }
         api.setNextChatMapFps(juce::JSON::toString(fpsVar, true));
     }
+    // 6c section 8a: staged beside mapFps and from the same rack, but OUTSIDE
+    // the mapFps guard above -- reads are worth sending whenever a slot exists,
+    // even on a turn where no fingerprint resolved.
+    {
+        api.setNextChatParamReads(
+            processorRef.getChainHost().buildSlotParamReadsJson());
+    }
     // dial-3 (A7.3): the declined-name batch rides THIS send's body,
     // consumed at body build like mapFps — so the transport's internal
     // limit-refresh retry resends WITHOUT the field rather than twice with

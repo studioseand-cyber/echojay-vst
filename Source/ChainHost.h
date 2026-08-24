@@ -170,6 +170,14 @@ public:
     // The server parses up to MAP_FPS_MAX (2000) and both must move together:
     // raising one alone changes nothing, since the smaller cap still binds.
     juce::String buildMapFpsJson(int maxEntries = 2000) const;
+    // 6c section 8a: every racked slot's CURRENT parameter reads, display text
+    // keyed by parameter index, as a JSON ARRAY. Staged and consumed exactly
+    // like mapFps. Carries BOTH the 1-based slot number and the plugin name
+    // (8b) so the server needs nothing else to join: it must not depend on
+    // [CURRENT CHAIN], which is gated on hadFeed||relevant and does not ride
+    // every turn, and a join that works only on some turns is worse than no
+    // join because its absence is silent.
+    juce::String buildSlotParamReadsJson() const;
 
     // ---- Apply-time honesty (26 Jul 2026) ----
     // Per-slot auto-dial outcome. The result bubble may only relay the

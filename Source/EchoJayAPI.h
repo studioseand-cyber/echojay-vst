@@ -301,6 +301,15 @@ public:
     void setNextChatMapFps(const juce::String& jsonObject)
     { nextChatMapFps_ = (jsonObject == "{}" ? juce::String() : jsonObject); }
 
+    // 6c section 8a: the racked slots' CURRENT parameter reads, staged from
+    // ChainHost::buildSlotParamReadsJson and consumed at body build exactly
+    // like mapFps. A JSON ARRAY, so "[]"/empty stages nothing. THE MODEL NEVER
+    // READS THIS FIELD: the server joins it by index at its one print site
+    // onto the controls it has already decided to expose, which is the whole
+    // reason the client does not select (6c §2, §3, §8c).
+    void setNextChatParamReads(const juce::String& jsonArray)
+    { nextChatParamReads_ = (jsonArray == "[]" ? juce::String() : jsonArray); }
+
     // Dashboard auth handoff (CONTRACT_dashboard_auth_handoff.md §2): mint a
     // single-use 120 s handoff for the webview. Minted FRESH on every entry
     // to the dashboard surface, never stockpiled; the callback gets the raw
@@ -365,6 +374,7 @@ public:
     {
         nextChatMeters_.clear();
         nextChatMapFps_.clear();
+        nextChatParamReads_.clear();
         nextChatDialDeclines_.clear();
         nextChatTurnType_.clear();
         nextChatBusCount_ = 0;
@@ -1034,6 +1044,7 @@ private:
     juce::String deviceId;
     juce::String nextChatMeters_;   // staged by setNextChatMeters()
     juce::String nextChatMapFps_;   // staged by setNextChatMapFps(); "" = none
+    juce::String nextChatParamReads_;   // 6c §8a: staged by setNextChatParamReads(); "" = none
     juce::String nextChatDialDeclines_;  // dial-3 batch envelope; "" = none
     juce::String nextChatTurnType_; // staged by setNextChatTurnType(); "" = "chat"
     juce::StringArray nextDialFlags_; // see setNextDialFlags(); cleared per send

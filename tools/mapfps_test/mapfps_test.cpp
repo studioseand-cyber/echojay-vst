@@ -28,6 +28,7 @@
 #include "EJDialTally.h"         // dial-4 A8: header-inline, the shipped tally
 #include "EJDialMissRows.h"      // A9 step 1: header-inline, the shipped row set
 #include "EJSettingsClip.h"      // 6a: header-inline, the shipped model-side clip
+#include "EJParamReads.h"        // 6c §8: header-inline, the shipped read serialiser
 #include "EchoJayParamMaps.h"
 #include "EchoJayParamApply.h"
 #include "EchoJayHistoryTrim.h"
@@ -1549,6 +1550,186 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "dump: a refused write logs a FAILED line, not a success line");
             check (body.contains ("EJChat: dev_mode body dump -> "),
                    "dump: a successful write still names the resolved path");
+        }
+    }
+
+    // ---- 6c: the client sends values and does NOT select ---------------------
+    {
+        std::cout << "6c current values on the wire:\n";
+
+        // PIN 1 — the four states 8d prints from, kept apart by the ENCODING.
+        // The empty string is not a sentinel: it is literally what the plugin
+        // returned, so it cannot collide with a real display value the way
+        // "?" or "-" could.
+        {
+            auto v = echojay::slotParamReadsVar (1, "Test", 3,
+                        [] (int i) { return i == 1 ? juce::String() : juce::String ("v") + juce::String (i); });
+            const auto js = juce::JSON::toString (v, true);
+            check (js.contains ("\"0\": \"v0\"") && js.contains ("\"2\": \"v2\""),
+                   "6c PIN1: a read control carries its display text", "got " + js);
+            check (js.contains ("\"1\": \"\""),
+                   "6c PIN1: a control read but UNREADABLE is the empty string", "got " + js);
+            check (! js.contains ("\"3\":"),
+                   "6c PIN1: an absent control has no key at all", "got " + js);
+            check (js.contains ("\"truncated\": false") && js.contains ("\"readFailed\": false"),
+                   "6c PIN1: both flags ride every entry, false when nothing happened", "got " + js);
+            check (js.contains ("\"slot\": 1") && js.contains ("\"name\": \"Test\"")
+                   && js.contains ("\"reads\":"),
+                   "6c PIN1: 8a's key names exactly -- slot, name, reads", "got " + js);
+        }
+
+        // PIN 2 — the backstop flags itself (8e), so the server can tell a CUT
+        // from a MISS. 8d cannot print its fourth state without this flag.
+        {
+            auto v = echojay::slotParamReadsVar (2, "Huge", echojay::kMaxParamReadsPerSlot + 7,
+                        [] (int i) { return juce::String (i); });
+            const auto js = juce::JSON::toString (v, true);
+            check (js.contains ("\"truncated\": true"),
+                   "6c PIN2: a cut slot says truncated", "got tail");
+            check (js.contains ("\"" + juce::String (echojay::kMaxParamReadsPerSlot - 1) + "\":"),
+                   "6c PIN2: everything up to the cap is still carried");
+            check (echojay::kMaxParamReadsPerSlot == 1024,
+                   "6c PIN2: the cap is 1024, above 126 of the 128 cached maps");
+        }
+
+        // PIN 2b — readFailed: the slot is PRESENT and empty, never absent.
+        // 8d gives absence its own meaning (stale client, print as today), so
+        // a slot that exists and could not be read must not borrow it.
+        {
+            auto v = echojay::slotParamReadsVar (3, "Dead", 40,
+                        [] (int) { return juce::String ("never called"); }, /*readFailed*/ true);
+            const auto js = juce::JSON::toString (v, true);
+            check (js.contains ("\"readFailed\": true"),
+                   "6c PIN2b: a non-responding slot says readFailed", "got " + js);
+            check (js.contains ("\"reads\": {}"),
+                   "6c PIN2b: readFailed carries an EMPTY reads object", "got " + js);
+            check (js.contains ("\"truncated\": false"),
+                   "6c PIN2b: readFailed is not also reported as a cut", "got " + js);
+            check (js.contains ("\"slot\": 3"),
+                   "6c PIN2b: the slot still appears, so the server knows it exists");
+            // BEHAVIOURAL, through the shipped decision: a null processor is
+            // readFailed. The earlier version of this pin searched ChainHost's
+            // source for the readFailed call, and a mutation that dead-coded
+            // the branch left the call in place and the pin green. The
+            // decision moved into the header so it can be DRIVEN, not read.
+            const auto nullJs = juce::JSON::toString (
+                echojay::slotParamReadsFor (4, "Gone", nullptr), true);
+            check (nullJs.contains ("\"readFailed\": true")
+                   && nullJs.contains ("\"reads\": {}"),
+                   "6c PIN2b: a NULL processor produces a readFailed slot", "got " + nullJs);
+        }
+
+        // PIN 3, structural — the client does NOT select, and the values do not
+        // ride a block the model reads. Both are the contract, not a detail:
+        // a port of the server's exposure rule was measured to miss the
+        // governing switches the server had just added.
+        {
+            std::ifstream fch ("Source/ChainHost.cpp");
+            std::stringstream sch; sch << fch.rdbuf();
+            const auto ch = codeOnly (juce::String (sch.str()));
+            check (ch.contains ("echojay::slotParamReadsFor("),
+                   "6c PIN3: ChainHost serialises through the one shared helper");
+            // NOT anchored on the /*readFailed*/ argument comment: codeOnly()
+            // strips it, so the first version of this pin failed on its own
+            // stripper rather than on the code. Anchor on the call and on the
+            // log line, both of which survive comment stripping.
+            check (ch.contains ("arr.add(echojay::slotParamReadsFor(i + 1, name, proc));"),
+                   "6c PIN3: EVERY slot is added, unconditionally");
+            check (! ch.contains ("if (proc == nullptr) continue;"),
+                   "6c PIN3: no slot is dropped for having no instance");
+            check (ch.contains ("readFailed -- no hosted instance"),
+                   "6c PIN3: and the client LOGS it, so a silent rack is visible");
+            check (! ch.contains ("K_PER_PLUGIN") && ! ch.contains ("classifyControl"),
+                   "6c PIN3: no copy of the server's exposure rule lives here");
+
+            std::ifstream fap ("Source/EchoJayAPI.cpp");
+            std::stringstream sap; sap << fap.rdbuf();
+            const auto api = codeOnly (juce::String (sap.str()));
+            check (api.contains ("\",\\\"slotParamReads\\\":\" + nextChatParamReads_"),
+                   "6c PIN3: the body carries the field, named slotParamReads");
+            check (api.contains ("nextChatParamReads_.clear();"),
+                   "6c PIN3: consumed per send, like mapFps");
+            // The field must NOT be spliced into the injection the model reads.
+            const auto inj = functionBody (juce::String (sap.str()),
+                "juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& rack,");
+            check (inj.isNotEmpty(), "6c PIN3: found the injection builder");
+            check (! inj.contains ("slotParamReads"),
+                   "6c PIN3: the reads never enter [CURRENT CHAIN]");
+        }
+
+        // PIN 4 — TURN D, THE ONE THAT HAS FAILED FOUR TIMES.
+        // A control moved by hand, to a value EchoJay never applied, must
+        // appear in the field with that value. Driven through the SHIPPED
+        // serialiser on a REAL hosted instance; skips cleanly when the plugin
+        // is not installed, the tools/bridged_readback_test convention.
+        {
+            juce::AudioPluginFormatManager fm;
+            juce::addDefaultFormatsToManager (fm);
+            juce::OwnedArray<juce::PluginDescription> found;
+            for (auto* f : fm.getFormats())
+                if (f->getName() == "AudioUnit")
+                    f->findAllTypesForFile (found, "AudioUnit:Effects/aufx,bxbl,Brwx");
+            if (found.isEmpty())
+                std::cout << "  SKIP  6c PIN4 turn-D (bx_blackdist2 AU not installed)\n";
+            else
+            {
+                juce::String err;
+                auto inst = fm.createPluginInstance (*found[0], 44100.0, 512, err);
+                if (inst == nullptr)
+                    std::cout << "  SKIP  6c PIN4 turn-D (instance refused: " << err << ")\n";
+                else
+                {
+                    inst->prepareToPlay (44100.0, 512);
+                    juce::AudioBuffer<float> buf (juce::jmax (2, inst->getTotalNumInputChannels()), 512);
+                    juce::MidiBuffer midi;
+                    auto render = [&] { for (int b = 0; b < 8; ++b) { buf.clear(); midi.clear(); inst->processBlock (buf, midi); } };
+                    render();
+                    auto& ps = inst->getParameters();
+                    const int idx = 3;   // "Vol" on this map
+                    if (! juce::isPositiveAndBelow (idx, ps.size()))
+                        std::cout << "  SKIP  6c PIN4 turn-D (no parameter " << idx << ")\n";
+                    else
+                    {
+                        const auto before = ps[idx]->getCurrentValueAsText().trim();
+                        // BY HAND: a bare gesture on the instance, nothing to do
+                        // with EchoJay's apply path. This is the user turning a
+                        // knob, which is exactly what every failed turn missed.
+                        const float target = (ps[idx]->getValue() > 0.5f) ? 0.23f : 0.77f;
+                        ps[idx]->beginChangeGesture();
+                        ps[idx]->setValueNotifyingHost (target);
+                        ps[idx]->endChangeGesture();
+                        render();
+                        const auto after = ps[idx]->getCurrentValueAsText().trim();
+
+                        // THROUGH slotParamReadsFor, THE SHIPPED PATH. An
+                        // earlier version passed its own reader lambda to
+                        // slotParamReadsVar, so it exercised a COPY of the read
+                        // and a mutation that stopped the shipped reader ever
+                        // touching the instance left this pin green. The one
+                        // pin this contract exists for cannot be the one
+                        // testing a reimplementation of the thing under test.
+                        auto v = echojay::slotParamReadsFor (1, "bx_blackdist2", inst.get());
+                        const auto js = juce::JSON::toString (v, true);
+
+                        check (after != before,
+                               "6c PIN4 turn-D: the hand move actually changed the display",
+                               "before \"" + before + "\" after \"" + after + "\"");
+                        check (js.contains ("\"" + juce::String (idx) + "\": \"" + after + "\""),
+                               "6c PIN4 turn-D: the hand-set value RIDES slotParamReads",
+                               "wanted \"" + after + "\" in " + js);
+                        // SCOPED TO THE MOVED KEY. An unscoped search for the
+                        // old text collides with unrelated controls that happen
+                        // to share it -- measured: indices 1 and 2 also read
+                        // "5.0" here, so the first version of this pin failed on
+                        // its own fixture rather than on the code.
+                        check (before.isEmpty()
+                               || ! js.contains ("\"" + juce::String (idx) + "\": \"" + before + "\""),
+                               "6c PIN4 turn-D: that control no longer reports its pre-move value",
+                               "stale \"" + before + "\" still at index " + juce::String (idx) + " in " + js);
+                    }
+                    inst->releaseResources();
+                }
+            }
         }
     }
 

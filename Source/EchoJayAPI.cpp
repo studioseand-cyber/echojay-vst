@@ -1266,6 +1266,19 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
         body += ",\"mapFps\":" + nextChatMapFps_;
         nextChatMapFps_.clear();
     }
+    // 6c section 8a: the racked slots' current parameter READS. Rides beside
+    // mapFps and is consumed the same way, so the transport's limit-refresh
+    // retry resends WITHOUT the field rather than twice with it. Deliberately
+    // NOT inside any block the model reads: the server joins it by index at
+    // fmtControl, its ONE print site, onto the controls it has already decided
+    // to expose -- so no selection rule exists twice (§8c). On a message
+    // already carrying 68,930 characters of [AVAILABLE PLUGINS], and cached
+    // nowhere, because the newest user turn is fresh input by design.
+    if (nextChatParamReads_.isNotEmpty())
+    {
+        body += ",\"slotParamReads\":" + nextChatParamReads_;
+        nextChatParamReads_.clear();
+    }
     // dialDeclines (dial-3, A7.3): consumed per send exactly like mapFps,
     // so the limit-refresh retry resends WITHOUT the field rather than
     // twice with it. The editor moves the watermark only on the success
