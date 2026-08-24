@@ -144,7 +144,10 @@ void LinkProcessor::timerCallback()
     {
         planJournalChecked_ = true;
         if (chainHost.planJournalRestoreIfPresent(resolvedDir, instanceUid_))
-            notifyChainModel();
+            // The restore rebuilt the rack in chainHost — same four-step
+            // sync, or a crash-recovered Link shows the pre-crash shape
+            // until its next local edit (the identical defect, latent).
+            syncModelAfterStructuralChange();
     }
     publishMeterFrame();
 
@@ -809,16 +812,10 @@ void LinkProcessor::pollControlCommand()
         LinkShm::StructureEdit::PreImages ignored;
         if (LinkShm::StructureEdit::planFromVar(obj->getProperty("structPlan"),
                                                 plan, ignored))
-        {
-            planResult = chainHost.applyStructurePlan(resolvedDir, plan);
-            // EVERY plan outcome repaints (24 Aug 2026: applied=Y with a
-            // stale rack UI): applied changed the shape; a rollback tore it
-            // down and rebuilt it back. Either way the editor's model and
-            // the host's snapshot are stale — notify UNCONDITIONALLY here,
-            // not on the success arm. (The launch-time journal restore has
-            // its own notify; together all three outcomes repaint.)
-            notifyChainModel();
-        }
+            // Apply + the four-step sync, one author — notify alone told
+            // the editor to re-read a model the plan never wrote (the
+            // two-models defect; functionally gated in linksync_test).
+            planResult = applyStructurePlanAndSync(resolvedDir, plan);
         else
             planResult.reasons.add("the plan could not be read");
         EchoJay_NSLog(("EJPlan[" + juce::String(seq) + "] link: applied="
@@ -1637,6 +1634,27 @@ void LinkProcessor::resyncChainModelFromHost()
     chainModel = std::move(next);
 }
 
+void LinkProcessor::syncModelAfterStructuralChange()
+{
+    // THE FOUR-STEP WRITER, one author (24 Aug 2026): the chain-cmd path
+    // always did these four; the plan path did only the last, so the
+    // editor re-read a model nobody had changed.
+    resyncChainModelFromHost();
+    publishRackSidecar();
+    updateChainLatency();
+    notifyChainModel();
+}
+
+ChainHost::PlanResult LinkProcessor::applyStructurePlanAndSync(
+    const juce::String& dir, const LinkShm::StructureEdit::Plan& plan)
+{
+    auto res = chainHost.applyStructurePlan(dir, plan);
+    // UNCONDITIONAL: applied changed the shape, a rollback tore it down
+    // and rebuilt it — the editor-facing model is stale either way.
+    syncModelAfterStructuralChange();
+    return res;
+}
+
 void LinkProcessor::notifyChainModel()
 {
     updateMonoStereoOnlyNames();
@@ -2124,10 +2142,7 @@ void LinkProcessor::pollChainCommand()
             self->chainHost.applyChainEdits(std::move(ops), -1, baseSlots,
                 [self, seq](const juce::StringArray& results, int applied, bool aborted)
             {
-                self->resyncChainModelFromHost();
-                self->publishRackSidecar();   // Phase R: edits publish instantly
-                self->updateChainLatency();
-                self->notifyChainModel();
+                self->syncModelAfterStructuralChange();
                 juce::String status = aborted ? "stale"
                                     : (applied == results.size() ? "ok" : "partial");
                 self->writeChainAck(seq, status, results, {});

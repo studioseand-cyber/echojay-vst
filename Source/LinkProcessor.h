@@ -180,6 +180,17 @@ public:
     ChainHost& getChainHost() { return chainHost; }
     const std::vector<ChainSlotSpec>& getChainModel() const { return chainModel; }
 
+    // Structure plan, display parity (24 Aug 2026): apply + the SAME
+    // four-step sync every structural writer uses. The Link has two rack
+    // models — chainHost (audio truth, what the sidecar publishes) and
+    // chainModel (editor-facing, keeps missing-slot memory) — and a plan
+    // that mutated only the first left a reopened editor showing the old
+    // shape. Public so linksync_test can prove FUNCTIONALLY that the
+    // editor-facing model moves; a source pin passed while that bug was
+    // live.
+    ChainHost::PlanResult applyStructurePlanAndSync(
+        const juce::String& dir, const LinkShm::StructureEdit::Plan& plan);
+
     // Replace the chain with the given spec (message thread, sequential
     // instantiation, editors are NEVER opened during build). onDone receives
     // one result line per requested slot ("ok" / failure reason) plus a
@@ -325,6 +336,11 @@ private:
     // over by first name match from the previous model. Missing (unloadable)
     // model entries do not survive an edit resync — the rack is truth.
     void resyncChainModelFromHost();
+    // The ONE four-step writer after any structural change: resync the
+    // editor-facing model, publish the sidecar, re-report latency, notify.
+    // Every structural mutation path calls this — a path that skips it is
+    // the two-models-disagree defect again.
+    void syncModelAfterStructuralChange();
     void notifyChainModel();
     juce::PluginDescription resolveChainPlugin(const juce::String& name) const;
     static juce::StringArray loadDisabledUids();
