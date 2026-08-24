@@ -4173,6 +4173,58 @@ bool ChainHost::planStageOne(const juce::PluginDescription& d, juce::String& why
     }
     else
     {
+        // RESOLUTION DIAGNOSTIC (25 Aug 2026, ordered before any fix): the
+        // stage failure names the plugin but not the LOOKUP. One line says
+        // what was searched (both uid encodings + deprecatedUid), what the
+        // descriptor actually carries when it reaches createPluginInstance
+        // (an EMPTY format there is the "No compatible plug-in format"
+        // error by construction), and what this catalogue holds.
+        {
+            int nameHits = 0, uidHits = 0, hexHits = 0;
+            juce::String firstHit;
+            const int wantUid = d.uniqueId != 0 ? d.uniqueId : d.deprecatedUid;
+            const juce::String wantHex = juce::String::toHexString(wantUid);
+            int klN = 0, enN = 0;
+            {
+                std::lock_guard<std::mutex> lock(pluginsMutex_);
+                klN = knownPlugins_.getNumTypes();
+                enN = entries_.size();
+                auto scan = [&](const juce::PluginDescription& e)
+                {
+                    const int eu = e.uniqueId != 0 ? e.uniqueId : e.deprecatedUid;
+                    if (namesMatchLoose(e.name, d.name))
+                    {
+                        ++nameHits;
+                        if (firstHit.isEmpty())
+                            firstHit = e.name + "/" + e.pluginFormatName
+                                     + "/uid.dec=" + juce::String(eu)
+                                     + "/uid.hex=" + juce::String::toHexString(eu);
+                    }
+                    if (wantUid != 0 && eu == wantUid) ++uidHits;
+                    if (juce::String::toHexString(eu).equalsIgnoreCase(wantHex)
+                        && wantUid != 0) ++hexHits;
+                };
+                for (const auto& e : knownPlugins_.getTypes()) scan(e);
+                for (const auto& e : entries_) scan(e);
+            }
+            EchoJay_NSLog(("EJPlan: stage lookup \"" + d.name + "\""
+                + " uid.dec=" + juce::String(d.uniqueId)
+                + " depUid.dec=" + juce::String(d.deprecatedUid)
+                + " uid.hex=" + wantHex
+                + " descFormat=" + (d.pluginFormatName.isEmpty()
+                                        ? juce::String("(EMPTY)")
+                                        : d.pluginFormatName)
+                + " descFile=" + (d.fileOrIdentifier.isEmpty()
+                                        ? juce::String("(EMPTY)")
+                                        : juce::String("set"))
+                + " catalogue known=" + juce::String(klN)
+                + " entries=" + juce::String(enN)
+                + " nameMatches=" + juce::String(nameHits)
+                + " uidMatches=" + juce::String(uidHits)
+                + " hexMatches=" + juce::String(hexHits)
+                + (firstHit.isEmpty() ? juce::String(" -> NO MATCH")
+                                      : " -> first " + firstHit)).toRawUTF8());
+        }
         const int mark = pushDeathMark("plan stage", d);
         juce::String err;
         auto inst = formatManager_.createPluginInstance(d, sampleRate_ > 0 ? sampleRate_ : 44100.0,

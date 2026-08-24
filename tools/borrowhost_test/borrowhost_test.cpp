@@ -1145,6 +1145,25 @@ int main()
                      && ! addArm.contains ("->liveIdentity()"),
                    "the Create identity is the PICKED plugin, never the substitute");
         }
+        // ---- The stage-lookup diagnostic (25 Aug 2026: failedAt=stage
+        // ---- names the plugin but not the LOOKUP): one line per non-
+        // ---- builtin stage attempt — searched name, BOTH uid encodings
+        // ---- plus deprecatedUid, the descriptor's (possibly EMPTY)
+        // ---- format at createPluginInstance, and catalogue hit counts.
+        {
+            const auto ch = slurp3 ("Source/ChainHost.cpp");
+            const int lk = ch.indexOf ("EJPlan: stage lookup");
+            const auto lkArm = lk >= 0 ? ch.substring (lk, lk + 1400)
+                                       : juce::String();
+            check (lk >= 0
+                     && lkArm.contains ("uid.dec=")
+                     && lkArm.contains ("uid.hex=")
+                     && lkArm.contains ("depUid.dec=")
+                     && lkArm.contains ("descFormat=")
+                     && lkArm.contains ("nameMatches="),
+                   "the stage lookup logs both uid encodings, the format "
+                   "and the catalogue hits");
+        }
         // ---- Session-state-first banners (24 Aug 2026: the status line
         // ---- truncated before "Your session is still live", a working
         // ---- refusal read as a hang, Apply was pressed four times).
