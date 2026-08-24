@@ -3,6 +3,7 @@
 #include "EJReplyBlocks.h"   // the whole-reply block strip (moved verbatim, spec step 3)
 #include "ChainHost.h"    // buildCurrentChainInjection reads the live rack
 #include "LinkShm.h"      // RackSidecar — targeted [CURRENT CHAIN] (Phase R)
+#include "EJSettingsClip.h" // the model-side slot-settings cap, and its marker
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics
 #include "EqPresets.h"    // the EQ teaching block lists presets from the table
 #include "EchoJayChannelLabel.h" // kChannelChooserCapability — the classify flag
@@ -1289,17 +1290,50 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
     // dev_mode: dump the EXACT outgoing body for diffing against server
     // logs (same switch as the Dump meters button)
     {
-        static const bool devMode = juce::File::getSpecialLocation(
-            juce::File::userApplicationDataDirectory)
-            .getChildFile("EchoJay").getChildFile("dev_mode").existsAsFile();
-        if (devMode)
+        // TWO REASONS THIS NEVER FIRED IN A DAW (24 Aug 2026). Both were in
+        // this block, and both were invisible: the dump simply was not there,
+        // which reads exactly like "nothing was sent".
+        //
+        // 1. IT OPEN-CODED THE GATE. ChainHost::devModeActive() checks the
+        //    absolute /Users/.../.echojay_dev FIRST, precisely because Logic
+        //    hosts AUs in the sandboxed AUHostingService where
+        //    userApplicationDataDirectory resolves into the SERVICE's
+        //    container and the real ~/Library/EchoJay/dev_mode is unreachable.
+        //    This copy had only the container-relative half, so in-DAW it was
+        //    always false — the one place the dump is actually needed.
+        //
+        // 2. static const bool: evaluated ONCE per process, at the first send.
+        //    Creating dev_mode after the plugin loaded did nothing until a
+        //    restart. Now read per send, the same call the stream_chains flag
+        //    already makes for the same reason ("the whole point of the flag is
+        //    flipping it mid-session ... one stat per send is free").
+        if (ChainHost::devModeActive())
         {
             auto f = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
                          .getChildFile("EchoJay").getChildFile("chat-body-debug.json");
-            f.getParentDirectory().createDirectory();
-            f.replaceWithText(body);
-            EchoJay_NSLog(("EJChat: dev_mode body dump -> " + f.getFullPathName()
-                           + " (" + juce::String((int) body.getNumBytesAsUTF8()) + "b total)").toRawUTF8());
+            // THE WRITE HALF HAS THE SAME SANDBOX PROBLEM AS THE GATE HAD, and
+            // fixing only the gate would have moved the silence rather than
+            // removed it. userDocumentsDirectory redirects into the
+            // AUHostingService container under Logic exactly as
+            // userApplicationDataDirectory does, so in-DAW this lands somewhere
+            // the operator will not think to look, and a sandbox may refuse it
+            // outright. The old code ignored replaceWithText's result and then
+            // logged success unconditionally — a line claiming a dump that
+            // might never have been written.
+            //
+            // So: log the RESOLVED path either way (it names the container when
+            // that is where it went), and say plainly when the write failed.
+            // An unreadable absence is what cost us the last two turns.
+            const bool dirOk = f.getParentDirectory().createDirectory().wasOk();
+            const bool wrote = dirOk && f.replaceWithText(body);
+            if (wrote)
+                EchoJay_NSLog(("EJChat: dev_mode body dump -> " + f.getFullPathName()
+                               + " (" + juce::String((int) body.getNumBytesAsUTF8()) + "b total)").toRawUTF8());
+            else
+                EchoJay_NSLog(("EJChat: dev_mode body dump FAILED -> " + f.getFullPathName()
+                               + (dirOk ? " (write refused)" : " (could not create directory)")
+                               + " -- sandboxed host? the gate passed, the write did not")
+                                  .toRawUTF8());
         }
     }
 
@@ -2914,13 +2948,18 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const ChainHost& chainHost)
     rack.revision  = chainHost.getChainRevision();
     rack.masterWet = chainHost.getMasterWet();
     juce::StringArray notes;
+    // The model's settings text rides index-parallel too (24 Aug 2026). The
+    // sidecar still carries s.settings so the Link app's own readers are
+    // untouched; the formatter prefers this array for the model's line.
+    juce::StringArray modelSettings;
     int i = 0;
     for (const auto& s : chainHost.getAllSlotInfos())
     {
         rack.slots.push_back({ s.name, s.format, s.settings, s.bypassed, s.wet });
+        modelSettings.add(s.settingsForModel);
         notes.add(formatSlotLevelNote(chainHost, i++));
     }
-    return buildCurrentChainInjection(rack, juce::String(), &notes);
+    return buildCurrentChainInjection(rack, juce::String(), &notes, &modelSettings);
 }
 
 // ---- running level, rendered ----------------------------------------------
@@ -2987,7 +3026,8 @@ juce::String EchoJayAPI::buildChainLevelsInjection(const ChainHost& chainHost)
 
 juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& rack,
                                                     const juce::String& channelLabel,
-                                                    const juce::StringArray* slotLevelNotes)
+                                                    const juce::StringArray* slotLevelNotes,
+                                                    const juce::StringArray* slotModelSettings)
 {
     if (!rack.valid || rack.slots.empty()) return {};
 
@@ -3037,12 +3077,24 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& 
         if (slotLevelNotes != nullptr && i < slotLevelNotes->size() && (*slotLevelNotes)[i].isNotEmpty())
             block << "; " << (*slotLevelNotes)[i];
         block << ")";
-        auto settings = s.settings.trim();
+        // THE MODEL READS ITS OWN STRING (24 Aug 2026). The card's copy and
+        // the model's copy answer to opposite rules — see
+        // ChainHost::SlotInfo::settingsForModel — so this line takes the tiered
+        // one when it exists. When it does not, the slot never had a tiering
+        // computed (prose only, a stale-map rung, a built-in, or a rack that
+        // arrived over the Link wire) and the card's string is all there is.
+        const auto picked = (slotModelSettings != nullptr && i < slotModelSettings->size()
+                         && (*slotModelSettings)[i].trim().isNotEmpty())
+                            ? (*slotModelSettings)[i].trim()
+                            : s.settings.trim();
+        // ONE clip for whichever string was picked, and it SAYS SO when it
+        // cuts. The old form dropped the tail behind a bare ellipsis, and the
+        // unverified group lives at the tail — so a silent cut removed exactly
+        // the words that mark a value as untrusted. See EJSettingsClip.h for
+        // why 500, and why the marker is load-bearing rather than cosmetic.
+        const auto settings = echojay::clipModelSettings(picked);
         if (settings.isNotEmpty())
-            block << juce::String::fromUTF8(" \xe2\x80\x94 settings: ")
-                  << (settings.length() > 120
-                        ? settings.substring(0, 120) + juce::String::fromUTF8("\xe2\x80\xa6")
-                        : settings);
+            block << juce::String::fromUTF8(" \xe2\x80\x94 settings: ") << settings;
         block << "\n";
     }
     if (rack.masterWet < 0.995f)

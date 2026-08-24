@@ -705,9 +705,17 @@ public:
     // slotLevelNotes: optional per-slot running-level clause (index-parallel
     // with rack.slots; an empty string draws nothing for that slot). Only the
     // local-rack adapter fills it today; a Link's rack carries no tally yet.
+    // slotModelSettings: optional per-slot MODEL settings text, index-parallel
+    // in the same way and for the same reason — RackSidecarSlot is a versioned
+    // wire struct the Link app reads, so a new per-slot fact rides beside it
+    // rather than in it. Null, or empty for a given slot, means "no tiered
+    // string exists for this slot" and the sidecar's own `settings` is used:
+    // that is the Link path, where the rack arrived from another machine and
+    // the tiering was never computed here.
     static juce::String buildCurrentChainInjection(const LinkShm::RackSidecar& rack,
                                                    const juce::String& channelLabel,
-                                                   const juce::StringArray* slotLevelNotes = nullptr);
+                                                   const juce::StringArray* slotLevelNotes = nullptr,
+                                                   const juce::StringArray* slotModelSettings = nullptr);
     // Running level (LevelTally, 17 Aug 2026), rendered for the model.
     //   formatLevelClause: one point, "in -19.2 dBFS RMS (p90 -15.5), peak
     //     -6.0, crest 12 dB, heard 2m10s (describes ~2m10s)" or the loud null

@@ -43,6 +43,24 @@ public:
         juce::String settings;  // suggested dial-in guidance from AI (display only)
         juce::String format;    // "AudioUnit" / "VST3" — popout-only is per-format
         float wet = 1.0f;       // per-slot wet/dry (0..1, 1 = fully wet)
+        // THE MODEL'S COPY of the same slot's settings text, and the reason
+        // there are two (24 Aug 2026). `settings` above serves the CARD and is
+        // governed by the 9 Aug rule: a successful write shows nothing extra,
+        // because surfacing an internal proof class as user-facing doubt would
+        // fire on the entire setread corpus forever (ChainHost.cpp, the comment
+        // above appliedSummary.add). The MODEL has the opposite requirement: it
+        // must never read a requested value as slot state, so it needs the
+        // Landed / Asked, not verified / Refused tiering.
+        //
+        // One field could not satisfy both. This is not a cosmetic split; the
+        // two audiences want opposite things about the same fact.
+        //
+        // EMPTY means "no dial echo is current for this slot" and the reader
+        // uses `settings` instead — the same string it reads today. That is a
+        // different SOURCE, not a fallback hiding a missing value: on those
+        // paths (prose guidance, stale-map notes, built-in applies) no tiering
+        // was ever computed, so there is nothing being concealed.
+        juce::String settingsForModel;
     };
 
     ChainHost();
@@ -963,6 +981,11 @@ private:
         juce::PluginDescription              desc;
         bool                                 bypassed = false;
         juce::String                         settings;   // AI-suggested dial-in guidance
+        // The model's tiered copy; see SlotInfo::settingsForModel for why the
+        // two exist. Written by exactly ONE site (the tiered block in
+        // applyStructuredIfReady) and cleared by every other writer of
+        // `settings`, so a dial echo can never outlive the map it describes.
+        juce::String                         settingsForModel;
         // Per-slot wet/dry: `wet` is the persisted value; `wetShared` is the
         // audio-thread copy read by this slot's SlotWetBlend graph node.
         // Both created lazily in rebuildGraph(), removed in removeSlot().

@@ -1347,15 +1347,16 @@ std::vector<ChainHost::SlotInfo> ChainHost::getAllSlotInfos() const
     result.reserve(slots_.size());
     for (auto& s : slots_)
         result.push_back({ s.desc.name, s.bypassed, s.settings,
-                           s.desc.pluginFormatName, s.wet });
+                           s.desc.pluginFormatName, s.wet, s.settingsForModel });
     return result;
 }
 
 ChainHost::SlotInfo ChainHost::getSlotInfo(int i) const
 {
-    if (i < 0 || i >= (int)slots_.size()) return { {}, false, {}, {}, 1.0f };
+    if (i < 0 || i >= (int)slots_.size()) return { {}, false, {}, {}, 1.0f, {} };
     return { slots_[i].desc.name, slots_[i].bypassed, slots_[i].settings,
-             slots_[i].desc.pluginFormatName, slots_[i].wet };
+             slots_[i].desc.pluginFormatName, slots_[i].wet,
+             slots_[i].settingsForModel };
 }
 
 ChainHost::SlotIdentity ChainHost::getSlotIdentity(int slot) const
@@ -1373,6 +1374,9 @@ void ChainHost::setSlotSettings(int i, const juce::String& settings)
 {
     if (i < 0 || i >= (int)slots_.size()) return;
     slots_[i].settings = settings;
+    // New prose for this slot: any dial echo it had describes an older
+    // request. Clear it rather than let it outlive its map (see the field).
+    slots_[i].settingsForModel.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -2728,6 +2732,7 @@ bool ChainHost::settleStaleRung(int i)
             if (! s.settings.startsWith(note))
             {
                 s.settings = s.settings.isEmpty() ? note : note + "\n" + s.settings;
+                s.settingsForModel.clear();   // stale-map rung: the echo's map no longer applies
                 changed = true;
             }
         }
@@ -2745,7 +2750,10 @@ bool ChainHost::settleStaleRung(int i)
     const juce::String note = "This version of " + s.desc.name
         + " is newer than any mapping we hold, so these controls need dialling by hand.";
     if (! s.settings.startsWith(note))
+    {
         s.settings = s.settings.isEmpty() ? note : note + "\n" + s.settings;
+        s.settingsForModel.clear();   // stale-map rung: no mapping, no tiering
+    }
     return true;
 }
 
@@ -3085,6 +3093,9 @@ juce::String ChainHost::devApplyEqJson(int slotIndex, const juce::String& json)
     if (slotIndex >= 0 && slotIndex < (int)slots_.size())
     {
         slots_[(size_t)slotIndex].settings = "Applied automatically\n" + summary;
+        // No tiering was computed on this path, so the model must not keep an
+        // older one beside a newer card.
+        slots_[(size_t)slotIndex].settingsForModel.clear();
         slots_[(size_t)slotIndex].dialAppliedCount = applied;
         slots_[(size_t)slotIndex].dialStatus =
             (skipped > 0) ? DialStatus::partial : DialStatus::applied;
@@ -3404,6 +3415,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         if (summary.isNotEmpty())
         {
             s.settings   = "Applied automatically\n" + summary;
+            s.settingsForModel.clear();   // built-in: no map, no tiering
             // Honest verdict, same contract as the mapped path: anything the
             // device could not place (the EQ was full, an id was unknown) is
             // partial, not success.
@@ -3632,8 +3644,27 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
     //   - display-verified: the plugin's own display text is ground truth.
     //   - bridged (staleDisplayKept): already annotated as unverifiable
     //     upstream; nothing is added here.
-    //   - setread / unparseable display: the written value, in the MAP's
-    //     vocabulary.
+    //   - setread / unparseable display / position: the written value, in
+    //     the MAP's vocabulary, on its OWN line marked unverified.
+    //
+    // 6a (24 Aug 2026), and it is NOT the one-line swap the contract
+    // imagined. landedText was never "unused" here: the displayVerified
+    // branch below has always reported it. What was wrong is that the OTHER
+    // three tiers printed r.requestedValue through the same arrow, so a
+    // request and a landing were byte-identical to the reader.
+    //
+    // Those three tiers cannot be fixed by reading landedText instead,
+    // because on every one of them the read is known-untrustworthy at the
+    // moment it is taken, not merely unverified:
+    //   - setread maps EXIST because the plugin's getText ignores its
+    //     argument (EchoJayParamApply.h, the method switch). The string is a
+    //     lie by the map's own declaration.
+    //   - position: "positions carry no display expectation" (:470).
+    //   - unparseable: typedReadbackMatch already returned 0 on that text.
+    // So the honest report on those tiers is the value we ASKED for, said as
+    // a request. Marked, not omitted: a control that was written and then
+    // dropped from the card is indistinguishable from one never requested,
+    // and an unreadable absence is the defect this contract is about.
     // THE RULE: the card must never restate a unit the map does not
     // declare. Where the map's unit is null or disagrees with the key's
     // suffix, show the range instead. That is the whole of tonight's
@@ -3677,7 +3708,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
                        ? juce::String((int) std::lround(v)) : juce::String(v, 2);
         };
         const auto arrow = juce::String::fromUTF8(" \xe2\x86\x92 ");
-        juce::StringArray landedBits, refusedBits;
+        juce::StringArray landedBits, askedBits, refusedBits;
         for (auto& r : report)
         {
             // Range refusals name the mapped range ON THE CARD, inheriting
@@ -3698,34 +3729,69 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
                 landedBits.add(label + arrow + "reads \"" + r.landedText.trim() + "\"");
                 continue;
             }
+            // NO VERIFIED LANDING FOR THIS CONTROL. It goes on the asked line,
+            // never the landed one: the whole point of 6a is that the reader
+            // can tell the two apart, and putting a request behind the same
+            // arrow as a landing is the original defect wearing a new name.
             const auto entry = entryFor(r.semantic);
             const auto unit  = declaredUnit(entry, r.semantic);
             float lo = 0.0f, hi = 0.0f;
             if (unit.isNotEmpty())
-                landedBits.add(label + arrow + r.requestedValue.toString() + " " + unit);
+                askedBits.add(label + arrow + r.requestedValue.toString() + " " + unit);
             else if (rangeOf(entry, lo, hi))
-                landedBits.add(label + arrow + r.requestedValue.toString()
-                               + " (this knob runs " + num(lo) + ".." + num(hi) + ")");
+                askedBits.add(label + arrow + r.requestedValue.toString()
+                              + " (this knob runs " + num(lo) + ".." + num(hi) + ")");
             else
-                landedBits.add(label + arrow + r.requestedValue.toString());
+                askedBits.add(label + arrow + r.requestedValue.toString());
         }
-        if (! landedBits.isEmpty() || ! refusedBits.isEmpty())
+        if (! landedBits.isEmpty() || ! askedBits.isEmpty() || ! refusedBits.isEmpty())
         {
             // Idempotent on re-apply (map arrival, re-dial): previous
-            // Landed/Refused lines are replaced, never stacked.
+            // Landed/Asked/Refused lines are replaced, never stacked. The
+            // asked prefix MUST be stripped here too, or a re-dial stacks a
+            // second unverified line under the first.
             static const char* kLandedPrefix  = "Landed: ";
+            static const char* kAskedPrefix   = "Asked, not verified: ";
             static const char* kRefusedPrefix = "Refused: ";
             juce::StringArray kept;
             for (auto& line : juce::StringArray::fromLines(s.settings))
-                if (! line.startsWith(kLandedPrefix) && ! line.startsWith(kRefusedPrefix))
+                if (! line.startsWith(kLandedPrefix) && ! line.startsWith(kAskedPrefix)
+                    && ! line.startsWith(kRefusedPrefix))
                     kept.add(line);
             while (! kept.isEmpty() && kept[kept.size() - 1].trim().isEmpty())
                 kept.remove(kept.size() - 1);
+            // ONE PARTITION, BUILT ONCE, CONSUMED TWICE. landedBits /
+            // askedBits / refusedBits are decided exactly once above; these
+            // three lines are composed exactly once here; and both consumers
+            // below take THESE lines. Nothing downstream re-decides what counts
+            // as landed versus asked, which is the whole point of the split.
+            juce::StringArray tierLines;
             if (! landedBits.isEmpty())
-                kept.add(kLandedPrefix + landedBits.joinIntoString(", "));
+                tierLines.add(kLandedPrefix + landedBits.joinIntoString(", "));
+            if (! askedBits.isEmpty())
+                tierLines.add(kAskedPrefix + askedBits.joinIntoString(", "));
             if (! refusedBits.isEmpty())
-                kept.add(kRefusedPrefix + refusedBits.joinIntoString("; "));
+                tierLines.add(kRefusedPrefix + refusedBits.joinIntoString("; "));
+            kept.addArray(tierLines);
+            // The CARD keeps the prose. Unchanged from before the split,
+            // including the fact that the "Applied automatically" writer below
+            // overwrites it whenever anything applied, so this assignment is
+            // observable only on the nothing-applied path (refusals only).
             s.settings = kept.joinIntoString("\n");
+            // THE MODEL GETS THE TIERS ONLY, NOT THE PROSE (24 Aug 2026).
+            // `kept` opens with whatever setSlotSettings wrote, which is the
+            // model's own suggested-settings description. Handing that back
+            // inside a field about control values is the same conflation this
+            // whole contract removes: description read as state.
+            //
+            // And excluding it is not a removal, it is declining to ADD. After
+            // a successful dial the writer below replaces s.settings outright,
+            // so the prose reaches the model on NO turn today; carrying `kept`
+            // here would have introduced it. Parity, measured, not preferred.
+            //
+            // The stale-map notes are unaffected: those paths clear this field
+            // and the reader falls back to s.settings, which still carries them.
+            s.settingsForModel = tierLines.joinIntoString("\n");
             if (onSlotSettingsChanged) onSlotSettingsChanged();
         }
     }

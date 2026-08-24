@@ -27,6 +27,7 @@
 #include <JuceHeader.h>
 #include "EJDialTally.h"         // dial-4 A8: header-inline, the shipped tally
 #include "EJDialMissRows.h"      // A9 step 1: header-inline, the shipped row set
+#include "EJSettingsClip.h"      // 6a: header-inline, the shipped model-side clip
 #include "EchoJayParamMaps.h"
 #include "EchoJayParamApply.h"
 #include "EchoJayHistoryTrim.h"
@@ -1369,6 +1370,185 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "A9.3 PIN7: 3494 assigns mapIdentityMismatch");
             check (chSrc3.contains ("s.dialStatus = DialStatus::builtinPayloadUnmatched;"),
                    "A9.3 PIN7: 3416 assigns builtinPayloadUnmatched");
+        }
+    }
+
+    // ---- 6a: the card and the model stop sharing one string -----------------
+    // s.settings answers to the 9 Aug rule (a successful write shows nothing
+    // extra on the CARD, because an internal proof class surfaced as
+    // user-facing doubt would fire on the whole setread corpus). The MODEL has
+    // the opposite requirement: never read a requested value as slot state.
+    // One field could not serve both, so the tiering moved to its own field.
+    // These pins guard the three things that make the split safe rather than a
+    // second place to disagree.
+    {
+        std::cout << "6a card/model settings split:\n";
+        std::ifstream fch ("Source/ChainHost.cpp");
+        std::stringstream sch; sch << fch.rdbuf();
+        const juce::String ch (sch.str());
+        std::ifstream fhh ("Source/ChainHost.h");
+        std::stringstream shh; shh << fhh.rdbuf();
+        const juce::String chH (shh.str());
+        std::ifstream fap ("Source/EchoJayAPI.cpp");
+        std::stringstream sap; sap << fap.rdbuf();
+        const juce::String api (sap.str());
+
+        // PIN 1 — ONE AUTHOR for the tiering. The Landed/Asked/Refused
+        // partition is decided at exactly one site and composed once; both
+        // fields receive that SAME composition. Two `kept.joinIntoString`
+        // calls, or a second "Asked, not verified: " literal, would mean two
+        // places deciding what counts as landed, which is worse than the one
+        // string we started with.
+        check (codeOnly (ch).contains ("juce::StringArray tierLines;"),
+               "6a PIN1: the tier lines are composed exactly once");
+        {
+            int n = 0, at = 0;
+            const auto code = codeOnly (ch);
+            while ((at = code.indexOf (at, "Asked, not verified: ")) >= 0) { ++n; at += 1; }
+            check (n == 1, "6a PIN1: exactly ONE site names the asked tier",
+                   "found " + juce::String (n));
+            // NOT a bare "kept.joinIntoString" count: `kept` is also a local
+            // in the chain-blacklist writer, and that unrelated second hit is
+            // what this pin found first. Count the tiered string's CONSUMERS
+            // instead — exactly two assignments, the card and the model, both
+            // from the one composition above.
+            n = 0; at = 0;
+            while ((at = code.indexOf (at, "tierLines")) >= 0) { ++n; at += 1; }
+            // one declaration, three adds, one addArray to the card, one join
+            // to the model: six. A seventh means a second consumer nobody
+            // reviewed; a fifth means one of the tiers stopped being carried.
+            check (n == 6, "6a PIN1: tierLines has exactly its six known uses",
+                   "found " + juce::String (n));
+        }
+        check (codeOnly (ch).contains ("kept.addArray(tierLines);")
+               && codeOnly (ch).contains ("s.settingsForModel = tierLines.joinIntoString(\"\\n\");"),
+               "6a PIN1: both consumers take the SAME tier lines");
+        // THE PROSE IS THE MODEL'S TO NOT HAVE (24 Aug). The card keeps
+        // `kept`, which opens with setSlotSettings' description; the model
+        // takes the tiers alone. If these ever converge again, description is
+        // being handed back as state.
+        check (codeOnly (ch).contains ("s.settings = kept.joinIntoString(\"\\n\");")
+               && ! codeOnly (ch).contains ("s.settingsForModel = kept"),
+               "6a PIN1: the card keeps the prose and the model does not");
+
+        // PIN 2 — THE CARD IS UNTOUCHED. The 9 Aug writer must survive
+        // byte-for-byte: same source, same shape, still overwriting.
+        check (codeOnly (ch).contains
+                   ("s.settings = \"Applied automatically\\n\" + appliedSummary.joinIntoString(\", \");"),
+               "6a PIN2: the card writer is unchanged");
+        check (codeOnly (ch).contains ("auto line = echojay::formatSemanticSetting(r.semantic, r.requestedValue);"),
+               "6a PIN2: the card still echoes the REQUESTED value (9 Aug rule)");
+
+        // PIN 3 — appliedSummary's CARDINALITY is untouched, so
+        // dialAppliedCount and the A9 partial/writesRejected verdict cannot
+        // move as a side effect of a display change. One add, and the count
+        // still reads off .size().
+        {
+            int n = 0, at = 0;
+            const auto code = codeOnly (ch);
+            while ((at = code.indexOf (at, "appliedSummary.add")) >= 0) { ++n; at += 1; }
+            check (n == 1, "6a PIN3: appliedSummary has exactly one add site",
+                   "found " + juce::String (n));
+        }
+        check (codeOnly (ch).contains ("s.dialAppliedCount = (int) appliedSummary.size();"),
+               "6a PIN3: dialAppliedCount still counts appliedSummary");
+
+        // PIN 4 — the model's line reads the model's field, and the Link wire
+        // struct did NOT grow a member to carry it.
+        // Not a bare name check: a mutation that keeps the PARAMETER and stops
+        // USING it would slip past that. Pin the selection itself.
+        check (codeOnly (api).contains ("slotModelSettings"),
+               "6a PIN4: the formatter takes the model settings array");
+        check (codeOnly (api).contains ("? (*slotModelSettings)[i].trim()"),
+               "6a PIN4: the model's line actually SELECTS the model field");
+        check (codeOnly (api).contains ("modelSettings.add(s.settingsForModel);"),
+               "6a PIN4: the local adapter fills it index-parallel");
+        check (codeOnly (api).contains ("rack.slots.push_back({ s.name, s.format, s.settings, s.bypassed, s.wet });"),
+               "6a PIN4: RackSidecarSlot is still built from the same five fields");
+        {
+            std::ifstream fsh ("Source/LinkShm.h");
+            std::stringstream ssh; ssh << fsh.rdbuf();
+            check (! codeOnly (juce::String (ssh.str())).contains ("settingsForModel"),
+                   "6a PIN4: the Link wire struct did not grow a field");
+        }
+
+        // PIN 5 — a dial echo cannot outlive the map it describes. Every
+        // non-tiered writer of `settings` clears the model copy; an absent
+        // clear would leave the model reading a tiering for a slot whose card
+        // has since moved on.
+        {
+            int n = 0, at = 0;
+            const auto code = codeOnly (ch);
+            while ((at = code.indexOf (at, "settingsForModel.clear()")) >= 0) { ++n; at += 1; }
+            check (n == 5, "6a PIN5: all five non-tiered settings writers clear the model copy",
+                   "found " + juce::String (n) + " of 5");
+        }
+        check (codeOnly (chH).contains ("juce::String settingsForModel;"),
+               "6a PIN5: SlotInfo carries the field to its readers");
+
+        // PIN 6 — TRUNCATION ANNOUNCES ITSELF. Behavioural, against the
+        // SHIPPED helper (header-inline, so this compiles the same bytes the
+        // plugin runs rather than the previous build's lib copy). A cap that
+        // cuts silently reintroduces the omission the tiering exists to
+        // remove, and it cuts at the TAIL, where the unverified group lives.
+        {
+            const auto under = juce::String::repeatedString ("x", echojay::kModelSettingsClip);
+            const auto over  = juce::String::repeatedString ("x", echojay::kModelSettingsClip + 1);
+            check (echojay::clipModelSettings (under) == under,
+                   "6a PIN6: a string AT the cap is returned untouched");
+            check (! echojay::clipModelSettings (under).contains ("[CLIPPED"),
+                   "6a PIN6: an unclipped string carries NO marker");
+            check (echojay::clipModelSettings (over).contains ("[CLIPPED"),
+                   "6a PIN6: a string OVER the cap says it was clipped");
+            check (echojay::clipModelSettings (over).startsWith (
+                       over.substring (0, echojay::kModelSettingsClip)),
+                   "6a PIN6: the kept prefix is exactly the cap, then the marker");
+            // The number itself is sized from K_PER_PLUGIN = 12, not from the
+            // thirteen observed applies. Pinned so a later reader cannot quietly
+            // shrink it back to something that only clears the sample.
+            check (echojay::kModelSettingsClip == 500,
+                   "6a PIN6: the cap is 500, sized from the 12-control bound");
+        }
+    }
+
+    // ---- dev_mode body dump: one gate, read per send ------------------------
+    // The dump exists to diff the EXACT outgoing body against server logs, and
+    // it had never fired in a DAW. Two independent reasons, both silent, and a
+    // missing dump file is indistinguishable from a turn that was never sent.
+    {
+        std::cout << "dev_mode body dump gate:\n";
+        std::ifstream fap ("Source/EchoJayAPI.cpp");
+        std::stringstream sap; sap << fap.rdbuf();
+        const juce::String api (sap.str());
+
+        check (codeOnly (api).contains ("if (ChainHost::devModeActive())"),
+               "dump: the gate is the SHARED dev predicate, not a second copy");
+        // The sandbox fallback is the whole reason the shared predicate exists;
+        // if it ever loses the absolute path, the dump goes dark in-DAW again
+        // and this pin is the only thing that would notice.
+        {
+            std::ifstream fch ("Source/ChainHost.h");
+            std::stringstream sch; sch << fch.rdbuf();
+            check (codeOnly (juce::String (sch.str())).contains ("/Users/SeanD/.echojay_dev"),
+                   "dump: devModeActive still checks the absolute sandbox-proof path");
+        }
+        // Per send, not once per process: creating dev_mode after the plugin
+        // loaded must take effect on the NEXT turn, not the next restart.
+        {
+            const auto body = functionBody (api, "juce::String EchoJayAPI::buildChatRequestBody");
+            check (body.isNotEmpty(), "dump: found buildChatRequestBody");
+            check (! body.contains ("static const bool devMode"),
+                   "dump: the gate is not cached for the process lifetime");
+            // A FAILED WRITE MUST SAY SO. Fixing the gate alone would have
+            // moved the silence to the write: userDocumentsDirectory redirects
+            // into the same container the flag check did, and the old code
+            // logged success without ever looking at replaceWithText's result.
+            check (body.contains ("const bool wrote = dirOk && f.replaceWithText(body);"),
+                   "dump: the write result is actually checked");
+            check (body.contains ("dev_mode body dump FAILED"),
+                   "dump: a refused write logs a FAILED line, not a success line");
+            check (body.contains ("EJChat: dev_mode body dump -> "),
+                   "dump: a successful write still names the resolved path");
         }
     }
 
