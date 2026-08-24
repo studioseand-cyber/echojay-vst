@@ -1141,9 +1141,10 @@ int main()
             const auto addArm = addAt >= 0 ? ed.substring (addAt, addAt + 1800)
                                            : juce::String();
             check (addArm.contains ("picked.name")
-                     && addArm.contains ("juce::String(picked.uniqueId)")
+                     && addArm.contains ("juce::String(ChainHost::descUid(picked))")
                      && ! addArm.contains ("->liveIdentity()"),
-                   "the Create identity is the PICKED plugin, never the substitute");
+                   "the Create identity is the PICKED plugin, never the "
+                   "substitute - through the ONE uid idiom");
         }
         // ---- The stage-lookup diagnostic (25 Aug 2026: failedAt=stage
         // ---- names the plugin but not the LOOKUP): one line per non-
@@ -1159,10 +1160,11 @@ int main()
                      && lkArm.contains ("uid.dec=")
                      && lkArm.contains ("uid.hex=")
                      && lkArm.contains ("depUid.dec=")
-                     && lkArm.contains ("descFormat=")
-                     && lkArm.contains ("nameMatches="),
-                   "the stage lookup logs both uid encodings, the format "
-                   "and the catalogue hits");
+                     && lkArm.contains ("nameMatches=")
+                     && lkArm.contains ("NOT IN CATALOGUE")
+                     && lkArm.contains ("resolved"),
+                   "the stage lookup logs both uid encodings, the catalogue "
+                   "hits and the resolution outcome");
         }
         // ---- Session-state-first banners (24 Aug 2026: the status line
         // ---- truncated before "Your session is still live", a working

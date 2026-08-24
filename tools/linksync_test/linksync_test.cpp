@@ -115,6 +115,34 @@ int main()
             .getFullPathName() + "/";
     juce::File (dir).createDirectory();
 
+    // A REAL third-party-shaped plugin for the resolution gate: an Apple AU
+    // (ships with macOS), enumerated live and staged into the sandbox
+    // catalogue BEFORE the processor constructs — the ctor loads
+    // chain_plugins.xml, so this is the Link's own list at plan time.
+    juce::PluginDescription realAu;
+    {
+        juce::AudioUnitPluginFormat aufmt;
+        for (const auto& id : aufmt.searchPathsForPlugins({}, false, false))
+        {
+            if (! id.containsIgnoreCase ("dely")) continue;
+            juce::OwnedArray<juce::PluginDescription> found;
+            aufmt.findAllTypesForFile (found, id);
+            if (! found.isEmpty()) { realAu = *found[0]; break; }
+        }
+        check (realAu.name.isNotEmpty(),
+               "a real Apple AU (AUDelay) enumerated for the catalogue",
+               realAu.name);
+        juce::KnownPluginList kl0;
+        kl0.addType (realAu);
+        if (auto xml = kl0.createXml())
+            juce::File (appData).getChildFile ("EchoJay")
+                .getChildFile ("chain_plugins.xml")
+                .getParentDirectory().createDirectory(),
+            juce::File (appData).getChildFile ("EchoJay")
+                .getChildFile ("chain_plugins.xml")
+                .replaceWithText (xml->toString (juce::XmlElement::TextFormat()));
+    }
+
     LinkProcessor proc;
     auto& host = proc.getChainHost();
 
@@ -319,6 +347,53 @@ int main()
                  && notes.contains ("running at defaults")
                  && notes.contains ("settings do not travel across formats"),
                "and it says so, in the withheld voice", notes);
+    }
+
+    // ---- a NON-BUILTIN Create resolves from the catalogue and loads -------
+    // THE GATE THAT WOULD HAVE CAUGHT THIS ON DAY ONE: every prior gate
+    // staged builtins, which skip the resolution arm entirely — so "no
+    // format name matches no format" shipped invisible. A Create carrying
+    // name + uid only must resolve to a REAL format from the Link's own
+    // catalogue and instantiate; a plugin the Link doesn't have must be
+    // refused BY NAME, never as a format error.
+    std::printf ("== non-builtin Create: catalogue resolution ==\n");
+    {
+        const auto base5 = host.liveIdentity();
+        const int n5 = (int) base5.size();
+        std::vector<SE::CurrentSlot> cur5;
+        for (int i = 0; i < n5; ++i)
+            cur5.push_back ({ base5[(size_t) i], i, false, false, {}, false, {} });
+        cur5.push_back ({ SE::SlotIdentity { realAu.name,
+                              juce::String (ChainHost::descUid (realAu)), {} },
+                          -1, true, false, {}, false, {} });
+        auto plan5 = SE::computePlan ("linksync-test", base5, cur5);
+        const auto res5 = proc.applyStructurePlanAndSync (dir, plan5);
+        check (res5.ok, "a bare name+uid Create resolved and applied",
+               res5.reasons.joinIntoString ("; ") + " failedAt=" + res5.failedAt);
+        check (host.getNumSlots() == n5 + 1, "the slot exists",
+               juce::String (host.getNumSlots()));
+        const auto info5 = host.getSlotInfo (n5);
+        check (info5.format == realAu.pluginFormatName
+                 && host.getSlotProcessor (n5) != nullptr,
+               "resolved to a REAL format from the catalogue and instantiated",
+               info5.format);
+
+        // The genuinely-missing plugin: refused by name.
+        const auto base6 = host.liveIdentity();
+        std::vector<SE::CurrentSlot> cur6;
+        for (int i = 0; i < (int) base6.size(); ++i)
+            cur6.push_back ({ base6[(size_t) i], i, false, false, {}, false, {} });
+        cur6.push_back ({ SE::SlotIdentity { "EJ No Such Plugin",
+                                             "999999", {} },
+                          -1, true, false, {}, false, {} });
+        auto plan6 = SE::computePlan ("linksync-test", base6, cur6);
+        const auto res6 = proc.applyStructurePlanAndSync (dir, plan6);
+        check (! res6.ok && res6.failedAt == "stage",
+               "a plugin this Link lacks fails at stage, rack untouched");
+        check (res6.reasons.joinIntoString ("; ")
+                   .contains ("this Link doesn't have EJ No Such Plugin"),
+               "and the refusal names the plugin, not a format error",
+               res6.reasons.joinIntoString ("; "));
     }
 
     // ---- negative control -------------------------------------------------

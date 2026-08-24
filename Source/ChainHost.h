@@ -38,6 +38,13 @@ public:
     friend struct EchoJayStateMatchTestAccess;
     friend struct EchoJayBorrowHostTestAccess;
 
+    // THE uid idiom, one copy (25 Aug 2026): some AU descriptors carry
+    // their uid in deprecatedUid with uniqueId 0. Every sender, key and
+    // comparison goes through this — a second inline copy is how the add
+    // path shipped String(picked.uniqueId) unguarded.
+    static int descUid(const juce::PluginDescription& d) noexcept
+    { return d.uniqueId != 0 ? d.uniqueId : d.deprecatedUid; }
+
     // Lightweight slot description safe to copy to the UI thread
     struct SlotInfo {
         juce::String name;
@@ -1258,7 +1265,7 @@ private:
     {
         // format|identifier|uid — the same identity stateFitsPlugin matches on.
         return d.pluginFormatName + "|" + d.fileOrIdentifier + "|"
-             + juce::String(d.uniqueId != 0 ? d.uniqueId : d.deprecatedUid);
+             + juce::String(descUid(d));
     }
     bool borrowTryReuseInto(const juce::PluginDescription& canonicalDesc);
 

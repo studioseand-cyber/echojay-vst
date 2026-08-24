@@ -4067,7 +4067,7 @@ std::vector<LinkShm::StructureEdit::SlotIdentity> ChainHost::liveIdentity() cons
     std::vector<LinkShm::StructureEdit::SlotIdentity> out;
     for (const auto& s : slots_)
         out.push_back({ s.desc.name,
-                        s.desc.uniqueId != 0 ? juce::String(s.desc.uniqueId)
+                        descUid(s.desc) != 0 ? juce::String(descUid(s.desc))
                                              : juce::String(),
                         s.fp });
     return out;
@@ -4101,7 +4101,7 @@ void ChainHost::parkSlotReattachable(int i)
     {
         if (auto* p = s.node->getProcessor()) p->suspendProcessing(true);
         planPark_[planKeyOf({ s.desc.name,
-                              s.desc.uniqueId != 0 ? juce::String(s.desc.uniqueId)
+                              descUid(s.desc) != 0 ? juce::String(descUid(s.desc))
                                                    : juce::String(), s.fp })]
             .push_back({ s.node, s.desc });
     }
@@ -4119,7 +4119,7 @@ void ChainHost::parkSlotReattachable(int i)
 bool ChainHost::tryReattachParked(const juce::PluginDescription& d, int insertAt)
 {
     const auto key = planKeyOf({ d.name,
-                                 d.uniqueId != 0 ? juce::String(d.uniqueId)
+                                 descUid(d) != 0 ? juce::String(descUid(d))
                                                  : juce::String(), {} });
     auto it = planPark_.find(key);
     if (it == planPark_.end() || it->second.empty()) return false;
@@ -4154,7 +4154,7 @@ bool ChainHost::planStageOne(const juce::PluginDescription& d, juce::String& why
     // claimed of the same key, or a plan creating two of one plugin gets
     // one instance and Phase B finds the park empty for the second.
     const auto key = planKeyOf({ d.name,
-                                 d.uniqueId != 0 ? juce::String(d.uniqueId)
+                                 descUid(d) != 0 ? juce::String(descUid(d))
                                                  : juce::String(), {} });
     if (auto it = planPark_.find(key); it != planPark_.end()
         && (int) it->second.size() > alreadyClaimed)
@@ -4162,6 +4162,10 @@ bool ChainHost::planStageOne(const juce::PluginDescription& d, juce::String& why
     if (d.fileOrIdentifier.isNotEmpty() && isBlacklisted(d.fileOrIdentifier))
     { whyNot = d.name + " is on this machine's crash skip list"; return false; }
 
+    // The park stays keyed by the IDENTITY (what the plan speaks); the
+    // slot's desc becomes whatever the catalogue resolves — the format the
+    // stateFormat honesty guard then compares against.
+    juce::PluginDescription staged = d;
     std::unique_ptr<juce::AudioProcessor> proc;
     if (isBuiltinDescription(d))
     {
@@ -4173,74 +4177,91 @@ bool ChainHost::planStageOne(const juce::PluginDescription& d, juce::String& why
     }
     else
     {
-        // RESOLUTION DIAGNOSTIC (25 Aug 2026, ordered before any fix): the
-        // stage failure names the plugin but not the LOOKUP. One line says
-        // what was searched (both uid encodings + deprecatedUid), what the
-        // descriptor actually carries when it reaches createPluginInstance
-        // (an EMPTY format there is the "No compatible plug-in format"
-        // error by construction), and what this catalogue holds.
+        // RESOLVE AGAINST THIS CATALOGUE (25 Aug 2026): a Create identity
+        // carries name + uid, no format — and JUCE's createPluginInstance
+        // requires an exact format-name match, so a bare identity could
+        // NEVER load ("No compatible plug-in format", every third-party
+        // Create; every builtin worked because builtins skip this arm).
+        // The Link resolves against its OWN catalogue and chooses the
+        // format — the picked-plugin principle, decided on the side that
+        // has to load it. Tiers: name+uid, then uid alone, then name alone
+        // (uid spaces differ across formats, so a name-only hit is the
+        // same plugin in another build). The lookup logs BOTH encodings.
+        juce::PluginDescription resolved;
+        int nameHits = 0, uidHits = 0, hexHits = 0;
+        const int wantUid = descUid(d);
+        const juce::String wantHex = juce::String::toHexString(wantUid);
+        int klN = 0, enN = 0;
         {
-            int nameHits = 0, uidHits = 0, hexHits = 0;
-            juce::String firstHit;
-            const int wantUid = d.uniqueId != 0 ? d.uniqueId : d.deprecatedUid;
-            const juce::String wantHex = juce::String::toHexString(wantUid);
-            int klN = 0, enN = 0;
+            std::lock_guard<std::mutex> lock(pluginsMutex_);
+            klN = knownPlugins_.getNumTypes();
+            enN = entries_.size();
+            juce::PluginDescription byBoth, byUid, byName;
+            auto scan = [&](const juce::PluginDescription& e)
             {
-                std::lock_guard<std::mutex> lock(pluginsMutex_);
-                klN = knownPlugins_.getNumTypes();
-                enN = entries_.size();
-                auto scan = [&](const juce::PluginDescription& e)
-                {
-                    const int eu = e.uniqueId != 0 ? e.uniqueId : e.deprecatedUid;
-                    if (namesMatchLoose(e.name, d.name))
-                    {
-                        ++nameHits;
-                        if (firstHit.isEmpty())
-                            firstHit = e.name + "/" + e.pluginFormatName
-                                     + "/uid.dec=" + juce::String(eu)
-                                     + "/uid.hex=" + juce::String::toHexString(eu);
-                    }
-                    if (wantUid != 0 && eu == wantUid) ++uidHits;
-                    if (juce::String::toHexString(eu).equalsIgnoreCase(wantHex)
-                        && wantUid != 0) ++hexHits;
-                };
-                for (const auto& e : knownPlugins_.getTypes()) scan(e);
-                for (const auto& e : entries_) scan(e);
-            }
-            EchoJay_NSLog(("EJPlan: stage lookup \"" + d.name + "\""
-                + " uid.dec=" + juce::String(d.uniqueId)
-                + " depUid.dec=" + juce::String(d.deprecatedUid)
-                + " uid.hex=" + wantHex
-                + " descFormat=" + (d.pluginFormatName.isEmpty()
-                                        ? juce::String("(EMPTY)")
-                                        : d.pluginFormatName)
-                + " descFile=" + (d.fileOrIdentifier.isEmpty()
-                                        ? juce::String("(EMPTY)")
-                                        : juce::String("set"))
-                + " catalogue known=" + juce::String(klN)
-                + " entries=" + juce::String(enN)
-                + " nameMatches=" + juce::String(nameHits)
-                + " uidMatches=" + juce::String(uidHits)
-                + " hexMatches=" + juce::String(hexHits)
-                + (firstHit.isEmpty() ? juce::String(" -> NO MATCH")
-                                      : " -> first " + firstHit)).toRawUTF8());
+                const int eu = descUid(e);
+                const bool nm = namesMatchLoose(e.name, d.name);
+                const bool um = wantUid != 0 && eu == wantUid;
+                if (nm) ++nameHits;
+                if (um) ++uidHits;
+                if (wantUid != 0
+                    && juce::String::toHexString(eu).equalsIgnoreCase(wantHex))
+                    ++hexHits;
+                if (nm && um && byBoth.name.isEmpty()) byBoth = e;
+                else if (um && byUid.name.isEmpty())   byUid  = e;
+                else if (nm && byName.name.isEmpty())  byName = e;
+            };
+            for (const auto& e : knownPlugins_.getTypes()) scan(e);
+            for (const auto& e : entries_) scan(e);
+            resolved = byBoth.name.isNotEmpty() ? byBoth
+                     : byUid.name.isNotEmpty()  ? byUid : byName;
         }
-        const int mark = pushDeathMark("plan stage", d);
+        EchoJay_NSLog(("EJPlan: stage lookup \"" + d.name + "\""
+            + " uid.dec=" + juce::String(d.uniqueId)
+            + " depUid.dec=" + juce::String(d.deprecatedUid)
+            + " uid.hex=" + wantHex
+            + " catalogue known=" + juce::String(klN)
+            + " entries=" + juce::String(enN)
+            + " nameMatches=" + juce::String(nameHits)
+            + " uidMatches=" + juce::String(uidHits)
+            + " hexMatches=" + juce::String(hexHits)
+            + (resolved.name.isEmpty()
+                   ? juce::String(" -> NOT IN CATALOGUE")
+                   : " -> resolved " + resolved.name + "/"
+                     + resolved.pluginFormatName + "/uid.dec="
+                     + juce::String(descUid(resolved)) + "/uid.hex="
+                     + juce::String::toHexString(descUid(resolved))))
+            .toRawUTF8());
+        if (resolved.name.isEmpty())
+        {
+            // The REAL missing-plugin case (a rack on a machine without
+            // it) reads as exactly that — never as a format error.
+            whyNot = "this Link doesn't have " + d.name
+                   + " - it is not in its plug-in list";
+            return false;
+        }
+        if (resolved.fileOrIdentifier.isNotEmpty()
+            && isBlacklisted(resolved.fileOrIdentifier))
+        { whyNot = resolved.name + " is on this machine's crash skip list";
+          return false; }
+        const int mark = pushDeathMark("plan stage", resolved);
         juce::String err;
-        auto inst = formatManager_.createPluginInstance(d, sampleRate_ > 0 ? sampleRate_ : 44100.0,
+        auto inst = formatManager_.createPluginInstance(resolved,
+                                                        sampleRate_ > 0 ? sampleRate_ : 44100.0,
                                                         blockSize_ > 0 ? blockSize_ : 512, err);
         popDeathMark(mark);
         if (inst == nullptr)
         { whyNot = d.name + " could not load right now ("
                  + (err.isNotEmpty() ? err : juce::String("no reason given")) + ")";
           return false; }
+        staged = resolved;
         proc = std::move(inst);
     }
     proc->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
     proc->suspendProcessing(true);                    // detached: parked, silent
     auto node = graph_ ? graph_->addNode(std::move(proc)) : nullptr;
     if (node == nullptr) { whyNot = d.name + " could not join the graph"; return false; }
-    planPark_[key].push_back({ node, d });
+    planPark_[key].push_back({ node, staged });
     ++planFresh_;
     return true;
 }

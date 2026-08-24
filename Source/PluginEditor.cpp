@@ -28292,7 +28292,11 @@ void EchoJayEditor::showChainPluginPicker()
                     p3.borrowCreatedIdentity_.push_back(
                         LinkShm::StructureEdit::SlotIdentity{
                             picked.name,
-                            juce::String(picked.uniqueId), {} });
+                            // THE one uid idiom (ChainHost::descUid): some
+                            // AU descriptors carry theirs in deprecatedUid
+                            // with uniqueId 0 — an unguarded uniqueId sends
+                            // "0" and the Link resolves on name alone.
+                            juce::String(ChainHost::descUid(picked)), {} });
                     // A created slot has a RECORD like every other slot
                     // (defect, 23 Aug 2026: the lost add — a slot without a
                     // record is invisible to every records-bounded consumer,
