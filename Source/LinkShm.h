@@ -1088,6 +1088,10 @@ struct RackSidecar {
     // apply a structure plan announces it; absent reads false and a main
     // never sends a plan — the never-half-see pattern, again.
     bool  structureEditCapable = false;
+    bool  inContextCapable = false;    // §8: can mute its output on lease
+                                       // command (muteOut) — in-context
+                                       // monitoring is OFFERED only when
+                                       // announced, never detected
     std::vector<RackSidecarSlot> slots;
 };
 
@@ -1720,6 +1724,7 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
     obj->setProperty("preGainInputKnown", rc.preGainInputKnown);
     if (rc.borrowCapable) obj->setProperty("borrowCapable", true);
     if (rc.structureEditCapable) obj->setProperty("structureEditCapable", true);
+    if (rc.inContextCapable) obj->setProperty("inContextCapable", true);
     juce::Array<juce::var> slots;
     for (const auto& s : rc.slots)
     {
@@ -1780,6 +1785,7 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
     rc.preGainInputKnown = obj->hasProperty("preGainInputKnown") && (bool)obj->getProperty("preGainInputKnown");
     rc.borrowCapable     = obj->hasProperty("borrowCapable") && (bool)obj->getProperty("borrowCapable");
     rc.structureEditCapable = obj->hasProperty("structureEditCapable") && (bool)obj->getProperty("structureEditCapable");
+    rc.inContextCapable = obj->hasProperty("inContextCapable") && (bool)obj->getProperty("inContextCapable");
     if (auto* arr = obj->getProperty("slots").getArray())
         for (auto& sv : *arr)
             if (auto* so = sv.getDynamicObject())

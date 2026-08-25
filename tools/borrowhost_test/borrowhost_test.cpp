@@ -381,9 +381,9 @@ int main()
         const juce::String psrc3 (sp3.str());
         check (psrc3.contains ("const bool borrowThrough = borrowRouteThroughMain();"),
                "the route is read ONCE per block");
-        check (psrc3.contains ("if (borrowThrough)\n        applyBorrowSoloMix(buffer);"),
+        check (psrc3.contains ("if (borrowThrough)\n        applyBorrowSoloMixOn(buffer,"),
                "through-main site present (before chainHost.process)");
-        check (psrc3.contains ("if (!borrowThrough)\n        applyBorrowSoloMix(buffer);"),
+        check (psrc3.contains ("if (!borrowThrough)\n        applyBorrowSoloMixOn(buffer, listenSolo);"),
                "replace-after site present (after chainHost.process)");
         // The banner SAYS the mode, both wordings live in the editor.
         std::ifstream fe3 ("Source/PluginEditor.cpp");
@@ -1512,6 +1512,54 @@ int main()
         mainProc.borrowRelease (false);
         check (mainProc.createSlotEditorForView ("uid-edit", 0) == nullptr,
                "after release the view is remote again - refuses");
+
+        // ---- §8.3 (amended): the report NEVER moves --------------------
+        // The whole amendment in three asserts: the budget is reported
+        // from prepare, and engage/release/mode changes leave it alone —
+        // ordinary browsing never re-runs PDC.
+        mainProc.prepareToPlay (48000.0, 512);
+        const int lat0 = mainProc.getLatencySamples();
+        check (lat0 >= EchoJayProcessor::kBorrowAlignBudgetFrames,
+               "the fixed budget is reported from prepare",
+               juce::String (lat0));
+        mainProc.borrowEngageBegin ("uid-ctx", "lease-ctx", true, true);
+        check (mainProc.getLatencySamples() == lat0,
+               "ENGAGE does not touch the report");
+        check (mainProc.borrowInContextOk_.load(),
+               "in-context OK at engage (capable, fits)");
+        mainProc.borrowRelease (false);
+        check (mainProc.getLatencySamples() == lat0,
+               "RELEASE does not touch the report");
+        // The pad arithmetic, pure: fits, exact fit, refuse-over-budget.
+        const int head = EchoJayProcessor::kBorrowAlignBudgetFrames - 1024;
+        check (EchoJayProcessor::alignPad (0)
+                   == EchoJayProcessor::kBorrowAlignBudgetFrames - 1024,
+               "pad math: empty chain uses the full headroom");
+        check (EchoJayProcessor::alignPad (head) == 0,
+               "pad math: an exact fit pads zero");
+        check (EchoJayProcessor::alignPad (head + 1) == -1,
+               "pad math: one frame over the headroom REFUSES");
+
+        // ---- §8 pins: the mute rides the lease, mode-gated; the Link
+        // ---- mutes AFTER the ring write; the restore arm clears it.
+        auto slurp8 = [] (const char* f)
+        { std::ifstream ff (f); std::stringstream ss; ss << ff.rdbuf();
+          return juce::String (ss.str()); };
+        const auto pp8 = slurp8 ("Source/PluginProcessor.cpp");
+        check (pp8.contains ("o->setProperty(\"muteOut\","),
+               "muteOut rides the lease renew");
+        const auto lp8 = slurp8 ("Source/LinkProcessor.cpp");
+        const int prodAt = lp8.indexOf ("LinkShm::ringProduce(shmMap");
+        const int muteAt = lp8.indexOf ("IN-CONTEXT MUTE, strictly AFTER");
+        check (prodAt >= 0 && muteAt > prodAt,
+               "the Link mutes strictly AFTER the ring write");
+        check (lp8.contains ("rackLeaseMuteWant_.store(false"),
+               "the one restore path clears the mute want");
+        check (lp8.contains ("rc.inContextCapable     = true;"),
+               "the Link announces in-context capability");
+        check (slurp8 ("Source/PluginEditor.cpp")
+                   .contains ("can't hand the mix over"),
+               "the incapable Link gets the named solo fallback line");
     }
 
     std::printf ("== DEV forceWithholdSlot: cannot exist in a non-DEV build ==\n");

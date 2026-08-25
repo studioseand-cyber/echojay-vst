@@ -425,24 +425,45 @@ rather than argued against:
   expiry, exactly as it un-bypasses the rack. No second restore path, no
   mute that can outlive its lease.
 
-### 8.3 Alignment: the cushion, the injected chain, and reported latency
+### 8.3 Alignment: a FIXED budget, reported once (AMENDED 26 Aug 2026)
 
-- The injected stream arrives late by the ring cushion
-  (kEditCushionFrames = 1024) plus the borrowed chain's own processing
-  latency. The main ALIGNS by delaying its own passthrough — the rest of
-  the mix entering the main — by `cushion + borrowedChain latency`,
-  recomputed when the borrowed chain changes (the latencyRebuilder
-  machinery already watches this).
-- **That delay is reported as the MAIN'S OWN latency** via
-  setLatencySamples + updateHostDisplay(latencyChanged) — the main's own
-  latency is allowed; the hard block stays exactly where it is: the
-  borrowed HOST never reaches the host's latency report
-  (hostReportableLatencySamples() == -1). Internal use of the borrowed
-  chain's latency for alignment is not reporting.
-- Latency is reported only WHILE an in-context session is engaged
-  (0 otherwise). Hosts re-run PDC on the change; a brief dropout at
-  engage/release is the accepted cost and is not hidden — it happens at
-  a moment the user just acted.
+**The requirement: ordinary browsing never re-runs PDC.** The first draft
+reported latency only while engaged; every selection would have re-run
+Logic's PDC and stuttered playback per click — a dropout per click reads
+as the plugin being broken. Amended to a fixed alignment budget:
+
+- **kBorrowAlignBudgetFrames = 16384**, reported (on top of the main's
+  own chain latency) from instantiation, always — engaged or not. PDC
+  runs once, when the plugin loads, which is when every plugin does it.
+  The trade — a constant latency on the main for zero stutter — is the
+  right way round on a mixing tool.
+- **The budget number is measured, not guessed** (this machine's
+  catalogue, defaults, 48k): the largest single-plugin latency found is
+  Ozone 12 Low End Focus at 12,799 frames; the common latency class
+  (Match EQ 3,070 / Unlimiter 3,072 / Bass Control 3,122 / Stem EQ
+  4,096 / Stabilizer & Clarity 1,024 / Maximizer 810 / Waves L2 64)
+  sits at or under ~4k. Budget 16384 = cushion 1024 + headroom 15360:
+  covers the worst measured single plus a typical second latency slot.
+  Known exceeders: linear-phase-EQ "Max"-class modes (tens of
+  thousands of frames) — handled by the refusal arm, below.
+- **Internal fit, constant total**: the injected path is inherently late
+  by cushion + borrowedChain latency; the passthrough is delayed to
+  match at the injection point, and a final pad of
+  `budget − cushion − chainLatency` after the main's own chain keeps
+  the TOTAL at exactly budget + mainChain latency in every mode — idle,
+  in-context, solo. Mode switches and borrowed-chain changes re-split
+  the internal delays (crossfaded, never clicked) and never touch the
+  report.
+- **When a borrowed chain's latency exceeds the headroom**: in-context
+  is REFUSED for that rack — fall back to solo with a named line
+  ("<name>'s rack needs Nms of look-ahead, over the in-mix budget —
+  soloing instead"), including LIVE: a chain that grows past the budget
+  mid-session drops to solo with the same line. Raising the budget was
+  rejected: a raise re-runs PDC, which is the banned event, and a chain
+  can grow again mid-session — the "one-time hit" is not one-time.
+- The hard block stays exactly where it is: the borrowed HOST never
+  reaches the host's latency report (hostReportableLatencySamples() ==
+  -1). Internal use of its latency for alignment is not reporting.
 
 ### 8.4 Sample-rate and buffer change mid-session
 

@@ -7945,12 +7945,14 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
         juce::int64 totalBytes = 0;
         juce::StringArray failures;        // named list for the §5e refusal
         bool structCapable = false;        // snapshot: offered only if announced
+        bool ctxCapable = false;           // §8: in-context offered only if announced
     };
     auto st = std::make_shared<PullState>();
     st->uid       = uid;
     st->slots     = it->second.rack.slots;
     st->masterWet = it->second.rack.masterWet;
     st->structCapable = structCapable;
+    st->ctxCapable    = it->second.rack.inContextCapable;
     say("Reading " + juce::String((int) st->slots.size()) + " plugin(s) from "
         + processorRef.resolveLinkDisplayName(uid) + "...");
 
@@ -7980,7 +7982,8 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
         auto& proc = safeThis->processorRef;
         const juce::String leaseId =
             st->uid + "-rack-" + juce::String(juce::Time::currentTimeMillis());
-        proc.borrowEngageBegin(st->uid, leaseId, st->structCapable);
+        proc.borrowEngageBegin(st->uid, leaseId, st->structCapable,
+                               st->ctxCapable);
         auto* bh = proc.borrowHost();
         // SESSION VECTORS AT ENGAGE, not at load settlement (26 Aug 2026):
         // the session is live from this line, so origins, base identity and
@@ -8130,12 +8133,23 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
                          "written back). "
                      : juce::String())
                 + "Editing " + p2.resolveLinkDisplayName(st->uid)
-                + " here - changes write to it when you leave this rack. "
+                + " here - "
+                + (p2.borrowInContextOk_.load(std::memory_order_relaxed)
+                       ? juce::String("you're hearing the whole mix with "
+                             "your edits in place. ")
+                       : st->ctxCapable
+                       ? juce::String("changes write to it when you leave "
+                             "this rack. ")
+                       : p2.resolveLinkDisplayName(st->uid)
+                             + "'s build can't hand the mix over - LISTEN "
+                             "solos instead. Update it. ")
                 + (restoredKept
                        ? juce::String("Your unwritten edits from the "
                              "interrupted session were RESTORED. ")
                        : juce::String())
-                + "LISTEN hears it on this channel.";
+                + "Changes write to "
+                + p2.resolveLinkDisplayName(st->uid)
+                + " when you leave this rack. LISTEN solos this channel.";
             safeThis->refreshChainPanelForView(true);
         });
         // Empty rack: no slots to settle; the session is engaged, silent.

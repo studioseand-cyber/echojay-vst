@@ -325,7 +325,7 @@ EchoJayProcessor::EchoJayProcessor()
         // setLatencySamples (RACK_BORROW_IMPLEMENTATION_SPEC §2.3). This
         // host is Primary, so the gate is structural, not behavioral.
         if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
-            setLatencySamples(lat);
+            setLatencySamples(lat + kBorrowAlignBudgetFrames);
         // The chain now produces different audio, so the held true peak / peak /
         // overs describe a signal that no longer exists (they were contradicting
         // a capture taken seconds later). Drop those holds; integrated LUFS / LRA
@@ -569,6 +569,15 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     // i.e. a click, in the exact path the solo battery listens through.
     editSoloMix_.reset(sampleRate, 0.030);
     borrowSoloMix_.reset(sampleRate, 0.030);
+    borrowCtxMix_.reset(sampleRate, 0.030);
+    // §8.3 (amended): the FIXED alignment budget, reported from
+    // instantiation — engage, release and rack-switching never touch the
+    // report, so ordinary browsing never re-runs PDC. The internal split
+    // (pre-sum alignment vs final pad) varies; the total never does.
+    alignPre_.prepare(kBorrowAlignBudgetFrames + 1);
+    alignPost_.prepare(kBorrowAlignBudgetFrames + 1);
+    if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
+        setLatencySamples(lat + kBorrowAlignBudgetFrames);
     if (borrowHost_ != nullptr)
         borrowHost_->prepare(sampleRate, samplesPerBlock);
 }
@@ -1019,8 +1028,43 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     // (a borrowed vocal must not run through a guitar track's chain). One
     // read per block so the two sites cannot both fire.
     const bool borrowThrough = borrowRouteThroughMain();
+    // §8 IN-CONTEXT (the default): LISTEN (audioOn) overrides to solo; the
+    // degenerate Mix/Master placement rides the existing through-main path
+    // (the channel IS the mix, no mute, no injection).
+    const bool listenSolo = borrowSession_.audioOn.load(std::memory_order_acquire);
+    const bool ctxNow = borrowActive()
+                        && borrowInContextOk_.load(std::memory_order_relaxed)
+                        && ! listenSolo && ! borrowThrough;
+    borrowCtxMix_.setTargetValue(ctxNow ? 1.0f : 0.0f);
+    const int ctxChainLat = borrowChainLat_.load(std::memory_order_relaxed);
+    const int ctxPad = alignPad(ctxChainLat);
+    if (ctxNow || borrowCtxMix_.getCurrentValue() > 0.0001f)
+    {
+        // Align the passthrough to the injection's inherent lateness
+        // (cushion + borrowed chain), sum ADDITIVELY, main chain processes
+        // the sum — the Link's channel entered the mix upstream, so its
+        // replacement enters here, pre-chain.
+        alignPre_.process(buffer, (int) kEditCushionFrames + ctxChainLat);
+        const int nS = buffer.getNumSamples();
+        const bool have = borrowHost_ != nullptr
+                       && borrowBuf_.getNumSamples() >= nS;
+        for (int i = 0; i < nS; ++i)
+        {
+            const float g = borrowCtxMix_.getNextValue();
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+            {
+                const float inj = have
+                    ? borrowBuf_.getSample(std::min(ch, 1), i) : 0.0f;
+                buffer.getWritePointer(ch)[i] += inj * g;
+            }
+        }
+    }
+    else
+        borrowCtxMix_.skip(buffer.getNumSamples());
     if (borrowThrough)
-        applyBorrowSoloMix(buffer);
+        applyBorrowSoloMixOn(buffer,
+            listenSolo || (borrowActive()
+                           && borrowInContextOk_.load(std::memory_order_relaxed)));
 
     // CHAIN: pass audio through hosted plugin (graph handles passthrough if none loaded)
     {
@@ -1164,7 +1208,7 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     // The through-main route ran BEFORE chainHost.process instead; exactly
     // one of the two sites fires per block (borrowThrough, read once above).
     if (!borrowThrough)
-        applyBorrowSoloMix(buffer);
+        applyBorrowSoloMixOn(buffer, listenSolo);
 
     // ===== Stage 1 SOLO: the last word on the buffer =====================
     // While a remote edit session runs, the mix is REPLACED by the edited
@@ -1200,6 +1244,14 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         else
             editSoloMix_.skip(buffer.getNumSamples());
     }
+
+    // §8.3 FINAL PAD, the last word on the buffer in every mode: keeps the
+    // TOTAL at exactly kBorrowAlignBudgetFrames (+ the main chain's own
+    // latency, reported) whether idle, soloing or in-context. The internal
+    // split moves; the report never does — that is the whole amendment.
+    alignPost_.process(buffer, (ctxNow && ctxPad >= 0)
+                                   ? ctxPad
+                                   : kBorrowAlignBudgetFrames);
 }
 
 // ============ Channel Type Detection ============
@@ -1706,9 +1758,9 @@ void EchoJayProcessor::borrowTick()
 // processBlock (through-main before chainHost.process, replace-after after
 // it), exactly one firing per block. Same idiom as the edit-session solo,
 // its own fields: a borrow and a slot edit session can coexist.
-void EchoJayProcessor::applyBorrowSoloMix(juce::AudioBuffer<float>& buffer)
+void EchoJayProcessor::applyBorrowSoloMixOn(juce::AudioBuffer<float>& buffer,
+                                            bool on)
 {
-    const bool on = borrowSession_.audioOn.load(std::memory_order_acquire);
     borrowSoloMix_.setTargetValue(on ? 1.0f : 0.0f);
     if (on || borrowSoloMix_.getCurrentValue() > 0.0001f)
     {
@@ -1738,6 +1790,27 @@ ChainHost* EchoJayProcessor::borrowHost()
         borrowHost_ = std::make_unique<ChainHost>(ChainHost::Mode::Borrowed);
         borrowHost_->prepare(hostSampleRate_ > 0 ? hostSampleRate_ : 44100.0,
                              hostSamplesPerBlock_ > 0 ? hostSamplesPerBlock_ : 512);
+        // §8: the borrowed chain's latency feeds the pad math (INTERNAL use
+        // — the hard block on its host REPORT stands). A chain that grows
+        // past the budget mid-session drops to solo, with the named line,
+        // live; the report never moves.
+        borrowHost_->onChainChanged = [this]
+        {
+            const int lat = std::max(0, borrowHost_ != nullptr
+                                            ? borrowHost_->getTotalLatencySamples() : 0);
+            borrowChainLat_.store(lat, std::memory_order_relaxed);
+            if (borrowInContextOk_.load(std::memory_order_relaxed)
+                && alignPad(lat) < 0)
+            {
+                borrowInContextOk_.store(false, std::memory_order_relaxed);
+                const juce::String name = resolveLinkDisplayName(borrowUid());
+                borrowStickyBanner_ = name + "'s rack now needs more "
+                    "look-ahead than the in-mix budget - soloing instead. "
+                    "LISTEN to hear it.";
+                EchoJay_NSLog(("EJCtx: chain latency " + juce::String(lat)
+                    + " exceeds budget - dropped to solo").toRawUTF8());
+            }
+        };
     }
     return borrowHost_.get();
 }
@@ -1761,6 +1834,14 @@ void EchoJayProcessor::renewBorrowLease()
     // refuses — it cannot half-engage (LeaseScope, pinned in racklock_test).
     o->setProperty("slot",    0);
     o->setProperty("scope",   "rack");
+    // §8: the mute rides the LEASE — one lifetime with the bypasses, one
+    // restore path on the Link. True only while in-context is actually
+    // playing (not while LISTEN solos, not in the degenerate through-main
+    // placement, never when refused/incapable).
+    o->setProperty("muteOut",
+        borrowInContextOk_.load(std::memory_order_relaxed)
+        && ! borrowSession_.audioOn.load(std::memory_order_relaxed)
+        && ! borrowRouteThroughMain());
     o->setProperty("tMs",     juce::Time::currentTimeMillis());
     juce::File(LinkShm::leasePath(dir, borrowSession_.uid))
         .replaceWithText(juce::JSON::toString(juce::var(o), true));
@@ -1768,7 +1849,8 @@ void EchoJayProcessor::renewBorrowLease()
 
 void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
                                          const juce::String& leaseId,
-                                         bool structureCapable)
+                                         bool structureCapable,
+                                         bool inContextCapable)
 {
     if (borrowActive() || uid.isEmpty()) return;
     borrowHost();                                    // exists + prepared
@@ -1782,6 +1864,11 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
     // it, and the picker's fork read false: the legacy refusal, on a
     // capable Link).
     borrowStructureCapable_ = structureCapable;
+    // §8 same rule: in-context OK = announced AND fits the budget, decided
+    // the instant the session exists; the chain watcher re-checks live.
+    borrowChainLat_.store(0, std::memory_order_relaxed);
+    borrowInContextOk_.store(inContextCapable && alignPad(0) >= 0,
+                             std::memory_order_relaxed);
 
     // Bind the ring, editBegin's idiom: seek to the cushion so the audition
     // starts near live rather than at the backlog.
@@ -1853,6 +1940,7 @@ void EchoJayProcessor::borrowRelease(bool keepEdits)
     borrowBaseIdentity_.clear();
     borrowRemovedWithheld_.clear();
     borrowRemovedNames_.clear();
+    borrowInContextOk_.store(false, std::memory_order_relaxed);
     borrowStructureCapable_ = false;
     // Ramp out first (the AMEK lesson): audioOn drops the crossfade target
     // to 0; the graph itself stays alive (session-long host), so there is

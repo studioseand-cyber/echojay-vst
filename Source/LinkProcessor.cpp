@@ -291,6 +291,7 @@ void LinkProcessor::publishRackSidecar()
     rc.uid       = instanceUid_;
     rc.borrowCapable = true;   // this binary honors the rack-scoped lease
     rc.structureEditCapable = true;   // and can journal/apply a structure plan
+    rc.inContextCapable     = true;   // §8: mutes on lease muteOut
     rc.name      = effectiveDisplayName();
     rc.revision  = rev;
     rc.masterWet = chainHost.getMasterWet();
@@ -567,6 +568,13 @@ void LinkProcessor::pollEditLease()
             fileId    = o->getProperty("leaseId").toString();
             fileSlot1 = (int) o->getProperty("slot");
             fileScopeRack = o->getProperty("scope").toString() == "rack";
+            // §8 in-context: the mute rides the LEASE (one lifetime by
+            // construction — the expiry that restores bypasses restores
+            // the mute; no second restore path can exist). Re-read every
+            // poll so LISTEN's solo mode can lift it live.
+            rackLeaseMuteWant_.store(o->hasProperty("muteOut")
+                && (bool) o->getProperty("muteOut"),
+                std::memory_order_relaxed);
             ageMs     = (double) juce::Time::currentTimeMillis()
                           - (double) (juce::int64) o->getProperty("tMs");
         }
@@ -626,6 +634,7 @@ void LinkProcessor::pollEditLease()
             // BOTH scopes: the rack arm restores every slot's saved bypass,
             // the slot arm restores its one, through this same switch case.
             leaseActive_.store(false, std::memory_order_relaxed);
+            rackLeaseMuteWant_.store(false, std::memory_order_relaxed);
             if (rackLeaseActive_)
             {
                 rackLeaseRelease();
@@ -1314,6 +1323,7 @@ void LinkProcessor::updateShmState()
 // =============================================================================
 void LinkProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
+    rackMuteMix_.reset(sampleRate, 0.030);   // §8 mute ramp, click-free
     hostSampleRate  = sampleRate;
     // The ring is always stereo (mono is duplicated on write) so the monitor
     // reads a consistent 2-channel layout regardless of the track format.
@@ -1511,6 +1521,30 @@ void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
             }
             shmLock.exit();
         }
+    }
+
+    // §8 IN-CONTEXT MUTE, strictly AFTER the ring write: the ring must keep
+    // carrying this signal (it is the main's injection source); only the
+    // channel's contribution to the DAW mix goes silent. Ramped ~30ms so
+    // engage/release never click. The want rides the lease (re-read every
+    // poll; cleared by the one Release/Expire restore path), so a crash
+    // un-mutes within the lease expiry exactly as it un-bypasses.
+    {
+        const bool muted = rackLeaseActive_
+                           && rackLeaseMuteWant_.load(std::memory_order_relaxed);
+        rackMuteMix_.setTargetValue(muted ? 0.0f : 1.0f);
+        if (muted || rackMuteMix_.getCurrentValue() < 0.9999f)
+        {
+            const int n = buffer.getNumSamples();
+            for (int i = 0; i < n; ++i)
+            {
+                const float g = rackMuteMix_.getNextValue();
+                for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                    buffer.getWritePointer(ch)[i] *= g;
+            }
+        }
+        else
+            rackMuteMix_.skip(buffer.getNumSamples());
     }
 }
 

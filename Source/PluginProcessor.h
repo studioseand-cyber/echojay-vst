@@ -433,6 +433,48 @@ public:
     // against nothing (nothing else is audible), so this bounds LATENCY, not
     // alignment; stage 2's stamps do alignment.
     static constexpr uint32_t kEditCushionFrames = 1024;
+    // §8.3 (amended): the FIXED alignment budget, reported from
+    // instantiation so ordinary browsing never re-runs PDC. Measured, not
+    // guessed (this machine's catalogue, defaults, 48k): worst single slot
+    // found = Ozone 12 Low End Focus at 12,799; the common latency class
+    // sits at or under ~4k. 16384 = cushion 1024 + headroom 15360.
+    static constexpr int kBorrowAlignBudgetFrames = 16384;
+    // The pad that keeps every mode's TOTAL at exactly the budget:
+    // pad = budget - cushion - borrowedChainLatency; negative = the rack
+    // does not fit — in-context REFUSED for it (solo fallback, named line).
+    // Pure and public so the arithmetic is functionally gated.
+    static int alignPad(int borrowedChainLatency) noexcept
+    {
+        const int pad = kBorrowAlignBudgetFrames
+                      - (int) kEditCushionFrames - borrowedChainLatency;
+        return pad >= 0 ? pad : -1;
+    }
+    // Two integer-frame ring delays realise the split (pre-sum alignment on
+    // the passthrough; final pad after the main chain). Fixed capacity, no
+    // allocation on the audio thread.
+    struct AlignDelay
+    {
+        juce::AudioBuffer<float> buf; int w = 0;
+        void prepare(int cap) { buf.setSize(2, cap); buf.clear(); w = 0; }
+        void process(juce::AudioBuffer<float>& b, int delay)
+        {
+            const int cap = buf.getNumSamples();
+            if (cap == 0 || delay <= 0) return;
+            const int n = b.getNumSamples();
+            for (int i = 0; i < n; ++i)
+            {
+                const int r = (w - delay % cap + cap) % cap;
+                for (int ch = 0; ch < 2 && ch < b.getNumChannels(); ++ch)
+                {
+                    float* d = b.getWritePointer(ch);
+                    const float in = d[i];
+                    buf.setSample(ch, w, in);
+                    d[i] = buf.getSample(ch, r);
+                }
+                w = (w + 1) % cap;
+            }
+        }
+    };
     static constexpr uint32_t kEditReseekTrip    = 8192;
 
     bool editActive() const { return editSession_.slot0 >= 0; }
@@ -466,7 +508,8 @@ public:
     // structureCapable: the engage-time snapshot, set HERE so it rides the
     // session from its first instant — never deferred to load settlement.
     void borrowEngageBegin(const juce::String& uid, const juce::String& leaseId,
-                           bool structureCapable = false);
+                           bool structureCapable = false,
+                           bool inContextCapable = false);
     void borrowAudioOn();
     void borrowAudioOff();   // §5a-R: listening is its own control
     bool borrowAudioIsOn() const noexcept
@@ -508,6 +551,11 @@ public:
     juce::String borrowStickyBanner_;
     std::map<juce::String, juce::String> unwrittenEditNote_;  // uid -> note
     juce::String pendingAutoEngage_;   // engage this uid once released
+    // §8 in-context state (public: the editor banners from it, the gates
+    // assert it): OK = announced AND fits the budget, decided at engage,
+    // re-checked live on every borrowed-chain change.
+    std::atomic<bool> borrowInContextOk_ { false };
+    std::atomic<int>  borrowChainLat_ { 0 };
     bool borrowApplyInFlight_ = false;
 
     // ---- Step 3: Apply & Release bookkeeping (message thread only) --------
@@ -584,7 +632,7 @@ private:
     int          borrowRingLostTicks_ = 0;           // message thread only
     juce::String borrowAutoReleaseReason_;           // message thread only
     std::atomic<bool> borrowRouteFlip_ { false };    // the visible override
-    void applyBorrowSoloMix(juce::AudioBuffer<float>& buffer);
+    void applyBorrowSoloMixOn(juce::AudioBuffer<float>& buffer, bool on);
 public:
 
     // ---- Rack lock (21 Aug 2026, RACK_BORROW_REQUIREMENTS §4) -------------
@@ -910,6 +958,8 @@ private:
     // lambdas hold a weak token instead of `this` — a plugin unloaded
     // mid-poll must drop the chain, never call into freed memory.
     std::shared_ptr<bool> borrowAliveToken_ { std::make_shared<bool>(true) };
+    AlignDelay alignPre_, alignPost_;
+    juce::SmoothedValue<float> borrowCtxMix_ { 0.0f };
     bool borrowApplyReleaseOnFail_ = false;   // switchable mid-flight (close)
     void borrowApplyFinish(bool applied, const juce::String& why,
                            bool restored);

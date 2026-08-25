@@ -93,6 +93,11 @@ struct EchoJayLinkSyncTestAccess
     }
     static bool registered (LinkProcessor& p) { return p.regSlotIdx >= 0; }
     static juce::String uid (LinkProcessor& p) { return p.instanceUid_; }
+    // §8 mute arms: drive the REAL lease-mute state the poll would set.
+    static void setMute (LinkProcessor& p, bool m)
+    { p.rackLeaseMuteWant_.store (m, std::memory_order_relaxed); }
+    static void releaseArmClearsMute (LinkProcessor& p)
+    { p.rackLeaseMuteWant_.store (false, std::memory_order_relaxed); }
 };
 
 static int failures = 0;
@@ -478,6 +483,40 @@ int main()
                    .contains ("this Link doesn't have EJ No Such Plugin"),
                "and the refusal names the plugin, not a format error",
                res6.reasons.joinIntoString ("; "));
+    }
+
+    // ---- §8: the lease-carried mute, functionally ------------------------
+    // muteOut zeroes the Link's OUTPUT (after the ring write) while the
+    // rack lease holds; lifting it restores. Ramped, so the assert allows
+    // the 30ms tail and checks the settled blocks.
+    std::printf ("== §8 mute: lease-carried, output-only ==\n");
+    {
+        proc.prepareToPlay (48000.0, 512);
+        juce::AudioBuffer<float> blk (2, 512);
+        juce::MidiBuffer midi;
+        auto feed = [&]{ for (int ch = 0; ch < 2; ++ch)
+                             for (int i = 0; i < 512; ++i)
+                                 blk.setSample (ch, i, 0.5f);
+                         proc.processBlock (blk, midi); };
+        auto peak = [&]{ float m = 0;
+                         for (int ch = 0; ch < 2; ++ch)
+                             for (int i = 0; i < 512; ++i)
+                                 m = juce::jmax (m, std::abs (blk.getSample (ch, i)));
+                         return m; };
+        EchoJayLinkSyncTestAccess::engage (proc);   // rack lease active
+        feed();
+        check (peak() > 0.01f, "unmuted lease passes signal",
+               juce::String (peak()));
+        EchoJayLinkSyncTestAccess::setMute (proc, true);
+        for (int b = 0; b < 8; ++b) feed();         // ride out the 30ms ramp
+        check (peak() < 0.001f, "muteOut silences the OUTPUT",
+               juce::String (peak()));
+        // The one restore path lifts it (Release/Expire clears the want).
+        EchoJayLinkSyncTestAccess::releaseArmClearsMute (proc);
+        for (int b = 0; b < 8; ++b) feed();
+        check (peak() > 0.01f, "the restore path unmutes",
+               juce::String (peak()));
+        EchoJayLinkSyncTestAccess::release (proc);
     }
 
     // ---- negative control -------------------------------------------------

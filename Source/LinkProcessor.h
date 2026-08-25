@@ -535,6 +535,10 @@ private:
     // the same Expire/Release arm the slot lease uses. Message thread only.
     bool               rackLeaseActive_ = false;
     std::vector<bool>  rackLeasePrior_;
+    // §8 in-context: the lease-carried mute (muteOut). Want set by the poll
+    // (message thread), consumed on the audio thread through the ramp.
+    std::atomic<bool>  rackLeaseMuteWant_ { false };
+    juce::SmoothedValue<float> rackMuteMix_ { 1.0f };
     bool               planJournalChecked_ = false;   // once per process
 public:
     /** Phase 3: is a structure-plan journal active for this Link? Drives
