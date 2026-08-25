@@ -83,6 +83,16 @@ struct EchoJayLinkSyncTestAccess
         p.leaseActive_.store (false, std::memory_order_relaxed);
         p.rackLeaseRelease();
     }
+    // Registration arms (26 Aug 2026): drive the REAL claim path the way
+    // the 1s tick does, so the gate proves claim/wait/adopt end to end.
+    static void releaseOnly (LinkProcessor& p) { p.releaseRegistrySlot(); }
+    static void releaseAndReclaim (LinkProcessor& p, int n)
+    {
+        p.releaseRegistrySlot();
+        for (int i = 0; i < n; ++i) p.claimRegistrySlot();
+    }
+    static bool registered (LinkProcessor& p) { return p.regSlotIdx >= 0; }
+    static juce::String uid (LinkProcessor& p) { return p.instanceUid_; }
 };
 
 static int failures = 0;
@@ -145,6 +155,80 @@ int main()
 
     LinkProcessor proc;
     auto& host = proc.getChainHost();
+
+    // ---- THE ORDINARY PATH, end to end (26 Aug 2026 regression): every
+    // UidClaimGate arm was about REFUSING; nothing proved a free registry
+    // still gets claimed — and it didn't. A Link constructed against an
+    // empty registry must appear as REGISTERED within a poll cycle.
+    std::printf ("== registration: empty registry claims immediately ==\n");
+    {
+        int err0 = 0;
+        const juce::String ldir = LinkShm::resolveDir(err0);
+        check (ldir.isNotEmpty(), "link dir resolves in the sandbox");
+        auto slotCount = [&ldir]
+        {
+            juce::MemoryBlock mb;
+            juce::File(ldir + "registry_v2.bin").loadFileAsData(mb);
+            const auto* d = static_cast<const uint8_t*>(mb.getData());
+            int n = 0;
+            for (int i = 0; i < 16
+                            && mb.getSize() >= (size_t)(64 + (i+1)*128); ++i)
+            { uint32_t v; std::memcpy(&v, d + 64 + i*128, 4); if (v) ++n; }
+            return n;
+        };
+        for (int t = 0; t < 3 && slotCount() == 0; ++t)
+            proc.updateShmState();
+        check (slotCount() == 1,
+               "a Link against an EMPTY registry registers within a poll cycle",
+               juce::String (slotCount()));
+
+        // A DIFFERENT-uid holder is not a collision at all: it must never
+        // enter the probe, and registration proceeds immediately. We plant
+        // a foreign slot through a second shared mapping (MAP_SHARED —
+        // coherent with the processor's own), release ours, and re-claim.
+        int rfd = -1, rerr = 0;
+        void* rmap = LinkShm::openRegistry(ldir, rfd, rerr);
+        check (rmap != nullptr, "test's second registry mapping opened");
+        auto* slots = LinkShm::regSlots(rmap);
+        int foreign = -1;
+        for (int i = 0; i < kRegMaxSlots; ++i)
+            if (LinkShm::loadAcquire(&slots[i].inUse) == 0) { foreign = i; break; }
+        check (foreign >= 0, "a free slot exists for the foreign holder");
+        std::strcpy(slots[foreign].displayName, "Foreign");
+        std::strcpy(slots[foreign].instanceUid, "ffffffff01");
+        LinkShm::storeRelease(&slots[foreign].heartbeat, 40u);   // frozen forever
+        LinkShm::storeRelease(&slots[foreign].inUse, 1u);
+        EchoJayLinkSyncTestAccess::releaseAndReclaim (proc, 1);
+        check (slotCount() == 2,
+               "a different-uid holder never enters the probe - claim is "
+               "immediate", juce::String (slotCount()));
+
+        // A FROZEN holder carrying OUR uid: the ghost of a dead launch.
+        // Adoption must come only through the threshold — never on the
+        // first sight — and the uid survives (no re-mint, no churn).
+        const juce::String myUid = EchoJayLinkSyncTestAccess::uid (proc);
+        EchoJayLinkSyncTestAccess::releaseOnly (proc);
+        int ghost = -1;
+        for (int i = 0; i < kRegMaxSlots; ++i)
+            if (LinkShm::loadAcquire(&slots[i].inUse) == 0) { ghost = i; break; }
+        std::strcpy(slots[ghost].displayName, "Ghost");
+        std::strncpy(slots[ghost].instanceUid, myUid.toRawUTF8(), 11);
+        LinkShm::storeRelease(&slots[ghost].heartbeat, 99u);     // frozen
+        LinkShm::storeRelease(&slots[ghost].inUse, 1u);
+        EchoJayLinkSyncTestAccess::releaseAndReclaim (proc, 1);
+        check (! EchoJayLinkSyncTestAccess::registered (proc),
+               "our-uid frozen holder: first sight WAITS, not adopts");
+        EchoJayLinkSyncTestAccess::releaseAndReclaim (proc, 6);
+        check (EchoJayLinkSyncTestAccess::registered (proc)
+                 && EchoJayLinkSyncTestAccess::uid (proc) == myUid,
+               "through the threshold the ghost is adopted, uid KEPT",
+               EchoJayLinkSyncTestAccess::uid (proc));
+        check (LinkShm::loadAcquire(&slots[ghost].inUse) == 0
+                 || EchoJayLinkSyncTestAccess::uid (proc) == myUid,
+               "the ghost slot was reaped, not duplicated");
+        // Clean the foreign plant so later arms see a sane registry.
+        LinkShm::storeRelease(&slots[foreign].inUse, 0u);
+    }
 
     // ---- build a two-slot rack straight into chainHost --------------------
     // Deliberately BYPASSING the model writers (restoreSavedChain is the

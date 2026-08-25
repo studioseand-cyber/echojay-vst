@@ -111,6 +111,16 @@ void LinkProcessor::timerCallback()
                 diag.heartbeat = LinkShm::loadRelaxed(
                     &LinkShm::regSlots(regMap)[regSlotIdx].heartbeat);
         }
+        else
+        {
+            // THE CLAIM RETRY (26 Aug 2026 regression): updateShmState is
+            // EVENT-driven — nothing recalls it after the UidClaimGate's
+            // Wait arm returns unclaimed, so a Link probing its own ghost
+            // waited FOREVER and no Link registered at all. While
+            // unregistered, retry the claim here, once per second — the
+            // cadence every Wait/adopt threshold was designed against.
+            claimRegistrySlot();
+        }
     }
 
 #if ECHOJAY_LINK_STATE_DIAG
