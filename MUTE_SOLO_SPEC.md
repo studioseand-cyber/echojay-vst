@@ -125,15 +125,24 @@ change what in-context monitoring plays:
   edited rack's channel stays session-muted, the main keeps injecting
   the processed edit. The user hears the edit in isolation, to the
   honest limit (plus un-Linked channels). This replaces LISTEN.
-- **The injection is an honorary strip** (ruling): the main's in-context
-  injection stands in for the edited rack's output, so it follows the
-  fabric as if it were that rack's strip — *audible iff the solo set is
-  empty or the edited rack is in it*. Someone soloing another rack
-  ramps the injection out (30 ms, the existing borrowCtxMix_ ramp) with
-  a named banner ("<name> is soloed - your edit is muted with the other
-  channels"); it ramps back when the set empties or the edited rack
-  joins it. Without this rule the injected edit would be the one
-  channel a solo cannot silence — a lie inside the main's own output.
+- **The injection is an honorary strip** (ruling; **amended 28 Aug
+  2026: it obeys EVERY silence reason, not just solo** — the
+  solo-only wording below is what let mute ship half-done): the main's
+  in-context injection stands in for the edited rack's output, so it is
+  silent for every reason that strip would be silent —
+  *audible iff the edited rack is not user-muted AND (the solo set is
+  empty or the edited rack is in it)*. A user mute on the edited rack
+  ramps the injection out exactly as a foreign solo does (while a
+  session is live the Link's channel is session-muted and the audible
+  copy IS the injection — muting something already silent is no mute at
+  all). Mute wins over the rack's own solo membership, per the strip
+  OR. A FOREIGN mute is that strip's own business and never touches the
+  injection. Each suppression carries a named banner ("<name> is muted
+  - your edit is muted with its strip" / "<name> is soloed - your edit
+  is muted with the other channels"); the injection ramps back (30 ms,
+  the existing borrowCtxMix_ ramp) when every reason lifts. Without
+  this rule the injected edit would be the one channel the mixer layer
+  cannot silence — a lie inside the main's own output.
 - **Mute the edited rack** (M during a session): legal; the channel is
   already session-silent, and the user mute is what remains after
   release. The lit M lamp is the explanation.

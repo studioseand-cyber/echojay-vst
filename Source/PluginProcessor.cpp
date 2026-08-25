@@ -4607,18 +4607,33 @@ void EchoJayProcessor::refreshLinkRegistry()
         const bool editedIn = borrowActive()
             && muteSoloSnaps_.count(borrowSession_.uid)
             && muteSoloSnaps_[borrowSession_.uid].soloOn;
-        const bool suppress = anySolo && borrowActive() && ! editedIn;
+        // THE HONORARY STRIP OBEYS EVERY SILENCE REASON (28 Aug 2026):
+        // solo-awareness alone shipped half a strip — while a session is
+        // live the Link's channel is session-muted and the audible copy
+        // IS the injection, so a user mute on the EDITED rack must ramp
+        // the injection out exactly as a foreign solo does. Mute wins
+        // over the rack's own solo membership (the strip OR); a FOREIGN
+        // mute is that strip's own business and never touches the
+        // injection.
+        const bool editedMuted = borrowActive()
+            && muteSoloSnaps_.count(borrowSession_.uid)
+            && muteSoloSnaps_[borrowSession_.uid].muteUser;
+        const bool suppress = borrowActive()
+            && (editedMuted || (anySolo && ! editedIn));
         borrowSoloSuppressInj_.store(suppress, std::memory_order_relaxed);
         if (suppress != soloSuppressPrev_)
         {
             soloSuppressPrev_ = suppress;
-            if (suppress)
+            if (suppress && editedMuted)
+                borrowStickyBanner_ = resolveLinkDisplayName(borrowSession_.uid)
+                    + " is muted - your edit is muted with its strip. "
+                      "Un-mute to hear it.";
+            else if (suppress)
                 borrowStickyBanner_ = firstSoloName
                     + " is soloed - your edit is muted with the other "
                       "channels. Solo this rack to hear it.";
             else if (borrowActive())
-                borrowStickyBanner_ = "Solo lifted - your edit is audible "
-                    "again.";
+                borrowStickyBanner_ = "Your edit is audible again.";
         }
     }
 

@@ -1843,6 +1843,13 @@ int main()
             LinkShm::RackSidecar rc;
             rc.valid = true; rc.uid = ruid; rc.name = "MS Test";
             rc.muteSoloCapable = true;
+            // inContextCapable too: the registry pass re-derives the §8
+            // budget whenever the listed-uid set changes, and a sidecar
+            // without the bit would WITHDRAW it mid-arm (the axis arm's
+            // first draft lost the budget to exactly this when its foreign
+            // row appeared — the gain froze at 1.0 with the whole §8 block
+            // skipped, not suppressed).
+            rc.inContextCapable = true;
             LinkShm::writeRackSidecar (rdir, rc);
             for (int t = 0; t < 4; ++t)
             {
@@ -1993,6 +2000,90 @@ int main()
                     .createComponentSnapshot (sgMs->mute);
                 check (hasAmber (img), "the MIXER lamp renders LIT (pixels)");
             }
+            // ---- THE MISSING AXIS (28 Aug hands-on): the injection obeys
+            // EVERY silence reason. Sean's repro: with a session live the
+            // Link is session-muted and the audible source IS the
+            // injection — a user mute on the edited rack silenced
+            // something already silent. Gated as BEHAVIOUR on the
+            // injection gain, through the REAL ingest and the REAL
+            // suppression computation (no atomic pokes):
+            {
+                auto sidecarMute = [&](bool m, bool s)
+                {
+                    juce::Thread::sleep (12);        // mtime resolution
+                    rc.muteUser = m; rc.soloOn = s;
+                    LinkShm::writeRackSidecar (rdir, rc);
+                    static uint32_t hb = 20;
+                    LinkShm::storeRelease (&rslots[ri].heartbeat, ++hb);
+                    mainProc.refreshLinkRegistry();
+                };
+                juce::AudioBuffer<float> blk (2, 512);
+                juce::MidiBuffer midi;
+                auto runBlocks = [&](int n)
+                {
+                    for (int b = 0; b < n; ++b)
+                    {
+                        for (int ch = 0; ch < 2; ++ch)
+                            for (int i = 0; i < 512; ++i)
+                                blk.setSample (ch, i, 0.5f);
+                        mainProc.processBlock (blk, midi);
+                    }
+                };
+                mainProc.setBorrowBudgetActive (true);
+                sidecarMute (false, false);          // clean slate
+                mainProc.borrowEngageBegin (ruid, "lease-ms2", true, true);
+                mainProc.refreshLinkRegistry();      // suppress recomputed
+                runBlocks (30);
+                check (mainProc.borrowCtxMixNow() > 0.99f,
+                       "axis arm: in-context settled at 1",
+                       juce::String (mainProc.borrowCtxMixNow(), 3));
+                sidecarMute (true, false);           // user-mute the EDITED rack
+                runBlocks (30);
+                check (mainProc.borrowCtxMixNow() < 0.01f,
+                       "a user mute on the edited rack ramps the injection "
+                       "OUT (the missing axis)",
+                       juce::String (mainProc.borrowCtxMixNow(), 3));
+                sidecarMute (false, false);          // un-mute
+                runBlocks (30);
+                check (mainProc.borrowCtxMixNow() > 0.99f,
+                       "un-mute: the injection ramps back",
+                       juce::String (mainProc.borrowCtxMixNow(), 3));
+                // Third axis: a FOREIGN mute never touches the injection.
+                const int fi2 = 12;
+                const char* fuid2 = "uid-fm";
+                std::memset (&rslots[fi2], 0, sizeof (RegistrySlot));
+                std::strncpy (rslots[fi2].displayName, "FM Test", 39);
+                std::memcpy (rslots[fi2].instanceUid, fuid2, 6);
+                rslots[fi2].sampleRate = 48000.0f;
+                rslots[fi2].numChannels = 2;
+                LinkShm::RackSidecar frc2;
+                frc2.valid = true; frc2.uid = fuid2; frc2.name = "FM Test";
+                frc2.muteSoloCapable = true; frc2.muteUser = true;
+                frc2.inContextCapable = true;
+                LinkShm::writeRackSidecar (rdir, frc2);
+                for (uint32_t t = 1; t <= 3; ++t)
+                {
+                    LinkShm::storeRelease (&rslots[fi2].heartbeat, t);
+                    LinkShm::storeRelease (&rslots[fi2].inUse, 1u);
+                    mainProc.refreshLinkRegistry();
+                }
+                runBlocks (10);
+                check (mainProc.borrowCtxMixNow() > 0.99f,
+                       "a FOREIGN mute is that strip's own business - "
+                       "the injection plays on",
+                       juce::String (mainProc.borrowCtxMixNow(), 3));
+                // And the OR: edited rack muted AND soloed -> mute wins.
+                sidecarMute (true, true);
+                runBlocks (30);
+                check (mainProc.borrowCtxMixNow() < 0.01f,
+                       "muted AND soloed: mute wins the strip OR",
+                       juce::String (mainProc.borrowCtxMixNow(), 3));
+                mainProc.borrowRelease (false);
+                mainProc.setBorrowBudgetActive (false);
+                LinkShm::storeRelease (&rslots[fi2].inUse, 0u);
+                juce::File (LinkShm::rackSidecarPath (rdir, fuid2)).deleteFile();
+            }
+
             LinkShm::storeRelease (&rslots[ri].inUse, 0u);
             juce::File (LinkShm::rackSidecarPath (rdir, ruid)).deleteFile();
             mainProc.refreshLinkRegistry();
@@ -2052,11 +2143,13 @@ int main()
             // rack exempt; both transition banners exist; the contextual
             // honest-limit line is conditional on an ACTIVE solo, and the
             // old-binary count rides it as a warning.
-            check (pp9.contains ("const bool suppress = anySolo && borrowActive() && ! editedIn;"),
-                   "suppression = solo set non-empty AND edited rack not in it");
+            check (pp9.contains ("const bool suppress = borrowActive()\n            && (editedMuted || (anySolo && ! editedIn));"),
+                   "suppression = EVERY silence reason (edited mute OR "
+                   "foreign solo), mute winning the OR");
             check (pp9.contains ("is soloed - your edit is muted with the other")
-                     && pp9.contains ("Solo lifted - your edit is audible"),
-                   "both honorary-strip transition banners exist");
+                     && pp9.contains ("is muted - your edit is muted with its strip")
+                     && pp9.contains ("Your edit is audible again."),
+                   "all three honorary-strip transition banners exist");
             {
                 std::ifstream fe9 ("Source/PluginEditor.cpp");
                 std::stringstream se9; se9 << fe9.rdbuf();
