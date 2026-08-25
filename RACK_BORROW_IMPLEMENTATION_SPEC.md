@@ -187,17 +187,66 @@ the lock and Apply inherits every per-slot staleness hazard at rack scale.
 
 ## 5. The five open items — recommendations, each with its reasoning
 
-**§5a commit model — recommend explicit Apply & Release, with continuous
-local keep as crash insurance.** Push-back-on-deselect is an implicit commit;
-a mis-click or crash loses a session's edits with no moment the user said
-"write this" — the requirements doc already names this the most dangerous open
-item. Stage 1's *Apply and Release* was explicit for exactly this reason, and
-its `editEnd(keepState)` precedent gives the other half: capture the borrowed
-rack's state continuously (the state-cache machinery the borrowed host
-already carries), so a crash or lease death loses nothing locally and a
-reopen can re-seed. Deselect without Apply asks — through `presentReplaceAsk`,
-the one confirm implementation — "apply these edits to <Link>, or discard?"
-Nothing silent in either direction.
+**§5a commit model — REVERSED (26 Aug 2026 ruling): selection IS the
+session; deselect applies automatically. No EDIT RACK, no RELEASE, no Apply
+confirm.** The paragraph below records the superseded recommendation and
+the reasoning for the reversal; §5a-R is the ruling in full.
+
+*Superseded (21 Aug 2026):* explicit Apply & Release, with continuous local
+keep as crash insurance. Push-back-on-deselect was argued to be an implicit
+commit — a mis-click loses a session's edits with no moment the user said
+"write this" — and deselect-without-Apply asked "apply or discard?" through
+`presentReplaceAsk`.
+
+*Why reversed:* the built model made every rack edit a three-step ceremony
+(EDIT RACK → edit → Apply & Release with a confirm), and the confirm's
+protective moment turned out to be where sessions went to die — the ask
+re-presented, was mis-answered, or was abandoned, and the hands-on battery
+spent its defects there rather than in the writes. The mis-click argument
+also cuts the other way: with selection as the session, there is no separate
+release gesture to mis-click. The danger the old design guarded against —
+an implicit write the user cannot take back — is answered by REVERT (below)
+rather than by a confirm in front of every write: the pre-edit state we
+already hold from the pull becomes an undo instead of a question.
+
+### §5a-R The ruled model: selecting a Link's rack is editing it
+
+- **Select** → take the rack lock, pull the rack, make it editable, grey
+  the Link — everything today's EDIT RACK does **except audio**. Listening
+  is a separate control (below).
+- **Deselect** → apply automatically. No ask. Editing a rack in the main
+  means overwriting the Link's, by default. The apply is the same vehicle
+  as today (structure plan for capable Links, per-slot commits for older
+  ones); only the trigger changes.
+- **Listening is its own control**, doing what solo does today (ring-steal
+  through the borrowed host, the two routes by channel type). In-context
+  monitoring remains parked (§8) and becomes a SECOND MODE of this same
+  control when it lands — the control is designed as a mode switch from
+  day one so §8 slots in without a new affordance.
+
+**Three things that survive the simplification, by ruling:**
+
+1. **Revert, not confirm.** With no Apply there is no moment to say no, so
+   the pre-edit state already held from the pull becomes an undo: "revert
+   this rack to before I touched it" — available on the Link AND in the
+   main while the session is fresh. This REPLACES Discard rather than
+   deleting it. (The continuous-keep machinery and the lease-death capture
+   below are unchanged; revert is the same held state pointed the other
+   way.)
+2. **The honesty rules are unchanged.** Withheld slots are still never
+   written (§5c); a structure plan is still all-or-nothing (§4b, and the
+   structure spec's atomicity). With no confirm step to carry those
+   refusals, they land as BANNERS on both sides — main status line and
+   Link overlay — and must NOT be losable by navigating away: a refusal
+   outlives the view that raised it until acknowledged or superseded.
+3. **The failure case, ruled explicitly:** deselect triggers an apply that
+   fails (a plugin won't stage). **The deselect does not complete** — the
+   session stays engaged, the lock holds, and it says why, exactly as a
+   failed Apply does today. The rack is never left half-anywhere and the
+   edits never vanish. Never silently drop a shape that was never written.
+   (Selection in the UI may visually move on; the SESSION does not — the
+   engaged rack surfaces as still-editing until the failure is resolved,
+   reverted, or the apply retried and succeeds.)
 
 **Lease death mid-borrow — recovery offer, never unstated loss** (amendment,
 21 Aug 2026): if the rack-scoped lease expires under a live borrow (the Link
@@ -206,13 +255,14 @@ superseded), the borrow disengages audio immediately (the Link owns the
 sound, same rule as the slot lease), but the uncommitted edits are CAPTURED
 first — the `editEnd(keepState)` precedent, rack-wide: every slot's current
 state is kept locally. The UI then says exactly what happened and what is
-held: "<Link> took its rack back — your edits are kept. Re-borrow to
-continue from them, Apply to send them now, or Discard." Apply from kept
-state runs the normal per-slot commit filtering (§5c) against the Link's
-CURRENT rack — if the rack changed shape while control was lost, the
-mismatching slots refuse by identity, named, rather than writing into the
-wrong plugin. The one thing that never happens is the edits evaporating with
-only a released overlay to show for it.
+held: "<Link> took its rack back — your edits are kept. Re-select to
+continue from them, send them now, or revert." (Wording updated for §5a-R:
+"Apply"/"Discard" become "send"/"revert"; the machinery is identical.)
+Sending from kept state runs the normal per-slot commit filtering (§5c)
+against the Link's CURRENT rack — if the rack changed shape while control
+was lost, the mismatching slots refuse by identity, named, rather than
+writing into the wrong plugin. The one thing that never happens is the
+edits evaporating with only a released overlay to show for it.
 
 **§3c the Link transfer tier — recommend a THIRD named pair, set today to the
 session tier's values.** The pull is a local JSON file between two processes:
@@ -235,11 +285,13 @@ save is refused.
 commit-guarded.** A banner on the borrowed rack the moment the build settles:
 "N of M plugins came across without their settings — this is NOT <Link>'s
 sound", with the withheld slots marked in place; not a scrollable notes list.
-And the hard rule that matters more than the display: **Apply never writes a
-withheld slot's state back.** A slot that arrived at defaults must not commit
-defaults over the Link's real settings — per-slot commit filtering by the
-same match verdicts that withheld the pull. The asymmetry (edit 3 slots,
-commit 3, leave 2 untouched) is stated in the Apply confirm.
+And the hard rule that matters more than the display: **the write-back never
+touches a withheld slot's state.** A slot that arrived at defaults must not
+commit defaults over the Link's real settings — per-slot commit filtering by
+the same match verdicts that withheld the pull. The asymmetry (edit 3 slots,
+commit 3, leave 2 untouched) was stated in the Apply confirm; under §5a-R
+there is no confirm, so it lands as the both-sides banner the ruling
+requires — not losable by navigating away.
 
 **§5d the Link's window while borrowed — recommend greyed with the overlay,
 not blank, not a live mirror.** The lock overlay already exists and is
