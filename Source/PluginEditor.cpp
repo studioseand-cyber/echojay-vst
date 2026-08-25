@@ -10010,17 +10010,39 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
         const uint32_t nowMs = juce::Time::getMillisecondCounter();
         bool  fresh = false;
         float dim   = 1.0f;
+        // THREE-STATE STRIP (25 Aug 2026): live-with-audio (full),
+        // live-but-silent (audio-stale dim below), and HEARTBEAT-STALE —
+        // the process stopped answering — rendered as a distinct "gone"
+        // state instead of the same dim a silent Link gets. That ambiguity
+        // (dead and silent painting one picture) cost a session an hour.
+        // THE LIMIT, stated where it will be read: this separates dead from
+        // silent. It CANNOT flag deleted-but-undo-held, because that
+        // instance is genuinely alive — Logic keeps a deleted channel's
+        // plugins running for undo, their heartbeats climb, and no signal
+        // of ours can see the arrange page.
+        const bool gone = !isBus && entry != nullptr
+                          && ! entry->info.heartbeatFresh;
         LinkStripState* st = nullptr;
         if (isBus)
         {
             fresh = ingestBusStripFrame(nowMs);
             st = &linkHostStrip_;
         }
-        else if (entry != nullptr)
+        else if (entry != nullptr && ! gone)
         {
             ingestLinkStripFrame(sg.addr, entry->info.regIdx,
                                  entry->info.active, nowMs, fresh, dim);
             st = &linkStripStates_[sg.addr];
+        }
+        if (gone)
+        {
+            // Outline only, no meters, no numbers, no cached curve — a
+            // plain word where data would falsely claim a living process.
+            g.setColour(LinkConsole::structure);
+            g.drawRect(sg.data, 1);
+            g.setFont(juce::Font(juce::FontOptions(11.0f)));
+            g.drawText("not responding", sg.data,
+                       juce::Justification::centred, true);
         }
 
         // ONE smoothing advance per strip per paint. Since 8b the data area
@@ -10052,8 +10074,8 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             const std::vector<int16_t>* c = nullptr;
             if (sg.isBus)
                 c = busEqCurve_.empty() ? nullptr : &busEqCurve_;
-            else if (entry != nullptr)
-                c = linkEqCurve(entry->info.uid);
+            else if (entry != nullptr && ! gone)   // a gone strip shows the
+                c = linkEqCurve(entry->info.uid);  // empty box, not a stale curve
             // ALWAYS CALLED, with or without data: the painter draws the box
             // and grid either way and adds the curve only when there is one.
             // Skipping the call for a rack with no EQ would put the "is there
@@ -10063,16 +10085,17 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             paintLinkStripEq(g, sg.eq, c != nullptr ? *c : none, dim, wide);
         }
 
-        switch (processorRef.linkMixerContent)
-        {
-            case EchoJayProcessor::LinkMixerContent::Numbers:
-                if (st != nullptr)
-                    paintLinkStripNumbers(g, sg.data, *st, drv, dim, wide);
-                break;
-            case EchoJayProcessor::LinkMixerContent::Chain:
-                paintLinkStripChain(g, sg.data, sg, entry, dim, wide);
-                break;
-        }
+        if (! gone)
+            switch (processorRef.linkMixerContent)
+            {
+                case EchoJayProcessor::LinkMixerContent::Numbers:
+                    if (st != nullptr)
+                        paintLinkStripNumbers(g, sg.data, *st, drv, dim, wide);
+                    break;
+                case EchoJayProcessor::LinkMixerContent::Chain:
+                    paintLinkStripChain(g, sg.data, sg, entry, dim, wide);
+                    break;
+            }
 
         // The meter band: PERMANENT chrome, every strip, every mode. A
         // mixer strip always shows its meter. ONE recessed well spans the

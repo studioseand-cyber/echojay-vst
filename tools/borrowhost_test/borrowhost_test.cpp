@@ -1266,19 +1266,22 @@ int main()
         check (! rl2.observe (0) && ! rl2.observe (0),
                "a ghost stuck at zero is never listed");
 
-        // THE REAPER, functionally, in the sandbox: dead-uid files older
-        // than grace die; fresh files and live uids survive; structplan is
-        // spared ENTIRELY (someone's rollback); audio rings reap by the
-        // registry's referenced FILENAMES, never by parsing names.
+        // THE REAPER, functionally, in the sandbox — NARROWED to transient
+        // classes (25 Aug 2026 ruling: uids RETURN, the dead-forever
+        // premise was false): protocol transients and unreferenced rings
+        // die; SIDECARS are spared however dead (a returning uid's rack
+        // description); structplan spared entirely (someone's rollback);
+        // rings reap by the registry's referenced FILENAMES.
         juce::File rdir = juce::File (appData).getChildFile ("EJReapTest");
         rdir.createDirectory();
         auto mk = [&rdir] (const char* n) { rdir.getChildFile (n)
                                                 .replaceWithText ("x"); };
-        mk ("rack-deaddead01.json");       // dead uid, old      -> reaped
-        mk ("rack-livelive01.json");       // live uid           -> spared
-        mk ("rack-freshfresh1.json");      // dead uid, fresh    -> spared
+        mk ("rack-deaddead01.json");       // sidecar, dead, old -> SPARED now
         mk ("structplan-deaddead01.json"); // journal, dead, old -> SPARED
-        mk ("ctrl-cmd-deaddead01.json");   // dead uid, old      -> reaped
+        mk ("ctrl-cmd-deaddead01.json");   // transient, dead, old -> reaped
+        mk ("lease-deaddead01.json");      // transient, dead, old -> reaped
+        mk ("lease-livelive01.json");      // transient, LIVE uid -> spared
+        mk ("ctrl-ack-freshfresh1.json");  // transient, dead, fresh -> spared
         mk ("audio_untitled_dead.bin");    // unreferenced ring  -> reaped
         mk ("audio_drums.bin");            // referenced ring    -> spared
         const juce::int64 now = juce::Time::currentTimeMillis();
@@ -1286,26 +1289,54 @@ int main()
         for (const char* n : { "rack-deaddead01.json",
                                "structplan-deaddead01.json",
                                "ctrl-cmd-deaddead01.json",
-                               "audio_untitled_dead.bin", "audio_drums.bin",
-                               "rack-livelive01.json" })
+                               "lease-deaddead01.json",
+                               "lease-livelive01.json",
+                               "audio_untitled_dead.bin", "audio_drums.bin" })
             rdir.getChildFile (n).setLastModificationTime (juce::Time (old));
         const int reaped = LinkShm::reapDeadUidFiles (
             rdir.getFullPathName() + "/", { "livelive01" },
             { "audio_drums.bin" }, now, 10 * 60 * 1000);
-        check (reaped == 3, "exactly the three dead files reaped",
+        check (reaped == 3, "exactly the three transient dead files reaped",
                juce::String (reaped));
-        check (! rdir.getChildFile ("rack-deaddead01.json").exists()
-                 && ! rdir.getChildFile ("ctrl-cmd-deaddead01.json").exists()
+        check (! rdir.getChildFile ("ctrl-cmd-deaddead01.json").exists()
+                 && ! rdir.getChildFile ("lease-deaddead01.json").exists()
                  && ! rdir.getChildFile ("audio_untitled_dead.bin").exists(),
-               "dead uid files and the orphan ring are gone");
-        check (rdir.getChildFile ("rack-livelive01.json").exists(),
-               "a live uid's files survive, however old");
-        check (rdir.getChildFile ("rack-freshfresh1.json").exists(),
+               "dead transients and the orphan ring are gone");
+        check (rdir.getChildFile ("rack-deaddead01.json").exists(),
+               "a SIDECAR is spared however dead - uids return");
+        check (rdir.getChildFile ("lease-livelive01.json").exists(),
+               "a live uid's transients survive, however old");
+        check (rdir.getChildFile ("ctrl-ack-freshfresh1.json").exists(),
                "a fresh file survives the grace window");
         check (rdir.getChildFile ("structplan-deaddead01.json").exists(),
                "structplan is SPARED entirely - a journal is a rollback");
         check (rdir.getChildFile ("audio_drums.bin").exists(),
                "a registry-referenced ring survives");
+
+        // THE UID CLAIM GATE, all three arms, functionally: a climbing
+        // holder is a duplicate (re-mint), a frozen holder is a ghost
+        // (adopt) — but never before the threshold (an unproven holder is
+        // never adopted).
+        using UCG = LinkShm::UidClaimGate;
+        UCG dup;
+        check (dup.observe (10) == UCG::Decision::Wait
+                 && dup.observe (11) == UCG::Decision::Remint,
+               "a proven-live holder forces a re-mint (real duplicate)");
+        UCG ghost;
+        bool earlyAdopt = false;
+        UCG::Decision d = UCG::Decision::Wait;
+        for (int t = 0; t < 5; ++t)
+        {
+            d = ghost.observe (7);
+            if (t < 4 && d != UCG::Decision::Wait) earlyAdopt = true;
+        }
+        check (! earlyAdopt, "an unproven holder is NEVER adopted early");
+        check (d == UCG::Decision::AdoptGhost,
+               "a holder frozen through the threshold is a ghost - adopted");
+        UCG lateLife;
+        lateLife.observe (3); lateLife.observe (3); lateLife.observe (3);
+        check (lateLife.observe (4) == UCG::Decision::Remint,
+               "a holder that wakes mid-probe is live - re-mint, not adopt");
 
         // Pins: the listing gates on the pure helper; the Link's destructor
         // cleans its own uid files but never structplan; the reaper's uid
@@ -1326,8 +1357,18 @@ int main()
         const auto sh = slurpR ("Source/LinkShm.h");
         const int up = sh.indexOf ("uidPatterns[]");
         const auto upArm = up >= 0 ? sh.substring (up, up + 400) : juce::String();
-        check (up >= 0 && ! upArm.contains ("structplan"),
-               "the reaper's pattern list carries no structplan entry");
+        check (up >= 0 && ! upArm.contains ("structplan")
+                 && ! upArm.contains ("\"rack-"),
+               "the reaper's pattern list carries neither structplan nor sidecars");
+        // The claim guard decides by heartbeat through the gate, and the
+        // strip renders the gone state distinctly from silence.
+        check (lpR.contains ("uidGate_.observe(holderHb)")
+                 && lpR.contains ("uid adopted"),
+               "the claim guard routes through UidClaimGate, ghost-adopting");
+        const auto edR = slurpR ("Source/PluginEditor.cpp");
+        check (edR.contains ("heartbeatFresh")
+                 && edR.contains ("\"not responding\""),
+               "the strip renders heartbeat-stale as GONE, not as silence");
     }
 
     std::printf ("== DEV forceWithholdSlot: cannot exist in a non-DEV build ==\n");

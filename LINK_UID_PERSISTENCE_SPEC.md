@@ -1,112 +1,79 @@
-# LINK_UID_PERSISTENCE_SPEC — a Link identity that survives relaunch
+# LINK_UID_PERSISTENCE_SPEC — corrected: persistence exists; the subject was the claim guard
 
-**Status: SPEC ONLY (25 Aug 2026). Not built, by ruling. Companion to the
-KNOWN HOLE recorded in RACK_STRUCTURE_EDIT_SPEC.md (journal orphaned by
-per-launch uid) and to the liveness/reaper work that treats a dead uid as
-permanently unaddressable.**
+**Status: CORRECTED 25 Aug 2026. The original draft proposed building uid
+persistence. Persistence ALREADY EXISTS and predates the draft:
+`getStateInformation` saves `instanceUid_` and `setStateInformation`
+restores it (LinkProcessor.cpp), so a reopened project returns with its
+saved identity. The evidence that exposed the error: rack-b3999c060d.json
+read rev 10 / 3 slots one day and rev 5 the next — a returning instance
+whose process-local revision counter restarted under the same uid.**
 
-## 0. The problem in one paragraph
+## 1. The real defect, and its fix (BUILT, 25 Aug 2026, by ruling)
 
-`instanceUid_` is minted fresh every launch. Everything keyed on it —
-sidecars, leases, locks, ctrl/chain command files, structplan journals, and
-registry row identity — therefore dies with the process and is reborn under
-a new name on relaunch. The observed costs: ghost selector rows (a killed
-launch's registry slot outlives it), 60+ dead uid-keyed files on one
-machine, a crash-recovery journal that can never be found by the relaunched
-Link that needs it, and five identically-named "Audio 1_04" rows — the same
-DAW channel, five launches, five identities, no way to tell the live one
-apart by name.
+The uid churn attributed to "per-launch uids" was the CLAIM-TIME COLLISION
+GUARD: it re-minted whenever any `inUse` registry slot carried the saved
+uid — and `inUse` cannot tell a live duplicate from a ghost. Every unclean
+kill left a frozen slot holding the uid; the relaunch saw a "collision",
+re-minted, and burned the identity — orphaning that uid's files and its
+structplan journal. The churn engine, not a design property.
 
-## 1. The proposal
+The guard now decides by the holder's heartbeat (`LinkShm::UidClaimGate`,
+pure, three arms, functionally gated):
 
-The Link persists its uid in its own saved state (getState/setState), so a
-reopened project reconnects THE SAME identity.
+- **Proven-live holder** (heartbeat observed climbing): a genuine duplicate
+  — copy/paste clones the saved state, uid included. THIS instance
+  re-mints; first-alive keeps the uid, the copy becomes a new channel.
+- **Observed-frozen holder** (no climb through the threshold, ~5 claim-retry
+  ticks): a ghost of a dead launch. The slot is reaped and the uid ADOPTED
+  — the crash/kill relaunch keeps its identity, which is what makes the
+  saved uid worth saving.
+- **Undecided** (just-appeared holder, too few observations): WAIT,
+  unregistered, retried on the ~1s tick. An unproven holder is never
+  adopted — reaping a possibly-live slot is the one unrecoverable mistake.
 
-- **Mint once**: a Link with no saved uid mints one (today's path) and saves
-  it with the next state snapshot. A Link restored WITH a saved uid adopts
-  it instead of minting.
-- **Adoption is claimed through the registry**, which stays the arbiter of
-  liveness: adopt-then-register is one operation, and the collision rule
-  below runs inside it.
-- **Files keyed by uid become durable per CHANNEL, not per launch**: the
-  sidecar, journal, and command files a relaunch finds under its own uid are
-  its own history. The reaper's "dead uid can never be addressed again"
-  premise inverts for persisted uids — see §4, this is the sharpest edge.
+## 2. What stable identity now holds, and its remaining limits
 
-## 2. Collision handling (copy/paste duplication)
+- Ghost selector rows: liveness-before-listing hides them; the fixed guard
+  stops manufacturing new identities against them.
+- File accumulation: one channel keeps one uid across relaunches; the
+  reaper (narrowed, §3) tidies protocol transients only.
+- Orphaned structplan journals: a crash relaunch now reclaims its uid, so
+  `structplan-<uid>.json` IS found again. The KNOWN HOLE recorded in
+  RACK_STRUCTURE_EDIT_SPEC.md narrows from "never survives relaunch" to
+  the honest residue below.
+- The five "Audio 1_04" rows: one channel, one row, henceforth.
 
-Copy/paste or track duplication clones the saved state, so TWO plugins carry
-the same saved uid. The second to register must notice and re-mint:
+Remaining limits, stated rather than wished away:
 
-- **Detection at claim time**: registering an adopted uid scans the registry
-  first. If a PROVEN-LIVE slot (heartbeat climbing — the RegLiveness rule,
-  not inUse alone) already carries that uid, this instance is the duplicate:
-  it mints a fresh uid, registers under it, and saves the new uid at the
-  next state snapshot. First to claim keeps the identity; the copy becomes a
-  new channel, which matches user intent — a duplicated track is a new
-  track.
-- **A NON-proven slot with the same uid is a ghost of a dead launch**: reap
-  it and adopt. Without this rule, the crashed-then-relaunched case — the
-  whole point of persistence — would read as a collision and re-mint,
-  orphaning the journal again.
-- **The race** (two copies registering in the same tick, neither proven
-  yet): both see no proven holder; both claim; the registry claim itself
-  must arbitrate — first CAS on the slot wins the uid, the loser re-mints.
-  The loser's files-under-the-shared-uid question is §4's stale-claim case,
-  bounded to seconds by the immediate re-mint.
-- **Same-uid, both saved, sessions opened on two machines**: no shared
-  registry, no collision, no problem — the shared dir is per-machine.
+- **A stale uid on a genuinely different channel** is still possible: "save
+  as", template projects, dragging a plugin between projects all put an old
+  uid on what the user considers a new channel, and the registry cannot
+  distinguish that from a legitimate return (both present a saved uid with
+  no live holder). Files keyed to the uid then describe the old channel
+  until overwritten — including, worst case, a journal "recovered" into
+  the wrong rack. NOTE THE OPEN TENSION: the journal restore deliberately
+  WINS over a divergent session snapshot (RACK_STRUCTURE_EDIT_SPEC
+  amendment 2 — a mid-plan Cmd-S must not beat the pre-images), so
+  divergence does NOT block a wrong-channel journal today; it only notes
+  both truths. Distinguishing "divergent because mid-plan save" from
+  "divergent because wrong channel" is unresolved; a generation counter on
+  the uid is the escalation path if this ever bites in practice.
+- **Instances never saved** still mint per-launch and churn on kill; only
+  a saved project pins identity. Working as intended.
 
-## 3. What it fixes
+## 3. The reaper under the corrected premise
 
-- **Ghost selector rows**: a relaunch re-claims its own registered slot
-  (same uid) instead of leaving the old row to the 30s reaper and adding a
-  new one beside it. Liveness-before-listing already hides ghosts; with
-  persistence they largely stop being CREATED.
-- **Per-launch file accumulation**: one channel = one uid = one sidecar,
-  one lease name, one journal path, forever. The reaper becomes a rare-event
-  janitor (deleted tracks) instead of a per-launch necessity.
-- **Orphaned journals**: `structplan-<uid>.json` written before a crash IS
-  found by the relaunched Link — the KNOWN HOLE in
-  RACK_STRUCTURE_EDIT_SPEC.md closes, and the phase-2 crash guarantee
-  becomes what it was believed to be.
-- **The five "Audio 1_04" entries**: one channel keeps one row. Display
-  disambiguation stops depending on uid-suffixed untitled names.
+"A dead uid can never be addressed again" is FALSE — uids return. The
+reaper is narrowed (same ruling) to what stays safe when they do:
+protocol transients (lease, racklock, ctrl/chain cmd+ack — consumed or
+recency-gated, recreated from nothing) and audio rings unreferenced by any
+registry slot (recreated at openRing). `rack-*.json` sidecars are now
+SPARED (a returning uid's rack description); `structplan-*.json` was
+always spared (someone's rollback).
 
-## 4. What it risks
+## 4. Out of scope, unchanged
 
-- **A stale uid claimed by a genuinely different channel.** The saved blob
-  travels: "save as", template projects, dragging a plugin between
-  projects, or restoring an old session over a new one all put an OLD uid
-  on what the user considers a DIFFERENT channel. The registry cannot tell
-  "same channel, relaunched" from "old blob, new channel" — both present a
-  saved uid with no live holder. Consequences worth naming before building:
-  - files keyed to that uid now mean something else — a journal written by
-    the old channel could be "recovered" INTO the new one (restoring a rack
-    the user never had there: worse than the orphan it fixes, because it is
-    wrong loudly rather than missing quietly);
-  - a main's cached rack for the uid describes the old channel until the
-    new sidecar overwrites it.
-  Mitigations to decide between at build time: journal adoption requires a
-  base-identity match against the restored rack (the §3e machinery already
-  exists for exactly this shape of question), and/or the uid carries a
-  generation counter bumped on adoption so consumers can distinguish eras.
-- **The reaper's premise inverts.** Today "not live + old = dead forever"
-  is safe by construction. With persistence, a channel in a CLOSED project
-  is not live for weeks and must not be reaped. The reaper must then key on
-  something else (e.g., only files whose uid has been superseded by a
-  re-mint, or nothing at all — accept accumulation bounded by real
-  channels). This spec does not pick; it insists the reaper be revisited IN
-  THE SAME CHANGE as persistence, not after the first lost sidecar.
-- **Registry slot exhaustion semantics shift**: 16 slots, and persisted
-  uids mean closed-project channels do not free their conceptual identity —
-  but they DO free their slot (registration is still per-process). No
-  change needed; noted so nobody "fixes" it.
-
-## 5. Out of scope
-
-Cross-machine identity, uid migration for existing sessions (they mint on
-first save under this scheme and lose nothing they have today), and journal
-adoption by identity-matching alone (an alternative that fixes ONLY the
-journal hole; decided against pursuing separately so the identity question
-is answered once, not twice).
+Cross-machine identity; uid migration for existing sessions; any uid
+scheme derived from stable host properties (track name/position are
+user-mutable and collide across projects — the saved-state uid is the
+right anchor).

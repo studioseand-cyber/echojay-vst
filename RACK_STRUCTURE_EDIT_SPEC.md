@@ -69,19 +69,25 @@ restoration honestly. The one non-restorable window — a crash *during the
 journal restore itself* — is the same residual the deadman accepts, and it
 blacklists the plugin that caused it.
 
-**KNOWN HOLE (25 Aug 2026): the crash-recovery arm does not survive a
-relaunch.** The journal is keyed `structplan-<uid>.json` and the Link's uid
-is per-launch, so the paragraph above overstates the guarantee: a relaunched
-Link looks up its NEW uid and never finds the journal a crash orphaned under
-the old one. Phase 2's crash guarantee therefore covers SAME-PROCESS
-recovery only (the launch-time check in a process that did not die, e.g.
-editor teardown/reopen inside one hosting-service lifetime). This was gated
-and believed complete, and it is not — the gates prove the restore works
-when the journal is FOUND; nothing proved it would be found. Orphaned
-journals are deliberately spared by the dead-uid file reaper (deleting one
-is deleting someone's rollback). The fix direction is uid persistence
-(LINK_UID_PERSISTENCE_SPEC.md) or identity-based journal adoption at
-launch; neither is built, by ruling, until the uid question is decided.
+**KNOWN HOLE (25 Aug 2026, NARROWED same day): the crash-recovery arm and
+the relaunch.** The journal is keyed `structplan-<uid>.json`. The uid was
+believed per-launch, which would have made an orphaned journal unfindable —
+that was gated and believed complete, and it wasn't: the gates proved the
+restore works when the journal is FOUND; nothing proved it would be found.
+Corrected mechanism (LINK_UID_PERSISTENCE_SPEC.md): the uid is SAVED IN THE
+LINK'S STATE and restored on project reopen; what broke relaunch recovery
+was the claim-time collision guard re-minting against GHOST slots, burning
+the identity and orphaning the journal. With the heartbeat-decided guard
+(built 25 Aug 2026), a crash relaunch of a SAVED project reclaims its uid
+and finds its journal. The honest residue: an instance never saved (no uid
+in any project) still mints fresh and cannot find a journal, and a saved
+uid restored onto a genuinely different channel could adopt the WRONG
+journal — and note the tension with amendment 2 below: the journal
+deliberately WINS over a divergent session snapshot, so divergence does
+not block a wrong-channel journal, it only notes both truths. That
+trade-off is unresolved (see LINK_UID_PERSISTENCE_SPEC.md §2). Orphaned
+journals remain spared by the file reaper (deleting one is deleting
+someone's rollback).
 
 **Journal restore vs the Link's session restore** (amendment, 22 Aug 2026):
 a relaunch after a mid-plan crash has TWO sources of truth — the DAW's

@@ -441,6 +441,11 @@ private:
     // on THIS — the display name is a label, never an address (unnamed or
     // same-named Links collided and toggles applied to all of them).
     juce::String instanceUid_;
+    // Uid claim gate (25 Aug 2026): decides duplicate vs ghost vs undecided
+    // by the holder's heartbeat across claim-retry ticks. Reset when the
+    // holder slot changes or the question resolves.
+    LinkShm::UidClaimGate uidGate_;
+    int uidGateHolder_ = -1;
     // Host track name stash (see the Phase N block above). appliedHostName_
     // is message-thread-only change detection for the timer's apply pass.
     mutable juce::CriticalSection hostNameLock_;

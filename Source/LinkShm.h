@@ -429,18 +429,51 @@ struct RegLiveness
 };
 
 // =============================================================================
-//  Dead-uid file reaper (25 Aug 2026): the Link's uid is per-launch, so
-//  uid-keyed files accumulate forever (62 dead rack sidecars on one machine).
-//  A dead uid can never be addressed again, so deletion is safe by
-//  construction — gated by NOT-live and an mtime grace window (a Link
-//  mid-launch has fresh files and an unproven heartbeat).
-//
-//  structplan-*.json IS SPARED ENTIRELY: a journal is someone's rollback,
-//  and no grace window makes deleting one a safe judgement.
-//
-//  Audio rings are name-keyed, not uid-keyed ("audio_drums.bin"), so they
-//  reap against the set of ring FILENAMES referenced by registry slots —
-//  never by parsing a uid out of the name.
+//  Uid claim gate (25 Aug 2026 ruling): a Link restoring its SAVED uid may
+//  find another registry slot already carrying it. Three cases, decided by
+//  the holder's heartbeat, never by inUse alone:
+//    - PROVEN LIVE (heartbeat observed climbing): a genuine duplicate
+//      (copy/paste clones the saved state, uid included) -> THIS instance
+//      re-mints; first to live on the uid keeps it.
+//    - OBSERVED FROZEN through the threshold: a ghost of a dead launch ->
+//      reap the slot and ADOPT the uid. This is the churn fix: the old
+//      guard re-minted against ghosts, so every unclean kill burned an
+//      identity and orphaned its files (62 sidecars on one machine).
+//    - NOT YET DECIDED (just-launched holder, too few observations): WAIT.
+//      An unproven holder is never adopted -- reaping a possibly-live slot
+//      is the one unrecoverable mistake here.
+//  Pure so all three arms gate functionally; the caller re-observes on its
+//  claim-retry tick (~1s; producers bump ~1Hz, so live proves in 1-2 ticks).
+// =============================================================================
+struct UidClaimGate
+{
+    enum class Decision { Wait, Remint, AdoptGhost };
+    RegLiveness live;
+    int ticks = 0;
+    Decision observe (uint32_t holderHb, int frozenTicksNeeded = 5)
+    {
+        ++ticks;
+        if (live.observe (holderHb)) return Decision::Remint;
+        if (ticks >= frozenTicksNeeded) return Decision::AdoptGhost;
+        return Decision::Wait;
+    }
+};
+
+// =============================================================================
+//  Dead-uid file reaper, NARROWED to transient classes (25 Aug 2026 ruling).
+//  The original premise — "a dead uid can never be addressed again" — is
+//  FALSE: the uid is saved in the Link's state and restored on project
+//  reopen, so uids RETURN (proven by a sidecar whose revision went
+//  backwards under one uid). What remains safe to reap:
+//    - PROTOCOL TRANSIENTS (lease, lock, ctrl/chain cmd+ack): consumed or
+//      recency-gated by protocol; a returning Link recreates them from
+//      nothing.
+//    - UNREFERENCED AUDIO RINGS: recreated at openRing by any returning
+//      producer; reaped against the ring FILENAMES referenced by registry
+//      slots — never by parsing a uid out of a name.
+//  SPARED: rack-*.json (the sidecar — a returning uid's rack description)
+//  and structplan-*.json ENTIRELY (a journal is someone's rollback; no
+//  grace window makes deleting one a safe judgement).
 // =============================================================================
 inline int reapDeadUidFiles (const juce::String& dir,
                              const juce::StringArray& liveUids,
@@ -448,7 +481,7 @@ inline int reapDeadUidFiles (const juce::String& dir,
                              juce::int64 nowMs, juce::int64 graceMs)
 {
     int reaped = 0;
-    static const char* uidPatterns[] = { "rack-*.json", "racklock-*.json",
+    static const char* uidPatterns[] = { "racklock-*.json",
         "lease-*.json", "ctrl-cmd-*.json", "ctrl-ack-*.json",
         "chain-cmd-*.json", "chain-ack-*.json" };
     for (auto* pat : uidPatterns)

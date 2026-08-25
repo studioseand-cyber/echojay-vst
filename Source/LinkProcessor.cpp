@@ -1106,22 +1106,50 @@ void LinkProcessor::claimRegistrySlot()
     ensureRegistryOpen();
     if (!regMap || regSlotIdx >= 0) return;
 
-    // Duplication guard: Logic's track-duplicate clones our serialised
-    // state INCLUDING the uid — if another live slot already carries it,
-    // regenerate ours so the two instances stay individually addressable
+    // Duplication guard, HEARTBEAT-DECIDED (25 Aug 2026 ruling): another
+    // slot carrying our saved uid is one of three things, and inUse alone
+    // cannot tell them apart — the old inUse-only re-mint burned an
+    // identity against every GHOST (unclean kill -> frozen slot), which was
+    // the uid-churn engine behind the orphaned files and journals. Now:
+    // proven-live holder -> WE re-mint (real duplicate, first-alive keeps
+    // the uid); observed-frozen holder -> a ghost, reap it and ADOPT our
+    // own uid back; undecided -> WAIT unclaimed (the ~1s updateShmState
+    // tick retries) — an unproven holder is never adopted.
     {
         RegistrySlot* slots = LinkShm::regSlots(regMap);   // global-scope struct
+        int holder = -1;
+        uint32_t holderHb = 0;
         for (int i = 0; i < kRegMaxSlots; ++i)
             if (LinkShm::loadAcquire(&slots[i].inUse) != 0
                 && instanceUid_ == juce::String::fromUTF8(slots[i].instanceUid))
+            { holder = i; holderHb = LinkShm::loadRelaxed(&slots[i].heartbeat); break; }
+        if (holder >= 0)
+        {
+            if (uidGateHolder_ != holder) { uidGate_ = {}; uidGateHolder_ = holder; }
+            switch (uidGate_.observe(holderHb))
             {
-                auto old = instanceUid_;
-                instanceUid_ = juce::String::toHexString(
-                    juce::Random::getSystemRandom().nextInt64()).removeCharacters("-").substring(0, 10);
-                EchoJay_NSLog(("EJLinkState: uid collision (duplicated instance?) "
-                               + old + " -> regenerated " + instanceUid_).toRawUTF8());
-                break;
+                case LinkShm::UidClaimGate::Decision::Wait:
+                    return;   // undecided: stay unregistered, retry next tick
+                case LinkShm::UidClaimGate::Decision::Remint:
+                {
+                    auto old = instanceUid_;
+                    instanceUid_ = juce::String::toHexString(
+                        juce::Random::getSystemRandom().nextInt64()).removeCharacters("-").substring(0, 10);
+                    EchoJay_NSLog(("EJLinkState: uid " + old + " held by a "
+                        "PROVEN-LIVE instance (duplicate) -> regenerated "
+                        + instanceUid_).toRawUTF8());
+                    break;
+                }
+                case LinkShm::UidClaimGate::Decision::AdoptGhost:
+                    LinkShm::reapSlot(regMap, holder);
+                    EchoJay_NSLog(("EJLinkState: uid " + instanceUid_
+                        + " held by a FROZEN ghost slot " + juce::String(holder)
+                        + " -> ghost reaped, uid adopted").toRawUTF8());
+                    break;
             }
+            uidGateHolder_ = -1;
+        }
+        else uidGateHolder_ = -1;
     }
     const juce::String audioFilename = "audio_" + effectiveFilePart() + ".bin";
 

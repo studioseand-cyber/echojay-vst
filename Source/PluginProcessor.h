@@ -1019,6 +1019,18 @@ public:
                                           // Link cannot announce anything, so
                                           // absence must mean "do not send
                                           // controls", never "check a version".
+        bool heartbeatFresh = true;       // heartbeat advanced within ~3s.
+                                          // FALSE = the process stopped
+                                          // answering: the strip renders the
+                                          // distinct "gone" state until the
+                                          // ~30s reap removes the row. This
+                                          // separates DEAD from SILENT; it
+                                          // cannot flag deleted-but-undo-held,
+                                          // because that instance is genuinely
+                                          // alive (Logic keeps deleted
+                                          // channels' plugins running for
+                                          // undo) — no signal of ours can see
+                                          // the arrange page.
     };
 
     /// Refresh the list of known Link slots from the registry.

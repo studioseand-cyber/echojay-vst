@@ -3992,6 +3992,10 @@ void EchoJayProcessor::refreshLinkRegistry()
         info.gainDb     = snap.gainDb;   // Link's built-in gain (0 from old Links)
         info.placement  = snap.placement;   // 0 unset, 1 bus, 2 insert
         info.dialCapable = snap.dialCapable;
+        // Fresh = the heartbeat moved within the last ~3s (6 cycles at 2Hz).
+        // The row stays LISTED while stale (proven-then-frozen) so the strip
+        // can say "gone" distinctly, until the ~30s reap removes it.
+        info.heartbeatFresh = ps.staleCycles < 6;
         newInfos.push_back(std::move(info));
     }
 
