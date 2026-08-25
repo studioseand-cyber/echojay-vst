@@ -1828,10 +1828,48 @@ private:
         // visibility are the one author's (refreshChainPanelForView).
         // Mute/solo (MUTE_SOLO_SPEC): permanent under the rack for a viewed
         // remote rack — where LISTEN sat. Lamps render from the SIDECAR.
-        juce::TextButton      muteBtn { "MUTE" };
-        juce::TextButton      soloBtn { "SOLO" };
-        juce::Label           soloLimitLabel;   // contextual honest-limit line
-        std::function<void()> onMuteClick, onSoloClick;
+        // ONE AUTHOR, TWO PLACEMENTS (28 Aug 2026): the rack's M/S are
+        // the SAME implementation as the mixer strips' — state read from
+        // processor->muteSoloSnaps_ AT PAINT TIME (the closed-loop
+        // sidecar lamp, never a local echo, never retained widget
+        // state), rendering through EchoJayEditor::drawMsLamp, clicks
+        // through the same stripMuteSoloClick. The TextButton version
+        // was a second implementation whose enabled/text state was
+        // authored only on panel rebuilds — the signature early-return
+        // froze it, which is what "three separate faults" were.
+        struct MsLamps : juce::Component, public juce::TooltipClient
+        {
+            juce::String uid;
+            EchoJayProcessor* proc = nullptr;
+            std::function<void(const juce::String&, bool)> onLamp;
+            std::function<juce::String(const juce::String&, bool)> tipFor;
+            juce::Rectangle<int> mRect() const { return { 0, 0, 18, getHeight() }; }
+            juce::Rectangle<int> sRect() const { return { 21, 0, 18, getHeight() }; }
+            void paint(juce::Graphics& g) override
+            {
+                bool cap = false, m = false, s = false;
+                if (proc != nullptr)
+                    if (auto it = proc->muteSoloSnaps_.find(uid);
+                        it != proc->muteSoloSnaps_.end())
+                    { cap = it->second.capable; m = it->second.muteUser;
+                      s = it->second.soloOn; }
+                EchoJayEditor::drawMsLamp(g, mRect(), false, m, cap);
+                EchoJayEditor::drawMsLamp(g, sRect(), true,  s, cap);
+            }
+            void mouseDown(const juce::MouseEvent& e) override
+            {
+                if (onLamp == nullptr || uid.isEmpty()) return;
+                if      (mRect().contains(e.getPosition())) onLamp(uid, false);
+                else if (sRect().contains(e.getPosition())) onLamp(uid, true);
+            }
+            juce::String getTooltip() override
+            {
+                if (tipFor == nullptr || uid.isEmpty()) return {};
+                return tipFor(uid,
+                    sRect().contains(getMouseXYRelative()));
+            }
+        };
+        MsLamps msLamps;
         // The route override (finding: solo routing depends on what the main
         // is). Text IS the active mode; a click flips it. Visible only while
         // an edit-rack session is live; both set by the one author.
@@ -1954,19 +1992,8 @@ private:
                                "The Link mixer follows the same selection.");
             rackBtn.onClick = [this] { if (onRackClick) onRackClick(); };
             addAndMakeVisible(rackBtn);
-            muteBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
-            muteBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffFFB020));
-            muteBtn.onClick = [this] { if (onMuteClick) onMuteClick(); };
-            addChildComponent(muteBtn);     // one author shows it
-            soloBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
-            soloBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffF2E14C));
-            soloBtn.onClick = [this] { if (onSoloClick) onSoloClick(); };
-            addChildComponent(soloBtn);
-            soloLimitLabel.setFont(juce::Font(juce::FontOptions(10.0f)));
-            soloLimitLabel.setColour(juce::Label::textColourId,
-                                     juce::Colour(0xff8a8fa8));
-            soloLimitLabel.setJustificationType(juce::Justification::centred);
-            addChildComponent(soloLimitLabel);
+            msLamps.setName("msLamps");
+            addChildComponent(msLamps);     // one author shows it
 
             addAndMakeVisible(stripView);
             stripView.setViewedComponent(&stripContent, false);
@@ -2684,13 +2711,7 @@ private:
             // narrow the window gets. Same shape as the master knob's
             // reservation at the right end.
             rackBtn.setBounds(8, getHeight() - kStripH + 8, kRackSelW - 16, 24);
-            {
-                const int w = (kRackSelW - 20) / 2;
-                muteBtn.setBounds(8, getHeight() - kStripH + 36, w, 22);
-                soloBtn.setBounds(12 + w, getHeight() - kStripH + 36, w, 22);
-                soloLimitLabel.setBounds(8, getHeight() - kStripH + 60,
-                                         kRackSelW - 16, 14);
-            }
+            msLamps.setBounds(8, getHeight() - kStripH + 36, 39, 18);
             // Pre-gain knob at the HEAD of the strip, left of the first block:
             // its position says what it does (the signal enters here). Shown
             // in local AND remote (a selected rack has a pre-gain too), so it
@@ -4177,8 +4198,13 @@ private:
     void showChainRackMenu();
     // Whole-rack borrow: step 2 (solo) + step 3 (Apply & Release).
     // toggleBorrow (LISTEN) deleted — MUTE_SOLO_SPEC §1.
-    void sendLinkMuteSoloForView(bool isSolo);
     void stripMuteSoloClick(const juce::String& uid, bool isSolo);
+    /** THE ONE M/S LAMP RENDERER (28 Aug 2026): both placements — every
+        mixer strip and the rack panel — draw through this and nothing
+        else. Colour change on state, letter, capability dimming; no
+        words. Two renderers is how the rack drifted. */
+    static void drawMsLamp(juce::Graphics& g, juce::Rectangle<int> r,
+                           bool isSolo, bool lit, bool capable);
     juce::String muteSoloStripTip(const juce::String& uid, bool isSolo) const;
     void sendLinkMuteSoloCommand(const juce::String& uid, bool isSolo, bool on);
     juce::String soloLimitLineText() const;

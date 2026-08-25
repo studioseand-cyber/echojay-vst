@@ -2139,8 +2139,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // label is derived from chainViewUid() on every refresh, so it cannot
     // disagree with the mixer.
     chainListPanel.onRackClick = [this] { showChainRackMenu(); };
-    chainListPanel.onMuteClick = [this] { sendLinkMuteSoloForView(false); };
-    chainListPanel.onSoloClick = [this] { sendLinkMuteSoloForView(true); };
+    // ONE AUTHOR: the rack lamps dispatch through the SAME functions the
+    // mixer strips do — same state source, same transport, same tooltip.
+    chainListPanel.msLamps.proc = &processorRef;
+    chainListPanel.msLamps.onLamp = [this](const juce::String& u, bool isSolo)
+    { stripMuteSoloClick(u, isSolo); };
+    chainListPanel.msLamps.tipFor = [this](const juce::String& u, bool isSolo)
+    { return muteSoloStripTip(u, isSolo); };
     chainListPanel.onRemoteEditorRequest = [this](int slotIdx)
     {
         const juce::String uid = chainViewUid();
@@ -6487,13 +6492,17 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
         // paint and hit-testing never re-derive them.
         if (full.getWidth() >= kStripWWide - 2)
         {
+            // The lamps sit DIRECTLY right of the tick (28 Aug hands-on:
+            // right-anchored lamps left the row reading as two things).
+            // sg.active keeps the full row — Mute/Solo are tested first
+            // in the hit order, so the overlap is behaviourally inert.
             auto act = sg.active;
+            const int tick = juce::jmin(16, act.getHeight() - 2);
+            act.removeFromLeft(tick + 5);
             const int lamp = juce::jmin(18, act.getHeight());
-            sg.solo = act.removeFromRight(lamp);
-            act.removeFromRight(3);
-            sg.mute = act.removeFromRight(lamp);
-            act.removeFromRight(3);
-            sg.active = act;
+            sg.mute = act.removeFromLeft(lamp);
+            act.removeFromLeft(3);
+            sg.solo = act.removeFromLeft(lamp);
         }
         else
         {
@@ -7452,6 +7461,19 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
             { pendingNote = "Added " + lastAddDone_.name + " to " + v.name + "."; break; }
     }
 
+    // M/S lamps authored EVERY tick, BEFORE the signature early-return —
+    // the same rule as the pre-gain knob below, and THE FIX for the rack's
+    // three faults (28 Aug 2026): the old TextButton pair was authored
+    // only on panel rebuilds, so its enabled/text state froze behind the
+    // signature — first render before the sidecar snap ingested left the
+    // buttons disabled (dead clicks), and only forced rebuilds (tab
+    // navigation, status writes) momentarily adopted fresh state. The
+    // lamps hold NO state: uid + visibility here, everything else read
+    // from muteSoloSnaps_ at paint time, exactly like the mixer strips.
+    chainListPanel.msLamps.uid = chainViewUid();
+    chainListPanel.msLamps.setVisible(chainViewUid().isNotEmpty());
+    chainListPanel.msLamps.repaint();
+
     // Pre-gain knob display refreshed EVERY tick, BEFORE the signature
     // early-return below: preGainDb_ is not part of the panel signature (a
     // pre-gain move never bumps the rack revision), so a reset or a remote
@@ -7557,44 +7579,10 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
         // the viewed rack (solo semantics; §8's in-context monitoring
         // becomes this control's second mode when it lands).
         juce::ignoreUnused(capable);
-        // M/S under the rack (MUTE_SOLO_SPEC): PERMANENT for a viewed
-        // remote rack — where LISTEN sat. Lamps from the SIDECAR snapshot
-        // (closed loop, never a local echo); disabled WITH THE REASON
-        // against a binary that never announced the capability.
-        // PERMANENT means permanent (27 Aug hands-on): keyed on "a Link
-        // rack is viewed", NOT on the view flavour — the borrowed session
-        // view is remote=false, so the remote-only rule showed the buttons
-        // for the ~1s between selection and engage and then lost them to
-        // the view flip. During a session they act on the edited rack
-        // (spec §6.1), which is the same uid.
-        const bool showMs = chainViewUid().isNotEmpty();
-        bool msCap = false, mOn = false, sOn = false;
-        if (auto ms = processorRef.muteSoloSnaps_.find(chainViewUid());
-            ms != processorRef.muteSoloSnaps_.end())
-        { msCap = ms->second.capable; mOn = ms->second.muteUser;
-          sOn = ms->second.soloOn; }
-        chainListPanel.muteBtn.setVisible(showMs);
-        chainListPanel.soloBtn.setVisible(showMs);
-        chainListPanel.muteBtn.setEnabled(msCap);
-        chainListPanel.soloBtn.setEnabled(msCap);
-        chainListPanel.muteBtn.setButtonText(mOn ? "MUTED" : "MUTE");
-        chainListPanel.soloBtn.setButtonText(sOn ? "SOLOED" : "SOLO");
-        const juce::String capWhy =
-            "This Link predates mute/solo - reinstall it.";
-        chainListPanel.muteBtn.setTooltip(msCap
-            ? "Mute this Link's channel output - EchoJay's own layer, "
-              "Logic's mute untouched. A mix decision: saves with the "
-              "project." : capWhy);
-        chainListPanel.soloBtn.setTooltip(msCap
-            ? "Solo: every other Link channel mutes. Monitoring only - "
-              "never saved with the project." : capWhy);
-        // The contextual honest-limit line (spec §5, amended): only while
-        // a solo is actually active, one quiet line; the old-binary count
-        // stays a warning and rides the same line.
-        chainListPanel.soloLimitLabel.setVisible(processorRef.soloSetActive_);
-        if (processorRef.soloSetActive_)
-            chainListPanel.soloLimitLabel.setText(soloLimitLineText(),
-                                                  juce::dontSendNotification);
+        // The rack's M/S lamps are authored ABOVE the signature early-out
+        // (one author, two placements — see the pre-sig block); nothing to
+        // do here. The contextual honest-limit line lives on the mixer
+        // title alone (28 Aug: no warning text under a mixer button).
     }
     if (noData)
     {
@@ -9673,29 +9661,17 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
         // Aug 2026 (hands-on ruling): the tick already carries the state
         // at strip width, and the tooltip still speaks the words.
 
-        // M/S lamps (MUTE_SOLO_SPEC): state from the processor's sidecar
-        // snapshot — the closed loop; a click is a request, the lamp is
-        // the Link's answer. An incapable binary renders dim hollow.
+        // M/S lamps: THE ONE RENDERER (drawMsLamp), state read from the
+        // processor's sidecar snapshot at paint time — the closed loop; a
+        // click is a request, the lamp is the Link's answer.
         {
             bool msCap = false, mOn = false, sOn = false;
             if (auto ms = processorRef.muteSoloSnaps_.find(sg.addr);
                 ms != processorRef.muteSoloSnaps_.end())
             { msCap = ms->second.capable; mOn = ms->second.muteUser;
               sOn = ms->second.soloOn; }
-            auto lamp = [&](juce::Rectangle<int> r, const char* letter,
-                            juce::Colour lit, bool on)
-            {
-                auto rf = r.toFloat().reduced(1.0f);
-                if (on) { g.setColour(lit); g.fillRoundedRectangle(rf, 3.0f); }
-                g.setColour(! msCap ? LinkConsole::caption.withAlpha(0.35f)
-                            : on ? juce::Colours::black
-                                 : LinkConsole::caption);
-                if (! on) g.drawRoundedRectangle(rf, 3.0f, 1.0f);
-                g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-                g.drawText(letter, r, juce::Justification::centred);
-            };
-            lamp(sg.mute, "M", juce::Colour(0xffFFB020), mOn);
-            lamp(sg.solo, "S", juce::Colour(0xffF2E14C), sOn);
+            drawMsLamp(g, sg.mute, false, mOn, msCap);
+            drawMsLamp(g, sg.solo, true,  sOn, msCap);
         }
     }
 
@@ -28472,16 +28448,22 @@ void EchoJayEditor::sendLinkMuteSoloCommand(const juce::String& uid,
     repaint();
 }
 
-void EchoJayEditor::sendLinkMuteSoloForView(bool isSolo)
+// sendLinkMuteSoloForView DELETED 28 Aug 2026 — it was the rack's second
+// implementation of the mixer's stripMuteSoloClick. One author now.
+
+void EchoJayEditor::drawMsLamp(juce::Graphics& g, juce::Rectangle<int> r,
+                               bool isSolo, bool lit, bool capable)
 {
-    // The under-rack buttons act on the VIEWED rack; disabled against an
-    // incapable binary, so a reachable click here always has a live snap.
-    const juce::String uid = chainViewUid();
-    auto ms = processorRef.muteSoloSnaps_.find(uid);
-    if (ms == processorRef.muteSoloSnaps_.end() || ! ms->second.capable)
-        return;
-    sendLinkMuteSoloCommand(uid, isSolo,
-        isSolo ? ! ms->second.soloOn : ! ms->second.muteUser);
+    const juce::Colour litCol (isSolo ? (juce::uint32) 0xffF2E14C
+                                      : (juce::uint32) 0xffFFB020);
+    const juce::Colour chrome = LinkConsole::caption;
+    auto rf = r.toFloat().reduced(1.0f);
+    if (lit) { g.setColour(litCol); g.fillRoundedRectangle(rf, 3.0f); }
+    g.setColour(! capable ? chrome.withAlpha(0.35f)
+                : lit ? juce::Colours::black : chrome);
+    if (! lit) g.drawRoundedRectangle(rf, 3.0f, 1.0f);
+    g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+    g.drawText(isSolo ? "S" : "M", r, juce::Justification::centred);
 }
 
 void EchoJayEditor::stripMuteSoloClick(const juce::String& uid, bool isSolo)

@@ -31,6 +31,18 @@ struct EchoJayTabStripTestAccess
     { e.switchToTab (EchoJayEditor::Tab::Chain, true); }
     static juce::Component& panel (EchoJayEditor& e)
     { return e.chainListPanel; }
+    static void toLink (EchoJayEditor& e)
+    { e.switchToTab (EchoJayEditor::Tab::Link, true); }
+    static void measure (EchoJayEditor& e) { e.measureLinkStrips(); }
+    static juce::Component& mixer (EchoJayEditor& e)
+    { return e.linkMixerView_; }
+    static const EchoJayEditor::StripGeom* geomFor (EchoJayEditor& e,
+                                                    const juce::String& addr)
+    {
+        for (const auto& sg : e.linkStripGeom_)
+            if (sg.addr == addr) return &sg;
+        return nullptr;
+    }
 };
 #include "EedDeviceRegistry.h"
 #include "LinkShm.h"   // BorrowRing — the stale-ring decision (finding #3)
@@ -1800,87 +1812,190 @@ int main()
         check (! mainProc.borrowEditPendingHeld_,
                "every ending clears the pending hold with the session");
 
-        // ---- M/S PERMANENCE (27 Aug hands-on): the under-rack buttons
-        // ---- vanished ~1s after selection — the remote-only visibility
-        // ---- rule lost them to the borrowed-view flip on engage. Gated
-        // ---- BY BEHAVIOUR through the REAL editor: after the view flip
-        // ---- and after a status write, the buttons must be visible AND
-        // ---- hittable. getComponentAt respects z-order and visibility,
-        // ---- so a button that exists but is covered, hidden or laid out
-        // ---- away fails this where an existence pin would pass.
+        // ---- M/S PERMANENCE + ONE AUTHOR (27/28 Aug hands-on) ----------
+        // Permanence: the rack lamps survive the borrowed-view flip and a
+        // status write, visible AND hittable (getComponentAt respects
+        // z-order — covered/hidden/mislaid fails where a pin passes).
+        // One author: the SAME click on the rack lamps and on the mixer
+        // strip must publish the SAME state, and BOTH surfaces must show
+        // it — pixel-asserted, because two renderers is how the rack
+        // drifted (its TextButton pair froze behind the panel signature:
+        // first render before the snap ingested left it disabled — dead
+        // clicks; only forced rebuilds momentarily adopted fresh state).
         {
-            mainProc.pendingChannelUid = "uid-lvl";     // view the Link rack
+            // A REAL registered Link row + published sidecar: the snaps
+            // must arrive through the shipping ingest, not a test poke.
+            int errR = 0;
+            const juce::String rdir = LinkShm::resolveDir (errR);
+            int rfd = -1, rerr = 0;
+            void* rmap = LinkShm::openRegistry (rdir, rfd, rerr);
+            check (rmap != nullptr, "one-author arm: registry mapping");
+            auto* rslots = LinkShm::regSlots (rmap);
+            const int ri = 11;
+            const char* ruid = "uid-ms";
+            std::memset (&rslots[ri], 0, sizeof (RegistrySlot));
+            std::strncpy (rslots[ri].displayName, "MS Test", 39);
+            std::memcpy (rslots[ri].instanceUid, ruid, 6);
+            rslots[ri].sampleRate = 48000.0f;
+            rslots[ri].numChannels = 2;
+            LinkShm::storeRelease (&rslots[ri].heartbeat, 1u);
+            LinkShm::storeRelease (&rslots[ri].inUse, 1u);
+            LinkShm::RackSidecar rc;
+            rc.valid = true; rc.uid = ruid; rc.name = "MS Test";
+            rc.muteSoloCapable = true;
+            LinkShm::writeRackSidecar (rdir, rc);
+            for (int t = 0; t < 4; ++t)
+            {
+                LinkShm::storeRelease (&rslots[ri].heartbeat, (uint32_t)(2 + t));
+                mainProc.refreshLinkRegistry();
+            }
+            check (mainProc.muteSoloSnaps_.count (ruid) == 1
+                     && mainProc.muteSoloSnaps_[ruid].capable,
+                   "the sidecar bits arrived through the REAL ingest");
+
+            mainProc.pendingChannelUid = ruid;      // view the Link rack
             std::unique_ptr<juce::AudioProcessorEditor> ed (mainProc.createEditor());
             check (ed != nullptr, "the REAL editor constructed");
             ed->setSize (1280, 820);
-            // The REAL tab path: switchToTab is the single writer of panel
-            // visibility and runs the enter-refresh — the same route a
-            // user's click takes.
             auto* eje = dynamic_cast<EchoJayEditor*> (ed.get());
             check (eje != nullptr, "and is the real EchoJayEditor");
             EchoJayTabStripTestAccess::toChain (*eje);
-            // The sandboxed editor sits on the LOGIN screen (no auth in
-            // the test HOME), whose layout pass skips the main-screen
-            // geometry — so the panel is sized here directly, the same
-            // rect the signed-in layout gives it. Everything else (the
-            // visibility rule, the refresh, z-order inside the panel) is
-            // the real code path.
+            // The sandboxed editor sits on the LOGIN screen, whose layout
+            // pass skips main-screen geometry — the panel is sized here
+            // directly; visibility, refresh and z-order are the shipping
+            // path.
             EchoJayTabStripTestAccess::panel (*eje)
                 .setBounds (0, 96, 900, 640);
             auto pump = [&]{ for (int i = 0; i < 12; ++i)
                              { juce::Timer::callPendingTimersSynchronously();
                                CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); } };
-            auto findBtn = [&](juce::Component* root, const juce::String& t,
-                               auto&& self) -> juce::TextButton*
+            auto findByName = [&](juce::Component* root, const juce::String& nm,
+                                  auto&& self) -> juce::Component*
             {
-                if (auto* b = dynamic_cast<juce::TextButton*> (root))
-                    if (b->getButtonText().startsWith (t)) return b;
+                if (root->getName() == nm) return root;
                 for (auto* c : root->getChildren())
-                    if (auto* r = self (c, t, self)) return r;
+                    if (auto* r = self (c, nm, self)) return r;
                 return nullptr;
             };
-            auto assertHittable = [&](const juce::String& t,
-                                      const juce::String& when)
+            auto lampsHittable = [&](const juce::String& when)
             {
-                auto* b = findBtn (ed.get(), t, findBtn);
-                check (b != nullptr && b->isVisible(),
-                       t + " present and visible " + when,
-                       b == nullptr ? "NOT FOUND"
-                                    : (b->isVisible() ? "ok" : "found, INVISIBLE"));
-                if (b == nullptr || ! b->isVisible()) return;
-                auto* parent = b->getParentComponent();
-                const auto centre = b->getBounds().getCentre();
-                auto* hit = parent != nullptr ? parent->getComponentAt (centre)
-                                              : nullptr;
-                check (hit == b,
-                       t + " HITTABLE (top of z-order at its centre) " + when,
-                       (parent != nullptr
-                          ? "panel " + parent->getBounds().toString()
-                            + " btn " + b->getBounds().toString() + " -> "
-                          : juce::String ("no parent -> "))
-                       + (hit == nullptr ? "hit NOTHING"
-                       : hit == parent ? "hit the PARENT panel"
-                       : "hit " + juce::String (typeid (*hit).name())
-                         + " \"" + hit->getName() + "\""));
+                auto* lamps = findByName (ed.get(), "msLamps", findByName);
+                check (lamps != nullptr && lamps->isVisible(),
+                       "rack lamps present and visible " + when,
+                       lamps == nullptr ? "NOT FOUND"
+                                        : (lamps->isVisible() ? "ok" : "INVISIBLE"));
+                if (lamps == nullptr || ! lamps->isVisible()) return;
+                auto* parent = lamps->getParentComponent();
+                const auto centre = lamps->getBounds().getCentre();
+                check (parent != nullptr
+                         && parent->getComponentAt (centre) == lamps,
+                       "rack lamps HITTABLE " + when);
             };
             pump();
-            assertHittable ("MUTE", "on the remote view");
-            assertHittable ("SOLO", "on the remote view");
-            // The field sequence: engage flips the view to the borrowed
-            // host (remote=false, borrowed=true). Buttons must survive.
-            mainProc.borrowEngageBegin ("uid-lvl", "lease-ms", true, true);
+            lampsHittable ("on the remote view");
+            mainProc.borrowEngageBegin (ruid, "lease-ms", true, true);
             pump();
-            assertHittable ("MUTE", "after the engage view flip");
-            assertHittable ("SOLO", "after the engage view flip");
-            // And survive the last-writer status surface (the one the
-            // "Engaging..." line rides).
+            lampsHittable ("after the engage view flip");
             mainProc.borrowStickyBanner_ = "a status line takes the panel";
             pump();
-            assertHittable ("MUTE", "after a status write");
-            assertHittable ("SOLO", "after a status write");
+            lampsHittable ("after a status write");
             mainProc.borrowRelease (false);
             pump();
-            assertHittable ("MUTE", "after release (back to remote view)");
+            lampsHittable ("after release");
+
+            // ---- ONE AUTHOR, the click half: a REAL mouse event on the
+            // rack lamps, then on the mixer strip, must publish the SAME
+            // field and value (both toggling from the same snap).
+            auto sendClick = [&](juce::Component& target, juce::Point<int> pos)
+            {
+                auto src = juce::Desktop::getInstance().getMainMouseSource();
+                const juce::MouseEvent down (src, pos.toFloat(),
+                    juce::ModifierKeys::leftButtonModifier,
+                    0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                    &target, &target, juce::Time::getCurrentTime(),
+                    pos.toFloat(), juce::Time::getCurrentTime(), 1, false);
+                target.mouseDown (down);
+            };
+            auto readCmd = [&]() -> juce::var
+            {
+                juce::File f (rdir + "ctrl-cmd-" + juce::String (ruid) + ".json");
+                auto v = juce::JSON::parse (f.loadFileAsString());
+                f.deleteFile();
+                return v;
+            };
+            auto* lamps = findByName (ed.get(), "msLamps", findByName);
+            check (lamps != nullptr, "lamps found for the click half");
+            sendClick (*lamps, { 9, 9 });          // the M half
+            auto rackCmd = readCmd();
+            check (rackCmd.getDynamicObject() != nullptr
+                     && rackCmd.hasProperty ("muteUser")
+                     && (bool) rackCmd["muteUser"],
+                   "rack M click published muteUser:true",
+                   juce::JSON::toString (rackCmd, true));
+
+            EchoJayTabStripTestAccess::toLink (*eje);
+            EchoJayTabStripTestAccess::measure (*eje);
+            // The login-screen layout never sizes the scrolled mixer view;
+            // size it here so clicks land and snapshots have pixels. The
+            // geometry itself comes from the real measure pass above.
+            EchoJayTabStripTestAccess::mixer (*eje).setSize (2000, 800);
+            const auto* sgMs = EchoJayTabStripTestAccess::geomFor (*eje, ruid);
+            check (sgMs != nullptr, "the mixer laid out a strip for uid-ms");
+            if (sgMs != nullptr)
+            {
+                sendClick (EchoJayTabStripTestAccess::mixer (*eje),
+                           sgMs->mute.getCentre());
+                auto mixCmd = readCmd();
+                check (mixCmd.getDynamicObject() != nullptr
+                         && mixCmd.hasProperty ("muteUser")
+                         && (bool) mixCmd["muteUser"],
+                       "mixer M click published muteUser:true",
+                       juce::JSON::toString (mixCmd, true));
+                check (rackCmd.hasProperty ("muteUser")
+                         == mixCmd.hasProperty ("muteUser")
+                       && (bool) rackCmd["muteUser"] == (bool) mixCmd["muteUser"]
+                       && ! rackCmd.hasProperty ("soloOn")
+                       && ! mixCmd.hasProperty ("soloOn"),
+                       "SAME published state from both surfaces (one author)");
+            }
+
+            // ---- and BOTH SURFACES SHOW IT: the Link answers (sidecar
+            // muteUser:true), the real ingest re-reads, and both lamps
+            // render LIT — asserted on PIXELS, the rendering itself.
+            juce::Thread::sleep (12);              // mtime resolution
+            rc.muteUser = true;
+            LinkShm::writeRackSidecar (rdir, rc);
+            LinkShm::storeRelease (&rslots[ri].heartbeat, 9u);
+            mainProc.refreshLinkRegistry();
+            check (mainProc.muteSoloSnaps_[ruid].muteUser,
+                   "the answer arrived through the real ingest");
+            auto hasAmber = [](const juce::Image& img)
+            {
+                for (int y = 0; y < img.getHeight(); ++y)
+                    for (int x = 0; x < img.getWidth(); ++x)
+                    {
+                        const auto c = img.getPixelAt (x, y);
+                        if (c.getRed() > 220 && c.getGreen() > 140
+                            && c.getGreen() < 210 && c.getBlue() < 90)
+                            return true;
+                    }
+                return false;
+            };
+            if (lamps != nullptr)
+            {
+                const auto img = lamps->createComponentSnapshot (
+                    { 0, 0, 18, lamps->getHeight() });   // the M half
+                check (hasAmber (img), "the RACK lamp renders LIT (pixels)");
+            }
+            if (sgMs != nullptr)
+            {
+                const auto img = EchoJayTabStripTestAccess::mixer (*eje)
+                    .createComponentSnapshot (sgMs->mute);
+                check (hasAmber (img), "the MIXER lamp renders LIT (pixels)");
+            }
+            LinkShm::storeRelease (&rslots[ri].inUse, 0u);
+            juce::File (LinkShm::rackSidecarPath (rdir, ruid)).deleteFile();
+            mainProc.refreshLinkRegistry();
             mainProc.pendingChannelUid.clear();
         }
         mainProc.setBorrowBudgetActive (false);
