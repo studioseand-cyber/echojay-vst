@@ -1281,7 +1281,8 @@ private:
     // TWO of the same plugin (24 Aug 2026: dup-Create "staged instance
     // vanished", found by the cross-format gate).
     bool planStageOne(const juce::PluginDescription& d, juce::String& whyNot,
-                      int alreadyClaimed = 0);
+                      int alreadyClaimed = 0,
+                      const juce::String& parkKeyIn = {});
     void planRestoreFromPreImages(const LinkShm::StructureEdit::PreImages& pre);
     // The plan's park: staging AND reattachable removals, keyed by the
     // plan's identity vocabulary (name|uid-decimal). Never freed, ever.

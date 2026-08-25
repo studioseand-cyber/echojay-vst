@@ -583,9 +583,16 @@ public:
             // notifyChainModel on every transition, so this rebuild runs on
             // lock and on release, exactly like the lease's engage path.
             const juce::String lockOwner = proc.rackLockOwner();
+            // Two lock states, two truths: a live selection instructs a
+            // deselect; a failure-held session (lease editPending) says an
+            // edit is still pending and what actually releases it — never
+            // an instruction the user already followed.
             const juce::String lockWhy = lockOwner.isNotEmpty()
-                ? "Selected in the rack on \"" + lockOwner
-                    + "\" - deselect there to edit here."
+                ? (proc.rackEditPendingHeld()
+                    ? "An edit from \"" + lockOwner + "\" is still pending - "
+                      "retry or end the session there to release this rack."
+                    : "Selected in the rack on \"" + lockOwner
+                        + "\" - deselect there to edit here.")
                 : juce::String();
 
             for (auto& bl : blocks) stripContent.removeChildComponent(bl.get());
@@ -729,8 +736,12 @@ public:
                 {
                     g.setColour(juce::Colour(0xffFFB020));
                     g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
-                    g.drawText("Selected in the rack on \"" + lockOwner
-                                   + "\" - deselect there to edit here.",
+                    g.drawText(proc.rackEditPendingHeld()
+                                   ? "An edit from \"" + lockOwner
+                                       + "\" is still pending - retry or end "
+                                       "the session there to release this rack."
+                                   : "Selected in the rack on \"" + lockOwner
+                                       + "\" - deselect there to edit here.",
                                8, kNameRowH + 2, getWidth() - 16, 16,
                                juce::Justification::centred, true);
                     // Phase 3: while a structure plan's journal is active,

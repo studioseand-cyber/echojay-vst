@@ -568,6 +568,11 @@ public:
     // banners must not be losable by navigating away (§5a-R honesty rule).
     juce::String borrowStickyBanner_;
     std::map<juce::String, juce::String> unwrittenEditNote_;  // uid -> note
+    // A deselect-apply FAILED and ruling 3 kept the session engaged: the
+    // hold is now a pending edit, not a selection. Rides the lease
+    // (additive "editPending") so the Link's lock banner can say so
+    // instead of instructing a deselect the user already performed.
+    bool borrowEditPendingHeld_ = false;
     juce::String pendingAutoEngage_;   // engage this uid once released
     // §8 in-context state (public: the editor banners from it, the gates
     // assert it): OK = announced AND fits the budget, decided at engage,

@@ -252,6 +252,20 @@ already hold from the pull becomes an undo instead of a question.
    engaged rack surfaces as still-editing until the failure is resolved,
    reverted, or the apply retried and succeeds.)
 
+   **Amendment (27 Aug 2026): the hold names itself on the Link too.**
+   A failure-held session is a pending edit, not a selection — the Link's
+   lock banner must not instruct "deselect there" when the user has
+   already deselected. The main renews the lease with an additive
+   `editPending: true` while ruling 3 holds the session; the Link parses
+   it per poll (absent reads false, so an old main never strands the
+   wording) and its lock banner and edit refusals switch to: *"An edit
+   from "<owner>" is still pending - retry or end the session there to
+   release this rack."* The flag clears with the session (every
+   `borrowRelease` ending) and with the lease (the one restore path).
+   Gated on the FILE from both halves: the main's renew is asserted on
+   disk (false live / true held / cleared on release), the Link's parse
+   through the real poll (absent→false, true→banner state, expiry→clear).
+
 **Two further rulings (26 Aug 2026):**
 
 4. **Editor close applies, then releases — and never strands a lock.** A

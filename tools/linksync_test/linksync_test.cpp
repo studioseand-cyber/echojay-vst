@@ -488,6 +488,32 @@ int main()
                res6.reasons.joinIntoString ("; "));
     }
 
+    // ---- a BUILTIN Create with a NAME-ONLY identity (the session-build
+    // shape) --------------------------------------------------------------
+    // 27 Aug field failure: Phase A pre-resolved the builtin name into a
+    // uid-ful desc and PARKED under name|uid; Phase B reattached by the op
+    // identity's key, name| — "staged instance vanished", whole-plan
+    // rollback. Every prior gate carried a uid, so the keys happened to
+    // agree. The park key must be the plan's identity vocabulary, always.
+    std::printf ("== builtin Create, name-only identity (session build) ==\n");
+    {
+        const auto base7 = host.liveIdentity();
+        const int n7 = (int) base7.size();
+        std::vector<SE::CurrentSlot> cur7;
+        for (int i = 0; i < n7; ++i)
+            cur7.push_back ({ base7[(size_t) i], i, false, false, {}, false, {} });
+        cur7.push_back ({ SE::SlotIdentity { "EJ Sync Probe",
+                                             juce::String(), {} },   // NO uid
+                          -1, true, false, {}, false, {} });
+        auto plan7 = SE::computePlan ("linksync-test", base7, cur7);
+        const auto res7 = proc.applyStructurePlanAndSync (dir, plan7);
+        check (res7.ok,
+               "a name-only builtin Create stages AND reattaches (key symmetry)",
+               res7.reasons.joinIntoString ("; ") + " failedAt=" + res7.failedAt);
+        check (host.getNumSlots() == n7 + 1, "the built slot exists",
+               juce::String (host.getNumSlots()));
+    }
+
     // ---- §8: the lease-carried mute, functionally ------------------------
     // muteOut zeroes the Link's OUTPUT (after the ring write) while the
     // rack lease holds; lifting it restores. Ramped, so the assert allows
@@ -537,11 +563,26 @@ int main()
         EchoJayLinkSyncTestAccess::pollLease (proc);
         check (EchoJayLinkSyncTestAccess::muteWant (proc),
                "the Link's poll reads muteOut from the REAL file");
+        // editPending (27 Aug wrong-banner): absent reads FALSE — an old
+        // main never strands the pending wording.
+        check (! proc.rackEditPendingHeld(),
+               "a lease without editPending reads not-held");
+        const juce::String lease2 =
+            "{\"v\": 1, \"leaseId\": \"lease-file-test\", \"slot\": 0, "
+            "\"scope\": \"rack\", \"muteOut\": true, "
+            "\"editPending\": true, \"tMs\": "
+            + juce::String (juce::Time::currentTimeMillis()) + "}";
+        juce::File (LinkShm::leasePath (ldir, myUid2)).replaceWithText (lease2);
+        EchoJayLinkSyncTestAccess::pollLease (proc);
+        check (proc.rackEditPendingHeld(),
+               "editPending in the FILE reaches the banner state");
         juce::File (LinkShm::leasePath (ldir, myUid2)).deleteFile();
         for (int t = 0; t < 40; ++t)                 // ride to the 3s expiry
             EchoJayLinkSyncTestAccess::pollLease (proc);
         check (! EchoJayLinkSyncTestAccess::muteWant (proc),
                "lease gone -> the want clears through the restore path");
+        check (! proc.rackEditPendingHeld(),
+               "lease gone -> the pending hold clears with it");
     }
 
     // ---- negative control -------------------------------------------------

@@ -1902,6 +1902,9 @@ void EchoJayProcessor::renewBorrowLease()
     const bool muteWant = borrowInContextOk_.load(std::memory_order_relaxed)
         && ! borrowSession_.audioOn.load(std::memory_order_relaxed);
     o->setProperty("muteOut", muteWant);
+    // Additive: the failure-held session names itself so the Link's
+    // banner can speak to the state the user is actually in.
+    o->setProperty("editPending", borrowEditPendingHeld_);
     EchoJay_NSLog(("EJCtx(main): renew muteOut="
         + juce::String(muteWant ? "Y" : "N") + " ok="
         + juce::String(borrowInContextOk_.load(std::memory_order_relaxed) ? "Y" : "N")
@@ -2001,6 +2004,7 @@ void EchoJayProcessor::captureBorrowKept()
 void EchoJayProcessor::borrowRelease(bool keepEdits)
 {
     if (!borrowActive()) return;
+    borrowEditPendingHeld_ = false;  // every ending clears the hold
     if (keepEdits) captureBorrowKept();
     borrowSlotRecords_.clear();
     borrowSlotOrigin_.clear();
@@ -2291,6 +2295,7 @@ void EchoJayProcessor::borrowApplyFinish(bool applied, const juce::String& why,
         + (restored ? name + " was restored to exactly its pre-write rack. "
                     : name + "'s rack was not touched. ")
         + "Fix the cause and leave the rack again to retry.";
+    borrowEditPendingHeld_ = true;   // the hold is a pending edit now
 }
 
 juce::AudioProcessorEditor* EchoJayProcessor::createSlotEditorForView(

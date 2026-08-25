@@ -1748,8 +1748,22 @@ int main()
                      && (bool) lo->getProperty ("muteOut"),
                    "the lease on DISK carries muteOut:true for in-context",
                    lf.loadFileAsString().substring (0, 200));
+            // editPending (27 Aug wrong-banner): a normal session renews
+            // FALSE; the failure-held session renews TRUE — asserted on
+            // the FILE, the only channel the Link's banner can read.
+            check (lo != nullptr && ! (bool) lo->getProperty ("editPending"),
+                   "a live selection renews editPending:false");
+            mainProc.borrowEditPendingHeld_ = true;   // ruling-3 keep arm
+            mainProc.renewBorrowLease();
+            auto lv2 = juce::JSON::parse (lf.loadFileAsString());
+            auto* lo2 = lv2.getDynamicObject();
+            check (lo2 != nullptr && (bool) lo2->getProperty ("editPending"),
+                   "the failure-held session renews editPending:true on DISK",
+                   lf.loadFileAsString().substring (0, 200));
         }
         mainProc.borrowRelease (false);
+        check (! mainProc.borrowEditPendingHeld_,
+               "every ending clears the pending hold with the session");
         mainProc.setBorrowBudgetActive (false);
         // The level arm alone can false-pass on a fresh process (OS pages
         // arrive zeroed; Sean's garbage came from recycled heap), so the

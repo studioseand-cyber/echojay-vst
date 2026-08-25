@@ -589,6 +589,9 @@ void LinkProcessor::pollEditLease()
             rackLeaseMuteWant_.store(o->hasProperty("muteOut")
                 && (bool) o->getProperty("muteOut"),
                 std::memory_order_relaxed);
+            rackLeaseEditPending_.store(o->hasProperty("editPending")
+                && (bool) o->getProperty("editPending"),
+                std::memory_order_relaxed);
             ageMs     = (double) juce::Time::currentTimeMillis()
                           - (double) (juce::int64) o->getProperty("tMs");
         }
@@ -649,6 +652,7 @@ void LinkProcessor::pollEditLease()
             // the slot arm restores its one, through this same switch case.
             leaseActive_.store(false, std::memory_order_relaxed);
             rackLeaseMuteWant_.store(false, std::memory_order_relaxed);
+            rackLeaseEditPending_.store(false, std::memory_order_relaxed);
             if (rackLeaseActive_)
             {
                 rackLeaseRelease();
@@ -2060,7 +2064,10 @@ void LinkProcessor::addChainPluginManually(const juce::PluginDescription& desc,
 {
     if (rackLockGuard("add"))
     {
-        if (done) done("This rack is selected on \"" + rackLockOwner_
+        if (done) done(rackEditPendingHeld()
+            ? "An edit from \"" + rackLockOwner_ + "\" is still pending - "
+              "retry or end the session there to release this rack."
+            : "This rack is selected on \"" + rackLockOwner_
                        + "\" - deselect there to edit here.");
         return;
     }

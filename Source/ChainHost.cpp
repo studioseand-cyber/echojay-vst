@@ -4147,15 +4147,19 @@ bool ChainHost::tryReattachParked(const juce::PluginDescription& d, int insertAt
 }
 
 bool ChainHost::planStageOne(const juce::PluginDescription& d, juce::String& whyNot,
-                             int alreadyClaimed)
+                             int alreadyClaimed, const juce::String& parkKeyIn)
 {
     // Already staged/parked by identity: a retried Apply instantiates zero
     // new (spec amendment 3) — but only BEYOND what this plan has already
     // claimed of the same key, or a plan creating two of one plugin gets
     // one instance and Phase B finds the park empty for the second.
-    const auto key = planKeyOf({ d.name,
-                                 descUid(d) != 0 ? juce::String(descUid(d))
-                                                 : juce::String(), {} });
+    // parkKeyIn: the caller's identity-vocabulary key (Phase A) — when
+    // given it OVERRIDES the derived key, keeping park and reattach
+    // symmetric whatever the staging desc resolved to.
+    const auto key = parkKeyIn.isNotEmpty() ? parkKeyIn
+        : planKeyOf({ d.name,
+                      descUid(d) != 0 ? juce::String(descUid(d))
+                                      : juce::String(), {} });
     if (auto it = planPark_.find(key); it != planPark_.end()
         && (int) it->second.size() > alreadyClaimed)
         return true;
@@ -4329,19 +4333,25 @@ ChainHost::PlanResult ChainHost::applyStructurePlan(
     for (const auto& op : plan.ops)
         if (op.type == OpType::Create)
         {
-            juce::PluginDescription d;
-            d.name = op.identity.name;
-            d.uniqueId = op.identity.uid.getIntValue();
-            if (isBuiltinDescription(resolveByName(op.name, {})))
-                d = resolveByName(op.name, {});
-            const auto stageDesc = d.name.isNotEmpty() ? d
-                                                       : resolveByName(op.name, {});
-            const auto key = planKeyOf({ stageDesc.name,
-                                         stageDesc.uniqueId != 0
-                                             ? juce::String(stageDesc.uniqueId)
+            juce::PluginDescription idDesc;
+            idDesc.name = op.identity.name;
+            idDesc.uniqueId = op.identity.uid.getIntValue();
+            // THE PARK KEY IS THE PLAN'S IDENTITY VOCABULARY — the same key
+            // Phase B's reattach derives from op.identity. Staging may
+            // resolve to a richer desc (builtin registry, catalogue), but
+            // the key NEVER follows the resolution (27 Aug: a name-only
+            // identity pre-resolved to a builtin's uid-ful desc, Phase A
+            // parked under name|uid, Phase B looked up name| — "staged
+            // instance vanished", whole-plan rollback).
+            const auto key = planKeyOf({ idDesc.name,
+                                         descUid(idDesc) != 0
+                                             ? juce::String(descUid(idDesc))
                                              : juce::String(), {} });
+            auto stageDesc = idDesc;
+            if (isBuiltinDescription(resolveByName(op.name, {})))
+                stageDesc = resolveByName(op.name, {});
             juce::String why;
-            if (! planStageOne(stageDesc, why, claimed[key]))
+            if (! planStageOne(stageDesc, why, claimed[key], key))
                 r.reasons.add(why);
             else
                 ++claimed[key];

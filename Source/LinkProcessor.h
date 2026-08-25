@@ -514,6 +514,8 @@ public:
     // guarded here — that is the lock OWNER'S write path.
     // Empty = unlocked; else the owning main's display name for the overlay.
     juce::String rackLockOwner() const { return rackLockOwner_; }
+    bool rackEditPendingHeld() const
+        { return rackLeaseEditPending_.load(std::memory_order_relaxed); }
     // true = refused (and said so in the log — a guard that can silently do
     // nothing must assert that it did something).
     bool rackLockGuard(const char* op);
@@ -539,6 +541,10 @@ private:
     // §8 in-context: the lease-carried mute (muteOut). Want set by the poll
     // (message thread), consumed on the audio thread through the ramp.
     std::atomic<bool>  rackLeaseMuteWant_ { false };
+    // The lease says the main's session is held open by a FAILED write
+    // (§5a-R ruling 3): the lock banner must speak to a pending edit,
+    // not instruct a deselect the user already performed.
+    std::atomic<bool>  rackLeaseEditPending_ { false };
     juce::SmoothedValue<float> rackMuteMix_ { 1.0f };
     bool               planJournalChecked_ = false;   // once per process
 public:

@@ -142,6 +142,20 @@ instance per added plugin, not three — the second attempt's Phase A
 reuses the first attempt's staged instances. Growth bounds at distinct
 identities staged, same §3a economics as everywhere else.
 
+**The park key is the PLAN's identity vocabulary — never the resolved
+desc's (27 Aug 2026, field failure).** Phase A may resolve a Create into
+a richer description than the op carried (a builtin name gains the
+builtin's uid; a bare name+uid resolves against the catalogue), but the
+park key must be computed from the op identity as sent, because Phase B's
+reattach derives its key from that same identity. The session build sends
+name-only identities (a substitute's uid is never sent — §5a-R), and the
+builtin pre-resolution parked under `name|uid` while reattach looked up
+`name|`: "staged instance vanished", whole-plan rollback, on a plan of
+nothing but builtins. Every earlier gate happened to carry uids, so the
+keys agreed by luck. Now `planStageOne` takes the caller's identity key
+explicitly, and the gate stages a builtin Create with a NAME-ONLY
+identity — the exact session-build shape.
+
 **The risk ranking, stated because it changes the design's center of
 gravity** (amendment, 22 Aug 2026): every plugin in a Create op has
 ALREADY loaded successfully in this process, in the borrowed host, on
