@@ -401,12 +401,14 @@ rather than argued against:
   the main on that channel's path — a post-Link channel EQ, sends tapped
   post-Link, bus processing the channel feeds elsewhere — processes
   silence during the session, and the injected signal bypasses it.
-  Extended 26 Aug 2026 (the crackle redesign): the injection also no
-  longer passes the MAIN's own chain — it sums post-chain, post-delay,
-  on its own pad line, because that is what makes the passthrough delay
-  CONSTANT and the mix physically unable to click on a rack switch or a
-  mid-build latency jump. A pad change interrupts only the ramped
-  injection. This
+  (A 26 Aug draft of the crackle fix moved the injection post-chain and
+  was REVERSED by ruling the same day: on a Mix Bus main the injected
+  channel bypassing the master processing would sound BETTER rather
+  than wrong, which is worse — the mix would be judged against it. The
+  constant passthrough delay and the pre-chain sum are independent: the
+  full budget delays the passthrough BEFORE the sum, the injection pads
+  itself to the same age on its own line, both pass the main's chain
+  together, and mainChainLat cancels out of the arithmetic.) This
   is the same class of approximation the through-main solo route already
   accepts, now said where the default lives. The banner does not claim
   "exactly your mix"; it claims your edits in place of that channel.

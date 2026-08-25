@@ -1046,6 +1046,55 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     const bool ctxNow = borrowActive()
                         && borrowInContextOk_.load(std::memory_order_relaxed)
                         && ! listenSolo;
+    // §8.3 (26 Aug, corrected per ruling): the CONSTANT full-budget delay
+    // sits on the passthrough BEFORE the sum, so at this point the
+    // passthrough is aged exactly `budget` and the injection — inherently
+    // aged cushion + chainLat, padded on ITS OWN line by
+    // budget - cushion - chainLat — is aged the same. Both then pass the
+    // MAIN'S OWN CHAIN together (the fidelity claim: the injected channel
+    // is processed like the original was), and no post-delay exists.
+    // mainChainLat cancels out of the arithmetic entirely. The passthrough
+    // delay NEVER changes (the crackle fix stands); a pad change still
+    // interrupts only the ramped injection.
+    if (borrowBudgetActive_.load(std::memory_order_relaxed))
+    {
+        alignPost_.process(buffer, kBorrowAlignBudgetFrames);
+        const int ctxChainLat = borrowChainLat_.load(std::memory_order_relaxed);
+        const int injPad = alignPad(ctxChainLat);
+        borrowCtxMix_.setTargetValue(ctxNow && injPad >= 0 ? 1.0f : 0.0f);
+        const int padKey = (ctxNow && injPad >= 0) ? injPad : -1;
+        if (padKey != borrowLastPadKey_)
+        {
+            // A pad change interrupts ONLY the injection: silence it, clear
+            // its history, ramp back in. The passthrough never notices.
+            borrowLastPadKey_ = padKey;
+            alignPre_.buf.clear();
+            borrowCtxMix_.setCurrentAndTargetValue(0.0f);
+            borrowCtxMix_.setTargetValue(ctxNow && injPad >= 0 ? 1.0f : 0.0f);
+        }
+        if ((ctxNow && injPad >= 0)
+            || borrowCtxMix_.getCurrentValue() > 0.0001f)
+        {
+            const int nS = buffer.getNumSamples();
+            const bool have = borrowHost_ != nullptr
+                           && borrowBuf_.getNumSamples() >= nS;
+            juce::AudioBuffer<float> inj(borrowBuf_.getArrayOfWritePointers(),
+                                         2, 0, nS);
+            if (have) alignPre_.process(inj, std::max(0, padKey));
+            for (int i = 0; i < nS; ++i)
+            {
+                const float g = borrowCtxMix_.getNextValue();
+                for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                {
+                    const float v = have
+                        ? inj.getSample(std::min(ch, 1), i) : 0.0f;
+                    buffer.getWritePointer(ch)[i] += v * g;
+                }
+            }
+        }
+        else
+            borrowCtxMix_.skip(buffer.getNumSamples());
+    }
     if (borrowThrough)
         applyBorrowSoloMixOn(buffer, listenSolo);
 
@@ -1228,57 +1277,6 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             editSoloMix_.skip(buffer.getNumSamples());
     }
 
-    // §8.3 FINAL STAGE. Passthrough: the CONSTANT budget delay — the
-    // report moves only on the capable-Link 0<->1 transition, and the
-    // internal delay now never moves at all (the crackle fix). Injection:
-    // borrowBuf_ padded on ITS OWN line to
-    // budget + mainChainLat - cushion - chainLat, summed POST-chain and
-    // post-delay so both paths age exactly (mainChainLat + budget). The
-    // §8.1 residual grows one clause: the injection no longer passes the
-    // MAIN's own chain either (recorded in the spec) — the price of a mix
-    // that cannot click.
-    if (borrowBudgetActive_.load(std::memory_order_relaxed))
-    {
-        alignPost_.process(buffer, kBorrowAlignBudgetFrames);
-        const int ctxChainLat = borrowChainLat_.load(std::memory_order_relaxed);
-        const int basePad = alignPad(ctxChainLat);
-        const int injPad = basePad >= 0
-            ? basePad + std::max(0, chainHost.hostReportableLatencySamples())
-            : -1;
-        borrowCtxMix_.setTargetValue(ctxNow && injPad >= 0 ? 1.0f : 0.0f);
-        const int padKey = (ctxNow && injPad >= 0) ? injPad : -1;
-        if (padKey != borrowLastPadKey_)
-        {
-            // A pad change interrupts ONLY the injection: silence it, clear
-            // its history, ramp back in. The passthrough never notices.
-            borrowLastPadKey_ = padKey;
-            alignPre_.buf.clear();
-            borrowCtxMix_.setCurrentAndTargetValue(0.0f);
-            borrowCtxMix_.setTargetValue(ctxNow && injPad >= 0 ? 1.0f : 0.0f);
-        }
-        if ((ctxNow && injPad >= 0)
-            || borrowCtxMix_.getCurrentValue() > 0.0001f)
-        {
-            const int nS = buffer.getNumSamples();
-            const bool have = borrowHost_ != nullptr
-                           && borrowBuf_.getNumSamples() >= nS;
-            juce::AudioBuffer<float> inj(borrowBuf_.getArrayOfWritePointers(),
-                                         2, 0, nS);
-            if (have) alignPre_.process(inj, std::max(0, padKey));
-            for (int i = 0; i < nS; ++i)
-            {
-                const float g = borrowCtxMix_.getNextValue();
-                for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-                {
-                    const float v = have
-                        ? inj.getSample(std::min(ch, 1), i) : 0.0f;
-                    buffer.getWritePointer(ch)[i] += v * g;
-                }
-            }
-        }
-        else
-            borrowCtxMix_.skip(buffer.getNumSamples());
-    }
 }
 
 // ============ Channel Type Detection ============
