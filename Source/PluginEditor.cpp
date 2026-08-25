@@ -28009,51 +28009,88 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
     // through here, so all three gain the borrowed arm at once.
     if (auto* bhB = processorRef.borrowHostIfActiveFor(linkUid))
     {
-        auto ops = ChainHost::parseChainEditOps(chainJson);
-        if (ops.empty())
+        // THE PAYLOAD IS A CHAIN ARRAY, not edit-ops (27 Aug: "Nothing to
+        // build" on a live session — the first divert parsed the wrong
+        // schema and the honest empty-parse banner shipped as the symptom).
+        // Convert each entry to an add-op so resolution, loading, settings
+        // text, STRUCTURED DIALING and wet all ride the proven
+        // applyChainEdits machinery on the borrowed host; a build REPLACES
+        // the rack (matching what the Link's own build does), recorded
+        // honestly in the session as removes + creates.
+        auto pv  = juce::JSON::parse(chainJson);
+        auto* po = pv.getDynamicObject();
+        auto* arr = (po != nullptr && po->hasProperty("chain"))
+                        ? po->getProperty("chain").getArray() : nullptr;
+        if (arr == nullptr || arr->isEmpty())
         {
-            chainListPanel.statusText = "Nothing to build.";
+            chainListPanel.statusText = "Failed: chain data could not be read.";
             chainListPanel.repaint();
             return;
         }
-        // baseSlots = the CURRENT session shape, so the staleness check
-        // inside applyChainEdits can never false-refuse our own session.
+        auto& p3 = processorRef;
         juce::StringArray baseNow;
-        for (const auto& si : bhB->getAllSlotInfos()) baseNow.add(si.name);
-        const int slotsBefore = bhB->getNumSlots();
+        const int nOld = bhB->getNumSlots();
+        for (int i = 0; i < nOld; ++i)
+        {
+            const juce::String nm = bhB->getSlotInfo(i).name;
+            baseNow.add(nm);
+            // Removal memory captured NOW — the facts die with the rows
+            // (the onRemoveSlot rule).
+            const int origin = i < (int) p3.borrowSlotOrigin_.size()
+                                   ? p3.borrowSlotOrigin_[(size_t) i] : -1;
+            if (origin >= 0)
+            {
+                p3.borrowRemovedNames_.add(nm);
+                if (origin < (int) p3.borrowSlotRecords_.size()
+                    && p3.borrowSlotRecords_[(size_t) origin].hadState
+                    && ! bhB->borrowSlotSeededWithState(i))
+                    p3.borrowRemovedWithheld_.add(nm);
+            }
+        }
+        // ONE conversion, shared with the functional gate.
+        auto ops = ChainHost::chainArrayToReplaceOps(*arr, nOld);
+        const int expectAdds = (int) ops.size() - nOld;
+        EchoJay_NSLog(("EJChain: build target uid=" + linkUid
+            + "  path=SESSION (borrowed host) removes=" + juce::String(nOld)
+            + " adds=" + juce::String(expectAdds)).toRawUTF8());
         auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+        chainListPanel.closeAllEditors();
+        chainListPanel.statusText = "Building " + juce::String(expectAdds)
+            + " plugin(s) into your edit session...";
+        chainListPanel.repaint();
         bhB->applyChainEdits(std::move(ops), -1, baseNow,
-            [safeThis, slotsBefore, linkUid](const juce::StringArray& results,
-                                             int applied, bool aborted)
+            [safeThis, linkUid](const juce::StringArray& results,
+                                int applied, bool aborted)
         {
             if (safeThis == nullptr) return;
-            auto& p3 = safeThis->processorRef;
-            auto* bh2 = p3.borrowHostIfActiveFor(linkUid);
+            auto& p4 = safeThis->processorRef;
+            auto* bh2 = p4.borrowHostIfActiveFor(linkUid);
             if (bh2 == nullptr) return;
-            // SESSION BOOKKEEPING for every slot the build created: origin
-            // -1 (the Create class), identity by LOADED NAME with no uid —
-            // name-only loose resolution on the Link finds the family even
-            // when local hosting substituted a build (the picked-plugin
-            // lesson: never send a substitute's uid).
-            for (int i = slotsBefore; i < bh2->getNumSlots(); ++i)
+            // WHOLESALE session bookkeeping: every surviving slot is a
+            // CREATE (origin -1, name-only identity — never a substitute's
+            // uid — and a record). The base identity snapshot stays: the
+            // deselect plan is removes-of-the-original + these creates.
+            p4.borrowSlotOrigin_.assign((size_t) bh2->getNumSlots(), -1);
+            p4.borrowCreatedIdentity_.clear();
+            for (int i = 0; i < bh2->getNumSlots(); ++i)
             {
-                p3.borrowSlotOrigin_.push_back(-1);
-                p3.borrowCreatedIdentity_.push_back(
+                p4.borrowCreatedIdentity_.push_back(
                     { bh2->getSlotInfo(i).name, {}, {} });
                 EchoJayProcessor::BorrowSlotRecord cr;
                 cr.name = bh2->getSlotInfo(i).name;
-                p3.borrowSlotRecords_.push_back(std::move(cr));
+                p4.borrowSlotRecords_.push_back(std::move(cr));
             }
-            const int added = bh2->getNumSlots() - slotsBefore;
+            safeThis->chainSelectedSlot_ = bh2->getNumSlots() > 0 ? 0 : -1;
             safeThis->chainListPanel.statusText =
                 (aborted ? juce::String("Build stopped early - ")
                          : juce::String())
-                + "Built " + juce::String(added) + " plugin"
-                + (added == 1 ? "" : "s") + " into your edit session - "
-                "writes to " + p3.resolveLinkDisplayName(linkUid)
+                + "Built " + juce::String(bh2->getNumSlots()) + " plugin"
+                + (bh2->getNumSlots() == 1 ? "" : "s")
+                + " into your edit session - writes to "
+                + p4.resolveLinkDisplayName(linkUid)
                 + " when you leave this rack. ("
-                + juce::String(applied) + "/"
-                + juce::String(results.size()) + " ops applied.)";
+                + juce::String(applied) + "/" + juce::String(results.size())
+                + " ops.)";
             safeThis->refreshChainPanelForView(true);
         });
         return;

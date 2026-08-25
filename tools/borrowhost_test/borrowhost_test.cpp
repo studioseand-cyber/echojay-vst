@@ -1317,6 +1317,58 @@ int main()
                "the borrowed view's signature reads the borrowed host");
     }
 
+    std::printf ("== build-into-session, functionally (27 Aug) ==\n");
+    {
+        // "Nothing to build" shipped because the first divert parsed the
+        // wrong schema and only a source pin guarded it. This gate does
+        // what the order says: session live, a proposed CHAIN ARRAY (the
+        // real payload shape), and the borrowed host's slot count asserted
+        // afterwards — through the ONE shared conversion the divert uses.
+        EchoJayProcessor bp;
+        bp.borrowEngageBegin ("uid-build", "lease-build", true, true);
+        auto* bhb = bp.borrowHost();
+        check (bhb != nullptr, "session engaged for the build gate");
+        borrowRack (*bhb);                       // 2 originals
+        check (bhb->getNumSlots() == 2, "two originals present");
+        juce::Array<juce::var> chainArr;
+        for (const char* nm : { "EJ Borrow Probe", "EJ Borrow Grinch",
+                                "EJ Borrow Probe" })
+        {
+            auto* eo = new juce::DynamicObject();
+            eo->setProperty ("name", nm);
+            eo->setProperty ("settings", "gate settings text");
+            chainArr.add (juce::var (eo));
+        }
+        auto ops = ChainHost::chainArrayToReplaceOps (chainArr,
+                                                      bhb->getNumSlots());
+        check ((int) ops.size() == 5,
+               "the conversion yields removes + adds (2 + 3)",
+               juce::String ((int) ops.size()));
+        juce::StringArray baseB { "EJ Borrow Probe", "EJ Borrow Grinch" };
+        bool done = false; int appliedN = 0;
+        bhb->applyChainEdits (std::move (ops), -1, baseB,
+            [&done, &appliedN] (const juce::StringArray&, int applied, bool)
+            { appliedN = applied; done = true; });
+        // The sequencer defers between ops (message-thread async), so the
+        // headless gate pumps the run loop + pending timers until done.
+        for (int t = 0; t < 200 && ! done; ++t)
+        {
+            juce::Timer::callPendingTimersSynchronously();
+            CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false);
+        }
+        check (done, "the build sequencer completed");
+        check (bhb->getNumSlots() == 3,
+               "the proposed chain BUILT into the borrowed host (3 slots)",
+               juce::String (bhb->getNumSlots()));
+        check (bhb->getSlotInfo (0).name == "EJ Borrow Probe"
+                 && bhb->getSlotInfo (1).name == "EJ Borrow Grinch"
+                 && bhb->getSlotInfo (2).name == "EJ Borrow Probe",
+               "in the proposed ORDER (append semantics held)");
+        check (bhb->getSlotInfo (0).settings == "gate settings text",
+               "settings text attached to the built slots");
+        bp.borrowRelease (false);
+    }
+
     std::printf ("== nextCtrlSeq: distinct under same-millisecond bursts ==\n");
     {
         // The ruling's gate: two commands issued in the same millisecond get

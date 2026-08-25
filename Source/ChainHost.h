@@ -409,6 +409,32 @@ public:
     };
     // Parse edit-block JSON. Returns empty on malformed payloads. Static so
     // preview cards can humanize ops without touching a host.
+    // §5a-R build-into-session (27 Aug 2026): convert a chat-build CHAIN
+    // ARRAY ({name, settings, settings_structured, wet_pct} entries) into
+    // replace ops — removes of the current rack, then appends in order.
+    // Pure and static: the editor's session divert and the functional gate
+    // share ONE conversion, so the gate exercises the real engine.
+    static std::vector<ChainEditOp> chainArrayToReplaceOps(
+        const juce::Array<juce::var>& chainArr, int currentSlots)
+    {
+        std::vector<ChainEditOp> ops;
+        for (int i = 0; i < currentSlots; ++i)
+        { ChainEditOp rm; rm.op = "remove"; rm.slot = i; ops.push_back(rm); }
+        for (const auto& ev : chainArr)
+            if (auto* eo = ev.getDynamicObject())
+            {
+                ChainEditOp ad;
+                ad.op    = "add";
+                ad.after = 9999;   // >= map size -> append in order
+                ad.name  = eo->getProperty("name").toString();
+                ad.settings = eo->getProperty("settings").toString();
+                ad.structuredSettings = eo->getProperty("settings_structured");
+                if (eo->hasProperty("wet_pct"))
+                    ad.wetPct = (float)(double) eo->getProperty("wet_pct");
+                if (ad.name.isNotEmpty()) ops.push_back(std::move(ad));
+            }
+        return ops;
+    }
     static std::vector<ChainEditOp> parseChainEditOps(const juce::String& editJson,
                                                       juce::StringArray* baseSlotsOut = nullptr,
                                                       juce::String* explanationOut = nullptr);
