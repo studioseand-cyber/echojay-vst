@@ -109,6 +109,12 @@ public:
                                             // prior remap maps through this
     };
     std::vector<LinkShm::StructureEdit::SlotIdentity> liveIdentity() const;
+    // §5a-R revert point: pre-apply images held in memory after a successful
+    // plan apply — this session's undo. Consumed on revert; discarded by the
+    // next lease engage (clearRevertPoint); never persisted.
+    bool revertLastApply(const juce::String& journalDir);
+    void clearRevertPoint();
+    bool hasRevertPoint() const noexcept { return hasLastApplyPre_; }
     LinkShm::StructureEdit::PreImages planCapturePreImages() const;
     PlanResult applyStructurePlan(const juce::String& journalDir,
                                   const LinkShm::StructureEdit::Plan& plan);
@@ -1260,6 +1266,8 @@ private:
     // The plan's park: staging AND reattachable removals, keyed by the
     // plan's identity vocabulary (name|uid-decimal). Never freed, ever.
     std::map<juce::String, std::vector<BorrowPoolEntry>> planPark_;
+    LinkShm::StructureEdit::PreImages lastApplyPre_;   // §5a-R revert point
+    bool hasLastApplyPre_ = false;
     int  planFresh_ = 0;
     static juce::String borrowPoolKey(const juce::PluginDescription& d)
     {

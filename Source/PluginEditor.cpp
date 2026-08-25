@@ -2644,6 +2644,11 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
 }
 
 EchoJayEditor::~EchoJayEditor() {
+    // §5a-R ruling 4: a window close COMMITS like a deselect, then releases
+    // — and never strands a lock. The orchestration lives on the processor
+    // precisely because this editor is dying and cannot poll an ack.
+    processorRef.borrowEditorClosed();
+
     // Rack lock: the editor IS the gate — no editor, no claim. Clearing the
     // declaration deletes the lock file now; the 3s expiry covers the crash
     // path where this line never runs.
@@ -7169,6 +7174,10 @@ void EchoJayEditor::refreshLinkRackCache(bool force)
     const uint32_t nowMs = juce::Time::getMillisecondCounter();
     if (!force && nowMs - lastRackCacheMs_ < 1000) return;
     lastRackCacheMs_ = nowMs;
+    // §5a-R: the ~1Hz tick that retries a deferred auto-engage (a release
+    // was in flight, or the capability cache had not filled) and presents
+    // the post-apply revert offer.
+    borrowSelectionTick();
     for (const auto& e : processorRef.getLinkDisplayList())
     {
         if (e.info.uid.isEmpty()) continue;   // legacy Link: no sidecar address
@@ -7535,20 +7544,20 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
             if (auto it = processorRef.linkRackCache.find(chainViewUid());
                 it != processorRef.linkRackCache.end())
                 capable = it->second.rack.borrowCapable;
-        // A LIVE BORROW keeps its release reachable from EVERY chain view
-        // (hands-on finding #3): a selection snap must never strand a borrow
-        // whose only exit is closing the window.
-        const bool showBorrow = v.borrowed
-            || processorRef.borrowActive()
-            || (v.remote && v.valid && !v.offline && capable
-                && processorRef.rackLockHeldFor(chainViewUid()));
-        chainListPanel.borrowBtn.setVisible(showBorrow);
+        // §5a-R: no EDIT RACK, no RELEASE — selection is the session. The
+        // button is now LISTEN, shown only while a session is engaged for
+        // the viewed rack (solo semantics; §8's in-context monitoring
+        // becomes this control's second mode when it lands).
+        juce::ignoreUnused(capable);
+        const bool sessionHere = processorRef.borrowActive()
+            && processorRef.borrowUid() == chainViewUid();
+        chainListPanel.borrowBtn.setVisible(sessionHere);
         chainListPanel.borrowBtn.setButtonText(
-            !processorRef.borrowActive() ? "EDIT RACK"
-            : "RELEASE " + processorRef.resolveLinkDisplayName(
-                               processorRef.borrowUid()).toUpperCase());
-        // The route override, visible only while editing; text IS the mode.
-        chainListPanel.borrowRouteBtn.setVisible(processorRef.borrowActive());
+            processorRef.borrowAudioIsOn() ? "LISTENING" : "LISTEN");
+        // The route override, visible only while actually listening; the
+        // text IS the mode.
+        chainListPanel.borrowRouteBtn.setVisible(
+            sessionHere && processorRef.borrowAudioIsOn());
         chainListPanel.borrowRouteBtn.setButtonText(
             processorRef.borrowRouteThroughMain() ? "HEARD: THROUGH THIS CHAIN"
                                                   : "HEARD: REPLACES OUTPUT");
@@ -7598,6 +7607,19 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
             chainListPanel.statusText = chainListPanel.restingHint_;
             lastAddLine_.clear();
         }
+        // §5a-R honesty surfaces, NOT losable by navigating away: the
+        // session-outcome sticky banner (processor state, survives view
+        // changes and editor recreation) and the unwritten-edit note for
+        // the VIEWED rack (ruling 4: the next window on that rack states
+        // plainly that the last edit was not written). Both are cleared
+        // only by a NEW session superseding them, never by navigation.
+        if (processorRef.borrowStickyBanner_.isNotEmpty()
+            && pendingNote.isEmpty())
+            chainListPanel.statusText = processorRef.borrowStickyBanner_;
+        if (auto nit = processorRef.unwrittenEditNote_.find(chainViewUid());
+            nit != processorRef.unwrittenEditNote_.end()
+            && ! processorRef.borrowActive())
+            chainListPanel.statusText = nit->second;
     }
     chainListPanel.rackBtn.setButtonText("RACK: " + v.name.toUpperCase());
     repaint();
@@ -7705,182 +7727,181 @@ void EchoJayEditor::showChainRackMenu()
 // edited is a byte-diff against the post-seed baseline.
 std::vector<std::pair<bool, bool>> EchoJayEditor::borrowSlotVerdicts()
 {
-    std::vector<std::pair<bool, bool>> out;
-    auto* bh = processorRef.borrowHost();
-    const auto& recs = processorRef.borrowSlotRecords_;
-    const auto& origins = processorRef.borrowSlotOrigin_;
-    for (int i = 0; i < bh->getNumSlots() && i < (int) origins.size(); ++i)
-    {
-        const int origin = origins[(size_t) i];
-        if (origin < 0)
-        {
-            // Created in the main: always a change, never withheld (the
-            // Link never had it — spec §3's Create class). LOGGED like
-            // every other slot — a diagnostic that skips slots is how the
-            // lost-add read as "only two verdict lines".
-            EchoJay_NSLog(("EJApply: slot " + juce::String(i) + " \""
-                + bh->getSlotInfo(i).name + "\" CREATED here - no pulled "
-                  "state, never withheld, edited by definition -> CREATE")
-                .toRawUTF8());
-            out.emplace_back(false, true);
-            continue;
-        }
-        if (origin >= (int) recs.size()) { out.emplace_back(false, false); continue; }
-        const auto& r = recs[(size_t) origin];
-        // THE RECORDED FACT, never a recomputed policy (22 Aug 2026):
-        // withheld means "a state was pulled and the seed did not apply it".
-        // A slot the Link had no state for is NOT withheld — committing
-        // edits to it writes nothing over anything.
-        const bool seeded   = bh->borrowSlotSeededWithState(i);
-        const bool withheld = r.hadState && ! seeded;
-        juce::String nowB64;
-        if (auto* p = bh->getSlotProcessor(i))
-        {
-            juce::MemoryBlock mb;
-            try { p->getStateInformation(mb); } catch (...) { mb.reset(); }
-            if (mb.getSize() > 0) nowB64 = LinkShm::stateToB64(mb);
-        }
-        const bool edited = nowB64 != r.baselineB64;
-        // THE DIAGNOSTIC the zero-commit round was missing: one line per
-        // slot at classify time — verdict, why, edit, action.
-        const auto action = LinkShm::BorrowCommit::classify(withheld, edited);
-        EchoJay_NSLog(("EJApply: slot " + juce::String(i) + " \"" + r.name
-            + "\" hadState=" + (r.hadState ? "Y" : "N")
-            + " seeded=" + (seeded ? "Y" : "N")
-            + " -> withheld=" + (withheld ? "Y" : "N")
-            + (withheld ? " (pulled state was never seeded)" : "")
-            + " edited=" + (edited ? "Y" : "N")
-            + " action=" + (action == LinkShm::BorrowCommit::Action::Commit ? "COMMIT"
-                            : action == LinkShm::BorrowCommit::Action::LeaveWithheld
-                                ? "LEAVE-WITHHELD" : "LEAVE-UNEDITED")).toRawUTF8());
-        out.emplace_back(withheld, edited);
-    }
-    return out;
+    // §5a-R: moved to the PROCESSOR with the orchestrator. Thin delegate.
+    return processorRef.borrowSlotVerdicts();
 }
 
-// Shape-dirty from the SESSION FACTS, independently of the plan: any created
-// slot (origin -1), any recorded removal, or any reorder. A tail removal
-// leaves origins identity-shaped, which is why removedNames is checked too.
-// This is the cross-check that catches a plan computing empty against a
-// session that says otherwise — the two must never disagree silently.
 bool EchoJayEditor::borrowSessionShapeDirty() const
 {
-    if (! processorRef.borrowRemovedNames_.isEmpty()) return true;
-    const auto& org = processorRef.borrowSlotOrigin_;
-    for (size_t i = 0; i < org.size(); ++i)
-        if (org[i] != (int) i) return true;   // created (-1) or reordered
-    return false;
+    return processorRef.borrowSessionShapeDirty();
 }
 
+// ---------------------------------------------------------------------------
+// §5a-R (26 Aug 2026): selection IS the session. No EDIT RACK, no RELEASE,
+// no Apply confirm — selecting a Link's rack engages (lock, pull, editable,
+// Link greyed, NO audio); deselecting applies automatically through the
+// PROCESSOR's orchestrator (an editor cannot poll an ack it may not
+// outlive). toggleBorrow keeps its name (the button wiring is untouched)
+// but is now the LISTEN control — solo semantics today, and the seam for
+// §8's in-context monitoring as a second mode of this same control.
+// ---------------------------------------------------------------------------
 void EchoJayEditor::toggleBorrow()
 {
-    // Release acts on the LIVE borrow whatever rack the view shows — the
-    // button stays reachable from every view precisely so a selection snap
-    // cannot strand the borrow (finding #3).
-    if (processorRef.borrowActive())
-    {
-        // EXPLICIT APPLY, never an implicit commit on deselect (§5a): with
-        // uncommitted edits OR shape changes, the release asks first through
-        // the one confirm implementation. Capability routes the ask: a
-        // structure-capable Link gets the plan-worded ask; an older Link
-        // keeps the settings-only ask, and never sees a plan.
-        if (processorRef.borrowStructureCapable_)
-        {
-            // ONE COMPUTATION (23 Aug 2026): the plan built HERE is the plan
-            // Apply sends — pendingStructPlan_ carries it across the confirm.
-            // Rebuilding at send time is how an add was lost: the ask said
-            // adds=1, the send computed empty, and the release was silent.
-            pendingStructPlanValid_ = false;
-            const auto splan = buildStructurePlan();
-            if (! splan.ops.empty() || splan.changed > 0)
-            {
-                pendingStructPlan_ = splan;
-                pendingStructPlanValid_ = true;
-                presentStructureApplyAsk(splan);
-                return;
-            }
-            // An EMPTY plan from a shape-dirty session is a DEFECT, said
-            // loudly, session kept live — never a silent release. The log
-            // carries the arithmetic that names the inconsistent input.
-            if (borrowSessionShapeDirty())
-            {
-                auto* bh = processorRef.borrowHost();
-                EchoJay_NSLog(("EJStruct: DEFECT empty plan from shape-dirty "
-                    "session: slots=" + juce::String(bh ? bh->getNumSlots() : -1)
-                    + " origins=" + juce::String((int) processorRef.borrowSlotOrigin_.size())
-                    + " records=" + juce::String((int) processorRef.borrowSlotRecords_.size())
-                    + " base=" + juce::String((int) processorRef.borrowBaseIdentity_.size())
-                    + " removedNames=" + juce::String(processorRef.borrowRemovedNames_.size()))
-                    .toRawUTF8());
-                chainListPanel.statusText = "Your session is still live. "
-                    "Release found a defect: your shape changes computed "
-                    "into an EMPTY plan - nothing was sent or released. "
-                    "Please report this.";
-                chainListPanel.repaint();
-                return;
-            }
-        }
-        else
-        {
-            const auto plan = LinkShm::BorrowCommit::plan(borrowSlotVerdicts());
-            if (plan.changed > 0)
-            {
-                presentBorrowApplyAsk(plan);
-                return;
-            }
-        }
-        const juce::String owner =
-            processorRef.resolveLinkDisplayName(processorRef.borrowUid());
-        processorRef.clearBorrowKept();
-        processorRef.borrowRelease(false);
-        chainListPanel.statusText = "Released - " + owner
-            + " owns its rack again. Nothing was changed on either side.";
-        refreshChainPanelForView(true);
-        return;
-    }
-    startBorrow(chainViewUid());
+    auto& p = processorRef;
+    if (! p.borrowActive()) return;
+    if (p.borrowAudioIsOn()) p.borrowAudioOff();
+    else                     p.borrowAudioOn();
+    refreshChainPanelForView(true);
 }
 
-void EchoJayEditor::presentBorrowApplyAsk(const LinkShm::BorrowCommit::Plan& plan)
+void EchoJayEditor::handleBorrowSelectionChange(const juce::String& newUid)
 {
-    // Fourth thin wrapper on the ONE presenter — wording + chips only,
-    // intent class apply_ (inside the replace-ask supersede class, never an
-    // unscoped prefix). THE ASYMMETRY IN WORDS, before anything is written:
-    // changed N, committing C, leaving the rest untouched — and edited-but-
-    // withheld slots named as never-written (§5c's hard rule, said aloud).
-    const juce::String name =
-        processorRef.resolveLinkDisplayName(processorRef.borrowUid());
-    const int total = (int) plan.actions.size();
-    juce::String question =
-        "You changed " + juce::String(plan.changed) + " of "
-        + juce::String(total) + " plugin" + (total == 1 ? "" : "s") + " on "
-        + name + ". Apply writes " + juce::String(plan.committing)
-        + " back to " + name;
-    if (plan.withheldEdited > 0)
-        question += " - the other " + juce::String(plan.withheldEdited)
-                  + " arrived without " + name + "'s real settings and "
-                    "will NEVER be written over them";
-    question += "; " + juce::String(plan.untouched) + " unchanged plugin"
-              + (plan.untouched == 1 ? "" : "s") + " stay"
-              + (plan.untouched == 1 ? "s" : "") + " untouched.";
+    auto& p = processorRef;
+    // DESELECT of an engaged rack applies automatically — editing a rack in
+    // the main means overwriting the Link's, by default (ruling 2). On
+    // failure the deselect does not COMPLETE: the session stays engaged and
+    // the sticky banner says why (ruling 3); the view may move on.
+    if (p.borrowActive() && p.borrowUid() != newUid)
+    {
+        if (p.borrowStructureCapable_)
+            p.borrowApplyAndRelease(/*releaseLockOnFail=*/false);
+        else
+            runBorrowApply();   // legacy: per-slot commits, then releases
+    }
+    // SELECT engages — deferred to the tick while a release is in flight.
+    p.pendingAutoEngage_ = newUid;
+    borrowSelectionTick();
+}
 
+void EchoJayEditor::borrowSelectionTick()
+{
+    auto& p = processorRef;
+    // The post-apply revert offer rides the shelf, once per apply (§5a-R
+    // rulings 1 and 5): the shelf is the not-losable surface, and the
+    // wording says this-session-only.
+    if (p.revertOfferUid_.isNotEmpty())
+    {
+        const juce::String uid = p.revertOfferUid_;
+        p.revertOfferUid_.clear();
+        presentRevertOffer(uid);
+    }
+    if (p.borrowActive() || p.borrowApplyInFlight_) return;
+    const juce::String want = p.pendingAutoEngage_;
+    if (want.isEmpty() || want != chainViewUid()) return;
+    bool capable = false;
+    if (auto it = p.linkRackCache.find(want); it != p.linkRackCache.end())
+        capable = it->second.rack.borrowCapable;
+    if (! capable) return;        // read-only view; the tick retries as the cache fills
+    p.pendingAutoEngage_.clear();
+    startBorrow(want);
+}
+
+void EchoJayEditor::revertInSession()
+{
+    // In-session revert: the Link is untouched until an apply happens, so
+    // "before I touched it" is a drop-and-re-pull. THIS SESSION only.
+    auto& p = processorRef;
+    if (! p.borrowActive()) return;
+    const juce::String uid = p.borrowUid();
+    p.clearBorrowKept();
+    p.borrowRelease(false);
+    p.borrowStickyBanner_.clear();
+    startBorrow(uid);
+    chainListPanel.statusText = "Reverted - this rack is back to before this "
+        "edit session. Nothing was written to the Link.";
+    chainListPanel.repaint();
+}
+
+void EchoJayEditor::presentRevertOffer(const juce::String& uid)
+{
+    const juce::String name = processorRef.resolveLinkDisplayName(uid);
     juce::Array<juce::var> choices;
     for (auto [label, intent] : { std::pair<const char*, const char*>
-             { "Apply & Release", "apply_confirm" },
-             { "Discard & Release", "apply_discard" },
-             { "Keep editing", "apply_keep" } })
+             { "Revert this session", "revert_rack" },
+             { "Keep it", "revert_dismiss" } })
     {
         auto* c = new juce::DynamicObject();
         c->setProperty("label",  label);
         c->setProperty("intent", intent);
+        c->setProperty("revert_uid", uid);
         choices.add(juce::var(c));
     }
-    presentReplaceAsk(question, choices,
-                      "apply to \"" + name + "\"",
-                      "EJApply: ask shown changed=" + juce::String(plan.changed)
-                          + " committing=" + juce::String(plan.committing)
-                          + " withheldEdited=" + juce::String(plan.withheldEdited)
-                          + " answer=pending");
+    presentReplaceAsk("Applied to " + name + ". Revert restores its rack to "
+        "before this edit session - available until the next edit session "
+        "starts on it.",
+        choices, "revert \"" + name + "\"",
+        "EJApply: revert offer shown uid=" + uid + " answer=pending");
+}
+
+void EchoJayEditor::sendRevertLastApply(const juce::String& uid)
+{
+    // The Link restores its OWN pre-apply images (exact, withheld states
+    // included — the main never had those). Consumed on use; a refusal
+    // means the point was already used or a new session cleared it, and
+    // the banner says so in the ruling's this-session wording.
+    if (uid.isEmpty()) return;
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    const juce::String name = processorRef.resolveLinkDisplayName(uid);
+    if (dir.isEmpty())
+    {
+        chainListPanel.statusText = "Cannot revert: the shared Link folder "
+            "is unavailable.";
+        chainListPanel.repaint();
+        return;
+    }
+    const int seq = LinkShm::nextCtrlSeq();
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",   1);
+    cmd->setProperty("seq", seq);
+    cmd->setProperty("revertLastApply", true);
+    EchoJay_NSLog(("EJStruct: send revert uid=" + uid
+                   + " seq=" + juce::String(seq)).toRawUTF8());
+    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();
+    juce::File(dir + "ctrl-cmd-" + uid + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    auto poll = std::make_shared<std::function<void(int)>>();
+    *poll = [safeThis, uid, seq, dir, name, poll](int left)
+    {
+        juce::Timer::callAfterDelay(250, [safeThis, uid, seq, dir, name, poll, left]
+        {
+            if (safeThis == nullptr) return;
+            juce::File ack(dir + "ctrl-ack-" + uid + ".json");
+            if (ack.existsAsFile())
+            {
+                auto v = juce::JSON::parse(ack.loadFileAsString());
+                if (auto* o = v.getDynamicObject(); o != nullptr
+                    && (int) o->getProperty("seq") == seq)
+                {
+                    ack.deleteFile();
+                    const bool done = (bool) o->getProperty("revertDone");
+                    EchoJay_NSLog(("EJStruct: revert ack uid=" + uid
+                        + " done=" + (done ? "Y" : "N")).toRawUTF8());
+                    safeThis->chainListPanel.statusText = done
+                        ? "Reverted - " + name + "'s rack is back to before "
+                          "the last edit session."
+                        : "Could not revert: no revert point held (already "
+                          "used, or a new edit session started on " + name
+                          + " since).";
+                    safeThis->processorRef.borrowStickyBanner_ =
+                        safeThis->chainListPanel.statusText;
+                    safeThis->refreshChainPanelForView(true);
+                    return;
+                }
+            }
+            if (left <= 1)
+            {
+                EchoJay_NSLog(("EJStruct: revert NO ACK uid=" + uid).toRawUTF8());
+                safeThis->chainListPanel.statusText =
+                    "Revert got no answer from " + name + ".";
+                safeThis->chainListPanel.repaint();
+                return;
+            }
+            (*poll)(left - 1);
+        });
+    };
+    (*poll)(20);
 }
 
 void EchoJayEditor::runBorrowApply()
@@ -7912,7 +7933,7 @@ void EchoJayEditor::runBorrowApply()
     st->name = proc.resolveLinkDisplayName(uid);
     st->baseSlots = baseSlots;
 
-    const auto plan = LinkShm::BorrowCommit::plan(borrowSlotVerdicts());
+    const auto plan = LinkShm::BorrowCommit::plan(processorRef.borrowSlotVerdicts());
     auto* bh = proc.borrowHost();
     for (int i = 0; i < (int) plan.actions.size(); ++i)
     {
@@ -8190,7 +8211,15 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
                 }
                 p2.clearBorrowKept();
             }
-            p2.borrowAudioOn();
+            // §5a-R: the session engages SILENT — listening is its own
+            // control now. No borrowAudioOn here; LISTEN turns it on.
+            // A new session supersedes the previous session's surfaces:
+            // the unwritten-note for this uid, the sticky banner, and the
+            // shelf's revert offer are all about a session that is no
+            // longer the latest.
+            p2.unwrittenEditNote_.erase(st->uid);
+            p2.borrowStickyBanner_.clear();
+            if (p2.revertOfferUid_ == st->uid) p2.revertOfferUid_.clear();
             // §5c's loud banner: withheld = the RECORDED fact per slot.
             int withheldN = 0;
             for (int i = 0; i < (int) p2.borrowSlotRecords_.size(); ++i)
@@ -8205,23 +8234,17 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
                          "written back). "
                      : juce::String())
                 + "Editing " + p2.resolveLinkDisplayName(st->uid)
-                + " here - soloed, "
-                + (p2.borrowRouteThroughMain()
-                       ? juce::String("heard through this channel's own chain. ")
-                       : juce::String("replacing this channel's output. "))
+                + " here - changes write to it when you leave this rack. "
                 + (restoredKept
-                       ? juce::String("Your uncommitted edits from the "
+                       ? juce::String("Your unwritten edits from the "
                              "interrupted session were RESTORED. ")
                        : juce::String())
-                + "Edits are audible and uncommitted until Apply.";
+                + "LISTEN hears it on this channel.";
             safeThis->refreshChainPanelForView(true);
         });
-        // Empty rack: no slots to settle, engage the (dry) solo directly.
+        // Empty rack: no slots to settle; the session is engaged, silent.
         if (want == 0)
-        {
-            proc.borrowAudioOn();
             safeThis->refreshChainPanelForView(true);
-        }
     };
 
     *step = [safeThis, st, step, finish]()
@@ -8303,311 +8326,9 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
 // ---------------------------------------------------------------------------
 LinkShm::StructureEdit::Plan EchoJayEditor::buildStructurePlan()
 {
-    // From the SESSION SNAPSHOTS (base identity captured at engage, origins
-    // mutated by the affordances) — never re-read from the cache, so a
-    // mid-session republish cannot shear the plan from what the user did.
-    auto& proc = processorRef;
-    auto* bh = proc.borrowHost();
-    const auto& base    = proc.borrowBaseIdentity_;
-    const auto& origins = proc.borrowSlotOrigin_;
-    const auto verdicts = borrowSlotVerdicts();
-    std::vector<LinkShm::StructureEdit::CurrentSlot> current;
-    for (int i = 0; i < (int) origins.size() && i < (int) verdicts.size(); ++i)
-    {
-        juce::String nowB64;
-        if (auto* p = bh->getSlotProcessor(i))
-        {
-            juce::MemoryBlock mb;
-            try { p->getStateInformation(mb); } catch (...) { mb.reset(); }
-            if (mb.getSize() > 0) nowB64 = LinkShm::stateToB64(mb);
-        }
-        const int o = origins[(size_t) i];
-        current.push_back({
-            o >= 0 && o < (int) base.size()
-                ? base[(size_t) o]
-                : proc.borrowCreatedIdentity_[(size_t) i],
-            o, verdicts[(size_t) i].second, verdicts[(size_t) i].first,
-            nowB64,
-            // The live bypass — rides the Create op so the Link's lease
-            // restore has a truth for a slot that predates no lease.
-            bh->getSlotInfo(i).bypassed,
-            // The live instance's FORMAT: nowB64 came out of it, and the
-            // main may be hosting a substitute build — the Link seeds a
-            // Create only when this matches what it stages (§5c across
-            // formats; a blob never crosses formats silently).
-            bh->getSlotInfo(i).format });
-    }
-    return LinkShm::StructureEdit::computePlan(proc.borrowUid(), base, current);
-}
-
-void EchoJayEditor::presentStructureApplyAsk(const LinkShm::StructureEdit::Plan& plan)
-{
-    // Phase 3: THE SHAPE IN WORDS, not just counts — every op appears by
-    // name, and removing a withheld slot gets its own line (it deletes
-    // settings the user never saw). Fifth thin wrapper on the one presenter,
-    // same apply_ intents; the chip handler routes by capability.
-    auto& proc = processorRef;
-    const juce::String name = proc.resolveLinkDisplayName(proc.borrowUid());
-    // EVERY list renders from the PLAN'S OPS — the plan this ask is asking
-    // about is the plan Apply will send, and nothing here reads a second
-    // session copy that could disagree (two sources is how the add was lost).
-    juce::StringArray adds, removes;
-    for (const auto& op : plan.ops)
-    {
-        if (op.type == LinkShm::StructureEdit::OpType::Create)
-            adds.add(op.name);
-        if (op.type == LinkShm::StructureEdit::OpType::Remove)
-            removes.add(op.name);
-    }
-    // The withheld-removal memory is a session FACT (recorded at removal
-    // time) — but it only speaks for names the PLAN actually removes.
-    juce::StringArray removedWithheld;
-    for (const auto& nm : proc.borrowRemovedWithheld_)
-        if (removes.contains(nm)) removedWithheld.add(nm);
-    juce::String q = "Apply your changes to " + name + "?";
-    if (! adds.isEmpty())
-        q += " Adding: " + adds.joinIntoString(", ") + ".";
-    if (! removes.isEmpty())
-        q += " Removing: " + removes.joinIntoString(", ") + ".";
-    if (! removedWithheld.isEmpty())
-        q += " NOTE - " + removedWithheld.joinIntoString(", ")
-           + " arrived without " + name + "'s real settings: removing "
-             "deletes settings you never saw.";
-    if (plan.moving > 0)
-        q += " Moving " + juce::String(plan.moving) + " slot"
-           + (plan.moving == 1 ? "" : "s") + " into your order.";
-    q += " Settings: you changed " + juce::String(plan.changed)
-       + ", Apply writes " + juce::String(plan.committing) + " back";
-    if (plan.withheldEdited > 0)
-        q += " - " + juce::String(plan.withheldEdited)
-           + " arrived without real settings and will NEVER be written over them";
-    q += "; " + juce::String(plan.untouched) + " unchanged stay untouched. "
-         "The whole plan applies, or none of it.";
-
-    juce::Array<juce::var> choices;
-    for (auto [label, intent] : { std::pair<const char*, const char*>
-             { "Apply & Release", "apply_confirm" },
-             { "Discard & Release", "apply_discard" },
-             { "Keep editing", "apply_keep" } })
-    {
-        auto* c = new juce::DynamicObject();
-        c->setProperty("label",  label);
-        c->setProperty("intent", intent);
-        choices.add(juce::var(c));
-    }
-    presentReplaceAsk(q, choices, "apply to \"" + name + "\"",
-        "EJApply: structure ask shown adds=" + juce::String(plan.creating)
-            + " removes=" + juce::String(plan.removing)
-            + " moves=" + juce::String(plan.moving)
-            + " commits=" + juce::String(plan.committing) + " answer=pending");
-}
-
-void EchoJayEditor::runStructureApply()
-{
-    // EVERY return between answer=apply and the send SPEAKS IN BOTH
-    // CHANNELS — a log line for the reviewer and a banner for the user
-    // (24 Aug 2026: three silent answer=apply attempts; a banner without a
-    // log is invisible in a log review, and a bare return is invisible in
-    // both).
-    auto& proc = processorRef;
-    const juce::String uid = proc.borrowUid();
-    if (uid.isEmpty())
-    {
-        EchoJay_NSLog("EJStruct: DEFECT apply with no live session uid - "
-                      "nothing sent");
-        chainListPanel.statusText = "Apply found no live session - nothing "
-            "was sent. Please report this.";
-        chainListPanel.repaint();
-        return;
-    }
-    // Capability, the never-half-see gate: the SNAPSHOT from engage — a
-    // Link that cannot journal a plan never receives one.
-    if (LinkShm::StructureEdit::accept(proc.borrowStructureCapable_)
-            != LinkShm::StructureEdit::Accept::Proceed)
-    {
-        EchoJay_NSLog(("EJStruct: refused send uid=" + uid
-                       + " - Link not structure-capable").toRawUTF8());
-        chainListPanel.statusText =
-            "Your session is still live. Cannot apply structure changes: this "
-            "Link's build cannot journal a plan. Update it.";
-        chainListPanel.repaint();
-        return;
-    }
-    // ONE COMPUTATION: send EXACTLY the plan the ask rendered and the user
-    // confirmed. Recomputing here is the lost-add defect — the ask said
-    // adds=1, the recomputation said empty, and the empty plan applied
-    // trivially and released. If no confirmed plan is pending, refuse.
-    if (! pendingStructPlanValid_)
-    {
-        EchoJay_NSLog(("EJStruct: refused send uid=" + uid
-                       + " - no confirmed plan pending").toRawUTF8());
-        chainListPanel.statusText = "Your session is still live. Apply had no "
-            "confirmed plan to send - nothing was sent; release again to "
-            "review and Apply.";
-        chainListPanel.repaint();
-        return;
-    }
-    const auto plan = pendingStructPlan_;
-    pendingStructPlanValid_ = false;
-    if (plan.ops.empty())
-    {
-        // The ask never presents an empty plan; reaching here is a defect.
-        EchoJay_NSLog(("EJStruct: DEFECT empty plan reached Apply: origins="
-            + juce::String((int) proc.borrowSlotOrigin_.size())
-            + " records=" + juce::String((int) proc.borrowSlotRecords_.size())
-            + " base=" + juce::String((int) proc.borrowBaseIdentity_.size()))
-            .toRawUTF8());
-        chainListPanel.statusText = "Your session is still live. Apply found "
-            "a defect: the confirmed plan is EMPTY - nothing was sent or "
-            "released. Please report this.";
-        chainListPanel.repaint();
-        return;
-    }
-
-    int err = 0;
-    const juce::String dir = LinkShm::resolveDir(err);
-    if (dir.isEmpty())
-    {
-        EchoJay_NSLog(("EJStruct: refused send uid=" + uid
-                       + " - shared Link folder unavailable").toRawUTF8());
-        chainListPanel.statusText = "Your session is still live. Cannot apply: "
-            "the shared Link folder is unavailable.";
-        chainListPanel.repaint();
-        return;
-    }
-    const int seq = LinkShm::nextCtrlSeq();
-    auto* cmd = new juce::DynamicObject();
-    cmd->setProperty("v",   1);
-    cmd->setProperty("seq", seq);
-    cmd->setProperty("structPlan",
-        LinkShm::StructureEdit::planToVar(plan, {}));
-    // THE SEND LOGS BEFORE IT WRITES, unconditionally — this line is what
-    // separates "never sent" from "sent and waiting" in a log review, and
-    // that distinction is the whole diagnosis.
-    EchoJay_NSLog(("EJStruct: send uid=" + uid
-                   + " ops=" + juce::String((int) plan.ops.size())
-                   + " seq=" + juce::String(seq)).toRawUTF8());
-    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();
-    if (! juce::File(dir + "ctrl-cmd-" + uid + ".json")
-            .replaceWithText(juce::JSON::toString(juce::var(cmd), true)))
-    {
-        // A failed write is the perfect silent failure: no cmd on disk, no
-        // Link receipt, a poll that can only time out. Checked and SAID.
-        EchoJay_NSLog(("EJStruct: cmd write FAILED uid=" + uid
-                       + " seq=" + juce::String(seq)).toRawUTF8());
-        chainListPanel.statusText = "Your session is still live. Apply could not "
-            "write the command file - nothing was sent.";
-        chainListPanel.repaint();
-        return;
-    }
-
-    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    auto poll = std::make_shared<std::function<void(int)>>();
-    *poll = [safeThis, uid, seq, dir, poll](int left)
-    {
-        juce::Timer::callAfterDelay(250, [safeThis, uid, seq, dir, poll, left]
-        {
-            if (safeThis == nullptr)
-            {
-                // The editor died mid-wait: no banner is possible, but the
-                // log must not go quiet — this was a wordless path.
-                EchoJay_NSLog(("EJStruct: ack poll abandoned (editor "
-                    "destroyed) uid=" + uid + " seq=" + juce::String(seq))
-                    .toRawUTF8());
-                return;
-            }
-            auto& p2 = safeThis->processorRef;
-            const juce::String name = p2.resolveLinkDisplayName(uid);
-            juce::File ack(dir + "ctrl-ack-" + uid + ".json");
-            if (ack.existsAsFile())
-            {
-                auto v = juce::JSON::parse(ack.loadFileAsString());
-                auto* o = v.getDynamicObject();
-                if (o != nullptr && (int) o->getProperty("seq") != seq)
-                    // A stale or foreign ack on the channel is a diagnosis
-                    // in itself (the seconds-resolution seq can collide) —
-                    // name it, keep polling.
-                    EchoJay_NSLog(("EJStruct: stale ack uid=" + uid
-                        + " got seq=" + o->getProperty("seq").toString()
-                        + " want=" + juce::String(seq)).toRawUTF8());
-                if (o != nullptr && (int) o->getProperty("seq") == seq)
-                {
-                    ack.deleteFile();
-                    // The transport itself can refuse (consume-and-answer
-                    // ruling): duplicate seq, bad version, malformed. Named
-                    // to the user and the log; the session stays live.
-                    if (o->hasProperty("refused"))
-                    {
-                        const juce::String why =
-                            o->getProperty("refused").toString();
-                        EchoJay_NSLog(("EJStruct: ack REFUSED uid=" + uid
-                            + " seq=" + juce::String(seq)
-                            + " why=" + why).toRawUTF8());
-                        safeThis->chainListPanel.statusText =
-                            "Your session is still live. Apply was refused by "
-                            + name + "'s transport - " + why
-                            + ". Nothing was applied.";
-                        safeThis->refreshChainPanelForView(true);
-                        return;
-                    }
-                    if ((bool) o->getProperty("planApplied"))
-                    {
-                        EchoJay_NSLog(("EJStruct: ack applied uid=" + uid
-                            + " seq=" + juce::String(seq)).toRawUTF8());
-                        // The one success path: applied whole, released.
-                        p2.clearBorrowKept();
-                        p2.borrowRelease(false);
-                        safeThis->chainListPanel.statusText =
-                            "Applied to " + name + " - the whole plan, or none "
-                            "of it. " + name + " owns its rack again.";
-                        safeThis->refreshChainPanelForView(true);
-                        return;
-                    }
-                    // FAILURE NEVER RELEASES (spec amendment 1): the Link
-                    // rolled back or refused; the user's shape and settings
-                    // are still here — fix the cause and retry.
-                    juce::String reasons;
-                    if (auto* rs = o->getProperty("planReasons").getArray())
-                        for (auto& r : *rs)
-                            reasons << (reasons.isEmpty() ? "" : "; ")
-                                    << r.toString();
-                    EchoJay_NSLog(("EJStruct: ack FAILED uid=" + uid
-                        + " seq=" + juce::String(seq)
-                        + " restored=" + ((bool) o->getProperty("planRestored") ? "Y" : "N")
-                        + " reasons=" + reasons).toRawUTF8());
-                    // SESSION STATE FIRST (24 Aug 2026: the status line
-                    // truncated before this sentence, so a working refusal
-                    // read as a hang and Apply was pressed four times).
-                    safeThis->chainListPanel.statusText =
-                        "Your session is still live. Apply failed - "
-                        + reasons + ". "
-                        + ((bool) o->getProperty("planRestored")
-                               ? name + " was restored to exactly its "
-                                 "pre-Apply rack. "
-                               : name + "'s rack was not touched. ")
-                        + "Fix the cause and Apply again.";
-                    safeThis->refreshChainPanelForView(true);
-                    return;
-                }
-            }
-            if (left <= 1)
-            {
-                EchoJay_NSLog(("EJStruct: NO ACK uid=" + uid
-                    + " seq=" + juce::String(seq)
-                    + " after 10s - the Link never answered").toRawUTF8());
-                safeThis->chainListPanel.statusText =
-                    "Your session is still live. Apply got no answer from "
-                    + name + " - nothing may have changed there.";
-                safeThis->refreshChainPanelForView(true);
-                return;
-            }
-            (*poll)(left - 1);
-        });
-    };
-    // 40 x 250ms = 10s: Phase A stages REAL plugin instances (blocking
-    // createPluginInstance per Create), so the Link can legitimately take
-    // seconds before it can ack. The timeout SPEAKS when it fires.
-    (*poll)(40);
+    // §5a-R: moved to the PROCESSOR (the deselect/close apply must outlive
+    // this editor). Thin delegate kept for the remaining editor callers.
+    return processorRef.buildStructurePlan();
 }
 
 void EchoJayEditor::sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemove)
@@ -22336,45 +22057,25 @@ void EchoJayEditor::onAskChipTapped(int i)
     //                   intent): the tap IS the disambiguation;
     //                   route it through handleChainRecall, which
     //                   still asks before replacing a non-empty rack.
-    // STEP 3: the Apply & Release ask's chips. Entirely client-side, no
-    // chat turn. Confirm commits the plan then releases; discard releases
-    // and clears the kept edits (the user's explicit choice of loss);
-    // keep-editing just closes the shelf and the session continues.
-    if (intent == "apply_confirm" || intent == "apply_discard"
-        || intent == "apply_keep")
+    // §5a-R: the Apply ask's chips are GONE — deselect applies, revert
+    // replaces discard. The shelf now carries the post-apply REVERT offer
+    // (this-session-only, per ruling 5).
+    if (intent == "revert_rack" || intent == "revert_dismiss")
     {
         logTap(intent);
         supersedePendingReplaceAsks();
         askShelfVisible_ = false;
         resized();
-        if (intent == "apply_confirm")
+        if (intent == "revert_rack")
         {
-            EchoJay_NSLog("EJApply: answer=apply");
-            // Capability routes the commit vehicle: a structure-capable
-            // Link gets the journaled plan; an older Link keeps the
-            // per-slot commits and never sees a plan.
-            if (processorRef.borrowStructureCapable_) runStructureApply();
-            else                                      runBorrowApply();
-        }
-        else if (intent == "apply_discard")
-        {
-            EchoJay_NSLog("EJApply: answer=discard");
-            pendingStructPlanValid_ = false;
-            const juce::String owner =
-                processorRef.resolveLinkDisplayName(processorRef.borrowUid());
-            processorRef.clearBorrowKept();
-            processorRef.borrowRelease(false);
-            chainListPanel.statusText = "Released - your edits were discarded. "
-                + owner + " owns its rack again, unchanged.";
-            refreshChainPanelForView(true);
+            auto* co = askChipVars[(size_t) i].getDynamicObject();
+            const juce::String ruid =
+                co ? co->getProperty("revert_uid").toString() : juce::String();
+            EchoJay_NSLog(("EJApply: answer=revert uid=" + ruid).toRawUTF8());
+            sendRevertLastApply(ruid);
         }
         else
-        {
-            EchoJay_NSLog("EJApply: answer=keep-editing");
-            // The confirmed plan dies with the ask: further edits mean the
-            // next RELEASE computes (and renders) a fresh one.
-            pendingStructPlanValid_ = false;
-        }
+            EchoJay_NSLog("EJApply: answer=keep-applied");
         return;
     }
     if (intent == "recall_confirm" || intent == "recall_cancel")
@@ -24349,6 +24050,11 @@ juce::String EchoJayEditor::mainContextLabel() const
 
 void EchoJayEditor::resetToMainContext()
 {
+    // §5a-R: leaving a Link's rack for the main IS the deselect — the
+    // engaged session applies automatically (one of the two selection
+    // writers; the other is openChannelByUid).
+    handleBorrowSelectionChange({});
+
     currentChatId = {};
     processorRef.activeChatId = {};
     processorRef.pendingChannelUid.clear();
@@ -24431,6 +24137,10 @@ void EchoJayEditor::showChannelBannerMenu()
 void EchoJayEditor::openChannelByUid(const juce::String& uid)
 {
     if (uid.isEmpty()) return;
+    // §5a-R: selecting a Link's rack IS editing it — deselect of the
+    // previous session applies, and this uid engages (via the tick once
+    // any release settles). The second of the two selection writers.
+    handleBorrowSelectionChange(uid);
 
     int matches = 0;
     if (auto existing = latestChannelChatId(uid, &matches); existing.isNotEmpty())

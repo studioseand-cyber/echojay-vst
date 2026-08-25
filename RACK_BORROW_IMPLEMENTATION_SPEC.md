@@ -248,6 +248,27 @@ already hold from the pull becomes an undo instead of a question.
    engaged rack surfaces as still-editing until the failure is resolved,
    reverted, or the apply retried and succeeds.)
 
+**Two further rulings (26 Aug 2026):**
+
+4. **Editor close applies, then releases — and never strands a lock.** A
+   window close commits like a deselect. If THAT apply fails, the rule
+   inverts from the deselect case: **the lock still releases** — no lock
+   without a visible owner — the edits stay KEPT (the continuous-keep
+   capture), and the next window opened on that rack states plainly that
+   the last edit was not written and may now conflict with the Link's own
+   changes since. The failure is LOGGED when it happens, regardless of
+   whether anyone ever reopens a window. (This requires the apply
+   orchestration to live on the PROCESSOR, not the editor — an editor
+   being destroyed cannot poll an ack.)
+5. **Revert holds until the next engage of that rack.** Process-lifetime,
+   in-memory, not persisted. A new session on that uid DISCARDS the
+   previous revert point, and the affordance's wording says it is about
+   THIS SESSION only. Mechanism: the side that has the truth holds the
+   point — the Link keeps its own pre-apply images (exact, withheld states
+   included, which the main never had) after a successful apply, cleared
+   on the next lease engage; in-session revert on the main is a re-pull
+   (the Link is untouched until an apply happens).
+
 **Lease death mid-borrow — recovery offer, never unstated loss** (amendment,
 21 Aug 2026): if the rack-scoped lease expires under a live borrow (the Link
 restored itself — its process relaunched, renewals lapsed, or a foreign claim

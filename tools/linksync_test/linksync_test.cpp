@@ -480,6 +480,56 @@ int main()
                res6.reasons.joinIntoString ("; "));
     }
 
+    // ---- §5a-R revert: the Link's own pre-apply images are the undo -------
+    // Held in memory after a successful apply, EXACT (withheld states
+    // included — the main never had those), consumed on use, discarded by
+    // the next lease engage. This-session-only, functionally.
+    std::printf ("== revert: this session's undo, held by the Link ==\n");
+    {
+        host.clearRevertPoint();               // isolate from earlier arms
+        const auto preShape = host.liveIdentity();
+        auto* p0 = dynamic_cast<SyncProbe*> (host.getSlotProcessor (0));
+        check (p0 != nullptr, "slot 0 probe reachable");
+        p0->value = 777;                       // a setting the apply will change
+        auto blobR = [] (int v)
+        { juce::MemoryBlock mb; mb.append (&v, sizeof (int));
+          return LinkShm::stateToB64 (mb); };
+        std::vector<SE::CurrentSlot> curR;
+        const auto baseR = host.liveIdentity();
+        const juce::String fmt0 = host.getSlotInfo (0).format;
+        for (int i = 0; i < (int) baseR.size(); ++i)
+            curR.push_back ({ baseR[(size_t) i], i, i == 0, false,
+                              i == 0 ? blobR (555) : juce::String(),
+                              false, i == 0 ? fmt0 : juce::String() });
+        // Simplest structural change: remove the LAST slot.
+        curR.pop_back();
+        auto planR = SE::computePlan ("linksync-test", baseR, curR);
+        check (planR.removing == 1, "the revert-test plan removes one");
+        const int nBefore = host.getNumSlots();
+        const auto resR = proc.applyStructurePlanAndSync (dir, planR);
+        check (resR.ok, "the plan applied", resR.reasons.joinIntoString ("; "));
+        check (host.getNumSlots() == nBefore - 1, "the shape changed");
+        check (host.hasRevertPoint(), "a revert point is held after apply");
+        check (host.revertLastApply (dir), "revert restores");
+        check (host.getNumSlots() == nBefore
+                 && (int) host.liveIdentity().size() == (int) preShape.size(),
+               "the shape is back", juce::String (host.getNumSlots()));
+        auto* p0b = dynamic_cast<SyncProbe*> (host.getSlotProcessor (0));
+        check (p0b != nullptr && p0b->value == 777,
+               "slot state restored from the pre-apply images",
+               p0b ? juce::String (p0b->value) : juce::String ("null"));
+        check (! host.revertLastApply (dir),
+               "a second revert refuses - the point is consumed on use");
+        // A NEW session discards the point (ruling 5): apply again, then
+        // engage — the point must be gone.
+        check (proc.applyStructurePlanAndSync (dir, planR).ok, "re-applied");
+        check (host.hasRevertPoint(), "point held again");
+        EchoJayLinkSyncTestAccess::engage (proc);
+        check (! host.hasRevertPoint(),
+               "a new engage DISCARDS the previous revert point");
+        EchoJayLinkSyncTestAccess::release (proc);
+    }
+
     // ---- negative control -------------------------------------------------
     check (false, "NEGATIVE CONTROL - this line is SUPPOSED to fail");
     const bool caught = (failures == 1);

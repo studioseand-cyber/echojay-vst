@@ -465,6 +465,9 @@ public:
     // restore) before calling borrowAudioOn().
     void borrowEngageBegin(const juce::String& uid, const juce::String& leaseId);
     void borrowAudioOn();
+    void borrowAudioOff();   // §5a-R: listening is its own control
+    bool borrowAudioIsOn() const noexcept
+    { return borrowSession_.audioOn.load(std::memory_order_relaxed); }
     // Release: audio off (ramped), lease file deleted (Link restores all
     // bypasses through its one restore path), instances parked in the pool.
     // keepEdits=true (auto-release, editor/processor teardown) captures every
@@ -472,6 +475,30 @@ public:
     // promise: a crash or lease death loses nothing. User Apply/Discard pass
     // false: the edits were committed, or the user explicitly chose loss.
     void borrowRelease(bool keepEdits = false);
+
+    // ---- §5a-R (26 Aug 2026): selection IS the session ---------------------
+    // The apply orchestration lives on the PROCESSOR because an editor being
+    // destroyed cannot poll an ack (ruling 4: editor close applies, then
+    // releases, and never strands a lock). Verdicts and the plan build move
+    // here with it — they only ever read processor state.
+    std::vector<std::pair<bool, bool>> borrowSlotVerdicts();  // {withheld, edited}
+    LinkShm::StructureEdit::Plan buildStructurePlan();
+    bool borrowSessionShapeDirty() const;
+    // Compute the plan ONCE and send it; on success release + sticky banner
+    // + revert offer. releaseLockOnFail: false = deselect semantics (the
+    // session stays engaged, lock holds, says why); true = editor-close
+    // semantics (lock releases regardless — no lock without a visible
+    // owner — edits kept, unwritten-note recorded, failure LOGGED whether
+    // or not a window ever reopens).
+    void borrowApplyAndRelease(bool releaseLockOnFail);
+    void borrowEditorClosed();
+    // Session-scoped surfaces, rendered by the panel until superseded —
+    // banners must not be losable by navigating away (§5a-R honesty rule).
+    juce::String borrowStickyBanner_;
+    std::map<juce::String, juce::String> unwrittenEditNote_;  // uid -> note
+    juce::String pendingAutoEngage_;   // engage this uid once released
+    juce::String revertOfferUid_;      // applied: offer revert via the shelf
+    bool borrowApplyInFlight_ = false;
 
     // ---- Step 3: Apply & Release bookkeeping (message thread only) --------
     // Per-slot record from engage: the saved identity triplet (the SAME
@@ -869,6 +896,14 @@ public:
     void stopAllCompare();
 
 private:
+    // §5a-R orchestrator internals: the ack poll outlives editors, so its
+    // lambdas hold a weak token instead of `this` — a plugin unloaded
+    // mid-poll must drop the chain, never call into freed memory.
+    std::shared_ptr<bool> borrowAliveToken_ { std::make_shared<bool>(true) };
+    bool borrowApplyReleaseOnFail_ = false;   // switchable mid-flight (close)
+    void borrowApplyFinish(bool applied, const juce::String& why,
+                           bool restored);
+
     MeterEngine meterEngine;       // Live meters (always running — live input only)
     MeterEngine captureEngine;     // Capture pass meters (reset each capture)
     MeterEngine abMeterEngine;     // AB playback spectrum only (used by Compare playing-slot panel)

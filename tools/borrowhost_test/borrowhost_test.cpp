@@ -387,9 +387,11 @@ int main()
         std::ifstream fe3 ("Source/PluginEditor.cpp");
         std::stringstream se3; se3 << fe3.rdbuf();
         const juce::String esrc3 (se3.str());
-        check (esrc3.contains ("heard through this channel's own chain"),
+        // §5a-R: the engage banner no longer claims solo (sessions engage
+        // SILENT); the mode wording lives on the route button.
+        check (esrc3.contains ("HEARD: THROUGH THIS CHAIN"),
                "banner wording: through-main present");
-        check (esrc3.contains ("replacing this channel's output"),
+        check (esrc3.contains ("HEARD: REPLACES OUTPUT"),
                "banner wording: replace-after present");
         check (esrc3.contains ("toggleBorrowRoute"),
                "the visible override is wired");
@@ -584,13 +586,18 @@ int main()
         const auto ed3 = slurp2 ("Source/PluginEditor.cpp");
         check (ed3.contains ("!= LinkShm::BorrowCommit::Action::Commit)\n            continue;"),
                "runBorrowApply sends ONLY Commit-classified slots (by source)");
-        check (ed3.contains ("will NEVER be written over them"),
-               "the ask names the withheld-edited slots as never-written");
-        check (ed3.contains ("\"You changed \"") && ed3.contains ("stay")
-                 && ed3.contains ("untouched.\""),
-               "the ask states changed / committing / untouched in words");
-        check (ed3.contains ("{ \"recall_\", \"build_\", \"apply_\" }"),
-               "apply_ is in the replace-ask supersede class");
+        // §5a-R: NO Apply confirm exists any more — the asks are gone from
+        // the codebase, and the honesty (withheld never written) rides the
+        // commit filter above plus the engage banner, not a confirm.
+        check (! ed3.contains ("presentStructureApplyAsk")
+                 && ! ed3.contains ("presentBorrowApplyAsk")
+                 && ! ed3.contains ("apply_confirm"),
+               "no Apply confirm exists anywhere (§5a-R)");
+        check (ed3.contains ("running at defaults; never")
+                 && ed3.contains ("written back"),
+               "the withheld banner still says never-written, confirm or no");
+        check (ed3.contains ("revert_rack"),
+               "the shelf now carries the revert offer (replaces discard)");
         // onCreateEditor ORDER (bug, 22 Aug 2026): the borrowed-host branch
         // must come BEFORE the remote guard, or it is dead code behind the
         // guard's early nullptr — exactly what a source pin catches and a
@@ -608,12 +615,12 @@ int main()
         }
         // The verdict reads the RECORDED FACT, never a recomputed policy,
         // the converter guards the seed seam, and every classify logs.
-        check (ed3.contains ("bh->borrowSlotSeededWithState(i)")
-                 && ! ed3.contains ("borrowSlotWithheld(\n            i,"),
+        const auto pp3 = slurp2 ("Source/PluginProcessor.cpp");
+        check (pp3.contains ("bh->borrowSlotSeededWithState(i)"),
                "Apply's verdict reads the seed fact (by source)");
         check (ed3.contains ("LinkShm::sidecarUidToStateUid(s.uid)"),
                "the seed converts the sidecar's hex uid (by source)");
-        check (ed3.contains ("EJApply: slot "),
+        check (pp3.contains ("EJApply: slot "),
                "one diagnostic line per slot at classify time (by source)");
         const auto pr3 = slurp2 ("Source/PluginProcessor.cpp");
         check (pr3.contains ("if (keepEdits) captureBorrowKept();"),
@@ -940,29 +947,35 @@ int main()
                    "a second check is a no-op: restore runs AT MOST ONCE");
         }
 
-        // GATE 2, by source: no rollback/refusal path releases the borrow.
+        // GATE 2, by source (§5a-R): the orchestrator lives on the
+        // PROCESSOR. Ruling 3: a failed DESELECT keeps the session (no
+        // release without borrowApplyReleaseOnFail_); ruling 4: a failed
+        // CLOSE releases anyway — no lock without a visible owner — with
+        // the edits kept and the note recorded.
         {
-            std::ifstream f ("Source/PluginEditor.cpp");
+            std::ifstream f ("Source/PluginProcessor.cpp");
             std::stringstream ss; ss << f.rdbuf();
             const juce::String src (ss.str());
-            const int fn  = src.indexOf ("void EchoJayEditor::runStructureApply");
-            const int end = fn >= 0 ? src.indexOf (fn, "\nvoid EchoJayEditor::sendBlockEdit") : -1;
+            const int fn  = src.indexOf ("void EchoJayProcessor::borrowApplyFinish");
+            const int end = fn >= 0 ? src.indexOf (fn, "\nvoid EchoJayProcessor::borrowEditorClosed") : -1;
             const auto body = (fn >= 0 && end > fn) ? src.substring (fn, end)
                                                     : juce::String();
-            check (body.isNotEmpty(), "runStructureApply located");
-            const int successRelease = body.indexOf ("borrowRelease(false)");
-            check (successRelease >= 0
-                     && body.indexOf (successRelease + 1, "borrowRelease") < 0,
-                   "borrowRelease appears ONCE, on the success path only — "
-                   "rollback and refusal keep the session live");
+            check (body.isNotEmpty(), "borrowApplyFinish located");
+            check (body.contains ("borrowRelease(false)")
+                     && body.contains ("if (borrowApplyReleaseOnFail_)")
+                     && body.contains ("borrowRelease(true)"),
+                   "success releases; failure releases ONLY under the close "
+                   "policy (deselect keeps the session, ruling 3)");
             check (body.contains ("Your session is still live"),
-                   "every failure banner says the session is live");
-            // Phase 3 moved the gate to the ENGAGE-TIME SNAPSHOT (a Link
-            // that flips capability mid-session must not half-see a plan),
-            // so the pin tracks accept() over the snapshot, not the sidecar.
-            check (body.contains ("StructureEdit::accept")
-                     && body.contains ("borrowStructureCapable_"),
-                   "the capability gate precedes the send");
+                   "the deselect-failure banner says the session is live");
+            check (body.contains ("unwrittenEditNote_[uid]")
+                     && body.contains ("close-apply FAILED"),
+                   "the close-failure records the note and LOGS regardless "
+                   "of any window (ruling 4)");
+            const auto ed2 = [&]{ std::ifstream f2 ("Source/PluginEditor.cpp");
+                std::stringstream s2; s2 << f2.rdbuf(); return juce::String (s2.str()); }();
+            check (ed2.contains ("if (p.borrowStructureCapable_)\n            p.borrowApplyAndRelease"),
+                   "the capability gate precedes the send (deselect fork)");
         }
     }
 
@@ -997,18 +1010,16 @@ int main()
             const int end = ed.indexOf (at, "\n}");
             return ed.substring (at, end > at ? end : at + 6000);
         };
-        const auto askBody = bodyOf ("void EchoJayEditor::presentStructureApplyAsk");
-        check (askBody.contains ("\" Adding: \"")
-                 && askBody.contains ("\" Removing: \"")
-                 && askBody.contains ("\" Moving \""),
-               "the confirm states adds, removes and moves in words");
-        check (askBody.contains ("deletes settings you never saw"),
-               "removing a withheld slot gets its own line (never-saw)");
-        check (askBody.contains ("The whole plan applies, or none of it."),
-               "the confirm states the atomicity promise");
-        // The chip routes the commit vehicle by capability.
-        check (ed.contains ("if (processorRef.borrowStructureCapable_) runStructureApply();"),
-               "apply_confirm routes: capable -> plan, older -> per-slot commits");
+        const auto pp = slurp3 ("Source/PluginProcessor.cpp");
+        // §5a-R: no confirm — the atomicity promise now rides the applied
+        // sticky banner, and the removed-withheld honesty was recorded at
+        // removal time (the memory pins below still hold).
+        check (pp.contains ("the whole plan, or "),
+               "the applied banner states the atomicity promise");
+        // The commit vehicle routes by capability at the DESELECT fork.
+        check (ed.contains ("p.borrowApplyAndRelease(/*releaseLockOnFail=*/false)")
+                 && ed.contains ("runBorrowApply();   // legacy"),
+               "deselect routes: capable -> plan, older -> per-slot commits");
         // The Link overlay gains the restructuring line while a journal is
         // active.
         check (slurp3 ("Source/LinkEditor.h").contains ("is restructuring this rack"),
@@ -1023,33 +1034,21 @@ int main()
         // and never recomputes. Two computations at two times, with session
         // state mutating between, is how the ask said adds=1 and the send
         // computed empty.
+        // §5a-R keeps ONE COMPUTATION by construction: the orchestrator
+        // computes the plan at the moment of deselect/close and sends that
+        // very object — there is no ask-to-send gap for session state to
+        // mutate across.
         int planCalls = 0;
-        for (int p = 0; (p = ed.indexOf (p, "= buildStructurePlan()")) >= 0; ++p)
+        for (int p = 0; (p = pp.indexOf (p, "= buildStructurePlan()")) >= 0; ++p)
             ++planCalls;
         check (planCalls == 1,
-               "the plan is computed ONCE, at ask time", juce::String (planCalls));
-        const auto rsaBody = bodyOf ("void EchoJayEditor::runStructureApply");
-        check (rsaBody.contains ("pendingStructPlan_")
-                 && ! rsaBody.contains ("buildStructurePlan"),
-               "Apply sends the confirmed plan, never a recomputed one");
-        // THE ASK RENDERS THE PLAN IT WILL SEND: every list derives from
-        // plan.ops; no second session copy that could disagree.
-        check (askBody.contains ("OpType::Remove")
-                 && ! askBody.contains ("proc.borrowRemovedNames_"),
-               "the ask's removes come from the plan's ops, not a session copy");
+               "the plan is computed ONCE, at the deselect/close moment",
+               juce::String (planCalls));
         // EMPTY PLAN, DIRTY SHAPE = a said-aloud defect that keeps the
-        // session live — at BOTH decision points (release-time and Apply).
-        int defectLines = 0;
-        for (int p = 0; (p = ed.indexOf (p, "EJStruct: DEFECT empty plan")) >= 0; ++p)
-            ++defectLines;
-        check (ed.contains ("borrowSessionShapeDirty") && defectLines >= 2,
-               "an empty plan against a dirty shape refuses loudly, twice over",
-               juce::String (defectLines));
-        const auto tbBody = bodyOf ("void EchoJayEditor::toggleBorrow");
-        check (tbBody.contains ("pendingStructPlan_ = splan;")
-                 && tbBody.contains ("pendingStructPlanValid_ = true;")
-                 && tbBody.contains ("presentStructureApplyAsk(splan)"),
-               "the ask stores the very plan it presents");
+        // session live (deselect) or records the note (close policy).
+        check (pp.contains ("EJStruct: DEFECT empty plan")
+                 && pp.contains ("borrowSessionShapeDirty()"),
+               "an empty plan against a dirty shape refuses loudly");
         // A CREATED SLOT HAS A RECORD: exactly two record-push sites —
         // engage (pulled slots) and the borrowed add (created slots).
         int recPush = 0;
@@ -1060,13 +1059,20 @@ int main()
                juce::String (recPush));
         // And the verdict diagnostic covers created slots — a log that
         // skips slots is how the contradiction hid.
-        check (ed.contains ("CREATED here - no pulled "),
+        check (pp.contains ("CREATED here - no pulled "),
                "the per-slot diagnostic logs created slots too");
 
         // ---- The silent-Apply class (24 Aug 2026): three answer=apply
         // ---- attempts with no log line and no UI change. Every path
         // ---- between the answer and the send now speaks in BOTH channels.
-        const auto rsa2 = bodyOf ("void EchoJayEditor::runStructureApply");
+        auto bodyIn = [] (const juce::String& src, const char* sig)
+        {
+            const int at = src.indexOf (sig);
+            if (at < 0) return juce::String();
+            const int end = src.indexOf (at, "\n}");
+            return src.substring (at, end > at ? end : at + 8000);
+        };
+        const auto rsa2 = bodyIn (pp, "void EchoJayProcessor::borrowApplyAndRelease");
         // The send logs BEFORE it writes — the line that separates "never
         // sent" from "sent and waiting".
         const int sendLog  = rsa2.indexOf ("EJStruct: send uid=");
@@ -1077,17 +1083,15 @@ int main()
         check (rsa2.contains ("cmd write FAILED"),
                "a failed command write speaks instead of timing out mutely");
         // Every early return names itself in the log as well as the banner.
-        check (rsa2.contains ("no live session uid")
-                 && rsa2.contains ("not structure-capable")
-                 && rsa2.contains ("no confirmed plan pending")
-                 && rsa2.contains ("folder unavailable"),
+        check (rsa2.contains ("folder unavailable")
+                 && rsa2.contains ("EJStruct: DEFECT empty plan"),
                "every pre-send return logs its reason");
         // Every terminal poll outcome speaks: applied, failed, timeout,
         // abandoned editor — and a stale ack is named while polling.
         check (rsa2.contains ("EJStruct: ack applied")
                  && rsa2.contains ("EJStruct: ack FAILED")
                  && rsa2.contains ("EJStruct: NO ACK")
-                 && rsa2.contains ("EJStruct: ack poll abandoned")
+                 && rsa2.contains ("ack poll abandoned")
                  && rsa2.contains ("EJStruct: stale ack"),
                "every ack-poll outcome logs, timeout included");
         // The Link says which side dropped a plan: receipt logged BEFORE
@@ -1169,7 +1173,7 @@ int main()
         // ---- Session-state-first banners (24 Aug 2026: the status line
         // ---- truncated before "Your session is still live", a working
         // ---- refusal read as a hang, Apply was pressed four times).
-        check (rsa2.contains ("Your session is still live. Apply failed"),
+        check (pp.contains ("Your session is still live. The write to"),
                "the failure banner LEADS with the session state");
         {
             int tailStates = 0;   // any Apply banner still ENDING with it
@@ -1191,6 +1195,58 @@ int main()
         check (secStamps == 2 && seqCalls >= 14 && ! ed.contains ("baseSeq"),
                "one seq author: every sender uses nextCtrlSeq",
                juce::String (secStamps) + "/" + juce::String (seqCalls));
+    }
+
+    std::printf ("== §5a-R: selection is the session, pinned by source ==\n");
+    {
+        auto slurpS = [] (const char* p)
+        { std::ifstream f (p); std::stringstream s; s << f.rdbuf(); return juce::String (s.str()); };
+        const auto edS = slurpS ("Source/PluginEditor.cpp");
+        const auto ppS = slurpS ("Source/PluginProcessor.cpp");
+        // BOTH selection writers route the session transition — deselect
+        // applies, select engages. A third writer that skips the hook is
+        // the next silent-does-nothing.
+        {
+            const int a = edS.indexOf ("void EchoJayEditor::resetToMainContext");
+            const int b = edS.indexOf ("void EchoJayEditor::openChannelByUid");
+            check (a >= 0 && edS.substring (a, a + 500)
+                       .contains ("handleBorrowSelectionChange({})"),
+                   "resetToMainContext routes the deselect");
+            check (b >= 0 && edS.substring (b, b + 600)
+                       .contains ("handleBorrowSelectionChange(uid)"),
+                   "openChannelByUid routes the select");
+        }
+        // Ruling 4: the editor's destructor commits like a deselect, on the
+        // PROCESSOR (it must outlive the window).
+        {
+            const int d = edS.indexOf ("EchoJayEditor::~EchoJayEditor");
+            check (d >= 0 && edS.substring (d, d + 600)
+                       .contains ("borrowEditorClosed()"),
+                   "the destructor applies-then-releases via the processor");
+        }
+        // Sessions engage SILENT; LISTEN is its own control.
+        {
+            const int f = edS.indexOf ("// §5a-R: the session engages SILENT");
+            check (f >= 0, "the engage-silent comment anchors the finish");
+            check (! edS.substring (f, f + 2200).contains ("borrowAudioOn()"),
+                   "no audio-on inside the engage finish");
+            check (edS.contains ("\"LISTENING\" : \"LISTEN\""),
+                   "the LISTEN control names its two states");
+        }
+        // Honesty surfaces are NOT losable by navigating away: the sticky
+        // banner and the unwritten-edit note render from PROCESSOR state.
+        check (edS.contains ("processorRef.borrowStickyBanner_.isNotEmpty()")
+                 && edS.contains ("processorRef.unwrittenEditNote_.find(chainViewUid())"),
+               "sticky banner and unwritten note render from processor state");
+        // Revert replaces discard, worded this-session-only (ruling 5).
+        check (edS.contains ("available until the next edit session"),
+               "the revert offer says this-session-only");
+        check (edS.contains ("revertLastApply")
+                 && ppS.contains ("revertOfferUid_ = uid;"),
+               "applied outcomes offer revert; the chip sends the cmd");
+        // A new session supersedes the previous session's surfaces.
+        check (edS.contains ("p2.unwrittenEditNote_.erase(st->uid);"),
+               "a new engage supersedes the old note, never navigation");
     }
 
     std::printf ("== nextCtrlSeq: distinct under same-millisecond bursts ==\n");

@@ -4462,7 +4462,35 @@ ChainHost::PlanResult ChainHost::applyStructurePlan(
     juce::File(journalPath(journalDir, plan.uid)).deleteFile();
     r.ok = true;
     r.finalOrigin = std::move(originSim);
+    // REVERT POINT (§5a-R ruling 5): the pre-apply images just consumed by
+    // the journal become this session's undo — held IN MEMORY, process
+    // lifetime, cleared on the next lease engage. The LINK holds them
+    // because only the Link has the exact truth (withheld states included,
+    // which the main never received).
+    lastApplyPre_ = pre;
+    hasLastApplyPre_ = true;
     return r;
+}
+
+bool ChainHost::revertLastApply(const juce::String& journalDir)
+{
+    // "Revert this rack to before I touched it" — THIS SESSION only: the
+    // point is consumed on use, discarded by the next engage, never
+    // persisted. Restores through the same wholesale pre-image path the
+    // crash journal uses (idempotent by construction, gated).
+    if (! hasLastApplyPre_) return false;
+    juce::ignoreUnused(journalDir);
+    planRestoreFromPreImages(lastApplyPre_);
+    hasLastApplyPre_ = false;
+    lastApplyPre_ = {};
+    EchoJay_NSLog("EJPlan: revertLastApply - rack restored to pre-apply images");
+    return true;
+}
+
+void ChainHost::clearRevertPoint()
+{
+    hasLastApplyPre_ = false;
+    lastApplyPre_ = {};
 }
 
 bool ChainHost::planJournalRestoreIfPresent(const juce::String& journalDir,

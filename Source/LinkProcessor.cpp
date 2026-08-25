@@ -835,6 +835,22 @@ void LinkProcessor::pollControlCommand()
                           .toRawUTF8());
     }
 
+    // ---- Revert last apply (§5a-R ruling 5) --------------------------------
+    // The Link restores its own pre-apply images — exact, withheld states
+    // included. Consumed on use; a second revert acks false.
+    bool revertAttempted = false, revertDone = false;
+    if (obj->hasProperty("revertLastApply")
+        && (bool) obj->getProperty("revertLastApply"))
+    {
+        revertAttempted = true;
+        revertDone = chainHost.revertLastApply(resolvedDir);
+        if (revertDone) syncModelAfterStructuralChange();
+        EchoJay_NSLog(("EJPlan[" + juce::String(seq) + "] link: revert "
+                       + juce::String(revertDone ? "DONE" : "refused - no "
+                       "revert point held (already used, or a new session "
+                       "cleared it)")).toRawUTF8());
+    }
+
     // ---- Commit (stage 1): the edited state comes home ---------------------
     // Guarded by baseSlots exactly like structural edits: the rack the main
     // plugin was looking at must still be THIS rack, or the state could land
@@ -919,6 +935,8 @@ void LinkProcessor::pollControlCommand()
         ack->setProperty("committedSlot", commitOk);
         if (!commitOk) ack->setProperty("commitErr", commitErr);
     }
+    if (revertAttempted)
+        ack->setProperty("revertDone", revertDone);
     if (planAttempted)
     {
         ack->setProperty("planApplied",  planResult.ok);
@@ -1698,6 +1716,9 @@ void LinkProcessor::rackLeaseEngage()
     rackLeaseActive_ = true;
     leaseSlot0_      = -1;
     leaseActive_.store(true, std::memory_order_relaxed);
+    // §5a-R ruling 5: a NEW session on this rack discards the previous
+    // session's revert point — revert is about THIS session only.
+    chainHost.clearRevertPoint();
     notifyChainModel();
     EchoJay_NSLog(("EJLease: RACK engaged, " +
                    juce::String((int) rackLeasePrior_.size())

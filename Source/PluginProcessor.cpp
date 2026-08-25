@@ -451,6 +451,11 @@ void ejDashLog(const juce::String& msg)
 
 EchoJayProcessor::~EchoJayProcessor()
 {
+    // §5a-R: drop any in-flight apply poll — its lambdas hold this token
+    // weakly and go inert now, never calling into freed memory.
+    *borrowAliveToken_ = false;
+    borrowAliveToken_.reset();
+
     // Stage 1 SOLO: the plugin is leaving the track with a session open.
     // Best-effort commit (fire and forget -- no ack can be awaited in a
     // destructor), then a normal end: the lease file is deleted so the Link
@@ -1801,6 +1806,14 @@ void EchoJayProcessor::borrowAudioOn()
     borrowSession_.audioOn.store(true, std::memory_order_release);
 }
 
+void EchoJayProcessor::borrowAudioOff()
+{
+    // §5a-R: listening is its OWN control now — the session engages silent
+    // and this turns monitoring off without ending anything. The 30ms
+    // crossfade in applyBorrowSoloMix rides the same audioOn flag down.
+    borrowSession_.audioOn.store(false, std::memory_order_release);
+}
+
 void EchoJayProcessor::captureBorrowKept()
 {
     if (!borrowActive() || borrowHost_ == nullptr) return;
@@ -1850,6 +1863,307 @@ void EchoJayProcessor::borrowRelease(bool keepEdits)
     if (borrowHost_) borrowHost_->releaseBorrowToPool();
     EchoJay_NSLog(("EJBorrow: released uid=" + uid
                    + " (lease deleted; Link restores its own bypasses)").toRawUTF8());
+}
+
+// ============================================================================
+// §5a-R (26 Aug 2026): selection IS the session. The verdicts, the plan
+// build and the apply orchestration live HERE because an editor being
+// destroyed cannot poll an ack — ruling 4 requires the close-apply to
+// outlive the window that triggered it.
+// ============================================================================
+std::vector<std::pair<bool, bool>> EchoJayProcessor::borrowSlotVerdicts()
+{
+    std::vector<std::pair<bool, bool>> out;
+    auto* bh = borrowHost();
+    if (bh == nullptr) return out;
+    const auto& recs = borrowSlotRecords_;
+    const auto& origins = borrowSlotOrigin_;
+    for (int i = 0; i < bh->getNumSlots() && i < (int) origins.size(); ++i)
+    {
+        const int origin = origins[(size_t) i];
+        if (origin < 0)
+        {
+            EchoJay_NSLog(("EJApply: slot " + juce::String(i) + " \""
+                + bh->getSlotInfo(i).name + "\" CREATED here - no pulled "
+                  "state, never withheld, edited by definition -> CREATE")
+                .toRawUTF8());
+            out.emplace_back(false, true);
+            continue;
+        }
+        if (origin >= (int) recs.size()) { out.emplace_back(false, false); continue; }
+        const auto& r = recs[(size_t) origin];
+        const bool seeded   = bh->borrowSlotSeededWithState(i);
+        const bool withheld = r.hadState && ! seeded;
+        juce::String nowB64;
+        if (auto* p = bh->getSlotProcessor(i))
+        {
+            juce::MemoryBlock mb;
+            try { p->getStateInformation(mb); } catch (...) { mb.reset(); }
+            if (mb.getSize() > 0) nowB64 = LinkShm::stateToB64(mb);
+        }
+        const bool edited = nowB64 != r.baselineB64;
+        const auto action = LinkShm::BorrowCommit::classify(withheld, edited);
+        EchoJay_NSLog(("EJApply: slot " + juce::String(i) + " \"" + r.name
+            + "\" hadState=" + (r.hadState ? "Y" : "N")
+            + " seeded=" + (seeded ? "Y" : "N")
+            + " -> withheld=" + (withheld ? "Y" : "N")
+            + " edited=" + (edited ? "Y" : "N")
+            + " action=" + (action == LinkShm::BorrowCommit::Action::Commit ? "COMMIT"
+                            : action == LinkShm::BorrowCommit::Action::LeaveWithheld
+                                ? "LEAVE-WITHHELD" : "LEAVE-UNEDITED")).toRawUTF8());
+        out.emplace_back(withheld, edited);
+    }
+    return out;
+}
+
+LinkShm::StructureEdit::Plan EchoJayProcessor::buildStructurePlan()
+{
+    auto* bh = borrowHost();
+    const auto& base    = borrowBaseIdentity_;
+    const auto& origins = borrowSlotOrigin_;
+    const auto verdicts = borrowSlotVerdicts();
+    std::vector<LinkShm::StructureEdit::CurrentSlot> current;
+    for (int i = 0; i < (int) origins.size() && i < (int) verdicts.size(); ++i)
+    {
+        juce::String nowB64;
+        if (auto* p = bh->getSlotProcessor(i))
+        {
+            juce::MemoryBlock mb;
+            try { p->getStateInformation(mb); } catch (...) { mb.reset(); }
+            if (mb.getSize() > 0) nowB64 = LinkShm::stateToB64(mb);
+        }
+        const int o = origins[(size_t) i];
+        current.push_back({
+            o >= 0 && o < (int) base.size()
+                ? base[(size_t) o]
+                : borrowCreatedIdentity_[(size_t) i],
+            o, verdicts[(size_t) i].second, verdicts[(size_t) i].first,
+            nowB64,
+            bh->getSlotInfo(i).bypassed,
+            bh->getSlotInfo(i).format });
+    }
+    return LinkShm::StructureEdit::computePlan(borrowUid(), base, current);
+}
+
+bool EchoJayProcessor::borrowSessionShapeDirty() const
+{
+    if (! borrowRemovedNames_.isEmpty()) return true;
+    const auto& org = borrowSlotOrigin_;
+    for (size_t i = 0; i < org.size(); ++i)
+        if (org[i] != (int) i) return true;
+    return false;
+}
+
+void EchoJayProcessor::borrowApplyAndRelease(bool releaseLockOnFail)
+{
+    if (! borrowActive()) return;
+    if (borrowApplyInFlight_)
+    {
+        // A close arriving mid-flight upgrades the outcome policy: the
+        // window is going away, so a failure now must still release.
+        if (releaseLockOnFail) borrowApplyReleaseOnFail_ = true;
+        return;
+    }
+    const juce::String uid  = borrowSession_.uid;
+    const juce::String name = resolveLinkDisplayName(uid);
+    // ONE COMPUTATION, at the moment of deselect/close — sent as computed.
+    const auto plan = buildStructurePlan();
+    if (plan.ops.empty())
+    {
+        if (borrowSessionShapeDirty())
+        {
+            auto* bh = borrowHost();
+            EchoJay_NSLog(("EJStruct: DEFECT empty plan from shape-dirty "
+                "session: slots=" + juce::String(bh ? bh->getNumSlots() : -1)
+                + " origins=" + juce::String((int) borrowSlotOrigin_.size())
+                + " records=" + juce::String((int) borrowSlotRecords_.size()))
+                .toRawUTF8());
+            borrowStickyBanner_ = "Your session is still live. Deselect "
+                "found a defect: your shape changes computed into an EMPTY "
+                "plan - nothing was sent or released. Please report this.";
+            if (releaseLockOnFail) borrowApplyFinish(false, "empty plan defect", false);
+            return;
+        }
+        // Nothing to write: a clean release, said so.
+        clearBorrowKept();
+        borrowRelease(false);
+        borrowStickyBanner_ = "Released - " + name + " owns its rack again. "
+            "Nothing was changed on either side.";
+        return;
+    }
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty())
+    {
+        EchoJay_NSLog(("EJStruct: refused send uid=" + uid
+                       + " - shared Link folder unavailable").toRawUTF8());
+        borrowStickyBanner_ = "Your session is still live. Cannot write to "
+            + name + ": the shared Link folder is unavailable.";
+        if (releaseLockOnFail) borrowApplyFinish(false, "shared folder unavailable", false);
+        return;
+    }
+    const int seq = LinkShm::nextCtrlSeq();
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",   1);
+    cmd->setProperty("seq", seq);
+    cmd->setProperty("structPlan", LinkShm::StructureEdit::planToVar(plan, {}));
+    EchoJay_NSLog(("EJStruct: send uid=" + uid
+                   + " ops=" + juce::String((int) plan.ops.size())
+                   + " seq=" + juce::String(seq)).toRawUTF8());
+    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();
+    if (! juce::File(dir + "ctrl-cmd-" + uid + ".json")
+            .replaceWithText(juce::JSON::toString(juce::var(cmd), true)))
+    {
+        EchoJay_NSLog(("EJStruct: cmd write FAILED uid=" + uid
+                       + " seq=" + juce::String(seq)).toRawUTF8());
+        if (releaseLockOnFail) { borrowApplyFinish(false, "command write failed", false); return; }
+        borrowStickyBanner_ = "Your session is still live. The write to "
+            + name + " could not start (command file) - nothing was sent.";
+        return;
+    }
+    borrowApplyInFlight_ = true;
+    borrowApplyReleaseOnFail_ = releaseLockOnFail;
+    std::weak_ptr<bool> alive = borrowAliveToken_;
+    auto poll = std::make_shared<std::function<void(int)>>();
+    *poll = [this, alive, uid, seq, dir, poll](int left)
+    {
+        juce::Timer::callAfterDelay(250, [this, alive, uid, seq, dir, poll, left]
+        {
+            auto a = alive.lock();
+            if (! a || ! *a)
+            {
+                EchoJay_NSLog(("EJStruct: ack poll abandoned (processor "
+                    "destroyed) uid=" + uid).toRawUTF8());
+                return;
+            }
+            juce::File ack(dir + "ctrl-ack-" + uid + ".json");
+            if (ack.existsAsFile())
+            {
+                auto v = juce::JSON::parse(ack.loadFileAsString());
+                auto* o = v.getDynamicObject();
+                if (o != nullptr && (int) o->getProperty("seq") != seq)
+                    EchoJay_NSLog(("EJStruct: stale ack uid=" + uid
+                        + " got seq=" + o->getProperty("seq").toString()
+                        + " want=" + juce::String(seq)).toRawUTF8());
+                if (o != nullptr && (int) o->getProperty("seq") == seq)
+                {
+                    ack.deleteFile();
+                    if (o->hasProperty("refused"))
+                    {
+                        const juce::String why = o->getProperty("refused").toString();
+                        EchoJay_NSLog(("EJStruct: ack REFUSED uid=" + uid
+                            + " why=" + why).toRawUTF8());
+                        borrowApplyFinish(false, "transport refused: " + why, false);
+                        return;
+                    }
+                    if ((bool) o->getProperty("planApplied"))
+                    {
+                        EchoJay_NSLog(("EJStruct: ack applied uid=" + uid
+                            + " seq=" + juce::String(seq)).toRawUTF8());
+                        borrowApplyFinish(true, {}, false);
+                        return;
+                    }
+                    juce::String reasons;
+                    if (auto* rs = o->getProperty("planReasons").getArray())
+                        for (auto& r : *rs)
+                            reasons << (reasons.isEmpty() ? "" : "; ") << r.toString();
+                    EchoJay_NSLog(("EJStruct: ack FAILED uid=" + uid
+                        + " reasons=" + reasons).toRawUTF8());
+                    borrowApplyFinish(false, reasons,
+                                      (bool) o->getProperty("planRestored"));
+                    return;
+                }
+            }
+            if (left <= 1)
+            {
+                EchoJay_NSLog(("EJStruct: NO ACK uid=" + uid
+                    + " seq=" + juce::String(seq) + " after 10s").toRawUTF8());
+                borrowApplyFinish(false, "no answer after 10s - nothing may "
+                                  "have changed there", false);
+                return;
+            }
+            (*poll)(left - 1);
+        });
+    };
+    (*poll)(40);
+}
+
+void EchoJayProcessor::borrowApplyFinish(bool applied, const juce::String& why,
+                                         bool restored)
+{
+    borrowApplyInFlight_ = false;
+    const juce::String uid  = borrowSession_.uid;
+    const juce::String name = resolveLinkDisplayName(uid);
+    if (applied)
+    {
+        clearBorrowKept();
+        borrowRelease(false);
+        borrowStickyBanner_ = "Applied to " + name + " - the whole plan, or "
+            "none of it. " + name + " owns its rack again.";
+        revertOfferUid_ = uid;   // the shelf offers "revert this session"
+        return;
+    }
+    if (borrowApplyReleaseOnFail_)
+    {
+        // RULING 4: no lock without a visible owner. The lock releases,
+        // the edits stay KEPT, the note outlives every window, and the
+        // failure is LOGGED whether or not anyone reopens.
+        EchoJay_NSLog(("EJStruct: close-apply FAILED uid=" + uid
+            + " - lock released, edits KEPT, note recorded. why=" + why)
+            .toRawUTF8());
+        unwrittenEditNote_[uid] = "The last edit session on " + name
+            + " ended WITHOUT writing: " + why + ". Your edits are kept "
+            "here" + (restored ? juce::String(" and " + name + " was restored "
+            "to its pre-edit rack") : juce::String()) + " - " + name
+            + " may have changed since, so re-opening this rack starts from "
+            "its current state.";
+        borrowRelease(true);
+        borrowStickyBanner_ = unwrittenEditNote_[uid];
+        return;
+    }
+    // Deselect semantics (ruling 3): the deselect does not complete — the
+    // session stays engaged, the lock holds, and it says why.
+    borrowStickyBanner_ = "Your session is still live. The write to " + name
+        + " failed - " + why + ". "
+        + (restored ? name + " was restored to exactly its pre-write rack. "
+                    : name + "'s rack was not touched. ")
+        + "Fix the cause, or revert this session.";
+}
+
+void EchoJayProcessor::borrowEditorClosed()
+{
+    if (! borrowActive()) return;
+    if (borrowApplyInFlight_) { borrowApplyReleaseOnFail_ = true; return; }
+    if (borrowStructureCapable_)
+    {
+        borrowApplyAndRelease(true);
+        return;
+    }
+    // Legacy (settings-only) Link: the per-slot commit sequencer is editor
+    // machinery and the editor is dying. Honest fallback: edits kept, lock
+    // released, note recorded IF anything was actually edited.
+    bool anyEdited = false;
+    for (const auto& v : borrowSlotVerdicts())
+        if (v.second) { anyEdited = true; break; }
+    const juce::String uid  = borrowSession_.uid;
+    const juce::String name = resolveLinkDisplayName(uid);
+    if (anyEdited)
+    {
+        EchoJay_NSLog(("EJStruct: editor closed on a LEGACY session uid="
+            + uid + " - edits kept, not written (no sequencer without a "
+            "window), note recorded").toRawUTF8());
+        unwrittenEditNote_[uid] = "The last edit session on " + name
+            + " closed before its settings were written. Your edits are "
+            "kept here - " + name + " may have changed since.";
+        borrowRelease(true);
+        borrowStickyBanner_ = unwrittenEditNote_[uid];
+    }
+    else
+    {
+        borrowRelease(false);
+        borrowStickyBanner_ = "Released - " + name + " owns its rack again. "
+            "Nothing was changed on either side.";
+    }
 }
 
 // ---------------------------------------------------------------------------
