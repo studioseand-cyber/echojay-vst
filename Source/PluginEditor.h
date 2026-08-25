@@ -1826,13 +1826,17 @@ private:
         // Whole-rack borrow (step 2): visible only when the view is a
         // borrow-capable Link's rack this main holds the lock on. Text and
         // visibility are the one author's (refreshChainPanelForView).
-        juce::TextButton      borrowBtn { "EDIT RACK" };
-        std::function<void()> onBorrowClick;
+        // Mute/solo (MUTE_SOLO_SPEC): permanent under the rack for a viewed
+        // remote rack — where LISTEN sat. Lamps render from the SIDECAR.
+        juce::TextButton      muteBtn { "MUTE" };
+        juce::TextButton      soloBtn { "SOLO" };
+        juce::Label           soloLimitLabel;   // contextual honest-limit line
+        std::function<void()> onMuteClick, onSoloClick;
         // The route override (finding: solo routing depends on what the main
         // is). Text IS the active mode; a click flips it. Visible only while
         // an edit-rack session is live; both set by the one author.
-        juce::TextButton      borrowRouteBtn { "HEARD: REPLACES OUTPUT" };
-        std::function<void()> onBorrowRouteClick;
+
+
         std::function<void()> onRackClick;
         static constexpr int  kRackSelW = 150;   // reserved left of the strip
 
@@ -1950,23 +1954,19 @@ private:
                                "The Link mixer follows the same selection.");
             rackBtn.onClick = [this] { if (onRackClick) onRackClick(); };
             addAndMakeVisible(rackBtn);
-            borrowBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
-            borrowBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffFFB020));
-            borrowBtn.setTooltip("Edit this rack here: the Link streams dry and its whole "
-                                 "chain runs in this window, soloed, editable. Release "
-                                 "hands it back. Nothing is written to the Link until "
-                                 "Apply (a later step).");
-            borrowBtn.onClick = [this] { if (onBorrowClick) onBorrowClick(); };
-            addChildComponent(borrowBtn);   // one author shows it
-            borrowRouteBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
-            borrowRouteBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff8fd3a8));
-            borrowRouteBtn.setTooltip("Where the edited rack's solo lands: through this "
-                                      "channel's own chain (the Mix/Master Bus default, so "
-                                      "the master processing stays in the ear), or replacing "
-                                      "this channel's output (every other channel's default). "
-                                      "Click to flip.");
-            borrowRouteBtn.onClick = [this] { if (onBorrowRouteClick) onBorrowRouteClick(); };
-            addChildComponent(borrowRouteBtn);
+            muteBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
+            muteBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffFFB020));
+            muteBtn.onClick = [this] { if (onMuteClick) onMuteClick(); };
+            addChildComponent(muteBtn);     // one author shows it
+            soloBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
+            soloBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffF2E14C));
+            soloBtn.onClick = [this] { if (onSoloClick) onSoloClick(); };
+            addChildComponent(soloBtn);
+            soloLimitLabel.setFont(juce::Font(juce::FontOptions(10.0f)));
+            soloLimitLabel.setColour(juce::Label::textColourId,
+                                     juce::Colour(0xff8a8fa8));
+            soloLimitLabel.setJustificationType(juce::Justification::centred);
+            addChildComponent(soloLimitLabel);
 
             addAndMakeVisible(stripView);
             stripView.setViewedComponent(&stripContent, false);
@@ -2684,8 +2684,13 @@ private:
             // narrow the window gets. Same shape as the master knob's
             // reservation at the right end.
             rackBtn.setBounds(8, getHeight() - kStripH + 8, kRackSelW - 16, 24);
-            borrowBtn.setBounds(8, getHeight() - kStripH + 36, kRackSelW - 16, 22);
-            borrowRouteBtn.setBounds(8, getHeight() - kStripH + 60, kRackSelW - 16, 14);
+            {
+                const int w = (kRackSelW - 20) / 2;
+                muteBtn.setBounds(8, getHeight() - kStripH + 36, w, 22);
+                soloBtn.setBounds(12 + w, getHeight() - kStripH + 36, w, 22);
+                soloLimitLabel.setBounds(8, getHeight() - kStripH + 60,
+                                         kRackSelW - 16, 14);
+            }
             // Pre-gain knob at the HEAD of the strip, left of the first block:
             // its position says what it does (the signal enters here). Shown
             // in local AND remote (a selected rack has a pre-gain too), so it
@@ -3409,6 +3414,8 @@ private:
         juce::Rectangle<int> name;      // resolveLinkDisplayName()
         juce::Rectangle<int> badge;     // BUS / CHANNEL / SET? chip
         juce::Rectangle<int> active;    // merged Active tick + connectivity
+        juce::Rectangle<int> mute;      // M lamp (MUTE_SOLO_SPEC), in the
+        juce::Rectangle<int> solo;      // Active row's right end; S beside it
         juce::Rectangle<int> data;      // numbers / chain (the content toggle)
         // The fader+meter BAND (8b): one horizontal band, console style, the
         // meter as PERMANENT chrome. Both rects are stored by layOutStrips
@@ -3724,7 +3731,8 @@ private:
     static int stripsTotalWidth(int count, int stripW)
     { return count <= 0 ? 0 : count * (stripW + kStripGap) - kStripGap; }
 
-    enum class StripHit { None = 0, Fader, Clip, Meter, Badge, Active, Background };
+    enum class StripHit { None = 0, Fader, Clip, Meter, Badge, Active,
+                          Mute, Solo, Background };
     /** HIT-TEST PRECEDENCE, in ONE place and stated in code rather than left
         to the order handlers happen to test in: fader, then meter, then the
         placement badge, then the merged Active control, then the strip
@@ -4168,7 +4176,12 @@ private:
                                    // retire text that stopped being true
     void showChainRackMenu();
     // Whole-rack borrow: step 2 (solo) + step 3 (Apply & Release).
-    void toggleBorrow();
+    // toggleBorrow (LISTEN) deleted — MUTE_SOLO_SPEC §1.
+    void sendLinkMuteSoloForView(bool isSolo);
+    void stripMuteSoloClick(const juce::String& uid, bool isSolo);
+    juce::String muteSoloStripTip(const juce::String& uid, bool isSolo) const;
+    void sendLinkMuteSoloCommand(const juce::String& uid, bool isSolo, bool on);
+    juce::String soloLimitLineText() const;
     void startBorrow(const juce::String& uid);
     std::vector<std::pair<bool, bool>> borrowSlotVerdicts();  // delegate -> processor
     // §5a-R (26 Aug 2026): selection IS the session.

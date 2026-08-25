@@ -101,6 +101,19 @@ struct EchoJayLinkSyncTestAccess
     { return p.rackLeaseMuteWant_.load (std::memory_order_relaxed); }
     static void releaseArmClearsMute (LinkProcessor& p)
     { p.rackLeaseMuteWant_.store (false, std::memory_order_relaxed); }
+    // Mute/solo arms (27 Aug 2026): drive and observe the REAL composed
+    // state, the REAL fabric scan, the REAL ctrl poll and publish.
+    static void setUserMute (LinkProcessor& p, bool m)
+    { p.muteUserOn_.store (m, std::memory_order_relaxed); }
+    static void setSolo (LinkProcessor& p, bool s)
+    { p.soloOn_.store (s, std::memory_order_relaxed); }
+    static void setSoloMuteDirect (LinkProcessor& p, bool s)
+    { p.soloMuteWant_.store (s, std::memory_order_relaxed); }
+    static bool soloMuteWant (LinkProcessor& p)
+    { return p.soloMuteWant_.load (std::memory_order_relaxed); }
+    static void fabricScan (LinkProcessor& p) { p.soloFabricScan(); }
+    static void pollCtrl (LinkProcessor& p) { p.pollControlCommand(); }
+    static void publish (LinkProcessor& p) { p.publishRackSidecar(); }
 };
 
 static int failures = 0;
@@ -583,6 +596,165 @@ int main()
                "lease gone -> the want clears through the restore path");
         check (! proc.rackEditPendingHeld(),
                "lease gone -> the pending hold clears with it");
+    }
+
+    // ---- MUTE/SOLO (27 Aug 2026, MUTE_SOLO_SPEC) --------------------------
+    // Composition truth table through the REAL processBlock: three reasons,
+    // one silence; each keeps its own lifetime, and a session release can
+    // NEVER clear a user mute — the ruling, asserted as behaviour.
+    std::printf ("== mute/solo: three reasons, one silence ==\n");
+    {
+        using T = EchoJayLinkSyncTestAccess;
+        juce::AudioBuffer<float> blk (2, 512);
+        juce::MidiBuffer midi;
+        auto feed = [&]{ for (int ch = 0; ch < 2; ++ch)
+                             for (int i = 0; i < 512; ++i)
+                                 blk.setSample (ch, i, 0.5f);
+                         proc.processBlock (blk, midi); };
+        auto peak = [&]{ float m = 0;
+                         for (int ch = 0; ch < 2; ++ch)
+                             for (int i = 0; i < 512; ++i)
+                                 m = juce::jmax (m, std::abs (blk.getSample (ch, i)));
+                         return m; };
+        auto settle = [&]{ for (int b = 0; b < 8; ++b) feed(); };
+        settle();
+        check (peak() > 0.01f, "all reasons clear: audible",
+               juce::String (peak()));
+        T::setUserMute (proc, true); settle();
+        check (peak() < 0.001f, "user mute alone silences", juce::String (peak()));
+        T::engage (proc); T::setMute (proc, true); settle();
+        check (peak() < 0.001f, "user + session mutes hold together");
+        // THE RULING: releasing the session clears ONLY its own reason.
+        T::releaseArmClearsMute (proc); T::release (proc); settle();
+        check (peak() < 0.001f,
+               "session released - the USER mute survives (the ruling)",
+               juce::String (peak()));
+        T::setUserMute (proc, false); settle();
+        check (peak() > 0.01f, "user mute lifted - audible again",
+               juce::String (peak()));
+        T::setSoloMuteDirect (proc, true); settle();
+        check (peak() < 0.001f, "solo-mute alone silences", juce::String (peak()));
+        T::setSoloMuteDirect (proc, false); settle();
+        check (peak() > 0.01f, "solo-mute lifted - audible again");
+    }
+
+    // The FABRIC, against the real registry mapping and real sidecar files:
+    // a live foreign solo mutes; my own membership exempts; a clean exit
+    // recovers immediately; a frozen heartbeat (crash) recovers within the
+    // freshness window. RegLiveness::proven is sticky, so the ghost arm is
+    // the one that proves death has its own check.
+    std::printf ("== solo fabric: live foreign solo mutes; ghosts cannot ==\n");
+    {
+        using T = EchoJayLinkSyncTestAccess;
+        int errF = 0;
+        const juce::String fdir = LinkShm::resolveDir (errF);
+        int ffd = -1, ferr = 0;
+        void* fmap = LinkShm::openRegistry (fdir, ffd, ferr);
+        check (fmap != nullptr, "fabric arm's registry mapping opened");
+        auto* fslots = LinkShm::regSlots (fmap);
+        const int fi = 9;                       // a slot nobody else claims
+        const char* fuid = "fabsolo001";
+        std::memset (&fslots[fi], 0, sizeof (RegistrySlot));
+        std::memcpy (fslots[fi].instanceUid, fuid, 10);
+        LinkShm::storeRelease (&fslots[fi].heartbeat, 1u);
+        LinkShm::storeRelease (&fslots[fi].inUse, 1u);
+        LinkShm::RackSidecar frc;
+        frc.valid = true; frc.uid = fuid; frc.name = "Fabric Probe";
+        frc.soloOn = true; frc.muteSoloCapable = true;
+        LinkShm::writeRackSidecar (fdir, frc);
+        T::fabricScan (proc);
+        check (! T::soloMuteWant (proc),
+               "one observation is NOT proof of life - no mute yet");
+        LinkShm::storeRelease (&fslots[fi].heartbeat, 2u);
+        T::fabricScan (proc);
+        check (T::soloMuteWant (proc),
+               "a PROVEN-live foreign solo mutes this Link");
+        T::setSolo (proc, true); T::fabricScan (proc);
+        check (! T::soloMuteWant (proc),
+               "joining the solo set exempts (multi-solo membership)");
+        T::setSolo (proc, false);
+        LinkShm::storeRelease (&fslots[fi].heartbeat, 3u);
+        T::fabricScan (proc);
+        check (T::soloMuteWant (proc), "leaving the set re-mutes");
+        LinkShm::storeRelease (&fslots[fi].inUse, 0u);
+        T::fabricScan (proc);
+        check (! T::soloMuteWant (proc),
+               "clean exit: the solo dies with the row, immediately");
+        // The ghost: re-plant, prove live, then freeze past the window.
+        LinkShm::storeRelease (&fslots[fi].inUse, 1u);
+        LinkShm::storeRelease (&fslots[fi].heartbeat, 4u);
+        T::fabricScan (proc);
+        LinkShm::storeRelease (&fslots[fi].heartbeat, 5u);
+        T::fabricScan (proc);
+        check (T::soloMuteWant (proc), "ghost arm: proven live first");
+        juce::Thread::sleep (3600);             // the freshness window
+        T::fabricScan (proc);
+        check (! T::soloMuteWant (proc),
+               "frozen heartbeat: the solo cannot outlive its owner");
+        LinkShm::storeRelease (&fslots[fi].inUse, 0u);
+        juce::File (LinkShm::rackSidecarPath (fdir, fuid)).deleteFile();
+        T::fabricScan (proc);
+    }
+
+    // TRANSPORT: the two additive cmd fields through the REAL poll —
+    // consumed, applied, answered.
+    std::printf ("== mute/solo transport: ctrl-cmd, consumed + acked ==\n");
+    {
+        using T = EchoJayLinkSyncTestAccess;
+        int errT = 0;
+        const juce::String tdir = LinkShm::resolveDir (errT);
+        const juce::String tuid = T::uid (proc);
+        auto sendCmd = [&](const char* field, bool on)
+        {
+            juce::File (tdir + "ctrl-cmd-" + tuid + ".json").replaceWithText (
+                "{\"v\": 1, \"seq\": " + juce::String (LinkShm::nextCtrlSeq())
+                + ", \"" + field + "\": " + (on ? "true" : "false") + "}");
+            T::pollCtrl (proc);
+        };
+        sendCmd ("muteUser", true);
+        check (proc.userMuteOn(), "muteUser=true applied through the poll");
+        check (! juce::File (tdir + "ctrl-cmd-" + tuid + ".json").existsAsFile(),
+               "the command was consumed");
+        check (juce::File (tdir + "ctrl-ack-" + tuid + ".json").existsAsFile(),
+               "and answered");
+        sendCmd ("soloOn", true);
+        check (proc.soloIsOn(), "soloOn=true applied through the poll");
+        // The published sidecar carries all three bits + the COMPOSED
+        // engaged state (a user mute is confirmed silence too).
+        T::publish (proc);
+        const auto prc = LinkShm::readRackSidecar (tdir, tuid);
+        check (prc.uid == tuid && prc.muteUser && prc.soloOn
+                 && prc.muteSoloCapable,
+               "the sidecar publishes muteUser, soloOn and the capability");
+        check (prc.muteEngaged,
+               "muteEngaged reports the COMPOSED actual (user mute counts)");
+        sendCmd ("muteUser", false);
+        sendCmd ("soloOn", false);
+        check (! proc.userMuteOn() && ! proc.soloIsOn(),
+               "both lift through the same transport");
+    }
+
+    // PERSISTENCE: muteUser rides the saved state; soloOn NEVER exists in
+    // it, by construction — asserted against the real serializer, both
+    // directions. (Last arm: setState schedules an async chain restore.)
+    std::printf ("== persistence: muteUser rides state; solo never ==\n");
+    {
+        using T = EchoJayLinkSyncTestAccess;
+        T::setUserMute (proc, true);
+        T::setSolo (proc, true);
+        juce::MemoryBlock mb;
+        proc.getStateInformation (mb);
+        const juce::String js = juce::String::fromUTF8 (
+            static_cast<const char*> (mb.getData()), (int) mb.getSize());
+        check (js.contains ("\"muteUser\": true"),
+               "the saved state carries the user mute");
+        check (! js.contains ("soloOn"),
+               "a saved solo CANNOT exist - the key is never written");
+        T::setUserMute (proc, false);
+        proc.setStateInformation (mb.getData(), (int) mb.getSize());
+        check (proc.userMuteOn(), "restore brings the user mute back");
+        T::setUserMute (proc, false);
+        T::setSolo (proc, false);
     }
 
     // ---- negative control -------------------------------------------------

@@ -903,10 +903,12 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                 // try-and-skip: the borrowed host is a session-long member
                 // and its graph carries the same prepare/process
                 // synchronization the main chainHost's does — spec §3).
-                if (li == borrowSession_.ringSlot.load(std::memory_order_relaxed)
-                    && (borrowSession_.audioOn.load(std::memory_order_acquire)
-                        || borrowInContextOk_.load(std::memory_order_relaxed)))
+                if (li == borrowSession_.ringSlot.load(std::memory_order_relaxed))
                 {
+                    // LISTEN deleted (27 Aug 2026): the stream's consumers
+                    // are now the injection (in-context) and the AUTOMATIC
+                    // solo fallback (!in-context) — that is every session
+                    // state, so the drain gates on the session alone.
                     // 26 Aug 2026 URGENT: this gate was audioOn-only (built
                     // for solo), so the in-context default ran with the
                     // drain DEAD — borrowBuf_ was never filled, and the
@@ -1042,10 +1044,14 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     // INJECTION's own delay line (end of block), where a change only
     // interrupts the ramped injection, never the passthrough. ctxNow is
     // independent of the MAIN's channel type (the route fork is SOLO's).
-    const bool listenSolo = borrowSession_.audioOn.load(std::memory_order_acquire);
+    // LISTEN deleted (27 Aug 2026, MUTE_SOLO_SPEC §6.4): the through-main
+    // borrow route survives ONLY as the automatic monitoring fallback when
+    // in-context is refused (incapable Link, over-budget rack, watchdog
+    // drop) — no user flag in the trigger.
+    const bool fallbackSolo = borrowActive()
+                        && ! borrowInContextOk_.load(std::memory_order_relaxed);
     const bool ctxNow = borrowActive()
-                        && borrowInContextOk_.load(std::memory_order_relaxed)
-                        && ! listenSolo;
+                        && borrowInContextOk_.load(std::memory_order_relaxed);
     // §8.3 (26 Aug, corrected per ruling): the CONSTANT full-budget delay
     // sits on the passthrough BEFORE the sum, so at this point the
     // passthrough is aged exactly `budget` and the injection — inherently
@@ -1061,7 +1067,15 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         alignPost_.process(buffer, kBorrowAlignBudgetFrames);
         const int ctxChainLat = borrowChainLat_.load(std::memory_order_relaxed);
         const int injPad = alignPad(ctxChainLat);
-        borrowCtxMix_.setTargetValue(ctxNow && injPad >= 0 ? 1.0f : 0.0f);
+        // THE HONORARY STRIP (MUTE_SOLO_SPEC §6.1): the injection stands in
+        // for the edited rack's output, so it follows the solo fabric as if
+        // it were that rack's strip — audible iff the solo set is empty or
+        // the edited rack is in it. Suppression is a MUTE, not a pad
+        // change: it rides the ramp target only, never padKey, so lifting
+        // it never clears the injection history.
+        const bool soloSup = borrowSoloSuppressInj_.load(std::memory_order_relaxed);
+        borrowCtxMix_.setTargetValue(ctxNow && injPad >= 0 && ! soloSup
+                                         ? 1.0f : 0.0f);
         const int padKey = (ctxNow && injPad >= 0) ? injPad : -1;
         if (padKey != borrowLastPadKey_)
         {
@@ -1070,7 +1084,8 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             borrowLastPadKey_ = padKey;
             alignPre_.buf.clear();
             borrowCtxMix_.setCurrentAndTargetValue(0.0f);
-            borrowCtxMix_.setTargetValue(ctxNow && injPad >= 0 ? 1.0f : 0.0f);
+            borrowCtxMix_.setTargetValue(ctxNow && injPad >= 0 && ! soloSup
+                                             ? 1.0f : 0.0f);
         }
         if ((ctxNow && injPad >= 0)
             || borrowCtxMix_.getCurrentValue() > 0.0001f)
@@ -1096,7 +1111,7 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             borrowCtxMix_.skip(buffer.getNumSamples());
     }
     if (borrowThrough)
-        applyBorrowSoloMixOn(buffer, listenSolo);
+        applyBorrowSoloMixOn(buffer, fallbackSolo);
 
     // CHAIN: pass audio through hosted plugin (graph handles passthrough if none loaded)
     {
@@ -1240,7 +1255,7 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     // The through-main route ran BEFORE chainHost.process instead; exactly
     // one of the two sites fires per block (borrowThrough, read once above).
     if (!borrowThrough)
-        applyBorrowSoloMixOn(buffer, listenSolo);
+        applyBorrowSoloMixOn(buffer, fallbackSolo);
 
     // ===== Stage 1 SOLO: the last word on the buffer =====================
     // While a remote edit session runs, the mix is REPLACED by the edited
@@ -1734,8 +1749,7 @@ void EchoJayProcessor::borrowTick()
     // Confirmation is only judged on a FRESH cache read (an editor feeds
     // the cache; stale reads prove nothing either way).
     if (borrowActive()
-        && borrowInContextOk_.load(std::memory_order_relaxed)
-        && ! borrowSession_.audioOn.load(std::memory_order_relaxed))
+        && borrowInContextOk_.load(std::memory_order_relaxed))
     {
         bool freshRead = false, confirmed = false;
         if (auto it = linkRackCache.find(borrowSession_.uid);
@@ -1753,8 +1767,8 @@ void EchoJayProcessor::borrowTick()
             borrowInContextOk_.store(false, std::memory_order_relaxed);
             const juce::String nm = resolveLinkDisplayName(borrowSession_.uid);
             borrowStickyBanner_ = nm + "'s channel did not confirm its mute - "
-                "the mix may have doubled briefly. Your edits still play: "
-                "use LISTEN. If this repeats, update " + nm + "'s EchoJay Link.";
+                "the mix may have doubled briefly. Soloing your edit "
+                "instead. If this repeats, update " + nm + "'s EchoJay Link.";
             EchoJay_NSLog(("EJCtx: mute UNCONFIRMED after "
                 + juce::String(borrowMuteUnconfirmedTicks_)
                 + " ticks - dropped to solo, named").toRawUTF8());
@@ -1866,8 +1880,8 @@ ChainHost* EchoJayProcessor::borrowHost()
                 borrowInContextOk_.store(false, std::memory_order_relaxed);
                 const juce::String name = resolveLinkDisplayName(borrowUid());
                 borrowStickyBanner_ = name + "'s rack now needs more "
-                    "look-ahead than the in-mix budget - soloing instead. "
-                    "LISTEN to hear it.";
+                    "look-ahead than the in-mix budget - soloing your edit "
+                    "instead.";
                 EchoJay_NSLog(("EJCtx: chain latency " + juce::String(lat)
                     + " exceeds budget - dropped to solo").toRawUTF8());
             }
@@ -1899,8 +1913,10 @@ void EchoJayProcessor::renewBorrowLease()
     // restore path on the Link. True only while in-context is actually
     // playing (not while LISTEN solos, not in the degenerate through-main
     // placement, never when refused/incapable).
-    const bool muteWant = borrowInContextOk_.load(std::memory_order_relaxed)
-        && ! borrowSession_.audioOn.load(std::memory_order_relaxed);
+    // LISTEN deleted: the session mute wants exactly while in-context
+    // monitoring is live (the fallback plays the ring through the main,
+    // where the Link's dry channel is not in the audible path anyway).
+    const bool muteWant = borrowInContextOk_.load(std::memory_order_relaxed);
     o->setProperty("muteOut", muteWant);
     // Additive: the failure-held session names itself so the Link's
     // banner can speak to the state the user is actually in.
@@ -1908,8 +1924,8 @@ void EchoJayProcessor::renewBorrowLease()
     EchoJay_NSLog(("EJCtx(main): renew muteOut="
         + juce::String(muteWant ? "Y" : "N") + " ok="
         + juce::String(borrowInContextOk_.load(std::memory_order_relaxed) ? "Y" : "N")
-        + " listen="
-        + juce::String(borrowSession_.audioOn.load(std::memory_order_relaxed) ? "Y" : "N"))
+        + " soloSup="
+        + juce::String(borrowSoloSuppressInj_.load(std::memory_order_relaxed) ? "Y" : "N"))
         .toRawUTF8());
     o->setProperty("tMs",     juce::Time::currentTimeMillis());
     juce::File(LinkShm::leasePath(dir, borrowSession_.uid))
@@ -1966,19 +1982,8 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
                    + juce::String(ringSlot)).toRawUTF8());
 }
 
-void EchoJayProcessor::borrowAudioOn()
-{
-    if (!borrowActive()) return;
-    borrowSession_.audioOn.store(true, std::memory_order_release);
-}
-
-void EchoJayProcessor::borrowAudioOff()
-{
-    // §5a-R: listening is its OWN control now — the session engages silent
-    // and this turns monitoring off without ending anything. The 30ms
-    // crossfade in applyBorrowSoloMix rides the same audioOn flag down.
-    borrowSession_.audioOn.store(false, std::memory_order_release);
-}
+// borrowAudioOn/borrowAudioOff (LISTEN) DELETED 27 Aug 2026 — solo
+// subsumes LISTEN (MUTE_SOLO_SPEC §1/§6.4). Deleted, not dormant.
 
 void EchoJayProcessor::captureBorrowKept()
 {
@@ -2014,10 +2019,10 @@ void EchoJayProcessor::borrowRelease(bool keepEdits)
     borrowRemovedNames_.clear();
     borrowInContextOk_.store(false, std::memory_order_relaxed);
     borrowStructureCapable_ = false;
-    // Ramp out first (the AMEK lesson): audioOn drops the crossfade target
-    // to 0; the graph itself stays alive (session-long host), so there is
-    // no instance teardown racing the audio thread here at all.
-    borrowSession_.audioOn.store(false, std::memory_order_release);
+    // Ramp out first (the AMEK lesson): active drops both crossfade
+    // targets (fallbackSolo and ctxNow derive from it); the graph itself
+    // stays alive (session-long host), so there is no instance teardown
+    // racing the audio thread here at all.
     if (borrowLeaseTimer_) borrowLeaseTimer_->stopTimer();
     int err = 0;
     const juce::String dir = LinkShm::resolveDir(err);
@@ -4553,6 +4558,67 @@ void EchoJayProcessor::refreshLinkRegistry()
                 if (itc->second) { anyCapable = true; break; }
             }
             setBorrowBudgetActive(anyCapable);
+        }
+    }
+
+    // ---- Mute/solo snapshot (27 Aug 2026, MUTE_SOLO_SPEC §3/§5/§6.1) ----
+    // LIVE rows only (heartbeatFresh — a ghost can neither solo nor need
+    // the capability warning); parses mtime-gated. Feeds the editor's
+    // lamps, the contextual honest-limit line, and the honorary-strip
+    // suppression of the in-context injection.
+    {
+        int errMs = 0;
+        const juce::String dirMs = LinkShm::resolveDir(errMs);
+        bool anySolo = false; int incap = 0;
+        std::set<juce::String> listedNow;
+        juce::String firstSoloName;
+        for (const auto& si : linkSlotInfos)
+        {
+            if (si.uid.isEmpty() || ! si.heartbeatFresh) continue;
+            listedNow.insert(si.uid);
+            auto& snap = muteSoloSnaps_[si.uid];
+            if (dirMs.isNotEmpty())
+            {
+                juce::File f(LinkShm::rackSidecarPath(dirMs, si.uid));
+                const juce::int64 mt = f.existsAsFile()
+                    ? f.getLastModificationTime().toMilliseconds() : 0;
+                if (mt != snap.mtimeMs)
+                {
+                    const auto rc = LinkShm::readRackSidecar(dirMs, si.uid);
+                    if (rc.uid == si.uid)
+                    {
+                        snap.mtimeMs = mt;
+                        snap.muteUser = rc.muteUser;
+                        snap.soloOn   = rc.soloOn;
+                        snap.capable  = rc.muteSoloCapable;
+                    }
+                }
+            }
+            if (snap.soloOn && firstSoloName.isEmpty())
+                firstSoloName = resolveLinkDisplayName(si.uid);
+            anySolo = anySolo || snap.soloOn;
+            if (! snap.capable) ++incap;
+        }
+        for (auto it = muteSoloSnaps_.begin(); it != muteSoloSnaps_.end();)
+            it = listedNow.count(it->first) ? std::next(it)
+                                            : muteSoloSnaps_.erase(it);
+        soloSetActive_     = anySolo;
+        soloIncapableLive_ = incap;
+        const bool editedIn = borrowActive()
+            && muteSoloSnaps_.count(borrowSession_.uid)
+            && muteSoloSnaps_[borrowSession_.uid].soloOn;
+        const bool suppress = anySolo && borrowActive() && ! editedIn;
+        borrowSoloSuppressInj_.store(suppress, std::memory_order_relaxed);
+        if (suppress != soloSuppressPrev_)
+        {
+            soloSuppressPrev_ = suppress;
+            if (suppress)
+                borrowStickyBanner_ = firstSoloName
+                    + " is soloed - your edit is muted with the other "
+                      "channels. Solo this rack to hear it.";
+            else if (borrowActive())
+                borrowStickyBanner_ = "Solo lifted - your edit is audible "
+                    "again.";
         }
     }
 

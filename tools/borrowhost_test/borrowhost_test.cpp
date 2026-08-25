@@ -383,20 +383,20 @@ int main()
                "the route is read ONCE per block");
         check (psrc3.contains ("if (borrowThrough)\n        applyBorrowSoloMixOn(buffer,"),
                "through-main site present (before chainHost.process)");
-        check (psrc3.contains ("if (!borrowThrough)\n        applyBorrowSoloMixOn(buffer, listenSolo);"),
+        check (psrc3.contains ("if (!borrowThrough)\n        applyBorrowSoloMixOn(buffer, fallbackSolo);"),
                "replace-after site present (after chainHost.process)");
         // The banner SAYS the mode, both wordings live in the editor.
         std::ifstream fe3 ("Source/PluginEditor.cpp");
         std::stringstream se3; se3 << fe3.rdbuf();
         const juce::String esrc3 (se3.str());
-        // §5a-R: the engage banner no longer claims solo (sessions engage
-        // SILENT); the mode wording lives on the route button.
-        check (esrc3.contains ("HEARD: THROUGH THIS CHAIN"),
-               "banner wording: through-main present");
-        check (esrc3.contains ("HEARD: REPLACES OUTPUT"),
-               "banner wording: replace-after present");
-        check (esrc3.contains ("toggleBorrowRoute"),
-               "the visible override is wired");
+        // 27 Aug 2026: the route override RETIRED with LISTEN
+        // (MUTE_SOLO_SPEC §6.4) — the route auto-detects, no user control,
+        // no mode wording. Deleted, not dormant.
+        check (! esrc3.contains ("HEARD: THROUGH THIS CHAIN")
+                 && ! esrc3.contains ("HEARD: REPLACES OUTPUT"),
+               "the route-mode wordings are gone");
+        check (! esrc3.contains ("toggleBorrowRoute"),
+               "the visible override is gone");
     }
 
     // =======================================================================
@@ -1232,14 +1232,17 @@ int main()
                        .contains ("borrowEditorClosed()"),
                    "the destructor applies-then-releases via the processor");
         }
-        // Sessions engage SILENT; LISTEN is its own control.
+        // LISTEN is DELETED (27 Aug 2026, MUTE_SOLO_SPEC §1/§6.4): solo
+        // subsumes it. Deleted, not dormant — pinned as absences of the
+        // code forms (comments explaining the deletion are welcome).
         {
-            const int f = edS.indexOf ("// §5a-R: the session engages SILENT");
-            check (f >= 0, "the engage-silent comment anchors the finish");
-            check (! edS.substring (f, f + 2200).contains ("borrowAudioOn()"),
-                   "no audio-on inside the engage finish");
-            check (edS.contains ("\"LISTENING\" : \"LISTEN\""),
-                   "the LISTEN control names its two states");
+            check (! edS.contains ("borrowAudioOn()")
+                     && ! edS.contains ("borrowAudioIsOn()"),
+                   "the editor holds no LISTEN control calls");
+            check (! edS.contains ("\"LISTENING\""),
+                   "the LISTENING button state is gone");
+            check (edS.contains ("sendLinkMuteSoloForView"),
+                   "the under-rack M/S controls replaced it");
         }
         // Honesty surfaces are NOT losable by navigating away: the sticky
         // banner and the unwritten-edit note render from PROCESSOR state.
@@ -1681,12 +1684,34 @@ int main()
             check (maxPeak < 2.0f,
                    "IN-CONTEXT output stays bounded over 60 real blocks",
                    juce::String (maxPeak, 3));
-            mainProc.borrowAudioOn();             // LISTEN: the solo path
+            // The AUTOMATIC fallback solo (LISTEN deleted): in-context
+            // refused -> the borrow ring replaces the output, no user flag.
+            mainProc.borrowInContextOk_.store (false, std::memory_order_relaxed);
             maxPeak = 0.0f; runBlocks (60);
             check (maxPeak < 2.0f,
-                   "SOLO output stays bounded over 60 real blocks",
+                   "FALLBACK SOLO output stays bounded over 60 real blocks",
                    juce::String (maxPeak, 3));
-            mainProc.borrowAudioOff();
+            mainProc.borrowInContextOk_.store (true, std::memory_order_relaxed);
+            // THE HONORARY STRIP (MUTE_SOLO_SPEC §6.1), as BEHAVIOUR: the
+            // injection gain follows the solo fabric — a foreign solo
+            // ramps it to silence, the edited rack joining the set (or the
+            // set emptying) ramps it back. Suppression must never touch
+            // the pad (no history clear), so the return is a ramp, not a
+            // re-prime.
+            runBlocks (30);   // settle in-context: gain reaches 1
+            check (mainProc.borrowCtxMixNow() > 0.99f,
+                   "in-context settled: injection gain 1",
+                   juce::String (mainProc.borrowCtxMixNow(), 3));
+            mainProc.borrowSoloSuppressInj_.store (true, std::memory_order_relaxed);
+            runBlocks (30);
+            check (mainProc.borrowCtxMixNow() < 0.01f,
+                   "a foreign solo ramps the injection OUT (honorary strip)",
+                   juce::String (mainProc.borrowCtxMixNow(), 3));
+            mainProc.borrowSoloSuppressInj_.store (false, std::memory_order_relaxed);
+            runBlocks (30);
+            check (mainProc.borrowCtxMixNow() > 0.99f,
+                   "solo lifted (or joined): the injection ramps back",
+                   juce::String (mainProc.borrowCtxMixNow(), 3));
             maxPeak = 0.0f; runBlocks (30);       // mode switch ramps settle
             check (maxPeak < 2.0f,
                    "the mode switch stays bounded through the ramps",
@@ -1737,7 +1762,6 @@ int main()
         // ---- the Link never muted; the gate had proven the mute only
         // ---- from the want-flag inward, never the FILE that carries it).
         {
-            mainProc.borrowAudioOff();
             int errL = 0;
             const juce::String ldir2 = LinkShm::resolveDir(errL);
             const juce::File lf (LinkShm::leasePath (ldir2, "uid-lvl"));
@@ -1773,8 +1797,11 @@ int main()
             std::ifstream f8 ("Source/PluginProcessor.cpp");
             std::stringstream s8; s8 << f8.rdbuf();
             const juce::String pp9 (s8.str());
-            check (pp9.contains ("|| borrowInContextOk_.load(std::memory_order_relaxed)))"),
-                   "the ring drain runs for the in-context consumer too");
+            // 27 Aug: LISTEN deleted — the drain gates on the session
+            // alone (its consumers, injection and automatic fallback,
+            // cover every session state between them).
+            check (pp9.contains ("if (li == borrowSession_.ringSlot.load(std::memory_order_relaxed))"),
+                   "the ring drain runs for EVERY session state");
             // 26 Aug: in-context must not depend on the MAIN's channel
             // type — the route fork belongs to SOLO alone.
             {
@@ -1786,8 +1813,11 @@ int main()
                 check (at >= 0 && ! decl.contains ("borrowThrough"),
                        "ctxNow is independent of the main's channel type");
             }
-            check (pp9.contains ("applyBorrowSoloMixOn(buffer, listenSolo);\n"),
-                   "the through-solo site keys on LISTEN alone");
+            check (pp9.contains ("applyBorrowSoloMixOn(buffer, fallbackSolo);\n"),
+                   "the through-solo site keys on the automatic fallback");
+            check (! pp9.contains ("audioOn.load")
+                     || juce::String (pp9).indexOf ("borrowSession_.audioOn") < 0,
+                   "no LISTEN flag survives in the borrow session");
             // Crackle redesign pins: the passthrough delay is CONSTANT;
             // the pad lives on the injection's own line.
             check (pp9.contains ("alignPost_.process(buffer, kBorrowAlignBudgetFrames);"),
@@ -1801,11 +1831,34 @@ int main()
                 std::ifstream lf9 ("Source/LinkProcessor.cpp");
                 std::stringstream ls9; ls9 << lf9.rdbuf();
                 const juce::String lp10 (ls9.str());
-                check (lp10.contains ("rc.muteEngaged = rackLeaseActive_"),
-                       "the Link publishes its LIVE mute state (closed loop)");
+                check (lp10.contains ("rc.muteEngaged = linkMuteWanted();"),
+                       "the Link publishes its LIVE mute state (closed "
+                       "loop) - now the COMPOSED actual (spec §2)");
             }
             check (pp9.contains ("borrowBuf_.clear();   // setSize leaves contents UNDEFINED"),
                    "the injection source is cleared at allocation, always");
+            // Mute/solo (27 Aug 2026) pins: ONE writer for the suppression
+            // (the registry pass), computed from LIVE rows with the edited
+            // rack exempt; both transition banners exist; the contextual
+            // honest-limit line is conditional on an ACTIVE solo, and the
+            // old-binary count rides it as a warning.
+            check (pp9.contains ("const bool suppress = anySolo && borrowActive() && ! editedIn;"),
+                   "suppression = solo set non-empty AND edited rack not in it");
+            check (pp9.contains ("is soloed - your edit is muted with the other")
+                     && pp9.contains ("Solo lifted - your edit is audible"),
+                   "both honorary-strip transition banners exist");
+            {
+                std::ifstream fe9 ("Source/PluginEditor.cpp");
+                std::stringstream se9; se9 << fe9.rdbuf();
+                const juce::String ed9 (se9.str());
+                check (ed9.contains ("if (processorRef.soloSetActive_)")
+                         && ed9.contains ("Solo mutes Link channels only"),
+                       "the honest-limit line is CONTEXTUAL (amendment)");
+                check (ed9.contains ("Link(s) predate solo and keep playing"),
+                       "the old-binary warning rides the same line");
+                check (ed9.contains ("predates mute/solo - reinstall"),
+                       "an incapable target is refused WITH the reason");
+            }
         }
         // The pad arithmetic, pure: fits, exact fit, refuse-over-budget.
         const int head = EchoJayProcessor::kBorrowAlignBudgetFrames - 1024;

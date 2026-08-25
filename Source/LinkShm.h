@@ -1089,6 +1089,16 @@ struct RackSidecar {
     // never sends a plan — the never-half-see pattern, again.
     bool  structureEditCapable = false;
     bool  inContextCapable = false;
+    // Mute/solo layer (27 Aug 2026). Additive at v:1, written only when
+    // true, absent reads false — the carved-bit convention throughout.
+    // muteUser is the user's own mix mute (persists in the Link's saved
+    // state); soloOn is this Link's solo membership (NEVER persisted — a
+    // saved solo is how a project opens silent and nobody knows why);
+    // muteSoloCapable announces the composed mute + the fabric scan, and
+    // a main never sends the mute/solo cmds against false.
+    bool  muteUser = false;
+    bool  soloOn = false;
+    bool  muteSoloCapable = false;
     bool  muteEngaged = false;         // LIVE state: the mute is actually
                                        // applied this instant — the closed
                                        // loop that replaces "impossible by
@@ -1730,6 +1740,9 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
     if (rc.structureEditCapable) obj->setProperty("structureEditCapable", true);
     if (rc.inContextCapable) obj->setProperty("inContextCapable", true);
     if (rc.muteEngaged) obj->setProperty("muteEngaged", true);
+    if (rc.muteUser) obj->setProperty("muteUser", true);
+    if (rc.soloOn) obj->setProperty("soloOn", true);
+    if (rc.muteSoloCapable) obj->setProperty("muteSoloCapable", true);
     juce::Array<juce::var> slots;
     for (const auto& s : rc.slots)
     {
@@ -1792,6 +1805,9 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
     rc.structureEditCapable = obj->hasProperty("structureEditCapable") && (bool)obj->getProperty("structureEditCapable");
     rc.inContextCapable = obj->hasProperty("inContextCapable") && (bool)obj->getProperty("inContextCapable");
     rc.muteEngaged = obj->hasProperty("muteEngaged") && (bool)obj->getProperty("muteEngaged");
+    rc.muteUser = obj->hasProperty("muteUser") && (bool)obj->getProperty("muteUser");
+    rc.soloOn = obj->hasProperty("soloOn") && (bool)obj->getProperty("soloOn");
+    rc.muteSoloCapable = obj->hasProperty("muteSoloCapable") && (bool)obj->getProperty("muteSoloCapable");
     if (auto* arr = obj->getProperty("slots").getArray())
         for (auto& sv : *arr)
             if (auto* so = sv.getDynamicObject())

@@ -516,6 +516,18 @@ public:
     juce::String rackLockOwner() const { return rackLockOwner_; }
     bool rackEditPendingHeld() const
         { return rackLeaseEditPending_.load(std::memory_order_relaxed); }
+    // The composed mute: output is silent if ANY reason wants it. This is
+    // the one truth processBlock ramps on and the sidecar's muteEngaged
+    // confirms — the §8.5b watchdog contract is unchanged by composition.
+    bool linkMuteWanted() const
+    {
+        return (rackLeaseActive_
+                    && rackLeaseMuteWant_.load(std::memory_order_relaxed))
+            || muteUserOn_.load(std::memory_order_relaxed)
+            || soloMuteWant_.load(std::memory_order_relaxed);
+    }
+    bool userMuteOn() const { return muteUserOn_.load(std::memory_order_relaxed); }
+    bool soloIsOn()  const { return soloOn_.load(std::memory_order_relaxed); }
     // true = refused (and said so in the log — a guard that can silently do
     // nothing must assert that it did something).
     bool rackLockGuard(const char* op);
@@ -541,6 +553,27 @@ private:
     // §8 in-context: the lease-carried mute (muteOut). Want set by the poll
     // (message thread), consumed on the audio thread through the ramp.
     std::atomic<bool>  rackLeaseMuteWant_ { false };
+    // Mute/solo layer (27 Aug 2026): THREE reasons, ONE silence, composed
+    // — never shared. muteUserOn_ is the user's mix decision (persists in
+    // saved state; a session release must never clear it). soloOn_ is this
+    // Link's solo membership (in-memory ONLY — never serialized, so a
+    // saved solo cannot exist). soloMuteWant_ is derived per fabric scan
+    // from OTHER live Links' published soloOn and stored nowhere beyond
+    // the tick, so it can never outlive its cause.
+    std::atomic<bool>  muteUserOn_ { false };
+    std::atomic<bool>  soloOn_ { false };
+    std::atomic<bool>  soloMuteWant_ { false };
+    // The fabric scan: proven-live foreign rows only (RegLiveness + a
+    // freshness window — proven is sticky, so death is its own check),
+    // sidecar parses mtime-gated so steady state costs no IO.
+    struct SoloScanRow { juce::String uid; LinkShm::RegLiveness live;
+                         uint32_t lastHb = 0; double lastHbMoveMs = 0;
+                         juce::int64 mtimeMs = -1; bool soloOn = false; };
+    std::array<SoloScanRow, kRegMaxSlots> soloScan_;
+    int soloScanDivider_ = 0;
+    void soloFabricScan();
+    bool lastPublishedMuteUser_ = false;
+    bool lastPublishedSoloOn_ = false;
     // The lease says the main's session is held open by a FAILED write
     // (§5a-R ruling 3): the lock banner must speak to a pending edit,
     // not instruct a deselect the user already performed.

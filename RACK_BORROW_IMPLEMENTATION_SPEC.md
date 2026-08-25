@@ -388,10 +388,12 @@ default.
 ## not built until this section is read and approved.
 
 **The model: in-context is the DEFAULT.** Selecting a rack means hearing
-the WHOLE MIX with that channel's edited chain in place. LISTEN remains
-available and becomes the solo mode — the second mode of the one control
-§5a-R seamed for exactly this. The route override (through-main /
-replace-after) belongs to solo only and hides in in-context.
+the WHOLE MIX with that channel's edited chain in place. ~~LISTEN remains
+available and becomes the solo mode~~ **(superseded 27 Aug 2026,
+MUTE_SOLO_SPEC: LISTEN is DELETED — soloing the edited rack in the
+mute/solo layer is the isolation control, and the through-main route
+survives only as the AUTOMATIC fallback when in-context is refused. The
+route override control retired with it; the route auto-detects.)**
 
 ### 8.1 Drift, answered by design choice: Link mutes, main injects
 
@@ -437,9 +439,9 @@ rather than argued against:
   DOWNSTREAM of the main (e.g. a master-chain Link from a track-placed
   main) mutes the path the injection itself flows through — the result
   is silence, which is SAFE and audibly wrong rather than subtly wrong,
-  and LISTEN covers that rack. Proper detection needs the Link to
-  publish channel identity — additive, future. The route override
-  (through/replace) belongs to SOLO alone.
+  and the automatic solo fallback covers that rack (LISTEN deleted 27
+  Aug 2026 — MUTE_SOLO_SPEC §6.4). Proper detection needs the Link to
+  publish channel identity — additive, future.
 
 ### 8.2 The Link's mute, and the one-restore-path rule
 
@@ -549,9 +551,9 @@ answer convention as every carved capability bit.)
 
 - Engage banner (in-context): "Editing <name> here — you're hearing the
   whole mix with your edits in place. Changes write to <name> when you
-  leave this rack. LISTEN solos this channel."
-- LISTEN pressed: today's solo behaviour and wording; the route override
-  reappears; the button reads LISTENING. Released: back to in-context.
+  leave this rack. Solo this rack to hear it alone." (27 Aug 2026:
+  LISTEN deleted; the mute/solo layer's S on the edited rack is the
+  isolation control — MUTE_SOLO_SPEC §6.1.)
 - Stale ring: "<name>'s channel dropped from the mix — reconnecting."
   then either silence-heals or the release-with-words.
 - Incapable Link: the §8.6 line, once, at engage.

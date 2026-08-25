@@ -2139,14 +2139,8 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // label is derived from chainViewUid() on every refresh, so it cannot
     // disagree with the mixer.
     chainListPanel.onRackClick = [this] { showChainRackMenu(); };
-    chainListPanel.onBorrowClick = [this] { toggleBorrow(); };
-    chainListPanel.onBorrowRouteClick = [this] {
-        processorRef.toggleBorrowRoute();
-        chainListPanel.statusText = processorRef.borrowRouteThroughMain()
-            ? "Now heard THROUGH this channel's own chain."
-            : "Now REPLACING this channel's output.";
-        refreshChainPanelForView(true);   // the button text is the mode
-    };
+    chainListPanel.onMuteClick = [this] { sendLinkMuteSoloForView(false); };
+    chainListPanel.onSoloClick = [this] { sendLinkMuteSoloForView(true); };
     chainListPanel.onRemoteEditorRequest = [this](int slotIdx)
     {
         const juce::String uid = chainViewUid();
@@ -6485,6 +6479,18 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
         // point of the move: a strip is a list of plugins with controls top
         // and bottom, rather than three stacked controls and a short list.
         sg.active = b.removeFromBottom(kStripActH);
+        // M/S lamps (MUTE_SOLO_SPEC): carved off the Active row's right
+        // end, every strip, both widths. Stored rects like everything
+        // else — paint and hit-testing never re-derive them.
+        {
+            auto act = sg.active;
+            const int lamp = juce::jmin(18, act.getHeight());
+            sg.solo = act.removeFromRight(lamp);
+            act.removeFromRight(3);
+            sg.mute = act.removeFromRight(lamp);
+            act.removeFromRight(3);
+            sg.active = act;
+        }
         b.removeFromBottom(kStripVGap);
         // The band sits directly above Active; the data area takes what is
         // left above it. Fader column LEFT, meter RIGHT, console
@@ -6589,6 +6595,8 @@ EchoJayEditor::StripHit EchoJayEditor::stripHitAt(const StripGeom& sg,
     if (sg.clip.contains(p))      return StripHit::Clip;
     if (sg.meter.contains(p))     return StripHit::Meter;
     if (sg.badge.contains(p))     return StripHit::Badge;
+    if (sg.mute.contains(p))      return StripHit::Mute;
+    if (sg.solo.contains(p))      return StripHit::Solo;
     if (sg.active.contains(p))    return StripHit::Active;
     // sg.eq IS DELIBERATELY ABSENT FROM THIS LIST, which is a decision rather
     // than an omission and is written down because the order above is the
@@ -7535,18 +7543,38 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
         // the viewed rack (solo semantics; §8's in-context monitoring
         // becomes this control's second mode when it lands).
         juce::ignoreUnused(capable);
-        const bool sessionHere = processorRef.borrowActive()
-            && processorRef.borrowUid() == chainViewUid();
-        chainListPanel.borrowBtn.setVisible(sessionHere);
-        chainListPanel.borrowBtn.setButtonText(
-            processorRef.borrowAudioIsOn() ? "LISTENING" : "LISTEN");
-        // The route override, visible only while actually listening; the
-        // text IS the mode.
-        chainListPanel.borrowRouteBtn.setVisible(
-            sessionHere && processorRef.borrowAudioIsOn());
-        chainListPanel.borrowRouteBtn.setButtonText(
-            processorRef.borrowRouteThroughMain() ? "HEARD: THROUGH THIS CHAIN"
-                                                  : "HEARD: REPLACES OUTPUT");
+        // M/S under the rack (MUTE_SOLO_SPEC): PERMANENT for a viewed
+        // remote rack — where LISTEN sat. Lamps from the SIDECAR snapshot
+        // (closed loop, never a local echo); disabled WITH THE REASON
+        // against a binary that never announced the capability.
+        const bool showMs = v.remote && v.valid;
+        bool msCap = false, mOn = false, sOn = false;
+        if (auto ms = processorRef.muteSoloSnaps_.find(chainViewUid());
+            ms != processorRef.muteSoloSnaps_.end())
+        { msCap = ms->second.capable; mOn = ms->second.muteUser;
+          sOn = ms->second.soloOn; }
+        chainListPanel.muteBtn.setVisible(showMs);
+        chainListPanel.soloBtn.setVisible(showMs);
+        chainListPanel.muteBtn.setEnabled(msCap);
+        chainListPanel.soloBtn.setEnabled(msCap);
+        chainListPanel.muteBtn.setButtonText(mOn ? "MUTED" : "MUTE");
+        chainListPanel.soloBtn.setButtonText(sOn ? "SOLOED" : "SOLO");
+        const juce::String capWhy =
+            "This Link predates mute/solo - reinstall it.";
+        chainListPanel.muteBtn.setTooltip(msCap
+            ? "Mute this Link's channel output - EchoJay's own layer, "
+              "Logic's mute untouched. A mix decision: saves with the "
+              "project." : capWhy);
+        chainListPanel.soloBtn.setTooltip(msCap
+            ? "Solo: every other Link channel mutes. Monitoring only - "
+              "never saved with the project." : capWhy);
+        // The contextual honest-limit line (spec §5, amended): only while
+        // a solo is actually active, one quiet line; the old-binary count
+        // stays a warning and rides the same line.
+        chainListPanel.soloLimitLabel.setVisible(processorRef.soloSetActive_);
+        if (processorRef.soloSetActive_)
+            chainListPanel.soloLimitLabel.setText(soloLimitLineText(),
+                                                  juce::dontSendNotification);
     }
     if (noData)
     {
@@ -7742,14 +7770,8 @@ bool EchoJayEditor::borrowSessionShapeDirty() const
 // but is now the LISTEN control — solo semantics today, and the seam for
 // §8's in-context monitoring as a second mode of this same control.
 // ---------------------------------------------------------------------------
-void EchoJayEditor::toggleBorrow()
-{
-    auto& p = processorRef;
-    if (! p.borrowActive()) return;
-    if (p.borrowAudioIsOn()) p.borrowAudioOff();
-    else                     p.borrowAudioOn();
-    refreshChainPanelForView(true);
-}
+// toggleBorrow (LISTEN) DELETED 27 Aug 2026 — solo subsumes LISTEN
+// (MUTE_SOLO_SPEC §1). Deleted, not dormant.
 
 void EchoJayEditor::handleBorrowSelectionChange(const juce::String& newUid,
                                                 bool userInitiated)
@@ -8152,15 +8174,16 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
                        ? juce::String("changes write to it when you leave "
                              "this rack. ")
                        : p2.resolveLinkDisplayName(st->uid)
-                             + "'s build can't hand the mix over - LISTEN "
-                             "solos instead. Update it. ")
+                             + "'s build can't hand the mix over - "
+                             "soloing your edit instead. Update it. ")
                 + (restoredKept
                        ? juce::String("Your unwritten edits from the "
                              "interrupted session were RESTORED. ")
                        : juce::String())
                 + "Changes write to "
                 + p2.resolveLinkDisplayName(st->uid)
-                + " when you leave this rack. LISTEN solos this channel.";
+                + " when you leave this rack. Solo this rack to hear it "
+                  "alone.";
             safeThis->refreshChainPanelForView(true);
         });
         // Empty rack: no slots to settle; the session is engaged, silent.
@@ -9634,6 +9657,31 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                        sg.active.withTrimmedLeft(side + 6),
                        juce::Justification::centredLeft);
         }
+
+        // M/S lamps (MUTE_SOLO_SPEC): state from the processor's sidecar
+        // snapshot — the closed loop; a click is a request, the lamp is
+        // the Link's answer. An incapable binary renders dim hollow.
+        {
+            bool msCap = false, mOn = false, sOn = false;
+            if (auto ms = processorRef.muteSoloSnaps_.find(sg.addr);
+                ms != processorRef.muteSoloSnaps_.end())
+            { msCap = ms->second.capable; mOn = ms->second.muteUser;
+              sOn = ms->second.soloOn; }
+            auto lamp = [&](juce::Rectangle<int> r, const char* letter,
+                            juce::Colour lit, bool on)
+            {
+                auto rf = r.toFloat().reduced(1.0f);
+                if (on) { g.setColour(lit); g.fillRoundedRectangle(rf, 3.0f); }
+                g.setColour(! msCap ? LinkConsole::caption.withAlpha(0.35f)
+                            : on ? juce::Colours::black
+                                 : LinkConsole::caption);
+                if (! on) g.drawRoundedRectangle(rf, 3.0f, 1.0f);
+                g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+                g.drawText(letter, r, juce::Justification::centred);
+            };
+            lamp(sg.mute, "M", juce::Colour(0xffFFB020), mOn);
+            lamp(sg.solo, "S", juce::Colour(0xffF2E14C), sOn);
+        }
     }
 
     // ---- The AI button is GONE. Selecting a strip already targets that
@@ -9952,6 +10000,14 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
             }
             break;
 
+        case StripHit::Mute:
+            if (!sg.isBus) stripMuteSoloClick(sg.addr, /*isSolo*/ false);
+            break;
+
+        case StripHit::Solo:
+            if (!sg.isBus) stripMuteSoloClick(sg.addr, /*isSolo*/ true);
+            break;
+
         case StripHit::Clip:
         {
             // Reset THIS strip's latches. The lamp is the only arm that
@@ -10066,6 +10122,12 @@ juce::String EchoJayEditor::linkStripTooltip(const StripGeom& sg,
                  : en.info.placement == 3 ? "Placement: Send return (click to change)"
                                           : "Placement not set (click to set)";
 
+        case StripHit::Mute:
+            if (sg.isBus) return name;
+            return muteSoloStripTip(sg.addr, false);
+        case StripHit::Solo:
+            if (sg.isBus) return name;
+            return muteSoloStripTip(sg.addr, true);
         case StripHit::Active:
         {
             if (sg.isBus || !have) return name;
@@ -10307,6 +10369,15 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
     g.setColour(LinkConsole::label);
     g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
     g.drawText("LINK MIXER", linkTitleRect_, juce::Justification::centredLeft);
+    // The contextual honest-limit line (MUTE_SOLO_SPEC §5, amended): only
+    // while a solo is actually active, one quiet line, right of the title.
+    if (processorRef.soloSetActive_)
+    {
+        g.setColour(juce::Colour(0xff8a8fa8));
+        g.setFont(juce::Font(juce::FontOptions(10.0f)));
+        g.drawText(soloLimitLineText(), linkTitleRect_.withTrimmedLeft(110),
+                   juce::Justification::centredRight);
+    }
 
     // View controls: painted from the STORED zones, selected state read back
     // from the processor's persisted modes right here, every paint. The
@@ -28356,6 +28427,94 @@ void EchoJayEditor::disablePluginByName(const juce::String& name)
 // =============================================================================
 //  LINK tab — remote Active control (ctrl-cmd / ctrl-ack files)
 // =============================================================================
+// ---------------------------------------------------------------------------
+// Mute/solo (27 Aug 2026, MUTE_SOLO_SPEC §3): the buttons and lamps are
+// remote controls on the LINK's own state — a click writes a ctrl-cmd
+// (consume-and-answer), the Link applies and publishes, and every lamp
+// renders from the published sidecar. No pending style: the closed loop IS
+// the display, and a refusal changes nothing on screen by construction.
+// ---------------------------------------------------------------------------
+void EchoJayEditor::sendLinkMuteSoloCommand(const juce::String& uid,
+                                            bool isSolo, bool on)
+{
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty() || uid.isEmpty()) return;
+    int seq = LinkShm::nextCtrlSeq();
+    for (auto& p : linkCtrlPending_)
+        if (p.addr == uid && p.seq >= seq) seq = p.seq + 1;
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",   1);
+    cmd->setProperty("seq", seq);
+    cmd->setProperty(isSolo ? "soloOn" : "muteUser", on);
+    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();   // stale ack
+    juce::File(dir + "ctrl-cmd-" + uid + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+    EchoJay_NSLog(("EJMuteSolo: sent " + juce::String(isSolo ? "soloOn"
+                                                             : "muteUser")
+                   + "=" + juce::String((int) on) + " uid=" + uid
+                   + " seq=" + juce::String(seq)).toRawUTF8());
+    repaint();
+}
+
+void EchoJayEditor::sendLinkMuteSoloForView(bool isSolo)
+{
+    // The under-rack buttons act on the VIEWED rack; disabled against an
+    // incapable binary, so a reachable click here always has a live snap.
+    const juce::String uid = chainViewUid();
+    auto ms = processorRef.muteSoloSnaps_.find(uid);
+    if (ms == processorRef.muteSoloSnaps_.end() || ! ms->second.capable)
+        return;
+    sendLinkMuteSoloCommand(uid, isSolo,
+        isSolo ? ! ms->second.soloOn : ! ms->second.muteUser);
+}
+
+void EchoJayEditor::stripMuteSoloClick(const juce::String& uid, bool isSolo)
+{
+    // Request the inverse of the PUBLISHED state. Refused WITH THE REASON
+    // against an incapable binary — never a silent no-op.
+    auto ms = processorRef.muteSoloSnaps_.find(uid);
+    if (ms == processorRef.muteSoloSnaps_.end() || ! ms->second.capable)
+    {
+        chainListPanel.statusText = processorRef.resolveLinkDisplayName(uid)
+            + " predates mute/solo - reinstall its EchoJay Link.";
+        refreshChainPanelForView(true);
+        return;
+    }
+    sendLinkMuteSoloCommand(uid, isSolo,
+        isSolo ? ! ms->second.soloOn : ! ms->second.muteUser);
+}
+
+juce::String EchoJayEditor::muteSoloStripTip(const juce::String& uid,
+                                             bool isSolo) const
+{
+    auto ms = processorRef.muteSoloSnaps_.find(uid);
+    if (ms == processorRef.muteSoloSnaps_.end() || ! ms->second.capable)
+        return "This Link predates mute/solo - reinstall it.";
+    if (isSolo)
+        return ms->second.soloOn
+            ? "Soloed (click to un-solo). Solo mutes Link channels only."
+            : "Solo: mute every other Link channel. Monitoring only - "
+              "never saved.";
+    return ms->second.muteUser
+        ? "Muted (click to un-mute). EchoJay's own mute - Logic's is "
+          "untouched."
+        : "Mute this Link's channel output. A mix decision: saves with "
+          "the project.";
+}
+
+juce::String EchoJayEditor::soloLimitLineText() const
+{
+    // Spec §5 amended: the design fact shows only while a solo is active;
+    // the old-binary count stays a warning and rides the same line.
+    juce::String t = "Solo mutes Link channels only - use Logic's solo "
+                     "for un-Linked tracks.";
+    if (processorRef.soloIncapableLive_ > 0)
+        t << " " << juce::String(processorRef.soloIncapableLive_)
+          << " Link(s) predate solo and keep playing.";
+    return t;
+}
+
 void EchoJayEditor::sendLinkActiveCommand(const juce::String& linkAddr, bool active)
 {
     int err = 0;

@@ -510,10 +510,8 @@ public:
     void borrowEngageBegin(const juce::String& uid, const juce::String& leaseId,
                            bool structureCapable = false,
                            bool inContextCapable = false);
-    void borrowAudioOn();
-    void borrowAudioOff();   // §5a-R: listening is its own control
-    bool borrowAudioIsOn() const noexcept
-    { return borrowSession_.audioOn.load(std::memory_order_relaxed); }
+    // borrowAudioOn/Off/IsOn (LISTEN) DELETED 27 Aug 2026 — solo subsumes
+    // LISTEN (MUTE_SOLO_SPEC). The fallback solo is automatic (!inContextOk).
     // Release: audio off (ramped), lease file deleted (Link restores all
     // bypasses through its one restore path), instances parked in the pool.
     // keepEdits=true (auto-release, editor/processor teardown) captures every
@@ -593,6 +591,27 @@ public:
                  ? kBorrowAlignBudgetFrames : 0; }
     bool borrowApplyInFlight_ = false;
 
+    // ---- Mute/solo layer (27 Aug 2026, MUTE_SOLO_SPEC) -------------------
+    // Per-Link snapshot of the published mute/solo bits, refreshed by the
+    // registry pass (mtime-gated parses — steady state costs no IO) from
+    // LIVE rows only. Message thread; the editor's lamps and capability
+    // gating read it directly.
+    struct LinkMuteSoloSnap { bool muteUser = false, soloOn = false,
+                              capable = false; juce::int64 mtimeMs = -1; };
+    std::map<juce::String, LinkMuteSoloSnap> muteSoloSnaps_;
+    bool soloSetActive_ = false;      // any LIVE row publishes soloOn
+    int  soloIncapableLive_ = 0;      // live rows lacking muteSoloCapable
+    // THE HONORARY STRIP (§6.1): the injection follows the fabric as if it
+    // were the edited rack's strip — suppressed iff a solo set exists and
+    // the edited rack is not in it. ONE writer (the registry pass); the
+    // audio thread only reads.
+    std::atomic<bool> borrowSoloSuppressInj_ { false };
+    bool soloSuppressPrev_ = false;   // banner-transition detector
+    // The injection gain this instant (the honorary strip's lamp) — public
+    // so the gate asserts the BEHAVIOUR, not just the branch.
+    float borrowCtxMixNow() const noexcept
+    { return borrowCtxMix_.getCurrentValue(); }
+
     // ---- Step 3: Apply & Release bookkeeping (message thread only) --------
     // Per-slot record from engage: the saved identity triplet (the SAME
     // fields stateFitsPlugin withheld the pull by — Apply re-runs the same
@@ -642,9 +661,8 @@ public:
     {
         return LinkShm::BorrowRoute::throughMainChain(
             channelType == ChannelType::FullMix || channelType == ChannelType::MasterBus,
-            borrowRouteFlip_.load(std::memory_order_relaxed));
+            /*flip*/ false);   // the override retired with LISTEN — auto only
     }
-    void toggleBorrowRoute() { borrowRouteFlip_.store(!borrowRouteFlip_.load(), std::memory_order_relaxed); }
     /** Set when the borrow released ITSELF (ring lost past tolerance) —
         consumed once by whichever editor next ticks, shown in words. A
         self-release must never be silent. */
@@ -653,7 +671,8 @@ public:
     struct BorrowSession {
         juce::String uid, leaseId;
         std::atomic<bool> active   { false };
-        std::atomic<bool> audioOn  { false };
+        // audioOn (LISTEN) deleted 27 Aug 2026 — MUTE_SOLO_SPEC §6.4: the
+        // fallback solo derives from !borrowInContextOk_, no user flag.
         std::atomic<int>  ringSlot { -1 };
     };
     BorrowSession borrowSession_;

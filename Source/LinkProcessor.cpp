@@ -97,6 +97,9 @@ void LinkProcessor::timerCallback()
 {
     // Heartbeat once per second (timer runs at 30Hz since v0.8.5; only the
     // meter publish uses the full rate)
+    // Solo fabric scan at ~4Hz: cheap by construction (shared-memory
+    // registry walk; sidecar parses only when a file's mtime moved).
+    if (++soloScanDivider_ >= 8) { soloScanDivider_ = 0; soloFabricScan(); }
     if (++heartbeatDivider_ >= 30)
     {
         heartbeatDivider_ = 0;
@@ -232,9 +235,10 @@ void LinkProcessor::publishRackSidecar()
     // §8 closed loop: a mute-state FLIP must republish promptly — the main
     // confirms the commanded mute through this sidecar, and a stale
     // muteEngaged would false-trip the watchdog into solo.
-    const bool muteNow = rackLeaseActive_
-        && rackLeaseMuteWant_.load(std::memory_order_relaxed);
-    const bool muteMoved = (muteNow != lastPublishedMuteEngaged_);
+    const bool muteNow = linkMuteWanted();
+    const bool muteMoved = (muteNow != lastPublishedMuteEngaged_)
+        || (muteUserOn_.load(std::memory_order_relaxed) != lastPublishedMuteUser_)
+        || (soloOn_.load(std::memory_order_relaxed) != lastPublishedSoloOn_);
     const double nowMs  = juce::Time::getMillisecondCounterHiRes();
 
     // The EQ curve, fetched ONCE for the rack rather than per slot: the
@@ -291,6 +295,8 @@ void LinkProcessor::publishRackSidecar()
     }
     lastPublishedRackRev_ = rev;
     lastPublishedMuteEngaged_ = muteNow;
+    lastPublishedMuteUser_ = muteUserOn_.load(std::memory_order_relaxed);
+    lastPublishedSoloOn_   = soloOn_.load(std::memory_order_relaxed);
     lastPublishedEpoch_   = epoch;
     lastPublishedCurve_   = curve;
     lastPublishedPreGainDb_        = pgDb;
@@ -304,8 +310,10 @@ void LinkProcessor::publishRackSidecar()
     rc.borrowCapable = true;   // this binary honors the rack-scoped lease
     rc.structureEditCapable = true;   // and can journal/apply a structure plan
     rc.inContextCapable     = true;   // §8: mutes on lease muteOut
-    rc.muteEngaged = rackLeaseActive_
-        && rackLeaseMuteWant_.load(std::memory_order_relaxed);
+    rc.muteEngaged = linkMuteWanted();   // ACTUAL silence, any reason
+    rc.muteUser = muteUserOn_.load(std::memory_order_relaxed);
+    rc.soloOn   = soloOn_.load(std::memory_order_relaxed);
+    rc.muteSoloCapable = true;   // this binary composes and scans
     rc.name      = effectiveDisplayName();
     rc.revision  = rev;
     rc.masterWet = chainHost.getMasterWet();
@@ -672,6 +680,56 @@ void LinkProcessor::pollEditLease()
     }
 }
 
+// ---------------------------------------------------------------------------
+// Solo fabric scan (27 Aug 2026): the solo set IS the live sidecars. Walk
+// the registry (shared memory, free), keep per-slot liveness, and parse a
+// foreign sidecar ONLY when its file's mtime moved. A row counts toward the
+// set only while proven live AND its heartbeat moved within ~3.5s —
+// RegLiveness::proven is sticky, so death needs its own freshness check.
+// This is what makes a deleted or crashed soloed Link self-healing: the
+// want is re-derived from live evidence every tick and stored nowhere.
+// ---------------------------------------------------------------------------
+void LinkProcessor::soloFabricScan()
+{
+    if (regMap == nullptr) return;
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty()) { soloMuteWant_.store(false, std::memory_order_relaxed); return; }
+    const double nowMs = juce::Time::getMillisecondCounterHiRes();
+    bool anyForeignSolo = false;
+    auto* slots = LinkShm::regSlots(regMap);
+    for (int i = 0; i < kRegMaxSlots; ++i)
+    {
+        auto& row = soloScan_[(size_t) i];
+        if (LinkShm::loadAcquire(&slots[i].inUse) == 0) { row = {}; continue; }
+        char ub[13] = {};
+        std::memcpy(ub, slots[i].instanceUid, 12);
+        const juce::String uid = juce::String::fromUTF8(ub);
+        if (uid.isEmpty() || uid == instanceUid_) { row = {}; continue; }
+        if (row.uid != uid) { row = {}; row.uid = uid; row.lastHbMoveMs = nowMs; }
+        const uint32_t hb = LinkShm::loadRelaxed(&slots[i].heartbeat);
+        if (hb != row.lastHb) { row.lastHb = hb; row.lastHbMoveMs = nowMs; }
+        const bool proven = row.live.observe(hb);
+        const bool fresh  = (nowMs - row.lastHbMoveMs) < 3500.0;
+        if (! proven || ! fresh) continue;    // never muted by a ghost
+        juce::File f(LinkShm::rackSidecarPath(dir, uid));
+        const juce::int64 mt = f.existsAsFile()
+            ? f.getLastModificationTime().toMilliseconds() : 0;
+        if (mt != row.mtimeMs)
+        {
+            row.mtimeMs = mt;
+            const auto rc = LinkShm::readRackSidecar(dir, uid);
+            row.soloOn = (rc.uid == uid) && rc.soloOn;
+        }
+        anyForeignSolo = anyForeignSolo || row.soloOn;
+    }
+    // In the set = exempt: a soloed Link never solo-mutes itself, and
+    // multi-solo means everyone in the set plays.
+    soloMuteWant_.store(anyForeignSolo
+                            && ! soloOn_.load(std::memory_order_relaxed),
+                        std::memory_order_relaxed);
+}
+
 void LinkProcessor::pollControlCommand()
 {
     auto id = chainInstanceId();
@@ -767,6 +825,32 @@ void LinkProcessor::pollControlCommand()
                        + " dB userSet=" + juce::String((int)userSet)
                        + " (seq " + juce::String(seq) + ")").toRawUTF8());
         chainHost.setPreGainDb(g, userSet);
+        updateShmState();
+    }
+    // Mute/solo layer (27 Aug 2026), additive fields on the same cmd
+    // transport. muteUser is a MIX decision: dirty-marks via
+    // updateShmState so the host saves it. soloOn is monitoring state:
+    // applied and published (the fabric reads the sidecar), never saved.
+    if (obj->hasProperty("muteUser"))
+    {
+        const bool on = (bool) obj->getProperty("muteUser");
+        EchoJay_NSLog(("EJLinkState: remote set muteUser="
+                       + juce::String((int) on)
+                       + " (seq " + juce::String(seq) + ")").toRawUTF8());
+        muteUserOn_.store(on, std::memory_order_relaxed);
+        updateShmState();
+        if (onLinkStateChanged) onLinkStateChanged();
+    }
+    if (obj->hasProperty("soloOn"))
+    {
+        const bool on = (bool) obj->getProperty("soloOn");
+        EchoJay_NSLog(("EJLinkState: remote set soloOn="
+                       + juce::String((int) on)
+                       + " (seq " + juce::String(seq) + ")").toRawUTF8());
+        soloOn_.store(on, std::memory_order_relaxed);
+        // My own membership changes my want NOW, not at the next scan:
+        // soloing must never briefly mute the soloed strip itself.
+        if (on) soloMuteWant_.store(false, std::memory_order_relaxed);
         updateShmState();
     }
     // Reset the pre-gain to auto (clears the hand-set flag; the next build
@@ -1548,8 +1632,11 @@ void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
     // poll; cleared by the one Release/Expire restore path), so a crash
     // un-mutes within the lease expiry exactly as it un-bypasses.
     {
-        const bool muted = rackLeaseActive_
-                           && rackLeaseMuteWant_.load(std::memory_order_relaxed);
+        // Mute/solo layer (27 Aug 2026): THREE reasons, ONE ramp. The
+        // lease mute, the user's own mute and the solo fabric compose
+        // through linkMuteWanted(); each keeps its own lifetime, so a
+        // session release can never clear a user mute.
+        const bool muted = linkMuteWanted();
         rackMuteMix_.setTargetValue(muted ? 0.0f : 1.0f);
         if (muted || rackMuteMix_.getCurrentValue() < 0.9999f)
         {
@@ -2435,6 +2522,10 @@ void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
     obj->setProperty("editorW",  editorW);
     obj->setProperty("editorH",  editorH);
     obj->setProperty("instanceUid", instanceUid_);
+    // muteUser is channel mix identity and persists. soloOn is DELIBERATELY
+    // ABSENT and must stay absent: a saved solo is how a project opens
+    // silent and nobody knows why (MUTE_SOLO_SPEC §4; the gate pins this).
+    obj->setProperty("muteUser", muteUserOn_.load(std::memory_order_relaxed));
     obj->setProperty("hostTrackName", getHostTrackName());
     // Full hosted chain: identities, order, bypass flags, wet mixes,
     // per-plugin state
@@ -2467,6 +2558,9 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
             genre = obj->getProperty("genre").toString();
         if (obj->getProperty("instanceUid").toString().isNotEmpty())
             instanceUid_ = obj->getProperty("instanceUid").toString();
+        if (obj->hasProperty("muteUser"))
+            muteUserOn_.store((bool) obj->getProperty("muteUser"),
+                              std::memory_order_relaxed);
         if (obj->hasProperty("hostTrackName"))
         {
             // Seed the stash + dirty flag so the restored name shows and
