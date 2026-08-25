@@ -370,9 +370,126 @@ default.
    share the verdict plumbing).
 4. §5d wording, §5e refusal surface, hands-on battery.
 
-## 8. Explicitly out of scope, unchanged from the requirements
+## 8. In-context monitoring — UNPARKED (26 Aug 2026 ruling). SPEC ONLY;
+## not built until this section is read and approved.
 
-In-context monitoring and delay compensation (parked on the drift-spec
-question); fixing §3e or §3f (recorded, inherited as stated problems — §4 of
-this spec *pins around* §3f for the borrow's duration but does not fix it);
+**The model: in-context is the DEFAULT.** Selecting a rack means hearing
+the WHOLE MIX with that channel's edited chain in place. LISTEN remains
+available and becomes the solo mode — the second mode of the one control
+§5a-R seamed for exactly this. The route override (through-main /
+replace-after) belongs to solo only and hides in in-context.
+
+### 8.1 Drift, answered by design choice: Link mutes, main injects
+
+The ruled starting position, AGREED, with the reasoning strengthened
+rather than argued against:
+
+- **Subtract-the-dry is wrong in principle, not merely fragile.**
+  Subtraction assumes the dry copy the main holds is sample-identical to
+  what actually summed into the mix — unknowable through downstream sends,
+  panning, automation, and bus processing — and it assumes LINEARITY:
+  any compressor or saturator between the Link and the main makes
+  subtracting the dry mathematically meaningless, not just misaligned.
+  Its failure mode is comb filtering, which reads as "sounds weird",
+  never as "is broken".
+- **Mute-and-inject fails loudly and attributably.** The only failure
+  mode is a timing or level offset on ONE named channel — audible as
+  exactly that. And it stays CORRECT under nonlinearity: the muted
+  channel contributes silence; the injection contributes the edited
+  signal; nothing is estimated.
+- **The honest residual, stated:** anything sitting BETWEEN the Link and
+  the main on that channel's path — a post-Link channel EQ, sends tapped
+  post-Link, bus processing the channel feeds elsewhere — processes
+  silence during the session, and the injected signal bypasses it. This
+  is the same class of approximation the through-main solo route already
+  accepts, now said where the default lives. The banner does not claim
+  "exactly your mix"; it claims your edits in place of that channel.
+- **Mix Bus / Master Bus degenerate case:** when the edited Link IS the
+  mix (FullMix/MasterBus placement), "the rest of the mix minus this
+  channel" is silence — in-context degenerates to the existing
+  through-main behaviour, no mute needed, same code path as today's
+  routing decision (BorrowRoute::throughMainChain).
+
+### 8.2 The Link's mute, and the one-restore-path rule
+
+- The rack-lease file gains an additive field: `"muteOut": true`. A
+  capable Link, on rack-lease ENGAGE with that field, ZEROES ITS OUTPUT
+  each block AFTER writing the ring (the ring must keep carrying the dry
+  stream — it is the injection's source). Old Links ignore unknown
+  fields, which is why capability gates the OFFER (§8.6), never
+  detection.
+- **Restore rides the SAME one restore path as the bypasses**: the
+  Release/Expire arm of the lease poll unmutes, whatever ended the lease
+  — clean release, expiry after a crash (3s), or a foreign claim. A
+  crash mid-session therefore un-mutes the channel within the lease
+  expiry, exactly as it un-bypasses the rack. No second restore path, no
+  mute that can outlive its lease.
+
+### 8.3 Alignment: the cushion, the injected chain, and reported latency
+
+- The injected stream arrives late by the ring cushion
+  (kEditCushionFrames = 1024) plus the borrowed chain's own processing
+  latency. The main ALIGNS by delaying its own passthrough — the rest of
+  the mix entering the main — by `cushion + borrowedChain latency`,
+  recomputed when the borrowed chain changes (the latencyRebuilder
+  machinery already watches this).
+- **That delay is reported as the MAIN'S OWN latency** via
+  setLatencySamples + updateHostDisplay(latencyChanged) — the main's own
+  latency is allowed; the hard block stays exactly where it is: the
+  borrowed HOST never reaches the host's latency report
+  (hostReportableLatencySamples() == -1). Internal use of the borrowed
+  chain's latency for alignment is not reporting.
+- Latency is reported only WHILE an in-context session is engaged
+  (0 otherwise). Hosts re-run PDC on the change; a brief dropout at
+  engage/release is the accepted cost and is not hidden — it happens at
+  a moment the user just acted.
+
+### 8.4 Sample-rate and buffer change mid-session
+
+- Buffer-size change: nothing — the alignment delay is frame-based.
+- Sample-rate change: the ring re-opens at the new rate (the existing
+  SR-stamped ring machinery and inode re-bind), the borrowed host is
+  re-prepared, and the alignment delay is rebuilt in new-rate frames.
+  If the ring drops during the transition, §8.5's stale-ring behaviour
+  covers the gap. The session survives SR changes; it does not survive
+  the Link process dying (lease expiry path, as today).
+
+### 8.5 Failure: the ring goes stale mid-session
+
+Existing machinery (BorrowRing::poll — rebind, 3-tick tolerance,
+release-with-words) unchanged; what the MIX does, stated: while the ring
+is stale the injected channel goes SILENT — never stale audio — and the
+rest of the mix keeps playing, still delayed, so alignment does not jump.
+If re-bind succeeds the channel returns. If the release fires, the one
+restore path un-mutes the Link, the mix returns whole (dry), the
+passthrough delay is withdrawn (latencyChanged again), and the
+release-with-words banner says what happened. A stale ring is a dropped
+channel with a name, never a silent mix or a doubled one.
+
+### 8.6 Failure: the Link that cannot mute (older build)
+
+Capability, not detection: the sidecar gains an additive
+`inContextCapable` flag. Not announced → in-context is NOT OFFERED — the
+session engages in solo mode with the existing wording plus one line:
+"<name>'s build can't hand the mix over — soloing instead. Update it."
+An unmuted Link plus injection is a doubled channel; that state must be
+impossible by construction, never detected after the fact. (The same
+never-half-see rule as structureEditCapable, same fallback-is-the-safe-
+answer convention as every carved capability bit.)
+
+### 8.7 What the user sees
+
+- Engage banner (in-context): "Editing <name> here — you're hearing the
+  whole mix with your edits in place. Changes write to <name> when you
+  leave this rack. LISTEN solos this channel."
+- LISTEN pressed: today's solo behaviour and wording; the route override
+  reappears; the button reads LISTENING. Released: back to in-context.
+- Stale ring: "<name>'s channel dropped from the mix — reconnecting."
+  then either silence-heals or the release-with-words.
+- Incapable Link: the §8.6 line, once, at engage.
+
+## 8x. Explicitly out of scope, unchanged from the requirements
+
+Fixing §3e or §3f (recorded, inherited as stated problems — §4 of this
+spec *pins around* §3f for the borrow's duration but does not fix it);
 any change to `leakedNodeStore()` itself.
