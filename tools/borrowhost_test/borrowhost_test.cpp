@@ -21,6 +21,17 @@
 #include <JuceHeader.h>
 #include "ChainHost.h"
 #include "PluginProcessor.h"   // §5a-R functional editor-open gate
+#include "PluginEditor.h"      // M/S permanence gate drives the REAL tab path
+
+// The friend already declared in PluginEditor.h — the M/S permanence arm
+// drives the REAL switchToTab (the single writer of panel visibility).
+struct EchoJayTabStripTestAccess
+{
+    static void toChain (EchoJayEditor& e)
+    { e.switchToTab (EchoJayEditor::Tab::Chain, true); }
+    static juce::Component& panel (EchoJayEditor& e)
+    { return e.chainListPanel; }
+};
 #include "EedDeviceRegistry.h"
 #include "LinkShm.h"   // BorrowRing — the stale-ring decision (finding #3)
 
@@ -1788,6 +1799,90 @@ int main()
         mainProc.borrowRelease (false);
         check (! mainProc.borrowEditPendingHeld_,
                "every ending clears the pending hold with the session");
+
+        // ---- M/S PERMANENCE (27 Aug hands-on): the under-rack buttons
+        // ---- vanished ~1s after selection — the remote-only visibility
+        // ---- rule lost them to the borrowed-view flip on engage. Gated
+        // ---- BY BEHAVIOUR through the REAL editor: after the view flip
+        // ---- and after a status write, the buttons must be visible AND
+        // ---- hittable. getComponentAt respects z-order and visibility,
+        // ---- so a button that exists but is covered, hidden or laid out
+        // ---- away fails this where an existence pin would pass.
+        {
+            mainProc.pendingChannelUid = "uid-lvl";     // view the Link rack
+            std::unique_ptr<juce::AudioProcessorEditor> ed (mainProc.createEditor());
+            check (ed != nullptr, "the REAL editor constructed");
+            ed->setSize (1280, 820);
+            // The REAL tab path: switchToTab is the single writer of panel
+            // visibility and runs the enter-refresh — the same route a
+            // user's click takes.
+            auto* eje = dynamic_cast<EchoJayEditor*> (ed.get());
+            check (eje != nullptr, "and is the real EchoJayEditor");
+            EchoJayTabStripTestAccess::toChain (*eje);
+            // The sandboxed editor sits on the LOGIN screen (no auth in
+            // the test HOME), whose layout pass skips the main-screen
+            // geometry — so the panel is sized here directly, the same
+            // rect the signed-in layout gives it. Everything else (the
+            // visibility rule, the refresh, z-order inside the panel) is
+            // the real code path.
+            EchoJayTabStripTestAccess::panel (*eje)
+                .setBounds (0, 96, 900, 640);
+            auto pump = [&]{ for (int i = 0; i < 12; ++i)
+                             { juce::Timer::callPendingTimersSynchronously();
+                               CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); } };
+            auto findBtn = [&](juce::Component* root, const juce::String& t,
+                               auto&& self) -> juce::TextButton*
+            {
+                if (auto* b = dynamic_cast<juce::TextButton*> (root))
+                    if (b->getButtonText().startsWith (t)) return b;
+                for (auto* c : root->getChildren())
+                    if (auto* r = self (c, t, self)) return r;
+                return nullptr;
+            };
+            auto assertHittable = [&](const juce::String& t,
+                                      const juce::String& when)
+            {
+                auto* b = findBtn (ed.get(), t, findBtn);
+                check (b != nullptr && b->isVisible(),
+                       t + " present and visible " + when,
+                       b == nullptr ? "NOT FOUND"
+                                    : (b->isVisible() ? "ok" : "found, INVISIBLE"));
+                if (b == nullptr || ! b->isVisible()) return;
+                auto* parent = b->getParentComponent();
+                const auto centre = b->getBounds().getCentre();
+                auto* hit = parent != nullptr ? parent->getComponentAt (centre)
+                                              : nullptr;
+                check (hit == b,
+                       t + " HITTABLE (top of z-order at its centre) " + when,
+                       (parent != nullptr
+                          ? "panel " + parent->getBounds().toString()
+                            + " btn " + b->getBounds().toString() + " -> "
+                          : juce::String ("no parent -> "))
+                       + (hit == nullptr ? "hit NOTHING"
+                       : hit == parent ? "hit the PARENT panel"
+                       : "hit " + juce::String (typeid (*hit).name())
+                         + " \"" + hit->getName() + "\""));
+            };
+            pump();
+            assertHittable ("MUTE", "on the remote view");
+            assertHittable ("SOLO", "on the remote view");
+            // The field sequence: engage flips the view to the borrowed
+            // host (remote=false, borrowed=true). Buttons must survive.
+            mainProc.borrowEngageBegin ("uid-lvl", "lease-ms", true, true);
+            pump();
+            assertHittable ("MUTE", "after the engage view flip");
+            assertHittable ("SOLO", "after the engage view flip");
+            // And survive the last-writer status surface (the one the
+            // "Engaging..." line rides).
+            mainProc.borrowStickyBanner_ = "a status line takes the panel";
+            pump();
+            assertHittable ("MUTE", "after a status write");
+            assertHittable ("SOLO", "after a status write");
+            mainProc.borrowRelease (false);
+            pump();
+            assertHittable ("MUTE", "after release (back to remote view)");
+            mainProc.pendingChannelUid.clear();
+        }
         mainProc.setBorrowBudgetActive (false);
         // The level arm alone can false-pass on a fresh process (OS pages
         // arrive zeroed; Sean's garbage came from recycled heap), so the

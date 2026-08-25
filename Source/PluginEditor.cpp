@@ -6479,9 +6479,13 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
         // point of the move: a strip is a list of plugins with controls top
         // and bottom, rather than three stacked controls and a short list.
         sg.active = b.removeFromBottom(kStripActH);
-        // M/S lamps (MUTE_SOLO_SPEC): carved off the Active row's right
-        // end, every strip, both widths. Stored rects like everything
-        // else — paint and hit-testing never re-derive them.
+        // M/S lamps (MUTE_SOLO_SPEC; layout amended 27 Aug hands-on): in
+        // the WIDE strip they share the Active row (tick left, lamps
+        // right). The NARROW strip cannot seat three controls in 46px —
+        // the lamps overlapped the tick — so there they take their OWN
+        // row, directly above Active. Stored rects like everything else;
+        // paint and hit-testing never re-derive them.
+        if (full.getWidth() >= kStripWWide - 2)
         {
             auto act = sg.active;
             const int lamp = juce::jmin(18, act.getHeight());
@@ -6490,6 +6494,16 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
             sg.mute = act.removeFromRight(lamp);
             act.removeFromRight(3);
             sg.active = act;
+        }
+        else
+        {
+            auto msRow = b.removeFromBottom(kStripActH);
+            const int lamp = juce::jmin(18, msRow.getHeight());
+            msRow.removeFromLeft(juce::jmax(0,
+                (msRow.getWidth() - (lamp * 2 + 3)) / 2));   // centred pair
+            sg.mute = msRow.removeFromLeft(lamp);
+            msRow.removeFromLeft(3);
+            sg.solo = msRow.removeFromLeft(lamp);
         }
         b.removeFromBottom(kStripVGap);
         // The band sits directly above Active; the data area takes what is
@@ -7547,7 +7561,13 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
         // remote rack — where LISTEN sat. Lamps from the SIDECAR snapshot
         // (closed loop, never a local echo); disabled WITH THE REASON
         // against a binary that never announced the capability.
-        const bool showMs = v.remote && v.valid;
+        // PERMANENT means permanent (27 Aug hands-on): keyed on "a Link
+        // rack is viewed", NOT on the view flavour — the borrowed session
+        // view is remote=false, so the remote-only rule showed the buttons
+        // for the ~1s between selection and engage and then lost them to
+        // the view flip. During a session they act on the edited rack
+        // (spec §6.1), which is the same uid.
+        const bool showMs = chainViewUid().isNotEmpty();
         bool msCap = false, mOn = false, sOn = false;
         if (auto ms = processorRef.muteSoloSnaps_.find(chainViewUid());
             ms != processorRef.muteSoloSnaps_.end())
@@ -9649,14 +9669,9 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             }
         }
 
-        if (wide)
-        {
-            g.setColour(!connected || timedOut ? coral : LinkConsole::label);
-            g.setFont(juce::Font(juce::FontOptions(11.0f)));
-            g.drawText(linkActiveLabel(connected, pending, timedOut),
-                       sg.active.withTrimmedLeft(side + 6),
-                       juce::Justification::centredLeft);
-        }
+        // The wide-mode words ("Active"/"Offline"/"no resp") retired 27
+        // Aug 2026 (hands-on ruling): the tick already carries the state
+        // at strip width, and the tooltip still speaks the words.
 
         // M/S lamps (MUTE_SOLO_SPEC): state from the processor's sidecar
         // snapshot — the closed loop; a click is a request, the lamp is
