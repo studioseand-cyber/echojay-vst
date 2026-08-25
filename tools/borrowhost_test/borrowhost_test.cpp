@@ -1518,9 +1518,16 @@ int main()
         // from prepare, and engage/release/mode changes leave it alone —
         // ordinary browsing never re-runs PDC.
         mainProc.prepareToPlay (48000.0, 512);
+        // §8.3 refinement: NO capable Link -> NO budget -> no added latency.
+        const int latBare = mainProc.getLatencySamples();
+        check (latBare < EchoJayProcessor::kBorrowAlignBudgetFrames,
+               "no capable Link: no alignment budget is carried",
+               juce::String (latBare));
+        // The 0->1 capable-Link transition is THE one PDC event.
+        mainProc.setBorrowBudgetActive (true);
         const int lat0 = mainProc.getLatencySamples();
-        check (lat0 >= EchoJayProcessor::kBorrowAlignBudgetFrames,
-               "the fixed budget is reported from prepare",
+        check (lat0 == latBare + EchoJayProcessor::kBorrowAlignBudgetFrames,
+               "a capable Link present: the budget is carried",
                juce::String (lat0));
         mainProc.borrowEngageBegin ("uid-ctx", "lease-ctx", true, true);
         check (mainProc.getLatencySamples() == lat0,
@@ -1530,6 +1537,9 @@ int main()
         mainProc.borrowRelease (false);
         check (mainProc.getLatencySamples() == lat0,
                "RELEASE does not touch the report");
+        mainProc.setBorrowBudgetActive (false);
+        check (mainProc.getLatencySamples() == latBare,
+               "the last capable Link leaving withdraws the budget");
         // The pad arithmetic, pure: fits, exact fit, refuse-over-budget.
         const int head = EchoJayProcessor::kBorrowAlignBudgetFrames - 1024;
         check (EchoJayProcessor::alignPad (0)

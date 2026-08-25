@@ -433,10 +433,13 @@ Logic's PDC and stuttered playback per click — a dropout per click reads
 as the plugin being broken. Amended to a fixed alignment budget:
 
 - **kBorrowAlignBudgetFrames = 16384**, reported (on top of the main's
-  own chain latency) from instantiation, always — engaged or not. PDC
-  runs once, when the plugin loads, which is when every plugin does it.
-  The trade — a constant latency on the main for zero stutter — is the
-  right way round on a mixing tool.
+  own chain latency) **only while the project has a capable Link**
+  (refinement, 26 Aug 2026 ruling): no Links → no alignment budget → no
+  added latency at all. The capable-Link 0↔1 transition re-runs PDC
+  once — adding or removing a Link is deliberate and rare, unlike rack
+  browsing, which never touches the report. Capability is read from the
+  sidecar per listed uid (cached; unpublished sidecars are retried, not
+  cached false), editor-independent, on the registry pass.
 - **The budget number is measured, not guessed** (this machine's
   catalogue, defaults, 48k): the largest single-plugin latency found is
   Ozone 12 Low End Focus at 12,799 frames; the common latency class

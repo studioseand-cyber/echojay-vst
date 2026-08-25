@@ -556,6 +556,16 @@ public:
     // re-checked live on every borrowed-chain change.
     std::atomic<bool> borrowInContextOk_ { false };
     std::atomic<int>  borrowChainLat_ { 0 };
+    // §8.3 refinement (26 Aug 2026 ruling): the budget is carried ONLY when
+    // the project has a capable Link. No Links -> no alignment budget -> no
+    // added latency. The transition re-runs PDC once, on the deliberate and
+    // rare act of adding/removing a Link — never on rack browsing. ONE
+    // writer: the registry pass, via setBorrowBudgetActive.
+    std::atomic<bool> borrowBudgetActive_ { false };
+    void setBorrowBudgetActive(bool active);
+    int  reportedBudgetFrames() const noexcept
+    { return borrowBudgetActive_.load(std::memory_order_relaxed)
+                 ? kBorrowAlignBudgetFrames : 0; }
     bool borrowApplyInFlight_ = false;
 
     // ---- Step 3: Apply & Release bookkeeping (message thread only) --------
@@ -1177,6 +1187,8 @@ private:
     // Resolved shared directory (message thread, set once in ensureLinkRegistryOpen)
     juce::String linkResolvedDir;
     juce::int64  lastFileReapMs_ = 0;   // dead-uid file sweep throttle (~5 min)
+    juce::String ctxCapSetKey_;          // §8.3: listed-uid set fingerprint
+    std::map<juce::String, bool> ctxCapCache_;   // uid -> inContextCapable
 
     // Registry mapping (message thread)
     void*  linkRegMap = nullptr;

@@ -325,7 +325,7 @@ EchoJayProcessor::EchoJayProcessor()
         // setLatencySamples (RACK_BORROW_IMPLEMENTATION_SPEC §2.3). This
         // host is Primary, so the gate is structural, not behavioral.
         if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
-            setLatencySamples(lat + kBorrowAlignBudgetFrames);
+            setLatencySamples(lat + reportedBudgetFrames());
         // The chain now produces different audio, so the held true peak / peak /
         // overs describe a signal that no longer exists (they were contradicting
         // a capture taken seconds later). Drop those holds; integrated LUFS / LRA
@@ -577,7 +577,7 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     alignPre_.prepare(kBorrowAlignBudgetFrames + 1);
     alignPost_.prepare(kBorrowAlignBudgetFrames + 1);
     if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
-        setLatencySamples(lat + kBorrowAlignBudgetFrames);
+        setLatencySamples(lat + reportedBudgetFrames());
     if (borrowHost_ != nullptr)
         borrowHost_->prepare(sampleRate, samplesPerBlock);
 }
@@ -1246,12 +1246,14 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     }
 
     // §8.3 FINAL PAD, the last word on the buffer in every mode: keeps the
-    // TOTAL at exactly kBorrowAlignBudgetFrames (+ the main chain's own
-    // latency, reported) whether idle, soloing or in-context. The internal
-    // split moves; the report never does — that is the whole amendment.
-    alignPost_.process(buffer, (ctxNow && ctxPad >= 0)
-                                   ? ctxPad
-                                   : kBorrowAlignBudgetFrames);
+    // TOTAL at exactly the reported budget (+ the main chain's own latency)
+    // whether idle, soloing or in-context. The internal split moves; the
+    // report moves ONLY on the capable-Link 0<->1 transition (the ruling's
+    // deliberate, rare PDC event) — never on browsing, engage or release.
+    if (borrowBudgetActive_.load(std::memory_order_relaxed))
+        alignPost_.process(buffer, (ctxNow && ctxPad >= 0)
+                                       ? ctxPad
+                                       : kBorrowAlignBudgetFrames);
 }
 
 // ============ Channel Type Detection ============
@@ -2245,6 +2247,18 @@ juce::AudioProcessorEditor* EchoJayProcessor::createSlotEditorForView(
         return nullptr;
     }
     return getChainHost().createEditorForSlot(slot);
+}
+
+void EchoJayProcessor::setBorrowBudgetActive(bool active)
+{
+    if (borrowBudgetActive_.exchange(active, std::memory_order_relaxed) == active)
+        return;
+    if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
+        setLatencySamples(lat + reportedBudgetFrames());
+    EchoJay_NSLog(("EJCtx: alignment budget "
+                   + juce::String(active ? "ON" : "OFF")
+                   + " (capable Link " + (active ? "present" : "gone")
+                   + ") - PDC re-runs once").toRawUTF8());
 }
 
 void EchoJayProcessor::borrowEditorClosed()
@@ -4431,6 +4445,45 @@ void EchoJayProcessor::refreshLinkRegistry()
     }
 
     linkSlotInfos = std::move(newInfos);
+
+    // §8.3 refinement: the budget follows CAPABLE-LINK PRESENCE. The
+    // capability lives in the sidecar, read once per uid and cached; the
+    // cache is consulted only when the listed-uid set changes, so steady
+    // state costs nothing. Editor-independent: a project with Links carries
+    // the budget whether or not a window is open.
+    {
+        juce::StringArray listed;
+        for (const auto& si : linkSlotInfos)
+            if (si.uid.isNotEmpty()) listed.add(si.uid);
+        listed.sort(false);
+        const juce::String key = listed.joinIntoString("|");
+        if (key != ctxCapSetKey_)
+        {
+            ctxCapSetKey_ = key;
+            bool anyCapable = false;
+            int err2 = 0;
+            const juce::String dir2 = LinkShm::resolveDir(err2);
+            for (const auto& u : listed)
+            {
+                auto itc = ctxCapCache_.find(u);
+                if (itc == ctxCapCache_.end())
+                {
+                    // Cache only a sidecar that was actually PUBLISHED (uid
+                    // echoes back) — a just-launched Link's sidecar can lag
+                    // its registry row, and a cached false would stick. An
+                    // unpublished sidecar leaves the uid uncached; the next
+                    // set change (or this one re-keying) retries.
+                    const auto rc = dir2.isNotEmpty()
+                        ? LinkShm::readRackSidecar(dir2, u)
+                        : LinkShm::RackSidecar{};
+                    if (rc.uid != u) { ctxCapSetKey_.clear(); continue; }
+                    itc = ctxCapCache_.emplace(u, rc.inContextCapable).first;
+                }
+                if (itc->second) { anyCapable = true; break; }
+            }
+            setBorrowBudgetActive(anyCapable);
+        }
+    }
 
     // DEAD-FILE REAP (25 Aug 2026), throttled to one sweep per 5 minutes per
     // process: uid-keyed files whose uid no REGISTERED slot carries (proven
