@@ -1874,6 +1874,68 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                "6cF PIN D: so a read slot gets neither the card's value NOR its prose");
     }
 
+    // ---- card separator: a label gets a colon, a number does not ------------
+    {
+        std::cout << "card separator (formatSemanticSetting):\n";
+        using echojay::formatSemanticSetting;
+        auto F = [] (const char* k, const juce::var& v) { return formatSemanticSetting (k, v); };
+
+        // PIN 1 — EVERY NUMERIC RENDER IS BYTE-IDENTICAL. The card is
+        // user-facing and governed by the 9 Aug silence decision; this change
+        // is allowed to alter label rendering and nothing else. Each suffix
+        // path and the ratio special case, exactly as the header documents.
+        check (F ("ratio", "4:1")            == "ratio 4:1",         "sep PIN1: ratio", "got " + F ("ratio", "4:1"));
+        check (F ("threshold_db", -18)       == "threshold -18dB",   "sep PIN1: _db",   "got " + F ("threshold_db", -18));
+        check (F ("attack_ms", 40)           == "attack 40ms",       "sep PIN1: _ms",   "got " + F ("attack_ms", 40));
+        check (F ("freq_hz", 1200)           == "freq 1200Hz",       "sep PIN1: _hz",   "got " + F ("freq_hz", 1200));
+        check (F ("mix_pct", 25)             == "mix 25%",           "sep PIN1: _pct",  "got " + F ("mix_pct", 25));
+        check (F ("reverb_decay_s", 2)       == "reverb decay 2s",   "sep PIN1: _s",    "got " + F ("reverb_decay_s", 2));
+        check (F ("Thresh", -3)              == "Thresh -3",         "sep PIN1: bare numeric", "got " + F ("Thresh", -3));
+        check (F ("Vol", 7)                  == "Vol 7",             "sep PIN1: bare int",     "got " + F ("Vol", 7));
+        // The one that made the guard necessary: semanticToFloat parses a
+        // STRING into a number, so a numeric-as-string can reach an anchored
+        // control. It must still render with a space.
+        check (F ("Vol", "7")                == "Vol 7",             "sep PIN1: numeric-as-STRING keeps the space", "got " + F ("Vol", "7"));
+        check (F ("Vol", "-3.5")             == "Vol -3.5",          "sep PIN1: signed numeric-as-string too",      "got " + F ("Vol", "-3.5"));
+
+        // PIN 2 — the three label shapes, taken from the corpus measurement.
+        check (F ("Band 1 Used", "Used")     == "Band 1 Used: Used",
+               "sep PIN2: a name ENDING in its label (Pro-Q 3, 442 such pairs)", "got " + F ("Band 1 Used", "Used"));
+        check (F ("In", "In")                == "In: In",
+               "sep PIN2: a name EQUAL to its label (API-2500, 6 such)",         "got " + F ("In", "In"));
+        check (F ("Bias", "Normal")          == "Bias: Normal",
+               "sep PIN2: a label UNRELATED to the name",                        "got " + F ("Bias", "Normal"));
+        // And the state it must stay distinguishable from.
+        check (F ("Band 1 Used", "Unused")   == "Band 1 Used: Unused",
+               "sep PIN2: the other state of the same control stays distinct",   "got " + F ("Band 1 Used", "Unused"));
+
+        // PIN 3 — THE TIERED LINE DOES NOT CONVERGE. It renders modes for the
+        // model as `reads "Used"`, and that is a different line for a
+        // different reader. If these two ever merge, one of them is wrong.
+        {
+            std::ifstream fch ("Source/ChainHost.cpp");
+            std::stringstream sch; sch << fch.rdbuf();
+            const auto ch = codeOnly (juce::String (sch.str()));
+            check (ch.contains ("+ arrow + \"reads \\\"\" + r.landedText.trim() + \"\\\"\""),
+                   "sep PIN3: the tiered Landed form is untouched");
+            check (! ch.contains ("formatSemanticSetting(r.semantic, r.landedText)"),
+                   "sep PIN3: the tier does not start using the card's composer");
+        }
+
+        // PIN 4 — THE MIRROR HOLDS. semanticLabel says it mirrors
+        // formatSemanticSetting's SUFFIX handling; a separator change touches
+        // no suffix, and semanticLabel never sees a value at all.
+        check (echojay::semanticLabel ("threshold_db") == "threshold"
+               && echojay::semanticLabel ("attack_ms")  == "attack"
+               && echojay::semanticLabel ("freq_hz")    == "freq"
+               && echojay::semanticLabel ("mix_pct")    == "mix"
+               && echojay::semanticLabel ("reverb_decay_s") == "reverb decay"
+               && echojay::semanticLabel ("ratio")      == "ratio",
+               "sep PIN4: semanticLabel's suffix stripping still matches the composer's");
+        check (echojay::semanticLabel ("Band 1 Used") == "Band 1 Used",
+               "sep PIN4: and it still returns a bare label, never a separator");
+    }
+
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";
     return failN == 0 ? 0 : 1;
 }
