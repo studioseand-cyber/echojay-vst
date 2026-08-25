@@ -993,8 +993,11 @@ int main()
             ++capForks;
         for (int p = 0; (p = ed.indexOf (p, "An edited rack keeps its shape")) >= 0; ++p)
             ++oldWording;
-        check (capForks >= 5,
-               "capability forks the affordances, the ask and the send",
+        // 4 = the add, remove and move forks plus the deselect routing;
+        // the SNAPSHOT itself moved into borrowEngageBegin (26 Aug: it must
+        // ride the session from its first instant, functionally gated).
+        check (capForks >= 4,
+               "capability forks the affordances and the deselect send",
                juce::String (capForks));
         // THREE sites — remove, add AND move. Move's refusal was silent
         // before phase 3; silent-does-nothing is the selector-bug failure
@@ -1447,8 +1450,15 @@ int main()
         check (! mainProc.borrowActive(), "fresh processor: no session");
         check (mainProc.createSlotEditorForView ("some-remote", 0) == nullptr,
                "a remote view without a session refuses (Link-owned instance)");
-        mainProc.borrowEngageBegin ("uid-edit", "lease-ed1");
+        mainProc.borrowEngageBegin ("uid-edit", "lease-ed1",
+                                    /*structureCapable=*/true);
         check (mainProc.borrowActive(), "session engaged (begin half)");
+        // THE CAPABILITY RIDES THE SESSION FROM ITS FIRST INSTANT — this
+        // assert runs BEFORE any load settles, which is exactly the async
+        // window where adds were refused on a live session (26 Aug 2026:
+        // the flag used to be set only at load settlement).
+        check (mainProc.borrowStructureCapable_,
+               "the capability snapshot is set the instant the session is");
         auto* bh = mainProc.borrowHost();
         check (bh != nullptr && bh->isBorrowed(), "borrowed host exists");
         borrowRack (*bh);
@@ -1460,6 +1470,45 @@ int main()
                "a DIFFERENT remote view still refuses");
         check (mainProc.createSlotEditorForView ("uid-edit", 99) == nullptr,
                "an out-of-range slot refuses, never crashes");
+        // A STRUCTURE EDIT IS PERMITTED: with the session vectors present
+        // (engage-time, not settlement-time), an added slot computes into
+        // a Create — the plan-level proof the picker's fork guards.
+        mainProc.borrowBaseIdentity_ = bh->liveIdentity();
+        mainProc.borrowSlotOrigin_ = { 0, 1 };
+        mainProc.borrowCreatedIdentity_.assign (2, {});
+        mainProc.borrowSlotRecords_.clear();
+        for (int i = 0; i < 2; ++i)
+        {
+            EchoJayProcessor::BorrowSlotRecord r0;
+            r0.name = bh->getSlotInfo (i).name;
+            mainProc.borrowSlotRecords_.push_back (std::move (r0));
+        }
+        borrowRack (*bh);   // no-op shape refresh keeps 2 slots
+        {
+            // simulate the picker's add: a third slot appended, origin -1
+            juce::Array<juce::var> arr1; int n1 = 1;
+            for (const char* nm : { "EJ Borrow Probe", "EJ Borrow Grinch",
+                                    "EJ Borrow Probe" })
+            {
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("n", n1++);
+                o->setProperty ("plugin", nm);
+                o->setProperty ("bypassed", false);
+                arr1.add (juce::var (o));
+            }
+            bh->restoreSavedChain (juce::var (arr1),
+                                   juce::var (new juce::DynamicObject()));
+            mainProc.borrowSlotOrigin_.push_back (-1);
+            mainProc.borrowCreatedIdentity_.push_back (
+                { "EJ Borrow Probe", "1161904976", {} });
+            EchoJayProcessor::BorrowSlotRecord cr0;
+            cr0.name = "EJ Borrow Probe";
+            mainProc.borrowSlotRecords_.push_back (std::move (cr0));
+        }
+        const auto permitPlan = mainProc.buildStructurePlan();
+        check (permitPlan.creating == 1,
+               "a structure edit is PERMITTED: the added slot computes into "
+               "a Create", juce::String (permitPlan.creating));
         mainProc.borrowRelease (false);
         check (mainProc.createSlotEditorForView ("uid-edit", 0) == nullptr,
                "after release the view is remote again - refuses");

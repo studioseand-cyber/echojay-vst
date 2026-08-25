@@ -463,7 +463,10 @@ public:
     // Engage half A (message thread): create/prepare the host, bind the ring,
     // start the rack-scoped lease renew. The EDITOR builds the rack (pulls +
     // restore) before calling borrowAudioOn().
-    void borrowEngageBegin(const juce::String& uid, const juce::String& leaseId);
+    // structureCapable: the engage-time snapshot, set HERE so it rides the
+    // session from its first instant — never deferred to load settlement.
+    void borrowEngageBegin(const juce::String& uid, const juce::String& leaseId,
+                           bool structureCapable = false);
     void borrowAudioOn();
     void borrowAudioOff();   // §5a-R: listening is its own control
     bool borrowAudioIsOn() const noexcept

@@ -1767,13 +1767,21 @@ void EchoJayProcessor::renewBorrowLease()
 }
 
 void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
-                                         const juce::String& leaseId)
+                                         const juce::String& leaseId,
+                                         bool structureCapable)
 {
     if (borrowActive() || uid.isEmpty()) return;
     borrowHost();                                    // exists + prepared
     borrowBuf_.setSize(2, 8192);                     // allocated HERE, never on audio
     borrowSession_.uid     = uid;
     borrowSession_.leaseId = leaseId;
+    // THE CAPABILITY SNAPSHOT RIDES THE SESSION FROM ITS FIRST INSTANT
+    // (26 Aug 2026: adds refused on a live session — the flag used to be
+    // set only when every async plugin load SETTLED, so the whole load
+    // window was a live session whose surrounding state hadn't come with
+    // it, and the picker's fork read false: the legacy refusal, on a
+    // capable Link).
+    borrowStructureCapable_ = structureCapable;
 
     // Bind the ring, editBegin's idiom: seek to the cushion so the audition
     // starts near live rather than at the backlog.

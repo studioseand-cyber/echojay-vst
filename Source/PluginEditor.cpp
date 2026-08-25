@@ -7606,6 +7606,15 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
             nit != processorRef.unwrittenEditNote_.end()
             && ! processorRef.borrowActive())
             chainListPanel.statusText = nit->second;
+        // ENGAGING, said while it happens (26 Aug 2026: the first engage
+        // attempt waits ~1s for the async lock claim, which looked inert).
+        // Last writer on purpose: the current activity beats a previous
+        // session's outcome banner for the second it takes.
+        if (! processorRef.borrowActive()
+            && processorRef.pendingAutoEngage_.isNotEmpty()
+            && processorRef.pendingAutoEngage_ == chainViewUid())
+            chainListPanel.statusText = "Engaging "
+                + processorRef.resolveLinkDisplayName(chainViewUid()) + "...";
     }
     chainListPanel.rackBtn.setButtonText("RACK: " + v.name.toUpperCase());
     repaint();
@@ -7971,8 +7980,28 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
         auto& proc = safeThis->processorRef;
         const juce::String leaseId =
             st->uid + "-rack-" + juce::String(juce::Time::currentTimeMillis());
-        proc.borrowEngageBegin(st->uid, leaseId);
+        proc.borrowEngageBegin(st->uid, leaseId, st->structCapable);
         auto* bh = proc.borrowHost();
+        // SESSION VECTORS AT ENGAGE, not at load settlement (26 Aug 2026):
+        // the session is live from this line, so origins, base identity and
+        // the capability snapshot (set inside engageBegin) must exist NOW.
+        // An add during the async load window otherwise pushed origin -1
+        // onto an EMPTY origins vector — the same live-session-without-its-
+        // state shape as the refused add. Records stay settled-time: their
+        // baselines are POST-SEED by definition.
+        {
+            const int wantNow = (int) st->slots.size();
+            proc.borrowSlotOrigin_.clear();
+            proc.borrowBaseIdentity_.clear();
+            proc.borrowCreatedIdentity_.assign((size_t) wantNow, {});
+            for (int i = 0; i < wantNow; ++i)
+            {
+                proc.borrowSlotOrigin_.push_back(i);
+                proc.borrowBaseIdentity_.push_back(
+                    LinkShm::StructureEdit::SlotIdentity::fromSidecar(
+                        st->slots[(size_t) i]));
+            }
+        }
 
         juce::Array<juce::var> slotsArr;
         auto* statesObj = new juce::DynamicObject();
@@ -8054,21 +8083,8 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
                 }
                 p2.borrowSlotRecords_.push_back(std::move(r));
             }
-            // Phase 3 session state: 1:1 origins at engage, the base
-            // identity snapshot (hex uid through the one seam), and the
-            // capability snapshot — an old Link keeps settings-only
-            // behaviour for the whole session.
-            p2.borrowSlotOrigin_.clear();
-            p2.borrowBaseIdentity_.clear();
-            p2.borrowCreatedIdentity_.assign((size_t) want, {});
-            for (int i = 0; i < want && i < (int) st->slots.size(); ++i)
-            {
-                p2.borrowSlotOrigin_.push_back(i);
-                p2.borrowBaseIdentity_.push_back(
-                    LinkShm::StructureEdit::SlotIdentity::fromSidecar(
-                        st->slots[(size_t) i]));
-            }
-            p2.borrowStructureCapable_ = st->structCapable;
+            // (Origins, base identity and the capability snapshot were set
+            // at ENGAGE — the session never runs without them.)
             // CONTINUOUS KEEP, the restore half: an interrupted session's
             // uncommitted edits come back, and it says so. Name-checked per
             // index so a changed rack cannot receive the wrong state.
