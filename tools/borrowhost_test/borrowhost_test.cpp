@@ -20,6 +20,7 @@
 #include <CoreFoundation/CoreFoundation.h>   // before JUCE: MacTypes' Point vs juce::Point
 #include <JuceHeader.h>
 #include "ChainHost.h"
+#include "PluginProcessor.h"   // §5a-R functional editor-open gate
 #include "EedDeviceRegistry.h"
 #include "LinkShm.h"   // BorrowRing — the stale-ring decision (finding #3)
 
@@ -71,8 +72,9 @@ struct BorrowProbe final : juce::AudioProcessor
     double getTailLengthSeconds() const override { return 0.0; }
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
-    juce::AudioProcessorEditor* createEditor() override { return nullptr; }
-    bool hasEditor() const override { return false; }
+    juce::AudioProcessorEditor* createEditor() override
+    { return new juce::GenericAudioProcessorEditor (*this); }
+    bool hasEditor() const override { return true; }
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
     void setCurrentProgram (int) override {}
@@ -596,22 +598,22 @@ int main()
         check (ed3.contains ("running at defaults; never")
                  && ed3.contains ("written back"),
                "the withheld banner still says never-written, confirm or no");
-        check (ed3.contains ("revert_rack"),
-               "the shelf now carries the revert offer (replaces discard)");
+        check (! ed3.contains ("revert_rack"),
+               "no revert chips exist (revert removed by ruling)");
         // onCreateEditor ORDER (bug, 22 Aug 2026): the borrowed-host branch
         // must come BEFORE the remote guard, or it is dead code behind the
         // guard's early nullptr — exactly what a source pin catches and a
         // functional test might not. Pin: within the handler, the borrow
         // check's offset precedes the remote guard's.
         {
+            // The decision moved to the processor and is FUNCTIONALLY gated
+            // below (twice a source pin here proved a branch existed while
+            // it was unreachable). This pin only holds the delegation.
             const int handler = ed3.indexOf ("chainListPanel.onCreateEditor");
-            const auto body = handler >= 0 ? ed3.substring (handler, handler + 1400)
+            const auto body = handler >= 0 ? ed3.substring (handler, handler + 900)
                                            : juce::String();
-            const int borrowArm = body.indexOf ("borrowHostIfActiveFor(chainViewUid())");
-            const int remoteArm = body.indexOf ("chainViewUid().isNotEmpty()");
-            check (handler >= 0 && borrowArm >= 0 && remoteArm >= 0
-                     && borrowArm < remoteArm,
-                   "onCreateEditor reaches the borrowed host BEFORE the remote guard");
+            check (body.contains ("createSlotEditorForView(chainViewUid(), i)"),
+                   "onCreateEditor delegates to the one gated author");
         }
         // The verdict reads the RECORDED FACT, never a recomputed policy,
         // the converter guards the seed seam, and every classify logs.
@@ -1192,7 +1194,7 @@ int main()
             ++secStamps;
         for (int p = 0; (p = ed.indexOf (p, "LinkShm::nextCtrlSeq()")) >= 0; ++p)
             ++seqCalls;
-        check (secStamps == 2 && seqCalls >= 14 && ! ed.contains ("baseSeq"),
+        check (secStamps == 2 && seqCalls >= 12 && ! ed.contains ("baseSeq"),
                "one seq author: every sender uses nextCtrlSeq",
                juce::String (secStamps) + "/" + juce::String (seqCalls));
     }
@@ -1238,12 +1240,18 @@ int main()
         check (edS.contains ("processorRef.borrowStickyBanner_.isNotEmpty()")
                  && edS.contains ("processorRef.unwrittenEditNote_.find(chainViewUid())"),
                "sticky banner and unwritten note render from processor state");
-        // Revert replaces discard, worded this-session-only (ruling 5).
-        check (edS.contains ("available until the next edit session"),
-               "the revert offer says this-session-only");
-        check (edS.contains ("revertLastApply")
-                 && ppS.contains ("revertOfferUid_ = uid;"),
-               "applied outcomes offer revert; the chip sends the cmd");
+        // Revert is NOT part of the model (26 Aug ruling): deleted, not
+        // dormant — the affordance, the chips and the machinery. Pinned as
+        // ABSENCE across every source file the machinery lived in.
+        {
+            auto lpS = slurpS ("Source/LinkProcessor.cpp");
+            auto chS = slurpS ("Source/ChainHost.h");
+            check (! edS.contains ("revertLastApply")
+                     && ! ppS.contains ("revertOfferUid_")
+                     && ! lpS.contains ("revertLastApply")
+                     && ! chS.contains ("revertLastApply"),
+                   "revert is deleted everywhere, not dormant");
+        }
         // A new session supersedes the previous session's surfaces.
         check (edS.contains ("p2.unwrittenEditNote_.erase(st->uid);"),
                "a new engage supersedes the old note, never navigation");
@@ -1425,6 +1433,36 @@ int main()
         check (edR.contains ("heartbeatFresh")
                  && edR.contains ("\"not responding\""),
                "the strip renders heartbeat-stale as GONE, not as silence");
+    }
+
+    std::printf ("== §5a-R functional: slot editors open while editing ==\n");
+    {
+        // TWICE this exact capability regressed behind passing source pins
+        // (22 Aug guard order; 26 Aug an engage that never completed). So
+        // this gate CONSTRUCTS the states and CALLS the one-author decision
+        // (EchoJayProcessor::createSlotEditorForView) against real object
+        // code — including the async-engage window, which is exactly the
+        // state built here: engage begun, rack settling, nothing finished.
+        EchoJayProcessor mainProc;
+        check (! mainProc.borrowActive(), "fresh processor: no session");
+        check (mainProc.createSlotEditorForView ("some-remote", 0) == nullptr,
+               "a remote view without a session refuses (Link-owned instance)");
+        mainProc.borrowEngageBegin ("uid-edit", "lease-ed1");
+        check (mainProc.borrowActive(), "session engaged (begin half)");
+        auto* bh = mainProc.borrowHost();
+        check (bh != nullptr && bh->isBorrowed(), "borrowed host exists");
+        borrowRack (*bh);
+        auto* ed0 = mainProc.createSlotEditorForView ("uid-edit", 0);
+        check (ed0 != nullptr,
+               "a slot editor OPENS while the rack is being edited");
+        delete ed0;
+        check (mainProc.createSlotEditorForView ("other-uid", 0) == nullptr,
+               "a DIFFERENT remote view still refuses");
+        check (mainProc.createSlotEditorForView ("uid-edit", 99) == nullptr,
+               "an out-of-range slot refuses, never crashes");
+        mainProc.borrowRelease (false);
+        check (mainProc.createSlotEditorForView ("uid-edit", 0) == nullptr,
+               "after release the view is remote again - refuses");
     }
 
     std::printf ("== DEV forceWithholdSlot: cannot exist in a non-DEV build ==\n");

@@ -492,12 +492,19 @@ public:
     // or not a window ever reopens).
     void borrowApplyAndRelease(bool releaseLockOnFail);
     void borrowEditorClosed();
+    // The slot-editor decision, ONE author, FUNCTIONALLY gated (twice
+    // regressed as editor-side code: 22 Aug guard order, 26 Aug an engage
+    // that never completed — both survived source pins because a pin proves
+    // a branch exists, not that it is reached). Order is load-bearing: the
+    // borrowed arm must precede the remote guard, whose viewUid is
+    // non-empty for a borrowed view too.
+    juce::AudioProcessorEditor* createSlotEditorForView(
+        const juce::String& viewUid, int slot);
     // Session-scoped surfaces, rendered by the panel until superseded —
     // banners must not be losable by navigating away (§5a-R honesty rule).
     juce::String borrowStickyBanner_;
     std::map<juce::String, juce::String> unwrittenEditNote_;  // uid -> note
     juce::String pendingAutoEngage_;   // engage this uid once released
-    juce::String revertOfferUid_;      // applied: offer revert via the shelf
     bool borrowApplyInFlight_ = false;
 
     // ---- Step 3: Apply & Release bookkeeping (message thread only) --------

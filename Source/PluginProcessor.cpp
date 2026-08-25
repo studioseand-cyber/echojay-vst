@@ -2100,7 +2100,6 @@ void EchoJayProcessor::borrowApplyFinish(bool applied, const juce::String& why,
         borrowRelease(false);
         borrowStickyBanner_ = "Applied to " + name + " - the whole plan, or "
             "none of it. " + name + " owns its rack again.";
-        revertOfferUid_ = uid;   // the shelf offers "revert this session"
         return;
     }
     if (borrowApplyReleaseOnFail_)
@@ -2127,7 +2126,29 @@ void EchoJayProcessor::borrowApplyFinish(bool applied, const juce::String& why,
         + " failed - " + why + ". "
         + (restored ? name + " was restored to exactly its pre-write rack. "
                     : name + "'s rack was not touched. ")
-        + "Fix the cause, or revert this session.";
+        + "Fix the cause and leave the rack again to retry.";
+}
+
+juce::AudioProcessorEditor* EchoJayProcessor::createSlotEditorForView(
+    const juce::String& viewUid, int slot)
+{
+    // ORDER IS LOAD-BEARING: a borrowed view's uid is non-empty, so the
+    // remote guard's early nullptr would make the borrowed arm dead code —
+    // the 22 Aug 2026 bug, and the reason this decision now lives where
+    // the gate can construct the real states and CALL it.
+    if (auto* bh = borrowHostIfActiveFor(viewUid))
+        return bh->createEditorForSlot(slot);
+    // A remote rack cannot render the LINK'S instance here (it lives in
+    // that process) — but a live stage-1 edit session's slot has a LOCAL
+    // editing copy, and its editor is the whole point of stage 1.
+    if (viewUid.isNotEmpty())
+    {
+        if (editActive() && editSession_.uid == viewUid
+            && editSession_.slot0 == slot)
+            return editCreateEditor();
+        return nullptr;
+    }
+    return getChainHost().createEditorForSlot(slot);
 }
 
 void EchoJayProcessor::borrowEditorClosed()

@@ -1908,25 +1908,12 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // "Add to Chain" — appends the selected list entry as a new slot
 
     chainListPanel.onCreateEditor = [this](int i) -> juce::AudioProcessorEditor* {
-        // ORDER IS LOAD-BEARING (bug, 22 Aug 2026): the borrowed-view check
-        // must run BEFORE the remote guard — a borrowed view's uid is
-        // non-empty, so the guard's early nullptr made this arm dead code
-        // and no plugin in an edited rack could open its editor. Pinned by
-        // source in borrowhost_test.
-        if (auto* bh = processorRef.borrowHostIfActiveFor(chainViewUid()))
-            return bh->createEditorForSlot(i);
-        // A remote rack cannot render the LINK'S instance here (it lives in
-        // that process slot) -- but a live edit session's slot has a LOCAL
-        // editing copy, and its editor is the whole point of stage 1.
-        if (chainViewUid().isNotEmpty())
-        {
-            if (processorRef.editActive()
-                && processorRef.editSession_.uid == chainViewUid()
-                && processorRef.editSession_.slot0 == i)
-                return processorRef.editCreateEditor();
-            return nullptr;
-        }
-        return processorRef.getChainHost().createEditorForSlot(i);
+        // ONE AUTHOR, on the processor and FUNCTIONALLY GATED there (twice
+        // regressed: 22 Aug guard order, 26 Aug the engage that never
+        // completed — both times a source pin proved a branch existed while
+        // it was unreachable, so the decision now lives where a test can
+        // construct the real states and call it).
+        return processorRef.createSlotEditorForView(chainViewUid(), i);
     };
     chainListPanel.onSelectSlot = [this](int i) { chainSelectedSlot_ = i; };
     chainListPanel.onRemoveSlot = [this](int i) {
@@ -7175,8 +7162,7 @@ void EchoJayEditor::refreshLinkRackCache(bool force)
     if (!force && nowMs - lastRackCacheMs_ < 1000) return;
     lastRackCacheMs_ = nowMs;
     // §5a-R: the ~1Hz tick that retries a deferred auto-engage (a release
-    // was in flight, or the capability cache had not filled) and presents
-    // the post-apply revert offer.
+    // in flight, the capability cache unfilled, or the rack lock pending).
     borrowSelectionTick();
     for (const auto& e : processorRef.getLinkDisplayList())
     {
@@ -7776,132 +7762,28 @@ void EchoJayEditor::handleBorrowSelectionChange(const juce::String& newUid)
 void EchoJayEditor::borrowSelectionTick()
 {
     auto& p = processorRef;
-    // The post-apply revert offer rides the shelf, once per apply (§5a-R
-    // rulings 1 and 5): the shelf is the not-losable surface, and the
-    // wording says this-session-only.
-    if (p.revertOfferUid_.isNotEmpty())
+    if (p.borrowActive())
     {
-        const juce::String uid = p.revertOfferUid_;
-        p.revertOfferUid_.clear();
-        presentRevertOffer(uid);
+        if (p.borrowUid() == p.pendingAutoEngage_) p.pendingAutoEngage_.clear();
+        return;
     }
-    if (p.borrowActive() || p.borrowApplyInFlight_) return;
+    if (p.borrowApplyInFlight_) return;
     const juce::String want = p.pendingAutoEngage_;
     if (want.isEmpty() || want != chainViewUid()) return;
     bool capable = false;
     if (auto it = p.linkRackCache.find(want); it != p.linkRackCache.end())
         capable = it->second.rack.borrowCapable;
     if (! capable) return;        // read-only view; the tick retries as the cache fills
-    p.pendingAutoEngage_.clear();
+    // THE LOCK GATES THE ATTEMPT, quietly (26 Aug regression): selection
+    // claims the rack lock ASYNCHRONOUSLY, and the old tick cleared
+    // pendingAutoEngage_ before a startBorrow that refuses while the lock
+    // is pending — so the session NEVER engaged, the view stayed remote,
+    // and remote clicks only select: no plugin editor could open. The
+    // pending uid is cleared ONLY once the session is live; until the lock
+    // lands the tick just waits, banner-free, and retries at 1Hz.
+    if (! p.rackLockHeldFor(want)) return;
     startBorrow(want);
-}
-
-void EchoJayEditor::revertInSession()
-{
-    // In-session revert: the Link is untouched until an apply happens, so
-    // "before I touched it" is a drop-and-re-pull. THIS SESSION only.
-    auto& p = processorRef;
-    if (! p.borrowActive()) return;
-    const juce::String uid = p.borrowUid();
-    p.clearBorrowKept();
-    p.borrowRelease(false);
-    p.borrowStickyBanner_.clear();
-    startBorrow(uid);
-    chainListPanel.statusText = "Reverted - this rack is back to before this "
-        "edit session. Nothing was written to the Link.";
-    chainListPanel.repaint();
-}
-
-void EchoJayEditor::presentRevertOffer(const juce::String& uid)
-{
-    const juce::String name = processorRef.resolveLinkDisplayName(uid);
-    juce::Array<juce::var> choices;
-    for (auto [label, intent] : { std::pair<const char*, const char*>
-             { "Revert this session", "revert_rack" },
-             { "Keep it", "revert_dismiss" } })
-    {
-        auto* c = new juce::DynamicObject();
-        c->setProperty("label",  label);
-        c->setProperty("intent", intent);
-        c->setProperty("revert_uid", uid);
-        choices.add(juce::var(c));
-    }
-    presentReplaceAsk("Applied to " + name + ". Revert restores its rack to "
-        "before this edit session - available until the next edit session "
-        "starts on it.",
-        choices, "revert \"" + name + "\"",
-        "EJApply: revert offer shown uid=" + uid + " answer=pending");
-}
-
-void EchoJayEditor::sendRevertLastApply(const juce::String& uid)
-{
-    // The Link restores its OWN pre-apply images (exact, withheld states
-    // included — the main never had those). Consumed on use; a refusal
-    // means the point was already used or a new session cleared it, and
-    // the banner says so in the ruling's this-session wording.
-    if (uid.isEmpty()) return;
-    int err = 0;
-    const juce::String dir = LinkShm::resolveDir(err);
-    const juce::String name = processorRef.resolveLinkDisplayName(uid);
-    if (dir.isEmpty())
-    {
-        chainListPanel.statusText = "Cannot revert: the shared Link folder "
-            "is unavailable.";
-        chainListPanel.repaint();
-        return;
-    }
-    const int seq = LinkShm::nextCtrlSeq();
-    auto* cmd = new juce::DynamicObject();
-    cmd->setProperty("v",   1);
-    cmd->setProperty("seq", seq);
-    cmd->setProperty("revertLastApply", true);
-    EchoJay_NSLog(("EJStruct: send revert uid=" + uid
-                   + " seq=" + juce::String(seq)).toRawUTF8());
-    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();
-    juce::File(dir + "ctrl-cmd-" + uid + ".json")
-        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
-    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    auto poll = std::make_shared<std::function<void(int)>>();
-    *poll = [safeThis, uid, seq, dir, name, poll](int left)
-    {
-        juce::Timer::callAfterDelay(250, [safeThis, uid, seq, dir, name, poll, left]
-        {
-            if (safeThis == nullptr) return;
-            juce::File ack(dir + "ctrl-ack-" + uid + ".json");
-            if (ack.existsAsFile())
-            {
-                auto v = juce::JSON::parse(ack.loadFileAsString());
-                if (auto* o = v.getDynamicObject(); o != nullptr
-                    && (int) o->getProperty("seq") == seq)
-                {
-                    ack.deleteFile();
-                    const bool done = (bool) o->getProperty("revertDone");
-                    EchoJay_NSLog(("EJStruct: revert ack uid=" + uid
-                        + " done=" + (done ? "Y" : "N")).toRawUTF8());
-                    safeThis->chainListPanel.statusText = done
-                        ? "Reverted - " + name + "'s rack is back to before "
-                          "the last edit session."
-                        : "Could not revert: no revert point held (already "
-                          "used, or a new edit session started on " + name
-                          + " since).";
-                    safeThis->processorRef.borrowStickyBanner_ =
-                        safeThis->chainListPanel.statusText;
-                    safeThis->refreshChainPanelForView(true);
-                    return;
-                }
-            }
-            if (left <= 1)
-            {
-                EchoJay_NSLog(("EJStruct: revert NO ACK uid=" + uid).toRawUTF8());
-                safeThis->chainListPanel.statusText =
-                    "Revert got no answer from " + name + ".";
-                safeThis->chainListPanel.repaint();
-                return;
-            }
-            (*poll)(left - 1);
-        });
-    };
-    (*poll)(20);
+    if (p.borrowActive()) p.pendingAutoEngage_.clear();
 }
 
 void EchoJayEditor::runBorrowApply()
@@ -8214,12 +8096,10 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
             // §5a-R: the session engages SILENT — listening is its own
             // control now. No borrowAudioOn here; LISTEN turns it on.
             // A new session supersedes the previous session's surfaces:
-            // the unwritten-note for this uid, the sticky banner, and the
-            // shelf's revert offer are all about a session that is no
-            // longer the latest.
+            // the unwritten-note for this uid and the sticky banner are
+            // about a session that is no longer the latest.
             p2.unwrittenEditNote_.erase(st->uid);
             p2.borrowStickyBanner_.clear();
-            if (p2.revertOfferUid_ == st->uid) p2.revertOfferUid_.clear();
             // §5c's loud banner: withheld = the RECORDED fact per slot.
             int withheldN = 0;
             for (int i = 0; i < (int) p2.borrowSlotRecords_.size(); ++i)
@@ -22057,27 +21937,6 @@ void EchoJayEditor::onAskChipTapped(int i)
     //                   intent): the tap IS the disambiguation;
     //                   route it through handleChainRecall, which
     //                   still asks before replacing a non-empty rack.
-    // §5a-R: the Apply ask's chips are GONE — deselect applies, revert
-    // replaces discard. The shelf now carries the post-apply REVERT offer
-    // (this-session-only, per ruling 5).
-    if (intent == "revert_rack" || intent == "revert_dismiss")
-    {
-        logTap(intent);
-        supersedePendingReplaceAsks();
-        askShelfVisible_ = false;
-        resized();
-        if (intent == "revert_rack")
-        {
-            auto* co = askChipVars[(size_t) i].getDynamicObject();
-            const juce::String ruid =
-                co ? co->getProperty("revert_uid").toString() : juce::String();
-            EchoJay_NSLog(("EJApply: answer=revert uid=" + ruid).toRawUTF8());
-            sendRevertLastApply(ruid);
-        }
-        else
-            EchoJay_NSLog("EJApply: answer=keep-applied");
-        return;
-    }
     if (intent == "recall_confirm" || intent == "recall_cancel")
     {
         logTap(intent);

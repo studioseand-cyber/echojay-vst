@@ -226,13 +226,17 @@ already hold from the pull becomes an undo instead of a question.
 
 **Three things that survive the simplification, by ruling:**
 
-1. **Revert, not confirm.** With no Apply there is no moment to say no, so
-   the pre-edit state already held from the pull becomes an undo: "revert
-   this rack to before I touched it" — available on the Link AND in the
-   main while the session is fresh. This REPLACES Discard rather than
-   deleting it. (The continuous-keep machinery and the lease-death capture
-   below are unchanged; revert is the same held state pointed the other
-   way.)
+1. **~~Revert, not confirm~~ — REMOVED (26 Aug 2026 ruling).** Revert is
+   not part of the model. Editing a Link's rack from the main is the same
+   act as editing it in the Link's own window, which has no revert;
+   inventing one only for the remote path adds a concept nothing else in
+   the plugin has. The affordance, the shelf offer, the chips and the
+   machinery behind it (the Link's held pre-apply images, the
+   revertLastApply/revertDone ctrl pair) were DELETED, not left dormant —
+   unreached code has cost this project twice. The protection that remains
+   is the one that was always doing the real work: the honesty rules
+   below. (Continuous keep and the lease-death capture are unchanged —
+   they are crash insurance, not an undo.)
 2. **The honesty rules are unchanged.** Withheld slots are still never
    written (§5c); a structure plan is still all-or-nothing (§4b, and the
    structure spec's atomicity). With no confirm step to carry those
@@ -260,14 +264,10 @@ already hold from the pull becomes an undo instead of a question.
    whether anyone ever reopens a window. (This requires the apply
    orchestration to live on the PROCESSOR, not the editor — an editor
    being destroyed cannot poll an ack.)
-5. **Revert holds until the next engage of that rack.** Process-lifetime,
-   in-memory, not persisted. A new session on that uid DISCARDS the
-   previous revert point, and the affordance's wording says it is about
-   THIS SESSION only. Mechanism: the side that has the truth holds the
-   point — the Link keeps its own pre-apply images (exact, withheld states
-   included, which the main never had) after a successful apply, cleared
-   on the next lease engage; in-session revert on the main is a re-pull
-   (the Link is untouched until an apply happens).
+5. **~~Revert holds until the next engage~~ — SUPERSEDED with revert's
+   removal (26 Aug 2026, ruling 1 above).** Recorded because it was ruled
+   and briefly built; the mechanism (Link-held pre-apply images, cleared
+   on engage, consumed on use) was deleted with the rest.
 
 **Lease death mid-borrow — recovery offer, never unstated loss** (amendment,
 21 Aug 2026): if the rack-scoped lease expires under a live borrow (the Link

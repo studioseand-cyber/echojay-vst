@@ -4174,9 +4174,6 @@ private:
     // §5a-R (26 Aug 2026): selection IS the session.
     void handleBorrowSelectionChange(const juce::String& newUid);
     void borrowSelectionTick();
-    void revertInSession();
-    void presentRevertOffer(const juce::String& uid);
-    void sendRevertLastApply(const juce::String& uid);
     void runBorrowApply();   // legacy per-slot commits (deselect, incapable Links)
     LinkShm::StructureEdit::Plan buildStructurePlan();   // delegate -> processor
     bool borrowSessionShapeDirty() const;                // delegate -> processor

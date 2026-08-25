@@ -41,7 +41,7 @@ cmd = (['clang++'] + out + ['-I', os.path.abspath('Source'),
         '-framework','IOKit','-framework','Security','-framework','WebKit',
         '-framework','Metal','-framework','MetalKit','-framework','CoreAudioKit',
         '-framework','UniformTypeIdentifiers','-framework','AVFoundation',
-        '-framework','CoreMedia','-framework','AVKit','-lcurl',
+        '-framework','CoreMedia','-framework','AVKit','-framework','OpenGL','-lcurl',
         '-o', f'{scratch}/borrowhost_test'])
 r = subprocess.run(cmd, capture_output=True, text=True)
 if r.returncode:
