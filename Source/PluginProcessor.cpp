@@ -904,8 +904,15 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                 // and its graph carries the same prepare/process
                 // synchronization the main chainHost's does — spec §3).
                 if (li == borrowSession_.ringSlot.load(std::memory_order_relaxed)
-                    && borrowSession_.audioOn.load(std::memory_order_acquire))
+                    && (borrowSession_.audioOn.load(std::memory_order_acquire)
+                        || borrowInContextOk_.load(std::memory_order_relaxed)))
                 {
+                    // 26 Aug 2026 URGENT: this gate was audioOn-only (built
+                    // for solo), so the in-context default ran with the
+                    // drain DEAD — borrowBuf_ was never filled, and the
+                    // injection added an UNINITIALISED buffer every block
+                    // (peak 746, pinned meters, read as feedback). The
+                    // drain now runs for EVERY live consumer of the stream.
                     const int want = buffer.getNumSamples();
                     if (borrowBuf_.getNumSamples() >= want && borrowHost_ != nullptr)
                     {
@@ -1857,6 +1864,8 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
     if (borrowActive() || uid.isEmpty()) return;
     borrowHost();                                    // exists + prepared
     borrowBuf_.setSize(2, 8192);                     // allocated HERE, never on audio
+    borrowBuf_.clear();   // setSize leaves contents UNDEFINED — an injection
+                          // source must never hold garbage, whatever the gates
     borrowSession_.uid     = uid;
     borrowSession_.leaseId = leaseId;
     // THE CAPABILITY SNAPSHOT RIDES THE SESSION FROM ITS FIRST INSTANT

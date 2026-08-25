@@ -1540,6 +1540,64 @@ int main()
         mainProc.setBorrowBudgetActive (false);
         check (mainProc.getLatencySamples() == latBare,
                "the last capable Link leaving withdraws the budget");
+
+        // ---- §8 STABILITY, with a REAL signal (26 Aug 2026 URGENT: the
+        // ---- in-context path injected an UNINITIALISED buffer — peak 746,
+        // ---- pinned meters. A DSP path with no level assertion is how it
+        // ---- reached a user; every §8 mode now proves bounded output).
+        mainProc.setBorrowBudgetActive (true);
+        mainProc.prepareToPlay (48000.0, 512);
+        mainProc.borrowEngageBegin ("uid-lvl", "lease-lvl", true, true);
+        check (mainProc.borrowInContextOk_.load(), "level arm: ctx engaged");
+        {
+            juce::AudioBuffer<float> blk (2, 512);
+            juce::MidiBuffer midi;
+            float maxPeak = 0.0f;
+            auto runBlocks = [&](int nBlocks)
+            {
+                for (int b = 0; b < nBlocks; ++b)
+                {
+                    for (int ch = 0; ch < 2; ++ch)
+                        for (int i = 0; i < 512; ++i)
+                            blk.setSample (ch, i,
+                                0.5f * std::sin (0.05f * (float) (b * 512 + i)));
+                    mainProc.processBlock (blk, midi);
+                    for (int ch = 0; ch < 2; ++ch)
+                        for (int i = 0; i < 512; ++i)
+                            maxPeak = juce::jmax (maxPeak,
+                                std::abs (blk.getSample (ch, i)));
+                }
+            };
+            runBlocks (60);                       // in-context, no ring bound
+            check (maxPeak < 2.0f,
+                   "IN-CONTEXT output stays bounded over 60 real blocks",
+                   juce::String (maxPeak, 3));
+            mainProc.borrowAudioOn();             // LISTEN: the solo path
+            maxPeak = 0.0f; runBlocks (60);
+            check (maxPeak < 2.0f,
+                   "SOLO output stays bounded over 60 real blocks",
+                   juce::String (maxPeak, 3));
+            mainProc.borrowAudioOff();
+            maxPeak = 0.0f; runBlocks (30);       // mode switch ramps settle
+            check (maxPeak < 2.0f,
+                   "the mode switch stays bounded through the ramps",
+                   juce::String (maxPeak, 3));
+        }
+        mainProc.borrowRelease (false);
+        mainProc.setBorrowBudgetActive (false);
+        // The level arm alone can false-pass on a fresh process (OS pages
+        // arrive zeroed; Sean's garbage came from recycled heap), so the
+        // two causes are ALSO pinned: the drain runs for every live
+        // consumer, and the injection source can never hold garbage.
+        {
+            std::ifstream f8 ("Source/PluginProcessor.cpp");
+            std::stringstream s8; s8 << f8.rdbuf();
+            const juce::String pp9 (s8.str());
+            check (pp9.contains ("|| borrowInContextOk_.load(std::memory_order_relaxed)))"),
+                   "the ring drain runs for the in-context consumer too");
+            check (pp9.contains ("borrowBuf_.clear();   // setSize leaves contents UNDEFINED"),
+                   "the injection source is cleared at allocation, always");
+        }
         // The pad arithmetic, pure: fits, exact fit, refuse-over-budget.
         const int head = EchoJayProcessor::kBorrowAlignBudgetFrames - 1024;
         check (EchoJayProcessor::alignPad (0)
