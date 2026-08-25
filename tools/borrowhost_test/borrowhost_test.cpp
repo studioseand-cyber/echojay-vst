@@ -1595,6 +1595,17 @@ int main()
             const juce::String pp9 (s8.str());
             check (pp9.contains ("|| borrowInContextOk_.load(std::memory_order_relaxed)))"),
                    "the ring drain runs for the in-context consumer too");
+            // 26 Aug: in-context must not depend on the MAIN's channel
+            // type — the route fork belongs to SOLO alone.
+            {
+                const int at = pp9.indexOf ("const bool ctxNow");
+                const auto decl = at >= 0 ? pp9.substring (at, at + 200)
+                                          : juce::String();
+                check (at >= 0 && ! decl.contains ("borrowThrough"),
+                       "ctxNow is independent of the main's channel type");
+            }
+            check (pp9.contains ("applyBorrowSoloMixOn(buffer, listenSolo);\n"),
+                   "the through-solo site keys on LISTEN alone");
             check (pp9.contains ("borrowBuf_.clear();   // setSize leaves contents UNDEFINED"),
                    "the injection source is cleared at allocation, always");
         }

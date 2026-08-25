@@ -404,11 +404,20 @@ rather than argued against:
   is the same class of approximation the through-main solo route already
   accepts, now said where the default lives. The banner does not claim
   "exactly your mix"; it claims your edits in place of that channel.
-- **Mix Bus / Master Bus degenerate case:** when the edited Link IS the
-  mix (FullMix/MasterBus placement), "the rest of the mix minus this
-  channel" is silence — in-context degenerates to the existing
-  through-main behaviour, no mute needed, same code path as today's
-  routing decision (BorrowRoute::throughMainChain).
+- **The downstream-Link limit (corrected 26 Aug 2026):** the first build
+  used BorrowRoute::throughMainChain as the degenerate-case detector —
+  WRONG: that keys on the MAIN's channel type (a solo-era decision about
+  where solo audio lands), and with the main on the Mix Bus it silently
+  demoted EVERY rack to solo. The real degenerate case is the LINK's
+  placement, which the main cannot currently detect (the Link publishes
+  bus/insert/send, not channel identity). Current honest behaviour:
+  in-context runs for every capable rack; editing a Link that sits
+  DOWNSTREAM of the main (e.g. a master-chain Link from a track-placed
+  main) mutes the path the injection itself flows through — the result
+  is silence, which is SAFE and audibly wrong rather than subtly wrong,
+  and LISTEN covers that rack. Proper detection needs the Link to
+  publish channel identity — additive, future. The route override
+  (through/replace) belongs to SOLO alone.
 
 ### 8.2 The Link's mute, and the one-restore-path rule
 

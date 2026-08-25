@@ -1039,9 +1039,17 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     // degenerate Mix/Master placement rides the existing through-main path
     // (the channel IS the mix, no mute, no injection).
     const bool listenSolo = borrowSession_.audioOn.load(std::memory_order_acquire);
+    // 26 Aug 2026 REGRESSION FIX: ctxNow must NOT depend on the MAIN's
+    // channel type. borrowRouteThroughMain() keys on THIS instance's
+    // placement (a solo-era decision about where solo audio lands) — with
+    // the main on the Mix Bus it was true for EVERY rack, so in-context
+    // silently fell back to solo everywhere. The §8.1 degenerate case is
+    // about the LINK's placement, which this cannot detect; pre-chain
+    // injection is correct on any main placement. The route fork now
+    // belongs to SOLO alone, as the spec says.
     const bool ctxNow = borrowActive()
                         && borrowInContextOk_.load(std::memory_order_relaxed)
-                        && ! listenSolo && ! borrowThrough;
+                        && ! listenSolo;
     borrowCtxMix_.setTargetValue(ctxNow ? 1.0f : 0.0f);
     const int ctxChainLat = borrowChainLat_.load(std::memory_order_relaxed);
     const int ctxPad = alignPad(ctxChainLat);
@@ -1069,9 +1077,7 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     else
         borrowCtxMix_.skip(buffer.getNumSamples());
     if (borrowThrough)
-        applyBorrowSoloMixOn(buffer,
-            listenSolo || (borrowActive()
-                           && borrowInContextOk_.load(std::memory_order_relaxed)));
+        applyBorrowSoloMixOn(buffer, listenSolo);
 
     // CHAIN: pass audio through hosted plugin (graph handles passthrough if none loaded)
     {
@@ -1849,8 +1855,7 @@ void EchoJayProcessor::renewBorrowLease()
     // placement, never when refused/incapable).
     o->setProperty("muteOut",
         borrowInContextOk_.load(std::memory_order_relaxed)
-        && ! borrowSession_.audioOn.load(std::memory_order_relaxed)
-        && ! borrowRouteThroughMain());
+        && ! borrowSession_.audioOn.load(std::memory_order_relaxed));
     o->setProperty("tMs",     juce::Time::currentTimeMillis());
     juce::File(LinkShm::leasePath(dir, borrowSession_.uid))
         .replaceWithText(juce::JSON::toString(juce::var(o), true));
