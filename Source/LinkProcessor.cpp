@@ -103,6 +103,10 @@ void LinkProcessor::timerCallback()
         // Bump heartbeat so the consumer can detect we're alive vs. crashed.
         // Registered-but-inactive Links heartbeat too — they must stay
         // visible (not reaped as stale) so remote re-activation works.
+        if (rackLeaseActive_)
+            EchoJay_NSLog(("EJCtx(link): leased muteWant="
+                + juce::String(rackLeaseMuteWant_.load(std::memory_order_relaxed)
+                                   ? "Y" : "N")).toRawUTF8());
         if (regSlotIdx >= 0)
         {
             LinkShm::bumpHeartbeat(regMap, regSlotIdx);
@@ -225,6 +229,12 @@ void LinkProcessor::publishRackSidecar()
     const int  epoch    = chainHost.getHostedChangeEpoch();
     const bool revMoved = (rev   != lastPublishedRackRev_);
     const bool epMoved  = (epoch != lastPublishedEpoch_);
+    // §8 closed loop: a mute-state FLIP must republish promptly — the main
+    // confirms the commanded mute through this sidecar, and a stale
+    // muteEngaged would false-trip the watchdog into solo.
+    const bool muteNow = rackLeaseActive_
+        && rackLeaseMuteWant_.load(std::memory_order_relaxed);
+    const bool muteMoved = (muteNow != lastPublishedMuteEngaged_);
     const double nowMs  = juce::Time::getMillisecondCounterHiRes();
 
     // The EQ curve, fetched ONCE for the rack rather than per slot: the
@@ -263,7 +273,8 @@ void LinkProcessor::publishRackSidecar()
                            || (pgUser  != lastPublishedPreGainUserSet_)
                            || (pgKnown != lastPublishedPreGainInputKnown_);
 
-    if (!revMoved && !epMoved && !curveMoved && !preGainMoved) return;
+    if (!revMoved && !epMoved && !curveMoved && !preGainMoved && !muteMoved)
+        return;
     if (!revMoved && !preGainMoved)
     {
         // A settle test ALONE would starve under sustained automation: a host
@@ -279,6 +290,7 @@ void LinkProcessor::publishRackSidecar()
         if (!settled && !stale) return;
     }
     lastPublishedRackRev_ = rev;
+    lastPublishedMuteEngaged_ = muteNow;
     lastPublishedEpoch_   = epoch;
     lastPublishedCurve_   = curve;
     lastPublishedPreGainDb_        = pgDb;
@@ -292,6 +304,8 @@ void LinkProcessor::publishRackSidecar()
     rc.borrowCapable = true;   // this binary honors the rack-scoped lease
     rc.structureEditCapable = true;   // and can journal/apply a structure plan
     rc.inContextCapable     = true;   // §8: mutes on lease muteOut
+    rc.muteEngaged = rackLeaseActive_
+        && rackLeaseMuteWant_.load(std::memory_order_relaxed);
     rc.name      = effectiveDisplayName();
     rc.revision  = rev;
     rc.masterWet = chainHost.getMasterWet();

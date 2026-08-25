@@ -1582,6 +1582,63 @@ int main()
             check (maxPeak < 2.0f,
                    "the mode switch stays bounded through the ramps",
                    juce::String (maxPeak, 3));
+            // RACK-SWITCH CONTINUITY (26 Aug crackle): with a steady sine
+            // playing, a chain-latency jump (what a rack switch does) must
+            // produce no sample-to-sample discontinuity in the MIX beyond
+            // the signal's own slope — the passthrough delay is constant
+            // by design; only the ramped injection may change.
+            float maxDelta = 0.0f; float prevLast = 0.0f; bool first = true;
+            long phase = 0;   // CONTINUOUS across runs - the input must not
+                              // be the discontinuity the assert then blames
+                              // on the device under test
+            auto runDelta = [&](int nBlocks)
+            {
+                for (int b = 0; b < nBlocks; ++b)
+                {
+                    for (int ch = 0; ch < 2; ++ch)
+                        for (int i = 0; i < 512; ++i)
+                            blk.setSample (ch, i,
+                                0.4f * std::sin (0.05f * (float) (phase + i)));
+                    phase += 512;
+                    mainProc.processBlock (blk, midi);
+                    for (int i = 0; i < 512; ++i)
+                    {
+                        const float v = blk.getSample (0, i);
+                        if (! first || i > 0)
+                            maxDelta = juce::jmax (maxDelta,
+                                std::abs (v - (i == 0 ? prevLast
+                                                      : blk.getSample (0, i - 1))));
+                        first = false;
+                    }
+                    prevLast = blk.getSample (0, 511);
+                }
+            };
+            runDelta (40);        // prime: flush the 32-block delay line of
+            maxDelta = 0.0f;      // the previous arm's unrelated signal
+            runDelta (20);
+            mainProc.borrowChainLat_.store (500);   // the rack switch
+            runDelta (20);
+            mainProc.borrowChainLat_.store (4000);  // and another
+            runDelta (20);
+            check (maxDelta < 0.2f,
+                   "a chain-latency jump produces NO mix discontinuity "
+                   "beyond the ramp", juce::String (maxDelta, 3));
+        }
+        // ---- THE MUTE CONTRACT, main half (26 Aug: continuous doubling —
+        // ---- the Link never muted; the gate had proven the mute only
+        // ---- from the want-flag inward, never the FILE that carries it).
+        {
+            mainProc.borrowAudioOff();
+            int errL = 0;
+            const juce::String ldir2 = LinkShm::resolveDir(errL);
+            const juce::File lf (LinkShm::leasePath (ldir2, "uid-lvl"));
+            check (lf.existsAsFile(), "engage wrote the lease file");
+            auto lv = juce::JSON::parse (lf.loadFileAsString());
+            auto* lo = lv.getDynamicObject();
+            check (lo != nullptr && lo->hasProperty ("muteOut")
+                     && (bool) lo->getProperty ("muteOut"),
+                   "the lease on DISK carries muteOut:true for in-context",
+                   lf.loadFileAsString().substring (0, 200));
         }
         mainProc.borrowRelease (false);
         mainProc.setBorrowBudgetActive (false);
@@ -1599,13 +1656,31 @@ int main()
             // type — the route fork belongs to SOLO alone.
             {
                 const int at = pp9.indexOf ("const bool ctxNow");
-                const auto decl = at >= 0 ? pp9.substring (at, at + 200)
-                                          : juce::String();
+                const int semi = at >= 0 ? pp9.indexOf (at, ";") : -1;
+                const auto decl = (at >= 0 && semi > at)
+                                      ? pp9.substring (at, semi)
+                                      : juce::String();
                 check (at >= 0 && ! decl.contains ("borrowThrough"),
                        "ctxNow is independent of the main's channel type");
             }
             check (pp9.contains ("applyBorrowSoloMixOn(buffer, listenSolo);\n"),
                    "the through-solo site keys on LISTEN alone");
+            // Crackle redesign pins: the passthrough delay is CONSTANT;
+            // the pad lives on the injection's own line.
+            check (pp9.contains ("alignPost_.process(buffer, kBorrowAlignBudgetFrames);"),
+                   "the passthrough delay is constant - the mix cannot click");
+            check (pp9.contains ("A pad change interrupts ONLY the injection"),
+                   "pad changes land on the injection alone");
+            // Closed loop pins: live state published, watchdog drops+names.
+            check (pp9.contains ("mute UNCONFIRMED"),
+                   "the main's watchdog drops an unconfirmed mute, named");
+            {
+                std::ifstream lf9 ("Source/LinkProcessor.cpp");
+                std::stringstream ls9; ls9 << lf9.rdbuf();
+                const juce::String lp10 (ls9.str());
+                check (lp10.contains ("rc.muteEngaged = rackLeaseActive_"),
+                       "the Link publishes its LIVE mute state (closed loop)");
+            }
             check (pp9.contains ("borrowBuf_.clear();   // setSize leaves contents UNDEFINED"),
                    "the injection source is cleared at allocation, always");
         }

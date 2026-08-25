@@ -400,7 +400,13 @@ rather than argued against:
 - **The honest residual, stated:** anything sitting BETWEEN the Link and
   the main on that channel's path — a post-Link channel EQ, sends tapped
   post-Link, bus processing the channel feeds elsewhere — processes
-  silence during the session, and the injected signal bypasses it. This
+  silence during the session, and the injected signal bypasses it.
+  Extended 26 Aug 2026 (the crackle redesign): the injection also no
+  longer passes the MAIN's own chain — it sums post-chain, post-delay,
+  on its own pad line, because that is what makes the passthrough delay
+  CONSTANT and the mix physically unable to click on a rack switch or a
+  mid-build latency jump. A pad change interrupts only the ramped
+  injection. This
   is the same class of approximation the through-main solo route already
   accepts, now said where the default lives. The banner does not claim
   "exactly your mix"; it claims your edits in place of that channel.
@@ -498,6 +504,19 @@ restore path un-mutes the Link, the mix returns whole (dry), the
 passthrough delay is withdrawn (latencyChanged again), and the
 release-with-words banner says what happened. A stale ring is a dropped
 channel with a name, never a silent mix or a doubled one.
+
+### 8.5b The closed loop (26 Aug 2026): CONFIRMED, not constructed
+
+"Doubling is impossible by construction" failed in the field with
+capability announced correctly — an open-loop claim (capability
+announced, command written, mute hoped). The real invariant: **a
+commanded mute is CONFIRMED by the Link** — the sidecar publishes live
+`muteEngaged` (republished promptly on flip), the main watches while
+in-context plays, and commanded-but-unconfirmed for ~3s of FRESH cache
+reads drops to solo WITH A NAME, never a silent double. Both sides
+trace at 1Hz (`EJCtx(main): renew muteOut=... ok=... listen=...`,
+`EJCtx(link): leased muteWant=...`) so a field break names its own
+failing step.
 
 ### 8.6 Failure: the Link that cannot mute (older build)
 

@@ -1035,47 +1035,17 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     // (a borrowed vocal must not run through a guitar track's chain). One
     // read per block so the two sites cannot both fire.
     const bool borrowThrough = borrowRouteThroughMain();
-    // §8 IN-CONTEXT (the default): LISTEN (audioOn) overrides to solo; the
-    // degenerate Mix/Master placement rides the existing through-main path
-    // (the channel IS the mix, no mute, no injection).
+    // §8 audio (REDESIGNED 26 Aug 2026, the rack-switch crackle): the
+    // PASSTHROUGH DELAY NEVER CHANGES — the final alignPost_ runs at the
+    // constant budget, so no mode flip, rack switch or mid-build latency
+    // jump can ever discontinue the mix. The per-rack pad lives on the
+    // INJECTION's own delay line (end of block), where a change only
+    // interrupts the ramped injection, never the passthrough. ctxNow is
+    // independent of the MAIN's channel type (the route fork is SOLO's).
     const bool listenSolo = borrowSession_.audioOn.load(std::memory_order_acquire);
-    // 26 Aug 2026 REGRESSION FIX: ctxNow must NOT depend on the MAIN's
-    // channel type. borrowRouteThroughMain() keys on THIS instance's
-    // placement (a solo-era decision about where solo audio lands) — with
-    // the main on the Mix Bus it was true for EVERY rack, so in-context
-    // silently fell back to solo everywhere. The §8.1 degenerate case is
-    // about the LINK's placement, which this cannot detect; pre-chain
-    // injection is correct on any main placement. The route fork now
-    // belongs to SOLO alone, as the spec says.
     const bool ctxNow = borrowActive()
                         && borrowInContextOk_.load(std::memory_order_relaxed)
                         && ! listenSolo;
-    borrowCtxMix_.setTargetValue(ctxNow ? 1.0f : 0.0f);
-    const int ctxChainLat = borrowChainLat_.load(std::memory_order_relaxed);
-    const int ctxPad = alignPad(ctxChainLat);
-    if (ctxNow || borrowCtxMix_.getCurrentValue() > 0.0001f)
-    {
-        // Align the passthrough to the injection's inherent lateness
-        // (cushion + borrowed chain), sum ADDITIVELY, main chain processes
-        // the sum — the Link's channel entered the mix upstream, so its
-        // replacement enters here, pre-chain.
-        alignPre_.process(buffer, (int) kEditCushionFrames + ctxChainLat);
-        const int nS = buffer.getNumSamples();
-        const bool have = borrowHost_ != nullptr
-                       && borrowBuf_.getNumSamples() >= nS;
-        for (int i = 0; i < nS; ++i)
-        {
-            const float g = borrowCtxMix_.getNextValue();
-            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-            {
-                const float inj = have
-                    ? borrowBuf_.getSample(std::min(ch, 1), i) : 0.0f;
-                buffer.getWritePointer(ch)[i] += inj * g;
-            }
-        }
-    }
-    else
-        borrowCtxMix_.skip(buffer.getNumSamples());
     if (borrowThrough)
         applyBorrowSoloMixOn(buffer, listenSolo);
 
@@ -1258,15 +1228,57 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             editSoloMix_.skip(buffer.getNumSamples());
     }
 
-    // §8.3 FINAL PAD, the last word on the buffer in every mode: keeps the
-    // TOTAL at exactly the reported budget (+ the main chain's own latency)
-    // whether idle, soloing or in-context. The internal split moves; the
-    // report moves ONLY on the capable-Link 0<->1 transition (the ruling's
-    // deliberate, rare PDC event) — never on browsing, engage or release.
+    // §8.3 FINAL STAGE. Passthrough: the CONSTANT budget delay — the
+    // report moves only on the capable-Link 0<->1 transition, and the
+    // internal delay now never moves at all (the crackle fix). Injection:
+    // borrowBuf_ padded on ITS OWN line to
+    // budget + mainChainLat - cushion - chainLat, summed POST-chain and
+    // post-delay so both paths age exactly (mainChainLat + budget). The
+    // §8.1 residual grows one clause: the injection no longer passes the
+    // MAIN's own chain either (recorded in the spec) — the price of a mix
+    // that cannot click.
     if (borrowBudgetActive_.load(std::memory_order_relaxed))
-        alignPost_.process(buffer, (ctxNow && ctxPad >= 0)
-                                       ? ctxPad
-                                       : kBorrowAlignBudgetFrames);
+    {
+        alignPost_.process(buffer, kBorrowAlignBudgetFrames);
+        const int ctxChainLat = borrowChainLat_.load(std::memory_order_relaxed);
+        const int basePad = alignPad(ctxChainLat);
+        const int injPad = basePad >= 0
+            ? basePad + std::max(0, chainHost.hostReportableLatencySamples())
+            : -1;
+        borrowCtxMix_.setTargetValue(ctxNow && injPad >= 0 ? 1.0f : 0.0f);
+        const int padKey = (ctxNow && injPad >= 0) ? injPad : -1;
+        if (padKey != borrowLastPadKey_)
+        {
+            // A pad change interrupts ONLY the injection: silence it, clear
+            // its history, ramp back in. The passthrough never notices.
+            borrowLastPadKey_ = padKey;
+            alignPre_.buf.clear();
+            borrowCtxMix_.setCurrentAndTargetValue(0.0f);
+            borrowCtxMix_.setTargetValue(ctxNow && injPad >= 0 ? 1.0f : 0.0f);
+        }
+        if ((ctxNow && injPad >= 0)
+            || borrowCtxMix_.getCurrentValue() > 0.0001f)
+        {
+            const int nS = buffer.getNumSamples();
+            const bool have = borrowHost_ != nullptr
+                           && borrowBuf_.getNumSamples() >= nS;
+            juce::AudioBuffer<float> inj(borrowBuf_.getArrayOfWritePointers(),
+                                         2, 0, nS);
+            if (have) alignPre_.process(inj, std::max(0, padKey));
+            for (int i = 0; i < nS; ++i)
+            {
+                const float g = borrowCtxMix_.getNextValue();
+                for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                {
+                    const float v = have
+                        ? inj.getSample(std::min(ch, 1), i) : 0.0f;
+                    buffer.getWritePointer(ch)[i] += v * g;
+                }
+            }
+        }
+        else
+            borrowCtxMix_.skip(buffer.getNumSamples());
+    }
 }
 
 // ============ Channel Type Detection ============
@@ -1716,6 +1728,42 @@ struct EchoJayProcessor::BorrowLeaseTimer : juce::Timer
 
 void EchoJayProcessor::borrowTick()
 {
+    // §8 CLOSED LOOP (26 Aug 2026): "impossible by construction" was an
+    // open-loop claim — the capability announced, the command written, the
+    // mute HOPED. The real invariant: a commanded mute is CONFIRMED by the
+    // Link (sidecar muteEngaged, republished on flip); commanded-but-
+    // unconfirmed for ~3s drops to solo WITH A NAME, never a silent double.
+    // Confirmation is only judged on a FRESH cache read (an editor feeds
+    // the cache; stale reads prove nothing either way).
+    if (borrowActive()
+        && borrowInContextOk_.load(std::memory_order_relaxed)
+        && ! borrowSession_.audioOn.load(std::memory_order_relaxed))
+    {
+        bool freshRead = false, confirmed = false;
+        if (auto it = linkRackCache.find(borrowSession_.uid);
+            it != linkRackCache.end())
+        {
+            freshRead = juce::Time::getMillisecondCounter() - it->second.readMs
+                            < 3000;
+            confirmed = it->second.rack.muteEngaged;
+        }
+        if (freshRead)
+            borrowMuteUnconfirmedTicks_ = confirmed
+                ? 0 : borrowMuteUnconfirmedTicks_ + 1;
+        if (freshRead && ! confirmed && borrowMuteUnconfirmedTicks_ >= 3)
+        {
+            borrowInContextOk_.store(false, std::memory_order_relaxed);
+            const juce::String nm = resolveLinkDisplayName(borrowSession_.uid);
+            borrowStickyBanner_ = nm + "'s channel did not confirm its mute - "
+                "the mix may have doubled briefly. Your edits still play: "
+                "use LISTEN. If this repeats, update " + nm + "'s EchoJay Link.";
+            EchoJay_NSLog(("EJCtx: mute UNCONFIRMED after "
+                + juce::String(borrowMuteUnconfirmedTicks_)
+                + " ticks - dropped to solo, named").toRawUTF8());
+        }
+    }
+    else borrowMuteUnconfirmedTicks_ = 0;
+
     if (!borrowActive()) return;
     renewBorrowLease();
 
@@ -1853,9 +1901,15 @@ void EchoJayProcessor::renewBorrowLease()
     // restore path on the Link. True only while in-context is actually
     // playing (not while LISTEN solos, not in the degenerate through-main
     // placement, never when refused/incapable).
-    o->setProperty("muteOut",
-        borrowInContextOk_.load(std::memory_order_relaxed)
-        && ! borrowSession_.audioOn.load(std::memory_order_relaxed));
+    const bool muteWant = borrowInContextOk_.load(std::memory_order_relaxed)
+        && ! borrowSession_.audioOn.load(std::memory_order_relaxed);
+    o->setProperty("muteOut", muteWant);
+    EchoJay_NSLog(("EJCtx(main): renew muteOut="
+        + juce::String(muteWant ? "Y" : "N") + " ok="
+        + juce::String(borrowInContextOk_.load(std::memory_order_relaxed) ? "Y" : "N")
+        + " listen="
+        + juce::String(borrowSession_.audioOn.load(std::memory_order_relaxed) ? "Y" : "N"))
+        .toRawUTF8());
     o->setProperty("tMs",     juce::Time::currentTimeMillis());
     juce::File(LinkShm::leasePath(dir, borrowSession_.uid))
         .replaceWithText(juce::JSON::toString(juce::var(o), true));

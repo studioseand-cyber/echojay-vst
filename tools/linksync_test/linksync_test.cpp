@@ -96,6 +96,9 @@ struct EchoJayLinkSyncTestAccess
     // §8 mute arms: drive the REAL lease-mute state the poll would set.
     static void setMute (LinkProcessor& p, bool m)
     { p.rackLeaseMuteWant_.store (m, std::memory_order_relaxed); }
+    static void pollLease (LinkProcessor& p) { p.pollEditLease(); }
+    static bool muteWant (LinkProcessor& p)
+    { return p.rackLeaseMuteWant_.load (std::memory_order_relaxed); }
     static void releaseArmClearsMute (LinkProcessor& p)
     { p.rackLeaseMuteWant_.store (false, std::memory_order_relaxed); }
 };
@@ -517,6 +520,28 @@ int main()
         check (peak() > 0.01f, "the restore path unmutes",
                juce::String (peak()));
         EchoJayLinkSyncTestAccess::release (proc);
+    }
+
+    // ---- THE MUTE CONTRACT, Link half (26 Aug doubling): the REAL lease
+    // ---- file, byte-shaped as the main writes it, through the REAL poll.
+    std::printf ("== §8 mute contract: file -> poll -> want ==\n");
+    {
+        int errL = 0;
+        const juce::String ldir = LinkShm::resolveDir (errL);
+        const juce::String myUid2 = EchoJayLinkSyncTestAccess::uid (proc);
+        const juce::String lease =
+            "{\"v\": 1, \"leaseId\": \"lease-file-test\", \"slot\": 0, "
+            "\"scope\": \"rack\", \"muteOut\": true, \"tMs\": "
+            + juce::String (juce::Time::currentTimeMillis()) + "}";
+        juce::File (LinkShm::leasePath (ldir, myUid2)).replaceWithText (lease);
+        EchoJayLinkSyncTestAccess::pollLease (proc);
+        check (EchoJayLinkSyncTestAccess::muteWant (proc),
+               "the Link's poll reads muteOut from the REAL file");
+        juce::File (LinkShm::leasePath (ldir, myUid2)).deleteFile();
+        for (int t = 0; t < 40; ++t)                 // ride to the 3s expiry
+            EchoJayLinkSyncTestAccess::pollLease (proc);
+        check (! EchoJayLinkSyncTestAccess::muteWant (proc),
+               "lease gone -> the want clears through the restore path");
     }
 
     // ---- negative control -------------------------------------------------

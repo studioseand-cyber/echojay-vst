@@ -556,6 +556,8 @@ public:
     // re-checked live on every borrowed-chain change.
     std::atomic<bool> borrowInContextOk_ { false };
     std::atomic<int>  borrowChainLat_ { 0 };
+    int borrowMuteUnconfirmedTicks_ = 0;   // §8 closed-loop watchdog
+    int borrowLastPadKey_ = -2;            // §8 injection pad-change detector
     // §8.3 refinement (26 Aug 2026 ruling): the budget is carried ONLY when
     // the project has a capable Link. No Links -> no alignment budget -> no
     // added latency. The transition re-runs PDC once, on the deliberate and
