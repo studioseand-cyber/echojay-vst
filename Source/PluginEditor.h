@@ -4172,7 +4172,12 @@ private:
     void startBorrow(const juce::String& uid);
     std::vector<std::pair<bool, bool>> borrowSlotVerdicts();  // delegate -> processor
     // §5a-R (26 Aug 2026): selection IS the session.
-    void handleBorrowSelectionChange(const juce::String& newUid);
+    void handleBorrowSelectionChange(const juce::String& newUid,
+                                     bool userInitiated);
+    // §3f: set TRUE by the user click sites immediately before they call a
+    // selection writer; consumed (reset false) by the writer. Everything
+    // else inherits the safe programmatic default.
+    bool pendingSelectionIsUser_ = false;
     void borrowSelectionTick();
     void runBorrowApply();   // legacy per-slot commits (deselect, incapable Links)
     LinkShm::StructureEdit::Plan buildStructurePlan();   // delegate -> processor

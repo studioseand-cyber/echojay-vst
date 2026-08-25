@@ -976,7 +976,8 @@ int main()
                    "of any window (ruling 4)");
             const auto ed2 = [&]{ std::ifstream f2 ("Source/PluginEditor.cpp");
                 std::stringstream s2; s2 << f2.rdbuf(); return juce::String (s2.str()); }();
-            check (ed2.contains ("if (p.borrowStructureCapable_)\n            p.borrowApplyAndRelease"),
+            check (ed2.contains ("if (p.borrowStructureCapable_)")
+                     && ed2.contains ("p.borrowApplyAndRelease(/*releaseLockOnFail=*/false)"),
                    "the capability gate precedes the send (deselect fork)");
         }
     }
@@ -1059,8 +1060,10 @@ int main()
         int recPush = 0;
         for (int p = 0; (p = ed.indexOf (p, "borrowSlotRecords_.push_back")) >= 0; ++p)
             ++recPush;
-        check (recPush == 2,
-               "every slot gets a record: engage AND the borrowed add",
+        // 3 = engage (pulled slots), the picker add, and the chain-build
+        // divert (26 Aug) — every path that creates a session slot records.
+        check (recPush == 3,
+               "every slot gets a record: engage, the add, and the build",
                juce::String (recPush));
         // And the verdict diagnostic covers created slots — a log that
         // skips slots is how the contradiction hid.
@@ -1214,11 +1217,11 @@ int main()
         {
             const int a = edS.indexOf ("void EchoJayEditor::resetToMainContext");
             const int b = edS.indexOf ("void EchoJayEditor::openChannelByUid");
-            check (a >= 0 && edS.substring (a, a + 500)
-                       .contains ("handleBorrowSelectionChange({})"),
+            check (a >= 0 && edS.substring (a, a + 700)
+                       .contains ("handleBorrowSelectionChange({}, pendingSelectionIsUser_)"),
                    "resetToMainContext routes the deselect");
-            check (b >= 0 && edS.substring (b, b + 600)
-                       .contains ("handleBorrowSelectionChange(uid)"),
+            check (b >= 0 && edS.substring (b, b + 700)
+                       .contains ("handleBorrowSelectionChange(uid, pendingSelectionIsUser_)"),
                    "openChannelByUid routes the select");
         }
         // Ruling 4: the editor's destructor commits like a deselect, on the
@@ -1258,6 +1261,60 @@ int main()
         // A new session supersedes the previous session's surfaces.
         check (edS.contains ("p2.unwrittenEditNote_.erase(st->uid);"),
                "a new engage supersedes the old note, never navigation");
+    }
+
+    std::printf ("== §3f pin: selection contention, pure and by source ==\n");
+    {
+        using D = EchoJayProcessor::SelDecision;
+        // All four arms of the pure decision.
+        check (EchoJayProcessor::decideSelection (true,  true,  true)  == D::Nothing
+                 && EchoJayProcessor::decideSelection (true,  true,  false) == D::Nothing,
+               "same-uid selection is a no-op, whoever made it");
+        check (EchoJayProcessor::decideSelection (true,  false, false) == D::ViewOnly,
+               "a programmatic grab moves the VIEW only - never applies");
+        check (EchoJayProcessor::decideSelection (true,  false, true)  == D::ApplyAndPend,
+               "only a USER deselect commits");
+        check (EchoJayProcessor::decideSelection (false, false, false) == D::ViewOnly
+                 && EchoJayProcessor::decideSelection (false, false, true) == D::PendEngage,
+               "without a session: user selections engage, programmatic never");
+        // THE PING-PONG, directly: chat grabs and user snap-backs
+        // alternating over a live session on A produce ZERO commits and
+        // ZERO engages of B - the session never moves.
+        int commits = 0, engagesOfB = 0;
+        for (int i = 0; i < 10; ++i)
+        {
+            // chat activation snaps to B (programmatic)
+            const auto d1 = EchoJayProcessor::decideSelection (true, false, false);
+            if (d1 == D::ApplyAndPend) ++commits;
+            if (d1 != D::ViewOnly && d1 != D::Nothing) ++engagesOfB;
+            // the user snaps back to A (user, same uid as the session)
+            const auto d2 = EchoJayProcessor::decideSelection (true, true, true);
+            if (d2 == D::ApplyAndPend) ++commits;
+        }
+        check (commits == 0 && engagesOfB == 0,
+               "10 rounds of selection ping-pong: zero commits, zero engages",
+               juce::String (commits) + "/" + juce::String (engagesOfB));
+        // By source: five user click sites arm the flag; every other
+        // writer inherits the programmatic default; the choke-point build
+        // divert exists; the borrowed view's signature reads the borrowed
+        // host's OWN revision.
+        auto slurpF = [] (const char* f)
+        { std::ifstream ff (f); std::stringstream ss; ss << ff.rdbuf();
+          return juce::String (ss.str()); };
+        const auto edF = slurpF ("Source/PluginEditor.cpp");
+        int userSites = 0;
+        for (int q = 0; (q = edF.indexOf (q, "pendingSelectionIsUser_ = true;")) >= 0; ++q)
+            ++userSites;
+        check (userSites == 5,
+               "exactly the five user click sites arm the user flag",
+               juce::String (userSites));
+        check (edF.contains ("handleBorrowSelectionChange({}, pendingSelectionIsUser_)")
+                 && edF.contains ("handleBorrowSelectionChange(uid, pendingSelectionIsUser_)"),
+               "both selection writers consume the flag (default programmatic)");
+        check (edF.contains ("if (auto* bhB = processorRef.borrowHostIfActiveFor(linkUid))"),
+               "chain builds divert into the SESSION at the one choke point");
+        check (edF.contains ("v.revision = bh->getChainRevision();"),
+               "the borrowed view's signature reads the borrowed host");
     }
 
     std::printf ("== nextCtrlSeq: distinct under same-millisecond bursts ==\n");

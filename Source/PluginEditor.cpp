@@ -7664,6 +7664,7 @@ void EchoJayEditor::showChainRackMenu()
                 {
                     EchoJay_NSLog(("EJRackSel: row=bus resolved=(main) current="
                                    + cur + " -> switching to main").toRawUTF8());
+                    safeThis->pendingSelectionIsUser_ = true;
                     safeThis->resetToMainContext();
                 }
                 else
@@ -7704,6 +7705,7 @@ void EchoJayEditor::showChainRackMenu()
                 EchoJay_NSLog(("EJRackSel: row=" + juce::String((int) i)
                                + " resolved=" + clicked + " current=" + curLbl
                                + " -> switching").toRawUTF8());
+                safeThis->pendingSelectionIsUser_ = true;
                 safeThis->openChannelByUid(clicked);
             }
             safeThis->refreshChainPanelForView(true);
@@ -7749,21 +7751,30 @@ void EchoJayEditor::toggleBorrow()
     refreshChainPanelForView(true);
 }
 
-void EchoJayEditor::handleBorrowSelectionChange(const juce::String& newUid)
+void EchoJayEditor::handleBorrowSelectionChange(const juce::String& newUid,
+                                                bool userInitiated)
 {
     auto& p = processorRef;
-    // DESELECT of an engaged rack applies automatically — editing a rack in
-    // the main means overwriting the Link's, by default (ruling 2). On
-    // failure the deselect does not COMPLETE: the session stays engaged and
-    // the sticky banner says why (ruling 3); the view may move on.
-    if (p.borrowActive() && p.borrowUid() != newUid)
+    // The PURE decision (§3f in §5a-R terms): a live session's uid is
+    // authoritative — programmatic writers (chat activation, deep links,
+    // card target switches) move the VIEW only; only a USER selection
+    // change applies-and-moves the session. The default at every call
+    // site is programmatic — an unknown path can never fire a write.
+    switch (EchoJayProcessor::decideSelection(
+                p.borrowActive(), p.borrowUid() == newUid, userInitiated))
     {
-        if (p.borrowStructureCapable_)
-            p.borrowApplyAndRelease(/*releaseLockOnFail=*/false);
-        else
-            runBorrowApply();   // legacy: per-slot commits, then releases
+        case EchoJayProcessor::SelDecision::Nothing:
+        case EchoJayProcessor::SelDecision::ViewOnly:
+            return;
+        case EchoJayProcessor::SelDecision::ApplyAndPend:
+            if (p.borrowStructureCapable_)
+                p.borrowApplyAndRelease(/*releaseLockOnFail=*/false);
+            else
+                runBorrowApply();   // legacy: per-slot commits, then releases
+            break;
+        case EchoJayProcessor::SelDecision::PendEngage:
+            break;
     }
-    // SELECT engages — deferred to the tick while a release is in flight.
     p.pendingAutoEngage_ = newUid;
     borrowSelectionTick();
 }
@@ -9999,7 +10010,10 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
                 // menu's own arm WITH its guard: resetting while already in
                 // main context would wipe a live conversation for nothing.
                 if (effectiveChannelUid().isNotEmpty())
+                {
+                    pendingSelectionIsUser_ = true;
                     resetToMainContext();
+                }
             }
             else
             {
@@ -10018,6 +10032,7 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
                 else if (en.info.uid != effectiveChannelUid())
                 {
                     // The banner's already-here guard, same as the AI arm.
+                    pendingSelectionIsUser_ = true;
                     openChannelByUid(en.info.uid);
                 }
             }
@@ -23939,10 +23954,11 @@ juce::String EchoJayEditor::mainContextLabel() const
 
 void EchoJayEditor::resetToMainContext()
 {
-    // §5a-R: leaving a Link's rack for the main IS the deselect — the
-    // engaged session applies automatically (one of the two selection
-    // writers; the other is openChannelByUid).
-    handleBorrowSelectionChange({});
+    // §5a-R: leaving a Link's rack for the main IS the deselect when the
+    // USER did it; programmatic resets move the view only (§3f pin). The
+    // flag defaults false; the user click sites pass true explicitly.
+    handleBorrowSelectionChange({}, pendingSelectionIsUser_);
+    pendingSelectionIsUser_ = false;
 
     currentChatId = {};
     processorRef.activeChatId = {};
@@ -24018,6 +24034,7 @@ void EchoJayEditor::showChannelBannerMenu()
             const size_t i = (size_t)(result - 1);
             if (i >= rows.size()) return;
             if (rows[i].uid == safeThis->effectiveChannelUid()) return;   // already here
+            safeThis->pendingSelectionIsUser_ = true;
             if (rows[i].uid.isEmpty()) { safeThis->resetToMainContext(); return; }
             safeThis->openChannelByUid(rows[i].uid);
         });
@@ -24026,10 +24043,10 @@ void EchoJayEditor::showChannelBannerMenu()
 void EchoJayEditor::openChannelByUid(const juce::String& uid)
 {
     if (uid.isEmpty()) return;
-    // §5a-R: selecting a Link's rack IS editing it — deselect of the
-    // previous session applies, and this uid engages (via the tick once
-    // any release settles). The second of the two selection writers.
-    handleBorrowSelectionChange(uid);
+    // §5a-R + §3f: user selections apply-and-engage; programmatic ones
+    // (chat activation, deep links) move the view only.
+    handleBorrowSelectionChange(uid, pendingSelectionIsUser_);
+    pendingSelectionIsUser_ = false;
 
     int matches = 0;
     if (auto existing = latestChannelChatId(uid, &matches); existing.isNotEmpty())
@@ -27983,6 +28000,65 @@ void EchoJayEditor::showChainPluginPicker()
 void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
                                     const juce::String& chainJson)
 {
+    // §5a-R + §3f (26 Aug): while THIS uid's rack IS the live session, a
+    // chain build lands in the SESSION (the borrowed host), never on the
+    // Link — the Link refuses chain-cmds while leased, and the ping-pong
+    // era's builds only ever reached it through released gaps. The build
+    // becomes session Creates; deselect applies it like any other edit.
+    // ONE choke point: the AI build, recall and dashboard-load all send
+    // through here, so all three gain the borrowed arm at once.
+    if (auto* bhB = processorRef.borrowHostIfActiveFor(linkUid))
+    {
+        auto ops = ChainHost::parseChainEditOps(chainJson);
+        if (ops.empty())
+        {
+            chainListPanel.statusText = "Nothing to build.";
+            chainListPanel.repaint();
+            return;
+        }
+        // baseSlots = the CURRENT session shape, so the staleness check
+        // inside applyChainEdits can never false-refuse our own session.
+        juce::StringArray baseNow;
+        for (const auto& si : bhB->getAllSlotInfos()) baseNow.add(si.name);
+        const int slotsBefore = bhB->getNumSlots();
+        auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+        bhB->applyChainEdits(std::move(ops), -1, baseNow,
+            [safeThis, slotsBefore, linkUid](const juce::StringArray& results,
+                                             int applied, bool aborted)
+        {
+            if (safeThis == nullptr) return;
+            auto& p3 = safeThis->processorRef;
+            auto* bh2 = p3.borrowHostIfActiveFor(linkUid);
+            if (bh2 == nullptr) return;
+            // SESSION BOOKKEEPING for every slot the build created: origin
+            // -1 (the Create class), identity by LOADED NAME with no uid —
+            // name-only loose resolution on the Link finds the family even
+            // when local hosting substituted a build (the picked-plugin
+            // lesson: never send a substitute's uid).
+            for (int i = slotsBefore; i < bh2->getNumSlots(); ++i)
+            {
+                p3.borrowSlotOrigin_.push_back(-1);
+                p3.borrowCreatedIdentity_.push_back(
+                    { bh2->getSlotInfo(i).name, {}, {} });
+                EchoJayProcessor::BorrowSlotRecord cr;
+                cr.name = bh2->getSlotInfo(i).name;
+                p3.borrowSlotRecords_.push_back(std::move(cr));
+            }
+            const int added = bh2->getNumSlots() - slotsBefore;
+            safeThis->chainListPanel.statusText =
+                (aborted ? juce::String("Build stopped early - ")
+                         : juce::String())
+                + "Built " + juce::String(added) + " plugin"
+                + (added == 1 ? "" : "s") + " into your edit session - "
+                "writes to " + p3.resolveLinkDisplayName(linkUid)
+                + " when you leave this rack. ("
+                + juce::String(applied) + "/"
+                + juce::String(results.size()) + " ops applied.)";
+            safeThis->refreshChainPanelForView(true);
+        });
+        return;
+    }
+
     int err = 0;
     juce::String dir = LinkShm::resolveDir(err);
     const juce::String id = linkUid;   // instanceId — the address, never the name

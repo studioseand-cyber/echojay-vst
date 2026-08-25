@@ -538,6 +538,24 @@ public:
     // or not a window ever reopens).
     void borrowApplyAndRelease(bool releaseLockOnFail);
     void borrowEditorClosed();
+    // §3f pin, restored in §5a-R terms (26 Aug 2026 ping-pong): while a
+    // session is LIVE its uid is authoritative — a chat activation may
+    // move the VIEW, never the session. Only a USER-initiated selection
+    // change commits (a deselect caused by something grabbing the
+    // selection is not the user saying "write this"). Pure, so every arm
+    // is functionally gated; the editor routes through it.
+    enum class SelDecision { Nothing, ViewOnly, ApplyAndPend, PendEngage };
+    static SelDecision decideSelection(bool sessionActive, bool sameUid,
+                                       bool userInitiated) noexcept
+    {
+        if (sessionActive && sameUid)   return SelDecision::Nothing;
+        if (sessionActive)              return userInitiated
+                                            ? SelDecision::ApplyAndPend
+                                            : SelDecision::ViewOnly;
+        return userInitiated ? SelDecision::PendEngage
+                             : SelDecision::ViewOnly;
+    }
+
     // The slot-editor decision, ONE author, FUNCTIONALLY gated (twice
     // regressed as editor-side code: 22 Aug guard order, 26 Aug an engage
     // that never completed — both survived source pins because a pin proves
