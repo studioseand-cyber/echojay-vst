@@ -631,6 +631,19 @@ public:
     void fetchDialableIdentities(const std::vector<echojay::IdentityRef>& plugins,
                                  std::function<void(bool ok, std::set<juce::String> dialableIks)> onComplete);
 
+    // PRODUCT FALLBACK (26 Aug 2026). Same endpoint as the existence index,
+    // the OTHER mode: "lookup" runs the tiered resolver and returns a map per
+    // plugin, tagged served_from + anchors_unverified when it had to reach
+    // back a version. The body is composed by ChainHost, which is the only
+    // layer that knows which racked fps came back mapless and what their live
+    // param counts and names are, so this is a pass-through: it exists
+    // because postJSON is private, not to reshape anything.
+    //
+    // onComplete gets the raw results array on a 200 and a void var otherwise.
+    // A non-200 must leave the slot mapless rather than half-served.
+    void lookupFallbackMaps(const juce::String& body,
+                            std::function<void(const juce::var& results)> onComplete);
+
     // Fetch settings from server
     void fetchSettings(std::function<void(bool success)> onComplete = nullptr);
     

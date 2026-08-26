@@ -1639,8 +1639,18 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             // Anchored on code, not on the /*readFailed*/ argument comment:
             // codeOnly() strips comments, so an earlier version of this pin
             // failed on its own stripper rather than on the code.
-            check (! ch.contains ("if (proc == nullptr) continue;"),
-                   "6c PIN3: no slot is dropped for having no instance");
+            // SCOPED to the reads builder. The unscoped version searched the
+            // whole file and went red when buildFallbackLookupJson added its
+            // own, legitimate, "no instance means no param counts to send"
+            // skip. A pin that fails on an unrelated function is measuring
+            // the file, not the behaviour.
+            {
+                const auto rb = functionBody (juce::String (sch.str()),
+                                              "juce::String ChainHost::buildSlotParamReadsJson");
+                check (rb.isNotEmpty(), "6c PIN3: found the reads builder");
+                check (! rb.contains ("if (proc == nullptr) continue;"),
+                       "6c PIN3: no slot is dropped for having no instance");
+            }
             check (ch.contains ("readFailed -- no hosted instance"),
                    "6c PIN3: and the client LOGS it, so a silent rack is visible");
             check (! ch.contains ("K_PER_PLUGIN") && ! ch.contains ("classifyControl"),
@@ -1934,6 +1944,140 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                "sep PIN4: semanticLabel's suffix stripping still matches the composer's");
         check (echojay::semanticLabel ("Band 1 Used") == "Band 1 Used",
                "sep PIN4: and it still returns a bare label, never a separator");
+    }
+
+    // ---- product fallback: dial by name, never assert the number -----------
+    // MAP_CARRY_FORWARD measured 539 two-version products: the control SURFACE
+    // held everywhere, the ANCHORS drifted on ~19%. So a prior version's map is
+    // worth dialling through and its numbers are not worth asserting.
+    {
+        std::cout << "product fallback (anchors_unverified):\n";
+        std::ifstream fpa ("Source/EchoJayParamApply.h");
+        std::stringstream spa; spa << fpa.rdbuf();
+        const auto pa = codeOnly (juce::String (spa.str()));
+        std::ifstream fch ("Source/ChainHost.cpp");
+        std::stringstream sch; sch << fch.rdbuf();
+        const auto ch = codeOnly (juce::String (sch.str()));
+
+        // PIN 1 — the tag is read ONCE, where the whole map is visible, and
+        // threaded like staleDisplayReads rather than looked up again.
+        check (pa.contains ("const bool anchorsUnverified = (bool) map.getProperty (\"anchors_unverified\", false);"),
+               "fb PIN1: the tag is read once, in applySettings");
+        {
+            int n = 0, at = 0;
+            while ((at = pa.indexOf (at, "anchors_unverified")) >= 0) { ++n; at += 1; }
+            check (n == 1, "fb PIN1: exactly ONE site reads the tag",
+                   "found " + juce::String (n));
+        }
+        check (pa.contains ("r.anchorsUnverified = anchorsUnverified;"),
+               "fb PIN1: every applyOne result carries it, set before any return");
+
+        // PIN 2 — THE HONESTY FLOOR DOES NOT REACH AN UNVERIFIED DIAL. The
+        // 9 Aug rule says a successful write shows nothing extra; silence
+        // there means "landed as asked", which on ~19% drift is a claim we
+        // cannot make.
+        check (ch.contains ("if (r.anchorsUnverified)")
+               && ch.contains ("s.dialApproximate.addIfNotAlreadyThere"),
+               "fb PIN2: an approximate dial is collected, not silent");
+        check (ch.contains ("\": approximate - mapped from \""),
+               "fb PIN2: the CARD names it approximate and says where from");
+        check (ch.contains ("\" (approximate, mapped from \""),
+               "fb PIN2: the MODEL's line is annotated too");
+        // The card's 9 Aug writer is untouched for verified maps.
+        check (ch.contains ("auto line = echojay::formatSemanticSetting(r.semantic, r.requestedValue);"),
+               "fb PIN2: the verified card path is byte-identical");
+
+        // PIN 3 — a verified map is UNCHANGED. The flag defaults false at every
+        // hop, so an untagged map cannot reach any approximate branch.
+        check (pa.contains ("bool anchorsUnverified = false)"),
+               "fb PIN3: the parameter defaults false");
+        check (pa.contains ("bool         anchorsUnverified = false;"),
+               "fb PIN3: the result field defaults false");
+        {
+            std::ifstream fh ("Source/ChainHost.h");
+            std::stringstream sh; sh << fh.rdbuf();
+            check (codeOnly (juce::String (sh.str())).contains ("bool anchorsUnverified = false; };"),
+                   "fb PIN3: the report field defaults false");
+        }
+
+        // PIN 4 — the fp integrity check stays a keying-bug catcher. Only a
+        // TAGGED map is exempt; an untagged mismatch still refuses.
+        check (ch.contains ("const bool servedAsFallback = (bool) it->second.getProperty(\"anchors_unverified\", false);"),
+               "fb PIN4: the exemption is keyed on the tag");
+        check (ch.contains ("if (mapFp != s.fp && ! servedAsFallback)"),
+               "fb PIN4: an UNtagged fp mismatch still refuses the apply");
+
+        // PIN 5 — the delivery half asks the right question. lookupTiered
+        // refuses every candidate with \"no_count_sent\" unless param_count
+        // rides the body, so a body without it would silently never resolve.
+        check (ch.contains ("root->setProperty(\"mode\", \"lookup\");"),
+               "fb PIN5: the map-returning mode, not exists");
+        check (ch.contains ("o->setProperty(\"param_count\", params.size());"),
+               "fb PIN5: param_count rides, or every candidate is refused");
+        check (ch.contains ("o->setProperty(\"param_names\", names);"),
+               "fb PIN5: param_names rides, for the name guard");
+        check (ch.contains ("if (paramMaps_.find(s.fp) != paramMaps_.end()) continue;"),
+               "fb PIN5: only MAPLESS fps are asked about");
+        check (ch.contains ("paramMaps_[wantFp] = map;"),
+               "fb PIN5: stored under the fp that ASKED, which the apply looks up by");
+    }
+
+    // ---- tagged-path name assertion: the client's own guard ---------------
+    // The fp-integrity exemption is only safe while something proves the index
+    // still means what the map says. The server's nameGuard does; this layer
+    // could not see it, so it now checks for itself.
+    {
+        std::cout << "fallback name assertion:\n";
+        std::ifstream fpa ("Source/EchoJayParamApply.h");
+        std::stringstream spa; spa << fpa.rdbuf();
+        const auto paRaw = juce::String (spa.str());
+        const auto pa = codeOnly (paRaw);
+        std::ifstream fch ("Source/ChainHost.cpp");
+        std::stringstream sch; sch << fch.rdbuf();
+        const auto ch = codeOnly (juce::String (sch.str()));
+
+        // PIN A — reachable ONLY on the tagged path, and the untagged write
+        // path gains no name check at all.
+        {
+            const auto body = functionBody (paRaw, "inline ApplyResult applyOne");
+            check (body.isNotEmpty(), "na PIN A: found applyOne");
+            check (body.contains ("if (anchorsUnverified)"),
+                   "na PIN A: the assertion is behind the tag");
+            int n = 0, at = 0;
+            const auto cb = codeOnly (body);
+            while ((at = cb.indexOf (at, "normNameServerRule")) >= 0) { ++n; at += 1; }
+            check (n == 2, "na PIN A: exactly one comparison, on that one path",
+                   "found " + juce::String (n) + " normNameServerRule uses");
+            check (! cb.contains ("getName") || cb.indexOf ("getName") > cb.indexOf ("if (anchorsUnverified)"),
+                   "na PIN A: the live name is read only inside the tagged branch");
+        }
+
+        // PIN B — a genuine mismatch refuses and records an honest miss: the
+        // same decline shape as a name that never resolved, never a write.
+        check (pa.contains ("|| normNameServerRule (live) != normNameServerRule (want))"),
+               "na PIN B: mismatch is the refusal condition");
+        check (pa.contains ("-- not written, dial by hand\";"),
+               "na PIN B: the miss says it was not written and names the remedy");
+        check (pa.contains ("if (live.isEmpty()"),
+               "na PIN B: FAILS CLOSED -- an unreadable live name is a mismatch");
+
+        // PIN C — the client normalization IS the server's definition, in one
+        // place, so the two cannot drift into accidental agreement.
+        check (pa.contains ("inline juce::String normNameServerRule (const juce::String& raw)"),
+               "na PIN C: the server's rule exists as its own function");
+        check (paRaw.contains ("String(n == null ? \"\" : n).trim().toLowerCase().replace(/\\s+/g, \" \")"),
+               "na PIN C: the server's source line is quoted beside it");
+        check (! pa.contains ("normalizeControlName (live)"),
+               "na PIN C: it does NOT use normalizeControlName, which omits the lowercasing");
+
+        // PIN D — identical SOURCING. One constant feeds both the param_names
+        // the server verified and the name this re-reads.
+        check (pa.contains ("inline constexpr int kParamNameQueryLen = 128;"),
+               "na PIN D: one definition of the name length");
+        check (pa.contains ("param->getName (kParamNameQueryLen)"),
+               "na PIN D: the assertion reads at that length");
+        check (ch.contains ("params[p]->getName(echojay::kParamNameQueryLen)"),
+               "na PIN D: param_names is composed at the same length");
     }
 
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";

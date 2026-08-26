@@ -55,6 +55,26 @@ struct ApplyResult
     bool         displayVerified  = false; // display text compared and matched
     bool         readbackMismatch = false; // landed wrong; value restored
 
+    /** THE MAP'S ANCHORS CAME FROM A DIFFERENT VERSION (26 Aug 2026).
+
+        Set when the served map carried `anchors_unverified`, which the server
+        stamps on a product fallback: the identity asked for has no map, so the
+        newest mapped identity of the same product (format|uid) is served in its
+        place, tagged with `served_from`.
+
+        MAP_CARRY_FORWARD measured what survives a version bump across 539
+        two-version products: the control SURFACE held everywhere (the names
+        dialling resolves by, plus index/kind/range/unit), and the measured
+        ANCHORS drifted on ~19%. So the write is worth making and the number
+        is not worth asserting.
+
+        The consequence is a reporting one and it is deliberate: the honesty
+        floor's "a successful write shows NOTHING extra" rule (ChainHost.cpp,
+        above appliedSummary.add) must NOT apply here. Silence there means
+        "this landed as asked", and on a ~19% drift that is a claim we cannot
+        make. An unverified-anchor dial says so on the card and to the model. */
+    bool         anchorsUnverified = false;
+
     /** Bridged-AU report-only outcome (10 Aug 2026): verification DISAGREED
         or could not run, but every in-stack read on this instance is
         structurally pre-write (DEFECT_BRIDGED_READBACK; measured 10 Aug:
@@ -418,13 +438,65 @@ inline bool valueWithinMappedRange (float target, float loV, float hiV)
     return target >= loV - tol && target <= hiV + tol;
 }
 
+// THE LENGTH THE LIVE NAME IS READ AT, one definition (26 Aug 2026).
+// buildFallbackLookupJson composes param_names with it and the tagged-path
+// assertion below re-reads with it. If these two ever differ, the client would
+// compare a string the server never saw, and the assertion could refuse a write
+// the server had already judged safe. Same call, same length, same session.
+inline constexpr int kParamNameQueryLen = 128;
+
+/** normName from the server's lib/params-lib.js, replicated:
+
+        String(n == null ? "" : n).trim().toLowerCase().replace(/\s+/g, " ")
+
+    Replicated rather than reused, because the client's existing
+    normalizeControlName is NOT the same function: it trims and collapses but
+    does NOT lowercase, and its call sites make up the difference with
+    equalsIgnoreCase. Comparing with that pair happens to give the same answer,
+    which is exactly the kind of accidental agreement that stops being true when
+    one side is edited. This is the server's rule, whole, in one place.
+
+    Trim, lowercase and collapse are done in a single pass off ONE whitespace
+    predicate, so the three can never disagree about what a space is. Residual
+    difference, stated rather than hidden: JUCE's isWhitespace and JavaScript's
+    \s do not cover byte-identical Unicode sets. Every character they disagree
+    about is exotic whitespace inside a plugin parameter name; if one ever
+    appears, this errs toward refusing a write, which is the safe direction. */
+inline juce::String normNameServerRule (const juce::String& raw)
+{
+    juce::String out;
+    bool lastWasSpace = true;              // true at the start: drops the leading run
+    auto cp = raw.getCharPointer();
+    for (juce::juce_wchar c; (c = cp.getAndAdvance()) != 0;)
+    {
+        if (juce::CharacterFunctions::isWhitespace (c))
+        {
+            if (! lastWasSpace) { out << ' '; lastWasSpace = true; }
+        }
+        else
+        {
+            out << juce::CharacterFunctions::toLowerCase (c);
+            lastWasSpace = false;
+        }
+    }
+    // Any space this emitted is ASCII, so trimEnd removes the trailing run
+    // whatever the source character was.
+    return out.trimEnd();
+}
+
+// anchorsUnverified rides beside staleDisplayReads and for the same reason:
+// both are facts about the SOURCE of this write that every result must carry,
+// and threading them as parameters keeps applyOne free of any lookup of its
+// own. Set once at the top so every early return carries it.
 inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
                              const juce::String& semantic,
                              const juce::var& mapEntry,
                              const juce::var& value,
-                             bool staleDisplayReads = false)
+                             bool staleDisplayReads = false,
+                             bool anchorsUnverified = false)
 {
     ApplyResult r; r.semantic = semantic;
+    r.anchorsUnverified = anchorsUnverified;
     r.requestedValue = value;
     const int index = (int) mapEntry.getProperty ("index", -1);
     r.index = index;
@@ -436,6 +508,52 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
         return r;
     }
     auto* param = params[index];
+
+    // SECOND GUARD, TAGGED MAPS ONLY (26 Aug 2026).
+    //
+    // The fingerprint-integrity check is exempted for a fallback map, because
+    // such a map names a different binary by design. That exemption is only
+    // safe while something proves the index still means what the map says, and
+    // until now the only thing doing so was the server's nameGuard, which this
+    // layer cannot see. So it checks for itself: the live parameter's name at
+    // the resolved index against the map entry's name, before any write.
+    //
+    // normNameServerRule is the server's own rule, and the live name is read
+    // with kParamNameQueryLen, the same call and length buildFallbackLookupJson
+    // used to compose param_names. Identical sourcing plus identical
+    // normalization in the same session means this can only fire on a genuine
+    // mismatch, never on a write the server already judged safe.
+    //
+    // The wanted name falls back to the entry's key exactly as the server's
+    // `c.name || key` does, so an entry carrying no name is compared rather
+    // than waved through.
+    //
+    // FAILS CLOSED. An unreadable live name on a tagged map is a mismatch, not
+    // a pass: the whole point is that we cannot vouch for this index, and an
+    // empty string is not evidence that we can.
+    //
+    // A disagreement is an honest miss in the same decline shape as a name that
+    // never resolved, so the value stays on the card for hand dialling. Never a
+    // silent skip and never a write.
+    //
+    // The VERIFIED path adds no such check, because an exact fingerprint
+    // already guarantees the index.
+    if (anchorsUnverified)
+    {
+        const auto mapped = mapEntry.getProperty ("name", juce::var()).toString();
+        const auto want   = mapped.isNotEmpty() ? mapped : semantic;
+        const auto live   = param->getName (kParamNameQueryLen);
+        if (live.isEmpty()
+            || normNameServerRule (live) != normNameServerRule (want))
+        {
+            r.note = "carried map names \"" + want + "\" at index " + juce::String (index)
+                   + ", this version has \""
+                   + (live.isEmpty() ? juce::String ("(unreadable)") : live)
+                   + "\" -- not written, dial by hand";
+            return r;
+        }
+    }
+
     const auto kind = mapEntry.getProperty ("kind", "").toString();
 
     // Every write is read back before success is claimed. The pre-write
@@ -863,7 +981,8 @@ inline BandReach bandReachRange (const juce::var& group)
 // so the caller never has to synthesise feedback.
 inline void applyBands (juce::AudioPluginInstance& plugin, const juce::var& map,
                         const juce::var& bandsVar, juce::Array<ApplyResult>& results,
-                        bool staleDisplayReads = false)
+                        bool staleDisplayReads = false,
+                        bool anchorsUnverified = false)
 {
     auto* bands = bandsVar.getArray();
     if (bands == nullptr) return;
@@ -985,7 +1104,7 @@ inline void applyBands (juce::AudioPluginInstance& plugin, const juce::var& map,
                     ApplyResult r; r.semantic = bk; r.note = tag + "band has no " + bk + " control";
                     results.add (r); continue;
                 }
-                auto res = applyOne (plugin, bk, e, kv.value, staleDisplayReads);
+                auto res = applyOne (plugin, bk, e, kv.value, staleDisplayReads, anchorsUnverified);
                 res.note = tag + res.note;
                 results.add (res);
             }
@@ -1029,6 +1148,11 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
                                                bool staleDisplayReads = false)
 {
     juce::Array<ApplyResult> results;
+    // READ ONCE, HERE, because this is the only function that sees the whole
+    // map. A product fallback carries anchors_unverified (and served_from
+    // naming the identity it came from); every result of this apply inherits
+    // it, so no downstream layer has to look the map up again to find out.
+    const bool anchorsUnverified = (bool) map.getProperty ("anchors_unverified", false);
     auto mapParams = map.getProperty ("params", juce::var());
     auto* settingsObj = settings.getDynamicObject();
     if (settingsObj == nullptr) return results;
@@ -1071,7 +1195,7 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
             results.add (r);
             continue;
         }
-        results.add (applyOne (plugin, semantic, mapEntry, kv.value, staleDisplayReads));
+        results.add (applyOne (plugin, semantic, mapEntry, kv.value, staleDisplayReads, anchorsUnverified));
     }
 
     auto bandsVar = settings.getProperty ("bands", juce::var());
@@ -1087,12 +1211,12 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
         if (auto* bs = bandsVar.getArray())
             for (auto& b : *bs) all.add (b);
         if (synthBand != nullptr) all.add (juce::var (synthBand.get()));
-        applyBands (plugin, map, juce::var (all), results, staleDisplayReads);
+        applyBands (plugin, map, juce::var (all), results, staleDisplayReads, anchorsUnverified);
     }
     else if (synthBand != nullptr)
     {
         juce::Array<juce::var> one; one.add (juce::var (synthBand.get()));
-        applyBands (plugin, map, juce::var (one), results, staleDisplayReads);
+        applyBands (plugin, map, juce::var (one), results, staleDisplayReads, anchorsUnverified);
     }
 
     // Named Tier 2 controls (1 Aug 2026, first reader): settings.controls is
@@ -1136,7 +1260,7 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
                 results.add (r);
                 continue;
             }
-            results.add (applyOne (plugin, name, entry, kv.value, staleDisplayReads));
+            results.add (applyOne (plugin, name, entry, kv.value, staleDisplayReads, anchorsUnverified));
         }
     }
     else if (! controlsReq.isVoid())

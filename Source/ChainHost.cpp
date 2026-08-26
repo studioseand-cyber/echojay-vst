@@ -2287,7 +2287,7 @@ ChainHost::applyStructuredSettings (int slotIndex,
         out.push_back ({ r.semantic, r.applied, r.normalized, r.note,
                          r.landedText, r.displayVerified, r.readbackMismatch,
                          r.staleDisplayKept, r.requestedValue, r.outOfRange,
-                         r.index });
+                         r.index, r.anchorsUnverified });
 
     return out;
 }
@@ -3509,7 +3509,16 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
     // keying bug (server response, cache merge, disk corruption) before a
     // wrong-layout map can touch a single parameter.
     const auto mapFp = it->second.getProperty("fp", juce::var()).toString();
-    if (mapFp != s.fp)
+    // A PRODUCT FALLBACK IS THE ONE LEGITIMATE DISAGREEMENT (26 Aug 2026).
+    // The server serves a prior version's map in this identity's place and
+    // tags it anchors_unverified + served_from, so its fp field NAMES ANOTHER
+    // BINARY by design. Refusing it here would make the fallback unreachable.
+    //
+    // Narrow on purpose: only a map carrying the tag is exempt. Every other
+    // fp disagreement is still the keying bug this check was built to catch,
+    // and an untagged mismatch still refuses exactly as before.
+    const bool servedAsFallback = (bool) it->second.getProperty("anchors_unverified", false);
+    if (mapFp != s.fp && ! servedAsFallback)
     {
         EchoJay_NSLog(("EJParamApply: map fp mismatch for slot " + juce::String(slotIndex)
                        + " (\"" + s.desc.name + "\"): key " + s.fp.substring(0, 12)
@@ -3561,6 +3570,8 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
     s.dialManual.clear();
     s.dialReadbackMiss.clear();
     s.dialUnconfirmed.clear();
+    s.dialApproximate.clear();
+    s.dialServedFrom = it->second.getProperty("served_from", juce::var()).toString();
     s.dialOutOfRange.clear();
     // dial-3 denominator (A3): the count of settings the model asked for,
     // stored HERE because appliedCount + manual.size() is not a substitute
@@ -3601,6 +3612,15 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
             // revert gone, the caveat must surface instead.
             if (r.staleDisplayKept)
                 s.dialUnconfirmed.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
+            // THE 9 AUG SILENCE RULE DOES NOT REACH HERE (26 Aug 2026). That
+            // rule says a successful write shows nothing extra, and it was
+            // right because silence meant "it landed as asked". On a product
+            // fallback the anchors came from another version and drift on
+            // ~19% of controls, so silence would be asserting something we
+            // measured to be false a fifth of the time. Named here, on the
+            // card, and marked to the model.
+            if (r.anchorsUnverified)
+                s.dialApproximate.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
         }
         else
         {
@@ -3734,9 +3754,21 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
             }
             if (! r.applied || r.staleDisplayKept) continue;   // bridged: annotated upstream
             const auto label = echojay::semanticLabel(r.semantic);
+            // AN APPROXIMATE VALUE IS NOT A LANDING, whatever the display
+            // says. displayVerified means the knob shows what we wrote; on a
+            // product fallback the unverified part is whether what we wrote
+            // corresponds to what was ASKED, because the anchor mapping came
+            // from another version. So the annotation rides the entry rather
+            // than the tier: the tier still says how the write went, and the
+            // suffix says the number cannot be trusted to the request.
+            const juce::String approx = r.anchorsUnverified
+                ? juce::String(" (approximate, mapped from ")
+                    + (s.dialServedFrom.isNotEmpty() ? s.dialServedFrom : juce::String("another version"))
+                    + ")"
+                : juce::String();
             if (r.displayVerified && r.landedText.trim().isNotEmpty())
             {
-                landedBits.add(label + arrow + "reads \"" + r.landedText.trim() + "\"");
+                landedBits.add(label + arrow + "reads \"" + r.landedText.trim() + "\"" + approx);
                 landedIdx.add(r.index);
                 continue;
             }
@@ -3748,12 +3780,12 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
             const auto unit  = declaredUnit(entry, r.semantic);
             float lo = 0.0f, hi = 0.0f;
             if (unit.isNotEmpty())
-                { askedBits.add(label + arrow + r.requestedValue.toString() + " " + unit); askedIdx.add(r.index); }
+                { askedBits.add(label + arrow + r.requestedValue.toString() + " " + unit + approx); askedIdx.add(r.index); }
             else if (rangeOf(entry, lo, hi))
                 { askedBits.add(label + arrow + r.requestedValue.toString()
-                              + " (this knob runs " + num(lo) + ".." + num(hi) + ")"); askedIdx.add(r.index); }
+                              + " (this knob runs " + num(lo) + ".." + num(hi) + ")" + approx); askedIdx.add(r.index); }
             else
-                { askedBits.add(label + arrow + r.requestedValue.toString()); askedIdx.add(r.index); }
+                { askedBits.add(label + arrow + r.requestedValue.toString() + approx); askedIdx.add(r.index); }
         }
         if (! landedBits.isEmpty() || ! askedBits.isEmpty() || ! refusedBits.isEmpty())
         {
@@ -3813,6 +3845,17 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         if (!s.dialUnconfirmed.isEmpty())
             s.settings += "\n" + s.dialUnconfirmed.joinIntoString(", ")
                         + ": written - display could not be confirmed on this bridged plugin";
+        // Approximate values get their own line, for the same reason the
+        // bridged caveat has one: the write succeeded and the number is not
+        // one we can stand behind. Naming the version it was mapped FROM is
+        // the whole point -- it tells the reader why, and that dialling by
+        // hand is the remedy.
+        if (!s.dialApproximate.isEmpty())
+            s.settings += "\n" + s.dialApproximate.joinIntoString(", ")
+                        + ": approximate - mapped from "
+                        + (s.dialServedFrom.isNotEmpty() ? s.dialServedFrom
+                                                         : juce::String("another version"))
+                        + ", dial by hand if it matters";
     }
 }
 
@@ -5203,6 +5246,95 @@ juce::String ChainHost::modelSettingsForSlot(int slot) const
     // nowhere else.
     if (! s.modelRefusedBits.isEmpty())  lines.add(kRefusedPrefix + s.modelRefusedBits.joinIntoString("; "));
     return lines.joinIntoString("\n");
+}
+
+juce::String ChainHost::buildFallbackLookupJson() const
+{
+    juce::Array<juce::var> plugins;
+    juce::StringArray asked;   // fps already in the body, so one ask per fp
+    for (int i = 0; i < (int) slots_.size(); ++i)
+    {
+        const auto& s = slots_[(size_t) i];
+        if (s.fp.isEmpty()) continue;                       // no identity, nothing to ask about
+        if (paramMaps_.find(s.fp) != paramMaps_.end()) continue;   // already mapped, exact
+        if (asked.contains(s.fp)) continue;
+        auto* proc = getSlotProcessor(i);
+        if (proc == nullptr) continue;                      // no live instance, no counts
+
+        auto* o = new juce::DynamicObject();
+        o->setProperty("ik", echojay::identityKeyForDescription(s.desc));
+        o->setProperty("fp", s.fp);
+        if (s.desc.manufacturerName.isNotEmpty())
+            o->setProperty("manufacturer", s.desc.manufacturerName);
+        auto& params = proc->getParameters();
+        o->setProperty("param_count", params.size());
+        // The name guard's input. Capped for the same reason the reads sweep
+        // is: a pathological plugin must not put twenty thousand names in a
+        // request body. The guard compares what it is given and reports how
+        // many it compared, so a cap narrows the check rather than faking it.
+        juce::Array<juce::var> names;
+        const int n = juce::jmin(params.size(), echojay::kMaxParamReadsPerSlot);
+        for (int p = 0; p < n; ++p)
+            // kParamNameQueryLen, not a literal: the tagged-path assertion in
+            // applyOne re-reads with the same constant, so the string it
+            // compares is the one the server verified.
+            names.add(params[p] != nullptr ? params[p]->getName(echojay::kParamNameQueryLen)
+                                           : juce::String());
+        o->setProperty("param_names", names);
+        plugins.add(juce::var(o));
+        asked.add(s.fp);
+    }
+    if (plugins.isEmpty()) return {};
+    auto* root = new juce::DynamicObject();
+    root->setProperty("mode", "lookup");
+    root->setProperty("plugins", juce::var(plugins));
+    return juce::JSON::toString(juce::var(root), true);
+}
+
+void ChainHost::storeFallbackMaps(const juce::var& resultsArray)
+{
+    auto* arr = resultsArray.getArray();
+    if (arr == nullptr) return;
+    int stored = 0, refused = 0;
+    for (auto& rv : *arr)
+    {
+        auto* r = rv.getDynamicObject();
+        if (r == nullptr) continue;
+        const auto ik  = r->getProperty("ik").toString();
+        const auto map = r->getProperty("map");
+        if (map.getDynamicObject() == nullptr)
+        {
+            // A miss is a real answer and it is logged, not swallowed: the
+            // reason names WHY the newest mapped version refused (names
+            // disagreed, fewer params, manufacturer mismatch), which is the
+            // difference between "no map exists" and "one exists and is not
+            // safe for this binary".
+            ++refused;
+            EchoJay_NSLog(("EJFallback: no map for " + ik + " -- tier "
+                           + r->getProperty("tier").toString() + ", reason "
+                           + r->getProperty("reason").toString()).toRawUTF8());
+            continue;
+        }
+        // Store under the fp that ASKED. Every slot sharing that identity
+        // finds it, and the exact-fp path is untouched because this only runs
+        // for fps that had no map at all.
+        juce::String wantFp;
+        for (const auto& sl : slots_)
+            if (echojay::identityKeyForDescription(sl.desc) == ik) { wantFp = sl.fp; break; }
+        if (wantFp.isEmpty()) continue;
+        paramMaps_[wantFp] = map;
+        fpFetchedAt_[wantFp] = juce::Time::currentTimeMillis();
+        ++stored;
+        EchoJay_NSLog(("EJFallback: " + ik + " served from "
+                       + r->getProperty("served_from").toString() + " (tier "
+                       + r->getProperty("tier").toString()
+                       + ", anchors_unverified="
+                       + juce::String((int) (bool) map.getProperty("anchors_unverified", false))
+                       + ")").toRawUTF8());
+    }
+    if (stored > 0) saveParamMapsToDisk();
+    EchoJay_NSLog(("EJFallback: " + juce::String(stored) + " served, "
+                   + juce::String(refused) + " refused").toRawUTF8());
 }
 
 juce::String ChainHost::buildSlotParamReadsJson() const

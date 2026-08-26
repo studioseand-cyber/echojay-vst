@@ -194,6 +194,29 @@ public:
     // join because its absence is silent.
     juce::String buildSlotParamReadsJson() const;
 
+    // PRODUCT FALLBACK, the delivery half (26 Aug 2026).
+    //
+    // The dial fetch asks GET /api/params/maps?fps=..., and the server's
+    // product fallback is gated on the identities= form, so it can never fire
+    // for this client. Rather than change the dial fetch's shape, a racked
+    // slot whose fp came back mapless asks POST /api/params/lookup in the
+    // default "lookup" mode, which runs the tiered resolver and returns the
+    // prior version's map already tagged served_from + anchors_unverified.
+    // That path is live and NOT behind PARAMS_PRODUCT_FALLBACK.
+    //
+    // The body carries what lookupTiered's guards need: without param_count
+    // it refuses every candidate with "no_count_sent", and param_names is what
+    // the name guard compares. Both come off the LIVE instance, so they
+    // describe the binary actually loaded rather than a scan row.
+    //
+    // Empty string = nothing to ask.
+    juce::String buildFallbackLookupJson() const;
+    // Stores each result's map under the fp that ASKED for it, not the fp it
+    // was served from: applyStructuredIfReady looks up by the slot's own fp.
+    // The map keeps its own fp field naming its true origin, which is why the
+    // integrity check needs its tagged exemption.
+    void storeFallbackMaps(const juce::var& resultsArray);
+
     // ONE SWEEP PER TURN, AND BOTH CONSUMERS USE IT (24 Aug 2026).
     //
     // This is not a convenience. The defect it fixes is TWO STORES FOR ONE
@@ -579,7 +602,12 @@ public:
                          // cannot be turned back into a map key ("low cut freq"
                          // from "low_cut_freq_hz" is guesswork) and the live
                          // reads are index-keyed. -1 where no index exists.
-                         int index = -1; };
+                         int index = -1;
+                         // The served map's anchors came from another version
+                         // (see ApplyResult::anchorsUnverified). Carried so the
+                         // report layer can refuse to present the value as
+                         // exact; it never changes whether the write happens.
+                         bool anchorsUnverified = false; };
     std::vector<ApplyReport> applyStructuredSettings (int slotIndex,
                                                       const juce::var& structuredSettings,
                                                       const juce::var& map);
@@ -1089,6 +1117,13 @@ private:
         juce::StringArray                    dialManual;                // unwritten control labels
         juce::StringArray                    dialReadbackMiss;          // wrote wrong, reverted
         juce::StringArray                    dialUnconfirmed;           // written, display stale (bridged)
+        // Controls dialled through a PRODUCT FALLBACK, and the identity its
+        // anchors came from. The write happened and the control resolved by
+        // name; only the value's exactness is unasserted (~19% anchor drift,
+        // MAP_CARRY_FORWARD). Same shape as dialUnconfirmed because it is the
+        // same kind of fact: a successful write that must not be silent.
+        juce::StringArray                    dialApproximate;
+        juce::String                         dialServedFrom;
         int                                  dialAppliedCount = 0;
         // dial-3 denominator (CONTRACT_racked_slot_controls.md A3/A7.2):
         // report.size() from the LAST apply loop; -1 = the apply never ran,

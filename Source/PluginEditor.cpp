@@ -820,8 +820,23 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                                        + juce::String(statusCode)).toRawUTF8());
                         return;
                     }
-                    safeThis->processorRef.getChainHost()
-                        .storeParamMaps(json.getProperty("maps", juce::var()));
+                    auto& ch = safeThis->processorRef.getChainHost();
+                    ch.storeParamMaps(json.getProperty("maps", juce::var()));
+                    // PRODUCT FALLBACK, second leg (26 Aug 2026). Anything
+                    // still mapless after the exact fetch asks the tiered
+                    // resolver, which serves the newest mapped version of the
+                    // same product tagged anchors_unverified. Deliberately a
+                    // SECOND call rather than a change to the first: the
+                    // ?fps= fetch is the exact-identity question and its
+                    // answer, including its misses, stays what it was.
+                    const auto body = ch.buildFallbackLookupJson();
+                    if (body.isEmpty()) return;
+                    safeThis->api.lookupFallbackMaps(body,
+                        [safeThis](const juce::var& results)
+                        {
+                            if (safeThis == nullptr || results.isVoid()) return;
+                            safeThis->processorRef.getChainHost().storeFallbackMaps(results);
+                        });
                 });
         };
         chainHostRef.onSlotSettingsChanged = [safeThis]()

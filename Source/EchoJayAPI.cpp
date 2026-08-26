@@ -3361,6 +3361,23 @@ UserSettings UserSettings::fromJSON(const juce::var& json)
 
 // ============ Settings Sync (via /api/data — profile field) ============
 
+void EchoJayAPI::lookupFallbackMaps(const juce::String& body,
+                                    std::function<void(const juce::var& results)> onComplete)
+{
+    if (body.isEmpty() || onComplete == nullptr) return;
+    postJSON("/api/params/lookup", body, [onComplete](const juce::var& json, int sc)
+    {
+        if (sc != 200)
+        {
+            EchoJay_NSLog(("EJFallback: /api/params/lookup status "
+                           + juce::String(sc) + " -- slots stay mapless").toRawUTF8());
+            onComplete(juce::var());
+            return;
+        }
+        onComplete(json.getProperty("results", juce::var()));
+    });
+}
+
 void EchoJayAPI::fetchWhatsNew(std::function<void(const juce::var&)> onComplete)
 {
     auto cacheFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
