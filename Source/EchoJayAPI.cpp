@@ -1198,13 +1198,6 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
     // it for chain turns with a live plugin feed and ignores it elsewhere.
     if (autoDialMode)
         body += ",\"autoDial\":true";
-    if (! nextDialFlags_.isEmpty())
-    {
-        juce::Array<juce::var> arr;
-        for (auto& n : nextDialFlags_) arr.add(n);
-        body += ",\"dialFlags\":" + juce::JSON::toString(juce::var(arr), true);
-        nextDialFlags_.clear();
-    }
     // Classifier binding (split call). Absent on any turn the classifier
     // did not answer for, which is every turn when it is gated off — and
     // the server then classifies for itself exactly as it does today.

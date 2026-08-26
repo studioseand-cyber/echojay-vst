@@ -613,11 +613,6 @@ public:
     void setNextClassifyBinding(const juce::String& intent, const juce::String& token)
     { nextClassifyIntent_ = intent; nextClassifyToken_ = token; }
 
-    // 2.4 dialFlags (26 Jul 2026, DARK): names from the AVAILABLE PLUGINS
-    // feed whose LOCAL map passes the dial-signals threshold. Staged per
-    // send by the editor only when kDialSignalsEnabled; rides the body as
-    // "dialFlags":[...] and clears after the send.
-    void setNextDialFlags(const juce::StringArray& names) { nextDialFlags_ = names; }
     
     // ============ User Settings (synced with web app) ============
 
@@ -647,12 +642,28 @@ public:
     UserSettings getUserSettings() const { return userSettings; }
 
     // Auto-dial mode (Settings toggle, default off): when on, every
-    // /api/chat body carries "autoDial":true and the server restricts chain
-    // suggestions to plugins EchoJay has param maps for (so every suggested
-    // slot is one-click dialable). Persisted in the LOCAL settings file, not
-    // the server profile: the flag only means anything on this machine, and
-    // keeping it out of the shared profile blob means a web-side settings
-    // save can never clobber it.
+    // /api/chat body carries "autoDial":true.
+    //
+    // CORRECTED 25 Aug 2026. This comment used to say the server "restricts
+    // chain suggestions to plugins EchoJay has param maps for (so every
+    // suggested slot is one-click dialable)". NOTHING RESTRICTS ANYTHING
+    // TODAY. api/_auto-dial-check.js checkAutoDial is report-only: it builds
+    // an allowed set, calls detectAutoDialViolations, returns them for
+    // logging, and fails open when the registry read is empty. The reply is
+    // not changed and no suggestion is withheld.
+    //
+    // Enforcement is SPECIFIED, not built: CONTRACT_pool_and_third_branch 11e
+    // (the toggle measured, and the ruling on how it is enforced) and 11f
+    // (Kathy's ruling, 25 Aug: prevention via the [AUTO-DIAL MODE ON] note,
+    // then a backstop that refuses an op naming an unmappable plugin).
+    //
+    // Stated this bluntly on purpose. A client comment asserting a server
+    // behaviour that does not exist is how this went unnoticed, and softening
+    // it into vagueness would leave the next reader in the same position.
+    //
+    // Persisted in the LOCAL settings file, not the server profile: the flag
+    // only means anything on this machine, and keeping it out of the shared
+    // profile blob means a web-side settings save can never clobber it.
     bool getAutoDialMode() const { return autoDialMode; }
     void setAutoDialMode(bool on) { autoDialMode = on; saveSettings(); }
 
@@ -1052,7 +1063,6 @@ private:
     juce::String nextChatParamReads_;   // 6c §8a: staged by setNextChatParamReads(); "" = none
     juce::String nextChatDialDeclines_;  // dial-3 batch envelope; "" = none
     juce::String nextChatTurnType_; // staged by setNextChatTurnType(); "" = "chat"
-    juce::StringArray nextDialFlags_; // see setNextDialFlags(); cleared per send
     juce::String nextClassifyIntent_, nextClassifyToken_; // setNextClassifyBinding()
     int          nextChatBusCount_ = 0;
     bool         nextChatIsExplicitCapture_ = false;   // see stageCapturePayload

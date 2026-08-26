@@ -1067,7 +1067,15 @@ private:
     // to plugins EchoJay can dial in automatically (server param maps).
     // State lives in EchoJayAPI (local settings file) and rides chat bodies;
     // the toggle applies immediately, independent of the Save button.
-    juce::ToggleButton autoDialToggle { "Only suggest plugins EchoJay can auto-dial (fewer options, every suggestion one-click)" };
+    // THE ONE-CLICK CLAUSE CAME OUT (Kathy, 25 Aug 2026;
+    // CONTRACT_pool_and_third_branch 11f). It was ACCURATE when written: on a
+    // chain BUILD, pass 2 exposes the picked plugins' controls, so a suggested
+    // slot really was one click from dialled. The suggestion branch being built
+    // now introduces an edit-turn case where it is not. Rather than keep a
+    // promise that is true on one path and false on another, the promise
+    // narrows to what the toggle actually delivers: which plugins get
+    // suggested, and the cost of that restriction.
+    juce::ToggleButton autoDialToggle { "Only suggest plugins EchoJay can auto-dial (fewer options)" };
     float uiScale_ = 1.0f;          // current scale factor
     void applyUIScale(float scale);
     void saveUIScale() const;
@@ -1237,6 +1245,21 @@ private:
     // Result stage: a local assistant bubble (persisted, block-less).
     // altPrompt (optional) attaches a Suggest-an-alternative pill to the
     // bubble (build failures) - same one-shot machinery as edit cards.
+    // refused_ops (25 Aug 2026, CONTRACT_pool_and_third_branch 11e). With the
+    // auto-dial toggle on, the server removes an add/replace naming a plugin it
+    // has no settings map for, deletes the block's `result` claim, and lists
+    // what it took out under `refused_ops` INSIDE the machine block.
+    //
+    // Nothing in this system edits prose, and the server deliberately does not
+    // start: its own comment says "the honest sentence is composed by the
+    // client from refused_ops, exactly as it already composes hand-dial copy
+    // from dropped_controls". So the reply still reads "adding Fresh Air"
+    // while the card no longer contains it, and without this the refusal is
+    // silent to the reader.
+    //
+    // Same shape as the dropped_controls copy: name the thing, carry the
+    // SERVER's reason rather than a client paraphrase, one local bubble.
+    void announceRefusedOps(const juce::String& chainJson, const juce::String& editJson);
     void appendLocalResultBubble(const juce::String& text,
                                  const juce::String& altPrompt = juce::String(),
                                  const juce::String& altLabel  = juce::String(),

@@ -675,7 +675,9 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
 
 // ---------------------------------------------------------------------------
 // Dial predicate (26 Jul 2026) — the ONE definition of "usable" shared by
-// apply-time honesty, the (dial) feed markers, and dialFlags. A param entry
+// apply-time honesty and the feed-split branch. (It also backed the "(dial)"
+// markers and dialFlags until those were deleted on 25 Aug; see the
+// supersession note further down.) A param entry
 // is usable iff applyOne above could actually write it: valid index, and
 // either a stepped position control or an anchor table with real span (the
 // same 1e-6 degenerate-span threshold applyOne refuses at).
@@ -741,11 +743,22 @@ inline bool mapIsDialableForSignals (const juce::var& map)
     return (bool) map.getProperty ("dialable", false);
 }
 
-// Dial signals master switch (feed "(dial)" markers + request dialFlags).
-// MUST stay false until the server-side explainer for the marker exists —
-// shipping markers the model has never had explained invites it to invent
-// meaning for them.
-constexpr bool kDialSignalsEnabled = false;
+// kDialSignalsEnabled IS DELETED (25 Aug 2026), and it is SUPERSEDED, not
+// pending. It gated the feed's "(dial)" name markers and the request's
+// dialFlags array, and it stayed false from 26 Jul waiting on a server-side
+// explainer for the marker that was never written.
+//
+// The category tag shipped on 25 Aug does that job at a granularity that
+// actually discriminates: 467 of 859 feed names carry one, against the dial
+// signal's 1,183 of 1,185 products. A marker that is true of almost everything
+// tells the model nothing, which is why no explainer for it was ever worth
+// writing.
+//
+// Recorded here rather than removed silently, because a dark constant with a
+// "MUST stay false until..." comment reads as work someone is coming back to,
+// and nobody was. mapIsDialableForSignals above SURVIVES: it still backs
+// ChainHost::getDialableRecommendableNames, which the P16 feed-split branch
+// and the settle walker both use.
 
 // Short human label for a semantic key, for "needs hand-dialing (threshold,
 // attack)" copy. Mirrors formatSemanticSetting's suffix handling.

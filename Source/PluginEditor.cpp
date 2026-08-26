@@ -7,7 +7,7 @@
 #include "EchoJayLogo.h"  // embedded logo PNG — Settings orb card glyph source
 #include "EchoJayVisualiserTexture.h"  // shared SPECTRUM/SPECTROGRAM texture
 #include "EchoJayEventLog.h"   // events.jsonl + machine_id (dial_miss telemetry)
-#include "EchoJayParamApply.h" // kDialSignalsEnabled + dial predicate (shared)
+#include "EchoJayParamApply.h" // the shared dial predicate + semanticLabel
 #include "EchoJayChannelLabel.h" // channelLabelUsable — ONE uid-passthrough test
 #include "EchoJayChannelChats.h" // latestChatForLink — the many-chats-per-channel
                                  // selection, header-inline for the unit test
@@ -6121,6 +6121,12 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
             cm.chainData = chainJson;
             cm.gainData  = gainJson;
             cm.editData  = editJson;
+
+            // The server refused an add and said so in the BLOCK, not in the
+            // prose; without this the reply still claims it happened. Fresh
+            // receipts only -- the workspace-restore path (cm.editData =
+            // msg.editJson) must not re-announce a refusal already read.
+            safeThis->announceRefusedOps(chainJson, editJson);
             cm.figuresData = figuresJson;   // client-built card, not from the reply
             // STEP 4: the build gate is structural and reads the SAME unified
             // source (compareTop_/compareBot_ via slotChannelUid) the context
@@ -15844,6 +15850,41 @@ namespace {
 // Paint
 // ============================================================================
 
+// Did this chain edit apply IN FULL? (25 Aug 2026)
+//
+// The retired card's outcome line was coloured by testing the text for the
+// prefix "Applied". That is a rule naming a token the renderer must print, and
+// the two drifted apart the moment the wording changed: once the full-success
+// line became "Changes applied", the ONLY remaining strings starting with
+// "Applied" were the partial-failure form "Applied N of M - <reasons>", which
+// by construction occurs only when N < M. The success colour had come to mean
+// exactly the failure case.
+//
+// So key on the distinction the string actually encodes -- full versus partial
+// -- rather than on a word at its front. Full success is:
+//
+//   "Changes applied" / "Changes applied on \"X\""   the current wording
+//   "Applied 1 change" / "Applied 3 changes"        legacy, and legacy on "X"
+//
+// The legacy forms stay green because editResult is persisted to the workspace
+// as _editResult and restored, so sessions saved before today still carry them
+// and must not change colour under us.
+//
+// The test after "Applied " is what follows the NUMBER: " change..." is a full
+// apply, " of ..." is a partial. Not a search for the word anywhere in the
+// line, because the reason text can legitimately contain it -- "the chain on
+// \"X\" changed" is one of the amber strings.
+static bool editResultIsFullSuccess (const juce::String& r)
+{
+    if (r.startsWith ("Changes applied")) return true;
+    if (! r.startsWith ("Applied "))      return false;
+    const auto rest = r.fromFirstOccurrenceOf ("Applied ", false, false);
+    int i = 0;
+    while (i < rest.length() && juce::CharacterFunctions::isDigit (rest[i])) ++i;
+    if (i == 0) return false;                       // "Applied " with no count
+    return rest.substring (i).startsWith (" change");
+}
+
 void EchoJayEditor::paint(juce::Graphics& g)
 {
     auto bounds = getLocalBounds();
@@ -17646,7 +17687,10 @@ void EchoJayEditor::paint(juce::Graphics& g)
                     }
                     if (msg.editApplied)
                     {
-                        g.setColour(msg.editResult.startsWith("Applied")
+                        // Green only for a FULL apply; see
+                        // editResultIsFullSuccess above for why the old prefix
+                        // test had come to paint the partial-failure case green.
+                        g.setColour(editResultIsFullSuccess(msg.editResult)
                                     ? juce::Colour(0xff22c55e) : juce::Colour(0xfff59e0b));
                         g.setFont(juce::Font(juce::FontOptions(10.5f)));
                         g.drawText(msg.editResult, ex, ey + 2, bubbleW - 20, 14,
@@ -21578,6 +21622,54 @@ void EchoJayEditor::onResultChipTapped(int msgIdx, int kind)
     repaint();
 }
 
+void EchoJayEditor::announceRefusedOps(const juce::String& chainJson,
+                                       const juce::String& editJson)
+{
+    // Names in block order, each with the SERVER's reason. Carrying the reason
+    // rather than restating it keeps one author for the sentence: a client
+    // paraphrase would go stale silently if the server's wording changed,
+    // which is the shape this file keeps being bitten by.
+    juce::StringArray names, reasons, perName;
+    auto collect = [&](const juce::String& json)
+    {
+        if (json.isEmpty()) return;
+        auto v = juce::JSON::parse(json);
+        auto* o = v.getDynamicObject();
+        if (o == nullptr) return;
+        if (auto* arr = o->getProperty("refused_ops").getArray())
+            for (auto& rv : *arr)
+                if (auto* r = rv.getDynamicObject())
+                {
+                    const auto nm = r->getProperty("name").toString().trim();
+                    if (nm.isEmpty() || names.contains(nm)) continue;
+                    const auto why = r->getProperty("reason").toString().trim();
+                    names.add(nm);
+                    reasons.addIfNotAlreadyThere(why);
+                    perName.add(why.isEmpty() ? nm : nm + " (" + why + ")");
+                }
+    };
+    collect(chainJson);
+    collect(editJson);
+    if (names.isEmpty()) return;
+
+    const bool one = names.size() == 1;
+    juce::String line;
+    if (reasons.size() == 1 && reasons[0].isNotEmpty())
+        // The only shape the server emits today: one reason for all of them,
+        // so it reads as a sentence instead of repeating itself per name.
+        line = names.joinIntoString(", ") + (one ? " was not added: " : " were not added: ")
+             + reasons[0] + ".";
+    else
+        // Mixed or missing reasons: each name carries its own, the same
+        // fallback the dropped_controls copy uses.
+        line = perName.joinIntoString("; ") + (one ? " was not added." : " were not added.");
+    line += one ? " Turn off \"only suggest plugins EchoJay can auto-dial\" in Settings"
+                  " if you want it anyway."
+                : " Turn off \"only suggest plugins EchoJay can auto-dial\" in Settings"
+                  " if you want them anyway.";
+    appendLocalResultBubble(line);
+}
+
 void EchoJayEditor::appendLocalResultBubble(const juce::String& text,
                                             const juce::String& altPrompt,
                                             const juce::String& altLabel,
@@ -22745,8 +22837,19 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
                 // third of three surfaces contradicting the honest bubble).
                 summary = "Suggested settings added to the card - nothing written automatically";
             else if (applied == total)
-                summary = "Applied " + juce::String(applied)
-                        + (applied == 1 ? " change" : " changes");
+                // NO COUNT (25 Aug 2026). The number counted OPS -- `total` is
+                // ops.size() and `applied` is incremented once per op in
+                // finishOpAndContinue -- while the card printed beneath it
+                // lists the SETTINGS by name. One `set` op carrying three
+                // controls read "Applied 1 change" above a card showing
+                // Attack 2, Release 7, Ratio 4.
+                //
+                // Not fixed by counting settings instead. The card already
+                // names every one of them, so any number here is a second
+                // store for the same fact and can only ever disagree with the
+                // list beside it. There is no case where the count tells the
+                // reader something the list does not.
+                summary = "Changes applied";
             else
                 summary = "Applied " + juce::String(applied) + " of "
                         + juce::String(total) + " - "
@@ -23104,9 +23207,11 @@ void EchoJayEditor::pollLinkEditAck(const juce::String& linkUid, int seq, int at
                     juce::String summary, altPrompt, altLabel, bubble;
                     if (status == "ok")
                     {
-                        summary = "Applied " + juce::String(totalOps)
-                                + (totalOps == 1 ? " change" : " changes")
-                                + " on \"" + targetLabel + "\"";
+                        // Same as the local path above: totalOps is ops.size(),
+                        // not a setting count, and the card lists the settings.
+                        // The target label stays -- it says WHICH Link channel,
+                        // which nothing else on this line carries.
+                        summary = "Changes applied on \"" + targetLabel + "\"";
                         auto ev = juce::JSON::parse(editDataKey);
                         if (auto* eo = ev.getDynamicObject())
                             bubble = eo->getProperty("result").toString().trim();
@@ -24063,18 +24168,11 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
         // suggestedTarget CUT (authorised): the feed no longer names other
         // Links to the model on ANY turn — routing to a Link is solely the
         // user's act (pill or banner selector) BEFORE the message is sent.
-        // 2.1 "(dial)" feed markers + 2.4 dialFlags (26 Jul 2026): built but
-        // DARK - kDialSignalsEnabled stays false until the server-side
-        // explainer for the marker exists. Threshold: >=2 usable CORE
-        // semantics (echojay::mapIsDialableForSignals), NOT raw usable
-        // count - spiff (mix_pct+position) must not be marked dialable.
-        if (echojay::kDialSignalsEnabled)
-        {
-            const auto dialable = chainHost.getDialableRecommendableNames();
-            for (auto& rn : recommendable)
-                if (dialable.contains(rn)) rn += " (dial)";
-            api.setNextDialFlags(dialable);
-        }
+        // The "(dial)" feed markers and the dialFlags array lived here behind
+        // kDialSignalsEnabled and are DELETED (25 Aug 2026). Superseded by the
+        // category tag, which discriminates where the dial signal did not:
+        // 467 of 859 feed names against 1,183 of 1,185 products. See the note
+        // where the constant was, in EchoJayParamApply.h.
         out += EchoJayAPI::buildChainInjection(recommendable);
         hadFeed = true;
         EchoJay_NSLog(("EJChat: chain injection attached -- "
@@ -26258,6 +26356,12 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
         cm.gainData  = gainJson;    // empty if no gain proposal block
         cm.askData   = askJson;     // empty if no ask block
         cm.editData  = editJson;    // empty if no chain-edit block
+
+        // The server refused an add and said so in the BLOCK, not in the
+        // prose; without this the reply still claims it happened. Fresh
+        // receipts only -- the workspace-restore path (cm.editData =
+        // msg.editJson) must not re-announce a refusal already read.
+        announceRefusedOps(chainJson, editJson);
         // Staleness anchor: the rack revision the model's baseSlots
         // describe. -1 after reload (in-memory counter, see header).
         // Targeted turns (Phase R) anchor to the LINK's sidecar
@@ -30668,6 +30772,12 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
             cm.chainData = chainJson;
             cm.gainData  = gainJson;
             cm.editData  = editJson;
+
+            // The server refused an add and said so in the BLOCK, not in the
+            // prose; without this the reply still claims it happened. Fresh
+            // receipts only -- the workspace-restore path (cm.editData =
+            // msg.editJson) must not re-announce a refusal already read.
+            safeThis2->announceRefusedOps(chainJson, editJson);
             // A CHAIN_EDIT from a capture in a channel chat targets THAT
             // channel's rack (same anchoring as the chat path).
             if (editJson.isNotEmpty())

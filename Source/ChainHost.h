@@ -303,8 +303,10 @@ public:
     // True when no slot is DialStatus::pending (bubble may compose).
     bool dialStateSettled() const;
     // Recommendable display names whose local map passes the dial-signals
-    // threshold (>=2 usable CORE semantics). Used by the dark 2.1 markers
-    // and 2.4 dialFlags; shares echojay::mapIsDialableForSignals.
+    // threshold (>=2 usable CORE semantics); shares
+    // echojay::mapIsDialableForSignals. Its two consumers are the P16
+    // feed-split branch and the settle walker. The dark "(dial)" markers and
+    // dialFlags were the third and were deleted on 25 Aug 2026.
     juce::StringArray getDialableRecommendableNames() const;
     // Feed split (P16). The model's list becomes the DIALABLE subset, but a
     // fresh machine has no local fp, so dialability also consults the server's
