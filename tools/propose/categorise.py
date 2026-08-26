@@ -2,7 +2,7 @@
 """Stage 0.5 -- categorise the whole catalogue from PRE-LOAD metadata, offline.
 
 Never loads a plugin. Reads ~/Library/ejmap/scan-cache.xml, asks two arms to
-place each product in one of the eleven dial-set categories, and writes
+place each product in one of the twelve dial-set categories, and writes
 ~/Library/ejmap/categories.json for the automated sweep to consume.
 
     python3 categorise.py                     # everything not yet categorised
@@ -20,7 +20,7 @@ client never reads one at dial time. So a wrong category cannot produce a wrong
 dial and cannot even produce an out-of-vocabulary semantic.
 
 What this pass is really for is deciding WHAT NOT TO LOAD. Measured on a random
-150: a third of the catalogue is a processor the eleven categories do not cover,
+150: a third of the catalogue is a processor the twelve categories do not cover,
 or not a processor at all. That is ~358 of 1,073 products the sweep never opens.
 
 THE TWO REFUSALS ARE NOT ONE BUCKET.
@@ -31,8 +31,8 @@ THE TWO REFUSALS ARE NOT ONE BUCKET.
                     forward across versions and is meant to be hard to undo.
 
   none              a real processor no category fits: filters, imaging,
-                    modulation, pitch. This is a statement about the ELEVEN-
-                    CATEGORY VOCABULARY, not about the plugin. Recorded as
+                    modulation, pitch shifting. This is a statement about the
+                    TWELVE-CATEGORY VOCABULARY, not about the plugin. Recorded as
                     `no_dial_set` and kept queryable, because grouped by kind it
                     is the ranked argument for which dial set to add next.
 
@@ -53,7 +53,8 @@ BATCH = 25
 REFUSALS = ("none", "not_a_processor")
 
 CATEGORIES = ["compressor", "limiter", "eq", "de-esser", "delay", "reverb",
-              "saturation", "gate", "transient_shaper", "channel_strip", "amp_sim"]
+              "saturation", "gate", "transient_shaper", "channel_strip", "amp_sim",
+              "pitch"]
 
 SYSTEM = """You categorise audio plug-ins for a tool that dials their controls.
 
@@ -66,11 +67,12 @@ Choose exactly one of:
 
 or one of these two refusals:
 
-  none        it processes audio but none of the categories fit (pitch
-              correction, modulation, imaging, restoration, filtering...)
+  none        it processes audio but none of the categories fit (modulation,
+              imaging, restoration, filtering, pitch shifting and
+              harmonising without key/scale correction...)
   not_a_processor
               it does not process audio at all, or has nothing worth dialling
-              (analysers, meters, tuners, key detectors, alignment utilities,
+              (analysers, meters, key detectors, alignment utilities,
               routing helpers, generators)
 
 RULES
@@ -80,6 +82,11 @@ RULES
   A compressor with a tone control is still a compressor.
 - amp_sim means a guitar/bass amplifier or cabinet emulation.
 - saturation covers tape, tube, transformer and distortion colour boxes.
+- pitch means a pitch CORRECTOR that retunes the voice to a key or scale
+  (e.g. Auto-Tune, Melodyne) -- its surface includes retune speed, key,
+  scale, flex-tune. A plugin sold under a tuner's brand that is really an
+  EQ or a compressor is eq or compressor, not pitch. A pitch shifter or
+  harmonizer with no key/scale correction is not pitch.
 - If you do not recognise the product, say so with confidence "low" and your
   best guess. Do NOT invent a category from the name alone if the name is
   generic.
@@ -398,7 +405,7 @@ def report(args):
 
 
 def no_dial_set(args):
-    """The vocabulary argument. 'none' is a statement about the ELEVEN
+    """The vocabulary argument. 'none' is a statement about the TWELVE
     CATEGORIES, not about the plugin, and grouped by kind it says which dial set
     to add next and how big each one is."""
     doc = load_cats(args.root)

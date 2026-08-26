@@ -11,7 +11,7 @@ import os, sys, tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from categorise import (base_name, product_key, mark_product_key, scan_products,
-                        decide, merge, CATEGORIES)
+                        decide, merge, CATEGORIES, SYSTEM)
 
 fails = checks = 0
 
@@ -114,6 +114,22 @@ check(d == "review" and "nothing" in why, "a missing answer is not a disagreemen
 
 d, _, why = decide(hi("dynamics"), hi("dynamics"))
 check(d == "review", "a confident agreement on a word that is not a category is refused")
+
+# PITCH IS A CATEGORY (26 Aug 2026). This pair is why it is HERE and not only in
+# the prompt: `pitch` reaches the arms from SYSTEM, but only CATEGORIES lets the
+# gate accept it, and editing one without the other sends every pitch corrector
+# to `review` with no category -- silently, and looking like a model failure
+# rather than a missing constant. The pair below fails if either half is undone.
+d, cat, why = decide(hi("pitch"), hi("pitch"))
+check((d, cat) == ("sweep", "pitch") and why == "",
+      "agreed and confident on pitch -> sweep, with pitch as the category")
+check("pitch" in CATEGORIES, "...because pitch is in the accept-list, not just the prompt")
+check("  pitch\n" in SYSTEM, "...and in the prompt, not just the accept-list")
+
+# The refusals keep their meaning around it: a pitch SHIFTER has no key/scale
+# correction, so it is still the vocabulary gap `none` exists to record.
+d, cat, _ = decide(hi("none"), hi("none"))
+check((d, cat) == ("no_dial_set", None), "a pitch shifter is still `none`, not `pitch`")
 
 # --------------------------------------------------------------------------
 # merge carries what the review pile needs to be identifiable
