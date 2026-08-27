@@ -2112,54 +2112,103 @@ int main()
         // past the reseek trip so the drain's first consume seeks to the
         // cushion exactly as a field engage does.
         std::printf ("== §8 alignment: impulse through both paths ==\n");
-        // mode 0: LINK-FIRST cycles, engage between cycles — the ideal
-        //         phase the arithmetic assumes. GATED at |delta|<=2.
-        // mode 1: MAIN-FIRST cycles (the consume races ahead of the
-        //         produce) — measured and PRINTED: the blind backlog seek
-        //         makes the offset a property of thread phase at engage.
-        // mode 2: producer one block AHEAD at the engage seek — the other
-        //         bad roll, printed.
-        // The printed modes are THE DEFECT (28 Aug): the engage-time
-        // ringSeekForward fixes the offset from wall-clock thread phase,
-        // and nothing ever corrects it (the drain reseek needs an 8192
-        // backlog). When the stamp-based seek lands, modes 1 and 2 must
-        // join the gate at |delta|<=2.
-        auto alignDelta = [&](int bs, int mode) -> int
+        // The producer STAMPS every block (ring-index <-> host-position,
+        // as the shipping Link does) and the main gets a test playhead, so
+        // the EJAlign instrument runs in-harness and its sign is verified
+        // AGAINST THE IMPULSE — content truth, not a comment's claim.
+        // modes:
+        //  0 prefilled, ideal phase (cushion established)   -> delta 0
+        //  1 main-first cycles                              -> prints
+        //  2 producer one block ahead at the seek           -> prints
+        //  3 THE FIELD SEQUENCE: ring connected and being
+        //    discard-drained BEFORE engage (backlog ~0), so the trim-only
+        //    engage seek is a NO-OP and the cushion is never built — the
+        //    pad still subtracts it: the double-count. 29 Aug field
+        //    readout: steady skew -1024.                    -> prints
+        //  4 prefilled + 1024 EXTRA frames after engage (a KNOWN +1024
+        //    content delay)                                 -> +1024/+1024
+        // GATED: mode 0 aligned; instrument==impulse in modes 3 and 4
+        // (the instrument tells the truth in both directions).
+        struct TestPlayHead : juce::AudioPlayHead
+        {
+            juce::int64 pos = 0;
+            juce::Optional<juce::AudioPlayHead::PositionInfo> getPosition() const override
+            {
+                juce::AudioPlayHead::PositionInfo p;
+                p.setTimeInSamples (pos);
+                p.setIsPlaying (true);
+                return p;
+            }
+        };
+        struct AlignRead { int delta; juce::int64 skew; };
+        TestPlayHead alignPH;
+        auto alignDelta = [&](int bs, int mode) -> AlignRead
         {
             int errA = 0;
             const juce::String adir = LinkShm::resolveDir (errA);
             mainProc.setBorrowBudgetActive (true);
             mainProc.prepareToPlay (48000.0, bs);
+            mainProc.setPlayHead (&alignPH);
+            alignPH.pos = 0;
+            juce::int64 prodPos = 0;
             int pfd = -1, perr = 0;
             void* pm = LinkShm::openRingProducer (adir, "audio_align.bin",
                                                   48000.0f, 2, pfd, perr);
-            if (pm == nullptr) return 99999;
+            if (pm == nullptr) return { 99999, 99999 };
             std::vector<float> zL ((size_t) bs, 0.0f), zR ((size_t) bs, 0.0f);
             auto produce = [&](float imp)
             {
                 zL[0] = imp; zR[0] = imp;
                 const float* p[2] = { zL.data(), zR.data() };
+                LinkShm::ringStampPublish (pm,
+                    LinkShm::loadRelaxed (&LinkShm::ringHeader (pm)->writeIdx),
+                    prodPos);
                 LinkShm::ringProduce (pm, p, 2, bs);
+                prodPos += bs;
                 zL[0] = zR[0] = 0.0f;
             };
-            for (int i2 = 0; i2 < 12000 / bs + 2; ++i2) produce (0.0f);
-            if (mode == 2) produce (0.0f);       // producer ahead at the seek
-            EchoJayAlignTestAccess::connect (mainProc, 2, "audio_align.bin",
-                                             "Align Probe", 48000.0f, "uid-al");
-            mainProc.borrowEngageBegin ("uid-al", "lease-al", true, true);
             juce::AudioBuffer<float> blk (2, bs);
             juce::MidiBuffer midi;
-            auto cycle = [&](float ringImp, float mainImp, float* sink)
+            auto process = [&](float mainImp, float* sink)
             {
-                if (mode != 1) produce (ringImp);
                 blk.clear();
                 blk.setSample (0, 0, mainImp);
                 blk.setSample (1, 0, mainImp);
                 mainProc.processBlock (blk, midi);
-                if (mode == 1) produce (ringImp);
+                alignPH.pos += bs;
                 if (sink != nullptr)
                     for (int i2 = 0; i2 < bs; ++i2)
                         sink[(size_t) i2] = blk.getSample (0, i2);
+            };
+            if (mode == 3)
+            {
+                // FIELD: connected first; the discard arm keeps backlog ~0
+                // for a while before the engage. Clocks stay in step.
+                EchoJayAlignTestAccess::connect (mainProc, 2, "audio_align.bin",
+                                                 "Align Probe", 48000.0f, "uid-al");
+                for (int i2 = 0; i2 < 40; ++i2) { produce (0); process (0, nullptr); }
+            }
+            else
+            {
+                for (int i2 = 0; i2 < 12000 / bs + 2; ++i2)
+                { produce (0.0f); alignPH.pos += bs; }   // clocks stay in step
+                prodPos = alignPH.pos;                   // (re-sync exactly)
+                if (mode == 2) { produce (0.0f); prodPos -= bs; }
+                EchoJayAlignTestAccess::connect (mainProc, 2, "audio_align.bin",
+                                                 "Align Probe", 48000.0f, "uid-al");
+            }
+            mainProc.borrowEngageBegin ("uid-al", "lease-al", true, true);
+            if (mode == 4)
+                for (int i2 = 0; i2 < 1024 / bs; ++i2)
+                { produce (0.0f); prodPos -= bs; }       // KNOWN +1024 delay:
+                                                         // extra content, the
+                                                         // producer clock says
+                                                         // it never happened
+            auto cycle = [&](float ringImp, float mainImp, float* sink)
+            {
+                if (mode != 1) produce (ringImp);
+                process (mainImp, sink);
+                if (mode == 1) produce (ringImp);
             };
             for (int i2 = 0; i2 < (16384 * 3) / bs; ++i2) cycle (0, 0, nullptr);
             const int capN = ((16384 * 3) / bs) * bs;
@@ -2177,24 +2226,52 @@ int main()
             if (iPass >= 0 && iInj < 0
                 && std::abs (out[(size_t) iPass]) > 1.25f)
                 iInj = iPass;
+            const juce::int64 skew = mainProc.borrowAlignSkew_.load();
             mainProc.borrowRelease (false);
             EchoJayAlignTestAccess::disconnect (mainProc, 2);
             mainProc.setBorrowBudgetActive (false);
+            mainProc.setPlayHead (nullptr);
             juce::File (adir + "audio_align.bin").deleteFile();
-            return (iPass >= 0 && iInj >= 0) ? iInj - iPass : 99999;
+            return { (iPass >= 0 && iInj >= 0) ? iInj - iPass : 99999, skew };
         };
         for (const int bs : { 512, 128, 1024 })
         {
-            const int d0 = alignDelta (bs, 0);
-            std::printf ("  [align bs=%d ideal-phase] delta=%+d\n", bs, d0);
-            check (std::abs (d0) <= 2,
+            const auto a0 = alignDelta (bs, 0);
+            std::printf ("  [align bs=%d ideal] delta=%+d skew=%+lld\n",
+                         bs, a0.delta, (long long) a0.skew);
+            check (std::abs (a0.delta) <= 2,
                    "bs=" + juce::String (bs)
                      + ": the injection lands WITH the passthrough",
-                   "delta=" + juce::String (d0) + " (positive = LATE)");
-            std::printf ("  [align bs=%d main-first] delta=%+d  (defect: expect +%d)\n",
-                         bs, alignDelta (bs, 1), bs);
-            std::printf ("  [align bs=%d producer-ahead] delta=%+d  (defect: expect -%d)\n",
-                         bs, alignDelta (bs, 2), bs);
+                   "delta=" + juce::String (a0.delta) + " (positive = LATE)");
+            check (std::abs (a0.skew) <= 2,
+                   "bs=" + juce::String (bs)
+                     + ": the instrument agrees (skew ~ 0)",
+                   "skew=" + juce::String ((juce::int64) a0.skew));
+            const auto a1 = alignDelta (bs, 1);
+            const auto a2 = alignDelta (bs, 2);
+            std::printf ("  [align bs=%d main-first] delta=%+d skew=%+lld\n",
+                         bs, a1.delta, (long long) a1.skew);
+            std::printf ("  [align bs=%d producer-ahead] delta=%+d skew=%+lld\n",
+                         bs, a2.delta, (long long) a2.skew);
+            const auto a3 = alignDelta (bs, 3);
+            std::printf ("  [align bs=%d FIELD-SEQUENCE] delta=%+d skew=%+lld"
+                         "  (field readout was -1024)\n",
+                         bs, a3.delta, (long long) a3.skew);
+            check (a3.skew == (juce::int64) a3.delta,
+                   "bs=" + juce::String (bs)
+                     + ": instrument == impulse in the FIELD sequence "
+                       "(the sign convention, verified by content)",
+                   "delta=" + juce::String (a3.delta)
+                     + " skew=" + juce::String ((juce::int64) a3.skew));
+            const auto a4 = alignDelta (bs, 4);
+            std::printf ("  [align bs=%d known +1024] delta=%+d skew=%+lld\n",
+                         bs, a4.delta, (long long) a4.skew);
+            check (a4.delta == 1024 && a4.skew == 1024,
+                   "bs=" + juce::String (bs)
+                     + ": a KNOWN +1024 delay reads +1024 on BOTH — "
+                       "positive means LATE, as the comment claims",
+                   "delta=" + juce::String (a4.delta)
+                     + " skew=" + juce::String ((juce::int64) a4.skew));
         }
         mainProc.setBorrowBudgetActive (false);
         // The level arm alone can false-pass on a fresh process (OS pages
