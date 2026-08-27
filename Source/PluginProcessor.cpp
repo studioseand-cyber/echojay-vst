@@ -936,17 +936,41 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                         auto* bhdr = LinkShm::ringHeader(ls.map);
                         if (borrowAlignReset_.exchange(false,
                                 std::memory_order_relaxed))
+                        {
                             borrowRingAgePrev_ = INT64_MIN;
-                        int64_t P = -1;
+                            borrowLastStampSwValid_ = false;
+                        }
+                        int64_t P = -1; bool playing = false;
                         if (auto* ph2 = getPlayHead())
                             if (auto pos2 = ph2->getPosition())
+                            {
+                                playing = pos2->getIsPlaying();
                                 if (pos2->getTimeInSamples().hasValue())
                                     P = *pos2->getTimeInSamples();
+                            }
                         uint32_t sw = 0; int64_t sp = 0;
                         const bool stamped = P >= 0
                             && LinkShm::ringStampRead(ls.map, sw, sp);
+                        // TRANSPORT-STOPPED HOLD (30 Aug 2026 regression):
+                        // a frozen playhead (or a producer whose stamp
+                        // stopped advancing) is a STATE TO HOLD IN, not a
+                        // discontinuity to correct. Without this, stale
+                        // stamps made the measured age shrink every block,
+                        // the drift detector re-seeked to a frozen target,
+                        // and the same cushion of audio replayed forever —
+                        // the field loop on pause. Hold = keep the pad
+                        // (last measured age), consume sequentially, seek
+                        // nothing; the first FRESH stamp after play
+                        // resumes re-seeks once through the jump arm.
+                        const bool staleStamp = stamped
+                            && borrowLastStampSwValid_
+                            && sw == borrowLastStampSw_;
                         int64_t age = -1;
-                        if (stamped)
+                        if (stamped && (! playing || staleStamp))
+                        {
+                            // hold: no seek, no measurement update
+                        }
+                        else if (stamped)
                         {
                             const uint32_t rNow =
                                 LinkShm::loadRelaxed(&bhdr->readIdx);
@@ -975,6 +999,8 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                                     - (uint32_t) behind) - sw));
                             }
                             borrowRingAgePrev_ = age;
+                            borrowLastStampSw_ = sw;
+                            borrowLastStampSwValid_ = true;
                             borrowAlignNoStamps_.store(false,
                                 std::memory_order_relaxed);
                         }
@@ -997,15 +1023,18 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                             borrowAlignNoStamps_.store(true,
                                 std::memory_order_relaxed);
                         }
-                        borrowRingAgeMeasured_.store((int) juce::jlimit(
-                            (int64_t) 0,
-                            (int64_t) kBorrowAlignBudgetFrames, age),
-                            std::memory_order_relaxed);
-                        borrowAlignSkew_.store(
-                            age - (int64_t) kEditCushionFrames,
-                            std::memory_order_relaxed);
-                        borrowAlignSkewValid_.store(true,
-                            std::memory_order_relaxed);
+                        if (age >= 0)   // the HOLD keeps the last values
+                        {
+                            borrowRingAgeMeasured_.store((int) juce::jlimit(
+                                (int64_t) 0,
+                                (int64_t) kBorrowAlignBudgetFrames, age),
+                                std::memory_order_relaxed);
+                            borrowAlignSkew_.store(
+                                age - (int64_t) kEditCushionFrames,
+                                std::memory_order_relaxed);
+                            borrowAlignSkewValid_.store(true,
+                                std::memory_order_relaxed);
+                        }
                         const uint32_t n = LinkShm::ringConsume(ls.map,
                                               borrowBuf_.getWritePointer(0),
                                               borrowBuf_.getWritePointer(1), want);
@@ -1166,8 +1195,14 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         // change: it rides the ramp target only, never padKey, so lifting
         // it never clears the injection history.
         const bool soloSup = borrowSoloSuppressInj_.load(std::memory_order_relaxed);
+        // RAMP IN ONLY AFTER THE MUTE IS CONFIRMED (30 Aug 2026): before
+        // confirmation the channel is still audible in the mix, and a
+        // perfectly aligned injection on top of it is a clean +6dB double
+        // — the volume jump on select. From silence to unity ONCE: the
+        // confirm gate is a mute (ramp target only), never a pad change.
+        const bool muteReady = borrowMuteConfirmedOnce_.load(std::memory_order_relaxed);
         borrowCtxMix_.setTargetValue(ctxNow && injPad >= 0 && ! soloSup
-                                         ? 1.0f : 0.0f);
+                                         && muteReady ? 1.0f : 0.0f);
         const int padKey = (ctxNow && injPad >= 0) ? injPad : -1;
         if (padKey != borrowLastPadKey_)
         {
@@ -1177,7 +1212,7 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             alignPre_.buf.clear();
             borrowCtxMix_.setCurrentAndTargetValue(0.0f);
             borrowCtxMix_.setTargetValue(ctxNow && injPad >= 0 && ! soloSup
-                                             ? 1.0f : 0.0f);
+                                             && muteReady ? 1.0f : 0.0f);
         }
         if ((ctxNow && injPad >= 0)
             || borrowCtxMix_.getCurrentValue() > 0.0001f)
@@ -1854,6 +1889,8 @@ void EchoJayProcessor::borrowTick()
         if (freshRead)
             borrowMuteUnconfirmedTicks_ = confirmed
                 ? 0 : borrowMuteUnconfirmedTicks_ + 1;
+        if (freshRead && confirmed)
+            borrowMuteConfirmedOnce_.store(true, std::memory_order_relaxed);
         if (freshRead && ! confirmed && borrowMuteUnconfirmedTicks_ >= 3)
         {
             borrowInContextOk_.store(false, std::memory_order_relaxed);
@@ -2076,6 +2113,7 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
     borrowSession_.ringSlot.store(ringSlot, std::memory_order_relaxed);
     borrowAlignReset_.store(true, std::memory_order_relaxed);
     borrowRingAgeMeasured_.store(-1, std::memory_order_relaxed);
+    borrowMuteConfirmedOnce_.store(false, std::memory_order_relaxed);
     borrowRingLostTicks_ = 0;
     borrowRouteFlip_.store(false, std::memory_order_relaxed);   // default per channel type
     borrowSession_.active.store(true, std::memory_order_relaxed);
@@ -2141,6 +2179,7 @@ void EchoJayProcessor::borrowRelease(bool keepEdits)
     borrowSession_.ringSlot.store(-1, std::memory_order_relaxed);
     borrowAlignReset_.store(true, std::memory_order_relaxed);
     borrowRingAgeMeasured_.store(-1, std::memory_order_relaxed);
+    borrowMuteConfirmedOnce_.store(false, std::memory_order_relaxed);
     if (borrowHost_) borrowHost_->releaseBorrowToPool();
     EchoJay_NSLog(("EJBorrow: released uid=" + uid
                    + " (lease deleted; Link restores its own bypasses)").toRawUTF8());

@@ -627,6 +627,13 @@ public:
     std::atomic<bool> borrowAlignReset_ { true };
     std::atomic<bool> borrowAlignNoStamps_ { false };
     int64_t borrowRingAgePrev_ = INT64_MIN;   // audio-thread scratch
+    uint32_t borrowLastStampSw_ = 0;          // audio-thread scratch
+    bool     borrowLastStampSwValid_ = false;
+    // The injection ramps in only after the Link's mute is CONFIRMED
+    // (30 Aug 2026: with alignment exact, the mute-confirm window turned
+    // from flange into a clean +6dB double on select). Set by borrowTick
+    // from the sidecar's muteEngaged; cleared with the session.
+    std::atomic<bool> borrowMuteConfirmedOnce_ { false };
     bool soloSuppressPrev_ = false;   // banner-transition detector
     // The injection gain this instant (the honorary strip's lamp) — public
     // so the gate asserts the BEHAVIOUR, not just the branch.

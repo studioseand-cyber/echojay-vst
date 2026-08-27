@@ -1693,6 +1693,9 @@ int main()
         mainProc.setBorrowBudgetActive (true);
         mainProc.prepareToPlay (48000.0, 512);
         mainProc.borrowEngageBegin ("uid-lvl", "lease-lvl", true, true);
+        // The rig plays the Link's confirmation (the injection ramps in
+        // only after the sidecar confirms the mute - 30 Aug gate).
+        mainProc.borrowMuteConfirmedOnce_.store (true, std::memory_order_relaxed);
         check (mainProc.borrowInContextOk_.load(), "level arm: ctx engaged");
         {
             juce::AudioBuffer<float> blk (2, 512);
@@ -2042,6 +2045,7 @@ int main()
                 mainProc.setBorrowBudgetActive (true);
                 sidecarMute (false, false);          // clean slate
                 mainProc.borrowEngageBegin (ruid, "lease-ms2", true, true);
+                mainProc.borrowMuteConfirmedOnce_.store (true, std::memory_order_relaxed);
                 mainProc.refreshLinkRegistry();      // suppress recomputed
                 runBlocks (30);
                 check (mainProc.borrowCtxMixNow() > 0.99f,
@@ -2134,11 +2138,12 @@ int main()
         struct TestPlayHead : juce::AudioPlayHead
         {
             juce::int64 pos = 0;
+            bool playing = true;   // false = parked: position frozen too
             juce::Optional<juce::AudioPlayHead::PositionInfo> getPosition() const override
             {
                 juce::AudioPlayHead::PositionInfo p;
                 p.setTimeInSamples (pos);
-                p.setIsPlaying (true);
+                p.setIsPlaying (playing);
                 return p;
             }
         };
@@ -2200,6 +2205,7 @@ int main()
                                                  "Align Probe", 48000.0f, "uid-al");
             }
             mainProc.borrowEngageBegin ("uid-al", "lease-al", true, true);
+            mainProc.borrowMuteConfirmedOnce_.store (true, std::memory_order_relaxed);
             if (mode == 4)
                 for (int i2 = 0; i2 < 1024 / bs; ++i2)
                 { produce (0.0f); prodPos -= bs; }       // KNOWN +1024 delay:
@@ -2294,6 +2300,124 @@ int main()
                        "(the -20903 excursion's shape)",
                    "delta=" + juce::String (a5.delta)
                      + " skew=" + juce::String ((juce::int64) a5.skew));
+        }
+
+        // ---- 30 Aug REGRESSIONS from the stamp seek, gated as LEVEL ----
+        // The second runaway on this path; the first (uninitialised
+        // buffer) arrived because there was no level assertion. There is
+        // one now — extended to STOPPED TRANSPORT and ENGAGE, as ordered.
+        std::printf ("== §8 stopped-transport hold + engage transient ==\n");
+        {
+            const int bs = 512;
+            int errA = 0;
+            const juce::String adir = LinkShm::resolveDir (errA);
+            mainProc.setBorrowBudgetActive (true);
+            mainProc.prepareToPlay (48000.0, bs);
+            mainProc.setPlayHead (&alignPH);
+            alignPH.pos = 0; alignPH.playing = true;
+            juce::int64 prodPos = 0;
+            int pfd = -1, perr = 0;
+            void* pm = LinkShm::openRingProducer (adir, "audio_align.bin",
+                                                  48000.0f, 2, pfd, perr);
+            check (pm != nullptr, "regression rig: ring mapped");
+            long phase = 0;
+            std::vector<float> sL ((size_t) bs), sR ((size_t) bs);
+            auto produceSine = [&](juce::int64 stampPos)
+            {
+                for (int i = 0; i < bs; ++i)
+                    sL[(size_t) i] = sR[(size_t) i]
+                        = 0.5f * std::sin (0.03f * (float) (phase + i));
+                const float* p[2] = { sL.data(), sR.data() };
+                LinkShm::ringStampPublish (pm,
+                    LinkShm::loadRelaxed (&LinkShm::ringHeader (pm)->writeIdx),
+                    stampPos);
+                LinkShm::ringProduce (pm, p, 2, bs);
+            };
+            juce::AudioBuffer<float> blk (2, bs);
+            juce::MidiBuffer midi;
+            float peak = 0.0f;
+            auto processSine = [&]
+            {
+                for (int i = 0; i < bs; ++i)
+                {
+                    const float v = 0.5f * std::sin (0.03f * (float) (phase + i));
+                    blk.setSample (0, i, v);
+                    blk.setSample (1, i, v);
+                }
+                phase += bs;
+                mainProc.processBlock (blk, midi);
+                if (alignPH.playing) alignPH.pos += bs;
+                for (int i = 0; i < bs; ++i)
+                    peak = juce::jmax (peak,
+                                       std::abs (blk.getSample (0, i)));
+            };
+            EchoJayAlignTestAccess::connect (mainProc, 2, "audio_align.bin",
+                                             "Align Probe", 48000.0f, "uid-al");
+            mainProc.borrowEngageBegin ("uid-al", "lease-rg", true, true);
+            // ENGAGE TRANSIENT: no confirmation yet — the injection must
+            // hold at SILENCE (the +6dB double lived in this window).
+            peak = 0.0f;
+            for (int c = 0; c < 60; ++c)
+            { produceSine (prodPos); prodPos += bs; processSine(); }
+            check (mainProc.borrowCtxMixNow() < 0.001f,
+                   "before the mute confirms, the injection holds at silence",
+                   juce::String (mainProc.borrowCtxMixNow(), 3));
+            check (peak <= 0.55f,
+                   "and the output is the passthrough alone",
+                   juce::String (peak, 3));
+            mainProc.borrowMuteConfirmedOnce_.store (true, std::memory_order_relaxed);
+            peak = 0.0f;
+            for (int c = 0; c < 120; ++c)
+            { produceSine (prodPos); prodPos += bs; processSine(); }
+            check (mainProc.borrowCtxMixNow() > 0.99f,
+                   "after confirmation it ramps to unity, once",
+                   juce::String (mainProc.borrowCtxMixNow(), 3));
+            check (peak <= 1.03f,
+                   "and never exceeds unity through the ramp",
+                   juce::String (peak, 3));
+            // STOPPED TRANSPORT: playhead parked, producer keeps writing
+            // with a parked stamp — the field loop's exact shape. The
+            // seek must HOLD: bounded output, NO growth in the measured
+            // age over 300 blocks.
+            const int ageAtStop = mainProc.borrowRingAgeMeasured_.load();
+            alignPH.playing = false;
+            peak = 0.0f;
+            // The field shape: stopped, the Link KEEPS WRITING but STOPS
+            // STAMPING ("no host position this block = no stamp") — the
+            // stale mapping is what made the age shrink every block and
+            // the detector chase a frozen target: the loop.
+            auto produceUnstamped = [&]
+            {
+                for (int i = 0; i < bs; ++i)
+                    sL[(size_t) i] = sR[(size_t) i]
+                        = 0.5f * std::sin (0.03f * (float) (phase + i));
+                const float* p[2] = { sL.data(), sR.data() };
+                LinkShm::ringProduce (pm, p, 2, bs);
+            };
+            for (int c = 0; c < 300; ++c)
+            { produceUnstamped(); processSine(); }
+            check (peak <= 1.03f,
+                   "STOPPED: output stays bounded over 300 blocks",
+                   juce::String (peak, 3));
+            check (mainProc.borrowRingAgeMeasured_.load() == ageAtStop,
+                   "STOPPED: the measured age HOLDS - no growth, no chase",
+                   juce::String (mainProc.borrowRingAgeMeasured_.load())
+                     + " vs " + juce::String (ageAtStop));
+            // RESUME: the first fresh stamp re-seeks once and re-aligns.
+            alignPH.playing = true;
+            peak = 0.0f;
+            for (int c = 0; c < 120; ++c)
+            { produceSine (prodPos); prodPos += bs; processSine(); }
+            check (std::abs (mainProc.borrowRingAgeMeasured_.load() - 1024) <= 2,
+                   "RESUME: one re-seek lands the age back on target",
+                   juce::String (mainProc.borrowRingAgeMeasured_.load()));
+            check (peak <= 1.03f, "and the resume itself stays bounded",
+                   juce::String (peak, 3));
+            mainProc.borrowRelease (false);
+            EchoJayAlignTestAccess::disconnect (mainProc, 2);
+            mainProc.setBorrowBudgetActive (false);
+            mainProc.setPlayHead (nullptr);
+            juce::File (adir + "audio_align.bin").deleteFile();
         }
         mainProc.setBorrowBudgetActive (false);
         // The level arm alone can false-pass on a fresh process (OS pages
