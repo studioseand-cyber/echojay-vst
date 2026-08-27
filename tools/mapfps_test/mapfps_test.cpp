@@ -29,6 +29,7 @@
 #include "EJDialMissRows.h"      // A9 step 1: header-inline, the shipped row set
 #include "EJSettingsClip.h"      // 6a: header-inline, the shipped model-side clip
 #include "EJParamReads.h"        // 6c §8: header-inline, the shipped read serialiser
+#include "EJRefusalLine.h"      // refusal bubble: header-inline, the shipped composer
 #include "EchoJayParamMaps.h"
 #include "EchoJayParamApply.h"
 #include "EchoJayHistoryTrim.h"
@@ -2160,6 +2161,107 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             std::stringstream sap; sap << fap.rdbuf();
             check (codeOnly (juce::String (sap.str())).contains ("EJFallback: lookup 200, "),
                    "fd PIN4: a SUCCESSFUL lookup logs too, not only a failure");
+        }
+    }
+
+    // ---- refusal remedy: the clause only where the toggle governs ---------
+    // The server's 558fc1d split one refusal sentence into three cases. The
+    // Settings clause is a remedy for exactly two of them; on an ownership
+    // refusal it offered a toggle that cannot make the user own a plugin.
+    {
+        std::cout << "refusal remedy clause:\n";
+        const juce::String kOwned  = "it is not in this project's plugin list, so EchoJay cannot add it";
+        const juce::String kNoMap  = "auto-dial mode is on and EchoJay has no settings map for this plugin";
+        const juce::String kUnres  = "EchoJay has a settings map for this plugin under a different spelling"
+                                     " of its name and will not guess which";
+        const juce::String kClause = " Turn off \"only suggest plugins EchoJay can auto-dial\" in Settings"
+                                     " if you want it anyway.";
+        const juce::String kClauseN = " Turn off \"only suggest plugins EchoJay can auto-dial\" in Settings"
+                                      " if you want them anyway.";
+
+        // PIN 1 — AN OWNERSHIP REFUSAL RENDERS WITHOUT THE CLAUSE. This is the
+        // pin the change exists for.
+        {
+            const auto line = echojay::refusalLineFor ({ { "Fresh Air", kOwned, "not_owned" } });
+            check (line == "Fresh Air was not added: " + kOwned + ".",
+                   "refusal PIN1: the ownership line is the server's sentence and stops there");
+            check (! line.contains ("Turn off"),
+                   "refusal PIN1: and carries NO Settings remedy");
+        }
+
+        // PIN 2 — A NO-MAP REFUSAL RENDERS WITH IT. The case the sentence was
+        // always true for, and the one the toggle really governs.
+        {
+            const auto line = echojay::refusalLineFor ({ { "Fresh Air", kNoMap, "no_map" } });
+            check (line == "Fresh Air was not added: " + kNoMap + "." + kClause,
+                   "refusal PIN2: the no-map line keeps the Settings remedy");
+        }
+
+        // PIN 3 — UNRESOLVED IS GOVERNED TOO. A map exists; turning the filter
+        // off does put the plugin back on the table.
+        check (echojay::refusalLineFor ({ { "Auto-Tune EFX", kUnres, "unresolved" } })
+                 .endsWith (kClause),
+               "refusal PIN3: a spelling refusal keeps the remedy");
+
+        // PIN 4 — AN OLDER SERVER SENDS NO CASE, and its one sentence was the
+        // no_map one. Absent must not be read as unknown, or every refusal from
+        // such a server loses a remedy that was correct.
+        check (echojay::refusalLineFor ({ { "Fresh Air", kNoMap, "" } }).endsWith (kClause),
+               "refusal PIN4: an absent case still gets the remedy");
+
+        // PIN 5 — MIXED TURN. The clause is per TURN, because one sentence
+        // covers every name; it rides when at least one refusal is governed,
+        // which mirrors the server's some(). Plural wording, and the per-name
+        // branch, because the reasons differ.
+        {
+            const auto line = echojay::refusalLineFor ({ { "Fresh Air", kOwned, "not_owned" },
+                                                         { "Pro-Q 3",   kNoMap, "no_map" } });
+            check (line == "Fresh Air (" + kOwned + "); Pro-Q 3 (" + kNoMap + ")"
+                           " were not added." + kClauseN,
+                   "refusal PIN5: mixed turn names each reason and keeps the remedy once");
+        }
+
+        // PIN 6 — ALL-OWNERSHIP PLURAL still suppresses. The bug reached the
+        // plural wording too, so the plural clause needs its own subject.
+        {
+            const auto line = echojay::refusalLineFor ({ { "Fresh Air", kOwned, "not_owned" },
+                                                         { "Sausage Fattener", kOwned, "not_owned" } });
+            check (line == "Fresh Air, Sausage Fattener were not added: " + kOwned + ".",
+                   "refusal PIN6: two unowned plugins, one sentence, no remedy");
+        }
+
+        // PIN 7 — THE CLIENT NEVER AUTHORS A REASON. The case decides the
+        // clause; the sentence is the server's, copied through untouched.
+        {
+            std::ifstream fr ("Source/EJRefusalLine.h");
+            std::stringstream sr; sr << fr.rdbuf();
+            const auto rl = codeOnly (juce::String (sr.str()));
+            check (rl.isNotEmpty(), "refusal PIN7: found the composer header");
+            check (! rl.contains ("no settings map") && ! rl.contains ("plugin list"),
+                   "refusal PIN7: the client holds no copy of the server's sentences");
+        }
+
+        // PIN 8 — NOTHING TO SAY RENDERS NOTHING, and a nameless op is skipped
+        // rather than rendering a bare reason.
+        check (echojay::refusalLineFor ({}).isEmpty(),
+               "refusal PIN8: no refusals, no bubble");
+        check (echojay::refusalLineFor ({ { "", kNoMap, "no_map" } }).isEmpty(),
+               "refusal PIN8: a nameless op is not a sentence");
+
+        // PIN 9 — THE EDITOR READS THE CASE OFF THE WIRE AND USES THE COMPOSER.
+        // Pins 1-8 call refusalLineFor directly and would all stay green with
+        // announceRefusedOps still composing its own line, which is the hole
+        // the server's own 558fc1d pin 10 names.
+        {
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se; se << fe.rdbuf();
+            const auto ed = codeOnly (juce::String (se.str()));
+            check (ed.contains ("r->getProperty(\"case\").toString().trim()"),
+                   "refusal PIN9: announceRefusedOps reads the case off the wire");
+            check (ed.contains ("echojay::refusalLineFor(ops)"),
+                   "refusal PIN9: and renders through the pinned composer");
+            check (! ed.contains ("line += one ? \" Turn off"),
+                   "refusal PIN9: the unconditional append is gone");
         }
     }
 

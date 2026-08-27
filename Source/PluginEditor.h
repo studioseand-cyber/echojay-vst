@@ -16,6 +16,7 @@
 #include "DashboardTab.h"
 #include "EJDialTally.h"
 #include "EJDialMissRows.h"
+#include "EJRefusalLine.h"   // the refusal bubble sentence + its remedy rule
 
 // Stage 2: the lazy webview Dashboard surface. Full type in DashboardWeb.h,
 // included from PluginEditor.cpp; the header only needs the incomplete type for

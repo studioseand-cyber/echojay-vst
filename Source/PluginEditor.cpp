@@ -21646,7 +21646,11 @@ void EchoJayEditor::announceRefusedOps(const juce::String& chainJson,
     // rather than restating it keeps one author for the sentence: a client
     // paraphrase would go stale silently if the server's wording changed,
     // which is the shape this file keeps being bitten by.
-    juce::StringArray names, reasons, perName;
+    // The op's "case" rides alongside its reason since the server's 558fc1d:
+    // not_owned | no_map | unresolved. It is read but never rendered -- the
+    // sentence stays the server's -- and it decides one thing only, whether the
+    // Settings remedy is true for this turn. See EJRefusalLine.h.
+    std::vector<echojay::RefusedOp> ops;
     auto collect = [&](const juce::String& json)
     {
         if (json.isEmpty()) return;
@@ -21656,34 +21660,15 @@ void EchoJayEditor::announceRefusedOps(const juce::String& chainJson,
         if (auto* arr = o->getProperty("refused_ops").getArray())
             for (auto& rv : *arr)
                 if (auto* r = rv.getDynamicObject())
-                {
-                    const auto nm = r->getProperty("name").toString().trim();
-                    if (nm.isEmpty() || names.contains(nm)) continue;
-                    const auto why = r->getProperty("reason").toString().trim();
-                    names.add(nm);
-                    reasons.addIfNotAlreadyThere(why);
-                    perName.add(why.isEmpty() ? nm : nm + " (" + why + ")");
-                }
+                    ops.push_back({ r->getProperty("name").toString().trim(),
+                                    r->getProperty("reason").toString().trim(),
+                                    r->getProperty("case").toString().trim() });
     };
     collect(chainJson);
     collect(editJson);
-    if (names.isEmpty()) return;
 
-    const bool one = names.size() == 1;
-    juce::String line;
-    if (reasons.size() == 1 && reasons[0].isNotEmpty())
-        // The only shape the server emits today: one reason for all of them,
-        // so it reads as a sentence instead of repeating itself per name.
-        line = names.joinIntoString(", ") + (one ? " was not added: " : " were not added: ")
-             + reasons[0] + ".";
-    else
-        // Mixed or missing reasons: each name carries its own, the same
-        // fallback the dropped_controls copy uses.
-        line = perName.joinIntoString("; ") + (one ? " was not added." : " were not added.");
-    line += one ? " Turn off \"only suggest plugins EchoJay can auto-dial\" in Settings"
-                  " if you want it anyway."
-                : " Turn off \"only suggest plugins EchoJay can auto-dial\" in Settings"
-                  " if you want them anyway.";
+    const auto line = echojay::refusalLineFor(ops);
+    if (line.isEmpty()) return;
     appendLocalResultBubble(line);
 }
 
