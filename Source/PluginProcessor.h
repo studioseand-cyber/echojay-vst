@@ -616,6 +616,17 @@ public:
     // Written by the drain (audio thread), logged at 1Hz by borrowTick.
     std::atomic<int64_t> borrowAlignSkew_ { 0 };
     std::atomic<bool>    borrowAlignSkewValid_ { false };
+    // Stamp-based alignment (29 Aug 2026 ruling): the injection's age is a
+    // MEASURED FACT — the drain derives it from the Link's ring stamps and
+    // the pad is computed from it, never from an assumed cushion (a
+    // constant true on paper and absent in the ring is how the -1024
+    // shipped). -1 = no measurement yet this session. borrowRingAgePrev_
+    // is audio-thread scratch for the relocate/drift detector;
+    // borrowAlignReset_ reseeds it across engages from the message thread.
+    std::atomic<int>  borrowRingAgeMeasured_ { -1 };
+    std::atomic<bool> borrowAlignReset_ { true };
+    std::atomic<bool> borrowAlignNoStamps_ { false };
+    int64_t borrowRingAgePrev_ = INT64_MIN;   // audio-thread scratch
     bool soloSuppressPrev_ = false;   // banner-transition detector
     // The injection gain this instant (the honorary strip's lamp) — public
     // so the gate asserts the BEHAVIOUR, not just the branch.

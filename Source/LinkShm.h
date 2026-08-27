@@ -675,6 +675,16 @@ inline uint32_t ringConsume(void* map, float* outL, float* outR, int numFrames)
 /// than a policy baked in here. The seek only ever moves FORWARD (backward
 /// would re-read frames the producer may already be overwriting) and never
 /// past writeIdx.
+/// Set the read cursor to an ABSOLUTE ring index (stamp-based alignment
+/// seek, 29 Aug 2026). Bidirectional on purpose: against a pre-drained
+/// ring the cushion must be BUILT by stepping back into content the ring
+/// still holds (capacity 65536 frames), which a forward trim can never
+/// do. Caller clamps into [write - held, write]; single-reader ring.
+inline void ringSeekTo(void* map, uint32_t readIdx)
+{
+    storeRelease(&ringHeader(map)->readIdx, readIdx);
+}
+
 inline uint32_t ringSeekForward(void* map, uint32_t targetBacklog)
 {
     auto*          hdr = ringHeader(map);

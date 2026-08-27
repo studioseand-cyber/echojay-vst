@@ -2120,15 +2120,17 @@ int main()
         //  0 prefilled, ideal phase (cushion established)   -> delta 0
         //  1 main-first cycles                              -> prints
         //  2 producer one block ahead at the seek           -> prints
-        //  3 THE FIELD SEQUENCE: ring connected and being
-        //    discard-drained BEFORE engage (backlog ~0), so the trim-only
-        //    engage seek is a NO-OP and the cushion is never built — the
-        //    pad still subtracts it: the double-count. 29 Aug field
-        //    readout: steady skew -1024.                    -> prints
-        //  4 prefilled + 1024 EXTRA frames after engage (a KNOWN +1024
-        //    content delay)                                 -> +1024/+1024
-        // GATED: mode 0 aligned; instrument==impulse in modes 3 and 4
-        // (the instrument tells the truth in both directions).
+        //  3 THE FIELD SEQUENCE: ring connected and discard-drained
+        //    BEFORE engage (backlog ~0). Pre-fix this read -1024/-1024
+        //    (the trim-only seek could not build the cushion); the
+        //    stamp-based seek steps BACK into held content -> 0/0.
+        //  4 prefilled + 1024 EXTRA frames after engage (a real +1024
+        //    content shift): the first stamped drain seeks it away -> 0/0.
+        //  5 RELOCATE mid-session (both clocks jump +20000, the -20903
+        //    excursion's shape): the discontinuity detector re-seeks and
+        //    the impulse after the jump lands aligned      -> 0/0.
+        // GATED: modes 0, 3, 4 and 5 all aligned AND instrument-agreed —
+        // the age is a measured fact and the pad is computed from it.
         struct TestPlayHead : juce::AudioPlayHead
         {
             juce::int64 pos = 0;
@@ -2210,7 +2212,15 @@ int main()
                 process (mainImp, sink);
                 if (mode == 1) produce (ringImp);
             };
-            for (int i2 = 0; i2 < (16384 * 3) / bs; ++i2) cycle (0, 0, nullptr);
+            for (int i2 = 0; i2 < (16384 * 2) / bs; ++i2) cycle (0, 0, nullptr);
+            if (mode == 5)
+            {
+                // The relocate: both clocks jump together, as a transport
+                // reposition moves every plugin's playhead at once.
+                alignPH.pos += 20000;
+                prodPos     += 20000;
+            }
+            for (int i2 = 0; i2 < (16384 * 1) / bs; ++i2) cycle (0, 0, nullptr);
             const int capN = ((16384 * 3) / bs) * bs;
             std::vector<float> out ((size_t) capN, 0.0f);
             int w = 0;
@@ -2255,23 +2265,35 @@ int main()
                          bs, a2.delta, (long long) a2.skew);
             const auto a3 = alignDelta (bs, 3);
             std::printf ("  [align bs=%d FIELD-SEQUENCE] delta=%+d skew=%+lld"
-                         "  (field readout was -1024)\n",
+                         "  (pre-fix this read -1024/-1024)\n",
                          bs, a3.delta, (long long) a3.skew);
-            check (a3.skew == (juce::int64) a3.delta,
+            check (std::abs (a3.delta) <= 2 && std::abs (a3.skew) <= 2,
                    "bs=" + juce::String (bs)
-                     + ": instrument == impulse in the FIELD sequence "
-                       "(the sign convention, verified by content)",
+                     + ": THE FIELD SEQUENCE is aligned — the seek builds "
+                       "the cushion the trim could not",
                    "delta=" + juce::String (a3.delta)
                      + " skew=" + juce::String ((juce::int64) a3.skew));
+            check (a3.skew == (juce::int64) a3.delta,
+                   "bs=" + juce::String (bs)
+                     + ": and instrument == impulse holds at 0/0");
             const auto a4 = alignDelta (bs, 4);
             std::printf ("  [align bs=%d known +1024] delta=%+d skew=%+lld\n",
                          bs, a4.delta, (long long) a4.skew);
-            check (a4.delta == 1024 && a4.skew == 1024,
+            check (std::abs (a4.delta) <= 2 && std::abs (a4.skew) <= 2,
                    "bs=" + juce::String (bs)
-                     + ": a KNOWN +1024 delay reads +1024 on BOTH — "
-                       "positive means LATE, as the comment claims",
+                     + ": a real +1024 content shift is SEEN and ABSORBED "
+                       "by the measured-age pad",
                    "delta=" + juce::String (a4.delta)
                      + " skew=" + juce::String ((juce::int64) a4.skew));
+            const auto a5 = alignDelta (bs, 5);
+            std::printf ("  [align bs=%d relocate +20000] delta=%+d skew=%+lld\n",
+                         bs, a5.delta, (long long) a5.skew);
+            check (std::abs (a5.delta) <= 2 && std::abs (a5.skew) <= 2,
+                   "bs=" + juce::String (bs)
+                     + ": a mid-session relocate re-seeks and heals "
+                       "(the -20903 excursion's shape)",
+                   "delta=" + juce::String (a5.delta)
+                     + " skew=" + juce::String ((juce::int64) a5.skew));
         }
         mainProc.setBorrowBudgetActive (false);
         // The level arm alone can false-pass on a fresh process (OS pages

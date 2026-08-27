@@ -922,33 +922,93 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                         if (LinkShm::loadAcquire(&hdr->writeIdx)
                               - LinkShm::loadRelaxed(&hdr->readIdx) > kEditReseekTrip)
                             LinkShm::ringSeekForward(ls.map, kEditCushionFrames);
-                        const uint32_t rIdxPre = LinkShm::loadRelaxed(
-                            &LinkShm::ringHeader(ls.map)->readIdx);
+                        // STAMP-BASED ALIGNMENT (29 Aug 2026 ruling). The
+                        // Link stamps ring-index <-> host-position every
+                        // block; the seek targets CONTENT (position
+                        // P - cushion) and the measured age feeds the pad.
+                        // The -1024 field defect: the discard arm kept the
+                        // backlog ~0, the trim-only seek was a no-op, and
+                        // the pad subtracted a cushion the ring never held.
+                        // A seek that can step BACK into held content
+                        // builds the cushion the trim could not; relocate
+                        // discontinuities (the -20903 excursion) re-seek by
+                        // the same detector.
+                        auto* bhdr = LinkShm::ringHeader(ls.map);
+                        if (borrowAlignReset_.exchange(false,
+                                std::memory_order_relaxed))
+                            borrowRingAgePrev_ = INT64_MIN;
+                        int64_t P = -1;
+                        if (auto* ph2 = getPlayHead())
+                            if (auto pos2 = ph2->getPosition())
+                                if (pos2->getTimeInSamples().hasValue())
+                                    P = *pos2->getTimeInSamples();
+                        uint32_t sw = 0; int64_t sp = 0;
+                        const bool stamped = P >= 0
+                            && LinkShm::ringStampRead(ls.map, sw, sp);
+                        int64_t age = -1;
+                        if (stamped)
+                        {
+                            const uint32_t rNow =
+                                LinkShm::loadRelaxed(&bhdr->readIdx);
+                            age = P - (sp + (int32_t)(rNow - sw));
+                            const int64_t maxAge =
+                                (int64_t) kBorrowAlignBudgetFrames
+                                - borrowChainLat_.load(std::memory_order_relaxed);
+                            const bool jump =
+                                borrowRingAgePrev_ != INT64_MIN
+                                && std::abs(age - borrowRingAgePrev_)
+                                       > (int64_t) want;
+                            if (borrowRingAgePrev_ == INT64_MIN || jump
+                                || age < (int64_t) want || age > maxAge)
+                            {
+                                const uint32_t w2 =
+                                    LinkShm::loadAcquire(&bhdr->writeIdx);
+                                const uint32_t tgtU = (uint32_t)((int64_t) sw
+                                    + (P - (int64_t) kEditCushionFrames - sp));
+                                int64_t behind = (int32_t)(w2 - tgtU);
+                                behind = juce::jlimit((int64_t) 0,
+                                    (int64_t)(kLinkRingFrames - 8192),
+                                    behind);
+                                LinkShm::ringSeekTo(ls.map,
+                                    w2 - (uint32_t) behind);
+                                age = P - (sp + (int32_t)((w2
+                                    - (uint32_t) behind) - sw));
+                            }
+                            borrowRingAgePrev_ = age;
+                            borrowAlignNoStamps_.store(false,
+                                std::memory_order_relaxed);
+                        }
+                        else
+                        {
+                            // NO STAMPS (old Link, or no transport
+                            // position): the cushion term is what the ring
+                            // ACTUALLY holds — the backlog, accurate to
+                            // one block — and borrowTick SAYS so at 1Hz.
+                            // Never a silent constant.
+                            if (LinkShm::loadAcquire(&bhdr->writeIdx)
+                                  - LinkShm::loadRelaxed(&bhdr->readIdx)
+                                      > kEditReseekTrip)
+                                LinkShm::ringSeekForward(ls.map,
+                                                         kEditCushionFrames);
+                            age = (int64_t)(int32_t)(
+                                LinkShm::loadAcquire(&bhdr->writeIdx)
+                                - LinkShm::loadRelaxed(&bhdr->readIdx));
+                            borrowRingAgePrev_ = INT64_MIN;
+                            borrowAlignNoStamps_.store(true,
+                                std::memory_order_relaxed);
+                        }
+                        borrowRingAgeMeasured_.store((int) juce::jlimit(
+                            (int64_t) 0,
+                            (int64_t) kBorrowAlignBudgetFrames, age),
+                            std::memory_order_relaxed);
+                        borrowAlignSkew_.store(
+                            age - (int64_t) kEditCushionFrames,
+                            std::memory_order_relaxed);
+                        borrowAlignSkewValid_.store(true,
+                            std::memory_order_relaxed);
                         const uint32_t n = LinkShm::ringConsume(ls.map,
                                               borrowBuf_.getWritePointer(0),
                                               borrowBuf_.getWritePointer(1), want);
-                        // §8 alignment trace: the consumed content's host
-                        // position (from the Link's stamp) against ours
-                        // minus the cushion the pad arithmetic assumes.
-                        {
-                            uint32_t sw = 0; int64_t sp = 0;
-                            if (auto* ph2 = getPlayHead())
-                                if (auto pos2 = ph2->getPosition())
-                                    if (pos2->getTimeInSamples().hasValue()
-                                        && LinkShm::ringStampRead(ls.map, sw, sp))
-                                    {
-                                        const int64_t content = sp
-                                            + (int32_t)(rIdxPre - sw);
-                                        const int64_t skew =
-                                            (*pos2->getTimeInSamples()
-                                             - (int64_t) kEditCushionFrames)
-                                            - content;
-                                        borrowAlignSkew_.store(skew,
-                                            std::memory_order_relaxed);
-                                        borrowAlignSkewValid_.store(true,
-                                            std::memory_order_relaxed);
-                                    }
-                        }
                         ls.framesRead.fetch_add((int64_t) n, std::memory_order_relaxed);
                         for (int ch = 0; ch < 2; ++ch)
                             if ((int) n < want)
@@ -1090,7 +1150,15 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     {
         alignPost_.process(buffer, kBorrowAlignBudgetFrames);
         const int ctxChainLat = borrowChainLat_.load(std::memory_order_relaxed);
-        const int injPad = alignPad(ctxChainLat);
+        // THE AGE IS A MEASURED FACT (29 Aug ruling): the pad is computed
+        // from what the ring actually delivered this block, never from an
+        // assumed cushion. alignPad's assumed-cushion form survives ONLY
+        // as the engage/chain-change capability check and as the estimate
+        // before the first drain of a session.
+        const int ringAge = borrowRingAgeMeasured_.load(std::memory_order_relaxed);
+        const int injPad = ringAge >= 0
+            ? kBorrowAlignBudgetFrames - ringAge - ctxChainLat
+            : alignPad(ctxChainLat);
         // THE HONORARY STRIP (MUTE_SOLO_SPEC §6.1): the injection stands in
         // for the edited rack's output, so it follows the solo fabric as if
         // it were that rack's strip — audible iff the solo set is empty or
@@ -1801,11 +1869,18 @@ void EchoJayProcessor::borrowTick()
     else borrowMuteUnconfirmedTicks_ = 0;
 
     if (!borrowActive()) return;
-    // §8 alignment trace, 1Hz: the field number the harness cannot see.
+    // §8 alignment trace, 1Hz: measured ring age vs the seek target. The
+    // pad absorbs any deviation, so this is a health line, not an error —
+    // except the no-stamp fallback, which is SAID rather than silent.
     if (borrowAlignSkewValid_.exchange(false, std::memory_order_relaxed))
-        EchoJay_NSLog(("EJAlign(main): content skew="
-            + juce::String((juce::int64) borrowAlignSkew_.load(std::memory_order_relaxed))
-            + " smp vs cushion (positive = edit LATE)").toRawUTF8());
+        EchoJay_NSLog(("EJAlign(main): ring age="
+            + juce::String((juce::int64) kEditCushionFrames
+                + borrowAlignSkew_.load(std::memory_order_relaxed))
+            + " smp (target " + juce::String((int) kEditCushionFrames) + ")"
+            + (borrowAlignNoStamps_.load(std::memory_order_relaxed)
+                 ? juce::String(" NO STAMPS - aligned by backlog, one-block "
+                                "accuracy; update this Link for exact")
+                 : juce::String())).toRawUTF8());
     renewBorrowLease();
 
     // RING RE-BIND, every tick (hands-on finding #3): the slot index bound
@@ -1999,6 +2074,8 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
             LinkShm::ringSeekForward(activeLinkSlots[ringSlot].map, kEditCushionFrames);
     }
     borrowSession_.ringSlot.store(ringSlot, std::memory_order_relaxed);
+    borrowAlignReset_.store(true, std::memory_order_relaxed);
+    borrowRingAgeMeasured_.store(-1, std::memory_order_relaxed);
     borrowRingLostTicks_ = 0;
     borrowRouteFlip_.store(false, std::memory_order_relaxed);   // default per channel type
     borrowSession_.active.store(true, std::memory_order_relaxed);
@@ -2062,6 +2139,8 @@ void EchoJayProcessor::borrowRelease(bool keepEdits)
     borrowSession_.uid.clear();
     borrowSession_.leaseId.clear();
     borrowSession_.ringSlot.store(-1, std::memory_order_relaxed);
+    borrowAlignReset_.store(true, std::memory_order_relaxed);
+    borrowRingAgeMeasured_.store(-1, std::memory_order_relaxed);
     if (borrowHost_) borrowHost_->releaseBorrowToPool();
     EchoJay_NSLog(("EJBorrow: released uid=" + uid
                    + " (lease deleted; Link restores its own bypasses)").toRawUTF8());

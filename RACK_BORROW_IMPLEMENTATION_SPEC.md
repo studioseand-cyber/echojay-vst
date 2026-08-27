@@ -458,7 +458,29 @@ rather than argued against:
   expiry, exactly as it un-bypasses the rack. No second restore path, no
   mute that can outlive its lease.
 
-### 8.3 Alignment: a FIXED budget, reported once (AMENDED 26 Aug 2026)
+### 8.3 Alignment: a FIXED budget, reported once (AMENDED 26 Aug 2026;
+### AMENDED AGAIN 29 Aug 2026 — the age is a MEASURED fact)
+
+**29 Aug amendment (the -1024 field defect).** The pad arithmetic
+assumed the ring transit equalled the cushion (1024). In the field the
+capture arm discard-drains every connected ring continuously, so the
+backlog at engage is ~0 and the trim-only seek could not build the
+cushion — the pad subtracted a constant the ring never held, and every
+session ran the edit EARLY by exactly 1024 (steady, buffer-independent,
+confirmed by the EJAlign instrument and reproduced by impulse in the
+gate). Ruling honoured: **the injection's age is now MEASURED from the
+Link's ring stamps every drain and the pad is computed from it** —
+cushion survives only as the seek TARGET (a scheduling margin), never
+as an arithmetic term that must happen to be true. The seek is
+`ringSeekTo` (bidirectional: it steps BACK into held content to build
+the cushion a forward trim cannot), re-seeks on relocate
+discontinuities (the -20903 excursion's shape — heals within a block),
+and the NO-STAMP fallback (old Link, no transport position) sets the
+age to what the ring actually holds — the backlog, one-block accuracy —
+and says so at 1Hz, never silently a constant. Gated by impulse AND
+instrument agreement (0/0) in the field sequence, under a known +1024
+content shift, and across a mid-session relocate, at three buffer
+sizes.
 
 **The requirement: ordinary browsing never re-runs PDC.** The first draft
 reported latency only while engaged; every selection would have re-run
