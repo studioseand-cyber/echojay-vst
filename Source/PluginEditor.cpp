@@ -7757,6 +7757,11 @@ void EchoJayEditor::showChainRackMenu()
         uids.push_back(e.info.uid);
     }
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    // 2 Sep 2026: an EMBEDDED menu (kept embedded for the watchdog reason
+    // below) is a lightweight component, and a hosted editor's NSView
+    // composites OVER it — the rack list drew BEHIND the plugin box. Close
+    // the hosted editors first: choosing a rack replaces the view anyway.
+    chainListPanel.closeAllEditors();
     // withParentComponent: same foreground-watchdog defect as the picker's
     // CallOutBox — a desktop-parented menu inside the background AU hosting
     // process dismisses on its own. Embedded menus do not.
@@ -30477,6 +30482,15 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
                     {
                         if (safeThis == nullptr) return;
                         auto& panel = safeThis->chainListPanel;
+                        // 2 Sep 2026 (the leak onto other tabs): a hosted
+                        // editor's NSView composites over EVERYTHING and
+                        // ignores JUCE visibility — auto-opening one after
+                        // a build that finished while the user had switched
+                        // tabs painted the plugin box over that tab. The
+                        // panel's visibility IS the on-Chain fact (writers:
+                        // switchToTab + the review modal); off-tab, skip
+                        // the auto-open — the user opens on arrival.
+                        if (! panel.isVisible()) return;
                         int nSlots = safeThis->processorRef.getChainHost().getNumSlots();
                         for (int s = 0; s < nSlots && !panel.anyEditorOpen(); ++s)
                             panel.selectSlot(s);
