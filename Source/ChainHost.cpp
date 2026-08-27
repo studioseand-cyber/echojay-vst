@@ -1,6 +1,7 @@
 #include "EchoJayBridgedAU.h"   // FIRST: pulls CoreFoundation before JUCE (Point ambiguity)
 #include "ChainHost.h"
 #include "EJVariantPreference.h"
+#include "EJWavesAlias.h"
 #include "EJParamReads.h"    // 6c section 8: one slot's current reads, header-inline for the pins
 #include "EchoJayParamApply.h"
 #include "EchoJayParamMaps.h"
@@ -5065,6 +5066,13 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
         }
     };
 
+    // Registry base names, for the Waves marketing-name alias (EJWavesAlias.h).
+    // Collected here rather than re-derived, so the alias searches exactly the
+    // set the nameMap was built from -- arch-gated, blacklist-gated, and all.
+    juce::StringArray registryBaseNames;
+    for (const auto& d : loadable)
+        registryBaseNames.addIfNotAlreadyThere(stripParenthetical(d.name));
+
     for (const auto& d : loadable)
     {
         insertName(d.name, d);
@@ -5134,6 +5142,25 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
         // If not found, try without manufacturer prefix ("Fab Filter: Pro-Q 3" → "pro q 3")
         if (it == nameMap.end() && sp.name.containsChar(':'))
             it = lookupName(sp.name.fromFirstOccurrenceOf(":", false, false).trim());
+
+        // WAVES MARKETING-NAME ALIAS (28 Aug 2026), strictly a fallback. The
+        // scanner injects Waves' marketing names (expandWavesCatalog) while the
+        // shell registers shorter ones, so 35 of 69 ticked Waves rows resolved
+        // to nothing and the model called installed plugins missing. Runs ONLY
+        // after the lookups above have missed, and its answer goes back through
+        // lookupName, so nothing that resolves today can resolve differently
+        // and the (m)/(s) preference still picks the variant.
+        if (it == nameMap.end() && sp.manufacturer == "Waves")
+        {
+            const auto aliased = echojay::wavesAliasFor(sp.name, registryBaseNames);
+            if (aliased.isNotEmpty())
+            {
+                it = lookupName(aliased);
+                if (it != nameMap.end())
+                    EchoJay_NSLog(("EJScan: [waves-alias] \"" + sp.name + "\" -> \""
+                                   + it->second.name + "\"").toRawUTF8());
+            }
+        }
 
         if (it != nameMap.end())
         {

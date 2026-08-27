@@ -31,6 +31,7 @@
 #include "EJParamReads.h"        // 6c §8: header-inline, the shipped read serialiser
 #include "EJRefusalLine.h"      // refusal bubble: header-inline, the shipped composer
 #include "EJVariantPreference.h" // Waves channel-variant rank: header-inline, shipped
+#include "EJWavesAlias.h"       // Waves marketing-name alias: header-inline, shipped
 #include "EchoJayParamMaps.h"
 #include "EchoJayParamApply.h"
 #include "EchoJayHistoryTrim.h"
@@ -2377,6 +2378,157 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "var PIN5: the EXACT-name key stays first-wins, untouched");
             check (ch.contains ("#include \"EJVariantPreference.h\""),
                    "var PIN5: and it includes the header it is pinned against");
+        }
+    }
+
+    // ---- Waves marketing-name alias --------------------------------------
+    // The scanner injects Waves' MARKETING names; the shell registers shorter
+    // ones. 35 of 69 ticked Waves rows resolved to nothing, so installed
+    // plugins were invisible to the model.
+    {
+        std::cout << "waves marketing-name alias:\n";
+        // The real registration base names off this machine's scan.
+        juce::StringArray bases;
+        {
+            auto f = juce::File::getSpecialLocation (juce::File::userHomeDirectory)
+                         .getChildFile ("Library/EchoJay/chain_entries.xml");
+            if (auto doc = juce::XmlDocument::parse (f))
+                for (auto* c : doc->getChildIterator())
+                    if (c->getStringAttribute ("manufacturer") == "Waves")
+                        bases.addIfNotAlreadyThere (
+                            ChainHost::stripParenthetical (c->getStringAttribute ("name")));
+        }
+        if (bases.isEmpty())
+        {
+            std::cout << "  SKIP  waves alias pins (no chain_entries.xml on this machine)\n";
+        }
+        else
+        {
+            // PIN 1 -- THE RENAISSANCE FAMILY. Vox and Compressor come from the
+            // derived initialism rule, Reverb from the explicit table because
+            // "Reverb" contracts to "Verb" and "RReverb" does not exist.
+            check (echojay::wavesAliasFor ("Renaissance Vox", bases) == "RVox",
+                   "wa PIN1: Renaissance Vox -> RVox");
+            check (echojay::wavesAliasFor ("Renaissance Compressor", bases) == "RCompressor",
+                   "wa PIN1: Renaissance Compressor -> RCompressor");
+            check (echojay::wavesAliasFor ("Renaissance Reverb", bases) == "RVerb",
+                   "wa PIN1: Renaissance Reverb -> RVerb");
+            // RENAISSANCE EQUALIZER IS DELIBERATELY REFUSED, and this pin
+            // records that as the decision it is. The shell registers REQ 2,
+            // REQ 4 and REQ 6: three products differing in band count. There is
+            // no "REQ". Resolving to any one of them would load a plugin the
+            // user did not ask for, so it stays out of the feed until somebody
+            // decides which band count "Renaissance Equalizer" means.
+            check (echojay::wavesAliasFor ("Renaissance Equalizer", bases).isEmpty(),
+                   "wa PIN1: Renaissance Equalizer REFUSES (REQ 2/4/6, band count is a product choice)");
+
+            // PIN 2 -- A ROW WITH NO ALIAS IS UNTOUCHED. The alias must answer
+            // nothing for a name it does not know, so the caller's existing
+            // resolution is what stands.
+            check (echojay::wavesAliasFor ("CLA-76", bases).isEmpty()
+                   || echojay::wavesAliasFor ("CLA-76", bases) == "CLA-76",
+                   "wa PIN2: a name that already resolves is never re-pointed elsewhere");
+            check (echojay::wavesAliasFor ("Not A Real Plugin At All", bases).isEmpty(),
+                   "wa PIN2: an unknown name yields no alias");
+
+            // PIN 3 -- AMBIGUITY REFUSES RATHER THAN GUESSES. Each of these
+            // marketing names covers more than one registered product.
+            check (echojay::wavesAliasFor ("API 550", bases).isEmpty(),
+                   "wa PIN3: API 550 refuses (API-550A / API-550B)");
+            check (echojay::wavesAliasFor ("SuperTap", bases).isEmpty(),
+                   "wa PIN3: SuperTap refuses (2-Taps / 6-Taps)");
+            check (echojay::wavesAliasFor ("Doubler", bases).isEmpty(),
+                   "wa PIN3: Doubler refuses (Doubler2 / Doubler4)");
+            check (echojay::wavesAliasFor ("Trans-X", bases).isEmpty(),
+                   "wa PIN3: Trans-X refuses (TransX Multi / Wide)");
+            check (echojay::wavesAliasFor ("NLS Non-Linear Summer", bases).isEmpty(),
+                   "wa PIN3: NLS refuses (NLS Buss / NLS Channel)");
+
+            // PIN 3b -- THE ALNUM-EQUALITY TIE, on a SYNTHETIC registry. Two
+            // registrations whose names differ only in punctuation do not occur
+            // in this machine's corpus, so the real data cannot exercise this
+            // branch and a mutation that made it guess reddened nothing. The
+            // fixture supplies the case the corpus lacks.
+            {
+                const juce::StringArray twoWays { "Foo-Bar", "Foo Bar" };
+                check (echojay::wavesAliasFor ("FooBar", twoWays).isEmpty(),
+                       "wa PIN3b: two registrations with one alnum key refuse rather than guess");
+                const juce::StringArray oneWay { "Foo-Bar" };
+                check (echojay::wavesAliasFor ("FooBar", oneWay) == "Foo-Bar",
+                       "wa PIN3b: and a single such registration still resolves");
+            }
+
+            // PIN 4 -- LONGEST PREFIX, not first or shortest. "Q1" also
+            // prefixes "Q10 Equalizer"; picking it would load the wrong EQ.
+            check (echojay::wavesAliasFor ("Q10 Equalizer", bases) == "Q10",
+                   "wa PIN4: Q10 Equalizer -> Q10, not the Q1 that also prefixes it");
+            check (echojay::wavesAliasFor ("H-Comp Hybrid Compressor", bases) == "H-Comp",
+                   "wa PIN4: the shell name is a leading run of the marketing name");
+            check (echojay::wavesAliasFor ("PuigTec EQP-1A", bases) == "PuigTec EQP1A",
+                   "wa PIN4: punctuation-only drift resolves");
+
+            // PIN 5 -- FEED GROWTH IS EXACTLY THE NEWLY RESOLVED SET, no more.
+            // Drive every one of the 69 curated names through the alias and
+            // count: anything that already resolves must not be aliased, and
+            // the aliased set must not collide two names onto one entry.
+            {
+                juce::StringArray targets; int aliased = 0, collided = 0;
+                for (const auto& e : echojay::wavesCatalog())
+                {
+                    const auto a2 = echojay::wavesAliasFor (juce::String (e.name), bases);
+                    if (a2.isEmpty()) continue;
+                    ++aliased;
+                    if (targets.contains (a2)) ++collided;
+                    targets.add (a2);
+                }
+                check (aliased == 62, "wa PIN5: 62 of the 69 curated names get an answer");
+                check (69 - aliased == 7, "wa PIN5: and 7 refuse, the ambiguous ones");
+                check (collided == 0, "wa PIN5: no two scanner rows alias onto one entry");
+
+                // THE ADDITIVE PROPERTY, asserted rather than argued. 34 of
+                // those 62 are names that ALREADY resolve; the call site never
+                // consults the alias for them. Even if it did, every one maps
+                // to the product it already resolves to, so the alias cannot
+                // re-point a working row. Checked by: whenever a catalog name
+                // is alphanumerically equal to a registry base name, the alias
+                // must return THAT base and nothing else.
+                int selfChecked = 0, selfWrong = 0;
+                for (const auto& e : echojay::wavesCatalog())
+                {
+                    const juce::String nm (e.name);
+                    juce::String same;
+                    for (const auto& b : bases)
+                        if (echojay::wavesAlnumKey (b) == echojay::wavesAlnumKey (nm)) same = b;
+                    if (same.isEmpty()) continue;
+                    ++selfChecked;
+                    if (echojay::wavesAliasFor (nm, bases) != same) ++selfWrong;
+                }
+                check (selfChecked > 0, "wa PIN5: found catalog names that already match a registration");
+                check (selfWrong == 0,
+                       "wa PIN5: a name that already matches is never re-pointed by the alias");
+            }
+
+            // PIN 6 -- THE (m)/(s) BEHAVIOUR IS UNCHANGED. The alias returns a
+            // BASE name and hands it back to lookupName, so the variant choice
+            // still belongs to EJVariantPreference.h and nothing here bypasses it.
+            check (echojay::channelVariantIsBetter ("RVox (s)", "RVox (m)"),
+                   "wa PIN6: the variant rank still decides, alias or not");
+            check (! echojay::wavesAliasFor ("Renaissance Vox", bases).contains ("("),
+                   "wa PIN6: an alias yields a BASE name, never a variant");
+        }
+
+        // PIN 7 -- THE CALL SITE. Additive by construction: consulted only when
+        // the existing lookups have already missed, and gated to Waves rows.
+        {
+            std::ifstream fch ("Source/ChainHost.cpp");
+            std::stringstream sch; sch << fch.rdbuf();
+            const auto ch = codeOnly (juce::String (sch.str()));
+            check (ch.contains ("if (it == nameMap.end() && sp.manufacturer == \"Waves\")"),
+                   "wa PIN7: the alias runs ONLY on a miss, and only for Waves rows");
+            check (ch.contains ("it = lookupName(aliased);"),
+                   "wa PIN7: its answer goes back through the SAME lookup");
+            check (ch.contains ("echojay::wavesAliasFor(sp.name, registryBaseNames)"),
+                   "wa PIN7: through the pinned header");
         }
     }
 
