@@ -786,6 +786,10 @@ public:
     static EditorPlacement editorPlacement(const juce::String& pluginName,
                                            const juce::String& format)
     {
+        // ORDER IS LOAD-BEARING: the builtin arm comes BEFORE the popout
+        // list precisely so a STALE on-disk mark on a builtin is inert
+        // (one exists in the field). Reorder these and the mis-mark
+        // floats builtins again while every truth-table arm stays green.
         if (format == kBuiltinFormat)         return EditorPlacement::InlineJuce;
         if (isPopoutOnly(pluginName, format)) return EditorPlacement::Float;
         return EditorPlacement::InlineNative;

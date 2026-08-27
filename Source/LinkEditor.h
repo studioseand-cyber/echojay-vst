@@ -593,7 +593,9 @@ public:
                     auto& mdl = safe->proc.getChainModel();
                     if (s >= 0 && s == safe->selectedIdx
                         && s < (int)mdl.size()
-                        && !ChainHost::isPopoutOnly(mdl[(size_t)s].name, safe->slotFormat(s)))
+                        && ChainHost::editorPlacement(mdl[(size_t)s].name,
+                                                      safe->slotFormat(s))
+                               != ChainHost::EditorPlacement::Float)
                         safe->showInline(s);
                     safe->repaint();
                 });
@@ -632,7 +634,10 @@ public:
             {
                 auto bl = std::make_unique<Block>();
                 bl->name     = model[(size_t)i].name;
-                bl->popoutOnly = ChainHost::isPopoutOnly(bl->name, slotFormat(i));
+                // Via the ONE decision — see the matching note in
+                // PluginEditor.h: the glyph must not outlie the click.
+                bl->popoutOnly = ChainHost::editorPlacement(bl->name, slotFormat(i))
+                                 == ChainHost::EditorPlacement::Float;
                 bl->modelIdx = i;
                 bl->bypassed = model[(size_t)i].bypassed;
                 bl->missing  = model[(size_t)i].missing;
@@ -831,8 +836,9 @@ public:
                      && inlineEditor == nullptr)
             {
                 bool po = selectedIdx < (int)model.size()
-                       && ChainHost::isPopoutOnly(model[(size_t)selectedIdx].name,
-                                                  slotFormat(selectedIdx));
+                       && ChainHost::editorPlacement(model[(size_t)selectedIdx].name,
+                                                     slotFormat(selectedIdx))
+                              == ChainHost::EditorPlacement::Float;
                 g.setColour(juce::Colour(0xffa0a0b8));
                 g.setFont(juce::Font(juce::FontOptions(12.0f)));
                 g.drawText(po ? "This plugin opens in a floating window (plugin limitation)."

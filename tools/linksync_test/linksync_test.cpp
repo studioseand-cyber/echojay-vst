@@ -624,6 +624,26 @@ int main()
         check (CH::editorPlacement ("Some Plugin", "VST3")
                    == CH::EditorPlacement::InlineNative,
                "everything else takes the native inline path");
+        // ONE READER (1 Sep 2026 audit): isPopoutOnly is consulted ONLY
+        // inside editorPlacement (plus its own decl/impl) — a second
+        // direct reader skips the builtin arm and reintroduces the bug
+        // in one place while this truth table stays green. Counted per
+        // file so a new call site fails loudly.
+        auto countIn = [](const char* path)
+        {
+            const juce::String src =
+                juce::File::getCurrentWorkingDirectory()
+                    .getChildFile (path).loadFileAsString();
+            int n = 0, at = 0;
+            while ((at = src.indexOf (at, "isPopoutOnly(")) >= 0) { ++n; ++at; }
+            return n;
+        };
+        check (countIn ("Source/ChainHost.h") == 2       // decl + the ONE call
+                 && countIn ("Source/ChainHost.cpp") == 1 // the impl
+                 && countIn ("Source/PluginEditor.h") == 0
+                 && countIn ("Source/LinkEditor.h") == 0,
+               "isPopoutOnly has ONE reader: editorPlacement (no direct "
+               "call sites on either side)");
     }
 
     // ---- MUTE/SOLO (27 Aug 2026, MUTE_SOLO_SPEC) --------------------------

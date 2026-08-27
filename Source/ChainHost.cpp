@@ -527,7 +527,7 @@ juce::PluginDescription ChainHost::preferInlineHostableDesc(const juce::PluginDe
 {
     if (isBuiltinDescription(d)) return d;   // never swapped for a VST3 build
     if (d.pluginFormatName != "AudioUnit") return d;
-    if (!isPopoutOnly(d.name, "AudioUnit")) return d;
+    if (editorPlacement(d.name, "AudioUnit") != EditorPlacement::Float) return d;
     auto alt = findVst3Alternative(d.name);
     if (alt.name.isNotEmpty())
     {

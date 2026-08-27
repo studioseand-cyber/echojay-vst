@@ -2483,8 +2483,9 @@ private:
                     // clicking the block reopens it on demand.
                     if (s >= 0 && s == safe->selectedIdx
                         && s < (int)safe->slotInfos.size()
-                        && !ChainHost::isPopoutOnly(safe->slotInfos[(size_t)s].name,
-                                                    safe->slotInfos[(size_t)s].format))
+                        && ChainHost::editorPlacement(safe->slotInfos[(size_t)s].name,
+                                                      safe->slotInfos[(size_t)s].format)
+                               != ChainHost::EditorPlacement::Float)
                         safe->showInline(s);   // sequential: popout destroyed first
                     safe->repaint();
                 });
@@ -2535,7 +2536,11 @@ private:
                 bl->slotIdx  = i;
                 bl->bypassed = slotInfos[(size_t)i].bypassed;
                 bl->selected = (i == selectedIdx);
-                bl->popoutOnly = ChainHost::isPopoutOnly(bl->name, slotInfos[(size_t)i].format);
+                // The GLYPH asks the same question the click answers — via
+                // the ONE decision, or a stale builtin mark shows a lying ↗.
+                bl->popoutOnly = ChainHost::editorPlacement(bl->name,
+                                     slotInfos[(size_t)i].format)
+                                 == ChainHost::EditorPlacement::Float;
                 int ci = i;
                 bl->onSelect = [this, ci] { selectSlot(ci); };
                 bl->onBypass = [this, ci] { if (onBypassSlot) onBypassSlot(ci); };
@@ -2723,8 +2728,9 @@ private:
             else if (popout != nullptr && popoutSlot == selectedIdx && inlineEditor == nullptr)
             {
                 bool po = selectedIdx < (int)slotInfos.size()
-                       && ChainHost::isPopoutOnly(slotInfos[(size_t)selectedIdx].name,
-                                                  slotInfos[(size_t)selectedIdx].format);
+                       && ChainHost::editorPlacement(slotInfos[(size_t)selectedIdx].name,
+                                                     slotInfos[(size_t)selectedIdx].format)
+                              == ChainHost::EditorPlacement::Float;
                 g.setColour(juce::Colour(0xffa0a0b8));
                 g.setFont(juce::Font(juce::FontOptions(12.0f)));
                 g.drawText(po ? "This plugin opens in a floating window (plugin limitation)."
