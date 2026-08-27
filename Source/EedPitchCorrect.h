@@ -57,6 +57,29 @@ namespace echojay
 {
 
 // ---------------------------------------------------------------------------
+// CENTS FRAMES (3 Sep 2026, the D-minor rotation). A bare float carried an
+// implicit reference frame: inCents was zeroed at reference_hz (the tuning
+// A) while nearestIn subtracted a C-frame root index — two quantities nine
+// semitones apart that assigned and compared without complaint, rotating
+// every requested root to (r+9)%12. D minor became the D-major pitch-class
+// set, F natural was pushed to E/F#, and a unit test written in the same
+// frame as the bug agreed with it. The frame is now part of the NAME:
+// cents enter the corrector through centsCFromHz (C-zeroed — the frame the
+// root indices and scale masks always lived in), leave through
+// hzFromCentsC, and the quantiser accepts only the CentsC wrapper, so the
+// compiler refuses an unconverted axis. Frame-INVARIANT quantities
+// (differences): osc, the note-change deltas, wanted, vibNow_, transpose.
+// Frame-CARRYING (all C-frame now): inCents, slowCents_, curCents_,
+// noteRefCents_, pendingCents_, targetCents_, selectCents.
+// ---------------------------------------------------------------------------
+struct CentsC { float v; };   // 0 == pitch class C in the reference tuning
+static constexpr float kCentsAtoC = 900.0f;    // A440 axis -> C axis
+inline float centsCFromHz (float hz, float refA) noexcept
+{ return 1200.0f * std::log2 (hz / refA) + kCentsAtoC; }
+inline float hzFromCentsC (float cC, float refA) noexcept
+{ return refA * std::pow (2.0f, (cC - kCentsAtoC) / 1200.0f); }
+
+// ---------------------------------------------------------------------------
 // F0JumpGate — rejects octave-scale detector excursions BEFORE anything acts
 // on them (PITCH_P0_VALIDATION.md §16.8).
 //
@@ -345,7 +368,7 @@ public:
             return 0.0f;
         }
 
-        const float inCents = 1200.0f * std::log2 (f0Hz / ref);
+        const float inCents = centsCFromHz (f0Hz, ref);   // C FRAME from here on
 
         // A resume inside the window continues the note in progress; a longer
         // gap has already cleared haveNote_ above.
@@ -418,7 +441,7 @@ public:
 
         // ---- 1..2: nearest enabled degree, plus its bias -------------------
         const float selectCents = ignoreVibrato_.load() ? slowCents_ : inCents;
-        const float degreeCents = nearestDegreeCents (selectCents);
+        const float degreeCents = nearestDegreeCents (CentsC { selectCents });
 
         // The NOTE and the WOBBLE are separated here, and everything below
         // acts on the note. slowCents_ is where the note is; osc is the
@@ -504,7 +527,7 @@ public:
         // ---- 5: transpose --------------------------------------------------
         targetCents_ = curCents_ + vibNow_ + 100.0f * transpose_.load();
 
-        return ref * std::pow (2.0f, targetCents_ / 1200.0f);
+        return hzFromCentsC (targetCents_, ref);
     }
 
     // ---- P5: vibrato ------------------------------------------------------
@@ -549,7 +572,7 @@ public:
 
     // Nearest ENABLED degree to a cents value, including that degree's bias.
     // Public so a test can pin the decision independently of the envelope.
-    float nearestDegreeCents (float cents) const noexcept
+    float nearestDegreeCents (CentsC cents) const noexcept
     {
         const float x = xfade_.load();
         const float now = nearestIn (cents, false);
@@ -563,11 +586,14 @@ public:
         return was + (now - was) * x;
     }
 
-    float nearestIn (float cents, bool previous) const noexcept
+    float nearestIn (CentsC centsC, bool previous) const noexcept
     {
+        const float cents = centsC.v;
         const int root = keyRoot_.load();
 
-        // Work relative to the root so degree indices are semitones above it.
+        // Work relative to the root so degree indices are semitones above
+        // it — VALID ONLY because both are C-framed, which the CentsC
+        // parameter now enforces at compile time.
         const float rel = cents - 100.0f * (float) root;
         const float octaves = std::floor (rel / 1200.0f);
         const float within = rel - octaves * 1200.0f;      // 0..1200

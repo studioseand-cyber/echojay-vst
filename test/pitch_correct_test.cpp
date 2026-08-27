@@ -18,11 +18,16 @@ static int g_fail = 0;
 static void check (bool c, const std::string& w)
 { std::printf ("  [%s] %s\n", c ? "PASS" : "FAIL", w.c_str()); if (! c) ++g_fail; }
 
-static float hz (float cents, float ref = 440.0f)
-{ return ref * std::pow (2.0f, cents / 1200.0f); }
+// THE NAMED FRAME (3 Sep 2026): these helpers used to be A440-framed while
+// every literal in this file was written as if the frame were C-rooted —
+// the test agreed with the bug because it was written in the same frame.
+// They now speak the corrector's own converters, so 900 means A, 600 means
+// F#, and 0 means C, in the file and in the device alike.
+static float hz (float centsC, float ref = 440.0f)
+{ return hzFromCentsC (centsC, ref); }
 
 static float cents (float f, float ref = 440.0f)
-{ return 1200.0f * std::log2 (f / ref); }
+{ return centsCFromHz (f, ref); }
 
 // Drive n hops of a steady pitch, return the final target in cents.
 static float settle (PitchCorrect& c, float f0, int hops, bool voiced = true)
@@ -53,15 +58,15 @@ int main()
     std::printf ("== the decision: nearest ENABLED degree ==\n");
     {
         PitchCorrect c; makeMajor (c, 0.0f, 0.0f, 0.0f);
-        // A440 is +0 cents. In C major the degrees are C D E F G A B.
+        // In the C frame A440 is +900 cents; C major degrees are C D E F G A B.
         // 440 Hz is A = 900 cents above C. Ask for something 30 cents sharp.
-        check (std::fabs (c.nearestDegreeCents (930.0f) - 900.0f) < 0.01f,
+        check (std::fabs (c.nearestDegreeCents (CentsC { 930.0f }) - 900.0f) < 0.01f,
                "930 cents snaps back to A (900)");
-        check (std::fabs (c.nearestDegreeCents (1010.0f) - 1100.0f) < 0.01f,
+        check (std::fabs (c.nearestDegreeCents (CentsC { 1010.0f }) - 1100.0f) < 0.01f,
                "1010 cents snaps up to B (1100), not to the disabled A# (1000)");
         // A# is NOT in C major: a note sitting exactly on it must go to a
         // neighbour rather than staying put.
-        const float got = c.nearestDegreeCents (1000.0f);
+        const float got = c.nearestDegreeCents (CentsC { 1000.0f });
         check (std::fabs (got - 900.0f) < 0.01f || std::fabs (got - 1100.0f) < 0.01f,
                "a disabled degree is never a target");
     }
@@ -70,7 +75,7 @@ int main()
     {
         PitchCorrect c; makeMajor (c, 0.0f, 0.0f, 0.0f);
         c.setDegree (9, true, -14.0f);          // pull A 14 cents flat
-        check (std::fabs (c.nearestDegreeCents (900.0f) - 886.0f) < 0.01f,
+        check (std::fabs (c.nearestDegreeCents (CentsC { 900.0f }) - 886.0f) < 0.01f,
                "A with bias -14 targets 886 cents");
     }
 
@@ -78,9 +83,9 @@ int main()
     {
         PitchCorrect c; makeMajor (c, 0.0f, 0.0f, 0.0f);
         // 1190 cents is just under C an octave up (1200), which IS enabled.
-        check (std::fabs (c.nearestDegreeCents (1190.0f) - 1200.0f) < 0.01f,
+        check (std::fabs (c.nearestDegreeCents (CentsC { 1190.0f }) - 1200.0f) < 0.01f,
                "1190 snaps up across the octave line to 1200");
-        check (std::fabs (c.nearestDegreeCents (-10.0f) - 0.0f) < 0.01f,
+        check (std::fabs (c.nearestDegreeCents (CentsC { -10.0f }) - 0.0f) < 0.01f,
                "-10 snaps up to 0");
     }
 
@@ -89,9 +94,9 @@ int main()
         PitchCorrect c; makeMajor (c, 0.0f, 0.0f, 0.0f);
         c.setKeyRoot (2);                        // D major
         // In D major, F# (600 cents above C) is a degree; F natural (500) is not.
-        check (std::fabs (c.nearestDegreeCents (600.0f) - 600.0f) < 0.01f,
+        check (std::fabs (c.nearestDegreeCents (CentsC { 600.0f }) - 600.0f) < 0.01f,
                "F# is in D major and stays put");
-        const float f = c.nearestDegreeCents (500.0f);
+        const float f = c.nearestDegreeCents (CentsC { 500.0f });
         check (std::fabs (f - 500.0f) > 1.0f, "F natural is not, and is moved");
     }
 
@@ -367,7 +372,10 @@ int main()
         // A note exactly on A at the NEW reference must be left alone.
         // Measured against the SAME reference the corrector is using - reading
         // the result in 440-cents would just re-measure the reference change.
-        const float inHz = 441.3f * std::pow (2.0f, 900.0f / 1200.0f);
+        // 900 cents = A in the C FRAME; built through the frame-named
+        // helper (the old inline pow was the A-frame formula - this line
+        // was the ref-test's own copy of the bug).
+        const float inHz = hz (900.0f, 441.3f);
         float outHz = 0.0f;
         for (int i = 0; i < 3; ++i) outHz = c.process (inHz, true);
         const float outCents = cents (outHz, 441.3f);
@@ -378,5 +386,51 @@ int main()
 
     std::printf ("\n%s (%d failure%s)\n", g_fail == 0 ? "ALL PASS" : "FAILURES",
                  g_fail, g_fail == 1 ? "" : "s");
+    std::printf ("== Hz-in subset sweep: 12 roots x major/minor ==\n");
+    // Chromatic is rotation-invariant, which is precisely how a 9-semitone
+    // frame error survived every earlier round; a single-root test can hide
+    // the same error at another offset. REAL frequencies in, output pitch
+    // classes (derived from Hz, so no cents convention can hide) asserted
+    // a subset of the selected scale, across the full grid.
+    {
+        static const int kSets[2][7] = { { 0,2,4,5,7,9,11 },     // major
+                                         { 0,2,3,5,7,8,10 } };   // minor
+        for (int sc = 0; sc < 2; ++sc)
+            for (int root = 0; root < 12; ++root)
+            {
+                PitchCorrect c;
+                c.prepare (48000.0, 128);
+                c.initDegrees();
+                c.setAllDegrees (false);
+                for (int k = 0; k < 7; ++k) c.setDegree (kSets[sc][k], true, 0.0f);
+                c.setKeyRoot (root);
+                c.setRetuneMs (0.0f); c.setFlex (0.0f); c.setHumanize (0.0f);
+                c.setIgnoreVibrato (false); c.setNaturalVibrato (0.0f);
+                bool ok = true; int badIn = -1, badOut = -1;
+                for (int pc = 0; pc < 12 && ok; ++pc)
+                {
+                    const float f = 261.6256f * std::pow (2.0f, pc / 12.0f);
+                    c.reset();
+                    float out = 0.0f;
+                    for (int i = 0; i < 4; ++i) out = c.process (f, true);
+                    const float midi = 69.0f + 12.0f * std::log2 (out / 440.0f);
+                    const int opc = (((int) std::lround (midi)) % 12 + 12) % 12;
+                    bool in = false;
+                    for (int k = 0; k < 7; ++k)
+                        if ((root + kSets[sc][k]) % 12 == opc) in = true;
+                    if (! in) { ok = false; badIn = pc; badOut = opc; }
+                }
+                char msg[160];
+                std::snprintf (msg, sizeof (msg),
+                    "root %d %s: every output pitch class is in-scale%s",
+                    root, sc ? "minor" : "major",
+                    ok ? "" : (std::snprintf (nullptr, 0, ""), " VIOLATION"));
+                if (! ok)
+                    std::printf ("     in pc %d -> out pc %d (root %d %s)\n",
+                                 badIn, badOut, root, sc ? "minor" : "major");
+                check (ok, msg);
+            }
+    }
+
     return g_fail == 0 ? 0 : 1;
 }

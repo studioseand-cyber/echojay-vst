@@ -174,6 +174,32 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
     corr.setHumanize (0.0f);
     corr.setIgnoreVibrato (true);
     corr.setNaturalVibrato (0.0f);
+    // Acceptance-render overrides (3 Sep 2026, the D-minor rotation):
+    // AB_ROOT=<0..11 C-frame>, AB_SCALE=major|minor, AB_PRESET=natural|
+    // balanced|tuned|hard. With AB_DUMP this renders an acceptance wav
+    // through the exact shipped pipeline; the hard-match gates are skipped
+    // when any override is set (their expectations assume chromatic).
+    if (const char* sc = getenv ("AB_SCALE"))
+        if (*sc != 0 && std::string (sc) != "chromatic")
+        {
+            static const int kMajor[7] = { 0,2,4,5,7,9,11 };
+            static const int kMinor[7] = { 0,2,3,5,7,8,10 };
+            const int* set = std::string (sc) == "minor" ? kMinor : kMajor;
+            for (int s = 0; s < 12; ++s) corr.setDegree (s, false, 0.0f);
+            for (int k = 0; k < 7; ++k) corr.setDegree (set[k], true, 0.0f);
+        }
+    if (const char* r = getenv ("AB_ROOT")) corr.setKeyRoot (std::atoi (r));
+    if (const char* p = getenv ("AB_PRESET"))
+    {
+        const std::string ps (p);
+        struct P { float retune, flex, hum, nv; };
+        const P v = ps == "natural"  ? P { 120.0f, 55.0f, 60.0f, 100.0f }
+                  : ps == "balanced" ? P {  40.0f, 25.0f, 30.0f, 100.0f }
+                  : ps == "tuned"    ? P {   8.0f,  0.0f,  0.0f,  40.0f }
+                  :                    P {   0.0f,  0.0f,  0.0f,   0.0f };
+        corr.setRetuneMs (v.retune); corr.setFlex (v.flex);
+        corr.setHumanize (v.hum);    corr.setNaturalVibrato (v.nv);
+    }
     corr.reset();
 
     F0JumpGate f0Gate;    // mirrors EedPitchProcessor::processBlock
@@ -631,6 +657,9 @@ int main (int argc, char* argv[])
 
     // The gated column: rendered HERE from the current engine.
     const std::vector<float> ours = renderEchoJay (dry, fs);
+    const bool overridden = getenv ("AB_SCALE") != nullptr
+                         || getenv ("AB_ROOT") != nullptr
+                         || getenv ("AB_PRESET") != nullptr;
 
     // Forensics hook: AB_DUMP=<path> writes the gated render as float32 WAV,
     // so external instruments inspect EXACTLY what the assertions measured.
@@ -650,6 +679,12 @@ int main (int argc, char* argv[])
             std::fclose (f);
             std::printf ("render dumped to %s\n", dump);
         }
+    }
+    if (overridden)
+    {
+        std::printf ("overrides active (AB_SCALE/AB_ROOT/AB_PRESET): render "
+                     "dumped, hard-match gates SKIPPED.\n");
+        return 0;
     }
 
     const Track td = trackFile (dry, fs);

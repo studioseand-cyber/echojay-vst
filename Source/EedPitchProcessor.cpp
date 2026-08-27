@@ -622,11 +622,15 @@ void EedPitchProcessor::applyScale (int index)
 
     juce::StringArray on;
     static const char* kNames[12] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
+    const int root = correct_.getKeyRoot();
     for (int s = 0; s < 12; ++s)
     {
         const bool en = (kMasks[i] >> s) & 1;
         correct_.setDegree (s, en, correct_.degreeBias (s));
-        if (en) on.add (kNames[s]);
+        // The NAME is a pitch class (root + degree), not a degree index —
+        // this summary used to print C-rooted names for every root
+        // (3 Sep 2026, found in the frame sweep).
+        if (en) on.add (kNames[(root + s) % 12]);
     }
 
     const auto* spec = schema().find (kScale);
