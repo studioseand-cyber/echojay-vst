@@ -19111,10 +19111,20 @@ void EchoJayEditor::resized()
         // takes the room between it and the detected label, clamped, and the
         // state block truncates the channel name via captureBtnMaxW_.
         scanBtn.setBounds(tx, ty, 78, bh); tx += 78 + 4;
-        // New chat, reachable from every tab (14 Aug 2026) — the slot the
-        // chain-list scan date held; that readout lives in the EJScan log
-        // lines now. Same 150px so nothing downstream of it moves.
-        headerNewChatBtn.setBounds(tx, ty, 150, bh); tx += 150 + 10;
+        // New chat, reachable from every tab (14 Aug 2026). Width BY THE
+        // NUMBERS (1 Sep 2026, third pass): the old 150px slot held 54.7px
+        // of text — idle it painted nothing, but the transparent-button
+        // HOVER fill is slot-sized, so a 150px slot flashed a giant grey
+        // slab where Capture (64px over 38px of text) hovers like a text
+        // link. Width = measured text + Capture's exact horizontal padding
+        // (64 - 38 = 26), computed from the same font the LookAndFeel
+        // draws with so a label change re-sizes itself.
+        {
+            const int ncW = (int) std::ceil (juce::GlyphArrangement::getStringWidth(
+                                EchoJayChrome::headerFont(),
+                                headerNewChatBtn.getButtonText())) + 26;
+            headerNewChatBtn.setBounds(tx, ty, ncW, bh); tx += ncW + 10;
+        }
         // Item 2a: FIXED-width Capture button.
         captureBtn.setBounds(tx, ty, 64, bh); tx += 68;
         // Item 2b: target indicator takes the room up to the detected label,

@@ -2296,6 +2296,51 @@ int main()
             for (int i2 = 0; i2 < 20; ++i2)
             { juce::Timer::callPendingTimersSynchronously();
               CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); }
+            if (std::getenv ("EJ_NUMBERS") != nullptr)
+            {
+                auto& ncb = EchoJayTabStripTestAccess::newChatBtn (*eje6);
+                auto* cap = [&]() -> juce::TextButton* {
+                    std::function<juce::TextButton*(juce::Component*)> f =
+                        [&](juce::Component* root) -> juce::TextButton* {
+                        if (auto* b = dynamic_cast<juce::TextButton*> (root))
+                            if (b->getButtonText() == "Capture") return b;
+                        for (auto* c : root->getChildren())
+                            if (auto* r = f (c)) return r;
+                        return nullptr; };
+                    return f (ed6.get()); }();
+                const auto fnt = EchoJayChrome::headerFont();
+                auto pr = [&](const char* nm, juce::TextButton* b)
+                {
+                    if (b == nullptr) { std::printf ("  [2a] %s: NOT FOUND\n", nm); return; }
+                    const auto r = b->getBounds();
+                    std::printf ("  [2a] %s bounds=(%d,%d %dx%d) textW=%.1f "
+                                 "bgCol=%08x alpha=%d\n",
+                                 nm, r.getX(), r.getY(), r.getWidth(), r.getHeight(),
+                                 juce::GlyphArrangement::getStringWidth (fnt, b->getButtonText()),
+                                 (unsigned) b->findColour (juce::TextButton::buttonColourId).getARGB(),
+                                 (int) b->findColour (juce::TextButton::buttonColourId).getAlpha());
+                    std::printf ("       textOff=%08x textOn=%08x chrome=%d "
+                                 "enabled=%d alpha=%.2f\n",
+                                 (unsigned) b->findColour (juce::TextButton::textColourOffId).getARGB(),
+                                 (unsigned) b->findColour (juce::TextButton::textColourOnId).getARGB(),
+                                 (int) b->getProperties().contains ("chromeLabel"),
+                                 (int) b->isEnabled(), b->getAlpha());
+                };
+                pr ("+New chat", &ncb);
+                pr ("Capture  ", cap);
+                // The pixels answer "what paints the box": snapshot the
+                // header band over both buttons at 3x.
+                const auto hb = ncb.getBounds().getUnion (
+                    cap != nullptr ? cap->getBounds() : ncb.getBounds())
+                    .expanded (12, 8);
+                juce::PNGImageFormat png;
+                juce::File hf (juce::String (std::getenv ("EJ_NUMBERS"))
+                               + "/header_row.png");
+                hf.deleteFile();
+                juce::FileOutputStream hos (hf);
+                png.writeImageToStream (
+                    eje6->createComponentSnapshot (hb, false, 3.0f), hos);
+            }
             check (EchoJayTabStripTestAccess::blockCount (*eje6) == 2,
                    "and the rack POPULATES with no other interaction "
                    "(two published slots render)",
