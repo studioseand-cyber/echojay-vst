@@ -922,9 +922,33 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                         if (LinkShm::loadAcquire(&hdr->writeIdx)
                               - LinkShm::loadRelaxed(&hdr->readIdx) > kEditReseekTrip)
                             LinkShm::ringSeekForward(ls.map, kEditCushionFrames);
+                        const uint32_t rIdxPre = LinkShm::loadRelaxed(
+                            &LinkShm::ringHeader(ls.map)->readIdx);
                         const uint32_t n = LinkShm::ringConsume(ls.map,
                                               borrowBuf_.getWritePointer(0),
                                               borrowBuf_.getWritePointer(1), want);
+                        // §8 alignment trace: the consumed content's host
+                        // position (from the Link's stamp) against ours
+                        // minus the cushion the pad arithmetic assumes.
+                        {
+                            uint32_t sw = 0; int64_t sp = 0;
+                            if (auto* ph2 = getPlayHead())
+                                if (auto pos2 = ph2->getPosition())
+                                    if (pos2->getTimeInSamples().hasValue()
+                                        && LinkShm::ringStampRead(ls.map, sw, sp))
+                                    {
+                                        const int64_t content = sp
+                                            + (int32_t)(rIdxPre - sw);
+                                        const int64_t skew =
+                                            (*pos2->getTimeInSamples()
+                                             - (int64_t) kEditCushionFrames)
+                                            - content;
+                                        borrowAlignSkew_.store(skew,
+                                            std::memory_order_relaxed);
+                                        borrowAlignSkewValid_.store(true,
+                                            std::memory_order_relaxed);
+                                    }
+                        }
                         ls.framesRead.fetch_add((int64_t) n, std::memory_order_relaxed);
                         for (int ch = 0; ch < 2; ++ch)
                             if ((int) n < want)
@@ -1777,6 +1801,11 @@ void EchoJayProcessor::borrowTick()
     else borrowMuteUnconfirmedTicks_ = 0;
 
     if (!borrowActive()) return;
+    // §8 alignment trace, 1Hz: the field number the harness cannot see.
+    if (borrowAlignSkewValid_.exchange(false, std::memory_order_relaxed))
+        EchoJay_NSLog(("EJAlign(main): content skew="
+            + juce::String((juce::int64) borrowAlignSkew_.load(std::memory_order_relaxed))
+            + " smp vs cushion (positive = edit LATE)").toRawUTF8());
     renewBorrowLease();
 
     // RING RE-BIND, every tick (hands-on finding #3): the slot index bound

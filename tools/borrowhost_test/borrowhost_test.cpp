@@ -23,6 +23,16 @@
 #include "PluginProcessor.h"   // §5a-R functional editor-open gate
 #include "PluginEditor.h"      // M/S permanence gate drives the REAL tab path
 
+// §8 alignment gate: bind/unbind the REAL ring consumer on the processor.
+struct EchoJayAlignTestAccess
+{
+    static void connect (EchoJayProcessor& p, int i, const juce::String& key,
+                         const juce::String& nm, float sr, const juce::String& uid)
+    { p.connectLinkAudioSlot (i, key, nm, sr, uid); }
+    static void disconnect (EchoJayProcessor& p, int i)
+    { p.disconnectLinkAudioSlot (i); }
+};
+
 // The friend already declared in PluginEditor.h — the M/S permanence arm
 // drives the REAL switchToTab (the single writer of panel visibility).
 struct EchoJayTabStripTestAccess
@@ -2088,6 +2098,103 @@ int main()
             juce::File (LinkShm::rackSidecarPath (rdir, ruid)).deleteFile();
             mainProc.refreshLinkRegistry();
             mainProc.pendingChannelUid.clear();
+        }
+
+        // ---- §8 ALIGNMENT, MEASURED (28 Aug hands-on: the edited channel
+        // "slightly out of time"). Everything about in-context was gated
+        // for level and continuity; NOTHING ever asserted it is IN TIME —
+        // which is why this shipped. An impulse fed to both paths must
+        // land within 2 samples at the sum point, at more than one buffer
+        // size. The ring impulse is 0.5 and the passthrough's 1.0 so the
+        // two peaks are identifiable (coincidence sums to ~1.5). The
+        // producer runs LINK-FIRST per cycle — a channel strip renders
+        // before the output strip it feeds — and the ring is pre-filled
+        // past the reseek trip so the drain's first consume seeks to the
+        // cushion exactly as a field engage does.
+        std::printf ("== §8 alignment: impulse through both paths ==\n");
+        // mode 0: LINK-FIRST cycles, engage between cycles — the ideal
+        //         phase the arithmetic assumes. GATED at |delta|<=2.
+        // mode 1: MAIN-FIRST cycles (the consume races ahead of the
+        //         produce) — measured and PRINTED: the blind backlog seek
+        //         makes the offset a property of thread phase at engage.
+        // mode 2: producer one block AHEAD at the engage seek — the other
+        //         bad roll, printed.
+        // The printed modes are THE DEFECT (28 Aug): the engage-time
+        // ringSeekForward fixes the offset from wall-clock thread phase,
+        // and nothing ever corrects it (the drain reseek needs an 8192
+        // backlog). When the stamp-based seek lands, modes 1 and 2 must
+        // join the gate at |delta|<=2.
+        auto alignDelta = [&](int bs, int mode) -> int
+        {
+            int errA = 0;
+            const juce::String adir = LinkShm::resolveDir (errA);
+            mainProc.setBorrowBudgetActive (true);
+            mainProc.prepareToPlay (48000.0, bs);
+            int pfd = -1, perr = 0;
+            void* pm = LinkShm::openRingProducer (adir, "audio_align.bin",
+                                                  48000.0f, 2, pfd, perr);
+            if (pm == nullptr) return 99999;
+            std::vector<float> zL ((size_t) bs, 0.0f), zR ((size_t) bs, 0.0f);
+            auto produce = [&](float imp)
+            {
+                zL[0] = imp; zR[0] = imp;
+                const float* p[2] = { zL.data(), zR.data() };
+                LinkShm::ringProduce (pm, p, 2, bs);
+                zL[0] = zR[0] = 0.0f;
+            };
+            for (int i2 = 0; i2 < 12000 / bs + 2; ++i2) produce (0.0f);
+            if (mode == 2) produce (0.0f);       // producer ahead at the seek
+            EchoJayAlignTestAccess::connect (mainProc, 2, "audio_align.bin",
+                                             "Align Probe", 48000.0f, "uid-al");
+            mainProc.borrowEngageBegin ("uid-al", "lease-al", true, true);
+            juce::AudioBuffer<float> blk (2, bs);
+            juce::MidiBuffer midi;
+            auto cycle = [&](float ringImp, float mainImp, float* sink)
+            {
+                if (mode != 1) produce (ringImp);
+                blk.clear();
+                blk.setSample (0, 0, mainImp);
+                blk.setSample (1, 0, mainImp);
+                mainProc.processBlock (blk, midi);
+                if (mode == 1) produce (ringImp);
+                if (sink != nullptr)
+                    for (int i2 = 0; i2 < bs; ++i2)
+                        sink[(size_t) i2] = blk.getSample (0, i2);
+            };
+            for (int i2 = 0; i2 < (16384 * 3) / bs; ++i2) cycle (0, 0, nullptr);
+            const int capN = ((16384 * 3) / bs) * bs;
+            std::vector<float> out ((size_t) capN, 0.0f);
+            int w = 0;
+            cycle (0.5f, 1.0f, out.data()); w = bs;
+            while (w + bs <= capN) { cycle (0, 0, out.data() + w); w += bs; }
+            int iPass = -1, iInj = -1;
+            for (int i2 = 0; i2 < capN; ++i2)
+            {
+                const float a = std::abs (out[(size_t) i2]);
+                if (a > 0.75f && iPass < 0) iPass = i2;
+                else if (a > 0.25f && a < 0.75f && iInj < 0) iInj = i2;
+            }
+            if (iPass >= 0 && iInj < 0
+                && std::abs (out[(size_t) iPass]) > 1.25f)
+                iInj = iPass;
+            mainProc.borrowRelease (false);
+            EchoJayAlignTestAccess::disconnect (mainProc, 2);
+            mainProc.setBorrowBudgetActive (false);
+            juce::File (adir + "audio_align.bin").deleteFile();
+            return (iPass >= 0 && iInj >= 0) ? iInj - iPass : 99999;
+        };
+        for (const int bs : { 512, 128, 1024 })
+        {
+            const int d0 = alignDelta (bs, 0);
+            std::printf ("  [align bs=%d ideal-phase] delta=%+d\n", bs, d0);
+            check (std::abs (d0) <= 2,
+                   "bs=" + juce::String (bs)
+                     + ": the injection lands WITH the passthrough",
+                   "delta=" + juce::String (d0) + " (positive = LATE)");
+            std::printf ("  [align bs=%d main-first] delta=%+d  (defect: expect +%d)\n",
+                         bs, alignDelta (bs, 1), bs);
+            std::printf ("  [align bs=%d producer-ahead] delta=%+d  (defect: expect -%d)\n",
+                         bs, alignDelta (bs, 2), bs);
         }
         mainProc.setBorrowBudgetActive (false);
         // The level arm alone can false-pass on a fresh process (OS pages

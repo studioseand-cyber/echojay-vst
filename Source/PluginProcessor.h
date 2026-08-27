@@ -606,6 +606,16 @@ public:
     // the edited rack is not in it. ONE writer (the registry pass); the
     // audio thread only reads.
     std::atomic<bool> borrowSoloSuppressInj_ { false };
+    // §8 ALIGNMENT TRACE (28 Aug 2026 investigation): the harness proves
+    // the in-process arithmetic sample-exact at three buffer sizes, so a
+    // field misalignment can only be TIMELINE SKEW between the Link's
+    // blocks and ours (Logic's PDC process-ahead, mid-cycle seek). The
+    // Link stamps ring-index <-> host-position every block; this measures
+    // the consumed content's age against the cushion the pad assumes.
+    // Positive skew = content older than assumed = the edit lands LATE.
+    // Written by the drain (audio thread), logged at 1Hz by borrowTick.
+    std::atomic<int64_t> borrowAlignSkew_ { 0 };
+    std::atomic<bool>    borrowAlignSkewValid_ { false };
     bool soloSuppressPrev_ = false;   // banner-transition detector
     // The injection gain this instant (the honorary strip's lamp) — public
     // so the gate asserts the BEHAVIOUR, not just the branch.
@@ -1258,6 +1268,10 @@ private:
     std::array<ActiveLinkSlot, kMaxLinkSlots> activeLinkSlots;
 
 
+    // The §8 alignment gate binds a REAL ring end-to-end (producer in the
+    // test, consumer here) — the one gate that asserts in-context is IN
+    // TIME, not just level-safe and continuous.
+    friend struct EchoJayAlignTestAccess;
     void connectLinkAudioSlot   (int i, const juce::String& key, const juce::String& displayName,
                                  float sr, const juce::String& uid);
     void disconnectLinkAudioSlot(int i);
