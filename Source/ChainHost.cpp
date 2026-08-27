@@ -1379,7 +1379,8 @@ ChainHost::SlotInfo ChainHost::getSlotInfo(int i) const
 {
     if (i < 0 || i >= (int)slots_.size()) return { {}, false, {}, {}, 1.0f };
     return { slots_[i].desc.name, slots_[i].bypassed, slots_[i].settings,
-             slots_[i].desc.pluginFormatName, slots_[i].wet };
+             slots_[i].desc.pluginFormatName, slots_[i].wet,
+             slots_[i].desc.manufacturerName };
 }
 
 ChainHost::SlotIdentity ChainHost::getSlotIdentity(int slot) const

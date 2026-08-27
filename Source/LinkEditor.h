@@ -378,6 +378,14 @@ public:
         }
 
         // Slot's hosted format ("AudioUnit"/"VST3") — popout-only is per-format
+        juce::String slotManufacturer(int modelIdx) const
+        {
+            auto& model = proc.getChainModel();
+            if (modelIdx < 0 || modelIdx >= (int)model.size()) return {};
+            int h = model[(size_t)modelIdx].hostIdx;
+            return h >= 0 ? proc.getChainHost().getSlotDescription(h).manufacturerName
+                          : juce::String();
+        }
         juce::String slotFormat(int modelIdx) const
         {
             auto& model = proc.getChainModel();
@@ -455,7 +463,8 @@ public:
             // written. Builtins embed inline with NO native machinery;
             // genuine out-of-process editors keep floating, label intact.
             switch (ChainHost::editorPlacement(model[(size_t)modelIdx].name,
-                                               slotFormat(modelIdx)))
+                                               slotFormat(modelIdx),
+                                               slotManufacturer(modelIdx)))
             {
                 case ChainHost::EditorPlacement::InlineJuce:
                 {
@@ -476,7 +485,7 @@ public:
                     return;                   // no timer: nothing native runs
                 }
                 case ChainHost::EditorPlacement::Float:
-                    statusText = "Opens in a floating window (plugin limitation)";
+                    statusText = "This plugin's editor can't be embedded and opens in its own window";
                     openPopoutForSelected();
                     repaint();
                     return;
@@ -575,7 +584,7 @@ public:
                                 if (bl->modelIdx == inlineModelIdx)
                                 { bl->popoutOnly = true; bl->repaint(); }
                         }
-                        statusText = "Opens in a floating window (plugin limitation)";
+                        statusText = "This plugin's editor can't be embedded and opens in its own window";
                         openPopoutForSelected();   // destroys the inline editor first
                         repaint();
                         startTimer(400);
@@ -687,7 +696,8 @@ public:
                     if (s >= 0 && s == safe->selectedIdx
                         && s < (int)mdl.size()
                         && ChainHost::editorPlacement(mdl[(size_t)s].name,
-                                                      safe->slotFormat(s))
+                                                      safe->slotFormat(s),
+                                                      safe->slotManufacturer(s))
                                != ChainHost::EditorPlacement::Float)
                         safe->showInline(s);
                     safe->repaint();
@@ -743,7 +753,8 @@ public:
                 bl->name     = model[(size_t)i].name;
                 // Via the ONE decision — see the matching note in
                 // PluginEditor.h: the glyph must not outlie the click.
-                bl->popoutOnly = ChainHost::editorPlacement(bl->name, slotFormat(i))
+                bl->popoutOnly = ChainHost::editorPlacement(bl->name, slotFormat(i),
+                                                            slotManufacturer(i))
                                  == ChainHost::EditorPlacement::Float;
                 bl->modelIdx = i;
                 bl->bypassed = model[(size_t)i].bypassed;
@@ -944,11 +955,12 @@ public:
             {
                 bool po = selectedIdx < (int)model.size()
                        && ChainHost::editorPlacement(model[(size_t)selectedIdx].name,
-                                                     slotFormat(selectedIdx))
+                                                     slotFormat(selectedIdx),
+                                                     slotManufacturer(selectedIdx))
                               == ChainHost::EditorPlacement::Float;
                 g.setColour(juce::Colour(0xffa0a0b8));
                 g.setFont(juce::Font(juce::FontOptions(12.0f)));
-                g.drawText(po ? "This plugin opens in a floating window (plugin limitation)."
+                g.drawText(po ? "This plugin's editor can't be embedded and opens in its own window."
                               : "Editor is open in a floating window - click the plugin block to bring it back.",
                            area.reduced(16), juce::Justification::centred, true);
             }

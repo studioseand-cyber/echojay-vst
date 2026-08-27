@@ -138,6 +138,16 @@ out-z-ordered"). The rule: anything that must appear over a hosted
 editor requires the editor CLOSED or HIDDEN first — never an overlay,
 never z-order.
 
+**STANDING HAZARD 2 — some hosted native views report success and
+render nothing.** WaveShell's embedded AU view returned a valid frame
+(481x614), the settle poll "settled", and the pane stayed blank: a
+view that measures fine and draws nothing defeats a size poll BY
+CONSTRUCTION. Detection for this class must be by IDENTITY (catalogue
+manufacturer/shell, decided before any embed attempt —
+ChainHost::floatsByIdentity), never by measurement. Do not fold the
+identity rule into the poll as redundant; the poll cannot see this
+failure and never will.
+
 **Licensing is not a concern.** iLok is per-machine; multi-instance is normal.
 Hardware-DSP plugins are the one real exception and are not worth designing
 around.

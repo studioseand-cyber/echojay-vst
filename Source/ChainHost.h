@@ -52,6 +52,8 @@ public:
         juce::String settings;  // suggested dial-in guidance from AI (display only)
         juce::String format;    // "AudioUnit" / "VST3" — popout-only is per-format
         float wet = 1.0f;       // per-slot wet/dry (0..1, 1 = fully wet)
+        juce::String manufacturer;  // catalogue identity — editorPlacement's
+                                    // float-by-identity rule keys on it
     };
 
     // ---- Mode (RACK_BORROW_IMPLEMENTATION_SPEC §2, 21 Aug 2026) -----------
@@ -783,14 +785,30 @@ public:
         FIRST so a stale popout mark on a builtin is inert; markPopoutOnly
         refuses builtins outright as the belt to this braces. */
     enum class EditorPlacement { InlineJuce, Float, InlineNative };
+    /** Float-by-IDENTITY (2 Sep 2026, the WaveShell blank pane): some
+        hosted native views report a valid frame and render NOTHING — a
+        view that measures fine and draws nothing defeats a size poll BY
+        CONSTRUCTION, so the settle poll is not, and never will be, the
+        detector for this class. WaveShell is decided here, before any
+        embed attempt, from CATALOGUE identity (manufacturer) — never from
+        the Cocoa view class, which is only knowable after the attempt
+        that doesn't work. DO NOT delete this as "redundant with the
+        poll": the poll saw 481x614 and settled while the pane stayed
+        blank, which is exactly why this rule exists. */
+    static bool floatsByIdentity(const juce::String& manufacturer)
+    {
+        return manufacturer.startsWith("Waves");   // WaveShell-hosted
+    }
     static EditorPlacement editorPlacement(const juce::String& pluginName,
-                                           const juce::String& format)
+                                           const juce::String& format,
+                                           const juce::String& manufacturer = {})
     {
         // ORDER IS LOAD-BEARING: the builtin arm comes BEFORE the popout
         // list precisely so a STALE on-disk mark on a builtin is inert
         // (one exists in the field). Reorder these and the mis-mark
         // floats builtins again while every truth-table arm stays green.
         if (format == kBuiltinFormat)         return EditorPlacement::InlineJuce;
+        if (floatsByIdentity(manufacturer))   return EditorPlacement::Float;
         if (isPopoutOnly(pluginName, format)) return EditorPlacement::Float;
         return EditorPlacement::InlineNative;
     }

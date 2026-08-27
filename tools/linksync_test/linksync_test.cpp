@@ -624,6 +624,21 @@ int main()
         check (CH::editorPlacement ("Some Plugin", "VST3")
                    == CH::EditorPlacement::InlineNative,
                "everything else takes the native inline path");
+        // Float-by-identity (2 Sep 2026, the WaveShell blank pane): a
+        // valid-frame-renders-nothing view defeats the size poll by
+        // construction, so WaveShell floats by CATALOGUE identity,
+        // decided before any embed attempt — through the same one
+        // decision, so glyph, caption and click agree.
+        check (CH::editorPlacement ("Abbey Road Chambers (s)", "AudioUnit",
+                                    "Waves")
+                   == CH::EditorPlacement::Float,
+               "a Waves-identity plugin floats BEFORE any embed attempt");
+        check (! CH::isPopoutOnly ("Abbey Road Chambers (s)", "AudioUnit"),
+               "and needs NO persisted mark to do so");
+        check (CH::editorPlacement ("EchoJay Gain", CH::kBuiltinFormat,
+                                    "EchoJay")
+                   == CH::EditorPlacement::InlineJuce,
+               "builtin-first ordering survives the identity arm");
         // ONE READER (1 Sep 2026 audit): isPopoutOnly is consulted ONLY
         // inside editorPlacement (plus its own decl/impl) — a second
         // direct reader skips the builtin arm and reintroduces the bug
