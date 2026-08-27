@@ -1,5 +1,6 @@
 #include "EchoJayBridgedAU.h"   // FIRST: pulls CoreFoundation before JUCE (Point ambiguity)
 #include "ChainHost.h"
+#include "EJVariantPreference.h"
 #include "EJParamReads.h"    // 6c section 8: one slot's current reads, header-inline for the pins
 #include "EchoJayParamApply.h"
 #include "EchoJayParamMaps.h"
@@ -5043,6 +5044,27 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
         if (stem != keyed && nameMap.find(stem) == nameMap.end())
             nameMap[stem] = d;
     };
+    // The base-name key is NOT first-wins (27 Aug 2026). Where several
+    // registrations collapse to one base name, the best channel variant claims
+    // it; see EJVariantPreference.h for the rank and the measurement behind it.
+    auto insertPreferredBase = [&nameMap, &modelKey](const juce::String& baseName,
+                                                     const juce::PluginDescription& d)
+    {
+        const std::string keyed = modelKey(baseName);
+        auto itK = nameMap.find(keyed);
+        if (itK == nameMap.end()
+            || echojay::channelVariantIsBetter(d.name, itK->second.name))
+            nameMap[keyed] = d;
+        const std::string stem = normalizeName(baseName).toStdString();
+        if (stem != keyed)
+        {
+            auto itS = nameMap.find(stem);
+            if (itS == nameMap.end()
+                || echojay::channelVariantIsBetter(d.name, itS->second.name))
+                nameMap[stem] = d;
+        }
+    };
+
     for (const auto& d : loadable)
     {
         insertName(d.name, d);
@@ -5053,7 +5075,7 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
         // of the AI feed entirely, and the model told the user a plugin
         // RUNNING IN THEIR RACK was "not in your available plugins".
         const auto base = stripParenthetical(d.name);
-        if (base != d.name) insertName(base, d);
+        if (base != d.name) insertPreferredBase(base, d);
     }
 
     // Filter enabled scanner plugins and resolve against the map

@@ -30,6 +30,7 @@
 #include "EJSettingsClip.h"      // 6a: header-inline, the shipped model-side clip
 #include "EJParamReads.h"        // 6c §8: header-inline, the shipped read serialiser
 #include "EJRefusalLine.h"      // refusal bubble: header-inline, the shipped composer
+#include "EJVariantPreference.h" // Waves channel-variant rank: header-inline, shipped
 #include "EchoJayParamMaps.h"
 #include "EchoJayParamApply.h"
 #include "EchoJayHistoryTrim.h"
@@ -2262,6 +2263,120 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "refusal PIN9: and renders through the pinned composer");
             check (! ed.contains ("line += one ? \" Turn off"),
                    "refusal PIN9: the unconditional append is gone");
+        }
+    }
+
+    // ---- Waves channel-variant preference --------------------------------
+    // WaveShell registers one AU per channel config. The feed offers the
+    // COLLAPSED base name, and the base key used to be first-wins over an
+    // alphabetically sorted entries_, so "(m)" beat "(s)" for 199 of 289 base
+    // names -- a mono instance in a 2x2 rack, right channel round the plugin.
+    {
+        std::cout << "waves channel-variant preference:\n";
+
+        // PIN 1 -- THE RANK ITSELF. Order is the whole decision, so it is
+        // asserted as an order and not as four independent numbers.
+        check (echojay::channelVariantRank ("Foo")            == 0, "var PIN1: unsuffixed is best");
+        check (echojay::channelVariantRank ("Foo (s)")        == 1, "var PIN1: (s) next");
+        check (echojay::channelVariantRank ("Foo (m)")        == 2, "var PIN1: (m) after (s)");
+        check (echojay::channelVariantRank ("Foo (m->s)")     == 3, "var PIN1: (m->s) after (m)");
+        check (echojay::channelVariantRank ("Foo (5->5)")     == 4, "var PIN1: surround last");
+        check (echojay::channelVariantRank ("Foo (S)")        == 1, "var PIN1: suffix match is case-insensitive");
+        check (echojay::channelVariantIsBetter ("F (s)", "F (m)"),  "var PIN1: (s) beats (m)");
+        check (! echojay::channelVariantIsBetter ("F (m)", "F (s)"),"var PIN1: and not the reverse");
+        check (! echojay::channelVariantIsBetter ("F (s)", "F (s)"),
+               "var PIN1: STRICTLY better only, so equal rank keeps the incumbent");
+
+        // (m->s) RANKS BELOW (m) ON PURPOSE, and this pin names the rule it is
+        // testing. (m->s) is 1-in/2-out: measured, it refuses setBusesLayout(2,2)
+        // and, because nOut == 2, buildGraph's `for (ch = nOut; ch < 2)`
+        // passthrough never runs, so the right INPUT is discarded rather than
+        // bypassed. (m) is 1-in/1-out and leaves the right channel dry but
+        // intact. Fed a right-only signal, Abbey Road Chambers (m->s) returned
+        // silence. So where a base name offers {m, m->s} and no (s) -- IR-L,
+        // IR1, the PRS amps, the UltraPitch family, 8 of 289 -- the rule is
+        // KEEP THE CHANNEL, and (m) wins.
+        check (echojay::channelVariantIsBetter ("IR-L (m)", "IR-L (m->s)"),
+               "var PIN4: with no (s), (m) beats (m->s) because (m->s) DISCARDS the right input");
+
+        // The base-name collapse, exactly as ChainHost does it. Mirrors the
+        // shipped loop; var PIN5 pins that the shipped loop still has this
+        // shape, so a change there reddens this fixture rather than passing
+        // against a stale mirror.
+        auto collapse = [] (const juce::StringArray& registrations, const juce::String& base)
+        {
+            juce::String winner;
+            for (const auto& r : registrations)
+            {
+                if (ChainHost::stripParenthetical (r) != base) continue;
+                if (winner.isEmpty() || echojay::channelVariantIsBetter (r, winner))
+                    winner = r;
+            }
+            return winner;
+        };
+
+        // PIN 2 -- CLA-76, THROUGH REAL REGISTRATIONS off this machine's
+        // chain_entries.xml rather than invented strings. CLA-76 has NO
+        // unsuffixed registration: only (m) and (s). It resolved to (m).
+        {
+            std::ifstream f (juce::File::getSpecialLocation (juce::File::userHomeDirectory)
+                                 .getChildFile ("Library/EchoJay/chain_entries.xml")
+                                 .getFullPathName().toStdString());
+            if (! f.good())
+            {
+                std::cout << "  SKIP  var PIN2 (no chain_entries.xml on this machine)\n";
+            }
+            else
+            {
+                std::stringstream ss; ss << f.rdbuf();
+                auto doc = juce::XmlDocument::parse (juce::String (ss.str()));
+                juce::StringArray regs;
+                if (doc != nullptr)
+                    for (auto* c : doc->getChildIterator())
+                        regs.add (c->getStringAttribute ("name"));
+                check (regs.size() > 0, "var PIN2: read the real registration list");
+                check (regs.contains ("CLA-76 (m)") && regs.contains ("CLA-76 (s)"),
+                       "var PIN2: CLA-76 really is registered (m) and (s), with no bare name");
+                check (! regs.contains ("CLA-76"),
+                       "var PIN2: and there is no unsuffixed CLA-76 to shortcut the choice");
+                check (collapse (regs, "CLA-76") == "CLA-76 (s)",
+                       "var PIN2: CLA-76 collapses to the STEREO registration");
+
+                // PIN 3 -- A MONO-ONLY BASE NAME MUST STILL RESOLVE. 5 of 289
+                // are (m) with nothing else; preferring stereo must never make
+                // one of those unreachable.
+                check (regs.contains ("GTR Tuner (m)") && ! regs.contains ("GTR Tuner (s)"),
+                       "var PIN3: GTR Tuner is registered mono-only");
+                check (collapse (regs, "GTR Tuner") == "GTR Tuner (m)",
+                       "var PIN3: a mono-only base name still resolves, to its mono build");
+
+                // PIN 4b -- the {m, m->s} case against real registrations.
+                check (collapse (regs, "UltraPitch Shift") == "UltraPitch Shift (m)",
+                       "var PIN4: {m, m->s} with no (s) resolves to (m), on real data");
+            }
+        }
+
+        // PIN 5 -- THE REAL CALLER. mapfps_test links the PREVIOUS build's
+        // SharedCode lib, so calling ChainHost::buildRecommendable here would
+        // exercise the code as it was before this change and prove nothing
+        // about it. What CAN be asserted without a rebuild is that the shipped
+        // call site routes the base key through this header and leaves the
+        // exact-name key first-wins -- the same wiring-pin shape the refusal
+        // work used, and the pin that reddens if someone reverts the site while
+        // leaving the helper green.
+        {
+            std::ifstream fch ("Source/ChainHost.cpp");
+            std::stringstream sch; sch << fch.rdbuf();
+            const auto ch = codeOnly (juce::String (sch.str()));
+            check (ch.contains ("if (base != d.name) insertPreferredBase(base, d);"),
+                   "var PIN5: the base-name key goes through the preferring insert");
+            check (ch.contains ("echojay::channelVariantIsBetter(d.name, itK->second.name)")
+                   && ch.contains ("echojay::channelVariantIsBetter(d.name, itS->second.name)"),
+                   "var PIN5: both the model key and the stem consult the shipped rank");
+            check (ch.contains ("insertName(d.name, d);"),
+                   "var PIN5: the EXACT-name key stays first-wins, untouched");
+            check (ch.contains ("#include \"EJVariantPreference.h\""),
+                   "var PIN5: and it includes the header it is pinned against");
         }
     }
 
