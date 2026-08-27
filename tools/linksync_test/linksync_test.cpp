@@ -490,6 +490,16 @@ int main()
                "a name+uid-only arrival still carries the manufacturer "
                "(instance backfill at storage)",
                "mfr=\"" + info5.manufacturer + "\"");
+        // BOTH projections (2 Sep): getAllSlotInfos dropped the sixth
+        // field in its own five-field brace init while getSlotInfo carried
+        // it — the main's panel and the sidecar publish feed from the
+        // PLURAL, which is exactly why the Link floated and the main did
+        // not. One builder now; this arm keeps them converged.
+        check (host.getAllSlotInfos()[(size_t) n5].manufacturer
+                   == info5.manufacturer,
+               "getAllSlotInfos and getSlotInfo project the SAME fields",
+               "plural mfr=\""
+                 + host.getAllSlotInfos()[(size_t) n5].manufacturer + "\"");
 
         // The genuinely-missing plugin: refused by name.
         const auto base6 = host.liveIdentity();

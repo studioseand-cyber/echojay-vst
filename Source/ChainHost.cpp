@@ -1367,11 +1367,18 @@ int ChainHost::getNumSlots() const noexcept
 
 std::vector<ChainHost::SlotInfo> ChainHost::getAllSlotInfos() const
 {
+    // ONE projection builder (2 Sep 2026): this used to brace-initialise
+    // five fields itself, so when SlotInfo gained `manufacturer` the sixth
+    // field silently defaulted to "" here while getSlotInfo carried it —
+    // the main's panel AND the sidecar publish both feed from THIS
+    // accessor, so the main never floated Waves and remote racks published
+    // blank identities, while the Link (getSlotDescription, same member)
+    // worked. Positional-init trap, fourth visit. Delegating means the
+    // two projections can never diverge again.
     std::vector<SlotInfo> result;
     result.reserve(slots_.size());
-    for (auto& s : slots_)
-        result.push_back({ s.desc.name, s.bypassed, s.settings,
-                           s.desc.pluginFormatName, s.wet });
+    for (int i = 0; i < (int) slots_.size(); ++i)
+        result.push_back(getSlotInfo(i));
     return result;
 }
 
