@@ -482,6 +482,14 @@ int main()
                  && host.getSlotProcessor (n5) != nullptr,
                "resolved to a REAL format from the catalogue and instantiated",
                info5.format);
+        // Single-source manufacturer (2 Sep 2026): this slot ARRIVED via a
+        // plan identity that carried NO manufacturer — the instance
+        // backfill at storage must supply it, because the float-by-identity
+        // placement reads it and a blank one embedded a Waves slot blank.
+        check (info5.manufacturer.isNotEmpty(),
+               "a name+uid-only arrival still carries the manufacturer "
+               "(instance backfill at storage)",
+               "mfr=\"" + info5.manufacturer + "\"");
 
         // The genuinely-missing plugin: refused by name.
         const auto base6 = host.liveIdentity();

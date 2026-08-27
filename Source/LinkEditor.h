@@ -462,6 +462,9 @@ public:
             // under a "plugin limitation" caption that was false as
             // written. Builtins embed inline with NO native machinery;
             // genuine out-of-process editors keep floating, label intact.
+            EchoJay_NSLog(("EJPane(link): open: " + model[(size_t)modelIdx].name
+                + " mfr=\"" + slotManufacturer(modelIdx)
+                + "\"").toRawUTF8());
             switch (ChainHost::editorPlacement(model[(size_t)modelIdx].name,
                                                slotFormat(modelIdx),
                                                slotManufacturer(modelIdx)))

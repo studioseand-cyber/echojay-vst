@@ -2413,6 +2413,12 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
     ChainSlot slot;
     slot.node     = graph_->addNode(std::move(inst));
     slot.desc     = desc;
+    // Backfill from the INSTANCE (see the twin note at the plan-attach
+    // sites): a restore's request desc lacks the manufacturer the
+    // float-by-identity placement keys on.
+    if (slot.desc.manufacturerName.isEmpty() && slot.node != nullptr)
+        if (auto* pi = dynamic_cast<juce::AudioPluginInstance*>(slot.node->getProcessor()))
+            slot.desc.manufacturerName = pi->getPluginDescription().manufacturerName;
     slot.bypassed = false;
     slots_.push_back(std::move(slot));
     // Pristine default, captured BEFORE any seed or dial (borrow reset).
@@ -4138,6 +4144,16 @@ bool ChainHost::tryReattachParked(const juce::PluginDescription& d, int insertAt
     ChainSlot slot;
     slot.node = std::move(entry.node);
     slot.desc = entry.desc;
+    // The stored desc is the REQUEST; the INSTANCE knows its true identity.
+    // Backfill what the request lacked — restore paths request by name+uid
+    // with a blank manufacturer, fresh adds carry the full catalogue desc —
+    // so every reader (editorPlacement's float-by-identity arm above all)
+    // sees the same truth regardless of arrival path (2 Sep 2026: a
+    // restored Waves slot reached the placement with mfr="" and embedded
+    // blank while an added one floated).
+    if (slot.desc.manufacturerName.isEmpty() && slot.node != nullptr)
+        if (auto* pi = dynamic_cast<juce::AudioPluginInstance*>(slot.node->getProcessor()))
+            slot.desc.manufacturerName = pi->getPluginDescription().manufacturerName;
     slot.bypassed = false;
     insertAt = juce::jlimit(0, (int) slots_.size(), insertAt);
     slots_.insert(slots_.begin() + insertAt, std::move(slot));
@@ -4570,6 +4586,16 @@ bool ChainHost::borrowTryReuseInto(const juce::PluginDescription& canonicalDesc)
     ChainSlot slot;
     slot.node = std::move(entry.node);
     slot.desc = entry.desc;
+    // The stored desc is the REQUEST; the INSTANCE knows its true identity.
+    // Backfill what the request lacked — restore paths request by name+uid
+    // with a blank manufacturer, fresh adds carry the full catalogue desc —
+    // so every reader (editorPlacement's float-by-identity arm above all)
+    // sees the same truth regardless of arrival path (2 Sep 2026: a
+    // restored Waves slot reached the placement with mfr="" and embedded
+    // blank while an added one floated).
+    if (slot.desc.manufacturerName.isEmpty() && slot.node != nullptr)
+        if (auto* pi = dynamic_cast<juce::AudioPluginInstance*>(slot.node->getProcessor()))
+            slot.desc.manufacturerName = pi->getPluginDescription().manufacturerName;
     slot.bypassed = false;
     slots_.push_back(std::move(slot));
     borrowReusedNodeIds_.insert(slots_.back().node->nodeID.uid);

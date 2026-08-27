@@ -2147,6 +2147,9 @@ private:
             // THE ONE PLACEMENT DECISION (31 Aug 2026): shared with the
             // Link's editor via ChainHost::editorPlacement — the branch
             // bodies stay host-specific, the DECISION cannot drift.
+            EchoJay_NSLog(("EJPane(main): open: " + slotInfos[(size_t)i].name
+                + " mfr=\"" + slotInfos[(size_t)i].manufacturer
+                + "\"").toRawUTF8());
             if (ChainHost::editorPlacement(slotInfos[(size_t)i].name,
                                            slotInfos[(size_t)i].format,
                                            slotInfos[(size_t)i].manufacturer)
