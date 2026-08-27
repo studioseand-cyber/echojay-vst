@@ -419,7 +419,21 @@ public:
             auto& model = proc.getChainModel();
             if (modelIdx < 0 || modelIdx >= (int)model.size()) return;
             int hostIdx = model[(size_t)modelIdx].hostIdx;
-            if (model[(size_t)modelIdx].missing || hostIdx < 0) { repaint(); return; }
+            if (model[(size_t)modelIdx].missing || hostIdx < 0)
+            {
+                // 1 Sep 2026 (Abbey Road Saturator): this return was SILENT
+                // — a slot whose plugin never loaded (WaveShell fails to
+                // instantiate here) showed an empty pane with no message at
+                // any point, unmarked, before the attempt path even began.
+                // Every open ends in a TRUE visible state.
+                statusText = model[(size_t)modelIdx].name
+                    + " could not be loaded on this Link - there is no "
+                      "editor to open. Reinstall or rescan the plugin.";
+                EchoJay_NSLog(("EJPane(link): open refused - slot missing: "
+                    + model[(size_t)modelIdx].name).toRawUTF8());
+                repaint();
+                return;
+            }
 
             // THE ONE PLACEMENT DECISION (31 Aug 2026): shared with the
             // main's panel via ChainHost::editorPlacement — the Link used
@@ -481,6 +495,8 @@ public:
             // which read as a broken pane. The poll's outcome replaces it.
             statusText = "Opening " + model[(size_t)modelIdx].name
                          + "'s editor...";
+            EchoJay_NSLog(("EJPane(link): attempt start: "
+                + model[(size_t)modelIdx].name).toRawUTF8());
             inlineEditor.reset(ed);
             inlineModelIdx = modelIdx;
             inlineHolder.setVisible(true);
@@ -508,6 +524,10 @@ public:
                     settled = true;
                     if (statusText.startsWith("Opening "))
                         statusText.clear();   // the verdict replaces it
+                    EchoJay_NSLog(("EJPane(link): settle verdict: "
+                        + juce::String(got ? "inline " + juce::String(w)
+                                             + "x" + juce::String(h)
+                                           : "EXPIRED -> popout")).toRawUTF8());
                     if (!got)
                     {
                         // Never grew past a placeholder: out-of-process
@@ -520,6 +540,8 @@ public:
                         {
                             ChainHost::markPopoutOnly(model[(size_t)inlineModelIdx].name,
                                                       slotFormat(inlineModelIdx));
+                            EchoJay_NSLog(("EJPane(link): mark written: "
+                                + model[(size_t)inlineModelIdx].name).toRawUTF8());
                             for (auto& bl : blocks)
                                 if (bl->modelIdx == inlineModelIdx)
                                 { bl->popoutOnly = true; bl->repaint(); }
@@ -607,9 +629,13 @@ public:
                 // fact the pane states.
                 statusText = "Failed: " + model[(size_t)i].name
                              + "'s editor could not be created";
+                EchoJay_NSLog(("EJPane(link): popout create FAILED: "
+                    + model[(size_t)i].name).toRawUTF8());
                 repaint();
                 return;
             }
+            EchoJay_NSLog(("EJPane(link): popout opened: "
+                + model[(size_t)i].name).toRawUTF8());
             popout = std::make_unique<PopoutWindow>(model[(size_t)i].name, ed);
             popoutModelIdx = i;
             popout->onCloseRequest = [safe = juce::Component::SafePointer<LinkChainPanel>(this)]

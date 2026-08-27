@@ -2206,6 +2206,8 @@ private:
             // as the Link's panel; the settle poll's verdict replaces it.
             statusText = "Opening " + slotInfos[(size_t)i].name
                          + "'s editor...";
+            EchoJay_NSLog(("EJPane(main): attempt start: "
+                + slotInfos[(size_t)i].name).toRawUTF8());
             inlineEditor.reset(ed);
             inlineSlot = i;
             inlineHolder.setVisible(true);
@@ -2252,6 +2254,10 @@ private:
                     settled = true;
                     if (statusText.startsWith("Opening "))
                         statusText.clear();   // the verdict replaces it
+                    EchoJay_NSLog(("EJPane(main): settle verdict: "
+                        + juce::String(got ? "inline " + juce::String(w)
+                                             + "x" + juce::String(h)
+                                           : "EXPIRED -> popout")).toRawUTF8());
                     if (!got)
                     {
                         // Never grew past a placeholder: out-of-process
@@ -2263,6 +2269,8 @@ private:
                         {
                             ChainHost::markPopoutOnly(slotInfos[(size_t)inlineSlot].name,
                                                       slotInfos[(size_t)inlineSlot].format);
+                            EchoJay_NSLog(("EJPane(main): mark written: "
+                                + slotInfos[(size_t)inlineSlot].name).toRawUTF8());
                             for (auto& bl : blocks)
                                 if (bl->slotIdx == inlineSlot)
                                 { bl->popoutOnly = true; bl->repaint(); }
@@ -2476,9 +2484,13 @@ private:
                 // no caption. Same fix as the Link's panel.
                 statusText = "Failed: " + slotInfos[(size_t)i].name
                              + "'s editor could not be created";
+                EchoJay_NSLog(("EJPane(main): popout create FAILED: "
+                    + slotInfos[(size_t)i].name).toRawUTF8());
                 repaint();
                 return;
             }
+            EchoJay_NSLog(("EJPane(main): popout opened: "
+                + slotInfos[(size_t)i].name).toRawUTF8());
             popout = std::make_unique<ChainEditorWindow>(slotInfos[(size_t)i].name, ed);
             popoutSlot = i;
             // Closing the floating window returns the editor to the plugin
