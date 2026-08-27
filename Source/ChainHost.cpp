@@ -2419,6 +2419,10 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
     if (slot.desc.manufacturerName.isEmpty() && slot.node != nullptr)
         if (auto* pi = dynamic_cast<juce::AudioPluginInstance*>(slot.node->getProcessor()))
             slot.desc.manufacturerName = pi->getPluginDescription().manufacturerName;
+    // Discriminator log (2 Sep): one side of the write; the projection's
+    // EJPane line is the other. The timestamps say which candidate holds.
+    EchoJay_NSLog(("EJPlace: stored \"" + slot.desc.name + "\" mfr=\""
+                   + slot.desc.manufacturerName + "\" (async load)").toRawUTF8());
     slot.bypassed = false;
     slots_.push_back(std::move(slot));
     // Pristine default, captured BEFORE any seed or dial (borrow reset).
@@ -4154,6 +4158,8 @@ bool ChainHost::tryReattachParked(const juce::PluginDescription& d, int insertAt
     if (slot.desc.manufacturerName.isEmpty() && slot.node != nullptr)
         if (auto* pi = dynamic_cast<juce::AudioPluginInstance*>(slot.node->getProcessor()))
             slot.desc.manufacturerName = pi->getPluginDescription().manufacturerName;
+    EchoJay_NSLog(("EJPlace: stored \"" + slot.desc.name + "\" mfr=\""
+                   + slot.desc.manufacturerName + "\" (plan attach)").toRawUTF8());
     slot.bypassed = false;
     insertAt = juce::jlimit(0, (int) slots_.size(), insertAt);
     slots_.insert(slots_.begin() + insertAt, std::move(slot));
@@ -4596,6 +4602,8 @@ bool ChainHost::borrowTryReuseInto(const juce::PluginDescription& canonicalDesc)
     if (slot.desc.manufacturerName.isEmpty() && slot.node != nullptr)
         if (auto* pi = dynamic_cast<juce::AudioPluginInstance*>(slot.node->getProcessor()))
             slot.desc.manufacturerName = pi->getPluginDescription().manufacturerName;
+    EchoJay_NSLog(("EJPlace: stored \"" + slot.desc.name + "\" mfr=\""
+                   + slot.desc.manufacturerName + "\" (plan attach)").toRawUTF8());
     slot.bypassed = false;
     slots_.push_back(std::move(slot));
     borrowReusedNodeIds_.insert(slots_.back().node->nodeID.uid);
