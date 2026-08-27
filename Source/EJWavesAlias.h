@@ -18,16 +18,17 @@
 // that resolves today can resolve differently, and the (m)/(s) preference in
 // EJVariantPreference.h still decides the variant.
 //
-// AMBIGUITY IS REFUSED, NOT GUESSED. Several marketing names cover more than one
-// registered product, and picking one would silently load the wrong plugin:
-//   Renaissance Equalizer -> REQ 2 / REQ 4 / REQ 6      (band count)
-//   API 550               -> API-550A / API-550B         (two EQs)
-//   SuperTap              -> SuperTap 2-Taps / 6-Taps    (tap count)
-//   Doubler               -> Doubler2 / Doubler4         (voice count)
-//   Trans-X               -> TransX Multi / TransX Wide  (two products)
-//   NLS Non-Linear Summer -> NLS Buss / NLS Channel      (two products)
-// Each returns empty and stays out of the feed. Choosing between them is a
-// product decision, not a naming one.
+// VARIANT COUNTS ARE RESOLVED BY OPERATOR DECISION (28 Aug 2026, second pass).
+// Six marketing names cover several registered products differing only in how
+// much of the product you get: band count, tap count, voice count. These were
+// refused as ambiguous until an operator chose the rule, which is FULLEST
+// VARIANT -- offer the model the most capable build and let it use less. They
+// are in the explicit table below, not derived, because "fullest" is a
+// judgement about products and nothing in the names encodes it.
+//
+// STILL REFUSED, and for a different reason: Abbey Road TG Mastering Chain is
+// not installed on this machine under any spelling. That is an absence, not an
+// ambiguity, and no table entry can fix it.
 namespace echojay
 {
 
@@ -62,6 +63,19 @@ inline const std::vector<std::pair<const char*, const char*>>& wavesExplicitAlia
         // "Master" is dropped. The EKramer* rows are the Eddie Kramer series,
         // a different product line, so this stays one-to-one.
         { "Kramer Master Tape",            "Kramer Tape"           },
+
+        // FULLEST-VARIANT CHOICES. Each of these marketing names covers two or
+        // three registrations that differ only in capacity, and the operator's
+        // rule is to offer the fullest. The target on the right is the name the
+        // shell actually registers, which is NOT always the obvious spelling:
+        // "API-550B" carries the API- prefix, "Doubler4" has no space, and
+        // "TransX Multi" has no hyphen even though the marketing name does.
+        { "Renaissance Equalizer",         "REQ 6"                 },  // of REQ 2 / 4 / 6
+        { "API 550",                       "API-550B"              },  // of API-550A / B
+        { "SuperTap",                      "SuperTap 6-Taps"       },  // of 2-Taps / 6-Taps
+        { "Doubler",                       "Doubler4"              },  // of Doubler2 / Doubler4
+        { "Trans-X",                       "TransX Multi"          },  // of TransX Multi / Wide
+        { "NLS Non-Linear Summer",         "NLS Channel"           },  // of NLS Buss / Channel
     };
     return t;
 }

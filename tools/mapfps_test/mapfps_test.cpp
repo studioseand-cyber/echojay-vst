@@ -2419,8 +2419,10 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             // no "REQ". Resolving to any one of them would load a plugin the
             // user did not ask for, so it stays out of the feed until somebody
             // decides which band count "Renaissance Equalizer" means.
-            check (echojay::wavesAliasFor ("Renaissance Equalizer", bases).isEmpty(),
-                   "wa PIN1: Renaissance Equalizer REFUSES (REQ 2/4/6, band count is a product choice)");
+            // Renaissance Equalizer was refused as ambiguous until an operator
+            // chose the rule (28 Aug 2026): FULLEST VARIANT. REQ 6 of REQ 2/4/6.
+            check (echojay::wavesAliasFor ("Renaissance Equalizer", bases) == "REQ 6",
+                   "wa PIN1: Renaissance Equalizer -> REQ 6 (fullest of REQ 2/4/6)");
 
             // PIN 2 -- A ROW WITH NO ALIAS IS UNTOUCHED. The alias must answer
             // nothing for a name it does not know, so the caller's existing
@@ -2431,18 +2433,26 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (echojay::wavesAliasFor ("Not A Real Plugin At All", bases).isEmpty(),
                    "wa PIN2: an unknown name yields no alias");
 
-            // PIN 3 -- AMBIGUITY REFUSES RATHER THAN GUESSES. Each of these
-            // marketing names covers more than one registered product.
-            check (echojay::wavesAliasFor ("API 550", bases).isEmpty(),
-                   "wa PIN3: API 550 refuses (API-550A / API-550B)");
-            check (echojay::wavesAliasFor ("SuperTap", bases).isEmpty(),
-                   "wa PIN3: SuperTap refuses (2-Taps / 6-Taps)");
-            check (echojay::wavesAliasFor ("Doubler", bases).isEmpty(),
-                   "wa PIN3: Doubler refuses (Doubler2 / Doubler4)");
-            check (echojay::wavesAliasFor ("Trans-X", bases).isEmpty(),
-                   "wa PIN3: Trans-X refuses (TransX Multi / Wide)");
-            check (echojay::wavesAliasFor ("NLS Non-Linear Summer", bases).isEmpty(),
-                   "wa PIN3: NLS refuses (NLS Buss / NLS Channel)");
+            // PIN 3 -- FULLEST VARIANT, by operator decision. Each of these
+            // marketing names covers several registrations differing only in
+            // capacity, and the rule is to offer the most capable. The TARGET
+            // SPELLINGS are the shell's, not the marketing ones: API-550B keeps
+            // the prefix, Doubler4 has no space, TransX Multi has no hyphen.
+            check (echojay::wavesAliasFor ("API 550", bases) == "API-550B",
+                   "wa PIN3: API 550 -> API-550B (fullest of A/B)");
+            check (echojay::wavesAliasFor ("SuperTap", bases) == "SuperTap 6-Taps",
+                   "wa PIN3: SuperTap -> SuperTap 6-Taps (fullest of 2/6)");
+            check (echojay::wavesAliasFor ("Doubler", bases) == "Doubler4",
+                   "wa PIN3: Doubler -> Doubler4 (fullest of 2/4)");
+            check (echojay::wavesAliasFor ("Trans-X", bases) == "TransX Multi",
+                   "wa PIN3: Trans-X -> TransX Multi");
+            check (echojay::wavesAliasFor ("NLS Non-Linear Summer", bases) == "NLS Channel",
+                   "wa PIN3: NLS Non-Linear Summer -> NLS Channel");
+            // AND THE ABSENCE IS STILL AN ABSENCE. Abbey Road TG is not
+            // installed under any spelling; no table entry can invent it, and
+            // this pin stops it being tabled to something that merely sounds close.
+            check (echojay::wavesAliasFor ("Abbey Road TG Mastering Chain", bases).isEmpty(),
+                   "wa PIN3: Abbey Road TG still refuses -- absent, not ambiguous");
 
             // PIN 3b -- THE ALNUM-EQUALITY TIE, on a SYNTHETIC registry. Two
             // registrations whose names differ only in punctuation do not occur
@@ -2481,8 +2491,9 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                     if (targets.contains (a2)) ++collided;
                     targets.add (a2);
                 }
-                check (aliased == 62, "wa PIN5: 62 of the 69 curated names get an answer");
-                check (69 - aliased == 7, "wa PIN5: and 7 refuse, the ambiguous ones");
+                check (aliased == 68, "wa PIN5: 68 of the 69 curated names get an answer");
+                check (69 - aliased == 1,
+                       "wa PIN5: and exactly 1 refuses, Abbey Road TG, which is not installed");
                 check (collided == 0, "wa PIN5: no two scanner rows alias onto one entry");
 
                 // THE ADDITIVE PROPERTY, asserted rather than argued. 34 of
