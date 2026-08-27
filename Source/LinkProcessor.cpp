@@ -350,6 +350,9 @@ void LinkProcessor::publishRackSidecar()
             // slot (assigned by name, after the positional init, like the
             // identity trio above).
             back.lastEditMs = lastLocalRackEditMs_;
+            // Manufacturer from the backfilled single source (SlotInfo),
+            // assigned after the positional init like the trio above.
+            back.manufacturer = s.manufacturer;
         }
     }
     LinkShm::writeRackSidecar(resolvedDir, rc);

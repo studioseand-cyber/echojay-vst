@@ -1074,6 +1074,14 @@ struct RackSidecarSlot {
     // systemic zero cannot masquerade as a pass). LAST, after the identity
     // strings, same positional-init rule as above.
     double lastEditMs = 0.0;
+    // Catalogue manufacturer (2 Sep 2026): editorPlacement's
+    // float-by-identity arm keys on it, and a remote rack's projection has
+    // no ChainHost to read through to — the sidecar is its only source.
+    // Additive at v:1, written only when non-empty, absent reads "".
+    // LAST, after lastEditMs, same positional-init rule as above — this is
+    // the trap's THIRD visit; a field spliced mid-struct shifts every
+    // brace initialiser silently and still compiles.
+    juce::String manufacturer;
 };
 struct RackSidecar {
     bool  valid = false;
@@ -1788,6 +1796,8 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
         // Additive at v:1, written only when a local edit has ever happened.
         if (s.lastEditMs > 0.0)
             so->setProperty("lastEditMs", s.lastEditMs);
+        if (s.manufacturer.isNotEmpty())
+            so->setProperty("mfr", s.manufacturer);
         slots.add(juce::var(so));
     }
     obj->setProperty("slots", slots);
@@ -1849,6 +1859,7 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
                                  && (bool) so->getProperty("controlled");
                 s.lastEditMs = so->hasProperty("lastEditMs")
                                  ? (double) so->getProperty("lastEditMs") : 0.0;
+                s.manufacturer = so->getProperty("mfr").toString();
                 if (s.name.isNotEmpty()) rc.slots.push_back(std::move(s));
             }
     rc.valid = rc.uid == uid && rc.revision >= 0;

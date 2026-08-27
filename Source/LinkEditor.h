@@ -488,7 +488,9 @@ public:
                     return;                   // no timer: nothing native runs
                 }
                 case ChainHost::EditorPlacement::Float:
-                    statusText = "This plugin's editor can't be embedded and opens in its own window";
+                    // No statusText: the PANE says it (its text is a
+                    // function of editorPlacement — 2 Sep rule), and the
+                    // strip line was a duplicate of the same sentence.
                     openPopoutForSelected();
                     repaint();
                     return;
@@ -587,7 +589,8 @@ public:
                                 if (bl->modelIdx == inlineModelIdx)
                                 { bl->popoutOnly = true; bl->repaint(); }
                         }
-                        statusText = "This plugin's editor can't be embedded and opens in its own window";
+                        // No statusText — the pane's placement-driven
+                        // caption covers Float (see the rule at paint).
                         openPopoutForSelected();   // destroys the inline editor first
                         repaint();
                         startTimer(400);
@@ -953,18 +956,37 @@ public:
                 g.drawText("This plugin could not be loaded on this machine.",
                            area, juce::Justification::centred);
             }
+            else if (inlineEditor == nullptr && selectedIdx >= 0
+                     && selectedIdx < (int)model.size()
+                     && ChainHost::editorPlacement(model[(size_t)selectedIdx].name,
+                                                   slotFormat(selectedIdx),
+                                                   slotManufacturer(selectedIdx))
+                            == ChainHost::EditorPlacement::Float)
+            {
+                // THE RULE (2 Sep 2026): the pane's text is a function of
+                // editorPlacement, full stop. Float -> the pane says so
+                // whether or not a window is open, was just closed, or
+                // never opened (the old popout!=nullptr gate erased the
+                // fact when the window closed). The closed wording names
+                // the way back — the slot's own popout arrow.
+                const bool winOpen = popout != nullptr
+                                     && popoutModelIdx == selectedIdx;
+                g.setColour(juce::Colour(0xffa0a0b8));
+                g.setFont(juce::Font(juce::FontOptions(12.0f)));
+                g.drawText(winOpen
+                    ? "Editor is open in its own window."
+                    : "This plugin's editor can't be embedded and opens in its own window. "
+                      "Click the slot's " + juce::String::fromUTF8("\xe2\x86\x97")
+                      + " to open it.",
+                           area.reduced(16), juce::Justification::centred, true);
+            }
             else if (popout != nullptr && popoutModelIdx == selectedIdx
                      && inlineEditor == nullptr)
             {
-                bool po = selectedIdx < (int)model.size()
-                       && ChainHost::editorPlacement(model[(size_t)selectedIdx].name,
-                                                     slotFormat(selectedIdx),
-                                                     slotManufacturer(selectedIdx))
-                              == ChainHost::EditorPlacement::Float;
+                // A non-Float plugin the user chose to pop out.
                 g.setColour(juce::Colour(0xffa0a0b8));
                 g.setFont(juce::Font(juce::FontOptions(12.0f)));
-                g.drawText(po ? "This plugin's editor can't be embedded and opens in its own window."
-                              : "Editor is open in a floating window - click the plugin block to bring it back.",
+                g.drawText("Editor is open in a floating window - click the plugin block to bring it back.",
                            area.reduced(16), juce::Justification::centred, true);
             }
 

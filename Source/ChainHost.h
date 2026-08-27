@@ -797,6 +797,15 @@ public:
         blank, which is exactly why this rule exists. */
     static bool floatsByIdentity(const juce::String& manufacturer)
     {
+        // "" IS EXPLICIT (2 Sep 2026): an empty manufacturer means the
+        // identity is unknown or unreported (an old Link's sidecar, or an
+        // instance that reports none) and reads NOT-Waves — the inline
+        // attempt proceeds, and that is SAFE because every attempt now
+        // ends in a true visible state: "Opening..." narrates it, the
+        // settle net marks+floats+captions on expiry, and a remote view
+        // (where the sidecar is the only source) never opens local
+        // editors at all — its clicks select. Unknown never silently
+        // does the doomed thing and shows nothing.
         return manufacturer.startsWith("Waves");   // WaveShell-hosted
     }
     static EditorPlacement editorPlacement(const juce::String& pluginName,

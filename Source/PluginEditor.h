@@ -2179,7 +2179,8 @@ private:
                                            slotInfos[(size_t)i].manufacturer)
                     == ChainHost::EditorPlacement::Float)
             {
-                statusText = "This plugin's editor can't be embedded and opens in its own window";
+                // No statusText: the PANE's placement-driven caption says
+                // it (2 Sep rule); the strip line duplicated the sentence.
                 openPopoutForSelected();
                 repaint();
                 return;
@@ -2295,7 +2296,8 @@ private:
                                 if (bl->slotIdx == inlineSlot)
                                 { bl->popoutOnly = true; bl->repaint(); }
                         }
-                        statusText = "This plugin's editor can't be embedded and opens in its own window";
+                        // No statusText — the pane's placement caption
+                        // covers Float (see the rule at paint).
                         openPopoutForSelected();   // destroys the inline editor first
                         repaint();
                         startTimer(400);
@@ -2772,17 +2774,34 @@ private:
                 g.drawText("to build a chain for you.",
                            0, cy + 20, getWidth(), 20, juce::Justification::centred);
             }
-            else if (popout != nullptr && popoutSlot == selectedIdx && inlineEditor == nullptr)
+            else if (inlineEditor == nullptr && selectedIdx >= 0
+                     && selectedIdx < (int)slotInfos.size()
+                     && ChainHost::editorPlacement(slotInfos[(size_t)selectedIdx].name,
+                                                   slotInfos[(size_t)selectedIdx].format,
+                                                   slotInfos[(size_t)selectedIdx].manufacturer)
+                            == ChainHost::EditorPlacement::Float)
             {
-                bool po = selectedIdx < (int)slotInfos.size()
-                       && ChainHost::editorPlacement(slotInfos[(size_t)selectedIdx].name,
-                                                     slotInfos[(size_t)selectedIdx].format,
-                                                     slotInfos[(size_t)selectedIdx].manufacturer)
-                              == ChainHost::EditorPlacement::Float;
+                // THE RULE (2 Sep 2026): the pane's text is a function of
+                // editorPlacement — Float says so whether or not a window
+                // is open (the old popout!=nullptr gate erased the fact on
+                // close). Closed wording names the way back.
+                const bool winOpen = popout != nullptr
+                                     && popoutSlot == selectedIdx;
                 g.setColour(juce::Colour(0xffa0a0b8));
                 g.setFont(juce::Font(juce::FontOptions(12.0f)));
-                g.drawText(po ? "This plugin's editor can't be embedded and opens in its own window."
-                              : "Editor is open in a floating window - click the plugin block to bring it back.",
+                g.drawText(winOpen
+                    ? "Editor is open in its own window."
+                    : "This plugin's editor can't be embedded and opens in its own window. "
+                      "Click the slot's " + juce::String::fromUTF8("\xe2\x86\x97")
+                      + " to open it.",
+                           area.reduced(16), juce::Justification::centred, true);
+            }
+            else if (popout != nullptr && popoutSlot == selectedIdx && inlineEditor == nullptr)
+            {
+                // A non-Float plugin the user chose to pop out.
+                g.setColour(juce::Colour(0xffa0a0b8));
+                g.setFont(juce::Font(juce::FontOptions(12.0f)));
+                g.drawText("Editor is open in a floating window - click the plugin block to bring it back.",
                            area.reduced(16), juce::Justification::centred, true);
             }
         }
@@ -4278,6 +4297,9 @@ private:
         si.settings = rs.settings;
         si.format   = rs.format;
         si.wet      = rs.wet;
+        si.manufacturer = rs.manufacturer;   // sidecar is the remote view's
+                                             // ONLY identity source ("" from
+                                             // an old Link reads not-Waves)
         return si;
     }
     ChainRackView chainRackView() const;
