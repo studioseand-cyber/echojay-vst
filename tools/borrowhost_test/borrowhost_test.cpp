@@ -78,6 +78,10 @@ struct EchoJayTabStripTestAccess
     // asserts read the same rects paint does.
     static juce::Rectangle<int> rackMRect (EchoJayEditor& e)
     { return e.chainListPanel.msLamps.mR; }
+    static bool panelVisible (EchoJayEditor& e)
+    { return e.chainListPanel.isVisible(); }
+    static int  blockCount (EchoJayEditor& e)
+    { return (int) e.chainListPanel.blocks.size(); }
 };
 #include "EedDeviceRegistry.h"
 #include "LinkShm.h"   // BorrowRing — the stale-ring decision (finding #3)
@@ -1616,6 +1620,19 @@ int main()
         // (EchoJayProcessor::createSlotEditorForView) against real object
         // code — including the async-engage window, which is exactly the
         // state built here: engage begun, rack settling, nothing finished.
+        // A persisted login BEFORE the processor constructs (its API loads
+        // auth.json exactly once, at ctor): editors in these arms run the
+        // MAIN screen — the field state — instead of the login page. The
+        // endpoint is a refused local port so nothing networks slowly.
+        {
+            const auto authF = juce::File::getSpecialLocation(
+                    juce::File::userApplicationDataDirectory)
+                .getChildFile ("Application Support/EchoJay/auth.json");
+            authF.getParentDirectory().createDirectory();
+            authF.replaceWithText (
+                "{\"endpoint\": \"http://127.0.0.1:9\", "
+                "\"token\": \"test-token\", \"email\": \"t@t\"}");
+        }
         EchoJayProcessor mainProc;
         check (! mainProc.borrowActive(), "fresh processor: no session");
         check (mainProc.createSlotEditorForView ("some-remote", 0) == nullptr,
@@ -2225,6 +2242,72 @@ int main()
 
             LinkShm::storeRelease (&rslots[ri].inUse, 0u);
             juce::File (LinkShm::rackSidecarPath (rdir, ruid)).deleteFile();
+            mainProc.refreshLinkRegistry();
+            mainProc.pendingChannelUid.clear();
+        }
+
+        // ---- FIRST-OPEN POPULATION (31 Aug, touch-up 6): an editor that
+        // REOPENS onto the CHAIN tab (lastTabIndex restored) must show the
+        // chain with NO other interaction. Pre-fix: the ctor seeded
+        // currentTab but never ran the tab-ENTER pass, clicking the
+        // already-current tab is a no-op, the panel (addChildComponent)
+        // stayed invisible and the 20Hz refresh gated on isVisible —
+        // blank forever. View-only (A): the rack below is published state
+        // the processor reads regardless of any editor.
+        {
+            int errF = 0;
+            const juce::String fdir = LinkShm::resolveDir (errF);
+            int ffd2 = -1, ferr2 = 0;
+            void* fmap2 = LinkShm::openRegistry (fdir, ffd2, ferr2);
+            check (fmap2 != nullptr, "first-open arm: registry mapping");
+            auto* fsl = LinkShm::regSlots (fmap2);
+            const int fi3 = 13;
+            const char* fuid3 = "uid-fo";
+            std::memset (&fsl[fi3], 0, sizeof (RegistrySlot));
+            std::strncpy (fsl[fi3].displayName, "FO Test", 39);
+            std::memcpy (fsl[fi3].instanceUid, fuid3, 6);
+            fsl[fi3].sampleRate = 48000.0f; fsl[fi3].numChannels = 2;
+            LinkShm::RackSidecar rc6;
+            rc6.valid = true; rc6.uid = fuid3; rc6.name = "FO Test";
+            rc6.revision = 1;   // a real Link always publishes >= 0
+            rc6.muteSoloCapable = true; rc6.inContextCapable = true;
+            LinkShm::RackSidecarSlot s1; s1.name = "EchoJay EQ";
+            s1.format = "EchoJay";
+            LinkShm::RackSidecarSlot s2; s2.name = "EchoJay Gain";
+            s2.format = "EchoJay";
+            rc6.slots = { s1, s2 };
+            LinkShm::writeRackSidecar (fdir, rc6);
+            for (uint32_t t = 1; t <= 3; ++t)
+            {
+                LinkShm::storeRelease (&fsl[fi3].heartbeat, t);
+                LinkShm::storeRelease (&fsl[fi3].inUse, 1u);
+                mainProc.refreshLinkRegistry();
+            }
+            mainProc.lastTabIndex = 6;            // reopened ONTO Chain
+            mainProc.pendingChannelUid = fuid3;   // a Link's rack selected
+            std::unique_ptr<juce::AudioProcessorEditor> ed6 (mainProc.createEditor());
+            auto* eje6 = dynamic_cast<EchoJayEditor*> (ed6.get());
+            check (eje6 != nullptr, "first-open arm: editor constructed");
+            // THE FIX, asserted before any pump or test-driven switch: the
+            // ctor itself ran the enter pass.
+            check (EchoJayTabStripTestAccess::panelVisible (*eje6),
+                   "the restored CHAIN tab is ENTERED at construction "
+                   "(panel visible, no interaction)");
+            for (int i2 = 0; i2 < 20; ++i2)
+            { juce::Timer::callPendingTimersSynchronously();
+              CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); }
+            check (EchoJayTabStripTestAccess::blockCount (*eje6) == 2,
+                   "and the rack POPULATES with no other interaction "
+                   "(two published slots render)",
+                   juce::String (EchoJayTabStripTestAccess::blockCount (*eje6))
+                     + " cache=" + juce::String ((int) mainProc.linkRackCache.count (fuid3))
+                     + (mainProc.linkRackCache.count (fuid3)
+                          ? " valid=" + juce::String ((int) mainProc.linkRackCache[fuid3].valid)
+                            + " slots=" + juce::String ((int) mainProc.linkRackCache[fuid3].rack.slots.size())
+                          : juce::String()));
+            ed6.reset();
+            LinkShm::storeRelease (&fsl[fi3].inUse, 0u);
+            juce::File (LinkShm::rackSidecarPath (fdir, fuid3)).deleteFile();
             mainProc.refreshLinkRegistry();
             mainProc.pendingChannelUid.clear();
         }

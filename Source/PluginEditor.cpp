@@ -2656,10 +2656,23 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             ch.startScan();
     }
 
-    // Session C: the constructor does not go through switchToTab, so an editor
-    // that OPENS on the Dashboard (a fresh instance, or a Logic recreate that
-    // restored the tab from the processor) has to be told to fill it. Cache
-    // first, then the TTL check, exactly as a tab click would.
+    // THE RESTORED TAB IS ENTERED, not just displayed (31 Aug 2026, the
+    // blank-CHAIN-on-first-open bug). The constructor seeds currentTab from
+    // the processor but never ran the tab-ENTER pass — and clicking the
+    // already-current tab is a no-op (switchToTab early-outs), so an editor
+    // reopened onto CHAIN showed the active tab strip over an invisible,
+    // never-refreshed panel (chainListPanel is addChildComponent; its ONE
+    // visibility writer is switchToTab; the 20Hz refresh gates on
+    // isVisible). View-only by construction — the chain lives in the
+    // processor's chainHost and kept processing. The fix is THE SAME
+    // function a tab click runs, forced once here: one population path, no
+    // second "initial draw" routine to drift.
+    if (currentScreen == Screen::Main)
+        switchToTab(currentTab, /*force*/ true);
+
+    // Session C: switchToTab alone does not FILL the Dashboard (cache
+    // first, then the TTL check, exactly as a tab click would) — the fill
+    // compensation stays.
     if (currentTab == Tab::Dashboard && currentScreen == Screen::Main)
         openDashboardTab();
 
