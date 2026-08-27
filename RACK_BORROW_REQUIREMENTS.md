@@ -112,9 +112,31 @@ test.
 the first, auto-acquiring on release or expiry.
 
 **Read-only covers structure and mix writes** — add, remove, move, bypass, slot
-wet, master wet. Plugin interiors stay live: selection, scrolling, meters, and
-opening a hosted editor. Locking parameter writes would be a claim the code
+wet, master wet. ~~Plugin interiors stay live: selection, scrolling, meters, and
+opening a hosted editor.~~ Locking parameter writes would be a claim the code
 cannot keep.
+
+**AMENDED 2 Sep 2026 — the lock now covers hosted editors too.** This
+reverses the struck sentence above: on lock acquire the Link closes any
+open hosted editor and refuses to open new ones while locked, with the
+reason stated. The reason for the reversal: the session's write-back at
+deselect replaces plugin state wholesale, so interior edits made on the
+Link during a lock are CLOBBERED when the session ends — an editor that
+stays open is an invitation to lose work. Selection, scrolling and
+meters stay live; parameter-write locking remains a claim the code
+cannot keep, which is exactly why the editor must close instead. No
+dimming overlay: see the standing hazard below.
+
+**STANDING HAZARD — hosted NSViews composite over everything JUCE
+draws.** A hosted plugin editor is a native NSView; it ignores JUCE
+z-order AND JUCE visibility of overlapping lightweight components.
+Three defects in one week came from forgetting this: the chain-build
+auto-open painting a plugin box over other tabs, the rack menu drawing
+behind the plugin pane, and the review overlay's earlier rule ("NSViews
+composite over lightweight components, so they must be HIDDEN, not
+out-z-ordered"). The rule: anything that must appear over a hosted
+editor requires the editor CLOSED or HIDDEN first — never an overlay,
+never z-order.
 
 **Licensing is not a concern.** iLok is per-machine; multi-instance is normal.
 Hardware-DSP plugins are the one real exception and are not worth designing

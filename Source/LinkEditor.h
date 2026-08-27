@@ -419,6 +419,16 @@ public:
             auto& model = proc.getChainModel();
             if (modelIdx < 0 || modelIdx >= (int)model.size()) return;
             int hostIdx = model[(size_t)modelIdx].hostIdx;
+            // Lock covers hosted editors (2 Sep 2026, §4 amendment).
+            if (proc.rackLockOwner().isNotEmpty())
+            {
+                statusText = "\"" + proc.rackLockOwner() + "\" is editing "
+                    "this rack - hosted editors reopen when it's released "
+                    "(its write-back would overwrite changes made here).";
+                EchoJay_NSLog("EJPane(link): open refused - rack locked");
+                repaint();
+                return;
+            }
             if (model[(size_t)modelIdx].missing || hostIdx < 0)
             {
                 // 1 Sep 2026 (Abbey Road Saturator): this return was SILENT
@@ -616,6 +626,13 @@ public:
         {
             auto& model = proc.getChainModel();
             if (!canPopOut()) return;
+            if (proc.rackLockOwner().isNotEmpty())
+            {
+                statusText = "\"" + proc.rackLockOwner() + "\" is editing "
+                    "this rack - hosted editors reopen when it's released.";
+                repaint();
+                return;
+            }
             int i = selectedIdx;
             int hostIdx = model[(size_t)i].hostIdx;
             closeAllEditors();
@@ -684,6 +701,20 @@ public:
                     : "Selected in the rack on \"" + lockOwner
                         + "\" - deselect there to edit here.")
                 : juce::String();
+
+            // 2 Sep 2026 (scope change, RACK_BORROW_REQUIREMENTS §4): the
+            // lock now COVERS hosted editors — the write-back at session
+            // end would clobber interior edits made here meanwhile. This
+            // rebuild runs on every lock transition (pollRackLock calls
+            // notifyChainModel), so acquire closes any open editor.
+            if (lockOwner.isNotEmpty()
+                && (inlineEditor != nullptr || popout != nullptr))
+            {
+                closeAllEditors();
+                statusText = "Hosted editors close while \"" + lockOwner
+                    + "\" edits this rack - its write-back would overwrite "
+                      "changes made here.";
+            }
 
             for (auto& bl : blocks) stripContent.removeChildComponent(bl.get());
             blocks.clear();
