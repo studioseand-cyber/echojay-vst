@@ -201,6 +201,7 @@ private:
     // zero target, which is a block-rate artefact of exactly the kind the
     // slicing exists to remove.
     float lastTarget_  = 0.0f;
+    float lastShift_ = echojay::PsolaEngine::kNoShift;   // held with the target
     float lastHopF0_   = 0.0f;
     bool  lastHopVoiced_ = false;
     bool  lastCorrecting_ = false;

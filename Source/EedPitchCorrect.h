@@ -389,6 +389,7 @@ public:
         {
             haveNote_ = true;
             curCents_ = inCents;               // start AT the note, not behind it
+            shiftSnap_ = true;
             noteRefCents_ = inCents;
             stableMs_ = 0.0f; confirmMs_ = 0.0f; havePending_ = false;
             noteMs_ = 0.0f; vibPhase_ = 0.0f;
@@ -419,6 +420,7 @@ public:
                         // A genuine note change: restart AT the new note so the
                         // interval does not become a portamento.
                         curCents_ = inCents;
+                        shiftSnap_ = true;
                         slowCents_ = inCents;
                         noteRefCents_ = inCents;
                         stableMs_ = 0.0f;
@@ -483,9 +485,37 @@ public:
         // The corrected NOTE, plus however much of the singer's own vibrato is
         // wanted on top of it: 100 keeps it as sung, 0 gives a dead-still note,
         // 200 exaggerates.
-        const float aimCents = noteCents + wanted + osc * (natVib_.load() * 0.01f);
+        // STRUCTURAL (3 Sep 2026 ruling): the fast component is EXCLUDED
+        // from the error rather than subtracted and re-added across the
+        // shifter's latency. The envelope glides the NOTE alone; the
+        // emitted quantity is a SLOW SHIFT (curCents_ - slowCents_), and
+        // the shifter applies it as a ratio against its own time-aligned
+        // f0 — so at natural_vibrato 100 the audio keeps its own vibrato
+        // by algebraic cancellation, not by a delay-line's belief about
+        // latency. The old path re-added osc(now) onto audio emitted
+        // 37-55 ms later: at ~6 Hz that is ~a third of a cycle of phase
+        // error, measured as MORE wobble than the source and 12 extra
+        // wrong-note events. k != 1 (dead-still 0 / exaggerate 200) still
+        // carries (k-1)*osc — fast, with the old phase caveat — because
+        // scaling the singer's own vibrato has no slow formulation.
+        const float aimCents = noteCents + wanted;
         const float coeff = onePole (retuneMs_.load());
         curCents_ = aimCents + (curCents_ - aimCents) * coeff;
+        {
+            // The vibrato smoother's stopband leaks a few cents of ripple
+            // into (curCents_ - noteCents); a slow pole on the SLOW PART
+            // kills it (smoothing a slow quantity — no latency belief
+            // involved), snapped at note changes so corrections never
+            // glide across notes. The DELIBERATE fast term (k-1)*osc is
+            // added after the pole: dead-still/exaggerate are meant to be
+            // fast, and damping them would blunt their own semantics.
+            const float slowPart = curCents_ - noteCents;
+            if (shiftSnap_) { shiftSm_ = slowPart; shiftSnap_ = false; }
+            else            shiftSm_ = slowPart
+                                     + (shiftSm_ - slowPart) * onePole (50.0f);
+            shiftCents_ = shiftSm_
+                        + (natVib_.load() * 0.01f - 1.0f) * osc;
+        }
         // Per-hop introspection for the retune trace (3 Sep 2026): plain
         // stores on the audio thread, read by the processor's trace ring.
         lastInCents_  = inCents;
@@ -526,6 +556,7 @@ public:
 
         // ---- 5: transpose --------------------------------------------------
         targetCents_ = curCents_ + vibNow_ + 100.0f * transpose_.load();
+        shiftCents_ += vibNow_ + 100.0f * transpose_.load();
 
         return hzFromCentsC (targetCents_, ref);
     }
@@ -564,6 +595,19 @@ public:
     uint32_t noteChanges() const noexcept { return noteChanges_; }
     uint32_t gapResumes()  const noexcept { return gapResumes_; }
     float    lastTargetCents() const noexcept { return targetCents_; }
+    /** The SLOW applied correction in cents (see the structural note in
+        process): what the shifter should apply as a ratio against its own
+        aligned f0. Valid whenever process() returned a target > 0. */
+    float    lastShiftCents() const noexcept { return shiftCents_; }
+    /** TRUE when the structural slow-shift path applies: natural_vibrato at
+        (effectively) 100, where the shift is osc-free by construction. At
+        any other setting the fast term (k-1)*osc has NO slow formulation —
+        measured +7 clicks on the chromatic gate when it rode the shift
+        path — so those settings keep the legacy target/f0 semantics with
+        their documented phase caveat. Both shipping presets that preserve
+        vibrato (natural, balanced) are k=100 and take the slow path. */
+    bool     shiftPreferred() const noexcept
+    { return std::fabs (natVib_.load() - 100.0f) < 0.5f; }
     float    lastInCents()   const noexcept { return lastInCents_; }
     float    lastSlowCents() const noexcept { return lastSlowCents_; }
     float    lastOscCents()  const noexcept { return lastOscCents_; }
@@ -653,6 +697,9 @@ private:
     std::atomic<float> natVib_   { 100.0f };
     float lastInCents_ = 0, lastSlowCents_ = 0, lastOscCents_ = 0,
           lastAimCents_ = 0;   // trace introspection (audio thread)
+    float shiftCents_ = 0.0f;   // the slow applied correction (see process)
+    float shiftSm_ = 0.0f;      // its ripple-killing slow pole
+    bool  shiftSnap_ = true;    // snap the pole at note changes
     float vibPhase_ = 0.0f, vibNow_ = 0.0f, noteMs_ = 0.0f;
 
     bool  haveNote_ = false, haveSlow_ = false, havePending_ = false;

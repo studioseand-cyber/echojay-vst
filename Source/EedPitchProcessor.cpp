@@ -733,6 +733,7 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     const uint64_t blockStart = engine_.inputPosition() - (uint64_t) n;
 
     float target     = lastTarget_;
+    float shift      = lastShift_;
     float sliceF0    = lastHopF0_;
     bool  sliceVoiced = lastHopVoiced_;
     bool  correcting = lastCorrecting_;
@@ -754,7 +755,7 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
             for (int ch = 0; ch < numCh; ++ch)
                 shifter (ch).process (buffer.getReadPointer (ch) + cursor,
                                       buffer.getWritePointer (ch) + cursor, len,
-                                      sliceF0, sliceVoiced, target);
+                                      sliceF0, sliceVoiced, target, shift);
             cursor = sliceEnd;
         }
 
@@ -816,9 +817,14 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
                 // emits those samples as bit-exact dry THROUGH the seam fade,
                 // which exists for exactly this join. Same audible content,
                 // faded instead of stepped - and unvoiced stays sacred.
-                if (t > 0.0f)           target = t;
+                if (t > 0.0f)         { target = t;
+                                          shift = correct_.shiftPreferred()
+                                              ? correct_.lastShiftCents()
+                                              : echojay::PsolaEngine::kNoShift; }
                 else if (target <= 0.0f) correcting = false;   // nothing to hold yet
-                // else: hold the last target through the gap.
+                // else: hold the last target AND SHIFT through the gap —
+                // holding a shift is gentler than holding an absolute
+                // target across a gap the voice moved through.
 
                 // Retune trace: one record per hop while correcting (the
                 // editor drains; unread records are simply overwritten).
@@ -832,16 +838,17 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
                     r.slowC = correct_.lastSlowCents();
                     r.oscC  = correct_.lastOscCents();
                     r.aimC  = correct_.lastAimCents();
-                    r.envC  = t > 0.0f
-                        ? 1200.0f * std::log2 (t / std::max (1.0f, gatedF0))
-                        : 0.0f;   // envC = applied correction in cents
+                    r.envC  = t > 0.0f ? correct_.lastShiftCents()
+                                       : 0.0f;   // the APPLIED shift (3 Sep)
                     traceW_.store (w + 1, std::memory_order_release);
                 }
             }
             else
             {
-                // Not correcting: the fixed-target diagnostic still applies.
+                // Not correcting: the fixed-target diagnostic still applies
+                // (legacy target/f0 semantics — no shift).
                 target = shifter().getTargetHz();
+                shift  = echojay::PsolaEngine::kNoShift;
                 correcting = false;
             }
         }
@@ -852,9 +859,9 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         for (int ch = 0; ch < numCh; ++ch)
             shifter (ch).process (buffer.getReadPointer (ch) + cursor,
                                   buffer.getWritePointer (ch) + cursor, n - cursor,
-                                  sliceF0, sliceVoiced, target);
+                                  sliceF0, sliceVoiced, target, shift);
 
-    lastTarget_ = target; lastHopF0_ = sliceF0;
+    lastTarget_ = target; lastShift_ = shift; lastHopF0_ = sliceF0;
     lastHopVoiced_ = sliceVoiced; lastCorrecting_ = correcting;
 
     // Feed the ribbon here rather than from the editor's timer, so the trace

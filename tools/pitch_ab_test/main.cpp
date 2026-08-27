@@ -200,6 +200,8 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
         corr.setRetuneMs (v.retune); corr.setFlex (v.flex);
         corr.setHumanize (v.hum);    corr.setNaturalVibrato (v.nv);
     }
+    if (const char* iv = getenv ("AB_IGNVIB"))
+        corr.setIgnoreVibrato (std::atoi (iv) != 0);
     corr.reset();
 
     F0JumpGate f0Gate;    // mirrors EedPitchProcessor::processBlock
@@ -246,6 +248,7 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
     std::vector<float> out (in.size(), 0.0f);
     PitchEngine::HopEvent ev[64];
     float target = 0.0f, sliceF0 = 0.0f;
+    float shift  = echojay::PsolaEngine::kNoShift;   // mirrors the processor
     bool  sliceVoiced = false;
     for (size_t p = 0; p + 256 <= in.size(); p += 256)
     {
@@ -266,7 +269,7 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
             {
                 sh.process (in.data() + p + (size_t) cursor,
                             out.data() + p + (size_t) cursor,
-                            sliceEnd - cursor, sliceF0, sliceVoiced, target);
+                            sliceEnd - cursor, sliceF0, sliceVoiced, target, shift);
                 cursor = sliceEnd;
             }
             if (h < nHops)
@@ -287,13 +290,16 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
                                                      rOldT, rNewT);
                 sliceF0 = gatedF0; sliceVoiced = ev[h].voiced;
                 const float t = corr.process (gatedF0, ev[h].voiced, hopMs);
-                if (t > 0.0f) target = t;              // hold through gaps
+                if (t > 0.0f) { target = t;            // hold through gaps
+                                shift  = corr.shiftPreferred()
+                                             ? corr.lastShiftCents()
+                                             : echojay::PsolaEngine::kNoShift; }
             }
         }
         if (cursor < 256)
             sh.process (in.data() + p + (size_t) cursor,
                         out.data() + p + (size_t) cursor,
-                        256 - cursor, sliceF0, sliceVoiced, target);
+                        256 - cursor, sliceF0, sliceVoiced, target, shift);
     }
 
     std::vector<float> aligned (in.size(), 0.0f);
@@ -648,7 +654,9 @@ int main (int argc, char* argv[])
 
     std::vector<float> dry, bounce, antares;
     double fs = 0.0, fs2 = 0.0, fs3 = 0.0;
-    if (! readWavMono ((dir + "/dry.wav").c_str(), dry, fs)
+    const char* srcOverride = getenv ("AB_SRC");   // acceptance renders
+    if (! readWavMono ((srcOverride != nullptr ? std::string (srcOverride)
+                                               : dir + "/dry.wav").c_str(), dry, fs)
         || ! readWavMono ((dir + "/antares.wav").c_str(), antares, fs3))
     { std::printf ("cannot read dry.wav/antares.wav in %s\n", dir.c_str()); return 1; }
     const bool haveBounce = readWavMono ((dir + "/echojay.wav").c_str(), bounce, fs2);

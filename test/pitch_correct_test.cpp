@@ -344,7 +344,13 @@ int main()
             {
                 const float dev = 60.0f * std::sin (2.0 * M_PI * 5.5 * i * 0.00267);
                 const float out = c.process (hz (900.0f + dev), true);
-                if (i > 250) { const float t = cents (out); lo = std::min (lo, t); hi = std::max (hi, t); }
+                (void) out;
+                // 3 Sep restructure: the TARGET no longer carries the
+                // vibrato - the SHIFT does, applied against the audio's own
+                // (aligned) pitch. The observable is the effective output:
+                // input + shift.
+                if (i > 250) { const float t = (900.0f + dev) + c.lastShiftCents();
+                               lo = std::min (lo, t); hi = std::max (hi, t); }
             }
             return hi - lo;
         };
@@ -386,6 +392,49 @@ int main()
 
     std::printf ("\n%s (%d failure%s)\n", g_fail == 0 ? "ALL PASS" : "FAILURES",
                  g_fail, g_fail == 1 ? "" : "s");
+    std::printf ("== the shift is SLOW: vibrato never crosses the latency ==\n");
+    // The structural rule (3 Sep 2026): at natural_vibrato 100 the emitted
+    // SHIFT excludes the fast component entirely - the audio keeps its own
+    // vibrato by algebraic cancellation in the shifter. A 6 Hz +/-50c
+    // vibrato on a held note must leave the shift nearly constant; the
+    // natVib=0 CONTROL must show the wobble in the shift (that is what
+    // dead-still means), or this arm proves nothing.
+    {
+        auto run = [] (float natVib, float& shiftSpan)
+        {
+            PitchCorrect c; makeMajor (c, 40.0f, 0.0f, 0.0f);
+            c.setNaturalVibrato (natVib);
+            c.setIgnoreVibrato (true);
+            float mn = 1e9f, mx = -1e9f;
+            const float hopMs = 2.67f;
+            for (int i = 0; i < 400; ++i)                 // ~1.1 s
+            {
+                const float t = (float) i * hopMs * 0.001f;
+                const float cts = 915.0f                  // off-key A-ish
+                    + 50.0f * std::sin (6.2832f * 6.0f * t);
+                c.process (hz (cts), true);
+                if (t > 0.5f)                             // settled region
+                {
+                    const float sft = c.lastShiftCents();
+                    mn = std::min (mn, sft); mx = std::max (mx, sft);
+                }
+            }
+            shiftSpan = mx - mn;
+        };
+        float spanPreserve = 0.0f, spanStill = 0.0f;
+        run (100.0f, spanPreserve);
+        run (0.0f,   spanStill);
+        char m1[128], m2[128];
+        std::snprintf (m1, sizeof (m1),
+            "natVib 100: shift span %.1fc over a +/-50c 6Hz vibrato (slow)",
+            spanPreserve);
+        std::snprintf (m2, sizeof (m2),
+            "natVib 0 control: shift carries the wobble (span %.1fc)",
+            spanStill);
+        check (spanPreserve < 10.0f, m1);
+        check (spanStill > 80.0f, m2);
+    }
+
     std::printf ("== Hz-in subset sweep: 12 roots x major/minor ==\n");
     // Chromatic is rotation-invariant, which is precisely how a 9-semitone
     // frame error survived every earlier round; a single-root test can hide

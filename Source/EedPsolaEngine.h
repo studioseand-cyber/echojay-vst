@@ -396,9 +396,21 @@ public:
     // caller can slice a block at hop boundaries and give each slice the target
     // that hop actually decided. Passing 0 means passthrough. The atomic setter
     // remains for the fixed-target diagnostic path.
+    // Shift-mode sentinel: kNoShift = "no shift given, use target/f0" (the
+    // fixed-target diagnostic and bypass paths). A real shift replaces the
+    // RATIO at both synthesis sites with 2^(shift/1200): the fast component
+    // cancels ALGEBRAICALLY at the engine's own time-aligned f0 index —
+    // never a delay-line's belief about latency (3 Sep 2026 ruling).
+    static constexpr float kNoShift = -100000.0f;
+
     void process (const float* in, float* out, int n, float f0Hz, bool voiced,
                   float targetHz) noexcept
+    { process (in, out, n, f0Hz, voiced, targetHz, kNoShift); }
+
+    void process (const float* in, float* out, int n, float f0Hz, bool voiced,
+                  float targetHz, float shiftCents) noexcept
     {
+        curShift_ = shiftCents;
         // UNPREPARED GUARD. mask_ is 0 and the ring is empty until prepare()
         // runs, and in_[0] on an empty vector is undefined behaviour. JUCE
         // orders prepareToPlay before processBlock so this is latent rather
@@ -453,6 +465,7 @@ public:
         advanceSynthesis (base + (int64_t) n + (int64_t) curPeriod_ * kGrainPeriods, base,
                           target);
         curTarget_ = target;
+        // curShift_ already stored at entry; emitMixed's splice arm reads it.
         emitMixed (out, n, base);
     }
 
@@ -588,7 +601,9 @@ private:
                 // flicker the splice keeps emitting on frozen state.
                 if (ok)
                 {
-                    const double r = (double) tgt / (double) f0Here;
+                    const double r = curShift_ > kNoShift + 1.0f
+                        ? std::exp2 ((double) curShift_ / 1200.0)
+                        : (double) tgt / (double) f0Here;
                     const double absSt = std::fabs (std::log2 (r) * 12.0);
                     const float want = absSt <= kSpliceBandSt ? 0.0f : 1.0f;
                     const float step = 1.0f / (float) std::max (16, (int) (0.004 * fs_));
@@ -845,7 +860,9 @@ private:
 
             // The target period, with the ratio clamped so an absurd
             // source/target combination degrades rather than explodes.
-            float ratio = target / f0;
+            float ratio = curShift_ > kNoShift + 1.0f
+                              ? std::exp2 (curShift_ / 1200.0f)
+                              : target / f0;   // legacy: crosses the latency
             ratio = std::clamp (ratio, 1.0f / kMaxRatio, kMaxRatio);
             const int Ts = std::max (4, (int) std::lround ((double) Ta / (double) ratio));
 
@@ -1404,6 +1421,7 @@ private:
     double   synthFrac_ = 0.0;
 
     std::atomic<float> targetHz_ { 0.0f };
+    float curShift_ = -100000.0f;   // kNoShift; per-call, audio thread
     std::atomic<int>   formantMode_ { kFormantPreserve };
     std::atomic<float> formantShift_ { 0.0f };
     std::atomic<float> mix_     { 1.0f };
