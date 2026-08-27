@@ -391,6 +391,19 @@ public:
             if (!inlineEditor) return;
             auto area = displayArea();
             inlineHolder.setBounds(area);
+            // A built-in editor is ours and resizes gracefully: give it the
+            // WHOLE display area (1 Sep 2026 — the placement CHOICE was
+            // lifted into ChainHost::editorPlacement but this sizing half
+            // stayed behind on the main only, so Link-side builtins kept
+            // their natural size and overflowed the pane; mirrors
+            // PluginEditor.h ChainListPanel::layoutInline's builtin arm).
+            if (inlineIsBuiltin)
+            {
+                layoutGuard = true;
+                inlineEditor->setBounds(0, 0, area.getWidth(), area.getHeight());
+                layoutGuard = false;
+                return;
+            }
             int pw = realW > 8 ? realW : inlineEditor->getWidth();
             int ph = realH > 8 ? realH : inlineEditor->getHeight();
             pw = juce::jmax(pw, 40);
@@ -462,6 +475,12 @@ public:
             try { ed = proc.getChainHost().createEditorForSlot(hostIdx); } catch (...) {}
             if (!ed) { statusText = "Failed: could not open editor"; repaint(); return; }
 
+            // The UNDECIDED state, said aloud (1 Sep 2026): between this
+            // attempt and the settle poll's verdict (~5s) the pane is
+            // neither inline nor Float — the old code showed NOTHING here,
+            // which read as a broken pane. The poll's outcome replaces it.
+            statusText = "Opening " + model[(size_t)modelIdx].name
+                         + "'s editor...";
             inlineEditor.reset(ed);
             inlineModelIdx = modelIdx;
             inlineHolder.setVisible(true);
@@ -487,6 +506,8 @@ public:
                 if (got || framePolls >= 50)
                 {
                     settled = true;
+                    if (statusText.startsWith("Opening "))
+                        statusText.clear();   // the verdict replaces it
                     if (!got)
                     {
                         // Never grew past a placeholder: out-of-process
@@ -578,7 +599,17 @@ public:
             closeAllEditors();
             juce::AudioProcessorEditor* ed = nullptr;
             try { ed = proc.getChainHost().createEditorForSlot(hostIdx); } catch (...) {}
-            if (!ed) return;
+            if (!ed)
+            {
+                // 1 Sep 2026: this return was SILENT — no window, no
+                // caption, an empty pane with no explanation (the caption
+                // block requires popout != nullptr). A failed editor is a
+                // fact the pane states.
+                statusText = "Failed: " + model[(size_t)i].name
+                             + "'s editor could not be created";
+                repaint();
+                return;
+            }
             popout = std::make_unique<PopoutWindow>(model[(size_t)i].name, ed);
             popoutModelIdx = i;
             popout->onCloseRequest = [safe = juce::Component::SafePointer<LinkChainPanel>(this)]

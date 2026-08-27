@@ -2202,7 +2202,10 @@ private:
             try { ed = onCreateEditor(i); } catch (...) {}
             if (!ed) { statusText = "Failed: could not open editor"; repaint(); return; }
 
-            statusText.clear();
+            // The UNDECIDED state, said aloud (1 Sep 2026) — same wording
+            // as the Link's panel; the settle poll's verdict replaces it.
+            statusText = "Opening " + slotInfos[(size_t)i].name
+                         + "'s editor...";
             inlineEditor.reset(ed);
             inlineSlot = i;
             inlineHolder.setVisible(true);
@@ -2247,6 +2250,8 @@ private:
                 if (got || framePolls >= 50)
                 {
                     settled = true;
+                    if (statusText.startsWith("Opening "))
+                        statusText.clear();   // the verdict replaces it
                     if (!got)
                     {
                         // Never grew past a placeholder: out-of-process
@@ -2465,7 +2470,15 @@ private:
             closeAllEditors();
             juce::AudioProcessorEditor* ed = nullptr;
             try { ed = onCreateEditor(i); } catch (...) {}
-            if (!ed) return;
+            if (!ed)
+            {
+                // 1 Sep 2026: was a SILENT return — empty pane, no window,
+                // no caption. Same fix as the Link's panel.
+                statusText = "Failed: " + slotInfos[(size_t)i].name
+                             + "'s editor could not be created";
+                repaint();
+                return;
+            }
             popout = std::make_unique<ChainEditorWindow>(slotInfos[(size_t)i].name, ed);
             popoutSlot = i;
             // Closing the floating window returns the editor to the plugin
