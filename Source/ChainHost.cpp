@@ -214,6 +214,10 @@ bool ChainHost::isPopoutOnly(const juce::String& pluginName, const juce::String&
 
 void ChainHost::markPopoutOnly(const juce::String& pluginName, const juce::String& format)
 {
+    // A builtin can never be popout-only: its editor is a plain JUCE
+    // component the native-size poll cannot see (31 Aug 2026 — the Link
+    // recorded exactly that blindness as a "plugin limitation").
+    if (format == kBuiltinFormat) return;
     // Static (machine-wide flag), so it cannot carry the borrowed read-only
     // guard; not on the spec §2.2 shared-file list, and no borrowed-mode
     // path calls it — the byte-identical gate still covers the file.

@@ -598,6 +598,34 @@ int main()
                "lease gone -> the pending hold clears with it");
     }
 
+    // ---- EDITOR PLACEMENT: one decision, builtins never float ------------
+    // 31 Aug 2026: the Link consulted only the popout list (no builtin
+    // arm), so the native-size poll — blind to a plain JUCE editor —
+    // marked EchoJay's own devices popout-only and floated them forever
+    // under a false "plugin limitation" caption. Both hosts now consult
+    // ChainHost::editorPlacement; builtins are checked FIRST (a stale
+    // on-disk mark is inert) and markPopoutOnly refuses them outright.
+    std::printf ("== editor placement: builtins embed, popouts float ==\n");
+    {
+        using CH = ChainHost;
+        check (CH::editorPlacement ("EchoJay Gain", CH::kBuiltinFormat)
+                   == CH::EditorPlacement::InlineJuce,
+               "a builtin places INLINE (plain JUCE editor, no native view)");
+        CH::markPopoutOnly ("EchoJay Gain", CH::kBuiltinFormat);
+        check (! CH::isPopoutOnly ("EchoJay Gain", CH::kBuiltinFormat),
+               "markPopoutOnly REFUSES a builtin (the mis-mark cannot recur)");
+        check (CH::editorPlacement ("EchoJay Gain", CH::kBuiltinFormat)
+                   == CH::EditorPlacement::InlineJuce,
+               "and the placement still embeds it");
+        CH::markPopoutOnly ("WaveShell-AU", "AudioUnit");
+        check (CH::editorPlacement ("WaveShell-AU", "AudioUnit")
+                   == CH::EditorPlacement::Float,
+               "a REAL out-of-process mark still floats, label truthful");
+        check (CH::editorPlacement ("Some Plugin", "VST3")
+                   == CH::EditorPlacement::InlineNative,
+               "everything else takes the native inline path");
+    }
+
     // ---- MUTE/SOLO (27 Aug 2026, MUTE_SOLO_SPEC) --------------------------
     // Composition truth table through the REAL processBlock: three reasons,
     // one silence; each keeps its own lifetime, and a session release can

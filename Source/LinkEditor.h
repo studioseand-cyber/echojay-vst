@@ -226,6 +226,8 @@ public:
         int  realW = 0, realH = 0;
         int  framePolls  = 0;
         bool settled     = false;
+        bool inlineIsBuiltin = false;   // plain JUCE editor: no native view
+                                        // to attach, measure, clip or poll
         bool layoutGuard = false;
 
         std::unique_ptr<PopoutWindow> popout;
@@ -349,12 +351,13 @@ public:
             {
                 inlineHolder.removeChildComponent(inlineEditor.get());
                 inlineEditor.reset();
-                NativeClip::detach(this);
+                if (!inlineIsBuiltin) NativeClip::detach(this);
             }
             inlineHolder.setVisible(false);
             inlineModelIdx = -1;
             realW = realH = 0;
             settled = false;
+            inlineIsBuiltin = false;
         }
 
         void closePopout()
@@ -367,6 +370,7 @@ public:
 
         void attachNative(bool log)
         {
+            if (inlineIsBuiltin) return;   // no foreign view to clip
             if (inlineEditor)
                 NativeClip::attach(this, displayArea(), log,
                                    inlineEditor->getWidth(), inlineEditor->getHeight());
@@ -404,15 +408,42 @@ public:
             int hostIdx = model[(size_t)modelIdx].hostIdx;
             if (model[(size_t)modelIdx].missing || hostIdx < 0) { repaint(); return; }
 
-            // Known popout-only plugin (out-of-process editor): go straight
-            // to the floating window — no failed inline attempt, no timeout.
-            // Format-qualified: a VST3 build of the same plugin may inline fine.
-            if (ChainHost::isPopoutOnly(model[(size_t)modelIdx].name, slotFormat(modelIdx)))
+            // THE ONE PLACEMENT DECISION (31 Aug 2026): shared with the
+            // main's panel via ChainHost::editorPlacement — the Link used
+            // to consult only the popout list and had no builtin arm, so
+            // the native-size poll (blind to a plain JUCE editor) marked
+            // EchoJay's own devices popout-only and floated them forever
+            // under a "plugin limitation" caption that was false as
+            // written. Builtins embed inline with NO native machinery;
+            // genuine out-of-process editors keep floating, label intact.
+            switch (ChainHost::editorPlacement(model[(size_t)modelIdx].name,
+                                               slotFormat(modelIdx)))
             {
-                statusText = "Opens in a floating window (plugin limitation)";
-                openPopoutForSelected();
-                repaint();
-                return;
+                case ChainHost::EditorPlacement::InlineJuce:
+                {
+                    juce::AudioProcessorEditor* edB = nullptr;
+                    try { edB = proc.getChainHost().createEditorForSlot(hostIdx); }
+                    catch (...) {}
+                    if (!edB)
+                    { statusText = "Failed: could not open editor"; repaint(); return; }
+                    statusText.clear();
+                    inlineEditor.reset(edB);
+                    inlineModelIdx  = modelIdx;
+                    inlineIsBuiltin = true;
+                    settled         = true;   // nothing to poll or wait for
+                    inlineHolder.setVisible(true);
+                    inlineHolder.addAndMakeVisible(*inlineEditor);
+                    layoutInline();
+                    repaint();
+                    return;                   // no timer: nothing native runs
+                }
+                case ChainHost::EditorPlacement::Float:
+                    statusText = "Opens in a floating window (plugin limitation)";
+                    openPopoutForSelected();
+                    repaint();
+                    return;
+                case ChainHost::EditorPlacement::InlineNative:
+                    break;                    // the native path below
             }
 
            #if ! JUCE_MAC

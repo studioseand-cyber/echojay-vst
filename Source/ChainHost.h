@@ -775,6 +775,21 @@ public:
     // and may contain fine when the AU cannot.
     static bool isPopoutOnly(const juce::String& pluginName, const juce::String& format);
     static void markPopoutOnly(const juce::String& pluginName, const juce::String& format);
+    /** THE ONE PLACEMENT DECISION (31 Aug 2026): both hosts' editors
+        consult this — never the parts separately. InlineJuce = a builtin's
+        plain JUCE component: no native view to reparent, measure, clip or
+        POLL (the poll finding nothing is how the Link mis-marked EchoJay
+        Gain popout-only — a limitation of nothing, persisted). Checked
+        FIRST so a stale popout mark on a builtin is inert; markPopoutOnly
+        refuses builtins outright as the belt to this braces. */
+    enum class EditorPlacement { InlineJuce, Float, InlineNative };
+    static EditorPlacement editorPlacement(const juce::String& pluginName,
+                                           const juce::String& format)
+    {
+        if (format == kBuiltinFormat)         return EditorPlacement::InlineJuce;
+        if (isPopoutOnly(pluginName, format)) return EditorPlacement::Float;
+        return EditorPlacement::InlineNative;
+    }
 
     // ---- Session load failures (deliberately NOT persisted) ---------------
     // A load failure means "could not authorise RIGHT NOW" (iLok not

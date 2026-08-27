@@ -2143,7 +2143,12 @@ private:
             // component, so the poll would run its full ~5s, then mark our own
             // EQ "popout only" and float it — a limitation of nothing,
             // recorded as a limitation of the plugin.
-            if (slotInfos[(size_t)i].format == ChainHost::kBuiltinFormat)
+            // THE ONE PLACEMENT DECISION (31 Aug 2026): shared with the
+            // Link's editor via ChainHost::editorPlacement — the branch
+            // bodies stay host-specific, the DECISION cannot drift.
+            if (ChainHost::editorPlacement(slotInfos[(size_t)i].name,
+                                           slotInfos[(size_t)i].format)
+                    == ChainHost::EditorPlacement::InlineJuce)
             {
                 juce::AudioProcessorEditor* ed = nullptr;
                 try { ed = onCreateEditor(i); } catch (...) {}
@@ -2164,8 +2169,9 @@ private:
             // Known popout-only plugin (out-of-process editor): go straight
             // to the floating window — no failed inline attempt, no timeout.
             // Format-qualified: a VST3 build of the same plugin may inline fine.
-            if (ChainHost::isPopoutOnly(slotInfos[(size_t)i].name,
-                                        slotInfos[(size_t)i].format))
+            if (ChainHost::editorPlacement(slotInfos[(size_t)i].name,
+                                           slotInfos[(size_t)i].format)
+                    == ChainHost::EditorPlacement::Float)
             {
                 statusText = "Opens in a floating window (plugin limitation)";
                 openPopoutForSelected();
