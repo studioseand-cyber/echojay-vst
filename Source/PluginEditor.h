@@ -4587,7 +4587,7 @@ private:
     // far down the list, so "which chat am I on" is answerable at a glance.
     // No-op if there is no active chat or no matching visible row.
     void scrollChatSidebarToActive();
-    void createNewChat();
+    void createNewChat(const juce::String& bindToUid);
     // ---- Stream ownership (14 Aug 2026: a stream belongs to a chat) ----
     // Re-establish the in-flight turn's provisional rendering (stage row or
     // partial bubble) after a chat switch, IF the newly opened chat owns the

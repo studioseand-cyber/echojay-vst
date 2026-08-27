@@ -931,9 +931,20 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     addAndMakeVisible(projectInput);
 
     // --- Capture ---
-    captureBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    captureBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
-    captureBtn.setColour(juce::TextButton::textColourOffId, C::text);
+    // ONE chrome-text style (30 Aug 2026): Capture and + New chat share
+    // it — plain text, no fill, no border (the transparent arm of the
+    // shared drawButtonBackground provides the hover treatment), tab-label
+    // font via the chromeLabel LookAndFeel property. Lifted here because
+    // two hand-matched copies drift the first time either is touched.
+    auto styleChromeTextButton = [](juce::TextButton& b)
+    {
+        b.setColour(juce::TextButton::buttonColourId,
+                    juce::Colours::transparentBlack);
+        b.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
+        b.setColour(juce::TextButton::textColourOffId, C::text);
+        b.getProperties().set("chromeLabel", true);   // tab-label size
+    };
+    styleChromeTextButton(captureBtn);
     // Item 2b: capture target indicator — dim, secondary, NOT a control.
     captureTargetLabel.setColour(juce::Label::textColourId, C::text3);
     captureTargetLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
@@ -970,7 +981,6 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             processorRef.stopCapture();
         }
     };
-    captureBtn.getProperties().set("chromeLabel", true); // tab-label size
     addAndMakeVisible(captureBtn);
 
     // (Reset button removed — auto-unfreeze handles this)
@@ -1859,14 +1869,16 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // Chain-list staleness, in the header beside the plugin count
     // (addAndMakeVisible, deliberately: two addChildComponent widgets in a
     // row each swallowed a feature by never being shown).
-    // Header New chat (14 Aug 2026, in chainListInfoLabel's old 150px slot):
-    // starting a fresh conversation must not require being on the Chat tab
-    // first. Create, then switch — createNewChat is tab-agnostic (stores +
-    // sidebar only), and the switch makes the result visible.
+    // Header New chat (14 Aug 2026, in chainListInfoLabel's old 150px
+    // slot). 30 Aug: SAME style source as Capture (one helper, one drift
+    // surface), and NO TAB SWITCH — the chat panel is a right-side split
+    // on every content tab, so the new chat opens in place; the old
+    // explicit switchToTab(Chat) here was the whole jump. The hit rect is
+    // the button's bounds, unchanged — only the fill went away.
+    styleChromeTextButton(headerNewChatBtn);
     headerNewChatBtn.onClick = [this]
     {
-        createNewChat();
-        switchToTab(Tab::Chat);
+        createNewChat(effectiveChannelUid());
     };
     addAndMakeVisible(headerNewChatBtn);
 
@@ -2319,7 +2331,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     };
     styleSidebarBtn(sidebarNewChatBtn);
     styleSidebarBtn(sidebarNewAlbumBtn);
-    sidebarNewChatBtn.onClick = [this]  { createNewChat();  };
+    sidebarNewChatBtn.onClick = [this]  { createNewChat(effectiveChannelUid()); };
     sidebarNewAlbumBtn.onClick = [this] { createNewAlbum(); };
     addChildComponent(sidebarNewChatBtn);
     addChildComponent(sidebarNewAlbumBtn);
@@ -13001,15 +13013,14 @@ void EchoJayEditor::saveCollapsedState() const
     f.replaceWithText(juce::JSON::toString(juce::var(arr)));
 }
 
-void EchoJayEditor::createNewChat()
+void EchoJayEditor::createNewChat(const juce::String& bindToUid)
 {
-    // INHERIT the active channel (14 Aug 2026): a new chat started while a
-    // channel is active is pre-assigned to it, because a channel owns many
-    // chats now. The composer's channel selector remains the way to change
-    // the assignment before the first message goes out. Captured BEFORE the
-    // pending clear below: effectiveChannelUid reads pending when no chat
-    // is active yet.
-    const juce::String inheritUid = effectiveChannelUid();
+    // THE BINDING IS THE PARAMETER (30 Aug 2026 ruling): one creator, and
+    // every caller passes the currently-viewed chat's context
+    // (effectiveChannelUid()) explicitly — never a forked Link-side
+    // creator. "" = main chat. The composer's channel selector remains the
+    // way to change the assignment before the first message goes out.
+    const juce::String inheritUid = bindToUid;
 
     // Nothing to leave behind: an empty context (main or channel) already
     // IS a fresh chat, so minting another empty record would be noise.

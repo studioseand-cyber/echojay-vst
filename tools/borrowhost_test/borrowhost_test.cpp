@@ -53,6 +53,27 @@ struct EchoJayTabStripTestAccess
             if (sg.addr == addr) return &sg;
         return nullptr;
     }
+    // New-chat arms (30 Aug 2026): drive the REAL button and read what the
+    // binding actually drives.
+    static void toChat (EchoJayEditor& e)
+    { e.switchToTab (EchoJayEditor::Tab::Chat, true); }
+    static int  tab (EchoJayEditor& e) { return (int) e.currentTab; }
+    static void seedMsg (EchoJayEditor& e)
+    {
+        EchoJayEditor::ChatMsg m;
+        m.role = "user"; m.content = "seed";
+        e.chatMessages.push_back (m);
+    }
+    static juce::TextButton& newChatBtn (EchoJayEditor& e)
+    { return e.headerNewChatBtn; }
+    static juce::String activeChatUid (EchoJayEditor& e)
+    {
+        if (auto* c = e.workspace.findChatById (e.currentChatId))
+            return c->linkUid;
+        return "<no chat>";
+    }
+    static juce::String viewUid (EchoJayEditor& e) { return e.chainViewUid(); }
+    static void clearActiveChat (EchoJayEditor& e) { e.currentChatId.clear(); }
 };
 #include "EedDeviceRegistry.h"
 #include "LinkShm.h"   // BorrowRing — the stale-ring decision (finding #3)
@@ -2054,6 +2075,57 @@ int main()
                 mainProc.linkMixerWide = false;
                 EchoJayTabStripTestAccess::measure (*eje);
             }
+            // ---- NEW CHAT (30 Aug 2026): no tab jump; the binding is the
+            // parameter of the ONE creator, inherited from the viewed
+            // context — proven by what the binding DRIVES (chainViewUid,
+            // which routes the rack panel and the rack-lock want), not by
+            // a header label.
+            {
+                using A = EchoJayTabStripTestAccess;
+                // From CHAT, main context: stays on CHAT, stays main.
+                A::toChat (*eje);
+                mainProc.pendingChannelUid.clear();
+                mainProc.activeChatId.clear();
+                A::seedMsg (*eje);                    // an empty chat would
+                                                      // short-circuit (by
+                                                      // design: empty IS new)
+                A::newChatBtn (*eje).onClick();
+                check (A::tab (*eje) == 3,            // Tab::Chat
+                       "new chat from CHAT: the tab does not move",
+                       juce::String (A::tab (*eje)));
+                check (A::activeChatUid (*eje).isEmpty(),
+                       "and a main-context chat stays MAIN",
+                       A::activeChatUid (*eje));
+                // From LINK, with a LINK-BOUND chat active: stays on LINK,
+                // inherits the binding from the chat being viewed. Pending
+                // applies only while NO chat is active (the lazy-creation
+                // contract), so the rig deactivates first — the same state
+                // a user tapping a channel is in.
+                A::clearActiveChat (*eje);
+                mainProc.pendingChannelUid = ruid;    // view the Link channel
+                A::seedMsg (*eje);
+                A::newChatBtn (*eje).onClick();       // binds via pending
+                check (A::activeChatUid (*eje) == juce::String (ruid),
+                       "a link-context chat binds to the Link",
+                       A::activeChatUid (*eje));
+                A::toLink (*eje);
+                A::seedMsg (*eje);                    // now the ACTIVE chat
+                                                      // is link-bound: the
+                                                      // "on a Link chat" case
+                A::newChatBtn (*eje).onClick();
+                check (A::tab (*eje) == 5,            // Tab::Link
+                       "new chat from LINK: the tab does not move "
+                       "(the old handler jumped to CHAT here)",
+                       juce::String (A::tab (*eje)));
+                check (A::activeChatUid (*eje) == juce::String (ruid),
+                       "and the new chat is BOUND to the viewed chat's Link",
+                       A::activeChatUid (*eje));
+                check (A::viewUid (*eje) == juce::String (ruid),
+                       "the binding DRIVES the view: chainViewUid follows it",
+                       A::viewUid (*eje));
+                A::toChain (*eje);                    // restore for later arms
+            }
+
             // ---- THE MISSING AXIS (28 Aug hands-on): the injection obeys
             // EVERY silence reason. Sean's repro: with a session live the
             // Link is session-muted and the audible source IS the
