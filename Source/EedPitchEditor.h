@@ -11,6 +11,7 @@
 */
 
 #pragma once
+#include <fstream>
 
 #include "DeviceEditorBase.h"
 #include "EedPitchProcessor.h"
@@ -40,6 +41,7 @@ protected:
 
 private:
     void timerCallback() override;
+    std::ofstream traceFile_;   // retune-trace CSV (3 Sep investigation)
     void syncFromProcessor();
 
     void paintNotePanel  (juce::Graphics& g, juce::Rectangle<int> area,

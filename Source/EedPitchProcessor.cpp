@@ -815,6 +815,24 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
                 if (t > 0.0f)           target = t;
                 else if (target <= 0.0f) correcting = false;   // nothing to hold yet
                 // else: hold the last target through the gap.
+
+                // Retune trace: one record per hop while correcting (the
+                // editor drains; unread records are simply overwritten).
+                if (hops[h].voiced && gatedF0 > 0.0f)
+                {
+                    const uint32_t w = traceW_.load (std::memory_order_relaxed);
+                    auto& r = trace_[w % (uint32_t) kTraceCap];
+                    r.tSec  = (double) hops[h].inputPos / sampleRate_;
+                    r.f0Hz  = gatedF0;
+                    r.inC   = correct_.lastInCents();
+                    r.slowC = correct_.lastSlowCents();
+                    r.oscC  = correct_.lastOscCents();
+                    r.aimC  = correct_.lastAimCents();
+                    r.envC  = t > 0.0f
+                        ? 1200.0f * std::log2 (t / std::max (1.0f, gatedF0))
+                        : 0.0f;   // envC = applied correction in cents
+                    traceW_.store (w + 1, std::memory_order_release);
+                }
             }
             else
             {

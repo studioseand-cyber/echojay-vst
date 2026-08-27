@@ -463,6 +463,12 @@ public:
         const float aimCents = noteCents + wanted + osc * (natVib_.load() * 0.01f);
         const float coeff = onePole (retuneMs_.load());
         curCents_ = aimCents + (curCents_ - aimCents) * coeff;
+        // Per-hop introspection for the retune trace (3 Sep 2026): plain
+        // stores on the audio thread, read by the processor's trace ring.
+        lastInCents_  = inCents;
+        lastSlowCents_ = noteCents;
+        lastOscCents_ = osc;
+        lastAimCents_ = aimCents;
 
         // ---- ADDED vibrato, after correction (spec §3) ---------------------
         vibNow_ = 0.0f;
@@ -535,6 +541,10 @@ public:
     uint32_t noteChanges() const noexcept { return noteChanges_; }
     uint32_t gapResumes()  const noexcept { return gapResumes_; }
     float    lastTargetCents() const noexcept { return targetCents_; }
+    float    lastInCents()   const noexcept { return lastInCents_; }
+    float    lastSlowCents() const noexcept { return lastSlowCents_; }
+    float    lastOscCents()  const noexcept { return lastOscCents_; }
+    float    lastAimCents()  const noexcept { return lastAimCents_; }
     bool     inNote() const noexcept { return haveNote_; }
 
     // Nearest ENABLED degree to a cents value, including that degree's bias.
@@ -615,6 +625,8 @@ private:
     std::atomic<int>   vibShape_ { kVibSine };
     std::atomic<float> vibOnset_ { 300.0f };
     std::atomic<float> natVib_   { 100.0f };
+    float lastInCents_ = 0, lastSlowCents_ = 0, lastOscCents_ = 0,
+          lastAimCents_ = 0;   // trace introspection (audio thread)
     float vibPhase_ = 0.0f, vibNow_ = 0.0f, noteMs_ = 0.0f;
 
     bool  haveNote_ = false, haveSlow_ = false, havePending_ = false;

@@ -608,6 +608,38 @@ void EedPitchEditor::timerCallback()
 {
     syncFromProcessor();
 
+    // Retune trace drain (3 Sep 2026 investigation): while this editor is
+    // open, per-hop decision records stream to a CSV the offline analysis
+    // reads. Message thread; append-only; ~200 rows/s of ~60 bytes.
+    {
+        EedPitchProcessor::TraceRec recs[512];
+        const int n = proc_.drainTrace (recs, 512);
+        if (n > 0)
+        {
+            if (! traceFile_.is_open())
+            {
+                const auto path = juce::File::getSpecialLocation(
+                        juce::File::userApplicationDataDirectory)
+                    .getChildFile ("EchoJay").getChildFile ("pitch_trace.csv");
+                path.getParentDirectory().createDirectory();
+                const bool fresh = ! path.existsAsFile();
+                traceFile_.open (path.getFullPathName().toRawUTF8(),
+                                 std::ios::app);
+                if (fresh && traceFile_.is_open())
+                    traceFile_ << "tSec,f0Hz,inC,slowC,oscC,aimC,appliedC\n";
+            }
+            if (traceFile_.is_open())
+            {
+                for (int i = 0; i < n; ++i)
+                    traceFile_ << recs[i].tSec << ',' << recs[i].f0Hz << ','
+                               << recs[i].inC << ',' << recs[i].slowC << ','
+                               << recs[i].oscC << ',' << recs[i].aimC << ','
+                               << recs[i].envC << '\n';
+                traceFile_.flush();
+            }
+        }
+    }
+
     if (bypassButton().getToggleState() != proc_.isBypassed())
         bypassButton().setToggleState (proc_.isBypassed(), juce::dontSendNotification);
 

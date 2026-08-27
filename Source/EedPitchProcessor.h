@@ -95,6 +95,26 @@ public:
     // read by paint; a torn column is one pixel and not worth a lock.
     echojay::viz::PitchRibbonView& ribbon() noexcept { return ribbon_; }
 
+    // ---- Retune trace (3 Sep 2026 investigation) --------------------------
+    // Per-HOP records of the whole decision: what the corrector saw (in,
+    // slow, osc), what it aimed at, what the envelope emitted, and the f0
+    // the shifter divides by. Lock-free SPSC ring written at each hop on
+    // the audio thread; the pitch editor's timer drains to CSV while open.
+    // The 30Hz ribbon cannot answer phase questions at 6Hz; this can.
+    struct TraceRec { double tSec; float f0Hz, inC, slowC, oscC, aimC, envC; };
+    static constexpr int kTraceCap = 8192;
+    std::array<TraceRec, kTraceCap> trace_ {};
+    std::atomic<uint32_t> traceW_ { 0 };
+    uint32_t traceR_ = 0;   // drained by the editor timer (message thread)
+    int drainTrace (TraceRec* out, int maxN) noexcept
+    {
+        int n = 0;
+        const uint32_t w = traceW_.load (std::memory_order_acquire);
+        while (traceR_ != w && n < maxN)
+        { out[n++] = trace_[traceR_ % (uint32_t) kTraceCap]; ++traceR_; }
+        return n;
+    }
+
     // correction_mode indices. `custom` is LAST and is what the display falls
     // to the moment any of the params a mode writes is moved by hand.
     enum Mode { kNatural = 0, kBalanced, kTuned, kHard, kCustom, kNumModes };
