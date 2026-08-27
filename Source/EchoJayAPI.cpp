@@ -3374,7 +3374,14 @@ void EchoJayAPI::lookupFallbackMaps(const juce::String& body,
             onComplete(juce::var());
             return;
         }
-        onComplete(json.getProperty("results", juce::var()));
+        // LOGGED ON SUCCESS TOO, not only on failure. A leg that only speaks
+        // when it breaks cannot be told apart from a leg that never ran, which
+        // is precisely what happened on the first live test.
+        auto results = json.getProperty("results", juce::var());
+        EchoJay_NSLog(("EJFallback: lookup 200, "
+                       + juce::String(results.isArray() ? results.getArray()->size() : 0)
+                       + " result(s)").toRawUTF8());
+        onComplete(results);
     });
 }
 

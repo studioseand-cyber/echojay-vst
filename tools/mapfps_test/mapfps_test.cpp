@@ -1957,7 +1957,8 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         const auto pa = codeOnly (juce::String (spa.str()));
         std::ifstream fch ("Source/ChainHost.cpp");
         std::stringstream sch; sch << fch.rdbuf();
-        const auto ch = codeOnly (juce::String (sch.str()));
+        const auto chRaw = juce::String (sch.str());
+        const auto ch = codeOnly (chRaw);
 
         // PIN 1 — the tag is read ONCE, where the whole map is visible, and
         // threaded like staleDisplayReads rather than looked up again.
@@ -2016,8 +2017,15 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                "fb PIN5: param_count rides, or every candidate is refused");
         check (ch.contains ("o->setProperty(\"param_names\", names);"),
                "fb PIN5: param_names rides, for the name guard");
-        check (ch.contains ("if (paramMaps_.find(s.fp) != paramMaps_.end()) continue;"),
-               "fb PIN5: only MAPLESS fps are asked about");
+        // Both builders now compose through fallbackEntryForSlot, so the
+        // mapless-only rule is asserted where it actually lives -- one place,
+        // reached by the per-slot trigger and the rack-wide sweep alike.
+        {
+            const auto body = codeOnly (functionBody (chRaw, "juce::var ChainHost::fallbackEntryForSlot"));
+            check (body.isNotEmpty(), "fb PIN5: found the single fallback composer");
+            check (body.contains ("paramMaps_.find(s.fp) != paramMaps_.end()"),
+                   "fb PIN5: only MAPLESS fps are asked about");
+        }
         check (ch.contains ("paramMaps_[wantFp] = map;"),
                "fb PIN5: stored under the fp that ASKED, which the apply looks up by");
     }
@@ -2078,6 +2086,81 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                "na PIN D: the assertion reads at that length");
         check (ch.contains ("params[p]->getName(echojay::kParamNameQueryLen)"),
                "na PIN D: param_names is composed at the same length");
+    }
+
+    // ---- fallback DELIVERY: the leg must fire on a mapless dial -----------
+    // The first live test failed with zero EJFallback lines. The leg was bound
+    // to the exact-map fetch completion, which fires before the plugin is
+    // racked (empty body, silent return) and is then suppressed forever by
+    // mapsRequested_. These pins are the ones that would have caught it.
+    {
+        std::cout << "fallback delivery leg:\n";
+        std::ifstream fch ("Source/ChainHost.cpp");
+        std::stringstream sch; sch << fch.rdbuf();
+        const auto chRaw = juce::String (sch.str());
+        const auto ch = codeOnly (chRaw);
+        std::ifstream fhh ("Source/ChainHost.h");
+        std::stringstream shh; shh << fhh.rdbuf();
+        const auto chH = codeOnly (juce::String (shh.str()));
+        std::ifstream fed ("Source/PluginEditor.cpp");
+        std::stringstream sed_; sed_ << fed.rdbuf();
+        const auto ed = codeOnly (juce::String (sed_.str()));
+
+        // PIN 1 — THE TRIGGER IS THE MAPLESS DIAL. The ask is composed inside
+        // setSlotStructuredSettings, the function that handles a dial arriving
+        // for a racked slot, not inside any fetch completion.
+        {
+            const auto body = functionBody (chRaw, "void ChainHost::setSlotStructuredSettings");
+            check (body.isNotEmpty(), "fd PIN1: found setSlotStructuredSettings");
+            const auto cb = codeOnly (body);
+            check (cb.contains ("buildFallbackLookupJsonForSlot(i)"),
+                   "fd PIN1: the mapless dial composes the fallback ask");
+            check (cb.contains ("onNeedFallbackMaps(body)"),
+                   "fd PIN1: and issues it");
+            check (cb.contains ("paramMaps_.find(fp) == paramMaps_.end()"),
+                   "fd PIN1: only when the fp has no exact map");
+        }
+
+        // PIN 2 — ITS OWN LEDGER. Keying off mapsRequested_ is the exact defect:
+        // the prefetch fills that set before the rack exists.
+        check (chH.contains ("juce::StringArray fallbackRequested_;"),
+               "fd PIN2: the fallback has its own requested set");
+        {
+            const auto body = codeOnly (functionBody (chRaw, "void ChainHost::setSlotStructuredSettings"));
+            check (body.contains ("! fallbackRequested_.contains(fp)")
+                   || body.contains ("!fallbackRequested_.contains(fp)"),
+                   "fd PIN2: the fallback is gated on ITS set, not mapsRequested_");
+        }
+        check (! ed.contains ("buildFallbackLookupJson()"),
+               "fd PIN2: the leg no longer hangs off the exact-map fetch completion");
+
+        // PIN 3 — RE-APPLY ON ARRIVAL, mirroring storeParamMaps. Without it the
+        // map lands in the cache and the waiting slot never dials.
+        {
+            const auto body = codeOnly (functionBody (chRaw, "void ChainHost::storeFallbackMaps"));
+            check (body.isNotEmpty(), "fd PIN3: found storeFallbackMaps");
+            check (body.contains ("applyStructuredIfReady(i, DialTrigger::mapArrived)"),
+                   "fd PIN3: an arriving fallback map re-runs the apply");
+            check (body.contains ("pendingMapFps_.removeString"),
+                   "fd PIN3: and clears the in-flight marker it set");
+            check (body.contains ("onSlotSettingsChanged()"),
+                   "fd PIN3: and repaints when something actually dialled");
+        }
+
+        // PIN 4 — NEVER SILENT. Both the empty-body path and the success path
+        // must speak, or "never fired" and "fired empty" look the same again.
+        check (ch.contains ("EJFallback: slot ") && ch.contains ("not asked -- "),
+               "fd PIN4: a slot that cannot be asked about says why");
+        check (ch.contains ("EJFallback: nothing to ask across "),
+               "fd PIN4: an empty rack-wide body says why");
+        check (ch.contains ("EJFallback: asking for slot "),
+               "fd PIN4: the ask itself is logged before it goes");
+        {
+            std::ifstream fap ("Source/EchoJayAPI.cpp");
+            std::stringstream sap; sap << fap.rdbuf();
+            check (codeOnly (juce::String (sap.str())).contains ("EJFallback: lookup 200, "),
+                   "fd PIN4: a SUCCESSFUL lookup logs too, not only a failure");
+        }
     }
 
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";

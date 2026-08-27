@@ -2574,6 +2574,40 @@ void ChainHost::setSlotStructuredSettings(int i, const juce::var& structured)
         pendingMapFps_.addIfNotAlreadyThere(fp);
         onNeedParamMaps(juce::StringArray(fp));
     }
+    // PRODUCT FALLBACK, TRIGGERED HERE (27 Aug 2026) and not on the exact
+    // fetch's completion. THIS is the event that needs it: a dial resolving
+    // against a racked slot whose fingerprint has no map. The slot exists, so
+    // its live param_count and param_names are readable now, which is what the
+    // server's guards require.
+    //
+    // fallbackRequested_ is its OWN set. Keying off mapsRequested_ was the
+    // defect: the prefetch adds every known fp to that set before the rack
+    // exists, which then suppressed the only fetch the fallback could have
+    // hung off. Separate question, separate ledger, and it still stops the same
+    // fp being re-asked in a loop.
+    //
+    // structuredSettings and structuredApplied=false were set above and are not
+    // touched here, so the request survives the round trip and storeFallbackMaps
+    // has something to apply when the map lands.
+    if (!slots_[(size_t)i].structuredApplied && fp.isNotEmpty()
+        && paramMaps_.find(fp) == paramMaps_.end()
+        && !fallbackRequested_.contains(fp) && onNeedFallbackMaps)
+    {
+        const auto body = buildFallbackLookupJsonForSlot(i);
+        if (body.isNotEmpty())
+        {
+            fallbackRequested_.add(fp);
+            // Rides pendingMapFps_ so the line below marks the slot pending
+            // rather than noMap while the answer is in flight, and so the
+            // bubble does not claim "no map" about a slot still being asked
+            // about. storeFallbackMaps clears it on arrival.
+            pendingMapFps_.addIfNotAlreadyThere(fp);
+            EchoJay_NSLog(("EJFallback: asking for slot " + juce::String(i + 1)
+                           + " (\"" + slots_[(size_t)i].desc.name + "\") fp "
+                           + fp.substring(0, 12) + " -- no exact map").toRawUTF8());
+            onNeedFallbackMaps(body);
+        }
+    }
     // The applyStructuredIfReady above ran BEFORE the fetch kicked, so a
     // first-encounter slot got noMap; correct it to pending while the
     // answer is in flight.
@@ -5248,47 +5282,87 @@ juce::String ChainHost::modelSettingsForSlot(int slot) const
     return lines.joinIntoString("\n");
 }
 
+juce::var ChainHost::fallbackEntryForSlot(int slot, juce::String& whyOut) const
+{
+    whyOut = {};
+    if (slot < 0 || slot >= (int) slots_.size()) { whyOut = "no such slot"; return {}; }
+    const auto& s = slots_[(size_t) slot];
+    if (s.fp.isEmpty())                              { whyOut = "slot has no fingerprint"; return {}; }
+    if (paramMaps_.find(s.fp) != paramMaps_.end())   { whyOut = "already mapped exactly"; return {}; }
+    auto* proc = getSlotProcessor(slot);
+    if (proc == nullptr)                             { whyOut = "no live instance"; return {}; }
+
+    juce::DynamicObject::Ptr o = new juce::DynamicObject();
+    o->setProperty("ik", echojay::identityKeyForDescription(s.desc));
+    o->setProperty("fp", s.fp);
+    if (s.desc.manufacturerName.isNotEmpty())
+        o->setProperty("manufacturer", s.desc.manufacturerName);
+    auto& params = proc->getParameters();
+    o->setProperty("param_count", params.size());
+    // The name guard's input. Capped for the same reason the reads sweep is:
+    // a pathological plugin must not put twenty thousand names in a request
+    // body. kParamNameQueryLen, not a literal: the tagged-path assertion in
+    // applyOne re-reads with the same constant, so the string it compares is
+    // the one the server verified.
+    juce::Array<juce::var> names;
+    const int n = juce::jmin(params.size(), echojay::kMaxParamReadsPerSlot);
+    for (int p = 0; p < n; ++p)
+        names.add(params[p] != nullptr ? params[p]->getName(echojay::kParamNameQueryLen)
+                                       : juce::String());
+    o->setProperty("param_names", names);
+    return juce::var(o.get());
+}
+
+static juce::String wrapFallbackBody(const juce::Array<juce::var>& plugins)
+{
+    juce::DynamicObject::Ptr root = new juce::DynamicObject();
+    root->setProperty("mode", "lookup");
+    root->setProperty("plugins", juce::var(plugins));
+    return juce::JSON::toString(juce::var(root.get()), true);
+}
+
+juce::String ChainHost::buildFallbackLookupJsonForSlot(int slot) const
+{
+    juce::String why;
+    auto e = fallbackEntryForSlot(slot, why);
+    if (e.getDynamicObject() == nullptr)
+    {
+        // NEVER SILENT (27 Aug 2026). The previous version returned an empty
+        // string here and the caller returned without a word, so "the leg
+        // never fired" and "the leg fired and had nothing to ask" were
+        // indistinguishable in the log -- which is exactly the pair that cost
+        // a live test.
+        EchoJay_NSLog(("EJFallback: slot " + juce::String(slot + 1) + " not asked -- "
+                       + why).toRawUTF8());
+        return {};
+    }
+    juce::Array<juce::var> one; one.add(e);
+    return wrapFallbackBody(one);
+}
+
 juce::String ChainHost::buildFallbackLookupJson() const
 {
     juce::Array<juce::var> plugins;
-    juce::StringArray asked;   // fps already in the body, so one ask per fp
+    juce::StringArray asked, reasons;
     for (int i = 0; i < (int) slots_.size(); ++i)
     {
-        const auto& s = slots_[(size_t) i];
-        if (s.fp.isEmpty()) continue;                       // no identity, nothing to ask about
-        if (paramMaps_.find(s.fp) != paramMaps_.end()) continue;   // already mapped, exact
-        if (asked.contains(s.fp)) continue;
-        auto* proc = getSlotProcessor(i);
-        if (proc == nullptr) continue;                      // no live instance, no counts
-
-        auto* o = new juce::DynamicObject();
-        o->setProperty("ik", echojay::identityKeyForDescription(s.desc));
-        o->setProperty("fp", s.fp);
-        if (s.desc.manufacturerName.isNotEmpty())
-            o->setProperty("manufacturer", s.desc.manufacturerName);
-        auto& params = proc->getParameters();
-        o->setProperty("param_count", params.size());
-        // The name guard's input. Capped for the same reason the reads sweep
-        // is: a pathological plugin must not put twenty thousand names in a
-        // request body. The guard compares what it is given and reports how
-        // many it compared, so a cap narrows the check rather than faking it.
-        juce::Array<juce::var> names;
-        const int n = juce::jmin(params.size(), echojay::kMaxParamReadsPerSlot);
-        for (int p = 0; p < n; ++p)
-            // kParamNameQueryLen, not a literal: the tagged-path assertion in
-            // applyOne re-reads with the same constant, so the string it
-            // compares is the one the server verified.
-            names.add(params[p] != nullptr ? params[p]->getName(echojay::kParamNameQueryLen)
-                                           : juce::String());
-        o->setProperty("param_names", names);
-        plugins.add(juce::var(o));
-        asked.add(s.fp);
+        juce::String why;
+        auto e = fallbackEntryForSlot(i, why);
+        if (e.getDynamicObject() == nullptr) { reasons.addIfNotAlreadyThere(why); continue; }
+        const auto fp = slots_[(size_t) i].fp;
+        if (asked.contains(fp)) continue;          // one ask per fp
+        plugins.add(e);
+        asked.add(fp);
     }
-    if (plugins.isEmpty()) return {};
-    auto* root = new juce::DynamicObject();
-    root->setProperty("mode", "lookup");
-    root->setProperty("plugins", juce::var(plugins));
-    return juce::JSON::toString(juce::var(root), true);
+    if (plugins.isEmpty())
+    {
+        EchoJay_NSLog(("EJFallback: nothing to ask across " + juce::String((int) slots_.size())
+                       + " slot(s) -- "
+                       + (reasons.isEmpty() ? juce::String("no slots") : reasons.joinIntoString("; ")))
+                          .toRawUTF8());
+        return {};
+    }
+    return wrapFallbackBody(plugins);
 }
 
 void ChainHost::storeFallbackMaps(const juce::var& resultsArray)
@@ -5335,6 +5409,28 @@ void ChainHost::storeFallbackMaps(const juce::var& resultsArray)
     if (stored > 0) saveParamMapsToDisk();
     EchoJay_NSLog(("EJFallback: " + juce::String(stored) + " served, "
                    + juce::String(refused) + " refused").toRawUTF8());
+
+    // RE-APPLY, mirroring storeParamMaps (27 Aug 2026). Without this the map
+    // landed in the cache and nothing dialled: setSlotStructuredSettings runs
+    // applyStructuredIfReady BEFORE kicking any fetch, so the waiting slot has
+    // already settled as pending/noMap and only a re-evaluation can move it.
+    // The tagged map would have sat unused until some later turn happened to
+    // re-trigger a dial, which is indistinguishable from the feature not
+    // working.
+    for (auto& rv : *arr)
+        if (auto* r = rv.getDynamicObject())
+            for (const auto& sl : slots_)
+                if (echojay::identityKeyForDescription(sl.desc) == r->getProperty("ik").toString())
+                    pendingMapFps_.removeString(sl.fp);
+    bool changed = false;
+    for (int i = 0; i < (int)slots_.size(); ++i)
+    {
+        const bool wasApplied = slots_[(size_t)i].structuredApplied;
+        applyStructuredIfReady(i, DialTrigger::mapArrived);
+        if (!wasApplied && slots_[(size_t)i].structuredApplied) changed = true;
+        if (settleStaleRung(i)) changed = true;
+    }
+    if (changed && onSlotSettingsChanged) onSlotSettingsChanged();
 }
 
 juce::String ChainHost::buildSlotParamReadsJson() const

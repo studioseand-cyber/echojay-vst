@@ -820,23 +820,24 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                                        + juce::String(statusCode)).toRawUTF8());
                         return;
                     }
-                    auto& ch = safeThis->processorRef.getChainHost();
-                    ch.storeParamMaps(json.getProperty("maps", juce::var()));
-                    // PRODUCT FALLBACK, second leg (26 Aug 2026). Anything
-                    // still mapless after the exact fetch asks the tiered
-                    // resolver, which serves the newest mapped version of the
-                    // same product tagged anchors_unverified. Deliberately a
-                    // SECOND call rather than a change to the first: the
-                    // ?fps= fetch is the exact-identity question and its
-                    // answer, including its misses, stays what it was.
-                    const auto body = ch.buildFallbackLookupJson();
-                    if (body.isEmpty()) return;
-                    safeThis->api.lookupFallbackMaps(body,
-                        [safeThis](const juce::var& results)
-                        {
-                            if (safeThis == nullptr || results.isVoid()) return;
-                            safeThis->processorRef.getChainHost().storeFallbackMaps(results);
-                        });
+                    safeThis->processorRef.getChainHost()
+                        .storeParamMaps(json.getProperty("maps", juce::var()));
+                });
+        };
+        // PRODUCT FALLBACK, on its OWN trigger (27 Aug 2026). It used to hang
+        // off the fetch completion above, which fires when a fingerprint is
+        // first asked about -- before the plugin is racked, so the body was
+        // empty -- and mapsRequested_ then suppressed any later fetch, so it
+        // never ran on the dial that needed it. ChainHost now calls this from
+        // the mapless-dial path with the body already composed.
+        chainHostRef.onNeedFallbackMaps = [safeThis](const juce::String& body)
+        {
+            if (safeThis == nullptr || body.isEmpty()) return;
+            safeThis->api.lookupFallbackMaps(body,
+                [safeThis](const juce::var& results)
+                {
+                    if (safeThis == nullptr || results.isVoid()) return;
+                    safeThis->processorRef.getChainHost().storeFallbackMaps(results);
                 });
         };
         chainHostRef.onSlotSettingsChanged = [safeThis]()
@@ -2603,6 +2604,7 @@ EchoJayEditor::~EchoJayEditor() {
     // stale hook. SafePointer already makes late fires no-ops; this is the
     // belt to that brace.
     processorRef.getChainHost().onNeedParamMaps = nullptr;
+    processorRef.getChainHost().onNeedFallbackMaps = nullptr;
     processorRef.getChainHost().onSlotSettingsChanged = nullptr;
     // If the user changed ticks and closed without hitting Done, commit the
     // local selection now so it isn't lost (disk persist; server is best-effort

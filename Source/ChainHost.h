@@ -211,6 +211,13 @@ public:
     //
     // Empty string = nothing to ask.
     juce::String buildFallbackLookupJson() const;
+    // One slot's ask, for the dial-time trigger. Shares fallbackEntryForSlot
+    // with the rack-wide builder so there is one composer, not two.
+    juce::String buildFallbackLookupJsonForSlot(int slot) const;
+    // THE one composer. Returns a void var when this slot cannot be asked
+    // about, with whyOut naming which of the three reasons applied, so an
+    // empty body is never silent again.
+    juce::var fallbackEntryForSlot(int slot, juce::String& whyOut) const;
     // Stores each result's map under the fp that ASKED for it, not the fp it
     // was served from: applyStructuredIfReady looks up by the slot's own fp.
     // The map keeps its own fp field naming its true origin, which is why the
@@ -645,6 +652,17 @@ public:
     // Networking is the editor's job (EchoJayAPI lives there): ChainHost
     // asks for fps through this and receives results via storeParamMaps.
     std::function<void(const juce::StringArray& fps)> onNeedParamMaps;
+    // PRODUCT FALLBACK, its own trigger (27 Aug 2026). It used to ride
+    // onNeedParamMaps' completion, which was the wrong event twice over: that
+    // fires when a fingerprint is FIRST asked about, usually before the plugin
+    // is racked (so the body was empty and returned silently), and mapsRequested_
+    // then suppresses it forever, so the moment that actually needs a fallback
+    // -- a dial resolving against a racked, mapless slot -- had no fetch to hang
+    // off. Measured: zero EJFallback lines on a live turn that needed one.
+    //
+    // The body is composed by ChainHost because only it knows which slot missed
+    // and what that slot's live param count and names are.
+    std::function<void(const juce::String& body)> onNeedFallbackMaps;
 
     // Fired after an async auto-apply mutates a slot's settings display so
     // the rack UI can refresh. Always called on the message thread.
@@ -1343,6 +1361,10 @@ private:
 
     // Resolver cache (message thread only — no mutex needed)
     std::vector<RecommendableEntry> recommendable_;
+    // Fingerprints already asked about via the FALLBACK leg. Deliberately NOT
+    // mapsRequested_: that set is the exact-map fetch's, and sharing it is what
+    // let the prefetch suppress the fallback. Separate set, separate question.
+    juce::StringArray fallbackRequested_;
     int recommendableEnabledIn_ = 0;   // how many enabled scanner entries were fed in
     juce::String recommendableFormat_; // filter used for the last build (fallback resolves honour it)
     bool hasResolved_ = false;         // latched by buildRecommendable once inputs were real
