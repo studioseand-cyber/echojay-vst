@@ -2013,6 +2013,47 @@ int main()
                     .createComponentSnapshot (sgMs->mute);
                 check (hasAmber (img), "the MIXER lamp renders LIT (pixels)");
             }
+            // Narrow S click through the STORED rect (30 Aug centring: the
+            // narrow strip is where the rects are tightest, so it is where
+            // a paint/hit mismatch would show).
+            if (sgMs != nullptr)
+            {
+                sendClick (EchoJayTabStripTestAccess::mixer (*eje),
+                           sgMs->solo.getCentre());
+                auto sCmd = readCmd();
+                check (sCmd.getDynamicObject() != nullptr
+                         && sCmd.hasProperty ("soloOn")
+                         && (bool) sCmd["soloOn"],
+                       "narrow S click lands through its stored rect",
+                       juce::JSON::toString (sCmd, true));
+            }
+            // Screenshot proof rig (EJ_SHOTS=1): one narrow and one wide
+            // strip PNG for visual verification of the centred group.
+            if (std::getenv ("EJ_SHOTS") != nullptr && sgMs != nullptr)
+            {
+                auto savePng = [&](const juce::Image& img,
+                                   const juce::String& path)
+                {
+                    juce::File f (path);
+                    f.deleteFile();
+                    juce::FileOutputStream os (f);
+                    juce::PNGImageFormat png; png.writeImageToStream (img, os);
+                };
+                savePng (EchoJayTabStripTestAccess::mixer (*eje)
+                             .createComponentSnapshot (sgMs->full, false, 3.0f),
+                         juce::String (std::getenv ("EJ_SHOTS"))
+                             + "/strip_narrow.png");
+                mainProc.linkMixerWide = true;
+                EchoJayTabStripTestAccess::measure (*eje);
+                EchoJayTabStripTestAccess::mixer (*eje).setSize (2000, 800);
+                if (const auto* sgW = EchoJayTabStripTestAccess::geomFor (*eje, ruid))
+                    savePng (EchoJayTabStripTestAccess::mixer (*eje)
+                                 .createComponentSnapshot (sgW->full, false, 3.0f),
+                             juce::String (std::getenv ("EJ_SHOTS"))
+                                 + "/strip_wide.png");
+                mainProc.linkMixerWide = false;
+                EchoJayTabStripTestAccess::measure (*eje);
+            }
             // ---- THE MISSING AXIS (28 Aug hands-on): the injection obeys
             // EVERY silence reason. Sean's repro: with a session live the
             // Link is session-muted and the audible source IS the

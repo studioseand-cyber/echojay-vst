@@ -6484,32 +6484,42 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
         // point of the move: a strip is a list of plugins with controls top
         // and bottom, rather than three stacked controls and a short list.
         sg.active = b.removeFromBottom(kStripActH);
-        // M/S lamps (MUTE_SOLO_SPEC; layout amended 27 Aug hands-on): in
-        // the WIDE strip they share the Active row (tick left, lamps
-        // right). The NARROW strip cannot seat three controls in 46px —
-        // the lamps overlapped the tick — so there they take their OWN
-        // row, directly above Active. Stored rects like everything else;
-        // paint and hit-testing never re-derive them.
+        // M/S lamps + Active tick (MUTE_SOLO_SPEC; layout amended 27/28
+        // Aug; CENTRED 30 Aug hands-on): both layouts centre the GROUP on
+        // the strip's centreline — existing spacing and sizes kept, never
+        // spread to fill. Wide: tick + M + S as one group on the Active
+        // row. Narrow: the M/S pair on its own row above Active, centred
+        // on the SAME centreline as the tick below it, so the two rows
+        // read as one stack. All of it in stored rects HERE — paint and
+        // hit-testing read them and never re-derive (a glyph that looks
+        // centred but clicks off-centre is worse than left-aligned).
+        // sg.active stays the row-wide Active click target in both modes
+        // (Mute/Solo are tested first in the hit order).
         if (full.getWidth() >= kStripWWide - 2)
         {
-            // The lamps sit DIRECTLY right of the tick (28 Aug hands-on:
-            // right-anchored lamps left the row reading as two things).
-            // sg.active keeps the full row — Mute/Solo are tested first
-            // in the hit order, so the overlap is behaviourally inert.
             auto act = sg.active;
-            const int tick = juce::jmin(16, act.getHeight() - 2);
-            act.removeFromLeft(tick + 5);
+            const int tickSide = juce::jmin(16, act.getHeight() - 2);
             const int lamp = juce::jmin(18, act.getHeight());
+            const int groupW = tickSide + 5 + lamp + 3 + lamp;
+            act.removeFromLeft(juce::jmax(0, (act.getWidth() - groupW) / 2));
+            sg.tick = { act.getX(),
+                        act.getCentreY() - tickSide / 2, tickSide, tickSide };
+            act.removeFromLeft(tickSide + 5);
             sg.mute = act.removeFromLeft(lamp);
             act.removeFromLeft(3);
             sg.solo = act.removeFromLeft(lamp);
         }
         else
         {
+            const int tickSide = juce::jmin(16, sg.active.getHeight() - 2);
+            sg.tick = { sg.active.getCentreX() - tickSide / 2,
+                        sg.active.getCentreY() - tickSide / 2,
+                        tickSide, tickSide };
             auto msRow = b.removeFromBottom(kStripActH);
             const int lamp = juce::jmin(18, msRow.getHeight());
             msRow.removeFromLeft(juce::jmax(0,
-                (msRow.getWidth() - (lamp * 2 + 3)) / 2));   // centred pair
+                (msRow.getWidth() - (lamp * 2 + 3)) / 2));   // centred pair,
+                                                             // same centreline
             sg.mute = msRow.removeFromLeft(lamp);
             msRow.removeFromLeft(3);
             sg.solo = msRow.removeFromLeft(lamp);
@@ -9621,15 +9631,9 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
         const bool connected = entry != nullptr && entry->info.connected;
         const bool active    = entry != nullptr && entry->info.active;
 
-        const int side = juce::jmin(16, sg.active.getHeight() - 2);
-        // Centred EXACTLY in the row (float centre, then snapped), both
-        // modes; wide keeps the box at the left for its word.
-        juce::Rectangle<float> box(0, 0, (float)side, (float)side);
-        box = wide ? box.withPosition((float)sg.active.getX(),
-                                      std::round((float)sg.active.getCentreY()
-                                                 - (float)side * 0.5f))
-                   : box.withCentre({ std::round((float)sg.active.getCentreX()),
-                                      std::round((float)sg.active.getCentreY()) });
+        // The tick draws from its STORED rect (30 Aug): layout centred
+        // it, paint just reads it — one truth for glyph and geometry.
+        const auto box = sg.tick.toFloat();
 
         g.setColour(!connected || timedOut ? coral : LinkConsole::caption);
         g.drawRoundedRectangle(box, 4.0f, 1.0f);

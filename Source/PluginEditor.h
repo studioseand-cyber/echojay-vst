@@ -3435,8 +3435,13 @@ private:
         juce::Rectangle<int> name;      // resolveLinkDisplayName()
         juce::Rectangle<int> badge;     // BUS / CHANNEL / SET? chip
         juce::Rectangle<int> active;    // merged Active tick + connectivity
-        juce::Rectangle<int> mute;      // M lamp (MUTE_SOLO_SPEC), in the
-        juce::Rectangle<int> solo;      // Active row's right end; S beside it
+        juce::Rectangle<int> mute;      // M lamp (MUTE_SOLO_SPEC)
+        juce::Rectangle<int> solo;      // S lamp
+        juce::Rectangle<int> tick;      // the Active tick SQUARE (30 Aug:
+                                        // stored like every other rect so
+                                        // paint and centring share one
+                                        // truth; sg.active stays the row-
+                                        // wide click target)
         juce::Rectangle<int> data;      // numbers / chain (the content toggle)
         // The fader+meter BAND (8b): one horizontal band, console style, the
         // meter as PERMANENT chrome. Both rects are stored by layOutStrips
