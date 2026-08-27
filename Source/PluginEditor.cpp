@@ -2158,6 +2158,39 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     { stripMuteSoloClick(u, isSolo); };
     chainListPanel.msLamps.tipFor = [this](const juce::String& u, bool isSolo)
     { return muteSoloStripTip(u, isSolo); };
+    chainListPanel.msLamps.tickFor = [this](const juce::String& u)
+    {
+        // The SAME state sources the strip's tick paints from.
+        std::remove_reference_t<decltype(chainListPanel.msLamps)>::TickView tv;
+        EchoJayProcessor::LinkDisplayEntry en;
+        tv.has = findLinkEntryByAddr(u, en);
+        linkPendingFor(u, tv.pending, tv.timedOut, tv.target);
+        tv.connected = tv.has && en.info.connected;
+        tv.active    = tv.has && en.info.active;
+        return tv;
+    };
+    chainListPanel.msLamps.onTick = [this](const juce::String& u)
+    {
+        // ONE DISPATCH: the strip's Active case, verbatim — current state
+        // from the slot, send the inverse, authority stays with the Link.
+        EchoJayProcessor::LinkDisplayEntry en;
+        if (findLinkEntryByAddr(u, en))
+            sendLinkActiveCommand(u, !en.info.active);
+    };
+    chainListPanel.msLamps.tickTipFor = [this](const juce::String& u)
+    {
+        EchoJayProcessor::LinkDisplayEntry en;
+        if (! findLinkEntryByAddr(u, en)) return juce::String();
+        bool pending = false, timedOut = false, target = false;
+        linkPendingFor(u, pending, timedOut, target);
+        if (!en.info.connected || timedOut)
+            return linkActiveLabel(en.info.connected, pending, timedOut);
+        if (pending)
+            return juce::String("Active...")
+                   + (target ? " (turning on)" : " (turning off)");
+        return en.info.active ? juce::String("Active (click to turn off)")
+                              : juce::String("Inactive (click to turn on)");
+    };
     chainListPanel.onRemoteEditorRequest = [this](int slotIdx)
     {
         const juce::String uid = chainViewUid();
@@ -7674,7 +7707,16 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
             chainListPanel.statusText = "Engaging "
                 + processorRef.resolveLinkDisplayName(chainViewUid()) + "...";
     }
-    chainListPanel.rackBtn.setButtonText("RACK: " + v.name.toUpperCase());
+    // The pill (31 Aug): the " (editing)" suffix is DROPPED here — it
+    // truncated mid-word on real channel names, cutting off the one word
+    // carrying the state. The editing state rides the pill's COLOUR
+    // instead (session amber vs chrome cyan); the status banner and the
+    // panel already say "editing" in words.
+    chainListPanel.rackBtn.setButtonText("RACK: "
+        + (v.borrowed ? processorRef.resolveLinkDisplayName(chainViewUid())
+                      : v.name).toUpperCase());
+    chainListPanel.rackBtn.setColour(juce::TextButton::textColourOffId,
+        v.borrowed ? juce::Colour(0xffFFB020) : juce::Colour(0xff22d3ee));
     repaint();
 }
 
@@ -9643,35 +9685,11 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
         const bool connected = entry != nullptr && entry->info.connected;
         const bool active    = entry != nullptr && entry->info.active;
 
-        // The tick draws from its STORED rect (30 Aug): layout centred
-        // it, paint just reads it — one truth for glyph and geometry.
-        const auto box = sg.tick.toFloat();
-
-        g.setColour(!connected || timedOut ? coral : LinkConsole::caption);
-        g.drawRoundedRectangle(box, 4.0f, 1.0f);
-
-        if (!connected)
-        {
-            // Cross: offline is a SHAPE, not just a colour
-            auto c = box.reduced(4.5f);
-            g.setColour(coral);
-            g.drawLine(c.getX(), c.getY(), c.getRight(), c.getBottom(), 1.6f);
-            g.drawLine(c.getX(), c.getBottom(), c.getRight(), c.getY(), 1.6f);
-        }
-        else
-        {
-            const bool showTick = pending ? target : (!timedOut && active);
-            if (showTick)
-            {
-                // GREEN is Active's accent: the running state must scan
-                // across sixteen strips, and grey read as chrome. Selection
-                // keeps cyan; the two never share a colour, as in Logic.
-                g.setColour(pending ? amber.withAlpha(0.6f) : C::green);
-                auto tick = getLookAndFeel().getTickShape(0.75f);
-                g.fillPath(tick, tick.getTransformToScaleToFit(
-                                     box.reduced(3.0f, 3.0f), false));
-            }
-        }
+        // THE ONE TICK RENDERER (31 Aug): stored rect in, states in —
+        // the rack row draws through the same call. (GREEN stays Active's
+        // accent; selection keeps cyan; the two never share a colour.)
+        drawActiveTick(g, sg.tick, getLookAndFeel(),
+                       connected, active, pending, timedOut, target);
 
         // The wide-mode words ("Active"/"Offline"/"no resp") retired 27
         // Aug 2026 (hands-on ruling): the tick already carries the state
@@ -28465,6 +28483,37 @@ void EchoJayEditor::sendLinkMuteSoloCommand(const juce::String& uid,
 
 // sendLinkMuteSoloForView DELETED 28 Aug 2026 — it was the rack's second
 // implementation of the mixer's stripMuteSoloClick. One author now.
+
+void EchoJayEditor::drawActiveTick(juce::Graphics& g, juce::Rectangle<int> boxI,
+                                   juce::LookAndFeel& lnf, bool connected,
+                                   bool active, bool pending, bool timedOut,
+                                   bool target)
+{
+    const auto coral = juce::Colour(0xffff6d5a);
+    const auto amber = juce::Colour(0xfff59e0b);
+    const auto box = boxI.toFloat();
+    g.setColour(!connected || timedOut ? coral : LinkConsole::caption);
+    g.drawRoundedRectangle(box, 4.0f, 1.0f);
+    if (!connected)
+    {
+        // Cross: offline is a SHAPE, not just a colour
+        auto c = box.reduced(4.5f);
+        g.setColour(coral);
+        g.drawLine(c.getX(), c.getY(), c.getRight(), c.getBottom(), 1.6f);
+        g.drawLine(c.getX(), c.getBottom(), c.getRight(), c.getY(), 1.6f);
+    }
+    else
+    {
+        const bool showTick = pending ? target : (!timedOut && active);
+        if (showTick)
+        {
+            g.setColour(pending ? amber.withAlpha(0.6f) : C::green);
+            auto tick = lnf.getTickShape(0.75f);
+            g.fillPath(tick, tick.getTransformToScaleToFit(
+                                 box.reduced(3.0f, 3.0f), false));
+        }
+    }
+}
 
 void EchoJayEditor::drawMsLamp(juce::Graphics& g, juce::Rectangle<int> r,
                                bool isSolo, bool lit, bool capable)

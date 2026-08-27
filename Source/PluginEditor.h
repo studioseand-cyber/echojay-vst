@@ -1843,8 +1843,30 @@ private:
             EchoJayProcessor* proc = nullptr;
             std::function<void(const juce::String&, bool)> onLamp;
             std::function<juce::String(const juce::String&, bool)> tipFor;
-            juce::Rectangle<int> mRect() const { return { 0, 0, 18, getHeight() }; }
-            juce::Rectangle<int> sRect() const { return { 21, 0, 18, getHeight() }; }
+            // The Active tick joined the row (31 Aug: it IS a control on
+            // the strip, so it is one here — same dispatch, same renderer,
+            // via these callbacks into the editor's one implementation).
+            struct TickView { bool has = false, connected = false,
+                              active = false, pending = false,
+                              timedOut = false, target = false; };
+            std::function<TickView(const juce::String&)> tickFor;
+            std::function<void(const juce::String&)> onTick;
+            std::function<juce::String(const juce::String&)> tickTipFor;
+            // STORED RECTS, centred as one group on the component's width
+            // (= the pill's centreline) — the strips' treatment, derived
+            // the same way: computed HERE, read by paint AND hit-testing.
+            juce::Rectangle<int> tickR, mR, sR;
+            void resized() override
+            {
+                const int lamp = 18, tick = 16;
+                const int groupW = tick + 5 + lamp + 3 + lamp;
+                int x = juce::jmax(0, (getWidth() - groupW) / 2);
+                tickR = { x, (getHeight() - tick) / 2, tick, tick };
+                x += tick + 5;
+                mR = { x, 0, lamp, getHeight() };
+                x += lamp + 3;
+                sR = { x, 0, lamp, getHeight() };
+            }
             void paint(juce::Graphics& g) override
             {
                 bool cap = false, m = false, s = false;
@@ -1853,20 +1875,35 @@ private:
                         it != proc->muteSoloSnaps_.end())
                     { cap = it->second.capable; m = it->second.muteUser;
                       s = it->second.soloOn; }
-                EchoJayEditor::drawMsLamp(g, mRect(), false, m, cap);
-                EchoJayEditor::drawMsLamp(g, sRect(), true,  s, cap);
+                if (tickFor != nullptr && uid.isNotEmpty())
+                {
+                    const auto tv = tickFor(uid);
+                    EchoJayEditor::drawActiveTick(g, tickR, getLookAndFeel(),
+                        tv.connected, tv.active, tv.pending, tv.timedOut,
+                        tv.target);
+                }
+                EchoJayEditor::drawMsLamp(g, mR, false, m, cap);
+                EchoJayEditor::drawMsLamp(g, sR, true,  s, cap);
             }
             void mouseDown(const juce::MouseEvent& e) override
             {
-                if (onLamp == nullptr || uid.isEmpty()) return;
-                if      (mRect().contains(e.getPosition())) onLamp(uid, false);
-                else if (sRect().contains(e.getPosition())) onLamp(uid, true);
+                if (uid.isEmpty()) return;
+                if      (tickR.contains(e.getPosition()))
+                { if (onTick) onTick(uid); }
+                else if (mR.contains(e.getPosition()))
+                { if (onLamp) onLamp(uid, false); }
+                else if (sR.contains(e.getPosition()))
+                { if (onLamp) onLamp(uid, true); }
             }
             juce::String getTooltip() override
             {
-                if (tipFor == nullptr || uid.isEmpty()) return {};
-                return tipFor(uid,
-                    sRect().contains(getMouseXYRelative()));
+                if (uid.isEmpty()) return {};
+                const auto p = getMouseXYRelative();
+                if (tickR.contains(p))
+                    return tickTipFor != nullptr ? tickTipFor(uid)
+                                                 : juce::String();
+                if (tipFor == nullptr) return {};
+                return tipFor(uid, sR.contains(p));
             }
         };
         MsLamps msLamps;
@@ -2711,7 +2748,10 @@ private:
             // narrow the window gets. Same shape as the master knob's
             // reservation at the right end.
             rackBtn.setBounds(8, getHeight() - kStripH + 8, kRackSelW - 16, 24);
-            msLamps.setBounds(8, getHeight() - kStripH + 36, 39, 18);
+            msLamps.setBounds(8, getHeight() - kStripH + 36,
+                              kRackSelW - 16, 18);   // the pill's width —
+                                                     // the group centres
+                                                     // inside (resized)
             // Pre-gain knob at the HEAD of the strip, left of the first block:
             // its position says what it does (the signal enters here). Shown
             // in local AND remote (a selected rack has a pre-gain too), so it
@@ -4210,6 +4250,13 @@ private:
         words. Two renderers is how the rack drifted. */
     static void drawMsLamp(juce::Graphics& g, juce::Rectangle<int> r,
                            bool isSolo, bool lit, bool capable);
+    /** THE ONE ACTIVE-TICK RENDERER (31 Aug 2026): the mixer strip and the
+        rack row draw the tick through this — box, offline cross, green
+        tick, amber pending — so the two cannot drift. */
+    static void drawActiveTick(juce::Graphics& g, juce::Rectangle<int> box,
+                               juce::LookAndFeel& lnf, bool connected,
+                               bool active, bool pending, bool timedOut,
+                               bool target);
     juce::String muteSoloStripTip(const juce::String& uid, bool isSolo) const;
     void sendLinkMuteSoloCommand(const juce::String& uid, bool isSolo, bool on);
     juce::String soloLimitLineText() const;

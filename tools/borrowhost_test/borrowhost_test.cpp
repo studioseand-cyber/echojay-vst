@@ -74,6 +74,10 @@ struct EchoJayTabStripTestAccess
     }
     static juce::String viewUid (EchoJayEditor& e) { return e.chainViewUid(); }
     static void clearActiveChat (EchoJayEditor& e) { e.currentChatId.clear(); }
+    // The rack row's STORED rects (31 Aug centring): clicks and pixel
+    // asserts read the same rects paint does.
+    static juce::Rectangle<int> rackMRect (EchoJayEditor& e)
+    { return e.chainListPanel.msLamps.mR; }
 };
 #include "EedDeviceRegistry.h"
 #include "LinkShm.h"   // BorrowRing — the stale-ring decision (finding #3)
@@ -1966,7 +1970,8 @@ int main()
             };
             auto* lamps = findByName (ed.get(), "msLamps", findByName);
             check (lamps != nullptr, "lamps found for the click half");
-            sendClick (*lamps, { 9, 9 });          // the M half
+            sendClick (*lamps,
+                EchoJayTabStripTestAccess::rackMRect (*eje).getCentre());
             auto rackCmd = readCmd();
             check (rackCmd.getDynamicObject() != nullptr
                      && rackCmd.hasProperty ("muteUser")
@@ -2025,7 +2030,7 @@ int main()
             if (lamps != nullptr)
             {
                 const auto img = lamps->createComponentSnapshot (
-                    { 0, 0, 18, lamps->getHeight() });   // the M half
+                    EchoJayTabStripTestAccess::rackMRect (*eje));
                 check (hasAmber (img), "the RACK lamp renders LIT (pixels)");
             }
             if (sgMs != nullptr)
@@ -2074,6 +2079,13 @@ int main()
                                  + "/strip_wide.png");
                 mainProc.linkMixerWide = false;
                 EchoJayTabStripTestAccess::measure (*eje);
+                // The rack row (31 Aug): pill + centred tick/M/S group.
+                auto& pnl = EchoJayTabStripTestAccess::panel (*eje);
+                savePng (pnl.createComponentSnapshot (
+                             { 0, pnl.getHeight() - 76, 176, 76 },
+                             false, 3.0f),
+                         juce::String (std::getenv ("EJ_SHOTS"))
+                             + "/rack_row.png");
             }
             // ---- NEW CHAT (30 Aug 2026): no tab jump; the binding is the
             // parameter of the ONE creator, inherited from the viewed
