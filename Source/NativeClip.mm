@@ -294,6 +294,46 @@ bool NativeClip2_attach(void* peerHandle, int cx, int cy, int cw, int ch, bool d
 // Reads the ACTUAL frame of the plugin view (inside the container, or still
 // stray at peer level). JUCE-reported editor sizes are unreliable; this is
 // ground truth. Degenerate results (1x1 etc.) mean "not ready — retry".
+bool NativeClip2_getPluginSizeVerbose(void* peerHandle, int* outW, int* outH,
+                                      char* desc, int descLen)
+{
+    if (desc && descLen > 0) desc[0] = 0;
+    if (outW) *outW = 0;
+    if (outH) *outH = 0;
+    if (!peerHandle) return false;
+    NSView* peer = (__bridge NSView*)peerHandle;
+    ECHOJAY_CLIP_CLASS* container = NativeClip2_findContainer(peer);
+    NSView* inContainer = (container != nil && [[container subviews] count] > 0)
+                              ? [container subviews][0] : nil;
+    NSView* plugin = inContainer != nil
+                         ? inContainer
+                         : NativeClip2_findStrayPluginView(peer, container);
+    NSRect cf = container != nil ? [container frame] : NSZeroRect;
+    if (!plugin)
+    {
+        if (desc)
+            snprintf(desc, (size_t)descLen,
+                     "no plugin view; container=%s %dx%d subviews=%d",
+                     container ? "yes" : "NO",
+                     (int)cf.size.width, (int)cf.size.height,
+                     container ? (int)[[container subviews] count] : -1);
+        return false;
+    }
+    NSRect f = [plugin frame];
+    if (outW) *outW = (int)f.size.width;
+    if (outH) *outH = (int)f.size.height;
+    if (desc)
+        snprintf(desc, (size_t)descLen,
+                 "measured=%s %dx%d@(%d,%d) source=%s container=%dx%d subviews=%d",
+                 [NSStringFromClass([plugin class]) UTF8String],
+                 (int)f.size.width, (int)f.size.height,
+                 (int)f.origin.x, (int)f.origin.y,
+                 inContainer != nil ? "container[0]" : "peer-STRAY",
+                 (int)cf.size.width, (int)cf.size.height,
+                 container ? (int)[[container subviews] count] : -1);
+    return true;
+}
+
 bool NativeClip2_getPluginSize(void* peerHandle, int* outW, int* outH)
 {
     if (outW) *outW = 0;

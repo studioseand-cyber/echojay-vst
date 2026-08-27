@@ -243,6 +243,7 @@ public:
         // ---- lifecycle ----
         explicit LinkChainPanel(LinkProcessor& p) : proc(p)
         {
+            inlineHolder.setName("inlineHolder");
             addChildComponent(inlineHolder);   // back of z-order
             inlineHolder.setInterceptsMouseClicks(false, true);
             inlineHolder.onChildBounds = [this]
@@ -534,10 +535,28 @@ public:
                     settled = true;
                     if (statusText.startsWith("Opening "))
                         statusText.clear();   // the verdict replaces it
-                    EchoJay_NSLog(("EJPane(link): settle verdict: "
-                        + juce::String(got ? "inline " + juce::String(w)
-                                             + "x" + juce::String(h)
-                                           : "EXPIRED -> popout")).toRawUTF8());
+                    {
+                        // The three facts (2 Sep 2026): the hosted editor's
+                        // OWN size, its parent, and which NSView the poll
+                        // actually measured — decides whether the poll
+                        // measures the plugin or the pane.
+                        int vw = 0, vh = 0; juce::String nat;
+                        NativeClip::getPluginViewSizeVerbose(this, vw, vh, nat);
+                        EchoJay_NSLog(("EJPane(link): settle verdict: "
+                            + juce::String(got ? "inline " + juce::String(w)
+                                                 + "x" + juce::String(h)
+                                               : "EXPIRED -> popout")
+                            + " | editor=" + juce::String(
+                                  inlineEditor != nullptr ? inlineEditor->getWidth() : -1)
+                            + "x" + juce::String(
+                                  inlineEditor != nullptr ? inlineEditor->getHeight() : -1)
+                            + " parent=" + juce::String(
+                                  inlineEditor != nullptr
+                                      && inlineEditor->getParentComponent() != nullptr
+                                      ? inlineEditor->getParentComponent()->getName()
+                                      : "none")
+                            + " | " + nat).toRawUTF8());
+                    }
                     if (!got)
                     {
                         // Never grew past a placeholder: out-of-process

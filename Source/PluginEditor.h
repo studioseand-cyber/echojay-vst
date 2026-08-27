@@ -1990,6 +1990,7 @@ private:
         {
             // Added first: stays at the back of the z-order so the strip,
             // header row and pop-out button remain clickable above it
+            inlineHolder.setName("inlineHolder");
             addChildComponent(inlineHolder);
             inlineHolder.setInterceptsMouseClicks(false, true);
             inlineHolder.onChildBounds = [this]
@@ -2254,10 +2255,24 @@ private:
                     settled = true;
                     if (statusText.startsWith("Opening "))
                         statusText.clear();   // the verdict replaces it
-                    EchoJay_NSLog(("EJPane(main): settle verdict: "
-                        + juce::String(got ? "inline " + juce::String(w)
-                                             + "x" + juce::String(h)
-                                           : "EXPIRED -> popout")).toRawUTF8());
+                    {
+                        int vw = 0, vh = 0; juce::String nat;
+                        NativeClip::getPluginViewSizeVerbose(this, vw, vh, nat);
+                        EchoJay_NSLog(("EJPane(main): settle verdict: "
+                            + juce::String(got ? "inline " + juce::String(w)
+                                                 + "x" + juce::String(h)
+                                               : "EXPIRED -> popout")
+                            + " | editor=" + juce::String(
+                                  inlineEditor != nullptr ? inlineEditor->getWidth() : -1)
+                            + "x" + juce::String(
+                                  inlineEditor != nullptr ? inlineEditor->getHeight() : -1)
+                            + " parent=" + juce::String(
+                                  inlineEditor != nullptr
+                                      && inlineEditor->getParentComponent() != nullptr
+                                      ? inlineEditor->getParentComponent()->getName()
+                                      : "none")
+                            + " | " + nat).toRawUTF8());
+                    }
                     if (!got)
                     {
                         // Never grew past a placeholder: out-of-process
