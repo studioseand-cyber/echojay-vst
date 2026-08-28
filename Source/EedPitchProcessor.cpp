@@ -655,6 +655,13 @@ void EedPitchProcessor::refreshLatency()
     // envelope would then act on from the wrong place.
     forEachShifter ([&] (auto& e) { e.setPitchLagSamples (engine_.pitchLagFor (vt)); });
 
+    // Drift bleed ON in the shipped path (5 Sep 2026 ruling): the per-span
+    // drift discharge at v/uv boundaries was measured as the field's
+    // near-zero-shift period inversions; bleeding it continuously (<=3
+    // cents momentary detune, tau 100 ms) cut the constant-shift breaks
+    // 36->15 at +5c on source4 and beat the old contract's own ideal floor.
+    forEachShifter ([&] (auto& e) { e.setDriftBleed (true); });
+
     setLatencySamples (shifter().latencySamples());
 }
 

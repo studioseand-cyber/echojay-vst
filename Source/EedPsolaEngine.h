@@ -167,6 +167,7 @@ public:
                   float lowestF0Hz, float worstCaseLowestF0Hz)
     {
         fs_ = sampleRate > 0.0 ? sampleRate : 48000.0;
+        bleedTau_ = 0.1 * fs_;
 
         const double worstPeriod = fs_ / std::max (10.0f, worstCaseLowestF0Hz);
         maxPeriod_ = (int) std::ceil (worstPeriod);
@@ -369,6 +370,11 @@ public:
 
     void setPitchLagSamples (int lag) noexcept { pitchLag_ = std::max (0, lag); }
     int  getPitchLagSamples() const noexcept   { return pitchLag_; }
+
+    // Drift bleed (see spliceSample): off by default; the A/B lives in
+    // tools/pitch_constshift_probe until a ruling ships it.
+    void setDriftBleed (bool on) noexcept { driftBleed_ = on; }
+    bool getDriftBleed() const noexcept   { return driftBleed_; }
 
     // Normalised autocorrelation of the INPUT ring at one lag, over a window
     // of two periods ending at `inputPos`. This is the F0JumpGate's audio
@@ -1333,6 +1339,28 @@ private:
     {
         spliceDrift_ += r - 1.0;
 
+        // DRIFT BLEED (5 Sep 2026 ruling): instead of anchoring each voiced
+        // span at its own entry and discharging the accumulated (r-1)*span
+        // as a content reset at the next gap - measured as the near-zero-
+        // shift period inversions in the field - bleed the drift back
+        // continuously as a small read-rate offset. The error goes into
+        // PITCH, where a few transient cents sit below notice, instead of
+        // into WAVEFORM CONTINUITY, where a period inversion is
+        // unambiguously audible. Proportional (drift/tau, tau 100 ms) so
+        // small drifts decay without overshoot, CAPPED at 3 cents of
+        // momentary detune so a heavily fragmented span can never turn the
+        // bleed into an audible glide - the cap, not the fragmentation,
+        // bounds the pitch excursion. The known cost, priced by the tuning
+        // gates: any sustained shift above the cap is undershot by up to
+        // the cap at equilibrium. Consonants stay bit-exact dry: this runs
+        // only inside spliceSample, which only voiced samples reach.
+        if (driftBleed_)
+        {
+            const double b = std::clamp (spliceDrift_ / bleedTau_,
+                                         -kBleedMaxRate, kBleedMaxRate);
+            spliceDrift_ -= b;
+        }
+
         // Trigger a period-aligned splice before the drift can outrun the
         // lookahead: jump one FRACTIONAL period (fs / f0, not the rounded T
         // - the integer round misaligned the two copies by up to half a
@@ -1443,6 +1471,10 @@ private:
     // Splice-resampler state.
     float  curTarget_ = 0.0f;
     double spliceDrift_ = 0.0, spliceOldDrift_ = 0.0, spliceR_ = 0.0, spliceTf_ = 0.0;
+    // 3 cents as a read-rate offset: 2^(3/1200)-1. See spliceSample.
+    static constexpr double kBleedMaxRate = 0.00173465;
+    double bleedTau_  = 4800.0;    // set in prepare(): 100 ms at fs
+    bool   driftBleed_ = false;
     int    spliceFadeLen_ = 0, spliceFadePos_ = 0, spliceT_ = 0;
     float  methodMix_ = 0.0f;      // 0 = splice, 1 = grains
 

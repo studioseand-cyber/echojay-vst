@@ -237,6 +237,7 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
     sh.setFormantShift (fshift);
     sh.debugDisableSplice (disableSplice);
     sh.setPitchLagSamples (det2.pitchLagFor (vt));
+    sh.setDriftBleed (true);   // mirrors the processor (5 Sep 2026 ruling)
     const int latency = sh.latencySamples();
 
     // THE BLOCK IS SLICED AT HOP BOUNDARIES, exactly as

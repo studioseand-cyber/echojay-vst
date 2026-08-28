@@ -149,7 +149,7 @@ static Track trackFile (const std::vector<float>& x, double fs)
 // shift = the constant. Voicing seams as fed to the engine are recorded.
 static std::vector<float> renderConstShift (const std::vector<float>& in, double fs,
                                             float shiftCents, int fmode,
-                                            bool disableSplice,
+                                            bool disableSplice, bool driftBleed,
                                             std::vector<uint64_t>& seams,
                                             std::vector<uint64_t>& splices,
                                             std::vector<PsolaEngine::DebugSpl>& trace,
@@ -176,6 +176,7 @@ static std::vector<float> renderConstShift (const std::vector<float>& in, double
     sh.setFormantMode (fmode);
     sh.debugRecordPhaseEvents (true);
     sh.debugDisableSplice (disableSplice);
+    sh.setDriftBleed (driftBleed);
     sh.setPitchLagSamples (det.pitchLagFor (vt));
     const int latency = sh.latencySamples();
 
@@ -488,10 +489,10 @@ int main (int argc, char** argv)
     const Track tr = trackFile (in, fs);
 
     struct Var { const char* name; int fmode; bool noSplice; int kind; };
-    const Var vars[] = {                                   // kind: 0 engine, 1 bridged, 2 seam-ideal
+    const Var vars[] = {                       // kind: 0 engine, 1 bridged, 2 seam-ideal, 3 engine+bleed
         { "full       ", PsolaEngine::kFormantPreserve, false, 0 },
+        { "bleed      ", PsolaEngine::kFormantPreserve, false, 3 },
         { "seam-ideal ", PsolaEngine::kFormantPreserve, false, 2 },
-        { "bridged-120", PsolaEngine::kFormantPreserve, false, 1 },
         { "grain      ", PsolaEngine::kFormantPreserve, true,  0 },
     };
     const std::vector<Hop> hops = gatedHops (in, fs);
@@ -525,6 +526,7 @@ int main (int argc, char** argv)
                 : v.kind == 2
                 ? renderSeamIdeal (in, fs, sc, hops, ringLag)
                 : renderConstShift (in, fs, sc, v.fmode, v.noSplice,
+                                    v.kind == 3,
                                     seams, splices, trace, lat, f0zero);
 
             std::vector<double> simsS, simsE, simsI;

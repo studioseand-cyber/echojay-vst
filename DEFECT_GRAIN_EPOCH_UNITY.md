@@ -1,0 +1,52 @@
+# DEFECT: grain-path epoch instability on real glottal pulses — breaks at ratio 1.0
+
+**Filed:** 2026-09-05, from the constant-shift probe run of the roughness
+investigation (`tools/pitch_constshift_probe`, source4). Ruled: recorded,
+not chased.
+
+## The measurement
+
+Real voice (source4, low-male, creaky patches) through PsolaEngine with the
+splice band force-disabled (`debugDisableSplice`) — the GRAIN path — at a
+constant shift of **0 cents, ratio exactly 1.0**, retune absent entirely:
+
+    grain path @ 0c:  141 break-windows (cycle similarity < 0.5),
+                      15 with successive periods INVERTING (similarity < 0),
+                      median similarity 0.9496 vs the source's own 0.9627
+    splice path @ 0c: 0 breaks, 0 inversions, bit-clean (identity)
+    ideal control:    0 breaks (the input is its own ideal at r=1)
+
+Only 15 of the 141 are explained by drift-displaced source transients; the
+rest are the synthesis itself. At unity, TD-PSOLA should approach a copy;
+epoch placement jittering or doubling on real glottal pulses (creak,
+period-doubling patches — exactly where the detector's period estimate is
+least stable) makes grains overlap incoherently instead.
+
+## Scope — why this is not the field defect
+
+**Out-of-band only.** In-band (|shift| <= 2.5 st) the shipped preserve path
+rides the splice-resampler with `methodMix_ = 0`: the grain output is fully
+replaced, and the per-sample author trace (`PsolaEngine::debugSpliceTrace`)
+confirms zero grain leakage across every in-band run. Correction-scale
+shifts never touch this path.
+
+## When it will matter
+
+The first time anyone shifts beyond the splice band — formant_mode `shift`
+(which never splices; its envelope warp needs the LPC grain path), or any
+correction/effect pushed past 2.5 semitones, where `methodMix_` crossfades
+to 1 and the grain path IS the output. On creaky or fry-heavy material it
+will carry roughly this take's density of breaks before any shift error is
+even added.
+
+## The investigation trail
+
+Probe variants and numbers: `tools/pitch_constshift_probe/main.cpp` (the
+`grain` variant rows). Reproduce with:
+
+    g++ -std=c++17 -O2 -ISource tools/pitch_constshift_probe/main.cpp -o probe
+    ./probe "/Users/SeanD/Music/Logic/test/Audio Files/source4.wav"
+
+The fix direction, when chased: epoch stability on real glottal pulses
+(does `nextEpoch`'s 0.7T–1.3T peak-pick hold the same phase point through
+creak?), before anything about grain gains or windows.
