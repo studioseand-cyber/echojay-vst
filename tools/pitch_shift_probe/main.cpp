@@ -270,12 +270,25 @@ int main()
             const double outT = kFs / (double) target;
             const auto st = measure (out, latency, outT);
             const int T = (int) std::lround (outT);
-            int rough = 0;
+            int rough = 0, nearEntry = 0, nearExit = 0, elsewhere = 0;
             for (long a = latency + (long) (0.5 * kFs);
                  a + 2 * T + 4 < (long) out.size() - T; a += T)
-                if (ncc (out, a, a + T, T) < 0.90) ++rough;
-            std::printf ("%5.0f, %.4f, %.4f, %.2f\n", sc,
-                         st.simMedian, st.simP10, rough / (kSeconds - 0.5));
+                if (ncc (out, a, a + T, T) < 0.90)
+                {
+                    ++rough;
+                    // Which seam edge is this window near, in INPUT time?
+                    const long ip = a - latency;          // input position
+                    const long inCycle = ip % 24000;
+                    // entry seam (voiced->uv) at 0; exit (uv->voiced) at 2880
+                    const long dEntry = std::min (inCycle, 24000 - inCycle);
+                    const long dExit  = std::labs (inCycle - 2880);
+                    if      (dExit  < 3 * T) ++nearExit;
+                    else if (dEntry < 3 * T) ++nearEntry;
+                    else                     ++elsewhere;
+                }
+            std::printf ("%5.0f, %.4f, %.4f, %.2f  (entry %d, exit %d, other %d)\n",
+                         sc, st.simMedian, st.simP10, rough / (kSeconds - 0.5),
+                         nearEntry, nearExit, elsewhere);
         }
     }
 
@@ -321,6 +334,56 @@ int main()
              a + 2 * T + 4 < (long) out.size() - T; a += T)
             if (ncc (out, a, a + T, T) < 0.90) ++rough;
         std::printf ("sim_median %.4f, sim_p10 %.4f, rough_per_s %.2f\n",
+                     st.simMedian, st.simP10, rough / (kSeconds - 0.5));
+    }
+    // ---- EXPERIMENT 4b: the METRIC'S OWN FLOOR -------------------------
+    // The same 0..80c @3Hz trajectory through an IDEAL time-varying
+    // resampler (cubic interpolation, moving read rate - it cannot
+    // glitch). Whatever this scores is what the fixed-period similarity
+    // metric charges for GENUINE pitch movement; the field numbers
+    // (measured with the same metric) inherit it.
+    std::printf ("\nexp4b: ideal-resampler control, same trajectory\n");
+    {
+        const int n = (int) (kFs * kSeconds);
+        std::vector<float> vib ((size_t) n);
+        double ph = 0.0;
+        for (int i = 0; i < n; ++i)
+        {
+            const double f = kF0 * std::pow (2.0,
+                (30.0 / 1200.0) * std::sin (2.0 * M_PI * 6.0 * i / kFs));
+            double sig = 0.0;
+            for (int h = 1; h <= 12; ++h) sig += std::sin (2.0 * M_PI * h * ph) / (double) h;
+            vib[(size_t) i] = (float) (0.25 * sig);
+            ph += f / kFs;
+        }
+        std::vector<float> out ((size_t) n, 0.0f);
+        double pos = 0.0;
+        auto cubic = [&] (double x) -> float
+        {
+            const long i1 = (long) x;
+            if (i1 < 1 || i1 + 2 >= n) return 0.0f;
+            const double fr = x - (double) i1;
+            const double xm = vib[(size_t) (i1 - 1)], x0 = vib[(size_t) i1],
+                         x1 = vib[(size_t) (i1 + 1)], x2 = vib[(size_t) (i1 + 2)];
+            return (float) (x0 + 0.5 * fr * (x1 - xm
+                          + fr * (2.0 * xm - 5.0 * x0 + 4.0 * x1 - x2
+                          + fr * (3.0 * (x0 - x1) + x2 - xm))));
+        };
+        for (int i = 0; i < n; ++i)
+        {
+            const float sc = 40.0f
+                + 40.0f * (float) std::sin (2.0 * M_PI * 3.0 * i / kFs);
+            out[(size_t) i] = cubic (pos);
+            pos += std::pow (2.0, sc / 1200.0);
+        }
+        const double outT = kFs / (double) (kF0 * std::pow (2.0f, 40.0f / 1200.0f));
+        const auto st = measure (out, 0, outT);
+        const int T = (int) std::lround (outT);
+        int rough = 0;
+        for (long a = (long) (0.5 * kFs);
+             a + 2 * T + 4 < (long) out.size() - T; a += T)
+            if (ncc (out, a, a + T, T) < 0.90) ++rough;
+        std::printf ("IDEAL: sim_median %.4f, sim_p10 %.4f, rough_per_s %.2f\n",
                      st.simMedian, st.simP10, rough / (kSeconds - 0.5));
     }
     return 0;
