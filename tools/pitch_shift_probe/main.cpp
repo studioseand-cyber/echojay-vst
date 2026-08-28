@@ -292,6 +292,73 @@ int main()
         }
     }
 
+    // ---- EXPERIMENT 3b: the SEAM FLOOR — an ideal shifter with the same
+    // v/uv pattern. Voiced spans resampled at constant r (cubic, started
+    // PHASE-ALIGNED with the dry at each entry), unvoiced spans bit-exact
+    // dry, 1.5ms linear crossfades. The pitch STEP wet<->dry at every seam
+    // is genuine and the metric charges for it — whatever this scores is
+    // the floor for "correct the vowels, keep consonants dry".
+    std::printf ("\nexp3b: ideal seam control\n");
+    std::printf ("shift_c, sim_median, sim_p10, rough_per_s\n");
+    {
+        const int n = (int) (kFs * kSeconds);
+        std::vector<float> vib ((size_t) n);
+        double ph = 0.0;
+        for (int i = 0; i < n; ++i)
+        {
+            const double f = kF0 * std::pow (2.0,
+                (30.0 / 1200.0) * std::sin (2.0 * M_PI * 6.0 * i / kFs));
+            double sg = 0.0;
+            for (int h = 1; h <= 12; ++h) sg += std::sin (2.0 * M_PI * h * ph) / (double) h;
+            vib[(size_t) i] = (float) (0.25 * sg);
+            ph += f / kFs;
+        }
+        auto cubic = [&] (double x) -> float
+        {
+            const long i1 = (long) x;
+            if (i1 < 1 || i1 + 2 >= n) return 0.0f;
+            const double fr = x - (double) i1;
+            const double xm = vib[(size_t) (i1 - 1)], x0 = vib[(size_t) i1],
+                         x1 = vib[(size_t) (i1 + 1)], x2 = vib[(size_t) (i1 + 2)];
+            return (float) (x0 + 0.5 * fr * (x1 - xm
+                          + fr * (2.0 * xm - 5.0 * x0 + 4.0 * x1 - x2
+                          + fr * (3.0 * (x0 - x1) + x2 - xm))));
+        };
+        for (float sc : { 0.0f, 40.0f, 80.0f })
+        {
+            const double r = std::pow (2.0, sc / 1200.0);
+            std::vector<float> out ((size_t) n, 0.0f);
+            const int fadeN = 72;
+            for (int i = 0; i < n; ++i)
+            {
+                const int inCycle = i % 24000;
+                const bool uv = inCycle < 2880;
+                if (uv) { out[(size_t) i] = vib[(size_t) i]; continue; }
+                // voiced: resample from the span's own start, phase-aligned
+                const int spanStart = (i / 24000) * 24000 + 2880;
+                const double pos = (double) spanStart + (double) (i - spanStart) * r;
+                float wet = cubic (pos);
+                // fade near both edges (voiced side), 72 samples
+                const int fromStart = i - spanStart;
+                const int toEnd = (spanStart + 24000 - 2880) - i;
+                const int edge = std::min (fromStart, toEnd);
+                const float g = edge >= fadeN ? 1.0f
+                              : (float) (edge + 1) / (float) (fadeN + 1);
+                out[(size_t) i] = vib[(size_t) i]
+                                + g * (wet - vib[(size_t) i]);
+            }
+            const double outT = kFs / (double) (kF0 * std::pow (2.0, sc / 1200.0));
+            const auto st = measure (out, 0, outT);
+            const int T = (int) std::lround (outT);
+            int rough = 0;
+            for (long a = (long) (0.5 * kFs);
+                 a + 2 * T + 4 < (long) out.size() - T; a += T)
+                if (ncc (out, a, a + T, T) < 0.90) ++rough;
+            std::printf ("%5.0f, %.4f, %.4f, %.2f\n", sc,
+                         st.simMedian, st.simP10, rough / (kSeconds - 0.5));
+        }
+    }
+
     // ---- EXPERIMENT 4: MOVING shift (retune dynamics) ------------------
     // Steady vibrato tone, shift ramping between 0 and 80c at 3 Hz —
     // roughly what correction across note transitions does to the ratio.

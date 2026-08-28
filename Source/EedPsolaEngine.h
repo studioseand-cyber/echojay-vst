@@ -640,7 +640,31 @@ private:
                 spliceR_ = 0.0; spliceT_ = 0; spliceTf_ = 0.0;
             }
 
-            float y = g <= 0.0f ? dry : (g >= 1.0f ? wet : dry + g * (wet - dry));
+            // PHASE-MATCHED JOIN (28 Aug 2026 ruling, the exit seam): the
+            // splice-resampler's wet reads at p + drift, and drift mod Tf
+            // is INVARIANT under period-aligned splices — so at a seam the
+            // wet meets the dry with a random sub-period offset, and the
+            // crossfade joined two misaligned periodic signals: measured
+            // 7.1 rough spans/s at 80c, ALL at the voiced->unvoiced exit,
+            // 0.0 at the 0c control. Inside the fade the DRY LEG starts at
+            // the wet's periodicity-equivalent offset (the drift REMAINDER,
+            // centred) and eases home following the fade's own amplitude
+            // curve — offset r0*g, so the two agree by construction: g=1
+            // matched to the wet, g=0 bit-exact true dry. Unvoiced samples
+            // (g<=0) are untouched: the sacred-dry contract covers content
+            // AND the mix paths (SlotWetBlend, master MIX) that sum this
+            // leg against a true-dry copy — which is also why the offset
+            // could not simply ride through the seam.
+            float dryLeg = dry;
+            if (g > 0.0f && g < 1.0f && spliceTf_ > 4.0 && methodMix_ < 1.0f)
+            {
+                double r0 = std::fmod (spliceDrift_, spliceTf_);
+                if (r0 >  spliceTf_ * 0.5) r0 -= spliceTf_;
+                if (r0 < -spliceTf_ * 0.5) r0 += spliceTf_;
+                dryLeg = readInterp ((double) p + r0 * (double) g);
+            }
+            float y = g <= 0.0f ? dry : (g >= 1.0f ? wet
+                                                   : dryLeg + g * (wet - dryLeg));
 
             // Blend against the delay-matched dry, then trim. Skipped entirely
             // at the defaults so nothing is multiplied that need not be.
