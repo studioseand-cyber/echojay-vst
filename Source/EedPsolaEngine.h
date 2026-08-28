@@ -359,6 +359,14 @@ public:
     struct DebugEmit { float seamG, winSum; };
     const std::vector<DebugEmit>& debugEmits() const noexcept { return dbgEmit_; }
 
+    // Per-sample splice-band author record (4 Sep 2026, the constant-shift
+    // mid-voiced breaks): which branch wrote `wet`, with the state that
+    // decided it. One push per emitted sample in BOTH emit paths, so the
+    // index is the emitted position exactly like dbgEmit_. mix<0 marks a
+    // sample emitted by emitDry (no splice state in play).
+    struct DebugSpl { float g, mix, r; float drift; int T; };
+    const std::vector<DebugSpl>& debugSpliceTrace() const noexcept { return dbgSpl_; }
+
     void setPitchLagSamples (int lag) noexcept { pitchLag_ = std::max (0, lag); }
     int  getPitchLagSamples() const noexcept   { return pitchLag_; }
 
@@ -477,7 +485,7 @@ private:
         for (int i = 0; i < n; ++i)
         {
             const int64_t p = base + (int64_t) i;
-            if (p < 0) { out[i] = 0.0f; if (debugOn_) dbgEmit_.push_back ({ -1.0f, 0.0f }); continue; }
+            if (p < 0) { out[i] = 0.0f; if (debugOn_) { dbgEmit_.push_back ({ -1.0f, 0.0f }); dbgSpl_.push_back ({ -1.0f, -1.0f, 0.0f, 0.0f, 0 }); } continue; }
             const uint32_t idx = (uint32_t) (uint64_t) p & mask_;
             const float og = outGain_.load (std::memory_order_relaxed);
             out[i] = og == 1.0f ? in_[(size_t) idx] : in_[(size_t) idx] * og;
@@ -489,7 +497,7 @@ private:
             // shifting does not read stale grain content.
             acc_[(size_t) idx] = 0.0f;
             win_[(size_t) idx] = 0.0f;
-            if (debugOn_) dbgEmit_.push_back ({ -1.0f, 0.0f });
+            if (debugOn_) { dbgEmit_.push_back ({ -1.0f, 0.0f }); dbgSpl_.push_back ({ -1.0f, -1.0f, 0.0f, 0.0f, 0 }); }
         }
         emitted_ = base + (int64_t) n;
     }
@@ -501,7 +509,7 @@ private:
         for (int i = 0; i < n; ++i)
         {
             const int64_t p = base + (int64_t) i;
-            if (p < 0) { out[i] = 0.0f; if (debugOn_) dbgEmit_.push_back ({ -1.0f, 0.0f }); continue; }
+            if (p < 0) { out[i] = 0.0f; if (debugOn_) { dbgEmit_.push_back ({ -1.0f, 0.0f }); dbgSpl_.push_back ({ -1.0f, -1.0f, 0.0f, 0.0f, 0 }); } continue; }
             const uint32_t idx = (uint32_t) (uint64_t) p & mask_;
 
             const float dry = in_[(size_t) idx];
@@ -655,6 +663,10 @@ private:
             // AND the mix paths (SlotWetBlend, master MIX) that sum this
             // leg against a true-dry copy — which is also why the offset
             // could not simply ride through the seam.
+            if (debugOn_)
+                dbgSpl_.push_back ({ g, methodMix_, (float) spliceR_,
+                                     (float) spliceDrift_, spliceT_ });
+
             float dryLeg = dry;
             if (g > 0.0f && g < 1.0f && spliceTf_ > 4.0 && methodMix_ < 1.0f)
             {
@@ -1398,6 +1410,7 @@ private:
     std::vector<uint64_t> dbgReseed_, dbgReset_;
     std::vector<DebugGrain> dbgGrain_;
     std::vector<DebugEmit>  dbgEmit_;
+    std::vector<DebugSpl>   dbgSpl_;
     std::vector<uint32_t>   dbgWinHist_;
     float dbgWinMin_ = 1.0e9f;
     int    maxPeriod_  = 2048;
