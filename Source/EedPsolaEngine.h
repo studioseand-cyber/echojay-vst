@@ -168,6 +168,7 @@ public:
     {
         fs_ = sampleRate > 0.0 ? sampleRate : 48000.0;
         bleedTau_ = 0.1 * fs_;
+        carryLimit_ = (double) carryMs_ * 0.001 * fs_;
 
         const double worstPeriod = fs_ / std::max (10.0f, worstCaseLowestF0Hz);
         maxPeriod_ = (int) std::ceil (worstPeriod);
@@ -231,6 +232,7 @@ public:
         spliceDrift_ = 0.0; spliceOldDrift_ = 0.0; spliceR_ = 0.0; spliceTf_ = 0.0;
         spliceFadeLen_ = 0; spliceFadePos_ = 0; spliceT_ = 0;
         methodMix_ = 0.0f;
+        uvRun_ = 0;
     }
 
     // The active voice_type's floor. Changes the reported latency, which the
@@ -375,6 +377,15 @@ public:
     // tools/pitch_constshift_probe until a ruling ships it.
     void setDriftBleed (bool on) noexcept { driftBleed_ = on; }
     bool getDriftBleed() const noexcept   { return driftBleed_; }
+
+    // Drift carry (see emitMixed): gaps shorter than this keep the read
+    // trajectory across the gap instead of re-anchoring. 0 = old behaviour.
+    void setDriftCarryMs (float ms) noexcept
+    {
+        carryMs_ = std::max (0.0f, ms);
+        carryLimit_ = (double) carryMs_ * 0.001 * fs_;
+    }
+    float getDriftCarryMs() const noexcept { return carryMs_; }
 
     // Normalised autocorrelation of the INPUT ring at one lag, over a window
     // of two periods ending at `inputPos`. This is the F0JumpGate's audio
@@ -596,6 +607,26 @@ private:
             // splices - its envelope warp needs the LPC grain path.
             if (g > 0.0f && fm != kFormantShift && ! dbgNoSplice_)
             {
+                // DRIFT CARRY (5 Sep 2026 ruling): a re-entry after a SHORT
+                // gap keeps the accumulated drift instead of re-anchoring.
+                // The census (tools/pitch_span_census) measured half of all
+                // span boundaries as tracking blinks inside continuous
+                // notes - audio periodic straight through, flanks within
+                // cents - and every re-anchor there was a content jump the
+                // field hears (~7 breaks/s of voiced, one per boundary).
+                // Carrying is the conservative action on "cannot measure":
+                // the gap itself stays bit-exact dry either way; only the
+                // re-anchor is removed, the wet resuming its pre-gap read
+                // trajectory (the entry fade's join handles the offset -
+                // its r0 term never assumed zero drift). Decided CAUSALLY
+                // at re-entry from the gap's length: real pauses (> the
+                // threshold) still re-anchor. carryLimit_ = 0 is exactly
+                // the old behaviour.
+                if (uvRun_ > 0)
+                {
+                    if ((double) uvRun_ > carryLimit_) spliceDrift_ = 0.0;
+                    uvRun_ = 0;
+                }
                 // The ratio is what the READ point's audio must be scaled by,
                 // so evaluate f0 where the read pointer actually is - up to
                 // ~3/4 of a period away from p, which on a vibrato is a
@@ -648,9 +679,13 @@ private:
             }
             else if (g <= 0.0f)
             {
-                // A seam or unvoiced sample: the next voiced entry starts
-                // phase-aligned with the dry by construction.
-                spliceDrift_ = 0.0; spliceFadeLen_ = 0; methodMix_ = 0.0f;
+                // A seam or unvoiced sample. With drift carry off the next
+                // voiced entry starts phase-aligned with the dry by
+                // construction; with it on, the drift survives until the
+                // re-entry decision above judges the gap's length.
+                ++uvRun_;
+                if (carryLimit_ <= 0.0) spliceDrift_ = 0.0;
+                spliceFadeLen_ = 0; methodMix_ = 0.0f;
                 spliceR_ = 0.0; spliceT_ = 0; spliceTf_ = 0.0;
             }
 
@@ -1475,6 +1510,9 @@ private:
     static constexpr double kBleedMaxRate = 0.00173465;
     double bleedTau_  = 4800.0;    // set in prepare(): 100 ms at fs
     bool   driftBleed_ = false;
+    float  carryMs_ = 0.0f;        // drift carry threshold; 0 = off
+    double carryLimit_ = 0.0;      // ...in samples, set with fs
+    int64_t uvRun_ = 0;            // unvoiced run length at the emit head
     int    spliceFadeLen_ = 0, spliceFadePos_ = 0, spliceT_ = 0;
     float  methodMix_ = 0.0f;      // 0 = splice, 1 = grains
 

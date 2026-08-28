@@ -150,6 +150,7 @@ static Track trackFile (const std::vector<float>& x, double fs)
 static std::vector<float> renderConstShift (const std::vector<float>& in, double fs,
                                             float shiftCents, int fmode,
                                             bool disableSplice, bool driftBleed,
+                                            float carryMs,
                                             std::vector<uint64_t>& seams,
                                             std::vector<uint64_t>& splices,
                                             std::vector<PsolaEngine::DebugSpl>& trace,
@@ -177,6 +178,7 @@ static std::vector<float> renderConstShift (const std::vector<float>& in, double
     sh.debugRecordPhaseEvents (true);
     sh.debugDisableSplice (disableSplice);
     sh.setDriftBleed (driftBleed);
+    sh.setDriftCarryMs (carryMs);
     sh.setPitchLagSamples (det.pitchLagFor (vt));
     const int latency = sh.latencySamples();
 
@@ -488,12 +490,17 @@ int main (int argc, char** argv)
 
     const Track tr = trackFile (in, fs);
 
-    struct Var { const char* name; int fmode; bool noSplice; int kind; };
-    const Var vars[] = {                       // kind: 0 engine, 1 bridged, 2 seam-ideal, 3 engine+bleed
-        { "full       ", PsolaEngine::kFormantPreserve, false, 0 },
-        { "bleed      ", PsolaEngine::kFormantPreserve, false, 3 },
-        { "seam-ideal ", PsolaEngine::kFormantPreserve, false, 2 },
-        { "grain      ", PsolaEngine::kFormantPreserve, true,  0 },
+    // The carry sweep (5 Sep 2026 ruling): bleed is shipped, carry is the
+    // candidate; the threshold curve decides whether it is a fitted
+    // constant or a plateau. carry 0 = the currently shipped behaviour.
+    struct Var { const char* name; bool bleed; float carryMs; };
+    const Var vars[] = {
+        { "bleed c0   ", true, 0.0f },
+        { "bleed c50  ", true, 50.0f },
+        { "bleed c100 ", true, 100.0f },
+        { "bleed c150 ", true, 150.0f },
+        { "bleed c200 ", true, 200.0f },
+        { "bleed c300 ", true, 300.0f },
     };
     const std::vector<Hop> hops = gatedHops (in, fs);
     int ringLag = 0;
@@ -508,7 +515,7 @@ int main (int argc, char** argv)
                             se.latencySamples() - 1);
     }
 
-    for (float sc : { 0.0f, 5.0f, 10.0f })
+    for (float sc : { 0.0f, 5.0f, 10.0f, 100.0f })
     {
         const double r = std::pow (2.0, sc / 1200.0);
         const auto ideal = renderIdeal (in, sc);
@@ -521,13 +528,18 @@ int main (int argc, char** argv)
             std::vector<uint64_t> seams, splices, f0zero;
             std::vector<PsolaEngine::DebugSpl> trace;
             int lat = 0;
-            const auto eng = v.kind == 1
-                ? renderConstShiftBridged (in, fs, sc, 120.0f)
-                : v.kind == 2
-                ? renderSeamIdeal (in, fs, sc, hops, ringLag)
-                : renderConstShift (in, fs, sc, v.fmode, v.noSplice,
-                                    v.kind == 3,
+            const auto eng = renderConstShift (in, fs, sc,
+                                    PsolaEngine::kFormantPreserve, false,
+                                    v.bleed, v.carryMs,
                                     seams, splices, trace, lat, f0zero);
+            // The DEFERRED DISCHARGE the ruling asked about: the largest
+            // |drift| still standing at any exit (last wet sample before a
+            // g<=0 run) - what a re-anchor at that seam would discharge.
+            double maxSeamDrift = 0.0;
+            for (size_t q = 1; q < trace.size(); ++q)
+                if (trace[q].g <= 0.0f && trace[q - 1].g > 0.0f)
+                    maxSeamDrift = std::max (maxSeamDrift,
+                                             (double) std::fabs (trace[q - 1].drift));
 
             std::vector<double> simsS, simsE, simsI;
             std::vector<WorstWin> wins;
@@ -600,10 +612,10 @@ int main (int argc, char** argv)
                 if (s.empty()) return 0.0;
                 std::sort (s.begin(), s.end()); return s[s.size() / 2]; };
             std::printf ("%s, %d, %.4f, %.4f, %.4f, %d, %d, %d, %d, %d, %d, %d  "
-                         "(splices %d, voiced-but-f0zero hops %d)\n",
+                         "(splices %d, maxSeamDrift %.0f smp)\n",
                          v.name, voiced, med (simsS), med (simsE), med (simsI),
                          roughE, roughI, brkE, brkI, negE, worse, worseMid,
-                         (int) splices.size(), (int) f0zero.size());
+                         (int) splices.size(), maxSeamDrift);
             std::sort (wins.begin(), wins.end(),
                        [] (const WorstWin& x, const WorstWin& y) { return x.eng < y.eng; });
             int dispExplained = 0, dispTotal = 0;
@@ -612,7 +624,7 @@ int main (int argc, char** argv)
                 { ++dispTotal; if (w.srcDisp < 0.60) ++dispExplained; }
             std::printf ("    displaced-anchor: %d/%d engine breaks have the "
                          "SOURCE broken at a+drift\n", dispExplained, dispTotal);
-            for (size_t k = 0; k < wins.size() && k < 8; ++k)
+            for (size_t k = 0; k < wins.size() && k < 4; ++k)
             {
                 std::printf ("    worst %5.2fs  eng %+.3f  idl %+.3f  src %.3f  "
                              "srcAtDrift %.3f (D=%+.0f)  %s\n",
