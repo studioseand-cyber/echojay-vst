@@ -2543,6 +2543,170 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         }
     }
 
+    // ---- The SECOND Waves seam: nameable but unloadable --------------------
+    // 66de26d/5abe833 taught buildRecommendable the marketing->shell alias, so
+    // 30 Waves rows entered the feed. Nothing taught the CHAIN-EDIT path, which
+    // validates with resolveByName against entries_ (shell names) while the feed
+    // offers displayName (marketing names). Every one of those 30 was nameable
+    // by the model and refused by the validator:
+    //     Not applied: op 1 invalid: "API 550" not in the loadable plugin list
+    // resolveOfferedName is the bridge. These pins run the REAL ChainHost off
+    // the REAL registry, not a model of it.
+    {
+        std::cout << "offered-name resolution (chain-edit seam):\n";
+        const juce::ScopedJuceInitialiser_GUI juceInit;
+        ChainHost host;
+
+        if (host.getNumPlugins() == 0)
+        {
+            std::cout << "  SKIP  offered-name pins (no chain_plugins.xml on this machine)\n";
+        }
+        else
+        {
+            // The feed exactly as the scanner builds it for Waves: all 69 curated
+            // MARKETING names under manufacturer "Waves" (expandWavesCatalog), fed
+            // through the real buildRecommendable so the real alias runs.
+            std::vector<ScannedPlugin> enabled;
+            for (const auto& e : echojay::wavesCatalog())
+            {
+                ScannedPlugin sp;
+                sp.name         = juce::String (e.name);
+                sp.manufacturer = "Waves";
+                sp.format       = "VST3/AU";
+                sp.category     = juce::String (e.category);
+                sp.path         = "WaveShell";
+                sp.uid          = "waves_" + sp.name.toLowerCase().replaceCharacter (' ', '_');
+                sp.enabled      = true;
+                enabled.push_back (sp);
+            }
+            host.buildRecommendable (enabled, {});
+            const auto offered = host.getRecommendableNames();
+
+            // ---- PIN A: the three names from the report, end to end ----------
+            // Each is a MARKETING name the feed offers and the validator refused.
+            // The assertion is on the base name, so the (m)/(s) preference stays
+            // free to pick the variant it always picked.
+            auto baseOf = [&host] (const juce::String& n)
+            {
+                return ChainHost::stripParenthetical (host.resolveOfferedName (n).name);
+            };
+            if (! offered.contains ("API 550"))
+            {
+                std::cout << "  SKIP  PIN A (API 550 not in this machine's feed)\n";
+            }
+            else
+            {
+                check (baseOf ("API 550") == "API-550B",
+                       "of PIN A: \"API 550\" resolves for the validator -> API-550B");
+                check (baseOf ("Renaissance Equalizer") == "REQ 6",
+                       "of PIN A: \"Renaissance Equalizer\" -> REQ 6");
+                check (baseOf ("Renaissance Vox") == "RVox",
+                       "of PIN A: \"Renaissance Vox\" -> RVox");
+                // And the refusal it produced before the bridge existed. This is
+                // the exact call the validator makes; empty is the refusal.
+                check (host.resolveByName ("API 550", {}).name.isEmpty(),
+                       "of PIN A: the registry alone still cannot see \"API 550\" "
+                       "(so the bridge, not a re-scan, is what fixed it)");
+            }
+
+            // ---- PIN B: ADDITIVE BY CONSTRUCTION, asserted over the feed -----
+            // For every offered name the registry CAN resolve, the bridge must
+            // return the identical row -- same uid, same format. This is the
+            // requirement that forced resolveByName to run FIRST: the opposite
+            // order re-points "TAL-BassLine-101" from the VST3 it resolves to
+            // today onto the AU twin the feed offers, and six rows share it.
+            int checkedSame = 0, repointed = 0;
+            juce::String firstRepoint;
+            for (const auto& n : offered)
+            {
+                const auto direct = host.resolveByName (n, {});
+                if (direct.name.isEmpty()) continue;          // bridge territory
+                const auto bridged = host.resolveOfferedName (n);
+                ++checkedSame;
+                if (bridged.uniqueId != direct.uniqueId
+                    || bridged.pluginFormatName != direct.pluginFormatName
+                    || bridged.name != direct.name)
+                {
+                    ++repointed;
+                    if (firstRepoint.isEmpty())
+                        firstRepoint = n + ": " + direct.name + " -> " + bridged.name;
+                }
+            }
+            check (checkedSame > 0, "of PIN B: the additive sweep had rows to check",
+                   "checked=" + juce::String (checkedSame));
+            check (repointed == 0,
+                   "of PIN B: no name that resolves today resolves anywhere else",
+                   "re-pointed " + juce::String (repointed) + " of "
+                       + juce::String (checkedSame) + "; first: " + firstRepoint);
+
+            // ---- PIN C: a row NOT in the feed resolves exactly as today ------
+            // "RVox" is the SHELL name: in the registry, never a displayName, so
+            // it never touches recommendable_ and must come back byte-identical.
+            {
+                const auto direct  = host.resolveByName ("RVox", {});
+                const auto bridged = host.resolveOfferedName ("RVox");
+                check (! offered.contains ("RVox"),
+                       "of PIN C: \"RVox\" is a shell name, not an offered name");
+                check (direct.name.isNotEmpty() && bridged.name == direct.name
+                           && bridged.uniqueId == direct.uniqueId,
+                       "of PIN C: a name outside the feed still resolves as today",
+                       direct.name + " vs " + bridged.name);
+                // And a name in neither is still a miss, with no invented answer.
+                check (host.resolveOfferedName ("Not A Real Plugin At All").name.isEmpty(),
+                       "of PIN C: an unknown name is still a miss");
+            }
+        }
+
+        // ---- PIN D: THE WIRING, which is what actually broke ----------------
+        // The alias logic was already right and already pinned; three call sites
+        // reaching past it is what shipped the defect. Pin the sites, not just
+        // the function they should call.
+        {
+            std::ifstream fch ("Source/ChainHost.cpp");
+            std::stringstream sch; sch << fch.rdbuf();
+            const auto src = juce::String (sch.str());
+            const auto ch  = codeOnly (src);
+
+            check (ch.contains ("resolveOfferedName(op.name, &why)"),
+                   "of PIN D: the chain-edit ops resolve through the bridge");
+            // add + replace in the dry run, and the runtime apply: three sites,
+            // and the dry run agreeing with the apply is the point of the guard.
+            int n = 0, at = 0;
+            while ((at = ch.indexOf (at, "resolveOfferedName(op.name")) >= 0) { ++n; at += 20; }
+            check (n == 3, "of PIN D: all THREE op sites (add, replace, apply) use it",
+                   "found " + juce::String (n));
+            check (! ch.contains ("resolveByName(op.name"),
+                   "of PIN D: and none of them still calls resolveByName directly");
+
+            // THE ORDER IS THE INVARIANT. resolveByName must be consulted before
+            // recommendable_ inside the bridge; reversing it is what re-points.
+            const auto body = functionBody (src, "juce::PluginDescription ChainHost::resolveOfferedName");
+            check (body.isNotEmpty(), "of PIN D: resolveOfferedName found in source");
+            const int iDirect = body.indexOf ("resolveByName(rawName");
+            const int iFeed   = body.indexOf ("recommendable_");
+            check (iDirect >= 0 && iFeed > iDirect,
+                   "of PIN D: the registry is consulted BEFORE the feed table",
+                   "resolveByName@" + juce::String (iDirect) + " recommendable_@" + juce::String (iFeed));
+
+            // RESTORE IS DELIBERATELY NOT ON THE BRIDGE. Saved chains carry
+            // desc.name (buildChainSlotsVar writes the slot's own registration),
+            // so a displayName lookup answers a question restore never asks.
+            const auto restore = functionBody (src, "void ChainHost::restoreSavedChain");
+            check (restore.contains ("resolveByName(name, {}, nullptr, &why)"),
+                   "of PIN D: restore still resolves saved SHELL names directly");
+            const auto slotsVar = functionBody (src, "juce::var ChainHost::buildChainSlotsVar");
+            check (slotsVar.contains ("setProperty(\"plugin\",       s.desc.name)"),
+                   "of PIN D: and what it restores is desc.name, which is why");
+
+            // THE FEED PATH IS UNCHANGED: the bridge reads recommendable_ and
+            // never writes it, so buildRecommendable owns it exactly as before.
+            const auto bodyRec = functionBody (src, "juce::PluginDescription ChainHost::resolveOfferedName");
+            check (! bodyRec.contains ("recommendable_.push_back")
+                   && ! bodyRec.contains ("recommendable_.clear"),
+                   "of PIN D: the bridge only READS the feed table");
+        }
+    }
+
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";
     return failN == 0 ? 0 : 1;
 }

@@ -730,6 +730,37 @@ public:
                                           juce::String* matchLogOut = nullptr,
                                           WithholdReason* withheldOut = nullptr) const;
 
+    // Resolve a name THE MODEL WAS OFFERED (28 Aug 2026, the second Waves seam).
+    // The feed carries recommendable_'s displayName, which for Waves is the
+    // MARKETING name ("Renaissance Vox"); resolveByName searches entries_, which
+    // holds the SHELL name ("RVox (s)"). Only buildRecommendable knew the alias
+    // between them, so all 30 rows 66de26d/5abe833 recovered were nameable by the
+    // model and refused by the chain-edit validator: "add the API 550" came back
+    // '"API 550" not in the loadable plugin list' while the feed offered it.
+    //
+    // ADDITIVE BY CONSTRUCTION, and the ORDER is the whole of it. resolveByName
+    // runs FIRST and its answer always wins; recommendable_ is consulted ONLY
+    // where that returned empty. So no name that resolves today can resolve to
+    // anything else tomorrow.
+    //
+    // The opposite order -- feed table first -- reads like the obvious one and
+    // is wrong, MEASURED not argued: the mutation that consults recommendable_
+    // first re-points 32 of the 34 Waves rows the gate sweeps, the first being
+    // CLA-2A (m) -> CLA-2A (s). The feed's base-name key takes the BEST channel
+    // variant (insertPreferredBase, EJVariantPreference.h) while resolveByName's
+    // ladder lands on whichever registration sorts first, so the two disagree on
+    // the variant almost everywhere they both answer. Deciding the feed is right
+    // may even be defensible; doing it silently inside a fix for a different
+    // seam is not. of PIN B holds the line.
+    //
+    // Callers: the chain-edit validator and its apply, which MUST agree -- a name
+    // that passes the dry run and then fails to load is the shape that aborts a
+    // batch halfway. NOT restore: saved chains carry desc.name (buildChainSlotsVar
+    // writes the slot's own registration), so a displayName lookup there would
+    // answer a question restore never asks.
+    juce::PluginDescription resolveOfferedName(const juce::String& rawName,
+                                               WithholdReason* withheldOut = nullptr) const;
+
     // ---- Built-in devices (EchoJay-owned nodes hosted as ordinary slots) ---
     // The chain otherwise only hosts what formatManager_ can instantiate from
     // a SCANNED description. EchoJay's own EQ has no scanned description, so

@@ -1647,7 +1647,7 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
             if (op.op == "add")
             {
                 if (op.name.isEmpty()) return bad("add without a plugin name");
-                if (auto why = WithholdReason::None; resolveByName(op.name, {}, nullptr, &why).name.isEmpty())
+                if (auto why = WithholdReason::None; resolveOfferedName(op.name, &why).name.isEmpty())
                     return bad("\"" + op.name + "\" "
                                + (why == WithholdReason::None ? juce::String("not in the loadable plugin list")
                                                               : withholdReasonText(why)));
@@ -1670,7 +1670,7 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
             {
                 if (!validSlot(op.slot)) return bad(slotLabel(op.slot) + " does not exist");
                 if (op.name.isEmpty()) return bad("replace without a plugin name");
-                if (auto why = WithholdReason::None; resolveByName(op.name, {}, nullptr, &why).name.isEmpty())
+                if (auto why = WithholdReason::None; resolveOfferedName(op.name, &why).name.isEmpty())
                     return bad("\"" + op.name + "\" "
                                + (why == WithholdReason::None ? juce::String("not in the loadable plugin list")
                                                               : withholdReasonText(why)));
@@ -1884,7 +1884,11 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
         // Honest miss (WithholdReason): a plugin this host withholds is
         // reported as such, not as "not resolvable".
         WithholdReason why = WithholdReason::None;
-        auto desc = resolveByName(op.name, {}, nullptr, &why);
+        // resolveOfferedName, not resolveByName: the SAME rule the pre-flight
+        // dry run above used. A name that passes validation and then misses
+        // here aborts a batch halfway, which is the one failure the dry run
+        // exists to prevent.
+        auto desc = resolveOfferedName(op.name, &why);
         if (desc.name.isEmpty())
             return failButContinue(op.op + " failed: \"" + op.name + "\" "
                                    + (why == WithholdReason::None ? juce::String("not resolvable")
@@ -4572,6 +4576,44 @@ juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
                      + (close.isEmpty() ? juce::String("(none)")
                                         : close.joinIntoString(", "));
     }
+    return {};
+}
+
+// Resolve a name the model was OFFERED: the registry first, then the feed's own
+// displayName -> desc table. See the header for why the order is not the other
+// way round. Message thread, matching loadByRecommendedName's convention for
+// touching recommendable_ (buildRecommendable writes it on the same thread).
+juce::PluginDescription ChainHost::resolveOfferedName(const juce::String& rawName,
+                                                      WithholdReason* withheldOut) const
+{
+    WithholdReason why = WithholdReason::None;
+    auto d = resolveByName(rawName, {}, nullptr, &why);
+    if (d.name.isNotEmpty())
+    {
+        if (withheldOut) *withheldOut = why;   // None on a hit, by contract
+        return d;
+    }
+
+    // MISS. The registry does not know this name -- but the feed may have
+    // offered it, under a display name the alias resolved at scan time. An
+    // exact, case-insensitive displayName match only: recommendable_ is a
+    // lookup table of names we ourselves published, not a second fuzzy ladder.
+    const auto want = rawName.trim();
+    for (const auto& e : recommendable_)
+        if (e.displayName.trim().equalsIgnoreCase(want))
+        {
+            EchoJay_NSLog(("EJChain: [offered-name] \"" + want + "\" -> \""
+                           + e.desc.name + "\" (feed displayName; registry missed)")
+                              .toRawUTF8());
+            // recommendable_ is built from the LOADABLE set, so a row that is
+            // in it is not withheld: the earlier reason described a different
+            // row the ladder happened to reach, and must not travel with this
+            // answer.
+            if (withheldOut) *withheldOut = WithholdReason::None;
+            return e.desc;
+        }
+
+    if (withheldOut) *withheldOut = why;
     return {};
 }
 
