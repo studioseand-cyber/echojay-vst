@@ -11,12 +11,18 @@ comparable across rounds. Do not substitute a new take without a ruling.
 |---|---|
 | `sourceNEW.wav` | the dry take — 13.25 s, low male, D minor, 48 kHz |
 | `antaresNEW.wav` | Antares Auto-Tune Pro on that take, sample-aligned |
-| `echojayignoreonNEW.wav` | EchoJay, ignore-vibrato ON — **pre-drift-bleed build** |
-| `echojayignoreoffNEW.wav` | EchoJay, ignore-vibrato OFF — **pre-drift-bleed build** |
+| `echojayignoreonNEW.wav` | EchoJay **at HARD**, ignore-vibrato ON |
+| `echojayignoreoffNEW.wav` | EchoJay **at HARD**, ignore-vibrato OFF |
 
-The two EchoJay bounces pre-date the shipped drift-bleed (commit 98fc274);
-they are the "was" columns. Fresh comparisons must re-bounce from the
-installed build (verify by UUID, see the install discipline).
+SETTINGS AUDIT (2026-08-29): the two EchoJay bounces are HARD-preset
+bounces - their tuning AND rough-span columns match a current-engine hard
+render (84/0.34s, 63.5%, 4.1c vs their 81/0.35s, 61.7%, 4.4c), not a
+natural one (51/0.19s, 49.4%). An earlier revision of this file called
+them pre-drift-bleed "was" columns and credited the bleed with a ~40%
+field improvement; that comparison was CONFOUNDED - it compared natural
+renders against hard bounces. At hard, the bleed's field effect is ~nil
+(the 3c cap is a sliver of hard's sustained shifts). Always compare at
+matched settings.
 
 The older 8.2 s trio (dry/echojay/antares.wav, same folder) belongs to the
 `pitch_ab_test` hard-match gate only.
@@ -33,12 +39,14 @@ are for matched-pair deltas only.
 
 ## The bars against this set (as ruled)
 
-- **Rough spans vs Antares**: the binding waveform-continuity number.
-  Pre-bleed bounces: 81 spans / 0.35 s (vib off), 98 / 0.48 s (vib on) on
-  this ruler (the reviewer's independent ruler read the same story as
-  93 / 1.12 s). Current engine, offline matched render: 51 / 0.19 and
-  56 / 0.21. The residual is a ruled design property —
-  `DESIGN_SEAM_RESIDUAL.md`.
+- **Rough spans vs Antares**: the binding waveform-continuity number,
+  BY OPERATING POINT (current engine, this ruler, same take):
+    natural: 51 / 0.19 s (vib off), 56 / 0.21 s (vib on), 0 inversions
+    hard:    84 / 0.34 s (vib off), 94 / 0.44 s (vib on), 3 inversions
+      at vib-on, worst deficit -0.95
+  Sean's complaint lives at HARD (his bounces measure 81/0.35 and
+  98/0.48). The natural-point residual is a ruled design property
+  (`DESIGN_SEAM_RESIDUAL.md`); the hard point is under investigation.
 - **Tuning held** means: in-scale ≥95%, same-semitone ≥95%, improve-rate
   ≥58% — judged on plugin-rendered bounces. Antares on this ruler:
   improve 62.4%, off-grid 5.1 c; Sean's vib-off bounce: 61.7%.

@@ -11,16 +11,20 @@
 //
 // RULER CALIBRATION (measured 2026-08-29 on the standing NEW set - read
 // this before quoting any absolute number from this tool):
-//   Antares itself reads improve-rate 62.4% / median off-grid 5.1c here.
-//   Sean's PLUGIN-RENDERED bounce (echojayignoreoffNEW) reads 61.7% -
-//   matching the reviewer's independent "tuning is done" measurement.
-//   OFFLINE renders via pitch_ab_test's env-preset table read 49.4% on the
-//   IDENTICAL engine, because the offline table approximates the natural
-//   preset imperfectly.
-// Therefore: ABSOLUTE tuning bars belong to plugin-rendered bounces only.
-// Offline renders are for MATCHED-PAIR DELTAS only (same table, one knob
-// changed). An absolute tuning number quoted off an offline render is a
-// false conclusion waiting to happen.
+//   Antares reads improve-rate 62.4% / median off-grid 5.1c here.
+//   EchoJay at HARD (retune 0/flex 0/hum 0) reads 63.5% / 4.1c;
+//   EchoJay at NATURAL (retune 120/flex 55/hum 60) reads 49.4% / 6.7c.
+//   Sean's NEW bounces read 61.7% / 4.4c - they are HARD bounces (the
+//   2026-08-29 settings audit: tuning AND rough-span columns match the
+//   hard render, not the natural one). An earlier header here blamed the
+//   offline preset table for the 61.7-vs-49.4 gap; that was WRONG - the
+//   gap is hard-vs-natural, and natural legitimately improves less
+//   because retune 120ms leaves the performance's own deviation in.
+// Therefore: quote tuning numbers ONLY against the operating point of the
+// render, and compare files ONLY at matched settings. The rough-span
+// column scales with operating point too (hard ~84-94 spans vs natural
+// ~51-56 on the same take, same engine) - a cross-operating-point
+// comparison measures the preset, not the build.
 //
 // Build: g++ -std=c++17 -O2 -ISource tools/pitch_field_compare/main.cpp -o fieldcmp
 // Run:   ./fieldcmp <source.wav> <antares.wav> <echojay.wav>
