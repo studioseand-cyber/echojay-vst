@@ -202,6 +202,12 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
     }
     if (const char* iv = getenv ("AB_IGNVIB"))
         corr.setIgnoreVibrato (std::atoi (iv) != 0);
+    // AB_REF=<Hz>: pin the tuning reference (29 Aug 2026, the hard-mode
+    // flat-bias attribution: the PLUGIN defaults reference_source=auto and
+    // follows KeyFeed's detected tuning; this mirror otherwise sits at
+    // manual 440 and cannot reproduce an auto-referenced bounce).
+    if (const char* rf = getenv ("AB_REF"))
+        corr.setReferenceHz ((float) std::atof (rf));
     corr.reset();
 
     F0JumpGate f0Gate;    // mirrors EedPitchProcessor::processBlock
@@ -237,7 +243,9 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
     sh.setFormantShift (fshift);
     sh.debugDisableSplice (disableSplice);
     sh.setPitchLagSamples (det2.pitchLagFor (vt));
-    sh.setDriftBleed (true);   // mirrors the processor (5 Sep 2026 ruling)
+    // AB_NOBLEED=1 disables the drift-bleed (29 Aug 2026, the hard-mode
+    // flat-bias investigation); default mirrors the processor (bleed on).
+    sh.setDriftBleed (getenv ("AB_NOBLEED") == nullptr);
     // AB_BRIDGE=<thresh>: audio-verified bridging (100 ms cap) for the
     // field evaluation renders (29 Aug 2026 ruling). Not shipped; the
     // switch flips only after the field number AND Sean's ear agree.

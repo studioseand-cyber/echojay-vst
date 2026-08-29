@@ -224,6 +224,30 @@ int main (int argc, char** argv)
     }
     std::sort (ogE.begin(), ogE.end());
 
+    // Signed STEADY-FRAME deviation from the nearest semitone (the
+    // flat-bias metric, 29 Aug 2026): frames whose pitch moves <8c against
+    // both neighbours. A healthy corrector centres this near 0; a constant
+    // one-directional offset here is a tuning-reference error ("never
+    // arrives at the note") that |off-grid| medians blur and slope-based
+    // under-correction metrics miss entirely.
+    auto steadyBias = [] (const Track& t) -> double
+    {
+        std::vector<double> dev;
+        for (size_t h = 1; h + 1 < t.f0.size(); ++h)
+        {
+            const float f = t.f0[h];
+            if (f <= 0.0f || t.f0[h - 1] <= 0.0f || t.f0[h + 1] <= 0.0f) continue;
+            if (std::fabs (1200.0 * std::log2 ((double) f / t.f0[h - 1])) >= 8.0) continue;
+            if (std::fabs (1200.0 * std::log2 ((double) t.f0[h + 1] / f)) >= 8.0) continue;
+            const double midi = 69.0 + 12.0 * std::log2 ((double) f / 440.0);
+            dev.push_back ((midi - std::round (midi)) * 100.0);
+        }
+        if (dev.empty()) return 0.0;
+        std::sort (dev.begin(), dev.end());
+        return dev[dev.size() / 2];
+    };
+    const double biasE = steadyBias (te), biasA = steadyBias (ta), biasS = steadyBias (ts);
+
     std::printf ("%s vs %s\n", argv[3], argv[2]);
     std::printf ("  rough spans vs Antares (>0.10 deficit): %d spans / %.2fs "
                  "(%d of %d windows)  worst -%.2f at %.2fs\n",
@@ -235,5 +259,7 @@ int main (int argc, char** argv)
                  100.0 * sameSemi / std::max (1, semiBoth),
                  100.0 * improve / std::max (1, impBoth),
                  ogE.empty() ? 0.0 : ogE[ogE.size() / 2]);
+    std::printf ("  steady-frame signed bias: echojay %+.2fc  antares %+.2fc  source %+.2fc\n",
+                 biasE, biasA, biasS);
     return 0;
 }
