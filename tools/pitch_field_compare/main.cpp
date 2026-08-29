@@ -9,6 +9,19 @@
 //   - tuning: in-scale %, same-semitone % vs Antares, improve-rate vs the
 //     source, median off-grid cents (D minor)
 //
+// RULER CALIBRATION (measured 2026-08-29 on the standing NEW set - read
+// this before quoting any absolute number from this tool):
+//   Antares itself reads improve-rate 62.4% / median off-grid 5.1c here.
+//   Sean's PLUGIN-RENDERED bounce (echojayignoreoffNEW) reads 61.7% -
+//   matching the reviewer's independent "tuning is done" measurement.
+//   OFFLINE renders via pitch_ab_test's env-preset table read 49.4% on the
+//   IDENTICAL engine, because the offline table approximates the natural
+//   preset imperfectly.
+// Therefore: ABSOLUTE tuning bars belong to plugin-rendered bounces only.
+// Offline renders are for MATCHED-PAIR DELTAS only (same table, one knob
+// changed). An absolute tuning number quoted off an offline render is a
+// false conclusion waiting to happen.
+//
 // Build: g++ -std=c++17 -O2 -ISource tools/pitch_field_compare/main.cpp -o fieldcmp
 // Run:   ./fieldcmp <source.wav> <antares.wav> <echojay.wav>
 
