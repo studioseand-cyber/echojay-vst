@@ -3,6 +3,7 @@
 #include "EJVariantPreference.h"
 #include "EJWavesAlias.h"
 #include "EJWavesRegistryFeed.h"   // Waves candidates come from the scan, not the catalog
+#include "EJNameLadder.h"          // normalizeName, trailingModelNumber, the match ladder
 #include "EJParamReads.h"    // 6c section 8: one slot's current reads, header-inline for the pins
 #include "EchoJayParamApply.h"
 #include "EchoJayParamMaps.h"
@@ -27,12 +28,12 @@
  #include <mach-o/loader.h>   // MH_MAGIC, mach_header (arch gate)
 #endif
 
-// Defined later in this file (used by the shared name resolution above it)
-static juce::String normalizeName(const juce::String& raw);
-// Trailing all-digits MODEL number (the token normalizeName strips as a
-// "version"), or empty. Lets resolveByName keep "AMEK EQ 250" and "AMEK EQ
-// 200" distinct while still tolerating genuine version suffixes.
-static juce::String trailingModelNumber(const juce::String& raw);
+// The name helpers and the match ladder live in EJNameLadder.h (28 Aug 2026):
+// the ladder is what every non-feed path resolves through, and a pin cannot run
+// it from the previous build's lib. Unqualified here so the twenty call sites
+// below read exactly as they did.
+using echojay::normalizeName;
+using echojay::trailingModelNumber;
 
 // ---------------------------------------------------------------------------
 // File path helpers
@@ -4487,53 +4488,27 @@ juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
     if (formatFilter.isEmpty())
         cands = collapseAuPreferring(cands);
 
-    // Normalised (case/punctuation/version-token tolerant). Model-number guard:
-    // normalizeName strips a trailing number as a version, which collapses
-    // "AMEK EQ 250" and "AMEK EQ 200" to the same stem. When the request AND
-    // the candidate each carry a trailing number and they DIFFER, the number is
-    // a model, not a version, so it is not a match. A number on only one side
-    // (e.g. "Saturn 2" vs a plugin named "Saturn") still tolerates the strip.
+    // Kept for the "closest" line at the bottom; the ladder derives its own.
     auto keyIn = normalizeName(base);
-    auto numIn = trailingModelNumber(base);
 
-    // The match ladder, exact / stripped / stripped+manufacturer / normalised,
-    // as ONE function so the offered pool and the withheld pool are searched
-    // by identical rules: a name that would have resolved to a withheld row
-    // is reported as withheld, never as not found. Returns the index into
-    // pool, or -1; how receives the rung that matched.
+    // THE MATCH LADDER IS IN EJNameLadder.h (28 Aug 2026), and it now PREFERS
+    // THE STEREO REGISTRATION on its two collapsing rungs. This function used
+    // to take whichever row sorted first, so every collapsed base name -- every
+    // Waves product, since WaveShell registers one AU per channel configuration
+    // -- resolved to the MONO build here while the feed's own table resolved it
+    // to the stereo one (9c4f629). Add ops, saved-chain recall with a bare name
+    // and every Link path go through this ladder and nothing else, so they all
+    // loaded the mono build of a stereo plugin.
+    //
+    // The EXACT rung is untouched and stays first: a name carrying a suffix
+    // means that registration. The rule RANKS, it never filters, so a product
+    // registered only in mono still resolves to its mono build. The pool is
+    // built above, after the format filter and the withhold gate, so the
+    // preference composes with the filter rather than reaching past it.
     auto matchIn = [&](const juce::Array<juce::PluginDescription>& pool,
                        juce::String& how) -> int
     {
-        for (int i = 0; i < pool.size(); ++i)
-            if (pool.getReference(i).name.equalsIgnoreCase(raw)) { how = "exact"; return i; }
-
-        // Parenthetical-stripped match, manufacturer as tie-breaker
-        juce::Array<int> baseHits;
-        for (int i = 0; i < pool.size(); ++i)
-            if (pool.getReference(i).name.equalsIgnoreCase(base)) baseHits.add(i);
-        if (baseHits.size() == 1) { how = "stripped"; return baseHits[0]; }
-        if (baseHits.size() > 1)
-        {
-            if (manu.isNotEmpty())
-                for (int i : baseHits)
-                    if (pool.getReference(i).manufacturerName.containsIgnoreCase(manu))
-                    { how = "stripped+manufacturer"; return i; }
-            how = "stripped (first of several)";
-            return baseHits[0];
-        }
-
-        for (int i = 0; i < pool.size(); ++i)
-        {
-            const auto& d = pool.getReference(i);
-            if (normalizeName(stripParenthetical(d.name)) == keyIn)
-            {
-                auto numCand = trailingModelNumber(stripParenthetical(d.name));
-                if (numIn.isNotEmpty() && numCand.isNotEmpty() && numIn != numCand)
-                    continue;
-                how = "normalised"; return i;
-            }
-        }
-        return -1;
+        return echojay::matchInPool(pool, raw, base, manu, how);
     };
 
     juce::String how;
@@ -4962,47 +4937,9 @@ juce::String ChainHost::withholdReasonText(WithholdReason r)
 // Settings ↔ ChainHost resolver
 // ---------------------------------------------------------------------------
 
-// Normalize a plugin name for fuzzy matching:
-//   lowercase, trim whitespace, collapse internal runs of spaces/punctuation
-//   to a single space, strip trailing version suffixes like " 3" / " v2" / " 2.0".
-static juce::String normalizeName(const juce::String& raw)
-{
-    juce::String s = raw.toLowerCase().trim();
-    // Replace common punctuation chars that differ between sources with space
-    s = s.replace("-", " ").replace("_", " ").replace(".", " ");
-    // Collapse multiple spaces
-    while (s.contains("  ")) s = s.replace("  ", " ");
-    // Strip trailing version tokens: " 3", " v2", " 2", " ii", " iii"
-    s = s.trimEnd();
-    juce::StringArray parts = juce::StringArray::fromTokens(s, " ", "");
-    if (parts.size() >= 2)
-    {
-        const auto& last = parts[parts.size() - 1];
-        bool isVersion = last.containsOnly("0123456789") ||
-                         (last.startsWithChar('v') && last.substring(1).containsOnly("0123456789")) ||
-                         last == "ii" || last == "iii" || last == "iv";
-        if (isVersion) parts.remove(parts.size() - 1);
-    }
-    return parts.joinIntoString(" ").trim();
-}
-
-// The trailing all-digits token normalizeName would strip, or empty. Mirrors
-// that tokenization so the number it returns is exactly the one stripped. Only
-// bare digits count as a model (v2 / II / III stay version suffixes); those are
-// still stripped and never guarded.
-static juce::String trailingModelNumber(const juce::String& raw)
-{
-    juce::String s = raw.toLowerCase().trim();
-    s = s.replace("-", " ").replace("_", " ").replace(".", " ");
-    while (s.contains("  ")) s = s.replace("  ", " ");
-    juce::StringArray parts = juce::StringArray::fromTokens(s.trim(), " ", "");
-    if (parts.size() >= 2)
-    {
-        const auto& last = parts[parts.size() - 1];
-        if (last.containsOnly("0123456789")) return last;
-    }
-    return {};
-}
+// normalizeName and trailingModelNumber are in EJNameLadder.h, beside the
+// ladder that uses them; `using` declarations at the top of this file keep every
+// call site unqualified.
 
 void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
                                     const juce::String& formatFilter)

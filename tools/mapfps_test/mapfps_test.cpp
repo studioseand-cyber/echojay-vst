@@ -33,6 +33,7 @@
 #include "EJVariantPreference.h" // Waves channel-variant rank: header-inline, shipped
 #include "EJWavesAlias.h"       // Waves marketing-name alias: header-inline, shipped
 #include "EJWavesRegistryFeed.h" // Waves feed source swap: header-inline, shipped
+#include "EJNameLadder.h"       // the match ladder + its variant preference: header-inline, shipped
 #include "EchoJayParamMaps.h"
 #include "EchoJayParamApply.h"
 #include "EchoJayHistoryTrim.h"
@@ -3122,6 +3123,386 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                               << (blockAfter.getNumBytesAsUTF8() - blockBefore.getNumBytesAsUTF8())
                               << ")\n";
                 }
+            }
+        }
+    }
+
+    // ---- The match ladder prefers the stereo registration ------------------
+    // 9c4f629 taught the FEED to collapse a base name onto the stereo build and
+    // left the LADDER taking whichever row sorted first. Measured live: a build
+    // turn loaded CLA-76 (s), an add op naming the same plugin loaded CLA-76
+    // (m). The ladder is what add/replace, bare-name recall and every Link path
+    // resolve through, so this is where the variant has to be decided.
+    //
+    // The ladder is header-inline now, so these pins run the SHIPPED code AND
+    // compare it name-by-name against the OLD one still in the linked lib --
+    // ChainHost::resolveByName here is the pre-change implementation, which is
+    // exactly what a before/after table needs.
+    {
+        std::cout << "name ladder (channel variant in the collapsing rungs):\n";
+        const juce::ScopedJuceInitialiser_GUI juceInit;
+        ChainHost host;
+
+        // The pools resolveByName builds, reproduced through the ONE public
+        // accessor that applies the same withhold gate and the same
+        // AU-preferring collapse. Built-ins are dropped because resolveByName
+        // answers them before the pool is ever searched.
+        auto poolOf = [&host] (const juce::String& formatFilter)
+        {
+            auto rows = host.getFilteredPlugins ({}, formatFilter,
+                                                 /*collapseTwins*/ formatFilter.isEmpty());
+            juce::Array<juce::PluginDescription> out;
+            for (const auto& d : rows)
+                if (d.pluginFormatName != juce::String (ChainHost::kBuiltinFormat))
+                    out.add (d);
+            return out;
+        };
+        const auto poolEmpty = poolOf ({});
+        const auto poolAU    = poolOf ("AudioUnit");
+
+        // The feed table, built by the LINKED lib from this machine's real
+        // scanner cache: path A reads it directly and never touches the ladder,
+        // so it has to be the real one for the table below to mean anything.
+        {
+            PluginScanner sc;
+            sc.loadCache();
+            auto rows = sc.getPlugins();
+            std::set<juce::String> disabled;
+            {
+                auto f = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                             .getChildFile ("Application Support/EchoJay/plugin_disabled.json");
+                if (auto arr = juce::JSON::parse (f.loadFileAsString()).getArray())
+                    for (auto& v : *arr) disabled.insert (v.toString());
+            }
+            PluginScanner::stampEnabled (rows, disabled);
+            if (! rows.empty()) host.buildRecommendable (rows, {});
+        }
+
+        if (poolEmpty.isEmpty())
+        {
+            std::cout << "  SKIP  name-ladder pins (no chain_entries.xml on this machine)\n";
+        }
+        else
+        {
+            // resolveByName's preamble, which this commit does not touch, plus
+            // the shipped ladder. nl PIN7 pins that the shipped function still
+            // derives raw/base/manu this way and calls exactly this.
+            auto ladder = [] (const juce::Array<juce::PluginDescription>& pool,
+                              const juce::String& name)
+            {
+                const auto raw  = name.trim();
+                const auto base = ChainHost::stripParenthetical (raw);
+                juce::String manu;
+                if (raw.endsWithChar (')') && raw.contains (" ("))
+                    manu = raw.fromLastOccurrenceOf (" (", false, false)
+                              .dropLastCharacters (1).trim();
+                juce::String how;
+                const int i = echojay::matchInPool (pool, raw, base, manu, how);
+                return i >= 0 ? pool.getReference (i) : juce::PluginDescription();
+            };
+
+            // ---- nl PIN1: the reported case ------------------------------
+            {
+                const auto now  = host.resolveOfferedName ("CLA-76");   // OLD, from the lib
+                const auto then = ladder (poolEmpty, "CLA-76");         // NEW, compiled here
+                std::cout << "  MEASURED  add op \"CLA-76\": " << now.name
+                          << " -> " << then.name << "\n";
+                check (then.name == "CLA-76 (s)",
+                       "nl PIN1: an add op naming \"CLA-76\" resolves to the STEREO registration",
+                       then.name);
+                check (now.name == "CLA-76 (m)",
+                       "nl PIN1: and the shipped resolver really did return the mono build",
+                       "(if this ever goes green-to-red the defect was fixed elsewhere: " + now.name + ")");
+            }
+
+            // ---- nl PIN2: the EXACT rung is untouched --------------------
+            // Not a witness: every registration in the corpus, asked for by its
+            // own full name, must come back byte-identical to what the shipped
+            // resolver returns today.
+            {
+                check (ladder (poolEmpty, "CLA-76 (m)").name == "CLA-76 (m)",
+                       "nl PIN2: \"CLA-76 (m)\" asked for by exact name still resolves to MONO",
+                       ladder (poolEmpty, "CLA-76 (m)").name);
+                int checkedExact = 0, movedExact = 0; juce::String firstMoved;
+                for (const auto& d : poolEmpty)
+                {
+                    const auto now  = host.resolveByName (d.name, {});
+                    const auto then = ladder (poolEmpty, d.name);
+                    ++checkedExact;
+                    if (now.name != then.name || now.uniqueId != then.uniqueId
+                        || now.pluginFormatName != then.pluginFormatName)
+                    {
+                        ++movedExact;
+                        if (firstMoved.isEmpty())
+                            firstMoved = d.name + ": " + now.name + " -> " + then.name;
+                    }
+                }
+                check (movedExact == 0 && checkedExact > 0,
+                       "nl PIN2: every registration asked for by its OWN name resolves unchanged",
+                       juce::String (movedExact) + " of " + juce::String (checkedExact)
+                           + " moved; first: " + firstMoved);
+            }
+
+            // ---- nl PIN3: a mono-only product still resolves --------------
+            {
+                check (ladder (poolEmpty, "GTR Tuner").name == "GTR Tuner (m)",
+                       "nl PIN3: a mono-only product still resolves, to its mono build",
+                       ladder (poolEmpty, "GTR Tuner").name);
+                check (ladder (poolEmpty, "UltraPitch Shift").name == "UltraPitch Shift (m)",
+                       "nl PIN3: {m, m->s} still resolves to (m), which keeps the right channel",
+                       ladder (poolEmpty, "UltraPitch Shift").name);
+                // The rule RANKS, it never filters: nothing that resolved
+                // before may resolve to nothing now.
+                int lost = 0; juce::String firstLost;
+                for (const auto& d : poolEmpty)
+                {
+                    const auto b = ChainHost::stripParenthetical (d.name);
+                    if (host.resolveByName (b, {}).name.isNotEmpty()
+                        && ladder (poolEmpty, b).name.isEmpty())
+                    { ++lost; if (firstLost.isEmpty()) firstLost = b; }
+                }
+                check (lost == 0,
+                       "nl PIN3: ranking never turns a resolution into a miss",
+                       juce::String (lost) + " lost; first: " + firstLost);
+            }
+
+            // ---- nl PIN4: a Link edit op, which has no feed to fall back on
+            {
+                ChainHost linkHost;   // never calls buildRecommendable, as LinkProcessor never does
+                check (linkHost.recommendableEntries().empty(),
+                       "nl PIN4: a Link-shaped host has an EMPTY feed table");
+                const auto now  = linkHost.resolveOfferedName ("CLA-76");
+                const auto then = ladder (poolEmpty, "CLA-76");
+                check (then.name == "CLA-76 (s)",
+                       "nl PIN4: a Link edit op naming \"CLA-76\" resolves to STEREO",
+                       now.name + " -> " + then.name);
+                std::ifstream flp ("Source/LinkProcessor.cpp");
+                std::stringstream slp; slp << flp.rdbuf();
+                const auto lp = codeOnly (juce::String (slp.str()));
+                check (! lp.contains ("buildRecommendable"),
+                       "nl PIN4: and LinkProcessor still never builds one, so the ladder is all it has");
+                check (lp.contains ("chainHost.resolveByName(name, chainFormatFilter(), &matchLog)"),
+                       "nl PIN4: the Link's chain build resolves through the same ladder");
+            }
+
+            // ---- nl PIN5: nothing that is not a channel variant moves ------
+            // Every name in the corpus, and every name the feed publishes, old
+            // resolver against new. The ONLY rows allowed to move are WaveShell
+            // registrations, and only onto a better variant of themselves.
+            {
+                juce::StringArray names;
+                for (const auto& d : poolEmpty)
+                {
+                    names.addIfNotAlreadyThere (d.name);
+                    names.addIfNotAlreadyThere (ChainHost::stripParenthetical (d.name));
+                }
+                int moved = 0, movedNonWaves = 0, movedOffProduct = 0;
+                juce::String firstNonWaves, firstOffProduct;
+                for (const auto& n : names)
+                {
+                    const auto now  = host.resolveByName (n, {});
+                    const auto then = ladder (poolEmpty, n);
+                    if (now.name == then.name && now.uniqueId == then.uniqueId
+                        && now.pluginFormatName == then.pluginFormatName) continue;
+                    ++moved;
+                    if (! echojay::isWaveShellRegistration (now)
+                        || ! echojay::isWaveShellRegistration (then))
+                    {
+                        ++movedNonWaves;
+                        if (firstNonWaves.isEmpty())
+                            firstNonWaves = n + ": " + now.name + " -> " + then.name;
+                    }
+                    else if (ChainHost::stripParenthetical (now.name)
+                             != ChainHost::stripParenthetical (then.name))
+                    {
+                        ++movedOffProduct;
+                        if (firstOffProduct.isEmpty())
+                            firstOffProduct = n + ": " + now.name + " -> " + then.name;
+                    }
+                }
+                check (movedNonWaves == 0,
+                       "nl PIN5: no non-Waves name resolves anywhere else",
+                       juce::String (movedNonWaves) + " moved; first: " + firstNonWaves);
+                check (movedOffProduct == 0,
+                       "nl PIN5: and no name moves to a DIFFERENT product, only a better variant",
+                       juce::String (movedOffProduct) + " moved; first: " + firstOffProduct);
+                std::cout << "  MEASURED  " << moved << " of " << names.size()
+                          << " names in the corpus resolve somewhere new, all of them"
+                             " WaveShell variants of the same product\n";
+            }
+
+            // ---- nl PIN6: the format filter composes, it is not bypassed ---
+            {
+                int notAU = 0; juce::String firstNotAU;
+                const auto waves = echojay::wavesRegistryFeedRows (poolEmpty, {});
+                for (const auto& r : waves.rows)
+                {
+                    const auto d = ladder (poolAU, r.name);
+                    if (d.name.isNotEmpty() && d.pluginFormatName != "AudioUnit")
+                    { ++notAU; if (firstNotAU.isEmpty()) firstNotAU = r.name + " -> " + d.pluginFormatName; }
+                }
+                check (notAU == 0,
+                       "nl PIN6: under an AudioUnit filter the ladder answers with AudioUnits only",
+                       juce::String (notAU) + "; first: " + firstNotAU);
+                // A VST3-filtered pool holds no WaveShell rows on this machine
+                // (the shell is one thin row until enumerated), so the
+                // preference has nothing to rank and refuses rather than
+                // reaching past the filter into the AU rows.
+                const auto poolVst3 = poolOf ("VST3");
+                int wavesInVst3 = 0;
+                for (const auto& d : poolVst3)
+                    if (echojay::isWaveShellRegistration (d)) ++wavesInVst3;
+                check (wavesInVst3 == 0 && ladder (poolVst3, "CLA-76").name.isEmpty(),
+                       "nl PIN6: and a VST3 filter still resolves no Waves product at all",
+                       juce::String (wavesInVst3) + " waves rows in the VST3 pool");
+            }
+
+            // ---- nl PIN7: the wiring ---------------------------------------
+            {
+                std::ifstream fch ("Source/ChainHost.cpp");
+                std::stringstream sch; sch << fch.rdbuf();
+                const auto src = juce::String (sch.str());
+                const auto ch  = codeOnly (src);
+                check (ch.contains ("#include \"EJNameLadder.h\""),
+                       "nl PIN7: ChainHost includes the ladder it is pinned against");
+                const auto body = functionBody (src, "juce::PluginDescription ChainHost::resolveByName");
+                check (body.contains ("echojay::matchInPool(pool, raw, base, manu, how)"),
+                       "nl PIN7: resolveByName searches BOTH pools through the shared ladder");
+                check (! body.contains ("how = \"exact\"")
+                       && ! body.contains ("how = \"normalised\""),
+                       "nl PIN7: and keeps no second copy of the rungs");
+                // The preamble the pins mirror: raw, base and the manufacturer
+                // hint. If this moves, the `ladder` lambda above is measuring
+                // something the shipped path no longer does.
+                check (body.contains ("auto base = stripParenthetical(raw);")
+                       && body.contains ("manu = raw.fromLastOccurrenceOf(\" (\", false, false)"),
+                       "nl PIN7: the request preamble is still raw / base / manufacturer hint");
+                check (body.contains ("if (formatFilter.isEmpty())")
+                       && body.contains ("cands = collapseAuPreferring(cands);"),
+                       "nl PIN7: the pool is still filtered and collapsed BEFORE the ladder sees it");
+                std::ifstream fnl ("Source/EJNameLadder.h");
+                std::stringstream snl; snl << fnl.rdbuf();
+                const auto nl = codeOnly (juce::String (snl.str()));
+                check (nl.contains ("channelVariantIsBetter"),
+                       "nl PIN7: the ladder ranks through the SHIPPED 9c4f629 rule, not a copy");
+            }
+
+            // ---- THE TABLE: six paths, 289 products, before and after -------
+            {
+                const auto waves = echojay::wavesRegistryFeedRows (poolEmpty, {});
+                ChainHost linkHost;   // no feed, as in a Link process
+                struct Row { const char* label; int monoBefore = 0, monoAfter = 0,
+                             wrongBefore = 0, wrongAfter = 0,
+                             missBefore = 0, missAfter = 0; };
+                Row A  { "A  build, exact branch      " };
+                Row Ad { "A' build, fallback          " };
+                Row B  { "B  add / replace            " };
+                Row D  { "D  recall, bare name        " };
+                Row H  { "H  Link edit ops            " };
+                Row I  { "I  Link chain build         " };
+                // Two different questions, and only the second is a defect.
+                // "mono" counts a mono or (m->s) build; a product registered
+                // ONLY in mono is supposed to land there. "wrong" counts a
+                // build worse than the best that product actually offers,
+                // which is what the ladder was getting wrong.
+                auto tally = [] (Row& r, const juce::PluginDescription& before,
+                                 const juce::PluginDescription& after,
+                                 const juce::PluginDescription& best)
+                {
+                    auto mono = [] (const juce::PluginDescription& d)
+                    {
+                        const int rank = echojay::channelVariantRank (d.name);
+                        return rank == 2 || rank == 3;   // (m) or (m->s)
+                    };
+                    auto worse = [&best] (const juce::PluginDescription& d)
+                    {
+                        return echojay::channelVariantIsBetter (best.name, d.name);
+                    };
+                    if (before.name.isEmpty()) ++r.missBefore;
+                    else { if (mono (before)) ++r.monoBefore; if (worse (before)) ++r.wrongBefore; }
+                    if (after.name.isEmpty()) ++r.missAfter;
+                    else { if (mono (after)) ++r.monoAfter; if (worse (after)) ++r.wrongAfter; }
+                };
+                for (const auto& p : waves.rows)
+                {
+                    const auto& n = p.name;
+                    // A: the feed's stored description, which the ladder never
+                    // touches -- before and after are the same read.
+                    juce::PluginDescription fed;
+                    for (const auto& e : host.recommendableEntries())
+                        if (e.displayName.trim().equalsIgnoreCase (n)) { fed = e.desc; break; }
+                    tally (A, fed, fed, p.desc);
+                    tally (Ad, host.resolveByName (n, "AudioUnit"), ladder (poolAU, n), p.desc);
+                    // B composes exactly as resolveOfferedName does: ladder
+                    // first, the feed's own table only on a miss.
+                    auto bAfter = ladder (poolEmpty, n);
+                    if (bAfter.name.isEmpty())
+                        for (const auto& e : host.recommendableEntries())
+                            if (e.displayName.trim().equalsIgnoreCase (n)) { bAfter = e.desc; break; }
+                    tally (B, host.resolveOfferedName (n), bAfter, p.desc);
+                    tally (D, host.resolveByName (n, {}), ladder (poolEmpty, n), p.desc);
+                    tally (H, linkHost.resolveOfferedName (n), ladder (poolEmpty, n), p.desc);
+                    tally (I, linkHost.resolveByName (n, "AudioUnit"), ladder (poolAU, n), p.desc);
+                }
+                std::cout << "  MEASURED  per path, over " << waves.products
+                          << " Waves products: mono/(m->s) before -> after,"
+                             " then WORSE-THAN-BEST, then unresolved\n";
+                for (const Row* r : { &A, &Ad, &B, &D, &H, &I })
+                    std::cout << "  MEASURED    " << r->label
+                              << "mono " << r->monoBefore << " -> " << r->monoAfter
+                              << " | wrong " << r->wrongBefore << " -> " << r->wrongAfter
+                              << " | miss " << r->missBefore << " -> " << r->missAfter << "\n";
+                check (Ad.wrongAfter == 0 && B.wrongAfter == 0 && D.wrongAfter == 0
+                       && H.wrongAfter == 0 && I.wrongAfter == 0 && A.wrongAfter == 0,
+                       "nl PIN8: after the fix NO path loads a worse build than the product offers",
+                       "A=" + juce::String (A.wrongAfter) + " A'=" + juce::String (Ad.wrongAfter)
+                           + " B=" + juce::String (B.wrongAfter) + " D=" + juce::String (D.wrongAfter)
+                           + " H=" + juce::String (H.wrongAfter) + " I=" + juce::String (I.wrongAfter));
+                check (Ad.monoAfter == B.monoAfter && B.monoAfter == D.monoAfter
+                       && D.monoAfter == H.monoAfter && H.monoAfter == I.monoAfter,
+                       "nl PIN8: every ladder path agrees on the same products afterwards",
+                       juce::String (Ad.monoAfter) + " mono-only products, and they must stay mono");
+                check (A.missAfter == A.missBefore && Ad.missAfter == Ad.missBefore
+                       && B.missAfter == B.missBefore && D.missAfter == D.missBefore
+                       && H.missAfter == H.missBefore && I.missAfter == I.missBefore,
+                       "nl PIN8: and no path resolves fewer products than it did");
+            }
+
+            // ---- nl PIN9: is insertPreferredBase now redundant? -------------
+            // A reads recommendable_ DIRECTLY (loadByRecommendedName's first
+            // branch) and never calls the ladder, so the feed's stored
+            // description is the only preference A has. The measurement that
+            // says so: the feed's descriptions and the ladder's answers now
+            // AGREE everywhere, which is the property that was broken, and the
+            // mutation that reverts insertPreferredBase reddens A alone.
+            {
+                int disagree = 0; juce::String firstDisagree;
+                for (const auto& e : host.recommendableEntries())
+                {
+                    if (! echojay::isWaveShellRegistration (e.desc)) continue;
+                    const auto viaLadder = ladder (poolEmpty, e.displayName);
+                    if (viaLadder.name.isEmpty()) continue;   // feed-only name, PIN5 covers it
+                    if (viaLadder.name != e.desc.name)
+                    {
+                        ++disagree;
+                        if (firstDisagree.isEmpty())
+                            firstDisagree = e.displayName + ": feed " + e.desc.name
+                                          + " vs ladder " + viaLadder.name;
+                    }
+                }
+                check (disagree == 0,
+                       "nl PIN9: the feed's stored description and the ladder now agree, name for name",
+                       juce::String (disagree) + " disagree; first: " + firstDisagree);
+                std::ifstream fch ("Source/ChainHost.cpp");
+                std::stringstream sch; sch << fch.rdbuf();
+                const auto ch = codeOnly (juce::String (sch.str()));
+                check (ch.contains ("if (base != d.name) insertPreferredBase(base, d);"),
+                       "nl PIN9: and insertPreferredBase STAYS -- A never consults the ladder");
+                const auto load = functionBody (juce::String (sch.str()),
+                                                "void ChainHost::loadByRecommendedName");
+                check (load.indexOf ("recommendable_") >= 0
+                       && load.indexOf ("recommendable_") < load.indexOf ("resolveByName"),
+                       "nl PIN9: which is the reason -- A reads the feed table BEFORE the resolver");
             }
         }
     }
