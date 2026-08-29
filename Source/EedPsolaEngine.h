@@ -233,6 +233,7 @@ public:
         spliceFadeLen_ = 0; spliceFadePos_ = 0; spliceT_ = 0;
         methodMix_ = 0.0f;
         uvRun_ = 0;
+        bleedGoal_ = 0.0;
     }
 
     // The active voice_type's floor. Changes the reported latency, which the
@@ -624,7 +625,8 @@ private:
                 // the old behaviour.
                 if (uvRun_ > 0)
                 {
-                    if ((double) uvRun_ > carryLimit_) spliceDrift_ = 0.0;
+                    if ((double) uvRun_ > carryLimit_)
+                    { spliceDrift_ = 0.0; bleedGoal_ = 0.0; }
                     uvRun_ = 0;
                 }
                 // The ratio is what the READ point's audio must be scaled by,
@@ -684,7 +686,7 @@ private:
                 // construction; with it on, the drift survives until the
                 // re-entry decision above judges the gap's length.
                 ++uvRun_;
-                if (carryLimit_ <= 0.0) spliceDrift_ = 0.0;
+                if (carryLimit_ <= 0.0) { spliceDrift_ = 0.0; bleedGoal_ = 0.0; }
                 spliceFadeLen_ = 0; methodMix_ = 0.0f;
                 spliceR_ = 0.0; spliceT_ = 0; spliceTf_ = 0.0;
             }
@@ -1389,9 +1391,27 @@ private:
         // gates: any sustained shift above the cap is undershot by up to
         // the cap at equilibrium. Consonants stay bit-exact dry: this runs
         // only inside spliceSample, which only voiced samples reach.
+        // RETARGETED to the NEAREST PERIOD MULTIPLE (29 Aug 2026 ruling):
+        // the quantity every seam charges for is the drift REMAINDER mod
+        // Tf (the join eases exactly that), so the bleed pulls toward the
+        // nearest multiple instead of zero - exits are then cheap without
+        // predicting them, and a post-episode leftover decays by at most
+        // T/2 before the bleed STOPS, instead of detuning all the way to
+        // zero. CHATTER-PROOF BY LATCHING: the goal re-selects only on
+        // ARRIVAL (|drift-goal| < 1 sample - re-selection then returns the
+        // multiple just reached, adjacent multiples being >= 8 samples
+        // apart) or at a SPLICE (a discrete event >= 0.75T away in
+        // accumulated drift, which moves drift a whole period past the
+        // latched goal and must re-centre). Between those events the goal
+        // is fixed, so the bleed direction flips at most once per goal
+        // epoch - a periodic modulation cannot form, and the 3-cent cap
+        // bounds any excursion regardless.
         if (driftBleed_)
         {
-            const double b = std::clamp (spliceDrift_ / bleedTau_,
+            if (std::fabs (spliceDrift_ - bleedGoal_) < 1.0 && Tf > 4.0)
+                bleedGoal_ = std::round (spliceDrift_ / Tf) * Tf;
+            const double rem = spliceDrift_ - bleedGoal_;
+            const double b = std::clamp (rem / bleedTau_,
                                          -kBleedMaxRate, kBleedMaxRate);
             spliceDrift_ -= b;
         }
@@ -1405,6 +1425,10 @@ private:
         {
             spliceOldDrift_ = spliceDrift_;
             spliceDrift_   += spliceDrift_ > 0.0 ? -Tf : Tf;
+            // The splice moved drift a whole period past the latched bleed
+            // goal - re-centre it (see the bleed block above; this is one
+            // of the two sanctioned re-selection events).
+            bleedGoal_ = std::round (spliceDrift_ / Tf) * Tf;
             spliceFadeLen_  = std::max (16, std::min (T / 2, (int) (0.004 * fs_)));
             spliceFadePos_  = 0;
             if (debugOn_) dbgSplice_.push_back (p);
@@ -1509,6 +1533,7 @@ private:
     // 3 cents as a read-rate offset: 2^(3/1200)-1. See spliceSample.
     static constexpr double kBleedMaxRate = 0.00173465;
     double bleedTau_  = 4800.0;    // set in prepare(): 100 ms at fs
+    double bleedGoal_ = 0.0;       // latched period multiple (samples)
     bool   driftBleed_ = false;
     float  carryMs_ = 0.0f;        // drift carry threshold; 0 = off
     double carryLimit_ = 0.0;      // ...in samples, set with fs
