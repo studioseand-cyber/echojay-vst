@@ -1116,10 +1116,18 @@ private:
         juce::String editAltPrompt; // "Suggest an alternative" follow-up (load
                                     // failures only); cleared once tapped
         juce::String editAltLabel;  // short display label for the alt tap
-        // Result-bubble "stop suggesting" chip (build failures): the failed
-        // plugin names. NOT persisted — the exclusion itself is session-
-        // scoped (chainFailSessionSeen_), and the chip is a just-failed-now
-        // action, so a reloaded bubble keeps its alt chip but not this one.
+        // RETIRED 29 Aug 2026, with the chip and handler it fed. These two
+        // fields are the last of the batch "stop suggesting" chip; they are
+        // still parsed off restored bubbles, so they stay as inert carriers
+        // rather than being removed from the message schema.
+        //
+        // The comment that stood here claimed the exclusion was "NOT persisted"
+        // and "session-scoped (chainFailSessionSeen_)". All of that was false:
+        // the handler called disablePluginByName, which writes
+        // plugin_disabled.json AND unticks the Settings checklist, and
+        // chainFailSessionSeen_ is a re-prompt suppressor with exactly one
+        // read that the feed never consults. The single door to exclusion is
+        // now showNextFailPrompt, which says what it does.
         juce::StringArray excludeNames;
         bool excludeApplied = false;
         juce::String displayText;   // tap-generated user turns: what the
@@ -4253,6 +4261,13 @@ private:
     // Shared disable action (local + Link build failures): untick in the
     // scanner (plugin_disabled.json), refresh checklist, rebuild recommendable.
     void disablePluginByName(const juce::String& name);
+    // "Not now": exclude from the AI feed for THIS RUN only. Writes nothing -
+    // no plugin_disabled.json, no checklist untick - so the plugin is back at
+    // next launch. The session store is a TU-local static in the .cpp, not a
+    // member here, so no gate-linked layout changes. Non-virtual by design.
+    void excludeFromFeedThisSession(const juce::String& name);
+    std::vector<ScannedPlugin>
+        feedRowsWithSessionExclusions(std::vector<ScannedPlugin> rows) const;
     // Link build results with load_failed entries: one dialog, per-plugin
     // "don't suggest again" toggle rows (no modal chain).
     std::set<juce::String> chainFailSessionSeen_; // names user chose "Keep it" this session

@@ -30,6 +30,7 @@
 #include "EJSettingsClip.h"      // 6a: header-inline, the shipped model-side clip
 #include "EJParamReads.h"        // 6c §8: header-inline, the shipped read serialiser
 #include "EJRefusalLine.h"      // refusal bubble: header-inline, the shipped composer
+#include "EJDisableReasons.h"  // disable provenance: header-inline, shipped
 #include "EJVariantPreference.h" // Waves channel-variant rank: header-inline, shipped
 #include "EJWavesAlias.h"       // Waves marketing-name alias: header-inline, shipped
 #include "EJWavesRegistryFeed.h" // Waves feed source swap: header-inline, shipped
@@ -3610,6 +3611,151 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                        && load.indexOf ("recommendable_") < load.indexOf ("resolveByName"),
                        "nl PIN9: which is the reason -- A reads the feed table BEFORE the resolver");
             }
+        }
+    }
+
+    // ---- DISABLE PROVENANCE + THE THREE-OUTCOME MODAL (29 Aug 2026) -------
+    // plugin_disabled.json recorded WHY nothing, so two rows carrying the
+    // load-failure signature (SSL Native X-EQ 2, Weiss Deess) could not be
+    // attributed. Half of this is behavioural (the sidecar), half structural
+    // (the modal's three outcomes and its disclosure), because a modal's
+    // button wiring has no seam a unit test can reach.
+    {
+        std::cout << "disable provenance + fail modal:\n";
+
+        // ---- dp PIN1: the sidecar round-trips, and UNKNOWN stays unknown ----
+        // Written to a scratch HOME so the pin never touches the real file.
+        {
+            auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                          .getChildFile ("ejdp_" + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30)));
+            tmp.getChildFile ("EchoJay").createDirectory();
+            const auto real = echojay::disableReasonsFile();
+            // The helper keys off userApplicationDataDirectory, so drive it
+            // through the real path but restore whatever was there.
+            const bool had = real.existsAsFile();
+            const auto saved = had ? real.loadFileAsString() : juce::String();
+            if (had) real.deleteFile();
+
+            echojay::recordDisableReasons ({ "uid_a", "uid_b" }, echojay::kDisableWhySettings);
+            echojay::recordDisableReasons ({ "uid_c" },          echojay::kDisableWhyLoadFailure);
+            check (echojay::disableReasonFor ("uid_a") == "settings",
+                   "dp PIN1: a Settings untick records why", echojay::disableReasonFor ("uid_a"));
+            check (echojay::disableReasonFor ("uid_c") == "load-failure",
+                   "dp PIN1: a load-failure exclusion records why", echojay::disableReasonFor ("uid_c"));
+            // THE LEGACY ROW. A uid disabled before this file existed has no
+            // entry, and that must read as UNKNOWN rather than as a default.
+            check (echojay::disableReasonFor ("uid_written_before_the_field").isEmpty(),
+                   "dp PIN1: a row predating the field reads UNKNOWN, not a default reason");
+            // Re-enabling drops the reason rather than leaving it to outlive
+            // the row it describes.
+            echojay::clearDisableReasons ({ "uid_a" });
+            check (echojay::disableReasonFor ("uid_a").isEmpty(),
+                   "dp PIN1: re-enabling clears the reason");
+            check (echojay::disableReasonFor ("uid_b") == "settings",
+                   "dp PIN1: and clearing one leaves the others alone");
+            // The main file's shape is untouched by all of this: it is a bare
+            // uid array and every existing reader does json.getArray().
+            {
+                auto dis = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                              .getChildFile ("Application Support/EchoJay/plugin_disabled.json");
+                if (dis.existsAsFile())
+                    check (juce::JSON::parse (dis.loadFileAsString()).getArray() != nullptr,
+                           "dp PIN1: plugin_disabled.json is STILL a bare uid array (no reader broken)");
+                else
+                    std::cout << "  SKIP  dp PIN1 array-shape (no plugin_disabled.json here)\n";
+            }
+            real.deleteFile();
+            if (had) real.replaceWithText (saved);
+            tmp.deleteRecursively();
+        }
+
+        // ---- dp PIN2: BOTH doors record, and they record DIFFERENT things --
+        {
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se; se << fe.rdbuf();
+            const auto ed = codeOnly (juce::String (se.str()));
+            std::ifstream fc ("Source/PluginChecklist.cpp");
+            std::stringstream sc2; sc2 << fc.rdbuf();
+            const auto cl = codeOnly (juce::String (sc2.str()));
+            check (ed.contains ("recordDisableReasons({ p.uid }, echojay::kDisableWhyLoadFailure)")
+                   || ed.contains ("recordDisableReasons({ p.uid },\n                                          echojay::kDisableWhyLoadFailure)"),
+                   "dp PIN2: the load-failure door stamps load-failure");
+            check (cl.contains ("recordDisableReasons(toDisable, echojay::kDisableWhySettings)"),
+                   "dp PIN2: the Settings door stamps settings");
+            check (cl.contains ("clearDisableReasons(toEnable)"),
+                   "dp PIN2: and Settings clears the reason on re-enable");
+        }
+
+        // ---- dp PIN3: THREE OUTCOMES, AND NO TWO ARE SYNONYMS --------------
+        // The ruling that forced this: the modal blamed a licence (transient)
+        // and offered only permanent exclusion or nothing, so a user with an
+        // unplugged dongle had no correct button.
+        {
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se; se << fe.rdbuf();
+            const auto raw = juce::String (se.str());
+            const auto body = functionBody (raw, "void EchoJayEditor::showNextFailPrompt");
+            check (body.isNotEmpty(), "dp PIN3: showNextFailPrompt found");
+            check (body.contains ("showYesNoCancelBox"),
+                   "dp PIN3: it is a THREE-button box, not the old two-button one");
+            check (body.contains ("\"Don't suggest again\", \"Not now\", \"Keep it\""),
+                   "dp PIN3: the three buttons, in order");
+            // Three DISTINCT actions. If any two collapsed, the middle button
+            // would be decoration - the exact defect being fixed.
+            check (body.contains ("disablePluginByName(name)"),
+                   "dp PIN3: outcome 1 persists (disablePluginByName)");
+            check (body.contains ("excludeFromFeedThisSession(name)"),
+                   "dp PIN3: outcome 2 is session-only (excludeFromFeedThisSession)");
+            check (body.contains ("chainFailSessionSeen_.insert(name)"),
+                   "dp PIN3: outcome 3 only stops the asking (chainFailSessionSeen_)");
+            const int i1 = body.indexOf ("disablePluginByName(name)");
+            const int i2 = body.indexOf ("excludeFromFeedThisSession(name)");
+            const int i3 = body.indexOf ("chainFailSessionSeen_.insert(name)");
+            check (i1 >= 0 && i2 >= 0 && i3 >= 0 && i1 != i2 && i2 != i3 && i1 != i3,
+                   "dp PIN3: no two outcomes are the same call");
+            // THE DISCLOSURE. Persistence the user is not told about is the
+            // whole complaint; the body must say what it does and where to undo.
+            check (body.contains ("unticks it in Settings"),
+                   "dp PIN3: the body discloses that it unticks in Settings");
+            check (body.contains ("re-tick it there any time"),
+                   "dp PIN3: and says where to undo it");
+            // The session door must write NOTHING.
+            // codeOnly FIRST: this body's comment explains that it does NOT
+            // call setPluginEnabled/saveEnabledState, and a raw grep reads that
+            // prose as the code it forbids. The helper exists for exactly this.
+            const auto sess = functionBody (codeOnly (raw),
+                                            "void EchoJayEditor::excludeFromFeedThisSession");
+            check (sess.isNotEmpty() && ! sess.contains ("saveEnabledState")
+                   && ! sess.contains ("setPluginEnabled"),
+                   "dp PIN3: \"Not now\" writes nothing - no save, no untick");
+        }
+
+        // ---- dp PIN4: the dead batch door is GONE --------------------------
+        {
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se; se << fe.rdbuf();
+            const auto ed = codeOnly (juce::String (se.str()));
+            // Same trap: the deletion note inside this function names
+            // disablePluginByName while explaining that it no longer calls it.
+            const auto tapped = functionBody (codeOnly (juce::String (se.str())),
+                                              "void EchoJayEditor::onResultChipTapped");
+            check (tapped.isNotEmpty() && ! tapped.contains ("disablePluginByName"),
+                   "dp PIN4: the batch chip handler no longer excludes anything");
+            check (! ed.contains ("for (const auto& n : m.excludeNames)"),
+                   "dp PIN4: and its loop over excludeNames is deleted");
+        }
+
+        // ---- dp PIN5: the spec says what the product does -------------------
+        {
+            std::ifstream fs2 ("CHAIN_AI_BUILD_SPEC.md");
+            std::stringstream ss2; ss2 << fs2.rdbuf();
+            const auto spec = juce::String (ss2.str());
+            check (spec.contains ("NEVER exclude AUTOMATICALLY and NEVER exclude"),
+                   "dp PIN5: the spec forbids automatic and batch exclusion");
+            check (spec.contains ("AMENDED 29 Aug 2026"),
+                   "dp PIN5: and records that it was amended, with the reasoning");
+            check (! spec.contains ("exclusion is session-scoped in-memory only"),
+                   "dp PIN5: the old rule the product violated is gone, not left contradicting it");
         }
     }
 

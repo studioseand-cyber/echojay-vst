@@ -373,12 +373,50 @@ real use before Phase 2/3. Do not wait for "everything" to ship anything.
   a chat bubble.
 - A LOAD FAILURE MEANS "CAN'T AUTHORISE RIGHT NOW", NOT "NOT OWNED". iLok
   absence makes genuinely-owned plugins fail to load on this machine while
-  they work fine on another. NEVER persist load-failure exclusions and
-  NEVER auto-untick the checklist from a load failure — a persistent
-  load_failed.txt was built and then REVERSED for exactly this reason;
-  exclusion is session-scoped in-memory only. (Checklist tick state,
-  plugin_disabled.json, is per-machine local and must stay that way; only
-  the profile plugin-list string is account-synced.)
+  they work fine on another. NEVER exclude AUTOMATICALLY and NEVER exclude
+  IN BATCH — a persistent load_failed.txt was built and then REVERSED for
+  exactly this reason, and the batch "stop suggesting" chip that replaced it
+  was removed and its handler deleted (29 Aug 2026) for the same one.
+  (Checklist tick state, plugin_disabled.json, is per-machine local and must
+  stay that way; only the profile plugin-list string is account-synced.)
+
+  AMENDED 29 Aug 2026. This rule read "NEVER persist load-failure exclusions
+  and NEVER auto-untick the checklist from a load failure; exclusion is
+  session-scoped in-memory only." That was violated in the shipped product
+  and, on inspection, the violation was the better behaviour. Two things were
+  wrong with the old wording:
+
+  1. IT FORBADE A CHOICE THE USER IS ENTITLED TO MAKE. The per-plugin modal
+     names one plugin, states the likely cause, and offers an explicit
+     button. A user pressing "Don't suggest again" is not an auto-untick;
+     "again" plainly means across sessions, and making it evaporate at
+     relaunch would be its own lie. The prohibition that matters is against
+     AUTOMATIC and BATCH exclusion, where no per-plugin consent is given.
+  2. IT DESCRIBED A MECHANISM THAT DID NOT EXIST. "Session-scoped in-memory
+     only" had no implementation: the code had plugin_disabled.json
+     (persistent, and the SAME store as the checklist, so persisting an
+     exclusion and unticking are one act) and chainFailSessionSeen_, which
+     is a re-prompt suppressor the feed never reads. A spec cannot require a
+     store the product lacks; the session store now exists
+     (excludeFromFeedThisSession, TU-local, writes nothing).
+
+  THE RULE NOW: a load-failure exclusion may persist ONLY through a
+  deliberate per-plugin choice that DISCLOSES what it does and where to undo
+  it. The modal offers three outcomes and no two are synonyms - "Don't
+  suggest again" persists and unticks in Settings (disclosed in the body,
+  reason recorded); "Not now" excludes from the feed for this run and writes
+  nothing; "Keep it" excludes nothing and only stops the asking. Automatic
+  and batch exclusion stay forbidden, which is what the reversed
+  load_failed.txt actually taught.
+
+  AND RECORD WHY. A uid entering plugin_disabled.json is stamped in the
+  sidecar plugin_disabled_reasons.json ("settings" | "load-failure", plus a
+  date; EJDisableReasons.h). The main file stays a bare uid array so every
+  existing reader is unaffected. Rows written before 29 Aug 2026 have no
+  entry and their reason is genuinely UNKNOWN - readers must treat a missing
+  entry as unknown and never as a default. Two live rows are in exactly that
+  state (SSL Native X-EQ 2, Weiss Deess): they carry the load-failure
+  signature and cannot be attributed, which is what prompted the field.
 - WAVES VARIANT-SUFFIX FEED KEYING: WaveShell AUs register per-variant
   component names ("Abbey Road Plates (s)"/"(m)") while the Settings
   scanner lists curated suffix-less names. buildRecommendable's exact

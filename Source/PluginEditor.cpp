@@ -3,6 +3,7 @@
 #include "ChainPluginPicker.h"   // P13: the searchable "+" picker (shared with the Link)
 #include "EJStreamBlockParser.h" // incremental block parser (spec step 3/4)
 #include "EJRecall.h"            // saved-chain recall decision logic (pure)
+#include "EJDisableReasons.h"   // WHY a uid sits in plugin_disabled.json
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics (EJChat:)
 #include "EchoJayLogo.h"  // embedded logo PNG — Settings orb card glyph source
 #include "EchoJayVisualiserTexture.h"  // shared SPECTRUM/SPECTROGRAM texture
@@ -10293,7 +10294,8 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
                 chainListPanel.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
                 chainListPanel.masterKnob.setValue(ch.getMasterWet());
                 // Rebuild resolver
-                ch.buildRecommendable(processorRef.getPluginScanner().getPlugins(), chainFormatFilter_);
+                ch.buildRecommendable(feedRowsWithSessionExclusions(
+                    processorRef.getPluginScanner().getPlugins()), chainFormatFilter_);
                 // Prefetch param maps for known fingerprints (throttled inside)
                 ch.requestMapPrefetch();
             }
@@ -19608,7 +19610,7 @@ void EchoJayEditor::timerCallback()
             auto scanned = processorRef.getPluginScanner().getPlugins();
             if (!scanned.empty())
             {
-                ch.buildRecommendable(scanned, chainFormatFilter_);
+                ch.buildRecommendable(feedRowsWithSessionExclusions(scanned), chainFormatFilter_);
                 // Entries just became ready: prefetch param maps for every
                 // fingerprint the persistent index knows (throttled inside),
                 // so a Build later this session needs no round trip.
@@ -19641,7 +19643,8 @@ void EchoJayEditor::timerCallback()
             // itself (EJScan: resolver rebuilt).
             bool entriesReady = ch.getNumPlugins() > 0;
             if (entriesReady && !ch.hasResolvedRecommendable())
-                ch.buildRecommendable(processorRef.getPluginScanner().getPlugins(), chainFormatFilter_);
+                ch.buildRecommendable(feedRowsWithSessionExclusions(
+                    processorRef.getPluginScanner().getPlugins()), chainFormatFilter_);
 
             // The staleness text that briefly lived here (13 Aug, morning)
             // moved to a header label and then out of the UI entirely
@@ -19886,7 +19889,7 @@ void EchoJayEditor::timerCallback()
             auto scanned = sc.getPlugins();
             if (n > 0 && !scanned.empty())
             {
-                ch.buildRecommendable(scanned, chainFormatFilter_);
+                ch.buildRecommendable(feedRowsWithSessionExclusions(scanned), chainFormatFilter_);
                 ch.requestMapPrefetch();
             }
             if (chainListModel)
@@ -21581,8 +21584,9 @@ EchoJayEditor::resultChipList(const ChatMsg& m) const
     // sole door to the same action, so the chip was a redundant second door -
     // and with two chips present its label wrapped to two lines in a one-line
     // pill. Only the alternatives chip remains; the multi-chip machinery stays
-    // for it (and any future chip). The kind==1 handler in onResultChipTapped
-    // is now unreachable but left as the documented exclude action.
+    // for it (and any future chip). The kind==1 handler it fed was DELETED on
+    // 29 Aug 2026: it had been unreachable since this removal, and its comment
+    // described behaviour it never had.
     std::vector<ResultChip> chips;
     if (m.editAltPrompt.isNotEmpty())
         chips.push_back({ m.editAltPrompt.startsWith("These")
@@ -21627,16 +21631,17 @@ void EchoJayEditor::onResultChipTapped(int msgIdx, int kind)
         sendChatMessage(prompt, label);
         return;
     }
-    // Exclude (session-scoped, iLok rule: never persisted, never auto-
-    // unticks anything): stop suggesting ALL failed plugins from this build
-    // in ONE interaction. chainFailSessionSeen_ is the live-session state
-    // consumed by the recommendable feed's exclusion.
-    if (m.excludeApplied || m.excludeNames.isEmpty()) return;
-    for (const auto& n : m.excludeNames)
-        disablePluginByName(n);
-    m.excludeApplied = true;
-    resized();
-    repaint();
+    // The batch "stop suggesting" handler (kind == 1) was DELETED 29 Aug 2026.
+    // It had been unreachable since the chip was removed from resultChipList,
+    // and its comment was wrong on three counts: it said session-scoped while
+    // calling disablePluginByName (which persists), said it never unticks
+    // anything (it unticks the Settings checklist), and said
+    // chainFailSessionSeen_ fed the recommendable exclusion (it has one read,
+    // as a re-prompt suppressor, and the feed never consults it). Dead code
+    // whose comment documents behaviour the code never had is worse than no
+    // documentation: it is what a reader trusts. Batch exclusion is also the
+    // shape the spec's reversed load_failed.txt was reversed FOR, so this is
+    // not a door to reopen. The per-plugin modal is the only exclusion door.
 }
 
 void EchoJayEditor::announceRefusedOps(const juce::String& chainJson,
@@ -27750,6 +27755,59 @@ void EchoJayEditor::pollLinkChainAck(const juce::String& linkUid, int seq,
     });
 }
 
+// SESSION-SCOPED FEED EXCLUSION (29 Aug 2026), the mechanism the spec always
+// described and the code never had. Before this there were exactly two stores:
+// plugin_disabled.json (persistent, and the same file as the Settings
+// checklist) and chainFailSessionSeen_ (a re-prompt suppressor with one read,
+// consumed by nothing). So "exclude for this session" was unavailable, and the
+// only door out of a load failure wrote to disk.
+//
+// A TU-LOCAL STATIC, not a member of anything. Adding a data member to
+// EchoJayEditor or ChainHost would change a layout the gate's stale SharedCode
+// link still holds the old shape of, and these pins are meant to run without a
+// rebuild. Process-lifetime is also the correct scope: "this session" means
+// this run of the host, and several editor instances share one process.
+//
+// NOT reusing setPluginEnabled's in-memory set, deliberately: that set is
+// REPLACED wholesale by maybeReloadEnabledState whenever plugin_disabled.json's
+// mtime moves (applyReloadedDisabledSet), so any other instance's save, or any
+// checklist click, would silently resurrect the exclusion mid-session. An
+// exclusion that survives only until someone else writes a file is worse than
+// none, because nothing says it went away.
+static std::set<juce::String>& sessionFeedExcludedUids()
+{
+    static std::set<juce::String> s;
+    return s;
+}
+
+std::vector<ScannedPlugin>
+EchoJayEditor::feedRowsWithSessionExclusions(std::vector<ScannedPlugin> rows) const
+{
+    const auto& ex = sessionFeedExcludedUids();
+    if (ex.empty()) return rows;
+    for (auto& r : rows)
+        if (r.enabled && ex.count(r.uid) > 0) r.enabled = false;
+    return rows;
+}
+
+void EchoJayEditor::excludeFromFeedThisSession(const juce::String& name)
+{
+    auto& scanner = processorRef.getPluginScanner();
+    for (auto& p : scanner.getPlugins())
+        if (ChainHost::namesMatchLoose(name, p.name))
+        {
+            sessionFeedExcludedUids().insert(p.uid);
+            EchoJay_NSLog(("EJExclude: session-only \"" + p.name
+                           + "\" uid=" + p.uid + " (Not now; nothing written)").toRawUTF8());
+            break;
+        }
+    // Rebuild so the feed drops it now. Nothing is saved: no
+    // setPluginEnabled, no saveEnabledState, no checklist refresh.
+    auto& ch = processorRef.getChainHost();
+    ch.buildRecommendable(feedRowsWithSessionExclusions(scanner.getPlugins()),
+                          chainFormatFilter_);
+}
+
 void EchoJayEditor::disablePluginByName(const juce::String& name)
 {
     auto& scanner = processorRef.getPluginScanner();
@@ -27761,12 +27819,18 @@ void EchoJayEditor::disablePluginByName(const juce::String& name)
         {
             scanner.setPluginEnabled(p.uid, false);
             scanner.saveEnabledState();
+            // WHY, beside the uid. This is the load-failure door; the Settings
+            // checklist stamps its own reason at its own commit. Without this
+            // the file records that a plugin is off and nothing about how it
+            // got that way, which is exactly the question that could not be
+            // answered for the two rows found on 29 Aug.
+            echojay::recordDisableReasons({ p.uid }, echojay::kDisableWhyLoadFailure);
             // Keep Settings checklist in sync
             if (settingsChecklist)
                 settingsChecklist->refresh();
             // Rebuild resolver so the AI no longer sees this plugin
             auto& ch = processorRef.getChainHost();
-            ch.buildRecommendable(scanner.getPlugins(), chainFormatFilter_);
+            ch.buildRecommendable(feedRowsWithSessionExclusions(scanner.getPlugins()), chainFormatFilter_);
             break;
         }
     }
@@ -29781,21 +29845,45 @@ void EchoJayEditor::showNextFailPrompt(juce::StringArray names, int idx)
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
 
-    juce::AlertWindow::showOkCancelBox(
+    // THREE OUTCOMES, BECAUSE THE CAUSE IS USUALLY TRANSIENT (29 Aug 2026).
+    // This prompt names a LICENCE as the likely cause and then, until now,
+    // offered only permanent exclusion or nothing: a user whose iLok was
+    // unplugged had no correct button. The middle one is that button.
+    //
+    //   Don't suggest again  PERSISTENT. Unticks the plugin in Settings, which
+    //                        is the same store, so the disclosure below says so
+    //                        and says where to undo it. Reason recorded.
+    //   Not now              THIS SESSION ONLY. Excluded from the feed now,
+    //                        nothing written, back next launch.
+    //   Keep it              NO EXCLUSION AT ALL. Stays suggestable; we simply
+    //                        stop asking about it this session.
+    //
+    // "Not now" and "Keep it" are NOT synonyms and the difference is the feed:
+    // Not now takes the plugin out of it for this session, Keep it leaves it
+    // in. Before this change the two live buttons very nearly were synonyms,
+    // which is how the modal came to be the only door to a permanent write.
+    juce::AlertWindow::showYesNoCancelBox(
         juce::AlertWindow::WarningIcon,
         "Plugin failed to load",
-        "\"" + name + "\" failed to load (this often means it isn't licensed).\n"
-        "Stop EchoJay from suggesting it?",
-        "Don't suggest again", "Keep it",
+        "\"" + name + "\" failed to load (this often means it isn't licensed, "
+        "or a dongle isn't plugged in).\n"
+        "Stop EchoJay from suggesting it?\n\n"
+        "\"Don't suggest again\" unticks it in Settings > Plugins. You can "
+        "re-tick it there any time.",
+        "Don't suggest again", "Not now", "Keep it",
         nullptr,
         juce::ModalCallbackFunction::create([safeThis, names, idx, name](int result) mutable
         {
             if (!safeThis) return;
-            if (result == 1) // "Don't suggest again"
+            if (result == 1)        // "Don't suggest again" — persistent
             {
                 safeThis->disablePluginByName(name);
             }
-            else // "Keep it" — don't prompt again this session
+            else if (result == 2)   // "Not now" — session-scoped exclusion
+            {
+                safeThis->excludeFromFeedThisSession(name);
+            }
+            else                    // "Keep it" — no exclusion, just stop asking
             {
                 safeThis->chainFailSessionSeen_.insert(name);
             }
