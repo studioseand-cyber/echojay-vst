@@ -57,6 +57,11 @@ private:
     juce::TextButton correctBtn_ { "CORRECT" };
     juce::TextButton vibBtn_     { "IGN VIB" };
     juce::TextButton keyAutoBtn_ { "AUTO" };
+    // The reference control (29 Aug 2026): Sean was stuck on a grid he could
+    // neither see the origin of nor change. The knob edits the MANUAL field
+    // (turning it takes manual control); the AUTO button returns the mode;
+    // provenance lives in the attribution line.
+    juce::TextButton refAutoBtn_ { "AUTO" };
 
     // low_latency is a WORKFLOW choice (tracking vs mixing), so it reads as a
     // mode rather than a checkbox, and carries the number it costs.
@@ -67,7 +72,8 @@ private:
     void refreshLatencyButton();
     int  currentLatencyMs (bool lowLatency) const;
     juce::TextButton resetBtn_ { "RESET" };
-    echojay::device::EchoJayDeviceKnob targetKnob_, retuneKnob_, flexKnob_, humanKnob_;
+    echojay::device::EchoJayDeviceKnob targetKnob_, retuneKnob_, flexKnob_, humanKnob_,
+                                       refKnob_;
 
     juce::Rectangle<int> notePanel_, numbersPanel_, guardPanel_, ribbonBounds_;
 

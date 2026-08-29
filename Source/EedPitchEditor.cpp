@@ -120,6 +120,7 @@ EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
         }
     };
     setupKnob (retuneKnob_, EedPitchProcessor::kRetuneMs, 80.0, 0, " ms", "RETUNE");
+    setupKnob (refKnob_,    EedPitchProcessor::kReferenceHz, 0.0, 1, " Hz", "REF");
     setupKnob (flexKnob_,   EedPitchProcessor::kFlex,      0.0, 0, " %",  "FLEX");
     setupKnob (humanKnob_,  EedPitchProcessor::kHumanize,  0.0, 0, " %",  "HUMAN");
 
@@ -179,6 +180,21 @@ EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
                              keyAutoBtn_.getToggleState() ? 0.0 : 1.0);
     };
     addAndMakeVisible (keyAutoBtn_);
+
+    // The reference's way back to auto - same shape as the key's. Turning
+    // the REF knob takes manual control (the param flips the mode); this
+    // returns it, and the attribution line says what auto then follows.
+    styleButton (refAutoBtn_, true);
+    refAutoBtn_.setToggleState (
+        proc_.getParamValue (EedPitchProcessor::kRefSource) < 0.5,
+        juce::dontSendNotification);
+    refAutoBtn_.onClick = [this]
+    {
+        if (suppressCallbacks_) return;
+        proc_.setParamValue (EedPitchProcessor::kRefSource,
+                             refAutoBtn_.getToggleState() ? 0.0 : 1.0);
+    };
+    addAndMakeVisible (refAutoBtn_);
 
     // THE LATENCY MODE. Deliberately a mode button rather than a checkbox: the
     // user is choosing between two WORKFLOWS, and the number it costs is the
@@ -303,10 +319,15 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
         vibBtn_.setBounds (sw.removeFromTop (juce::jmin (kRowH, sw.getHeight())).reduced (1));
     }
 
-    // The target dial sits hard right; the readout columns share the rest.
-    targetKnob_.setBounds (content.removeFromRight (
-        juce::jmin (kKnobW, content.getWidth()))
-            .withHeight (juce::jmin (kKnobH, content.getHeight())));
+    // The target dial sits hard right; the REF control stacks beneath it
+    // (knob + its AUTO), and the readout columns share the rest.
+    {
+        auto rcol = content.removeFromRight (juce::jmin (kKnobW, content.getWidth()));
+        targetKnob_.setBounds (rcol.removeFromTop (juce::jmin (kKnobH, rcol.getHeight())));
+        refKnob_.setBounds (rcol.removeFromTop (juce::jmin (kKnobH, rcol.getHeight())));
+        refAutoBtn_.setBounds (rcol.removeFromTop (juce::jmin (kRowH, rcol.getHeight()))
+                                   .reduced (1));
+    }
     content.removeFromRight (juce::jmin (6, content.getWidth()));
 
     // Three columns: note + tuner bar | numbers | guard log.
@@ -552,6 +573,16 @@ void EedPitchEditor::syncFromProcessor()
         if (std::abs (v - k.getRealValue()) > 1.0e-4) k.setRealValue (v);
     };
     syncKnob (retuneKnob_, EedPitchProcessor::kRetuneMs);
+    syncKnob (refKnob_,    EedPitchProcessor::kReferenceHz);
+    {
+        // Dim the REF knob in auto - it shows the manual FIELD, which auto
+        // is not using; the attribution line carries the live grid.
+        const bool refAuto = proc_.getParamValue (EedPitchProcessor::kRefSource) < 0.5;
+        const float ra = refAuto ? 0.45f : 1.0f;
+        if (std::abs (refKnob_.getAlpha() - ra) > 0.01f) refKnob_.setAlpha (ra);
+        if (refAutoBtn_.getToggleState() != refAuto)
+            refAutoBtn_.setToggleState (refAuto, juce::dontSendNotification);
+    }
     syncKnob (flexKnob_,   EedPitchProcessor::kFlex);
     syncKnob (humanKnob_,  EedPitchProcessor::kHumanize);
 
@@ -676,6 +707,8 @@ const std::vector<const char*>& EedPitchEditor::handControlledParams()
         EedPitchProcessor::kFlex,          // flexKnob_
         EedPitchProcessor::kHumanize,      // humanKnob_
         EedPitchProcessor::kTargetHz,      // targetKnob_
+        EedPitchProcessor::kReferenceHz,   // refKnob_ - the control Sean lacked (29 Aug 2026)
+        EedPitchProcessor::kRefSource,     // refAutoBtn_ - the way back to auto
         EedPitchProcessor::kResetStats,    // resetBtn_
     };
     return ids;

@@ -91,6 +91,23 @@ public:
     void getStateInformation (juce::MemoryBlock& dest) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    // True while setStateInformation is applying a loaded state's params.
+    // A device that treats a LIVE param write as a user action (e.g. the
+    // pitch reference flipping to manual) must not treat a state load the
+    // same way - a load replays values, it is nobody touching a control.
+    bool applyingState() const noexcept { return applyingState_; }
+
+protected:
+    // Called once after a loaded state's params have all been applied, so a
+    // device can run migrations that need the COMPLETE state (e.g. the
+    // 29 Aug 2026 laundered-reference revert). Default: nothing.
+    virtual void onStateApplied() {}
+
+private:
+    bool applyingState_ = false;
+
+public:
+
     // ---- AudioProcessor boilerplate shared by every built-in --------------
     bool hasEditor() const override                   { return true; }
     bool acceptsMidi() const override                 { return false; }

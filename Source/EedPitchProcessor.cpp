@@ -128,6 +128,15 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "against everything",
           false },
 
+        { EedPitchProcessor::kRefManualByUser, "", 0.0, 1.0, 0.0,
+          "internal provenance marker, not a control: 1 once a person has "
+          "taken manual control of the reference (set reference_hz or chose "
+          "reference_source manual live). Saved states from before this "
+          "marker existed could carry a DETECTED reference laundered into "
+          "the manual field; on load, a manual reference without this marker "
+          "reverts to auto. Do not set this directly",
+          false },
+
         { EedPitchProcessor::kTranspose, "st",
           (double) PitchCorrect::kMinTranspose, (double) PitchCorrect::kMaxTranspose, 0.0,
           "shifts the corrected result in semitones, after correction",
@@ -296,7 +305,18 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
         lastAutoRoot_ = -1; lastAutoFellBack_ = false;
         return true;
     }
-    if (id == kRefSource)   { refAuto_.store (value < 0.5); lastAutoTuning_ = 0.0f; return true; }
+    if (id == kRefSource)
+    {
+        const bool manual = value >= 0.5;
+        refAuto_.store (! manual); lastAutoTuning_ = 0.0f;
+        // Manual mode applies the MANUAL field - never whatever detection
+        // last left in the corrector (the laundering path, 29 Aug 2026).
+        if (manual) correct_.setReferenceHz (manualRefHz_.load());
+        if (manual && ! writingDefaults_ && ! applyingState())
+            refManualByUser_.store (true);
+        return true;
+    }
+    if (id == kRefManualByUser) { refManualByUser_.store (value >= 0.5); return true; }
     if (id == kMode)        { applyMode ((int) std::lround (value)); return true; }
     if (id == kNaturalVib)  { correct_.setNaturalVibrato ((float) value); toCustomMode(); return true; }
     if (id == kVibDepth)    { correct_.setVibDepthCents ((float) value);  return true; }
@@ -321,8 +341,19 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
     }
     if (id == kScale)       { applyScale ((int) std::lround (value));
                               if (! writingDefaults_) keyAuto_.store (false); return true; }
-    if (id == kReferenceHz) { correct_.setReferenceHz ((float) value);
-                              if (! writingDefaults_) refAuto_.store (false); return true; }
+    if (id == kReferenceHz)
+    {
+        // The value lands in the MANUAL FIELD. Only a LIVE write - a person
+        // at the knob, or their agent in chat - takes manual control; a
+        // state load merely replays the field and decides the mode via
+        // reference_source (plus the onStateApplied migration).
+        manualRefHz_.store (juce::jlimit (PitchCorrect::kMinReferenceHz,
+                                          PitchCorrect::kMaxReferenceHz, (float) value));
+        if (! writingDefaults_ && ! applyingState())
+        { refAuto_.store (false); refManualByUser_.store (true); }
+        if (! refAuto_.load()) correct_.setReferenceHz (manualRefHz_.load());
+        return true;
+    }
     if (id == kTranspose)   { correct_.setTranspose ((float) value);   return true; }
     if (id == kIgnoreVib)   { correct_.setIgnoreVibrato (value >= 0.5); toCustomMode(); return true; }
     if (id == kResetStats)
@@ -361,7 +392,8 @@ double EedPitchProcessor::getParamValue (const juce::String& id) const
     if (id == kHumanize)    return (double) correct_.getHumanize();
     if (id == kKeyRoot)     return (double) correct_.getKeyRoot();
     if (id == kScale)       return (double) scaleIndex_.load();
-    if (id == kReferenceHz) return (double) correct_.getReferenceHz();
+    if (id == kReferenceHz) return (double) manualRefHz_.load();   // the manual FIELD, never the live/detected grid
+    if (id == kRefManualByUser) return refManualByUser_.load() ? 1.0 : 0.0;
     if (id == kTranspose)   return (double) correct_.getTranspose();
     if (id == kIgnoreVib)   return correct_.getIgnoreVibrato() ? 1.0 : 0.0;
     if (id == kResetStats) return 0.0;
@@ -607,6 +639,24 @@ void EedPitchProcessor::refreshAutoKey()
     autoState_.refAuto        = refAuto;
     autoState_.refApplied     = correct_.getReferenceHz();
     autoState_.refSelfIgnored = refAuto && refCircular;
+}
+
+// The laundered-reference migration (29 Aug 2026): before manualRefHz_
+// existed, a state save exported the corrector's LIVE reference - under
+// auto, the detected value - and the load's reference_hz write flipped the
+// mode to manual. Anyone who saved a session with auto reference got a
+// detected grid promoted to a "manual" setting with no control to change
+// it. A genuine pre-fix manual reference (chat-set) is indistinguishable
+// from a laundered one in saved state - both are just {manual, value} - so
+// per the ruling both revert to auto; the readout shows it and the new REF
+// control restores a wanted manual value in one gesture.
+void EedPitchProcessor::onStateApplied()
+{
+    if (! refAuto_.load() && ! refManualByUser_.load())
+    {
+        refAuto_.store (true);
+        lastAutoTuning_ = 0.0f;   // force the next refresh to re-apply
+    }
 }
 
 void EedPitchProcessor::resetParamsToDefaults()

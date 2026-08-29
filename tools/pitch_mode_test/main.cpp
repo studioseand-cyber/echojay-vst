@@ -164,8 +164,36 @@ int main()
         check (p.getParamValue ("key_root") == 6.0, "key_root followed to F#");
         const auto* sp = EedPitchProcessor::schema().find ("scale");
         check (sp->choiceLabel (p.getParamValue ("scale")) == "minor", "scale followed to minor");
-        check (std::abs (p.getParamValue ("reference_hz") - 441.3) < 0.1,
-               "reference_hz followed the detected tuning, not dragged to 440");
+        // The LIVE grid follows; the PARAM is the manual FIELD and must not
+        // (29 Aug 2026: exporting the detected value through the param was
+        // the laundering path - this assertion used to demand it).
+        check (std::abs (p.autoKeyState().refApplied - 441.3) < 0.1,
+               "the LIVE grid followed the detected tuning");
+        check (std::abs (p.getParamValue ("reference_hz") - 440.0) < 0.1,
+               "the manual FIELD stayed 440 - a detected value never enters it");
+
+        // THE CIRCULARITY GUARD: a fact derived from this instance's own
+        // channel must not move the grid - fall back to 440, never to the
+        // channel itself.
+        p.setKeyFeedSelfId (77);
+        {
+            echojay::DetectedKeyFact f;
+            f.valid = true; f.root = 6; f.minor = true; f.confidence = 0.86f;
+            f.tuningHz = 438.0f; f.fromBus = true;
+            f.publisherId = 77; f.selfDerived = true;
+            std::strncpy (f.sourceName, "Self", sizeof (f.sourceName) - 1);
+            echojay::KeyFeed::instance().publish (f);
+        }
+        pump (4);
+        check (std::abs (p.autoKeyState().refApplied - 440.0) < 0.1,
+               "a self-derived fact from THIS instance is not followed - grid falls back to 440");
+        check (p.autoKeyState().refSelfIgnored,
+               "...and the state says so (refSelfIgnored), for the readout");
+        p.setKeyFeedSelfId (0);
+        // Restore the external fact so the downstream source-name check sees
+        // the state it always saw.
+        publish (6, true, 0.86f, 441.3f, "Music Bus");
+        pump (4);
 
         const auto st = p.autoKeyState();
         check (st.applied && st.sourceName == "Music Bus",
@@ -317,6 +345,7 @@ int main()
             { "scale",            "WHAT to correct to" },
             { "reference_source", "WHAT tuning to correct to" },
             { "reference_hz",     "WHAT tuning to correct to" },
+            { "ref_manual_by_user", "internal provenance marker, not character" },
             { "transpose",        "a pitch offset on the result, orthogonal to character" },
             { "voice_type",       "detector fit to the material, not character" },
             { "tracking",         "detector strictness, not character" },
@@ -385,10 +414,8 @@ int main()
         // list and fails the build.
         struct NoUi { const char* id; const char* why; };
         static const NoUi kNoUi[] = {
-            { "reference_source", "no UI yet. Same one-way SHAPE as key_source's closed "
-                                  "gap, but no hand control writes reference_hz, so only "
-                                  "the model can spring it - and the model can release it" },
-            { "reference_hz",     "no UI yet" },
+            { "ref_manual_by_user", "internal provenance marker, deliberately "
+                                    "uncontrolled - see EedPitchProcessor::onStateApplied" },
             { "transpose",        "no UI yet" },
             { "natural_vibrato",  "no UI yet - character-relevant, worth a knob eventually" },
             { "vib_depth_cents",  "no UI yet - added-vibrato block has no panel" },
@@ -423,6 +450,56 @@ int main()
                    + " has no hand control and no exemption - add it to the editor's"
                      " handControlledParams() with a control, or to the ledger HERE"
                      " with its status");
+        }
+    }
+
+    // ---- reference provenance (29 Aug 2026): the laundering defect --------
+    // A detected reference must never become a manual setting. The pre-fix
+    // machinery saved the corrector's LIVE (detected) reference and the load
+    // flipped the mode to manual - a grid nobody chose, with no control to
+    // change it. These four lock the repaired contract.
+    {
+        std::printf ("\nreference provenance:\n");
+        auto load = [] (EedPitchProcessor& p,
+                        std::initializer_list<std::pair<const char*, juce::var>> kv)
+        {
+            const juce::String js = juce::JSON::toString (params (kv), true);
+            p.setStateInformation (js.toRawUTF8(), (int) js.getNumBytesAsUTF8());
+        };
+        {
+            EedPitchProcessor p;
+            load (p, { { "reference_source", 1.0 }, { "reference_hz", 439.2 } });
+            check (p.getParamValue (EedPitchProcessor::kRefSource) < 0.5,
+                   "laundered state (manual + value, no marker) reverts to AUTO on load");
+        }
+        {
+            EedPitchProcessor p;
+            load (p, { { "reference_source", 1.0 }, { "reference_hz", 441.0 },
+                       { "ref_manual_by_user", 1.0 } });
+            check (p.getParamValue (EedPitchProcessor::kRefSource) >= 0.5,
+                   "marked manual state stays MANUAL on load");
+            check (std::abs (p.getParamValue (EedPitchProcessor::kReferenceHz) - 441.0) < 0.01,
+                   "manual field holds the entered 441");
+        }
+        {
+            EedPitchProcessor p;
+            p.setParamValue (EedPitchProcessor::kReferenceHz, 442.0);
+            check (p.getParamValue (EedPitchProcessor::kRefSource) >= 0.5,
+                   "a LIVE reference write takes manual control");
+            juce::MemoryBlock mb; p.getStateInformation (mb);
+            EedPitchProcessor q;
+            q.setStateInformation (mb.getData(), (int) mb.getSize());
+            check (q.getParamValue (EedPitchProcessor::kRefSource) >= 0.5
+                   && std::abs (q.getParamValue (EedPitchProcessor::kReferenceHz) - 442.0) < 0.01,
+                   "marked manual 442 survives a save/load round-trip");
+        }
+        {
+            EedPitchProcessor p;
+            juce::MemoryBlock mb; p.getStateInformation (mb);
+            EedPitchProcessor q;
+            q.setStateInformation (mb.getData(), (int) mb.getSize());
+            check (q.getParamValue (EedPitchProcessor::kRefSource) < 0.5,
+                   "auto survives a save/load round-trip (the field saved is the manual 440, never a detected grid)");
         }
     }
 

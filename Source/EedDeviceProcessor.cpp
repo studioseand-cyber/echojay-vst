@@ -225,6 +225,9 @@ void EedDeviceProcessor::setStateInformation (const void* data, int sizeInBytes)
     // FULL REPLACE, not a merge. A saved state is the whole device, and a file
     // written before a param existed must load as that param's DEFAULT rather
     // than inheriting whatever this instance was last set to.
+    applyingState_ = true;
     resetParamsToDefaults();
     applyParams (parsed.getProperty ("params", juce::var()));
+    applyingState_ = false;
+    onStateApplied();
 }

@@ -65,6 +65,10 @@ public:
     static constexpr const char* kReferenceHz  = "reference_hz";
     static constexpr const char* kTranspose    = "transpose";
     static constexpr const char* kIgnoreVib    = "targeting_ignores_vibrato";
+    // Provenance marker (29 Aug 2026): 1 once a PERSON has taken manual
+    // control of the reference. Saved states lacking it revert a manual
+    // reference to auto on load - see onStateApplied.
+    static constexpr const char* kRefManualByUser = "ref_manual_by_user";
     static constexpr const char* kMode         = "correction_mode";
     static constexpr const char* kMix          = "mix";
     static constexpr const char* kOutputDb     = "output_db";
@@ -97,6 +101,10 @@ public:
         bool  refSelfIgnored = false;   // auto saw only this channel: using 440
     };
     AutoKeyState autoKeyState() const;
+
+protected:
+    void onStateApplied() override;
+public:
 
     // Writing the schema defaults must not be mistaken for the user reaching
     // for key_root or scale, which would leave key_source on manual and
@@ -208,6 +216,12 @@ private:
     std::atomic<bool> keyAuto_ { true };
     std::atomic<bool> refAuto_ { true };
     std::atomic<uint64_t> keyFeedSelfId_ { 0 };
+    // The MANUAL reference field: only ever what a person entered (or its
+    // 440 default). NEVER written from detection - the corrector's live
+    // reference under auto lives in correct_ alone, so a state save cannot
+    // launder a detected grid into a user setting (29 Aug 2026 defect).
+    std::atomic<float> manualRefHz_ { 440.0f };
+    std::atomic<bool>  refManualByUser_ { false };
     // Carried ACROSS blocks. The slice before the first hop of a block
     // continues whatever the last hop of the previous block decided - resetting
     // these per block would make the first slice of every block use a stale or
