@@ -617,6 +617,11 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
         auto* lo = labels.getDynamicObject();
         if (lo == nullptr || label.isEmpty()) { r.note = "no labels in mode entry"; return r; }
         const bool ciOk = (bool) mapEntry.getProperty ("caseInsensitiveOk", false);
+        // Provenance: labels borrowed from the sibling binary named here, rather
+        // than measured on this one. Written only by the class-1 label join; see
+        // the branch below for why this, and not trust, is the gate.
+        const bool labelsAreForeign =
+            mapEntry.getProperty ("joined_from", juce::var()).toString().isNotEmpty();
         juce::String matched;
         float labelNorm = 0.0f;
         for (auto& kv : lo->getProperties())
@@ -636,6 +641,55 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
             r.normalized = labelNorm;
             r.displayVerified = true;
             r.note = "applied, reads \"" + r.landedText + "\"";
+        }
+        else if (labelsAreForeign && ! staleDisplayReads)
+        {
+            // BORROWED LABELS (29 Aug 2026). These label strings were measured
+            // on a DIFFERENT binary - the sibling named by joined_from - and
+            // attached here because both formats step the same parameter at the
+            // same normalised positions. That is the whole point of the join:
+            // this binary reports its value as an ORDINAL ("6"), which is why it
+            // had no labels of its own. So the text comparison above compares a
+            // name against a number and can never succeed, and the revert below
+            // would undo a write that landed on exactly the right option.
+            // MEASURED on the 28 Aug Saturn 2 pilot, from this very path:
+            //   asked "Warm Tape", plugin shows "6", value restored
+            // and "Warm Tape" IS index 6. The write was correct; the instrument
+            // was wrong.
+            //
+            // GATED ON PROVENANCE, NOT ON TRUST, and that is load-bearing.
+            // trust:"setread" looks like the natural gate and is useless as one:
+            // measured across 133 maps, ALL 5,772 genuine mode controls carry it,
+            // because every label in the corpus was captured set-then-read. A
+            // trust gate would relax verification for every mode control there
+            // is. joined_from is written by the join and by nothing else.
+            // (Corroboration, deliberately NOT a code condition: 0 of those 5,772
+            // carry an anchors array, while every joined control does. An
+            // incidental absence is not a guard - if a future builder emits
+            // anchors on a native mode control the discriminator dies silently,
+            // so the explicit field stays the only gate.)
+            //
+            // NOT a rubber stamp: the write is still verified, by the same norm
+            // round-trip the anchored setread path below uses. Swapping the
+            // instrument is the fix; skipping verification is not. A write that
+            // does not stick still reverts.
+            //
+            // The ! staleDisplayReads guard keeps the bridged path below intact:
+            // on a bridge getValue() is pre-write too, so the round-trip would
+            // fail by construction and revert exactly the work the bridged rung
+            // exists to keep. A bridged joined control falls through to it.
+            if (std::abs (param->getValue() - labelNorm) <= 0.02f)
+            {
+                r.applied = true;
+                r.normalized = labelNorm;
+                r.note = "applied (display unverifiable on this plugin)";
+            }
+            else
+            {
+                revert();
+                r.readbackMismatch = true;
+                r.note = "asked \"" + matched + "\", write did not stick, value restored";
+            }
         }
         else if (staleDisplayReads)
         {
