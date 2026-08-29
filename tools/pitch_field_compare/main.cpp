@@ -248,6 +248,50 @@ int main (int argc, char** argv)
     };
     const double biasE = steadyBias (te), biasA = steadyBias (ta), biasS = steadyBias (ts);
 
+    // CONVERGENCE, unsigned and per-note (29 Aug 2026 correction to the
+    // bleed A/B: a signed steady-frame bias CANCELS an undershoot that
+    // opposes the correction direction across up- vs down-corrected notes;
+    // the unsigned per-note centre is the statistic that can see it).
+    // A note = a voiced run whose nearest semitone holds, >= 80 ms. Its
+    // centre is the median deviation from that semitone; the headline is
+    // the median |centre| across notes, plus % of voiced frames within 3c
+    // of the nearest semitone.
+    auto convergence = [] (const Track& t, double& medCentre, double& pctWithin3)
+    {
+        std::vector<double> centres, run;
+        int within = 0, voicedN = 0, runSemi = 1000;
+        auto flush = [&] ()
+        {
+            if ((int) run.size() * 1 >= 16)   // >= ~80ms at ~5ms hops
+            {
+                std::vector<double> r = run;
+                std::sort (r.begin(), r.end());
+                centres.push_back (std::fabs (r[r.size() / 2]));
+            }
+            run.clear();
+        };
+        for (size_t h = 0; h < t.f0.size(); ++h)
+        {
+            const float f = t.f0[h];
+            if (f <= 0.0f) { flush(); runSemi = 1000; continue; }
+            const double midi = 69.0 + 12.0 * std::log2 ((double) f / 440.0);
+            const int semi = (int) std::lround (midi);
+            const double dev = (midi - semi) * 100.0;
+            ++voicedN;
+            if (std::fabs (dev) <= 3.0) ++within;
+            if (semi != runSemi) { flush(); runSemi = semi; }
+            run.push_back (dev);
+        }
+        flush();
+        std::sort (centres.begin(), centres.end());
+        medCentre  = centres.empty() ? 0.0 : centres[centres.size() / 2];
+        pctWithin3 = voicedN > 0 ? 100.0 * within / voicedN : 0.0;
+    };
+    double ncE = 0, w3E = 0, ncA = 0, w3A = 0, ncS = 0, w3S = 0;
+    convergence (te, ncE, w3E);
+    convergence (ta, ncA, w3A);
+    convergence (ts, ncS, w3S);
+
     std::printf ("%s vs %s\n", argv[3], argv[2]);
     std::printf ("  rough spans vs Antares (>0.10 deficit): %d spans / %.2fs "
                  "(%d of %d windows)  worst -%.2f at %.2fs\n",
@@ -261,5 +305,8 @@ int main (int argc, char** argv)
                  ogE.empty() ? 0.0 : ogE[ogE.size() / 2]);
     std::printf ("  steady-frame signed bias: echojay %+.2fc  antares %+.2fc  source %+.2fc\n",
                  biasE, biasA, biasS);
+    std::printf ("  convergence: note-centre |med| echojay %.2fc antares %.2fc source %.2fc"
+                 "   within-3c echojay %.1f%% antares %.1f%% source %.1f%%\n",
+                 ncE, ncA, ncS, w3E, w3A, w3S);
     return 0;
 }
