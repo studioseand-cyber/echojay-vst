@@ -238,6 +238,11 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
     sh.debugDisableSplice (disableSplice);
     sh.setPitchLagSamples (det2.pitchLagFor (vt));
     sh.setDriftBleed (true);   // mirrors the processor (5 Sep 2026 ruling)
+    // AB_BRIDGE=<thresh>: audio-verified bridging (100 ms cap) for the
+    // field evaluation renders (29 Aug 2026 ruling). Not shipped; the
+    // switch flips only after the field number AND Sean's ear agree.
+    if (const char* b = getenv ("AB_BRIDGE"))
+        if (std::atof (b) > 0.0) sh.setF0Bridge (100.0f, (float) std::atof (b));
     const int latency = sh.latencySamples();
 
     // THE BLOCK IS SLICED AT HOP BOUNDARIES, exactly as
