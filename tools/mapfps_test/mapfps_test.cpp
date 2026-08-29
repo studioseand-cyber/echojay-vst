@@ -32,6 +32,7 @@
 #include "EJRefusalLine.h"      // refusal bubble: header-inline, the shipped composer
 #include "EJVariantPreference.h" // Waves channel-variant rank: header-inline, shipped
 #include "EJWavesAlias.h"       // Waves marketing-name alias: header-inline, shipped
+#include "EJWavesRegistryFeed.h" // Waves feed source swap: header-inline, shipped
 #include "EchoJayParamMaps.h"
 #include "EchoJayParamApply.h"
 #include "EchoJayHistoryTrim.h"
@@ -2704,6 +2705,424 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (! bodyRec.contains ("recommendable_.push_back")
                    && ! bodyRec.contains ("recommendable_.clear"),
                    "of PIN D: the bridge only READS the feed table");
+        }
+    }
+
+    // ---- Waves candidates from the REGISTRY, not the catalog ---------------
+    // Step 2 of the feed source swap. The catalog was the MEMBERSHIP TEST for
+    // Waves: buildRecommendable walks scanner rows, so a Waves product the 69
+    // curated names did not name could not enter the feed however plainly it
+    // was installed. EJWavesRegistryFeed.h moves membership to the machine's
+    // own AU scan and leaves the catalog as a ranking. Everything that decides
+    // is header-inline, so these pins run the SHIPPED bytes against the REAL
+    // registry; the call site is pinned structurally, because the lib this test
+    // links was built before the call site existed.
+    {
+        std::cout << "waves from the registry (feed source swap):\n";
+        const juce::ScopedJuceInitialiser_GUI juceInit;
+        ChainHost host;
+
+        // `loadable` as buildRecommendable sees it: the withheld rows are
+        // already gone (getFilteredPlugins calls the same withholdReasonLocked
+        // at the same lock), the format filter is empty, and a fresh process
+        // has no session load failures. collapseTwins=false so nothing is
+        // hidden before the predicate gets to judge it.
+        const auto loadable = host.getFilteredPlugins ({}, {}, /*collapseTwins*/ false);
+
+        if (loadable.isEmpty())
+        {
+            std::cout << "  SKIP  waves-registry pins (no chain_entries.xml on this machine)\n";
+        }
+        else
+        {
+            // ---- wr PIN1: THE SCOPE, and that it is not a name match --------
+            int byCode = 0, byVendor = 0, codeButNotVendor = 0, vendorButNotCode = 0;
+            for (const auto& d : loadable)
+            {
+                const bool code   = echojay::isWaveShellRegistration (d);
+                const bool vendor = (d.manufacturerName == "Waves");
+                byCode   += code   ? 1 : 0;
+                byVendor += vendor ? 1 : 0;
+                if (code && ! vendor) ++codeButNotVendor;
+                if (vendor && ! code) ++vendorButNotCode;
+            }
+            check (byCode > 0, "wr PIN1: the AU manufacturer code selects rows at all",
+                   "selected " + juce::String (byCode));
+            check (codeButNotVendor == 0 && vendorButNotCode == 0,
+                   "wr PIN1: 'ksWV' and manufacturer==\"Waves\" select the SAME set",
+                   "code=" + juce::String (byCode) + " vendor=" + juce::String (byVendor)
+                       + " code-only=" + juce::String (codeButNotVendor)
+                       + " vendor-only=" + juce::String (vendorButNotCode));
+            {
+                // The case the corpus cannot supply on demand: a vendor whose
+                // NAME contains "Waves" and whose rows are not WaveShell's.
+                // Synthetic, so it runs on every machine, and real if present.
+                juce::PluginDescription wf;
+                wf.name = "Cassette"; wf.manufacturerName = "Wavesfactory";
+                wf.pluginFormatName = "VST3";
+                wf.fileOrIdentifier = "/Library/Audio/Plug-Ins/VST3/Cassette.vst3";
+                check (! echojay::isWaveShellRegistration (wf),
+                       "wr PIN1: a 'Wavesfactory' row is NOT a WaveShell registration");
+                juce::PluginDescription au;   // and the shape it does accept
+                au.name = "CLA-76 (s)"; au.manufacturerName = "Waves";
+                au.pluginFormatName = "AudioUnit";
+                au.fileOrIdentifier = "AudioUnit:Effects/aufx,76CS,ksWV";
+                check (echojay::isWaveShellRegistration (au),
+                       "wr PIN1: and an AU identifier ending ksWV IS one");
+                juce::PluginDescription other;
+                other.name = "Thing"; other.manufacturerName = "Someone";
+                other.pluginFormatName = "AudioUnit";
+                other.fileOrIdentifier = "AudioUnit:Effects/aufx,THNG,SMNE";
+                check (! echojay::isWaveShellRegistration (other),
+                       "wr PIN1: another vendor's AudioUnit is not claimed");
+            }
+
+            // ---- The rows the shipped header offers, off the real registry --
+            const auto fresh = echojay::wavesRegistryFeedRows (loadable, {});
+
+            // ---- wr PIN2: THE COLLAPSE --------------------------------------
+            {
+                juce::StringArray distinctBases;
+                for (const auto& d : loadable)
+                    if (echojay::isWaveShellRegistration (d))
+                        distinctBases.addIfNotAlreadyThere (ChainHost::stripParenthetical (d.name));
+                check (fresh.products == distinctBases.size(),
+                       "wr PIN2: one product per distinct base name",
+                       juce::String (fresh.products) + " vs " + juce::String (distinctBases.size()));
+                check (fresh.products < byCode,
+                       "wr PIN2: and that is FEWER than the registrations",
+                       juce::String (fresh.products) + " products from "
+                           + juce::String (byCode) + " registrations");
+                int suffixed = 0;
+                for (const auto& r : fresh.rows)
+                    if (echojay::channelVariantSuffix (r.name).isNotEmpty()) ++suffixed;
+                check (suffixed == 0,
+                       "wr PIN2: no offered name carries a channel suffix",
+                       juce::String (suffixed) + " suffixed of "
+                           + juce::String ((int) fresh.rows.size()));
+                // Against a fresh feed every product is offered, so the two
+                // numbers reconcile and neither refusal is firing by accident.
+                check ((int) fresh.rows.size() + fresh.alreadyOffered
+                           + fresh.nameTakenByOther == fresh.products,
+                       "wr PIN2: rows + refusals accounts for every product");
+            }
+
+            // ---- wr PIN3: THE VARIANT, so 9c4f629 is not undone -------------
+            {
+                auto chosenFor = [&fresh] (const juce::String& base) -> juce::String
+                {
+                    for (const auto& r : fresh.rows) if (r.name == base) return r.desc.name;
+                    return {};
+                };
+                juce::StringArray regs;
+                for (const auto& d : loadable)
+                    if (echojay::isWaveShellRegistration (d)) regs.add (d.name);
+
+                if (! regs.contains ("CLA-76 (s)"))
+                {
+                    std::cout << "  SKIP  wr PIN3 (CLA-76 not registered on this machine)\n";
+                }
+                else
+                {
+                    check (chosenFor ("CLA-76") == "CLA-76 (s)",
+                           "wr PIN3: a product with (m) and (s) is offered as the STEREO build",
+                           chosenFor ("CLA-76"));
+                    check (chosenFor ("GTR Tuner") == "GTR Tuner (m)",
+                           "wr PIN3: a mono-only product still reaches the feed, as (m)",
+                           chosenFor ("GTR Tuner"));
+                    check (chosenFor ("UltraPitch Shift") == "UltraPitch Shift (m)",
+                           "wr PIN3: {m, m->s} resolves to (m), which keeps the right channel",
+                           chosenFor ("UltraPitch Shift"));
+                }
+                // AND THE AGGREGATE, which is what a witness cannot say: no
+                // offered row loses to another registration of its own product.
+                int beaten = 0; juce::String firstBeaten;
+                for (const auto& r : fresh.rows)
+                    for (const auto& d : loadable)
+                        if (echojay::isWaveShellRegistration (d)
+                            && ChainHost::stripParenthetical (d.name) == r.name
+                            && echojay::channelVariantIsBetter (d.name, r.desc.name))
+                        {
+                            ++beaten;
+                            if (firstBeaten.isEmpty())
+                                firstBeaten = r.desc.name + " beaten by " + d.name;
+                        }
+                check (beaten == 0,
+                       "wr PIN3: every offered row is the best variant of its product",
+                       juce::String (beaten) + " beaten; first: " + firstBeaten);
+            }
+
+            // ---- wr PIN4: an UNCATALOGUED product reaches the feed ----------
+            {
+                auto inCatalog = [] (const juce::String& base)
+                {
+                    for (const auto& e : echojay::wavesCatalog())
+                        if (echojay::wavesAlnumKey (juce::String (e.name))
+                                == echojay::wavesAlnumKey (base))
+                            return true;
+                    return false;
+                };
+                int uncatalogued = 0; juce::String witness;
+                for (const auto& r : fresh.rows)
+                    if (! inCatalog (r.name))
+                    {
+                        ++uncatalogued;
+                        if (witness.isEmpty()) witness = r.name;
+                    }
+                check (uncatalogued > 0,
+                       "wr PIN4: products the catalog never named now reach the model",
+                       juce::String (uncatalogued) + " of "
+                           + juce::String ((int) fresh.rows.size()) + "; first: " + witness);
+                // The named witness, so a count cannot drift into vacuity.
+                bool hasPuigchild = false;
+                for (const auto& r : fresh.rows)
+                    if (r.name.startsWith ("Puigchild")) hasPuigchild = true;
+                bool registryHasPuigchild = false;
+                for (const auto& d : loadable)
+                    if (echojay::isWaveShellRegistration (d) && d.name.startsWith ("Puigchild"))
+                        registryHasPuigchild = true;
+                check (hasPuigchild == registryHasPuigchild,
+                       "wr PIN4: Puigchild 670 is installed, uncatalogued, and offered",
+                       registryHasPuigchild ? "registered" : "not on this machine");
+            }
+
+            // ---- wr PIN5: nothing but Waves comes in through this door ------
+            {
+                int notWaves = 0;
+                for (const auto& r : fresh.rows)
+                    if (! echojay::isWaveShellRegistration (r.desc)) ++notWaves;
+                check (notWaves == 0,
+                       "wr PIN5: every appended row IS a WaveShell registration",
+                       juce::String (notWaves) + " were not");
+                // The rows are the only thing the call site appends, so a
+                // non-Waves plugin cannot enter the feed through this path even
+                // if its name collides with a Waves product's.
+                std::set<juce::String> names, ids;
+                int dupName = 0, dupId = 0;
+                for (const auto& r : fresh.rows)
+                {
+                    if (! names.insert (r.name).second) ++dupName;
+                    if (! ids.insert (r.desc.createIdentifierString()).second) ++dupId;
+                }
+                check (dupName == 0 && dupId == 0,
+                       "wr PIN5: one row per name and one row per registration",
+                       "dupName=" + juce::String (dupName) + " dupId=" + juce::String (dupId));
+            }
+
+            // ---- wr PIN6: COLD START still offers the 69 --------------------
+            {
+                const auto none = echojay::wavesRegistryFeedRows ({}, {});
+                check (none.rows.empty() && none.products == 0,
+                       "wr PIN6: with no registry the header adds nothing");
+                check (echojay::wavesCatalog().size() == 69,
+                       "wr PIN6: the curated catalog is still 69 names",
+                       juce::String ((int) echojay::wavesCatalog().size()));
+                std::ifstream fsc ("Source/PluginScanner.cpp");
+                std::stringstream ssc; ssc << fsc.rdbuf();
+                const auto sc = codeOnly (juce::String (ssc.str()));
+                check (sc.contains ("for (const auto& e : echojay::wavesCatalog())"),
+                       "wr PIN6: and the scanner still injects it (Settings, profile, prompt)");
+                std::ifstream fed ("Source/PluginEditor.cpp");
+                std::stringstream sed_; sed_ << fed.rdbuf();
+                const auto ed = codeOnly (juce::String (sed_.str()));
+                check (ed.contains ("EchoJayAPI::buildPluginInjection(\n"
+                                    "            processorRef.getPluginScanner().getFullPluginList())")
+                       || ed.contains ("buildPluginInjection("),
+                       "wr PIN6: the no-feed fallback still injects the scanner's full list");
+            }
+
+            // ---- wr PIN7: THE WIRING, which is what actually ships ----------
+            {
+                std::ifstream fch ("Source/ChainHost.cpp");
+                std::stringstream sch; sch << fch.rdbuf();
+                const auto src = juce::String (sch.str());
+                const auto ch  = codeOnly (src);
+                check (ch.contains ("#include \"EJWavesRegistryFeed.h\""),
+                       "wr PIN7: buildRecommendable includes the header it is pinned against");
+                const auto body = functionBody (src, "void ChainHost::buildRecommendable");
+                check (body.contains ("echojay::wavesRegistryFeedRows(loadable, resolved)"),
+                       "wr PIN7: it calls the header with the gated entries and the feed so far");
+                check (body.contains ("resolved.push_back({ r.name, r.desc });"),
+                       "wr PIN7: and APPENDS the rows");
+                // No decision at the site: the header owns scope, variant and
+                // both refusals, so a mutation there reddens the pins above.
+                const auto after = body.fromFirstOccurrenceOf ("wavesRegistryFeedRows", false, false);
+                check (! after.contains ("isWaveShellRegistration")
+                       && ! after.contains ("channelVariantIsBetter")
+                       && ! after.contains ("stripParenthetical"),
+                       "wr PIN7: no second copy of the decision at the call site");
+                // ORDER: after the scanner walk (so the catalog's rows keep
+                // their names and positions) and before the cache is filled.
+                const int iLoop   = body.indexOf ("resolved.push_back({ sp.name, it->second });");
+                const int iWaves  = body.indexOf ("wavesRegistryFeedRows");
+                const int iCache  = body.indexOf ("recommendable_          = std::move(resolved);");
+                check (iLoop >= 0 && iWaves > iLoop && iCache > iWaves,
+                       "wr PIN7: appended AFTER the scanner rows and BEFORE the cache is filled",
+                       "loop@" + juce::String (iLoop) + " waves@" + juce::String (iWaves)
+                           + " cache@" + juce::String (iCache));
+                check (body.contains ("+ \", feed=\" + juce::String((int) resolved.size())"),
+                       "wr PIN7: the coverage line reports the feed total it now differs from");
+            }
+
+            // ---- wr PIN8: THE REAL CALLER, on this machine's real inputs ----
+            // buildRecommendable comes from the linked lib, so this is the feed
+            // AS IT SHIPS TODAY. What it can prove without a rebuild: the rows
+            // the header offers are names today's feed does NOT carry, and the
+            // composition adds no duplicate name and no duplicate registration.
+            {
+                PluginScanner sc;
+                sc.loadCache();
+                auto rows = sc.getPlugins();
+                std::set<juce::String> disabled;
+                {
+                    auto f = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                                 .getChildFile ("Application Support/EchoJay/plugin_disabled.json");
+                    if (auto arr = juce::JSON::parse (f.loadFileAsString()).getArray())
+                        for (auto& v : *arr) disabled.insert (v.toString());
+                }
+                PluginScanner::stampEnabled (rows, disabled);
+
+                if (rows.empty())
+                {
+                    std::cout << "  SKIP  wr PIN8 (no plugin_cache.json on this machine)\n";
+                }
+                else
+                {
+                    host.buildRecommendable (rows, {});
+                    const auto before = host.getRecommendableNames();
+                    // The REAL feed table, names and registrations both, which
+                    // is exactly what the shipped call site passes. So these
+                    // numbers are the composition as it will ship, off a
+                    // `before` the linked lib produced from this machine's own
+                    // scanner cache and registry.
+                    const auto add = echojay::wavesRegistryFeedRows (
+                        loadable, host.recommendableEntries());
+
+                    int alreadyInFeed = 0;
+                    for (const auto& r : add.rows)
+                        if (before.contains (r.name)) ++alreadyInFeed;
+                    check (alreadyInFeed == 0,
+                           "wr PIN8: every offered product is a name today's feed does NOT carry",
+                           juce::String (alreadyInFeed) + " were already there");
+                    // AND NOT UNDER ANOTHER NAME EITHER, which is the refusal a
+                    // name comparison cannot see: 64 of these products are in
+                    // today's feed under a catalog MARKETING name whose spelling
+                    // shares nothing with the shell's ("SSL E-Channel" is
+                    // "SSLChannel (s)"). Offering both is one plugin twice.
+                    int wavesBefore = 0, reoffered = 0, feedProducts = 0;
+                    juce::String firstReoffered;
+                    {
+                        std::set<juce::String> feedRegs;
+                        for (const auto& e : host.recommendableEntries())
+                        {
+                            if (! echojay::isWaveShellRegistration (e.desc)) continue;
+                            ++wavesBefore;
+                            // KEYED ON THE PRODUCT, not the registration: a
+                            // catalog row can hold a different channel build of
+                            // the same plugin, and one did.
+                            feedRegs.insert (ChainHost::stripParenthetical (e.desc.name));
+                        }
+                        for (const auto& r : add.rows)
+                            if (feedRegs.count (ChainHost::stripParenthetical (r.desc.name)) > 0)
+                            {
+                                ++reoffered;
+                                if (firstReoffered.isEmpty())
+                                    firstReoffered = r.name + " = " + r.desc.name;
+                            }
+                        feedProducts = (int) feedRegs.size();
+                        // A gap between the two says today's feed already
+                        // carries one product under two names, which the
+                        // product-keyed refusal above depends on seeing.
+                        if (feedProducts != wavesBefore)
+                        {
+                            std::set<juce::String> seen;
+                            for (const auto& e : host.recommendableEntries())
+                                if (echojay::isWaveShellRegistration (e.desc)
+                                    && ! seen.insert (ChainHost::stripParenthetical (e.desc.name)).second)
+                                    std::cout << "  MEASURED  today's feed carries \""
+                                              << e.displayName << "\" -> " << e.desc.name
+                                              << " twice over\n";
+                        }
+                    }
+                    check (reoffered == 0,
+                           "wr PIN8: nor a PRODUCT today's feed already carries under another name",
+                           juce::String (reoffered) + " re-offered; first: " + firstReoffered);
+                    check (! add.rows.empty(),
+                           "wr PIN8: and there are such products on this machine",
+                           juce::String ((int) add.rows.size()) + " of "
+                               + juce::String (add.products));
+
+                    juce::StringArray after = before;
+                    for (const auto& r : add.rows) after.add (r.name);
+                    juce::StringArray uniq;
+                    for (const auto& n : after) uniq.addIfNotAlreadyThere (n);
+                    check (uniq.size() == after.size(),
+                           "wr PIN8: the composed feed carries no duplicate name",
+                           juce::String (after.size() - uniq.size()) + " duplicates");
+                    // before is a PREFIX of after: nothing is reordered, nothing
+                    // is dropped, which is the whole non-Waves argument.
+                    bool prefix = (after.size() >= before.size());
+                    for (int i = 0; prefix && i < before.size(); ++i)
+                        prefix = (after[i] == before[i]);
+                    check (prefix,
+                           "wr PIN8: today's feed survives byte-for-byte as the head of the new one");
+
+                    const auto blockBefore = EchoJayAPI::buildChainInjection (before);
+                    const auto blockAfter  = EchoJayAPI::buildChainInjection (after);
+                    // WHERE THE 69 ACTUALLY LAND, which "N of 69 resolve"
+                    // never said: a curated name can be in the feed and
+                    // pointing at somebody else's plugin.
+                    {
+                        int inFeed = 0, toWaves = 0, toOther = 0, absent = 0;
+                        juce::String firstOther;
+                        for (const auto& e : echojay::wavesCatalog())
+                        {
+                            const juce::String n (e.name);
+                            const ChainHost::RecommendableEntry* hit = nullptr;
+                            for (const auto& r : host.recommendableEntries())
+                                if (r.displayName == n) { hit = &r; break; }
+                            if (hit == nullptr)
+                            {
+                                ++absent;
+                                std::cout << "  MEASURED  curated name absent from the feed: \""
+                                          << n << "\"\n";
+                                continue;
+                            }
+                            ++inFeed;
+                            if (echojay::isWaveShellRegistration (hit->desc)) ++toWaves;
+                            else
+                            {
+                                ++toOther;
+                                if (firstOther.isEmpty())
+                                    firstOther = n + " -> " + hit->desc.name + " ["
+                                               + hit->desc.manufacturerName + "]";
+                            }
+                        }
+                        check (toOther == 0,
+                               "wr PIN9: no curated Waves name points at another vendor's plugin",
+                               juce::String (toOther) + " do; first: " + firstOther);
+                        std::cout << "  MEASURED  of the 69 curated names, " << inFeed
+                                  << " are in the feed (" << toWaves << " on WaveShell rows, "
+                                  << toOther << " elsewhere), " << absent << " absent\n";
+                    }
+                    std::cout << "  MEASURED  Waves rows in the feed before: " << wavesBefore
+                              << " (catalog marketing names), covering "
+                              << (int) feedProducts << " products; after: "
+                              << (feedProducts + (int) add.rows.size()) << " of "
+                              << add.products << " registered\n"
+                              << "  MEASURED  feed " << before.size() << " -> " << after.size()
+                              << " names (+" << (after.size() - before.size()) << "), "
+                              << add.products << " Waves products registered, "
+                              << add.rows.size() << " added, "
+                              << add.alreadyOffered << " already offered, "
+                              << add.nameTakenByOther << " name held elsewhere\n"
+                              << "  MEASURED  [AVAILABLE PLUGINS] block "
+                              << blockBefore.getNumBytesAsUTF8() << " -> "
+                              << blockAfter.getNumBytesAsUTF8() << " bytes (+"
+                              << (blockAfter.getNumBytesAsUTF8() - blockBefore.getNumBytesAsUTF8())
+                              << ")\n";
+                }
+            }
         }
     }
 

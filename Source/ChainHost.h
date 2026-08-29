@@ -166,6 +166,17 @@ public:
     // Display names of resolved entries (for AI prompt injection).
     juce::StringArray getRecommendableNames() const;
 
+    // The feed table itself, names AND the registrations they resolve to.
+    // Exposed for the pins (28 Aug 2026): the registry-sourced Waves rows are
+    // refused against the REGISTRATIONS the feed already carries, and a name
+    // list drops exactly the half of each row that decides that. Header-inline
+    // and read-only, so mapfps_test can call it against the previous build's
+    // lib; it adds no data member, so the object layout is untouched.
+    const std::vector<RecommendableEntry>& recommendableEntries() const noexcept
+    {
+        return recommendable_;
+    }
+
     // name -> fingerprint for the chat body's mapFps field (per-fp exact
     // controls exposure, 9 Aug 2026). Rack slots first - a loaded slot's fp
     // IS the binary the user holds - then recommendable entries resolved

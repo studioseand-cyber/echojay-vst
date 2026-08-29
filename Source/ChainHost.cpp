@@ -2,6 +2,7 @@
 #include "ChainHost.h"
 #include "EJVariantPreference.h"
 #include "EJWavesAlias.h"
+#include "EJWavesRegistryFeed.h"   // Waves candidates come from the scan, not the catalog
 #include "EJParamReads.h"    // 6c section 8: one slot's current reads, header-inline for the pins
 #include "EchoJayParamApply.h"
 #include "EchoJayParamMaps.h"
@@ -5231,14 +5232,59 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
         }
     }
 
+    // WAVES CANDIDATES COME FROM THE REGISTRY, NOT THE CATALOG (28 Aug 2026).
+    // Everything above walks SCANNER rows, so a Waves product could only enter
+    // the feed if the 69-name curated catalog happened to name it. This
+    // machine's registry holds 289 Waves products and the feed carried 64 of
+    // them, so the gate was hiding 225 installed plugins from the model while
+    // the user looked at them in the Chain browser. The catalog is neither
+    // deleted nor bypassed: its rows still resolve in the loop above, at their
+    // own positions, under the marketing names real sessions use, and they are
+    // the only Waves names cold start has. They are simply no longer the
+    // membership test. See EJWavesRegistryFeed.h for the scope predicate, the
+    // collapse and the two refusals.
+    //
+    // APPEND-ONLY, AND THAT IS THE WHOLE OF THE ADDITIVE ARGUMENT: nameMap is
+    // not touched, the loop above is not touched, and no row already in
+    // `resolved` is rewritten, re-pointed or reordered. Every non-Waves
+    // resolution is therefore byte-identical to what it was, by construction
+    // rather than by inspection. NO DECISION LIVES HERE -- the header owns
+    // scope, collapse, variant and both refusals, so the pins can run the
+    // shipped bytes against the real registry without a rebuild.
+    const int scannerResolved = (int) resolved.size();
+    const auto wavesRows = echojay::wavesRegistryFeedRows(loadable, resolved);
+    for (const auto& r : wavesRows.rows)
+    {
+        pushedNames.insert(r.name);
+        resolved.push_back({ r.name, r.desc });
+    }
+    // Logged on EVERY build, including at zero, for the same reason the
+    // arch-withheld line above is: a Waves catalogue that silently stops
+    // reaching the model looks exactly like a model that stopped naming Waves
+    // plugins. Zero under a VST3 format filter is the expected reading (the
+    // registrations are AudioUnits), and so is zero with no entries cache.
+    EchoJay_NSLog(("EJScan: " + juce::String((int) wavesRows.rows.size())
+                   + " Waves product(s) added from the registry, of "
+                   + juce::String(wavesRows.products) + " registered ("
+                   + juce::String(wavesRows.alreadyOffered)
+                   + " already offered under another name, "
+                   + juce::String(wavesRows.nameTakenByOther)
+                   + " name(s) held by a different plugin)").toRawUTF8());
+
     // The resolver coverage triple, relocated from a never-rendered label
     // (13 Aug 2026, the dead-layer sweep) and promoted from DBG to a
     // release-build line: unmatched is the number that would have flagged a
     // starving resolver, and it existed nowhere a release build could see.
-    // N resolved here MUST equal feed= on the EJMapFps line - both count
-    // recommendable_. A divergence between those two lines is a FINDING
-    // (two counts of one population disagreeing), not a rounding
-    // difference.
+    // THE NUMBER THAT MUST EQUAL feed= ON THE EJMapFps LINE IS feed= HERE,
+    // NOT resolved= (28 Aug 2026). Both still count recommendable_, but
+    // recommendable_ no longer comes from the scanner walk alone: `resolved`
+    // is the scanner half and keeps the identity that made this line
+    // checkable at a glance,
+    //     enabled = resolved + duplicates + unmatched,
+    // while the registry-sourced Waves rows are named separately and the two
+    // are summed into feed=. A divergence between feed= here and feed= on the
+    // EJMapFps line is a FINDING (two counts of one population disagreeing),
+    // not a rounding difference.
     // input and excluded ride the line (13 Aug 2026, the Brainworx 56) so
     // the accounting is checkable on ONE line: input - excluded = enabled,
     // and excluded against the EJScan set-size lines is one subtraction in
@@ -5254,13 +5300,15 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
     // With rows unique, excluded ROWS equals excluded UIDS; a gap means
     // duplicate rows have come back, and the line says so itself instead of
     // waiting for someone to derive it by hand.
-    EchoJay_NSLog(("EJScan: resolver rebuilt, " + juce::String((int) resolved.size())
+    EchoJay_NSLog(("EJScan: resolver rebuilt, " + juce::String(scannerResolved)
                    + " resolved (input=" + juce::String((int) allPlugins.size())
                    + ", enabled=" + juce::String(enabledCount)
                    + ", excluded=" + juce::String(excludedRows)
                    + " from " + juce::String((int) excludedUids.size()) + " uid(s)"
                    + ", duplicates=" + juce::String(duplicateNames)
-                   + ", unmatched=" + juce::String(enabledCount - (int) resolved.size() - duplicateNames)
+                   + ", unmatched=" + juce::String(enabledCount - scannerResolved - duplicateNames)
+                   + ", wavesFromRegistry=" + juce::String((int) wavesRows.rows.size())
+                   + ", feed=" + juce::String((int) resolved.size())
                    + ")"
                    + (excludedRows != (int) excludedUids.size()
                           ? juce::String(" [DUPLICATE ROWS: excluded rows exceed uids]")
