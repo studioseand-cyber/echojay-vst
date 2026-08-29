@@ -39,7 +39,8 @@
 #include <sys/stat.h>   // ::chmod for machine_id (0600)
 
 #include "EchoJayParamExtractor.h"
-#include "EchoJayAuRegistry.h"   // the one AU walk, shared with ejmap
+#include "EchoJayAuRegistry.h"
+#include "EchoJayAuCoverage.h"   // the one AU walk, shared with ejmap
 
 // Same default the plugin compiles in (Source/EchoJayAPI.cpp); the real
 // endpoint is read from auth.json when the user has ever logged in.
@@ -439,13 +440,42 @@ static int runBootstrap()
         for (const auto& f : home.getChildFile (d).findChildFiles (juce::File::findDirectories | juce::File::findFiles, false))
             bundles.add (f);
 
-    int fresh = 0, failed = 0, reused = 0, skippedMarked = 0;
+    // THE FILE WALK KEEPS VST3; THE REGISTRY PASS BELOW TAKES AU (29 Aug 2026).
+    // A shell bundle answers a PATH with one component, so the 13 WaveShell
+    // bundles yielded 13 fingerprints against ~600 Waves plugins. The registry
+    // reaches each component individually (measured 27 Jul: Waves 614/614 ok).
+    // The two walks are PARTITIONED rather than reconciled: a .component yields
+    // only AU types and a .vst3 only VST3 types, so they cover disjoint format
+    // spaces and nothing is instantiated twice. That matters because the ledgers
+    // cannot be reconciled -- this one keys on bundle path with sig
+    // "version|mtime", the registry's on MD5(identifier) with sig = identifier.
+    //
+    // SUPERSET IS CHECKED, NOT ASSUMED. Dropping AU from this walk is only safe
+    // while the census really does reach every component the bundles declare, so
+    // that is computed here, every run, from Info.plist alone (no instantiation).
+    // Anything unprovable stays in this walk. Measured today: 748 of 763 covered,
+    // 15 carved, ZERO of them for a missing identifier.
+    const auto census   = echojay::auregistry::buildCensus();
+    const auto coverage = echojay::aucoverage::assess (bundles, census);
+    logLine ("au coverage: " + juce::String (coverage.componentsCovered) + " of "
+             + juce::String (coverage.componentsSeen)
+             + " component bundle(s) covered by the registry census ("
+             + juce::String ((int) census.targets.size()) + " target(s)); "
+             + juce::String ((int) coverage.carved.size()) + " carved back to the file walk");
+    // NON-SILENT BY CONTRACT. A carve-out that does not say what it holds is a
+    // filter nobody can audit; every entry prints with its reason.
+    for (const auto& c : coverage.carved)
+        logLine ("  carve-out: " + c.bundle.getFileName() + "  (" + c.why + ")");
+
+    int fresh = 0, failed = 0, reused = 0, skippedMarked = 0, registryCovered = 0;
 
     for (const auto& b : bundles)
     {
         const auto ext = b.getFileExtension().toLowerCase();
         if (ext != ".vst3" && ext != ".component") continue;
         if (b.getFileName().startsWithIgnoreCase ("EchoJay")) continue;
+        // AU that the registry pass will reach: skip it here, or it loads twice.
+        if (ext == ".component" && coverage.covers (b)) { ++registryCovered; continue; }
 
         const auto key = b.getFullPathName();
         const auto sig = bundleSignature (b);
@@ -512,8 +542,87 @@ static int runBootstrap()
                 for (auto& fp : *arr) allFps.addIfNotAlreadyThere (fp.toString());
     logLine ("plugins: " + juce::String (fresh) + " extracted, " + juce::String (reused)
              + " reused (unchanged), " + juce::String (failed) + " failed, "
-             + juce::String (skippedMarked) + " skip-marked; "
+             + juce::String (skippedMarked) + " skip-marked, "
+             + juce::String (registryCovered) + " left to the registry pass; "
              + juce::String (allFps.size()) + " fingerprints total");
+
+    // ---- THE REGISTRY PASS (29 Aug 2026) ---------------------------------
+    // Every AU the census enumerated, dispatched BY IDENTIFIER to the same
+    // isolated worker. The worker already accepts an identifier as readily as a
+    // path (see its argv note), so nothing about it changes, and the identity
+    // write below already builds identityToFp from whatever samples land in
+    // samplesDir -- registry-sourced samples flow through untouched.
+    //
+    // ITS OWN LEDGER, DELIBERATELY. au_registry_ledger keys on MD5(identifier)
+    // with sig = the identifier; this file keys on bundle path with sig
+    // "version|mtime". Merging them would mean inventing a key that is neither.
+    // They stay disjoint and each keeps the delta rule that suits it: here a
+    // changed bundle signature re-extracts, there a TERMINAL status is final and
+    // only timeout/crashed retry (a hang may be a one-off licensing dialog).
+    {
+        auto auLedgerFile = dir.getChildFile ("au_registry_ledger.json");
+        auto auLedger = readJsonFile (auLedgerFile);
+        juce::DynamicObject::Ptr auLed = auLedger.getDynamicObject() != nullptr
+            ? juce::DynamicObject::Ptr (auLedger.getDynamicObject())
+            : juce::DynamicObject::Ptr (new juce::DynamicObject());
+        juce::DynamicObject::Ptr done = auLed->getProperty ("done").getDynamicObject();
+        if (done == nullptr) { done = new juce::DynamicObject(); auLed->setProperty ("done", juce::var (done.get())); }
+        auto saveAu = [&] { writeJsonFileAtomic (auLedgerFile, juce::var (auLed.get())); };
+        auto isTerminal = [] (const juce::String& st) {
+            return st == "ok" || st == "no-types" || st == "no-data"
+                || st == "license-refused" || st == "load-failed";
+        };
+        int rOk = 0, rSkip = 0, rFail = 0, idx = 0;
+        for (const auto& t : census.targets)
+        {
+            ++idx;
+            const auto keyId = juce::String (juce::MD5 (t.identifier.toUTF8()).toHexString());
+            const auto prior = done->getProperty (juce::Identifier (keyId))
+                                   .getProperty ("status", juce::var()).toString();
+            if (prior.isNotEmpty() && isTerminal (prior)) { ++rSkip; continue; }
+
+            auto workDir = dir.getChildFile ("bootstrap_au_work");
+            workDir.deleteRecursively(); workDir.createDirectory();
+            // Started-marker before the spawn, the same crash discipline the
+            // file walk uses: a plugin that takes the driver down is skipped at
+            // this identifier next run instead of crash-looping the sweep.
+            {
+                juce::DynamicObject::Ptr e = new juce::DynamicObject();
+                e->setProperty ("status", "started");
+                e->setProperty ("sig", t.identifier);
+                e->setProperty ("identifier", t.identifier);
+                e->setProperty ("vendor", t.vendorName);
+                e->setProperty ("extractorVersion", echojay::ExtractorConfig{}.extractorVersion);
+                done->setProperty (juce::Identifier (keyId), juce::var (e.get()));
+                saveAu();
+            }
+            const auto res = runIsolatedWorkerOn (t.identifier, juce::String(), workDir);
+            juce::StringArray fpList;
+            for (const auto& f : workDir.findChildFiles (juce::File::findFiles, false, "*.json"))
+            {
+                fpList.add (f.getFileNameWithoutExtension());
+                f.moveFileTo (samplesDir.getChildFile (f.getFileName()));
+            }
+            workDir.deleteRecursively();
+            juce::DynamicObject::Ptr e = new juce::DynamicObject();
+            stampLedgerEntry (e, t.identifier, res);
+            e->setProperty ("identifier", t.identifier);
+            e->setProperty ("vendor", t.vendorName);
+            juce::Array<juce::var> fv; for (const auto& f : fpList) fv.add (f);
+            e->setProperty ("fps", juce::var (fv));
+            done->setProperty (juce::Identifier (keyId), juce::var (e.get()));
+            saveAu();
+            if (res.status == "ok") ++rOk; else ++rFail;
+            for (const auto& f : fpList) allFps.addIfNotAlreadyThere (f);
+            if (idx % 100 == 0)
+                logLine ("  registry " + juce::String (idx) + "/"
+                         + juce::String ((int) census.targets.size()));
+        }
+        saveAu();
+        logLine ("registry: " + juce::String (rOk) + " extracted, " + juce::String (rSkip)
+                 + " terminal-skipped, " + juce::String (rFail) + " failed; "
+                 + juce::String (allFps.size()) + " fingerprints total after both walks");
+    }
 
     // Start from the existing bootstrap cache: on an incremental run the
     // samples for unchanged plugins are long gone, but their identity index
