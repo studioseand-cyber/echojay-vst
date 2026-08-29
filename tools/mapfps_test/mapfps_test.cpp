@@ -3245,16 +3245,21 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             // asserts the CORRECT behaviour (both paths resolve, and agree on
             // stereo), so a regression to the mono build reddens it again.
             //
-            // WHAT FIXED IT IS DELIBERATELY NOT RECORDED, because it was not
-            // established and an asserted cause gets believed. Checked and RULED
-            // OUT: the 29 Aug identity merge (chain_fp_scan.json 90 -> 853,
-            // client index 238 -> 899). resolveOfferedName cannot see it - its
-            // body references neither identityToFp_ nor paramMaps_ (measured: 0)
-            // - and its source is unchanged since 57aa54f. What IS observable:
-            // (m) precedes (s) in entries_, so a resolveByName hit would return
-            // MONO; the stereo answer is insertPreferredBase's rank, which means
-            // recommendable_ answered and resolveByName missed. Why it missed is
-            // open, and is the thing to chase if this pin ever moves again.
+            // WHAT FIXED IT: 28d3f53, "Prefer the stereo registration in the
+            // resolver, not only in the feed" (29 Aug 07:27), which replaced this
+            // ladder's match rungs with EJNameLadder.h. The witness pin and the
+            // fix arrived in the SAME commit, so it was green only while the
+            // gate still linked a lib built before it -- `now` came from the
+            // stale archive and `then` from the newly compiled header. Rebuild
+            // the lib and the two converge, which is the whole point of the
+            // change and is what reddened the pin. Standing hazard, not a
+            // surprise: mapfps_test links the PREVIOUS build's SharedCode.
+            //
+            // RULED OUT on the way, and recorded so nobody re-runs it: the 29 Aug
+            // identity merge (chain_fp_scan.json 90 -> 853, client index
+            // 238 -> 899). resolveOfferedName cannot see it - its body references
+            // neither identityToFp_ nor paramMaps_ (measured: zero). It was the
+            // obvious candidate and it was the wrong one.
             {
                 const auto now  = host.resolveOfferedName ("CLA-76");   // shipped, from the lib
                 const auto then = ladder (poolEmpty, "CLA-76");         // the ladder, compiled here
