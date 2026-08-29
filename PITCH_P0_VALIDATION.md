@@ -1772,3 +1772,38 @@ chromatic, which acquits the key entirely. The reported magnitudes
 ran the pre-§16.13 grain path (the defect above), whose roughness made
 the external tracker exaggerate — the same instrument hazard the reporter
 flagged themselves.
+
+## §17 The shift-gated bleed, and natural's character — read these together (29 Aug 2026 ruling)
+
+### §17.1 The gate, and the ACCEPTED natural delta
+
+The drift-bleed is gated on |ratio−1| against its own cap (taper 0.7–1.3 of
+cap, 100 ms pole; EedPsolaEngine spliceSample). Below the cap the bleed can
+bound drift — an equilibrium exists; above it, accumulation outruns the cap,
+splices do the bounding, and a running bleed is pure convergence tax:
+measured on a noiseless steady tone at hard, 3.38 c note-centre undershoot
+with the ungated bleed against 0.42 c without. The gate removes the tax
+(hard reads 0.42 c / 99.7 % within-3 c with the gated bleed ON).
+
+**The natural-mode delta is a KNOWN, ACCEPTED consequence, not a
+regression.** Field figures on the standing NEW set, gated vs ungated:
+vib-off 52 vs 51 rough spans (0.19 s both), vib-on 59 vs 56 (+0.01 s),
+worst deficits −0.39 vs −0.34 and −0.62 vs −0.54, inversions 0 in all.
+Natural's older, slightly lower numbers were partly BOUGHT BY THE TAX —
+the ungated bleed was detuning sustained corrections by up to 3 cents
+everywhere, including natural. Removing the tax and keeping its side
+effect is not available. Ruled and accepted 29 Aug 2026; do not widen or
+soften the taper to buy these spans back — that fits to a subsidised
+number — and do not reverse the gate on the strength of this delta.
+
+### §17.2 Natural leaves most of a sustained offset standing — BY DESIGN
+
+A steady tone 20 c off-grid through the natural preset comes out 17 c
+off-grid. That is flex 55 / humanize 60 doing exactly what their schema
+text promises — expressive deviation is left alone, sustained notes are
+not frozen — and it is why every absolute tuning column measured at
+natural reads "loose" against Antares-at-hard or EchoJay-at-hard.
+It is the preset's CHARACTER, not a convergence defect. Before chasing
+any natural-mode tuning number, re-read this section and the hard-mode
+history that produced it (the settings audit: an entire investigation
+optimised natural while the complaint lived at hard).
