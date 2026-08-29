@@ -114,7 +114,10 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "where concert pitch comes from. auto follows the TUNING EchoJay "
           "detected in the music, so a track cut at 441.3 Hz is corrected to "
           "441.3 rather than dragged to 440 and left sitting subtly wrong "
-          "against everything else. manual uses reference_hz as set",
+          "against everything else - but NEVER from this channel itself: a "
+          "grid derived from the signal being corrected is circular, so when "
+          "the only measurable material is this channel (a solo instance), "
+          "auto falls back to 440. manual uses reference_hz as set",
           false, { "auto", "manual" } },
 
         { EedPitchProcessor::kReferenceHz, "Hz",
@@ -526,7 +529,10 @@ void EedPitchProcessor::refreshAutoKey()
     if (! keyAuto && ! refAuto)
     {
         const juce::ScopedLock sl (autoLock_);
-        autoState_.active = false;
+        autoState_.active         = false;
+        autoState_.refAuto        = false;
+        autoState_.refApplied     = correct_.getReferenceHz();
+        autoState_.refSelfIgnored = false;
         return;
     }
 
@@ -565,11 +571,28 @@ void EedPitchProcessor::refreshAutoKey()
         }
     }
 
-    if (refAuto && usable && f.tuningHz > 0.0f
-        && std::abs (f.tuningHz - lastAutoTuning_) > 0.05f)
+    // THE CIRCULARITY GUARD (29 Aug 2026 ruling): auto must never derive
+    // the grid from the signal being corrected. A fact whose primary came
+    // from THIS instance's own channel (selfDerived, same publisher) is a
+    // loop closing on its own output - a flat singer defines a flat grid
+    // and correction becomes a no-op in the mean. Measured on the standing
+    // reference: the installed default corrected Sean's take to its own
+    // 439.1 Hz, -3.4c flat of the Antares grid ("never arrives at the
+    // note"). Such a fact is treated as UNMEASURED: fall back to 440,
+    // never to the channel itself. The fallback is applied actively, not
+    // by omission - on a solo instance auto now IS manual-440.
+    bool refCircular = false;
+    if (refAuto)
     {
-        correct_.setReferenceHz (f.tuningHz);
-        lastAutoTuning_ = f.tuningHz;
+        refCircular = f.selfDerived && f.publisherId != 0
+                   && f.publisherId == keyFeedSelfId_.load (std::memory_order_relaxed);
+        const float wantRef = (usable && ! refCircular && f.tuningHz > 0.0f)
+                                ? f.tuningHz : 440.0f;
+        if (std::abs (wantRef - lastAutoTuning_) > 0.05f)
+        {
+            correct_.setReferenceHz (wantRef);
+            lastAutoTuning_ = wantRef;
+        }
     }
 
     const juce::ScopedLock sl (autoLock_);
@@ -581,6 +604,9 @@ void EedPitchProcessor::refreshAutoKey()
     autoState_.conf       = f.confidence;
     autoState_.tuningHz   = f.tuningHz;
     autoState_.sourceName = juce::String (juce::CharPointer_ASCII (f.sourceName));
+    autoState_.refAuto        = refAuto;
+    autoState_.refApplied     = correct_.getReferenceHz();
+    autoState_.refSelfIgnored = refAuto && refCircular;
 }
 
 void EedPitchProcessor::resetParamsToDefaults()

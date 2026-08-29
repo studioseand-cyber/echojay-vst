@@ -332,6 +332,11 @@ private:
     bool existenceOk_ = false;
 public:
 
+    // The owning instance's KeyFeed identity - set once by the owner right
+    // after construction, applied to every builtin created afterwards (see
+    // keyFeedOwnerId_ below).
+    void setKeyFeedOwnerId (uint64_t id) noexcept { keyFeedOwnerId_ = id; }
+
     // Count stats from the last buildRecommendable() call.
     int getRecommendableCount()   const noexcept { return (int)recommendable_.size(); }
     int getEnabledInputCount()    const noexcept { return recommendableEnabledIn_; }
@@ -1294,6 +1299,12 @@ private:
 
     // ---- Borrow mode internals (spec §1/§2) -------------------------------
     const Mode mode_ = Mode::Primary;
+    // The owning instance's KeyFeed identity (see EedKeyFeed.h,
+    // KeyFeedConsumer): handed to every builtin created here so a
+    // feed-consuming device can recognise a fact derived from its own
+    // channel. 0 until the owner sets it (Links never publish, so their
+    // builtins simply never match a publisher).
+    uint64_t keyFeedOwnerId_ = 0;
     struct BorrowPoolEntry {
         juce::AudioProcessorGraph::Node::Ptr node;
         juce::PluginDescription desc;

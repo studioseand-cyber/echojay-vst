@@ -261,6 +261,12 @@ EchoJayProcessor::EchoJayProcessor()
         .withInput("Input", juce::AudioChannelSet::stereo(), true)
         .withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
+    // KeyFeed circularity guard (29 Aug 2026): builtins hosted here learn
+    // which instance hosts them, so a feed fact derived from THIS channel's
+    // own audio is recognisable by this instance's own consumers. Must match
+    // publishKeyFeed's publisherId stamp.
+    chainHost.setKeyFeedOwnerId ((uint64_t) (uintptr_t) this);
+
     // Session C: join the PROCESS-WIDE poller. Registered here rather than
     // from the editor, so the poll exists for the whole life of this instance
     // and does not depend on a window ever being opened, and so an editor
@@ -1835,9 +1841,18 @@ void EchoJayProcessor::publishKeyFeed(const KeySources& sources)
         fact.ageMs      = p->ageMs;
         fact.fromBus    = p->kind == KeySourceReading::Kind::BusLink
                        || p->kind == KeySourceReading::Kind::SelfBus;
+        // Circularity provenance (29 Aug 2026): did this fact's primary come
+        // from THIS instance's own channel audio? Self analysis and the local
+        // chain trivially did; a capture did when the offline pass read this
+        // channel rather than a bus Link's.
+        fact.selfDerived = p->kind == KeySourceReading::Kind::SelfBus
+                        || p->kind == KeySourceReading::Kind::LocalChain
+                        || (p->kind == KeySourceReading::Kind::Capture
+                            && p->detail.contains ("(this channel)"));
         const auto nm = p->name.isNotEmpty() ? p->name : juce::String ("EchoJay");
         nm.copyToUTF8 (fact.sourceName, (int) sizeof (fact.sourceName));
     }
+    fact.publisherId = (uint64_t) (uintptr_t) this;
     echojay::KeyFeed::instance().publish (fact);
 }
 

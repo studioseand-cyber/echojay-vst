@@ -3,6 +3,7 @@
 #include "EchoJayParamApply.h"
 #include "EchoJayParamMaps.h"
 #include "SurgicalEqProcessor.h"   // built-in EQ device (see kBuiltinFormat)
+#include "EedKeyFeed.h"            // KeyFeedConsumer: builtins learn their owner
 #include "LinkShm.h"               // the EQ curve's grid, clamp and point count
 #include "AUEnumerator.h"
 #include "NativeClip.h"   // EchoJay_NSLog
@@ -4212,6 +4213,8 @@ bool ChainHost::planStageOne(const juce::PluginDescription& d, juce::String& why
             proc = dev->create();
         if (proc == nullptr)
         { whyNot = d.name + " is a built-in this build does not carry"; return false; }
+        if (auto* kc = dynamic_cast<echojay::KeyFeedConsumer*>(proc.get()))
+            kc->setKeyFeedSelfId(keyFeedOwnerId_);
     }
     else
     {
@@ -4654,6 +4657,8 @@ juce::String ChainHost::loadBuiltinNow(const juce::PluginDescription& desc)
     std::unique_ptr<juce::AudioProcessor> proc = device->create();
     if (!proc)
         return "built-in device \"" + desc.name + "\" failed to construct";
+    if (auto* kc = dynamic_cast<echojay::KeyFeedConsumer*>(proc.get()))
+        kc->setKeyFeedSelfId(keyFeedOwnerId_);
     if (mode_ == Mode::Borrowed) ++borrowFresh_;
 
     proc->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);

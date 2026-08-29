@@ -22,10 +22,17 @@
 #include "EedKeyFeed.h"
 #include "viz/PitchRibbonView.h"
 
-class EedPitchProcessor : public EedDeviceProcessor
+class EedPitchProcessor : public EedDeviceProcessor,
+                          public echojay::KeyFeedConsumer
 {
 public:
     EedPitchProcessor() = default;
+
+    // KeyFeedConsumer: which instance hosts this device. Used by the auto
+    // reference to recognise - and refuse - a tuning grid derived from the
+    // very channel being corrected (see refreshAutoKey).
+    void setKeyFeedSelfId (uint64_t id) override
+    { keyFeedSelfId_.store (id, std::memory_order_relaxed); }
 
     const juce::String getName() const override { return "EchoJay Pitch"; }
 
@@ -83,6 +90,11 @@ public:
         float        conf     = 0.0f;
         float        tuningHz = 440.0f;
         juce::String sourceName;
+        // The reference line (29 Aug 2026): what grid the corrector is on
+        // and WHY - the state whose invisibility cost days.
+        bool  refAuto        = false;
+        float refApplied     = 440.0f;
+        bool  refSelfIgnored = false;   // auto saw only this channel: using 440
     };
     AutoKeyState autoKeyState() const;
 
@@ -195,6 +207,7 @@ private:
 
     std::atomic<bool> keyAuto_ { true };
     std::atomic<bool> refAuto_ { true };
+    std::atomic<uint64_t> keyFeedSelfId_ { 0 };
     // Carried ACROSS blocks. The slice before the first hop of a block
     // continues whatever the last hop of the previous block decided - resetting
     // these per block would make the first slice of every block use a stale or

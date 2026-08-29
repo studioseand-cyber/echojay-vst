@@ -456,11 +456,18 @@ void EedPitchEditor::paintGuardPanel (juce::Graphics& g, juce::Rectangle<int> ar
 void EedPitchEditor::paintKeyAttribution (juce::Graphics& g, juce::Rectangle<int> area)
 {
     const auto st = proc_.autoKeyState();
+    // The reference line is ALWAYS shown with its provenance (29 Aug 2026
+    // ruling): a vocal silently tuned to a grid derived from itself was
+    // invisible state that cost days. One suffix tells the whole story.
+    const juce::String refLine =
+        ! st.refAuto        ? "   ref " + juce::String (st.refApplied, 1) + " Hz (manual)"
+        : st.refSelfIgnored ? "   ref 440.0 Hz (auto: only this track measurable - not followed)"
+        : "   ref " + juce::String (st.refApplied, 1) + " Hz (auto)";
     if (! st.active)
     {
         g.setColour (C::text3);
         g.setFont (uiFont (9.0f));
-        g.drawText ("key set by hand", area, juce::Justification::centredLeft);
+        g.drawText ("key set by hand" + refLine, area, juce::Justification::centredLeft);
         return;
     }
 
@@ -477,6 +484,7 @@ void EedPitchEditor::paintKeyAttribution (juce::Graphics& g, juce::Rectangle<int
              << "  " << juce::String (st.tuningHz, 1) << " Hz"
              << "  conf " << juce::String (st.conf, 2);
         if (st.sourceName.isNotEmpty()) line << "   from \"" << st.sourceName << "\"";
+        line << refLine;
         g.drawText (line, area, juce::Justification::centredLeft);
         return;
     }
@@ -485,10 +493,11 @@ void EedPitchEditor::paintKeyAttribution (juce::Graphics& g, juce::Rectangle<int
     // was rejected will read chromatic correction as the device misbehaving.
     g.setColour (C::amber);
     g.setFont (uiFont (9.0f, true));
-    g.drawText (st.conf > 0.0f
+    g.drawText ((st.conf > 0.0f
                     ? "auto: key confidence " + juce::String (st.conf, 2)
                         + " too low - using CHROMATIC"
-                    : juce::String ("auto: no key detected - using CHROMATIC"),
+                    : juce::String ("auto: no key detected - using CHROMATIC"))
+                    + refLine,
                 area, juce::Justification::centredLeft);
 }
 
