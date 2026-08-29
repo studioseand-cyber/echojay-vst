@@ -168,6 +168,7 @@ public:
     {
         fs_ = sampleRate > 0.0 ? sampleRate : 48000.0;
         bleedTau_ = 0.1 * fs_;
+        bleedGateK_ = 1.0 / (0.1 * fs_);
         carryLimit_ = (double) carryMs_ * 0.001 * fs_;
 
         const double worstPeriod = fs_ / std::max (10.0f, worstCaseLowestF0Hz);
@@ -1465,10 +1466,29 @@ private:
         // that occurs - and REVERTED by ruling, 29 Aug 2026: extra
         // machinery justified only by a regime the measurement says does
         // not happen. See commit 1151b4b for the latch design and numbers.)
+        //
+        // SHIFT-GATED (29 Aug 2026 ruling): the bleed can bound drift only
+        // while |r-1| < kBleedMaxRate - below the cap an equilibrium
+        // exists; above it accumulation outruns the cap, splices do the
+        // bounding anyway, and a running bleed is pure convergence tax
+        // (measured on a noiseless steady tone at hard: 3.38c note-centre
+        // undershoot with the bleed on vs 0.42c off). The gate is a smooth
+        // TAPER of |r-1|/cap (1 below 0.7, 0 above 1.3) through a 100 ms
+        // one-pole. It cannot chatter: there is no feedback path - the
+        // gate depends only on the corrector-side ratio, which the bleed's
+        // output-side pitch effect never reaches - so it can only be
+        // DRIVEN, and a vibrato crossing the band at ~6 Hz is attenuated
+        // ~4x by the ~1.6 Hz pole on top of the near-equilibrium bleed
+        // already being small. Sustained correction runs untaxed; the
+        // near-zero-shift blink discharges the bleed was built for keep it.
         if (driftBleed_)
         {
+            const double x = std::fabs (r - 1.0) / kBleedMaxRate;
+            const double gT = x <= 0.7 ? 1.0 : x >= 1.3 ? 0.0 : (1.3 - x) / 0.6;
+            bleedGate_ += (gT - bleedGate_) * bleedGateK_;
             const double b = std::clamp (spliceDrift_ / bleedTau_,
-                                         -kBleedMaxRate, kBleedMaxRate);
+                                         -kBleedMaxRate, kBleedMaxRate)
+                           * bleedGate_;
             spliceDrift_ -= b;
         }
 
@@ -1585,6 +1605,8 @@ private:
     // 3 cents as a read-rate offset: 2^(3/1200)-1. See spliceSample.
     static constexpr double kBleedMaxRate = 0.00173465;
     double bleedTau_  = 4800.0;    // set in prepare(): 100 ms at fs
+    double bleedGate_ = 1.0;       // smoothed shift gate (see spliceSample)
+    double bleedGateK_ = 1.0 / 4800.0;   // 100 ms pole, set in prepare()
     bool   driftBleed_ = false;
     float  carryMs_ = 0.0f;        // drift carry threshold; 0 = off
     double carryLimit_ = 0.0;      // ...in samples, set with fs
