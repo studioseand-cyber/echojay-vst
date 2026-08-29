@@ -267,6 +267,67 @@ int main (int argc, char** argv)
                  "over %.0fms starting %.2fs\n",
                  notesSplit, notes, maxSpansInNote, maxNoteMs, worstNoteAt / fs);
 
+    // MISCLASSIFICATION SWEEP (29 Aug 2026 ruling): drive a real engine
+    // with audio-verified bridging at each threshold, fed the same gated
+    // slices, and score its ACTUAL bridge decisions against this tool's
+    // gap classification. Two error types, very different costs:
+    //   wrongly bridged = census-real gap with >25% bridge coverage
+    //                     (wet played through a real consonant)
+    //   wrongly left    = census-false-split with <75% coverage
+    //                     (a blink seam survives)
+    std::printf ("\nbridge sweep (engine decisions vs census classification):\n");
+    std::printf ("thresh, runs, bridged_ms, wrongly_bridged/real, wrongly_left/false\n");
+    for (float th : { 0.5f, 0.6f, 0.7f, 0.8f })
+    {
+        float worst2 = PitchEngine::voiceRange (0).fMinHz;
+        for (int t = 1; t < PitchEngine::kNumVoiceTypes; ++t)
+            worst2 = std::min (worst2, PitchEngine::voiceRange (t).fMinHz);
+        PsolaEngine e;
+        e.prepare (fs, 256, PitchEngine::voiceRange (PitchEngine::kLowMale).fMinHz, worst2);
+        {
+            PitchEngine lr; lr.prepare (fs, 256); lr.setVoiceType (PitchEngine::kLowMale);
+            e.setPitchLagSamples (lr.pitchLagFor (PitchEngine::kLowMale));
+        }
+        e.setF0Bridge (100.0f, th);
+        e.debugRecordPhaseEvents (true);
+        std::vector<float> scratch (256);
+        float f0 = 0.0f; bool v = false; size_t hi = 0;
+        for (size_t p = 0; p + 256 <= in.size(); p += 256)
+        {
+            size_t cursor = p;
+            while (hi < hops.size() && hops[hi].pos < p + 256)
+            {
+                const size_t end = std::clamp ((size_t) hops[hi].pos, cursor, p + 256);
+                if (end > cursor)
+                { e.process (in.data() + cursor, scratch.data(), (int) (end - cursor), f0, v, 0.0f); cursor = end; }
+                f0 = hops[hi].f0; v = hops[hi].voiced; ++hi;
+            }
+            if (cursor < p + 256)
+                e.process (in.data() + cursor, scratch.data(), (int) (p + 256 - cursor), f0, v, 0.0f);
+        }
+        double bridgedMs = 0;
+        for (const auto& b : e.debugBridges()) bridgedMs += 1000.0 * b.len / fs;
+        int wrongBridged = 0, wrongLeft = 0, nReal = 0, nFalse = 0;
+        for (size_t i = 0; i + 1 < spans.size(); ++i)
+        {
+            const long g0 = spans[i].e, g1 = spans[i + 1].s;
+            if (g1 <= g0) continue;
+            long cover = 0;
+            for (const auto& b : e.debugBridges())
+            {
+                const long b0 = std::max ((long) b.pos, g0);
+                const long b1 = std::min ((long) b.pos + b.len, g1);
+                if (b1 > b0) cover += b1 - b0;
+            }
+            const double frac = (double) cover / (double) (g1 - g0);
+            if (merge[i]) { ++nFalse; if (frac < 0.75) ++wrongLeft; }
+            else          { ++nReal;  if (frac > 0.25) ++wrongBridged; }
+        }
+        std::printf ("  %.1f, %3d, %6.0f, %d/%d, %d/%d\n", th,
+                     (int) e.debugBridges().size(), bridgedMs,
+                     wrongBridged, nReal, wrongLeft, nFalse);
+    }
+
     // Every false-split gap listed (they are the discharge sites a fix
     // would remove): time, length, mid-gap periodicity, flank cents.
     std::printf ("\nfalse-split gaps (time, len ms, mid periodicity, flank cents):\n");

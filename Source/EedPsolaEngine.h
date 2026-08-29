@@ -233,7 +233,7 @@ public:
         spliceFadeLen_ = 0; spliceFadePos_ = 0; spliceT_ = 0;
         methodMix_ = 0.0f;
         uvRun_ = 0;
-        bleedGoal_ = 0.0;
+        bridgeSeedT_ = 0.0; bridgeLen_ = 0.0;
     }
 
     // The active voice_type's floor. Changes the reported latency, which the
@@ -379,6 +379,18 @@ public:
     void setDriftBleed (bool on) noexcept { driftBleed_ = on; }
     bool getDriftBleed() const noexcept   { return driftBleed_; }
 
+    // Audio-verified bridging (see process()): while a tracked-unvoiced
+    // slice's ring audio stays measurably periodic, the MEASURED f0 is
+    // written instead of 0, up to maxMs per run. maxMs 0 disables (the
+    // default). thresh is the periodicity bar (the census classifier's
+    // kStillPeriodic-family test).
+    void setF0Bridge (float maxMs, float thresh) noexcept
+    { bridgeMaxMs_ = std::max (0.0f, maxMs); bridgeThresh_ = thresh; }
+    float getF0BridgeMaxMs() const noexcept { return bridgeMaxMs_; }
+
+    struct DbgBridge { uint64_t pos; int len; float f0, r; };
+    const std::vector<DbgBridge>& debugBridges() const noexcept { return dbgBridge_; }
+
     // Drift carry (see emitMixed): gaps shorter than this keep the read
     // trajectory across the gap instead of re-anchoring. 0 = old behaviour.
     void setDriftCarryMs (float ms) noexcept
@@ -448,7 +460,7 @@ public:
             return;
         }
 
-        const float track = (voiced && f0Hz > 0.0f) ? f0Hz : 0.0f;
+        float track = (voiced && f0Hz > 0.0f) ? f0Hz : 0.0f;
 
         for (int i = 0; i < n; ++i)
         {
@@ -461,6 +473,64 @@ public:
         // lag exceeds the lookahead the compensation is simply reduced rather
         // than corrupting the past.
         const int lag = std::min (pitchLag_, std::max (0, latency_ - 1));
+
+        // AUDIO-VERIFIED BRIDGING (29 Aug 2026 ruling). A tracker blink
+        // inside a continuous note writes f0=0 into the ring, and every
+        // such zero-run is a seam the shifter executes - measured at ~7
+        // breaks/s of voiced, half of all span boundaries being blinks
+        // (tools/pitch_span_census: audio periodic straight through the
+        // gap, flanks within cents). Bridge CAUSALLY, per hop, on the
+        // audio's own testimony: the ring write runs pitchLag_ behind the
+        // hop, so the audio around the position being written - including
+        // ~lag samples ahead of it - is already in the ring. While a
+        // zero slice's ring audio stays periodic at the seeded period
+        // (best-lag search, threshold bridgeThresh_), write the MEASURED
+        // f0 (fs/bestLag - from the audio, never interpolated from the
+        // flanks) instead of 0; the seed follows the audio hop by hop. The
+        // moment periodicity dies - a real consonant - the test fails,
+        // that hop writes 0, the seam lands exactly at loss of
+        // periodicity, and everything from there stays bit-exact dry. A
+        // failed test DISARMS until true voicing returns (no flutter);
+        // bridgeMaxMs_ caps a run so sustained periodic-but-untracked
+        // material cannot out-vote the tracker forever. The CORRECTOR
+        // never sees bridged values - this rewrites only the shifter's
+        // ring, so tuning decisions are untouched.
+        if (bridgeMaxMs_ > 0.0f)
+        {
+            if (track > 0.0f)
+            { bridgeSeedT_ = fs_ / (double) track; bridgeLen_ = 0.0; }
+            else if (bridgeSeedT_ > 8.0
+                     && bridgeLen_ + n <= (double) bridgeMaxMs_ * 0.001 * fs_)
+            {
+                const int64_t q = (int64_t) write_ - (int64_t) n / 2 - (int64_t) lag;
+                const int T0 = (int) std::lround (bridgeSeedT_);
+                int bestLag = 0; float bestR = -1.0f;
+                const int step = std::max (1, T0 / 16);
+                for (int L = (int) (0.85 * T0); L <= (int) (1.15 * T0); L += step)
+                {
+                    const float r = q > L ? inputPeriodicity ((uint64_t) (q + L), L) : 0.0f;
+                    if (r > bestR) { bestR = r; bestLag = L; }
+                }
+                for (int L = std::max (8, bestLag - step + 1); L < bestLag + step; ++L)
+                {
+                    if (L == bestLag) continue;
+                    const float r = q > L ? inputPeriodicity ((uint64_t) (q + L), L) : 0.0f;
+                    if (r > bestR) { bestR = r; bestLag = L; }
+                }
+                if (bestR >= bridgeThresh_ && bestLag >= 8)
+                {
+                    track = (float) (fs_ / (double) bestLag);
+                    bridgeSeedT_ = (double) bestLag;
+                    bridgeLen_ += (double) n;
+                    if (debugOn_)
+                        dbgBridge_.push_back ({ (uint64_t) std::max<int64_t> (0,
+                            (int64_t) write_ - (int64_t) n - (int64_t) lag),
+                            n, track, bestR });
+                }
+                else bridgeSeedT_ = 0.0;   // real consonant: disarm until voiced
+            }
+            else bridgeSeedT_ = 0.0;       // cap reached or no seed
+        }
         for (int i = 0; i < n; ++i)
         {
             const int64_t at = (int64_t) write_ - (int64_t) n + i - (int64_t) lag;
@@ -625,8 +695,7 @@ private:
                 // the old behaviour.
                 if (uvRun_ > 0)
                 {
-                    if ((double) uvRun_ > carryLimit_)
-                    { spliceDrift_ = 0.0; bleedGoal_ = 0.0; }
+                    if ((double) uvRun_ > carryLimit_) spliceDrift_ = 0.0;
                     uvRun_ = 0;
                 }
                 // The ratio is what the READ point's audio must be scaled by,
@@ -686,7 +755,7 @@ private:
                 // construction; with it on, the drift survives until the
                 // re-entry decision above judges the gap's length.
                 ++uvRun_;
-                if (carryLimit_ <= 0.0) { spliceDrift_ = 0.0; bleedGoal_ = 0.0; }
+                if (carryLimit_ <= 0.0) spliceDrift_ = 0.0;
                 spliceFadeLen_ = 0; methodMix_ = 0.0f;
                 spliceR_ = 0.0; spliceT_ = 0; spliceTf_ = 0.0;
             }
@@ -1391,27 +1460,14 @@ private:
         // gates: any sustained shift above the cap is undershot by up to
         // the cap at equilibrium. Consonants stay bit-exact dry: this runs
         // only inside spliceSample, which only voiced samples reach.
-        // RETARGETED to the NEAREST PERIOD MULTIPLE (29 Aug 2026 ruling):
-        // the quantity every seam charges for is the drift REMAINDER mod
-        // Tf (the join eases exactly that), so the bleed pulls toward the
-        // nearest multiple instead of zero - exits are then cheap without
-        // predicting them, and a post-episode leftover decays by at most
-        // T/2 before the bleed STOPS, instead of detuning all the way to
-        // zero. CHATTER-PROOF BY LATCHING: the goal re-selects only on
-        // ARRIVAL (|drift-goal| < 1 sample - re-selection then returns the
-        // multiple just reached, adjacent multiples being >= 8 samples
-        // apart) or at a SPLICE (a discrete event >= 0.75T away in
-        // accumulated drift, which moves drift a whole period past the
-        // latched goal and must re-centre). Between those events the goal
-        // is fixed, so the bleed direction flips at most once per goal
-        // epoch - a periodic modulation cannot form, and the 3-cent cap
-        // bounds any excursion regardless.
+        // (Bleed-to-nearest-multiple was built, measured IDENTICAL - the
+        // policies coincide wherever |drift| < T/2, which is everywhere
+        // that occurs - and REVERTED by ruling, 29 Aug 2026: extra
+        // machinery justified only by a regime the measurement says does
+        // not happen. See commit 1151b4b for the latch design and numbers.)
         if (driftBleed_)
         {
-            if (std::fabs (spliceDrift_ - bleedGoal_) < 1.0 && Tf > 4.0)
-                bleedGoal_ = std::round (spliceDrift_ / Tf) * Tf;
-            const double rem = spliceDrift_ - bleedGoal_;
-            const double b = std::clamp (rem / bleedTau_,
+            const double b = std::clamp (spliceDrift_ / bleedTau_,
                                          -kBleedMaxRate, kBleedMaxRate);
             spliceDrift_ -= b;
         }
@@ -1425,10 +1481,6 @@ private:
         {
             spliceOldDrift_ = spliceDrift_;
             spliceDrift_   += spliceDrift_ > 0.0 ? -Tf : Tf;
-            // The splice moved drift a whole period past the latched bleed
-            // goal - re-centre it (see the bleed block above; this is one
-            // of the two sanctioned re-selection events).
-            bleedGoal_ = std::round (spliceDrift_ / Tf) * Tf;
             spliceFadeLen_  = std::max (16, std::min (T / 2, (int) (0.004 * fs_)));
             spliceFadePos_  = 0;
             if (debugOn_) dbgSplice_.push_back (p);
@@ -1533,11 +1585,15 @@ private:
     // 3 cents as a read-rate offset: 2^(3/1200)-1. See spliceSample.
     static constexpr double kBleedMaxRate = 0.00173465;
     double bleedTau_  = 4800.0;    // set in prepare(): 100 ms at fs
-    double bleedGoal_ = 0.0;       // latched period multiple (samples)
     bool   driftBleed_ = false;
     float  carryMs_ = 0.0f;        // drift carry threshold; 0 = off
     double carryLimit_ = 0.0;      // ...in samples, set with fs
     int64_t uvRun_ = 0;            // unvoiced run length at the emit head
+    float  bridgeMaxMs_ = 0.0f;    // audio-verified bridge cap; 0 = off
+    float  bridgeThresh_ = 0.6f;   // periodicity bar for bridging
+    double bridgeSeedT_ = 0.0;     // last accepted period (samples); 0 = disarmed
+    double bridgeLen_ = 0.0;       // bridged samples in the current run
+    std::vector<DbgBridge> dbgBridge_;
     int    spliceFadeLen_ = 0, spliceFadePos_ = 0, spliceT_ = 0;
     float  methodMix_ = 0.0f;      // 0 = splice, 1 = grains
 

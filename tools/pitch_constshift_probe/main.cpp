@@ -150,7 +150,7 @@ static Track trackFile (const std::vector<float>& x, double fs)
 static std::vector<float> renderConstShift (const std::vector<float>& in, double fs,
                                             float shiftCents, int fmode,
                                             bool disableSplice, bool driftBleed,
-                                            float carryMs,
+                                            float carryMs, float bridgeThresh,
                                             std::vector<uint64_t>& seams,
                                             std::vector<uint64_t>& splices,
                                             std::vector<PsolaEngine::DebugSpl>& trace,
@@ -179,6 +179,7 @@ static std::vector<float> renderConstShift (const std::vector<float>& in, double
     sh.debugDisableSplice (disableSplice);
     sh.setDriftBleed (driftBleed);
     sh.setDriftCarryMs (carryMs);
+    if (bridgeThresh > 0.0f) sh.setF0Bridge (100.0f, bridgeThresh);
     sh.setPitchLagSamples (det.pitchLagFor (vt));
     const int latency = sh.latencySamples();
 
@@ -493,14 +494,15 @@ int main (int argc, char** argv)
     // The carry sweep (5 Sep 2026 ruling): bleed is shipped, carry is the
     // candidate; the threshold curve decides whether it is a fitted
     // constant or a plateau. carry 0 = the currently shipped behaviour.
-    struct Var { const char* name; bool bleed; float carryMs; };
+    // Audio-verified bridging sweep (29 Aug 2026 ruling): thresholds
+    // swept, not fitted; "off" is the shipped behaviour baseline.
+    struct Var { const char* name; bool bleed; float carryMs; float bridge; };
     const Var vars[] = {
-        { "bleed c0   ", true, 0.0f },
-        { "bleed c50  ", true, 50.0f },
-        { "bleed c100 ", true, 100.0f },
-        { "bleed c150 ", true, 150.0f },
-        { "bleed c200 ", true, 200.0f },
-        { "bleed c300 ", true, 300.0f },
+        { "bridge off ", true, 0.0f, 0.0f },
+        { "bridge 0.5 ", true, 0.0f, 0.5f },
+        { "bridge 0.6 ", true, 0.0f, 0.6f },
+        { "bridge 0.7 ", true, 0.0f, 0.7f },
+        { "bridge 0.8 ", true, 0.0f, 0.8f },
     };
     const std::vector<Hop> hops = gatedHops (in, fs);
     int ringLag = 0;
@@ -530,7 +532,7 @@ int main (int argc, char** argv)
             int lat = 0;
             const auto eng = renderConstShift (in, fs, sc,
                                     PsolaEngine::kFormantPreserve, false,
-                                    v.bleed, v.carryMs,
+                                    v.bleed, v.carryMs, v.bridge,
                                     seams, splices, trace, lat, f0zero);
             // The DEFERRED DISCHARGE the ruling asked about: the largest
             // |drift| still standing at any exit (last wet sample before a
