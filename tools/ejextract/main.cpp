@@ -51,11 +51,27 @@ static constexpr int kPerPluginTimeoutMs = 120 * 1000;
 // ever sees it (observed live: status 0 on a 351-fp batch). 100 fps is a
 // ~6.5KB URL, safely inside every hop's limit.
 static constexpr int kMapsBatch = 100;
-// Contribute batches are BYTE-limited: Vercel 413s request bodies past
-// ~4.5MB, and one sample (a dense sweep) can run to ~3MB alone (observed
-// live). Count is capped too, far under the endpoint's 200.
+// Contribute batches are BYTE-limited by the platform, not by the endpoint.
+// The endpoint's own 413 is a COUNT check (samples.length > 200) and has never
+// fired; every rejection we have seen came from the platform refusing the
+// request body before the handler ran.
+//
+// THE LIMIT, BRACKETED against a live preview on 30 Aug 2026: 4.27 MB accepted,
+// 4.56 MB refused. That agrees with the platform's documented 4.5 MB, but the
+// bracket is what was measured and the number below is sized off the bracket.
+//
+// A PREVIOUS COMMENT HERE READ THE LIMIT AS ~4 MB, from a sweep whose rejected
+// samples measured 3847-4008 KB each. Those are PER-SAMPLE sizes inside a
+// BATCH; it was the batch total that crossed. A limit inferred from the parts
+// of a request that failed is not the limit -- hence the live bracket.
+//
+// These bytes are RAW, counted before compression, and httpPostJson gzips
+// anything past its threshold. Worst-case that still fits: the least
+// compressible sample in the 128-sample backlog manages only 1.3x (the
+// aggregate is 71x, but an aggregate cannot bound a single request), so 3 MB
+// raw is at most ~2.3 MB on the wire -- half the limit even in the worst case
+// measured. Count is capped too, far under the endpoint's 200.
 static constexpr juce::int64 kContributeBatchBytes = 3 * 1024 * 1024;
-static constexpr juce::int64 kContributeMaxSampleBytes = 4 * 1024 * 1024;
 static constexpr int kContributeBatchCount = 100;
 
 static juce::File echojayDir();
@@ -183,12 +199,51 @@ static juce::String httpGet (const juce::String& fullUrl, int& statusCode)
     return {};
 }
 
+// Above this, the body travels gzipped. Below it, plain -- a small post stays
+// readable in a proxy, and both forms are accepted, so nothing about
+// correctness rides on where this sits.
+static constexpr size_t kGzipPostThresholdBytes = 64 * 1024;
+
+// POST a JSON body, COMPRESSED once it is big enough (30 Aug 2026).
+//
+// WHY. /api/params/contribute is the only caller, and it was losing its
+// largest maps: 41 of 128 backlog samples never landed because the platform
+// refused the body with a 413 raised BEFORE the handler ran. No server-side
+// change could have caught those; the body had to get smaller.
+//
+// BOTH HEADERS, AND octet-stream IS THE LOAD-BEARING ONE. Content-Encoding
+// alone does not work: the platform JSON-parses an application/json body
+// before the handler is reached, so it would try to parse the compressed bytes
+// and fail where nothing of ours can see it. The declared type must NOT be
+// JSON. api/params/contribute.js inflates it (decodeBody), and answers a clean
+// 400 bad_gzip_body if the bytes are not really gzip.
 static juce::String httpPostJson (const juce::String& fullUrl, const juce::String& body, int& statusCode)
 {
-    juce::URL url = juce::URL (fullUrl).withPOSTData (body);
+    const size_t rawBytes = body.getNumBytesAsUTF8();
+    juce::URL url = juce::URL (fullUrl);
+    juce::String contentHeaders = "Content-Type: application/json\r\n";
+    if (rawBytes >= kGzipPostThresholdBytes)
+    {
+        juce::MemoryBlock gz;
+        {
+            juce::MemoryOutputStream out (gz, false);
+            // windowBitsGZIP, not the default: the default emits a zlib wrapper,
+            // which gunzip refuses. This is the difference between a working
+            // post and a 400 the server is right to give.
+            juce::GZIPCompressorOutputStream z (out, 9,
+                juce::GZIPCompressorOutputStream::windowBitsGZIP);
+            z.write (body.toRawUTF8(), rawBytes);
+            z.flush();
+        }
+        url = url.withPOSTData (gz);
+        contentHeaders = "Content-Type: application/octet-stream\r\n"
+                         "Content-Encoding: gzip\r\n";
+    }
+    else
+        url = url.withPOSTData (body);
     auto opts = juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inPostData)
                     .withConnectionTimeoutMs (30000)
-                    .withExtraHeaders ("Content-Type: application/json\r\n")
+                    .withExtraHeaders (contentHeaders)
                     .withStatusCode (&statusCode);
     if (auto stream = url.createInputStream (opts))
         return stream->readEntireStreamAsString();
@@ -742,14 +797,15 @@ static int runBootstrap()
     };
     for (const auto& s : toContribute)
     {
+        // NO PER-SAMPLE SIZE SKIP. There used to be one, dropping any sample
+        // over 4 MB as "too large to contribute" -- a permanent loss, since a
+        // skipped sample was never retried and the largest maps are exactly
+        // the ones worth having. Gzip removes the class rather than the
+        // symptom: the biggest sample in the backlog is 5653 KB raw and
+        // 56.6 KB compressed, and the largest compressed RESULT anywhere in
+        // the 128 is 129.9 KB. Nothing is too large any more, so nothing is
+        // skipped, so there is no skip to log.
         const auto bytes = (juce::int64) juce::JSON::toString (s).getNumBytesAsUTF8();
-        if (bytes > kContributeMaxSampleBytes)
-        {
-            logLine ("sample too large to contribute ("
-                     + juce::String (bytes / 1024) + " KB), skipping "
-                     + s.getProperty ("fp", juce::var()).toString().substring (0, 12));
-            continue;
-        }
         if (! batch.isEmpty()
             && (batchBytes + bytes > kContributeBatchBytes
                 || batch.size() >= kContributeBatchCount))
