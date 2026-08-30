@@ -478,9 +478,26 @@ public:
         noteMs_ += stepMs_;
 
         // ---- 1..2: nearest enabled degree, plus its bias -------------------
-        // Experiment (b): provisional targeting - until the slow track has
-        // ~half a vibrato period of history, target the way vib-off does.
-        const bool slowProvisional = seedExp_ == 2 && slowAgeMs_ < 90.0f;
+        // (d) PROVISIONAL SELECTION ON PENDING EVIDENCE (30 Aug 2026
+        // ruling, SHIPPED): while the note-change detector holds a pending
+        // candidate - a sustained jump past kNoteChangeCents, the same
+        // evidence that already gates envelope resets - selection leans
+        // into the pending note by reading inCents instead of the lagging
+        // slow track. Measured before this: with ignore-vib on, 82% of
+        // wrong-semitone votes were THE PREVIOUS NOTE, concentrated in the
+        // first 100ms after a transition (17.4% vs 1.5% in the next bin) -
+        // the slow track kept voting the old note through detector lag +
+        // confirm while vib-off (and Antares) flipped at the crossing.
+        // Chatter safety: a vibrato swing that does not sustain never
+        // forms a pending, so mid-note anti-chatter is untouched; both
+        // sources vote the same discrete note everywhere except inside
+        // the confirm window, so the hand-off is inaudible where it is
+        // not doing work.
+        // (Experiment (b), retained for the record: provisional for the
+        // slow track's first 90ms - measured a dead end, 11.7 -> 10.7%.)
+        const bool slowProvisional = (seedExp_ != 4 && havePending_)
+                                  || (seedExp_ == 2 && slowAgeMs_ < 90.0f);
+        // (seedExp_ 4 = the pre-(d) shipped behaviour, for measured A/Bs.)
         const float selectCents = (ignoreVibrato_.load() && ! slowProvisional)
                                     ? slowCents_ : inCents;
         const float degreeCents = nearestDegreeCents (CentsC { selectCents });
