@@ -202,6 +202,10 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
     }
     if (const char* iv = getenv ("AB_IGNVIB"))
         corr.setIgnoreVibrato (std::atoi (iv) != 0);
+    // AB_RETUNE=<ms>: retune-speed override AFTER the preset (30 Aug 2026,
+    // the calibration curve - which EchoJay retune matches Antares's 0).
+    if (const char* rt = getenv ("AB_RETUNE"))
+        corr.setRetuneMs ((float) std::atof (rt));
     // AB_REF=<Hz>: pin the tuning reference (29 Aug 2026, the hard-mode
     // flat-bias attribution: the PLUGIN defaults reference_source=auto and
     // follows KeyFeed's detected tuning; this mirror otherwise sits at
