@@ -33,3 +33,37 @@ fragmentation change lands, BEFORE building anything vibrato-specific.
 
 Whether ignore_vibrato should remain the default while it measurably
 degrades every tuning metric on reference material.
+
+## MEASURED 2026-08-30: confirmed — the onset-seeding variant
+
+The fragmentation-coat hypothesis is CONFIRMED in refined form. Short
+blinks are innocent (gaps < kGapIsNoteChangeMs = 200 ms hold state by
+design). The mechanism is the RE-SEED: at every voicing resume after a
+>=200 ms gap and at every note change, `haveSlow_` drops and
+`slowCents_` — the slow-smoothed track that ignore-vibrato TARGETS from
+— is re-seeded from ONE instantaneous sample (`slowCents_ = inCents`),
+which under vibrato can sit a full swing off the note's mean. The
+140 ms smoother (kVibratoSmoothMs) then takes ~300 ms to converge, and
+targeting votes from the biased value throughout.
+
+The measurement (tools/pitch_vibvote, sourceNEW hard renders vs
+antaresNEW, 68 re-seed events):
+
+    vib ON:  wrong-semitone 11.7% within 300 ms of a re-seed
+             vs 1.2% elsewhere — a 10x concentration;
+             98% of all wrong frames live in re-seed windows.
+    vib OFF: 4.3% vs 1.5% (ordinary onset transients; immune to the
+             mechanism because targeting never consults slowCents_).
+
+The entire ~9-point same-semitone gap is onset seeding; MID-NOTE,
+vib-on targeting is as accurate as vib-off (1.2 vs 1.5%).
+
+## Fix candidates (for ruling — none built)
+
+(a) Onset-adaptive smoothing: seed as today but start kVibratoSmoothMs
+    short (~30 ms) and relax to 140 over the first few hundred ms, so
+    the slow track converges before votes matter.
+(b) Provisional targeting: until the slow track has ~a half vibrato
+    period of history, target the way vib-off does (fast f0), then
+    hand over.
+Both are corrector-local; neither touches the engine or the contract.
