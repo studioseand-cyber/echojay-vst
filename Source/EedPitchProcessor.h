@@ -102,6 +102,11 @@ public:
     };
     AutoKeyState autoKeyState() const;
 
+    // The retune floor's effective value, for the knob readout (30 Aug
+    // 2026: a mapping that lives only in schema text is a mapping the
+    // next person doesn't know about).
+    float retuneEffectiveMs() const noexcept { return correct_.retuneEffectiveMs(); }
+
 protected:
     void onStateApplied() override;
 public:

@@ -233,6 +233,21 @@ public:
 
     // ---- advertised ranges (single source of truth for the ParamSchema) ----
     static constexpr float kMinRetuneMs   = 0.0f,   kMaxRetuneMs   = 400.0f;
+    // THE RETUNE FLOOR (30 Aug 2026 ruling, PITCH_P0_VALIDATION.md
+    // Â§17.3): the effective tau never goes below 6 ms, though the dial
+    // still reads 0. The 0-6 ms zone is STRICTLY DOMINATED, measured:
+    // converged accuracy identical (synthetic centres 1.92-2.05c across
+    // 0-6), acquisition identical (settle ~107 ms, floored by note-change
+    // detection - the pole buys no speed), and roughness WORSE at 0 (84 vs
+    // 74 rough spans on sourceNEW, 29 vs 26 on the hard-match take: tau 0
+    // chases hop-level detection jitter verbatim). Antares's own "retune
+    // 0" carries internal smoothing equivalent to ~4-6 ms of this tau -
+    // Sean's blind match and the roughness curves agree - so the floor
+    // also makes 0 mean what users arriving from other correctors expect.
+    // The DIAL value stays as entered (round-trip honest); the floor
+    // applies at the single use site, and retuneEffectiveMs() exists so
+    // the UI can SHOW the mapping instead of hiding it.
+    static constexpr float kRetuneFloorMs = 6.0f;
     static constexpr float kDefRetuneMs   = 120.0f;
     static constexpr float kMinReferenceHz = 380.0f, kMaxReferenceHz = 500.0f;
     static constexpr float kMinTranspose  = -12.0f, kMaxTranspose  = 12.0f;
@@ -293,6 +308,8 @@ public:
     // ---- parameters --------------------------------------------------------
     void setRetuneMs (float v) noexcept   { retuneMs_.store (std::clamp (v, kMinRetuneMs, kMaxRetuneMs)); }
     float getRetuneMs() const noexcept    { return retuneMs_.load(); }
+    float retuneEffectiveMs() const noexcept
+    { return std::max (retuneMs_.load(), kRetuneFloorMs); }
     void setFlex (float pct) noexcept     { flex_.store (std::clamp (pct, 0.0f, 100.0f)); }
     float getFlex() const noexcept        { return flex_.load(); }
     void setHumanize (float pct) noexcept { humanize_.store (std::clamp (pct, 0.0f, 100.0f)); }
@@ -499,7 +516,7 @@ public:
         // carries (k-1)*osc — fast, with the old phase caveat — because
         // scaling the singer's own vibrato has no slow formulation.
         const float aimCents = noteCents + wanted;
-        const float coeff = onePole (retuneMs_.load());
+        const float coeff = onePole (std::max (retuneMs_.load(), kRetuneFloorMs));
         curCents_ = aimCents + (curCents_ - aimCents) * coeff;
         {
             // The vibrato smoother's stopband leaks a few cents of ripple

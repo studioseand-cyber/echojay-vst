@@ -1807,3 +1807,32 @@ It is the preset's CHARACTER, not a convergence defect. Before chasing
 any natural-mode tuning number, re-read this section and the hard-mode
 history that produced it (the settings audit: an entire investigation
 optimised natural while the complaint lived at hard).
+
+### §17.3 The retune floor: 6 ms, and why the zone below it is dominated (30 Aug 2026 ruling)
+
+`retune_speed_ms` is the honest time constant of the per-hop one-pole
+toward the aim (63 % in τ, ~95 % in 3τ). The dial still reads 0; the
+EFFECTIVE τ never goes below `PitchCorrect::kRetuneFloorMs` = 6 ms, and
+the knob readout shows the mapping ("0 (6 ms)").
+
+The 0–6 ms zone is STRICTLY DOMINATED — three measurements, all
+post-gate (before §17.1 the 3.38 c convergence tax flattened this whole
+scale and none of this was measurable):
+1. **Converged accuracy identical**: synthetic stepped-note rig centres
+   1.92 / 1.98 / 1.98 / 2.03 / 2.05 c at retune 0/1/2/4/6.
+2. **Acquisition identical**: settle-to-3c after a note change is
+   ~107 ms median, FLAT from 0 through 20 ms — floored by note-change
+   detection/confirm, not by the pole. The fast zone buys no speed.
+3. **Roughness WORSE at 0**: τ 0 chases hop-level detection jitter
+   verbatim. Real voice, rough spans vs Antares: sourceNEW 84 → 74
+   (retune 0 → 6); the hard-match take 29 → 26 with worst deficit
+   −0.97 → −0.71. Tuning cost of the floor: none measurable on either
+   take.
+
+**Antares's zero is not zero**: its fastest setting carries internal
+smoothing equivalent to ~4–6 ms of this τ — Sean's blind match
+("EchoJay 4–6 sounds like Antares 0") and the roughness curves agree —
+so the floor also makes 0 mean what a user arriving from any other
+corrector expects. 6 was chosen over 4 BY MEASUREMENT on both takes,
+not from the middle of the reported range. Re-baselined hard-match gate
+columns are recorded in the commit that landed the floor.

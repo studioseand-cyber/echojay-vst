@@ -120,6 +120,19 @@ EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
         }
     };
     setupKnob (retuneKnob_, EedPitchProcessor::kRetuneMs, 80.0, 0, " ms", "RETUNE");
+    // The retune FLOOR readout (30 Aug 2026 ruling): the dial keeps 0 so
+    // muscle memory from other correctors finds it, but the readout states
+    // what it actually is - "0 (6 ms)". Twice now this project was rescued
+    // by showing a hidden derived value (reference provenance, placement
+    // caption); same principle, one string.
+    retuneKnob_.formatValue = [this] (double v)
+    {
+        const double eff = (double) proc_.retuneEffectiveMs();
+        if (v + 0.01 < eff)
+            return juce::String ((int) std::lround (v)) + " (" +
+                   juce::String (eff, 0) + " ms)";
+        return juce::String ((int) std::lround (v)) + " ms";
+    };
     setupKnob (refKnob_,    EedPitchProcessor::kReferenceHz, 0.0, 1, " Hz", "REF");
     setupKnob (flexKnob_,   EedPitchProcessor::kFlex,      0.0, 0, " %",  "FLEX");
     setupKnob (humanKnob_,  EedPitchProcessor::kHumanize,  0.0, 0, " %",  "HUMAN");

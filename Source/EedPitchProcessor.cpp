@@ -47,14 +47,18 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
         { EedPitchProcessor::kRetuneMs, "ms",
           (double) PitchCorrect::kMinRetuneMs, (double) PitchCorrect::kMaxRetuneMs,
           (double) PitchCorrect::kDefRetuneMs,
-          "how fast pitch is pulled to the target; 0 is the hard tuned effect "
-          "where every note snaps instantly, 100+ is transparent and keeps the "
-          "singer's own movement between notes. NOTE: retune 0 alone is NOT "
-          "the full hard-tune - natural_vibrato re-adds the singer's own "
-          "wobble on top of the snapped note and defaults to 100. For the "
-          "complete snap set correction_mode hard, which also writes "
-          "natural_vibrato 0; measured, retune 0 with natural_vibrato left at "
-          "100 sits 22 cents from the nearest note where hard mode sits 9",
+          "how fast pitch is pulled to the target - the time constant of an "
+          "exponential glide, in honest milliseconds. 0 is the hard-tuned "
+          "snap, 100+ is transparent and keeps the singer's own movement. "
+          "THE EFFECTIVE FLOOR IS 6 ms: values below it behave as 6, because "
+          "the 0-6 zone was measured strictly dominated - same tuning, same "
+          "lock speed (acquisition is floored by note-change detection), "
+          "worse roughness from chasing per-hop detection jitter - and "
+          "because other correctors' 'retune 0' carries equivalent internal "
+          "smoothing, so 6 here IS what 0 means elsewhere. The UI readout "
+          "shows the mapping. NOTE: retune 0 alone is NOT the full "
+          "hard-tune - natural_vibrato re-adds the singer's own wobble and "
+          "defaults to 100; for the complete snap set correction_mode hard",
           false },
 
         { EedPitchProcessor::kFlex, "%", 0.0, 100.0, 55.0,
