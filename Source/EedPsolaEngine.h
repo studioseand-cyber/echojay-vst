@@ -385,6 +385,10 @@ public:
     // written instead of 0, up to maxMs per run. maxMs 0 disables (the
     // default). thresh is the periodicity bar (the census classifier's
     // kStillPeriodic-family test).
+    // Diagnostic only (30 Aug 2026 tau sweep): force the pre-gate bleed
+    // behaviour so gated-vs-ungated can be measured at every retune tau.
+    void debugBleedUngated (bool on) noexcept { dbgBleedUngated_ = on; }
+
     void setF0Bridge (float maxMs, float thresh) noexcept
     { bridgeMaxMs_ = std::max (0.0f, maxMs); bridgeThresh_ = thresh; }
     float getF0BridgeMaxMs() const noexcept { return bridgeMaxMs_; }
@@ -1488,7 +1492,7 @@ private:
             bleedGate_ += (gT - bleedGate_) * bleedGateK_;
             const double b = std::clamp (spliceDrift_ / bleedTau_,
                                          -kBleedMaxRate, kBleedMaxRate)
-                           * bleedGate_;
+                           * (dbgBleedUngated_ ? 1.0 : bleedGate_);
             spliceDrift_ -= b;
         }
 
@@ -1608,6 +1612,7 @@ private:
     double bleedGate_ = 1.0;       // smoothed shift gate (see spliceSample)
     double bleedGateK_ = 1.0 / 4800.0;   // 100 ms pole, set in prepare()
     bool   driftBleed_ = false;
+    bool   dbgBleedUngated_ = false;
     float  carryMs_ = 0.0f;        // drift carry threshold; 0 = off
     double carryLimit_ = 0.0;      // ...in samples, set with fs
     int64_t uvRun_ = 0;            // unvoiced run length at the emit head

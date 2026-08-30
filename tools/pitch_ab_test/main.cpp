@@ -250,6 +250,7 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
     // AB_NOBLEED=1 disables the drift-bleed (29 Aug 2026, the hard-mode
     // flat-bias investigation); default mirrors the processor (bleed on).
     sh.setDriftBleed (getenv ("AB_NOBLEED") == nullptr);
+    if (getenv ("AB_UNGATE")) sh.debugBleedUngated (true);   // tau-sweep diagnostic
     // AB_BRIDGE=<thresh>: audio-verified bridging (100 ms cap) for the
     // field evaluation renders (29 Aug 2026 ruling). Not shipped; the
     // switch flips only after the field number AND Sean's ear agree.
