@@ -2805,7 +2805,8 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 // Against a fresh feed every product is offered, so the two
                 // numbers reconcile and neither refusal is firing by accident.
                 check ((int) fresh.rows.size() + fresh.alreadyOffered
-                           + fresh.nameTakenByOther == fresh.products,
+                           + fresh.nameTakenByOther + fresh.untickedInSettings
+                           == fresh.products,
                        "wr PIN2: rows + refusals accounts for every product");
             }
 
@@ -2942,8 +2943,12 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 check (ch.contains ("#include \"EJWavesRegistryFeed.h\""),
                        "wr PIN7: buildRecommendable includes the header it is pinned against");
                 const auto body = functionBody (src, "void ChainHost::buildRecommendable");
-                check (body.contains ("echojay::wavesRegistryFeedRows(loadable, resolved)"),
-                       "wr PIN7: it calls the header with the gated entries and the feed so far");
+                check (body.contains ("echojay::wavesRegistryFeedRows(loadable, resolved, untickedRegistrations)"),
+                       "wr PIN7: it calls the header with the gated entries, the feed so far, AND the unticked set");
+                // The set is not decorative: it must be FILLED from the disabled
+                // branch, or the argument is an empty set that always agrees.
+                check (body.contains ("untickedRegistrations.push_back"),
+                       "wr PIN7: and the unticked list is filled from the disabled branch");
                 check (body.contains ("resolved.push_back({ r.name, r.desc });"),
                        "wr PIN7: and APPENDS the rows");
                 // No decision at the site: the header owns scope, variant and
@@ -3085,6 +3090,138 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                         check (dup.rows.empty(),
                                "wr PIN8: and the same product already in the feed is NOT re-offered",
                                juce::String ((int) dup.rows.size()) + " row(s)");
+
+                        // ---- wr PIN9: THE SETTINGS TICK REACHES THIS PATH ----
+                        // The gap this closes: `loadable` is filtered for
+                        // format, session failure, crash blacklist and arch, and
+                        // for nothing the user chose. An unticked Waves plugin
+                        // was therefore not removed from the feed but RENAMED --
+                        // the disabled scanner row left `resolved`, so its
+                        // product left offeredProducts, so this function added
+                        // it straight back under the shell base name.
+                        {
+                            std::vector<juce::PluginDescription> unticked;
+                            unticked.push_back (w);          // the registration, "(s)" and all
+                            const auto off = echojay::wavesRegistryFeedRows (
+                                fixtureLoadable, {}, unticked);
+                            check (off.rows.empty() && off.untickedInSettings == 1,
+                                   "wr PIN9: an UNTICKED product is not offered by the registry path",
+                                   juce::String ((int) off.rows.size()) + " row(s), unticked="
+                                       + juce::String (off.untickedInSettings));
+                            // RE-TICKING RESTORES IT. Same fixture, same call,
+                            // empty set: the refusal must be a function of the
+                            // set and of nothing sticky.
+                            const auto back = echojay::wavesRegistryFeedRows (
+                                fixtureLoadable, {}, {});
+                            check (back.rows.size() == 1
+                                       && back.rows[0].name == "Fixture Widget"
+                                       && back.untickedInSettings == 0,
+                                   "wr PIN9: and re-ticking restores it",
+                                   juce::String ((int) back.rows.size()) + " row(s)");
+                            // A DIFFERENT product being unticked changes nothing:
+                            // the refusal keys on the product, not on "something
+                            // was unticked".
+                            juce::PluginDescription otherW;
+                            otherW.name             = "Some Other Product (s)";
+                            otherW.pluginFormatName = "AudioUnit";
+                            otherW.fileOrIdentifier = juce::String ("AudioUnit:Effects/aufx,OthP,")
+                                                    + echojay::wavesAuManufacturerCode();
+                            const auto un = echojay::wavesRegistryFeedRows (
+                                fixtureLoadable, {}, { otherW });
+                            check (un.rows.size() == 1 && un.untickedInSettings == 0,
+                                   "wr PIN9: a TICKED product still appears when a different one is unticked",
+                                   juce::String ((int) un.rows.size()) + " row(s)");
+                            // SCOPE IS THE HEADER'S, so a NON-WaveShell
+                            // registration in the unticked list is ignored, not
+                            // trusted. The caller hands over every disabled row
+                            // it resolves, of any vendor -- if this leaked, one
+                            // unticked Melda plugin whose base name collided
+                            // would silently suppress a Waves product.
+                            juce::PluginDescription notWaves;
+                            notWaves.name             = "Fixture Widget (s)";
+                            notWaves.pluginFormatName = "AudioUnit";
+                            notWaves.fileOrIdentifier = "AudioUnit:Effects/aufx,FxWd,Nope";
+                            const auto ign = echojay::wavesRegistryFeedRows (
+                                fixtureLoadable, {}, { notWaves });
+                            check (ign.rows.size() == 1 && ign.untickedInSettings == 0,
+                                   "wr PIN9: a non-WaveShell registration in the unticked list is IGNORED",
+                                   juce::String ((int) ign.rows.size()) + " row(s)");
+                            // An already-offered product is refused as
+                            // alreadyOffered, NOT counted as unticked: it is
+                            // still being shown, by the enabled row that offers
+                            // it, so calling it a user refusal would be a lie.
+                            const auto both = echojay::wavesRegistryFeedRows (
+                                fixtureLoadable, already, unticked);
+                            check (both.rows.empty() && both.alreadyOffered == 1
+                                       && both.untickedInSettings == 0,
+                                   "wr PIN9: a product still offered by an enabled row counts as alreadyOffered, not unticked",
+                                   juce::String ("alreadyOffered=") + juce::String (both.alreadyOffered)
+                                       + " unticked=" + juce::String (both.untickedInSettings));
+                        }
+                    }
+
+                    // ---- wr PIN10: THE UNTICK, END TO END, ON REAL DATA ----
+                    // The fixture pins prove the header refuses. This proves the
+                    // WHOLE PATH refuses: a real scanner row, unticked, rebuilt
+                    // through the shipped buildRecommendable, absent from the
+                    // feed under BOTH of its names -- the catalog marketing name
+                    // the scanner walk offers it by, and the shell base name the
+                    // registry path would re-add it under. Those two names are
+                    // the entire bug: before this, unticking swapped one for the
+                    // other and called it removed.
+                    {
+                        // A ticked row that resolves to a WaveShell registration.
+                        const ScannedPlugin* victim = nullptr;
+                        juce::String product;
+                        for (const auto& e : host.recommendableEntries())
+                        {
+                            if (! echojay::isWaveShellRegistration (e.desc)) continue;
+                            for (const auto& r : rows)
+                                if (r.enabled && r.name == e.displayName) { victim = &r; break; }
+                            if (victim != nullptr)
+                            { product = ChainHost::stripParenthetical (e.desc.name); break; }
+                        }
+                        if (victim == nullptr)
+                        {
+                            std::cout << "  SKIP  wr PIN10 (no ticked Waves row in this machine's feed)\n";
+                        }
+                        else
+                        {
+                            const auto victimName = victim->name;
+                            auto flipped = rows;
+                            for (auto& r : flipped) if (r.name == victimName) r.enabled = false;
+
+                            host.buildRecommendable (flipped, {});
+                            const auto names = host.getRecommendableNames();
+                            check (! names.contains (victimName),
+                                   "wr PIN10: an unticked plugin is gone from the feed by the SCANNER name",
+                                   victimName);
+                            check (! names.contains (product),
+                                   "wr PIN10: and gone by the REGISTRY base name too (the rename this fixes)",
+                                   product + " still offered");
+                            // The registration must not survive under any third
+                            // spelling either: nothing in the feed may still
+                            // point at this product.
+                            int stillPointing = 0;
+                            for (const auto& e : host.recommendableEntries())
+                                if (echojay::isWaveShellRegistration (e.desc)
+                                    && ChainHost::stripParenthetical (e.desc.name) == product)
+                                    ++stillPointing;
+                            check (stillPointing == 0,
+                                   "wr PIN10: and no feed row points at the unticked product at all",
+                                   juce::String (stillPointing) + " row(s) still point at " + product);
+
+                            // RE-TICKING RESTORES IT, and restores the whole feed:
+                            // a suppression that leaks would show up as a feed
+                            // that never comes back to its original size.
+                            host.buildRecommendable (rows, {});
+                            const auto restored = host.getRecommendableNames();
+                            check (restored.contains (victimName),
+                                   "wr PIN10: re-ticking restores it", victimName);
+                            check (restored.size() == before.size(),
+                                   "wr PIN10: and restores the feed exactly, no residue",
+                                   juce::String (restored.size()) + " vs " + juce::String (before.size()));
+                        }
                     }
 
                     juce::StringArray after = before;

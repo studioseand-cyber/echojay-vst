@@ -5106,41 +5106,70 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
         return it;
     };
 
-    for (const auto& sp : allPlugins)
+    // ONE RESOLUTION LADDER, ASKED BY BOTH BRANCHES (30 Aug 2026). The disabled
+    // branch has to resolve a row exactly as the enabled branch does, or the
+    // suppression it derives would answer a different question from the offer it
+    // exists to cancel. Factored rather than copied, for the reason the variant
+    // rule is reused rather than restated in EJWavesRegistryFeed.h: a second
+    // copy of a ladder drifts, and the drift is invisible until a name stops
+    // resolving. logAlias is false for disabled rows only so the [waves-alias]
+    // stream keeps meaning "a row the model was offered".
+    auto resolveScannerRow = [&](const ScannedPlugin& sp, bool logAlias)
     {
-        if (!sp.enabled)
-        {
-            ++excludedRows;
-            excludedUids.insert(sp.uid);
-            continue;
-        }
-        ++enabledCount;
-
-        // Try exact normalized name (model-keyed, stem-guarded — see lookupName)
         auto it = lookupName(sp.name);
-
-        // If not found, try without manufacturer prefix ("Fab Filter: Pro-Q 3" → "pro q 3")
         if (it == nameMap.end() && sp.name.containsChar(':'))
             it = lookupName(sp.name.fromFirstOccurrenceOf(":", false, false).trim());
-
-        // WAVES MARKETING-NAME ALIAS (28 Aug 2026), strictly a fallback. The
-        // scanner injects Waves' marketing names (expandWavesCatalog) while the
-        // shell registers shorter ones, so 35 of 69 ticked Waves rows resolved
-        // to nothing and the model called installed plugins missing. Runs ONLY
-        // after the lookups above have missed, and its answer goes back through
-        // lookupName, so nothing that resolves today can resolve differently
-        // and the (m)/(s) preference still picks the variant.
         if (it == nameMap.end() && sp.manufacturer == "Waves")
         {
             const auto aliased = echojay::wavesAliasFor(sp.name, registryBaseNames);
             if (aliased.isNotEmpty())
             {
                 it = lookupName(aliased);
-                if (it != nameMap.end())
+                if (it != nameMap.end() && logAlias)
                     EchoJay_NSLog(("EJScan: [waves-alias] \"" + sp.name + "\" -> \""
                                    + it->second.name + "\"").toRawUTF8());
             }
         }
+        return it;
+    };
+
+    // What the user UNTICKED, resolved to registrations. This cannot be derived
+    // downstream from uids: a scanner uid keys the catalog MARKETING name while
+    // these registrations carry the SHELL name -- "API 2500" keys
+    // api_2500_waves and "API-2500 (s)" keys api-2500_waves, one hyphen apart
+    // and never equal. Measured here: of 289 registry products only 31 produce
+    // a uid any scanner row also produces, so a uid test would have missed 258
+    // and looked like it worked. The name ladder is the one bridge between the
+    // two vocabularies this codebase has, so the untick crosses on it -- and
+    // crosses as a REGISTRATION, leaving scope and collapse to the header.
+    std::vector<juce::PluginDescription> untickedRegistrations;
+
+    for (const auto& sp : allPlugins)
+    {
+        if (!sp.enabled)
+        {
+            ++excludedRows;
+            excludedUids.insert(sp.uid);
+            // THE UNTICK HAS TO REACH THE REGISTRY PATH, or it does not remove
+            // the plugin, it RENAMES it: this row leaving `resolved` is exactly
+            // what lets the registry path offer the same product again under
+            // its shell base name. Resolved, not classified -- whether this is
+            // a Waves row and what product it collapses to are the header's
+            // calls, and a copy of them here is the thing wr PIN7 forbids.
+            auto dit = resolveScannerRow(sp, false);
+            if (dit != nameMap.end()) untickedRegistrations.push_back(dit->second);
+            continue;
+        }
+        ++enabledCount;
+
+        // Exact normalized name (model-keyed, stem-guarded), then the
+        // manufacturer-prefix strip, then the WAVES MARKETING-NAME ALIAS
+        // (28 Aug 2026) -- the scanner injects Waves' marketing names
+        // (expandWavesCatalog) while the shell registers shorter ones, so 35 of
+        // 69 ticked Waves rows resolved to nothing and the model called
+        // installed plugins missing. All three now live in resolveScannerRow
+        // above, which the disabled branch asks too.
+        auto it = resolveScannerRow(sp, true);
 
         if (it != nameMap.end())
         {
@@ -5189,7 +5218,7 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
     // scope, collapse, variant and both refusals, so the pins can run the
     // shipped bytes against the real registry without a rebuild.
     const int scannerResolved = (int) resolved.size();
-    const auto wavesRows = echojay::wavesRegistryFeedRows(loadable, resolved);
+    const auto wavesRows = echojay::wavesRegistryFeedRows(loadable, resolved, untickedRegistrations);
     for (const auto& r : wavesRows.rows)
     {
         pushedNames.insert(r.name);
@@ -5206,7 +5235,9 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
                    + juce::String(wavesRows.alreadyOffered)
                    + " already offered under another name, "
                    + juce::String(wavesRows.nameTakenByOther)
-                   + " name(s) held by a different plugin)").toRawUTF8());
+                   + " name(s) held by a different plugin, "
+                   + juce::String(wavesRows.untickedInSettings)
+                   + " unticked in Settings)").toRawUTF8());
 
     // The resolver coverage triple, relocated from a never-rendered label
     // (13 Aug 2026, the dead-layer sweep) and promoted from DBG to a

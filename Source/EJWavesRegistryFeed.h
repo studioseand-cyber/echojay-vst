@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "ChainHost.h"            // stripParenthetical + RecommendableEntry
 #include "EJVariantPreference.h"  // the channel-variant rank, unchanged and reused
+#include <set>
 
 // Which Waves products the AI feed offers, taken from the machine's own AU scan
 // rather than from the curated catalog.
@@ -95,6 +96,7 @@ struct WavesFeedRows
     int products        = 0;                   // products the registry offers
     int alreadyOffered  = 0;                   // already in the feed under another name
     int nameTakenByOther= 0;                   // name already used for a DIFFERENT plugin
+    int untickedInSettings = 0;                // the user unticked this product
 };
 
 /** The Waves products this registry offers that the feed does not carry yet.
@@ -129,11 +131,49 @@ struct WavesFeedRows
     had landed on a DIFFERENT channel build of it than the rank picks here. The
     model would then have been offered two names for one plugin, at two channel
     configurations, with nothing to choose between them. A product is offered
-    once, whatever variant of it is already there. */
+    once, whatever variant of it is already there.
+
+    A THIRD REFUSAL: THE SETTINGS TICK (30 Aug 2026). The scanner walk skips a
+    row the user unticked; this path walked `loadable`, which is filtered for
+    format, session load failure, crash blacklist and architecture -- and for
+    nothing the user chose. So unticking a Waves plugin did not remove it from
+    the feed. It RENAMED it: the disabled scanner row left `resolved`, its
+    product therefore left offeredProducts, and this function added the product
+    straight back under its shell base name. An exclusion that silently becomes
+    a rename is worse than one that fails loudly.
+
+    WHY THE CALLER PASSES PRODUCT NAMES AND NOT UIDS, which is the whole reason
+    the check could not simply be copied from the scanner walk. Scanner uids are
+    makeUid(name, manufacturer) over the CATALOG MARKETING name; the
+    registrations here carry the SHELL name. "API 2500" keys api_2500_waves and
+    "API-2500 (s)" keys api-2500_waves -- one hyphen apart and never equal.
+    Measured on this machine: of 289 registry products only 31 produce a uid any
+    scanner row also produces, so a uid test would have missed 258 of them and
+    looked like it worked. The caller resolves each unticked row through the
+    SAME name ladder it uses to offer one, and passes the product names that
+    ladder lands on; identity is thereby established the one way this codebase
+    has ever established it between these two vocabularies.
+
+    THE CALLER HANDS OVER REGISTRATIONS, NOT PRODUCTS, and that split is the
+    point: deciding which registrations are Waves and how a registration
+    collapses to a product are THIS header's decisions, and the call site must
+    not hold a second copy of either. The caller resolves an unticked row to a
+    registration -- the one thing only it can do, because only it has the name
+    ladder -- and this function does the rest. */
 inline WavesFeedRows wavesRegistryFeedRows (
     const juce::Array<juce::PluginDescription>& loadable,
-    const std::vector<ChainHost::RecommendableEntry>& alreadyResolved)
+    const std::vector<ChainHost::RecommendableEntry>& alreadyResolved,
+    const std::vector<juce::PluginDescription>& untickedRegistrations = {})
 {
+    // The unticked registrations, collapsed the same way everything else here
+    // is. A non-WaveShell registration in this list is ignored rather than
+    // trusted: the caller resolves every disabled row it has, of any vendor,
+    // and scope is decided here.
+    std::set<juce::String> untickedProducts;
+    for (const auto& d : untickedRegistrations)
+        if (isWaveShellRegistration (d))
+            untickedProducts.insert (ChainHost::stripParenthetical (d.name));
+
     WavesFeedRows out;
 
     // What the feed already says. displayName is exactly what buildRecommendable
@@ -177,6 +217,14 @@ inline WavesFeedRows wavesRegistryFeedRows (
         if (! offeredProducts.insert (base).second)
         {
             ++out.alreadyOffered;
+            continue;
+        }
+        // AFTER alreadyOffered on purpose: a product still carried by an ENABLED
+        // catalog row is offered by that row, and counting it as unticked here
+        // would say the user refused something they are still being shown.
+        if (untickedProducts.count (base) > 0)
+        {
+            ++out.untickedInSettings;
             continue;
         }
         if (! offeredNames.insert (base).second)
