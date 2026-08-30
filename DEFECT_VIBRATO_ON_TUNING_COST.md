@@ -67,3 +67,23 @@ vib-on targeting is as accurate as vib-off (1.2 vs 1.5%).
     period of history, target the way vib-off does (fast f0), then
     hand over.
 Both are corrector-local; neither touches the engine or the contract.
+
+## RESOLVED 2026-08-30 — fix (d) shipped; residual UNDERSTOOD AND DECLINED
+
+Fix (d), provisional selection on pending evidence, shipped in commit
+5499adc (window wrong-rate 11.7 -> 7.0%, same-semitone 90.5 -> 94.6,
+vibrato retention bit-identical, confirmed on source4: 6.5 -> 3.1%).
+
+**The residual is filed, not open**: 7.0% in-window against vib-off's
+4.3%, cause named and measured — ~35 ms tracker latency plus pending-
+formation time, the interval BEFORE the note-change detector can hold a
+pending at all. Closing it requires touching detection, which has been
+deliberately kept honest throughout and carries its own cautionary
+history (the F0JumpGate rounds: persistence-holds at the detection
+layer injected excursions). Ruled 2026-08-30: understood-and-declined.
+Do not reopen without new evidence about detection itself.
+
+**Side-settlement**: (d) repaid the bleed gate's accepted natural cost
+— natural vib-on rough spans 59 -> 56, back at the pre-gate number —
+so the price recorded in PITCH_P0_VALIDATION.md §17.1 is now SETTLED
+rather than outstanding.

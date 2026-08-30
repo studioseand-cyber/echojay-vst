@@ -1795,6 +1795,9 @@ everywhere, including natural. Removing the tax and keeping its side
 effect is not available. Ruled and accepted 29 Aug 2026; do not widen or
 soften the taper to buy these spans back — that fits to a subsidised
 number — and do not reverse the gate on the strength of this delta.
+(SETTLED 30 Aug 2026: the vib-on fix (d) repaid this cost — natural
+vib-on spans 59 → 56, back at the pre-gate number. The price is paid,
+not outstanding; see DEFECT_VIBRATO_ON_TUNING_COST.md.)
 
 ### §17.2 Natural leaves most of a sustained offset standing — BY DESIGN
 
