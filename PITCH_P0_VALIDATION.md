@@ -1836,3 +1836,34 @@ so the floor also makes 0 mean what a user arriving from any other
 corrector expects. 6 was chosen over 4 BY MEASUREMENT on both takes,
 not from the middle of the reported range. Re-baselined hard-match gate
 columns are recorded in the commit that landed the floor.
+
+### §17.4 The dial's usable range: useful correction ends ~40 ms (30 Aug 2026)
+
+Full-dial sweep, sourceNEW at hard / vib off / reference 440, gated vs
+ungated bleed (AB_UNGATE), rough spans vs Antares / note-centre / within-3c:
+
+    tau    gated spans   ungated spans   centre   within-3c
+     0(6)   74 / 0.32s    73 / 0.30s     2.55c    40.4%
+     10     77 / 0.31     75 / 0.29      2.37     41.5
+     20     71 / 0.28     68 / 0.26      3.23     44.2
+     40     64 / 0.27     61 / 0.25      3.55     40.5   <- minimum
+     100    80 / 0.33     71 / 0.31      3.74     30.8
+     200    87 / 0.37     83 / 0.34      4.57     25.8
+     400   100 / 0.41     93 / 0.39      5.54     22.6
+
+**Useful correction ends around 40 ms** — the roughness minimum and the
+last stop before the within-3-cents cliff. 40→400 is transparency
+CHARACTER (natural lives at 120 with flex/humanize shaping it); 400 is
+essentially all scoop — τ never arrives on normal-length notes, and the
+larger sustained shifts its glides hold also buy seam charge under the
+boundary-scales-with-shift law. Sean's "400 sounds worse" is expected
+behaviour on both counts, not a defect. The τ-climb survives REMOVING
+the bleed gate entirely (+36 spans gated, +32 ungated from 40→400), so
+it is not the gate; the gate's own cost is ~+4 spans, flat in τ, and at
+low τ it buys convergence (2.55 vs 3.15 c at dial 0).
+
+**Caveat that must travel with this table (the exp4b lesson):** part of
+the long-τ climb is the RULER charging genuine glide motion — cycle
+similarity taxes real pitch movement — so the rows above 40 ms are an
+UPPER BOUND on actual waveform damage: measurement artefact plus real
+seam cost, not damage alone. Do not read the 400 ms row as breakage.
