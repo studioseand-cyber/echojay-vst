@@ -206,6 +206,9 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
     // the calibration curve - which EchoJay retune matches Antares's 0).
     if (const char* rt = getenv ("AB_RETUNE"))
         corr.setRetuneMs ((float) std::atof (rt));
+    // AB_SEED=1|2|3: the 30 Aug 2026 seed experiments (a/b/c).
+    if (const char* se = getenv ("AB_SEED"))
+        corr.debugSeedExperiment (std::atoi (se));
     // AB_REF=<Hz>: pin the tuning reference (29 Aug 2026, the hard-mode
     // flat-bias attribution: the PLUGIN defaults reference_source=auto and
     // follows KeyFeed's detected tuning; this mirror otherwise sits at

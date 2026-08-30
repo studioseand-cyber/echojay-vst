@@ -394,11 +394,28 @@ public:
         gapMs_ = 0.0f;
 
         // ---- slow-smoothed f0, for TARGET SELECTION only ------------------
-        if (! haveSlow_ || ! haveNote_) { slowCents_ = inCents; haveSlow_ = true; }
+        if (! haveSlow_ || ! haveNote_)
+        {
+            // Experiment (c): seed the slow track from the NOTE, not from
+            // one mid-swing audio sample - unbiased by vibrato phase by
+            // construction, inheriting only the note decision the corrector
+            // targets anyway. (30 Aug 2026 three-way; nothing shipped.)
+            slowCents_ = seedExp_ == 3 ? nearestDegreeCents (CentsC { inCents })
+                                       : inCents;
+            haveSlow_ = true;
+            slowAgeMs_ = 0.0f;
+        }
         else
         {
-            const float a = onePole (kVibratoSmoothMs);
+            // Experiment (a): onset-adaptive smoothing - the pole starts at
+            // 30 ms and relaxes to kVibratoSmoothMs over the first 300 ms.
+            const float smoothMs = seedExp_ == 1
+                ? 30.0f + (kVibratoSmoothMs - 30.0f)
+                        * std::min (1.0f, slowAgeMs_ / 300.0f)
+                : kVibratoSmoothMs;
+            const float a = onePole (smoothMs);
             slowCents_ = inCents + (slowCents_ - inCents) * a;
+            slowAgeMs_ += stepMs_;
         }
 
         // ---- note-change detection ----------------------------------------
@@ -438,7 +455,9 @@ public:
                         // interval does not become a portamento.
                         curCents_ = inCents;
                         shiftSnap_ = true;
-                        slowCents_ = inCents;
+                        slowCents_ = seedExp_ == 3
+                            ? nearestDegreeCents (CentsC { inCents }) : inCents;
+                        slowAgeMs_ = 0.0f;
                         noteRefCents_ = inCents;
                         stableMs_ = 0.0f;
                         noteMs_ = 0.0f; vibPhase_ = 0.0f;
@@ -459,7 +478,11 @@ public:
         noteMs_ += stepMs_;
 
         // ---- 1..2: nearest enabled degree, plus its bias -------------------
-        const float selectCents = ignoreVibrato_.load() ? slowCents_ : inCents;
+        // Experiment (b): provisional targeting - until the slow track has
+        // ~half a vibrato period of history, target the way vib-off does.
+        const bool slowProvisional = seedExp_ == 2 && slowAgeMs_ < 90.0f;
+        const float selectCents = (ignoreVibrato_.load() && ! slowProvisional)
+                                    ? slowCents_ : inCents;
         const float degreeCents = nearestDegreeCents (CentsC { selectCents });
 
         // The NOTE and the WOBBLE are separated here, and everything below
@@ -630,6 +653,10 @@ public:
     float    lastOscCents()  const noexcept { return lastOscCents_; }
     float    lastAimCents()  const noexcept { return lastAimCents_; }
     bool     inNote() const noexcept { return haveNote_; }
+    // Seed-experiment selector + raw slow-track access (30 Aug 2026
+    // three-way measurement; 0 = shipped, 1/2/3 = candidates a/b/c).
+    void  debugSeedExperiment (int e) noexcept { seedExp_ = e; }
+    float debugSlowTrack() const noexcept { return slowCents_; }
 
     // Nearest ENABLED degree to a cents value, including that degree's bias.
     // Public so a test can pin the decision independently of the envelope.
@@ -694,6 +721,8 @@ private:
     mutable float stepMs_ = 2.67f;
 
     std::atomic<float> retuneMs_    { kDefRetuneMs };
+    int   seedExp_ = 0;        // 30 Aug 2026 three-way experiments; 0 = shipped
+    float slowAgeMs_ = 0.0f;   // ms since the slow track was (re)seeded
     std::atomic<float> flex_        { 55.0f };
     std::atomic<float> humanize_    { 60.0f };
     std::atomic<float> referenceHz_ { 440.0f };

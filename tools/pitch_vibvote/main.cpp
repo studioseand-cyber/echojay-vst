@@ -73,15 +73,34 @@ int main (int argc, char** argv)
           if(lastSemi!=-1000&&sm!=lastSemi) reseed.push_back((int)h);
           lastSemi=sm; } } }
     int wrongNear=0,nearN=0,wrongFar=0,farN=0;
+    int wPrev=0,wOther=0;                    // wrong = previous note vs other
+    int wBin[3]={0,0,0}, nBin[3]={0,0,0};    // 0-100 / 100-200 / 200-300ms
+    int prevSemi=-1000;                       // antares' previous note
+    { // build previous-note map by scanning antares
+    }
+    std::vector<int> prevNote(ta.f0.size(),-1000);
+    { int last=-1000,cur=-1000;
+      for(size_t h=0;h<ta.f0.size();++h)
+      { if(ta.f0[h]<=0){ prevNote[h]=last; continue; }
+        const int sm=semi(ta.f0[h]);
+        if(sm!=cur){ last=cur; cur=sm; }
+        prevNote[h]=last; } }
     for(size_t h=0;h<te.f0.size()&&h<ta.f0.size();++h)
     { if(te.f0[h]<=0||ta.f0[h]<=0) continue;
       double d=1e9;
       for(int rs:reseed){ const double dt=((double)h-rs)*hopS; if(dt>=0&&dt<d) d=dt; }
       const bool near_=d<0.3;
       const bool wrong=semi(te.f0[h])!=semi(ta.f0[h]);
-      if(near_){++nearN; if(wrong)++wrongNear;} else {++farN; if(wrong)++wrongFar;} }
-    std::printf("%s: reseeds %d | within 300ms of reseed: wrong %d/%d (%.1f%%) | elsewhere: wrong %d/%d (%.1f%%)\n",
+      if(near_){++nearN; if(wrong)++wrongNear;
+        const int bin=d<0.1?0:d<0.2?1:2; ++nBin[bin];
+        if(wrong){ ++wBin[bin];
+          if(semi(te.f0[h])==prevNote[h]) ++wPrev; else ++wOther; } }
+      else {++farN; if(wrong)++wrongFar;} }
+    std::printf("%s: reseeds %d | within 300ms: wrong %d/%d (%.1f%%) | elsewhere %d/%d (%.1f%%)\n"
+        "    bins 0-100/100-200/200-300ms: %.1f%% %.1f%% %.1f%% | wrong = PREVIOUS note %d, other %d\n",
         argv[3],(int)reseed.size(),wrongNear,nearN,100.0*wrongNear/std::max(1,nearN),
-        wrongFar,farN,100.0*wrongFar/std::max(1,farN));
+        wrongFar,farN,100.0*wrongFar/std::max(1,farN),
+        100.0*wBin[0]/std::max(1,nBin[0]),100.0*wBin[1]/std::max(1,nBin[1]),
+        100.0*wBin[2]/std::max(1,nBin[2]),wPrev,wOther);
     return 0;
 }
