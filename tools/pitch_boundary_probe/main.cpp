@@ -72,7 +72,7 @@ int main (int argc, char** argv)
     ring.setPitchLagSamples(det.pitchLagFor(vt));
     std::vector<float> scratch(256);
     PitchEngine::HopEvent ev[64];
-    std::vector<double> tgtC, inC;      // per hop: applied target cents, in cents (C-frame diff irrelevant: use A-frame both)
+    std::vector<double> tgtC, inC, appC;      // per hop: applied target cents, in cents (C-frame diff irrelevant: use A-frame both)
     std::vector<int>    chg;            // hop indices where noteChanges() ticked
     uint32_t lastNC=0;
     for(size_t p=0;p+256<=in.size();p+=256)
@@ -93,17 +93,25 @@ int main (int argc, char** argv)
             const bool voiced=ev[h].voiced&&g>0;
             tgtC.push_back(t>0? 1200.0*std::log2(t/440.0) : -1e9);
             inC.push_back(voiced? 1200.0*std::log2(g/440.0) : -1e9);
+            // The quantity that reaches the AUDIO, routed per path: the
+            // shift-preferred slow shift at natVib~100, legacy target-in
+            // otherwise (31 Aug 2026, the applied-shift round).
+            appC.push_back(!voiced||t<=0 ? -1e9
+                : corr.shiftPreferred() ? (double)corr.lastShiftCents()
+                : 1200.0*std::log2(t/440.0)-1200.0*std::log2(g/440.0));
             if(corr.noteChanges()!=lastNC){ lastNC=corr.noteChanges(); chg.push_back((int)tgtC.size()-1); }
         }
     }
     const double hopS=det.inputHopLength(vt)/fs;
     auto med=[](std::vector<double>&v){ if(v.empty())return 0.0; std::sort(v.begin(),v.end()); return v[v.size()/2]; };
-    std::vector<double> disc, s30, s150, s300, rem300;
+    std::vector<double> disc, adisc, s30, s150, s300, rem300;
     for(int k:chg)
     {
         if(k<1) continue;
         if(tgtC[(size_t)k]<-1e8||tgtC[(size_t)k-1]<-1e8) continue;
         disc.push_back(std::fabs(tgtC[(size_t)k]-tgtC[(size_t)k-1]));
+        if(appC[(size_t)k]>-1e8&&appC[(size_t)k-1]>-1e8)
+            adisc.push_back(std::fabs(appC[(size_t)k]-appC[(size_t)k-1]));
         auto shiftAt=[&](double ms)->double{
             const int i=k+(int)std::lround(ms/1000.0/hopS);
             if(i>=(int)tgtC.size()||tgtC[(size_t)i]<-1e8||inC[(size_t)i]<-1e8) return -1;
@@ -111,7 +119,7 @@ int main (int argc, char** argv)
         double a=shiftAt(30),b=shiftAt(150),c=shiftAt(300);
         if(a>=0)s30.push_back(a); if(b>=0)s150.push_back(b); if(c>=0)s300.push_back(c);
     }
-    std::printf("tau %3.0f: boundaries %2d | SNAP disc med %5.1fc | applied |shift| med +30ms %4.1fc  +150ms %4.1fc  +300ms %4.1fc\n",
-        tau,(int)chg.size(),med(disc),med(s30),med(s150),med(s300));
+    std::printf("tau %3.0f: boundaries %2d | TARGET disc med %5.1fc | APPLIED-SHIFT disc med %5.1fc | |shift| +30ms %4.1fc +150ms %4.1fc +300ms %4.1fc\n",
+        tau,(int)chg.size(),med(disc),med(adisc),med(s30),med(s150),med(s300));
     return 0;
 }

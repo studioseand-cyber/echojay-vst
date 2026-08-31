@@ -604,13 +604,29 @@ public:
         //               vibrato is where the false alarms originate AND
         //               where suspension damage is audible; onsets carry no
         //               developed vibrato, so the tau-400 fix survives.
+        //   envExp_ 5 = APPLIED-SHIFT GATE (31 Aug 2026 ruling): suspend
+        //               only when the shift actually REACHING THE AUDIO is
+        //               large - the quantity the confirmation snap would
+        //               cancel. Routed per path: the shift-preferred slow
+        //               path (natVib~100) absorbs boundary discontinuities
+        //               structurally (measured applied disc 3.7c at
+        //               natural-120 and 8.3c even at natural-400, under
+        //               146-172c TARGET discs), while the legacy target/f0
+        //               path transmits them whole (181c at hard-400). The
+        //               causal quantity, no fitted crossover; stays correct
+        //               if flex/humanize scaling or the dial's range ever
+        //               changes, and degrades gracefully: suspension
+        //               engages only where the applied step is real.
+        const float appliedNow = shiftPreferred() ? shiftCents_
+                                                  : (curCents_ - inCents);
         const bool suspend = (envExp_ == 1 || envExp_ == 2) ? havePending_
                            : (envExp_ == 3) ? pendingCorroborated
                            : (envExp_ == 4) ? (pendingCorroborated && pendDepth_ < 8.0f)
+                           : (envExp_ == 5) ? (havePending_ && std::fabs (appliedNow) > 30.0f)
                            : false;
         if (suspend)
         {
-            if (envExp_ == 2 || envExp_ == 3)
+            if (envExp_ == 2 || envExp_ == 3 || envExp_ == 5)
                 curCents_ = inCents + (curCents_ - inCents) * onePole (10.0f);
             // envExp_ 1: curCents_ held as-is.
         }
