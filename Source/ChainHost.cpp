@@ -5152,6 +5152,15 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
     // Model-keyed slot first (exact product), then the bare stem guarded by
     // the c3ad9be predicate: a stem hit whose entry carries a DIFFERENT
     // trailing number than this row is a different product, not a resolution.
+    //
+    // THE SECOND TIER IS EXACTLY ONE SHAPE, and knowing that is what makes the
+    // guard below safe (measured 31 Aug 2026). modelKey is normalizeName plus
+    // "\n" + trailingModelNumber when there IS a bare trailing number, so when
+    // there is none the model key and the bare stem are the SAME STRING: a
+    // tier-1 miss is then a tier-2 miss on an identical lookup. Tier 2 is
+    // therefore reachable ONLY when the request carries a bare trailing number
+    // the entry does not. Verified against all 1,491 scanner rows on this
+    // machine: zero counter-examples.
     auto lookupName = [&nameMap, &modelKey](const juce::String& n)
     {
         auto it = nameMap.find(modelKey(n));
@@ -5163,6 +5172,48 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
             const auto numEn = trailingModelNumber(stripParenthetical(it->second.name));
             if (numIn.isNotEmpty() && numEn.isNotEmpty() && numIn != numEn)
                 return nameMap.end();
+            // DIRECTION A: the request carries a number, the entry carries
+            // none. THE FEED PATH REFUSES THIS, and EJNameLadder.h's ladder
+            // deliberately does not -- see the note beside its tolerance for
+            // why the two diverge rather than one of them being wrong.
+            //
+            // WHAT IT COSTS AND WHAT IT BUYS, MEASURED over this machine's
+            // 1,491 scanner rows: tier 2 has exactly ONE member, and it is the
+            // defect. Logic Pro's stock "DeEsser 2" reached this branch, the
+            // strip took its "2", and it bound to WAVES' "DeEsser (s)" -- a
+            // different vendor's plugin, advertised to the model under Logic's
+            // name. Logic's DeEsser 2 is not in entries_ at all (stock plugins
+            // are not standalone AUs), so the strip was the only reason that
+            // name resolved to anything. Refusing costs zero correct bindings
+            // here and removes that one.
+            //
+            // DIRECTION B IS UNTOUCHED and is the useful half: an entry that
+            // carries a number the request does not ("Pro-Q" finding "Pro-Q 3",
+            // "Saturn" finding "Saturn 2") still binds, because that asymmetry
+            // reaches tier 1, not here.
+            //
+            // NOT KEYED ON THE VENDOR, and that was the measured decision
+            // rather than the obvious one. A vendor comparison looks like the
+            // natural test and fails on this data: scanner and registry vendor
+            // strings disagree outright on 73 of 654 resolved pairs (11.2%) --
+            // developer against distributor ("Adptr" / "Se" against "Plugin
+            // Alliance"), a CATEGORY sitting in the field ("Pitch Shift" for
+            // MAutoPitch), brand renames -- and 851 of 860 VST3 registry rows
+            // carry no manufacturer at all, so it fails open exactly where it
+            // would be needed. 72 of those 73 disagreements resolve on tier 1
+            // where the name matched byte-for-byte and the vendor is beside
+            // the point. The number asymmetry tests what actually went wrong.
+            if (numIn.isNotEmpty() && numEn.isEmpty())
+            {
+                // LOGGED, ALWAYS. A refusal that is silent is indistinguishable
+                // from one that never fired, and what it removes is a name
+                // quietly missing from the feed on someone else's machine.
+                EchoJay_NSLog(("EJScan: [name-guard] REFUSED \"" + n + "\" -> \""
+                               + it->second.name + "\" [" + it->second.pluginFormatName
+                               + "]: direction-A number asymmetry (request carries \""
+                               + numIn + "\", entry carries none)").toRawUTF8());
+                return nameMap.end();
+            }
         }
         return it;
     };

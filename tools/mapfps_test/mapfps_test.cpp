@@ -3503,6 +3503,218 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                           << lostAmbiguous << "\n";
             }
 
+            // ---- nl PIN11: THE FEED'S DIRECTION-A REFUSAL -----------------
+            // buildRecommendable's lookupName refuses a stem hit where the
+            // REQUEST carries a bare trailing number and the ENTRY carries
+            // none. The keying lives in lambdas inside a member function and
+            // cannot be called directly (the limitation the 20 Aug model-number
+            // pin records), so this REBUILDS the two-tier map the way
+            // buildRecommendable builds it -- insertName on the full name,
+            // insertPreferredBase on the stripped base -- and asks it real
+            // lookups. Pairwise "does this look like direction A" is NOT the
+            // same question and gets a different answer: it cannot see that
+            // tier 1 already matched some other entry, and it keys the entry
+            // by its full name where the map keys it by its base.
+            {
+                auto tnum = [] (const juce::String& n)
+                { return echojay::trailingModelNumber (n); };
+                auto stem = [] (const juce::String& n)
+                { return echojay::normalizeName (n); };
+                auto modelKeyOf = [&] (const juce::String& n)
+                {
+                    const auto num = tnum (n);
+                    return num.isNotEmpty() ? stem (n) + "\n" + num : stem (n);
+                };
+                struct Tiered { juce::String name; int tier = 0; };   // 0 = miss
+                auto buildMap = [&] (const juce::Array<juce::PluginDescription>& entries)
+                {
+                    std::map<juce::String, juce::PluginDescription> m;
+                    auto insertName = [&] (const juce::String& n, const juce::PluginDescription& d)
+                    {
+                        const auto k = modelKeyOf (n);
+                        if (m.find (k) == m.end()) m[k] = d;
+                        const auto st = stem (n);
+                        if (st != k && m.find (st) == m.end()) m[st] = d;
+                    };
+                    auto insertBase = [&] (const juce::String& b, const juce::PluginDescription& d)
+                    {
+                        const auto k = modelKeyOf (b);
+                        auto itK = m.find (k);
+                        if (itK == m.end() || echojay::channelVariantIsBetter (d.name, itK->second.name))
+                            m[k] = d;
+                        const auto st = stem (b);
+                        if (st != k)
+                        {
+                            auto itS = m.find (st);
+                            if (itS == m.end() || echojay::channelVariantIsBetter (d.name, itS->second.name))
+                                m[st] = d;
+                        }
+                    };
+                    for (const auto& d : entries)
+                    {
+                        insertName (d.name, d);
+                        const auto b = ChainHost::stripParenthetical (d.name);
+                        if (b != d.name) insertBase (b, d);
+                    }
+                    return m;
+                };
+                // lookupName, both tiers, INCLUDING the direction-A refusal.
+                auto lookup = [&] (const std::map<juce::String, juce::PluginDescription>& m,
+                                   const juce::String& n) -> Tiered
+                {
+                    auto it = m.find (modelKeyOf (n));
+                    if (it != m.end()) return { it->second.name, 1 };
+                    it = m.find (stem (n));
+                    if (it != m.end())
+                    {
+                        const auto numIn = tnum (ChainHost::stripParenthetical (n));
+                        const auto numEn = tnum (ChainHost::stripParenthetical (it->second.name));
+                        if (numIn.isNotEmpty() && numEn.isNotEmpty() && numIn != numEn) return {};
+                        if (numIn.isNotEmpty() && numEn.isEmpty())                      return {};
+                        return { it->second.name, 2 };
+                    }
+                    return {};
+                };
+                auto row = [] (const char* name, const char* sub)
+                {
+                    juce::PluginDescription d;
+                    d.name = name; d.pluginFormatName = "AudioUnit";
+                    d.fileOrIdentifier = juce::String ("AudioUnit:Effects/aufx,") + sub + ",Fxtr";
+                    return d;
+                };
+                auto poolOfNames = [&] (std::initializer_list<std::pair<const char*, const char*>> l)
+                {
+                    juce::Array<juce::PluginDescription> a;
+                    for (auto& kv : l) a.add (row (kv.first, kv.second));
+                    return a;
+                };
+
+                // TIER 2 IS ONE SHAPE, and the guard's safety rests on it: with
+                // no bare trailing number the model key and the bare stem are
+                // the same string, so tier 2 is unreachable.
+                check (modelKeyOf ("bx_digital V2") == stem ("bx_digital V2"),
+                       "nl PIN11: a v-prefixed version is NOT a model number, so its key IS the stem",
+                       modelKeyOf ("bx_digital V2"));
+                check (modelKeyOf ("DeEsser 2") != stem ("DeEsser 2"),
+                       "nl PIN11: a BARE trailing number splits the model key from the stem",
+                       modelKeyOf ("DeEsser 2").replace ("\n", "|"));
+
+                // DIRECTION A: request carries a number the entry lacks. The
+                // entry is a CHANNEL VARIANT, so it reaches the map under its
+                // stripped base -- which is exactly how the live case arrives.
+                {
+                    const auto m = buildMap (poolOfNames ({{"Fixture Dess (m)","FdsM"},
+                                                           {"Fixture Dess (s)","FdsS"}}));
+                    // TIER 1, not 2: "Fixture Dess" carries no bare digit, so
+                    // its model key IS its stem -- the same property the guard
+                    // rests on, seen from the other side. What matters here is
+                    // that it BINDS, and to the stereo variant.
+                    check (lookup (m, "Fixture Dess").tier == 1
+                           && lookup (m, "Fixture Dess").name == "Fixture Dess (s)",
+                           "nl PIN11: the un-numbered base still binds, to the stereo variant",
+                           lookup (m, "Fixture Dess").name + " tier "
+                               + juce::String (lookup (m, "Fixture Dess").tier));
+                    check (lookup (m, "Fixture Dess 2").tier == 0,
+                           "nl PIN11: request carries a number the entry lacks -> REFUSED (direction A)",
+                           lookup (m, "Fixture Dess 2").name);
+                }
+                // DIRECTION B: the entry carries the number, the request does
+                // not. Still binds -- this is the half that earns the tolerance.
+                {
+                    const auto m = buildMap (poolOfNames ({{"Fixture Q 3","FQ3a"}}));
+                    check (lookup (m, "Fixture Q").tier != 0
+                           && lookup (m, "Fixture Q").name == "Fixture Q 3",
+                           "nl PIN11: entry carries a number the request lacks -> still binds (direction B)",
+                           lookup (m, "Fixture Q").name);
+                }
+                // TWO DIFFERENT numbers stay the c3ad9be guard's business.
+                {
+                    const auto m = buildMap (poolOfNames ({{"Fixture EQ 200","FE20"}}));
+                    check (lookup (m, "Fixture EQ 250").tier == 0,
+                           "nl PIN11: two DIFFERENT numbers stay refused by the c3ad9be guard",
+                           lookup (m, "Fixture EQ 250").name);
+                }
+                // THE ARM THAT PINS THE bx_ PAIR OUT OF THE GUARD'S REACH.
+                // bx_digital V2 -> V3 and bx_XL -> bx_XL V2 are CORRECT
+                // bindings carried by the version-token strip, not the digit
+                // strip, and their vendors disagree (Brainworx against Plugin
+                // Alliance, developer against distributor) so a vendor-keyed
+                // guard would have refused them. They resolve on TIER 1, where
+                // this guard never runs.
+                {
+                    const auto m = buildMap (poolOfNames ({{"bx_digital V3","bxd3"},
+                                                           {"bx_XL V2","bxx2"}}));
+                    check (lookup (m, "bx_digital V2").tier == 1
+                           && lookup (m, "bx_digital V2").name == "bx_digital V3",
+                           "nl PIN11: bx_digital V2 binds V3 on TIER 1, out of the guard's reach",
+                           lookup (m, "bx_digital V2").name);
+                    check (lookup (m, "bx_XL").tier == 1
+                           && lookup (m, "bx_XL").name == "bx_XL V2",
+                           "nl PIN11: and bx_XL binds bx_XL V2 the same way",
+                           lookup (m, "bx_XL").name);
+                }
+                // A NUMBERED REQUEST WITH ITS OWN ENTRY hits tier 1 and is
+                // never offered to the guard -- the UAD "... 180" shape, which
+                // a pairwise reading of this rule gets wrong.
+                {
+                    const auto m = buildMap (poolOfNames ({{"Fixture Mic Collection","FMC0"},
+                                                           {"Fixture Mic Collection 180","FM18"}}));
+                    check (lookup (m, "Fixture Mic Collection 180").tier == 1
+                           && lookup (m, "Fixture Mic Collection 180").name == "Fixture Mic Collection 180",
+                           "nl PIN11: a numbered request WITH its own entry resolves on tier 1, unrefused",
+                           lookup (m, "Fixture Mic Collection 180").name);
+                }
+
+                // THE STRUCTURAL ARM: the shipped guard exists, refuses, and
+                // says so out loud. A silent refusal is indistinguishable from
+                // one that never fired.
+                {
+                    std::ifstream fch ("Source/ChainHost.cpp");
+                    std::stringstream sch; sch << fch.rdbuf();
+                    const auto body = functionBody (juce::String (sch.str()),
+                                                    "void ChainHost::buildRecommendable");
+                    check (body.contains ("if (numIn.isNotEmpty() && numEn.isEmpty())"),
+                           "nl PIN11: the shipped feed path carries the direction-A refusal");
+                    check (body.contains ("EJScan: [name-guard] REFUSED"),
+                           "nl PIN11: and LOGS every refusal, name and candidate both");
+                }
+
+                // THE LIVE ARM: a real two-tier lookup for every scanner row
+                // against this machine's real registry, counting what the
+                // guard actually removes.
+                {
+                    PluginScanner sc; sc.loadCache();
+                    auto rows = sc.getPlugins();
+                    if (rows.empty() || poolEmpty.isEmpty())
+                        std::cout << "  SKIP  nl PIN11 live arm (no scanner cache on this machine)\n";
+                    else
+                    {
+                        const auto live = buildMap (poolEmpty);
+                        juce::StringArray refused;
+                        for (const auto& sp : rows)
+                        {
+                            const auto n = sp.name.trim();
+                            if (n.isEmpty()) continue;
+                            if (lookup (live, n).tier != 0) continue;      // bound, nothing removed
+                            auto it = live.find (stem (n));
+                            if (it == live.end()) continue;                // a plain miss, not a refusal
+                            const auto numIn = tnum (ChainHost::stripParenthetical (n));
+                            const auto numEn = tnum (ChainHost::stripParenthetical (it->second.name));
+                            if (numIn.isNotEmpty() && numEn.isEmpty())
+                                refused.addIfNotAlreadyThere (n + " -> " + it->second.name);
+                        }
+                        std::cout << "  MEASURED  direction-A bindings the guard removes: "
+                                  << refused.size() << " (" << refused.joinIntoString ("; ") << ")\n";
+                        check (refused.size() == 1,
+                               "nl PIN11: the guard removes exactly ONE binding on this machine",
+                               juce::String (refused.size()) + ": " + refused.joinIntoString ("; "));
+                        check (! refused.isEmpty() && refused[0].startsWith ("DeEsser 2 -> DeEsser"),
+                               "nl PIN11: and it is the cross-vendor DeEsser binding, named",
+                               refused.joinIntoString ("; "));
+                    }
+                }
+            }
+
             // ---- nl PIN10: AN AMBIGUOUS TIE CANNOT RESOLVE TO A PICK ------
             // A FIXTURE, and deliberately so: this machine's registry has no
             // different-product tie left to reach (the 16 ties its corpus can

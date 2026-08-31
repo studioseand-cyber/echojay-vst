@@ -224,6 +224,36 @@ inline int matchInPool (const juce::Array<juce::PluginDescription>& pool,
     // the candidate each carry a trailing number and they DIFFER, the number is
     // a model, not a version, so it is not a match. A number on only one side
     // (e.g. "Saturn 2" vs a plugin named "Saturn") still tolerates the strip.
+    //
+    // THE FEED PATH DELIBERATELY DIVERGES HERE, AND THIS IS NOT AN OVERSIGHT
+    // TO TIDY UP (31 Aug 2026). ChainHost::buildRecommendable's lookupName
+    // REFUSES the one-sided case in one direction -- request carries a number,
+    // entry carries none -- while this ladder keeps tolerating it. Anyone
+    // unifying the two should know why they were separated:
+    //
+    //   The tolerance was written for THIS function, and on the feed path it
+    //   had exactly one live consumer, which was a defect. Measured over 1,491
+    //   scanner rows: the feed's second tier holds ONE binding, Logic Pro's
+    //   stock "DeEsser 2" onto WAVES' "DeEsser (s)" -- a different vendor's
+    //   plugin offered under Logic's name, reachable only because the strip
+    //   took the "2". Refusing it there costs nothing measurable and removes a
+    //   wrong binding from the list the model reads.
+    //
+    //   HERE the same population cannot be sized, and that is the reason to
+    //   leave it alone rather than an excuse. This ladder answers names from
+    //   outside the registry -- chat text, saved chains, Link sidecars -- and
+    //   the registry-derived corpus produces ZERO one-sided cases in either
+    //   direction (every registry name hits the exact rung), so a change here
+    //   would ship against no measurement at all. Direction B, an entry
+    //   carrying a number the request does not ("Pro-Q" -> "Pro-Q 3"), is the
+    //   half that earns the tolerance and is wanted on both paths.
+    //
+    // So: same asymmetry, two paths, one measured and one not. If someone
+    // later measures the model-emitted population and finds direction A
+    // misfiring here too, tightening this is the right move -- but do it on a
+    // measurement, which is the thing that was missing the first time this
+    // guard shipped (c3ad9be, 28 July, no test, silently bypassed for three
+    // weeks).
     const auto keyIn = normalizeName (base);
     const auto numIn = trailingModelNumber (base);
     juce::Array<int> normHits;
