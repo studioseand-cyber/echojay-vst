@@ -82,6 +82,43 @@ inline bool isWaveShellRegistration (const juce::PluginDescription& d)
              == wavesAuManufacturerCode();
 }
 
+/** The key two registrations share when they are the same product.
+
+    stripParenthetical says which registrations are one product; folding case
+    says that "Nx Ambisonics" and "NX Ambisonics" are one product NAME and not
+    two, which is the half this header was missing.
+
+    ONE PRODUCT, NOT TWO -- MEASURED 31 Aug 2026, and it retracts an earlier
+    claim in nl PIN9 that these were two different Waves products. WaveShell
+    registers "Nx Ambisonics (4->2)" as aufx,NX4B and "NX Ambisonics (4->4)" as
+    aufx,NX4D: a shared three-character product code with the channel
+    configuration in the trailing character. That is the shape of every other
+    Waves family in this registry -- B360 is B3M4/B3S4/B354/B364/B384, Abbey
+    Road Chambers is STEM/STES/STEX. Two genuinely DIFFERENT products carry
+    different product CODES instead: GTR Stomp 2/4/6 are GC2x, GC4x and GCNx,
+    and API-2500 and API-560 are APCx and AE5x. Same vendor, same version,
+    adjacent uids, one product code: one product, two channel configurations,
+    and a name Waves capitalised two ways.
+
+    WHY THE KEY HAS TO FOLD, WHICH IS THE ACTUAL CAUSE. The name ladder
+    (EJNameLadder.h) resolves case-INSENSITIVELY -- normalizeName lowercases --
+    so a base name is the same request to the resolver however it is
+    capitalised. This header keyed products case-SENSITIVELY, so it offered
+    "Nx Ambisonics" and "NX Ambisonics" as two products while the ladder could
+    only ever answer one of them. The feed's row carried (4->4) and every
+    resolver path loaded (4->2). The defect is that the two sides key the same
+    population differently; it is NOT a tie-break defect, and the ladder's
+    equal-rank first-wins rule is deliberately untouched (it is the no-change
+    guarantee that keeps a single-candidate name resolving exactly as it did).
+
+    ONLY THE KEY FOLDS. The name the model is offered is still the spelling the
+    registry used, taken first-seen in registry order, so no product is renamed
+    by this. */
+inline juce::String wavesProductKey (const juce::String& registrationName)
+{
+    return ChainHost::stripParenthetical (registrationName).toLowerCase();
+}
+
 /** One feed row: the product name the model is offered, and the registration
     that name will load. */
 struct WavesFeedRow
@@ -172,7 +209,7 @@ inline WavesFeedRows wavesRegistryFeedRows (
     std::set<juce::String> untickedProducts;
     for (const auto& d : untickedRegistrations)
         if (isWaveShellRegistration (d))
-            untickedProducts.insert (ChainHost::stripParenthetical (d.name));
+            untickedProducts.insert (wavesProductKey (d.name));
 
     WavesFeedRows out;
 
@@ -181,28 +218,35 @@ inline WavesFeedRows wavesRegistryFeedRows (
     // registration rather than off that display name -- the display name is a
     // marketing name whose spelling shares nothing with the shell's ("SSL
     // E-Channel" is "SSLChannel (s)"), so comparing names would see none of it.
+    // offeredProducts is keyed by wavesProductKey; offeredNames is NOT, and
+    // that split is deliberate. The first is a product identity, which folds.
+    // The second is the set of display names the feed already publishes -- a
+    // different vocabulary, owned by the scanner walk above -- and this header
+    // is not the place to re-key it.
     std::set<juce::String> offeredNames, offeredProducts;
     for (const auto& r : alreadyResolved)
     {
         offeredNames.insert (r.displayName);
         if (isWaveShellRegistration (r.desc))
-            offeredProducts.insert (ChainHost::stripParenthetical (r.desc.name));
+            offeredProducts.insert (wavesProductKey (r.desc.name));
     }
 
     // Collapse the registrations to products, best variant per product, in
     // registry order (entries_ is sorted, so the order is stable and the
     // appended block reads alphabetically).
-    juce::StringArray order;
+    juce::StringArray order;                             // product KEYS, registry order
+    std::map<juce::String, juce::String> offeredBase;    // key -> first-seen spelling
     std::map<juce::String, juce::PluginDescription> best;
     for (const auto& d : loadable)
     {
         if (! isWaveShellRegistration (d)) continue;
-        const auto base = ChainHost::stripParenthetical (d.name);
-        auto it = best.find (base);
+        const auto key = wavesProductKey (d.name);
+        auto it = best.find (key);
         if (it == best.end())
         {
-            order.add (base);
-            best.emplace (base, d);
+            order.add (key);
+            offeredBase.emplace (key, ChainHost::stripParenthetical (d.name));
+            best.emplace (key, d);
         }
         else if (channelVariantIsBetter (d.name, it->second.name))
         {
@@ -211,10 +255,11 @@ inline WavesFeedRows wavesRegistryFeedRows (
     }
     out.products = order.size();
 
-    for (const auto& base : order)
+    for (const auto& key : order)
     {
-        const auto& d = best[base];
-        if (! offeredProducts.insert (base).second)
+        const auto& d    = best[key];
+        const auto& base = offeredBase[key];
+        if (! offeredProducts.insert (key).second)
         {
             ++out.alreadyOffered;
             continue;
@@ -222,7 +267,7 @@ inline WavesFeedRows wavesRegistryFeedRows (
         // AFTER alreadyOffered on purpose: a product still carried by an ENABLED
         // catalog row is offered by that row, and counting it as unticked here
         // would say the user refused something they are still being shown.
-        if (untickedProducts.count (base) > 0)
+        if (untickedProducts.count (key) > 0)
         {
             ++out.untickedInSettings;
             continue;

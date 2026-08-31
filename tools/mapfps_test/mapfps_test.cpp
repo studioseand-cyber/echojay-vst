@@ -2784,10 +2784,16 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
 
             // ---- wr PIN2: THE COLLAPSE --------------------------------------
             {
+                // CASE-INSENSITIVE, mirroring wavesProductKey, and derived
+                // through JUCE's own compare rather than through the helper so
+                // the count stays independent of the function under test.
+                // Case-sensitive this counted 289 where the header now counts
+                // 288: "Nx Ambisonics" and "NX Ambisonics" are one product.
                 juce::StringArray distinctBases;
                 for (const auto& d : loadable)
                     if (echojay::isWaveShellRegistration (d))
-                        distinctBases.addIfNotAlreadyThere (ChainHost::stripParenthetical (d.name));
+                        distinctBases.addIfNotAlreadyThere (ChainHost::stripParenthetical (d.name),
+                                                            /*ignoreCase*/ true);
                 check (fresh.products == distinctBases.size(),
                        "wr PIN2: one product per distinct base name",
                        juce::String (fresh.products) + " vs " + juce::String (distinctBases.size()));
@@ -2843,7 +2849,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 for (const auto& r : fresh.rows)
                     for (const auto& d : loadable)
                         if (echojay::isWaveShellRegistration (d)
-                            && ChainHost::stripParenthetical (d.name) == r.name
+                            && ChainHost::stripParenthetical (d.name).equalsIgnoreCase (r.name)
                             && echojay::channelVariantIsBetter (d.name, r.desc.name))
                         {
                             ++beaten;
@@ -3027,10 +3033,12 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                             // KEYED ON THE PRODUCT, not the registration: a
                             // catalog row can hold a different channel build of
                             // the same plugin, and one did.
-                            feedRegs.insert (ChainHost::stripParenthetical (e.desc.name));
+                            feedRegs.insert (ChainHost::stripParenthetical (e.desc.name)
+                                                 .toLowerCase());
                         }
                         for (const auto& r : add.rows)
-                            if (feedRegs.count (ChainHost::stripParenthetical (r.desc.name)) > 0)
+                            if (feedRegs.count (ChainHost::stripParenthetical (r.desc.name)
+                                                    .toLowerCase()) > 0)
                             {
                                 ++reoffered;
                                 if (firstReoffered.isEmpty())
@@ -3045,7 +3053,8 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                             std::set<juce::String> seen;
                             for (const auto& e : host.recommendableEntries())
                                 if (echojay::isWaveShellRegistration (e.desc)
-                                    && ! seen.insert (ChainHost::stripParenthetical (e.desc.name)).second)
+                                    && ! seen.insert (ChainHost::stripParenthetical (e.desc.name)
+                                                          .toLowerCase()).second)
                                     std::cout << "  MEASURED  today's feed carries \""
                                               << e.displayName << "\" -> " << e.desc.name
                                               << " twice over\n";
@@ -3305,10 +3314,17 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
     // (m). The ladder is what add/replace, bare-name recall and every Link path
     // resolve through, so this is where the variant has to be decided.
     //
-    // The ladder is header-inline now, so these pins run the SHIPPED code AND
-    // compare it name-by-name against the OLD one still in the linked lib --
-    // ChainHost::resolveByName here is the pre-change implementation, which is
-    // exactly what a before/after table needs.
+    // The ladder is header-inline now, so these pins run the SHIPPED code and
+    // compare it name-by-name against the lib's copy of the same rule.
+    //
+    // RE-POINTED 31 Aug 2026, for the reason cb19bfe re-pointed nl PIN1. This
+    // block was written while the linked archive predated 28d3f53, so
+    // ChainHost::resolveByName WAS the pre-change ladder and the table below
+    // was a genuine before/after. The archive has been rebuilt since; the lib
+    // now carries the same ladder the header does, so those columns are no
+    // longer before and after. They are LIB and HEADER: two compilations of
+    // one rule, and the table asserts they AGREE. A before/after reading of it
+    // would be reading a difference that no longer exists.
     {
         std::cout << "name ladder (channel variant in the collapsing rungs):\n";
         const juce::ScopedJuceInitialiser_GUI juceInit;
@@ -3590,9 +3606,11 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             {
                 const auto waves = echojay::wavesRegistryFeedRows (poolEmpty, {});
                 ChainHost linkHost;   // no feed, as in a Link process
-                struct Row { const char* label; int monoBefore = 0, monoAfter = 0,
-                             wrongBefore = 0, wrongAfter = 0,
-                             missBefore = 0, missAfter = 0; };
+                // Lib / Header, not Before / After: both sides are the
+                // post-28d3f53 ladder now, one linked and one compiled here.
+                struct Row { const char* label; int monoLib = 0, monoHdr = 0,
+                             wrongLib = 0, wrongHdr = 0,
+                             missLib = 0, missHdr = 0; };
                 Row A  { "A  build, exact branch      " };
                 Row Ad { "A' build, fallback          " };
                 Row B  { "B  add / replace            " };
@@ -3604,8 +3622,8 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 // ONLY in mono is supposed to land there. "wrong" counts a
                 // build worse than the best that product actually offers,
                 // which is what the ladder was getting wrong.
-                auto tally = [] (Row& r, const juce::PluginDescription& before,
-                                 const juce::PluginDescription& after,
+                auto tally = [] (Row& r, const juce::PluginDescription& viaLib,
+                                 const juce::PluginDescription& viaHdr,
                                  const juce::PluginDescription& best)
                 {
                     auto mono = [] (const juce::PluginDescription& d)
@@ -3617,16 +3635,16 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                     {
                         return echojay::channelVariantIsBetter (best.name, d.name);
                     };
-                    if (before.name.isEmpty()) ++r.missBefore;
-                    else { if (mono (before)) ++r.monoBefore; if (worse (before)) ++r.wrongBefore; }
-                    if (after.name.isEmpty()) ++r.missAfter;
-                    else { if (mono (after)) ++r.monoAfter; if (worse (after)) ++r.wrongAfter; }
+                    if (viaLib.name.isEmpty()) ++r.missLib;
+                    else { if (mono (viaLib)) ++r.monoLib; if (worse (viaLib)) ++r.wrongLib; }
+                    if (viaHdr.name.isEmpty()) ++r.missHdr;
+                    else { if (mono (viaHdr)) ++r.monoHdr; if (worse (viaHdr)) ++r.wrongHdr; }
                 };
                 for (const auto& p : waves.rows)
                 {
                     const auto& n = p.name;
                     // A: the feed's stored description, which the ladder never
-                    // touches -- before and after are the same read.
+                    // touches -- both columns are the same read.
                     juce::PluginDescription fed;
                     for (const auto& e : host.recommendableEntries())
                         if (e.displayName.trim().equalsIgnoreCase (n)) { fed = e.desc; break; }
@@ -3644,27 +3662,40 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                     tally (I, linkHost.resolveByName (n, "AudioUnit"), ladder (poolAU, n), p.desc);
                 }
                 std::cout << "  MEASURED  per path, over " << waves.products
-                          << " Waves products: mono/(m->s) before -> after,"
+                          << " Waves products: mono/(m->s) lib | header,"
                              " then WORSE-THAN-BEST, then unresolved\n";
                 for (const Row* r : { &A, &Ad, &B, &D, &H, &I })
                     std::cout << "  MEASURED    " << r->label
-                              << "mono " << r->monoBefore << " -> " << r->monoAfter
-                              << " | wrong " << r->wrongBefore << " -> " << r->wrongAfter
-                              << " | miss " << r->missBefore << " -> " << r->missAfter << "\n";
-                check (Ad.wrongAfter == 0 && B.wrongAfter == 0 && D.wrongAfter == 0
-                       && H.wrongAfter == 0 && I.wrongAfter == 0 && A.wrongAfter == 0,
-                       "nl PIN8: after the fix NO path loads a worse build than the product offers",
-                       "A=" + juce::String (A.wrongAfter) + " A'=" + juce::String (Ad.wrongAfter)
-                           + " B=" + juce::String (B.wrongAfter) + " D=" + juce::String (D.wrongAfter)
-                           + " H=" + juce::String (H.wrongAfter) + " I=" + juce::String (I.wrongAfter));
-                check (Ad.monoAfter == B.monoAfter && B.monoAfter == D.monoAfter
-                       && D.monoAfter == H.monoAfter && H.monoAfter == I.monoAfter,
-                       "nl PIN8: every ladder path agrees on the same products afterwards",
-                       juce::String (Ad.monoAfter) + " mono-only products, and they must stay mono");
-                check (A.missAfter == A.missBefore && Ad.missAfter == Ad.missBefore
-                       && B.missAfter == B.missBefore && D.missAfter == D.missBefore
-                       && H.missAfter == H.missBefore && I.missAfter == I.missBefore,
-                       "nl PIN8: and no path resolves fewer products than it did");
+                              << "mono " << r->monoLib << " | " << r->monoHdr
+                              << " | wrong " << r->wrongLib << " | " << r->wrongHdr
+                              << " | miss " << r->missLib << " | " << r->missHdr << "\n";
+                check (Ad.wrongHdr == 0 && B.wrongHdr == 0 && D.wrongHdr == 0
+                       && H.wrongHdr == 0 && I.wrongHdr == 0 && A.wrongHdr == 0,
+                       "nl PIN8: NO path loads a worse build than the product offers",
+                       "A=" + juce::String (A.wrongHdr) + " A'=" + juce::String (Ad.wrongHdr)
+                           + " B=" + juce::String (B.wrongHdr) + " D=" + juce::String (D.wrongHdr)
+                           + " H=" + juce::String (H.wrongHdr) + " I=" + juce::String (I.wrongHdr));
+                check (Ad.monoHdr == B.monoHdr && B.monoHdr == D.monoHdr
+                       && D.monoHdr == H.monoHdr && H.monoHdr == I.monoHdr,
+                       "nl PIN8: every ladder path agrees on the same products",
+                       juce::String (Ad.monoHdr) + " mono-only products, and they must stay mono");
+                check (A.missHdr == A.missLib && Ad.missHdr == Ad.missLib
+                       && B.missHdr == B.missLib && D.missHdr == D.missLib
+                       && H.missHdr == H.missLib && I.missHdr == I.missLib,
+                       "nl PIN8: and the two compilations resolve the same products");
+                // THE ARM THE RENAME EARNS: with one rule on both sides the
+                // columns must now MATCH, which the old before/after labels
+                // could not have asserted. A divergence here means the linked
+                // archive is stale again -- the standing hazard this file is
+                // built around -- and every reading below it is then a
+                // reading of two different ladders.
+                check (A.wrongLib == A.wrongHdr && Ad.wrongLib == Ad.wrongHdr
+                       && B.wrongLib == B.wrongHdr && D.wrongLib == D.wrongHdr
+                       && H.wrongLib == H.wrongHdr && I.wrongLib == I.wrongHdr
+                       && Ad.monoLib == Ad.monoHdr && B.monoLib == B.monoHdr
+                       && D.monoLib == D.monoHdr && H.monoLib == H.monoHdr
+                       && I.monoLib == I.monoHdr,
+                       "nl PIN8: the linked lib and the compiled header agree -- if this reddens, REBUILD");
             }
 
             // ---- nl PIN9: is insertPreferredBase now redundant? -------------
@@ -3691,52 +3722,74 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                                           + " vs ladder " + viaLadder.name;
                     }
                 }
-                // KNOWN-FAILING, QUARANTINED 29 Aug 2026 -- NOT silenced.
-                // One disagreement survives, and it is a REAL defect rather than
-                // a pin artefact, so it is pinned as a named exception instead
-                // of being asserted away. Any NEW disagreement still reddens
-                // this, and so does the known one being fixed (the set would no
-                // longer match), which is what keeps it visible.
+                // FIXED 31 Aug 2026, and the quarantine is retired.
                 //
-                // THE DEFECT. Two DIFFERENT Waves products collide on one
-                // normalised base name, differing only in capitalisation:
-                //   NX Ambisonics (4->4)   uid 445e056a
-                //   Nx Ambisonics (4->2)   uid 445e056c
-                // stripParenthetical + lowercasing collapse both to
-                // "nx ambisonics", and channelVariantRank scores "(4->4)" and
-                // "(4->2)" BOTH rank 4 ("anything ... surround builds"), so
-                // channelVariantIsBetter is false either way and the winner is
-                // decided by iteration order alone. The feed table and the
-                // resolver ladder walk different orders, so they pick different
-                // products. This is the AMEK EQ 250/200 shape, not the
-                // marketing-vs-shell shape: same name, two real products.
+                // THE RETRACTION FIRST. This block used to say the two rows
+                // were "two DIFFERENT Waves products" that collide on one
+                // normalised base name. That was wrong, and nothing measured
+                // it -- it was inferred from the names. The registry says one
+                // product:
+                //     Nx Ambisonics (4->2)   aufx,NX4B,ksWV   uid 445e056c
+                //     NX Ambisonics (4->4)   aufx,NX4D,ksWV   uid 445e056a
+                // a shared NX4 product code with the channel configuration in
+                // the trailing character, which is the shape of every Waves
+                // family here (B360 is B3M4/B3S4/B354/B364/B384, Abbey Road
+                // Chambers is STEM/STES/STEX). Two genuinely different
+                // products carry different product CODES: GTR Stomp 2/4/6 are
+                // GC2*/GC4*/GCN*, API-2500 and API-560 are APC* and AE5*.
+                // Same vendor, same version, adjacent uids. It is ONE product,
+                // two channel configurations, and a name Waves capitalised two
+                // ways.
                 //
-                // TODO (name-ladder owner): decide what "NX Ambisonics" means.
-                // Note that both candidates are rank 4 -- surround builds that
-                // are wrong for the 2x2 graph regardless -- so "offer neither"
-                // is a legitimate answer and may be the better one. Whatever is
-                // chosen, the rank rule needs a tie-break that is not iteration
-                // order, or these two must stop sharing a key.
+                // THE CAUSE, WHICH WAS ALSO NAMED WRONG. This was recorded as
+                // a tie-break defect -- both rows rank 4, so channelVariantIsBetter
+                // is false either way and iteration order decides. True, and
+                // not the cause. The cause is that the two sides KEY THE SAME
+                // POPULATION DIFFERENTLY: EJWavesRegistryFeed.h keyed products
+                // case-SENSITIVELY (289 products) while the ladder keys them
+                // case-INSENSITIVELY through normalizeName (288). The feed
+                // therefore offered two products where the ladder could only
+                // ever answer one, and the row it carried was not the row the
+                // ladder returned. Fixed by folding the feed's product key
+                // (wavesProductKey); the ladder's equal-rank first-wins rule is
+                // untouched, because it is the no-change guarantee that keeps
+                // every single-candidate name resolving exactly as it did.
+                //
+                // The known-set below is consequently EMPTY, and an empty
+                // known-set is the shape this pin has to be careful about: a
+                // for-loop over nothing checks nothing. The count arm at the
+                // bottom is what actually holds it, and it fails on an empty
+                // array rather than passing by having no work to do.
                 std::cout << "  MEASURED  feed/ladder disagreements: " << disagree
                           << " (" << disagreeNames.joinIntoString (", ") << ")\n";
-                static const char* kKnownDisagree[] = { "NX Ambisonics" };
+                // A juce::StringArray rather than a C array: `const char*
+                // k[] = {}` is not even legal C++, and the shape has to be one
+                // that can legally hold nothing now that nothing is expected.
+                static const juce::StringArray kKnownDisagree {};
                 juce::StringArray unexpected;
                 for (const auto& d : disagreeNames)
-                {
-                    bool known = false;
-                    for (auto* k : kKnownDisagree) if (d == k) { known = true; break; }
-                    if (! known) unexpected.add (d);
-                }
+                    if (! kKnownDisagree.contains (d)) unexpected.add (d);
                 juce::StringArray missing;
-                for (auto* k : kKnownDisagree)
+                for (const auto& k : kKnownDisagree)
                     if (! disagreeNames.contains (k)) missing.add (k);
                 check (unexpected.isEmpty(),
-                       "nl PIN9: no NEW feed/ladder disagreement beyond the known collision",
-                       juce::String (unexpected.size()) + " new: " + unexpected.joinIntoString (", ")
+                       "nl PIN9: no feed/ladder disagreement outside the known set (which is now empty)",
+                       juce::String (unexpected.size()) + " unexpected: " + unexpected.joinIntoString (", ")
                            + "; first overall: " + firstDisagree);
                 check (missing.isEmpty(),
-                       "nl PIN9: and the known collision is still there -- if this reddens it was FIXED, retire the exception",
+                       "nl PIN9: and every known disagreement is still there -- if this reddens it was FIXED, retire the exception",
                        "no longer disagreeing: " + missing.joinIntoString (", "));
+                // THE ARM AN EMPTY KNOWN-SET NEEDS. Both loops above iterate a
+                // set that is now empty, so both pass by having nothing to
+                // check -- vacuous, not verified. This one asserts the count
+                // directly and is the only arm that can fail when the known
+                // set holds nothing. It reddens if ANY disagreement appears,
+                // including the one that was just fixed coming back.
+                check (disagreeNames.size() == kKnownDisagree.size(),
+                       "nl PIN9: the feed and the ladder agree on every product they both name",
+                       juce::String (disagreeNames.size()) + " disagreeing name(s), "
+                           + juce::String (kKnownDisagree.size()) + " known; "
+                           + juce::String (disagree) + " disagreeing entr(ies)");
                 std::ifstream fch ("Source/ChainHost.cpp");
                 std::stringstream sch; sch << fch.rdbuf();
                 const auto ch = codeOnly (juce::String (sch.str()));
