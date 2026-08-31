@@ -708,6 +708,9 @@ public:
     // Seed-experiment selector + raw slow-track access (30 Aug 2026
     // three-way measurement; 0 = shipped, 1/2/3 = candidates a/b/c).
     void  debugSeedExperiment (int e) noexcept { seedExp_ = e; }
+    // Pending telemetry (31 Aug 2026 false-pending measurement round).
+    bool  debugPendingNow() const noexcept { return havePending_; }
+    float debugNoteRef() const noexcept { return noteRefCents_; }
     void  debugEnvExperiment (int e) noexcept { envExp_ = e; }
     float debugSlowTrack() const noexcept { return slowCents_; }
 
