@@ -822,7 +822,16 @@ private:
 
     std::atomic<float> retuneMs_    { kDefRetuneMs };
     int   seedExp_ = 0;        // 30 Aug 2026 three-way experiments; 0 = shipped
-    int   envExp_ = 0;         // 31 Aug 2026 boundary experiments; 0 = shipped
+    // SHIPPED DEFAULT = 5, the applied-shift gate (31 Aug 2026 ruling):
+    // natural bit-identical, hard better on 6/8 columns, tau-400 rough
+    // spans 97 -> 76, ear neutral-or-better across two blind rounds.
+    // 0 = the pre-fix path, kept for A/Bs; 1-4 = measured dead ends.
+    // The 30c gate is DERIVED, not picked: geometric midpoint of the
+    // bracket [shielded-path ceiling 8.3c (natural's applied disc, with
+    // margin), smallest musical interval 100c] = sqrt(8.3*100) ~ 29c;
+    // the 20/30/50 sweep shows a monotone hard-6-vs-hard-400 trade with
+    // both natural corners invariant at every value.
+    int   envExp_ = 5;
     float depthEnv_ = 0.0f;    // measured vibrato depth (see osc block)
     float pendDepth_ = 0.0f;   // depthEnv_ latched at pending formation
     float slowAgeMs_ = 0.0f;   // ms since the slow track was (re)seeded

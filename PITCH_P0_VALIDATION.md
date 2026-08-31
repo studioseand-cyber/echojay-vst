@@ -1870,3 +1870,30 @@ the long-τ climb is the RULER charging genuine glide motion — cycle
 similarity taxes real pitch movement — so the rows above 40 ms are an
 UPPER BOUND on actual waveform damage: measurement artefact plus real
 seam cost, not damage alone. Do not read the 400 ms row as breakage.
+
+### §17.5 The regime-dependent-constant register (31 Aug 2026 ruling)
+
+Constants whose correctness was VALIDATED IN A REGIME, with that regime
+stated - a dial-range, path, or preset change outside it invalidates the
+constant, and this list is where to look first:
+
+1. **"restart AT the note" (the confirm snap, curCents_ := inCents)** -
+   correct for small tau where the envelope arrives pre-confirm; became a
+   173c onset discontinuity when the dial's range grew. Fixed by the
+   applied-shift-gated release (envExp 5 default).
+2. **The 0-6 ms retune floor (§17.3)** - the dominated zone measured on
+   this detector's ~107ms note-change acquisition floor; a faster
+   detector re-opens the question.
+3. **The 3c drift-bleed cap** - bounds drift only where |r-1| < cap;
+   validated for correction-scale shifts with the shift-gated taper.
+4. **The 30c applied-shift gate (envExp 5)** - derived as the geometric
+   midpoint of [shielded-path ceiling 8.3c, smallest interval 100c].
+   VALIDATED IN: this singer, sourceNEW (cross-checked source4 for the
+   pending stats), tau in {6, 120, 400}, both vibrato modes, the two
+   shift paths as currently routed (shiftPreferred vs legacy). A new
+   path, a different fMin voice type, or a shifted kNoteChangeCents
+   moves both bracket ends - re-derive, don't re-fit.
+
+The general hazard, named after four instances: a constant proven in one
+regime reads as universal until the regime silently widens. When a dial
+range, preset table, or path-routing changes, walk this list.

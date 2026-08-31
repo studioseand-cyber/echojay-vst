@@ -102,3 +102,25 @@ fraction. The applied-shift gate (envExp 5) sidesteps rather than solves
 this: it conditions on how much the misfire would COST, not on whether the
 pending is real. Moving the discriminator itself means touching detection —
 a separately-ruled decision with its own cautionary history.
+
+## CLOSED 2026-08-31 — envExp 5 shipped; env3 filed available-but-rejected
+
+The note-boundary snap fix shipped as the applied-shift-gated release
+(envExp 5 default; PITCH_P0_VALIDATION.md §17.5 item 4 for the constant's
+regime). Natural bit-identical (unique among all candidates), hard better
+on 6/8 columns, tau-400 rough spans 97 -> 76, hard-match clicks 2 -> 0,
+ear neutral-or-better across two blind rounds.
+
+**env3 (slow-track conjunction, TH=20): AVAILABLE BUT REJECTED.** It is
+the only arm whose tau-400 benefit was ear-confirmed unprompted ("way
+smoother", round 1) and it collapses the snap further (12.7c vs 26.6c) -
+but it moved natural both times it was measured (release: 56->65 spans;
+TH=20: 56->57 + same-semitone 98.4->97.5), and natural untouched was the
+binding requirement. Kept debug-gated as envExp 3 with its numbers.
+
+**Ear-calibration datum (record per ruling):** in round 2 Sean identified
+a bit-identical pair as identical (nat120, byte-compared). His round-1
+tau-400 detection ("way smoother") is therefore validated as a real
+detection, and his round-2 miss of env5-vs-shipped at tau 400 is a real
+threshold effect (the fix difference swims in 400ms's own scoop), not
+noise in the listener. Weigh ear verdicts accordingly.
