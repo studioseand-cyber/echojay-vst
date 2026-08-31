@@ -2670,8 +2670,13 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             const auto src = juce::String (sch.str());
             const auto ch  = codeOnly (src);
 
-            check (ch.contains ("resolveOfferedName(op.name, &why)"),
-                   "of PIN D: the chain-edit ops resolve through the bridge");
+            // The out-param is part of the pinned text on purpose (31 Aug
+            // 2026): the sites must not only go through the bridge, they must
+            // ASK it for the ambiguity candidates. Dropping &ambiguous would
+            // still resolve names correctly and would silently take the
+            // candidate list out of the message the user reads.
+            check (ch.contains ("resolveOfferedName(op.name, &why, &ambiguous)"),
+                   "of PIN D: the chain-edit ops resolve through the bridge, asking for the candidates");
             // add + replace in the dry run, and the runtime apply: three sites,
             // and the dry run agreeing with the apply is the point of the guard.
             int n = 0, at = 0;
@@ -3468,17 +3473,144 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                        ladder (poolEmpty, "UltraPitch Shift").name);
                 // The rule RANKS, it never filters: nothing that resolved
                 // before may resolve to nothing now.
-                int lost = 0; juce::String firstLost;
+                //
+                // NARROWED 31 Aug 2026, and the narrowing is the point rather
+                // than an exception to it. A tie between DIFFERENT PRODUCTS is
+                // now refused instead of picked, so "never turns a resolution
+                // into a miss" is no longer true as written -- it is true of
+                // RANKING, which is what this pin was always about, and false
+                // of the ambiguity refusal that sits beside it. A name lost to
+                // ambiguity is counted separately and must come with its
+                // candidates; a name lost to anything else is still zero.
+                int lost = 0, lostAmbiguous = 0; juce::String firstLost;
                 for (const auto& d : poolEmpty)
                 {
                     const auto b = ChainHost::stripParenthetical (d.name);
                     if (host.resolveByName (b, {}).name.isNotEmpty()
                         && ladder (poolEmpty, b).name.isEmpty())
-                    { ++lost; if (firstLost.isEmpty()) firstLost = b; }
+                    {
+                        juce::String how; juce::StringArray amb;
+                        echojay::matchInPool (poolEmpty, b, ChainHost::stripParenthetical (b),
+                                              {}, how, &amb);
+                        if (amb.size() > 1) { ++lostAmbiguous; continue; }
+                        ++lost; if (firstLost.isEmpty()) firstLost = b;
+                    }
                 }
                 check (lost == 0,
                        "nl PIN3: ranking never turns a resolution into a miss",
                        juce::String (lost) + " lost; first: " + firstLost);
+                std::cout << "  MEASURED  names newly refused as ambiguous on this machine: "
+                          << lostAmbiguous << "\n";
+            }
+
+            // ---- nl PIN10: AN AMBIGUOUS TIE CANNOT RESOLVE TO A PICK ------
+            // A FIXTURE, and deliberately so: this machine's registry has no
+            // different-product tie left to reach (the 16 ties its corpus can
+            // reach are all one product's channel builds, and the one case
+            // difference was folded by 6cea1f7). A pin that needs an instance
+            // the corpus does not have is a pin that measures the machine, not
+            // the rule -- the call wr PIN8 already makes. The live corpus is
+            // still measured, in nl PIN3 above, and must read zero.
+            {
+                auto row = [] (const char* name, const char* sub)
+                {
+                    juce::PluginDescription d;
+                    d.name = name; d.pluginFormatName = "AudioUnit";
+                    d.fileOrIdentifier = juce::String ("AudioUnit:Effects/aufx,") + sub + ",Fxtr";
+                    return d;
+                };
+                auto ask = [] (const juce::Array<juce::PluginDescription>& pool,
+                               const juce::String& name, juce::StringArray& amb)
+                {
+                    juce::String how;
+                    const int i = echojay::matchInPool (pool, name.trim(),
+                                                        ChainHost::stripParenthetical (name.trim()),
+                                                        {}, how, &amb);
+                    return i;
+                };
+
+                // FOUR different products collapsing to one normalised stem,
+                // the "UAD Neve 1073 / 1081 / 1084 / 31102" shape: normalizeName
+                // strips the trailing number as a version, and a request that
+                // carries no number cannot be split by the model-number guard.
+                juce::Array<juce::PluginDescription> four;
+                four.add (row ("Fixture Neve 1073", "FN73"));
+                four.add (row ("Fixture Neve 1081", "FN81"));
+                four.add (row ("Fixture Neve 1084", "FN84"));
+                four.add (row ("Fixture Neve 31102", "FN02"));
+                {
+                    juce::StringArray amb;
+                    const int i = ask (four, "Fixture Neve", amb);
+                    check (i < 0,
+                           "nl PIN10: a tie between DIFFERENT products refuses, it does not pick",
+                           i < 0 ? juce::String ("refused")
+                                 : "picked \"" + four.getReference (i).name + "\"");
+                    // THE CAP THAT MUST NOT BE INHERITED. resolveByName's fuzzy
+                    // "closest:" list stops at 3 and would drop one of these
+                    // four; this is a different computation and names them all.
+                    check (amb.size() == 4,
+                           "nl PIN10: and it names EVERY candidate, with no cap at three",
+                           juce::String (amb.size()) + ": " + amb.joinIntoString (", "));
+                    check (amb.contains ("Fixture Neve 31102"),
+                           "nl PIN10: including the fourth, which a cap of 3 would have dropped");
+                    const auto text = ChainHost::ambiguousNameText (amb);
+                    check (text.contains ("Fixture Neve 1073") && text.contains ("Fixture Neve 31102")
+                           && text.contains ("4 installed plugins"),
+                           "nl PIN10: and the user-facing clause carries all four", text);
+                }
+                // Asked for by its OWN name, the exact rung answers as it always did.
+                {
+                    juce::StringArray amb;
+                    const int i = ask (four, "Fixture Neve 1081", amb);
+                    check (i >= 0 && four.getReference (i).name == "Fixture Neve 1081",
+                           "nl PIN10: and an EXACT name is untouched by the refusal",
+                           i >= 0 ? four.getReference (i).name : juce::String ("refused"));
+                }
+                // ONE product, several channel builds: still resolves, to the
+                // stereo one. This is the 14-tie population the refusal must
+                // not touch.
+                {
+                    juce::Array<juce::PluginDescription> variants;
+                    variants.add (row ("Fixture Widget (m)", "FWdM"));
+                    variants.add (row ("Fixture Widget (s)", "FWdS"));
+                    juce::StringArray amb;
+                    const int i = ask (variants, "Fixture Widget", amb);
+                    check (i >= 0 && variants.getReference (i).name == "Fixture Widget (s)"
+                           && amb.isEmpty(),
+                           "nl PIN10: a tie between CHANNEL BUILDS of one product still resolves, to (s)",
+                           i >= 0 ? variants.getReference (i).name : juce::String ("refused"));
+                }
+                // A case difference is NOT a collision -- 6cea1f7's evidence:
+                // aufx,NX4B and aufx,NX4D are one product Waves spelled two
+                // ways. Both rank 4, so this is a genuine tie, and it must
+                // still pick rather than refuse.
+                {
+                    juce::Array<juce::PluginDescription> cased;
+                    cased.add (row ("Fixture Nx Thing (4->2)", "FNxB"));
+                    cased.add (row ("Fixture NX Thing (4->4)", "FNxD"));
+                    juce::StringArray amb;
+                    const int i = ask (cased, "Fixture Nx Thing", amb);
+                    check (i >= 0 && amb.isEmpty(),
+                           "nl PIN10: a tie that is only a CASE difference is one product, and resolves",
+                           i >= 0 ? cased.getReference (i).name : juce::String ("REFUSED"));
+                }
+                // The wiring: the three edit-op sites must ASK for the
+                // candidates, or the refusal reaches the user as bare silence.
+                {
+                    std::ifstream fch ("Source/ChainHost.cpp");
+                    std::stringstream sch; sch << fch.rdbuf();
+                    const auto body = functionBody (juce::String (sch.str()),
+                                                    "void ChainHost::applyChainEdits");
+                    check (body.contains ("resolveOfferedName(op.name, &why, &ambiguous)"),
+                           "nl PIN10: the edit-op sites ask resolveOfferedName for the candidates");
+                    check (body.contains ("ambiguousNameText(ambiguous)"),
+                           "nl PIN10: and put them in the message the user reads");
+                    // ONE author for the clause: a second copy is a second
+                    // wording, and they drift.
+                    const auto ch = codeOnly (juce::String (sch.str()));
+                    check (ch.contains ("juce::String ChainHost::ambiguousNameText"),
+                           "nl PIN10: and the clause has exactly one author");
+                }
             }
 
             // ---- nl PIN4: a Link edit op, which has no feed to fall back on
@@ -3581,7 +3713,12 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 check (ch.contains ("#include \"EJNameLadder.h\""),
                        "nl PIN7: ChainHost includes the ladder it is pinned against");
                 const auto body = functionBody (src, "juce::PluginDescription ChainHost::resolveByName");
-                check (body.contains ("echojay::matchInPool(pool, raw, base, manu, how)"),
+                // Six arguments since 31 Aug 2026: the trailing out-param is
+                // how an ambiguous tie reaches the caller as candidates rather
+                // than as a bare miss. Pinned WITH it, because a five-argument
+                // call still compiles and still resolves -- it just loses the
+                // refusal's only content.
+                check (body.contains ("echojay::matchInPool(pool, raw, base, manu, how, ambig)"),
                        "nl PIN7: resolveByName searches BOTH pools through the shared ladder");
                 check (! body.contains ("how = \"exact\"")
                        && ! body.contains ("how = \"normalised\""),

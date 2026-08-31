@@ -109,6 +109,52 @@ inline int preferredOfHits (const juce::Array<juce::PluginDescription>& pool,
     return win;
 }
 
+/** The hits that tie at the winning rank -- the set preferredOfHits chooses
+    between, and the set a refusal has to be able to name. */
+inline juce::Array<int> tiedAtBestRank (const juce::Array<juce::PluginDescription>& pool,
+                                        const juce::Array<int>& hits)
+{
+    const int best = channelVariantRank (pool.getReference (preferredOfHits (pool, hits)).name);
+    juce::Array<int> tied;
+    for (int i : hits)
+        if (channelVariantRank (pool.getReference (i).name) == best) tied.add (i);
+    return tied;
+}
+
+/** Does this tie span more than one PRODUCT, or just more than one channel
+    build of one product?
+
+    THE DISTINCTION IS THE WHOLE OF THE REFUSAL, and it is drawn on the base
+    name BEFORE normalisation, because nothing else on a PluginDescription can
+    draw it. Measured 31 Aug 2026 over this machine's 1,401-row AU pool: uid
+    cannot, because WaveShell mints a separate uid per channel build ("Abbey
+    Road Chambers" is 59527463 / 59527476 / 5952747d), so uid-distinctness is
+    true of a variant tie and a product collision alike. Nor can the uid's
+    shape: B360's five builds share prefix 4835 and suffix 1a, and GTR Stomp
+    2/4/6 -- three DIFFERENT products -- share prefix 4d45 and suffix 63. The
+    AU subtype is the same story (STEM/STES/STEX against GC2S/GC4S/GCNS). The
+    stripped base name is the one field that separates the two populations,
+    and it separates them cleanly: of the 29 deciding ties in that pool, all 14
+    variant ties have byte-identical bases and every product collision differs
+    in base text.
+
+    CASE-INSENSITIVELY, which is not a detail. "Nx Ambisonics (4->2)" and "NX
+    Ambisonics (4->4)" are ONE product (aufx,NX4B and aufx,NX4D share the NX4
+    product code) that Waves capitalised two ways, so a case difference must
+    NOT read as a collision -- 6cea1f7 folded the feed's product key for the
+    same reason and on the same evidence. A tie that is only a case difference
+    keeps resolving, exactly as it did. */
+inline bool tieSpansProducts (const juce::Array<juce::PluginDescription>& pool,
+                              const juce::Array<int>& tied)
+{
+    if (tied.size() < 2) return false;
+    const auto first = ChainHost::stripParenthetical (pool.getReference (tied[0]).name);
+    for (int i : tied)
+        if (! ChainHost::stripParenthetical (pool.getReference (i).name).equalsIgnoreCase (first))
+            return true;
+    return false;
+}
+
 /** The match ladder: exact / stripped / stripped+manufacturer / normalised.
 
     ONE function so the offered pool and the withheld pool are searched by
@@ -117,13 +163,39 @@ inline int preferredOfHits (const juce::Array<juce::PluginDescription>& pool,
     -1; `how` receives the rung that matched.
 
     `raw` is the trimmed request, `base` its parenthetical-stripped form, `manu`
-    the text of that parenthetical when there was one (a manufacturer hint). */
+    the text of that parenthetical when there was one (a manufacturer hint).
+
+    AMBIGUITY IS A REFUSAL, NOT A PICK (31 Aug 2026). When the winning rank is
+    tied between rows that are DIFFERENT PRODUCTS, this returns -1 and fills
+    `ambiguousOut` with every tied candidate -- so "UAD Neve" stops silently
+    loading the 1073 and says which four it could not choose between. Equal
+    ranks within ONE product still keep the first, untouched: that rule is a
+    no-change guarantee for every single-candidate name and re-deciding it
+    would move 14 same-product variant ties that have nothing wrong with them.
+
+    EVERY candidate, and no cap. The "closest:" list this function's caller
+    builds on a total miss is a fuzzy substring heuristic capped at 3, which
+    would have dropped one of the four Neves. This is a different computation
+    -- the exact set the rank could not choose between -- and it must not
+    inherit that cap. */
 inline int matchInPool (const juce::Array<juce::PluginDescription>& pool,
                         const juce::String& raw,
                         const juce::String& base,
                         const juce::String& manu,
-                        juce::String& how)
+                        juce::String& how,
+                        juce::StringArray* ambiguousOut = nullptr)
 {
+    // Filled at whichever ranked rung refuses; named once so both rungs
+    // cannot drift apart.
+    auto refuseAmbiguous = [&pool, ambiguousOut, &how] (const juce::Array<int>& tied,
+                                                        const char* rung)
+    {
+        if (ambiguousOut != nullptr)
+            for (int i : tied) ambiguousOut->add (pool.getReference (i).name);
+        how = juce::String (rung) + " AMBIGUOUS (" + juce::String (tied.size())
+            + " products)";
+        return -1;
+    };
     for (int i = 0; i < pool.size(); ++i)
         if (pool.getReference(i).name.equalsIgnoreCase(raw)) { how = "exact"; return i; }
 
@@ -138,6 +210,8 @@ inline int matchInPool (const juce::Array<juce::PluginDescription>& pool,
             for (int i : baseHits)
                 if (pool.getReference(i).manufacturerName.containsIgnoreCase(manu))
                 { how = "stripped+manufacturer"; return i; }
+        const auto tied = tiedAtBestRank (pool, baseHits);
+        if (tieSpansProducts (pool, tied)) return refuseAmbiguous (tied, "stripped");
         const int win = preferredOfHits (pool, baseHits);
         how = (win == baseHits[0] ? "stripped (first of several)"
                                   : "stripped (preferred variant)");
@@ -163,6 +237,8 @@ inline int matchInPool (const juce::Array<juce::PluginDescription>& pool,
     }
     if (! normHits.isEmpty())
     {
+        const auto tied = tiedAtBestRank (pool, normHits);
+        if (tieSpansProducts (pool, tied)) return refuseAmbiguous (tied, "normalised");
         const int win = preferredOfHits (pool, normHits);
         how = (win == normHits[0] ? "normalised" : "normalised (preferred variant)");
         return win;

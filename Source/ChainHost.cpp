@@ -1643,16 +1643,30 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
             // Slot numbers in error text are 1-BASED (the numbering the
             // model and user see); s itself is internal 0-based
             auto slotLabel = [](int s) { return "slot " + juce::String(s + 1); };
+            // ONE author for the "why this name did not resolve" clause, so
+            // the add and replace arms cannot drift. THREE outcomes, not two:
+            // a name nothing has, a name this host withholds, and a name that
+            // several DIFFERENT products answer to -- the last names all of
+            // them, because a refusal the reader cannot act on is barely a
+            // refusal.
+            auto missText = [](WithholdReason why, const juce::StringArray& ambiguous)
+            {
+                if (why == WithholdReason::Ambiguous) return ambiguousNameText(ambiguous);
+                if (why == WithholdReason::None)      return juce::String("not in the loadable plugin list");
+                return withholdReasonText(why);
+            };
             auto validSlot = [&](int s) {
                 return s >= 0 && s < n && alive[(size_t)s];
             };
             if (op.op == "add")
             {
                 if (op.name.isEmpty()) return bad("add without a plugin name");
-                if (auto why = WithholdReason::None; resolveOfferedName(op.name, &why).name.isEmpty())
-                    return bad("\"" + op.name + "\" "
-                               + (why == WithholdReason::None ? juce::String("not in the loadable plugin list")
-                                                              : withholdReasonText(why)));
+                {
+                    auto why = WithholdReason::None;
+                    juce::StringArray ambiguous;
+                    if (resolveOfferedName(op.name, &why, &ambiguous).name.isEmpty())
+                        return bad("\"" + op.name + "\" " + missText(why, ambiguous));
+                }
                 // Positional target: out-of-range/removed "after" CLAMPS to
                 // append-at-end (the runtime add path already does this) —
                 // aborting the whole batch over a position was worse than an
@@ -1672,10 +1686,12 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
             {
                 if (!validSlot(op.slot)) return bad(slotLabel(op.slot) + " does not exist");
                 if (op.name.isEmpty()) return bad("replace without a plugin name");
-                if (auto why = WithholdReason::None; resolveOfferedName(op.name, &why).name.isEmpty())
-                    return bad("\"" + op.name + "\" "
-                               + (why == WithholdReason::None ? juce::String("not in the loadable plugin list")
-                                                              : withholdReasonText(why)));
+                {
+                    auto why = WithholdReason::None;
+                    juce::StringArray ambiguous;
+                    if (resolveOfferedName(op.name, &why, &ambiguous).name.isEmpty())
+                        return bad("\"" + op.name + "\" " + missText(why, ambiguous));
+                }
             }
             else if (op.op == "move")
             {
@@ -1886,15 +1902,19 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
         // Honest miss (WithholdReason): a plugin this host withholds is
         // reported as such, not as "not resolvable".
         WithholdReason why = WithholdReason::None;
+        juce::StringArray ambiguous;
         // resolveOfferedName, not resolveByName: the SAME rule the pre-flight
         // dry run above used. A name that passes validation and then misses
         // here aborts a batch halfway, which is the one failure the dry run
         // exists to prevent.
-        auto desc = resolveOfferedName(op.name, &why);
+        auto desc = resolveOfferedName(op.name, &why, &ambiguous);
         if (desc.name.isEmpty())
             return failButContinue(op.op + " failed: \"" + op.name + "\" "
-                                   + (why == WithholdReason::None ? juce::String("not resolvable")
-                                                                  : withholdReasonText(why)));
+                                   + (why == WithholdReason::Ambiguous
+                                          ? ambiguousNameText(ambiguous)
+                                      : why == WithholdReason::None
+                                          ? juce::String("not resolvable")
+                                          : withholdReasonText(why)));
         desc = preferInlineHostableDesc(desc);
         auto self = st;
         const auto theOp = op;
@@ -4445,7 +4465,8 @@ bool ChainHost::namesMatchLoose(const juce::String& incoming,
 juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
                                                  const juce::String& formatFilter,
                                                  juce::String* matchLogOut,
-                                                 WithholdReason* withheldOut) const
+                                                 WithholdReason* withheldOut,
+                                                 juce::StringArray* ambiguousOut) const
 {
     if (withheldOut) *withheldOut = WithholdReason::None;
     auto raw  = rawName.trim();
@@ -4506,13 +4527,15 @@ juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
     // built above, after the format filter and the withhold gate, so the
     // preference composes with the filter rather than reaching past it.
     auto matchIn = [&](const juce::Array<juce::PluginDescription>& pool,
-                       juce::String& how) -> int
+                       juce::String& how,
+                       juce::StringArray* ambig = nullptr) -> int
     {
-        return echojay::matchInPool(pool, raw, base, manu, how);
+        return echojay::matchInPool(pool, raw, base, manu, how, ambig);
     };
 
     juce::String how;
-    if (const int i = matchIn(cands, how); i >= 0)
+    juce::StringArray ambiguous;
+    if (const int i = matchIn(cands, how, &ambiguous); i >= 0)
     {
         const auto& d = cands.getReference(i);
         if (matchLogOut)
@@ -4520,10 +4543,24 @@ juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
         return d;
     }
 
+    // AMBIGUOUS, and it returns HERE rather than falling through (31 Aug
+    // 2026). The name was found -- several times over -- so searching the
+    // withheld pool next would answer a question nobody asked, and could
+    // report "withheld" as the reason a name that resolves twice did not
+    // resolve. A refusal must name what it saw, and what this saw is a tie.
+    if (ambiguous.size() > 1)
+    {
+        if (withheldOut)  *withheldOut  = WithholdReason::Ambiguous;
+        if (ambiguousOut) *ambiguousOut = ambiguous;
+        if (matchLogOut)
+            *matchLogOut = how + " -> refused; candidates: " + ambiguous.joinIntoString(", ");
+        return {};
+    }
+
     // Honest miss: the name is on this machine, this host keeps it back.
     // Still empty (nothing resolves that cannot load), but the caller can
     // say so instead of "not found".
-    if (const int i = matchIn(withheld, how); i >= 0)
+    if (const int i = matchIn(withheld, how); i >= 0)   // no ambiguousOut: see above
     {
         const auto& d   = withheld.getReference(i);
         const auto  why = withheldWhy[i];
@@ -4560,10 +4597,12 @@ juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
 // way round. Message thread, matching loadByRecommendedName's convention for
 // touching recommendable_ (buildRecommendable writes it on the same thread).
 juce::PluginDescription ChainHost::resolveOfferedName(const juce::String& rawName,
-                                                      WithholdReason* withheldOut) const
+                                                      WithholdReason* withheldOut,
+                                                      juce::StringArray* ambiguousOut) const
 {
     WithholdReason why = WithholdReason::None;
-    auto d = resolveByName(rawName, {}, nullptr, &why);
+    juce::StringArray ambiguous;
+    auto d = resolveByName(rawName, {}, nullptr, &why, &ambiguous);
     if (d.name.isNotEmpty())
     {
         if (withheldOut) *withheldOut = why;   // None on a hit, by contract
@@ -4589,7 +4628,12 @@ juce::PluginDescription ChainHost::resolveOfferedName(const juce::String& rawNam
             return e.desc;
         }
 
-    if (withheldOut) *withheldOut = why;
+    // The feed table is consulted BEFORE the ambiguity is reported, and that
+    // order is deliberate: a name the feed itself published is a name we chose
+    // to offer, so it is answerable even when the registry ladder found the
+    // request tied. Only a name nothing can answer is refused as ambiguous.
+    if (withheldOut)  *withheldOut  = why;
+    if (ambiguousOut) *ambiguousOut = ambiguous;
     return {};
 }
 
@@ -4926,11 +4970,28 @@ juce::String ChainHost::withholdReasonText(WithholdReason r)
                  + juce::File::descriptionOfSizeInBytes((juce::int64) kSessionStateMaxSlotBytes)
                  + " a session can save per plugin, so a chain holding it could not be saved "
                    "(chain_state_oversize.txt; deleting its line there offers it again)";
+        case WithholdReason::Ambiguous:
+            // The candidates are the reason, and this function does not have
+            // them. ambiguousNameText authors it; returning empty here keeps
+            // the two from disagreeing about one refusal.
+            break;
         case WithholdReason::Unreadable:
         case WithholdReason::None:
             break;
     }
     return {};
+}
+
+juce::String ChainHost::ambiguousNameText(const juce::StringArray& candidates)
+{
+    if (candidates.size() < 2) return {};
+    // EVERY candidate, in pool order, no cap: see the header. A refusal that
+    // lists three of four names is a refusal the reader cannot act on, and
+    // the one it drops is the one they wanted often enough to matter.
+    return "matches " + juce::String(candidates.size())
+         + " installed plugins and nothing chooses between them: "
+         + candidates.joinIntoString(", ")
+         + " - name one of them exactly";
 }
 
 // ---------------------------------------------------------------------------

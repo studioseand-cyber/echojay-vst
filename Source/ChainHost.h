@@ -133,7 +133,16 @@ public:
     // (chain_state_oversize.txt), never the crash list. Measured in the
     // fingerprint pass and at first rack (completeLoad); the file is the
     // authority and deleting a line offers the plugin again.
-    enum class WithholdReason { None, CrashBlacklisted, ArchitectureIncompatible, Unreadable, SettingsTooLarge };
+    // Ambiguous is NOT a withhold and is deliberately in this enum anyway
+    // (31 Aug 2026). isWithheld is an explicit allow-list, so a new member is
+    // not-withheld by construction -- Unreadable is already here on exactly
+    // that footing -- and this is the enum every caller of resolveByName
+    // already reads to turn "empty" into a sentence. A parallel enum would
+    // have meant a second out-param at three call sites that each have to say
+    // ONE thing about one name. Ambiguous carries no text of its own: the
+    // candidates ARE the reason, so ambiguousNameText authors it from them.
+    enum class WithholdReason { None, CrashBlacklisted, ArchitectureIncompatible,
+                                Unreadable, SettingsTooLarge, Ambiguous };
     static bool isWithheld(WithholdReason r) noexcept
     {
         return r == WithholdReason::CrashBlacklisted
@@ -148,6 +157,13 @@ public:
     // its VST3 has no arm64 build, so it cannot run in this host". Empty for
     // None and Unreadable (nothing to explain: the row is offered).
     static juce::String withholdReasonText(WithholdReason r);
+    // The clause for WithholdReason::Ambiguous, which withholdReasonText
+    // cannot author because the reason is the candidate list itself. Names
+    // EVERY candidate: the fuzzy "closest:" list in resolveByName's total-miss
+    // branch is capped at 3 and would drop one of the four "UAD Neve" rows,
+    // and this is a different computation -- the exact set the rank could not
+    // choose between -- so it must not inherit that cap.
+    static juce::String ambiguousNameText(const juce::StringArray& candidates);
 
     // ---- Settings ↔ ChainHost resolver (message thread) -----------------
     // A "recommendable" plugin is BOTH enabled in the Settings checklist AND
@@ -736,10 +752,17 @@ public:
     // A genuine miss leaves *withheldOut at None. Callers turn that into
     // "cannot run in this host" instead of "not found", which is the one
     // case where the user can act on the truth.
+    //
+    // Ambiguity (31 Aug 2026): when the name ties between DIFFERENT PRODUCTS
+    // the ladder refuses rather than picking, *withheldOut receives Ambiguous
+    // and ambiguousOut (optional) receives every tied candidate. The withheld
+    // pool is NOT then searched: the name was found, several times over, and
+    // reporting it as withheld would name a reason that was never checked.
     juce::PluginDescription resolveByName(const juce::String& rawName,
                                           const juce::String& formatFilter,
                                           juce::String* matchLogOut = nullptr,
-                                          WithholdReason* withheldOut = nullptr) const;
+                                          WithholdReason* withheldOut = nullptr,
+                                          juce::StringArray* ambiguousOut = nullptr) const;
 
     // Resolve a name THE MODEL WAS OFFERED (28 Aug 2026, the second Waves seam).
     // The feed carries recommendable_'s displayName, which for Waves is the
@@ -770,7 +793,8 @@ public:
     // writes the slot's own registration), so a displayName lookup there would
     // answer a question restore never asks.
     juce::PluginDescription resolveOfferedName(const juce::String& rawName,
-                                               WithholdReason* withheldOut = nullptr) const;
+                                               WithholdReason* withheldOut = nullptr,
+                                               juce::StringArray* ambiguousOut = nullptr) const;
 
     // ---- Built-in devices (EchoJay-owned nodes hosted as ordinary slots) ---
     // The chain otherwise only hosts what formatManager_ can instantiate from
