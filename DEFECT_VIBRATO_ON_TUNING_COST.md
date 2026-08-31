@@ -87,3 +87,18 @@ Do not reopen without new evidence about detection itself.
 — natural vib-on rough spans 59 -> 56, back at the pre-gate number —
 so the price recorded in PITCH_P0_VALIDATION.md §17.1 is now SETTLED
 rather than outstanding.
+
+## The finding of the boundary-suspension rounds (31 Aug 2026, recorded verbatim per ruling)
+
+"The confirm window is the only true discriminator, so only detection can
+move the trade-off — everything else redistributes it."
+
+Context for whoever picks this up: the pending stream is settings-invariant
+(detection reads only inCents vs the note anchor; no preset touches it) and
+depth-blind (pre-pending vibrato depth distributions for confirmed vs
+reverted pendings overlap almost completely on both reference takes). Any
+policy that acts during the confirm window misfires on the ~25% revert
+fraction. The applied-shift gate (envExp 5) sidesteps rather than solves
+this: it conditions on how much the misfire would COST, not on whether the
+pending is real. Moving the discriminator itself means touching detection —
+a separately-ruled decision with its own cautionary history.
