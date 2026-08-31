@@ -1,8 +1,10 @@
-// pendstat: the FALSE-PENDING cost, measured directly (31 Aug 2026).
-// Logs per hop {pending, slowCents, noteRef, noteChanges} under the SHIPPED
-// envelope, then scores every conjunction threshold on the same
-// trajectories: episodes/s, % reverted (never confirmed), and suspension
-// seconds/s spent on episodes that never confirm - the cost itself.
+// depthstat (31 Aug 2026): is the vibrato-depth estimate stale at onsets?
+// Logs per-hop |osc| = |inCents - slowCents| and confirm ticks, then scores
+// candidate depth ENVELOPES (one-pole of |osc|, tau 50/150/300ms, each with
+// and without reset-at-confirm) in two windows: first 100ms after a note
+// boundary vs mid-sustain (>300ms in). The gate's whole premise is that
+// onsets read shallow; a memory that carries the previous note's depth
+// across the boundary is the three-times-seen stale-per-note-state bug.
 #include "EedPitchEngine.h"
 #include "EedPitchCorrect.h"
 #include "EedPsolaEngine.h"
@@ -11,6 +13,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <vector>
+#include <algorithm>
 using namespace echojay;
 static bool readWavMono (const char* path, std::vector<float>& out, double& fs)
 {
@@ -41,8 +44,6 @@ static bool readWavMono (const char* path, std::vector<float>& out, double& fs)
 }
 int main (int argc, char** argv)
 {
-    const float tau = argc>2 ? (float)atof(argv[2]) : 6.0f;
-    const bool nat = argc>3 && !strcmp(argv[3],"nat");
     std::vector<float> in; double fs=0;
     if(argc<2||!readWavMono(argv[1],in,fs)){ std::printf("bad input\n"); return 1; }
     constexpr int vt = PitchEngine::kLowMale;
@@ -52,9 +53,9 @@ int main (int argc, char** argv)
     static const int kMinor[7]={0,2,3,5,7,8,10};
     for(int s=0;s<12;++s) corr.setDegree(s,false,0);
     for(int k=0;k<7;++k) corr.setDegree(kMinor[k],true,0);
-    corr.setKeyRoot(2); corr.setRetuneMs(tau);
-    corr.setFlex(nat?55.0f:0.0f); corr.setHumanize(nat?60.0f:0.0f);
-    corr.setIgnoreVibrato(true); corr.setNaturalVibrato(nat?100.0f:0.0f);
+    corr.setKeyRoot(2); corr.setRetuneMs(120);
+    corr.setFlex(55); corr.setHumanize(60);
+    corr.setIgnoreVibrato(true); corr.setNaturalVibrato(100);
     corr.reset();
     F0JumpGate gate;
     float worst=PitchEngine::voiceRange(0).fMinHz;
@@ -63,7 +64,7 @@ int main (int argc, char** argv)
     ring.setPitchLagSamples(det.pitchLagFor(vt));
     std::vector<float> scratch(256);
     PitchEngine::HopEvent ev[64];
-    std::vector<int> pend, conf; std::vector<double> dep;   // per hop
+    std::vector<double> osc; std::vector<int> confT; std::vector<int> voiced;
     uint32_t lastNC=0;
     for(size_t p=0;p+256<=in.size();p+=256)
     {
@@ -79,39 +80,42 @@ int main (int argc, char** argv)
               rO=ring.inputPeriodicity(ev[h].inputPos,(int)std::lround(fs/ref));
               rN=ring.inputPeriodicity(ev[h].inputPos,(int)std::lround(fs/ev[h].f0Hz)); }
             const float g=gate.filter(ev[h].f0Hz,ev[h].voiced,hopMs,rO,rN);
-            corr.process(g,ev[h].voiced,hopMs);
-            pend.push_back(corr.debugPendingNow()?1:0);
-            dep.push_back(corr.debugPendingNow()?corr.debugPendDepth():-1.0);
-            conf.push_back(corr.noteChanges()!=lastNC?1:0);
+            const float t=corr.process(g,ev[h].voiced,hopMs);
+            voiced.push_back(t>0&&g>0?1:0);
+            osc.push_back(std::fabs(corr.lastInCents()-corr.debugSlowTrack()));
+            confT.push_back(corr.noteChanges()!=lastNC?1:0);
             lastNC=corr.noteChanges();
         }
     }
     const double hopS=det.inputHopLength(vt)/fs;
-    const double durS=pend.size()*hopS;
-    // Episodes: maximal pending runs; outcome = a confirm tick at/just after end.
-    struct Ep { int a,b; bool confirmed; };
-    std::vector<Ep> eps;
-    for(size_t h=0;h<pend.size();)
-    { if(!pend[h]){++h;continue;}
-      size_t a=h; while(h<pend.size()&&pend[h])++h;
-      bool c=false;
-      for(size_t k=a;k<h+1&&k<pend.size();++k) if(conf[k]) c=true;
-      if(h<pend.size()&&conf[h]) c=true;
-      eps.push_back({(int)a,(int)h,c}); }
-    int raised=(int)eps.size(), reverted=0;
-    for(auto&e:eps) if(!e.confirmed)++reverted;
-    std::printf("%s tau %.0f: pendings %.2f/s, reverted %d/%d (%.0f%%)\n",
-        nat?"natural":"hard",tau,raised/durS,reverted,raised,100.0*reverted/std::max(1,raised));
-    std::vector<double> dConf,dRev;
-    for(auto&e:eps)
-    { const double d=dep[(size_t)e.a];
-      (e.confirmed?dConf:dRev).push_back(d); }
-    auto pr=[&](const char*nm,std::vector<double>&v)
-    { std::sort(v.begin(),v.end());
-      std::printf("    pendDepth %s (n=%d): ",nm,(int)v.size());
-      for(double q:{0.1,0.25,0.5,0.75,0.9})
-        std::printf("p%.0f=%.1fc ",q*100,v.empty()?0:v[(size_t)((v.size()-1)*q)]);
-      std::printf("\n"); };
-    pr("CONFIRMED",dConf); pr("REVERTED ",dRev);
+    // window classification per hop: onset (<100ms after a confirm) / sustain (>300ms into a voiced-and-no-confirm run)
+    std::vector<int> sinceConf(osc.size(),1<<30);
+    { int s=1<<30;
+      for(size_t h=0;h<osc.size();++h){ if(confT[h])s=0; else if(s<(1<<30))++s; sinceConf[h]=s; } }
+    auto med=[](std::vector<double> v){ if(v.empty())return 0.0; std::sort(v.begin(),v.end()); return v[v.size()/2]; };
+    // raw |osc|
+    std::vector<double> rawOn, rawSus;
+    for(size_t h=0;h<osc.size();++h)
+    { if(!voiced[h])continue;
+      const double tMs=sinceConf[h]*hopS*1000.0;
+      if(tMs<100) rawOn.push_back(osc[h]);
+      else if(tMs>300&&tMs<100000) rawSus.push_back(osc[h]); }
+    std::printf("raw |osc|: onset(0-100ms) med %.1fc   sustain(>300ms) med %.1fc\n",
+        med(rawOn),med(rawSus));
+    for(double tc : {50.0,150.0,300.0})
+      for(int rst=0;rst<2;++rst)
+      {
+        double env=0; const double a=std::exp(-hopS*1000.0/tc);
+        std::vector<double> eOn,eSus;
+        for(size_t h=0;h<osc.size();++h)
+        { if(confT[h]&&rst)env=0;
+          if(voiced[h]) env=osc[h]+(env-osc[h])*a;
+          const double tMs=sinceConf[h]*hopS*1000.0;
+          if(!voiced[h])continue;
+          if(tMs<100)eOn.push_back(env);
+          else if(tMs>300&&tMs<100000)eSus.push_back(env); }
+        std::printf("env tau %3.0fms %s: onset med %.1fc   sustain med %.1fc\n",
+            tc,rst?"RESET at confirm":"no reset        ",med(eOn),med(eSus));
+      }
     return 0;
 }

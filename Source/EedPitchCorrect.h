@@ -404,6 +404,7 @@ public:
                                        : inCents;
             haveSlow_ = true;
             slowAgeMs_ = 0.0f;
+            depthEnv_ = 0.0f;
         }
         else
         {
@@ -444,6 +445,13 @@ public:
             {
                 if (! havePending_ || std::fabs (inCents - pendingCents_) > kNoteChangeCents)
                 {
+                    // Latch the SUSTAIN's depth at pending formation:
+                    // depthEnv_ here is last hop's value - the note's wobble
+                    // BEFORE the candidate excursion began, which is the
+                    // quantity the depth gate must judge (measured: the
+                    // envelope DURING a pending reads ~74c of transition
+                    // excursion, not vibrato - gating on it never fires).
+                    if (! havePending_) pendDepth_ = depthEnv_;
                     pendingCents_ = inCents; havePending_ = true; confirmMs_ = 0.0f;
                 }
                 else
@@ -458,6 +466,7 @@ public:
                         slowCents_ = seedExp_ == 3
                             ? nearestDegreeCents (CentsC { inCents }) : inCents;
                         slowAgeMs_ = 0.0f;
+                        depthEnv_ = 0.0f;
                         noteRefCents_ = inCents;
                         stableMs_ = 0.0f;
                         noteMs_ = 0.0f; vibPhase_ = 0.0f;
@@ -516,6 +525,15 @@ public:
         // rather than whether the vibrato is, which is the more defensible
         // reading of it.
         const float osc = haveSlow_ ? (inCents - slowCents_) : 0.0f;
+        // MEASURED vibrato depth: one-pole envelope of |osc|, tau 150ms,
+        // RESET at both slow-track reset sites - measured 31 Aug 2026:
+        // without the reset the envelope reads 36-39c at onsets (the
+        // pre-confirm interval excursion captured as "depth" - the
+        // stale-per-note-state bug, fourth instance, caught in design);
+        // with it, onsets read 0.9c vs sustains 12.1c, the >10x
+        // separation the depth gate stands on.
+        if (! havePending_)   // never ingest a candidate excursion as "depth"
+            depthEnv_ = std::fabs (osc) + (depthEnv_ - std::fabs (osc)) * onePole (150.0f);
         const float noteCents = haveSlow_ ? slowCents_ : inCents;
 
         // ---- 3: flex -------------------------------------------------------
@@ -580,8 +598,16 @@ public:
         //               conjunction and real note changes pass it.
         const bool pendingCorroborated = havePending_
             && std::fabs (slowCents_ - noteRefCents_) > 20.0f;
+        //   envExp_ 4 = (ii) DEPTH-GATED (31 Aug 2026 ruling): suspend only
+        //               when the pending is corroborated AND measured
+        //               vibrato depth is shallow (< 8c) - deep preserved
+        //               vibrato is where the false alarms originate AND
+        //               where suspension damage is audible; onsets carry no
+        //               developed vibrato, so the tau-400 fix survives.
         const bool suspend = (envExp_ == 1 || envExp_ == 2) ? havePending_
-                           : (envExp_ == 3) ? pendingCorroborated : false;
+                           : (envExp_ == 3) ? pendingCorroborated
+                           : (envExp_ == 4) ? (pendingCorroborated && pendDepth_ < 8.0f)
+                           : false;
         if (suspend)
         {
             if (envExp_ == 2 || envExp_ == 3)
@@ -711,6 +737,8 @@ public:
     // Pending telemetry (31 Aug 2026 false-pending measurement round).
     bool  debugPendingNow() const noexcept { return havePending_; }
     float debugNoteRef() const noexcept { return noteRefCents_; }
+    float debugDepthEnv() const noexcept { return depthEnv_; }
+    float debugPendDepth() const noexcept { return pendDepth_; }
     void  debugEnvExperiment (int e) noexcept { envExp_ = e; }
     float debugSlowTrack() const noexcept { return slowCents_; }
 
@@ -779,6 +807,8 @@ private:
     std::atomic<float> retuneMs_    { kDefRetuneMs };
     int   seedExp_ = 0;        // 30 Aug 2026 three-way experiments; 0 = shipped
     int   envExp_ = 0;         // 31 Aug 2026 boundary experiments; 0 = shipped
+    float depthEnv_ = 0.0f;    // measured vibrato depth (see osc block)
+    float pendDepth_ = 0.0f;   // depthEnv_ latched at pending formation
     float slowAgeMs_ = 0.0f;   // ms since the slow track was (re)seeded
     std::atomic<float> flex_        { 55.0f };
     std::atomic<float> humanize_    { 60.0f };
