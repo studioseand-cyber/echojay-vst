@@ -556,8 +556,30 @@ public:
         // carries (k-1)*osc — fast, with the old phase caveat — because
         // scaling the singer's own vibrato has no slow formulation.
         const float aimCents = noteCents + wanted;
-        const float coeff = onePole (std::max (retuneMs_.load(), kRetuneFloorMs));
-        curCents_ = aimCents + (curCents_ - aimCents) * coeff;
+        // ENVELOPE AMBIGUITY EXPERIMENTS (31 Aug 2026, the note-boundary
+        // snap defect): through detector lag + confirm the shipped envelope
+        // CHASES the new aim from the old note's position - the output is
+        // pulled toward the OLD note by up to the interval at every onset,
+        // then the confirmation snap cancels the remaining travel in one
+        // hop (measured: 4.8c at tau 6, 173c at tau 400). Same principle
+        // as (d): don't act on state that belongs to the previous note
+        // while you don't yet know which note you're on.
+        //   envExp_ 1 = FREEZE: hold the envelope through the window; the
+        //               confirm step is the old correction's magnitude.
+        //   envExp_ 2 = RELEASE: ease the applied shift toward zero
+        //               (~10ms) through the window; the step is spread,
+        //               at the cost of briefly unwinding a good correction.
+        if (envExp_ != 0 && havePending_)
+        {
+            if (envExp_ == 2)
+                curCents_ = inCents + (curCents_ - inCents) * onePole (10.0f);
+            // envExp_ 1: curCents_ held as-is.
+        }
+        else
+        {
+            const float coeff = onePole (std::max (retuneMs_.load(), kRetuneFloorMs));
+            curCents_ = aimCents + (curCents_ - aimCents) * coeff;
+        }
         {
             // The vibrato smoother's stopband leaks a few cents of ripple
             // into (curCents_ - noteCents); a slow pole on the SLOW PART
@@ -673,6 +695,7 @@ public:
     // Seed-experiment selector + raw slow-track access (30 Aug 2026
     // three-way measurement; 0 = shipped, 1/2/3 = candidates a/b/c).
     void  debugSeedExperiment (int e) noexcept { seedExp_ = e; }
+    void  debugEnvExperiment (int e) noexcept { envExp_ = e; }
     float debugSlowTrack() const noexcept { return slowCents_; }
 
     // Nearest ENABLED degree to a cents value, including that degree's bias.
@@ -739,6 +762,7 @@ private:
 
     std::atomic<float> retuneMs_    { kDefRetuneMs };
     int   seedExp_ = 0;        // 30 Aug 2026 three-way experiments; 0 = shipped
+    int   envExp_ = 0;         // 31 Aug 2026 boundary experiments; 0 = shipped
     float slowAgeMs_ = 0.0f;   // ms since the slow track was (re)seeded
     std::atomic<float> flex_        { 55.0f };
     std::atomic<float> humanize_    { 60.0f };

@@ -56,7 +56,9 @@ int main (int argc, char** argv)
     for(int k=0;k<7;++k) corr.setDegree(kMinor[k],true,0);
     corr.setKeyRoot(2);
     corr.setRetuneMs(tau); corr.setFlex(0); corr.setHumanize(0);
-    corr.setIgnoreVibrato(true); corr.setNaturalVibrato(0); corr.reset();
+    corr.setIgnoreVibrato(true); corr.setNaturalVibrato(0);
+    if(argc>3) corr.debugEnvExperiment(atoi(argv[3]));
+    corr.reset();
     F0JumpGate gate;
     float worst=PitchEngine::voiceRange(0).fMinHz;
     for(int t=1;t<PitchEngine::kNumVoiceTypes;++t) worst=std::min(worst,PitchEngine::voiceRange(t).fMinHz);
