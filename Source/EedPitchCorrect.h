@@ -569,9 +569,22 @@ public:
         //   envExp_ 2 = RELEASE: ease the applied shift toward zero
         //               (~10ms) through the window; the step is spread,
         //               at the cost of briefly unwinding a good correction.
-        if (envExp_ != 0 && havePending_)
+        //   envExp_ 3 = RELEASE + SLOW-TRACK CONJUNCTION: suspend only when
+        //               the pending is corroborated by the slow track having
+        //               departed the note anchor (> 30c). The discriminator
+        //               a false pending lacks: ignore-vib's slow track does
+        //               not move with fast wobble BY DESIGN (leak "a few
+        //               cents" per its own comment), while a real semitone
+        //               step moves it >= ~35c by mid-confirm-window - so
+        //               natural's vibrato-raised pendings fail the
+        //               conjunction and real note changes pass it.
+        const bool pendingCorroborated = havePending_
+            && std::fabs (slowCents_ - noteRefCents_) > 20.0f;
+        const bool suspend = (envExp_ == 1 || envExp_ == 2) ? havePending_
+                           : (envExp_ == 3) ? pendingCorroborated : false;
+        if (suspend)
         {
-            if (envExp_ == 2)
+            if (envExp_ == 2 || envExp_ == 3)
                 curCents_ = inCents + (curCents_ - inCents) * onePole (10.0f);
             // envExp_ 1: curCents_ held as-is.
         }

@@ -55,8 +55,14 @@ int main (int argc, char** argv)
     for(int s=0;s<12;++s) corr.setDegree(s,false,0);
     for(int k=0;k<7;++k) corr.setDegree(kMinor[k],true,0);
     corr.setKeyRoot(2);
-    corr.setRetuneMs(tau); corr.setFlex(0); corr.setHumanize(0);
-    corr.setIgnoreVibrato(true); corr.setNaturalVibrato(0);
+    // argv[4] "nat": natural's OWN settings - the original sweep was
+    // HARD-settings-only (flex 0/hum 0/natVib 0 with tau overridden),
+    // which measures the snap with the aim far from inCents; at natural
+    // flex/humanize keep the aim close to the singer (31 Aug 2026).
+    const bool nat = argc>4 && !strcmp(argv[4],"nat");
+    corr.setRetuneMs(tau);
+    corr.setFlex(nat?55.0f:0.0f); corr.setHumanize(nat?60.0f:0.0f);
+    corr.setIgnoreVibrato(true); corr.setNaturalVibrato(nat?100.0f:0.0f);
     if(argc>3) corr.debugEnvExperiment(atoi(argv[3]));
     corr.reset();
     F0JumpGate gate;
