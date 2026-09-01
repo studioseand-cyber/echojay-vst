@@ -399,11 +399,51 @@ public:
         // the same median-of-first-hops anchor used at note starts: a
         // note start and a gap resume differ in whether the target is
         // re-decided, not in how the position is established.
-        if (medianSeed_ && resuming)
+        if (medianSeed_ >= 2 && resuming)
         {
-            curCents_ = inCents; shiftSnap_ = true;
-            noteRefCents_ = inCents;
-            seedHops_ = 1; seedBuf_[0] = inCents;
+            // THE CORRIDOR, judged with ROBUST evidence (17.6 as amended,
+            // completed 1 Sep 2026): the first corridor draft tested the
+            // carried position against ONE fresh sample - the least
+            // trustworthy reading in the signal - and fired on 33-41% of
+            // resumes (median excess 34-72c, tail to 1269c: octave
+            // mis-reads re-anchoring GOOD state to BAD samples). Judge
+            // with the same median the anchor would use: arm a 3-hop
+            // window, keep carried state through it (it was fine 11ms
+            // ago), decide at the median.
+            resumeJudge_ = 1; resumeBuf_[0] = inCents;
+        }
+        else if (resumeJudge_ > 0 && resumeJudge_ < 3)
+        {
+            resumeBuf_[resumeJudge_++] = inCents;
+            if (resumeJudge_ >= 3)
+            {
+                float a = resumeBuf_[0], b = resumeBuf_[1], c2 = resumeBuf_[2];
+                const float med = std::max (std::min (a, b),
+                                            std::min (std::max (a, b), c2));
+                // Endpoint from the SLOW selection, not the fresh median:
+                // with ignore-vib the aim's degree is deg(slowCents_) - a
+                // carried but INPUT-derived quantity, unpoisoned by the
+                // envelope ferry and stable across blinks by design.
+                // deg(med) fired on legitimate boundary-straddling vibrato
+                // (64-74% of resumes); deg(slow) is where the envelope is
+                // ENTITLED to sit.
+                const float deg = nearestDegreeCents (CentsC { slowCents_ });
+                const float lo = std::min (med, deg) - kCorridorSlackC;
+                const float hi = std::max (med, deg) + kCorridorSlackC;
+                lastCorridorExcess_ = curCents_ < lo ? curCents_ - lo
+                                    : curCents_ > hi ? curCents_ - hi : 0.0f;
+                if (curCents_ < lo || curCents_ > hi)
+                {
+                    ++resumeReanchors_;
+                    // CUR ONLY: the ferry is an ENVELOPE-POSITION defect.
+                    // Re-anchoring noteRefCents_ too was measured spawning
+                    // third-note wrong votes (+82 "other" in the vibvote
+                    // split) - the note reference is target-side state the
+                    // 200ms same-note rule legitimately carries.
+                    curCents_ = med; shiftSnap_ = true;
+                }
+                resumeJudge_ = 0;
+            }
         }
         gapMs_ = 0.0f;
 
@@ -792,7 +832,9 @@ public:
     float debugDepthEnv() const noexcept { return depthEnv_; }
     float debugPendDepth() const noexcept { return pendDepth_; }
     void  debugEnvExperiment (int e) noexcept { envExp_ = e; }
-    void  debugMedianSeed (bool on) noexcept { medianSeed_ = on; }
+    void  debugMedianSeed (int mode) noexcept { medianSeed_ = mode; }   // 0 off, 1 starts only, 2 +resume corridor
+    uint32_t debugResumeReanchors() const noexcept { return resumeReanchors_; }
+    float    debugLastCorridorExcess() const noexcept { return lastCorridorExcess_; }
     float debugSlowTrack() const noexcept { return slowCents_; }
 
     // Nearest ENABLED degree to a cents value, including that degree's bias.
@@ -869,7 +911,12 @@ private:
     // the 20/30/50 sweep shows a monotone hard-6-vs-hard-400 trade with
     // both natural corners invariant at every value.
     int   envExp_ = 5;
-    bool  medianSeed_ = false;   // (a) behind the flag until panels + ear
+    int   medianSeed_ = 0;       // 0 off, 1 starts only, 2 +resume corridor
+    uint32_t resumeReanchors_ = 0;
+    int   resumeJudge_ = 0;
+    float resumeBuf_[3] = { 0, 0, 0 };
+    float lastCorridorExcess_ = 0.0f;   // signed 0 if inside; set every resume
+    static constexpr float kCorridorSlackC = 15.0f;   // see the resume corridor
     int   seedHops_ = 0;
     float seedBuf_[3] = { 0, 0, 0 };
     float depthEnv_ = 0.0f;    // measured vibrato depth (see osc block)

@@ -1922,7 +1922,22 @@ range, preset table, path-routing, or VOICE TYPE changes, walk this list.
 ### §17.6 THE RE-ANCHOR RULE (1 Sep 2026 ruling - a design rule, not a hazard note)
 
 **No state computed before a discontinuity may be applied after it
-without re-anchoring to post-discontinuity audio.**
+unless it is consistent with post-discontinuity evidence. Where it is
+not, re-anchor; where it is, keep it.**
+
+Operational test (the CORRIDOR): carried envelope position between the
+resuming audio and the aim is a partial correction - KEEP it; outside
+that corridor it is unexplainable by the new audio - RE-ANCHOR (the
+median-of-first-hops primitive).
+
+**The rule's own first draft violated the rule** - preserved here as
+the register's most instructive entry: the unconditional form
+("always re-anchor") was built and measured 1 Sep 2026, healed the
+tau-400 ferry exactly, and REGRESSED every panel row (hard
+same-semitone 94.8 -> 85.7, natural 98.4 -> 92.2, spans 56 -> 79,
+both voices) by re-anchoring at every 11ms blink the 200ms resume
+rule exists to protect - a prescription without a diagnosis, i.e.
+instance seven, committed by the rule itself.
 
 Six violations of this one sentence cost, in total, weeks of
 measurement (each looked like a different defect):
