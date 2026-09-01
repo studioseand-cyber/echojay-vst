@@ -62,3 +62,26 @@ round was lost because every offline instrument pinned low_male while his
 session sat on the default; the defect only existed at his settings.
 Every measurement records its voice_type (see PITCH_P0_VALIDATION.md
 §17.5 item 5).
+
+## The matched-settings block (1 Sep 2026 — VERIFIED FROM BOTH UIs, not assumed)
+
+The first controlled comparison of the investigation. τ400 renders
+(antaresnew1 / echojaynew1) were made at:
+
+    EchoJay:  voice ALTO/TENOR (amber mismatch warning shown), formant
+              preserve, retune 400ms, flex 0, humanize 0, natural_vibrato
+              0 (custom), key D minor by hand, reference 440.0 (auto,
+              self-not-followed), mixing latency 38ms full lookahead.
+              Octave guard: 71 fires on the take.
+    Antares:  Input Type Alto-Tenor, Key D minor, Retune 400, Flex 0,
+              Humanize 0, Natural Vibrato 0.0, Tracking 50, Detune 440.0,
+              Transpose 0, Formant on, Mix 100.
+
+Same voice type, same retune, same key/scale/reference, all shaping at
+zero. The 5.2s event (EchoJay 161.5Hz off-grid vs Antares 173.5 faithful)
+has NO settings difference left to explain it.
+
+**Standing instruction, second half (added after this round): read the
+REFERENCE plugin's settings too.** The rule's first half was written
+after assuming EchoJay's voice type; the identical assumption was then
+made about Antares for a month.
