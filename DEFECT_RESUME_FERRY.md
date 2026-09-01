@@ -46,3 +46,24 @@ The corridor machinery remains in the code behind `debugMedianSeed`
 correct per its final form, for anyone who genuinely needs long-τ +
 mismatch operation. The fences: the voice-fit readout, §17.4's τ-caveat,
 and §17.5/§17.6 in the register.
+
+## OVERTURNED 2026-09-01 — the mechanism attribution was wrong
+
+The matched-settings round (both UIs read; REFERENCE_SET.md block)
+disproved the ferry: the pre-gap envelope entered the 130ms gap HEALTHY
+(target 172.2Hz, applied +3.5c, converged on F3). The -123c hold was
+made in ONE HOP at 5.264: a single 148.2Hz onset mis-read raised a
+pending, and the then-shipped envExp 5 release eased curCents_ toward
+that very sample (10ms pole, one hop = -60c: 172.2 -> 161.5); the
+pending reverted next hop; tau400 stranded the drag. Causality: env0
+renders the window clean (173-174), env5 the defect (163-166). Antares's
+immunity: no such release exists there.
+
+**The four rounds above were comparing a regression against itself: the
+baseline contained envExp 5 (the then-default) in every panel.** The
+transferable lessons stand; the ferry as a mechanism does not. The
+terminal filing is superseded: envExp 5's default was REVERTED
+(commit f1d9f5f) and the median-destination fix goes through the
+four-part acceptance before any re-enable. See §17.6's corollary:
+three fixes written to enforce the re-anchor rule violated it at their
+own value-choosing sites.

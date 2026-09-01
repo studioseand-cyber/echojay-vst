@@ -1965,6 +1965,26 @@ no measurable quantity separates the healthy from the defective
 population, the honest end is a documented limitation, not another
 mechanism.
 
+**COROLLARY (1 Sep 2026 ruling - three for three):** any fix that must
+CHOOSE A VALUE at a discontinuity is itself subject to this rule. The
+unconditional re-anchor, corridor v1, and envExp 5's release destination
+were each written to ENFORCE the rule and each VIOLATED it. Every such
+site - note-start seed, gap resume, corridor endpoint, release
+destination - takes its value from the one shared robust anchor
+(median-of-first-hops), never from a single sample.
+
+**OVERTURN APPENDED TO THE WORKED EXAMPLE (1 Sep 2026):** the ferry
+mechanism attribution was WRONG. The pre-gap envelope was healthy
+(172.2Hz, converged); the 161.9 was made in ONE HOP by envExp 5's
+release easing toward the single sample that raised a (reverting)
+pending - a regression in the then-shipped default. The transferable
+lessons above survive; the mechanism does not. The methodological
+failure, stated plainly: THE FERRY INVESTIGATION'S BASELINE CONTAINED
+THE VERY CHANGE UNDER TEST - envExp 5 was the default in every "off"
+row of four rounds of panels, so the measurements compared a regression
+against itself. Standing instruction, beside "record the voice_type":
+STATE THE BASELINE'S FLAG CONFIGURATION IN EVERY PANEL.
+
 Review test for any change touching a seam, gap, resume, onset or
 confirm: name the state that crosses it, and name where it re-anchors.
 If it has no re-anchor site, it is instance seven. The shared primitive
