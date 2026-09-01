@@ -382,6 +382,16 @@ public:
             // through a gap - see kGapIsNoteChangeMs.
             gapMs_ += stepMs_;
             if (gapMs_ >= kGapIsNoteChangeMs) { haveNote_ = false; haveSlow_ = false; }
+            // PENDING FORGET (1 Sep 2026; §17.6 corollary, one level
+            // deeper): a note-change pending is EVIDENCE, and evidence
+            // lapsed unvoiced past ~30ms is stale - two agreeing creak
+            // mis-reads 53ms apart accumulated into one pending and handed
+            // the release a "consistent" bad destination (avg(148.2,
+            // 148.2) - the 5.2s residual after the median fix). The
+            // F0JumpGate learned this identical lesson (kGapForgetMs);
+            // the pending now forgets on the same clock.
+            if (gapMs_ >= kPendForgetMs)
+            { havePending_ = false; pendN_ = 0; confirmMs_ = 0.0f; }
             return 0.0f;
         }
 
@@ -530,9 +540,11 @@ public:
                     // excursion, not vibrato - gating on it never fires).
                     if (! havePending_) pendDepth_ = depthEnv_;
                     pendingCents_ = inCents; havePending_ = true; confirmMs_ = 0.0f;
+                    pendN_ = 1; pendBuf_[0] = inCents;
                 }
                 else
                 {
+                    if (pendN_ > 0 && pendN_ < 3) pendBuf_[pendN_++] = inCents;
                     confirmMs_ += stepMs_;
                     if (confirmMs_ >= kNoteConfirmMs)
                     {
@@ -703,8 +715,26 @@ public:
                            : false;
         if (suspend)
         {
-            if (envExp_ == 2 || envExp_ == 3 || envExp_ == 5)
-                curCents_ = inCents + (curCents_ - inCents) * onePole (10.0f);
+            // MEDIAN DESTINATION (1 Sep 2026 ruling; §17.6 corollary): the
+            // release's old destination was inCents - the single sample
+            // that raised the pending, often the very mis-read (a 148.2Hz
+            // creak onset dragged a healthy 172.2Hz envelope to 161.5 in
+            // ONE hop; tau400 stranded it 300ms - the 5.2s regression).
+            // The destination now comes from the pending's OWN samples via
+            // the shared 3-hop discipline: hop 1 NO release (a one-sample
+            // spurious pending reverts before any release occurs - the
+            // damage class vanishes structurally), hop 2 average, hop 3+
+            // median. A real note change releases 5ms later: negligible
+            // against the 25ms confirm.
+            if ((envExp_ == 2 || envExp_ == 3 || envExp_ == 5) && pendN_ >= 2)
+            {
+                const float dest = pendN_ == 2
+                    ? 0.5f * (pendBuf_[0] + pendBuf_[1])
+                    : std::max (std::min (pendBuf_[0], pendBuf_[1]),
+                                std::min (std::max (pendBuf_[0], pendBuf_[1]),
+                                          pendBuf_[2]));
+                curCents_ = dest + (curCents_ - dest) * onePole (10.0f);
+            }
             // envExp_ 1: curCents_ held as-is.
         }
         else
@@ -930,10 +960,13 @@ private:
     float lastCorridorExcess_ = 0.0f;   // signed 0 if inside; set every resume
     float lastResumeOffset_ = 0.0f;     // |cur - med| at every judgment
     static constexpr float kCorridorSlackC = 15.0f;   // see the resume corridor
+    static constexpr float kPendForgetMs = 30.0f;     // pending evidence staleness (see gap hold)
     int   seedHops_ = 0;
     float seedBuf_[3] = { 0, 0, 0 };
     float depthEnv_ = 0.0f;    // measured vibrato depth (see osc block)
     float pendDepth_ = 0.0f;   // depthEnv_ latched at pending formation
+    int   pendN_ = 0;          // median-destination sample count (see release)
+    float pendBuf_[3] = { 0, 0, 0 };
     float slowAgeMs_ = 0.0f;   // ms since the slow track was (re)seeded
     std::atomic<float> flex_        { 55.0f };
     std::atomic<float> humanize_    { 60.0f };
