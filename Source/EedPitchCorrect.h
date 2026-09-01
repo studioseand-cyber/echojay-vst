@@ -432,6 +432,7 @@ public:
                 const float hi = std::max (med, deg) + kCorridorSlackC;
                 lastCorridorExcess_ = curCents_ < lo ? curCents_ - lo
                                     : curCents_ > hi ? curCents_ - hi : 0.0f;
+                lastResumeOffset_ = std::fabs (curCents_ - med);
                 if (curCents_ < lo || curCents_ > hi)
                 {
                     ++resumeReanchors_;
@@ -835,6 +836,7 @@ public:
     void  debugMedianSeed (int mode) noexcept { medianSeed_ = mode; }   // 0 off, 1 starts only, 2 +resume corridor
     uint32_t debugResumeReanchors() const noexcept { return resumeReanchors_; }
     float    debugLastCorridorExcess() const noexcept { return lastCorridorExcess_; }
+    float    debugLastResumeOffset() const noexcept { return lastResumeOffset_; }
     float debugSlowTrack() const noexcept { return slowCents_; }
 
     // Nearest ENABLED degree to a cents value, including that degree's bias.
@@ -916,6 +918,7 @@ private:
     int   resumeJudge_ = 0;
     float resumeBuf_[3] = { 0, 0, 0 };
     float lastCorridorExcess_ = 0.0f;   // signed 0 if inside; set every resume
+    float lastResumeOffset_ = 0.0f;     // |cur - med| at every judgment
     static constexpr float kCorridorSlackC = 15.0f;   // see the resume corridor
     int   seedHops_ = 0;
     float seedBuf_[3] = { 0, 0, 0 };

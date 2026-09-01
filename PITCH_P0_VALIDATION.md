@@ -1952,6 +1952,19 @@ measurement (each looked like a different defect):
    a sub-200ms gap and applied to the new syllable (-123c off-grid holds
    at long tau, voice-mismatch dependent).
 
+**The fullest worked example (1 Sep 2026, four rounds, terminal):** the
+gap-resume ferry - see DEFECT_RESUME_FERRY.md for the chain. The two
+transferable lessons, ahead of any fix: (1) the rule's first draft
+violated the rule - "always re-anchor" is a prescription without a
+diagnosis, and it regressed every panel row; (2) corridor v1 judged
+carried state against the SINGLE least trustworthy sample in the signal
+- the judgment step must use the same robust evidence as the anchor.
+The threshold search that closed it found natural's legitimate carried
+offsets (73-215c) fully interleaved with the ferry's (49-1092c): when
+no measurable quantity separates the healthy from the defective
+population, the honest end is a documented limitation, not another
+mechanism.
+
 Review test for any change touching a seam, gap, resume, onset or
 confirm: name the state that crosses it, and name where it re-anchors.
 If it has no re-anchor site, it is instance seven. The shared primitive
