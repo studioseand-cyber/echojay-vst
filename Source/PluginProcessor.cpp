@@ -320,7 +320,12 @@ EchoJayProcessor::EchoJayProcessor()
 
     chainHost.onChainChanged = [this]
     {
-        setLatencySamples(chainHost.getTotalLatencySamples());
+        // Through the hard-block accessor, never getTotalLatencySamples
+        // directly: a Borrowed host answers -1 here and must never reach
+        // setLatencySamples (RACK_BORROW_IMPLEMENTATION_SPEC §2.3). This
+        // host is Primary, so the gate is structural, not behavioral.
+        if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
+            setLatencySamples(lat + reportedBudgetFrames());
         // The chain now produces different audio, so the held true peak / peak /
         // overs describe a signal that no longer exists (they were contradicting
         // a capture taken seconds later). Drop those holds; integrated LUFS / LRA
@@ -446,6 +451,11 @@ void ejDashLog(const juce::String& msg)
 
 EchoJayProcessor::~EchoJayProcessor()
 {
+    // §5a-R: drop any in-flight apply poll — its lambdas hold this token
+    // weakly and go inert now, never calling into freed memory.
+    *borrowAliveToken_ = false;
+    borrowAliveToken_.reset();
+
     // Stage 1 SOLO: the plugin is leaving the track with a session open.
     // Best-effort commit (fire and forget -- no ack can be awaited in a
     // destructor), then a normal end: the lease file is deleted so the Link
@@ -471,6 +481,13 @@ EchoJayProcessor::~EchoJayProcessor()
         }
         editEnd(false);
     }
+    // Borrow: a dying host releases cleanly — lease deleted so the Link
+    // restores its bypasses NOW rather than at the 3s expiry. keepEdits: a
+    // teardown is never an implicit discard.
+    borrowRelease(true);
+    // Rack lock: delete rather than expire — same reason as the lease above.
+    // setRackLockWant({}) stops the renew timer and deletes the lock file.
+    setRackLockWant({});
     ejTeardownLog("~EchoJayProcessor enter");
     stopTimer();   // §6.1 scheduler — no arm can fire into teardown
 
@@ -546,6 +563,23 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     hostSampleRate_      = sampleRate;
     hostSamplesPerBlock_ = samplesPerBlock;
     chainHost.prepare(sampleRate, samplesPerBlock);
+    // Solo crossfades, BOTH a real 30ms ramp (the busGainSmoothed_ idiom
+    // above). editSoloMix_ had never been given one — Stage 1's "~30ms"
+    // comment was aspirational and its engage/release was an instant step,
+    // i.e. a click, in the exact path the solo battery listens through.
+    editSoloMix_.reset(sampleRate, 0.030);
+    borrowSoloMix_.reset(sampleRate, 0.030);
+    borrowCtxMix_.reset(sampleRate, 0.030);
+    // §8.3 (amended): the FIXED alignment budget, reported from
+    // instantiation — engage, release and rack-switching never touch the
+    // report, so ordinary browsing never re-runs PDC. The internal split
+    // (pre-sum alignment vs final pad) varies; the total never does.
+    alignPre_.prepare(kBorrowAlignBudgetFrames + 1);
+    alignPost_.prepare(kBorrowAlignBudgetFrames + 1);
+    if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
+        setLatencySamples(lat + reportedBudgetFrames());
+    if (borrowHost_ != nullptr)
+        borrowHost_->prepare(sampleRate, samplesPerBlock);
 }
 
 void EchoJayProcessor::releaseResources()
@@ -863,6 +897,160 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                 // end-of-block overwrite. Capture cannot also be running
                 // (mutual exclusion at both start sites), so stealing the
                 // slot from the drain corrupts nothing.
+                // Step 2 BORROW: this Link's ring belongs to the borrow
+                // session — consume into the borrow scratch and run the
+                // whole borrowed CHAIN on it, unconditionally (no
+                // try-and-skip: the borrowed host is a session-long member
+                // and its graph carries the same prepare/process
+                // synchronization the main chainHost's does — spec §3).
+                if (li == borrowSession_.ringSlot.load(std::memory_order_relaxed))
+                {
+                    // LISTEN deleted (27 Aug 2026): the stream's consumers
+                    // are now the injection (in-context) and the AUTOMATIC
+                    // solo fallback (!in-context) — that is every session
+                    // state, so the drain gates on the session alone.
+                    // 26 Aug 2026 URGENT: this gate was audioOn-only (built
+                    // for solo), so the in-context default ran with the
+                    // drain DEAD — borrowBuf_ was never filled, and the
+                    // injection added an UNINITIALISED buffer every block
+                    // (peak 746, pinned meters, read as feedback). The
+                    // drain now runs for EVERY live consumer of the stream.
+                    const int want = buffer.getNumSamples();
+                    if (borrowBuf_.getNumSamples() >= want && borrowHost_ != nullptr)
+                    {
+                        auto* hdr = LinkShm::ringHeader(ls.map);
+                        if (LinkShm::loadAcquire(&hdr->writeIdx)
+                              - LinkShm::loadRelaxed(&hdr->readIdx) > kEditReseekTrip)
+                            LinkShm::ringSeekForward(ls.map, kEditCushionFrames);
+                        // STAMP-BASED ALIGNMENT (29 Aug 2026 ruling). The
+                        // Link stamps ring-index <-> host-position every
+                        // block; the seek targets CONTENT (position
+                        // P - cushion) and the measured age feeds the pad.
+                        // The -1024 field defect: the discard arm kept the
+                        // backlog ~0, the trim-only seek was a no-op, and
+                        // the pad subtracted a cushion the ring never held.
+                        // A seek that can step BACK into held content
+                        // builds the cushion the trim could not; relocate
+                        // discontinuities (the -20903 excursion) re-seek by
+                        // the same detector.
+                        auto* bhdr = LinkShm::ringHeader(ls.map);
+                        if (borrowAlignReset_.exchange(false,
+                                std::memory_order_relaxed))
+                        {
+                            borrowRingAgePrev_ = INT64_MIN;
+                            borrowLastStampSwValid_ = false;
+                        }
+                        int64_t P = -1; bool playing = false;
+                        if (auto* ph2 = getPlayHead())
+                            if (auto pos2 = ph2->getPosition())
+                            {
+                                playing = pos2->getIsPlaying();
+                                if (pos2->getTimeInSamples().hasValue())
+                                    P = *pos2->getTimeInSamples();
+                            }
+                        uint32_t sw = 0; int64_t sp = 0;
+                        const bool stamped = P >= 0
+                            && LinkShm::ringStampRead(ls.map, sw, sp);
+                        // TRANSPORT-STOPPED HOLD (30 Aug 2026 regression):
+                        // a frozen playhead (or a producer whose stamp
+                        // stopped advancing) is a STATE TO HOLD IN, not a
+                        // discontinuity to correct. Without this, stale
+                        // stamps made the measured age shrink every block,
+                        // the drift detector re-seeked to a frozen target,
+                        // and the same cushion of audio replayed forever —
+                        // the field loop on pause. Hold = keep the pad
+                        // (last measured age), consume sequentially, seek
+                        // nothing; the first FRESH stamp after play
+                        // resumes re-seeks once through the jump arm.
+                        const bool staleStamp = stamped
+                            && borrowLastStampSwValid_
+                            && sw == borrowLastStampSw_;
+                        int64_t age = -1;
+                        if (stamped && (! playing || staleStamp))
+                        {
+                            // hold: no seek, no measurement update
+                        }
+                        else if (stamped)
+                        {
+                            const uint32_t rNow =
+                                LinkShm::loadRelaxed(&bhdr->readIdx);
+                            age = P - (sp + (int32_t)(rNow - sw));
+                            const int64_t maxAge =
+                                (int64_t) kBorrowAlignBudgetFrames
+                                - borrowChainLat_.load(std::memory_order_relaxed);
+                            const bool jump =
+                                borrowRingAgePrev_ != INT64_MIN
+                                && std::abs(age - borrowRingAgePrev_)
+                                       > (int64_t) want;
+                            if (borrowRingAgePrev_ == INT64_MIN || jump
+                                || age < (int64_t) want || age > maxAge)
+                            {
+                                const uint32_t w2 =
+                                    LinkShm::loadAcquire(&bhdr->writeIdx);
+                                const uint32_t tgtU = (uint32_t)((int64_t) sw
+                                    + (P - (int64_t) kEditCushionFrames - sp));
+                                int64_t behind = (int32_t)(w2 - tgtU);
+                                behind = juce::jlimit((int64_t) 0,
+                                    (int64_t)(kLinkRingFrames - 8192),
+                                    behind);
+                                LinkShm::ringSeekTo(ls.map,
+                                    w2 - (uint32_t) behind);
+                                age = P - (sp + (int32_t)((w2
+                                    - (uint32_t) behind) - sw));
+                            }
+                            borrowRingAgePrev_ = age;
+                            borrowLastStampSw_ = sw;
+                            borrowLastStampSwValid_ = true;
+                            borrowAlignNoStamps_.store(false,
+                                std::memory_order_relaxed);
+                        }
+                        else
+                        {
+                            // NO STAMPS (old Link, or no transport
+                            // position): the cushion term is what the ring
+                            // ACTUALLY holds — the backlog, accurate to
+                            // one block — and borrowTick SAYS so at 1Hz.
+                            // Never a silent constant.
+                            if (LinkShm::loadAcquire(&bhdr->writeIdx)
+                                  - LinkShm::loadRelaxed(&bhdr->readIdx)
+                                      > kEditReseekTrip)
+                                LinkShm::ringSeekForward(ls.map,
+                                                         kEditCushionFrames);
+                            age = (int64_t)(int32_t)(
+                                LinkShm::loadAcquire(&bhdr->writeIdx)
+                                - LinkShm::loadRelaxed(&bhdr->readIdx));
+                            borrowRingAgePrev_ = INT64_MIN;
+                            borrowAlignNoStamps_.store(true,
+                                std::memory_order_relaxed);
+                        }
+                        if (age >= 0)   // the HOLD keeps the last values
+                        {
+                            borrowRingAgeMeasured_.store((int) juce::jlimit(
+                                (int64_t) 0,
+                                (int64_t) kBorrowAlignBudgetFrames, age),
+                                std::memory_order_relaxed);
+                            borrowAlignSkew_.store(
+                                age - (int64_t) kEditCushionFrames,
+                                std::memory_order_relaxed);
+                            borrowAlignSkewValid_.store(true,
+                                std::memory_order_relaxed);
+                        }
+                        const uint32_t n = LinkShm::ringConsume(ls.map,
+                                              borrowBuf_.getWritePointer(0),
+                                              borrowBuf_.getWritePointer(1), want);
+                        ls.framesRead.fetch_add((int64_t) n, std::memory_order_relaxed);
+                        for (int ch = 0; ch < 2; ++ch)
+                            if ((int) n < want)
+                                borrowBuf_.clear(ch, (int) n, want - (int) n);
+                        juce::MidiBuffer noMidi;
+                        // The whole borrowed chain, in order, on the dry stream.
+                        juce::AudioBuffer<float> view(borrowBuf_.getArrayOfWritePointers(),
+                                                      2, 0, want);
+                        borrowHost_->process(view, noMidi);
+                    }
+                    ls.lock.exit();
+                    continue;
+                }
                 if (li == editSession_.ringSlot.load(std::memory_order_relaxed)
                     && editSession_.audioOn.load(std::memory_order_acquire))
                 {
@@ -953,6 +1141,104 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         audioSilent.store(false);
         wasReceivingAudio = true;
     }
+
+    // ===== Step 2 BORROW SOLO, through-main route ========================
+    // On a Mix/Master Bus main the borrowed channel must be HEARD THROUGH
+    // the main's own chain (losing the master processing was the hands-on
+    // volume jump); crossfading here, before chainHost.process, sends it
+    // through. Every other channel type replaces AFTER the chain instead
+    // (a borrowed vocal must not run through a guitar track's chain). One
+    // read per block so the two sites cannot both fire.
+    const bool borrowThrough = borrowRouteThroughMain();
+    // §8 audio (REDESIGNED 26 Aug 2026, the rack-switch crackle): the
+    // PASSTHROUGH DELAY NEVER CHANGES — the final alignPost_ runs at the
+    // constant budget, so no mode flip, rack switch or mid-build latency
+    // jump can ever discontinue the mix. The per-rack pad lives on the
+    // INJECTION's own delay line (end of block), where a change only
+    // interrupts the ramped injection, never the passthrough. ctxNow is
+    // independent of the MAIN's channel type (the route fork is SOLO's).
+    // LISTEN deleted (27 Aug 2026, MUTE_SOLO_SPEC §6.4): the through-main
+    // borrow route survives ONLY as the automatic monitoring fallback when
+    // in-context is refused (incapable Link, over-budget rack, watchdog
+    // drop) — no user flag in the trigger.
+    const bool fallbackSolo = borrowActive()
+                        && ! borrowInContextOk_.load(std::memory_order_relaxed);
+    const bool ctxNow = borrowActive()
+                        && borrowInContextOk_.load(std::memory_order_relaxed);
+    // §8.3 (26 Aug, corrected per ruling): the CONSTANT full-budget delay
+    // sits on the passthrough BEFORE the sum, so at this point the
+    // passthrough is aged exactly `budget` and the injection — inherently
+    // aged cushion + chainLat, padded on ITS OWN line by
+    // budget - cushion - chainLat — is aged the same. Both then pass the
+    // MAIN'S OWN CHAIN together (the fidelity claim: the injected channel
+    // is processed like the original was), and no post-delay exists.
+    // mainChainLat cancels out of the arithmetic entirely. The passthrough
+    // delay NEVER changes (the crackle fix stands); a pad change still
+    // interrupts only the ramped injection.
+    if (borrowBudgetActive_.load(std::memory_order_relaxed))
+    {
+        alignPost_.process(buffer, kBorrowAlignBudgetFrames);
+        const int ctxChainLat = borrowChainLat_.load(std::memory_order_relaxed);
+        // THE AGE IS A MEASURED FACT (29 Aug ruling): the pad is computed
+        // from what the ring actually delivered this block, never from an
+        // assumed cushion. alignPad's assumed-cushion form survives ONLY
+        // as the engage/chain-change capability check and as the estimate
+        // before the first drain of a session.
+        const int ringAge = borrowRingAgeMeasured_.load(std::memory_order_relaxed);
+        const int injPad = ringAge >= 0
+            ? kBorrowAlignBudgetFrames - ringAge - ctxChainLat
+            : alignPad(ctxChainLat);
+        // THE HONORARY STRIP (MUTE_SOLO_SPEC §6.1): the injection stands in
+        // for the edited rack's output, so it follows the solo fabric as if
+        // it were that rack's strip — audible iff the solo set is empty or
+        // the edited rack is in it. Suppression is a MUTE, not a pad
+        // change: it rides the ramp target only, never padKey, so lifting
+        // it never clears the injection history.
+        const bool soloSup = borrowSoloSuppressInj_.load(std::memory_order_relaxed);
+        // RAMP IN ONLY AFTER THE MUTE IS CONFIRMED (30 Aug 2026): before
+        // confirmation the channel is still audible in the mix, and a
+        // perfectly aligned injection on top of it is a clean +6dB double
+        // — the volume jump on select. From silence to unity ONCE: the
+        // confirm gate is a mute (ramp target only), never a pad change.
+        const bool muteReady = borrowMuteConfirmedOnce_.load(std::memory_order_relaxed);
+        borrowCtxMix_.setTargetValue(ctxNow && injPad >= 0 && ! soloSup
+                                         && muteReady ? 1.0f : 0.0f);
+        const int padKey = (ctxNow && injPad >= 0) ? injPad : -1;
+        if (padKey != borrowLastPadKey_)
+        {
+            // A pad change interrupts ONLY the injection: silence it, clear
+            // its history, ramp back in. The passthrough never notices.
+            borrowLastPadKey_ = padKey;
+            alignPre_.buf.clear();
+            borrowCtxMix_.setCurrentAndTargetValue(0.0f);
+            borrowCtxMix_.setTargetValue(ctxNow && injPad >= 0 && ! soloSup
+                                             && muteReady ? 1.0f : 0.0f);
+        }
+        if ((ctxNow && injPad >= 0)
+            || borrowCtxMix_.getCurrentValue() > 0.0001f)
+        {
+            const int nS = buffer.getNumSamples();
+            const bool have = borrowHost_ != nullptr
+                           && borrowBuf_.getNumSamples() >= nS;
+            juce::AudioBuffer<float> inj(borrowBuf_.getArrayOfWritePointers(),
+                                         2, 0, nS);
+            if (have) alignPre_.process(inj, std::max(0, padKey));
+            for (int i = 0; i < nS; ++i)
+            {
+                const float g = borrowCtxMix_.getNextValue();
+                for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                {
+                    const float v = have
+                        ? inj.getSample(std::min(ch, 1), i) : 0.0f;
+                    buffer.getWritePointer(ch)[i] += v * g;
+                }
+            }
+        }
+        else
+            borrowCtxMix_.skip(buffer.getNumSamples());
+    }
+    if (borrowThrough)
+        applyBorrowSoloMixOn(buffer, fallbackSolo);
 
     // CHAIN: pass audio through hosted plugin (graph handles passthrough if none loaded)
     {
@@ -1092,6 +1378,12 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         }
     }
 
+    // ===== Step 2 BORROW SOLO, replace-after route =======================
+    // The through-main route ran BEFORE chainHost.process instead; exactly
+    // one of the two sites fires per block (borrowThrough, read once above).
+    if (!borrowThrough)
+        applyBorrowSoloMixOn(buffer, fallbackSolo);
+
     // ===== Stage 1 SOLO: the last word on the buffer =====================
     // While a remote edit session runs, the mix is REPLACED by the edited
     // channel: ring audio processed through the editing copy (filled in the
@@ -1126,6 +1418,7 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         else
             editSoloMix_.skip(buffer.getNumSamples());
     }
+
 }
 
 // ============ Channel Type Detection ============
@@ -1559,6 +1852,784 @@ struct EchoJayProcessor::EditLeaseTimer : juce::Timer
     explicit EditLeaseTimer(EchoJayProcessor& proc) : p(proc) {}
     void timerCallback() override { p.renewEditLease(); }
 };
+
+// ---------------------------------------------------------------------------
+// Whole-rack borrow, step 2 — solo only, no commit. Nothing here writes
+// state back to the Link: the ONLY file this session writes is the lease
+// (renewBorrowLease), and the only deletion is that same file on release.
+// borrowhost_test pins that by source.
+// ---------------------------------------------------------------------------
+struct EchoJayProcessor::BorrowLeaseTimer : juce::Timer
+{
+    EchoJayProcessor& p;
+    explicit BorrowLeaseTimer(EchoJayProcessor& proc) : p(proc) {}
+    void timerCallback() override { p.borrowTick(); }
+};
+
+void EchoJayProcessor::borrowTick()
+{
+    // §8 CLOSED LOOP (26 Aug 2026): "impossible by construction" was an
+    // open-loop claim — the capability announced, the command written, the
+    // mute HOPED. The real invariant: a commanded mute is CONFIRMED by the
+    // Link (sidecar muteEngaged, republished on flip); commanded-but-
+    // unconfirmed for ~3s drops to solo WITH A NAME, never a silent double.
+    // Confirmation is only judged on a FRESH cache read (an editor feeds
+    // the cache; stale reads prove nothing either way).
+    if (borrowActive()
+        && borrowInContextOk_.load(std::memory_order_relaxed))
+    {
+        bool freshRead = false, confirmed = false;
+        if (auto it = linkRackCache.find(borrowSession_.uid);
+            it != linkRackCache.end())
+        {
+            freshRead = juce::Time::getMillisecondCounter() - it->second.readMs
+                            < 3000;
+            confirmed = it->second.rack.muteEngaged;
+        }
+        if (freshRead)
+            borrowMuteUnconfirmedTicks_ = confirmed
+                ? 0 : borrowMuteUnconfirmedTicks_ + 1;
+        if (freshRead && confirmed)
+            borrowMuteConfirmedOnce_.store(true, std::memory_order_relaxed);
+        if (freshRead && ! confirmed && borrowMuteUnconfirmedTicks_ >= 3)
+        {
+            borrowInContextOk_.store(false, std::memory_order_relaxed);
+            const juce::String nm = resolveLinkDisplayName(borrowSession_.uid);
+            borrowStickyBanner_ = nm + "'s channel did not confirm its mute - "
+                "the mix may have doubled briefly. Soloing your edit "
+                "instead. If this repeats, update " + nm + "'s EchoJay Link.";
+            EchoJay_NSLog(("EJCtx: mute UNCONFIRMED after "
+                + juce::String(borrowMuteUnconfirmedTicks_)
+                + " ticks - dropped to solo, named").toRawUTF8());
+        }
+    }
+    else borrowMuteUnconfirmedTicks_ = 0;
+
+    if (!borrowActive()) return;
+    // §8 alignment trace, 1Hz: measured ring age vs the seek target. The
+    // pad absorbs any deviation, so this is a health line, not an error —
+    // except the no-stamp fallback, which is SAID rather than silent.
+    if (borrowAlignSkewValid_.exchange(false, std::memory_order_relaxed))
+        EchoJay_NSLog(("EJAlign(main): ring age="
+            + juce::String((juce::int64) kEditCushionFrames
+                + borrowAlignSkew_.load(std::memory_order_relaxed))
+            + " smp (target " + juce::String((int) kEditCushionFrames) + ")"
+            + (borrowAlignNoStamps_.load(std::memory_order_relaxed)
+                 ? juce::String(" NO STAMPS - aligned by backlog, one-block "
+                                "accuracy; update this Link for exact")
+                 : juce::String())).toRawUTF8());
+    renewBorrowLease();
+
+    // RING RE-BIND, every tick (hands-on finding #3): the slot index bound
+    // at engage is not trusted — a sample-rate change or Link re-register
+    // can remap activeLinkSlots, and a stale binding is SILENT while the
+    // lease still holds the Link dry. Re-resolve by uid; tolerate a short
+    // gap (the Link may be mid-re-register); past tolerance, release WITH
+    // WORDS through the reason the editor shows.
+    int found = -1;
+    for (int i = 0; i < kMaxLinkSlots; ++i)
+        if (activeLinkSlots[i].map != nullptr
+            && activeLinkSlots[i].uid == borrowSession_.uid)
+            { found = i; break; }
+    switch (LinkShm::BorrowRing::poll(
+                borrowSession_.ringSlot.load(std::memory_order_relaxed),
+                found, borrowRingLostTicks_))
+    {
+        case LinkShm::BorrowRing::Verdict::Bound:
+            borrowRingLostTicks_ = 0;
+            break;
+        case LinkShm::BorrowRing::Verdict::Rebind:
+        {
+            borrowRingLostTicks_ = 0;
+            const juce::SpinLock::ScopedLockType sl(activeLinkSlots[found].lock);
+            if (activeLinkSlots[found].map != nullptr)
+                LinkShm::ringSeekForward(activeLinkSlots[found].map, kEditCushionFrames);
+            borrowSession_.ringSlot.store(found, std::memory_order_relaxed);
+            EchoJay_NSLog(("EJBorrow: ring re-bound to slot "
+                           + juce::String(found)).toRawUTF8());
+            break;
+        }
+        case LinkShm::BorrowRing::Verdict::Lost:
+            ++borrowRingLostTicks_;
+            EchoJay_NSLog(("EJBorrow: ring lost, tick " + juce::String(borrowRingLostTicks_)
+                           + " of " + juce::String(LinkShm::kBorrowRingMaxLostTicks)).toRawUTF8());
+            break;
+        case LinkShm::BorrowRing::Verdict::Release:
+        {
+            const juce::String name = resolveLinkDisplayName(borrowSession_.uid);
+            borrowRingLostTicks_ = 0;
+            borrowRelease(true);   // a lease death is never an implicit discard
+            borrowAutoReleaseReason_ =
+                "Released: " + name + "'s audio stream went away and did "
+                "not come back. The Link owns its rack again; nothing was "
+                "applied, and your edits are KEPT - press EDIT RACK on it "
+                "again to continue from them.";
+            EchoJay_NSLog("EJBorrow: SELF-RELEASED - ring gone past tolerance");
+            break;
+        }
+    }
+}
+
+// The borrow solo crossfade — one implementation, two call sites in
+// processBlock (through-main before chainHost.process, replace-after after
+// it), exactly one firing per block. Same idiom as the edit-session solo,
+// its own fields: a borrow and a slot edit session can coexist.
+void EchoJayProcessor::applyBorrowSoloMixOn(juce::AudioBuffer<float>& buffer,
+                                            bool on)
+{
+    borrowSoloMix_.setTargetValue(on ? 1.0f : 0.0f);
+    if (on || borrowSoloMix_.getCurrentValue() > 0.0001f)
+    {
+        const int nS = buffer.getNumSamples();
+        const bool have = borrowHost_ != nullptr
+                       && borrowBuf_.getNumSamples() >= nS;
+        for (int i = 0; i < nS; ++i)
+        {
+            const float g = borrowSoloMix_.getNextValue();
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+            {
+                const float solo = have
+                    ? borrowBuf_.getSample(std::min(ch, 1), i) : 0.0f;
+                float* out = buffer.getWritePointer(ch);
+                out[i] = out[i] * (1.0f - g) + solo * g;
+            }
+        }
+    }
+    else
+        borrowSoloMix_.skip(buffer.getNumSamples());
+}
+
+ChainHost* EchoJayProcessor::borrowHost()
+{
+    if (borrowHost_ == nullptr)
+    {
+        borrowHost_ = std::make_unique<ChainHost>(ChainHost::Mode::Borrowed);
+        borrowHost_->prepare(hostSampleRate_ > 0 ? hostSampleRate_ : 44100.0,
+                             hostSamplesPerBlock_ > 0 ? hostSamplesPerBlock_ : 512);
+        // §8: the borrowed chain's latency feeds the pad math (INTERNAL use
+        // — the hard block on its host REPORT stands). A chain that grows
+        // past the budget mid-session drops to solo, with the named line,
+        // live; the report never moves.
+        borrowHost_->onChainChanged = [this]
+        {
+            const int lat = std::max(0, borrowHost_ != nullptr
+                                            ? borrowHost_->getTotalLatencySamples() : 0);
+            borrowChainLat_.store(lat, std::memory_order_relaxed);
+            if (borrowInContextOk_.load(std::memory_order_relaxed)
+                && alignPad(lat) < 0)
+            {
+                borrowInContextOk_.store(false, std::memory_order_relaxed);
+                const juce::String name = resolveLinkDisplayName(borrowUid());
+                borrowStickyBanner_ = name + "'s rack now needs more "
+                    "look-ahead than the in-mix budget - soloing your edit "
+                    "instead.";
+                EchoJay_NSLog(("EJCtx: chain latency " + juce::String(lat)
+                    + " exceeds budget - dropped to solo").toRawUTF8());
+            }
+        };
+    }
+    return borrowHost_.get();
+}
+
+ChainHost* EchoJayProcessor::borrowHostIfActiveFor(const juce::String& uid)
+{
+    return (borrowActive() && borrowSession_.uid == uid) ? borrowHost_.get() : nullptr;
+}
+
+void EchoJayProcessor::renewBorrowLease()
+{
+    if (!borrowActive()) return;
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty()) return;
+    auto* o = new juce::DynamicObject();
+    o->setProperty("v",       1);
+    o->setProperty("leaseId", borrowSession_.leaseId);
+    // slot 0 + scope "rack": a capable Link engages the whole rack; an old
+    // binary never parses scope, sees slot 0, and its own validity check
+    // refuses — it cannot half-engage (LeaseScope, pinned in racklock_test).
+    o->setProperty("slot",    0);
+    o->setProperty("scope",   "rack");
+    // §8: the mute rides the LEASE — one lifetime with the bypasses, one
+    // restore path on the Link. True only while in-context is actually
+    // playing (not while LISTEN solos, not in the degenerate through-main
+    // placement, never when refused/incapable).
+    // LISTEN deleted: the session mute wants exactly while in-context
+    // monitoring is live (the fallback plays the ring through the main,
+    // where the Link's dry channel is not in the audible path anyway).
+    const bool muteWant = borrowInContextOk_.load(std::memory_order_relaxed);
+    o->setProperty("muteOut", muteWant);
+    // Additive: the failure-held session names itself so the Link's
+    // banner can speak to the state the user is actually in.
+    o->setProperty("editPending", borrowEditPendingHeld_);
+    EchoJay_NSLog(("EJCtx(main): renew muteOut="
+        + juce::String(muteWant ? "Y" : "N") + " ok="
+        + juce::String(borrowInContextOk_.load(std::memory_order_relaxed) ? "Y" : "N")
+        + " soloSup="
+        + juce::String(borrowSoloSuppressInj_.load(std::memory_order_relaxed) ? "Y" : "N"))
+        .toRawUTF8());
+    o->setProperty("tMs",     juce::Time::currentTimeMillis());
+    juce::File(LinkShm::leasePath(dir, borrowSession_.uid))
+        .replaceWithText(juce::JSON::toString(juce::var(o), true));
+}
+
+void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
+                                         const juce::String& leaseId,
+                                         bool structureCapable,
+                                         bool inContextCapable)
+{
+    if (borrowActive() || uid.isEmpty()) return;
+    borrowHost();                                    // exists + prepared
+    borrowBuf_.setSize(2, 8192);                     // allocated HERE, never on audio
+    borrowBuf_.clear();   // setSize leaves contents UNDEFINED — an injection
+                          // source must never hold garbage, whatever the gates
+    borrowSession_.uid     = uid;
+    borrowSession_.leaseId = leaseId;
+    // THE CAPABILITY SNAPSHOT RIDES THE SESSION FROM ITS FIRST INSTANT
+    // (26 Aug 2026: adds refused on a live session — the flag used to be
+    // set only when every async plugin load SETTLED, so the whole load
+    // window was a live session whose surrounding state hadn't come with
+    // it, and the picker's fork read false: the legacy refusal, on a
+    // capable Link).
+    borrowStructureCapable_ = structureCapable;
+    // §8 same rule: in-context OK = announced AND fits the budget, decided
+    // the instant the session exists; the chain watcher re-checks live.
+    borrowChainLat_.store(0, std::memory_order_relaxed);
+    borrowInContextOk_.store(inContextCapable && alignPad(0) >= 0,
+                             std::memory_order_relaxed);
+
+    // Bind the ring, editBegin's idiom: seek to the cushion so the audition
+    // starts near live rather than at the backlog.
+    int ringSlot = -1;
+    for (int i = 0; i < kMaxLinkSlots; ++i)
+        if (activeLinkSlots[i].map != nullptr && activeLinkSlots[i].uid == uid)
+            { ringSlot = i; break; }
+    if (ringSlot >= 0)
+    {
+        const juce::SpinLock::ScopedLockType sl(activeLinkSlots[ringSlot].lock);
+        if (activeLinkSlots[ringSlot].map != nullptr)
+            LinkShm::ringSeekForward(activeLinkSlots[ringSlot].map, kEditCushionFrames);
+    }
+    borrowSession_.ringSlot.store(ringSlot, std::memory_order_relaxed);
+    borrowAlignReset_.store(true, std::memory_order_relaxed);
+    borrowRingAgeMeasured_.store(-1, std::memory_order_relaxed);
+    borrowMuteConfirmedOnce_.store(false, std::memory_order_relaxed);
+    borrowRingLostTicks_ = 0;
+    borrowRouteFlip_.store(false, std::memory_order_relaxed);   // default per channel type
+    borrowSession_.active.store(true, std::memory_order_relaxed);
+
+    renewBorrowLease();                              // the file appears NOW
+    if (borrowLeaseTimer_ == nullptr)
+        borrowLeaseTimer_ = std::make_unique<BorrowLeaseTimer>(*this);
+    borrowLeaseTimer_->startTimer((int) LinkShm::kLeaseRenewMs);
+    EchoJay_NSLog(("EJBorrow: engaged uid=" + uid + " ringSlot="
+                   + juce::String(ringSlot)).toRawUTF8());
+}
+
+// borrowAudioOn/borrowAudioOff (LISTEN) DELETED 27 Aug 2026 — solo
+// subsumes LISTEN (MUTE_SOLO_SPEC §1/§6.4). Deleted, not dormant.
+
+void EchoJayProcessor::captureBorrowKept()
+{
+    if (!borrowActive() || borrowHost_ == nullptr) return;
+    borrowKept_ = {};
+    borrowKept_.uid = borrowSession_.uid;
+    for (int i = 0; i < borrowHost_->getNumSlots(); ++i)
+    {
+        juce::String b64;
+        if (auto* p = borrowHost_->getSlotProcessor(i))
+        {
+            juce::MemoryBlock mb;
+            try { p->getStateInformation(mb); } catch (...) { mb.reset(); }
+            if (mb.getSize() > 0) b64 = LinkShm::stateToB64(mb);
+        }
+        borrowKept_.names.add(borrowHost_->getSlotInfo(i).name);
+        borrowKept_.states.add(b64);
+    }
+    EchoJay_NSLog(("EJBorrow: kept " + juce::String(borrowKept_.states.size())
+                   + " slot state(s) for uid=" + borrowKept_.uid).toRawUTF8());
+}
+
+void EchoJayProcessor::borrowRelease(bool keepEdits)
+{
+    if (!borrowActive()) return;
+    borrowEditPendingHeld_ = false;  // every ending clears the hold
+    if (keepEdits) captureBorrowKept();
+    borrowSlotRecords_.clear();
+    borrowSlotOrigin_.clear();
+    borrowCreatedIdentity_.clear();
+    borrowBaseIdentity_.clear();
+    borrowRemovedWithheld_.clear();
+    borrowRemovedNames_.clear();
+    borrowInContextOk_.store(false, std::memory_order_relaxed);
+    borrowStructureCapable_ = false;
+    // Ramp out first (the AMEK lesson): active drops both crossfade
+    // targets (fallbackSolo and ctxNow derive from it); the graph itself
+    // stays alive (session-long host), so there is no instance teardown
+    // racing the audio thread here at all.
+    if (borrowLeaseTimer_) borrowLeaseTimer_->stopTimer();
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isNotEmpty())
+        juce::File(LinkShm::leasePath(dir, borrowSession_.uid)).deleteFile();
+    borrowSession_.active.store(false, std::memory_order_relaxed);
+    const juce::String uid = borrowSession_.uid;
+    borrowSession_.uid.clear();
+    borrowSession_.leaseId.clear();
+    borrowSession_.ringSlot.store(-1, std::memory_order_relaxed);
+    borrowAlignReset_.store(true, std::memory_order_relaxed);
+    borrowRingAgeMeasured_.store(-1, std::memory_order_relaxed);
+    borrowMuteConfirmedOnce_.store(false, std::memory_order_relaxed);
+    if (borrowHost_) borrowHost_->releaseBorrowToPool();
+    EchoJay_NSLog(("EJBorrow: released uid=" + uid
+                   + " (lease deleted; Link restores its own bypasses)").toRawUTF8());
+}
+
+// ============================================================================
+// §5a-R (26 Aug 2026): selection IS the session. The verdicts, the plan
+// build and the apply orchestration live HERE because an editor being
+// destroyed cannot poll an ack — ruling 4 requires the close-apply to
+// outlive the window that triggered it.
+// ============================================================================
+std::vector<std::pair<bool, bool>> EchoJayProcessor::borrowSlotVerdicts()
+{
+    std::vector<std::pair<bool, bool>> out;
+    auto* bh = borrowHost();
+    if (bh == nullptr) return out;
+    const auto& recs = borrowSlotRecords_;
+    const auto& origins = borrowSlotOrigin_;
+    for (int i = 0; i < bh->getNumSlots() && i < (int) origins.size(); ++i)
+    {
+        const int origin = origins[(size_t) i];
+        if (origin < 0)
+        {
+            EchoJay_NSLog(("EJApply: slot " + juce::String(i) + " \""
+                + bh->getSlotInfo(i).name + "\" CREATED here - no pulled "
+                  "state, never withheld, edited by definition -> CREATE")
+                .toRawUTF8());
+            out.emplace_back(false, true);
+            continue;
+        }
+        if (origin >= (int) recs.size()) { out.emplace_back(false, false); continue; }
+        const auto& r = recs[(size_t) origin];
+        const bool seeded   = bh->borrowSlotSeededWithState(i);
+        const bool withheld = r.hadState && ! seeded;
+        juce::String nowB64;
+        if (auto* p = bh->getSlotProcessor(i))
+        {
+            juce::MemoryBlock mb;
+            try { p->getStateInformation(mb); } catch (...) { mb.reset(); }
+            if (mb.getSize() > 0) nowB64 = LinkShm::stateToB64(mb);
+        }
+        const bool edited = nowB64 != r.baselineB64;
+        const auto action = LinkShm::BorrowCommit::classify(withheld, edited);
+        EchoJay_NSLog(("EJApply: slot " + juce::String(i) + " \"" + r.name
+            + "\" hadState=" + (r.hadState ? "Y" : "N")
+            + " seeded=" + (seeded ? "Y" : "N")
+            + " -> withheld=" + (withheld ? "Y" : "N")
+            + " edited=" + (edited ? "Y" : "N")
+            + " action=" + (action == LinkShm::BorrowCommit::Action::Commit ? "COMMIT"
+                            : action == LinkShm::BorrowCommit::Action::LeaveWithheld
+                                ? "LEAVE-WITHHELD" : "LEAVE-UNEDITED")).toRawUTF8());
+        out.emplace_back(withheld, edited);
+    }
+    return out;
+}
+
+LinkShm::StructureEdit::Plan EchoJayProcessor::buildStructurePlan()
+{
+    auto* bh = borrowHost();
+    const auto& base    = borrowBaseIdentity_;
+    const auto& origins = borrowSlotOrigin_;
+    const auto verdicts = borrowSlotVerdicts();
+    std::vector<LinkShm::StructureEdit::CurrentSlot> current;
+    for (int i = 0; i < (int) origins.size() && i < (int) verdicts.size(); ++i)
+    {
+        juce::String nowB64;
+        if (auto* p = bh->getSlotProcessor(i))
+        {
+            juce::MemoryBlock mb;
+            try { p->getStateInformation(mb); } catch (...) { mb.reset(); }
+            if (mb.getSize() > 0) nowB64 = LinkShm::stateToB64(mb);
+        }
+        const int o = origins[(size_t) i];
+        current.push_back({
+            o >= 0 && o < (int) base.size()
+                ? base[(size_t) o]
+                : borrowCreatedIdentity_[(size_t) i],
+            o, verdicts[(size_t) i].second, verdicts[(size_t) i].first,
+            nowB64,
+            bh->getSlotInfo(i).bypassed,
+            bh->getSlotInfo(i).format });
+    }
+    return LinkShm::StructureEdit::computePlan(borrowUid(), base, current);
+}
+
+bool EchoJayProcessor::borrowSessionShapeDirty() const
+{
+    if (! borrowRemovedNames_.isEmpty()) return true;
+    const auto& org = borrowSlotOrigin_;
+    for (size_t i = 0; i < org.size(); ++i)
+        if (org[i] != (int) i) return true;
+    return false;
+}
+
+void EchoJayProcessor::borrowApplyAndRelease(bool releaseLockOnFail)
+{
+    if (! borrowActive()) return;
+    if (borrowApplyInFlight_)
+    {
+        // A close arriving mid-flight upgrades the outcome policy: the
+        // window is going away, so a failure now must still release.
+        if (releaseLockOnFail) borrowApplyReleaseOnFail_ = true;
+        return;
+    }
+    const juce::String uid  = borrowSession_.uid;
+    const juce::String name = resolveLinkDisplayName(uid);
+    // ONE COMPUTATION, at the moment of deselect/close — sent as computed.
+    const auto plan = buildStructurePlan();
+    if (plan.ops.empty())
+    {
+        if (borrowSessionShapeDirty())
+        {
+            auto* bh = borrowHost();
+            EchoJay_NSLog(("EJStruct: DEFECT empty plan from shape-dirty "
+                "session: slots=" + juce::String(bh ? bh->getNumSlots() : -1)
+                + " origins=" + juce::String((int) borrowSlotOrigin_.size())
+                + " records=" + juce::String((int) borrowSlotRecords_.size()))
+                .toRawUTF8());
+            borrowStickyBanner_ = "Your session is still live. Deselect "
+                "found a defect: your shape changes computed into an EMPTY "
+                "plan - nothing was sent or released. Please report this.";
+            if (releaseLockOnFail) borrowApplyFinish(false, "empty plan defect", false);
+            return;
+        }
+        // Nothing to write: a clean release, said so.
+        clearBorrowKept();
+        borrowRelease(false);
+        borrowStickyBanner_ = "Released - " + name + " owns its rack again. "
+            "Nothing was changed on either side.";
+        return;
+    }
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty())
+    {
+        EchoJay_NSLog(("EJStruct: refused send uid=" + uid
+                       + " - shared Link folder unavailable").toRawUTF8());
+        borrowStickyBanner_ = "Your session is still live. Cannot write to "
+            + name + ": the shared Link folder is unavailable.";
+        if (releaseLockOnFail) borrowApplyFinish(false, "shared folder unavailable", false);
+        return;
+    }
+    const int seq = LinkShm::nextCtrlSeq();
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",   1);
+    cmd->setProperty("seq", seq);
+    cmd->setProperty("structPlan", LinkShm::StructureEdit::planToVar(plan, {}));
+    EchoJay_NSLog(("EJStruct: send uid=" + uid
+                   + " ops=" + juce::String((int) plan.ops.size())
+                   + " seq=" + juce::String(seq)).toRawUTF8());
+    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();
+    if (! juce::File(dir + "ctrl-cmd-" + uid + ".json")
+            .replaceWithText(juce::JSON::toString(juce::var(cmd), true)))
+    {
+        EchoJay_NSLog(("EJStruct: cmd write FAILED uid=" + uid
+                       + " seq=" + juce::String(seq)).toRawUTF8());
+        if (releaseLockOnFail) { borrowApplyFinish(false, "command write failed", false); return; }
+        borrowStickyBanner_ = "Your session is still live. The write to "
+            + name + " could not start (command file) - nothing was sent.";
+        return;
+    }
+    borrowApplyInFlight_ = true;
+    borrowApplyReleaseOnFail_ = releaseLockOnFail;
+    std::weak_ptr<bool> alive = borrowAliveToken_;
+    auto poll = std::make_shared<std::function<void(int)>>();
+    *poll = [this, alive, uid, seq, dir, poll](int left)
+    {
+        juce::Timer::callAfterDelay(250, [this, alive, uid, seq, dir, poll, left]
+        {
+            auto a = alive.lock();
+            if (! a || ! *a)
+            {
+                EchoJay_NSLog(("EJStruct: ack poll abandoned (processor "
+                    "destroyed) uid=" + uid).toRawUTF8());
+                return;
+            }
+            juce::File ack(dir + "ctrl-ack-" + uid + ".json");
+            if (ack.existsAsFile())
+            {
+                auto v = juce::JSON::parse(ack.loadFileAsString());
+                auto* o = v.getDynamicObject();
+                if (o != nullptr && (int) o->getProperty("seq") != seq)
+                    EchoJay_NSLog(("EJStruct: stale ack uid=" + uid
+                        + " got seq=" + o->getProperty("seq").toString()
+                        + " want=" + juce::String(seq)).toRawUTF8());
+                if (o != nullptr && (int) o->getProperty("seq") == seq)
+                {
+                    ack.deleteFile();
+                    if (o->hasProperty("refused"))
+                    {
+                        const juce::String why = o->getProperty("refused").toString();
+                        EchoJay_NSLog(("EJStruct: ack REFUSED uid=" + uid
+                            + " why=" + why).toRawUTF8());
+                        borrowApplyFinish(false, "transport refused: " + why, false);
+                        return;
+                    }
+                    if ((bool) o->getProperty("planApplied"))
+                    {
+                        EchoJay_NSLog(("EJStruct: ack applied uid=" + uid
+                            + " seq=" + juce::String(seq)).toRawUTF8());
+                        borrowApplyFinish(true, {}, false);
+                        return;
+                    }
+                    juce::String reasons;
+                    if (auto* rs = o->getProperty("planReasons").getArray())
+                        for (auto& r : *rs)
+                            reasons << (reasons.isEmpty() ? "" : "; ") << r.toString();
+                    EchoJay_NSLog(("EJStruct: ack FAILED uid=" + uid
+                        + " reasons=" + reasons).toRawUTF8());
+                    borrowApplyFinish(false, reasons,
+                                      (bool) o->getProperty("planRestored"));
+                    return;
+                }
+            }
+            if (left <= 1)
+            {
+                EchoJay_NSLog(("EJStruct: NO ACK uid=" + uid
+                    + " seq=" + juce::String(seq) + " after 10s").toRawUTF8());
+                borrowApplyFinish(false, "no answer after 10s - nothing may "
+                                  "have changed there", false);
+                return;
+            }
+            (*poll)(left - 1);
+        });
+    };
+    (*poll)(40);
+}
+
+void EchoJayProcessor::borrowApplyFinish(bool applied, const juce::String& why,
+                                         bool restored)
+{
+    borrowApplyInFlight_ = false;
+    const juce::String uid  = borrowSession_.uid;
+    const juce::String name = resolveLinkDisplayName(uid);
+    if (applied)
+    {
+        clearBorrowKept();
+        borrowRelease(false);
+        borrowStickyBanner_ = "Applied to " + name + " - the whole plan, or "
+            "none of it. " + name + " owns its rack again.";
+        return;
+    }
+    if (borrowApplyReleaseOnFail_)
+    {
+        // RULING 4: no lock without a visible owner. The lock releases,
+        // the edits stay KEPT, the note outlives every window, and the
+        // failure is LOGGED whether or not anyone reopens.
+        EchoJay_NSLog(("EJStruct: close-apply FAILED uid=" + uid
+            + " - lock released, edits KEPT, note recorded. why=" + why)
+            .toRawUTF8());
+        unwrittenEditNote_[uid] = "The last edit session on " + name
+            + " ended WITHOUT writing: " + why + ". Your edits are kept "
+            "here" + (restored ? juce::String(" and " + name + " was restored "
+            "to its pre-edit rack") : juce::String()) + " - " + name
+            + " may have changed since, so re-opening this rack starts from "
+            "its current state.";
+        borrowRelease(true);
+        borrowStickyBanner_ = unwrittenEditNote_[uid];
+        return;
+    }
+    // Deselect semantics (ruling 3): the deselect does not complete — the
+    // session stays engaged, the lock holds, and it says why.
+    borrowStickyBanner_ = "Your session is still live. The write to " + name
+        + " failed - " + why + ". "
+        + (restored ? name + " was restored to exactly its pre-write rack. "
+                    : name + "'s rack was not touched. ")
+        + "Fix the cause and leave the rack again to retry.";
+    borrowEditPendingHeld_ = true;   // the hold is a pending edit now
+}
+
+juce::AudioProcessorEditor* EchoJayProcessor::createSlotEditorForView(
+    const juce::String& viewUid, int slot)
+{
+    // ORDER IS LOAD-BEARING: a borrowed view's uid is non-empty, so the
+    // remote guard's early nullptr would make the borrowed arm dead code —
+    // the 22 Aug 2026 bug, and the reason this decision now lives where
+    // the gate can construct the real states and CALL it.
+    if (auto* bh = borrowHostIfActiveFor(viewUid))
+        return bh->createEditorForSlot(slot);
+    // A remote rack cannot render the LINK'S instance here (it lives in
+    // that process) — but a live stage-1 edit session's slot has a LOCAL
+    // editing copy, and its editor is the whole point of stage 1.
+    if (viewUid.isNotEmpty())
+    {
+        if (editActive() && editSession_.uid == viewUid
+            && editSession_.slot0 == slot)
+            return editCreateEditor();
+        return nullptr;
+    }
+    return getChainHost().createEditorForSlot(slot);
+}
+
+void EchoJayProcessor::setBorrowBudgetActive(bool active)
+{
+    if (borrowBudgetActive_.exchange(active, std::memory_order_relaxed) == active)
+        return;
+    if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
+        setLatencySamples(lat + reportedBudgetFrames());
+    EchoJay_NSLog(("EJCtx: alignment budget "
+                   + juce::String(active ? "ON" : "OFF")
+                   + " (capable Link " + (active ? "present" : "gone")
+                   + ") - PDC re-runs once").toRawUTF8());
+}
+
+void EchoJayProcessor::borrowEditorClosed()
+{
+    if (! borrowActive()) return;
+    if (borrowApplyInFlight_) { borrowApplyReleaseOnFail_ = true; return; }
+    if (borrowStructureCapable_)
+    {
+        borrowApplyAndRelease(true);
+        return;
+    }
+    // Legacy (settings-only) Link: the per-slot commit sequencer is editor
+    // machinery and the editor is dying. Honest fallback: edits kept, lock
+    // released, note recorded IF anything was actually edited.
+    bool anyEdited = false;
+    for (const auto& v : borrowSlotVerdicts())
+        if (v.second) { anyEdited = true; break; }
+    const juce::String uid  = borrowSession_.uid;
+    const juce::String name = resolveLinkDisplayName(uid);
+    if (anyEdited)
+    {
+        EchoJay_NSLog(("EJStruct: editor closed on a LEGACY session uid="
+            + uid + " - edits kept, not written (no sequencer without a "
+            "window), note recorded").toRawUTF8());
+        unwrittenEditNote_[uid] = "The last edit session on " + name
+            + " closed before its settings were written. Your edits are "
+            "kept here - " + name + " may have changed since.";
+        borrowRelease(true);
+        borrowStickyBanner_ = unwrittenEditNote_[uid];
+    }
+    else
+    {
+        borrowRelease(false);
+        borrowStickyBanner_ = "Released - " + name + " owns its rack again. "
+            "Nothing was changed on either side.";
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Rack lock — the main side. See LinkShm.h (RackLock) for the pure decisions
+// and RACK_BORROW_REQUIREMENTS §4 for the design record.
+// ---------------------------------------------------------------------------
+struct EchoJayProcessor::RackLockTimer : juce::Timer
+{
+    EchoJayProcessor& p;
+    explicit RackLockTimer(EchoJayProcessor& proc) : p(proc) {}
+    void timerCallback() override { p.rackLockTick(); }
+};
+
+juce::String EchoJayProcessor::rackLockMyName() const
+{
+    // The overlay names the owner; a track name is the most recognisable
+    // identity a main has. Fallback stays honest rather than blank.
+    const juce::String t = chainHost.getHostTrackName();
+    return t.isNotEmpty() ? "EchoJay on \"" + t + "\"" : juce::String("another EchoJay");
+}
+
+void EchoJayProcessor::rackLockReleaseFile()
+{
+    if (rackLockHeldUid_.isEmpty()) return;
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isNotEmpty())
+        juce::File(LinkShm::racklockPath(dir, rackLockHeldUid_)).deleteFile();
+    EchoJay_NSLog(("EJRackLock: released uid=" + rackLockHeldUid_).toRawUTF8());
+    rackLockHeldUid_.clear();
+    // Reset the STATE with the hold. Leaving it at Held made the next
+    // acquire's transition invisible on a direct rack->rack switch (prev ==
+    // Held, so the acquired log never fired) — a successful acquire and a
+    // failed one must not both read as silence.
+    rackLockState_ = RackLockState::Idle;
+}
+
+void EchoJayProcessor::setRackLockWant(const juce::String& uid)
+{
+    if (uid == rackLockWantUid_) return;
+    // A change of target releases the old lock NOW — clean delete beats a 3s
+    // expiry every time the release path is reachable.
+    if (rackLockHeldUid_.isNotEmpty() && rackLockHeldUid_ != uid)
+        rackLockReleaseFile();
+    rackLockWantUid_ = uid;
+    if (uid.isEmpty())
+    {
+        rackLockState_ = RackLockState::Idle;
+        rackLockOtherOwner_.clear();
+        if (rackLockTimer_) rackLockTimer_->stopTimer();
+        return;
+    }
+    if (rackLockId_.isEmpty())
+        rackLockId_ = juce::Uuid().toString();
+    rackLockTick();   // attempt NOW, not in 1s — mirrors renewEditLease
+    if (rackLockTimer_ == nullptr)
+        rackLockTimer_ = std::make_unique<RackLockTimer>(*this);
+    rackLockTimer_->startTimer((int) LinkShm::kRackLockRenewMs);
+}
+
+void EchoJayProcessor::rackLockTick()
+{
+    if (rackLockWantUid_.isEmpty()) { rackLockReleaseFile(); return; }
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty()) return;
+
+    juce::String fileId, fileOwner;
+    double ageMs = 1.0e12;
+    LinkShm::readRackLockFile(dir, rackLockWantUid_, fileId, fileOwner, ageMs);
+    const auto claim = LinkShm::RackLock::read(fileId, ageMs, rackLockId_);
+
+    // Recency reads the sidecar's slot stamps — the Link's last LOCAL edit.
+    double lastEditMs = 0.0;
+    {
+        const auto rc = LinkShm::readRackSidecar(dir, rackLockWantUid_);
+        for (const auto& s : rc.slots)
+            lastEditMs = juce::jmax(lastEditMs, s.lastEditMs);
+    }
+    const bool holding = rackLockState_ == RackLockState::Held
+                       && rackLockHeldUid_ == rackLockWantUid_;
+    const auto prev = rackLockState_;
+    switch (LinkShm::RackLock::decide(claim, holding,
+                                      (double) juce::Time::currentTimeMillis(),
+                                      lastEditMs))
+    {
+        case LinkShm::RackLock::Acquire::Take:
+            LinkShm::writeRackLockFile(dir, rackLockWantUid_, rackLockId_,
+                                       rackLockMyName());
+            rackLockHeldUid_ = rackLockWantUid_;
+            rackLockState_   = RackLockState::Held;
+            rackLockOtherOwner_.clear();
+            if (prev != RackLockState::Held)
+                EchoJay_NSLog(("EJRackLock: acquired uid=" + rackLockHeldUid_).toRawUTF8());
+            break;
+        case LinkShm::RackLock::Acquire::WaitRecency:
+            rackLockState_ = RackLockState::WaitRecency;
+            rackLockOtherOwner_.clear();
+            if (prev != RackLockState::WaitRecency)
+                EchoJay_NSLog("EJRackLock: waiting - the Link was edited moments ago");
+            break;
+        case LinkShm::RackLock::Acquire::HeldByOther:
+            rackLockState_      = RackLockState::HeldByOther;
+            rackLockOtherOwner_ = fileOwner.isNotEmpty() ? fileOwner
+                                                         : juce::String("another EchoJay");
+            rackLockHeldUid_.clear();   // a fresh foreign id supersedes us
+            if (prev != RackLockState::HeldByOther)
+                EchoJay_NSLog(("EJRackLock: held by \"" + rackLockOtherOwner_
+                               + "\"").toRawUTF8());
+            break;
+    }
+}
 
 void EchoJayProcessor::editBegin(const juce::String& uid, int slot0,
                                  const juce::String& name, const juce::String& fmt,
@@ -3539,6 +4610,16 @@ void EchoJayProcessor::refreshLinkRegistry()
             ps.staleCycles = 0;
         }
 
+        // LIVENESS BEFORE LISTING (25 Aug 2026): inUse alone lists ghosts —
+        // a killed Link's slot keeps inUse=1 with a frozen heartbeat until
+        // the ~30s reaper, and the selector showed five dead rows. A slot
+        // appears only once its heartbeat is OBSERVED TO CLIMB (a live Link
+        // bumps ~1Hz; we poll ~2Hz, so real rows appear within a second or
+        // two). The reap threshold above is unchanged — it reclaims the
+        // slot; this only gates what the user is shown.
+        if (! ps.live.observe(snap.heartbeat))
+            continue;
+
         // Connect the audio ring only while the Link's capture role is
         // ACTIVE — inactive Links stay registered (visible, remotely
         // re-activatable) but publish no ring
@@ -3579,10 +4660,158 @@ void EchoJayProcessor::refreshLinkRegistry()
         info.gainDb     = snap.gainDb;   // Link's built-in gain (0 from old Links)
         info.placement  = snap.placement;   // 0 unset, 1 bus, 2 insert
         info.dialCapable = snap.dialCapable;
+        // Fresh = the heartbeat moved within the last ~3s (6 cycles at 2Hz).
+        // The row stays LISTED while stale (proven-then-frozen) so the strip
+        // can say "gone" distinctly, until the ~30s reap removes it.
+        info.heartbeatFresh = ps.staleCycles < 6;
         newInfos.push_back(std::move(info));
     }
 
     linkSlotInfos = std::move(newInfos);
+
+    // §8.3 refinement: the budget follows CAPABLE-LINK PRESENCE. The
+    // capability lives in the sidecar, read once per uid and cached; the
+    // cache is consulted only when the listed-uid set changes, so steady
+    // state costs nothing. Editor-independent: a project with Links carries
+    // the budget whether or not a window is open.
+    {
+        juce::StringArray listed;
+        for (const auto& si : linkSlotInfos)
+            if (si.uid.isNotEmpty()) listed.add(si.uid);
+        listed.sort(false);
+        const juce::String key = listed.joinIntoString("|");
+        if (key != ctxCapSetKey_)
+        {
+            ctxCapSetKey_ = key;
+            bool anyCapable = false;
+            int err2 = 0;
+            const juce::String dir2 = LinkShm::resolveDir(err2);
+            for (const auto& u : listed)
+            {
+                auto itc = ctxCapCache_.find(u);
+                if (itc == ctxCapCache_.end())
+                {
+                    // Cache only a sidecar that was actually PUBLISHED (uid
+                    // echoes back) — a just-launched Link's sidecar can lag
+                    // its registry row, and a cached false would stick. An
+                    // unpublished sidecar leaves the uid uncached; the next
+                    // set change (or this one re-keying) retries.
+                    const auto rc = dir2.isNotEmpty()
+                        ? LinkShm::readRackSidecar(dir2, u)
+                        : LinkShm::RackSidecar{};
+                    if (rc.uid != u) { ctxCapSetKey_.clear(); continue; }
+                    itc = ctxCapCache_.emplace(u, rc.inContextCapable).first;
+                }
+                if (itc->second) { anyCapable = true; break; }
+            }
+            setBorrowBudgetActive(anyCapable);
+        }
+    }
+
+    // ---- Mute/solo snapshot (27 Aug 2026, MUTE_SOLO_SPEC §3/§5/§6.1) ----
+    // LIVE rows only (heartbeatFresh — a ghost can neither solo nor need
+    // the capability warning); parses mtime-gated. Feeds the editor's
+    // lamps, the contextual honest-limit line, and the honorary-strip
+    // suppression of the in-context injection.
+    {
+        int errMs = 0;
+        const juce::String dirMs = LinkShm::resolveDir(errMs);
+        bool anySolo = false; int incap = 0;
+        std::set<juce::String> listedNow;
+        juce::String firstSoloName;
+        for (const auto& si : linkSlotInfos)
+        {
+            if (si.uid.isEmpty() || ! si.heartbeatFresh) continue;
+            listedNow.insert(si.uid);
+            auto& snap = muteSoloSnaps_[si.uid];
+            if (dirMs.isNotEmpty())
+            {
+                juce::File f(LinkShm::rackSidecarPath(dirMs, si.uid));
+                const juce::int64 mt = f.existsAsFile()
+                    ? f.getLastModificationTime().toMilliseconds() : 0;
+                if (mt != snap.mtimeMs)
+                {
+                    const auto rc = LinkShm::readRackSidecar(dirMs, si.uid);
+                    if (rc.uid == si.uid)
+                    {
+                        snap.mtimeMs = mt;
+                        snap.muteUser = rc.muteUser;
+                        snap.soloOn   = rc.soloOn;
+                        snap.capable  = rc.muteSoloCapable;
+                    }
+                }
+            }
+            if (snap.soloOn && firstSoloName.isEmpty())
+                firstSoloName = resolveLinkDisplayName(si.uid);
+            anySolo = anySolo || snap.soloOn;
+            if (! snap.capable) ++incap;
+        }
+        for (auto it = muteSoloSnaps_.begin(); it != muteSoloSnaps_.end();)
+            it = listedNow.count(it->first) ? std::next(it)
+                                            : muteSoloSnaps_.erase(it);
+        soloSetActive_     = anySolo;
+        soloIncapableLive_ = incap;
+        const bool editedIn = borrowActive()
+            && muteSoloSnaps_.count(borrowSession_.uid)
+            && muteSoloSnaps_[borrowSession_.uid].soloOn;
+        // THE HONORARY STRIP OBEYS EVERY SILENCE REASON (28 Aug 2026):
+        // solo-awareness alone shipped half a strip — while a session is
+        // live the Link's channel is session-muted and the audible copy
+        // IS the injection, so a user mute on the EDITED rack must ramp
+        // the injection out exactly as a foreign solo does. Mute wins
+        // over the rack's own solo membership (the strip OR); a FOREIGN
+        // mute is that strip's own business and never touches the
+        // injection.
+        const bool editedMuted = borrowActive()
+            && muteSoloSnaps_.count(borrowSession_.uid)
+            && muteSoloSnaps_[borrowSession_.uid].muteUser;
+        const bool suppress = borrowActive()
+            && (editedMuted || (anySolo && ! editedIn));
+        borrowSoloSuppressInj_.store(suppress, std::memory_order_relaxed);
+        if (suppress != soloSuppressPrev_)
+        {
+            soloSuppressPrev_ = suppress;
+            if (suppress && editedMuted)
+                borrowStickyBanner_ = resolveLinkDisplayName(borrowSession_.uid)
+                    + " is muted - your edit is muted with its strip. "
+                      "Un-mute to hear it.";
+            else if (suppress)
+                borrowStickyBanner_ = firstSoloName
+                    + " is soloed - your edit is muted with the other "
+                      "channels. Solo this rack to hear it.";
+            else if (borrowActive())
+                borrowStickyBanner_ = "Your edit is audible again.";
+        }
+    }
+
+    // DEAD-FILE REAP (25 Aug 2026), throttled to one sweep per 5 minutes per
+    // process: uid-keyed files whose uid no REGISTERED slot carries (proven
+    // or not — a just-registering Link is protected twice, by registration
+    // and by the 10-minute mtime grace) are litter from dead per-launch
+    // uids and can never be addressed again. structplan-*.json is spared
+    // inside the reaper itself. Deletes are idempotent, so several mains
+    // sweeping concurrently is benign.
+    {
+        const juce::int64 nowMs = juce::Time::currentTimeMillis();
+        if (nowMs - lastFileReapMs_ > 5 * 60 * 1000)
+        {
+            lastFileReapMs_ = nowMs;
+            juce::StringArray liveUids, liveRings;
+            for (int i = 0; i < kMaxLinkSlots; ++i)
+            {
+                LinkShm::SlotSnapshot snap;
+                if (! LinkShm::readSlot(linkRegMap, i, snap)) continue;
+                if (snap.instanceUid.isNotEmpty()) liveUids.add(snap.instanceUid);
+                if (snap.audioFilename.isNotEmpty()) liveRings.add(snap.audioFilename);
+            }
+            const int reaped = LinkShm::reapDeadUidFiles(
+                linkResolvedDir, liveUids, liveRings, nowMs, 10 * 60 * 1000);
+            if (reaped > 0)
+                EchoJay_NSLog(("EJReap: removed " + juce::String(reaped)
+                    + " dead-uid file(s); live uids=" + juce::String(liveUids.size()))
+                    .toRawUTF8());
+        }
+    }
 
     // Update consumer diagnostics
     consumerDiag.activeSlotCount = (int)linkSlotInfos.size();

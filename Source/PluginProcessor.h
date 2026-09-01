@@ -433,6 +433,48 @@ public:
     // against nothing (nothing else is audible), so this bounds LATENCY, not
     // alignment; stage 2's stamps do alignment.
     static constexpr uint32_t kEditCushionFrames = 1024;
+    // §8.3 (amended): the FIXED alignment budget, reported from
+    // instantiation so ordinary browsing never re-runs PDC. Measured, not
+    // guessed (this machine's catalogue, defaults, 48k): worst single slot
+    // found = Ozone 12 Low End Focus at 12,799; the common latency class
+    // sits at or under ~4k. 16384 = cushion 1024 + headroom 15360.
+    static constexpr int kBorrowAlignBudgetFrames = 16384;
+    // The pad that keeps every mode's TOTAL at exactly the budget:
+    // pad = budget - cushion - borrowedChainLatency; negative = the rack
+    // does not fit — in-context REFUSED for it (solo fallback, named line).
+    // Pure and public so the arithmetic is functionally gated.
+    static int alignPad(int borrowedChainLatency) noexcept
+    {
+        const int pad = kBorrowAlignBudgetFrames
+                      - (int) kEditCushionFrames - borrowedChainLatency;
+        return pad >= 0 ? pad : -1;
+    }
+    // Two integer-frame ring delays realise the split (pre-sum alignment on
+    // the passthrough; final pad after the main chain). Fixed capacity, no
+    // allocation on the audio thread.
+    struct AlignDelay
+    {
+        juce::AudioBuffer<float> buf; int w = 0;
+        void prepare(int cap) { buf.setSize(2, cap); buf.clear(); w = 0; }
+        void process(juce::AudioBuffer<float>& b, int delay)
+        {
+            const int cap = buf.getNumSamples();
+            if (cap == 0 || delay <= 0) return;
+            const int n = b.getNumSamples();
+            for (int i = 0; i < n; ++i)
+            {
+                const int r = (w - delay % cap + cap) % cap;
+                for (int ch = 0; ch < 2 && ch < b.getNumChannels(); ++ch)
+                {
+                    float* d = b.getWritePointer(ch);
+                    const float in = d[i];
+                    buf.setSample(ch, w, in);
+                    d[i] = buf.getSample(ch, r);
+                }
+                w = (w + 1) % cap;
+            }
+        }
+    };
     static constexpr uint32_t kEditReseekTrip    = 8192;
 
     bool editActive() const { return editSession_.slot0 >= 0; }
@@ -450,6 +492,254 @@ public:
     void renewEditLease();          // the 1s writer
     struct EditLeaseTimer;
     std::unique_ptr<EditLeaseTimer> editLeaseTimer_;
+
+    // ---- Whole-rack borrow, step 2 (RACK_BORROW_IMPLEMENTATION_SPEC §3/§4)
+    // Solo only, NO COMMIT: edits are audible and uncommitted; nothing in
+    // this step writes state back to the Link (step 3 owns Apply). The
+    // borrowed host is session-long (spec §1); the session engages/releases.
+    ChainHost*   borrowHost();                       // lazy, Mode::Borrowed
+    ChainHost*   borrowHostIfActiveFor(const juce::String& uid);
+    bool         borrowActive() const noexcept
+    { return borrowSession_.active.load(std::memory_order_relaxed); }
+    juce::String borrowUid() const { return borrowSession_.uid; }
+    // Engage half A (message thread): create/prepare the host, bind the ring,
+    // start the rack-scoped lease renew. The EDITOR builds the rack (pulls +
+    // restore) before calling borrowAudioOn().
+    // structureCapable: the engage-time snapshot, set HERE so it rides the
+    // session from its first instant — never deferred to load settlement.
+    void borrowEngageBegin(const juce::String& uid, const juce::String& leaseId,
+                           bool structureCapable = false,
+                           bool inContextCapable = false);
+    // borrowAudioOn/Off/IsOn (LISTEN) DELETED 27 Aug 2026 — solo subsumes
+    // LISTEN (MUTE_SOLO_SPEC). The fallback solo is automatic (!inContextOk).
+    // Release: audio off (ramped), lease file deleted (Link restores all
+    // bypasses through its one restore path), instances parked in the pool.
+    // keepEdits=true (auto-release, editor/processor teardown) captures every
+    // slot's current state into borrowKept_ FIRST — the continuous-keep
+    // promise: a crash or lease death loses nothing. User Apply/Discard pass
+    // false: the edits were committed, or the user explicitly chose loss.
+    void borrowRelease(bool keepEdits = false);
+
+    // ---- §5a-R (26 Aug 2026): selection IS the session ---------------------
+    // The apply orchestration lives on the PROCESSOR because an editor being
+    // destroyed cannot poll an ack (ruling 4: editor close applies, then
+    // releases, and never strands a lock). Verdicts and the plan build move
+    // here with it — they only ever read processor state.
+    std::vector<std::pair<bool, bool>> borrowSlotVerdicts();  // {withheld, edited}
+    LinkShm::StructureEdit::Plan buildStructurePlan();
+    bool borrowSessionShapeDirty() const;
+    // Compute the plan ONCE and send it; on success release + sticky banner
+    // + revert offer. releaseLockOnFail: false = deselect semantics (the
+    // session stays engaged, lock holds, says why); true = editor-close
+    // semantics (lock releases regardless — no lock without a visible
+    // owner — edits kept, unwritten-note recorded, failure LOGGED whether
+    // or not a window ever reopens).
+    void borrowApplyAndRelease(bool releaseLockOnFail);
+    void borrowEditorClosed();
+    // §3f pin, restored in §5a-R terms (26 Aug 2026 ping-pong): while a
+    // session is LIVE its uid is authoritative — a chat activation may
+    // move the VIEW, never the session. Only a USER-initiated selection
+    // change commits (a deselect caused by something grabbing the
+    // selection is not the user saying "write this"). Pure, so every arm
+    // is functionally gated; the editor routes through it.
+    enum class SelDecision { Nothing, ViewOnly, ApplyAndPend, PendEngage };
+    static SelDecision decideSelection(bool sessionActive, bool sameUid,
+                                       bool userInitiated) noexcept
+    {
+        if (sessionActive && sameUid)   return SelDecision::Nothing;
+        if (sessionActive)              return userInitiated
+                                            ? SelDecision::ApplyAndPend
+                                            : SelDecision::ViewOnly;
+        return userInitiated ? SelDecision::PendEngage
+                             : SelDecision::ViewOnly;
+    }
+
+    // The slot-editor decision, ONE author, FUNCTIONALLY gated (twice
+    // regressed as editor-side code: 22 Aug guard order, 26 Aug an engage
+    // that never completed — both survived source pins because a pin proves
+    // a branch exists, not that it is reached). Order is load-bearing: the
+    // borrowed arm must precede the remote guard, whose viewUid is
+    // non-empty for a borrowed view too.
+    juce::AudioProcessorEditor* createSlotEditorForView(
+        const juce::String& viewUid, int slot);
+    // Session-scoped surfaces, rendered by the panel until superseded —
+    // banners must not be losable by navigating away (§5a-R honesty rule).
+    juce::String borrowStickyBanner_;
+    std::map<juce::String, juce::String> unwrittenEditNote_;  // uid -> note
+    // A deselect-apply FAILED and ruling 3 kept the session engaged: the
+    // hold is now a pending edit, not a selection. Rides the lease
+    // (additive "editPending") so the Link's lock banner can say so
+    // instead of instructing a deselect the user already performed.
+    bool borrowEditPendingHeld_ = false;
+    juce::String pendingAutoEngage_;   // engage this uid once released
+    // §8 in-context state (public: the editor banners from it, the gates
+    // assert it): OK = announced AND fits the budget, decided at engage,
+    // re-checked live on every borrowed-chain change.
+    std::atomic<bool> borrowInContextOk_ { false };
+    std::atomic<int>  borrowChainLat_ { 0 };
+    int borrowMuteUnconfirmedTicks_ = 0;   // §8 closed-loop watchdog
+    int borrowLastPadKey_ = -2;            // §8 injection pad-change detector
+    // §8.3 refinement (26 Aug 2026 ruling): the budget is carried ONLY when
+    // the project has a capable Link. No Links -> no alignment budget -> no
+    // added latency. The transition re-runs PDC once, on the deliberate and
+    // rare act of adding/removing a Link — never on rack browsing. ONE
+    // writer: the registry pass, via setBorrowBudgetActive.
+    std::atomic<bool> borrowBudgetActive_ { false };
+    void setBorrowBudgetActive(bool active);
+    int  reportedBudgetFrames() const noexcept
+    { return borrowBudgetActive_.load(std::memory_order_relaxed)
+                 ? kBorrowAlignBudgetFrames : 0; }
+    bool borrowApplyInFlight_ = false;
+
+    // ---- Mute/solo layer (27 Aug 2026, MUTE_SOLO_SPEC) -------------------
+    // Per-Link snapshot of the published mute/solo bits, refreshed by the
+    // registry pass (mtime-gated parses — steady state costs no IO) from
+    // LIVE rows only. Message thread; the editor's lamps and capability
+    // gating read it directly.
+    struct LinkMuteSoloSnap { bool muteUser = false, soloOn = false,
+                              capable = false; juce::int64 mtimeMs = -1; };
+    std::map<juce::String, LinkMuteSoloSnap> muteSoloSnaps_;
+    bool soloSetActive_ = false;      // any LIVE row publishes soloOn
+    int  soloIncapableLive_ = 0;      // live rows lacking muteSoloCapable
+    // THE HONORARY STRIP (§6.1): the injection follows the fabric as if it
+    // were the edited rack's strip — suppressed iff a solo set exists and
+    // the edited rack is not in it. ONE writer (the registry pass); the
+    // audio thread only reads.
+    std::atomic<bool> borrowSoloSuppressInj_ { false };
+    // §8 ALIGNMENT TRACE (28 Aug 2026 investigation): the harness proves
+    // the in-process arithmetic sample-exact at three buffer sizes, so a
+    // field misalignment can only be TIMELINE SKEW between the Link's
+    // blocks and ours (Logic's PDC process-ahead, mid-cycle seek). The
+    // Link stamps ring-index <-> host-position every block; this measures
+    // the consumed content's age against the cushion the pad assumes.
+    // Positive skew = content older than assumed = the edit lands LATE.
+    // Written by the drain (audio thread), logged at 1Hz by borrowTick.
+    std::atomic<int64_t> borrowAlignSkew_ { 0 };
+    std::atomic<bool>    borrowAlignSkewValid_ { false };
+    // Stamp-based alignment (29 Aug 2026 ruling): the injection's age is a
+    // MEASURED FACT — the drain derives it from the Link's ring stamps and
+    // the pad is computed from it, never from an assumed cushion (a
+    // constant true on paper and absent in the ring is how the -1024
+    // shipped). -1 = no measurement yet this session. borrowRingAgePrev_
+    // is audio-thread scratch for the relocate/drift detector;
+    // borrowAlignReset_ reseeds it across engages from the message thread.
+    std::atomic<int>  borrowRingAgeMeasured_ { -1 };
+    std::atomic<bool> borrowAlignReset_ { true };
+    std::atomic<bool> borrowAlignNoStamps_ { false };
+    int64_t borrowRingAgePrev_ = INT64_MIN;   // audio-thread scratch
+    uint32_t borrowLastStampSw_ = 0;          // audio-thread scratch
+    bool     borrowLastStampSwValid_ = false;
+    // The injection ramps in only after the Link's mute is CONFIRMED
+    // (30 Aug 2026: with alignment exact, the mute-confirm window turned
+    // from flange into a clean +6dB double on select). Set by borrowTick
+    // from the sidecar's muteEngaged; cleared with the session.
+    std::atomic<bool> borrowMuteConfirmedOnce_ { false };
+    bool soloSuppressPrev_ = false;   // banner-transition detector
+    // The injection gain this instant (the honorary strip's lamp) — public
+    // so the gate asserts the BEHAVIOUR, not just the branch.
+    float borrowCtxMixNow() const noexcept
+    { return borrowCtxMix_.getCurrentValue(); }
+
+    // ---- Step 3: Apply & Release bookkeeping (message thread only) --------
+    // Per-slot record from engage: the saved identity triplet (the SAME
+    // fields stateFitsPlugin withheld the pull by — Apply re-runs the same
+    // verdict) and the post-seed BASELINE state, so "edited" means "byte-
+    // differs from what the Link sounds like", not "differs from a pull that
+    // may have been empty".
+    struct BorrowSlotRecord {
+        juce::String name, savedFormat, savedVersion, savedUid, baselineB64;
+        bool hadState = false;   // a state was pulled for this slot
+    };
+    std::vector<BorrowSlotRecord> borrowSlotRecords_;
+    // Uncommitted edits captured at a keep-release; re-borrowing the same
+    // uid restores them (and says so). Cleared by Apply, Discard, or the
+    // restore itself.
+    struct BorrowKept { juce::String uid; juce::StringArray names, states; };
+    BorrowKept borrowKept_;
+    void captureBorrowKept();
+    void clearBorrowKept() { borrowKept_ = {}; }
+
+    // ---- Phase 3: structure-edit session state (message thread only) ------
+    // Per CURRENT borrowed slot: which base slot it came from (-1 = created
+    // in the main). The records stay base-indexed and immutable; this map is
+    // what reorders/removes/adds mutate, and what the plan reads.
+    std::vector<int> borrowSlotOrigin_;
+    // Created slots' identity, keyed by their position in borrowSlotOrigin_
+    // being -1: name + decimal uid captured at add time.
+    std::vector<LinkShm::StructureEdit::SlotIdentity> borrowCreatedIdentity_;
+    // The base identity snapshot from engage (the plan guard's truth).
+    std::vector<LinkShm::StructureEdit::SlotIdentity> borrowBaseIdentity_;
+    // Capability snapshot at engage: structure ops offered only against a
+    // Link that announced structureEditCapable THEN — never re-read mid-
+    // session, so an old Link keeps settings-only behaviour throughout.
+    bool borrowStructureCapable_ = false;
+    // Removed-withheld memory: names of removed slots whose settings never
+    // arrived — the confirm gives these their own line (spec: deleting
+    // settings the user never saw). Checked AT removal (the node's seeded
+    // fact dies with the slot).
+    juce::StringArray borrowRemovedWithheld_;
+    // Removed base names for the confirm's Removing line.
+    juce::StringArray borrowRemovedNames_;
+    void renewBorrowLease();                         // scope:"rack", slot:0
+    void borrowTick();          // renew + ring re-bind (the 1s timer's body)
+    /** Where the borrowed solo lands: through the main's own chain (Mix/
+        Master Bus default) or replacing the output after it (every other
+        channel type). The flip is the visible override; reset at engage. */
+    bool borrowRouteThroughMain() const
+    {
+        return LinkShm::BorrowRoute::throughMainChain(
+            channelType == ChannelType::FullMix || channelType == ChannelType::MasterBus,
+            /*flip*/ false);   // the override retired with LISTEN — auto only
+    }
+    /** Set when the borrow released ITSELF (ring lost past tolerance) —
+        consumed once by whichever editor next ticks, shown in words. A
+        self-release must never be silent. */
+    juce::String takeBorrowAutoReleaseReason()
+    { return std::exchange(borrowAutoReleaseReason_, juce::String()); }
+    struct BorrowSession {
+        juce::String uid, leaseId;
+        std::atomic<bool> active   { false };
+        // audioOn (LISTEN) deleted 27 Aug 2026 — MUTE_SOLO_SPEC §6.4: the
+        // fallback solo derives from !borrowInContextOk_, no user flag.
+        std::atomic<int>  ringSlot { -1 };
+    };
+    BorrowSession borrowSession_;
+private:
+    std::unique_ptr<ChainHost> borrowHost_;
+    juce::AudioBuffer<float>   borrowBuf_;
+    juce::SpinLock             borrowLock_;
+    juce::LinearSmoothedValue<float> borrowSoloMix_ { 0.0f };
+    struct BorrowLeaseTimer;
+    std::unique_ptr<BorrowLeaseTimer> borrowLeaseTimer_;
+    int          borrowRingLostTicks_ = 0;           // message thread only
+    juce::String borrowAutoReleaseReason_;           // message thread only
+    std::atomic<bool> borrowRouteFlip_ { false };    // the visible override
+    void applyBorrowSoloMixOn(juce::AudioBuffer<float>& buffer, bool on);
+public:
+
+    // ---- Rack lock (21 Aug 2026, RACK_BORROW_REQUIREMENTS §4) -------------
+    // PROCESSOR renews, EDITOR gates: the editor declares which rack its
+    // Chain tab is actively showing (empty = none), this class writes/renews
+    // racklock-<uid>.json at 1s while it holds, deletes it the moment the
+    // declaration clears, and lets the 3s expiry cover a crash. UI-only:
+    // nothing here touches audio, bypass or the Active toggle. All state is
+    // message-thread only, like the edit-session lease around it.
+    enum class RackLockState { Idle, Held, WaitRecency, HeldByOther };
+    void setRackLockWant(const juce::String& uid);   // editor's declaration
+    RackLockState rackLockState() const { return rackLockState_; }
+    juce::String  rackLockOtherOwner() const { return rackLockOtherOwner_; }
+    bool rackLockHeldFor(const juce::String& uid) const
+    { return rackLockState_ == RackLockState::Held && rackLockHeldUid_ == uid; }
+    void rackLockTick();            // the 1s state machine (public for the timer)
+private:
+    struct RackLockTimer;
+    std::unique_ptr<RackLockTimer> rackLockTimer_;
+    juce::String  rackLockWantUid_, rackLockHeldUid_, rackLockOtherOwner_;
+    juce::String  rackLockId_;      // stable identity for FCFS, minted on first use
+    RackLockState rackLockState_ = RackLockState::Idle;
+    juce::String  rackLockMyName() const;
+    void          rackLockReleaseFile();
+public:
     void startCapture();
     void stopCapture();
     void resetCapture();
@@ -746,6 +1036,16 @@ public:
     void stopAllCompare();
 
 private:
+    // §5a-R orchestrator internals: the ack poll outlives editors, so its
+    // lambdas hold a weak token instead of `this` — a plugin unloaded
+    // mid-poll must drop the chain, never call into freed memory.
+    std::shared_ptr<bool> borrowAliveToken_ { std::make_shared<bool>(true) };
+    AlignDelay alignPre_, alignPost_;
+    juce::SmoothedValue<float> borrowCtxMix_ { 0.0f };
+    bool borrowApplyReleaseOnFail_ = false;   // switchable mid-flight (close)
+    void borrowApplyFinish(bool applied, const juce::String& why,
+                           bool restored);
+
     MeterEngine meterEngine;       // Live meters (always running — live input only)
     MeterEngine captureEngine;     // Capture pass meters (reset each capture)
     MeterEngine abMeterEngine;     // AB playback spectrum only (used by Compare playing-slot panel)
@@ -896,6 +1196,18 @@ public:
                                           // Link cannot announce anything, so
                                           // absence must mean "do not send
                                           // controls", never "check a version".
+        bool heartbeatFresh = true;       // heartbeat advanced within ~3s.
+                                          // FALSE = the process stopped
+                                          // answering: the strip renders the
+                                          // distinct "gone" state until the
+                                          // ~30s reap removes the row. This
+                                          // separates DEAD from SILENT; it
+                                          // cannot flag deleted-but-undo-held,
+                                          // because that instance is genuinely
+                                          // alive (Logic keeps deleted
+                                          // channels' plugins running for
+                                          // undo) — no signal of ours can see
+                                          // the arrange page.
     };
 
     /// Refresh the list of known Link slots from the registry.
@@ -946,6 +1258,9 @@ private:
 
     // Resolved shared directory (message thread, set once in ensureLinkRegistryOpen)
     juce::String linkResolvedDir;
+    juce::int64  lastFileReapMs_ = 0;   // dead-uid file sweep throttle (~5 min)
+    juce::String ctxCapSetKey_;          // §8.3: listed-uid set fingerprint
+    std::map<juce::String, bool> ctxCapCache_;   // uid -> inContextCapable
 
     // Registry mapping (message thread)
     void*  linkRegMap = nullptr;
@@ -971,13 +1286,18 @@ private:
     std::array<ActiveLinkSlot, kMaxLinkSlots> activeLinkSlots;
 
 
+    // The §8 alignment gate binds a REAL ring end-to-end (producer in the
+    // test, consumer here) — the one gate that asserts in-context is IN
+    // TIME, not just level-safe and continuous.
+    friend struct EchoJayAlignTestAccess;
     void connectLinkAudioSlot   (int i, const juce::String& key, const juce::String& displayName,
                                  float sr, const juce::String& uid);
     void disconnectLinkAudioSlot(int i);
     void disconnectAllLinkSlotsNow();  // destructor
 
     // Stale detection (message thread)
-    struct SlotProbeState { uint32_t lastHb = 0; int staleCycles = 0; };
+    struct SlotProbeState { uint32_t lastHb = 0; int staleCycles = 0;
+                            LinkShm::RegLiveness live; };
     std::array<SlotProbeState, kMaxLinkSlots> slotProbeStates;
 
     // UI snapshot (message thread only)

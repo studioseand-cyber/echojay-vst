@@ -180,6 +180,17 @@ public:
     ChainHost& getChainHost() { return chainHost; }
     const std::vector<ChainSlotSpec>& getChainModel() const { return chainModel; }
 
+    // Structure plan, display parity (24 Aug 2026): apply + the SAME
+    // four-step sync every structural writer uses. The Link has two rack
+    // models — chainHost (audio truth, what the sidecar publishes) and
+    // chainModel (editor-facing, keeps missing-slot memory) — and a plan
+    // that mutated only the first left a reopened editor showing the old
+    // shape. Public so linksync_test can prove FUNCTIONALLY that the
+    // editor-facing model moves; a source pin passed while that bug was
+    // live.
+    ChainHost::PlanResult applyStructurePlanAndSync(
+        const juce::String& dir, const LinkShm::StructureEdit::Plan& plan);
+
     // Replace the chain with the given spec (message thread, sequential
     // instantiation, editors are NEVER opened during build). onDone receives
     // one result line per requested slot ("ok" / failure reason) plus a
@@ -201,7 +212,13 @@ public:
     // state without being spammed during the drag.
     void  setChainSlotWet(int idx, float wet01);
     float getChainSlotWet(int idx) const;
-    void  setChainMasterWet(float wet01) { chainHost.setMasterWet(wet01); }
+    void  setChainMasterWet(float wet01)
+    {
+        // Rack lock: master wet is a mix write, locked with structure.
+        if (rackLockGuard("master wet")) return;
+        chainHost.setMasterWet(wet01);
+        stampLocalRackEdit();
+    }
     float getChainMasterWet() const      { return chainHost.getMasterWet(); }
     void  commitChainWetChange();
 
@@ -319,6 +336,16 @@ private:
     // over by first name match from the previous model. Missing (unloadable)
     // model entries do not survive an edit resync — the rack is truth.
     void resyncChainModelFromHost();
+    // The ONE four-step writer after any structural change: resync the
+    // editor-facing model, publish the sidecar, re-report latency, notify.
+    // Every structural mutation path calls this — a path that skips it is
+    // the two-models-disagree defect again.
+    void syncModelAfterStructuralChange();
+    // The rack-lease arms, extracted from the poll switch so linksync_test
+    // drives the REAL engage/restore code, not a test-local copy.
+    void rackLeaseEngage();
+    void rackLeaseRelease();
+    friend struct EchoJayLinkSyncTestAccess;
     void notifyChainModel();
     juce::PluginDescription resolveChainPlugin(const juce::String& name) const;
     static juce::StringArray loadDisabledUids();
@@ -414,6 +441,11 @@ private:
     // on THIS — the display name is a label, never an address (unnamed or
     // same-named Links collided and toggles applied to all of them).
     juce::String instanceUid_;
+    // Uid claim gate (25 Aug 2026): decides duplicate vs ghost vs undecided
+    // by the holder's heartbeat across claim-retry ticks. Reset when the
+    // holder slot changes or the question resolves.
+    LinkShm::UidClaimGate uidGate_;
+    int uidGateHolder_ = -1;
     // Host track name stash (see the Phase N block above). appliedHostName_
     // is message-thread-only change detection for the timer's apply pass.
     mutable juce::CriticalSection hostNameLock_;
@@ -424,6 +456,7 @@ private:
     // rack-<uid>.json. -1 so the first tick publishes even an empty rack
     // ("known empty" is a different fact from "rack unknown").
     int lastPublishedRackRev_ = -1;
+    bool lastPublishedMuteEngaged_ = false;   // §8 closed-loop republish gate
     // Last hosted-parameter epoch written. Separate from the revision because
     // the two publish on different terms: structure at once, knobs after they
     // settle. -1 for the same reason as above.
@@ -472,10 +505,93 @@ private:
     // message-thread state. leasePriorBypass_ is what the restore restores:
     // the bypass the USER had before the lease, not blanket false.
     void pollEditLease();
+
+public:
+    // ---- Rack lock (21 Aug 2026, RACK_BORROW_REQUIREMENTS §4) -------------
+    // UI-ONLY ownership: while a main's editor shows this rack, the six local
+    // mutation entry points refuse and the editor greys. NEVER audio: no
+    // bypass, no Active, nothing in the graph. The ctrl-cmd path is NOT
+    // guarded here — that is the lock OWNER'S write path.
+    // Empty = unlocked; else the owning main's display name for the overlay.
+    juce::String rackLockOwner() const { return rackLockOwner_; }
+    bool rackEditPendingHeld() const
+        { return rackLeaseEditPending_.load(std::memory_order_relaxed); }
+    // The composed mute: output is silent if ANY reason wants it. This is
+    // the one truth processBlock ramps on and the sidecar's muteEngaged
+    // confirms — the §8.5b watchdog contract is unchanged by composition.
+    bool linkMuteWanted() const
+    {
+        return (rackLeaseActive_
+                    && rackLeaseMuteWant_.load(std::memory_order_relaxed))
+            || muteUserOn_.load(std::memory_order_relaxed)
+            || soloMuteWant_.load(std::memory_order_relaxed);
+    }
+    bool userMuteOn() const { return muteUserOn_.load(std::memory_order_relaxed); }
+    bool soloIsOn()  const { return soloOn_.load(std::memory_order_relaxed); }
+    // true = refused (and said so in the log — a guard that can silently do
+    // nothing must assert that it did something).
+    bool rackLockGuard(const char* op);
+    // Stamp a LOCAL rack edit for the recency rule. Local only, never remote
+    // ops: deriving this from chainRevision would also stamp the main's own
+    // edits and make it wait out itself after releasing.
+    void stampLocalRackEdit()
+    { lastLocalRackEditMs_ = (double) juce::Time::currentTimeMillis(); }
+
+private:
+    void pollRackLock();
+    juce::String rackLockOwner_;             // message thread only
+    double       lastLocalRackEditMs_ = 0.0; // message thread only
+
     LinkShm::LeaseGate leaseGate_;
     std::atomic<bool>  leaseActive_ { false };
     int                leaseSlot0_       = -1;
     bool               leasePriorBypass_ = false;
+    // Whole-rack lease (step 2): the saved bypass of EVERY slot, restored by
+    // the same Expire/Release arm the slot lease uses. Message thread only.
+    bool               rackLeaseActive_ = false;
+    std::vector<bool>  rackLeasePrior_;
+    // §8 in-context: the lease-carried mute (muteOut). Want set by the poll
+    // (message thread), consumed on the audio thread through the ramp.
+    std::atomic<bool>  rackLeaseMuteWant_ { false };
+    // Mute/solo layer (27 Aug 2026): THREE reasons, ONE silence, composed
+    // — never shared. muteUserOn_ is the user's mix decision (persists in
+    // saved state; a session release must never clear it). soloOn_ is this
+    // Link's solo membership (in-memory ONLY — never serialized, so a
+    // saved solo cannot exist). soloMuteWant_ is derived per fabric scan
+    // from OTHER live Links' published soloOn and stored nowhere beyond
+    // the tick, so it can never outlive its cause.
+    std::atomic<bool>  muteUserOn_ { false };
+    std::atomic<bool>  soloOn_ { false };
+    std::atomic<bool>  soloMuteWant_ { false };
+    // The fabric scan: proven-live foreign rows only (RegLiveness + a
+    // freshness window — proven is sticky, so death is its own check),
+    // sidecar parses mtime-gated so steady state costs no IO.
+    struct SoloScanRow { juce::String uid; LinkShm::RegLiveness live;
+                         uint32_t lastHb = 0; double lastHbMoveMs = 0;
+                         juce::int64 mtimeMs = -1; bool soloOn = false; };
+    std::array<SoloScanRow, kRegMaxSlots> soloScan_;
+    int soloScanDivider_ = 0;
+    void soloFabricScan();
+    bool lastPublishedMuteUser_ = false;
+    bool lastPublishedSoloOn_ = false;
+    // The lease says the main's session is held open by a FAILED write
+    // (§5a-R ruling 3): the lock banner must speak to a pending edit,
+    // not instruct a deselect the user already performed.
+    std::atomic<bool>  rackLeaseEditPending_ { false };
+    juce::SmoothedValue<float> rackMuteMix_ { 1.0f };
+    bool               planJournalChecked_ = false;   // once per process
+public:
+    /** Phase 3: is a structure-plan journal active for this Link? Drives
+        the lock overlay's restructuring line — the statement that the
+        shape flicker underneath is deliberate, not corruption. */
+    bool structPlanJournalPresent() const
+    {
+        return resolvedDir.isNotEmpty() && instanceUid_.isNotEmpty()
+            && juce::File(LinkShm::StructureEdit::journalPath(resolvedDir,
+                                                              instanceUid_))
+                   .existsAsFile();
+    }
+private:
 
     juce::String effectiveFilePart() const;
     juce::String chainInstanceId() const;

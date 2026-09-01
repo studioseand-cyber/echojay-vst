@@ -811,6 +811,25 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "latestChannelChatId decides through latestChatForLink");
             check (! edSrc.contains ("findChannelChatId"),
                    "the first-match lookup name is gone from PluginEditor.cpp");
+
+            // ONE AUTHOR for the chain panel (21 Aug 2026). Fourteen call
+            // sites once rebuilt chainListPanel directly from the LOCAL rack
+            // with no look at the active view, which is how the panel showed
+            // the main instance's plugins under a Link's RACK: header. Every
+            // render now funnels through refreshChainPanelForView — the one
+            // site that derives slots, header, remote flags and status
+            // together. This check is what stops author #2 accumulating
+            // again: if it fails, route the new render request through
+            // refreshChainPanelForView (force=true only when no revision or
+            // signature input moved) instead of calling rebuild directly.
+            {
+                int rebuilds = 0;
+                for (int p = 0; (p = edSrc.indexOf (p, "chainListPanel.rebuild(")) >= 0; ++p)
+                    ++rebuilds;
+                check (rebuilds == 1,
+                       "chainListPanel.rebuild( has exactly ONE author in "
+                       "PluginEditor.cpp (found " + juce::String (rebuilds) + ")");
+            }
         }
     }
 
@@ -1873,9 +1892,24 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
 
         // PIN C — the flag actually travels. A correct rule that never reaches
         // the formatter is the shape that produced this bug in the first place.
-        check (ch.contains ("slotHasLiveReads(i) });")
-               && ch.contains ("modelSettingsForSlot(i), slotHasLiveReads(i) };"),
-               "6cF PIN C: SlotInfo carries the flag from both readers");
+        //
+        // RE-AIMED AT ARRIVAL, NOT SYNTAX (1 Sep 2026, the link-rack merge).
+        // This used to assert two brace-init literals. The trunk then made
+        // getAllSlotInfos DELEGATE to getSlotInfo, because listing the fields
+        // positionally in two places is what silently defaulted `manufacturer`
+        // when SlotInfo gained a sixth field. The old pin failed on a refactor
+        // that fixed a bug, which is a pin testing the spelling of an answer
+        // rather than the answer. Now: one projection builder, and it assigns
+        // the flag. The second half is the stronger invariant of the two -- a
+        // second positional field list is the defect shape itself.
+        {
+            const auto getOne = functionBody (ch, "ChainHost::SlotInfo ChainHost::getSlotInfo");
+            const auto getAll = functionBody (ch, "std::vector<ChainHost::SlotInfo> ChainHost::getAllSlotInfos");
+            check (getOne.contains ("hasLiveReads") && getOne.contains ("slotHasLiveReads(i)"),
+                   "6cF PIN C: the ONE projection builder assigns the live-reads flag");
+            check (getAll.contains ("getSlotInfo(i)") && ! getAll.contains ("s.bypassed, s.settings"),
+                   "6cF PIN C: and the list reader delegates rather than re-listing the fields");
+        }
         check (api.contains ("hasLiveReads.add(s.hasLiveReads);")
                && api.contains ("&hasLiveReads);"),
                "6cF PIN C: the adapter fills it and passes it index-parallel");
@@ -2683,8 +2717,90 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             while ((at = ch.indexOf (at, "resolveOfferedName(op.name")) >= 0) { ++n; at += 20; }
             check (n == 3, "of PIN D: all THREE op sites (add, replace, apply) use it",
                    "found " + juce::String (n));
-            check (! ch.contains ("resolveByName(op.name"),
-                   "of PIN D: and none of them still calls resolveByName directly");
+            // NARROWED, WITH ITS REASON, 1 Sep 2026 (the link-rack merge).
+            // This was "no op site calls resolveByName directly", and it earned
+            // its keep by catching applyStructurePlan, which the merge brought
+            // in. ONE call there is exempt: the BUILT-IN PROBE. It asks only
+            // whether a name is a built-in device, and the description it takes
+            // is used solely when the answer is yes, where the built-in
+            // registry is the authority and no bridge or catalogue applies. The
+            // bridge exists so a MARKETING name the model was offered resolves
+            // to the shell's registration; a built-in has no marketing name and
+            // no shell. Everything else must still go through the bridge, so
+            // the exemption is written as two facts about the exempt calls plus
+            // a zero everywhere else, not as a hole in the check.
+            {
+                const auto planBody = functionBody (ch, "ChainHost::PlanResult ChainHost::applyStructurePlan");
+                check (planBody.isNotEmpty(), "of PIN D: applyStructurePlan found in source");
+                check (planBody.contains ("if (isBuiltinDescription(resolveByName(op.name, {})))")
+                       && planBody.contains ("stageDesc = resolveByName(op.name, {});"),
+                       "of PIN D: the exempt calls are the built-in probe and the desc it GUARDS");
+                int total = 0, inPlan = 0, at = 0;
+                while ((at = ch.indexOf (at, "resolveByName(op.name")) >= 0) { ++total; at += 20; }
+                at = 0;
+                while ((at = planBody.indexOf (at, "resolveByName(op.name")) >= 0) { ++inPlan; at += 20; }
+                check (inPlan == 2 && total == 2,
+                       "of PIN D: and NO op-name resolve exists outside that probe",
+                       "total=" + juce::String (total) + " inPlan=" + juce::String (inPlan));
+            }
+
+            // THE PREMISE THE NARROWING RESTS ON, PINNED (1 Sep 2026). The
+            // exemption is only sound while op.name can never be a name the
+            // MODEL authored: planStageOne's resolver has no marketing-name
+            // bridge, so a model string reaching it would be a real defect
+            // rather than an exempt probe. Today it cannot, because every
+            // op.name is read back off something already loaded or picked. That
+            // is a property of three files this pin's subject cannot see, which
+            // is exactly why it is asserted here instead of being trusted. A
+            // FOURTH writer of op.name, or of either identity vector, reddens
+            // this and the exemption above must be re-earned.
+            {
+                auto readAll = [] (const char* path)
+                {
+                    std::ifstream f (path);
+                    std::stringstream ss; ss << f.rdbuf();
+                    return codeOnly (juce::String (ss.str()));
+                };
+                // Counted over the WHOLE header on purpose: the claim is that
+                // no fifth writer exists ANYWHERE, not that computePlan holds
+                // four. p.ops.push_back occurs nowhere else in the file.
+                const auto plan = readAll ("Source/LinkShm.h");
+                check (plan.isNotEmpty(), "of PIN D premise: LinkShm.h read");
+                int writes = 0, at = 0;
+                while ((at = plan.indexOf (at, "p.ops.push_back")) >= 0) { ++writes; at += 10; }
+                check (writes == 4,
+                       "of PIN D premise: op.name has exactly FOUR writers, all in computePlan",
+                       "found " + juce::String (writes));
+                check (plan.contains ("inline Plan computePlan"),
+                       "of PIN D premise: and computePlan is where they live");
+                // and each takes its name off a SlotIdentity, never a literal:
+                // Remove and Move from the base snapshot, Create and Commit
+                // from the current slot's identity.
+                check (plan.contains ("base[(size_t) i].name")
+                       && plan.contains ("base[(size_t) origin].name")
+                       && plan.contains ("current[(size_t) i].identity.name")
+                       && plan.contains ("c.identity.name"),
+                       "of PIN D premise: every one of the four names comes off an identity");
+
+                const auto ed = readAll ("Source/PluginEditor.cpp");
+                int created = 0; at = 0;
+                while ((at = ed.indexOf (at, "borrowCreatedIdentity_.push_back")) >= 0) { ++created; at += 20; }
+                check (created == 2,
+                       "of PIN D premise: a created identity has exactly TWO authors",
+                       "found " + juce::String (created));
+                check (ed.contains ("picked.name") && ed.contains ("bh2->getSlotInfo(i).name, {}, {} }"),
+                       "of PIN D premise: and they are the PICKED description and a LOADED slot's own name");
+                int base = 0; at = 0;
+                while ((at = ed.indexOf (at, "borrowBaseIdentity_.push_back")) >= 0) { ++base; at += 20; }
+                check (base == 1 && ed.contains ("SlotIdentity::fromSidecar"),
+                       "of PIN D premise: the base identity has ONE author, the Link's own sidecar",
+                       "found " + juce::String (base));
+                // The remaining touches are erase, swap, clear and assign-empty:
+                // they permute or drop entries, they never author a name.
+                check (! ed.contains ("borrowCreatedIdentity_.emplace_back")
+                       && ! ed.contains ("borrowBaseIdentity_.emplace_back"),
+                       "of PIN D premise: and nothing constructs one in place, past those authors");
+            }
 
             // THE ORDER IS THE INVARIANT. resolveByName must be consulted before
             // recommendable_ inside the bridge; reversing it is what re-points.
@@ -4296,6 +4412,102 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (! spec.contains ("exclusion is session-scoped in-memory only"),
                    "dp PIN5: the old rule the product violated is gone, not left contradicting it");
         }
+    }
+
+    // ---- The SEVENTH resolver: planStageOne's name tier ---------------------
+    // The link-rack merge brought applyStructurePlan, and planStageOne under it
+    // carries its OWN resolver: namesMatchLoose plus uid, scanned over
+    // knownPlugins_ then entries_, first-wins. It reaches neither 9c4f629's feed
+    // preference nor 28d3f53's ladder, so a plan naming "CLA-76" staged the MONO
+    // build -- the defect 28d3f53 closed, by a route that did not exist when the
+    // six paths were inventoried.
+    //
+    // THE DECISION IS NOW BEHAVIOURAL. It was a lambda-local inside a private
+    // method whose only public door (applyStructurePlan) INSTANTIATES what it
+    // resolves, so it could only be pinned as source text. It is lifted into
+    // EJVariantPreference.h beside the rank it uses, which is header-inline, so
+    // these pins CALL the shipped rule with the real names off this machine's
+    // registry. The call site keeps the trunk's resolver shape: one branch, one
+    // call, everything else byte for byte.
+    {
+        std::cout << "planStageOne name tier (the seventh resolver):\n";
+        std::ifstream fch ("Source/ChainHost.cpp");
+        std::stringstream sch; sch << fch.rdbuf();
+        const auto chRaw = juce::String (sch.str());
+        const auto ch    = codeOnly (chRaw);
+        const auto stage = functionBody (ch, "bool ChainHost::planStageOne");
+        check (stage.isNotEmpty(), "sp PIN0: planStageOne found in source");
+
+        // sp PIN1 -- THE WIRING, asserted as a PROPERTY not a spelling. The
+        // previous version of this check named the exact one-liner it replaced,
+        // and a two-line equivalent of that same revert walked straight past it
+        // in the mutation run: a guard testing how an answer is spelled, which
+        // is the flaw 6cF PIN C had. What must be true is that the tier has ONE
+        // assignment and it is guarded by the shipped rule.
+        {
+            const auto tier = stage.fromFirstOccurrenceOf ("else if (nm)", false, false)
+                                   .upToFirstOccurrenceOf ("};", false, false);
+            check (tier.contains ("echojay::channelVariantShouldReplace(e.name, byName.name, d.name)"),
+                   "sp PIN1: the byName tier delegates to the shipped rule");
+            int assigns = 0, at = 0;
+            while ((at = tier.indexOf (at, "byName = e;")) >= 0) { ++assigns; at += 5; }
+            check (assigns == 1,
+                   "sp PIN1: and assigns byName exactly once, so no unguarded path remains",
+                   "found " + juce::String (assigns));
+            check (! tier.contains ("byName.name.isEmpty()"),
+                   "sp PIN1: the seed case is the rule's too, not a separate first-wins branch");
+        }
+
+        // sp PIN2 -- THE THREE BEHAVIOURS, CALLED. Real names off this
+        // machine's registry: CLA-76 registers (m) and (s) and no bare name.
+        {
+            const juce::String m ("CLA-76 (m)"), st ("CLA-76 (s)"), ms ("CLA-76 (m->s)");
+
+            // A -- wanted the product, held the mono build, offered the stereo.
+            check (echojay::channelVariantShouldReplace (st, m, "CLA-76"),
+                   "sp PIN2 A: for \"CLA-76\", the stereo build replaces the mono one");
+
+            // B -- wanted the MONO build BY NAME. namesMatchLoose matches (s)
+            // too, so this is the one a rank placed above exactness breaks.
+            check (! echojay::channelVariantShouldReplace (st, m, "CLA-76 (m)"),
+                   "sp PIN2 B: asked for \"CLA-76 (m)\" exactly, the stereo build does NOT replace it");
+            // and the same rule the other way: an exact name TAKES the slot from
+            // a better-ranked inexact one.
+            check (echojay::channelVariantShouldReplace (m, st, "CLA-76 (m)"),
+                   "sp PIN2 B: and an exact name wins even over a better-ranked inexact one");
+
+            // C -- neither exact: the rank decides, exactly as before.
+            check (echojay::channelVariantShouldReplace (m, ms, "CLA-76"),
+                   "sp PIN2 C: between two inexact names the rank still decides ((m) over (m->s))");
+            check (! echojay::channelVariantShouldReplace (ms, m, "CLA-76"),
+                   "sp PIN2 C: and never the other way");
+            check (! echojay::channelVariantShouldReplace (m, st, "CLA-76"),
+                   "sp PIN2 C: a worse variant never displaces a better one");
+
+            // The seed, and the mono-only product that must still resolve.
+            check (echojay::channelVariantShouldReplace (m, {}, "CLA-76"),
+                   "sp PIN2: an empty held slot is always taken, so the first candidate seeds");
+            check (echojay::channelVariantShouldReplace ("GTR Tuner (m)", {}, "GTR Tuner"),
+                   "sp PIN2: a mono-only product still resolves, to its mono build");
+        }
+
+        // sp PIN3 -- BEHAVIOUR C: the uid tiers are untouched. Where a uid
+        // matched, the variant was chosen by whoever authored the identity.
+        check (stage.contains ("if (nm && um && byBoth.name.isEmpty()) byBoth = e;")
+               && stage.contains ("else if (um && byUid.name.isEmpty())   byUid  = e;"),
+               "sp PIN3: byBoth and byUid keep their first-wins assignments, byte for byte");
+        {
+            const auto beforeName = stage.upToFirstOccurrenceOf ("else if (nm)", false, false);
+            check (! beforeName.contains ("channelVariantIsBetter"),
+                   "sp PIN3: and no rank is consulted before the name tier is reached");
+        }
+        check (stage.contains ("resolved = byBoth.name.isNotEmpty() ? byBoth"),
+               "sp PIN3: the tier ORDER is unchanged - uid still outranks name");
+
+        // sp PIN4 -- reachable with no new include and no signature change: the
+        // rule's header was already included for the feed and the ladder.
+        check (ch.contains ("#include \"EJVariantPreference.h\""),
+               "sp PIN4: the rank comes from the header already included for the other six paths");
     }
 
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";

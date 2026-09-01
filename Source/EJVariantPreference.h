@@ -80,4 +80,38 @@ inline bool channelVariantIsBetter (const juce::String& candidateFullName,
     return channelVariantRank (candidateFullName) < channelVariantRank (incumbentFullName);
 }
 
+/** Should `candidate` replace `held` as the answer to a request for `wanted`?
+
+    THE WHOLE RULE, IN ONE PLACE (1 Sep 2026). A resolver that matches loosely
+    sees several registrations of one product, and two questions decide between
+    them in a fixed order:
+
+      1. EXACTNESS FIRST. A name that IS the request wins outright, whatever its
+         rank. This is not politeness to the caller, it is the case the rank
+         alone gets wrong: namesMatchLoose strips the parenthetical, so a request
+         for "CLA-76 (m)" matches "CLA-76 (s)" too, and saved chains, borrowed
+         racks and Link sidecars all carry desc.name, the FULL registration. A
+         rank placed above exactness silently re-points a slot that deliberately
+         asked for the mono build.
+      2. RANK ONLY BETWEEN EQUALS. Two exact names, or two inexact ones, fall to
+         channelVariantIsBetter: stereo over mono over (m->s), for the reasons in
+         the table at the top of this header.
+
+    An empty `held` is always replaced, so a caller can seed with the first
+    candidate it sees without a separate branch.
+
+    Lifted out of planStageOne's lambda so the three behaviours can be pinned by
+    CALLING them rather than by reading the source text around them. */
+inline bool channelVariantShouldReplace (const juce::String& candidateFullName,
+                                         const juce::String& heldFullName,
+                                         const juce::String& wantedName)
+{
+    if (heldFullName.isEmpty()) return true;
+    const auto want      = wantedName.trim();
+    const bool candExact = candidateFullName.trim().equalsIgnoreCase (want);
+    const bool heldExact = heldFullName.trim().equalsIgnoreCase (want);
+    if (candExact != heldExact) return candExact;
+    return channelVariantIsBetter (candidateFullName, heldFullName);
+}
+
 } // namespace echojay

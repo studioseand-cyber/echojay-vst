@@ -14,6 +14,8 @@
 extern "C" bool NativeClip2_attach(void* peerHandle, int x, int y, int w, int h, bool doLog,
                                    int desiredW, int desiredH);
 extern "C" bool NativeClip2_getPluginSize(void* peerHandle, int* outW, int* outH);
+extern "C" bool NativeClip2_getPluginSizeVerbose(void* peerHandle, int* outW, int* outH,
+                                                 char* desc, int descLen);
 extern "C" void NativeClip2_detach(void* peerHandle);
 
 // Unified-log bridge (NSLog) so C++ diagnostics show up in Console.app
@@ -52,6 +54,23 @@ namespace NativeClip
         w = h = 0;
         auto* handle = windowHandleFor(comp);
         return handle != nullptr && NativeClip2_getPluginSize(handle, &w, &h);
+    }
+
+    // VERBOSE variant for the settle-verdict log (2 Sep 2026): names WHICH
+    // NSView the walk measured (class + frame), the container's own frame,
+    // and whether the view came from inside the container or the peer-level
+    // stray search — the three facts that decide whether the poll measured
+    // the plugin or the pane it was added to.
+    inline bool getPluginViewSizeVerbose(juce::Component* comp, int& w, int& h,
+                                         juce::String& desc)
+    {
+        w = h = 0;
+        char buf[256] = { 0 };
+        auto* handle = windowHandleFor(comp);
+        const bool ok = handle != nullptr
+            && NativeClip2_getPluginSizeVerbose(handle, &w, &h, buf, (int) sizeof(buf));
+        desc = juce::String::fromUTF8(buf);
+        return ok;
     }
 
     // Remove the container (call AFTER the hosted editor is destroyed).

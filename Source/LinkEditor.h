@@ -226,6 +226,8 @@ public:
         int  realW = 0, realH = 0;
         int  framePolls  = 0;
         bool settled     = false;
+        bool inlineIsBuiltin = false;   // plain JUCE editor: no native view
+                                        // to attach, measure, clip or poll
         bool layoutGuard = false;
 
         std::unique_ptr<PopoutWindow> popout;
@@ -241,6 +243,7 @@ public:
         // ---- lifecycle ----
         explicit LinkChainPanel(LinkProcessor& p) : proc(p)
         {
+            inlineHolder.setName("inlineHolder");
             addChildComponent(inlineHolder);   // back of z-order
             inlineHolder.setInterceptsMouseClicks(false, true);
             inlineHolder.onChildBounds = [this]
@@ -349,12 +352,13 @@ public:
             {
                 inlineHolder.removeChildComponent(inlineEditor.get());
                 inlineEditor.reset();
-                NativeClip::detach(this);
+                if (!inlineIsBuiltin) NativeClip::detach(this);
             }
             inlineHolder.setVisible(false);
             inlineModelIdx = -1;
             realW = realH = 0;
             settled = false;
+            inlineIsBuiltin = false;
         }
 
         void closePopout()
@@ -367,12 +371,21 @@ public:
 
         void attachNative(bool log)
         {
+            if (inlineIsBuiltin) return;   // no foreign view to clip
             if (inlineEditor)
                 NativeClip::attach(this, displayArea(), log,
                                    inlineEditor->getWidth(), inlineEditor->getHeight());
         }
 
         // Slot's hosted format ("AudioUnit"/"VST3") — popout-only is per-format
+        juce::String slotManufacturer(int modelIdx) const
+        {
+            auto& model = proc.getChainModel();
+            if (modelIdx < 0 || modelIdx >= (int)model.size()) return {};
+            int h = model[(size_t)modelIdx].hostIdx;
+            return h >= 0 ? proc.getChainHost().getSlotDescription(h).manufacturerName
+                          : juce::String();
+        }
         juce::String slotFormat(int modelIdx) const
         {
             auto& model = proc.getChainModel();
@@ -387,6 +400,19 @@ public:
             if (!inlineEditor) return;
             auto area = displayArea();
             inlineHolder.setBounds(area);
+            // A built-in editor is ours and resizes gracefully: give it the
+            // WHOLE display area (1 Sep 2026 — the placement CHOICE was
+            // lifted into ChainHost::editorPlacement but this sizing half
+            // stayed behind on the main only, so Link-side builtins kept
+            // their natural size and overflowed the pane; mirrors
+            // PluginEditor.h ChainListPanel::layoutInline's builtin arm).
+            if (inlineIsBuiltin)
+            {
+                layoutGuard = true;
+                inlineEditor->setBounds(0, 0, area.getWidth(), area.getHeight());
+                layoutGuard = false;
+                return;
+            }
             int pw = realW > 8 ? realW : inlineEditor->getWidth();
             int ph = realH > 8 ? realH : inlineEditor->getHeight();
             pw = juce::jmax(pw, 40);
@@ -402,17 +428,74 @@ public:
             auto& model = proc.getChainModel();
             if (modelIdx < 0 || modelIdx >= (int)model.size()) return;
             int hostIdx = model[(size_t)modelIdx].hostIdx;
-            if (model[(size_t)modelIdx].missing || hostIdx < 0) { repaint(); return; }
-
-            // Known popout-only plugin (out-of-process editor): go straight
-            // to the floating window — no failed inline attempt, no timeout.
-            // Format-qualified: a VST3 build of the same plugin may inline fine.
-            if (ChainHost::isPopoutOnly(model[(size_t)modelIdx].name, slotFormat(modelIdx)))
+            // Lock covers hosted editors (2 Sep 2026, §4 amendment).
+            if (proc.rackLockOwner().isNotEmpty())
             {
-                statusText = "Opens in a floating window (plugin limitation)";
-                openPopoutForSelected();
+                statusText = "\"" + proc.rackLockOwner() + "\" is editing "
+                    "this rack - hosted editors reopen when it's released "
+                    "(its write-back would overwrite changes made here).";
+                EchoJay_NSLog("EJPane(link): open refused - rack locked");
                 repaint();
                 return;
+            }
+            if (model[(size_t)modelIdx].missing || hostIdx < 0)
+            {
+                // 1 Sep 2026 (Abbey Road Saturator): this return was SILENT
+                // — a slot whose plugin never loaded (WaveShell fails to
+                // instantiate here) showed an empty pane with no message at
+                // any point, unmarked, before the attempt path even began.
+                // Every open ends in a TRUE visible state.
+                statusText = model[(size_t)modelIdx].name
+                    + " could not be loaded on this Link - there is no "
+                      "editor to open. Reinstall or rescan the plugin.";
+                EchoJay_NSLog(("EJPane(link): open refused - slot missing: "
+                    + model[(size_t)modelIdx].name).toRawUTF8());
+                repaint();
+                return;
+            }
+
+            // THE ONE PLACEMENT DECISION (31 Aug 2026): shared with the
+            // main's panel via ChainHost::editorPlacement — the Link used
+            // to consult only the popout list and had no builtin arm, so
+            // the native-size poll (blind to a plain JUCE editor) marked
+            // EchoJay's own devices popout-only and floated them forever
+            // under a "plugin limitation" caption that was false as
+            // written. Builtins embed inline with NO native machinery;
+            // genuine out-of-process editors keep floating, label intact.
+            EchoJay_NSLog(("EJPane(link): open: " + model[(size_t)modelIdx].name
+                + " mfr=\"" + slotManufacturer(modelIdx)
+                + "\"").toRawUTF8());
+            switch (ChainHost::editorPlacement(model[(size_t)modelIdx].name,
+                                               slotFormat(modelIdx),
+                                               slotManufacturer(modelIdx)))
+            {
+                case ChainHost::EditorPlacement::InlineJuce:
+                {
+                    juce::AudioProcessorEditor* edB = nullptr;
+                    try { edB = proc.getChainHost().createEditorForSlot(hostIdx); }
+                    catch (...) {}
+                    if (!edB)
+                    { statusText = "Failed: could not open editor"; repaint(); return; }
+                    statusText.clear();
+                    inlineEditor.reset(edB);
+                    inlineModelIdx  = modelIdx;
+                    inlineIsBuiltin = true;
+                    settled         = true;   // nothing to poll or wait for
+                    inlineHolder.setVisible(true);
+                    inlineHolder.addAndMakeVisible(*inlineEditor);
+                    layoutInline();
+                    repaint();
+                    return;                   // no timer: nothing native runs
+                }
+                case ChainHost::EditorPlacement::Float:
+                    // No statusText: the PANE says it (its text is a
+                    // function of editorPlacement — 2 Sep rule), and the
+                    // strip line was a duplicate of the same sentence.
+                    openPopoutForSelected();
+                    repaint();
+                    return;
+                case ChainHost::EditorPlacement::InlineNative:
+                    break;                    // the native path below
             }
 
            #if ! JUCE_MAC
@@ -431,6 +514,14 @@ public:
             try { ed = proc.getChainHost().createEditorForSlot(hostIdx); } catch (...) {}
             if (!ed) { statusText = "Failed: could not open editor"; repaint(); return; }
 
+            // The UNDECIDED state, said aloud (1 Sep 2026): between this
+            // attempt and the settle poll's verdict (~5s) the pane is
+            // neither inline nor Float — the old code showed NOTHING here,
+            // which read as a broken pane. The poll's outcome replaces it.
+            statusText = "Opening " + model[(size_t)modelIdx].name
+                         + "'s editor...";
+            EchoJay_NSLog(("EJPane(link): attempt start: "
+                + model[(size_t)modelIdx].name).toRawUTF8());
             inlineEditor.reset(ed);
             inlineModelIdx = modelIdx;
             inlineHolder.setVisible(true);
@@ -456,6 +547,30 @@ public:
                 if (got || framePolls >= 50)
                 {
                     settled = true;
+                    if (statusText.startsWith("Opening "))
+                        statusText.clear();   // the verdict replaces it
+                    {
+                        // The three facts (2 Sep 2026): the hosted editor's
+                        // OWN size, its parent, and which NSView the poll
+                        // actually measured — decides whether the poll
+                        // measures the plugin or the pane.
+                        int vw = 0, vh = 0; juce::String nat;
+                        NativeClip::getPluginViewSizeVerbose(this, vw, vh, nat);
+                        EchoJay_NSLog(("EJPane(link): settle verdict: "
+                            + juce::String(got ? "inline " + juce::String(w)
+                                                 + "x" + juce::String(h)
+                                               : "EXPIRED -> popout")
+                            + " | editor=" + juce::String(
+                                  inlineEditor != nullptr ? inlineEditor->getWidth() : -1)
+                            + "x" + juce::String(
+                                  inlineEditor != nullptr ? inlineEditor->getHeight() : -1)
+                            + " parent=" + juce::String(
+                                  inlineEditor != nullptr
+                                      && inlineEditor->getParentComponent() != nullptr
+                                      ? inlineEditor->getParentComponent()->getName()
+                                      : "none")
+                            + " | " + nat).toRawUTF8());
+                    }
                     if (!got)
                     {
                         // Never grew past a placeholder: out-of-process
@@ -468,11 +583,14 @@ public:
                         {
                             ChainHost::markPopoutOnly(model[(size_t)inlineModelIdx].name,
                                                       slotFormat(inlineModelIdx));
+                            EchoJay_NSLog(("EJPane(link): mark written: "
+                                + model[(size_t)inlineModelIdx].name).toRawUTF8());
                             for (auto& bl : blocks)
                                 if (bl->modelIdx == inlineModelIdx)
                                 { bl->popoutOnly = true; bl->repaint(); }
                         }
-                        statusText = "Opens in a floating window (plugin limitation)";
+                        // No statusText — the pane's placement-driven
+                        // caption covers Float (see the rule at paint).
                         openPopoutForSelected();   // destroys the inline editor first
                         repaint();
                         startTimer(400);
@@ -542,12 +660,33 @@ public:
         {
             auto& model = proc.getChainModel();
             if (!canPopOut()) return;
+            if (proc.rackLockOwner().isNotEmpty())
+            {
+                statusText = "\"" + proc.rackLockOwner() + "\" is editing "
+                    "this rack - hosted editors reopen when it's released.";
+                repaint();
+                return;
+            }
             int i = selectedIdx;
             int hostIdx = model[(size_t)i].hostIdx;
             closeAllEditors();
             juce::AudioProcessorEditor* ed = nullptr;
             try { ed = proc.getChainHost().createEditorForSlot(hostIdx); } catch (...) {}
-            if (!ed) return;
+            if (!ed)
+            {
+                // 1 Sep 2026: this return was SILENT — no window, no
+                // caption, an empty pane with no explanation (the caption
+                // block requires popout != nullptr). A failed editor is a
+                // fact the pane states.
+                statusText = "Failed: " + model[(size_t)i].name
+                             + "'s editor could not be created";
+                EchoJay_NSLog(("EJPane(link): popout create FAILED: "
+                    + model[(size_t)i].name).toRawUTF8());
+                repaint();
+                return;
+            }
+            EchoJay_NSLog(("EJPane(link): popout opened: "
+                + model[(size_t)i].name).toRawUTF8());
             popout = std::make_unique<PopoutWindow>(model[(size_t)i].name, ed);
             popoutModelIdx = i;
             popout->onCloseRequest = [safe = juce::Component::SafePointer<LinkChainPanel>(this)]
@@ -562,7 +701,10 @@ public:
                     auto& mdl = safe->proc.getChainModel();
                     if (s >= 0 && s == safe->selectedIdx
                         && s < (int)mdl.size()
-                        && !ChainHost::isPopoutOnly(mdl[(size_t)s].name, safe->slotFormat(s)))
+                        && ChainHost::editorPlacement(mdl[(size_t)s].name,
+                                                      safe->slotFormat(s),
+                                                      safe->slotManufacturer(s))
+                               != ChainHost::EditorPlacement::Float)
                         safe->showInline(s);
                     safe->repaint();
                 });
@@ -576,6 +718,38 @@ public:
         {
             auto& model = proc.getChainModel();
             selectedIdx = juce::jlimit(-1, (int)model.size() - 1, selectedIdx);
+            // Rack lock (21 Aug 2026): rack-wide read-only while a main's
+            // Chain tab shows this rack. STRUCTURE AND MIX ONLY — selection
+            // and hosted editors stay live (locking parameter writes is a
+            // claim the code cannot keep). pollRackLock calls
+            // notifyChainModel on every transition, so this rebuild runs on
+            // lock and on release, exactly like the lease's engage path.
+            const juce::String lockOwner = proc.rackLockOwner();
+            // Two lock states, two truths: a live selection instructs a
+            // deselect; a failure-held session (lease editPending) says an
+            // edit is still pending and what actually releases it — never
+            // an instruction the user already followed.
+            const juce::String lockWhy = lockOwner.isNotEmpty()
+                ? (proc.rackEditPendingHeld()
+                    ? "An edit from \"" + lockOwner + "\" is still pending - "
+                      "retry or end the session there to release this rack."
+                    : "Selected in the rack on \"" + lockOwner
+                        + "\" - deselect there to edit here.")
+                : juce::String();
+
+            // 2 Sep 2026 (scope change, RACK_BORROW_REQUIREMENTS §4): the
+            // lock now COVERS hosted editors — the write-back at session
+            // end would clobber interior edits made here meanwhile. This
+            // rebuild runs on every lock transition (pollRackLock calls
+            // notifyChainModel), so acquire closes any open editor.
+            if (lockOwner.isNotEmpty()
+                && (inlineEditor != nullptr || popout != nullptr))
+            {
+                closeAllEditors();
+                statusText = "Hosted editors close while \"" + lockOwner
+                    + "\" edits this rack - its write-back would overwrite "
+                      "changes made here.";
+            }
 
             for (auto& bl : blocks) stripContent.removeChildComponent(bl.get());
             blocks.clear();
@@ -583,7 +757,11 @@ public:
             {
                 auto bl = std::make_unique<Block>();
                 bl->name     = model[(size_t)i].name;
-                bl->popoutOnly = ChainHost::isPopoutOnly(bl->name, slotFormat(i));
+                // Via the ONE decision — see the matching note in
+                // PluginEditor.h: the glyph must not outlie the click.
+                bl->popoutOnly = ChainHost::editorPlacement(bl->name, slotFormat(i),
+                                                            slotManufacturer(i))
+                                 == ChainHost::EditorPlacement::Float;
                 bl->modelIdx = i;
                 bl->bypassed = model[(size_t)i].bypassed;
                 bl->missing  = model[(size_t)i].missing;
@@ -628,10 +806,28 @@ public:
                     bl->wetKnob.setVisible(false);
                     bl->setAlpha(0.55f);
                 }
+                // Rack lock: the whole rack's structure/mix controls go dead,
+                // named tooltip on each. onSelect stays wired — selection and
+                // opening editors are deliberately NOT locked.
+                if (lockOwner.isNotEmpty())
+                {
+                    for (auto* b : { &bl->bypassBtn, &bl->removeBtn,
+                                     &bl->prevBtn, &bl->nextBtn })
+                    { b->setEnabled(false); b->setTooltip(lockWhy); }
+                    bl->wetKnob.setVisible(false);
+                    bl->setAlpha(0.55f);
+                }
                 stripContent.addAndMakeVisible(*bl);
                 blocks.push_back(std::move(bl));
             }
             layoutStrip();
+            // Rack lock: master MIX and "+" are mix/structure writes. The
+            // processor guard is the backstop; this stops the gesture ever
+            // starting (a knob that moves then snaps back reads as a bug).
+            addBlock.setEnabled(lockOwner.isEmpty());
+            addBlock.setTooltip(lockWhy);
+            masterKnob.setInterceptsMouseClicks(lockOwner.isEmpty(), lockOwner.isEmpty());
+            masterKnob.setAlpha(lockOwner.isEmpty() ? 1.0f : 0.55f);
             masterKnob.setValue(proc.getChainMasterWet());
             {
                 auto& ch = proc.getChainHost();
@@ -691,6 +887,33 @@ public:
             g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.3f));
             g.drawRoundedRectangle(area.toFloat().reduced(0.5f), 8.0f, 1.0f);
 
+            // Rack lock overlay banner: names the owner and says how to
+            // release. Paint only — it must never block clicks, because
+            // selection and hosted editors stay live under the lock.
+            {
+                const juce::String lockOwner = proc.rackLockOwner();
+                if (lockOwner.isNotEmpty())
+                {
+                    g.setColour(juce::Colour(0xffFFB020));
+                    g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+                    g.drawText(proc.rackEditPendingHeld()
+                                   ? "An edit from \"" + lockOwner
+                                       + "\" is still pending - retry or end "
+                                       "the session there to release this rack."
+                                   : "Selected in the rack on \"" + lockOwner
+                                       + "\" - deselect there to edit here.",
+                               8, kNameRowH + 2, getWidth() - 16, 16,
+                               juce::Justification::centred, true);
+                    // Phase 3: while a structure plan's journal is active,
+                    // the overlay says the shape flicker underneath is
+                    // deliberate, not corruption.
+                    if (proc.structPlanJournalPresent())
+                        g.drawText(lockOwner + " is restructuring this rack...",
+                                   8, kNameRowH + 18, getWidth() - 16, 14,
+                                   juce::Justification::centred, true);
+                }
+            }
+
             // Name row — selected plugin, centred
             if (haveSel)
             {
@@ -733,16 +956,37 @@ public:
                 g.drawText("This plugin could not be loaded on this machine.",
                            area, juce::Justification::centred);
             }
+            else if (inlineEditor == nullptr && selectedIdx >= 0
+                     && selectedIdx < (int)model.size()
+                     && ChainHost::editorPlacement(model[(size_t)selectedIdx].name,
+                                                   slotFormat(selectedIdx),
+                                                   slotManufacturer(selectedIdx))
+                            == ChainHost::EditorPlacement::Float)
+            {
+                // THE RULE (2 Sep 2026): the pane's text is a function of
+                // editorPlacement, full stop. Float -> the pane says so
+                // whether or not a window is open, was just closed, or
+                // never opened (the old popout!=nullptr gate erased the
+                // fact when the window closed). The closed wording names
+                // the way back — the slot's own popout arrow.
+                const bool winOpen = popout != nullptr
+                                     && popoutModelIdx == selectedIdx;
+                g.setColour(juce::Colour(0xffa0a0b8));
+                g.setFont(juce::Font(juce::FontOptions(12.0f)));
+                g.drawText(winOpen
+                    ? "Editor is open in its own window."
+                    : "This plugin's editor can't be embedded and opens in its own window. "
+                      "Click the slot's " + juce::String::fromUTF8("\xe2\x86\x97")
+                      + " to open it.",
+                           area.reduced(16), juce::Justification::centred, true);
+            }
             else if (popout != nullptr && popoutModelIdx == selectedIdx
                      && inlineEditor == nullptr)
             {
-                bool po = selectedIdx < (int)model.size()
-                       && ChainHost::isPopoutOnly(model[(size_t)selectedIdx].name,
-                                                  slotFormat(selectedIdx));
+                // A non-Float plugin the user chose to pop out.
                 g.setColour(juce::Colour(0xffa0a0b8));
                 g.setFont(juce::Font(juce::FontOptions(12.0f)));
-                g.drawText(po ? "This plugin opens in a floating window (plugin limitation)."
-                              : "Editor is open in a floating window - click the plugin block to bring it back.",
+                g.drawText("Editor is open in a floating window - click the plugin block to bring it back.",
                            area.reduced(16), juce::Justification::centred, true);
             }
 

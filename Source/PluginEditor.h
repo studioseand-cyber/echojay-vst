@@ -1928,6 +1928,95 @@ private:
             the left end of the rack strip, labelling the blocks beside it,
             mirroring the master MIX knob at the other end. */
         juce::TextButton      rackBtn { "RACK" };
+        // Whole-rack borrow (step 2): visible only when the view is a
+        // borrow-capable Link's rack this main holds the lock on. Text and
+        // visibility are the one author's (refreshChainPanelForView).
+        // Mute/solo (MUTE_SOLO_SPEC): permanent under the rack for a viewed
+        // remote rack — where LISTEN sat. Lamps render from the SIDECAR.
+        // ONE AUTHOR, TWO PLACEMENTS (28 Aug 2026): the rack's M/S are
+        // the SAME implementation as the mixer strips' — state read from
+        // processor->muteSoloSnaps_ AT PAINT TIME (the closed-loop
+        // sidecar lamp, never a local echo, never retained widget
+        // state), rendering through EchoJayEditor::drawMsLamp, clicks
+        // through the same stripMuteSoloClick. The TextButton version
+        // was a second implementation whose enabled/text state was
+        // authored only on panel rebuilds — the signature early-return
+        // froze it, which is what "three separate faults" were.
+        struct MsLamps : juce::Component, public juce::TooltipClient
+        {
+            juce::String uid;
+            EchoJayProcessor* proc = nullptr;
+            std::function<void(const juce::String&, bool)> onLamp;
+            std::function<juce::String(const juce::String&, bool)> tipFor;
+            // The Active tick joined the row (31 Aug: it IS a control on
+            // the strip, so it is one here — same dispatch, same renderer,
+            // via these callbacks into the editor's one implementation).
+            struct TickView { bool has = false, connected = false,
+                              active = false, pending = false,
+                              timedOut = false, target = false; };
+            std::function<TickView(const juce::String&)> tickFor;
+            std::function<void(const juce::String&)> onTick;
+            std::function<juce::String(const juce::String&)> tickTipFor;
+            // STORED RECTS, centred as one group on the component's width
+            // (= the pill's centreline) — the strips' treatment, derived
+            // the same way: computed HERE, read by paint AND hit-testing.
+            juce::Rectangle<int> tickR, mR, sR;
+            void resized() override
+            {
+                const int lamp = 18, tick = 16;
+                const int groupW = tick + 5 + lamp + 3 + lamp;
+                int x = juce::jmax(0, (getWidth() - groupW) / 2);
+                tickR = { x, (getHeight() - tick) / 2, tick, tick };
+                x += tick + 5;
+                mR = { x, 0, lamp, getHeight() };
+                x += lamp + 3;
+                sR = { x, 0, lamp, getHeight() };
+            }
+            void paint(juce::Graphics& g) override
+            {
+                bool cap = false, m = false, s = false;
+                if (proc != nullptr)
+                    if (auto it = proc->muteSoloSnaps_.find(uid);
+                        it != proc->muteSoloSnaps_.end())
+                    { cap = it->second.capable; m = it->second.muteUser;
+                      s = it->second.soloOn; }
+                if (tickFor != nullptr && uid.isNotEmpty())
+                {
+                    const auto tv = tickFor(uid);
+                    EchoJayEditor::drawActiveTick(g, tickR, getLookAndFeel(),
+                        tv.connected, tv.active, tv.pending, tv.timedOut,
+                        tv.target);
+                }
+                EchoJayEditor::drawMsLamp(g, mR, false, m, cap);
+                EchoJayEditor::drawMsLamp(g, sR, true,  s, cap);
+            }
+            void mouseDown(const juce::MouseEvent& e) override
+            {
+                if (uid.isEmpty()) return;
+                if      (tickR.contains(e.getPosition()))
+                { if (onTick) onTick(uid); }
+                else if (mR.contains(e.getPosition()))
+                { if (onLamp) onLamp(uid, false); }
+                else if (sR.contains(e.getPosition()))
+                { if (onLamp) onLamp(uid, true); }
+            }
+            juce::String getTooltip() override
+            {
+                if (uid.isEmpty()) return {};
+                const auto p = getMouseXYRelative();
+                if (tickR.contains(p))
+                    return tickTipFor != nullptr ? tickTipFor(uid)
+                                                 : juce::String();
+                if (tipFor == nullptr) return {};
+                return tipFor(uid, sR.contains(p));
+            }
+        };
+        MsLamps msLamps;
+        // The route override (finding: solo routing depends on what the main
+        // is). Text IS the active mode; a click flips it. Visible only while
+        // an edit-rack session is live; both set by the one author.
+
+
         std::function<void()> onRackClick;
         static constexpr int  kRackSelW = 150;   // reserved left of the strip
 
@@ -1977,6 +2066,11 @@ private:
         std::function<void(int)> onRemoteEditorRequest;
         juce::String remoteName;     // the Link's display name, for the note
         bool         remoteOffline = false;
+        // Rack lock: TRUE while viewing a remote rack this main does not
+        // hold — remote edit affordances disable, tooltip says why. Set only
+        // by refreshChainPanelForView (the one author), like the flags above.
+        bool         remoteWriteLocked = false;
+        juce::String remoteWriteLockWhy;
         std::function<void(int)>        onSelectSlot;
         std::function<void(int)>        onRemoveSlot;
         std::function<void(int)>        onBypassSlot;
@@ -2001,6 +2095,7 @@ private:
         {
             // Added first: stays at the back of the z-order so the strip,
             // header row and pop-out button remain clickable above it
+            inlineHolder.setName("inlineHolder");
             addChildComponent(inlineHolder);
             inlineHolder.setInterceptsMouseClicks(false, true);
             inlineHolder.onChildBounds = [this]
@@ -2040,6 +2135,8 @@ private:
                                "The Link mixer follows the same selection.");
             rackBtn.onClick = [this] { if (onRackClick) onRackClick(); };
             addAndMakeVisible(rackBtn);
+            msLamps.setName("msLamps");
+            addChildComponent(msLamps);     // one author shows it
 
             addAndMakeVisible(stripView);
             stripView.setViewedComponent(&stripContent, false);
@@ -2152,7 +2249,16 @@ private:
             // component, so the poll would run its full ~5s, then mark our own
             // EQ "popout only" and float it — a limitation of nothing,
             // recorded as a limitation of the plugin.
-            if (slotInfos[(size_t)i].format == ChainHost::kBuiltinFormat)
+            // THE ONE PLACEMENT DECISION (31 Aug 2026): shared with the
+            // Link's editor via ChainHost::editorPlacement — the branch
+            // bodies stay host-specific, the DECISION cannot drift.
+            EchoJay_NSLog(("EJPane(main): open: " + slotInfos[(size_t)i].name
+                + " mfr=\"" + slotInfos[(size_t)i].manufacturer
+                + "\"").toRawUTF8());
+            if (ChainHost::editorPlacement(slotInfos[(size_t)i].name,
+                                           slotInfos[(size_t)i].format,
+                                           slotInfos[(size_t)i].manufacturer)
+                    == ChainHost::EditorPlacement::InlineJuce)
             {
                 juce::AudioProcessorEditor* ed = nullptr;
                 try { ed = onCreateEditor(i); } catch (...) {}
@@ -2173,10 +2279,13 @@ private:
             // Known popout-only plugin (out-of-process editor): go straight
             // to the floating window — no failed inline attempt, no timeout.
             // Format-qualified: a VST3 build of the same plugin may inline fine.
-            if (ChainHost::isPopoutOnly(slotInfos[(size_t)i].name,
-                                        slotInfos[(size_t)i].format))
+            if (ChainHost::editorPlacement(slotInfos[(size_t)i].name,
+                                           slotInfos[(size_t)i].format,
+                                           slotInfos[(size_t)i].manufacturer)
+                    == ChainHost::EditorPlacement::Float)
             {
-                statusText = "Opens in a floating window (plugin limitation)";
+                // No statusText: the PANE's placement-driven caption says
+                // it (2 Sep rule); the strip line duplicated the sentence.
                 openPopoutForSelected();
                 repaint();
                 return;
@@ -2205,7 +2314,12 @@ private:
             try { ed = onCreateEditor(i); } catch (...) {}
             if (!ed) { statusText = "Failed: could not open editor"; repaint(); return; }
 
-            statusText.clear();
+            // The UNDECIDED state, said aloud (1 Sep 2026) — same wording
+            // as the Link's panel; the settle poll's verdict replaces it.
+            statusText = "Opening " + slotInfos[(size_t)i].name
+                         + "'s editor...";
+            EchoJay_NSLog(("EJPane(main): attempt start: "
+                + slotInfos[(size_t)i].name).toRawUTF8());
             inlineEditor.reset(ed);
             inlineSlot = i;
             inlineHolder.setVisible(true);
@@ -2250,6 +2364,26 @@ private:
                 if (got || framePolls >= 50)
                 {
                     settled = true;
+                    if (statusText.startsWith("Opening "))
+                        statusText.clear();   // the verdict replaces it
+                    {
+                        int vw = 0, vh = 0; juce::String nat;
+                        NativeClip::getPluginViewSizeVerbose(this, vw, vh, nat);
+                        EchoJay_NSLog(("EJPane(main): settle verdict: "
+                            + juce::String(got ? "inline " + juce::String(w)
+                                                 + "x" + juce::String(h)
+                                               : "EXPIRED -> popout")
+                            + " | editor=" + juce::String(
+                                  inlineEditor != nullptr ? inlineEditor->getWidth() : -1)
+                            + "x" + juce::String(
+                                  inlineEditor != nullptr ? inlineEditor->getHeight() : -1)
+                            + " parent=" + juce::String(
+                                  inlineEditor != nullptr
+                                      && inlineEditor->getParentComponent() != nullptr
+                                      ? inlineEditor->getParentComponent()->getName()
+                                      : "none")
+                            + " | " + nat).toRawUTF8());
+                    }
                     if (!got)
                     {
                         // Never grew past a placeholder: out-of-process
@@ -2261,11 +2395,14 @@ private:
                         {
                             ChainHost::markPopoutOnly(slotInfos[(size_t)inlineSlot].name,
                                                       slotInfos[(size_t)inlineSlot].format);
+                            EchoJay_NSLog(("EJPane(main): mark written: "
+                                + slotInfos[(size_t)inlineSlot].name).toRawUTF8());
                             for (auto& bl : blocks)
                                 if (bl->slotIdx == inlineSlot)
                                 { bl->popoutOnly = true; bl->repaint(); }
                         }
-                        statusText = "Opens in a floating window (plugin limitation)";
+                        // No statusText — the pane's placement caption
+                        // covers Float (see the rule at paint).
                         openPopoutForSelected();   // destroys the inline editor first
                         repaint();
                         startTimer(400);
@@ -2468,7 +2605,19 @@ private:
             closeAllEditors();
             juce::AudioProcessorEditor* ed = nullptr;
             try { ed = onCreateEditor(i); } catch (...) {}
-            if (!ed) return;
+            if (!ed)
+            {
+                // 1 Sep 2026: was a SILENT return — empty pane, no window,
+                // no caption. Same fix as the Link's panel.
+                statusText = "Failed: " + slotInfos[(size_t)i].name
+                             + "'s editor could not be created";
+                EchoJay_NSLog(("EJPane(main): popout create FAILED: "
+                    + slotInfos[(size_t)i].name).toRawUTF8());
+                repaint();
+                return;
+            }
+            EchoJay_NSLog(("EJPane(main): popout opened: "
+                + slotInfos[(size_t)i].name).toRawUTF8());
             popout = std::make_unique<ChainEditorWindow>(slotInfos[(size_t)i].name, ed);
             popoutSlot = i;
             // Closing the floating window returns the editor to the plugin
@@ -2486,8 +2635,10 @@ private:
                     // clicking the block reopens it on demand.
                     if (s >= 0 && s == safe->selectedIdx
                         && s < (int)safe->slotInfos.size()
-                        && !ChainHost::isPopoutOnly(safe->slotInfos[(size_t)s].name,
-                                                    safe->slotInfos[(size_t)s].format))
+                        && ChainHost::editorPlacement(safe->slotInfos[(size_t)s].name,
+                                                      safe->slotInfos[(size_t)s].format,
+                                                      safe->slotInfos[(size_t)s].manufacturer)
+                               != ChainHost::EditorPlacement::Float)
                         safe->showInline(s);   // sequential: popout destroyed first
                     safe->repaint();
                 });
@@ -2519,6 +2670,11 @@ private:
 
         void rebuild(const std::vector<ChainHost::SlotInfo>& slots, int selIdx)
         {
+            // Instant-dismiss diagnosis (21 Aug 2026): timestamp every panel
+            // rebuild so it can be interleaved with EJPicker lines — a
+            // rebuild landing between "shown" and "destroyed" names itself.
+            EchoJay_NSLog(("EJPanel: rebuild slots=" + juce::String((int) slots.size())
+                           + " sel=" + juce::String(selIdx)).toRawUTF8());
             slotInfos = slots;
             if ((int)slotInfos.size() > kMaxSlots)
                 slotInfos.resize(kMaxSlots);
@@ -2533,7 +2689,12 @@ private:
                 bl->slotIdx  = i;
                 bl->bypassed = slotInfos[(size_t)i].bypassed;
                 bl->selected = (i == selectedIdx);
-                bl->popoutOnly = ChainHost::isPopoutOnly(bl->name, slotInfos[(size_t)i].format);
+                // The GLYPH asks the same question the click answers — via
+                // the ONE decision, or a stale builtin mark shows a lying ↗.
+                bl->popoutOnly = ChainHost::editorPlacement(bl->name,
+                                     slotInfos[(size_t)i].format,
+                                     slotInfos[(size_t)i].manufacturer)
+                                 == ChainHost::EditorPlacement::Float;
                 int ci = i;
                 bl->onSelect = [this, ci] { selectSlot(ci); };
                 bl->onBypass = [this, ci] { if (onBypassSlot) onBypassSlot(ci); };
@@ -2564,6 +2725,13 @@ private:
                     bl->removeBtn.setEnabled(false);
                     bl->bypassBtn.setTooltip(off);
                     bl->removeBtn.setTooltip(off);
+                }
+                if (remoteWriteLocked)
+                {
+                    bl->bypassBtn.setEnabled(false);
+                    bl->removeBtn.setEnabled(false);
+                    bl->bypassBtn.setTooltip(remoteWriteLockWhy);
+                    bl->removeBtn.setTooltip(remoteWriteLockWhy);
                 }
                 stripContent.addAndMakeVisible(*bl);
                 blocks.push_back(std::move(bl));
@@ -2711,15 +2879,34 @@ private:
                 g.drawText("to build a chain for you.",
                            0, cy + 20, getWidth(), 20, juce::Justification::centred);
             }
-            else if (popout != nullptr && popoutSlot == selectedIdx && inlineEditor == nullptr)
+            else if (inlineEditor == nullptr && selectedIdx >= 0
+                     && selectedIdx < (int)slotInfos.size()
+                     && ChainHost::editorPlacement(slotInfos[(size_t)selectedIdx].name,
+                                                   slotInfos[(size_t)selectedIdx].format,
+                                                   slotInfos[(size_t)selectedIdx].manufacturer)
+                            == ChainHost::EditorPlacement::Float)
             {
-                bool po = selectedIdx < (int)slotInfos.size()
-                       && ChainHost::isPopoutOnly(slotInfos[(size_t)selectedIdx].name,
-                                                  slotInfos[(size_t)selectedIdx].format);
+                // THE RULE (2 Sep 2026): the pane's text is a function of
+                // editorPlacement — Float says so whether or not a window
+                // is open (the old popout!=nullptr gate erased the fact on
+                // close). Closed wording names the way back.
+                const bool winOpen = popout != nullptr
+                                     && popoutSlot == selectedIdx;
                 g.setColour(juce::Colour(0xffa0a0b8));
                 g.setFont(juce::Font(juce::FontOptions(12.0f)));
-                g.drawText(po ? "This plugin opens in a floating window (plugin limitation)."
-                              : "Editor is open in a floating window - click the plugin block to bring it back.",
+                g.drawText(winOpen
+                    ? "Editor is open in its own window."
+                    : "This plugin's editor can't be embedded and opens in its own window. "
+                      "Click the slot's " + juce::String::fromUTF8("\xe2\x86\x97")
+                      + " to open it.",
+                           area.reduced(16), juce::Justification::centred, true);
+            }
+            else if (popout != nullptr && popoutSlot == selectedIdx && inlineEditor == nullptr)
+            {
+                // A non-Float plugin the user chose to pop out.
+                g.setColour(juce::Colour(0xffa0a0b8));
+                g.setFont(juce::Font(juce::FontOptions(12.0f)));
+                g.drawText("Editor is open in a floating window - click the plugin block to bring it back.",
                            area.reduced(16), juce::Justification::centred, true);
             }
         }
@@ -2745,6 +2932,10 @@ private:
             // narrow the window gets. Same shape as the master knob's
             // reservation at the right end.
             rackBtn.setBounds(8, getHeight() - kStripH + 8, kRackSelW - 16, 24);
+            msLamps.setBounds(8, getHeight() - kStripH + 36,
+                              kRackSelW - 16, 18);   // the pill's width —
+                                                     // the group centres
+                                                     // inside (resized)
             // Pre-gain knob at the HEAD of the strip, left of the first block:
             // its position says what it does (the signal enters here). Shown
             // in local AND remote (a selected rack has a pre-gain too), so it
@@ -3468,6 +3659,13 @@ private:
         juce::Rectangle<int> name;      // resolveLinkDisplayName()
         juce::Rectangle<int> badge;     // BUS / CHANNEL / SET? chip
         juce::Rectangle<int> active;    // merged Active tick + connectivity
+        juce::Rectangle<int> mute;      // M lamp (MUTE_SOLO_SPEC)
+        juce::Rectangle<int> solo;      // S lamp
+        juce::Rectangle<int> tick;      // the Active tick SQUARE (30 Aug:
+                                        // stored like every other rect so
+                                        // paint and centring share one
+                                        // truth; sg.active stays the row-
+                                        // wide click target)
         juce::Rectangle<int> data;      // numbers / chain (the content toggle)
         // The fader+meter BAND (8b): one horizontal band, console style, the
         // meter as PERMANENT chrome. Both rects are stored by layOutStrips
@@ -3783,7 +3981,8 @@ private:
     static int stripsTotalWidth(int count, int stripW)
     { return count <= 0 ? 0 : count * (stripW + kStripGap) - kStripGap; }
 
-    enum class StripHit { None = 0, Fader, Clip, Meter, Badge, Active, Background };
+    enum class StripHit { None = 0, Fader, Clip, Meter, Badge, Active,
+                          Mute, Solo, Background };
     /** HIT-TEST PRECEDENCE, in ONE place and stated in code rather than left
         to the order handlers happen to test in: fader, then meter, then the
         placement badge, then the merged Active control, then the strip
@@ -4183,9 +4382,10 @@ private:
         the panel must render differently. */
     struct ChainRackView {
         std::vector<ChainHost::SlotInfo> slots;
-        bool valid   = false;      // false = no readable sidecar
-        bool remote  = false;
-        bool offline = false;
+        bool valid    = false;     // false = no readable sidecar
+        bool remote   = false;
+        bool borrowed = false;     // step 2: the view is the borrowed host
+        bool offline  = false;
         juce::String name;         // display name of the rack's owner
         int  revision = -1;
     };
@@ -4202,6 +4402,9 @@ private:
         si.settings = rs.settings;
         si.format   = rs.format;
         si.wet      = rs.wet;
+        si.manufacturer = rs.manufacturer;   // sidecar is the remote view's
+                                             // ONLY identity source ("" from
+                                             // an old Link reads not-Waves)
         return si;
     }
     ChainRackView chainRackView() const;
@@ -4225,6 +4428,38 @@ private:
     juce::String lastAddLine_;     // the author's own last write, so it can
                                    // retire text that stopped being true
     void showChainRackMenu();
+    // Whole-rack borrow: step 2 (solo) + step 3 (Apply & Release).
+    // toggleBorrow (LISTEN) deleted — MUTE_SOLO_SPEC §1.
+    void stripMuteSoloClick(const juce::String& uid, bool isSolo);
+    /** THE ONE M/S LAMP RENDERER (28 Aug 2026): both placements — every
+        mixer strip and the rack panel — draw through this and nothing
+        else. Colour change on state, letter, capability dimming; no
+        words. Two renderers is how the rack drifted. */
+    static void drawMsLamp(juce::Graphics& g, juce::Rectangle<int> r,
+                           bool isSolo, bool lit, bool capable);
+    /** THE ONE ACTIVE-TICK RENDERER (31 Aug 2026): the mixer strip and the
+        rack row draw the tick through this — box, offline cross, green
+        tick, amber pending — so the two cannot drift. */
+    static void drawActiveTick(juce::Graphics& g, juce::Rectangle<int> box,
+                               juce::LookAndFeel& lnf, bool connected,
+                               bool active, bool pending, bool timedOut,
+                               bool target);
+    juce::String muteSoloStripTip(const juce::String& uid, bool isSolo) const;
+    void sendLinkMuteSoloCommand(const juce::String& uid, bool isSolo, bool on);
+    juce::String soloLimitLineText() const;
+    void startBorrow(const juce::String& uid);
+    std::vector<std::pair<bool, bool>> borrowSlotVerdicts();  // delegate -> processor
+    // §5a-R (26 Aug 2026): selection IS the session.
+    void handleBorrowSelectionChange(const juce::String& newUid,
+                                     bool userInitiated);
+    // §3f: set TRUE by the user click sites immediately before they call a
+    // selection writer; consumed (reset false) by the writer. Everything
+    // else inherits the safe programmatic default.
+    bool pendingSelectionIsUser_ = false;
+    void borrowSelectionTick();
+    void runBorrowApply();   // legacy per-slot commits (deselect, incapable Links)
+    LinkShm::StructureEdit::Plan buildStructurePlan();   // delegate -> processor
+    bool borrowSessionShapeDirty() const;                // delegate -> processor
 
     std::map<juce::String, LinkStripState> linkStripStates_;
     LinkStripState linkHostStrip_;         // the Mix Bus (this instance) row
@@ -4593,7 +4828,7 @@ private:
     // far down the list, so "which chat am I on" is answerable at a glance.
     // No-op if there is no active chat or no matching visible row.
     void scrollChatSidebarToActive();
-    void createNewChat();
+    void createNewChat(const juce::String& bindToUid);
     // ---- Stream ownership (14 Aug 2026: a stream belongs to a chat) ----
     // Re-establish the in-flight turn's provisional rendering (stage row or
     // partial bubble) after a chat switch, IF the newly opened chat owns the

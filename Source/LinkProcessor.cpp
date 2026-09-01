@@ -64,7 +64,28 @@ LinkProcessor::~LinkProcessor()
     stopTimer();
     // Audio thread guaranteed stopped before destructor
     releaseRegistrySlot();
+    // CLEAN-EXIT HYGIENE (25 Aug 2026): the uid is per-launch, so this
+    // instance's uid-keyed files are unreachable the moment it dies —
+    // delete them here rather than leaving them for the reaper (crashes
+    // still litter; the main's sweep is the backstop). structplan is NOT
+    // deleted: a lingering journal is a rollback, and completion already
+    // deletes it. NOT in releaseRegistrySlot — that also runs on live
+    // re-claims mid-session.
+    if (instanceUid_.isNotEmpty() && resolvedDir.isNotEmpty())
+    {
+        for (const auto& p : { "rack-" + instanceUid_ + ".json",
+                               "racklock-" + instanceUid_ + ".json",
+                               "lease-" + instanceUid_ + ".json",
+                               "ctrl-cmd-" + instanceUid_ + ".json",
+                               "ctrl-ack-" + instanceUid_ + ".json",
+                               "chain-cmd-" + instanceUid_ + ".json",
+                               "chain-ack-" + instanceUid_ + ".json" })
+            juce::File(resolvedDir + p).deleteFile();
+    }
+    const juce::String ringPath = shmOpenedKey;   // full path, set at openRing
     closeRingNow();
+    if (ringPath.isNotEmpty())
+        juce::File(ringPath).deleteFile();
     LinkShm::closeRegistry(regMap, regFd);
     regMap = nullptr; regFd = -1;
 }
@@ -76,12 +97,19 @@ void LinkProcessor::timerCallback()
 {
     // Heartbeat once per second (timer runs at 30Hz since v0.8.5; only the
     // meter publish uses the full rate)
+    // Solo fabric scan at ~4Hz: cheap by construction (shared-memory
+    // registry walk; sidecar parses only when a file's mtime moved).
+    if (++soloScanDivider_ >= 8) { soloScanDivider_ = 0; soloFabricScan(); }
     if (++heartbeatDivider_ >= 30)
     {
         heartbeatDivider_ = 0;
         // Bump heartbeat so the consumer can detect we're alive vs. crashed.
         // Registered-but-inactive Links heartbeat too — they must stay
         // visible (not reaped as stale) so remote re-activation works.
+        if (rackLeaseActive_)
+            EchoJay_NSLog(("EJCtx(link): leased muteWant="
+                + juce::String(rackLeaseMuteWant_.load(std::memory_order_relaxed)
+                                   ? "Y" : "N")).toRawUTF8());
         if (regSlotIdx >= 0)
         {
             LinkShm::bumpHeartbeat(regMap, regSlotIdx);
@@ -89,6 +117,16 @@ void LinkProcessor::timerCallback()
             if (regMap)
                 diag.heartbeat = LinkShm::loadRelaxed(
                     &LinkShm::regSlots(regMap)[regSlotIdx].heartbeat);
+        }
+        else
+        {
+            // THE CLAIM RETRY (26 Aug 2026 regression): updateShmState is
+            // EVENT-driven — nothing recalls it after the UidClaimGate's
+            // Wait arm returns unclaimed, so a Link probing its own ghost
+            // waited FOREVER and no Link registered at all. While
+            // unregistered, retry the claim here, once per second — the
+            // cadence every Wait/adopt threshold was designed against.
+            claimRegistrySlot();
         }
     }
 
@@ -125,6 +163,7 @@ void LinkProcessor::timerCallback()
     {
         pollChainCommand();
         pollEditLease();
+        pollRackLock();
         pollControlCommand();
         pollKeyCommand();
         pollSessionProjectName();
@@ -134,6 +173,20 @@ void LinkProcessor::timerCallback()
     // scheduler whose shortest interval is 30 s.
     if (heartbeatDivider_ % 30 == 0)
         schedulePassiveKeyPass();
+    // Structure-plan journal check (phase 2): AFTER the DAW's session
+    // restore has settled — the restore runs at instantiation and this is
+    // the first quiet 1s tick after it — and at most once per process (the
+    // journal's delete-on-completion makes a rerun read absent anyway).
+    if (!planJournalChecked_ && heartbeatDivider_ % 30 == 0
+        && !resolvedDir.isEmpty() && instanceUid_.isNotEmpty())
+    {
+        planJournalChecked_ = true;
+        if (chainHost.planJournalRestoreIfPresent(resolvedDir, instanceUid_))
+            // The restore rebuilt the rack in chainHost — same four-step
+            // sync, or a crash-recovered Link shows the pre-crash shape
+            // until its next local edit (the identical defect, latent).
+            syncModelAfterStructuralChange();
+    }
     publishMeterFrame();
 
     // One-shot arming note for the position stamps (stage 0), off the audio
@@ -179,6 +232,13 @@ void LinkProcessor::publishRackSidecar()
     const int  epoch    = chainHost.getHostedChangeEpoch();
     const bool revMoved = (rev   != lastPublishedRackRev_);
     const bool epMoved  = (epoch != lastPublishedEpoch_);
+    // §8 closed loop: a mute-state FLIP must republish promptly — the main
+    // confirms the commanded mute through this sidecar, and a stale
+    // muteEngaged would false-trip the watchdog into solo.
+    const bool muteNow = linkMuteWanted();
+    const bool muteMoved = (muteNow != lastPublishedMuteEngaged_)
+        || (muteUserOn_.load(std::memory_order_relaxed) != lastPublishedMuteUser_)
+        || (soloOn_.load(std::memory_order_relaxed) != lastPublishedSoloOn_);
     const double nowMs  = juce::Time::getMillisecondCounterHiRes();
 
     // The EQ curve, fetched ONCE for the rack rather than per slot: the
@@ -217,7 +277,8 @@ void LinkProcessor::publishRackSidecar()
                            || (pgUser  != lastPublishedPreGainUserSet_)
                            || (pgKnown != lastPublishedPreGainInputKnown_);
 
-    if (!revMoved && !epMoved && !curveMoved && !preGainMoved) return;
+    if (!revMoved && !epMoved && !curveMoved && !preGainMoved && !muteMoved)
+        return;
     if (!revMoved && !preGainMoved)
     {
         // A settle test ALONE would starve under sustained automation: a host
@@ -233,6 +294,9 @@ void LinkProcessor::publishRackSidecar()
         if (!settled && !stale) return;
     }
     lastPublishedRackRev_ = rev;
+    lastPublishedMuteEngaged_ = muteNow;
+    lastPublishedMuteUser_ = muteUserOn_.load(std::memory_order_relaxed);
+    lastPublishedSoloOn_   = soloOn_.load(std::memory_order_relaxed);
     lastPublishedEpoch_   = epoch;
     lastPublishedCurve_   = curve;
     lastPublishedPreGainDb_        = pgDb;
@@ -243,6 +307,13 @@ void LinkProcessor::publishRackSidecar()
     LinkShm::RackSidecar rc;
     rc.valid     = true;
     rc.uid       = instanceUid_;
+    rc.borrowCapable = true;   // this binary honors the rack-scoped lease
+    rc.structureEditCapable = true;   // and can journal/apply a structure plan
+    rc.inContextCapable     = true;   // §8: mutes on lease muteOut
+    rc.muteEngaged = linkMuteWanted();   // ACTUAL silence, any reason
+    rc.muteUser = muteUserOn_.load(std::memory_order_relaxed);
+    rc.soloOn   = soloOn_.load(std::memory_order_relaxed);
+    rc.muteSoloCapable = true;   // this binary composes and scans
     rc.name      = effectiveDisplayName();
     rc.revision  = rev;
     rc.masterWet = chainHost.getMasterWet();
@@ -266,7 +337,7 @@ void LinkProcessor::publishRackSidecar()
                                  // still holds the lease is the teardown
                                  // signal).
                                  leaseActive_.load(std::memory_order_relaxed)
-                                     && i == leaseSlot0_,
+                                     && (rackLeaseActive_ || i == leaseSlot0_),
                                  // The curve rides on the EQ's OWN slot, so a
                                  // reader never has to guess which entry it
                                  // describes. Every other slot leaves it empty.
@@ -275,6 +346,13 @@ void LinkProcessor::publishRackSidecar()
             const auto id = chainHost.getSlotIdentity(i);
             auto& back = rc.slots.back();
             back.fp = id.fp; back.uid = id.uid; back.version = id.version;
+            // Rack lock recency: the Link's last LOCAL rack edit rides every
+            // slot (assigned by name, after the positional init, like the
+            // identity trio above).
+            back.lastEditMs = lastLocalRackEditMs_;
+            // Manufacturer from the backfilled single source (SlotInfo),
+            // assigned after the positional init like the trio above.
+            back.manufacturer = s.manufacturer;
         }
     }
     LinkShm::writeRackSidecar(resolvedDir, rc);
@@ -464,6 +542,38 @@ void LinkProcessor::pollSessionProjectName()
 // toggle (same updateShmState path, same dirty-marking so it persists),
 // then the ack confirms the applied state.
 // ---------------------------------------------------------------------------
+void LinkProcessor::pollRackLock()
+{
+    // ~100ms cadence, message thread — same shape as pollEditLease: the FILE
+    // is the claim, freshness decides, and the transition is what acts.
+    if (instanceUid_.isEmpty() || resolvedDir.isEmpty()) return;
+    juce::String id, owner;
+    double age = 1.0e12;
+    LinkShm::readRackLockFile(resolvedDir, instanceUid_, id, owner, age);
+    const auto claim = LinkShm::RackLock::read(id, age, {});   // a Link never owns
+    const juce::String newOwner =
+        claim == LinkShm::RackLock::Claim::Other
+            ? (owner.isNotEmpty() ? owner : juce::String("another EchoJay"))
+            : juce::String();
+    if (newOwner == rackLockOwner_) return;
+    EchoJay_NSLog((newOwner.isNotEmpty()
+                       ? "EJRackLock: locked by \"" + newOwner + "\""
+                       : "EJRackLock: released (was \"" + rackLockOwner_ + "\")")
+                      .toRawUTF8());
+    rackLockOwner_ = newOwner;
+    notifyChainModel();   // the editor re-renders the rack UI locked/unlocked
+}
+
+bool LinkProcessor::rackLockGuard(const char* op)
+{
+    if (rackLockOwner_.isEmpty()) return false;
+    // The refusal asserts itself: from outside, a guard that returned early
+    // is indistinguishable from one that refused — this line is the witness.
+    EchoJay_NSLog(("EJRackLock: refused " + juce::String(op)
+                   + " - rack is selected on \"" + rackLockOwner_ + "\"").toRawUTF8());
+    return true;
+}
+
 void LinkProcessor::pollEditLease()
 {
     // ~100ms cadence, message thread. The FILE is the lease (see LinkShm.h):
@@ -472,6 +582,7 @@ void LinkProcessor::pollEditLease()
 
     juce::String fileId;
     int          fileSlot1 = 0;
+    bool         fileScopeRack = false;
     double       ageMs     = 1.0e12;   // absent reads as infinitely stale
     juce::File f(LinkShm::leasePath(resolvedDir, instanceUid_));
     if (f.existsAsFile())
@@ -481,6 +592,17 @@ void LinkProcessor::pollEditLease()
         {
             fileId    = o->getProperty("leaseId").toString();
             fileSlot1 = (int) o->getProperty("slot");
+            fileScopeRack = o->getProperty("scope").toString() == "rack";
+            // §8 in-context: the mute rides the LEASE (one lifetime by
+            // construction — the expiry that restores bypasses restores
+            // the mute; no second restore path can exist). Re-read every
+            // poll so LISTEN's solo mode can lift it live.
+            rackLeaseMuteWant_.store(o->hasProperty("muteOut")
+                && (bool) o->getProperty("muteOut"),
+                std::memory_order_relaxed);
+            rackLeaseEditPending_.store(o->hasProperty("editPending")
+                && (bool) o->getProperty("editPending"),
+                std::memory_order_relaxed);
             ageMs     = (double) juce::Time::currentTimeMillis()
                           - (double) (juce::int64) o->getProperty("tMs");
         }
@@ -496,8 +618,21 @@ void LinkProcessor::pollEditLease()
     {
         case LinkShm::LeaseGate::Engage:
         {
+            // THE SCOPE DECISION, through the shared pure helper (step 2):
+            // rack scope on a capable binary engages the whole rack; on an
+            // old binary the same file (slot 0, scope unparsed) falls into
+            // the slot arm and refuses — proven equivalent in racklock_test.
+            const auto scoped = LinkShm::LeaseScope::decide(
+                fileScopeRack, /*binarySupportsRack*/ true,
+                leaseGate_.activeSlot1, chainHost.getNumSlots());
+            if (scoped == LinkShm::LeaseScope::Engage::Rack)
+            {
+                rackLeaseEngage();
+                break;
+            }
             const int slot0 = leaseGate_.activeSlot1 - 1;
-            if (slot0 < 0 || slot0 >= chainHost.getNumSlots())
+            if (scoped == LinkShm::LeaseScope::Engage::Refuse
+                || slot0 < 0 || slot0 >= chainHost.getNumSlots())
             {
                 // A lease naming a slot this rack does not have engages
                 // NOTHING: force the gate back to idle so a later valid
@@ -523,20 +658,79 @@ void LinkProcessor::pollEditLease()
         case LinkShm::LeaseGate::Release:
         {
             // ONE restore path for every ending -- clean release, expiry
-            // after a crash, a new id superseding a dead session. Restore
-            // the bypass the user actually had, drop the flags, republish.
+            // after a crash, a new id superseding a dead session -- and for
+            // BOTH scopes: the rack arm restores every slot's saved bypass,
+            // the slot arm restores its one, through this same switch case.
             leaseActive_.store(false, std::memory_order_relaxed);
-            if (leaseSlot0_ >= 0 && leaseSlot0_ < chainHost.getNumSlots())
+            rackLeaseMuteWant_.store(false, std::memory_order_relaxed);
+            rackLeaseEditPending_.store(false, std::memory_order_relaxed);
+            if (rackLeaseActive_)
+            {
+                rackLeaseRelease();
+            }
+            else if (leaseSlot0_ >= 0 && leaseSlot0_ < chainHost.getNumSlots())
+            {
                 chainHost.setSlotBypassed(leaseSlot0_, leasePriorBypass_);
+                EchoJay_NSLog("EJLease: released/expired - slot restored");
+            }
             leaseSlot0_ = -1;
             notifyChainModel();
-            EchoJay_NSLog("EJLease: released/expired - slot restored");
             break;
         }
         case LinkShm::LeaseGate::Hold:
         case LinkShm::LeaseGate::None:
             break;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Solo fabric scan (27 Aug 2026): the solo set IS the live sidecars. Walk
+// the registry (shared memory, free), keep per-slot liveness, and parse a
+// foreign sidecar ONLY when its file's mtime moved. A row counts toward the
+// set only while proven live AND its heartbeat moved within ~3.5s —
+// RegLiveness::proven is sticky, so death needs its own freshness check.
+// This is what makes a deleted or crashed soloed Link self-healing: the
+// want is re-derived from live evidence every tick and stored nowhere.
+// ---------------------------------------------------------------------------
+void LinkProcessor::soloFabricScan()
+{
+    if (regMap == nullptr) return;
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty()) { soloMuteWant_.store(false, std::memory_order_relaxed); return; }
+    const double nowMs = juce::Time::getMillisecondCounterHiRes();
+    bool anyForeignSolo = false;
+    auto* slots = LinkShm::regSlots(regMap);
+    for (int i = 0; i < kRegMaxSlots; ++i)
+    {
+        auto& row = soloScan_[(size_t) i];
+        if (LinkShm::loadAcquire(&slots[i].inUse) == 0) { row = {}; continue; }
+        char ub[13] = {};
+        std::memcpy(ub, slots[i].instanceUid, 12);
+        const juce::String uid = juce::String::fromUTF8(ub);
+        if (uid.isEmpty() || uid == instanceUid_) { row = {}; continue; }
+        if (row.uid != uid) { row = {}; row.uid = uid; row.lastHbMoveMs = nowMs; }
+        const uint32_t hb = LinkShm::loadRelaxed(&slots[i].heartbeat);
+        if (hb != row.lastHb) { row.lastHb = hb; row.lastHbMoveMs = nowMs; }
+        const bool proven = row.live.observe(hb);
+        const bool fresh  = (nowMs - row.lastHbMoveMs) < 3500.0;
+        if (! proven || ! fresh) continue;    // never muted by a ghost
+        juce::File f(LinkShm::rackSidecarPath(dir, uid));
+        const juce::int64 mt = f.existsAsFile()
+            ? f.getLastModificationTime().toMilliseconds() : 0;
+        if (mt != row.mtimeMs)
+        {
+            row.mtimeMs = mt;
+            const auto rc = LinkShm::readRackSidecar(dir, uid);
+            row.soloOn = (rc.uid == uid) && rc.soloOn;
+        }
+        anyForeignSolo = anyForeignSolo || row.soloOn;
+    }
+    // In the set = exempt: a soloed Link never solo-mutes itself, and
+    // multi-solo means everyone in the set plays.
+    soloMuteWant_.store(anyForeignSolo
+                            && ! soloOn_.load(std::memory_order_relaxed),
+                        std::memory_order_relaxed);
 }
 
 void LinkProcessor::pollControlCommand()
@@ -553,14 +747,38 @@ void LinkProcessor::pollControlCommand()
     juce::File cmdFile(resolvedDir + "ctrl-cmd-" + id + ".json");
     if (!cmdFile.existsAsFile()) return;
 
+    // CONSUME AND ANSWER, ALWAYS (24 Aug 2026 ruling): a command is
+    // consumed exactly once and always answered — ver mismatch, duplicate
+    // seq, malformed, all of them. Silence is never a valid response; a
+    // refused-but-kept file wedged this channel at 10Hz and left the
+    // sender's poll blind until its timeout.
+    auto refuseCmd = [&](const juce::String& why, int rseq)
+    {
+        cmdFile.deleteFile();
+        auto* r = new juce::DynamicObject();
+        r->setProperty("v",       1);
+        r->setProperty("seq",     rseq);
+        r->setProperty("refused", why);
+        juce::File(resolvedDir + "ctrl-ack-" + id + ".json")
+            .replaceWithText(juce::JSON::toString(juce::var(r), true));
+        EchoJay_NSLog(("EJCtrl: link REFUSED ctrl-cmd (" + why + ") seq="
+            + juce::String(rseq)
+            + " lastApplied=" + juce::String(lastAppliedCtrlSeq_)
+            + " - consumed and answered").toRawUTF8());
+    };
+
     auto v = juce::JSON::parse(cmdFile.loadFileAsString());
     auto* obj = v.getDynamicObject();
-    if (obj == nullptr) { cmdFile.deleteFile(); return; }
+    if (obj == nullptr) { refuseCmd("UNPARSEABLE ctrl-cmd", 0); return; }
 
     int ver = (int)obj->getProperty("v");
     int seq = (int)obj->getProperty("seq");
-    if (ver != 1 || seq == lastAppliedCtrlSeq_ || seq == 0)
-        return;
+    if (ver != 1)
+    { refuseCmd("version " + juce::String(ver) + " unsupported", seq); return; }
+    if (seq == 0)
+    { refuseCmd("seq 0 invalid", seq); return; }
+    if (seq == lastAppliedCtrlSeq_)
+    { refuseCmd("duplicate seq, already applied", seq); return; }
 
     lastAppliedCtrlSeq_ = seq;
     cmdFile.deleteFile();   // consumed
@@ -612,6 +830,32 @@ void LinkProcessor::pollControlCommand()
         chainHost.setPreGainDb(g, userSet);
         updateShmState();
     }
+    // Mute/solo layer (27 Aug 2026), additive fields on the same cmd
+    // transport. muteUser is a MIX decision: dirty-marks via
+    // updateShmState so the host saves it. soloOn is monitoring state:
+    // applied and published (the fabric reads the sidecar), never saved.
+    if (obj->hasProperty("muteUser"))
+    {
+        const bool on = (bool) obj->getProperty("muteUser");
+        EchoJay_NSLog(("EJLinkState: remote set muteUser="
+                       + juce::String((int) on)
+                       + " (seq " + juce::String(seq) + ")").toRawUTF8());
+        muteUserOn_.store(on, std::memory_order_relaxed);
+        updateShmState();
+        if (onLinkStateChanged) onLinkStateChanged();
+    }
+    if (obj->hasProperty("soloOn"))
+    {
+        const bool on = (bool) obj->getProperty("soloOn");
+        EchoJay_NSLog(("EJLinkState: remote set soloOn="
+                       + juce::String((int) on)
+                       + " (seq " + juce::String(seq) + ")").toRawUTF8());
+        soloOn_.store(on, std::memory_order_relaxed);
+        // My own membership changes my want NOW, not at the next scan:
+        // soloing must never briefly mute the soloed strip itself.
+        if (on) soloMuteWant_.store(false, std::memory_order_relaxed);
+        updateShmState();
+    }
     // Reset the pre-gain to auto (clears the hand-set flag; the next build
     // sets it again). Its own field: setPreGainDb userSet=false cannot clear.
     if (obj->hasProperty("preGainReset") && (bool)obj->getProperty("preGainReset"))
@@ -649,11 +893,11 @@ void LinkProcessor::pollControlCommand()
             try { proc->getStateInformation(mb); } catch (...) { threw = true; }
             if (threw)
                 pullErr = "this plugin refused to hand over its settings";
-            else if ((int) mb.getSize() > ChainHost::kApiStateMaxSlotBytes)
+            else if ((int) mb.getSize() > LinkShm::kLinkTransferMaxSlotBytes)
                 pullErr = "this plugin's settings are "
                         + juce::File::descriptionOfSizeInBytes((juce::int64) mb.getSize())
                         + ", over the "
-                        + juce::File::descriptionOfSizeInBytes((juce::int64) ChainHost::kApiStateMaxSlotBytes)
+                        + juce::File::descriptionOfSizeInBytes((juce::int64) LinkShm::kLinkTransferMaxSlotBytes)
                         + " limit, too large to carry";
             else
                 pulledB64 = LinkShm::stateToB64(mb);
@@ -662,17 +906,47 @@ void LinkProcessor::pollControlCommand()
             // and bytes handed to the transport after encoding. The transport
             // is ONE ctrl-ack JSON file, NOT chunked, no framing beyond JSON
             // string quoting; its only cap is the raw-size gate above
-            // (ChainHost::kApiStateMaxSlotBytes, enforced BEFORE encoding).
+            // (LinkShm::kLinkTransferMaxSlotBytes, enforced BEFORE encoding).
             EchoJay_NSLog(("EJPull[" + juce::String(seq) + "] link: raw="
                            + juce::String((juce::int64) mb.getSize())
                            + " bytes from getStateInformation; encoded="
                            + juce::String(pulledB64.length())
                            + " b64 chars; cap="
-                           + juce::String(ChainHost::kApiStateMaxSlotBytes)
+                           + juce::String(LinkShm::kLinkTransferMaxSlotBytes)
                            + " raw bytes; transport=single ctrl-ack JSON, unchunked"
                            + (pullErr.isNotEmpty() ? "; REFUSED: " + pullErr
                                                    : juce::String())).toRawUTF8());
         }
+    }
+
+    // ---- Structure plan (phase 2): verify, journal, two-phase apply --------
+    bool planAttempted = false;
+    ChainHost::PlanResult planResult;
+    if (obj->hasProperty("structPlan"))
+    {
+        // RECEIPT, logged BEFORE the parse and the apply — so a run's log
+        // says which side dropped a plan: no "send" line = main never sent;
+        // send but no "received" = transport or this dispatcher; received
+        // but no "applied" = the apply hung or died.
+        EchoJay_NSLog(("EJPlan[" + juce::String(seq)
+                       + "] link: plan received").toRawUTF8());
+        planAttempted = true;
+        LinkShm::StructureEdit::Plan plan;
+        LinkShm::StructureEdit::PreImages ignored;
+        if (LinkShm::StructureEdit::planFromVar(obj->getProperty("structPlan"),
+                                                plan, ignored))
+            // Apply + the four-step sync, one author — notify alone told
+            // the editor to re-read a model the plan never wrote (the
+            // two-models defect; functionally gated in linksync_test).
+            planResult = applyStructurePlanAndSync(resolvedDir, plan);
+        else
+            planResult.reasons.add("the plan could not be read");
+        EchoJay_NSLog(("EJPlan[" + juce::String(seq) + "] link: applied="
+                       + juce::String(planResult.ok ? "Y" : "N")
+                       + " restored=" + juce::String(planResult.restored ? "Y" : "N")
+                       + (planResult.failedAt.isNotEmpty()
+                              ? " failedAt=" + planResult.failedAt : juce::String()))
+                          .toRawUTF8());
     }
 
     // ---- Commit (stage 1): the edited state comes home ---------------------
@@ -758,6 +1032,16 @@ void LinkProcessor::pollControlCommand()
     {
         ack->setProperty("committedSlot", commitOk);
         if (!commitOk) ack->setProperty("commitErr", commitErr);
+    }
+    if (planAttempted)
+    {
+        ack->setProperty("planApplied",  planResult.ok);
+        ack->setProperty("planRestored", planResult.restored);
+        if (planResult.failedAt.isNotEmpty())
+            ack->setProperty("planFailedAt", planResult.failedAt);
+        juce::Array<juce::var> rs;
+        for (const auto& why : planResult.reasons) rs.add(why);
+        ack->setProperty("planReasons", rs);
     }
     {
         juce::File af(resolvedDir + "ctrl-ack-" + id + ".json");
@@ -946,22 +1230,50 @@ void LinkProcessor::claimRegistrySlot()
     ensureRegistryOpen();
     if (!regMap || regSlotIdx >= 0) return;
 
-    // Duplication guard: Logic's track-duplicate clones our serialised
-    // state INCLUDING the uid — if another live slot already carries it,
-    // regenerate ours so the two instances stay individually addressable
+    // Duplication guard, HEARTBEAT-DECIDED (25 Aug 2026 ruling): another
+    // slot carrying our saved uid is one of three things, and inUse alone
+    // cannot tell them apart — the old inUse-only re-mint burned an
+    // identity against every GHOST (unclean kill -> frozen slot), which was
+    // the uid-churn engine behind the orphaned files and journals. Now:
+    // proven-live holder -> WE re-mint (real duplicate, first-alive keeps
+    // the uid); observed-frozen holder -> a ghost, reap it and ADOPT our
+    // own uid back; undecided -> WAIT unclaimed (the ~1s updateShmState
+    // tick retries) — an unproven holder is never adopted.
     {
         RegistrySlot* slots = LinkShm::regSlots(regMap);   // global-scope struct
+        int holder = -1;
+        uint32_t holderHb = 0;
         for (int i = 0; i < kRegMaxSlots; ++i)
             if (LinkShm::loadAcquire(&slots[i].inUse) != 0
                 && instanceUid_ == juce::String::fromUTF8(slots[i].instanceUid))
+            { holder = i; holderHb = LinkShm::loadRelaxed(&slots[i].heartbeat); break; }
+        if (holder >= 0)
+        {
+            if (uidGateHolder_ != holder) { uidGate_ = {}; uidGateHolder_ = holder; }
+            switch (uidGate_.observe(holderHb))
             {
-                auto old = instanceUid_;
-                instanceUid_ = juce::String::toHexString(
-                    juce::Random::getSystemRandom().nextInt64()).removeCharacters("-").substring(0, 10);
-                EchoJay_NSLog(("EJLinkState: uid collision (duplicated instance?) "
-                               + old + " -> regenerated " + instanceUid_).toRawUTF8());
-                break;
+                case LinkShm::UidClaimGate::Decision::Wait:
+                    return;   // undecided: stay unregistered, retry next tick
+                case LinkShm::UidClaimGate::Decision::Remint:
+                {
+                    auto old = instanceUid_;
+                    instanceUid_ = juce::String::toHexString(
+                        juce::Random::getSystemRandom().nextInt64()).removeCharacters("-").substring(0, 10);
+                    EchoJay_NSLog(("EJLinkState: uid " + old + " held by a "
+                        "PROVEN-LIVE instance (duplicate) -> regenerated "
+                        + instanceUid_).toRawUTF8());
+                    break;
+                }
+                case LinkShm::UidClaimGate::Decision::AdoptGhost:
+                    LinkShm::reapSlot(regMap, holder);
+                    EchoJay_NSLog(("EJLinkState: uid " + instanceUid_
+                        + " held by a FROZEN ghost slot " + juce::String(holder)
+                        + " -> ghost reaped, uid adopted").toRawUTF8());
+                    break;
             }
+            uidGateHolder_ = -1;
+        }
+        else uidGateHolder_ = -1;
     }
     const juce::String audioFilename = "audio_" + effectiveFilePart() + ".bin";
 
@@ -1116,6 +1428,7 @@ void LinkProcessor::updateShmState()
 // =============================================================================
 void LinkProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
+    rackMuteMix_.reset(sampleRate, 0.030);   // §8 mute ramp, click-free
     hostSampleRate  = sampleRate;
     // The ring is always stereo (mono is duplicated on write) so the monitor
     // reads a consistent 2-channel layout regardless of the track format.
@@ -1314,6 +1627,33 @@ void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
             shmLock.exit();
         }
     }
+
+    // §8 IN-CONTEXT MUTE, strictly AFTER the ring write: the ring must keep
+    // carrying this signal (it is the main's injection source); only the
+    // channel's contribution to the DAW mix goes silent. Ramped ~30ms so
+    // engage/release never click. The want rides the lease (re-read every
+    // poll; cleared by the one Release/Expire restore path), so a crash
+    // un-mutes within the lease expiry exactly as it un-bypasses.
+    {
+        // Mute/solo layer (27 Aug 2026): THREE reasons, ONE ramp. The
+        // lease mute, the user's own mute and the solo fabric compose
+        // through linkMuteWanted(); each keeps its own lifetime, so a
+        // session release can never clear a user mute.
+        const bool muted = linkMuteWanted();
+        rackMuteMix_.setTargetValue(muted ? 0.0f : 1.0f);
+        if (muted || rackMuteMix_.getCurrentValue() < 0.9999f)
+        {
+            const int n = buffer.getNumSamples();
+            for (int i = 0; i < n; ++i)
+            {
+                const float g = rackMuteMix_.getNextValue();
+                for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                    buffer.getWritePointer(ch)[i] *= g;
+            }
+        }
+        else
+            rackMuteMix_.skip(buffer.getNumSamples());
+    }
 }
 
 // Audio thread. Glides the smoothed linear gain toward the atomic target and
@@ -1460,7 +1800,19 @@ void LinkProcessor::resyncChainModelFromHost()
         auto info = chainHost.getSlotInfo(i);
         ChainSlotSpec s;
         s.name     = info.name;
-        s.bypassed = info.bypassed;
+        // THE GENERAL RULE (24 Aug 2026): lease bypass is the LEASE'S
+        // business and never reaches the Link's own saved state — chainModel
+        // is what the editor renders AND what persists, and a persisted
+        // lease-bypass means a crash mid-borrow leaves the rack silently
+        // switched off. Under a lease the model records the TRUE state (the
+        // saved prior), not the lease's temporary dry rack.
+        if (rackLeaseActive_ && i < (int) rackLeasePrior_.size())
+            s.bypassed = rackLeasePrior_[(size_t) i];
+        else if (! rackLeaseActive_ && leaseSlot0_ == i
+                 && leaseActive_.load(std::memory_order_relaxed))
+            s.bypassed = leasePriorBypass_;
+        else
+            s.bypassed = info.bypassed;
         s.hostIdx  = i;
         s.wet      = info.wet;
         s.settings = info.settings;
@@ -1471,6 +1823,90 @@ void LinkProcessor::resyncChainModelFromHost()
         next.push_back(std::move(s));
     }
     chainModel = std::move(next);
+}
+
+void LinkProcessor::rackLeaseEngage()
+{
+    // WHOLE-RACK ENGAGE: save every slot's bypass, bypass all once, stream
+    // dry. setSlotBypassed bumps the revision, so the sidecar republishes
+    // with every slot controlled. Extracted so linksync_test drives the
+    // REAL arm, not a test-local copy.
+    rackLeasePrior_.clear();
+    for (int i = 0; i < chainHost.getNumSlots(); ++i)
+    {
+        rackLeasePrior_.push_back(chainHost.getSlotInfo(i).bypassed);
+        chainHost.setSlotBypassed(i, true);
+    }
+    rackLeaseActive_ = true;
+    leaseSlot0_      = -1;
+    leaseActive_.store(true, std::memory_order_relaxed);
+    notifyChainModel();
+    EchoJay_NSLog(("EJLease: RACK engaged, " +
+                   juce::String((int) rackLeasePrior_.size())
+                   + " slot(s) bypassed, streaming dry").toRawUTF8());
+}
+
+void LinkProcessor::rackLeaseRelease()
+{
+    for (int i = 0; i < chainHost.getNumSlots()
+                    && i < (int) rackLeasePrior_.size(); ++i)
+        chainHost.setSlotBypassed(i, rackLeasePrior_[(size_t) i]);
+    EchoJay_NSLog(("EJLease: RACK released/expired - "
+                   + juce::String((int) rackLeasePrior_.size())
+                   + " slot bypass state(s) restored").toRawUTF8());
+    rackLeaseActive_ = false;
+    rackLeasePrior_.clear();
+    // The model re-reads the restored truth: without this, a sync that ran
+    // mid-lease would leave the editor (and the SAVED state) claiming the
+    // lease's bypass long after the lease ended.
+    resyncChainModelFromHost();
+}
+
+void LinkProcessor::syncModelAfterStructuralChange()
+{
+    // THE FOUR-STEP WRITER, one author (24 Aug 2026): the chain-cmd path
+    // always did these four; the plan path did only the last, so the
+    // editor re-read a model nobody had changed.
+    resyncChainModelFromHost();
+    publishRackSidecar();
+    updateChainLatency();
+    notifyChainModel();
+}
+
+ChainHost::PlanResult LinkProcessor::applyStructurePlanAndSync(
+    const juce::String& dir, const LinkShm::StructureEdit::Plan& plan)
+{
+    auto res = chainHost.applyStructurePlan(dir, plan);
+    if (res.ok && rackLeaseActive_)
+    {
+        // PLAN-AWARE PRIOR REMAP (24 Aug 2026: every plugin came back
+        // bypassed): the priors were captured per index before the plan,
+        // and the plan shifts indices. Each prior follows the SLOT it
+        // belongs to, through the plan's own finalOrigin record; a created
+        // slot's prior is the bypass state the plan carried for it (read
+        // from the slot, where Phase B just wrote it) — never a default
+        // and never "not restored". Then the lease's dry rack is
+        // re-asserted, created slots included.
+        std::vector<bool> np;
+        for (int i = 0; i < (int) res.finalOrigin.size(); ++i)
+        {
+            const int o = res.finalOrigin[(size_t) i];
+            np.push_back(o >= 0 && o < (int) rackLeasePrior_.size()
+                             ? (bool) rackLeasePrior_[(size_t) o]
+                             : chainHost.getSlotInfo(i).bypassed);
+        }
+        rackLeasePrior_ = std::move(np);
+        for (int i = 0; i < chainHost.getNumSlots(); ++i)
+            chainHost.setSlotBypassed(i, true);
+        EchoJay_NSLog(("EJLease: priors remapped through the plan ("
+                       + juce::String((int) rackLeasePrior_.size())
+                       + " slots), dry rack re-asserted").toRawUTF8());
+    }
+    // UNCONDITIONAL: applied changed the shape, a rollback tore it down
+    // and rebuilt it — the editor-facing model is stale either way. Runs
+    // AFTER the remap so the sync records the lease's TRUE priors.
+    syncModelAfterStructuralChange();
+    return res;
 }
 
 void LinkProcessor::notifyChainModel()
@@ -1716,6 +2152,15 @@ bool LinkProcessor::isPluginDisabledByName(const juce::String& name) const
 void LinkProcessor::addChainPluginManually(const juce::PluginDescription& desc,
                                            std::function<void(const juce::String&)> done)
 {
+    if (rackLockGuard("add"))
+    {
+        if (done) done(rackEditPendingHeld()
+            ? "An edit from \"" + rackLockOwner_ + "\" is still pending - "
+              "retry or end the session there to release this rack."
+            : "This rack is selected on \"" + rackLockOwner_
+                       + "\" - deselect there to edit here.");
+        return;
+    }
     if ((int)chainModel.size() >= kMaxChainSlots)
     {
         if (done) done("Chain is full (" + juce::String(kMaxChainSlots) + " slots max)");
@@ -1739,6 +2184,7 @@ void LinkProcessor::addChainPluginManually(const juce::PluginDescription& desc,
         slot.name    = name;
         slot.hostIdx = chainHost.getNumSlots() - 1;
         chainModel.push_back(slot);
+        stampLocalRackEdit();
         // Latency: chainHost.onChainChanged already ran updateChainLatency
         // during the graph rebuild. notifyChainModel refreshes the editor
         // and marks host state dirty — the same path command builds use.
@@ -1749,6 +2195,7 @@ void LinkProcessor::addChainPluginManually(const juce::PluginDescription& desc,
 
 void LinkProcessor::removeChainSlot(int idx)
 {
+    if (rackLockGuard("remove")) return;
     if (idx < 0 || idx >= (int)chainModel.size()) return;
     if (onChainAboutToChange) onChainAboutToChange();
     int hostIdx = chainModel[(size_t)idx].hostIdx;
@@ -1759,11 +2206,13 @@ void LinkProcessor::removeChainSlot(int idx)
             if (s.hostIdx > hostIdx) --s.hostIdx;
     }
     chainModel.erase(chainModel.begin() + idx);
+    stampLocalRackEdit();
     notifyChainModel();
 }
 
 void LinkProcessor::moveChainSlot(int idx, int dir)
 {
+    if (rackLockGuard("move")) return;
     int j = idx + dir;
     if (idx < 0 || idx >= (int)chainModel.size()) return;
     if (j < 0 || j >= (int)chainModel.size()) return;
@@ -1778,26 +2227,31 @@ void LinkProcessor::moveChainSlot(int idx, int dir)
         std::swap(a.hostIdx, b.hostIdx);
     }
     std::swap(a, b);
+    stampLocalRackEdit();
     notifyChainModel();
 }
 
 void LinkProcessor::toggleChainSlotBypass(int idx)
 {
+    if (rackLockGuard("bypass")) return;
     if (idx < 0 || idx >= (int)chainModel.size()) return;
     auto& s = chainModel[(size_t)idx];
     s.bypassed = !s.bypassed;
     if (s.hostIdx >= 0)
         chainHost.setSlotBypassed(s.hostIdx, s.bypassed);
+    stampLocalRackEdit();
     notifyChainModel();
 }
 
 void LinkProcessor::setChainSlotWet(int idx, float wet01)
 {
+    if (rackLockGuard("slot wet")) return;
     if (idx < 0 || idx >= (int)chainModel.size()) return;
     auto& s = chainModel[(size_t)idx];
     s.wet = juce::jlimit(0.0f, 1.0f, wet01);   // model copy = serialisation source
     if (s.hostIdx >= 0)
         chainHost.setSlotWet(s.hostIdx, s.wet);
+    stampLocalRackEdit();
 }
 
 float LinkProcessor::getChainSlotWet(int idx) const
@@ -1945,10 +2399,7 @@ void LinkProcessor::pollChainCommand()
             self->chainHost.applyChainEdits(std::move(ops), -1, baseSlots,
                 [self, seq](const juce::StringArray& results, int applied, bool aborted)
             {
-                self->resyncChainModelFromHost();
-                self->publishRackSidecar();   // Phase R: edits publish instantly
-                self->updateChainLatency();
-                self->notifyChainModel();
+                self->syncModelAfterStructuralChange();
                 juce::String status = aborted ? "stale"
                                     : (applied == results.size() ? "ok" : "partial");
                 self->writeChainAck(seq, status, results, {});
@@ -2074,6 +2525,10 @@ void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
     obj->setProperty("editorW",  editorW);
     obj->setProperty("editorH",  editorH);
     obj->setProperty("instanceUid", instanceUid_);
+    // muteUser is channel mix identity and persists. soloOn is DELIBERATELY
+    // ABSENT and must stay absent: a saved solo is how a project opens
+    // silent and nobody knows why (MUTE_SOLO_SPEC §4; the gate pins this).
+    obj->setProperty("muteUser", muteUserOn_.load(std::memory_order_relaxed));
     obj->setProperty("hostTrackName", getHostTrackName());
     // Full hosted chain: identities, order, bypass flags, wet mixes,
     // per-plugin state
@@ -2106,6 +2561,9 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
             genre = obj->getProperty("genre").toString();
         if (obj->getProperty("instanceUid").toString().isNotEmpty())
             instanceUid_ = obj->getProperty("instanceUid").toString();
+        if (obj->hasProperty("muteUser"))
+            muteUserOn_.store((bool) obj->getProperty("muteUser"),
+                              std::memory_order_relaxed);
         if (obj->hasProperty("hostTrackName"))
         {
             // Seed the stash + dirty flag so the restored name shows and

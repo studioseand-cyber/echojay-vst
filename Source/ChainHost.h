@@ -7,6 +7,7 @@
 #include <atomic>
 #include <map>
 #include <set>
+#include "LinkShm.h"   // StructureEdit plan/journal types (phase 2)
 #include <mutex>
 #include <memory>
 #include <thread>
@@ -35,6 +36,14 @@ public:
         changes a header between translation units fails as memory corruption,
         while a friend declaration changes no layout, size or vtable. */
     friend struct EchoJayStateMatchTestAccess;
+    friend struct EchoJayBorrowHostTestAccess;
+
+    // THE uid idiom, one copy (25 Aug 2026): some AU descriptors carry
+    // their uid in deprecatedUid with uniqueId 0. Every sender, key and
+    // comparison goes through this — a second inline copy is how the add
+    // path shipped String(picked.uniqueId) unguarded.
+    static int descUid(const juce::PluginDescription& d) noexcept
+    { return d.uniqueId != 0 ? d.uniqueId : d.deprecatedUid; }
 
     // Lightweight slot description safe to copy to the UI thread
     struct SlotInfo {
@@ -43,6 +52,8 @@ public:
         juce::String settings;  // suggested dial-in guidance from AI (display only)
         juce::String format;    // "AudioUnit" / "VST3" — popout-only is per-format
         float wet = 1.0f;       // per-slot wet/dry (0..1, 1 = fully wet)
+        juce::String manufacturer;  // catalogue identity — editorPlacement's
+                                    // float-by-identity rule keys on it
         // THE MODEL'S COPY of the same slot's settings text, and the reason
         // there are two (24 Aug 2026). `settings` above serves the CARD and is
         // governed by the 9 Aug rule: a successful write shows nothing extra,
@@ -78,8 +89,101 @@ public:
         bool hasLiveReads = false;
     };
 
-    ChainHost();
+    // ---- Mode (RACK_BORROW_IMPLEMENTATION_SPEC §2, 21 Aug 2026) -----------
+    // Primary is today's ChainHost, unchanged. Borrowed is the constrained
+    // second-host mode for whole-rack borrow: skipped constructor loads,
+    // read-only on every shared file (death MARKS excepted — process-scoped
+    // by design; even their CONSUMPTION stays the primary's job), an
+    // identity-keyed reuse pool instead of the write-only graveyard, and the
+    // latency hard block below.
+    enum class Mode { Primary, Borrowed };
+    explicit ChainHost(Mode mode = Mode::Primary);
     ~ChainHost() override;
+    bool isBorrowed() const noexcept { return mode_ == Mode::Borrowed; }
+
+    /** Host latency mirroring, REFUSED in Borrowed mode (spec §2.3): the
+        host-reported latency is the main rack's alone — a borrowed chain's
+        latency lives on a side stream the host cannot compensate. Returns
+        -1 (and logs) on a borrowed host; callers gate on >= 0. This is the
+        hard block, not a convention: setLatencySamples must be fed from
+        HERE, never from getTotalLatencySamples directly. */
+    int hostReportableLatencySamples() const;
+
+    // ---- Borrow pool (Borrowed mode only; spec §1) ------------------------
+    // Released slots park IN the graph, disconnected and SUSPENDED (the
+    // graph skips suspended nodes — juce_AudioProcessorGraph.cpp:887), keyed
+    // by plugin identity for reuse. A removed Node::Ptr can never re-enter a
+    // graph (addNode only takes a fresh unique_ptr), which is why parking
+    // stays in-graph rather than in the graveyard. Nothing is ever freed —
+    // §3a's rule is untouched; parked instances are findable instead of
+    // only leaked. Growth bound: distinct plugin identities ever borrowed.
+    void releaseBorrowToPool();          // park every slot, clear the rack
+    int  borrowPoolCount() const noexcept { return (int) borrowPoolTotal_; }
+    int  borrowFreshInstantiations() const noexcept { return borrowFresh_; }
+    /** The named fallback: this identity failed reuse verification — every
+        later borrow instantiates fresh (its parked instances are never
+        popped again), and the marking logs. */
+    void markBorrowPoolIneligible(const juce::PluginDescription& d,
+                                  const juce::String& why);
+    // ---- Structure plan engine, phase 2 (RACK_STRUCTURE_EDIT_SPEC) --------
+    // Runs on the LINK's (Primary) host. Two phases: STAGE instantiates
+    // every Create detached (staging park keyed by identity, so a retry
+    // instantiates zero new); MUTATE applies removes (parked re-attachably),
+    // moves, creates, commits — any mid-mutate failure restores wholesale
+    // from the journal's absolute pre-images. The journal is written before
+    // the first mutation and deleted only on completion or completed
+    // restore, so the launch-time check runs at most once.
+    struct PlanResult {
+        bool ok = false;
+        bool restored = false;              // rollback ran (rack = pre-images)
+        juce::String failedAt;              // op description on failure
+        juce::StringArray reasons;          // per-slot named reasons (Phase A)
+        std::vector<int> finalOrigin;       // ok only: per final slot, the
+                                            // pre-plan index it came from
+                                            // (-1 = created) — the lease's
+                                            // prior remap maps through this
+    };
+    std::vector<LinkShm::StructureEdit::SlotIdentity> liveIdentity() const;
+    LinkShm::StructureEdit::PreImages planCapturePreImages() const;
+    PlanResult applyStructurePlan(const juce::String& journalDir,
+                                  const LinkShm::StructureEdit::Plan& plan);
+    /** Launch-time journal check. Call AFTER the session restore settles —
+        the DAW's restore runs first mechanically; this runs once per
+        journal and WINS on divergence, with a note naming both truths.
+        Returns true when a restore ran. */
+    bool planJournalRestoreIfPresent(const juce::String& journalDir,
+                                     const juce::String& uid);
+    int  planFreshInstantiations() const noexcept { return planFresh_; }
+
+    /** Step 3, the RECORDED FACT (22 Aug 2026): was this slot actually
+        seeded with the Link's state? Set by applyRestoredState at the
+        moment the chunk applies, cleared on release. Apply reads THIS,
+        never a recomputed policy — a policy re-run can answer differently
+        from what happened (it did: the hex/decimal uid round), and
+        "withheld" means exactly "we did not seed this slot with the Link's
+        state", nothing else. */
+    bool borrowSlotSeededWithState(int i) const
+    {
+        return i >= 0 && i < (int) slots_.size()
+            && slots_[(size_t) i].node != nullptr
+            && borrowSeededNodeIds_.count(slots_[(size_t) i].node->nodeID.uid) > 0;
+    }
+
+    /** The recomputed-policy verdict, kept for DIAGNOSTICS only — the
+        commit decision reads borrowSlotSeededWithState above. QUIET (no
+        note: a verdict read, not an apply). */
+    bool borrowSlotWithheld(int i, const juce::String& savedFormat,
+                            const juce::String& savedVersion,
+                            const juce::String& savedUid) const
+    {
+        if (i < 0 || i >= (int) slots_.size()) return false;
+        return ! stateFitsPlugin(slots_[(size_t) i].desc, savedFormat,
+                                 savedVersion, savedUid,
+                                 slots_[(size_t) i].desc.name,
+                                 nullptr, /*noteOnWithhold*/ false);
+    }
+    bool isBorrowPoolIneligible(const juce::PluginDescription& d) const
+    { return borrowPoolIneligible_.contains(borrowPoolKey(d)); }
 
     // ---- Audio thread hooks -----------------------------------------------
     void prepare(double sampleRate, int blockSize);
@@ -465,6 +569,32 @@ public:
     };
     // Parse edit-block JSON. Returns empty on malformed payloads. Static so
     // preview cards can humanize ops without touching a host.
+    // §5a-R build-into-session (27 Aug 2026): convert a chat-build CHAIN
+    // ARRAY ({name, settings, settings_structured, wet_pct} entries) into
+    // replace ops — removes of the current rack, then appends in order.
+    // Pure and static: the editor's session divert and the functional gate
+    // share ONE conversion, so the gate exercises the real engine.
+    static std::vector<ChainEditOp> chainArrayToReplaceOps(
+        const juce::Array<juce::var>& chainArr, int currentSlots)
+    {
+        std::vector<ChainEditOp> ops;
+        for (int i = 0; i < currentSlots; ++i)
+        { ChainEditOp rm; rm.op = "remove"; rm.slot = i; ops.push_back(rm); }
+        for (const auto& ev : chainArr)
+            if (auto* eo = ev.getDynamicObject())
+            {
+                ChainEditOp ad;
+                ad.op    = "add";
+                ad.after = 9999;   // >= map size -> append in order
+                ad.name  = eo->getProperty("name").toString();
+                ad.settings = eo->getProperty("settings").toString();
+                ad.structuredSettings = eo->getProperty("settings_structured");
+                if (eo->hasProperty("wet_pct"))
+                    ad.wetPct = (float)(double) eo->getProperty("wet_pct");
+                if (ad.name.isNotEmpty()) ops.push_back(std::move(ad));
+            }
+        return ops;
+    }
     static std::vector<ChainEditOp> parseChainEditOps(const juce::String& editJson,
                                                       juce::StringArray* baseSlotsOut = nullptr,
                                                       juce::String* explanationOut = nullptr);
@@ -870,6 +1000,50 @@ public:
     // and may contain fine when the AU cannot.
     static bool isPopoutOnly(const juce::String& pluginName, const juce::String& format);
     static void markPopoutOnly(const juce::String& pluginName, const juce::String& format);
+    /** THE ONE PLACEMENT DECISION (31 Aug 2026): both hosts' editors
+        consult this — never the parts separately. InlineJuce = a builtin's
+        plain JUCE component: no native view to reparent, measure, clip or
+        POLL (the poll finding nothing is how the Link mis-marked EchoJay
+        Gain popout-only — a limitation of nothing, persisted). Checked
+        FIRST so a stale popout mark on a builtin is inert; markPopoutOnly
+        refuses builtins outright as the belt to this braces. */
+    enum class EditorPlacement { InlineJuce, Float, InlineNative };
+    /** Float-by-IDENTITY (2 Sep 2026, the WaveShell blank pane): some
+        hosted native views report a valid frame and render NOTHING — a
+        view that measures fine and draws nothing defeats a size poll BY
+        CONSTRUCTION, so the settle poll is not, and never will be, the
+        detector for this class. WaveShell is decided here, before any
+        embed attempt, from CATALOGUE identity (manufacturer) — never from
+        the Cocoa view class, which is only knowable after the attempt
+        that doesn't work. DO NOT delete this as "redundant with the
+        poll": the poll saw 481x614 and settled while the pane stayed
+        blank, which is exactly why this rule exists. */
+    static bool floatsByIdentity(const juce::String& manufacturer)
+    {
+        // "" IS EXPLICIT (2 Sep 2026): an empty manufacturer means the
+        // identity is unknown or unreported (an old Link's sidecar, or an
+        // instance that reports none) and reads NOT-Waves — the inline
+        // attempt proceeds, and that is SAFE because every attempt now
+        // ends in a true visible state: "Opening..." narrates it, the
+        // settle net marks+floats+captions on expiry, and a remote view
+        // (where the sidecar is the only source) never opens local
+        // editors at all — its clicks select. Unknown never silently
+        // does the doomed thing and shows nothing.
+        return manufacturer.startsWith("Waves");   // WaveShell-hosted
+    }
+    static EditorPlacement editorPlacement(const juce::String& pluginName,
+                                           const juce::String& format,
+                                           const juce::String& manufacturer = {})
+    {
+        // ORDER IS LOAD-BEARING: the builtin arm comes BEFORE the popout
+        // list precisely so a STALE on-disk mark on a builtin is inert
+        // (one exists in the field). Reorder these and the mis-mark
+        // floats builtins again while every truth-table arm stays green.
+        if (format == kBuiltinFormat)         return EditorPlacement::InlineJuce;
+        if (floatsByIdentity(manufacturer))   return EditorPlacement::Float;
+        if (isPopoutOnly(pluginName, format)) return EditorPlacement::Float;
+        return EditorPlacement::InlineNative;
+    }
 
     // ---- Session load failures (deliberately NOT persisted) ---------------
     // A load failure means "could not authorise RIGHT NOW" (iLok not
@@ -1381,6 +1555,56 @@ private:
     // Freed only when the ChainHost itself is destroyed.
     std::vector<juce::AudioProcessorGraph::Node::Ptr> graveyard_;
 
+    // ---- Borrow mode internals (spec §1/§2) -------------------------------
+    const Mode mode_ = Mode::Primary;
+    struct BorrowPoolEntry {
+        juce::AudioProcessorGraph::Node::Ptr node;
+        juce::PluginDescription desc;
+    };
+    // Keyed by identity; entries stay members of graph_, suspended.
+    std::map<juce::String, std::vector<BorrowPoolEntry>> borrowPool_;
+    size_t            borrowPoolTotal_ = 0;
+    juce::StringArray borrowPoolIneligible_;
+    int               borrowFresh_ = 0;      // fresh instantiations, for the gate
+    // Node ids of slots that came FROM the pool this borrow — a seed failure
+    // on one of these is a REUSE failure (marks ineligible); on a fresh
+    // instance it is just a bad state.
+    std::set<juce::uint32> borrowReusedNodeIds_;
+    std::set<juce::uint32> borrowSeededNodeIds_;   // the seed FACT, per node
+    // The instance's PRISTINE state, captured at fresh instantiation before
+    // any seed or dial (22 Aug 2026): a pooled instance remembers its last
+    // borrow's settings, so reuse RESETS to this before seeding — a failed
+    // seed then leaves true defaults, never another channel's sound wearing
+    // this rack's name. An instance with no capturable default is retired
+    // from the pool rather than reused dirty.
+    std::map<juce::uint32, juce::MemoryBlock> borrowDefaultStates_;
+    std::vector<BorrowPoolEntry> borrowPoolRetired_;   // alive, never reused
+    void captureBorrowDefaultState(int slotIdx);
+    // Plan engine internals: the reattachable-park mechanics, shared with
+    // the borrow pool's storage (same never-free rule, same identity keys).
+    void parkSlotReattachable(int i);
+    bool tryReattachParked(const juce::PluginDescription& d, int insertAt);
+    // alreadyClaimed: how many parked instances of this key the CALLER's plan
+    // has spoken for so far — the retry-dedupe ("a retried Apply instantiates
+    // zero new") must not conflate a re-run with a plan that genuinely needs
+    // TWO of the same plugin (24 Aug 2026: dup-Create "staged instance
+    // vanished", found by the cross-format gate).
+    bool planStageOne(const juce::PluginDescription& d, juce::String& whyNot,
+                      int alreadyClaimed = 0,
+                      const juce::String& parkKeyIn = {});
+    void planRestoreFromPreImages(const LinkShm::StructureEdit::PreImages& pre);
+    // The plan's park: staging AND reattachable removals, keyed by the
+    // plan's identity vocabulary (name|uid-decimal). Never freed, ever.
+    std::map<juce::String, std::vector<BorrowPoolEntry>> planPark_;
+    int  planFresh_ = 0;
+    static juce::String borrowPoolKey(const juce::PluginDescription& d)
+    {
+        // format|identifier|uid — the same identity stateFitsPlugin matches on.
+        return d.pluginFormatName + "|" + d.fileOrIdentifier + "|"
+             + juce::String(descUid(d));
+    }
+    bool borrowTryReuseInto(const juce::PluginDescription& canonicalDesc);
+
     bool   prepared_  = false;
     std::atomic<bool> hasActiveSlots_ { false };  // true when ≥1 non-bypassed slot exists
     std::atomic<int>  chainRevision_ { 0 };       // see getChainRevision()
@@ -1522,7 +1746,8 @@ private:
                          const juce::String& savedVersion,
                          const juce::String& savedUid,
                          const juce::String& slotName,
-                         juce::String* deferredNote = nullptr) const;
+                         juce::String* deferredNote = nullptr,
+                         bool noteOnWithhold = true) const;
 
     // ---- Hosted settings cache internals ---------------------------------
     // Debounce: capture 2s after the last observed change, so one knob drag

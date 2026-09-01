@@ -17,6 +17,7 @@
 // ---------------------------------------------------------------------------
 #include <JuceHeader.h>
 #include "ChainHost.h"
+#include "NativeClip.h"   // EchoJay_NSLog — instant-dismiss diagnosis (21 Aug 2026)
 
 class ChainPluginPicker : public juce::Component,
                           private juce::ListBoxModel,
@@ -40,6 +41,12 @@ public:
     ChainPluginPicker(juce::Array<juce::PluginDescription> items, PickFn onPick)
         : all_(std::move(items)), onPick_(std::move(onPick))
     {
+        // Instant-dismiss diagnosis (21 Aug 2026): the CallOutBox's OWN
+        // dismissal (outside click, focus fight) never passes through
+        // dismiss() below — the DESTRUCTOR is the one witness every death
+        // path shares. Interleave these EJPicker lines with EJPanel:
+        // rebuild in the unified log to name the actor.
+        EchoJay_NSLog("EJPicker: shown");
         setSize(440, 500);
         search_.setTextToShowWhenEmpty("Search plugins: name, vendor, AU / VST3, or what a built-in does", juce::Colour(0xff6b7280));
         search_.setFont(juce::Font(juce::FontOptions(13.0f)));
@@ -97,12 +104,23 @@ public:
         g.drawText("up/down select   Return add   Esc close", hint_, juce::Justification::centredRight);
     }
 
-    // Show in a CallOutBox pointing at `target`. The box owns the picker.
-    static void show(juce::Component& target, juce::Array<juce::PluginDescription> items, PickFn onPick)
+    // Show in a CallOutBox pointing at `target`, EMBEDDED in `parent` (the
+    // plugin editor). PARENTED ON PURPOSE (21 Aug 2026): a desktop-parented
+    // CallOutBox inside the AU hosting XPC process is killed ~200ms after
+    // opening by JUCE's foreground watchdog (CallOutBoxCallback::
+    // timerCallback dismisses when isForegroundOrEmbeddedProcess is false,
+    // and a background XPC process is never the foreground app). An embedded
+    // box passes that check. Fits: the box (~470x540 with chrome) is inside
+    // both editors' 900x580 minimum. Never pass nullptr here again.
+    static void show(juce::Component& target, juce::Component& parent,
+                     juce::Array<juce::PluginDescription> items, PickFn onPick)
     {
         auto picker = std::make_unique<ChainPluginPicker>(std::move(items), std::move(onPick));
         auto* raw = picker.get();
-        auto& box = juce::CallOutBox::launchAsynchronously(std::move(picker), target.getScreenBounds(), nullptr);
+        auto& box = juce::CallOutBox::launchAsynchronously(
+            std::move(picker),
+            parent.getLocalArea(&target, target.getLocalBounds()),
+            &parent);
         box.setDismissalMouseClicksAreAlwaysConsumed(true);
         raw->box_ = &box;
     }
@@ -203,8 +221,12 @@ private:
         dismiss();   // this may destroy us: nothing below touches members
         fn(d);
     }
+public:
+    ~ChainPluginPicker() override { EchoJay_NSLog("EJPicker: destroyed"); }
+private:
     void dismiss()
     {
+        EchoJay_NSLog("EJPicker: self-dismiss (Esc or pick)");
         if (box_ != nullptr) { auto* b = box_; box_ = nullptr; b->dismiss(); }
     }
 

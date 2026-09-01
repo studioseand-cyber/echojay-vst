@@ -844,8 +844,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         chainHostRef.onSlotSettingsChanged = [safeThis]()
         {
             if (safeThis == nullptr) return;
-            auto& ch = safeThis->processorRef.getChainHost();
-            safeThis->chainListPanel.rebuild(ch.getAllSlotInfos(), -1);
+            // force = true, NAMED: this callback IS the change detector.
+            // Map arrivals and capture settles change the rendered settings
+            // text and dial status without moving the chain revision (or any
+            // counter the signature reads), so the signature cannot see them.
+            // (This also stops deselecting the slot on every capture, which
+            // the old direct rebuild(-1) here did.)
+            safeThis->refreshChainPanelForView(true);
         };
     }
 
@@ -944,9 +949,20 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     addAndMakeVisible(projectInput);
 
     // --- Capture ---
-    captureBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    captureBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
-    captureBtn.setColour(juce::TextButton::textColourOffId, C::text);
+    // ONE chrome-text style (30 Aug 2026): Capture and + New chat share
+    // it — plain text, no fill, no border (the transparent arm of the
+    // shared drawButtonBackground provides the hover treatment), tab-label
+    // font via the chromeLabel LookAndFeel property. Lifted here because
+    // two hand-matched copies drift the first time either is touched.
+    auto styleChromeTextButton = [](juce::TextButton& b)
+    {
+        b.setColour(juce::TextButton::buttonColourId,
+                    juce::Colours::transparentBlack);
+        b.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
+        b.setColour(juce::TextButton::textColourOffId, C::text);
+        b.getProperties().set("chromeLabel", true);   // tab-label size
+    };
+    styleChromeTextButton(captureBtn);
     // Item 2b: capture target indicator — dim, secondary, NOT a control.
     captureTargetLabel.setColour(juce::Label::textColourId, C::text3);
     captureTargetLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
@@ -983,7 +999,6 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             processorRef.stopCapture();
         }
     };
-    captureBtn.getProperties().set("chromeLabel", true); // tab-label size
     addAndMakeVisible(captureBtn);
 
     // (Reset button removed — auto-unfreeze handles this)
@@ -1894,14 +1909,16 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // Chain-list staleness, in the header beside the plugin count
     // (addAndMakeVisible, deliberately: two addChildComponent widgets in a
     // row each swallowed a feature by never being shown).
-    // Header New chat (14 Aug 2026, in chainListInfoLabel's old 150px slot):
-    // starting a fresh conversation must not require being on the Chat tab
-    // first. Create, then switch — createNewChat is tab-agnostic (stores +
-    // sidebar only), and the switch makes the result visible.
+    // Header New chat (14 Aug 2026, in chainListInfoLabel's old 150px
+    // slot). 30 Aug: SAME style source as Capture (one helper, one drift
+    // surface), and NO TAB SWITCH — the chat panel is a right-side split
+    // on every content tab, so the new chat opens in place; the old
+    // explicit switchToTab(Chat) here was the whole jump. The hit rect is
+    // the button's bounds, unchanged — only the fill went away.
+    styleChromeTextButton(headerNewChatBtn);
     headerNewChatBtn.onClick = [this]
     {
-        createNewChat();
-        switchToTab(Tab::Chat);
+        createNewChat(effectiveChannelUid());
     };
     addAndMakeVisible(headerNewChatBtn);
 
@@ -1943,18 +1960,12 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // "Add to Chain" — appends the selected list entry as a new slot
 
     chainListPanel.onCreateEditor = [this](int i) -> juce::AudioProcessorEditor* {
-        // A remote rack cannot render the LINK'S instance here (it lives in
-        // that process slot) -- but a live edit session's slot has a LOCAL
-        // editing copy, and its editor is the whole point of stage 1.
-        if (chainViewUid().isNotEmpty())
-        {
-            if (processorRef.editActive()
-                && processorRef.editSession_.uid == chainViewUid()
-                && processorRef.editSession_.slot0 == i)
-                return processorRef.editCreateEditor();
-            return nullptr;
-        }
-        return processorRef.getChainHost().createEditorForSlot(i);
+        // ONE AUTHOR, on the processor and FUNCTIONALLY GATED there (twice
+        // regressed: 22 Aug guard order, 26 Aug the engage that never
+        // completed — both times a source pin proved a branch existed while
+        // it was unreachable, so the decision now lives where a test can
+        // construct the real states and call it).
+        return processorRef.createSlotEditorForView(chainViewUid(), i);
     };
     chainListPanel.onSelectSlot = [this](int i) { chainSelectedSlot_ = i; };
     chainListPanel.onRemoveSlot = [this](int i) {
@@ -1962,6 +1973,62 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         // destroy (the AMEK EQ 250 segfault); a remote remove needs none of
         // that, because nothing in this process is being destroyed.
         const juce::String uid = chainViewUid();
+        // Phase 3: a structure-capable Link's borrow removes locally and the
+        // plan carries it home; an older Link's borrow keeps its shape —
+        // the step-2 refusal, word for word, because that Link cannot
+        // journal a plan and must never half-see one.
+        if (auto* bh = processorRef.borrowHostIfActiveFor(uid))
+        {
+            if (! processorRef.borrowStructureCapable_)
+            {
+                chainListPanel.statusText = "An edited rack keeps its shape - "
+                    "bypass and settings edit here; structure stays the Link's.";
+                chainListPanel.repaint();
+                return;
+            }
+            if (i < 0 || i >= bh->getNumSlots() || chainRemovePending_) return;
+            // Same 80ms deferred destroy as the local body (AMEK EQ 250
+            // segfault) — the removed-withheld memory and the origin erase
+            // ride the SAME callback as the removal, so the session vectors
+            // can never say "removed" about a slot that is still there.
+            chainRemovePending_ = true;
+            chainListPanel.noteSlotRemoved(i);
+            auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+            juce::Timer::callAfterDelay(80, [safeThis, i] {
+                if (safeThis == nullptr) return;
+                safeThis->chainRemovePending_ = false;
+                auto& p3 = safeThis->processorRef;
+                auto* bh2 = p3.borrowHost();
+                if (bh2 == nullptr || i < 0 || i >= bh2->getNumSlots()) return;
+                // REMOVED-WITHHELD MEMORY, checked at removal time (spec
+                // §4): after the erase the origin row is gone and the fact
+                // with it. A created slot (origin -1) leaves no memory —
+                // nothing of the Link's dies with it.
+                auto& org = p3.borrowSlotOrigin_;
+                const int origin = i < (int) org.size() ? org[(size_t) i] : -1;
+                if (origin >= 0)
+                {
+                    const juce::String nm = bh2->getSlotInfo(i).name;
+                    p3.borrowRemovedNames_.add(nm);
+                    if (origin < (int) p3.borrowSlotRecords_.size()
+                        && p3.borrowSlotRecords_[(size_t) origin].hadState
+                        && ! bh2->borrowSlotSeededWithState(i))
+                        p3.borrowRemovedWithheld_.add(nm);
+                }
+                if (i < (int) org.size())
+                    org.erase(org.begin() + i);
+                auto& cid = p3.borrowCreatedIdentity_;
+                if (i < (int) cid.size())
+                    cid.erase(cid.begin() + i);
+                bh2->removeSlot(i);
+                safeThis->chainSelectedSlot_ =
+                    juce::jlimit(-1, bh2->getNumSlots() - 1,
+                                 safeThis->chainSelectedSlot_);
+                safeThis->refreshChainPanelForView(false);
+                safeThis->repaint();
+            });
+            return;
+        }
         if (uid.isNotEmpty()) { sendRackEdit(uid, i, true); return; }
         auto& ch = processorRef.getChainHost();
         if (i < 0 || i >= ch.getNumSlots() || chainRemovePending_) return;
@@ -1981,8 +2048,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             ch2.removeSlot(i);
             safeThis->chainSelectedSlot_ =
                 juce::jlimit(-1, ch2.getNumSlots() - 1, safeThis->chainSelectedSlot_);
-            safeThis->chainListPanel.rebuild(ch2.getAllSlotInfos(),
-                                             safeThis->chainSelectedSlot_);
+            safeThis->refreshChainPanelForView(false);
             safeThis->repaint();
         });
     };
@@ -1993,17 +2059,55 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         // a line after this test, which is why the local path cannot pick up
         // remote behaviour.
         const juce::String uid = chainViewUid();
+        // Borrow: bypass acts on the BORROWED chain, locally — this is the
+        // engagement check's control (bypass the borrowed rack, hear dry).
+        if (auto* bh = processorRef.borrowHostIfActiveFor(uid))
+        {
+            if (i < 0 || i >= bh->getNumSlots()) return;
+            bh->setSlotBypassed(i, !bh->getSlotInfo(i).bypassed);
+            refreshChainPanelForView(false);   // borrowed revision is in the sig
+            repaint();
+            return;
+        }
         if (uid.isNotEmpty()) { sendRackEdit(uid, i, false); return; }
         auto& ch = processorRef.getChainHost();
         if (i < 0 || i >= ch.getNumSlots()) return;
         ch.setSlotBypassed(i, !ch.getSlotInfo(i).bypassed);
-        chainListPanel.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
+        refreshChainPanelForView(false);   // bypass bumps the revision
         repaint();
     };
     chainListPanel.onMoveSlot = [this](int i, int dir) {
-        // Stage 2: the move op exists but is not wired this pass. Disabled in
-        // the panel; guarded here so a remote view can never reorder the
-        // LOCAL rack by mistake.
+        // Phase 3: a borrowed rack reorders locally when the Link announced
+        // structure capability; a remote view still never reorders the
+        // LOCAL rack, and an old Link's borrow keeps its shape — SAID, not
+        // silent (silent-does-nothing is the selector-bug failure mode).
+        if (auto* bh = processorRef.borrowHostIfActiveFor(chainViewUid()))
+        {
+            if (! processorRef.borrowStructureCapable_)
+            {
+                chainListPanel.statusText = "An edited rack keeps its shape - "
+                    "bypass and settings edit here; structure stays the Link's.";
+                chainListPanel.repaint();
+                return;
+            }
+            int j2 = i + dir;
+            if (i < 0 || i >= bh->getNumSlots() || j2 < 0 || j2 >= bh->getNumSlots())
+                return;
+            chainListPanel.noteSlotMoved(i, j2);
+            bh->moveSlot(i, dir);
+            auto& org = processorRef.borrowSlotOrigin_;
+            auto& cid = processorRef.borrowCreatedIdentity_;
+            if (i < (int) org.size() && j2 < (int) org.size())
+            { std::swap(org[(size_t) i], org[(size_t) j2]);
+              std::swap(cid[(size_t) i], cid[(size_t) j2]); }
+            int newSel = chainSelectedSlot_;
+            if (chainSelectedSlot_ == i)       newSel = j2;
+            else if (chainSelectedSlot_ == j2) newSel = i;
+            chainSelectedSlot_ = juce::jlimit(0, bh->getNumSlots() - 1, newSel);
+            refreshChainPanelForView(false);
+            repaint();
+            return;
+        }
         if (chainViewUid().isNotEmpty()) return;
         auto& ch = processorRef.getChainHost();
         int j = i + dir;
@@ -2014,7 +2118,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         if (chainSelectedSlot_ == i)      newSel = j;
         else if (chainSelectedSlot_ == j) newSel = i;
         chainSelectedSlot_ = juce::jlimit(0, ch.getNumSlots() - 1, newSel);
-        chainListPanel.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
+        refreshChainPanelForView(false);   // moveSlot bumps the revision
         repaint();
     };
     chainListPanel.onAddClick = [this] { showChainPluginPicker(); };
@@ -2024,12 +2128,19 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chainListPanel.onSlotWet = [this](int i, float v) {
         // Stage 2. There is no wet op, so a remote rack must not silently
         // write the LOCAL one; the knob is hidden in remote mode and this
-        // guard is the second lock on the same door.
-        if (chainViewUid().isNotEmpty()) return;
+        // guard is the second lock on the same door. A BORROWED rack is
+        // local-editable: wet writes go to the borrowed host.
+        const juce::String uid = chainViewUid();
+        if (auto* bh = processorRef.borrowHostIfActiveFor(uid))
+        { bh->setSlotWet(i, v); return; }
+        if (uid.isNotEmpty()) return;
         processorRef.getChainHost().setSlotWet(i, v);
     };
     chainListPanel.onMasterWet = [this](float v) {
-        if (chainViewUid().isNotEmpty()) return;
+        const juce::String uid = chainViewUid();
+        if (auto* bh = processorRef.borrowHostIfActiveFor(uid))
+        { bh->setMasterWet(v); return; }
+        if (uid.isNotEmpty()) return;
         processorRef.getChainHost().setMasterWet(v);
     };
     // Pre-chain gain: driven by the rack-head PreGainKnob (18 Aug 2026),
@@ -2063,7 +2174,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         }
         m.addItem(2, "Reset level tally");
         auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-        m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&chainListPanel.masterKnob),
+        m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&chainListPanel.masterKnob).withParentComponent(this),
             [safeThis](int r)
             {
                 if (safeThis == nullptr) return;
@@ -2080,6 +2191,46 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // label is derived from chainViewUid() on every refresh, so it cannot
     // disagree with the mixer.
     chainListPanel.onRackClick = [this] { showChainRackMenu(); };
+    // ONE AUTHOR: the rack lamps dispatch through the SAME functions the
+    // mixer strips do — same state source, same transport, same tooltip.
+    chainListPanel.msLamps.proc = &processorRef;
+    chainListPanel.msLamps.onLamp = [this](const juce::String& u, bool isSolo)
+    { stripMuteSoloClick(u, isSolo); };
+    chainListPanel.msLamps.tipFor = [this](const juce::String& u, bool isSolo)
+    { return muteSoloStripTip(u, isSolo); };
+    chainListPanel.msLamps.tickFor = [this](const juce::String& u)
+    {
+        // The SAME state sources the strip's tick paints from.
+        std::remove_reference_t<decltype(chainListPanel.msLamps)>::TickView tv;
+        EchoJayProcessor::LinkDisplayEntry en;
+        tv.has = findLinkEntryByAddr(u, en);
+        linkPendingFor(u, tv.pending, tv.timedOut, tv.target);
+        tv.connected = tv.has && en.info.connected;
+        tv.active    = tv.has && en.info.active;
+        return tv;
+    };
+    chainListPanel.msLamps.onTick = [this](const juce::String& u)
+    {
+        // ONE DISPATCH: the strip's Active case, verbatim — current state
+        // from the slot, send the inverse, authority stays with the Link.
+        EchoJayProcessor::LinkDisplayEntry en;
+        if (findLinkEntryByAddr(u, en))
+            sendLinkActiveCommand(u, !en.info.active);
+    };
+    chainListPanel.msLamps.tickTipFor = [this](const juce::String& u)
+    {
+        EchoJayProcessor::LinkDisplayEntry en;
+        if (! findLinkEntryByAddr(u, en)) return juce::String();
+        bool pending = false, timedOut = false, target = false;
+        linkPendingFor(u, pending, timedOut, target);
+        if (!en.info.connected || timedOut)
+            return linkActiveLabel(en.info.connected, pending, timedOut);
+        if (pending)
+            return juce::String("Active...")
+                   + (target ? " (turning on)" : " (turning off)");
+        return en.info.active ? juce::String("Active (click to turn off)")
+                              : juce::String("Inactive (click to turn on)");
+    };
     chainListPanel.onRemoteEditorRequest = [this](int slotIdx)
     {
         const juce::String uid = chainViewUid();
@@ -2253,7 +2404,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     };
     styleSidebarBtn(sidebarNewChatBtn);
     styleSidebarBtn(sidebarNewAlbumBtn);
-    sidebarNewChatBtn.onClick = [this]  { createNewChat();  };
+    sidebarNewChatBtn.onClick = [this]  { createNewChat(effectiveChannelUid()); };
     sidebarNewAlbumBtn.onClick = [this] { createNewAlbum(); };
     addChildComponent(sidebarNewChatBtn);
     addChildComponent(sidebarNewAlbumBtn);
@@ -2545,10 +2696,23 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             ch.startScan();
     }
 
-    // Session C: the constructor does not go through switchToTab, so an editor
-    // that OPENS on the Dashboard (a fresh instance, or a Logic recreate that
-    // restored the tab from the processor) has to be told to fill it. Cache
-    // first, then the TTL check, exactly as a tab click would.
+    // THE RESTORED TAB IS ENTERED, not just displayed (31 Aug 2026, the
+    // blank-CHAIN-on-first-open bug). The constructor seeds currentTab from
+    // the processor but never ran the tab-ENTER pass — and clicking the
+    // already-current tab is a no-op (switchToTab early-outs), so an editor
+    // reopened onto CHAIN showed the active tab strip over an invisible,
+    // never-refreshed panel (chainListPanel is addChildComponent; its ONE
+    // visibility writer is switchToTab; the 20Hz refresh gates on
+    // isVisible). View-only by construction — the chain lives in the
+    // processor's chainHost and kept processing. The fix is THE SAME
+    // function a tab click runs, forced once here: one population path, no
+    // second "initial draw" routine to drift.
+    if (currentScreen == Screen::Main)
+        switchToTab(currentTab, /*force*/ true);
+
+    // Session C: switchToTab alone does not FILL the Dashboard (cache
+    // first, then the TTL check, exactly as a tab click would) — the fill
+    // compensation stays.
     if (currentTab == Tab::Dashboard && currentScreen == Screen::Main)
         openDashboardTab();
 
@@ -2564,6 +2728,16 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
 }
 
 EchoJayEditor::~EchoJayEditor() {
+    // §5a-R ruling 4: a window close COMMITS like a deselect, then releases
+    // — and never strands a lock. The orchestration lives on the processor
+    // precisely because this editor is dying and cannot poll an ack.
+    processorRef.borrowEditorClosed();
+
+    // Rack lock: the editor IS the gate — no editor, no claim. Clearing the
+    // declaration deletes the lock file now; the 3s expiry covers the crash
+    // path where this line never runs.
+    processorRef.setRackLockWant({});
+
     // Session C: drop the processor's callback into this editor BEFORE any
     // other teardown. The poll keeps running (that is the point), so a tick
     // landing after this line must not reach a half-destroyed editor. This is
@@ -3276,7 +3450,7 @@ void EchoJayEditor::showIntakeMoreMenu()
 {
     const int page = onboardingOverlay_.currentPage;
     juce::PopupMenu menu;
-    auto opts = juce::PopupMenu::Options().withTargetComponent(&intakeMoreBtn);
+    auto opts = juce::PopupMenu::Options().withTargetComponent(&intakeMoreBtn).withParentComponent(this);
     if (page == 2)
     {
         for (int gi = 0; gi < kGenreGroupCount; ++gi)
@@ -4157,7 +4331,7 @@ void EchoJayEditor::showScanMenu(juce::Component* target)
     }
 
     juce::Component::SafePointer<EchoJayEditor> safeThis(this);
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(target),
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(target).withParentComponent(this),
         [safeThis](int result) {
             if (safeThis == nullptr) return;
             auto* scanner = &safeThis->processorRef.getPluginScanner();
@@ -5118,7 +5292,7 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
     juce::StringArray orphansToClear = orphanReviewIds;
 
     menu.showMenuAsync(
-        juce::PopupMenu::Options().withTargetComponent(&btn),
+        juce::PopupMenu::Options().withTargetComponent(&btn).withParentComponent(this),
         [safeThis, isTop, orphansToClear](int result)
         {
             if (safeThis == nullptr || result == 0) return;
@@ -6418,6 +6592,46 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
         // point of the move: a strip is a list of plugins with controls top
         // and bottom, rather than three stacked controls and a short list.
         sg.active = b.removeFromBottom(kStripActH);
+        // M/S lamps + Active tick (MUTE_SOLO_SPEC; layout amended 27/28
+        // Aug; CENTRED 30 Aug hands-on): both layouts centre the GROUP on
+        // the strip's centreline — existing spacing and sizes kept, never
+        // spread to fill. Wide: tick + M + S as one group on the Active
+        // row. Narrow: the M/S pair on its own row above Active, centred
+        // on the SAME centreline as the tick below it, so the two rows
+        // read as one stack. All of it in stored rects HERE — paint and
+        // hit-testing read them and never re-derive (a glyph that looks
+        // centred but clicks off-centre is worse than left-aligned).
+        // sg.active stays the row-wide Active click target in both modes
+        // (Mute/Solo are tested first in the hit order).
+        if (full.getWidth() >= kStripWWide - 2)
+        {
+            auto act = sg.active;
+            const int tickSide = juce::jmin(16, act.getHeight() - 2);
+            const int lamp = juce::jmin(18, act.getHeight());
+            const int groupW = tickSide + 5 + lamp + 3 + lamp;
+            act.removeFromLeft(juce::jmax(0, (act.getWidth() - groupW) / 2));
+            sg.tick = { act.getX(),
+                        act.getCentreY() - tickSide / 2, tickSide, tickSide };
+            act.removeFromLeft(tickSide + 5);
+            sg.mute = act.removeFromLeft(lamp);
+            act.removeFromLeft(3);
+            sg.solo = act.removeFromLeft(lamp);
+        }
+        else
+        {
+            const int tickSide = juce::jmin(16, sg.active.getHeight() - 2);
+            sg.tick = { sg.active.getCentreX() - tickSide / 2,
+                        sg.active.getCentreY() - tickSide / 2,
+                        tickSide, tickSide };
+            auto msRow = b.removeFromBottom(kStripActH);
+            const int lamp = juce::jmin(18, msRow.getHeight());
+            msRow.removeFromLeft(juce::jmax(0,
+                (msRow.getWidth() - (lamp * 2 + 3)) / 2));   // centred pair,
+                                                             // same centreline
+            sg.mute = msRow.removeFromLeft(lamp);
+            msRow.removeFromLeft(3);
+            sg.solo = msRow.removeFromLeft(lamp);
+        }
         b.removeFromBottom(kStripVGap);
         // The band sits directly above Active; the data area takes what is
         // left above it. Fader column LEFT, meter RIGHT, console
@@ -6522,6 +6736,8 @@ EchoJayEditor::StripHit EchoJayEditor::stripHitAt(const StripGeom& sg,
     if (sg.clip.contains(p))      return StripHit::Clip;
     if (sg.meter.contains(p))     return StripHit::Meter;
     if (sg.badge.contains(p))     return StripHit::Badge;
+    if (sg.mute.contains(p))      return StripHit::Mute;
+    if (sg.solo.contains(p))      return StripHit::Solo;
     if (sg.active.contains(p))    return StripHit::Active;
     // sg.eq IS DELIBERATELY ABSENT FROM THIS LIST, which is a decision rather
     // than an omission and is written down because the order above is the
@@ -7094,6 +7310,9 @@ void EchoJayEditor::refreshLinkRackCache(bool force)
     const uint32_t nowMs = juce::Time::getMillisecondCounter();
     if (!force && nowMs - lastRackCacheMs_ < 1000) return;
     lastRackCacheMs_ = nowMs;
+    // §5a-R: the ~1Hz tick that retries a deferred auto-engage (a release
+    // in flight, the capability cache unfilled, or the rack lock pending).
+    borrowSelectionTick();
     for (const auto& e : processorRef.getLinkDisplayList())
     {
         if (e.info.uid.isEmpty()) continue;   // legacy Link: no sidecar address
@@ -7267,13 +7486,35 @@ EchoJayEditor::ChainRackView EchoJayEditor::chainRackView() const
     const juce::String uid = chainViewUid();
     if (uid.isEmpty())
     {
-        // THE LOCAL PATH, byte for byte what the Chain tab did before this
-        // pass: straight off the host's own ChainHost, synchronous, valid by
-        // construction. Nothing about the remote path can reach it.
-        v.slots  = processorRef.getChainHost().getAllSlotInfos();
-        v.valid  = true;
-        v.remote = false;
-        v.name   = "this instance";
+        // THE LOCAL PATH: straight off the host's own ChainHost, synchronous,
+        // valid by construction. Nothing about the remote path can reach it.
+        // The revision is the local ChainHost's own counter (bumped on every
+        // add, remove, move, bypass, wet and load), so the change detector in
+        // refreshChainPanelForView sees local structure move exactly as it
+        // sees a Link's published revision move. Before this (21 Aug 2026)
+        // the local arm left revision at -1, the signature was blind to
+        // local changes, and fourteen call sites compensated by rebuilding
+        // the panel directly — the multi-author bug.
+        v.slots    = processorRef.getChainHost().getAllSlotInfos();
+        v.valid    = true;
+        v.remote   = false;
+        v.name     = "this instance";
+        v.revision = processorRef.getChainHost().getChainRevision();
+        return v;
+    }
+
+    // BORROWED VIEW (step 2): while this uid's rack is borrowed, the view IS
+    // the borrowed host — local editing semantics against the borrowed
+    // chain, rendered by the same one author. Not remote: the plugins are
+    // HERE now, and bypass/wet act on them directly.
+    if (auto* bh = processorRef.borrowHostIfActiveFor(uid))
+    {
+        v.slots    = bh->getAllSlotInfos();
+        v.valid    = true;
+        v.remote   = false;
+        v.borrowed = true;
+        v.name     = processorRef.resolveLinkDisplayName(uid) + " (editing)";
+        v.revision = bh->getChainRevision();
         return v;
     }
 
@@ -7338,6 +7579,19 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
             { pendingNote = "Added " + lastAddDone_.name + " to " + v.name + "."; break; }
     }
 
+    // M/S lamps authored EVERY tick, BEFORE the signature early-return —
+    // the same rule as the pre-gain knob below, and THE FIX for the rack's
+    // three faults (28 Aug 2026): the old TextButton pair was authored
+    // only on panel rebuilds, so its enabled/text state froze behind the
+    // signature — first render before the sidecar snap ingested left the
+    // buttons disabled (dead clicks), and only forced rebuilds (tab
+    // navigation, status writes) momentarily adopted fresh state. The
+    // lamps hold NO state: uid + visibility here, everything else read
+    // from muteSoloSnaps_ at paint time, exactly like the mixer strips.
+    chainListPanel.msLamps.uid = chainViewUid();
+    chainListPanel.msLamps.setVisible(chainViewUid().isNotEmpty());
+    chainListPanel.msLamps.repaint();
+
     // Pre-gain knob display refreshed EVERY tick, BEFORE the signature
     // early-return below: preGainDb_ is not part of the panel signature (a
     // pre-gain move never bumps the rack revision), so a reset or a remote
@@ -7364,9 +7618,55 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
         }
     }
 
+    // Rack lock status — a render input like everything else here. TWO
+    // DISTINCT REFUSALS by design: FCFS names another owner and does not
+    // clear by waiting; the recency wait names the Link and clears on its
+    // own. They must never share one string.
+    juce::String lockLine;
+    bool writeLocked = false;
+    if (v.remote)
+        switch (processorRef.rackLockState())
+        {
+            case EchoJayProcessor::RackLockState::Held: break;
+            case EchoJayProcessor::RackLockState::HeldByOther:
+                writeLocked = true;
+                lockLine = "This rack is locked by "
+                         + processorRef.rackLockOtherOwner()
+                         + " - it frees up when that window deselects it.";
+                break;
+            case EchoJayProcessor::RackLockState::WaitRecency:
+                writeLocked = true;
+                lockLine = v.name + " was just edited in its own window - "
+                           "this clears on its own in a few seconds.";
+                break;
+            case EchoJayProcessor::RackLockState::Idle:
+                writeLocked = true;   // acquiring; one tick at most
+                break;
+        }
+
+    // NO DATA is a state of the view, decided once and used by the signature,
+    // the status line and the (single) rebuild below.
+    const bool noData = v.remote && !v.valid;
+    // Clamp BEFORE the signature: the selection is a render input, so the
+    // change detector must see it move (a restore that resets it, an add
+    // that selects the new slot).
+    if (! noData)
+        chainSelectedSlot_ = juce::jlimit(-1, (int) v.slots.size() - 1, chainSelectedSlot_);
+
+    // The signature covers every render input: view identity, structure
+    // (revision — local bumps ride ChainHost::bumpChainRevision, remote ones
+    // the sidecar's published revision), honesty states, slot count,
+    // selection, and the derived status note. DELIBERATELY NOT the hosted
+    // change epoch: it moves every block under automation and would turn the
+    // 20Hz tick into a rebuild storm. Settings-only changes (map arrivals,
+    // capture settles, the `set` edit op) move no counter at all, which is
+    // why their authors call with force = true.
     juce::String sig;
     sig << chainViewUid() << "|" << v.revision << "|" << (int) v.valid
-        << (int) v.offline << "|" << (int) v.slots.size() << "|" << pendingNote;
+        << (int) v.offline << (int) writeLocked << (int) v.borrowed
+        << (int) processorRef.borrowActive()   // the release affordance's input
+        << "|" << (int) v.slots.size() << "|"
+        << chainSelectedSlot_ << "|" << pendingNote << "|" << lockLine;
     if (!force && sig == chainViewSig_) return;
     chainViewSig_ = sig;
 
@@ -7380,7 +7680,29 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
     chainListPanel.remote        = v.remote;
     chainListPanel.remoteName    = v.name;
     chainListPanel.remoteOffline = v.offline;
-    if (v.remote && !v.valid)
+    chainListPanel.remoteWriteLocked  = writeLocked;
+    chainListPanel.remoteWriteLockWhy = lockLine;
+    // Borrow affordance (step 2), one author: offered ONLY against a Link
+    // that announces borrowCapable — an old binary is never offered, so it
+    // can never half-engage (the wire-level refusal is the belt; this is
+    // the braces, both pinned in the gates).
+    {
+        bool capable = false;
+        if (v.remote && v.valid)
+            if (auto it = processorRef.linkRackCache.find(chainViewUid());
+                it != processorRef.linkRackCache.end())
+                capable = it->second.rack.borrowCapable;
+        // §5a-R: no EDIT RACK, no RELEASE — selection is the session. The
+        // button is now LISTEN, shown only while a session is engaged for
+        // the viewed rack (solo semantics; §8's in-context monitoring
+        // becomes this control's second mode when it lands).
+        juce::ignoreUnused(capable);
+        // The rack's M/S lamps are authored ABOVE the signature early-out
+        // (one author, two placements — see the pre-sig block); nothing to
+        // do here. The contextual honest-limit line lives on the mixer
+        // title alone (28 Aug: no warning text under a mixer button).
+    }
+    if (noData)
     {
         // NO DATA, said in words, and NOT an empty rack. The panel is given
         // no slots and the reason is stated; an empty strip alone would read
@@ -7388,12 +7710,17 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
         chainListPanel.statusText =
             v.name + " has not published its rack yet. Nothing is shown because "
             "there is nothing to read, which is not the same as an empty rack.";
-        chainListPanel.rebuild({}, -1);
     }
-    else
+    // THE ONE REBUILD. Every panel render in this file funnels through this
+    // call — the flags above, the header below and the slots move together,
+    // so the panel can never show one view's rows under another view's
+    // header (the three-rows-under-RACK:-VOCAL defect, 21 Aug 2026). The
+    // gate asserts this call site is unique; do not add another. Local
+    // mutations stay at their sites and request a render here instead.
+    chainListPanel.rebuild(noData ? std::vector<ChainHost::SlotInfo>{} : v.slots,
+                           noData ? -1 : chainSelectedSlot_);
+    if (! noData)
     {
-        chainSelectedSlot_ = juce::jlimit(-1, (int) v.slots.size() - 1, chainSelectedSlot_);
-        chainListPanel.rebuild(v.slots, chainSelectedSlot_);
         // rebuild() sets its own remote note; an in-flight, refused or
         // just-completed edit is more urgent, so it overwrites afterwards.
         // The author REMEMBERS what it wrote (lastAddLine_) so that when the
@@ -7406,14 +7733,53 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
             chainListPanel.statusText = pendingNote;
             lastAddLine_ = pendingNote;
         }
+        else if (lockLine.isNotEmpty())
+        {
+            // The lock refusal explains itself on the status line. Below an
+            // in-flight op's note (that is a result, this is a standing
+            // state) and never remembered as lastAddLine_ — it retires by
+            // the signature moving when the lock state does.
+            chainListPanel.statusText = lockLine;
+        }
         else if (lastAddLine_.isNotEmpty()
                  && chainListPanel.statusText == lastAddLine_)
         {
             chainListPanel.statusText = chainListPanel.restingHint_;
             lastAddLine_.clear();
         }
+        // §5a-R honesty surfaces, NOT losable by navigating away: the
+        // session-outcome sticky banner (processor state, survives view
+        // changes and editor recreation) and the unwritten-edit note for
+        // the VIEWED rack (ruling 4: the next window on that rack states
+        // plainly that the last edit was not written). Both are cleared
+        // only by a NEW session superseding them, never by navigation.
+        if (processorRef.borrowStickyBanner_.isNotEmpty()
+            && pendingNote.isEmpty())
+            chainListPanel.statusText = processorRef.borrowStickyBanner_;
+        if (auto nit = processorRef.unwrittenEditNote_.find(chainViewUid());
+            nit != processorRef.unwrittenEditNote_.end()
+            && ! processorRef.borrowActive())
+            chainListPanel.statusText = nit->second;
+        // ENGAGING, said while it happens (26 Aug 2026: the first engage
+        // attempt waits ~1s for the async lock claim, which looked inert).
+        // Last writer on purpose: the current activity beats a previous
+        // session's outcome banner for the second it takes.
+        if (! processorRef.borrowActive()
+            && processorRef.pendingAutoEngage_.isNotEmpty()
+            && processorRef.pendingAutoEngage_ == chainViewUid())
+            chainListPanel.statusText = "Engaging "
+                + processorRef.resolveLinkDisplayName(chainViewUid()) + "...";
     }
-    chainListPanel.rackBtn.setButtonText("RACK: " + v.name.toUpperCase());
+    // The pill (31 Aug): the " (editing)" suffix is DROPPED here — it
+    // truncated mid-word on real channel names, cutting off the one word
+    // carrying the state. The editing state rides the pill's COLOUR
+    // instead (session amber vs chrome cyan); the status banner and the
+    // panel already say "editing" in words.
+    chainListPanel.rackBtn.setButtonText("RACK: "
+        + (v.borrowed ? processorRef.resolveLinkDisplayName(chainViewUid())
+                      : v.name).toUpperCase());
+    chainListPanel.rackBtn.setColour(juce::TextButton::textColourOffId,
+        v.borrowed ? juce::Colour(0xffFFB020) : juce::Colour(0xff22d3ee));
     repaint();
 }
 
@@ -7441,24 +7807,612 @@ void EchoJayEditor::showChainRackMenu()
         uids.push_back(e.info.uid);
     }
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(chainListPanel.rackBtn),
+    // 2 Sep 2026: an EMBEDDED menu (kept embedded for the watchdog reason
+    // below) is a lightweight component, and a hosted editor's NSView
+    // composites OVER it — the rack list drew BEHIND the plugin box. Close
+    // the hosted editors first: choosing a rack replaces the view anyway.
+    chainListPanel.closeAllEditors();
+    // withParentComponent: same foreground-watchdog defect as the picker's
+    // CallOutBox — a desktop-parented menu inside the background AU hosting
+    // process dismisses on its own. Embedded menus do not.
+    m.showMenuAsync(juce::PopupMenu::Options()
+                        .withTargetComponent(chainListPanel.rackBtn)
+                        .withParentComponent(this),
         [safeThis, uids](int r)
         {
             if (safeThis == nullptr || r <= 0) return;
+            // EVERY arm logs, including the silent ones (21 Aug 2026): the
+            // hands-on stuck-lock repro showed a rack selection that never
+            // reached the writer, and nothing said so — a step that can
+            // silently do nothing must assert that it did something.
+            const juce::String cur = safeThis->effectiveChannelUid();
             if (r == 1)
             {
-                // The mixer's bus arm, guard included.
-                if (safeThis->effectiveChannelUid().isNotEmpty())
+                if (cur.isNotEmpty())
+                {
+                    EchoJay_NSLog(("EJRackSel: row=bus resolved=(main) current="
+                                   + cur + " -> switching to main").toRawUTF8());
+                    safeThis->pendingSelectionIsUser_ = true;
                     safeThis->resetToMainContext();
+                }
+                else
+                    EchoJay_NSLog("EJRackSel: row=bus resolved=(main) "
+                                  "current=(main) -> already here, click swallowed");
+                safeThis->refreshChainPanelForView(true);
+                return;
+            }
+            const size_t i = (size_t) (r - 2);
+            const juce::String clicked = i < uids.size() ? uids[i] : juce::String();
+            // RE-VERIFY BY UID AT CLICK, never by row index alone: uids was
+            // built at menu-OPEN, and the registry can churn between open
+            // and click. The uid the row carried must still name a listed
+            // Link NOW, or the click is refused with a reason rather than
+            // selecting a rack that no longer exists.
+            bool listedNow = false;
+            for (const auto& e : safeThis->processorRef.getLinkDisplayList())
+                if (e.info.uid.isNotEmpty() && e.info.uid == clicked)
+                { listedNow = true; break; }
+            const juce::String curLbl = cur.isEmpty() ? juce::String("(main)") : cur;
+            if (clicked.isEmpty() || !listedNow)
+            {
+                EchoJay_NSLog(("EJRackSel: row=" + juce::String((int) i)
+                               + " resolved=" + (clicked.isEmpty() ? "(none)" : clicked)
+                               + " current=" + curLbl
+                               + " -> REFUSED, uid no longer listed (registry moved "
+                                 "between menu open and click)").toRawUTF8());
+                return;
+            }
+            if (clicked == cur)
+            {
+                EchoJay_NSLog(("EJRackSel: row=" + juce::String((int) i)
+                               + " resolved=" + clicked + " current=" + curLbl
+                               + " -> already here, click swallowed").toRawUTF8());
             }
             else
             {
-                const size_t i = (size_t) (r - 2);
-                if (i < uids.size() && uids[i] != safeThis->effectiveChannelUid())
-                    safeThis->openChannelByUid(uids[i]);
+                EchoJay_NSLog(("EJRackSel: row=" + juce::String((int) i)
+                               + " resolved=" + clicked + " current=" + curLbl
+                               + " -> switching").toRawUTF8());
+                safeThis->pendingSelectionIsUser_ = true;
+                safeThis->openChannelByUid(clicked);
             }
             safeThis->refreshChainPanelForView(true);
         });
+}
+
+// ---------------------------------------------------------------------------
+// Whole-rack borrow, step 2 — engage (pull all, build, solo) and release.
+// SOLO ONLY, NO COMMIT: nothing here writes state back to the Link. The only
+// Link-bound writes are the pull COMMANDS (reads by protocol) and the lease
+// file the processor renews; borrowhost_test pins the absence of any commit
+// key by source.
+// ---------------------------------------------------------------------------
+// The per-slot verdicts, computed the ONE way (step 3): withheld re-runs
+// stateFitsPlugin against the SAME saved triplet that withheld the pull;
+// edited is a byte-diff against the post-seed baseline.
+std::vector<std::pair<bool, bool>> EchoJayEditor::borrowSlotVerdicts()
+{
+    // §5a-R: moved to the PROCESSOR with the orchestrator. Thin delegate.
+    return processorRef.borrowSlotVerdicts();
+}
+
+bool EchoJayEditor::borrowSessionShapeDirty() const
+{
+    return processorRef.borrowSessionShapeDirty();
+}
+
+// ---------------------------------------------------------------------------
+// §5a-R (26 Aug 2026): selection IS the session. No EDIT RACK, no RELEASE,
+// no Apply confirm — selecting a Link's rack engages (lock, pull, editable,
+// Link greyed, NO audio); deselecting applies automatically through the
+// PROCESSOR's orchestrator (an editor cannot poll an ack it may not
+// outlive). toggleBorrow keeps its name (the button wiring is untouched)
+// but is now the LISTEN control — solo semantics today, and the seam for
+// §8's in-context monitoring as a second mode of this same control.
+// ---------------------------------------------------------------------------
+// toggleBorrow (LISTEN) DELETED 27 Aug 2026 — solo subsumes LISTEN
+// (MUTE_SOLO_SPEC §1). Deleted, not dormant.
+
+void EchoJayEditor::handleBorrowSelectionChange(const juce::String& newUid,
+                                                bool userInitiated)
+{
+    auto& p = processorRef;
+    // The PURE decision (§3f in §5a-R terms): a live session's uid is
+    // authoritative — programmatic writers (chat activation, deep links,
+    // card target switches) move the VIEW only; only a USER selection
+    // change applies-and-moves the session. The default at every call
+    // site is programmatic — an unknown path can never fire a write.
+    switch (EchoJayProcessor::decideSelection(
+                p.borrowActive(), p.borrowUid() == newUid, userInitiated))
+    {
+        case EchoJayProcessor::SelDecision::Nothing:
+        case EchoJayProcessor::SelDecision::ViewOnly:
+            return;
+        case EchoJayProcessor::SelDecision::ApplyAndPend:
+            if (p.borrowStructureCapable_)
+                p.borrowApplyAndRelease(/*releaseLockOnFail=*/false);
+            else
+                runBorrowApply();   // legacy: per-slot commits, then releases
+            break;
+        case EchoJayProcessor::SelDecision::PendEngage:
+            break;
+    }
+    p.pendingAutoEngage_ = newUid;
+    borrowSelectionTick();
+}
+
+void EchoJayEditor::borrowSelectionTick()
+{
+    auto& p = processorRef;
+    if (p.borrowActive())
+    {
+        if (p.borrowUid() == p.pendingAutoEngage_) p.pendingAutoEngage_.clear();
+        return;
+    }
+    if (p.borrowApplyInFlight_) return;
+    const juce::String want = p.pendingAutoEngage_;
+    if (want.isEmpty() || want != chainViewUid()) return;
+    bool capable = false;
+    if (auto it = p.linkRackCache.find(want); it != p.linkRackCache.end())
+        capable = it->second.rack.borrowCapable;
+    if (! capable) return;        // read-only view; the tick retries as the cache fills
+    // THE LOCK GATES THE ATTEMPT, quietly (26 Aug regression): selection
+    // claims the rack lock ASYNCHRONOUSLY, and the old tick cleared
+    // pendingAutoEngage_ before a startBorrow that refuses while the lock
+    // is pending — so the session NEVER engaged, the view stayed remote,
+    // and remote clicks only select: no plugin editor could open. The
+    // pending uid is cleared ONLY once the session is live; until the lock
+    // lands the tick just waits, banner-free, and retries at 1Hz.
+    if (! p.rackLockHeldFor(want)) return;
+    startBorrow(want);
+    if (p.borrowActive()) p.pendingAutoEngage_.clear();
+}
+
+void EchoJayEditor::runBorrowApply()
+{
+    // Sequential per-slot committer, the pull sequencer's shape. ONLY slots
+    // the plan marks Commit are ever sent — the Link's state can only change
+    // through a commit payload, so the filter IS the untouched guarantee.
+    auto& proc = processorRef;
+    const juce::String uid = proc.borrowUid();
+    if (uid.isEmpty()) return;
+    auto it = proc.linkRackCache.find(uid);
+    // baseSlots: the Link's live rack names, order and all — STABLE under
+    // the rack lock (the Link's structure writes are refused while we hold
+    // it), which is what makes rack-scale Apply safe where per-slot wasn't.
+    juce::Array<juce::var> baseSlots;
+    if (it != proc.linkRackCache.end())
+        for (const auto& rs : it->second.rack.slots)
+            baseSlots.add(rs.name);
+
+    struct ApplyState {
+        juce::String uid, name;
+        juce::Array<juce::var> baseSlots;
+        std::vector<std::pair<int, juce::String>> payloads;   // slot0, b64
+        int idx = 0, ok = 0;
+        juce::StringArray failures;
+    };
+    auto st = std::make_shared<ApplyState>();
+    st->uid = uid;
+    st->name = proc.resolveLinkDisplayName(uid);
+    st->baseSlots = baseSlots;
+
+    const auto plan = LinkShm::BorrowCommit::plan(processorRef.borrowSlotVerdicts());
+    auto* bh = proc.borrowHost();
+    for (int i = 0; i < (int) plan.actions.size(); ++i)
+    {
+        if (plan.actions[(size_t) i] != LinkShm::BorrowCommit::Action::Commit)
+            continue;
+        juce::MemoryBlock mb;
+        if (auto* p = bh->getSlotProcessor(i))
+            try { p->getStateInformation(mb); } catch (...) { mb.reset(); }
+        const juce::String nm = bh->getSlotInfo(i).name;
+        if (mb.getSize() == 0)
+        { st->failures.add(nm + " (could not read its settings)"); continue; }
+        if ((int) mb.getSize() > LinkShm::kLinkTransferMaxSlotBytes)
+        { st->failures.add(nm + " (settings over the transfer cap)"); continue; }
+        st->payloads.emplace_back(i, LinkShm::stateToB64(mb));
+    }
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    auto finish = std::make_shared<std::function<void()>>();
+    auto step   = std::make_shared<std::function<void()>>();
+    *finish = [safeThis, st]()
+    {
+        if (safeThis == nullptr) return;
+        auto& p2 = safeThis->processorRef;
+        p2.clearBorrowKept();          // committed (or named as failed) — not kept
+        p2.borrowRelease(false);
+        safeThis->chainListPanel.statusText =
+            "Applied " + juce::String(st->ok) + " plugin"
+            + (st->ok == 1 ? "'s" : "s'") + " settings to " + st->name
+            + (st->failures.isEmpty()
+                   ? juce::String(". ")
+                   : " - NOT applied: " + st->failures.joinIntoString("; ") + ". ")
+            + st->name + " owns its rack again.";
+        safeThis->refreshChainPanelForView(true);
+    };
+    *step = [safeThis, st, step, finish]()
+    {
+        if (safeThis == nullptr) return;
+        if (st->idx >= (int) st->payloads.size()) { (*finish)(); return; }
+        int err = 0;
+        const juce::String dir = LinkShm::resolveDir(err);
+        if (dir.isEmpty())
+        { st->failures.add("shared Link folder unavailable"); (*finish)(); return; }
+        const auto& [slot0, b64] = st->payloads[(size_t) st->idx];
+        const int seq = LinkShm::nextCtrlSeq();
+        auto* cmd = new juce::DynamicObject();
+        cmd->setProperty("v",           1);
+        cmd->setProperty("seq",         seq);
+        cmd->setProperty("commitSlot",  slot0 + 1);
+        cmd->setProperty("commitState", b64);
+        cmd->setProperty("baseSlots",   st->baseSlots);
+        juce::File(dir + "ctrl-ack-" + st->uid + ".json").deleteFile();
+        juce::File(dir + "ctrl-cmd-" + st->uid + ".json")
+            .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+        auto poll = std::make_shared<std::function<void(int)>>();
+        *poll = [safeThis, st, step, finish, poll, seq, dir, slot0](int left)
+        {
+            juce::Timer::callAfterDelay(250, [safeThis, st, step, finish, poll, seq, dir, slot0, left]
+            {
+                if (safeThis == nullptr) return;
+                const juce::String nm = st->idx < (int) st->payloads.size()
+                    ? safeThis->processorRef.borrowHost()->getSlotInfo(slot0).name
+                    : juce::String("?");
+                juce::File ack(dir + "ctrl-ack-" + st->uid + ".json");
+                if (ack.existsAsFile())
+                {
+                    auto v = juce::JSON::parse(ack.loadFileAsString());
+                    if (auto* o = v.getDynamicObject(); o != nullptr
+                        && (int) o->getProperty("seq") == seq)
+                    {
+                        ack.deleteFile();
+                        if (o->hasProperty("committedSlot")
+                            && (bool) o->getProperty("committedSlot")) ++st->ok;
+                        else st->failures.add(nm + " ("
+                            + o->getProperty("commitErr").toString() + ")");
+                        ++st->idx;
+                        (*step)();
+                        return;
+                    }
+                }
+                if (left <= 1)
+                { st->failures.add(nm + " (no answer from the Link)");
+                  ++st->idx; (*step)(); return; }
+                (*poll)(left - 1);
+            });
+        };
+        (*poll)(20);
+    };
+    (*step)();
+}
+
+void EchoJayEditor::startBorrow(const juce::String& uid)
+{
+    auto say = [this](const juce::String& t)
+    { chainListPanel.statusText = t; chainListPanel.repaint(); };
+
+    if (uid.isEmpty() || processorRef.borrowActive()) return;
+    // The offer gate, re-checked at the entry (the button's visibility is
+    // the same author's, but a guard beats a convention): lock held,
+    // sidecar valid, and the Link ANNOUNCES borrowCapable — an old binary
+    // is never engaged, so it can never half-engage.
+    if (! processorRef.rackLockHeldFor(uid))
+    { say("Cannot edit this rack: its lock is not held here."); return; }
+    auto it = processorRef.linkRackCache.find(uid);
+    if (it == processorRef.linkRackCache.end() || !it->second.valid)
+    { say("Cannot edit this rack: this Link has not published it."); return; }
+    const bool structCapable = it->second.rack.structureEditCapable;
+    if (! it->second.rack.borrowCapable)
+    { say("Cannot edit this rack: " + processorRef.resolveLinkDisplayName(uid)
+          + " is running an older EchoJay Link that cannot hand its rack "
+            "over. Update it."); return; }
+
+    struct PullState {
+        juce::String uid;
+        std::vector<LinkShm::RackSidecarSlot> slots;
+        juce::StringArray states;          // b64 per slot, parallel
+        float masterWet = 1.0f;            // the rack's mix, carried across
+        int idx = 0;
+        juce::int64 totalBytes = 0;
+        juce::StringArray failures;        // named list for the §5e refusal
+        bool structCapable = false;        // snapshot: offered only if announced
+        bool ctxCapable = false;           // §8: in-context offered only if announced
+    };
+    auto st = std::make_shared<PullState>();
+    st->uid       = uid;
+    st->slots     = it->second.rack.slots;
+    st->masterWet = it->second.rack.masterWet;
+    st->structCapable = structCapable;
+    st->ctxCapable    = it->second.rack.inContextCapable;
+    say("Reading " + juce::String((int) st->slots.size()) + " plugin(s) from "
+        + processorRef.resolveLinkDisplayName(uid) + "...");
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    auto finish = std::make_shared<std::function<void()>>();
+    auto step   = std::make_shared<std::function<void()>>();
+
+    *finish = [safeThis, st]()
+    {
+        if (safeThis == nullptr) return;
+        auto say2 = [&](const juce::String& t)
+        { safeThis->chainListPanel.statusText = t; safeThis->chainListPanel.repaint(); };
+        // §5e, decided: refuse with a named list — no partial borrow. A rack
+        // minus a slot is a chain that does not exist.
+        if (! st->failures.isEmpty())
+        { say2("Cannot edit this rack - " + juce::String(st->failures.size())
+               + " plugin(s) could not come across: "
+               + st->failures.joinIntoString("; ")
+               + ". Nothing was engaged."); return; }
+        if (st->totalBytes > (juce::int64) LinkShm::kLinkTransferMaxTotalBytes)
+        { say2("Cannot edit this rack - its settings total "
+               + juce::File::descriptionOfSizeInBytes(st->totalBytes)
+               + ", over the "
+               + juce::File::descriptionOfSizeInBytes((juce::int64) LinkShm::kLinkTransferMaxTotalBytes)
+               + " whole-chain budget. Nothing was engaged."); return; }
+
+        auto& proc = safeThis->processorRef;
+        const juce::String leaseId =
+            st->uid + "-rack-" + juce::String(juce::Time::currentTimeMillis());
+        proc.borrowEngageBegin(st->uid, leaseId, st->structCapable,
+                               st->ctxCapable);
+        auto* bh = proc.borrowHost();
+        // SESSION VECTORS AT ENGAGE, not at load settlement (26 Aug 2026):
+        // the session is live from this line, so origins, base identity and
+        // the capability snapshot (set inside engageBegin) must exist NOW.
+        // An add during the async load window otherwise pushed origin -1
+        // onto an EMPTY origins vector — the same live-session-without-its-
+        // state shape as the refused add. Records stay settled-time: their
+        // baselines are POST-SEED by definition.
+        {
+            const int wantNow = (int) st->slots.size();
+            proc.borrowSlotOrigin_.clear();
+            proc.borrowBaseIdentity_.clear();
+            proc.borrowCreatedIdentity_.assign((size_t) wantNow, {});
+            for (int i = 0; i < wantNow; ++i)
+            {
+                proc.borrowSlotOrigin_.push_back(i);
+                proc.borrowBaseIdentity_.push_back(
+                    LinkShm::StructureEdit::SlotIdentity::fromSidecar(
+                        st->slots[(size_t) i]));
+            }
+        }
+
+        juce::Array<juce::var> slotsArr;
+        auto* statesObj = new juce::DynamicObject();
+        for (int i = 0; i < (int) st->slots.size(); ++i)
+        {
+            const auto& s = st->slots[(size_t) i];
+            auto* o = new juce::DynamicObject();
+            o->setProperty("n",        i + 1);
+            o->setProperty("plugin",   s.name);
+            o->setProperty("bypassed", s.bypassed);
+            o->setProperty("wet",      s.wet);
+            // Identity rides for stateFitsPlugin's match + apply-time
+            // re-check. The sidecar uid is HEX (server-oriented); the state
+            // policy compares decimal — converted HERE, the one consumer
+            // seam, or every known-uid slot withholds its own state.
+            if (s.format.isNotEmpty())  o->setProperty("format",  s.format);
+            if (s.uid.isNotEmpty())
+                o->setProperty("uid", LinkShm::sidecarUidToStateUid(s.uid));
+            if (s.version.isNotEmpty()) o->setProperty("version", s.version);
+            slotsArr.add(juce::var(o));
+            if (st->states[i].isNotEmpty())
+                statesObj->setProperty(juce::String(i + 1), st->states[i]);
+        }
+        const int want = (int) st->slots.size();
+        auto settled = std::make_shared<int>(0);
+        // isDisabledByName deliberately {}: the borrow mirrors the LINK's
+        // rack, not this machine's disabled list.
+        bh->restoreSavedChain(juce::var(slotsArr), juce::var(statesObj),
+            [safeThis, st, want, settled]()
+        {
+            if (safeThis == nullptr) return;
+            if (++(*settled) < want) { safeThis->refreshChainPanelForView(true); return; }
+            auto& p2 = safeThis->processorRef;
+            auto* bh2 = p2.borrowHost();
+            // The honesty gate before any sound: every slot loaded, or the
+            // whole borrow backs out — a partial chain is §2's falsified mix.
+            if (bh2->getNumSlots() != want)
+            {
+                juce::String why = bh2->getStateNotes().joinIntoString("; ");
+                p2.borrowRelease();
+                safeThis->chainListPanel.statusText =
+                    "Released - the chain could not be rebuilt here ("
+                    + juce::String(bh2->getNumSlots()) + " of "
+                    + juce::String(want) + " loaded): " + why;
+                safeThis->refreshChainPanelForView(true);
+                return;
+            }
+            // THE RACK'S MIX comes across too (hands-on finding #1): master
+            // wet is inaudible on the STREAM — with every Link slot bypassed
+            // its dry/wet mixes identical signals — so the borrowed host must
+            // apply it, or the chain runs full-wet and the premise ("you are
+            // hearing the Link's sound") breaks. PRE-GAIN is deliberately NOT
+            // adopted: the ring is written AFTER the Link's ChainHost::process
+            // (LinkProcessor.cpp ringProduce follows chainHost.process), and
+            // pre-gain is pre-graph, not a slot — the dry stream already
+            // carries it, and adopting it here would apply it twice.
+            bh2->setMasterWet(st->masterWet);
+            // The per-slot guidance text rides for display parity (the
+            // settings card would otherwise read empty on a borrowed slot).
+            for (int i = 0; i < want && i < (int) st->slots.size(); ++i)
+                bh2->setSlotSettings(i, st->slots[(size_t) i].settings);
+            // STEP 3 BOOKKEEPING: the saved identity triplet (Apply re-runs
+            // the same stateFitsPlugin verdict that withheld the pull) and
+            // the post-seed BASELINE — captured NOW, before any kept-edit
+            // overlay, so "edited" means "differs from the Link's sound".
+            p2.borrowSlotRecords_.clear();
+            for (int i = 0; i < want && i < (int) st->slots.size(); ++i)
+            {
+                EchoJayProcessor::BorrowSlotRecord r;
+                const auto& s = st->slots[(size_t) i];
+                r.name = s.name; r.savedFormat = s.format;
+                r.savedVersion = s.version; r.savedUid = s.uid;
+                r.hadState = st->states[i].isNotEmpty();
+                if (auto* pr = bh2->getSlotProcessor(i))
+                {
+                    juce::MemoryBlock mb;
+                    try { pr->getStateInformation(mb); } catch (...) { mb.reset(); }
+                    if (mb.getSize() > 0) r.baselineB64 = LinkShm::stateToB64(mb);
+                }
+                p2.borrowSlotRecords_.push_back(std::move(r));
+            }
+            // (Origins, base identity and the capability snapshot were set
+            // at ENGAGE — the session never runs without them.)
+            // CONTINUOUS KEEP, the restore half: an interrupted session's
+            // uncommitted edits come back, and it says so. Name-checked per
+            // index so a changed rack cannot receive the wrong state.
+            bool restoredKept = false;
+            if (p2.borrowKept_.uid == st->uid)
+            {
+                for (int i = 0; i < want
+                                && i < p2.borrowKept_.states.size(); ++i)
+                {
+                    if (p2.borrowKept_.names[i].trim()
+                            != bh2->getSlotInfo(i).name.trim()
+                        || p2.borrowKept_.states[i].isEmpty()) continue;
+                    juce::MemoryBlock mb;
+                    if (! LinkShm::stateFromB64(p2.borrowKept_.states[i], mb)
+                        || mb.getSize() == 0) continue;
+                    if (auto* pr = bh2->getSlotProcessor(i))
+                    {
+                        try { pr->setStateInformation(mb.getData(), (int) mb.getSize());
+                              restoredKept = true; }
+                        catch (...) {}
+                    }
+                }
+                p2.clearBorrowKept();
+            }
+            // §5a-R: the session engages SILENT — listening is its own
+            // control now. No borrowAudioOn here; LISTEN turns it on.
+            // A new session supersedes the previous session's surfaces:
+            // the unwritten-note for this uid and the sticky banner are
+            // about a session that is no longer the latest.
+            p2.unwrittenEditNote_.erase(st->uid);
+            p2.borrowStickyBanner_.clear();
+            // §5c's loud banner: withheld = the RECORDED fact per slot.
+            int withheldN = 0;
+            for (int i = 0; i < (int) p2.borrowSlotRecords_.size(); ++i)
+                if (p2.borrowSlotRecords_[(size_t) i].hadState
+                    && ! bh2->borrowSlotSeededWithState(i)) ++withheldN;
+            safeThis->chainListPanel.statusText =
+                (withheldN > 0
+                     ? juce::String(withheldN) + " of " + juce::String(want)
+                       + " plugins arrived WITHOUT "
+                       + p2.resolveLinkDisplayName(st->uid)
+                       + "'s real settings (running at defaults; never "
+                         "written back). "
+                     : juce::String())
+                + "Editing " + p2.resolveLinkDisplayName(st->uid)
+                + " here - "
+                + (p2.borrowInContextOk_.load(std::memory_order_relaxed)
+                       ? juce::String("you're hearing the whole mix with "
+                             "your edits in place. ")
+                       : st->ctxCapable
+                       ? juce::String("changes write to it when you leave "
+                             "this rack. ")
+                       : p2.resolveLinkDisplayName(st->uid)
+                             + "'s build can't hand the mix over - "
+                             "soloing your edit instead. Update it. ")
+                + (restoredKept
+                       ? juce::String("Your unwritten edits from the "
+                             "interrupted session were RESTORED. ")
+                       : juce::String())
+                + "Changes write to "
+                + p2.resolveLinkDisplayName(st->uid)
+                + " when you leave this rack. Solo this rack to hear it "
+                  "alone.";
+            safeThis->refreshChainPanelForView(true);
+        });
+        // Empty rack: no slots to settle; the session is engaged, silent.
+        if (want == 0)
+            safeThis->refreshChainPanelForView(true);
+    };
+
+    *step = [safeThis, st, step, finish]()
+    {
+        if (safeThis == nullptr) return;
+        if (st->idx >= (int) st->slots.size()) { (*finish)(); return; }
+        int err = 0;
+        const juce::String dir = LinkShm::resolveDir(err);
+        if (dir.isEmpty())
+        { st->failures.add("shared Link folder unavailable"); (*finish)(); return; }
+        const int seq = LinkShm::nextCtrlSeq();
+        auto* cmd = new juce::DynamicObject();
+        cmd->setProperty("v",             1);
+        cmd->setProperty("seq",           seq);
+        cmd->setProperty("pullSlotState", st->idx + 1);
+        juce::File(dir + "ctrl-ack-" + st->uid + ".json").deleteFile();
+        juce::File(dir + "ctrl-cmd-" + st->uid + ".json")
+            .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+
+        auto poll = std::make_shared<std::function<void(int)>>();
+        *poll = [safeThis, st, step, finish, poll, seq, dir](int attemptsLeft)
+        {
+            juce::Timer::callAfterDelay(250, [safeThis, st, step, finish, poll, seq, dir, attemptsLeft]
+            {
+                if (safeThis == nullptr) return;
+                const juce::String slotName =
+                    st->idx < (int) st->slots.size()
+                        ? st->slots[(size_t) st->idx].name : juce::String("?");
+                juce::File ack(dir + "ctrl-ack-" + st->uid + ".json");
+                if (ack.existsAsFile())
+                {
+                    auto v = juce::JSON::parse(ack.loadFileAsString());
+                    if (auto* o = v.getDynamicObject(); o != nullptr
+                        && (int) o->getProperty("seq") == seq)
+                    {
+                        ack.deleteFile();
+                        if (! o->hasProperty("pulledState"))
+                        {
+                            // Old-Link echo-absence: the refusal arm, named.
+                            st->failures.add(slotName + " (this Link's build "
+                                             "cannot hand plugins over)");
+                        }
+                        else if (! (bool) o->getProperty("pulledState"))
+                            st->failures.add(slotName + " ("
+                                + o->getProperty("slotStateErr").toString() + ")");
+                        else
+                        {
+                            const juce::String b64 = o->getProperty("slotState").toString();
+                            st->states.set(st->idx, b64);
+                            st->totalBytes += (juce::int64) b64.length() * 3 / 4;
+                        }
+                        ++st->idx;
+                        (*step)();
+                        return;
+                    }
+                }
+                if (attemptsLeft <= 1)
+                {
+                    st->failures.add(slotName + " (no answer from the Link)");
+                    ++st->idx;
+                    (*step)();
+                    return;
+                }
+                (*poll)(attemptsLeft - 1);
+            });
+        };
+        (*poll)(20);
+    };
+    for (int i = 0; i <= (int) st->slots.size(); ++i)
+        st->states.add({});            // pre-sized; set(idx) then overwrites
+    (*step)();
+}
+
+// ---------------------------------------------------------------------------
+// Structure Apply, phase 2 — the SENDER. No UI reaches this yet (the
+// add/remove affordances on a borrowed rack come in phase 3, so the mutation
+// code is provable before a user can touch it). Commit-only plans until
+// then; the Link-side applier handles full plans regardless.
+// ---------------------------------------------------------------------------
+LinkShm::StructureEdit::Plan EchoJayEditor::buildStructurePlan()
+{
+    // §5a-R: moved to the PROCESSOR (the deselect/close apply must outlive
+    // this editor). Thin delegate kept for the remaining editor callers.
+    return processorRef.buildStructurePlan();
 }
 
 void EchoJayEditor::sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemove)
@@ -7512,6 +8466,16 @@ void EchoJayEditor::sendRackEdit(const juce::String& uid, int slotIdx, bool isRe
         // This is also the offline rule the Chain tab needs: refused, with a
         // reason, never queued for later.
         fail("Not applied: this Link is not connected right now - nothing was changed.");
+        return;
+    }
+    // Rack lock: same one-writer rule as sendRackAdd, same two wordings.
+    if (!processorRef.rackLockHeldFor(uid))
+    {
+        fail(processorRef.rackLockState() == EchoJayProcessor::RackLockState::HeldByOther
+                 ? "Not applied: this rack is locked by "
+                     + processorRef.rackLockOtherOwner() + "."
+                 : "Not applied: this rack was just edited in its own window - "
+                   "try again in a few seconds.");
         return;
     }
 
@@ -7597,7 +8561,7 @@ void EchoJayEditor::beginRemoteEditSession(const juce::String& uid, int slot0)
     juce::String dir = LinkShm::resolveDir(err);
     if (dir.isEmpty())
     { say("Cannot reach " + name + ": the shared Link folder is unavailable."); return; }
-    int seq = (int) (juce::Time::currentTimeMillis() / 1000);
+    int seq = LinkShm::nextCtrlSeq();
     for (auto& pnd : linkCtrlPending_)
         if (pnd.addr == uid && pnd.seq >= seq) seq = pnd.seq + 1;
     auto* cmd = new juce::DynamicObject();
@@ -7846,7 +8810,7 @@ void EchoJayEditor::commitAndReleaseEditSession()
     juce::String dir = LinkShm::resolveDir(err);
     if (dir.isEmpty())
     { say("Shared Link folder unavailable - still editing, nothing sent."); return; }
-    int seq = (int) (juce::Time::currentTimeMillis() / 1000);
+    int seq = LinkShm::nextCtrlSeq();
     for (auto& pnd : linkCtrlPending_)
         if (pnd.addr == uid && pnd.seq >= seq) seq = pnd.seq + 1;
     auto* cmd = new juce::DynamicObject();
@@ -7935,7 +8899,7 @@ void EchoJayEditor::sendOpenSlotEditor(const juce::String& uid, int slotIdx)
         return;
     }
 
-    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    int seq = LinkShm::nextCtrlSeq();
     for (auto& p : linkCtrlPending_)
         if (p.addr == uid && p.seq >= seq) seq = p.seq + 1;
 
@@ -8031,6 +8995,18 @@ void EchoJayEditor::sendRackAdd(const juce::String& uid, const juce::String& plu
     if (!connected)
     {
         fail("Not added: this Link is not connected right now - nothing was changed.");
+        return;
+    }
+    // Rack lock: one writer at a time — a main that does not hold this rack
+    // does not write it. Distinct wording per refusal (never one string for
+    // two causes).
+    if (!processorRef.rackLockHeldFor(uid))
+    {
+        fail(processorRef.rackLockState() == EchoJayProcessor::RackLockState::HeldByOther
+                 ? "Not added: this rack is locked by "
+                     + processorRef.rackLockOtherOwner() + "."
+                 : "Not added: this rack was just edited in its own window - "
+                   "try again in a few seconds.");
         return;
     }
 
@@ -8777,49 +9753,27 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
         const bool connected = entry != nullptr && entry->info.connected;
         const bool active    = entry != nullptr && entry->info.active;
 
-        const int side = juce::jmin(16, sg.active.getHeight() - 2);
-        // Centred EXACTLY in the row (float centre, then snapped), both
-        // modes; wide keeps the box at the left for its word.
-        juce::Rectangle<float> box(0, 0, (float)side, (float)side);
-        box = wide ? box.withPosition((float)sg.active.getX(),
-                                      std::round((float)sg.active.getCentreY()
-                                                 - (float)side * 0.5f))
-                   : box.withCentre({ std::round((float)sg.active.getCentreX()),
-                                      std::round((float)sg.active.getCentreY()) });
+        // THE ONE TICK RENDERER (31 Aug): stored rect in, states in —
+        // the rack row draws through the same call. (GREEN stays Active's
+        // accent; selection keeps cyan; the two never share a colour.)
+        drawActiveTick(g, sg.tick, getLookAndFeel(),
+                       connected, active, pending, timedOut, target);
 
-        g.setColour(!connected || timedOut ? coral : LinkConsole::caption);
-        g.drawRoundedRectangle(box, 4.0f, 1.0f);
+        // The wide-mode words ("Active"/"Offline"/"no resp") retired 27
+        // Aug 2026 (hands-on ruling): the tick already carries the state
+        // at strip width, and the tooltip still speaks the words.
 
-        if (!connected)
+        // M/S lamps: THE ONE RENDERER (drawMsLamp), state read from the
+        // processor's sidecar snapshot at paint time — the closed loop; a
+        // click is a request, the lamp is the Link's answer.
         {
-            // Cross: offline is a SHAPE, not just a colour
-            auto c = box.reduced(4.5f);
-            g.setColour(coral);
-            g.drawLine(c.getX(), c.getY(), c.getRight(), c.getBottom(), 1.6f);
-            g.drawLine(c.getX(), c.getBottom(), c.getRight(), c.getY(), 1.6f);
-        }
-        else
-        {
-            const bool showTick = pending ? target : (!timedOut && active);
-            if (showTick)
-            {
-                // GREEN is Active's accent: the running state must scan
-                // across sixteen strips, and grey read as chrome. Selection
-                // keeps cyan; the two never share a colour, as in Logic.
-                g.setColour(pending ? amber.withAlpha(0.6f) : C::green);
-                auto tick = getLookAndFeel().getTickShape(0.75f);
-                g.fillPath(tick, tick.getTransformToScaleToFit(
-                                     box.reduced(3.0f, 3.0f), false));
-            }
-        }
-
-        if (wide)
-        {
-            g.setColour(!connected || timedOut ? coral : LinkConsole::label);
-            g.setFont(juce::Font(juce::FontOptions(11.0f)));
-            g.drawText(linkActiveLabel(connected, pending, timedOut),
-                       sg.active.withTrimmedLeft(side + 6),
-                       juce::Justification::centredLeft);
+            bool msCap = false, mOn = false, sOn = false;
+            if (auto ms = processorRef.muteSoloSnaps_.find(sg.addr);
+                ms != processorRef.muteSoloSnaps_.end())
+            { msCap = ms->second.capable; mOn = ms->second.muteUser;
+              sOn = ms->second.soloOn; }
+            drawMsLamp(g, sg.mute, false, mOn, msCap);
+            drawMsLamp(g, sg.solo, true,  sOn, msCap);
         }
     }
 
@@ -8839,17 +9793,39 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
         const uint32_t nowMs = juce::Time::getMillisecondCounter();
         bool  fresh = false;
         float dim   = 1.0f;
+        // THREE-STATE STRIP (25 Aug 2026): live-with-audio (full),
+        // live-but-silent (audio-stale dim below), and HEARTBEAT-STALE —
+        // the process stopped answering — rendered as a distinct "gone"
+        // state instead of the same dim a silent Link gets. That ambiguity
+        // (dead and silent painting one picture) cost a session an hour.
+        // THE LIMIT, stated where it will be read: this separates dead from
+        // silent. It CANNOT flag deleted-but-undo-held, because that
+        // instance is genuinely alive — Logic keeps a deleted channel's
+        // plugins running for undo, their heartbeats climb, and no signal
+        // of ours can see the arrange page.
+        const bool gone = !isBus && entry != nullptr
+                          && ! entry->info.heartbeatFresh;
         LinkStripState* st = nullptr;
         if (isBus)
         {
             fresh = ingestBusStripFrame(nowMs);
             st = &linkHostStrip_;
         }
-        else if (entry != nullptr)
+        else if (entry != nullptr && ! gone)
         {
             ingestLinkStripFrame(sg.addr, entry->info.regIdx,
                                  entry->info.active, nowMs, fresh, dim);
             st = &linkStripStates_[sg.addr];
+        }
+        if (gone)
+        {
+            // Outline only, no meters, no numbers, no cached curve — a
+            // plain word where data would falsely claim a living process.
+            g.setColour(LinkConsole::structure);
+            g.drawRect(sg.data, 1);
+            g.setFont(juce::Font(juce::FontOptions(11.0f)));
+            g.drawText("not responding", sg.data,
+                       juce::Justification::centred, true);
         }
 
         // ONE smoothing advance per strip per paint. Since 8b the data area
@@ -8881,8 +9857,8 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             const std::vector<int16_t>* c = nullptr;
             if (sg.isBus)
                 c = busEqCurve_.empty() ? nullptr : &busEqCurve_;
-            else if (entry != nullptr)
-                c = linkEqCurve(entry->info.uid);
+            else if (entry != nullptr && ! gone)   // a gone strip shows the
+                c = linkEqCurve(entry->info.uid);  // empty box, not a stale curve
             // ALWAYS CALLED, with or without data: the painter draws the box
             // and grid either way and adds the curve only when there is one.
             // Skipping the call for a rack with no EQ would put the "is there
@@ -8892,16 +9868,17 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             paintLinkStripEq(g, sg.eq, c != nullptr ? *c : none, dim, wide);
         }
 
-        switch (processorRef.linkMixerContent)
-        {
-            case EchoJayProcessor::LinkMixerContent::Numbers:
-                if (st != nullptr)
-                    paintLinkStripNumbers(g, sg.data, *st, drv, dim, wide);
-                break;
-            case EchoJayProcessor::LinkMixerContent::Chain:
-                paintLinkStripChain(g, sg.data, sg, entry, dim, wide);
-                break;
-        }
+        if (! gone)
+            switch (processorRef.linkMixerContent)
+            {
+                case EchoJayProcessor::LinkMixerContent::Numbers:
+                    if (st != nullptr)
+                        paintLinkStripNumbers(g, sg.data, *st, drv, dim, wide);
+                    break;
+                case EchoJayProcessor::LinkMixerContent::Chain:
+                    paintLinkStripChain(g, sg.data, sg, entry, dim, wide);
+                    break;
+            }
 
         // The meter band: PERMANENT chrome, every strip, every mode. A
         // mixer strip always shows its meter. ONE recessed well spans the
@@ -9116,6 +10093,14 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
             }
             break;
 
+        case StripHit::Mute:
+            if (!sg.isBus) stripMuteSoloClick(sg.addr, /*isSolo*/ false);
+            break;
+
+        case StripHit::Solo:
+            if (!sg.isBus) stripMuteSoloClick(sg.addr, /*isSolo*/ true);
+            break;
+
         case StripHit::Clip:
         {
             // Reset THIS strip's latches. The lamp is the only arm that
@@ -9174,7 +10159,10 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
                 // menu's own arm WITH its guard: resetting while already in
                 // main context would wipe a live conversation for nothing.
                 if (effectiveChannelUid().isNotEmpty())
+                {
+                    pendingSelectionIsUser_ = true;
                     resetToMainContext();
+                }
             }
             else
             {
@@ -9193,6 +10181,7 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
                 else if (en.info.uid != effectiveChannelUid())
                 {
                     // The banner's already-here guard, same as the AI arm.
+                    pendingSelectionIsUser_ = true;
                     openChannelByUid(en.info.uid);
                 }
             }
@@ -9226,6 +10215,12 @@ juce::String EchoJayEditor::linkStripTooltip(const StripGeom& sg,
                  : en.info.placement == 3 ? "Placement: Send return (click to change)"
                                           : "Placement not set (click to set)";
 
+        case StripHit::Mute:
+            if (sg.isBus) return name;
+            return muteSoloStripTip(sg.addr, false);
+        case StripHit::Solo:
+            if (sg.isBus) return name;
+            return muteSoloStripTip(sg.addr, true);
         case StripHit::Active:
         {
             if (sg.isBus || !have) return name;
@@ -9467,6 +10462,15 @@ void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int
     g.setColour(LinkConsole::label);
     g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
     g.drawText("LINK MIXER", linkTitleRect_, juce::Justification::centredLeft);
+    // The contextual honest-limit line (MUTE_SOLO_SPEC §5, amended): only
+    // while a solo is actually active, one quiet line, right of the title.
+    if (processorRef.soloSetActive_)
+    {
+        g.setColour(juce::Colour(0xff8a8fa8));
+        g.setFont(juce::Font(juce::FontOptions(10.0f)));
+        g.drawText(soloLimitLineText(), linkTitleRect_.withTrimmedLeft(110),
+                   juce::Justification::centredRight);
+    }
 
     // View controls: painted from the STORED zones, selected state read back
     // from the processor's persisted modes right here, every paint. The
@@ -10290,8 +11294,10 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
                     ch.startScan();
                 // Keep list model populated for the picker popup
                 chainListModel->items = ch.getFilteredPlugins({}, chainFormatFilter_, !chainOfferBothBuilds_);
-                // Rebuild rack strip from current chain state
-                chainListPanel.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
+                // Render the rack strip for the current view; the signature
+                // sees a real change (or the first pass), so force is not
+                // needed and the detector stays exercised.
+                refreshChainPanelForView(false);
                 chainListPanel.masterKnob.setValue(ch.getMasterWet());
                 // Rebuild resolver
                 ch.buildRecommendable(feedRowsWithSessionExclusions(
@@ -12222,15 +13228,14 @@ void EchoJayEditor::saveCollapsedState() const
     f.replaceWithText(juce::JSON::toString(juce::var(arr)));
 }
 
-void EchoJayEditor::createNewChat()
+void EchoJayEditor::createNewChat(const juce::String& bindToUid)
 {
-    // INHERIT the active channel (14 Aug 2026): a new chat started while a
-    // channel is active is pre-assigned to it, because a channel owns many
-    // chats now. The composer's channel selector remains the way to change
-    // the assignment before the first message goes out. Captured BEFORE the
-    // pending clear below: effectiveChannelUid reads pending when no chat
-    // is active yet.
-    const juce::String inheritUid = effectiveChannelUid();
+    // THE BINDING IS THE PARAMETER (30 Aug 2026 ruling): one creator, and
+    // every caller passes the currently-viewed chat's context
+    // (effectiveChannelUid()) explicitly — never a forked Link-side
+    // creator. "" = main chat. The composer's channel selector remains the
+    // way to change the assignment before the first message goes out.
+    const juce::String inheritUid = bindToUid;
 
     // Nothing to leave behind: an empty context (main or channel) already
     // IS a fresh chat, so minting another empty record would be noise.
@@ -14697,7 +15702,7 @@ void EchoJayEditor::triggerKeyReanalyse()
         if (dir.isEmpty()) return;
         auto* cmd = new juce::DynamicObject();
         cmd->setProperty("v",   1);
-        cmd->setProperty("seq", (int) (juce::Time::currentTimeMillis() / 1000));
+        cmd->setProperty("seq", LinkShm::nextCtrlSeq());
         juce::File(dir + "key-ack-" + target->uid + ".json").deleteFile();
         juce::File(dir + "key-cmd-" + target->uid + ".json")
             .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
@@ -18333,10 +19338,20 @@ void EchoJayEditor::resized()
         // takes the room between it and the detected label, clamped, and the
         // state block truncates the channel name via captureBtnMaxW_.
         scanBtn.setBounds(tx, ty, 78, bh); tx += 78 + 4;
-        // New chat, reachable from every tab (14 Aug 2026) — the slot the
-        // chain-list scan date held; that readout lives in the EJScan log
-        // lines now. Same 150px so nothing downstream of it moves.
-        headerNewChatBtn.setBounds(tx, ty, 150, bh); tx += 150 + 10;
+        // New chat, reachable from every tab (14 Aug 2026). Width BY THE
+        // NUMBERS (1 Sep 2026, third pass): the old 150px slot held 54.7px
+        // of text — idle it painted nothing, but the transparent-button
+        // HOVER fill is slot-sized, so a 150px slot flashed a giant grey
+        // slab where Capture (64px over 38px of text) hovers like a text
+        // link. Width = measured text + Capture's exact horizontal padding
+        // (64 - 38 = 26), computed from the same font the LookAndFeel
+        // draws with so a label change re-sizes itself.
+        {
+            const int ncW = (int) std::ceil (juce::GlyphArrangement::getStringWidth(
+                                EchoJayChrome::headerFont(),
+                                headerNewChatBtn.getButtonText())) + 26;
+            headerNewChatBtn.setBounds(tx, ty, ncW, bh); tx += ncW + 10;
+        }
         // Item 2a: FIXED-width Capture button.
         captureBtn.setBounds(tx, ty, 64, bh); tx += 68;
         // Item 2b: target indicator takes the room up to the detected label,
@@ -20504,6 +21519,27 @@ void EchoJayEditor::timerCallback()
     //  The LOCAL rack costs nothing here: its signature only moves when its
     //  slot count does, and every local mutation already rebuilds inline.
     // -------------------------------------------------------------------------
+    // Rack lock: the editor's declaration of "actively showing". Idempotent
+    // setter, every tick — Chain tab showing a Link's rack claims it; any
+    // other tab (or the local rack) clears it, which deletes the lock file
+    // immediately. Editor destruction clears it too; a crash is covered by
+    // the 3s expiry. This is the "editor gates" half of the design.
+    // A live borrow PINS the lock to its own uid (spec §4): switching tabs
+    // or racks mid-borrow must not drop the lock while the lease holds, or
+    // the Link's UI would unlock under an engaged borrow.
+    processorRef.setRackLockWant(
+        processorRef.borrowActive() ? processorRef.borrowUid()
+        : currentTab == Tab::Chain && chainListPanel.isVisible()
+            ? chainViewUid() : juce::String());
+
+    // A borrow that released ITSELF says so in words, wherever the user is
+    // looking — a self-release must never be silent (finding #3).
+    if (auto reason = processorRef.takeBorrowAutoReleaseReason(); reason.isNotEmpty())
+    {
+        chainListPanel.statusText = reason;
+        refreshChainPanelForView(true);
+    }
+
     if (currentTab == Tab::Chain && chainListPanel.isVisible())
     {
         if (chainViewUid().isNotEmpty()) refreshLinkRackCache(false);
@@ -22891,8 +23927,9 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
             auto& ch2 = safeThis->processorRef.getChainHost();
             safeThis->chainSelectedSlot_ =
                 juce::jlimit(-1, ch2.getNumSlots() - 1, safeThis->chainSelectedSlot_);
-            safeThis->chainListPanel.rebuild(ch2.getAllSlotInfos(),
-                                             safeThis->chainSelectedSlot_);
+            // force = true, NAMED: the `set` edit op applies settings only —
+            // no structural change, no revision bump, signature blind.
+            safeThis->refreshChainPanelForView(true);
 
             // Result stage (1d, dedup decision): the retired card keeps the
             // factual summary; a result bubble appears ONLY when it says
@@ -23165,7 +24202,7 @@ int EchoJayEditor::sendChainEditToLink(const juce::String& linkUid,
     // Mirror of sendChainToLink, v:2: ops + baseSlots pass through verbatim
     // (the Link re-parses via the same ChainHost::parseChainEditOps and runs
     // its own baseSlots staleness check — guard #2).
-    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    int seq = LinkShm::nextCtrlSeq();
     auto* cmd = new juce::DynamicObject();
     cmd->setProperty("v",          2);
     cmd->setProperty("seq",        seq);
@@ -23446,6 +24483,12 @@ juce::String EchoJayEditor::mainContextLabel() const
 
 void EchoJayEditor::resetToMainContext()
 {
+    // §5a-R: leaving a Link's rack for the main IS the deselect when the
+    // USER did it; programmatic resets move the view only (§3f pin). The
+    // flag defaults false; the user click sites pass true explicitly.
+    handleBorrowSelectionChange({}, pendingSelectionIsUser_);
+    pendingSelectionIsUser_ = false;
+
     currentChatId = {};
     processorRef.activeChatId = {};
     processorRef.pendingChannelUid.clear();
@@ -23520,6 +24563,7 @@ void EchoJayEditor::showChannelBannerMenu()
             const size_t i = (size_t)(result - 1);
             if (i >= rows.size()) return;
             if (rows[i].uid == safeThis->effectiveChannelUid()) return;   // already here
+            safeThis->pendingSelectionIsUser_ = true;
             if (rows[i].uid.isEmpty()) { safeThis->resetToMainContext(); return; }
             safeThis->openChannelByUid(rows[i].uid);
         });
@@ -23528,6 +24572,10 @@ void EchoJayEditor::showChannelBannerMenu()
 void EchoJayEditor::openChannelByUid(const juce::String& uid)
 {
     if (uid.isEmpty()) return;
+    // §5a-R + §3f: user selections apply-and-engage; programmatic ones
+    // (chat activation, deep links) move the view only.
+    handleBorrowSelectionChange(uid, pendingSelectionIsUser_);
+    pendingSelectionIsUser_ = false;
 
     int matches = 0;
     if (auto existing = latestChannelChatId(uid, &matches); existing.isNotEmpty())
@@ -23883,14 +24931,16 @@ void EchoJayEditor::supersedePendingAsksByIntent(std::initializer_list<const cha
 void EchoJayEditor::supersedePendingReplaceAsks()
 {
     // Replace-class only: recall_* (recall_confirm / recall_cancel /
-    // recall_here / recall_switch) and build_* (build_confirm /
-    // build_cancel). The mismatch flag belongs to this class.
+    // recall_here / recall_switch), build_* (build_confirm / build_cancel)
+    // and apply_* (step 3's Apply & Release ask — IN the class on purpose:
+    // an unscoped prefix is the two-stacked-asks trap the rack-lock brief
+    // named). The mismatch flag belongs to this class.
     if (pendingRecallMismatchAsk_)
     {
         pendingRecallMismatchAsk_ = false;
         EchoJay_NSLog("EJRecall: mismatch ask dismissed without choosing (superseded by new replace ask)");
     }
-    supersedePendingAsksByIntent({ "recall_", "build_" });
+    supersedePendingAsksByIntent({ "recall_", "build_", "apply_" });
 }
 
 // THE ONE presenter for replace-class asks. Build and recall each compose
@@ -25118,6 +26168,7 @@ void EchoJayEditor::showKeySourceMenu()
     m.showMenuAsync(
         juce::PopupMenu::Options()
             .withTargetComponent(this)
+            .withParentComponent(this)
             .withTargetScreenArea(localAreaToGlobal(keySourceMenuRect_)),
         [safeThis, snapshot] (int result)
         {
@@ -25509,7 +26560,9 @@ void EchoJayEditor::handleDevEqTest(const juce::String& jsonArg)
     chatInput.clear();
 
     // Reflect any band change the apply made in an open editor / rack card.
-    chainListPanel.rebuild(ch.getAllSlotInfos(), chainSelectedSlot_);
+    // force = true, NAMED: an EQ band apply is settings-only — it moves no
+    // revision, so the signature cannot see it.
+    refreshChainPanelForView(true);
     resized();
     repaint();
 }
@@ -26402,8 +27455,9 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
                     }
                     else
                         cm.editData = remaining;
-                    chainListPanel.rebuild(processorRef.getChainHost().getAllSlotInfos(),
-                                           chainSelectedSlot_);
+                    // force = true, NAMED: card-apply is settings-only — no
+                    // revision bump, signature blind.
+                    refreshChainPanelForView(true);
                 }
                 cm.editBaseRevision = processorRef.getChainHost().getChainRevision();
             }
@@ -27297,7 +28351,8 @@ void EchoJayEditor::openChannelChooser(int chipIdx)
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     menu.showMenuAsync(
-        juce::PopupMenu::Options().withTargetComponent(askChipBtns[(size_t) chipIdx].get()),
+        juce::PopupMenu::Options().withTargetComponent(askChipBtns[(size_t) chipIdx].get())
+            .withParentComponent(this),
         [safeThis, ordered](int result)
         {
             if (safeThis == nullptr || result <= 0 || result > ordered.size()) return;
@@ -27358,7 +28413,8 @@ void EchoJayEditor::openRecallChannelChooser(int chipIdx)
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     menu.showMenuAsync(
-        juce::PopupMenu::Options().withTargetComponent(askChipBtns[(size_t) chipIdx].get()),
+        juce::PopupMenu::Options().withTargetComponent(askChipBtns[(size_t) chipIdx].get())
+            .withParentComponent(this),
         [safeThis, ordered, nameByUid, rid, rnm](int result)
         {
             if (safeThis == nullptr) return;
@@ -27466,7 +28522,7 @@ void EchoJayEditor::showChainPluginPicker()
     // P13 (17 Aug 2026): the searchable picker (ChainPluginPicker.h) in
     // place of a 1400-row PopupMenu; type to filter, keyboard first.
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    ChainPluginPicker::show(chainListPanel.addBlock, plugins,
+    ChainPluginPicker::show(chainListPanel.addBlock, *this, plugins,
         [safeThis](const juce::PluginDescription& picked)
         {
             if (safeThis == nullptr) return;
@@ -27478,6 +28534,73 @@ void EchoJayEditor::showChainPluginPicker()
             // swapped name would also ask the Link for a build it may not
             // have, turning a working add into a spurious refusal.
             const juce::String rackUid = safeThis->chainViewUid();
+            // Phase 3: a structure-capable Link's borrow adds locally — the
+            // plan's Create op carries the new slot home; an older Link
+            // keeps the settings-only refusal, word for word.
+            if (auto* bh0 = safeThis->processorRef.borrowHostIfActiveFor(rackUid))
+            {
+                if (! safeThis->processorRef.borrowStructureCapable_)
+                {
+                    safeThis->chainListPanel.statusText =
+                        "An edited rack keeps its shape - bypass and settings "
+                        "edit here; structure stays the Link's.";
+                    safeThis->chainListPanel.repaint();
+                    return;
+                }
+                auto desc0 = bh0->preferInlineHostableDesc(picked);
+                safeThis->chainListPanel.statusText = "Loading " + desc0.name + "...";
+                safeThis->chainListPanel.repaint();
+                bh0->loadPluginAsync(desc0, [safeThis, picked](const juce::String& err)
+                {
+                    if (safeThis == nullptr) return;
+                    auto* bh2 = safeThis->processorRef.borrowHost();
+                    if (bh2 == nullptr) return;
+                    if (err.isNotEmpty())
+                    {
+                        safeThis->chainListPanel.statusText = "Failed: " + err;
+                        safeThis->chainListPanel.repaint();
+                        return;
+                    }
+                    const int newSlot = bh2->getNumSlots() - 1;
+                    // CREATE class (spec §3): origin -1, identity recorded
+                    // from the PICKED descriptor, never the live instance
+                    // (24 Aug 2026: Apply failed at stage, four runs).
+                    // preferInlineHostableDesc may have SWAPPED to a variant
+                    // for THIS process's hosting convenience; liveIdentity()
+                    // reads the swap, and the Link is then asked for a build
+                    // it may not have — the very trap the sendRackAdd
+                    // comment below warns about. The substitute hosts here;
+                    // the plan carries what the user picked.
+                    auto& p3 = safeThis->processorRef;
+                    p3.borrowSlotOrigin_.push_back(-1);
+                    p3.borrowCreatedIdentity_.push_back(
+                        LinkShm::StructureEdit::SlotIdentity{
+                            picked.name,
+                            // THE one uid idiom (ChainHost::descUid): some
+                            // AU descriptors carry theirs in deprecatedUid
+                            // with uniqueId 0 — an unguarded uniqueId sends
+                            // "0" and the Link resolves on name alone.
+                            juce::String(ChainHost::descUid(picked)), {} });
+                    // A created slot has a RECORD like every other slot
+                    // (defect, 23 Aug 2026: the lost add — a slot without a
+                    // record is invisible to every records-bounded consumer,
+                    // and the bound was doing its job against inconsistent
+                    // inputs). Nothing was pulled: hadState=false so it can
+                    // never read as withheld, and the EMPTY baseline makes
+                    // it edited by definition. Named as PICKED, same as the
+                    // identity — the ask and the removal memory must speak
+                    // the user's name for it, not the substitute's.
+                    EchoJayProcessor::BorrowSlotRecord cr;
+                    cr.name = picked.name;
+                    p3.borrowSlotRecords_.push_back(std::move(cr));
+                    safeThis->chainSelectedSlot_ = newSlot;
+                    safeThis->chainListPanel.statusText = {};
+                    safeThis->refreshChainPanelForView(false);
+                    safeThis->resized();
+                    safeThis->repaint();
+                });
+                return;
+            }
             if (rackUid.isNotEmpty())
             {
                 // NO direct status write here (fix 3): the line is DERIVED
@@ -27506,8 +28629,10 @@ void EchoJayEditor::showChainPluginPicker()
                 int newSlot = ch3.getNumSlots() - 1;
                 safeThis->chainSelectedSlot_ = newSlot;
                 safeThis->chainListPanel.statusText = {};
-                // rebuild() selects the new slot and opens its editor inline
-                safeThis->chainListPanel.rebuild(ch3.getAllSlotInfos(), safeThis->chainSelectedSlot_);
+                // completeLoad bumped the revision and the selection moved:
+                // the signature sees both, and the render selects the new
+                // slot and opens its editor inline.
+                safeThis->refreshChainPanelForView(false);
                 safeThis->resized();
                 safeThis->repaint();
             });
@@ -27520,6 +28645,102 @@ void EchoJayEditor::showChainPluginPicker()
 void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
                                     const juce::String& chainJson)
 {
+    // §5a-R + §3f (26 Aug): while THIS uid's rack IS the live session, a
+    // chain build lands in the SESSION (the borrowed host), never on the
+    // Link — the Link refuses chain-cmds while leased, and the ping-pong
+    // era's builds only ever reached it through released gaps. The build
+    // becomes session Creates; deselect applies it like any other edit.
+    // ONE choke point: the AI build, recall and dashboard-load all send
+    // through here, so all three gain the borrowed arm at once.
+    if (auto* bhB = processorRef.borrowHostIfActiveFor(linkUid))
+    {
+        // THE PAYLOAD IS A CHAIN ARRAY, not edit-ops (27 Aug: "Nothing to
+        // build" on a live session — the first divert parsed the wrong
+        // schema and the honest empty-parse banner shipped as the symptom).
+        // Convert each entry to an add-op so resolution, loading, settings
+        // text, STRUCTURED DIALING and wet all ride the proven
+        // applyChainEdits machinery on the borrowed host; a build REPLACES
+        // the rack (matching what the Link's own build does), recorded
+        // honestly in the session as removes + creates.
+        auto pv  = juce::JSON::parse(chainJson);
+        auto* po = pv.getDynamicObject();
+        auto* arr = (po != nullptr && po->hasProperty("chain"))
+                        ? po->getProperty("chain").getArray() : nullptr;
+        if (arr == nullptr || arr->isEmpty())
+        {
+            chainListPanel.statusText = "Failed: chain data could not be read.";
+            chainListPanel.repaint();
+            return;
+        }
+        auto& p3 = processorRef;
+        juce::StringArray baseNow;
+        const int nOld = bhB->getNumSlots();
+        for (int i = 0; i < nOld; ++i)
+        {
+            const juce::String nm = bhB->getSlotInfo(i).name;
+            baseNow.add(nm);
+            // Removal memory captured NOW — the facts die with the rows
+            // (the onRemoveSlot rule).
+            const int origin = i < (int) p3.borrowSlotOrigin_.size()
+                                   ? p3.borrowSlotOrigin_[(size_t) i] : -1;
+            if (origin >= 0)
+            {
+                p3.borrowRemovedNames_.add(nm);
+                if (origin < (int) p3.borrowSlotRecords_.size()
+                    && p3.borrowSlotRecords_[(size_t) origin].hadState
+                    && ! bhB->borrowSlotSeededWithState(i))
+                    p3.borrowRemovedWithheld_.add(nm);
+            }
+        }
+        // ONE conversion, shared with the functional gate.
+        auto ops = ChainHost::chainArrayToReplaceOps(*arr, nOld);
+        const int expectAdds = (int) ops.size() - nOld;
+        EchoJay_NSLog(("EJChain: build target uid=" + linkUid
+            + "  path=SESSION (borrowed host) removes=" + juce::String(nOld)
+            + " adds=" + juce::String(expectAdds)).toRawUTF8());
+        auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+        chainListPanel.closeAllEditors();
+        chainListPanel.statusText = "Building " + juce::String(expectAdds)
+            + " plugin(s) into your edit session...";
+        chainListPanel.repaint();
+        bhB->applyChainEdits(std::move(ops), -1, baseNow,
+            [safeThis, linkUid](const juce::StringArray& results,
+                                int applied, bool aborted)
+        {
+            if (safeThis == nullptr) return;
+            auto& p4 = safeThis->processorRef;
+            auto* bh2 = p4.borrowHostIfActiveFor(linkUid);
+            if (bh2 == nullptr) return;
+            // WHOLESALE session bookkeeping: every surviving slot is a
+            // CREATE (origin -1, name-only identity — never a substitute's
+            // uid — and a record). The base identity snapshot stays: the
+            // deselect plan is removes-of-the-original + these creates.
+            p4.borrowSlotOrigin_.assign((size_t) bh2->getNumSlots(), -1);
+            p4.borrowCreatedIdentity_.clear();
+            for (int i = 0; i < bh2->getNumSlots(); ++i)
+            {
+                p4.borrowCreatedIdentity_.push_back(
+                    { bh2->getSlotInfo(i).name, {}, {} });
+                EchoJayProcessor::BorrowSlotRecord cr;
+                cr.name = bh2->getSlotInfo(i).name;
+                p4.borrowSlotRecords_.push_back(std::move(cr));
+            }
+            safeThis->chainSelectedSlot_ = bh2->getNumSlots() > 0 ? 0 : -1;
+            safeThis->chainListPanel.statusText =
+                (aborted ? juce::String("Build stopped early - ")
+                         : juce::String())
+                + "Built " + juce::String(bh2->getNumSlots()) + " plugin"
+                + (bh2->getNumSlots() == 1 ? "" : "s")
+                + " into your edit session - writes to "
+                + p4.resolveLinkDisplayName(linkUid)
+                + " when you leave this rack. ("
+                + juce::String(applied) + "/" + juce::String(results.size())
+                + " ops.)";
+            safeThis->refreshChainPanelForView(true);
+        });
+        return;
+    }
+
     int err = 0;
     juce::String dir = LinkShm::resolveDir(err);
     const juce::String id = linkUid;   // instanceId — the address, never the name
@@ -27560,7 +28781,7 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
 
     // Chain entries pass through as-is (name/role/settings) — the Link
     // resolves names and applies plugin_disabled.json on its side.
-    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    int seq = LinkShm::nextCtrlSeq();
     auto* cmd = new juce::DynamicObject();
     cmd->setProperty("v",          1);
     cmd->setProperty("seq",        seq);
@@ -27839,6 +29060,131 @@ void EchoJayEditor::disablePluginByName(const juce::String& name)
 // =============================================================================
 //  LINK tab — remote Active control (ctrl-cmd / ctrl-ack files)
 // =============================================================================
+// ---------------------------------------------------------------------------
+// Mute/solo (27 Aug 2026, MUTE_SOLO_SPEC §3): the buttons and lamps are
+// remote controls on the LINK's own state — a click writes a ctrl-cmd
+// (consume-and-answer), the Link applies and publishes, and every lamp
+// renders from the published sidecar. No pending style: the closed loop IS
+// the display, and a refusal changes nothing on screen by construction.
+// ---------------------------------------------------------------------------
+void EchoJayEditor::sendLinkMuteSoloCommand(const juce::String& uid,
+                                            bool isSolo, bool on)
+{
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty() || uid.isEmpty()) return;
+    int seq = LinkShm::nextCtrlSeq();
+    for (auto& p : linkCtrlPending_)
+        if (p.addr == uid && p.seq >= seq) seq = p.seq + 1;
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",   1);
+    cmd->setProperty("seq", seq);
+    cmd->setProperty(isSolo ? "soloOn" : "muteUser", on);
+    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();   // stale ack
+    juce::File(dir + "ctrl-cmd-" + uid + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+    EchoJay_NSLog(("EJMuteSolo: sent " + juce::String(isSolo ? "soloOn"
+                                                             : "muteUser")
+                   + "=" + juce::String((int) on) + " uid=" + uid
+                   + " seq=" + juce::String(seq)).toRawUTF8());
+    repaint();
+}
+
+// sendLinkMuteSoloForView DELETED 28 Aug 2026 — it was the rack's second
+// implementation of the mixer's stripMuteSoloClick. One author now.
+
+void EchoJayEditor::drawActiveTick(juce::Graphics& g, juce::Rectangle<int> boxI,
+                                   juce::LookAndFeel& lnf, bool connected,
+                                   bool active, bool pending, bool timedOut,
+                                   bool target)
+{
+    const auto coral = juce::Colour(0xffff6d5a);
+    const auto amber = juce::Colour(0xfff59e0b);
+    const auto box = boxI.toFloat();
+    g.setColour(!connected || timedOut ? coral : LinkConsole::caption);
+    g.drawRoundedRectangle(box, 4.0f, 1.0f);
+    if (!connected)
+    {
+        // Cross: offline is a SHAPE, not just a colour
+        auto c = box.reduced(4.5f);
+        g.setColour(coral);
+        g.drawLine(c.getX(), c.getY(), c.getRight(), c.getBottom(), 1.6f);
+        g.drawLine(c.getX(), c.getBottom(), c.getRight(), c.getY(), 1.6f);
+    }
+    else
+    {
+        const bool showTick = pending ? target : (!timedOut && active);
+        if (showTick)
+        {
+            g.setColour(pending ? amber.withAlpha(0.6f) : C::green);
+            auto tick = lnf.getTickShape(0.75f);
+            g.fillPath(tick, tick.getTransformToScaleToFit(
+                                 box.reduced(3.0f, 3.0f), false));
+        }
+    }
+}
+
+void EchoJayEditor::drawMsLamp(juce::Graphics& g, juce::Rectangle<int> r,
+                               bool isSolo, bool lit, bool capable)
+{
+    const juce::Colour litCol (isSolo ? (juce::uint32) 0xffF2E14C
+                                      : (juce::uint32) 0xffFFB020);
+    const juce::Colour chrome = LinkConsole::caption;
+    auto rf = r.toFloat().reduced(1.0f);
+    if (lit) { g.setColour(litCol); g.fillRoundedRectangle(rf, 3.0f); }
+    g.setColour(! capable ? chrome.withAlpha(0.35f)
+                : lit ? juce::Colours::black : chrome);
+    if (! lit) g.drawRoundedRectangle(rf, 3.0f, 1.0f);
+    g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+    g.drawText(isSolo ? "S" : "M", r, juce::Justification::centred);
+}
+
+void EchoJayEditor::stripMuteSoloClick(const juce::String& uid, bool isSolo)
+{
+    // Request the inverse of the PUBLISHED state. Refused WITH THE REASON
+    // against an incapable binary — never a silent no-op.
+    auto ms = processorRef.muteSoloSnaps_.find(uid);
+    if (ms == processorRef.muteSoloSnaps_.end() || ! ms->second.capable)
+    {
+        chainListPanel.statusText = processorRef.resolveLinkDisplayName(uid)
+            + " predates mute/solo - reinstall its EchoJay Link.";
+        refreshChainPanelForView(true);
+        return;
+    }
+    sendLinkMuteSoloCommand(uid, isSolo,
+        isSolo ? ! ms->second.soloOn : ! ms->second.muteUser);
+}
+
+juce::String EchoJayEditor::muteSoloStripTip(const juce::String& uid,
+                                             bool isSolo) const
+{
+    auto ms = processorRef.muteSoloSnaps_.find(uid);
+    if (ms == processorRef.muteSoloSnaps_.end() || ! ms->second.capable)
+        return "This Link predates mute/solo - reinstall it.";
+    if (isSolo)
+        return ms->second.soloOn
+            ? "Soloed (click to un-solo). Solo mutes Link channels only."
+            : "Solo: mute every other Link channel. Monitoring only - "
+              "never saved.";
+    return ms->second.muteUser
+        ? "Muted (click to un-mute). EchoJay's own mute - Logic's is "
+          "untouched."
+        : "Mute this Link's channel output. A mix decision: saves with "
+          "the project.";
+}
+
+juce::String EchoJayEditor::soloLimitLineText() const
+{
+    // Spec §5 amended: the design fact shows only while a solo is active;
+    // the old-binary count stays a warning and rides the same line.
+    juce::String t = "Solo mutes Link channels only - use Logic's solo "
+                     "for un-Linked tracks.";
+    if (processorRef.soloIncapableLive_ > 0)
+        t << " " << juce::String(processorRef.soloIncapableLive_)
+          << " Link(s) predate solo and keep playing.";
+    return t;
+}
+
 void EchoJayEditor::sendLinkActiveCommand(const juce::String& linkAddr, bool active)
 {
     int err = 0;
@@ -27846,7 +29192,7 @@ void EchoJayEditor::sendLinkActiveCommand(const juce::String& linkAddr, bool act
     if (dir.isEmpty() || linkAddr.isEmpty()) return;
     const juce::String& id = linkAddr;
 
-    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    int seq = LinkShm::nextCtrlSeq();
     for (auto& p : linkCtrlPending_)
         if (p.addr == linkAddr && p.seq >= seq)
             seq = p.seq + 1;   // same-second re-toggle: keep seq advancing
@@ -27914,7 +29260,7 @@ void EchoJayEditor::sendLinkPreGainCommand(const juce::String& linkAddr, float p
     for (const auto& p : linkCtrlPending_)
         if (p.addr == linkAddr && !p.isGain && !p.isPreGain && !p.timedOut) active = p.target;
 
-    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    int seq = LinkShm::nextCtrlSeq();
     for (auto& p : linkCtrlPending_)
         if (p.addr == linkAddr && p.seq >= seq) seq = p.seq + 1;
 
@@ -27956,7 +29302,7 @@ void EchoJayEditor::sendLinkPreGainResetCommand(const juce::String& linkAddr)
         const juce::String a = li.uid.isNotEmpty() ? li.uid : LinkShm::makeSafeFilePart(li.name);
         if (a == linkAddr) { active = li.active; break; }
     }
-    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    int seq = LinkShm::nextCtrlSeq();
     for (auto& p : linkCtrlPending_)
         if (p.addr == linkAddr && p.seq >= seq) seq = p.seq + 1;
     auto* cmd = new juce::DynamicObject();
@@ -27997,7 +29343,7 @@ void EchoJayEditor::sendLinkGainCommand(const juce::String& linkAddr, float gain
     for (const auto& p : linkCtrlPending_)
         if (p.addr == linkAddr && !p.isGain && !p.timedOut) active = p.target;
 
-    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    int seq = LinkShm::nextCtrlSeq();
     for (auto& p : linkCtrlPending_)
         if (p.addr == linkAddr && p.seq >= seq) seq = p.seq + 1;
 
@@ -28347,7 +29693,7 @@ void EchoJayEditor::sendLinkPlacementCommand(const juce::String& linkAddr, int p
     for (const auto& p : linkCtrlPending_)
         if (p.addr == linkAddr && !p.isGain && !p.timedOut) active = p.target;
 
-    int seq = (int)(juce::Time::currentTimeMillis() / 1000);
+    int seq = LinkShm::nextCtrlSeq();
     for (auto& p : linkCtrlPending_)
         if (p.addr == linkAddr && p.seq >= seq) seq = p.seq + 1;
 
@@ -28388,7 +29734,7 @@ void EchoJayEditor::showLinkPlacementMenu(const juce::String& linkAddr)
     m.addItem(2, "Channel", true, cur == 2);
     m.addItem(3, "Send",    true, cur == 3);
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    m.showMenuAsync(juce::PopupMenu::Options(),
+    m.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
         [safeThis, linkAddr](int r)
         {
             if (safeThis == nullptr || r == 0) return;
@@ -28471,7 +29817,7 @@ void EchoJayEditor::showLinkGainMenu(const juce::String& linkAddr)
     }
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    m.showMenuAsync(juce::PopupMenu::Options(),
+    m.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
         [safeThis, linkAddr, busInteg](int r)
         {
             if (safeThis == nullptr || r == 0) return;
@@ -28854,6 +30200,7 @@ void EchoJayEditor::showChainRowMenu(int displayIdx)
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this)
+                        .withParentComponent(this)
                         .withTargetScreenArea({ juce::Desktop::getMousePosition().x,
                                                 juce::Desktop::getMousePosition().y, 1, 1 }),
         [safeThis, displayIdx, row](int choice)
@@ -29311,7 +30658,8 @@ void EchoJayEditor::showSavedChainsMenu()
         }
 
         menu.showMenuAsync(juce::PopupMenu::Options()
-                               .withTargetComponent(&safeThis->chainOpenBtn),
+                               .withTargetComponent(&safeThis->chainOpenBtn)
+                               .withParentComponent(safeThis.getComponent()),
             [safeThis, ids, names](int choice)
             {
                 if (safeThis == nullptr || choice <= 0
@@ -29405,7 +30753,7 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
             ch.archiveCurrentRack("replaced by recall: " + name);
             for (int i = ch.getNumSlots() - 1; i >= 0; --i) ch.removeSlot(i);
             safeThis->chainSelectedSlot_ = -1;
-            safeThis->chainListPanel.rebuild(ch.getAllSlotInfos(), -1);
+            safeThis->refreshChainPanelForView(false);   // removeSlot bumped per slot
 
             // The SAME restore path a session reload takes. The callback
             // fires after every slot attempt, so the rack fills in visibly
@@ -29418,8 +30766,7 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
                 auto& ch2 = safeThis->processorRef.getChainHost();
                 if (safeThis->chainSelectedSlot_ < 0 && ch2.getNumSlots() > 0)
                     safeThis->chainSelectedSlot_ = 0;
-                safeThis->chainListPanel.rebuild(ch2.getAllSlotInfos(),
-                                                 safeThis->chainSelectedSlot_);
+                safeThis->refreshChainPanelForView(false);   // per-slot loads bump the revision
                 // Per-slot degradation, visible as it happens: a plugin that
                 // would not load, or settings that would not restore, is
                 // named here. A silent default is the one outcome the user
@@ -29597,7 +30944,8 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
         // first plugin, so the page never sits on the old chain looking
         // frozen while slots instantiate (instantiation blocks the message
         // thread per plugin, so between-stall paints are all the user gets).
-        safeThis->chainListPanel.rebuild(ch2.getAllSlotInfos(), -1);
+        // removeSlot bumped per slot and the selection moved to -1 above.
+        safeThis->refreshChainPanelForView(false);
         safeThis->chainListPanel.statusText = "Loading " + slots[0].name
             + " (1 of " + juce::String((int)slots.size()) + ")...";
         safeThis->chainListPanel.repaint();
@@ -29615,7 +30963,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
             {
                 auto& ch3 = safeThis->processorRef.getChainHost();
                 safeThis->chainSelectedSlot_ = ch3.getNumSlots() > 0 ? 0 : -1;
-                safeThis->chainListPanel.rebuild(ch3.getAllSlotInfos(), safeThis->chainSelectedSlot_);
+                safeThis->refreshChainPanelForView(false);   // loads bumped the revision
                 // Every slot failing must not strand the Loading text; the
                 // "Failed" prefix picks up the panel's error style.
                 safeThis->chainListPanel.statusText =
@@ -29715,6 +31063,15 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
                     {
                         if (safeThis == nullptr) return;
                         auto& panel = safeThis->chainListPanel;
+                        // 2 Sep 2026 (the leak onto other tabs): a hosted
+                        // editor's NSView composites over EVERYTHING and
+                        // ignores JUCE visibility — auto-opening one after
+                        // a build that finished while the user had switched
+                        // tabs painted the plugin box over that tab. The
+                        // panel's visibility IS the on-Chain fact (writers:
+                        // switchToTab + the review modal); off-tab, skip
+                        // the auto-open — the user opens on arrival.
+                        if (! panel.isVisible()) return;
                         int nSlots = safeThis->processorRef.getChainHost().getNumSlots();
                         for (int s = 0; s < nSlots && !panel.anyEditorOpen(); ++s)
                             panel.selectSlot(s);
@@ -29796,7 +31153,9 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
                                                + " applied to \"" + name + "\"").toRawUTF8());
                             }
                             // Progressive: the rack grows a row per loaded slot
-                            safeThis->chainListPanel.rebuild(ch4.getAllSlotInfos(), -1);
+                            // (completeLoad bumped; selection stays -1 from
+                            // the build-start clear)
+                            safeThis->refreshChainPanelForView(false);
                         }
                         (*loadNextPtr)();
                     });
@@ -30896,9 +32255,9 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
                         }
                         else
                             cm.editData = remaining;
-                        auto& chS2 = safeThis2->processorRef.getChainHost();
-                        safeThis2->chainListPanel.rebuild(chS2.getAllSlotInfos(),
-                                                          safeThis2->chainSelectedSlot_);
+                        // force = true, NAMED: card-apply is settings-only —
+                        // no revision bump, signature blind.
+                        safeThis2->refreshChainPanelForView(true);
                     }
                     cm.editBaseRevision = safeThis2->processorRef.getChainHost().getChainRevision();
                 }
@@ -31998,7 +33357,7 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
             sizeMenu.addItem(2, "Small (900 x 580)");
             sizeMenu.addItem(3, "Default (1170 x 696)");
             sizeMenu.addItem(4, "Large (1400 x 860)");
-            sizeMenu.showMenuAsync(juce::PopupMenu::Options(),
+            sizeMenu.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
                 [this](int result) {
                     if (result == 2) setSize(900, 580);
                     else if (result == 3) setSize(1170, 696);
@@ -32019,7 +33378,7 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         sizeMenu.addItem(2, "Default (900 x 580)");
         sizeMenu.addItem(3, "Large (1080 x 696)");
         sizeMenu.addItem(4, "Extra Large (1260 x 812)");
-        sizeMenu.showMenuAsync(juce::PopupMenu::Options(),
+        sizeMenu.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
             [this](int result) {
                 if (result == 2) setSize(900, 580);
                 else if (result == 3) setSize(1080, 696);
@@ -32069,7 +33428,8 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
                 menu.addItem(1, "Rename \"" + snaps[(size_t)idx].name + "\"");
                 menu.addItem(2, "Delete Pass");
                 auto* targetBox = slot.box;
-                menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(*targetBox),
+                menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(*targetBox)
+                                       .withParentComponent(this),
                     [this, idx, targetBox](int result) {
                         if (result == 1) {
                             auto snaps2 = processorRef.getSnapshots();

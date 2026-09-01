@@ -408,6 +408,106 @@ inline juce::String makeAudioFilename(const juce::String& linkName)
 static inline const char* kRegistryFilename = "registry_v2.bin";
 
 // =============================================================================
+//  Registry liveness (25 Aug 2026): a slot is LISTED only after its heartbeat
+//  has been observed to CLIMB. inUse alone lists ghosts: a killed Link's slot
+//  keeps inUse=1 with a frozen heartbeat until the ~30s reaper, and the
+//  selector showed five dead rows settling to two. Pure so the decision is
+//  gateable without a processor; the same observation feeds the reaper.
+// =============================================================================
+struct RegLiveness
+{
+    uint32_t lastHb = 0;
+    bool     seen   = false;    // at least one observation exists
+    bool     proven = false;    // the heartbeat has climbed since first seen
+    bool observe (uint32_t hb)  // returns proven as of this observation
+    {
+        if (seen && hb != lastHb) proven = true;
+        lastHb = hb;
+        seen   = true;
+        return proven;
+    }
+};
+
+// =============================================================================
+//  Uid claim gate (25 Aug 2026 ruling): a Link restoring its SAVED uid may
+//  find another registry slot already carrying it. Three cases, decided by
+//  the holder's heartbeat, never by inUse alone:
+//    - PROVEN LIVE (heartbeat observed climbing): a genuine duplicate
+//      (copy/paste clones the saved state, uid included) -> THIS instance
+//      re-mints; first to live on the uid keeps it.
+//    - OBSERVED FROZEN through the threshold: a ghost of a dead launch ->
+//      reap the slot and ADOPT the uid. This is the churn fix: the old
+//      guard re-minted against ghosts, so every unclean kill burned an
+//      identity and orphaned its files (62 sidecars on one machine).
+//    - NOT YET DECIDED (just-launched holder, too few observations): WAIT.
+//      An unproven holder is never adopted -- reaping a possibly-live slot
+//      is the one unrecoverable mistake here.
+//  Pure so all three arms gate functionally; the caller re-observes on its
+//  claim-retry tick (~1s; producers bump ~1Hz, so live proves in 1-2 ticks).
+// =============================================================================
+struct UidClaimGate
+{
+    enum class Decision { Wait, Remint, AdoptGhost };
+    RegLiveness live;
+    int ticks = 0;
+    Decision observe (uint32_t holderHb, int frozenTicksNeeded = 5)
+    {
+        ++ticks;
+        if (live.observe (holderHb)) return Decision::Remint;
+        if (ticks >= frozenTicksNeeded) return Decision::AdoptGhost;
+        return Decision::Wait;
+    }
+};
+
+// =============================================================================
+//  Dead-uid file reaper, NARROWED to transient classes (25 Aug 2026 ruling).
+//  The original premise — "a dead uid can never be addressed again" — is
+//  FALSE: the uid is saved in the Link's state and restored on project
+//  reopen, so uids RETURN (proven by a sidecar whose revision went
+//  backwards under one uid). What remains safe to reap:
+//    - PROTOCOL TRANSIENTS (lease, lock, ctrl/chain cmd+ack): consumed or
+//      recency-gated by protocol; a returning Link recreates them from
+//      nothing.
+//    - UNREFERENCED AUDIO RINGS: recreated at openRing by any returning
+//      producer; reaped against the ring FILENAMES referenced by registry
+//      slots — never by parsing a uid out of a name.
+//  SPARED: rack-*.json (the sidecar — a returning uid's rack description)
+//  and structplan-*.json ENTIRELY (a journal is someone's rollback; no
+//  grace window makes deleting one a safe judgement).
+// =============================================================================
+inline int reapDeadUidFiles (const juce::String& dir,
+                             const juce::StringArray& liveUids,
+                             const juce::StringArray& liveAudioFiles,
+                             juce::int64 nowMs, juce::int64 graceMs)
+{
+    int reaped = 0;
+    static const char* uidPatterns[] = { "racklock-*.json",
+        "lease-*.json", "ctrl-cmd-*.json", "ctrl-ack-*.json",
+        "chain-cmd-*.json", "chain-ack-*.json" };
+    for (auto* pat : uidPatterns)
+        for (auto& f : juce::File (dir).findChildFiles (juce::File::findFiles,
+                                                        false, pat))
+        {
+            const auto uid = f.getFileName()
+                                 .fromLastOccurrenceOf ("-", false, false)
+                                 .upToLastOccurrenceOf (".", false, false);
+            if (uid.isEmpty() || liveUids.contains (uid)) continue;
+            if (nowMs - f.getLastModificationTime().toMilliseconds() < graceMs)
+                continue;
+            if (f.deleteFile()) ++reaped;
+        }
+    for (auto& f : juce::File (dir).findChildFiles (juce::File::findFiles,
+                                                    false, "audio_*.bin"))
+    {
+        if (liveAudioFiles.contains (f.getFileName())) continue;
+        if (nowMs - f.getLastModificationTime().toMilliseconds() < graceMs)
+            continue;
+        if (f.deleteFile()) ++reaped;
+    }
+    return reaped;
+}
+
+// =============================================================================
 //  Low-level file mmap helpers
 // =============================================================================
 
@@ -575,6 +675,16 @@ inline uint32_t ringConsume(void* map, float* outL, float* outR, int numFrames)
 /// than a policy baked in here. The seek only ever moves FORWARD (backward
 /// would re-read frames the producer may already be overwriting) and never
 /// past writeIdx.
+/// Set the read cursor to an ABSOLUTE ring index (stamp-based alignment
+/// seek, 29 Aug 2026). Bidirectional on purpose: against a pre-drained
+/// ring the cushion must be BUILT by stepping back into content the ring
+/// still holds (capacity 65536 frames), which a forward trim can never
+/// do. Caller clamps into [write - held, write]; single-reader ring.
+inline void ringSeekTo(void* map, uint32_t readIdx)
+{
+    storeRelease(&ringHeader(map)->readIdx, readIdx);
+}
+
 inline uint32_t ringSeekForward(void* map, uint32_t targetBacklog)
 {
     auto*          hdr = ringHeader(map);
@@ -956,6 +1066,22 @@ struct RackSidecarSlot {
     // (LinkProcessor publishRackSidecar), so a new field goes last and is set
     // by assignment, never spliced into the middle.
     juce::String fp, uid, version;
+    // Rack lock recency transport (21 Aug 2026): wallclock ms of the Link's
+    // last LOCAL rack edit — the six LinkProcessor UI mutations, never a
+    // remote op, or the main would wait out its own edits after releasing.
+    // 0 = never / written by a build that predates the field, which reads as
+    // "quiet" (racklock_test asserts the field genuinely round-trips, so a
+    // systemic zero cannot masquerade as a pass). LAST, after the identity
+    // strings, same positional-init rule as above.
+    double lastEditMs = 0.0;
+    // Catalogue manufacturer (2 Sep 2026): editorPlacement's
+    // float-by-identity arm keys on it, and a remote rack's projection has
+    // no ChainHost to read through to — the sidecar is its only source.
+    // Additive at v:1, written only when non-empty, absent reads "".
+    // LAST, after lastEditMs, same positional-init rule as above — this is
+    // the trap's THIRD visit; a field spliced mid-struct shifts every
+    // brace initialiser silently and still compiles.
+    juce::String manufacturer;
 };
 struct RackSidecar {
     bool  valid = false;
@@ -970,7 +1096,465 @@ struct RackSidecar {
     float preGainDb = 0.0f;
     bool  preGainUserSet = false;
     bool  preGainInputKnown = false;
+    // Whole-rack borrow capability (step 2, 21 Aug 2026). Additive at v:1:
+    // written true by a binary that honors the rack-scoped lease; absent
+    // reads false, and a main NEVER offers borrow against false — an old
+    // Link must not half-engage (see LeaseScope below for the wire-level
+    // belt to this braces).
+    bool  borrowCapable = false;
+    // Structure editing capability (phase 2): a Link that can journal and
+    // apply a structure plan announces it; absent reads false and a main
+    // never sends a plan — the never-half-see pattern, again.
+    bool  structureEditCapable = false;
+    bool  inContextCapable = false;
+    // Mute/solo layer (27 Aug 2026). Additive at v:1, written only when
+    // true, absent reads false — the carved-bit convention throughout.
+    // muteUser is the user's own mix mute (persists in the Link's saved
+    // state); soloOn is this Link's solo membership (NEVER persisted — a
+    // saved solo is how a project opens silent and nobody knows why);
+    // muteSoloCapable announces the composed mute + the fabric scan, and
+    // a main never sends the mute/solo cmds against false.
+    bool  muteUser = false;
+    bool  soloOn = false;
+    bool  muteSoloCapable = false;
+    bool  muteEngaged = false;         // LIVE state: the mute is actually
+                                       // applied this instant — the closed
+                                       // loop that replaces "impossible by
+                                       // construction" with CONFIRMED    // §8: can mute its output on lease
+                                       // command (muteOut) — in-context
+                                       // monitoring is OFFERED only when
+                                       // announced, never detected
     std::vector<RackSidecarSlot> slots;
+};
+
+// =============================================================================
+//  Whole-rack borrow: the third state-transfer tier and the lease scope
+//  (RACK_BORROW_IMPLEMENTATION_SPEC §4/§5, step 2)
+// =============================================================================
+// The Link pull is a LOCAL file between two processes — document-class, not
+// request-class. Its own named pair (spec §5/3c, decided): initialized to the
+// session tier's values, free to diverge, and NEVER aligned with the API tier
+// (anything that leaves the machine keeps kApiState*). Slot cap enforced
+// Link-side before encoding; the TOTAL is a whole-chain budget enforced
+// main-side across the rack pull (over → the borrow REFUSES with a named
+// list, §5e — no partial borrow).
+static constexpr int kLinkTransferMaxSlotBytes  = 4 * 1024 * 1024;
+static constexpr int kLinkTransferMaxTotalBytes = 16 * 1024 * 1024;
+
+// The lease's rack scope rides the EXISTING lease file additively: a rack
+// lease writes scope:"rack" and slot:0. The pure decision below is shared by
+// the Link's engage arm and the test; its old-binary arm is not hypothetical
+// — an old binary never parses `scope`, sees slot1 == 0, and its own
+// slot-validity check refuses the engage. Same outcome, proven both ways.
+// The borrow's ring binding is re-resolved every renew tick rather than
+// trusted from engage (hands-on finding #3: a sample-rate change can remap
+// the Link slots and a stale binding goes SILENT while the lease still holds
+// the Link dry). Pure decision, pinned in borrowhost_test: found again →
+// stay/rebind; not found → tolerate kBorrowRingMaxLostTicks consecutive
+// ticks (the Link may be re-registering), then RELEASE WITH WORDS — a
+// borrow must produce sound or a stated release, never silence.
+static constexpr int kBorrowRingMaxLostTicks = 3;   // ~3s at the renew cadence
+
+// Step 3 (22 Aug 2026): WHAT APPLY WRITES, decided per slot by one pure
+// gate. The hard rule (spec §5c, decided): a WITHHELD slot — one whose
+// state never arrived because the identity match refused it — is NEVER
+// written back, edited or not: its local instance runs defaults plus
+// whatever the user did to defaults, and committing that would stomp the
+// Link's real settings. An UNEDITED slot (current state byte-equal to the
+// post-seed baseline) is left untouched too: Apply writes exactly what the
+// user changed, nothing else. The Link's state can only change through a
+// commit payload, so proving the plan is proving the Link untouched.
+// The sidecar's slot uid is HEX (getSlotIdentity's toHexString — built for
+// the server's fp union), but stateFitsPlugin compares DECIMAL
+// (String(found.uniqueId)). Feeding one into the other withheld EVERY
+// slot with a known uid — seed and Apply alike (22 Aug 2026, the
+// zero-commits round). ONE converter, used by every consumer that hands a
+// sidecar uid to the state-match policy; empty stays empty (no opinion).
+inline juce::String sidecarUidToStateUid (const juce::String& hexUid)
+{
+    if (hexUid.isEmpty()) return {};
+    return juce::String (hexUid.getHexValue32());
+}
+
+// ---------------------------------------------------------------------------
+// Ctrl-cmd seq, collision-proof (24 Aug 2026): the seconds-resolution stamp
+// meant two commands in one second shared a seq and the second was refused
+// as a duplicate — silently, which read as "Apply does nothing". ONE author
+// for every command seq this process issues: seeded at wall seconds so a
+// restart stays monotonic against a Link's remembered lastApplied, and
+// strictly increasing per call so two commands issued in the same
+// MILLISECOND still get distinct seqs (gated functionally, not trusted).
+// ---------------------------------------------------------------------------
+inline int nextCtrlSeq()
+{
+    static std::atomic<int> last { 0 };
+    const int now = (int) (juce::Time::currentTimeMillis() / 1000);
+    int prev = last.load();
+    int next;
+    do { next = juce::jmax (now, prev + 1); }
+    while (! last.compare_exchange_weak (prev, next));
+    return next;
+}
+
+struct BorrowCommit
+{
+    enum class Action { Commit, LeaveWithheld, LeaveUnedited };
+    static Action classify (bool withheld, bool edited)
+    {
+        if (withheld) return Action::LeaveWithheld;   // beats edited, always
+        return edited ? Action::Commit : Action::LeaveUnedited;
+    }
+    struct Plan
+    {
+        std::vector<Action> actions;
+        int changed = 0;          // slots the user edited (incl. withheld ones)
+        int committing = 0;       // what Apply will actually write
+        int withheldEdited = 0;   // edited but never written (the asymmetry)
+        int untouched = 0;        // unedited, left alone
+    };
+    static Plan plan (const std::vector<std::pair<bool, bool>>& slots) // {withheld, edited}
+    {
+        Plan p;
+        for (const auto& [withheld, edited] : slots)
+        {
+            const auto a = classify (withheld, edited);
+            p.actions.push_back (a);
+            if (edited) ++p.changed;
+            if (a == Action::Commit) ++p.committing;
+            else if (withheld && edited) ++p.withheldEdited;
+            if (! edited) ++p.untouched;
+        }
+        return p;
+    }
+};
+
+// =============================================================================
+//  Structure editing, phase 1 (RACK_STRUCTURE_EDIT_SPEC, 22 Aug 2026):
+//  the PLAN and the JOURNAL — pure computation and file format only. No UI,
+//  no Link-side applier, no audio; phase 2 wires these into the transport.
+// =============================================================================
+namespace StructureEdit
+{
+    // Per-slot identity for the guard (spec §5): name always compared, uid
+    // and fp only when BOTH sides carry them (absent-is-no-opinion — the
+    // stateFitsPlugin grammar). uid is DECIMAL here, normalized from the
+    // sidecar's hex at construction — the encoding that shipped a feature
+    // which couldn't write is not allowed to recur.
+    struct SlotIdentity
+    {
+        juce::String name, uid, fp;
+        static SlotIdentity fromSidecar (const RackSidecarSlot& s)
+        {
+            return { s.name, sidecarUidToStateUid (s.uid), s.fp };
+        }
+        bool matches (const SlotIdentity& other) const
+        {
+            if (name.trim() != other.name.trim()) return false;
+            if (uid.isNotEmpty() && other.uid.isNotEmpty() && uid != other.uid)
+                return false;
+            if (fp.isNotEmpty() && other.fp.isNotEmpty() && fp != other.fp)
+                return false;
+            return true;
+        }
+    };
+
+    // The identity guard (spec §5). Count first, then per-index identity.
+    // §3e's same-name swap is CAUGHT here: names match after a swap, but
+    // per-index uid/fp do not.
+    enum class BaseCheck { Match, CountMismatch, IdentityMismatch };
+    inline BaseCheck verifyBaseIdentity (const std::vector<SlotIdentity>& planBase,
+                                         const std::vector<SlotIdentity>& live)
+    {
+        if (planBase.size() != live.size()) return BaseCheck::CountMismatch;
+        for (size_t i = 0; i < planBase.size(); ++i)
+            if (! planBase[i].matches (live[i]))
+                return BaseCheck::IdentityMismatch;
+        return BaseCheck::Match;
+    }
+
+    // Capability (spec §0): an old Link never sees a plan. Trivial and pure
+    // so the refusal arm is pinnable.
+    enum class Accept { Proceed, RefuseIncapable };
+    inline Accept accept (bool structureEditCapable)
+    { return structureEditCapable ? Accept::Proceed : Accept::RefuseIncapable; }
+
+    // The ordered ops (spec §3). Leave* classes are not ops — they are the
+    // absence of one; the plan reports their counts for the confirm.
+    enum class OpType { Remove, Move, Create, Commit };
+    struct Op
+    {
+        OpType type {};
+        int from = -1;             // Remove/Move/Commit: index at op time
+        int to   = -1;             // Move: target index; Create: insert index
+        juce::String name;         // display + honesty
+        juce::String stateB64;     // Create seed / Commit payload
+        SlotIdentity identity;     // phase 2: the applier keys staging/park by this
+        bool bypassed = false;     // Create: the bypass state the user gave the
+                                   // slot in the main — carried so the lease's
+                                   // prior remap has a truth for created slots
+                                   // (never a default, never "not restored")
+        juce::String stateFormat;  // Create: the format of the instance whose
+                                   // state seeded stateB64 (the main may host a
+                                   // SUBSTITUTE build) — state is format-
+                                   // specific, and the applier seeds only on a
+                                   // match; empty = no opinion (seed)
+    };
+
+    // What the plan computation is TOLD about each current slot. originIndex
+    // is the base index this slot came from, -1 for a slot created in the
+    // main. The withheld/edited flags are the RECORDED facts from the borrow
+    // session, never recomputed here.
+    struct CurrentSlot
+    {
+        SlotIdentity identity;
+        int  originIndex = -1;
+        bool edited = false, withheld = false;
+        juce::String stateB64;     // current state (Create seed / Commit)
+        bool bypassedNow = false;  // live bypass in the main's borrowed host —
+                                   // rides the Create op (field added LAST:
+                                   // existing positional inits stay valid)
+        juce::String stateFormat;  // the live instance's format — rides the
+                                   // Create op so a substitute's blob can
+                                   // never seed a different format's build
+    };
+
+    struct Plan
+    {
+        juce::String uid;                       // the Link
+        std::vector<SlotIdentity> baseIdentity; // the guard's snapshot
+        std::vector<Op> ops;                    // ordered: Removes, Moves, Creates, Commits
+        int changed = 0, committing = 0, creating = 0, removing = 0,
+            moving = 0, withheldEdited = 0, untouched = 0;
+    };
+
+    // The plan computation, deterministic by construction (spec §3 order:
+    // removes descending, then moves to target order, then creates at their
+    // positions, then commits). Withheld beats edited, always — a withheld
+    // slot never yields a Commit, moved or not.
+    inline Plan computePlan (const juce::String& uid,
+                             const std::vector<SlotIdentity>& base,
+                             const std::vector<CurrentSlot>& current)
+    {
+        Plan p;
+        p.uid = uid;
+        p.baseIdentity = base;
+
+        // Removes: base indices no current slot originates from, descending
+        // so earlier removes cannot shift later ones.
+        std::vector<bool> survives (base.size(), false);
+        for (const auto& c : current)
+            if (c.originIndex >= 0 && c.originIndex < (int) base.size())
+                survives[(size_t) c.originIndex] = true;
+        for (int i = (int) base.size() - 1; i >= 0; --i)
+            if (! survives[(size_t) i])
+            {
+                p.ops.push_back ({ OpType::Remove, i, -1, base[(size_t) i].name, {},
+                                   base[(size_t) i] });
+                ++p.removing;
+            }
+
+        // Moves: bring the survivors into the current order. The working
+        // model mirrors what the applier will hold after the removes.
+        std::vector<int> work;                     // base origin per position
+        for (size_t i = 0; i < base.size(); ++i)
+            if (survives[i]) work.push_back ((int) i);
+        std::vector<int> target;                   // survivor origins, current order
+        for (const auto& c : current)
+            if (c.originIndex >= 0) target.push_back (c.originIndex);
+        for (int pos = 0; pos < (int) target.size(); ++pos)
+        {
+            if (work[(size_t) pos] == target[(size_t) pos]) continue;
+            int fromPos = pos + 1;
+            while (fromPos < (int) work.size()
+                   && work[(size_t) fromPos] != target[(size_t) pos]) ++fromPos;
+            const int origin = work[(size_t) fromPos];
+            work.erase (work.begin() + fromPos);
+            work.insert (work.begin() + pos, origin);
+            p.ops.push_back ({ OpType::Move, fromPos, pos,
+                               base[(size_t) origin].name, {},
+                               base[(size_t) origin] });
+            ++p.moving;
+        }
+
+        // Creates: at their final positions, ascending (earlier inserts make
+        // later target indices correct).
+        for (int i = 0; i < (int) current.size(); ++i)
+            if (current[(size_t) i].originIndex < 0)
+            {
+                p.ops.push_back ({ OpType::Create, -1, i,
+                                   current[(size_t) i].identity.name,
+                                   current[(size_t) i].stateB64,
+                                   current[(size_t) i].identity,
+                                   current[(size_t) i].bypassedNow,
+                                   current[(size_t) i].stateFormat });
+                ++p.creating;
+            }
+
+        // Commits: edited survivors, withheld NEVER (spec §3 / §5c).
+        for (int i = 0; i < (int) current.size(); ++i)
+        {
+            const auto& c = current[(size_t) i];
+            if (c.originIndex < 0) continue;       // Create seeds itself
+            if (c.edited) ++p.changed;
+            if (! c.edited) { ++p.untouched; continue; }
+            if (c.withheld) { ++p.withheldEdited; continue; }
+            p.ops.push_back ({ OpType::Commit, i, -1,
+                               c.identity.name, c.stateB64, c.identity });
+            ++p.committing;
+        }
+        return p;
+    }
+
+    // -------------------------------------------------------------------
+    //  The journal (spec §1): plan + ABSOLUTE pre-images, written before
+    //  the first mutation, deleted only on completion. Pre-images are the
+    //  whole shape and every state — restore is wholesale replacement, so
+    //  replaying it is idempotent by construction (and gated anyway).
+    // -------------------------------------------------------------------
+    struct PreImages
+    {
+        std::vector<SlotIdentity> shape;
+        juce::StringArray states;              // parallel, "" = none held
+    };
+
+    inline juce::String journalPath (const juce::String& dir, const juce::String& uid)
+    { return dir + "structplan-" + uid + ".json"; }
+
+    inline juce::var identityToVar (const SlotIdentity& s)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("name", s.name);
+        if (s.uid.isNotEmpty()) o->setProperty ("uid", s.uid);
+        if (s.fp.isNotEmpty())  o->setProperty ("fp",  s.fp);
+        return juce::var (o);
+    }
+    inline SlotIdentity identityFromVar (const juce::var& v)
+    {
+        SlotIdentity s;
+        if (auto* o = v.getDynamicObject())
+        {
+            s.name = o->getProperty ("name").toString();
+            s.uid  = o->getProperty ("uid").toString();
+            s.fp   = o->getProperty ("fp").toString();
+        }
+        return s;
+    }
+
+    inline juce::var planToVar (const Plan& p, const PreImages& pre)
+    {
+        auto* root = new juce::DynamicObject();
+        root->setProperty ("v",   1);
+        root->setProperty ("uid", p.uid);
+        juce::Array<juce::var> baseArr, opsArr, shapeArr;
+        for (const auto& s : p.baseIdentity) baseArr.add (identityToVar (s));
+        root->setProperty ("baseIdentity", baseArr);
+        for (const auto& op : p.ops)
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("type", (int) op.type);
+            o->setProperty ("from", op.from);
+            o->setProperty ("to",   op.to);
+            o->setProperty ("name", op.name);
+            if (op.stateB64.isNotEmpty()) o->setProperty ("state", op.stateB64);
+            o->setProperty ("identity", identityToVar (op.identity));
+            o->setProperty ("byp", op.bypassed);
+            if (op.stateFormat.isNotEmpty())
+                o->setProperty ("stateFmt", op.stateFormat);
+            opsArr.add (juce::var (o));
+        }
+        root->setProperty ("ops", opsArr);
+        for (const auto& s : pre.shape) shapeArr.add (identityToVar (s));
+        root->setProperty ("preShape", shapeArr);
+        juce::Array<juce::var> preStates;
+        for (const auto& st : pre.states) preStates.add (st);
+        root->setProperty ("preStates", preStates);
+        return juce::var (root);
+    }
+
+    inline bool planFromVar (const juce::var& v, Plan& pOut, PreImages& preOut)
+    {
+        auto* o = v.getDynamicObject();
+        if (o == nullptr || (int) o->getProperty ("v") != 1) return false;
+        pOut = {};
+        preOut = {};
+        pOut.uid = o->getProperty ("uid").toString();
+        if (auto* arr = o->getProperty ("baseIdentity").getArray())
+            for (auto& e : *arr) pOut.baseIdentity.push_back (identityFromVar (e));
+        if (auto* arr = o->getProperty ("ops").getArray())
+            for (auto& e : *arr)
+                if (auto* oo = e.getDynamicObject())
+                    pOut.ops.push_back ({ (OpType) (int) oo->getProperty ("type"),
+                                          (int) oo->getProperty ("from"),
+                                          (int) oo->getProperty ("to"),
+                                          oo->getProperty ("name").toString(),
+                                          oo->getProperty ("state").toString(),
+                                          identityFromVar (oo->getProperty ("identity")),
+                                          (bool) oo->getProperty ("byp"),
+                                          oo->getProperty ("stateFmt").toString() });
+        if (auto* arr = o->getProperty ("preShape").getArray())
+            for (auto& e : *arr) preOut.shape.push_back (identityFromVar (e));
+        if (auto* arr = o->getProperty ("preStates").getArray())
+            for (auto& e : *arr) preOut.states.add (e.toString());
+        return true;
+    }
+
+    inline void writeJournal (const juce::String& dir, const Plan& p,
+                              const PreImages& pre)
+    {
+        juce::File (journalPath (dir, p.uid))
+            .replaceWithText (juce::JSON::toString (planToVar (p, pre), true));
+    }
+    inline bool readJournal (const juce::String& dir, const juce::String& uid,
+                             Plan& pOut, PreImages& preOut)
+    {
+        juce::File f (journalPath (dir, uid));
+        if (! f.existsAsFile()) return false;
+        return planFromVar (juce::JSON::parse (f.loadFileAsString()), pOut, preOut);
+    }
+
+    // The restore, as a pure model transform: ABSOLUTE pre-images replace
+    // the rack wholesale. Feeding the output back in yields itself — the
+    // idempotence the journal's crash-retry depends on, gated in
+    // structplan_test rather than trusted.
+    struct RackModel { std::vector<SlotIdentity> shape; juce::StringArray states; };
+    inline RackModel restoreFromJournal (const PreImages& pre, const RackModel&)
+    { return { pre.shape, pre.states }; }
+}
+
+// Where the borrowed solo lands (hands-on decision, 21 Aug 2026): on a Mix
+// Bus or Master Bus main, the borrowed channel feeds INTO the main's own
+// chain — soloing a channel on the mix bus must not lose the master
+// processing. On every other channel type it REPLACES the output after the
+// main's chain — a borrowed vocal must not run through a guitar track's
+// chain. Sub-buses (Vocal Bus, Drum Bus, ...) are "other". The user flip
+// overrides either default; pure, pinned in borrowhost_test.
+struct BorrowRoute
+{
+    static bool throughMainChain (bool mixOrMasterBus, bool userFlip)
+    { return mixOrMasterBus != userFlip; }
+};
+struct BorrowRing
+{
+    enum class Verdict { Bound, Rebind, Lost, Release };
+    static Verdict poll (int currentSlot, int foundSlot, int lostTicksSoFar)
+    {
+        if (foundSlot >= 0)
+            return foundSlot == currentSlot ? Verdict::Bound : Verdict::Rebind;
+        return lostTicksSoFar + 1 >= kBorrowRingMaxLostTicks ? Verdict::Release
+                                                             : Verdict::Lost;
+    }
+};
+
+struct LeaseScope
+{
+    enum class Engage { Refuse, Slot, Rack };
+    static Engage decide (bool scopeIsRack, bool binarySupportsRack,
+                          int slot1, int numSlots)
+    {
+        if (scopeIsRack)
+            return binarySupportsRack ? Engage::Rack : Engage::Refuse;
+        return (slot1 >= 1 && slot1 <= numSlots) ? Engage::Slot : Engage::Refuse;
+    }
 };
 
 inline juce::String rackSidecarPath(const juce::String& dir, const juce::String& uid)
@@ -1069,6 +1653,96 @@ struct LeaseGate
     }
 };
 
+// =============================================================================
+//  Rack lock — racklock-<uid>.json (21 Aug 2026)
+//
+//  The UI-only ownership claim from RACK_BORROW_REQUIREMENTS §4: while a main
+//  plugin's editor is actively SHOWING a Link's rack in its Chain tab, that
+//  Link's own rack UI goes read-only. Same thinking as the edit lease —
+//  heartbeat (renew ~1s), expiry (3s), processor-renewed / editor-gated,
+//  deleted on clean release — but a SIBLING file, never a field in the
+//  sidecar: the clearing path must work independently of the state file,
+//  because clearing is what has to work when everything else has gone wrong.
+//  NEVER an audio change: no bypass, no Active toggle, nothing in a graph.
+// =============================================================================
+static constexpr double kRackLockRenewMs   = 1000.0;
+static constexpr double kRackLockExpireMs  = 3000.0;
+// Reverse contention: a LOCAL rack edit on the Link inside this window makes
+// the main wait (and auto-acquire when quiet). Recency, not window state —
+// Link windows sit open idle all day.
+static constexpr double kRackLockRecencyMs = 10000.0;
+
+inline juce::String racklockPath(const juce::String& dir, const juce::String& uid)
+{
+    return dir + "racklock-" + uid + ".json";
+}
+
+// ONE author for the file format, both sides and the test read/write through
+// these. owner is a display name for the overlay ("Selected in the rack on
+// <owner>"), lockId is the identity FCFS compares.
+inline void writeRackLockFile(const juce::String& dir, const juce::String& uid,
+                              const juce::String& lockId, const juce::String& owner)
+{
+    auto* o = new juce::DynamicObject();
+    o->setProperty("v",      1);
+    o->setProperty("lockId", lockId);
+    o->setProperty("owner",  owner);
+    o->setProperty("tMs",    juce::Time::currentTimeMillis());
+    juce::File(racklockPath(dir, uid))
+        .replaceWithText(juce::JSON::toString(juce::var(o), true));
+}
+
+inline bool readRackLockFile(const juce::String& dir, const juce::String& uid,
+                             juce::String& lockIdOut, juce::String& ownerOut,
+                             double& ageMsOut)
+{
+    lockIdOut.clear(); ownerOut.clear(); ageMsOut = 1.0e12;   // absent = infinitely stale
+    juce::File f(racklockPath(dir, uid));
+    if (!f.existsAsFile()) return false;
+    auto v = juce::JSON::parse(f.loadFileAsString());
+    auto* o = v.getDynamicObject();
+    if (o == nullptr || (int) o->getProperty("v") != 1) return false;
+    lockIdOut = o->getProperty("lockId").toString();
+    ownerOut  = o->getProperty("owner").toString();
+    ageMsOut  = (double) juce::Time::currentTimeMillis()
+                  - (double) (juce::int64) o->getProperty("tMs");
+    return true;
+}
+
+// The PURE decisions, LeaseGate-style, so racklock_test can pin them with no
+// processor in the room.
+struct RackLock
+{
+    // What the file says, from any reader's point of view. myId empty (the
+    // Link side never owns) makes any fresh claim Other.
+    enum class Claim { Free, Mine, Other };
+    static Claim read(const juce::String& fileId, double ageMs, const juce::String& myId)
+    {
+        if (fileId.isEmpty() || ageMs >= kRackLockExpireMs) return Claim::Free;
+        return (myId.isNotEmpty() && fileId == myId) ? Claim::Mine : Claim::Other;
+    }
+
+    // The main's acquire decision each renew tick. lastEditMs is the newest
+    // slot stamp from the sidecar (0 = no local edit ever recorded).
+    enum class Acquire {
+        Take,          // write/renew the file: we hold it
+        WaitRecency,   // the Link was edited moments ago; clears by waiting
+        HeldByOther,   // FCFS: another main holds it; wait for release/expiry
+    };
+    static Acquire decide(Claim claim, bool alreadyHolding,
+                          double nowMs, double lastEditMs)
+    {
+        // A fresh FOREIGN id always wins, even over a holder — it can only
+        // appear if our renewals lapsed past expiry, and two writers is the
+        // one state this file exists to prevent. Yield; FCFS re-runs.
+        if (claim == Claim::Other) return Acquire::HeldByOther;
+        if (alreadyHolding)        return Acquire::Take;   // renewal
+        if (lastEditMs > 0.0 && nowMs - lastEditMs < kRackLockRecencyMs)
+            return Acquire::WaitRecency;
+        return Acquire::Take;
+    }
+};
+
 inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
 {
     auto* obj = new juce::DynamicObject();
@@ -1080,6 +1754,13 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
     obj->setProperty("preGainDb",        rc.preGainDb);
     obj->setProperty("preGainUserSet",   rc.preGainUserSet);
     obj->setProperty("preGainInputKnown", rc.preGainInputKnown);
+    if (rc.borrowCapable) obj->setProperty("borrowCapable", true);
+    if (rc.structureEditCapable) obj->setProperty("structureEditCapable", true);
+    if (rc.inContextCapable) obj->setProperty("inContextCapable", true);
+    if (rc.muteEngaged) obj->setProperty("muteEngaged", true);
+    if (rc.muteUser) obj->setProperty("muteUser", true);
+    if (rc.soloOn) obj->setProperty("soloOn", true);
+    if (rc.muteSoloCapable) obj->setProperty("muteSoloCapable", true);
     juce::Array<juce::var> slots;
     for (const auto& s : rc.slots)
     {
@@ -1112,6 +1793,11 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
         }
         if (s.controlled)
             so->setProperty("controlled", true);
+        // Additive at v:1, written only when a local edit has ever happened.
+        if (s.lastEditMs > 0.0)
+            so->setProperty("lastEditMs", s.lastEditMs);
+        if (s.manufacturer.isNotEmpty())
+            so->setProperty("mfr", s.manufacturer);
         slots.add(juce::var(so));
     }
     obj->setProperty("slots", slots);
@@ -1135,6 +1821,13 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
     rc.preGainDb        = obj->hasProperty("preGainDb") ? (float)(double)obj->getProperty("preGainDb") : 0.0f;
     rc.preGainUserSet   = obj->hasProperty("preGainUserSet") && (bool)obj->getProperty("preGainUserSet");
     rc.preGainInputKnown = obj->hasProperty("preGainInputKnown") && (bool)obj->getProperty("preGainInputKnown");
+    rc.borrowCapable     = obj->hasProperty("borrowCapable") && (bool)obj->getProperty("borrowCapable");
+    rc.structureEditCapable = obj->hasProperty("structureEditCapable") && (bool)obj->getProperty("structureEditCapable");
+    rc.inContextCapable = obj->hasProperty("inContextCapable") && (bool)obj->getProperty("inContextCapable");
+    rc.muteEngaged = obj->hasProperty("muteEngaged") && (bool)obj->getProperty("muteEngaged");
+    rc.muteUser = obj->hasProperty("muteUser") && (bool)obj->getProperty("muteUser");
+    rc.soloOn = obj->hasProperty("soloOn") && (bool)obj->getProperty("soloOn");
+    rc.muteSoloCapable = obj->hasProperty("muteSoloCapable") && (bool)obj->getProperty("muteSoloCapable");
     if (auto* arr = obj->getProperty("slots").getArray())
         for (auto& sv : *arr)
             if (auto* so = sv.getDynamicObject())
@@ -1164,6 +1857,9 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
                     }
                 s.controlled = so->hasProperty("controlled")
                                  && (bool) so->getProperty("controlled");
+                s.lastEditMs = so->hasProperty("lastEditMs")
+                                 ? (double) so->getProperty("lastEditMs") : 0.0;
+                s.manufacturer = so->getProperty("mfr").toString();
                 if (s.name.isNotEmpty()) rc.slots.push_back(std::move(s));
             }
     rc.valid = rc.uid == uid && rc.revision >= 0;

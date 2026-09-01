@@ -220,6 +220,13 @@ bool ChainHost::isPopoutOnly(const juce::String& pluginName, const juce::String&
 
 void ChainHost::markPopoutOnly(const juce::String& pluginName, const juce::String& format)
 {
+    // A builtin can never be popout-only: its editor is a plain JUCE
+    // component the native-size poll cannot see (31 Aug 2026 — the Link
+    // recorded exactly that blindness as a "plugin limitation").
+    if (format == kBuiltinFormat) return;
+    // Static (machine-wide flag), so it cannot carry the borrowed read-only
+    // guard; not on the spec §2.2 shared-file list, and no borrowed-mode
+    // path calls it — the byte-identical gate still covers the file.
     popoutOnlyReloadIfStale();
     auto key = popoutOnlyKey(pluginName, format);
     if (key.startsWith("|") || popoutOnlyCache().contains(key)) return;
@@ -526,7 +533,7 @@ juce::PluginDescription ChainHost::preferInlineHostableDesc(const juce::PluginDe
 {
     if (isBuiltinDescription(d)) return d;   // never swapped for a VST3 build
     if (d.pluginFormatName != "AudioUnit") return d;
-    if (!isPopoutOnly(d.name, "AudioUnit")) return d;
+    if (editorPlacement(d.name, "AudioUnit") != EditorPlacement::Float) return d;
     auto alt = findVst3Alternative(d.name);
     if (alt.name.isNotEmpty())
     {
@@ -732,7 +739,7 @@ struct ChainHost::LatencyRebuilder : juce::AsyncUpdater, juce::Timer
     ChainHost& owner;
 };
 
-ChainHost::ChainHost()
+ChainHost::ChainHost(Mode mode) : mode_(mode)
 {
     juce::addDefaultFormatsToManager(formatManager_);
 
@@ -744,6 +751,21 @@ ChainHost::ChainHost()
     outputNode_ = graph_->addNode(std::make_unique<IOProc>(IOProc::audioOutputNode));
 
     rebuildGraph(); // passthrough (no slots yet)
+
+    // BORROWED MODE (spec §2.1): plugin resolution rides the PRIMARY's lists
+    // read-only — implemented as reading the same shared files the primary
+    // wrote (loadFromDisk and the blacklist are pure reads; the read-only
+    // rule bans WRITES). Skipped: param maps, bootstrap, helper catalogue,
+    // the scan thread, and death-mark CONSUMPTION — that stays the primary's
+    // job; a borrowed host is created lazily after a primary exists, and
+    // consuming here would race it for the same marker files.
+    if (mode_ == Mode::Borrowed)
+    {
+        loadFromDisk();
+        reloadBlacklistFromDisk();
+        return;
+    }
+
     loadFromDisk();
     loadParamMapsFromDisk();
     mergeBootstrapMaps();
@@ -1010,7 +1032,10 @@ void ChainHost::setScanStatus(const juce::String& s)
 }
 
 void ChainHost::doRefresh()
-{
+{    // Borrowed mode is READ-ONLY on every shared file (spec §2.2): one
+    // writer per file, and the primary host is it.
+    if (mode_ == Mode::Borrowed) return;
+
     struct Finally { ChainHost* h; ~Finally() { h->scanning_.store(false); } } fin{this};
 
     // The FILE is the authority at scan time: deleting a line from
@@ -1348,24 +1373,42 @@ int ChainHost::getNumSlots() const noexcept
 
 std::vector<ChainHost::SlotInfo> ChainHost::getAllSlotInfos() const
 {
+    // ONE projection builder (2 Sep 2026): this used to brace-initialise
+    // five fields itself, so when SlotInfo gained `manufacturer` the sixth
+    // field silently defaulted to "" here while getSlotInfo carried it —
+    // the main's panel AND the sidecar publish both feed from THIS
+    // accessor, so the main never floated Waves and remote racks published
+    // blank identities, while the Link (getSlotDescription, same member)
+    // worked. Positional-init trap, fourth visit. Delegating means the
+    // two projections can never diverge again.
     std::vector<SlotInfo> result;
     result.reserve(slots_.size());
-    for (int i = 0; i < (int)slots_.size(); ++i)
-    {
-        const auto& s = slots_[(size_t)i];
-        result.push_back({ s.desc.name, s.bypassed, s.settings,
-                           s.desc.pluginFormatName, s.wet, modelSettingsForSlot(i),
-                           slotHasLiveReads(i) });
-    }
+    for (int i = 0; i < (int) slots_.size(); ++i)
+        result.push_back(getSlotInfo(i));
     return result;
 }
 
 ChainHost::SlotInfo ChainHost::getSlotInfo(int i) const
 {
-    if (i < 0 || i >= (int)slots_.size()) return { {}, false, {}, {}, 1.0f, {}, false };
-    return { slots_[i].desc.name, slots_[i].bypassed, slots_[i].settings,
-             slots_[i].desc.pluginFormatName, slots_[i].wet,
-             modelSettingsForSlot(i), slotHasLiveReads(i) };
+    // ASSIGNED BY NAME, not by position (1 Sep 2026, resolving the merge that
+    // grew SlotInfo on BOTH sides at once). The note above getAllSlotInfos
+    // calls positional init a trap on its "fourth visit"; a merge in which two
+    // branches each append a field is precisely the fifth. Named assignment
+    // means a future field cannot silently land in the wrong slot, and the
+    // out-of-range return states what it returns instead of counting braces.
+    SlotInfo info;
+    info.bypassed = false;
+    if (i < 0 || i >= (int)slots_.size()) return info;
+    const auto& s = slots_[(size_t)i];
+    info.name             = s.desc.name;
+    info.bypassed         = s.bypassed;
+    info.settings         = s.settings;
+    info.format           = s.desc.pluginFormatName;
+    info.wet              = s.wet;
+    info.manufacturer     = s.desc.manufacturerName;   // remote, 27 Aug
+    info.settingsForModel = modelSettingsForSlot(i);   // local, 24 Aug
+    info.hasLiveReads     = slotHasLiveReads(i);       // local, 24 Aug
+    return info;
 }
 
 ChainHost::SlotIdentity ChainHost::getSlotIdentity(int slot) const
@@ -2421,11 +2464,25 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
     // Any successful load clears a stale session load-failure mark
     sessionLoadFailed_.removeString(sessionLoadKey(desc.name, desc.pluginFormatName));
 
+    if (mode_ == Mode::Borrowed) ++borrowFresh_;   // the gate's counter
+
     ChainSlot slot;
     slot.node     = graph_->addNode(std::move(inst));
     slot.desc     = desc;
+    // Backfill from the INSTANCE (see the twin note at the plan-attach
+    // sites): a restore's request desc lacks the manufacturer the
+    // float-by-identity placement keys on.
+    if (slot.desc.manufacturerName.isEmpty() && slot.node != nullptr)
+        if (auto* pi = dynamic_cast<juce::AudioPluginInstance*>(slot.node->getProcessor()))
+            slot.desc.manufacturerName = pi->getPluginDescription().manufacturerName;
+    // Discriminator log (2 Sep): one side of the write; the projection's
+    // EJPane line is the other. The timestamps say which candidate holds.
+    EchoJay_NSLog(("EJPlace: stored \"" + slot.desc.name + "\" mfr=\""
+                   + slot.desc.manufacturerName + "\" (async load)").toRawUTF8());
     slot.bypassed = false;
     slots_.push_back(std::move(slot));
+    // Pristine default, captured BEFORE any seed or dial (borrow reset).
+    captureBorrowDefaultState((int) slots_.size() - 1);
     // A VST3 build inside an AU host is told in the rack, on every route
     // (session restore, shared chain, picker, model): the chain that comes
     // back is the chain that was saved, and it is not silent about it.
@@ -3945,7 +4002,10 @@ void ChainHost::loadParamMapsFromDisk()
 }
 
 void ChainHost::saveParamMapsToDisk()
-{
+{    // Borrowed mode is READ-ONLY on every shared file (spec §2.2): one
+    // writer per file, and the primary host is it.
+    if (mode_ == Mode::Borrowed) return;
+
     juce::DynamicObject::Ptr idx = new juce::DynamicObject();
     for (auto& kv : identityToFp_) idx->setProperty(juce::Identifier(kv.first), kv.second);
     juce::DynamicObject::Ptr maps = new juce::DynamicObject();
@@ -4129,6 +4189,683 @@ static void pollVST3Validation(
     });
 }
 
+// ---------------------------------------------------------------------------
+// Borrow pool (Borrowed mode only) — RACK_BORROW_IMPLEMENTATION_SPEC §1.
+// ---------------------------------------------------------------------------
+int ChainHost::hostReportableLatencySamples() const
+{
+    if (mode_ == Mode::Borrowed)
+    {
+        // THE HARD BLOCK (spec §2.3): a borrowed chain's latency must never
+        // reach setLatencySamples — the host would delay the main's channel
+        // by latency it does not experience. Refused, loudly, not advisory.
+        EchoJay_NSLog("EJBorrow: latency mirror REFUSED - a borrowed host "
+                      "never reaches setLatencySamples");
+        return -1;
+    }
+    return getTotalLatencySamples();
+}
+
+void ChainHost::markBorrowPoolIneligible(const juce::PluginDescription& d,
+                                         const juce::String& why)
+{
+    const auto key = borrowPoolKey(d);
+    if (borrowPoolIneligible_.contains(key)) return;
+    borrowPoolIneligible_.add(key);
+    // The named fallback, said out loud (spec §1): this plugin pays today's
+    // per-cycle cost for ITSELF only; everything else keeps the bound.
+    EchoJay_NSLog(("EJBorrowPool: \"" + d.name + "\" failed reuse verification ("
+                   + why + ") - pool-ineligible this session, later borrows "
+                   "instantiate fresh").toRawUTF8());
+}
+
+void ChainHost::releaseBorrowToPool()
+{
+    if (mode_ != Mode::Borrowed || !graph_) return;
+    for (int i = 0; i < (int) slots_.size(); ++i)
+    {
+        auto& s = slots_[(size_t) i];
+        if (s.node == nullptr) continue;
+        // Same discipline as removeSlot: no listener may outlive its slot.
+        detachHostedListener(i);
+        // Park IN the graph, disconnected (rebuildGraph below only wires
+        // slots_) and SUSPENDED — the graph skips suspended nodes, so a
+        // parked rack costs one flag check per node per block, not audio.
+        if (auto* p = s.node->getProcessor()) p->suspendProcessing(true);
+        borrowPool_[borrowPoolKey(s.desc)].push_back({ s.node, s.desc });
+        ++borrowPoolTotal_;
+        // The wet-blend node is OURS — destroy for real, as removeSlot does.
+        if (s.blendNode) graph_->removeNode(s.blendNode->nodeID);
+    }
+    slots_.clear();
+    borrowReusedNodeIds_.clear();
+    borrowSeededNodeIds_.clear();
+    bumpChainRevision();
+    rebuildGraph();
+    if (prepared_)
+    {
+        graph_->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+        graph_->prepareToPlay(sampleRate_, blockSize_);
+    }
+    EchoJay_NSLog(("EJBorrowPool: rack released, " + juce::String((int) borrowPoolTotal_)
+                   + " instance(s) parked").toRawUTF8());
+}
+
+#if ECHOJAY_DEV_TRANSPORT
+namespace {
+// DEV-ONLY forced withhold (22 Aug 2026): on this machine the real withhold
+// cannot be produced by hand — same plugin collection, identity always
+// matches — so ~/.echojay/dev.json may name ONE slot (1-based, key
+// "forceWithholdSlot") whose borrow seed is deliberately failed, exercising
+// the user-facing withheld path in a DAW: defaults + banner + never written
+// back. Read once per process, like the dev transport itself. This symbol
+// CANNOT exist in a non-DEV build — the whole block compiles away, and
+// borrowhost_test proves the OFF binary carries no trace of it.
+int devForceWithholdSlot1()
+{
+    static const int s = []
+    {
+        auto f = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+                     .getChildFile(".echojay").getChildFile("dev.json");
+        if (! f.existsAsFile()) return 0;
+        auto v = juce::JSON::parse(f.loadFileAsString());
+        if (auto* o = v.getDynamicObject())
+            return (int) o->getProperty("forceWithholdSlot");
+        return 0;
+    }();
+    return s;
+}
+} // namespace
+#endif
+
+// ===========================================================================
+//  Structure plan engine, phase 2 (RACK_STRUCTURE_EDIT_SPEC). Runs on the
+//  LINK's Primary host, message thread. Staging and removal parks share one
+//  container keyed by the PLAN's identity vocabulary (name|uid-decimal), and
+//  everything parked stays alive — §3a everywhere.
+// ===========================================================================
+namespace
+{
+    juce::String planKeyOf(const LinkShm::StructureEdit::SlotIdentity& id)
+    { return id.name.trim() + "|" + id.uid; }
+}
+
+std::vector<LinkShm::StructureEdit::SlotIdentity> ChainHost::liveIdentity() const
+{
+    std::vector<LinkShm::StructureEdit::SlotIdentity> out;
+    for (const auto& s : slots_)
+        out.push_back({ s.desc.name,
+                        descUid(s.desc) != 0 ? juce::String(descUid(s.desc))
+                                             : juce::String(),
+                        s.fp });
+    return out;
+}
+
+LinkShm::StructureEdit::PreImages ChainHost::planCapturePreImages() const
+{
+    LinkShm::StructureEdit::PreImages pre;
+    pre.shape = liveIdentity();
+    for (const auto& s : slots_)
+    {
+        juce::String b64;
+        if (s.node != nullptr)
+            if (auto* p = s.node->getProcessor())
+            {
+                juce::MemoryBlock mb;
+                try { p->getStateInformation(mb); } catch (...) { mb.reset(); }
+                if (mb.getSize() > 0) b64 = LinkShm::stateToB64(mb);
+            }
+        pre.states.add(b64);
+    }
+    return pre;
+}
+
+void ChainHost::parkSlotReattachable(int i)
+{
+    if (i < 0 || i >= (int) slots_.size() || !graph_) return;
+    auto& s = slots_[(size_t) i];
+    detachHostedListener(i);
+    if (s.node != nullptr)
+    {
+        if (auto* p = s.node->getProcessor()) p->suspendProcessing(true);
+        planPark_[planKeyOf({ s.desc.name,
+                              descUid(s.desc) != 0 ? juce::String(descUid(s.desc))
+                                                   : juce::String(), s.fp })]
+            .push_back({ s.node, s.desc });
+    }
+    if (s.blendNode) graph_->removeNode(s.blendNode->nodeID);
+    slots_.erase(slots_.begin() + i);
+    bumpChainRevision();
+    rebuildGraph();
+    if (prepared_)
+    {
+        graph_->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+        graph_->prepareToPlay(sampleRate_, blockSize_);
+    }
+}
+
+bool ChainHost::tryReattachParked(const juce::PluginDescription& d, int insertAt)
+{
+    const auto key = planKeyOf({ d.name,
+                                 descUid(d) != 0 ? juce::String(descUid(d))
+                                                 : juce::String(), {} });
+    auto it = planPark_.find(key);
+    if (it == planPark_.end() || it->second.empty()) return false;
+    BorrowPoolEntry entry = std::move(it->second.back());
+    it->second.pop_back();
+    if (auto* p = entry.node->getProcessor())
+    {
+        p->suspendProcessing(false);
+        p->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+    }
+    ChainSlot slot;
+    slot.node = std::move(entry.node);
+    slot.desc = entry.desc;
+    // The stored desc is the REQUEST; the INSTANCE knows its true identity.
+    // Backfill what the request lacked — restore paths request by name+uid
+    // with a blank manufacturer, fresh adds carry the full catalogue desc —
+    // so every reader (editorPlacement's float-by-identity arm above all)
+    // sees the same truth regardless of arrival path (2 Sep 2026: a
+    // restored Waves slot reached the placement with mfr="" and embedded
+    // blank while an added one floated).
+    if (slot.desc.manufacturerName.isEmpty() && slot.node != nullptr)
+        if (auto* pi = dynamic_cast<juce::AudioPluginInstance*>(slot.node->getProcessor()))
+            slot.desc.manufacturerName = pi->getPluginDescription().manufacturerName;
+    EchoJay_NSLog(("EJPlace: stored \"" + slot.desc.name + "\" mfr=\""
+                   + slot.desc.manufacturerName + "\" (plan attach)").toRawUTF8());
+    slot.bypassed = false;
+    insertAt = juce::jlimit(0, (int) slots_.size(), insertAt);
+    slots_.insert(slots_.begin() + insertAt, std::move(slot));
+    bumpChainRevision();
+    rebuildGraph();
+    if (prepared_)
+    {
+        graph_->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+        graph_->prepareToPlay(sampleRate_, blockSize_);
+    }
+    return true;
+}
+
+bool ChainHost::planStageOne(const juce::PluginDescription& d, juce::String& whyNot,
+                             int alreadyClaimed, const juce::String& parkKeyIn)
+{
+    // Already staged/parked by identity: a retried Apply instantiates zero
+    // new (spec amendment 3) — but only BEYOND what this plan has already
+    // claimed of the same key, or a plan creating two of one plugin gets
+    // one instance and Phase B finds the park empty for the second.
+    // parkKeyIn: the caller's identity-vocabulary key (Phase A) — when
+    // given it OVERRIDES the derived key, keeping park and reattach
+    // symmetric whatever the staging desc resolved to.
+    const auto key = parkKeyIn.isNotEmpty() ? parkKeyIn
+        : planKeyOf({ d.name,
+                      descUid(d) != 0 ? juce::String(descUid(d))
+                                      : juce::String(), {} });
+    if (auto it = planPark_.find(key); it != planPark_.end()
+        && (int) it->second.size() > alreadyClaimed)
+        return true;
+    if (d.fileOrIdentifier.isNotEmpty() && isBlacklisted(d.fileOrIdentifier))
+    { whyNot = d.name + " is on this machine's crash skip list"; return false; }
+
+    // The park stays keyed by the IDENTITY (what the plan speaks); the
+    // slot's desc becomes whatever the catalogue resolves — the format the
+    // stateFormat honesty guard then compares against.
+    juce::PluginDescription staged = d;
+    std::unique_ptr<juce::AudioProcessor> proc;
+    if (isBuiltinDescription(d))
+    {
+        if (const auto* dev = BuiltinDeviceRegistry::instance().findForDescription(d);
+            dev != nullptr && dev->create)
+            proc = dev->create();
+        if (proc == nullptr)
+        { whyNot = d.name + " is a built-in this build does not carry"; return false; }
+    }
+    else
+    {
+        // RESOLVE AGAINST THIS CATALOGUE (25 Aug 2026): a Create identity
+        // carries name + uid, no format — and JUCE's createPluginInstance
+        // requires an exact format-name match, so a bare identity could
+        // NEVER load ("No compatible plug-in format", every third-party
+        // Create; every builtin worked because builtins skip this arm).
+        // The Link resolves against its OWN catalogue and chooses the
+        // format — the picked-plugin principle, decided on the side that
+        // has to load it. Tiers: name+uid, then uid alone, then name alone
+        // (uid spaces differ across formats, so a name-only hit is the
+        // same plugin in another build). The lookup logs BOTH encodings.
+        juce::PluginDescription resolved;
+        int nameHits = 0, uidHits = 0, hexHits = 0;
+        const int wantUid = descUid(d);
+        const juce::String wantHex = juce::String::toHexString(wantUid);
+        int klN = 0, enN = 0;
+        {
+            std::lock_guard<std::mutex> lock(pluginsMutex_);
+            klN = knownPlugins_.getNumTypes();
+            enN = entries_.size();
+            juce::PluginDescription byBoth, byUid, byName;
+            auto scan = [&](const juce::PluginDescription& e)
+            {
+                const int eu = descUid(e);
+                const bool nm = namesMatchLoose(e.name, d.name);
+                const bool um = wantUid != 0 && eu == wantUid;
+                if (nm) ++nameHits;
+                if (um) ++uidHits;
+                if (wantUid != 0
+                    && juce::String::toHexString(eu).equalsIgnoreCase(wantHex))
+                    ++hexHits;
+                if (nm && um && byBoth.name.isEmpty()) byBoth = e;
+                else if (um && byUid.name.isEmpty())   byUid  = e;
+                else if (nm)
+                {
+                    // CHANNEL VARIANT AT THE NAME TIER (1 Sep 2026, merging the
+                    // reasoning line in). WaveShell registers one AU per channel
+                    // configuration and namesMatchLoose strips the suffix, so
+                    // "CLA-76" matches CLA-76 (m) AND (s); first-wins took
+                    // whichever was scanned first, which is the mono build. That
+                    // is the defect 28d3f53 closed in the resolver ladder,
+                    // arriving here by a route that did not exist when the six
+                    // paths were inventoried. Same rank, same header.
+                    //
+                    // THE RANK SITS UNDER AN EXACT NAME, NEVER OVER IT. A saved
+                    // or borrowed rack carries desc.name, the full registration,
+                    // so a plan identity naming "CLA-76 (m)" asked for the mono
+                    // build and must keep it; namesMatchLoose would otherwise let
+                    // the rank re-point it to (s).
+                    //
+                    // ONLY THIS TIER. byBoth and byUid are pinned by uid, and
+                    // each variant carries its own (Abbey Road Chambers (m)
+                    // 59527463, (m->s) 59527476, (s) 5952747d), so where a uid
+                    // matched the variant was already chosen by whoever authored
+                    // the identity and the rank must not second-guess it.
+                    // THE RULE ITSELF IS IN THE HEADER, called not copied, so
+                    // the three behaviours above are pinned by calling it.
+                    if (echojay::channelVariantShouldReplace(e.name, byName.name, d.name))
+                        byName = e;
+                }
+            };
+            for (const auto& e : knownPlugins_.getTypes()) scan(e);
+            for (const auto& e : entries_) scan(e);
+            resolved = byBoth.name.isNotEmpty() ? byBoth
+                     : byUid.name.isNotEmpty()  ? byUid : byName;
+        }
+        EchoJay_NSLog(("EJPlan: stage lookup \"" + d.name + "\""
+            + " uid.dec=" + juce::String(d.uniqueId)
+            + " depUid.dec=" + juce::String(d.deprecatedUid)
+            + " uid.hex=" + wantHex
+            + " catalogue known=" + juce::String(klN)
+            + " entries=" + juce::String(enN)
+            + " nameMatches=" + juce::String(nameHits)
+            + " uidMatches=" + juce::String(uidHits)
+            + " hexMatches=" + juce::String(hexHits)
+            + (resolved.name.isEmpty()
+                   ? juce::String(" -> NOT IN CATALOGUE")
+                   : " -> resolved " + resolved.name + "/"
+                     + resolved.pluginFormatName + "/uid.dec="
+                     + juce::String(descUid(resolved)) + "/uid.hex="
+                     + juce::String::toHexString(descUid(resolved))))
+            .toRawUTF8());
+        if (resolved.name.isEmpty())
+        {
+            // The REAL missing-plugin case (a rack on a machine without
+            // it) reads as exactly that — never as a format error.
+            whyNot = "this Link doesn't have " + d.name
+                   + " - it is not in its plug-in list";
+            return false;
+        }
+        if (resolved.fileOrIdentifier.isNotEmpty()
+            && isBlacklisted(resolved.fileOrIdentifier))
+        { whyNot = resolved.name + " is on this machine's crash skip list";
+          return false; }
+        const int mark = pushDeathMark("plan stage", resolved);
+        juce::String err;
+        auto inst = formatManager_.createPluginInstance(resolved,
+                                                        sampleRate_ > 0 ? sampleRate_ : 44100.0,
+                                                        blockSize_ > 0 ? blockSize_ : 512, err);
+        popDeathMark(mark);
+        if (inst == nullptr)
+        { whyNot = d.name + " could not load right now ("
+                 + (err.isNotEmpty() ? err : juce::String("no reason given")) + ")";
+          return false; }
+        staged = resolved;
+        proc = std::move(inst);
+    }
+    proc->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+    proc->suspendProcessing(true);                    // detached: parked, silent
+    auto node = graph_ ? graph_->addNode(std::move(proc)) : nullptr;
+    if (node == nullptr) { whyNot = d.name + " could not join the graph"; return false; }
+    planPark_[key].push_back({ node, staged });
+    ++planFresh_;
+    return true;
+}
+
+void ChainHost::planRestoreFromPreImages(const LinkShm::StructureEdit::PreImages& pre)
+{
+    // Wholesale: park everything, rebuild the pre-image shape from the park
+    // (nothing was freed, so every instance is findable), reseed pre states.
+    for (int i = (int) slots_.size() - 1; i >= 0; --i)
+        parkSlotReattachable(i);
+    for (int i = 0; i < (int) pre.shape.size(); ++i)
+    {
+        juce::PluginDescription d;
+        d.name = pre.shape[(size_t) i].name;
+        d.uniqueId = pre.shape[(size_t) i].uid.getIntValue();
+        if (! tryReattachParked(d, i))
+        {
+            // Not parked — the LAUNCH restore path: after a crash nothing
+            // is parked, so the restore instantiates from identity and
+            // reseeds. Only a plugin gone from the machine is a lost slot,
+            // and that is said out loud.
+            juce::String why;
+            juce::PluginDescription rd = resolveByName(d.name, {});
+            if (rd.name.isEmpty()) rd = d;
+            if (! planStageOne(rd, why) || ! tryReattachParked(rd, i))
+            {
+                addStateNote(d.name + ": could not be restored after the "
+                             "interrupted restructure ("
+                             + (why.isNotEmpty() ? why : juce::String("not loadable"))
+                             + ") - this slot was lost");
+                EchoJay_NSLog(("EJPlan: restore could not rebuild \""
+                               + d.name + "\" - slot lost").toRawUTF8());
+                continue;
+            }
+        }
+        const auto& b64 = pre.states[i];
+        if (b64.isNotEmpty() && i < (int) slots_.size())
+            if (auto* p = getSlotProcessor(i))
+            {
+                juce::MemoryBlock mb;
+                if (LinkShm::stateFromB64(b64, mb) && mb.getSize() > 0)
+                { try { p->setStateInformation(mb.getData(), (int) mb.getSize()); }
+                  catch (...) {} }
+            }
+    }
+}
+
+ChainHost::PlanResult ChainHost::applyStructurePlan(
+    const juce::String& journalDir, const LinkShm::StructureEdit::Plan& plan)
+{
+    using namespace LinkShm::StructureEdit;
+    PlanResult r;
+
+    // The identity guard, first and absolute (spec §5).
+    if (verifyBaseIdentity(plan.baseIdentity, liveIdentity()) != BaseCheck::Match)
+    { r.failedAt = "base identity"; r.reasons.add(
+          "the rack is not the one this plan was made for - nothing was changed");
+      return r; }
+
+    // PHASE A: stage every Create, detached. Any failure aborts with ZERO
+    // mutations and per-slot named reasons (spec §2). claimed counts per
+    // key so a plan creating TWO of one plugin stages two instances — the
+    // retry-dedupe inside planStageOne only skips beyond this plan's claims.
+    std::map<juce::String, int> claimed;
+    for (const auto& op : plan.ops)
+        if (op.type == OpType::Create)
+        {
+            juce::PluginDescription idDesc;
+            idDesc.name = op.identity.name;
+            idDesc.uniqueId = op.identity.uid.getIntValue();
+            // THE PARK KEY IS THE PLAN'S IDENTITY VOCABULARY — the same key
+            // Phase B's reattach derives from op.identity. Staging may
+            // resolve to a richer desc (builtin registry, catalogue), but
+            // the key NEVER follows the resolution (27 Aug: a name-only
+            // identity pre-resolved to a builtin's uid-ful desc, Phase A
+            // parked under name|uid, Phase B looked up name| — "staged
+            // instance vanished", whole-plan rollback).
+            const auto key = planKeyOf({ idDesc.name,
+                                         descUid(idDesc) != 0
+                                             ? juce::String(descUid(idDesc))
+                                             : juce::String(), {} });
+            auto stageDesc = idDesc;
+            if (isBuiltinDescription(resolveByName(op.name, {})))
+                stageDesc = resolveByName(op.name, {});
+            juce::String why;
+            if (! planStageOne(stageDesc, why, claimed[key], key))
+                r.reasons.add(why);
+            else
+                ++claimed[key];
+        }
+    if (! r.reasons.isEmpty()) { r.failedAt = "stage"; return r; }
+
+    // Journal BEFORE the first mutation (spec §1).
+    const auto pre = planCapturePreImages();
+    writeJournal(journalDir, plan, pre);
+
+    // PHASE B: mutate, in the plan's order. Any failure restores wholesale.
+    // originSim mirrors every mutation so the caller learns, per FINAL slot,
+    // which pre-plan index it came from (-1 = created) — the lease's prior
+    // remap maps through it and cannot be fooled by shifted indices.
+    std::vector<int> originSim;
+    for (int i = 0; i < (int) slots_.size(); ++i) originSim.push_back(i);
+    for (const auto& op : plan.ops)
+    {
+        bool ok = true;
+        juce::String why;
+        switch (op.type)
+        {
+            case OpType::Remove:
+                if (op.from >= 0 && op.from < (int) slots_.size())
+                {
+                    parkSlotReattachable(op.from);
+                    originSim.erase(originSim.begin() + op.from);
+                }
+                else { ok = false; why = "remove index out of range"; }
+                break;
+            case OpType::Move:
+            {
+                int cur = op.from;
+                while (ok && cur > op.to)
+                { moveSlot(cur, -1);
+                  std::swap(originSim[(size_t) cur], originSim[(size_t) cur - 1]);
+                  --cur; }
+                while (ok && cur < op.to)
+                { moveSlot(cur, +1);
+                  std::swap(originSim[(size_t) cur], originSim[(size_t) cur + 1]);
+                  ++cur; }
+                break;
+            }
+            case OpType::Create:
+            {
+                juce::PluginDescription d;
+                d.name = op.identity.name;
+                d.uniqueId = op.identity.uid.getIntValue();
+                if (! tryReattachParked(d, op.to))
+                { ok = false; why = "staged instance vanished"; break; }
+                originSim.insert(originSim.begin()
+                                     + juce::jmin(op.to, (int) originSim.size()),
+                                 -1);
+                // The plan's bypass truth for the created slot (the state the
+                // user gave it in the main); under a rack lease the caller
+                // reads it into the remapped priors, then re-bypasses.
+                setSlotBypassed(juce::jmin(op.to, (int) slots_.size() - 1),
+                                op.bypassed);
+                if (op.stateB64.isNotEmpty())
+                {
+                    const int at = juce::jmin(op.to, (int) slots_.size() - 1);
+                    // §5c ACROSS FORMATS (24 Aug 2026): plugin state is
+                    // format-specific, and the main may have hosted a
+                    // SUBSTITUTE build — its blob must never seed a
+                    // different format's build here. Mismatch = the slot
+                    // arrives at DEFAULTS and SAYS so, in the withheld
+                    // voice; only a matching (or unstated) format seeds.
+                    const auto stagedFmt = getSlotInfo(at).format;
+                    if (op.stateFormat.isNotEmpty()
+                        && op.stateFormat != stagedFmt)
+                    {
+                        addStateNote(op.name + " was added WITHOUT its "
+                            "settings (running at defaults): they came from "
+                            "a " + op.stateFormat + " build and this rack "
+                            "loads the " + stagedFmt + " build - settings "
+                            "do not travel across formats");
+                        EchoJay_NSLog(("EJPlan: Create \"" + op.name
+                            + "\" seeded at DEFAULTS - state format "
+                            + op.stateFormat + " != staged " + stagedFmt)
+                            .toRawUTF8());
+                    }
+                    else if (auto* p = getSlotProcessor(at))
+                    {
+                        juce::MemoryBlock mb;
+                        if (LinkShm::stateFromB64(op.stateB64, mb) && mb.getSize() > 0)
+                        { try { p->setStateInformation(mb.getData(), (int) mb.getSize()); }
+                          catch (...) { ok = false; why = op.name + " refused its seed"; } }
+                    }
+                }
+                break;
+            }
+            case OpType::Commit:
+            {
+                auto* p = getSlotProcessor(op.from);
+                juce::MemoryBlock mb;
+                if (p == nullptr || ! LinkShm::stateFromB64(op.stateB64, mb)
+                    || mb.getSize() == 0)
+                { ok = false; why = op.name + ": commit state unreadable"; break; }
+                const int mark = pushDeathMark("state restore",
+                                               slots_[(size_t) op.from].desc);
+                try { p->setStateInformation(mb.getData(), (int) mb.getSize()); }
+                catch (...) { ok = false; why = op.name + " refused the settings"; }
+                popDeathMark(mark);
+                break;
+            }
+        }
+        if (! ok)
+        {
+            planRestoreFromPreImages(pre);
+            juce::File(journalPath(journalDir, plan.uid)).deleteFile();
+            r.restored = true;
+            r.failedAt = why;
+            r.reasons.add(why + " - the rack was restored to exactly its "
+                          "pre-Apply state");
+            return r;
+        }
+    }
+    juce::File(journalPath(journalDir, plan.uid)).deleteFile();
+    r.ok = true;
+    r.finalOrigin = std::move(originSim);
+    return r;
+}
+
+bool ChainHost::planJournalRestoreIfPresent(const juce::String& journalDir,
+                                            const juce::String& uid)
+{
+    using namespace LinkShm::StructureEdit;
+    Plan p;
+    PreImages pre;
+    if (! readJournal(journalDir, uid, p, pre)) return false;
+    // Divergence: the session snapshot lost to the journal — say so with
+    // both truths named (spec amendment 2).
+    const bool diverged =
+        verifyBaseIdentity(pre.shape, liveIdentity()) != BaseCheck::Match;
+    planRestoreFromPreImages(pre);
+    juce::File(journalPath(journalDir, uid)).deleteFile();
+    addStateNote(diverged
+        ? juce::String("a restructure was interrupted; this rack was restored "
+                       "from its pre-Apply state (the session had saved a "
+                       "different shape)")
+        : juce::String("a restructure was interrupted; this rack was restored "
+                       "from its pre-Apply state"));
+    EchoJay_NSLog(("EJPlan: journal restore ran (diverged="
+                   + juce::String(diverged ? "Y" : "N") + ")").toRawUTF8());
+    return true;
+}
+
+void ChainHost::captureBorrowDefaultState(int slotIdx)
+{
+    if (mode_ != Mode::Borrowed || slotIdx < 0
+        || slotIdx >= (int) slots_.size() || slots_[(size_t) slotIdx].node == nullptr)
+        return;
+    if (auto* p = slots_[(size_t) slotIdx].node->getProcessor())
+    {
+        juce::MemoryBlock mb;
+        try { p->getStateInformation(mb); } catch (...) { mb.reset(); }
+        if (mb.getSize() > 0)
+            borrowDefaultStates_[slots_[(size_t) slotIdx].node->nodeID.uid] = std::move(mb);
+    }
+}
+
+bool ChainHost::borrowTryReuseInto(const juce::PluginDescription& canonicalDesc)
+{
+    if (mode_ != Mode::Borrowed) return false;
+    const auto key = borrowPoolKey(canonicalDesc);
+    if (borrowPoolIneligible_.contains(key)) return false;   // fresh, by verdict
+    auto it = borrowPool_.find(key);
+    if (it == borrowPool_.end() || it->second.empty()) return false;
+
+    BorrowPoolEntry entry = std::move(it->second.back());
+    it->second.pop_back();
+    --borrowPoolTotal_;
+    // RESET BEFORE SEEDING (22 Aug 2026): the parked instance still holds
+    // the PREVIOUS borrow's settings, and a failed seed on top of those
+    // would leave another channel's sound wearing this rack's name — worse
+    // than defaults, because it sounds like a working chain. Reseed the
+    // pristine default captured at fresh instantiation; an instance with no
+    // default, or one that refuses it, is RETIRED (kept alive, never
+    // reused) and the caller instantiates fresh.
+    {
+        auto* p = entry.node->getProcessor();
+        auto dIt = p != nullptr
+                     ? borrowDefaultStates_.find(entry.node->nodeID.uid)
+                     : borrowDefaultStates_.end();
+        bool resetOk = false;
+        if (dIt != borrowDefaultStates_.end() && dIt->second.getSize() > 0)
+        {
+            try { p->setStateInformation(dIt->second.getData(),
+                                         (int) dIt->second.getSize());
+                  resetOk = true; }
+            catch (...) {}
+        }
+        if (! resetOk)
+        {
+            EchoJay_NSLog(("EJBorrowPool: \"" + canonicalDesc.name + "\" could "
+                           "not be reset to defaults - retired from the pool, "
+                           "instantiating fresh").toRawUTF8());
+            borrowPoolRetired_.push_back(std::move(entry));
+            // Ineligible too: a reset-refuser would otherwise pay the
+            // retire dance every cycle; this way later borrows go fresh
+            // directly — today's per-cycle cost for ITSELF only.
+            markBorrowPoolIneligible(canonicalDesc, "could not be reset to defaults");
+            return false;
+        }
+    }
+    if (auto* p = entry.node->getProcessor())
+    {
+        p->suspendProcessing(false);
+        p->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+    }
+    ChainSlot slot;
+    slot.node = std::move(entry.node);
+    slot.desc = entry.desc;
+    // The stored desc is the REQUEST; the INSTANCE knows its true identity.
+    // Backfill what the request lacked — restore paths request by name+uid
+    // with a blank manufacturer, fresh adds carry the full catalogue desc —
+    // so every reader (editorPlacement's float-by-identity arm above all)
+    // sees the same truth regardless of arrival path (2 Sep 2026: a
+    // restored Waves slot reached the placement with mfr="" and embedded
+    // blank while an added one floated).
+    if (slot.desc.manufacturerName.isEmpty() && slot.node != nullptr)
+        if (auto* pi = dynamic_cast<juce::AudioPluginInstance*>(slot.node->getProcessor()))
+            slot.desc.manufacturerName = pi->getPluginDescription().manufacturerName;
+    EchoJay_NSLog(("EJPlace: stored \"" + slot.desc.name + "\" mfr=\""
+                   + slot.desc.manufacturerName + "\" (plan attach)").toRawUTF8());
+    slot.bypassed = false;
+    slots_.push_back(std::move(slot));
+    borrowReusedNodeIds_.insert(slots_.back().node->nodeID.uid);
+
+    bumpChainRevision();
+    rebuildGraph();
+    if (prepared_)
+    {
+        graph_->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+        graph_->prepareToPlay(sampleRate_, blockSize_);
+    }
+    const int idx = (int) slots_.size() - 1;
+    applyStructuredIfReady(idx, DialTrigger::slotLoaded);
+    if (stateCacheEnabled_)
+    {
+        attachHostedListener(idx);
+        captureSlotState(idx, juce::Time::getMillisecondCounterHiRes());
+    }
+    EchoJay_NSLog(("EJBorrowPool: \"" + canonicalDesc.name + "\" REUSED from the "
+                   "pool as slot " + juce::String(idx) + " (0 new instances)").toRawUTF8());
+    return true;
+}
+
 juce::String ChainHost::loadBuiltinNow(const juce::PluginDescription& desc)
 {
     if (!graph_) return "chain graph not ready";
@@ -4140,9 +4877,16 @@ juce::String ChainHost::loadBuiltinNow(const juce::PluginDescription& desc)
     if (device == nullptr)
         return "unknown built-in device \"" + desc.name + "\"";
 
+    // Borrowed mode: the pool first — a parked identical instance is reused
+    // instead of constructing (spec §1: growth bounds at distinct identities).
+    if (mode_ == Mode::Borrowed
+        && borrowTryReuseInto(BuiltinDeviceRegistry::descriptionFor(*device)))
+        return {};
+
     std::unique_ptr<juce::AudioProcessor> proc = device->create();
     if (!proc)
         return "built-in device \"" + desc.name + "\" failed to construct";
+    if (mode_ == Mode::Borrowed) ++borrowFresh_;
 
     proc->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
 
@@ -4156,6 +4900,8 @@ juce::String ChainHost::loadBuiltinNow(const juce::PluginDescription& desc)
     slot.desc     = BuiltinDeviceRegistry::descriptionFor(*device);
     slot.bypassed = false;
     slots_.push_back(std::move(slot));
+    // Pristine default, captured BEFORE any seed or dial (borrow reset).
+    captureBorrowDefaultState((int) slots_.size() - 1);
 
     bumpChainRevision();
     rebuildGraph();
@@ -4194,6 +4940,15 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
     {
         const auto err = loadBuiltinNow(desc);
         if (callback) callback(err);
+        return;
+    }
+
+    // Borrowed mode: the pool first, same rule as the builtin branch inside
+    // loadBuiltinNow. The key is the resolved description's identity, which
+    // arrives through the same resolution path on every borrow.
+    if (mode_ == Mode::Borrowed && borrowTryReuseInto(desc))
+    {
+        if (callback) callback({});
         return;
     }
 
@@ -4684,7 +5439,10 @@ bool ChainHost::isBlacklisted(const juce::String& path) const
 }
 
 void ChainHost::addToBlacklist(const juce::String& path, const juce::String& reason)
-{
+{    // Borrowed mode is READ-ONLY on every shared file (spec §2.2): one
+    // writer per file, and the primary host is it.
+    if (mode_ == Mode::Borrowed) return;
+
     juce::String bl;
     {
         std::lock_guard<std::mutex> lock(pluginsMutex_);
@@ -5952,7 +6710,10 @@ void ChainHost::loadByRecommendedName(const juce::String& name,
 // Persistence — plugin list cache
 // ---------------------------------------------------------------------------
 void ChainHost::saveToDisk() const
-{
+{    // Borrowed mode is READ-ONLY on every shared file (spec §2.2): one
+    // writer per file, and the primary host is it.
+    if (mode_ == Mode::Borrowed) return;
+
     appSupportDir().createDirectory();
     std::lock_guard<std::mutex> lock(pluginsMutex_);
     auto xml = knownPlugins_.createXml();
@@ -6054,7 +6815,10 @@ int ChainHost::oversizeStateBytes(const juce::String& path) const
 }
 
 void ChainHost::recordStateOversize(const juce::String& path, int bytes, const juce::String& name, const juce::String& where)
-{
+{    // Borrowed mode is READ-ONLY on every shared file (spec §2.2): one
+    // writer per file, and the primary host is it.
+    if (mode_ == Mode::Borrowed) return;
+
     if (path.isEmpty() || bytes <= kSessionStateMaxSlotBytes) return;
     {
         std::lock_guard<std::mutex> lock(pluginsMutex_);
@@ -6173,7 +6937,8 @@ bool ChainHost::stateFitsPlugin(const juce::PluginDescription& found,
                                 const juce::String& savedVersion,
                                 const juce::String& savedUid,
                                 const juce::String& slotName,
-                                juce::String* deferredNote) const
+                                juce::String* deferredNote,
+                                bool noteOnWithhold) const
 {
     if (deferredNote != nullptr) *deferredNote = {};
 
@@ -6190,7 +6955,7 @@ bool ChainHost::stateFitsPlugin(const juce::PluginDescription& found,
     // sound wrong and look deliberate, worst case a dead host.
     if (savedFormat.isNotEmpty() && ! savedFormat.equalsIgnoreCase(found.pluginFormatName))
     {
-        addStateNote(slotName + ": saved as " + savedFormat + " but loaded here as "
+        if (noteOnWithhold) addStateNote(slotName + ": saved as " + savedFormat + " but loaded here as "
                      + found.pluginFormatName
                      + ", so its settings were not applied (settings do not"
                        " transfer between formats)");
@@ -6202,7 +6967,7 @@ bool ChainHost::stateFitsPlugin(const juce::PluginDescription& found,
     // here. Withholding costs one line of text; guessing costs the rack.
     if (savedUid.isNotEmpty() && foundUidKnown && savedUid != juce::String(found.uniqueId))
     {
-        addStateNote(slotName + ": this is a different build from the one saved,"
+        if (noteOnWithhold) addStateNote(slotName + ": this is a different build from the one saved,"
                                 " so its settings were not applied");
         return false;
     }
@@ -6281,6 +7046,21 @@ void ChainHost::applyRestoredState(int slotIdx, const juce::String& b64,
     const int mark = (slotIdx >= 0 && slotIdx < (int)slots_.size())
                        ? pushDeathMark("state restore", slots_[(size_t)slotIdx].desc) : 0;
 
+#if ECHOJAY_DEV_TRANSPORT
+    // DEV-ONLY forced withhold: fail this slot's seed exactly as a real
+    // refusal would — note written, seed fact NOT recorded, so everything
+    // downstream (banner, verdicts, Apply's filter) runs the true path.
+    if (mode_ == Mode::Borrowed && devForceWithholdSlot1() == slotIdx + 1)
+    {
+        popDeathMark(mark);
+        addStateNote(slotName + ": [DEV forceWithholdSlot] seed deliberately"
+                                " failed - running at defaults");
+        EchoJay_NSLog(("EJBorrow: DEV forceWithholdSlot fired on slot "
+                       + juce::String(slotIdx + 1)).toRawUTF8());
+        return;
+    }
+#endif
+
     bool applied = false;
     try
     {
@@ -6295,7 +7075,40 @@ void ChainHost::applyRestoredState(int slotIdx, const juce::String& b64,
     }
     popDeathMark(mark);
 
+    // Reuse verification, production arm (spec §1): a seed failing on an
+    // instance that came FROM the pool is a REUSE failure — that identity
+    // goes pool-ineligible for the session and later borrows instantiate
+    // fresh, loudly. On a fresh instance the same failure is just a bad
+    // state and marks nothing.
+    if (mode_ == Mode::Borrowed && slotIdx >= 0 && slotIdx < (int) slots_.size()
+        && slots_[(size_t) slotIdx].node != nullptr
+        && borrowReusedNodeIds_.count(slots_[(size_t) slotIdx].node->nodeID.uid) > 0)
+    {
+        bool readbackOk = applied;
+        if (applied)
+        {
+            // Self-check: a reused instance that accepted the seed must be
+            // able to read its state back. Empty or throwing readback means
+            // reuse left it incoherent even though setState "succeeded".
+            juce::MemoryBlock rb;
+            try { proc->getStateInformation(rb); }
+            catch (...) { rb.reset(); }
+            readbackOk = rb.getSize() > 0;
+        }
+        if (! readbackOk)
+            markBorrowPoolIneligible(slots_[(size_t) slotIdx].desc,
+                                     applied ? "state readback failed after reuse seed"
+                                             : "rejected its state on reuse");
+    }
+
     if (!applied) return;
+
+    // The seed FACT, recorded at the only place it happens (step 3): this
+    // slot now carries the restored state. Apply's withheld verdict reads
+    // this, never a recomputed policy.
+    if (mode_ == Mode::Borrowed && slotIdx >= 0 && slotIdx < (int) slots_.size()
+        && slots_[(size_t) slotIdx].node != nullptr)
+        borrowSeededNodeIds_.insert(slots_[(size_t) slotIdx].node->nodeID.uid);
 
     // The version note, NOW: after the chunk applied and none of the four
     // failure returns above (decode, null proc, throw, and the load failure in
@@ -6880,7 +7693,10 @@ juce::var ChainHost::buildChainSlotsVar() const
 }
 
 void ChainHost::archiveCurrentRack(const juce::String& label)
-{
+{    // Borrowed mode is READ-ONLY on every shared file (spec §2.2): one
+    // writer per file, and the primary host is it.
+    if (mode_ == Mode::Borrowed) return;
+
     if (slots_.empty()) return;   // nothing populated: nothing to protect
 
     // Same capture path a deliberate library save uses (sendChainSave): force

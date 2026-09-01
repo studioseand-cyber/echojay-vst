@@ -506,7 +506,7 @@ void LinkEditor::showChainPluginPicker()
 
     // P13 (17 Aug 2026): the searchable picker shared with the main plugin
     auto safeThis = juce::Component::SafePointer<LinkEditor>(this);
-    ChainPluginPicker::show(chainPanel.addBlock, avail,
+    ChainPluginPicker::show(chainPanel.addBlock, *this, avail,
         [safeThis](const juce::PluginDescription& desc)
         {
             if (safeThis == nullptr) return;
@@ -629,8 +629,12 @@ void LinkEditor::showPlacementHelp()
         }
     };
 
+    // Parented, never desktop: the foreground watchdog kills desktop
+    // CallOutBoxes in the AU hosting XPC process (the picker's bug).
     juce::CallOutBox::launchAsynchronously(std::make_unique<HelpText>(),
-                                           placementHelp.getScreenBounds(), nullptr);
+                                           getLocalArea(&placementHelp,
+                                                        placementHelp.getLocalBounds()),
+                                           this);
 }
 
 // Subtle inline "?" glyph — dim, brightens on hover; no border.
@@ -661,7 +665,7 @@ void LinkEditor::showPlacementChooser()
     m.addItem(2, "Channel", true, cur == LinkProcessor::PlacementInsert);
     m.addItem(3, "Send",    true, cur == LinkProcessor::PlacementSend);
     auto safeThis = juce::Component::SafePointer<LinkEditor>(this);
-    m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&placementBtn),
+    m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&placementBtn).withParentComponent(this),
         [safeThis](int r)
         {
             if (safeThis == nullptr || r == 0) return;
