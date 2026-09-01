@@ -391,6 +391,20 @@ public:
         // gap has already cleared haveNote_ above.
         const bool resuming = gapMs_ > 0.0f && haveNote_;
         if (resuming) ++gapResumes_;
+        // THE SHARED ANCHOR at gap resumes (1 Sep 2026 ruling; §17.6, the
+        // re-anchor rule): the resume keeps the TARGET (the 200ms rule -
+        // same note) but the envelope's POSITION is pre-gap state applied
+        // to post-gap audio - the ferry that held -123c off-grid for
+        // 230ms at tau 400 (an unconverged limbo resumed verbatim). Arm
+        // the same median-of-first-hops anchor used at note starts: a
+        // note start and a gap resume differ in whether the target is
+        // re-decided, not in how the position is established.
+        if (medianSeed_ && resuming)
+        {
+            curCents_ = inCents; shiftSnap_ = true;
+            noteRefCents_ = inCents;
+            seedHops_ = 1; seedBuf_[0] = inCents;
+        }
         gapMs_ = 0.0f;
 
         // ---- slow-smoothed f0, for TARGET SELECTION only ------------------

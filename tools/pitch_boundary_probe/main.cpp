@@ -47,7 +47,7 @@ int main (int argc, char** argv)
     std::vector<float> in; double fs=0;
     if(argc<2||!readWavMono(argv[1],in,fs)){ std::printf("bad input\n"); return 1; }
 
-    constexpr int vt = PitchEngine::kLowMale;
+    const int vt = argc>5 ? atoi(argv[5]) : (int)PitchEngine::kLowMale;
     PitchEngine det; det.prepare(fs,256); det.setVoiceType(vt); det.setTracking(PitchEngine::kNormal);
     const float hopMs = det.hopMs();
     PitchCorrect corr; corr.prepare(fs, det.inputHopLength(vt)); corr.initDegrees();
@@ -60,10 +60,13 @@ int main (int argc, char** argv)
     // which measures the snap with the aim far from inCents; at natural
     // flex/humanize keep the aim close to the singer (31 Aug 2026).
     const bool nat = argc>4 && !strcmp(argv[4],"nat");
+    // argv[5] voice type (default low_male=2), argv[6] median-anchor flag
+    const int vtArg = argc>5 ? atoi(argv[5]) : 2;
     corr.setRetuneMs(tau);
     corr.setFlex(nat?55.0f:0.0f); corr.setHumanize(nat?60.0f:0.0f);
     corr.setIgnoreVibrato(true); corr.setNaturalVibrato(nat?100.0f:0.0f);
     if(argc>3) corr.debugEnvExperiment(atoi(argv[3]));
+    if(argc>6&&atoi(argv[6])) corr.debugMedianSeed(true);
     corr.reset();
     F0JumpGate gate;
     float worst=PitchEngine::voiceRange(0).fMinHz;

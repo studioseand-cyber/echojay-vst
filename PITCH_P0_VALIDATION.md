@@ -1865,6 +1865,16 @@ the bleed gate entirely (+36 spans gated, +32 ungated from 40→400), so
 it is not the gate; the gate's own cost is ~+4 spans, flat in τ, and at
 low τ it buys convergence (2.55 vs 3.15 c at dial 0).
 
+**Regime caveat added 1 Sep 2026, per ruling:** this table was measured
+at voice_type = low_male. At alto_tenor (the schema default, and Sean's
+session), the tau-400 row is now KNOWN to contain the GAP-RESUME FERRY
+defect this table never measured - a stale envelope limbo resumed across
+sub-200ms gaps, producing off-grid holds (-123c at 5.20s). Do not quote
+the tau-400 row as characterising clean behaviour until the resume
+re-anchor lands; the SHAPE conclusions (useful zone ~40ms, the tau
+climb) survive at both voice types (alto re-measure: 83/77/89 spans at
+tau 0/40/400).
+
 **Caveat that must travel with this table (the exp4b lesson):** part of
 the long-τ climb is the RULER charging genuine glide motion — cycle
 similarity taxes real pitch movement — so the rows above 40 ms are an
@@ -1908,3 +1918,27 @@ constant, and this list is where to look first:
 The general hazard, named after five instances: a constant proven in one
 regime reads as universal until the regime silently widens. When a dial
 range, preset table, path-routing, or VOICE TYPE changes, walk this list.
+
+### §17.6 THE RE-ANCHOR RULE (1 Sep 2026 ruling - a design rule, not a hazard note)
+
+**No state computed before a discontinuity may be applied after it
+without re-anchoring to post-discontinuity audio.**
+
+Six violations of this one sentence cost, in total, weeks of
+measurement (each looked like a different defect):
+1. The pre-confirm envelope chase (the note-boundary snap, §17.5 item 1).
+2. Seed-from-old-note (experiment (c) of the vib-on rounds: seeding the
+   slow track at the old decision's tone reinforced the old vote).
+3. Previous-note voting (the vib-on selection lag fixed by (d)).
+4. The vibrato-depth estimator ingesting the note-interval excursion as
+   "depth" (caught twice in one build).
+5. The popout/menu ordering class (the rack-borrow work's inert-mark).
+6. The GAP-RESUME FERRY: an unconverged envelope position resumed across
+   a sub-200ms gap and applied to the new syllable (-123c off-grid holds
+   at long tau, voice-mismatch dependent).
+
+Review test for any change touching a seam, gap, resume, onset or
+confirm: name the state that crosses it, and name where it re-anchors.
+If it has no re-anchor site, it is instance seven. The shared primitive
+(PitchCorrect's median-of-first-hops anchor, used at note starts AND gap
+resumes) is the standing implementation of this rule for the envelope.
