@@ -903,7 +903,17 @@ private:
 
     std::atomic<float> retuneMs_    { kDefRetuneMs };
     int   seedExp_ = 0;        // 30 Aug 2026 three-way experiments; 0 = shipped
-    // SHIPPED DEFAULT = 5, the applied-shift gate (31 Aug 2026 ruling):
+    // DEFAULT REVERTED TO 0 (1 Sep 2026 ruling): env5's release eases the
+    // envelope toward the SINGLE sample that raised the pending - at
+    // legacy-path x long-tau x creaky onsets that is a live regression
+    // (-123c off-grid holds; the 5.2s event Sean reported, then
+    // mis-attributed for four rounds because the investigation baseline
+    // contained env5 itself). Its measured benefit (tau400 spans 97->76)
+    // was ear-marginal twice; the regression is not, and sits at Sean's
+    // working configuration. env5 returns to default only through the
+    // four-part acceptance in the ruling, after the median-destination
+    // fix.
+    // (The original env5 rationale, for the record:)
     // natural bit-identical, hard better on 6/8 columns, tau-400 rough
     // spans 97 -> 76, ear neutral-or-better across two blind rounds.
     // 0 = the pre-fix path, kept for A/Bs; 1-4 = measured dead ends.
@@ -912,7 +922,7 @@ private:
     // margin), smallest musical interval 100c] = sqrt(8.3*100) ~ 29c;
     // the 20/30/50 sweep shows a monotone hard-6-vs-hard-400 trade with
     // both natural corners invariant at every value.
-    int   envExp_ = 5;
+    int   envExp_ = 0;
     int   medianSeed_ = 0;       // 0 off, 1 starts only, 2 +resume corridor
     uint32_t resumeReanchors_ = 0;
     int   resumeJudge_ = 0;
