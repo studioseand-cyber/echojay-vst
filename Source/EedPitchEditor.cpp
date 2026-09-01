@@ -359,6 +359,9 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
 void EedPitchEditor::paintContent (juce::Graphics& g)
 {
     const echojay::PitchReading r = proc_.engine().getReading();
+    if (r.voiced && r.f0Hz > 0.0f)
+    { fitLogHz_ += (std::log ((double) r.f0Hz) - fitLogHz_)
+                   * (fitN_ < 200 ? 1.0 / (++fitN_) : 0.005); }
     const float dim = proc_.isBypassed() ? 0.4f : 1.0f;
     g.setOpacity (dim);
 
@@ -493,6 +496,31 @@ void EedPitchEditor::paintKeyAttribution (juce::Graphics& g, juce::Rectangle<int
     // The reference line is ALWAYS shown with its provenance (29 Aug 2026
     // ruling): a vocal silently tuned to a grid derived from itself was
     // invisible state that cost days. One suffix tells the whole story.
+    // Voice-fit line (1 Sep 2026): amber ONLY when the running pitch
+    // evidence suggests a different voice_type - the mismatch that cost
+    // this project a full investigation round (alto_tenor default on
+    // low-male material; schema's own text warns it causes octave errors).
+    juce::String voiceLine;
+    if (fitN_ >= 100)
+    {
+        const int cur = (int) proc_.getParamValue (EedPitchProcessor::kVoiceType);
+        int best = cur; double bestD = 1e9;
+        for (int t = 0; t < echojay::PitchEngine::kNumVoiceTypes; ++t)
+        {
+            const auto& vr = echojay::PitchEngine::voiceRange (t);
+            const double centre = 0.5 * (std::log ((double) vr.fMinHz)
+                                       + std::log ((double) vr.fMaxHz));
+            const double d = std::fabs (fitLogHz_ - centre);
+            if (d < bestD) { bestD = d; best = t; }
+        }
+        if (best != cur)
+        {
+            const auto* sp = EedPitchProcessor::schema().find (EedPitchProcessor::kVoiceType);
+            if (sp != nullptr)
+                voiceLine = "   voice " + juce::String (sp->choiceLabel (cur))
+                          + " - range suggests " + juce::String (sp->choiceLabel (best));
+        }
+    }
     const juce::String refLine =
         ! st.refAuto        ? "   ref " + juce::String (st.refApplied, 1) + " Hz (manual)"
         : st.refSelfIgnored ? "   ref 440.0 Hz (auto: only this track measurable - not followed)"
@@ -501,7 +529,8 @@ void EedPitchEditor::paintKeyAttribution (juce::Graphics& g, juce::Rectangle<int
     {
         g.setColour (C::text3);
         g.setFont (uiFont (9.0f));
-        g.drawText ("key set by hand" + refLine, area, juce::Justification::centredLeft);
+        if (voiceLine.isNotEmpty()) g.setColour (C::amber);
+        g.drawText ("key set by hand" + refLine + voiceLine, area, juce::Justification::centredLeft);
         return;
     }
 
@@ -518,7 +547,8 @@ void EedPitchEditor::paintKeyAttribution (juce::Graphics& g, juce::Rectangle<int
              << "  " << juce::String (st.tuningHz, 1) << " Hz"
              << "  conf " << juce::String (st.conf, 2);
         if (st.sourceName.isNotEmpty()) line << "   from \"" << st.sourceName << "\"";
-        line << refLine;
+        line << refLine << voiceLine;
+        if (voiceLine.isNotEmpty()) g.setColour (C::amber);
         g.drawText (line, area, juce::Justification::centredLeft);
         return;
     }

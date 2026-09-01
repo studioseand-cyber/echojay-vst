@@ -1894,6 +1894,17 @@ constant, and this list is where to look first:
    path, a different fMin voice type, or a shifted kNoteChangeCents
    moves both bracket ends - re-derive, don't re-fit.
 
-The general hazard, named after four instances: a constant proven in one
+5. **voice_type in every measurement (added retroactively, 1 Sep 2026)**:
+   entries 1-4 above were ALL validated at voice_type = low_male - the
+   instrument stack pinned it, and Sean's session sat on the alto_tenor
+   DEFAULT, where a gap-resume-ferried envelope limbo at long tau produced
+   a -123c off-grid hold invisible to every panel (the tau-400 5.20s
+   defect). §17.4's SHAPE survives at alto_tenor (re-measured: tau 0/40/
+   400 -> 83/77/89 spans, centres 2.15/3.45/6.06c - same U-curve, same
+   useful-zone conclusion, uniformly slightly worse, worst deficits
+   deeper at 400 where the resume defect lives). EVERY measurement from
+   now on records its voice_type.
+
+The general hazard, named after five instances: a constant proven in one
 regime reads as universal until the regime silently widens. When a dial
-range, preset table, or path-routing changes, walk this list.
+range, preset table, path-routing, or VOICE TYPE changes, walk this list.

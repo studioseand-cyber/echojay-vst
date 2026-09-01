@@ -78,6 +78,9 @@ private:
     juce::Rectangle<int> notePanel_, numbersPanel_, guardPanel_, ribbonBounds_;
 
     bool suppressCallbacks_ = false;
+    // Voice-fit readout (1 Sep 2026 ruling): running log-f0 evidence and
+    // the suggested voice type - the fourth hidden-state-made-visible.
+    double fitLogHz_ = 0.0; int fitN_ = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedPitchEditor)
 };

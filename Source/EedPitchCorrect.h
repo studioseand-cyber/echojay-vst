@@ -428,6 +428,28 @@ public:
             noteRefCents_ = inCents;
             stableMs_ = 0.0f; confirmMs_ = 0.0f; havePending_ = false;
             noteMs_ = 0.0f; vibPhase_ = 0.0f;
+            seedHops_ = 1; seedBuf_[0] = inCents;
+        }
+        else if (medianSeed_ && seedHops_ > 0 && seedHops_ < 3)
+        {
+            // MEDIAN-OF-FIRST-HOPS SEED (1 Sep 2026 ruling, defect family
+            // instance five): the single-sample "start AT the note" seed is
+            // taken at the moment the estimate is worst - a creak onset
+            // mis-read (148 Hz for a 170 Hz note at alto_tenor) poisons
+            // curCents_ AND noteRefCents_, and long tau preserves the
+            // poison for hundreds of ms (the 5.20-5.43s -123c hold; at
+            // small tau the same poison heals in ~20ms, invisible). For
+            // the first 3 voiced hops (~8ms - inaudible), re-seed both
+            // from the RUNNING MEDIAN, the same don't-trust-one-sample
+            // discipline the slow-track work established.
+            seedBuf_[seedHops_++] = inCents;
+            float a = seedBuf_[0], b = seedBuf_[1], c = seedHops_ > 2 ? seedBuf_[2] : b;
+            const float med = seedHops_ > 2
+                ? std::max (std::min (a, b), std::min (std::max (a, b), c))
+                : 0.5f * (a + b);
+            curCents_ = med; shiftSnap_ = true;
+            noteRefCents_ = med;
+            if (seedHops_ >= 3) seedHops_ = 0;
         }
         else
         {
@@ -756,6 +778,7 @@ public:
     float debugDepthEnv() const noexcept { return depthEnv_; }
     float debugPendDepth() const noexcept { return pendDepth_; }
     void  debugEnvExperiment (int e) noexcept { envExp_ = e; }
+    void  debugMedianSeed (bool on) noexcept { medianSeed_ = on; }
     float debugSlowTrack() const noexcept { return slowCents_; }
 
     // Nearest ENABLED degree to a cents value, including that degree's bias.
@@ -832,6 +855,9 @@ private:
     // the 20/30/50 sweep shows a monotone hard-6-vs-hard-400 trade with
     // both natural corners invariant at every value.
     int   envExp_ = 5;
+    bool  medianSeed_ = false;   // (a) behind the flag until panels + ear
+    int   seedHops_ = 0;
+    float seedBuf_[3] = { 0, 0, 0 };
     float depthEnv_ = 0.0f;    // measured vibrato depth (see osc block)
     float pendDepth_ = 0.0f;   // depthEnv_ latched at pending formation
     float slowAgeMs_ = 0.0f;   // ms since the slow track was (re)seeded

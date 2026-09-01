@@ -53,3 +53,12 @@ are for matched-pair deltas only.
 - **Inversions**: zero, always.
 - The vib-on tuning gap (same-semitone 90.4% vs 97–98% everywhere else) is
   the largest measured open defect: `DEFECT_VIBRATO_ON_TUNING_COST.md`.
+
+## Standing instruction (1 Sep 2026 ruling)
+
+**Ear renders are made at Sean's ACTUAL session settings, read from his
+session, never assumed** — including voice_type. The alto_tenor-default
+round was lost because every offline instrument pinned low_male while his
+session sat on the default; the defect only existed at his settings.
+Every measurement records its voice_type (see PITCH_P0_VALIDATION.md
+§17.5 item 5).
