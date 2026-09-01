@@ -390,7 +390,7 @@ public:
             // 148.2) - the 5.2s residual after the median fix). The
             // F0JumpGate learned this identical lesson (kGapForgetMs);
             // the pending now forgets on the same clock.
-            if (gapMs_ >= kPendForgetMs)
+            if (pendForgetOn_ && gapMs_ >= kPendForgetMs)
             { havePending_ = false; pendN_ = 0; confirmMs_ = 0.0f; }
             return 0.0f;
         }
@@ -864,6 +864,7 @@ public:
     float debugPendDepth() const noexcept { return pendDepth_; }
     void  debugEnvExperiment (int e) noexcept { envExp_ = e; }
     void  debugMedianSeed (int mode) noexcept { medianSeed_ = mode; }   // 0 off, 1 starts only, 2 +resume corridor
+    void  debugPendForget (bool on) noexcept { pendForgetOn_ = on; }    // gated: rode ungated into the baseline for one commit - the exact pattern under repair
     uint32_t debugResumeReanchors() const noexcept { return resumeReanchors_; }
     float    debugLastCorridorExcess() const noexcept { return lastCorridorExcess_; }
     float    debugLastResumeOffset() const noexcept { return lastResumeOffset_; }
@@ -966,6 +967,7 @@ private:
     float depthEnv_ = 0.0f;    // measured vibrato depth (see osc block)
     float pendDepth_ = 0.0f;   // depthEnv_ latched at pending formation
     int   pendN_ = 0;          // median-destination sample count (see release)
+    bool  pendForgetOn_ = false;
     float pendBuf_[3] = { 0, 0, 0 };
     float slowAgeMs_ = 0.0f;   // ms since the slow track was (re)seeded
     std::atomic<float> flex_        { 55.0f };

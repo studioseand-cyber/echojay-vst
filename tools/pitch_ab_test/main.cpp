@@ -213,6 +213,7 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
     if (const char* ee = getenv ("AB_ENV"))
         corr.debugEnvExperiment (std::atoi (ee));   // 31 Aug 2026 boundary arms
     if (const char* ms = getenv ("AB_MEDSEED")) corr.debugMedianSeed (std::atoi (ms));
+    if (getenv ("AB_FORGET")) corr.debugPendForget (true);
     // AB_REF=<Hz>: pin the tuning reference (29 Aug 2026, the hard-mode
     // flat-bias attribution: the PLUGIN defaults reference_source=auto and
     // follows KeyFeed's detected tuning; this mirror otherwise sits at

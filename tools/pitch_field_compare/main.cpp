@@ -191,7 +191,8 @@ int main (int argc, char** argv)
         if (d > 0.10)
         {
             ++deficit; deficitS += (double) ts.hop / fs;
-            if (! inSpan) { ++spans; inSpan = true; }
+            if (! inSpan) { ++spans; inSpan = true;
+                if (getenv ("FIELD_SPANS")) std::printf ("    span @ %.2fs\n", a / fs); }
             if (d > worst) { worst = d; worstAt = a / fs; }
         }
         else inSpan = false;
