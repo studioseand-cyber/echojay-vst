@@ -215,6 +215,10 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
     if (const char* ms = getenv ("AB_MEDSEED")) corr.debugMedianSeed (std::atoi (ms));
     if (getenv ("AB_FORGET")) corr.debugPendForget (true);
     if (getenv ("AB_FORCESHIFT")) corr.debugForceShiftPath (true);   // Q1 reproduction
+    // AB_FASTRING: the ring-aligned fast-term experiment - shift path
+    // forced at any k, fast component engine-side per-sample.
+    const bool fastRing = getenv ("AB_FASTRING") != nullptr;
+    if (fastRing) { corr.debugForceShiftPath (true); corr.debugFastRing (true); }
     // AB_REF=<Hz>: pin the tuning reference (29 Aug 2026, the hard-mode
     // flat-bias attribution: the PLUGIN defaults reference_source=auto and
     // follows KeyFeed's detected tuning; this mirror otherwise sits at
@@ -259,6 +263,7 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
     // AB_NOBLEED=1 disables the drift-bleed (29 Aug 2026, the hard-mode
     // flat-bias investigation); default mirrors the processor (bleed on).
     sh.setDriftBleed (getenv ("AB_NOBLEED") == nullptr);
+    if (fastRing) sh.setFastRing (true, corr.getNaturalVibrato() * 0.01f);
     if (getenv ("AB_UNGATE")) sh.debugBleedUngated (true);   // tau-sweep diagnostic
     // AB_BRIDGE=<thresh>: audio-verified bridging (100 ms cap) for the
     // field evaluation renders (29 Aug 2026 ruling). Not shipped; the
@@ -318,6 +323,7 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
                                                      rOldT, rNewT);
                 sliceF0 = gatedF0; sliceVoiced = ev[h].voiced;
                 const float t = corr.process (gatedF0, ev[h].voiced, hopMs);
+                if (fastRing) sh.setFastRingSlowHz (corr.slowHzNow());
                 if (t > 0.0f) { target = t;            // hold through gaps
                                 shift  = corr.shiftPreferred()
                                              ? corr.lastShiftCents()

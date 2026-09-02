@@ -168,6 +168,7 @@ public:
     {
         fs_ = sampleRate > 0.0 ? sampleRate : 48000.0;
         bleedTau_ = 0.1 * fs_;
+        ringSlowK_ = 1.0 / (0.14 * fs_);
         bleedGateK_ = 1.0 / (0.1 * fs_);
         carryLimit_ = (double) carryMs_ * 0.001 * fs_;
 
@@ -189,6 +190,7 @@ public:
 
         in_.assign  (sz, 0.0f);
         f0_.assign  (sz, 0.0f);      // <= 0 means UNVOICED at that sample
+        slowRing_.assign (sz, 0.0f);
         acc_.assign (sz, 0.0f);
         win_.assign (sz, 0.0f);
 
@@ -541,6 +543,12 @@ public:
             const int64_t at = (int64_t) write_ - (int64_t) n + i - (int64_t) lag;
             if (at < 0 || at < emitted_) continue;
             f0_[(size_t) ((uint32_t) (uint64_t) at & mask_)] = track;
+            // The fast-ring slow reference rides the SAME lag compensation
+            // as the f0 it will divide - time-aligned by the proven
+            // mechanism, not a new timing belief (2 Sep, fourth cut: the
+            // feed-time reference led the audio by ~latency, costing ~5c).
+            if (fastRingOn_ && ! slowRing_.empty())
+                slowRing_[(size_t) ((uint32_t) (uint64_t) at & mask_)] = fastSlowHz_;
         }
 
         const float target = targetHz;
@@ -722,9 +730,31 @@ private:
                 // flicker the splice keeps emitting on frozen state.
                 if (ok)
                 {
-                    const double r = curShift_ > kNoShift + 1.0f
+                    // RING-ALIGNED FAST TERM (2 Sep 2026, flag): the slow
+                    // shift arrives via curShift_; the fast component is
+                    // computed HERE, per sample, as (f0Here/ringSlow)^(k-1)
+                    // - the audio's own wobble read at the audio's own
+                    // time, the k=100 cancellation generalised. ringSlow is
+                    // this engine's one-pole (~140ms) of f0Here, seeded at
+                    // re-entry (never a single stale sample - §17.6).
+                    double fastFactor = 1.0;
+                    const float slowHere = fastRingOn_
+                        ? slowRing_[(size_t) ((uint32_t) (uint64_t) std::max<int64_t> (0, rp) & mask_)]
+                        : 0.0f;
+                    if (fastRingOn_ && slowHere > 0.0f)
+                    {
+                        // Numerator ring-aligned (phase-critical); the
+                        // denominator is the CORRECTOR's slow track, per
+                        // hop - one slow reference for both terms (the
+                        // engine-side slow track was the third cut's
+                        // measured mistake).
+                        const double dev = (double) f0Here / (double) slowHere;
+                        fastFactor = std::pow (std::clamp (dev, 0.84, 1.19),
+                                               (double) fastK_ - 1.0);
+                    }
+                    const double r = (curShift_ > kNoShift + 1.0f
                         ? std::exp2 ((double) curShift_ / 1200.0)
-                        : (double) tgt / (double) f0Here;
+                        : (double) tgt / (double) f0Here) * fastFactor;
                     const double absSt = std::fabs (std::log2 (r) * 12.0);
                     const float want = absSt <= kSpliceBandSt ? 0.0f : 1.0f;
                     const float step = 1.0f / (float) std::max (16, (int) (0.004 * fs_));
@@ -763,6 +793,11 @@ private:
                 if (carryLimit_ <= 0.0) spliceDrift_ = 0.0;
                 spliceFadeLen_ = 0; methodMix_ = 0.0f;
                 spliceR_ = 0.0; spliceT_ = 0; spliceTf_ = 0.0;
+                // ringSlowHz_ deliberately SURVIVES blinks: it is an
+                // input-derived slow track (the corrector's 200ms-rule
+                // lesson); resetting it at every 11ms dropout left the
+                // fast factor at ~1 for 140ms after each of ~8 blinks/s -
+                // measured as 25.5c under-correction on the first cut.
             }
 
             // PHASE-MATCHED JOIN (28 Aug 2026 ruling, the exit seam): the
@@ -1613,6 +1648,19 @@ private:
     double bleedGateK_ = 1.0 / 4800.0;   // 100 ms pole, set in prepare()
     bool   driftBleed_ = false;
     bool   dbgBleedUngated_ = false;
+public:
+    // Ring-aligned fast vibrato term (2 Sep 2026 experiment; see the
+    // splice block). k in 0..2 (natural_vibrato/100).
+    void setFastRing (bool on, float k) noexcept
+    { fastRingOn_ = on; fastK_ = std::clamp (k, 0.0f, 2.0f); }
+    void setFastRingSlowHz (float hz) noexcept { fastSlowHz_ = hz; }
+private:
+    bool   fastRingOn_ = false;
+    float  fastK_ = 1.0f;
+    double ringSlowHz_ = 0.0;      // (unused by the one-reference cut)
+    float  fastSlowHz_ = 0.0f;     // the corrector's slow track, per hop
+    std::vector<float> slowRing_;  // lag-compensated slow reference
+    double ringSlowK_ = 1.0 / (0.14 * 48000.0);   // set in prepare
     float  carryMs_ = 0.0f;        // drift carry threshold; 0 = off
     double carryLimit_ = 0.0;      // ...in samples, set with fs
     int64_t uvRun_ = 0;            // unvoiced run length at the emit head

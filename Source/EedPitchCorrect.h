@@ -764,8 +764,17 @@ public:
             if (shiftSnap_) { shiftSm_ = slowPart; shiftSnap_ = false; }
             else            shiftSm_ = slowPart
                                      + (shiftSm_ - slowPart) * onePole (50.0f);
+            // RING-ALIGNED FAST TERM experiment (2 Sep 2026 ruling): under
+            // the flag the corrector emits the SLOW shift only; the fast
+            // component (k-1)*osc - the hop-sampled, 37-55ms-late term
+            // that measured 11 clicks and 13.1c at k=0 - is applied by the
+            // ENGINE per-sample from its own ring, where it is
+            // phase-correct by construction. Descends from the k=100
+            // structural solution (algebraic cancellation at the ring's
+            // time), generalised to k != 100.
             shiftCents_ = shiftSm_
-                        + (natVib_.load() * 0.01f - 1.0f) * osc;
+                        + (dbgFastRing_ ? 0.0f
+                           : (natVib_.load() * 0.01f - 1.0f) * osc);
         }
         // Per-hop introspection for the retune trace (3 Sep 2026): plain
         // stores on the audio thread, read by the processor's trace ring.
@@ -863,6 +872,7 @@ public:
     // path at any natural_vibrato, to reproduce and dissect the recorded
     // "+7 clicks at k != 100" finding. Investigation-only.
     void debugForceShiftPath (bool on) noexcept { dbgForceShiftPath_ = on; }
+    void debugFastRing (bool on) noexcept { dbgFastRing_ = on; }
     float    lastInCents()   const noexcept { return lastInCents_; }
     float    lastSlowCents() const noexcept { return lastSlowCents_; }
     float    lastOscCents()  const noexcept { return lastOscCents_; }
@@ -883,6 +893,12 @@ public:
     float    debugLastCorridorExcess() const noexcept { return lastCorridorExcess_; }
     float    debugLastResumeOffset() const noexcept { return lastResumeOffset_; }
     float debugSlowTrack() const noexcept { return slowCents_; }
+    // The slow track in Hz, for the ring-aligned fast term: ONE slow
+    // reference serves both the slow shift and the fast factor - two
+    // independent slow tracks measured mistuned by the note step for
+    // ~140ms after every change (rig flatness 3.4% vs legacy 22.6%).
+    float slowHzNow() const noexcept
+    { return haveSlow_ ? hzFromCentsC (slowCents_, referenceHz_.load()) : 0.0f; }
 
     // Nearest ENABLED degree to a cents value, including that degree's bias.
     // Public so a test can pin the decision independently of the envelope.
@@ -982,6 +998,7 @@ private:
     float pendDepth_ = 0.0f;   // depthEnv_ latched at pending formation
     int   pendN_ = 0;          // median-destination sample count (see release)
     bool  dbgForceShiftPath_ = false;
+    bool  dbgFastRing_ = false;
     bool  pendForgetOn_ = false;
     float pendBuf_[3] = { 0, 0, 0 };
     float slowAgeMs_ = 0.0f;   // ms since the slow track was (re)seeded
