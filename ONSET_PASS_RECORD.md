@@ -857,3 +857,39 @@ baseline of the same order. The grain path's inversion mechanism stays
 quarantined in DEFECT_GRAIN_EPOCH_UNITY (already VOID-remeasured).
 
 No build. The seam ramp waits on the ear gate.
+
+---
+
+# Round 13 (2 Sep 2026): EAR GATE PASSED - the build proceeds
+
+**Sean's confirmation, recorded against the 6.18s seam event** (the one
+the tap caught in the act - wet resuming at 6.16s after 22ms dry with a
+9c target step - at the timestamp he independently named weeks before
+it was measured): on the 6.18s clip, "gets worse and worse" across the
+three legs - source clean, ignore-vib OFF carries the artifact,
+ignore-vib ON worst. That confirms BOTH the event and the
+ignore-vibrato ordering by ear, matching the event counts from both
+instruments (container 12/30, current engine 4/7).
+
+## THE COMMITTED BAR (this commit precedes the first line of engine
+## code; the flag commit repeats it verbatim)
+
+  ACCEPT:  word-start event fraction falls materially from 100% (OFF) /
+           71% (ON) toward Antares' ~31%, on the NEW take.
+  ACCEPT:  no regression in sustain tuning (1.9c) or onset off-grid.
+  FALSIFY: the OLD low-male take's ign-vib ON zero-event state must not
+           gain events.
+  Raw event COUNT is explicitly not the bar. Do not optimise it.
+  IF THE BAR IS MISSED, REVERT. It is not renegotiated.
+
+Build shape: on resuming wet after bit-exact dry, the wet leg starts at
+the DRY LEG'S PITCH (zero correction at the seam) and ramps to full
+correction over tens of ms. kSeamFadeMs untouched (pitch continuity,
+not waveform continuity - reasoning in round 12). Ramp time exposed as
+a parameter, not baked (prior art: GSnap Attack; Waves Tune RT Note
+Transition 0.1-800ms, 120ms default).
+
+DEFECT_VIBRATO_ON_TUNING_COST: now carries tuning cost + event-count
+cost + EAR confirmation; "understood and declined" is no longer
+defensible on this material. TO BE RE-OPENED SEPARATELY after the seam
+ramp lands - not bundled, so each result stays attributable.
