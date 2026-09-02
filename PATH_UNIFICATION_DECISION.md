@@ -88,3 +88,25 @@ panels. If it passes, unify routing and run the retirement list. If the
 fast term cannot pass the click gate ring-aligned, the answer is "the
 legacy path stays, env5's four-gate path is the standing mitigation" -
 and this document records why, with numbers.
+
+## The strategic framing (2 Sep 2026 ruling, recorded verbatim in intent)
+
+Two paths for applying a correction: one structurally immune to the
+boundary-discontinuity family, one not - with the user-facing settings
+routing to the fragile one. Every fix in the §17.6 lineage is a patch on
+that asymmetry. The hybrid is the first proposal that addresses the
+asymmetry itself, which is why it gets a careful build and a hard gate.
+
+## Build log (cuts 1-5, 2 Sep 2026)
+
+The historic "+7 clicks" blocker is RETIRED: with one lag-aligned slow
+reference the forced shift path at k=0 measures clicks 2 = legacy
+parity, HF in bounds, HNR/flux passing, and synthetic-rig flatness at
+legacy parity. The confirmed mechanism was exactly the document's Q1
+prediction: the hop-sampled fast term applied 37-55ms late. Remaining:
+under-correction 16.3c vs the 12.6 bar (legacy 10.5) - localised to the
+SLOW-shift composition under the forced path (shiftSm_ pole + wanted
+interplay at k=0), NOT the fast term. Status: flag-only; the migration
+remains gated on closing the cents gap; the stop condition stands
+written (if the slow-composition round cannot close it, this document
+records why and the legacy path stays).
