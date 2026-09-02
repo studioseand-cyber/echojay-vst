@@ -2756,7 +2756,11 @@ const juce::StringArray& EchoJayAPI::historyStripMarkers()
         "\n\n[CURRENT RACK EMPTY",
         // The running level marker (17 Aug 2026): rides after the rack
         // block on the same arm, varies per turn, never belongs in history.
-        "\n\n[CHAIN LEVELS"
+        "\n\n[CHAIN LEVELS",
+        // The extended meter marker (2 Sep 2026): same arm, same per-turn
+        // volatility. A stale snapshot resent as history would be read as a
+        // second measurement of the same input.
+        "\n\n[METER SNAPSHOT v2"
     };
     return markers;
 }
@@ -3031,6 +3035,86 @@ juce::String EchoJayAPI::buildChainLevelsInjection(const ChainHost& chainHost)
         b << "; output " << fmt1(out.levelDb) << " LUFS (out-in " << fmt1(out.levelDb - in.levelDb) << " dB)";
     b << "]";
     return b;
+}
+
+juce::String EchoJayAPI::buildMeterSnapshotInjection(const juce::String& meterJson)
+{
+    // [METER SNAPSHOT v2]: the extended meter fields on a CHAIN turn, by the
+    // same route [CHAIN LEVELS] already takes -- text on the last user
+    // message, no body field, no capture flag.
+    //
+    // WHY TEXT AND NOT THE `meters` BODY FIELD. That field is explicit-capture
+    // only (EchoJayAPI.cpp, the metersBlob dispatch) because a stray blob made
+    // the server classify a plain chat as capture_analysis. Nothing here goes
+    // near it: nextChatIsExplicitCapture_ is untouched, the capture path is
+    // exactly as it was. The server needs no change either -- parseExtendedMeter
+    // (api/_classifier.js) is a TEXT scanner over stable + volatile + the last
+    // user message, and buildExtendedMeterContext renders whatever it finds
+    // into prose for the model.
+    //
+    // THE MARKER MUST MATCH NONE OF containsCaptureMarkers' five patterns
+    // (api/_prompt-shapes.js): the two "<WORD> CHANNEL:/ANALYSIS:" shapes need
+    // an uppercase run followed by that word and a quote, "[PREVIOUS CAPTURE:"
+    // and "[SPECTRUM REFERENCE" are literals, and the fifth is the literal
+    // "Band profile (avg dB". "[METER SNAPSHOT v2: " matches none -- the
+    // lowercase "v2" alone puts it outside the first two character classes --
+    // and it was verified clean in the server run. Do not rename it without
+    // re-checking all five.
+    //
+    // SOURCED FROM meterDataToJSON, NOT RE-DERIVED. Its absent-key convention
+    // is the server's null convention: a key that is not there means
+    // unavailable, never a placeholder zero. Copying keys forward preserves
+    // that for free; recomputing would be a second opinion about availability.
+    auto v = juce::JSON::parse(meterJson);
+    auto* o = v.getDynamicObject();
+    if (o == nullptr) return {};
+
+    juce::StringArray parts;
+    auto copyNumber = [&](const char* key)
+    {
+        if (! o->hasProperty(key)) return;                  // absent = unavailable
+        const auto val = o->getProperty(key);
+        if (! (val.isDouble() || val.isInt() || val.isInt64())) return;
+        parts.add("\"" + juce::String(key) + "\":" + val.toString());
+    };
+    copyNumber("psr");
+    copyNumber("plr");
+    copyNumber("oversCount");
+
+    // ALL-OR-NOTHING, and the two objects differ in how they can fail.
+    // macroBands is written by meterDataToJSON with all six names or not at
+    // all, so a partial one should be impossible; bandCrest genuinely can be
+    // partial (its three subkeys appear as each band first gets signal). The
+    // server treats a partial object as UNAVAILABLE for both, so emitting one
+    // is strictly worse than emitting nothing: it costs bytes and yields the
+    // same null. Both are checked the same way rather than trusting the
+    // writer, because the cost of the check is nil and the cost of being
+    // wrong is a field that reads present and parses to null.
+    auto copyObject = [&](const char* key, const juce::StringArray& required)
+    {
+        if (! o->hasProperty(key)) return;
+        auto* obj = o->getProperty(key).getDynamicObject();
+        if (obj == nullptr) return;
+        for (const auto& r : required)
+            if (! obj->hasProperty(r)) return;              // partial = omit entirely
+        parts.add("\"" + juce::String(key) + "\":"
+                  + juce::JSON::toString(o->getProperty(key), true));
+    };
+    copyObject("macroBands", { "sub", "low", "lowMid", "mid", "highMid", "air" });
+    copyObject("bandCrest",  { "sub", "mid", "top" });
+
+    // EVERY KEY ABSENT MEANS NO BLOCK AT ALL. A stopped transport measures
+    // nothing, every guard in meterDataToJSON omits its key, parts is empty,
+    // and this returns "" -- so standardChainInjections appends nothing and the
+    // turn carries no marker. An empty "[METER SNAPSHOT v2: ]" would be a
+    // present-but-meaningless block: it would read as data to a human, and to
+    // the server it would parse to the same nulls while spending the bytes.
+    if (parts.isEmpty()) return {};
+
+    return "\n\n[METER SNAPSHOT v2: " + parts.joinIntoString(", ")
+         + " - measured on the live input, same convention as the capture"
+           " payload: a field absent here was not measurable, never assume a"
+           " value for it.]";
 }
 
 juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& rack,

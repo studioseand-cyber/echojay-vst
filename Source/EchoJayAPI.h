@@ -766,6 +766,15 @@ public:
     static juce::String formatHeard(float seconds);
     static juce::String formatSlotLevelNote(const ChainHost& chainHost, int slot);
     static juce::String buildChainLevelsInjection(const ChainHost& chainHost);
+    //   buildMeterSnapshotInjection: the "[METER SNAPSHOT v2: ...]" marker
+    //     carrying psr / plr / oversCount / macroBands / bandCrest on a CHAIN
+    //     turn. Takes meterDataToJSON's output and copies the present keys
+    //     forward, so its absent-key convention (and the server's matching
+    //     null convention) is preserved rather than re-decided. Rides the same
+    //     arm and the same TEXT path as [CHAIN LEVELS]; touches neither
+    //     nextChatIsExplicitCapture_ nor the `meters` body field. Returns ""
+    //     when nothing was measurable, so no block is emitted at all.
+    static juce::String buildMeterSnapshotInjection(const juce::String& meterJson);
 
     // Parse the chain block out of an assistant reply.
     // Returns true and fills chainJsonOut if a block (complete or truncated) is present.

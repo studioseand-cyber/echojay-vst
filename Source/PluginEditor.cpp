@@ -25437,6 +25437,22 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
             EchoJay_NSLog(("EJLevels: CHAIN LEVELS marker attached, " + juce::String(lv.length())
                            + " chars: " + lv.substring(0, 160).replace("\n", " ")).toRawUTF8());
         }
+        // [METER SNAPSHOT v2]: psr / plr / oversCount / macroBands / bandCrest
+        // on the SAME arm and the same text path. The builder copies whatever
+        // meterDataToJSON currently has and returns "" when it has nothing, so
+        // a stopped transport attaches no marker rather than an empty one --
+        // the zero is logged either way, because a marker that silently stops
+        // riding looks exactly like a marker that was never added.
+        {
+            const juce::String ms = EchoJayAPI::buildMeterSnapshotInjection(
+                                        processorRef.getMeterEngine().getMeterDataJSON());
+            out += ms;
+            EchoJay_NSLog((ms.isEmpty()
+                              ? juce::String("EJLevels: METER SNAPSHOT omitted - nothing measurable yet")
+                              : "EJLevels: METER SNAPSHOT marker attached, "
+                                + juce::String(ms.length()) + " chars: "
+                                + ms.substring(0, 200).replace("\n", " ")).toRawUTF8());
+        }
     }
 
     // [SAVED CHAINS]: names and ids only, riding the SAME arms as the chain
