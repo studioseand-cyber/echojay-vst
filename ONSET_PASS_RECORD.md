@@ -893,3 +893,67 @@ DEFECT_VIBRATO_ON_TUNING_COST: now carries tuning cost + event-count
 cost + EAR confirmation; "understood and declined" is no longer
 defensible on this material. TO BE RE-OPENED SEPARATELY after the seam
 ramp lands - not bundled, so each result stays attributable.
+
+---
+
+# Round 14 (2 Sep 2026): SEAM RAMP v1 BUILT, MEASURED, AND REVERTED BY
+# ITS OWN BAR. The bar worked exactly as designed.
+
+Built per the ordered shape: on wet resume after bit-exact dry, ratio
+exponent w ramps 0 -> 1 over seamRampMs (w=0 IS the dry leg's pitch,
+r^0=1; linear in cents), engine-side at the re-entry site, kSeamFadeMs
+untouched, flag setSeamRampMs (0=off). Three re-entry discriminators
+iterated BEFORE the bar measurement, each caught by measurement:
+  1. Ungated: mid-note blinks retriggered the ramp - ign-vib-ON sustain
+     tuning 1.9c -> 2.8c.
+  2. Gap-length gate at 60ms (the word-start detector's constant):
+     EXCLUDED THE EAR-CONFIRMED EXEMPLAR - the 6.16s word-start seam has
+     a 22ms ENGINE-dry gap (detector-unvoiced and engine-dry are
+     different clocks). At 15ms: re-admitted ON's 15-25ms blink class.
+     GAP LENGTH CANNOT SEPARATE THE POPULATIONS (the ferry lesson again).
+  3. Audio-testimony discriminator (the audio-verified-bridging test,
+     read-only: periodic-through-the-gap = blink, aperiodic = word
+     start, 0.5 threshold, 15ms floor): fixed OFF completely; ON's
+     damaging re-entries are GENUINELY aperiodic and pass it.
+
+## The measurements against the committed bar (ramp 60ms, discriminator 3)
+
+  WORD-START FRACTION (NEW):  OFF 100% -> 0% (ZERO events, from 4);
+                              ON 71% -> 20% (1/5, from 7)     ** PASS **
+  FALSIFY (OLD, ign-vib ON):  0 events -> 0 events            ** PASS **
+  SUSTAIN TUNING:  OFF 2.9c -> 2.8c                              PASS
+                   ON  1.9c -> 2.8c                           ** MISS **
+  ONSET OFF-GRID:  med 4.94 -> 5.04 (noise-level); p75 8.5->10.7,
+                   p90 15.4->22.7 - the tails carry the fix's OWN trade
+                   (the deliberately-uncorrected first tens of ms).
+
+The ON sustain miss, dissected per-instant (the standing constraint
+caught what the medians hid): per-instant delta med +0.03c - NO
+systematic regression - but ~45 hops in ONE 150ms region (0.79-0.93s,
+the sustain tail of ign-vib ON's turbulent intro note, the same region
+whose 36c target steps were event-flagged BEFORE the fix) worsened
++2-3c and crossed the median line, plus a 2-hop +14.8c spike at 4.20s.
+Ramp length does not matter (2.7-2.8c at 30/45/60ms) - the damage is
+the re-zeroing itself at those specific aperiodic mid-note re-entries,
+which pass every discriminator tried because they ARE aperiodic.
+
+## VERDICT: the bar says revert. Reverted.
+
+The engine change was never committed (the bar commit preceded it, per
+the ordered sequence); the working tree is restored. The full v1 diff
+is preserved at scratchpad/seam_ramp_v1.patch for the next ruling.
+No ear set cut (step 6 was conditional on the bar).
+
+## What v1 established for the next shape (findings, not proposals)
+
+  - The fix WORKS on the mechanism: zero word-start events at OFF, the
+    ear-confirmed 6.18s exemplar eliminated, falsifier clean.
+  - The residual problem is ONE population: ign-vib ON's aperiodic
+    mid-note re-entries (15-25ms, intro-turbulence class), where
+    re-zeroing a LARGE standing correction (ON holds 30c+ through
+    ignored vibrato) costs tuning. Gap length, periodicity, and ramp
+    time all fail to separate them from word starts.
+  - The un-tried discriminator with a §17.6 pedigree: the SIZE of the
+    correction being re-zeroed, or note identity across the gap
+    (pre-gap vs post-gap note agreement) - a blink resumes the SAME
+    note; a word start usually does not. Not built; not measured.
