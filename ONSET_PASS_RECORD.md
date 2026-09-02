@@ -706,3 +706,74 @@ Every metric in rounds 1-10 was an aggregate; Sean's complaint has
 always been about specific moments ("at 5 seconds", "at 6 seconds" -
 both now matched by container events at 5.57/5.66/5.67 and 6.16s on the
 29 Aug bounces).
+
+---
+
+# Round 11 (2 Sep 2026): THE EVENT INSTRUMENT - the container's word-start
+# discontinuities reproduce on the CURRENT engine, and the 6.16s event
+# sits exactly on a tapped dry->wet seam.
+
+tools/pitch_glitch_events: LTP residual (P from the file's own local
+period, g from local normalised correlation), peak/RMS per 10ms block,
+excess over aligned source, loud+voiced both sides, threshold 1.5,
+events merged within 30ms. Alignment lag reported per file and verified
+against unvoiced-source hits (the container's dead Antares column).
+
+## NEW take (24 word starts; alignment clean, 0-2 unvoiced hits per file)
+
+    row                          events  within 150ms of word start
+    29 Aug bounce, ign-vib OFF      3        2/3  (67%)
+    29 Aug bounce, ign-vib ON      11        2/11 (18%)
+    CURRENT tau6, ign-vib OFF       4        4/4  (100%)
+    CURRENT tau6, ign-vib ON        7        5/7  (71%)
+    ANT_0 (lag +252, 32/736 uv)    13        4/13 (31%)
+
+Container counts (12/30 on the bounces) differ in absolute number from
+mine (3/11) - different scoring constants - but the ORDERING and the
+event locations agree, which is what matters for an event instrument.
+
+**Sean's timestamps confirmed on the CURRENT engine:** 5.62s (excess
+2.2, 65ms after the 5.55 word start) and 6.18s - and the 6.18 event's
+tap cross-ref reads: **wet resumes at 6.16s after 22ms of bit-exact
+dry, target step 9c** - a dry->wet seam, the DESIGN_SEAM_RESIDUAL
+population, caught in the act at the exact second Sean named. Both
+events appear in BOTH ignore-vib states. The 2.51s event (excess ~2.0)
+is the most stable artifact in the set: present in both 29 Aug bounces
+and both current renders at the same timestamp.
+
+**Antares at Retune 0 has 13 events of its own** (strongest in the set:
+5.12s, excess 4.42) - the hard snap is not discontinuity-free; its
+alignment (+252) carries 32/736 unvoiced hits, short of my suspect
+threshold but the weakest alignment in the table.
+
+## OLD take: the ignore-vib ordering INVERTS
+
+    CURRENT OFF: 4 events (1 onset)  |  CURRENT ON: 0 events
+    antares.wav fast: 7 events
+Three OFF events (2.19/2.47/6.30) also appear in the Antares render -
+shared source-roughness moments, not EchoJay-specific.
+
+## JOB 3 - the practical answer for Sean, plainly
+
+On YOUR material (the NEW alto take, the take of the complaint):
+**ignore-vib OFF gives fewer glitch events than ON on the current
+engine (4 vs 7; 3 vs 11 on your 29 Aug bounces) AND better sustain
+tuning. Actionable today.** On the old low-male take the ordering
+inverts (0 vs 4), so it is a per-material setting, not a universal.
+Cross-referenced in DEFECT_VIBRATO_ON_TUNING_COST.
+
+## JOB 2 - both filings VOIDED as ordered (marked, not deleted)
+
+- DEFECT_GRAIN_EPOCH_UNITY: clearance void (jitter cannot see clicks);
+  grain path at unity measures 30 events on sourceNEW / 16 on source4 /
+  6 on dry.wav vs 4-7 full-chain; inversion-timestamp cross-check
+  partial (probe prints only worst windows; extension needed for 1:1).
+- DESIGN_SEAM_RESIDUAL: onset-closure void; seam-vs-event overlap now
+  MEASURED - 100% (OFF) / 71% (ON) of current-engine events sit within
+  150ms of word starts, and the 6.18s event is tap-confirmed AT a seam.
+
+## For Sean's ear (the fastest validation no ruler substitutes for)
+
+Listen on the current install at: **2.51s, 5.62s, 6.18s, 11.75s** (both
+ignore-vib states), plus 0.07-0.31s with ignore-vib ON only. Confirm or
+deny; the event list is falsifiable at each named time.

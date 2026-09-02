@@ -63,3 +63,22 @@ was ANT_400-only and is VOID - Antares at Retune 0 measures onset jitter
 4.84 vs the source's 5.22. This cross-reference stands on the seam-population
 identity alone; whether the seam step matters at onsets is back inside the
 live section-4 question in ONSET_PASS_RECORD.md.)
+
+## The onset-pass closure is VOID - CLOSED WITH A PITCH METRIC (2 Sep 2026)
+
+The cross-reference above was kept closed by a PITCH argument (Antares
+onset rows vs a jitter floor). The defect this filing accepts is a
+DISCONTINUITY class, which no pitch aggregate can see. That closure is
+VOID; the design-property ruling itself (waveform-continuity evidence
+chain, cycle-similarity ruler) is untouched.
+
+Seam population vs the event list (tools/pitch_glitch_events, current
+engine tau6, NEW take): ignore-vib OFF - 4/4 events within 150ms of a
+word start (100%); ignore-vib ON - 5/7 (71%). The strongest recurring
+event (t=6.18s, both ignore-vib states, also in both 29 Aug bounces
+and the container's independent run) sits EXACTLY at a tapped dry->wet
+seam: wet resumes at 6.16s after 22ms of bit-exact dry, with a 9c
+target step. Sean's two independently reported timestamps ("at 5
+seconds", "at 6 seconds") both correspond to detected events (5.62s,
+6.18s). The seam population and the event population overlap heavily
+at word starts - measured, no longer inferred.

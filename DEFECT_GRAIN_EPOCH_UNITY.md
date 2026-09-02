@@ -67,3 +67,27 @@ SOURCE's own 5.22; sustain 1.27 vs source 1.41. At onset windows the
 grain path measures within 5% of the raw take. The epoch path
 contributes ~nothing to onset shakiness on this metric; the 141-break
 figure stands as filed for sustained out-of-band material only.
+
+## VOID - CLOSED WITH A PITCH METRIC (2 Sep 2026, the waveform pivot)
+
+The 2 Sep onset-windowed clearance ("grain onset jitter 5.47 vs source
+5.22, within 5%") compared JITTER - a pitch aggregate - against a
+filing whose subject is BREAKS AND INVERSIONS, which the research doc
+classes as click-class undefined behaviour. A jitter metric cannot see
+a click; twelve events cannot move a median. The clearance is VOID.
+
+Event-level re-measure (tools/pitch_glitch_events, LTP-residual excess
+> 1.5 vs source, grain path forced at unity, current engine):
+  sourceNEW (alto): **30 events** (10 within 150ms of word starts) -
+    against 4-7 for the full chain on the same take.
+  dry.wav (low_male): 6 events.
+  source4 (the census material): 16 events.
+The grain path produces the event class in quantity. Timestamp
+cross-check against the original census's 15 inversions is PARTIAL:
+pitch_constshift_probe prints only per-variant worst windows (4.24 /
+5.46 / 8.98 / 9.53s on source4), which do not line up 1:1 with the
+event list; a full inversion-timestamp dump needs a probe extension.
+The VOID stands on the instrument-class argument regardless. Scope
+note unchanged: in-band production audio never routes the grain path
+(methodMix 0, author-trace verified); this filing matters out-of-band
+and for formant_mode shift.

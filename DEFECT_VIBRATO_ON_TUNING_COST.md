@@ -132,3 +132,10 @@ sustain jitter 0.97 vs 1.61, all-voiced <5c 48.9% vs 45.0%). Those bounces
 PREDATE the (d) fix this file ships, so the data is consistent with the
 defect as it stood and says nothing about the current engine. Filed for the
 record; not re-opened.
+
+**Cross-reference (2 Sep 2026, the waveform pivot):** on the NEW take,
+ignore-vib ON costs GLITCH EVENTS as well as tuning - current engine
+tau6: 7 events vs OFF's 4 (29 Aug bounces: 11 vs 3; container: 30 vs
+12). If both costs stand after Sean's ear pass, this filing's
+"understood and declined" status needs revisiting. Note the OLD take
+inverts (ON 0 events, OFF 4) - the cost is material-dependent.
