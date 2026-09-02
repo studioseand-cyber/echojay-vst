@@ -957,3 +957,43 @@ No ear set cut (step 6 was conditional on the bar).
     correction being re-zeroed, or note identity across the gap
     (pre-gap vs post-gap note agreement) - a blink resumes the SAME
     note; a word start usually does not. Not built; not measured.
+
+---
+
+# Round 15 (2 Sep 2026): THE CORRECTED BAR - committed before any code
+
+Two of v1's three misses were errors in the bar as written; correcting a
+MALFORMED bar is not renegotiating a FAILED one. Safeguards carried: the
+corrected bar can still fail; it is measured FRESH, never re-read off
+v1's numbers; and it gains an ear gate no arithmetic can soften.
+
+**STATISTICAL CAUTION FILED** (beside medians-of-absolutes and
+magnitude-is-not-mechanism): **A MEDIAN CAN MOVE SHARPLY WHEN A CLUSTER
+STEPS ACROSS IT.** ~45 hops in one 150ms region crossed the median
+point and dragged a distribution median 0.9c while the paired
+per-instant delta median read +0.03c. Never use distribution medians
+for a localized effect.
+
+## THE CORRECTED BAR (verbatim)
+
+  ACCEPT: word-start fraction falls materially from 100% (OFF) / 71%
+          (ON) toward Antares' ~31%, NEW take.
+  ACCEPT: paired per-instant sustain tuning delta median <= +0.15c in
+          BOTH ignore-vib configs, AND no contiguous region larger than
+          50ms worsening by more than 2c.
+  ACCEPT: onset off-grid MEDIAN not regressed. Tails reported, not
+          gated (the p75/p90 regression IS the ordered fix shape).
+  FALSIFY: OLD low-male take, ign-vib ON, must stay at 0 events.
+  EAR GATE: Sean must not hear damage in ON's turbulent intro note
+          region. Hard gate; cannot be argued past.
+  Raw event count remains explicitly not the bar.
+
+V2 = v1 + the CORRECTION-SIZE DISCRIMINATOR (suppress the re-zero when
+the standing correction exceeds a threshold DERIVED from the measured
+populations; note-identity-across-the-gap held in reserve). Dead ends
+not to be retried: ramp length, gap length, ungated.
+
+Reconciliation ordered before v2's ON numbers are trusted: the
+container had OFF tuning better than ON (29 Aug bounces); this record
+has ON better at sustains (current engine). Which ordering is real, on
+matched renders, decided below.
