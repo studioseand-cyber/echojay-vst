@@ -50,3 +50,20 @@ Probe variants and numbers: `tools/pitch_constshift_probe/main.cpp` (the
 The fix direction, when chased: epoch stability on real glottal pulses
 (does `nextEpoch`'s 0.7T–1.3T peak-pick hold the same phase point through
 creak?), before anything about grain gains or windows.
+
+## RE-OPENED 2 Sep 2026 (the onset-shakiness pass) — and the ordered question answered in writing
+
+**Q: did "out-of-band only" exclude low-confidence or onset frames?**
+**A: YES.** The 141-breaks census (tools/pitch_constshift_probe) gated
+every counted window on source periodicity >= 0.5 — which excludes
+precisely the aperiodic onset frames under investigation. The dismissal
+AS IT APPLIES TO ONSETS was therefore void as written. (The
+"out-of-band only" routing claim itself — methodMix 0 in-band — remains
+true and verified by the author trace.)
+
+**The onset-windowed re-measure (tools/pitch_onset_probe, alto_tenor,
+ratio exactly 1.0, grain path forced):** onset jitter 5.47 c/hop vs the
+SOURCE's own 5.22; sustain 1.27 vs source 1.41. At onset windows the
+grain path measures within 5% of the raw take. The epoch path
+contributes ~nothing to onset shakiness on this metric; the 141-break
+figure stands as filed for sustained out-of-band material only.
