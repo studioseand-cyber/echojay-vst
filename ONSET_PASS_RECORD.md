@@ -670,3 +670,39 @@ take, every existing tool applies unchanged.
 
 Stopped at the leg-1 clause. No fix, no bar, no flag beyond the
 approved debug taps.
+
+---
+
+# Round 10 (2 Sep 2026): synthetic-truth take - SUSPENDED MID-GATE by the
+# waveform-discontinuity pivot (Sean: "the start of words is shakey";
+# the container found discrete waveform events no pitch metric can see).
+
+State at suspension, so nothing is lost:
+- CALIBRATION ARM COMPLETE: **account B EXCLUDED** - b_res-b_raw and
+  b_spl-b_raw are <=0.4c at every ratio (+/-10/25/50c), both registers,
+  both on the first synthetic and re-confirmed on the hardened one.
+  The tracker does NOT read resampled/spliced audio differently. The
+  round-9 degeneracy therefore resolves toward account A - with the
+  caveat that the offline replica has no FORMANT-PRESERVE stage, so a
+  formant-preserve-induced reading shift remains the prime suspect
+  inside account A.
+- REQUIREMENT-3 GATE: first cut too easy (leg3 onset 2.22c vs real
+  4.86c); hardened with stochastic onset wobble (the real take's
+  measured 5.22c/hop onset instability was the missing mode) +35ms
+  attack + varied scoops; overshot at 18c scale (13.16c), landed at
+  7c scale: **onset 6.64c vs real 4.86c, sustain 2.93c vs 1.74c** -
+  hardness now within ~1.4x of real on both axes, adequate for
+  magnitude-transfer with that factor stated.
+- PRIMARY DELIVERABLE: NOT READ (gate iteration was still in flight
+  when the pivot landed). The pre-hardening run's numbers are recorded
+  in the transcript but are NOT findings.
+
+## STANDING CAUTION (ordered with the pivot), filed beside
+## magnitude-is-not-mechanism:
+
+**AN OCCASIONAL DEFECT REQUIRES AN EVENT-LEVEL INSTRUMENT, NOT A BETTER
+AGGREGATE.** 12 events across 860 blocks cannot move a median or a p99.
+Every metric in rounds 1-10 was an aggregate; Sean's complaint has
+always been about specific moments ("at 5 seconds", "at 6 seconds" -
+both now matched by container events at 5.57/5.66/5.67 and 6.16s on the
+29 Aug bounces).
