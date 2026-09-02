@@ -68,7 +68,7 @@ static std::vector<double> fineTrack (const std::vector<float>& x, double fs, in
 }
 struct Render { std::vector<float> out; std::vector<PsolaEngine::DbgRingTap> tap; };
 static Render renderSelf (const std::vector<float>& in, double fs, int vt,
-                          bool chrom, bool ignVib, bool grain)
+                          bool chrom, bool ignVib, bool grain, float rampMs=0.0f)
 {
     Render R;
     PitchEngine det; det.prepare(fs,256); det.setVoiceType(vt); det.setTracking(PitchEngine::kNormal);
@@ -89,6 +89,7 @@ static Render renderSelf (const std::vector<float>& in, double fs, int vt,
     sh.setPitchLagSamples(det.pitchLagFor(vt));
     sh.setDriftBleed(true);
     sh.debugRingTap(true);
+    sh.setSeamRampMs(rampMs);
     if(grain) sh.debugDisableSplice(true);
     const int lat=sh.latencySamples();
     std::vector<float> raw(in.size(),0.0f);
@@ -262,11 +263,16 @@ int main (int argc, char** argv)
         if(!spec.compare(0,10,"inversions")) continue;
         std::vector<float> x; Render R; bool haveTap=false;
         std::string label=spec;
+        float rampMs=0.0f;
+        { const size_t rp=spec.find(":r");
+          if(rp!=std::string::npos&&spec.compare(0,5,"self:")==0)
+          { rampMs=(float)atof(spec.c_str()+rp+2); spec=spec.substr(0,rp); } }
         if(spec=="self:ignon"||spec=="self:ignoff"||spec=="self:grain")
-        { R=renderSelf(src,fs,vt,chrom,spec=="self:ignon",spec=="self:grain");
+        { R=renderSelf(src,fs,vt,chrom,spec=="self:ignon",spec=="self:grain",rampMs);
           x=R.out; haveTap=true;
           label=spec=="self:grain"?"CURRENT grain-path unity"
-               :spec=="self:ignon"?"CURRENT tau6 ignore-vib ON":"CURRENT tau6 ignore-vib OFF"; }
+               :spec=="self:ignon"?"CURRENT tau6 ignore-vib ON":"CURRENT tau6 ignore-vib OFF";
+          if(rampMs>0){ char b[64]; std::snprintf(b,sizeof b," + seam ramp %.0fms",rampMs); label+=b; } }
         else if(!spec.compare(0,5,"file:"))
         { double f2=0;
           if(!readWavMono(spec.c_str()+5,x,f2)){ std::printf("%s unreadable\n",spec.c_str()); continue; }

@@ -67,6 +67,23 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "defaults to 100; for the complete snap set correction_mode hard",
           false },
 
+        { EedPitchProcessor::kSeamAttackMs, "ms",
+          0.0, 150.0, 0.0,
+          "SEAM ATTACK (2 Sep 2026): at every word start the correction "
+          "used to arrive as an instantaneous pitch STEP the moment the wet "
+          "path resumed after the bit-exact-dry consonant (9 cents at the "
+          "ear-confirmed exemplar - above the pitch JND). With attack > 0 "
+          "the wet path resumes AT THE SUNG PITCH and ramps to full "
+          "correction over this many ms - pitch continuity at the seam, the "
+          "same move as GSnap's Attack and Waves Tune RT's Note Transition. "
+          "Measured at 60ms: word-start glitch events fall to ZERO "
+          "(ignore-vib off) with no paired tuning regression. 0 = off "
+          "(pre-fix behaviour); DEFAULT 0 UNTIL THE EAR GATE PASSES, then "
+          "60 - the geometric midpoint of the ~30ms pitch-integration floor "
+          "and Waves' field-proven 120ms, and the measured event-elimination "
+          "point",
+          true },
+
         { EedPitchProcessor::kFlex, "%", 0.0, 100.0, 55.0,
           "how much expressive drift is left alone before correction engages; "
           "high keeps slides, scoops and deliberate blue notes, 0 corrects "
@@ -350,6 +367,7 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
         toCustomMode(); return true;
     }
     if (id == kFlex)        { correct_.setFlex ((float) value);     toCustomMode(); return true; }
+    if (id == kSeamAttackMs){ forEachShifter ([&] (auto& e) { e.setSeamRampMs ((float) value); }); return true; }
     if (id == kHumanize)    { correct_.setHumanize ((float) value); toCustomMode(); return true; }
     if (id == kKeyRoot)
     {
@@ -408,6 +426,7 @@ double EedPitchProcessor::getParamValue (const juce::String& id) const
     if (id == kOutputDb)    return (double) shifter().getOutputDb();
     if (id == kCorrect)     return correctOn_.load() ? 1.0 : 0.0;
     if (id == kRetuneMs)    return (double) correct_.getRetuneMs();
+    if (id == kSeamAttackMs) return (double) psola_[0].getSeamRampMs();
     if (id == kFlex)        return (double) correct_.getFlex();
     if (id == kHumanize)    return (double) correct_.getHumanize();
     if (id == kKeyRoot)     return (double) correct_.getKeyRoot();

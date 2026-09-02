@@ -65,6 +65,7 @@ public:
     static constexpr const char* kReferenceHz  = "reference_hz";
     static constexpr const char* kTranspose    = "transpose";
     static constexpr const char* kIgnoreVib    = "targeting_ignores_vibrato";
+    static constexpr const char* kSeamAttackMs = "seam_attack_ms";
     // Provenance marker (29 Aug 2026): 1 once a PERSON has taken manual
     // control of the reference. Saved states lacking it revert a manual
     // reference to auto on load - see onStateApplied.

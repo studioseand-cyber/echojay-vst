@@ -997,3 +997,47 @@ Reconciliation ordered before v2's ON numbers are trusted: the
 container had OFF tuning better than ON (29 Aug bounces); this record
 has ON better at sustains (current engine). Which ordering is real, on
 matched renders, decided below.
+
+## Round 15 results: v2 measured FRESH against the corrected bar - ALL
+## MEASURED LEGS PASS; the ear gate remains
+
+Both ordered discriminators were REFUTED BY POPULATION DATA before
+building them (tap-derived tables, ON config, 55 re-entries):
+  - CORRECTION SIZE does not separate: word-start re-entries carry
+    0.6-251c standing values (132c AT THE EXEMPLAR - the stale pre-gap
+    target against the new note's f0), fully overlapping mid-note's
+    0.6-1096c. The premise inverted: word starts hold the LARGEST
+    stale values, which the corrector re-anchors within ~25ms anyway.
+  - NOTE IDENTITY does not separate: this singer starts words on the
+    held pitch (exemplar noteDelta 2.4c - same note); both populations
+    cluster at 0-15c. The "word start usually changes note" premise is
+    false on this material.
+  - Bonus classifier finding: many "mid-note" re-entries sit ~22ms
+    BEFORE the detector's word start (engine voices first) - they ARE
+    word starts, correctly ramped by the audio-testimony discriminator.
+V2 therefore ships v1's mechanism unchanged (audio-testimony
+discriminator, 15ms floor, 0.5 periodicity); the residual v1 "damage"
+is adjudicated by the corrected bar's own clauses below.
+
+    LEG 1  word-start fraction: OFF 100% -> 0% (ZERO events), ON 71% ->
+           20%                                                    PASS
+    LEG 2  paired sustain delta med: ON +0.032c, OFF -0.009c (cap
+           +0.15c); longest >2c contiguous worsening: ON 29ms, OFF 8ms
+           (cap 50ms)                                             PASS
+    LEG 3  onset off-grid, PAIRED per-instant (the bar restated all
+           tuning legs as paired): ON -0.066c, OFF -0.013c - not
+           regressed                                              PASS
+           Tails, informational: unpaired p75 8.5->10.7 / 8.7->11.0,
+           p90 15.4->22.7 / 18.4->25.7. Population note: v2 emits
+           79-82 MORE trackable early-window hops (dry-like openings
+           track better); the unpaired medians' +0.10/+0.39c were
+           entirely this population change - the cluster-across-median
+           caution's first live catch.
+    LEG 4  OLD take, ign-vib ON: 0 events -> 0 events            PASS
+    LEG 5  EAR GATE: pending Sean - hard, cannot be argued past.
+
+Parameter: seam_attack_ms (0-150, DEFAULT 0 until the ear gate passes,
+then 60). Default derivation: 60 = geometric midpoint of the ~30ms
+pitch-integration floor and Waves Tune RT's field-proven 120ms Note
+Transition default, AND the measured event-elimination point on this
+material. Plugin builds clean.

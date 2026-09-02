@@ -233,6 +233,7 @@ public:
         synIdx_ = 0;
         curTarget_ = 0.0f;
         spliceDrift_ = 0.0; spliceOldDrift_ = 0.0; spliceR_ = 0.0; spliceTf_ = 0.0;
+        seamRampW_ = 1.0;
         spliceFadeLen_ = 0; spliceFadePos_ = 0; spliceT_ = 0;
         methodMix_ = 0.0f;
         uvRun_ = 0;
@@ -375,6 +376,11 @@ public:
     const std::vector<DebugSpl>& debugSpliceTrace() const noexcept { return dbgSpl_; }
 
     void setPitchLagSamples (int lag) noexcept { pitchLag_ = std::max (0, lag); }
+    /** SEAM RAMP (2 Sep 2026): ms over which the wet leg ramps from the
+        dry leg's pitch to full correction at every dry->wet seam. 0 = off
+        (the pre-fix behaviour). See the re-entry site for the mechanism. */
+    void setSeamRampMs (float ms) noexcept { seamRampMs_ = std::max (0.0f, ms); }
+    float getSeamRampMs() const noexcept   { return seamRampMs_; }
     int  getPitchLagSamples() const noexcept   { return pitchLag_; }
 
     // Drift bleed (see spliceSample): off by default; the A/B lives in
@@ -730,8 +736,52 @@ private:
                 // the old behaviour.
                 if (uvRun_ > 0)
                 {
-                    if ((double) uvRun_ > carryLimit_) spliceDrift_ = 0.0;
+                    const double gapSamples = (double) uvRun_;
+                    if (gapSamples > carryLimit_) spliceDrift_ = 0.0;
                     uvRun_ = 0;
+                    // SEAM RAMP (2 Sep 2026 ruling, the word-start fix):
+                    // every dry->wet seam carries an instantaneous TARGET
+                    // step (9c at the ear-confirmed 6.16s exemplar) - above
+                    // the ~8.6c pitch JND, tau-independent, the measured
+                    // mechanism of the word-start complaint. The wet leg
+                    // therefore resumes AT THE DRY LEG'S PITCH - zero
+                    // correction at the seam - and ramps to full correction
+                    // over seamRampMs_. This is PITCH continuity;
+                    // kSeamFadeMs (waveform continuity) is deliberately
+                    // untouched - crossfading two signals 9c apart is
+                    // beating followed by the same step. 0 = off.
+                    //
+                    // GAP-GATED at the word-start convention (60ms, the
+                    // same threshold every instrument in the investigation
+                    // used to define a word start): a BLINK re-entry
+                    // (shorter gap, mid-note - half of all span boundaries
+                    // per the census) resumes where the pre-gap correction
+                    // was already valid; re-zeroing there is the 17.6
+                    // class of error, and it was MEASURED - ungated, the
+                    // ramp retriggered on in-note flickers and dragged
+                    // ign-vib-ON sustain tuning 1.9c -> 2.8c, a bar miss.
+                    // WORD START vs BLINK, by the audio's own testimony
+                    // (the audio-verified-bridging discriminator, reused
+                    // read-only): a blink is periodic straight through the
+                    // gap (census: half of all span boundaries); a word
+                    // start crosses a consonant. GAP LENGTH CANNOT separate
+                    // them - measured: a 60ms gate excluded the 22ms
+                    // ear-confirmed exemplar; a 15ms gate re-admitted the
+                    // ign-vib-ON blink class (15-25ms mid-note gaps) and
+                    // dragged its sustains 1.9c -> 2.8c again. Periodicity
+                    // mid-gap at the resume period decides instead; the
+                    // 15ms floor stays as the fast path (shorter gaps
+                    // cannot fit a period test and are blinks in practice;
+                    // the 0.5 threshold is the census/bridge convention).
+                    if (seamRampMs_ > 0.0f && gapSamples >= 0.015 * fs_)
+                    {
+                        const int T0 = std::clamp ((int) std::lround (fs_ / (double) g),
+                                                   8, maxPeriod_);
+                        const uint64_t mid = (uint64_t) std::max<int64_t> (T0 + 1,
+                            (int64_t) p - (int64_t) (gapSamples * 0.5));
+                        if (inputPeriodicity (mid, T0) < 0.5f)
+                            seamRampW_ = 0.0;
+                    }
                 }
                 // The ratio is what the READ point's audio must be scaled by,
                 // so evaluate f0 where the read pointer actually is - up to
@@ -808,7 +858,17 @@ private:
 
                 if (methodMix_ < 1.0f && spliceR_ > 0.0 && spliceT_ > 0)
                 {
-                    const float ys = spliceSample ((uint64_t) p, spliceT_, spliceTf_, spliceR_);
+                    // Seam ramp: exponent on the ratio, linear in cents -
+                    // w=0 is the dry leg's pitch exactly (r^0 = 1), w=1 is
+                    // full correction. Advanced per emitted wet sample.
+                    double rUse = spliceR_;
+                    if (seamRampMs_ > 0.0f && seamRampW_ < 1.0)
+                    {
+                        rUse = std::pow (spliceR_, seamRampW_);
+                        seamRampW_ = std::min (1.0, seamRampW_
+                                     + 1.0 / ((double) seamRampMs_ * 0.001 * fs_));
+                    }
+                    const float ys = spliceSample ((uint64_t) p, spliceT_, spliceTf_, rUse);
                     wet = ys + methodMix_ * (wet - ys);
                 }
             }
@@ -1697,6 +1757,8 @@ private:
     float  carryMs_ = 0.0f;        // drift carry threshold; 0 = off
     double carryLimit_ = 0.0;      // ...in samples, set with fs
     int64_t uvRun_ = 0;            // unvoiced run length at the emit head
+    float  seamRampMs_ = 0.0f;     // 0 = off; see setSeamRampMs
+    double seamRampW_  = 1.0;      // 0 at a seam -> 1 over seamRampMs_
     float  bridgeMaxMs_ = 0.0f;    // audio-verified bridge cap; 0 = off
     float  bridgeThresh_ = 0.6f;   // periodicity bar for bridging
     double bridgeSeedT_ = 0.0;     // last accepted period (samples); 0 = disarmed
