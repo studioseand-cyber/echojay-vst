@@ -858,7 +858,11 @@ public:
         their documented phase caveat. Both shipping presets that preserve
         vibrato (natural, balanced) are k=100 and take the slow path. */
     bool     shiftPreferred() const noexcept
-    { return std::fabs (natVib_.load() - 100.0f) < 0.5f; }
+    { return dbgForceShiftPath_ || std::fabs (natVib_.load() - 100.0f) < 0.5f; }
+    // Path-unification investigation (2 Sep 2026, Q1): force the shift
+    // path at any natural_vibrato, to reproduce and dissect the recorded
+    // "+7 clicks at k != 100" finding. Investigation-only.
+    void debugForceShiftPath (bool on) noexcept { dbgForceShiftPath_ = on; }
     float    lastInCents()   const noexcept { return lastInCents_; }
     float    lastSlowCents() const noexcept { return lastSlowCents_; }
     float    lastOscCents()  const noexcept { return lastOscCents_; }
@@ -977,6 +981,7 @@ private:
     float depthEnv_ = 0.0f;    // measured vibrato depth (see osc block)
     float pendDepth_ = 0.0f;   // depthEnv_ latched at pending formation
     int   pendN_ = 0;          // median-destination sample count (see release)
+    bool  dbgForceShiftPath_ = false;
     bool  pendForgetOn_ = false;
     float pendBuf_[3] = { 0, 0, 0 };
     float slowAgeMs_ = 0.0f;   // ms since the slow track was (re)seeded
