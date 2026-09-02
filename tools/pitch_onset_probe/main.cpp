@@ -182,6 +182,44 @@ int main (int argc, char** argv)
         std::printf("SOURCE     onset wobble med %5.2fc  jitter %5.2fc/hop  | sustain wobble %5.2fc jitter %5.2fc/hop\n",
             med(onW), med(onJ), med(susW), med(susJ));
     }
+    // Optional argv[3]: a RENDERED file (e.g. antaresNEW) measured by the
+    // same ruler with the SOURCE's onsets - sample-aligned matched pair,
+    // within the calibration rule (a plugin-rendered bounce).
+    if (argc>3)
+    {
+        std::vector<float> rx; double rfs=0;
+        if (readWavMono(argv[3],rx,rfs))
+        {
+            int rh=0; auto rT=fineTrack(rx,rfs,vt,rh);
+            auto winStats=[&](const std::vector<double>& T,long h0,long h1,double& wob,double& jit)
+            {
+                std::vector<double> seg;
+                for(long h=h0;h<h1&&h<(long)T.size();++h) if(T[(size_t)h]>-1e8) seg.push_back(T[(size_t)h]);
+                wob=0; jit=0;
+                if(seg.size()>=5)
+                { double acc=0;int n=0;
+                  for(size_t i=2;i+2<seg.size();++i)
+                  { double v[5]={seg[i-2],seg[i-1],seg[i],seg[i+1],seg[i+2]};
+                    std::sort(v,v+5); acc+=std::fabs(seg[i]-v[2]); ++n; }
+                  wob=n?acc/n:0;
+                  double ja=0;int jn=0;
+                  for(size_t i=1;i<seg.size();++i){ ja+=std::fabs(seg[i]-seg[i-1]); ++jn; }
+                  jit=jn?ja/jn:0; }
+            };
+            std::vector<double> onW,onJ,susW,susJ;
+            const long win=(long)std::lround(0.150/hopS);
+            for(long o:onsets){ double w,j; winStats(rT,o,o+win,w,j); if(w>0){onW.push_back(w);onJ.push_back(j);} }
+            { int run=0;
+              for(size_t h=0;h<srcT.size();++h)
+              { if(srcT[h]<-1e8){run=0;continue;} ++run;
+                if(run==(int)std::lround(0.30/hopS))
+                { double w,j; winStats(rT,(long)h,(long)h+win,w,j); if(w>0){susW.push_back(w);susJ.push_back(j);} } } }
+            auto med=[](std::vector<double>&v){ if(v.empty())return 0.0; std::sort(v.begin(),v.end()); return v[v.size()/2]; };
+            const double oj=med(onJ), sj=med(susJ);
+            std::printf("RENDER %s: onset wobble %5.2fc jitter %5.2fc/hop | sustain wobble %5.2fc jitter %5.2fc/hop | CONTRAST %.2fx\n",
+                argv[3], med(onW), oj, med(susW), sj, sj>0?oj/sj:0);
+        }
+    }
     struct Row { const char* name; float tau; int mode; };
     const Row rows[] = {
         { "M1 tau6   ", 6.0f, 0 },

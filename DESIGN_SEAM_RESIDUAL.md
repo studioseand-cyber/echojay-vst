@@ -52,3 +52,11 @@ measure is dominated by boundary count, not by any implementation defect.
   consonants bit-exact dry) or the boundary COUNT at the detector — both
   product decisions, not fixes.
 - Suspect for the separate vib-on tuning gap: DEFECT_VIBRATO_ON_TUNING_COST.md.
+
+**Cross-reference (2 Sep 2026, the onset pass):** the seam population
+this filing accepts coincides exactly with the onset-shakiness region
+under investigation in ONSET_PASS_RECORD.md - every word beginning is a
+dry->wet seam by construction, making the per-boundary pitch step a
+tau-independent onset mechanism inside an accepted design property. Not
+re-opened; the Antares onset rows (never below the source floor) kept it
+closed.
