@@ -212,9 +212,54 @@ int main (int argc, char** argv)
         PitchEngine::voiceRange(vt).id,words.size());
     for(double w:words) std::printf(" %.2f",w);
     std::printf("\n");
+    // spec "inversions": the 15-inversion timestamp dump the census probe
+    // never printed (round-12 ruling). Grain path at unity, per-period
+    // cycle similarity; a window whose successive periods CORRELATE
+    // NEGATIVELY (sim < 0) is an inversion - click-class. Timestamps are
+    // printed for 1:1 comparison against the event list.
+    for(int a=4;a<argc;++a) if(!std::strncmp(argv[a],"inversions",10))
+    {
+        // "inversions" = grain path (the census config); "inversionsfull"
+        // = the PRODUCTION full chain, ignore-vib OFF - the config whose
+        // event list the fix targets. Coincidence here means a second
+        // mechanism at the same locations.
+        const bool full=!std::strcmp(argv[a],"inversionsfull");
+        const bool srcMode=!std::strcmp(argv[a],"inversionssrc");
+        Render R;
+        if(srcMode) R.out=src;                 // the source's own baseline
+        else R=full?renderSelf(src,fs,vt,chrom,false,false)
+                   :renderSelf(src,fs,vt,chrom,true,true);
+        std::printf("%s",srcMode?"[SOURCE baseline]":full?"[FULL CHAIN tau6 ign-vib OFF]":"");
+        int rh=0; auto tX=fineTrack(R.out,fs,vt,rh);
+        std::printf("\nINVERSION DUMP (grain path, unity, source-periodicity-ungated):\n");
+        int nInv=0, nBrk=0; double lastT=-1;
+        for(size_t h=0;h+2<tX.size();++h)
+        {
+            if(tX[h]<=0) continue;
+            const int P=(int)std::lround(fs/tX[h]);
+            const size_t s0=(size_t)((double)h*rh);
+            if(s0<(size_t)P||s0+2*(size_t)P>=R.out.size()) continue;
+            double num=0,d1=0,d2=0;
+            for(int i=0;i<P;++i)
+            { const double a1=R.out[s0+(size_t)i], a2=R.out[s0+(size_t)i+(size_t)P];
+              num+=a1*a2; d1+=a1*a1; d2+=a2*a2; }
+            if(d1<1e-12||d2<1e-12) continue;
+            const double sim=num/std::sqrt(d1*d2);
+            const double t=(double)s0/fs;
+            if(sim<0.5) ++nBrk;
+            if(sim<0.0&&t-lastT>0.030)
+            { ++nInv; lastT=t;
+              double dNear=1e9;
+              for(double w:words) dNear=std::min(dNear,std::fabs(t-w));
+              std::printf("    INVERSION t=%6.2fs  sim %+.2f  nearest word start %+.0fms\n",
+                  t,sim,1000.0*dNear); }
+        }
+        std::printf("  totals: %d break-windows (sim<0.5), %d inversions (sim<0, merged 30ms)\n",nBrk,nInv);
+    }
     for(int a=4;a<argc;++a)
     {
         std::string spec=argv[a];
+        if(!spec.compare(0,10,"inversions")) continue;
         std::vector<float> x; Render R; bool haveTap=false;
         std::string label=spec;
         if(spec=="self:ignon"||spec=="self:ignoff"||spec=="self:grain")

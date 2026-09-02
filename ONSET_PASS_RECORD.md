@@ -777,3 +777,83 @@ Cross-referenced in DEFECT_VIBRATO_ON_TUNING_COST.
 Listen on the current install at: **2.51s, 5.62s, 6.18s, 11.75s** (both
 ignore-vib states), plus 0.07-0.31s with ignore-vib ON only. Confirm or
 deny; the event list is falsifiable at each named time.
+
+---
+
+# Round 12 (2 Sep 2026): THE MECHANISM RECORDED - the seam step. Ear
+# gate delivered. Inversion question answered: the seam is the whole
+# story on the production path.
+
+## The mechanism (primary finding of the investigation, per ruling)
+
+Word start goes bit-exact dry (CORRECT - the V/U split prevents PSOLA
+on plosives/fricatives). ~22ms later the wet leg resumes with a TARGET
+STEP (9c at the 6.16s exemplar) - above the ~8.6c pitch JND. Every word
+start with a dry gap therefore carries an audible instantaneous pitch
+jump. NOT wobble - a STEP, tau-independent because a seam step contains
+no time constant. This accounts for every property of the complaint,
+including the tau-invariance that killed nine rounds of target-side
+hypotheses.
+
+**DO NOT REACH FOR kSeamFadeMs** (recorded so nobody tries it later):
+crossfading two signals 9 cents apart produces 1.5ms of beating
+followed by the same step. Pitch perception integrates over tens of ms;
+lengthening the fade worsens the beating without shrinking the step.
+The seam fade solves WAVEFORM continuity; this is PITCH continuity -
+different problems, and the fade was never going to solve this one.
+
+## The fix shape (research doc section 7 item 7, promoted from taste
+## knob - the three products disagree about onset direction and amount,
+## but all three agree you do not STEP)
+
+The wet leg resumes AT THE DRY LEG'S PITCH - zero correction at the
+seam - and ramps to full correction over tens of ms. Prior art: GSnap
+"Attack"; Waves Tune RT "Note Transition" (120ms default, separate from
+its 15ms Speed).
+
+## The acceptance bar (recorded now; goes in the flag's commit when built)
+
+  ACCEPT:  word-start event fraction falls materially from 100% (OFF) /
+           71% (ON) toward Antares' ~31%, NEW take.
+  ACCEPT:  no regression in sustain tuning (1.9c) or onset off-grid.
+  FALSIFY: the OLD low-male take - ign-vib ON currently has 0 events;
+           the ramp must not introduce any there.
+  Raw event COUNT is explicitly NOT the bar (ANT_0 has 13 events, more
+  than our 4, including the file set's strongest - scattered
+  discontinuities read as material roughness; one at EVERY word start
+  reads as a broken plugin). Do not optimise count.
+
+## GATE: Sean's ear, BEFORE any build
+
+Delivered ear_gate_excerpts.zip - five 1.5s aligned windows (2.51 /
+5.62 / 6.18 / 11.75s + the 0.1-0.3s ON-only cluster), each as source /
+EchoJay ign-vib OFF / ON / ANT_0 (its +252 lag applied), 10ms edge
+fades so the cut cannot masquerade as the event; the event sits 0.6s
+into every clip. From the MEASURED renders, not the install. If he
+hears nothing at those points, the events are inaudible and we stop -
+that outcome will be reported as readily as the other.
+
+## The inversion question, answered (probe extension committed)
+
+pitch_glitch_events gained "inversions" (grain, census config),
+"inversionsfull" (production chain), "inversionssrc" (source baseline);
+timestamps printed for 1:1 comparison.
+
+- source4, grain path (the census material): 16 events vs the ungated
+  inversion list - EXACT coincidences at 3.23s (sim -0.71, the
+  strongest inversion, [ONSET]) and 8.64s, near-miss at 2.06/2.00;
+  partial coincidence. Grain-path-only; out of the production band.
+- NEW take, PRODUCTION chain: 37 sim<0 windows - against the SOURCE'S
+  OWN 33. The voice's consonant discontinuities dominate the inversion
+  population. At the four events: 11.71 (-0.41) is render-added and
+  coincides; 5.62's are strengthened versions of inversions the source
+  already has at 5.47/5.55; 2.51 and 6.18 have none (the 6.18 event's
+  driver is the tapped SEAM, which flanking weak sims corroborate).
+
+**VERDICT, in the ruling's words: the seam is the whole story** for the
+production-path fix. Inversions are not a coherent second mechanism at
+the event locations - one coincidence in four, against a source
+baseline of the same order. The grain path's inversion mechanism stays
+quarantined in DEFECT_GRAIN_EPOCH_UNITY (already VOID-remeasured).
+
+No build. The seam ramp waits on the ear gate.
