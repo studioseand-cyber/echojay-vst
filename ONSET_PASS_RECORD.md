@@ -76,3 +76,66 @@ per-boundary pitch step at exactly those seams - a tau-independent onset
 mechanism living inside a filing already accepted as by-design. The seam
 population coincides with the region under investigation. Not re-opened:
 the Antares rows show its onsets carry the same class of charge.
+
+---
+
+# Round 3 (2 Sep 2026): the jitter-neutrality reframe — M2 + cross-check done, M1 specified and BLOCKED on a bounce
+
+Hypothesis under test: Antares is jitter-neutral by architecture (delay-line
+repeats whole original cycles); we are not (TD-PSOLA resynthesises periods at
+our estimated marks). Research doc section 3: PSOLA 0.941 attack-envelope
+preservation vs 0.995 for a delay line.
+
+## M1 — the matched bounce: REQUIRED FROM SEAN, cannot be produced here
+
+Antares renders only exist from Sean's Logic session; nothing on disk is a
+fast-retune Antares bounce of sourceNEW. **The spec, derived not picked:
+Retune Speed 0** — the 6ms-floor calibration (§17.3) measured Antares' 0 as
+equivalent to our 4–6ms τ, so their 0 is the fair match to our τ6. Everything
+else identical to the matched-settings block: Input Type Alto-Tenor, Key D
+minor, Detune 440, Flex-Tune 0, Humanize 0, Natural Vibrato 0, Tracking 50,
+Transpose 0, Formant on, Mix 100 — read off the UI at bounce time and
+recorded, never assumed. Run tools/pitch_onset_probe on the result; the
+sustain-jitter cell decides: stays near 1.3 → architectural, hypothesis
+confirmed; drops toward 0.86 → the reframe collapses into a settings
+mismatch and closes.
+
+## M2 — tuning separated from jitter (tools/pitch_sustain_tuning, sustains only, D minor/440)
+
+    row                 n    off-grid med   in-scale   improve   same-semi
+    SOURCE             170       6.0c         99.4%      —         99.4%
+    ANTARES @400       170       3.7c        100.0%     75.3%     100.0%
+    ECHOJAY tau6       165       1.9c        100.0%     82.4%     100.0%
+
+**Verdict, in the ruling's words: our tuning accuracy BEATS Antares and our
+jitter is lower — it is a win carrying a separate, untracked cost.** Not the
+pure-cost branch. Caveat carried: the Antares column is at THEIR Retune 400
+(slow — looser tuning is expected at that setting); the M1 bounce retests
+this at their 0 before the verdict is treated as settings-fair.
+
+## CROSS-CHECK — the de-jittering is REAL at waveform level, not a YIN artifact
+
+tools/pitch_period_hist: NO tracker in the loop — source-picked sustain
+windows applied to all three files, band-pass at the window's median f0,
+rising zero-crossing intervals = raw period lengths, deviation from window
+median in cents:
+
+    windows x periods        SOURCE          ANTARES @400     ECHOJAY tau6
+    4 x 55  (100ms wins)     IQR 12.3c       IQR  9.3c        IQR  7.5c
+                             within5c 50.9%  58.2%            70.4%
+    18 x 180 (80ms wins)     IQR  9.8c       IQR 11.5c        IQR  8.4c
+                             within5c 51.1%  49.2%            57.4%
+
+EchoJay's raw period-length distribution is the NARROWEST in both runs (more
+mass within 5c of the window median in both); Antares STRADDLES the source
+(9.3 vs 12.3 one run, 11.5 vs 9.8 the other — neutral within this ruler's
+noise). The tracker's 39% jitter reduction shows up smaller here (IQR −14 to
+−32%) because raw zero-crossing periods carry a measurement-noise floor the
+tracker's median smooths — but the ordering and the direction are the same
+ruler-independently. **The de-jittering is genuine period-sequence
+regularisation, and Antares' waveform-level neutrality is consistent with
+the architecture hypothesis — which M1 alone can confirm or kill** (a fast
+Antares could still regularise via its correction loop even with a neutral
+shifter; that is exactly the axis the bounce separates).
+
+Nothing built. No flags. Awaiting the Retune-0 bounce.
