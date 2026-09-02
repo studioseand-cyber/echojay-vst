@@ -353,3 +353,87 @@ theirs. Plausible and consistent with everything measured; not yet tested.
 
 A proposal with an acceptance bar, both takes, and a written falsification
 condition committed with the flag BEFORE any code.
+
+---
+
+# Round 6 (2 Sep 2026): STEP 1 CODE VERIFICATION — the premise is REFUTED for the measured configuration. Report and stop.
+
+Ordered: confirm the leak is the shielded shift path emitting the slow term
+only, leaving osc = inCents - slowCents_ in the output; stop if it is
+somewhere else. It is somewhere else.
+
+## What IS confirmed (the hypothesis, on the path it describes)
+
+EedPitchCorrect.h:626/636/775-777, verbatim: osc = inCents - slowCents_;
+the envelope glides the NOTE alone; on the SHIFT-PREFERRED path (natVib ~=
+100 only, per shiftPreferred() at :869) the emitted shift is shiftSm_ - the
+SLOW part - and osc survives by algebraic cancellation. On THAT path,
+vibrato and onset shake are one signal and both are preserved by design.
+Every word of the hypothesis is true THERE.
+
+## Where the measured leak actually lives
+
+Every measured row in this pass (natVib 0, IGN VIB on, flex 0, hard) rides
+the LEGACY path - shiftPreferred() is FALSE at natVib 0. On that path:
+
+  1. The target is osc-FREE. At flex 0: wanted = degreeCents - noteCents,
+     aim = noteCents + wanted = degreeCents exactly (:642,:675). Mid-note
+     (no pending) aim is CONSTANT; curCents_ settles onto it within ~4*tau
+     (~24ms at tau6) and stays. targetCents_ = curCents_ (:818). No osc
+     term reaches the target.
+  2. The engine already DIVIDES OUT the singer's deviation, per sample:
+     in-band the preserve path rides the splice resampler, ratio =
+     target/f0Here with f0Here read per-sample from the lag-compensated
+     f0 ring (EedPsolaEngine.h:741-757). Output pitch =
+     f0_true(t) * target / f0Here(t).
+
+So mid-note the legacy path is ALREADY A SUBTRACTOR, and the retune
+constant does not appear in its transfer at all. The residual is exactly:
+
+     leak(t) = degree * f0_true(t) / f0Here(t)
+
+**the freshness error of the detected f0** - hop sampling (5.3ms) plus the
+detector's estimation group delay. A deviation with a 30-80ms timescale
+against a ~15-20ms-stale estimate leaves 60-85% standing - the same
+magnitude the tau-follower model predicted, which is why round 5's
+attribution fit numerically. Round 5's MECHANISM attribution (tau6 one-pole
+leak) is SUPERSEDED by this code reading: the magnitude match was a
+coincidence of two models with similar transfer at these timescales.
+
+## Three measurements already on record corroborate staleness, not shape
+
+  1. The tau->0 row (round 5): bit-identical output. Now doubly explained -
+     mid-note, tau is not in the transfer AT ALL on this path.
+  2. Tau-invariance of the sustain jitter removal (0.86 at tau6, 0.83 at
+     tau150): a follower's removal would scale with tau; a stale
+     subtractor's does not.
+  3. PATH_UNIFICATION Q1 + cuts 1-5: forcing the shift path with the
+     ring-aligned fast term at k=0 NEVER measured better than the legacy
+     division (13.1-16.3c vs legacy 10.5c) - expected, because fastFactor's
+     reference (f0Here/slowHere) is built from the SAME ring: the ring
+     subtractor's theoretical best equals the legacy division we already
+     run.
+
+## Why step 3's vehicle cannot meet step 2's bar
+
+The ring-aligned fast term subtracts the DETECTED deviation. The measured
+configuration already subtracts the detected deviation. The bar (hold 77.3
+-> ~27ms, floor 3-5c -> 1-2c) requires reducing f0_true/f0Here - detector
+freshness at onsets - which no exponent on ring-derived quantities can
+touch. Scheduling k along the dial would convert the natVib~=100 SHIFT path
+to a subtractor (real, but that is not the configuration Sean's complaint
+or any measured row is in) and would leave the legacy rows where they are.
+
+## The corrected mechanism statement, for the next ruling
+
+Antares' fast mode and our fast mode are BOTH subtractors. Theirs snaps
+with a fresh estimate; ours with a stale one. The section-4 ruling's own
+promoted mechanism contains the fix's location: "the narrow-band tracker...
+keeps detector error small enough that a hard snap lands" - detector-side
+freshness at onsets (narrow-band re-estimation, or predictive deviation
+estimation), not shifter-side algebra. The 1-2c-vs-3-5c floor gap and the
+26.7-vs-77.3ms hold gap are measurements OF OUR DETECTOR'S onset group
+delay as seen through a subtractor.
+
+Stopped per the step-1 instruction: no acceptance bar committed (it assumed
+the plan), no flag, no engine code.
