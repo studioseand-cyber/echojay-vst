@@ -1990,3 +1990,22 @@ confirm: name the state that crosses it, and name where it re-anchors.
 If it has no re-anchor site, it is instance seven. The shared primitive
 (PitchCorrect's median-of-first-hops anchor, used at note starts AND gap
 resumes) is the standing implementation of this rule for the envelope.
+
+### §17.7 The retune cap: the dial ends at 150 ms (2 Sep 2026 ruling)
+
+kMaxRetuneMs is 150. Derived, not picked: the bracket is [120 (the
+natural preset - constraint one), 200 (where §17.4's within-3-cents has
+already cliffed to 25.8% and roughness climbs)]; 150 taken with §17.4's
+curve attached. Saved sessions above the cap CLAMP ON LOAD with the
+readout showing "150 (was 400)" - never a silent change to a saved sound.
+
+**Recorded honestly, per the ruling: the cap retires the CHARACTER
+region** - the all-scoop zone and the literal tau-400 complaint point -
+**not the boundary-snap class.** The applied-shift discontinuity on the
+legacy path is 42c at tau-20, 94c at 40, and 146c at the
+natural-preserving minimum of 120 (the full curve is in the 2 Sep
+ruling's report); the snap class lives on the PATH, not in the capped
+region, and remains handled by the env5 candidate's four-gate acceptance.
+The class-retiring question - routing everything through the shift path,
+which measures 3.7-8.3c at every tau and voice - is opened separately as
+a decision document (PATH_UNIFICATION_DECISION.md).

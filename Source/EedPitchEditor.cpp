@@ -127,6 +127,11 @@ EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
     // caption); same principle, one string.
     retuneKnob_.formatValue = [this] (double v)
     {
+        // Load-clamp memory first (the cap): "150 (was 400)".
+        const float was = proc_.retuneWasMs();
+        if (was > 0.0f)
+            return juce::String ((int) std::lround (v)) + " (was " +
+                   juce::String ((int) std::lround (was)) + ")";
         const double eff = (double) proc_.retuneEffectiveMs();
         if (v + 0.01 < eff)
             return juce::String ((int) std::lround (v)) + " (" +

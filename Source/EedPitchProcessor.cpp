@@ -50,6 +50,12 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "how fast pitch is pulled to the target - the time constant of an "
           "exponential glide, in honest milliseconds. 0 is the hard-tuned "
           "snap, 100+ is transparent and keeps the singer's own movement. "
+          "THE RANGE ENDS AT 150 ms (2 Sep 2026): measured, useful "
+          "correction ends there - roughness reaches its minimum near 40, "
+          "frames-within-3-cents cliffs past ~150, and by 400 the glide "
+          "never arrives on normal notes (all scoop). Comparable correctors "
+          "expose none of that region. Saved sessions above 150 clamp on "
+          "load and the readout says so. "
           "THE EFFECTIVE FLOOR IS 6 ms: values below it behave as 6, because "
           "the 0-6 zone was measured strictly dominated - same tuning, same "
           "lock speed (acquisition is floored by note-change detection), "
@@ -332,7 +338,17 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
     if (id == kCorrect)     { correctOn_.store (value >= 0.5); return true; }
     // These four are what a mode writes, so moving one by hand means the
     // display no longer honestly names the state.
-    if (id == kRetuneMs)    { correct_.setRetuneMs ((float) value); toCustomMode(); return true; }
+    if (id == kRetuneMs)
+    {
+        // The 150ms cap (2 Sep 2026): clamp ON LOAD with memory for the
+        // readout; live writes cannot exceed the schema max anyway.
+        if (value > (double) PitchCorrect::kMaxRetuneMs && applyingState())
+            retuneWasMs_ = (float) value;
+        else if (! applyingState())
+            retuneWasMs_ = 0.0f;
+        correct_.setRetuneMs ((float) value);
+        toCustomMode(); return true;
+    }
     if (id == kFlex)        { correct_.setFlex ((float) value);     toCustomMode(); return true; }
     if (id == kHumanize)    { correct_.setHumanize ((float) value); toCustomMode(); return true; }
     if (id == kKeyRoot)

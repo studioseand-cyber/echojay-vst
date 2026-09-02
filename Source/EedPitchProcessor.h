@@ -106,6 +106,11 @@ public:
     // 2026: a mapping that lives only in schema text is a mapping the
     // next person doesn't know about).
     float retuneEffectiveMs() const noexcept { return correct_.retuneEffectiveMs(); }
+    // Load-clamp memory (2 Sep 2026 cap): when a saved session carries a
+    // retune above the new 150ms cap, the value is clamped ON LOAD and the
+    // readout says so - "150 (was 400)". Never a silent change to a saved
+    // sound. Cleared by any live write.
+    float retuneWasMs() const noexcept { return retuneWasMs_; }
 
 protected:
     void onStateApplied() override;
@@ -225,6 +230,7 @@ private:
     // 440 default). NEVER written from detection - the corrector's live
     // reference under auto lives in correct_ alone, so a state save cannot
     // launder a detected grid into a user setting (29 Aug 2026 defect).
+    float retuneWasMs_ = 0.0f;   // pre-cap value from a clamped load; 0 = none
     std::atomic<float> manualRefHz_ { 440.0f };
     std::atomic<bool>  refManualByUser_ { false };
     // Carried ACROSS blocks. The slice before the first hop of a block

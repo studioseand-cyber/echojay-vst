@@ -232,7 +232,17 @@ public:
     PitchCorrect() = default;
 
     // ---- advertised ranges (single source of truth for the ParamSchema) ----
-    static constexpr float kMinRetuneMs   = 0.0f,   kMaxRetuneMs   = 400.0f;
+    // THE CAP (2 Sep 2026 ruling, PITCH_P0_VALIDATION.md §17.4/§17.7):
+    // the dial ends at 150ms, where §17.4's own verdict says useful
+    // correction ends (roughness minimum at 40, within-3c cliff past
+    // ~150, all-scoop by 400). Derived bracket: >=120 (the natural
+    // preset), <=200 (the cliff); 150 taken with the curve attached.
+    // RECORDED HONESTLY: the cap retires the CHARACTER region and the
+    // literal tau-400 complaint point - NOT the boundary-snap class,
+    // which lives on the legacy path at any tau above the floor (146c
+    // applied disc at tau-120) and is still handled by the env5
+    // candidate's four-gate path.
+    static constexpr float kMinRetuneMs   = 0.0f,   kMaxRetuneMs   = 150.0f;
     // THE RETUNE FLOOR (30 Aug 2026 ruling, PITCH_P0_VALIDATION.md
     // Â§17.3): the effective tau never goes below 6 ms, though the dial
     // still reads 0. The 0-6 ms zone is STRICTLY DOMINATED, measured:
