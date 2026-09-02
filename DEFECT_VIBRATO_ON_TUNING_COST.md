@@ -124,3 +124,11 @@ tau-400 detection ("way smoother") is therefore validated as a real
 detection, and his round-2 miss of env5-vs-shipped at tau 400 is a real
 threshold effect (the fix difference swims in 400ms's own scoop), not
 noise in the listener. Weigh ear verdicts accordingly.
+
+**Cross-reference (2 Sep 2026, onset pass round 4):** the independent
+container measurement of Sean's 29 Aug bounces shows ignore-vib OFF tuning
+better than ON (onset p75 12.77c vs 18.71c; this machine's rulers agree:
+sustain jitter 0.97 vs 1.61, all-voiced <5c 48.9% vs 45.0%). Those bounces
+PREDATE the (d) fix this file ships, so the data is consistent with the
+defect as it stood and says nothing about the current engine. Filed for the
+record; not re-opened.

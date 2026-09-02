@@ -139,3 +139,110 @@ Antares could still regularise via its correction loop even with a neutral
 shifter; that is exactly the axis the bounce separates).
 
 Nothing built. No flags. Awaiting the Retune-0 bounce.
+
+---
+
+# Round 4 (2 Sep 2026): antares_retune0_NEW OVERTURNS the onset conclusion
+
+The bounce: /Users/SeanD/Desktop/antares_retune0_NEW.wav (2 Sep 16:31),
+measured independently in the cloud container first, confirmed here.
+
+**Settings verification, honestly stated:** NO screenshot exists for this
+bounce. The newest Antares screenshot on disk (1 Sep 18:41) shows Retune 20 /
+Key C CHROMATIC - it describes an earlier session moment, not this bounce.
+Audio-level evidence: the chromatic detector (share of voiced hops sitting on
+a NON-D-minor chromatic tone) reads 0.6% - exactly the source's own rate - so
+the bounce behaves as D-minor-compatible; and its onset off-grid (med 1.94c
+here, 1.15c in the container) is only reachable at a very fast retune. The
+settings are CONSISTENT with the Retune-0/D-minor spec but not
+screenshot-verified; a screenshot at the bounce settings would close the gap.
+
+## JOB 1 - my rulers vs the container's (off-grid to D natural minor, 440)
+
+    onset off-grid          med     p75     p90    all-voiced <5c
+    SOURCE       container  6.63   16.31   36.54      38.8%
+                 here       8.49   16.64   30.74      39.8%
+    ANT_400      container  5.09   12.44   33.35      45.2%
+                 here       6.42   13.42   27.19      46.9%
+    ANT_0        container  1.15    3.25    9.51      66.1%
+                 here       1.94    6.15   17.52      76.3%
+    EJ_ignoreoff container  6.03   10.38   21.78      44.7%
+                 here       6.56   10.21   16.69      48.9%
+    EJ_ignoreon  container  7.07   17.77   36.16      37.8%
+                 here       5.71   10.72   23.23      45.0%
+    EJ tau6 current engine  4.95    8.74   18.41      59.9%   (no container row)
+
+No material disagreement: ordering identical everywhere that matters, the
+ANT_0 collapse reproduced (med improves 3.3x here vs 4.4x there; the p90
+ratio is 1.55x here vs 3.5x there - different trackers and onset windows;
+neither ruler is "wrong", and both carry the same conclusion). **Antares at
+Retune 0 corrects onsets hard and accurately: onset med 1.94c vs our
+current-engine best 4.95c (2.6x tighter), all-voiced <5c 76.3% vs 59.9%.**
+
+Jitter/contrast rows (tools/pitch_onset_probe, this machine's ruler):
+
+    row                        onset jitter   sustain jitter   CONTRAST
+    ANT_0                          4.84            1.13          4.27x
+    EJ_ignoreoff (29 Aug bounce)   7.07            0.97          7.30x
+    EJ_ignoreon  (29 Aug bounce)   7.18            1.61          4.47x
+
+ANT_0's onset jitter is BELOW the source floor (4.84 vs 5.22, -7%) - the
+first row ever measured under it.
+
+## JOB 2 - the EchoJay row identity, established
+
+The container's EJ rows are Sean's **29 Aug HARD-preset bounces** - an engine
+predating the vib-on (d) fix (installed ~31 Aug), the boundary-snap work, and
+the retune cap. Measurably stale: onset jitter 7.07/7.18 vs the current
+engine's 5.68 at the same operating point. **The matched tau6 render EXISTS:
+pf2_hard_v1_e0.wav** - current engine, rendered by this session's harness
+with settings known by construction (alto_tenor, D minor, 440, tau 6ms,
+IGN VIB on, envExp 0). No new bounce is required for the analysis; a fresh
+Logic bounce at the current install is an EAR decision, not a data need.
+
+## JOB 3 - VOID, MEASURED AT UNMATCHED RETUNE
+
+The following round-2 conclusions are marked void; each rested on ANT_400:
+  - "our onsets are Antares to within noise" (5.68 vs 5.70)   VOID
+  - "the onset column is closed / matched, nothing to do"     VOID
+  - "'Antares actively cleans onsets' is REFUTED"             VOID - at 0 it
+    cleans them below the source floor (jitter 4.84 vs 5.22) and 3x tighter
+    to grid than our best
+  - "section 4's menu produces at best source-level onsets"   VOID
+**Section 4 of ONSET_SHAKINESS_RESEARCH.md is LIVE again**: the
+bypass-on-low-confidence design, the narrow-band tracker, and the
+detector-side rate limit are all back on the table as things Antares may be
+doing at onsets that we are not.
+
+**Also void by the same mismatch - the round-3 M2 verdict.** At matched
+retune, ANT_0 sustains: off-grid med 0.8c, improve 97.1% - against our 1.9c /
+82.4%. The verdict flips to WORSE than the ruling's second branch: **our
+jitter reduction is pure cost, buying nothing - we smooth sustains harder
+than Antares (0.86 vs 1.13) while tuning them less accurately (1.9c vs
+0.8c).** The primary finding of this round, ahead of the jitter question:
+at matched retune Antares beats the current engine on BOTH onset and sustain
+tuning while removing LESS of the singer's micro-variation.
+
+## JOB 4 - the jitter-neutrality hypothesis: survives, weakened; now secondary
+
+ANT_0 sustain jitter **1.13** - nearer 1.3 than 0.86. The reframe does NOT
+collapse into a settings mismatch: even at its fastest setting Antares
+removes only 20% of the source's sustain jitter (1.41 -> 1.13) where we
+remove 39% (1.41 -> 0.86). But strict architectural neutrality is dead too -
+its correction loop regularises somewhat with speed (1.31 at 400 -> 1.13 at
+0) and its onsets go BELOW the source floor at 0. Verdict, plainly: **Antares
+de-jitters less than us at every setting it has, and the gap is real; but
+the onset tuning gap (JOB 3) is the live question and this one is secondary.**
+Both takes: on the old creaky low_male take, fast Antares removed nothing
+(5.47 -> 5.66, +3%) - the neutrality picture is material-dependent; no valid
+old-take EchoJay cell exists (the old echojay.wav is a pre-splice artifact
+and the take's key is unrecorded, so its grid metrics are undefined).
+
+## Cross-reference filed (not re-opened)
+
+ignore-vibrato OFF tunes better than ON in both rulers (container onset p75
+12.77 vs 18.71; here sustain jitter 0.97 vs 1.61, <5c 48.9% vs 45.0%) - on
+bounces that PREDATE the (d) fix, i.e. consistent with
+DEFECT_VIBRATO_ON_TUNING_COST as it stood then. Noted there; not re-opened.
+
+Nothing built. The next decision needs a ruling on section 4's menu.

@@ -58,5 +58,8 @@ this filing accepts coincides exactly with the onset-shakiness region
 under investigation in ONSET_PASS_RECORD.md - every word beginning is a
 dry->wet seam by construction, making the per-boundary pitch step a
 tau-independent onset mechanism inside an accepted design property. Not
-re-opened; the Antares onset rows (never below the source floor) kept it
-closed.
+re-opened. (Round-4 amendment: the "never below the source floor" support
+was ANT_400-only and is VOID - Antares at Retune 0 measures onset jitter
+4.84 vs the source's 5.22. This cross-reference stands on the seam-population
+identity alone; whether the seam step matters at onsets is back inside the
+live section-4 question in ONSET_PASS_RECORD.md.)
