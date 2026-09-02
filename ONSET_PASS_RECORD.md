@@ -246,3 +246,110 @@ bounces that PREDATE the (d) fix, i.e. consistent with
 DEFECT_VIBRATO_ON_TUNING_COST as it stood then. Noted there; not re-opened.
 
 Nothing built. The next decision needs a ruling on section 4's menu.
+
+---
+
+# Round 5 (2 Sep 2026): section-4 ruling FINAL + the convergence measurement
+
+## The ruling, recorded as decided (FINAL per Sean's confirmation message)
+
+**KILLED as primary candidate: low-confidence bypass.** Arithmetic: a bypass
+sets ratio 1.0, so its onset output IS its input - source-level 5.22 by
+definition. It cannot produce ANT_0's 4.84. Its whole achievable range moves
+us from 5.68 toward 5.22; Antares is already past that. Kept filed as a
+possible safety net for gross detector failures only.
+
+**PROMOTED: hard snap to a constant target, with a detector accurate enough
+to land it.** At Retune 0 there is no ratio smoothing; during a note the
+output is pinned to the scale tone and the only residual is detector error.
+ANT_0's onset jitter 4.84 and off-grid 1.15-1.94c are ONE finding. The
+narrow-band tracker does not smooth the output - it keeps detector error
+small enough that a hard snap lands on the RIGHT note. We also snap at tau6;
+ours does not land. The question: why is our target wrong or late in the
+first 150ms when theirs is not.
+
+**Settings flag CLOSED:** Sean confirms Retune Speed 0 by hand (recorded in
+REFERENCE_SET.md; no screenshot; audio evidence concordant). Comparison
+fair per §17.3.
+
+## The measurement — tools/pitch_onset_converge (10c threshold, 150ms windows)
+
+NEW take (alto_tenor, D minor, 24 onsets):
+
+                      first<10c      HOLD<10c        wrong-tone      settles
+                      (median)       to window end   dwell (median)  wrong
+    SOURCE            24/24 16.0ms   17/24 109.3ms   16 on, 21.3ms   0/24
+    ANT_0             24/24  8.0ms   23/24  26.7ms   18 on, 26.7ms   1/24
+    EJ tau6 current   22/24 10.7ms   20/24  77.3ms   18 on,  5.3ms   1/22
+
+    median |off-grid| trajectory: ANT_0 collapses to 1-2c by ~45ms and PINS
+    there. EJ descends to a 3-5c FLOOR by ~55ms and floats, with excursions
+    past 10c recurring until ~77ms. Source floats at 5-11c all window.
+
+The in-process render (SELF:6) reproduces pf2_hard_v1_e0 line for line -
+the round-4 row identity is now proven, not argued.
+
+**tau->0 row: VOID as a discriminator.** SELF:0 output is bit-identical to
+SELF:6 - kRetuneFloorMs=6 clamps inside PitchCorrect, so no sub-floor tau is
+reachable without an engine change (next pass's territory, not this one).
+
+OLD take (low_male; grid CHROMATIC - the take's key was never recorded, so
+D-minor metrics would be fiction; 11 onsets):
+
+    SOURCE            11/11  2.7ms    3/11 136.0ms   11 on, 26.7ms   0/11
+    ANT old fast      11/11 16.0ms    7/11 125.3ms   11 on, 26.7ms   2/11
+    EJ tau6 current   11/11 13.3ms    9/11 130.7ms    9 on, 29.3ms   2/11
+
+On creaky low_male material NEITHER plugin pins (both hold >2s worth of the
+window off-grid); EchoJay's trajectory is the better of the two through most
+of the window. The onset gap is a CLEAN-MATERIAL phenomenon.
+
+## The discrimination — (d), a mix, with the dominant term named and one term the menu did not contain
+
+- **(a) wrong target: DEAD.** Settles on other-than-source-intent: 1/22 vs
+  1/24. Detector accuracy at the note-choice level is not the problem.
+- **(b) late acquisition: MINOR.** First-touch 10.7ms vs 8.0ms - a +2.7ms
+  gap. kNoteConfirmMs=25 does NOT appear as a 25ms penalty at onsets on
+  this data; the acquisition sixth of the window is not where we lose.
+- **(c) target re-decided mid-note: NOT SUPPORTED as defined.** A
+  re-decision would show as dwell near OTHER tones; our wrong-tone dwell is
+  5.3ms median - one fifth of Antares' own 26.7ms (their hard snap grabs
+  the approach tone early and audibly sits on it; we glide through).
+- **DOMINANT (the unlisted term): hold failure around the CORRECT tone -
+  residual tracking leak.** We reach the right tone almost as fast as
+  Antares, then keep crossing 10c until 77.3ms (vs their 26.7ms) and floor
+  at 3-5c (vs their 1-2c). Quantitatively consistent with what a 6ms
+  one-pole follower must do: deviations on 30-80ms timescales (the
+  singer's onset excursions - the source's own mid-window median sits at
+  6-11c) pass a tau=6ms follower at ~60-85% amplitude; 6-9c x ~0.6 = our
+  observed 3-5c floor, and 12-15c source excursions leak out past 10c.
+  Antares' fast mode is NOT a lagged follower - it subtracts the full
+  measured deviation (the promoted hard snap), leaving detector-error-sized
+  residual (1-2c). The §17.3 calibration equated the two on step
+  convergence, which both shapes pass; onset excursion tracking is where
+  they differ.
+
+So the proposal's target, when asked for: not acquisition, not note choice -
+the RESIDUAL SHAPE of retune-fast. Sub-floor/snap behaviour at the dial's
+fast end is the thing to propose, with the hold-time and floor numbers above
+as the acceptance axes, and the old take as the do-no-harm axis (we are
+currently BETTER than Antares there; a snap must not break creak).
+
+## The M2 flip's implication — recorded as the current best account
+
+At matched retune Antares tunes sustains to 0.8c while removing only 20% of
+sustain jitter; we tune to 1.9c while removing 39%. Better on BOTH axes at
+once - so tuning accuracy and microstructure preservation are NOT in
+tension, and our jitter loss buys nothing. Combined with its tau-invariance
+(0.86 at tau6 vs 0.83 at tau150), that locates the loss in the SHIFTER, not
+the correction loop - where every round of effort so far has gone.
+
+**HYPOTHESIS, NOT MEASURED** (labelled as such per ruling): TD-PSOLA
+resynthesises periods from our estimated marks and inherits our mark
+regularity; cycle repeat/delete reuses the singer's own cycles and preserves
+theirs. Plausible and consistent with everything measured; not yet tested.
+
+## Next (not this pass)
+
+A proposal with an acceptance bar, both takes, and a written falsification
+condition committed with the flag BEFORE any code.

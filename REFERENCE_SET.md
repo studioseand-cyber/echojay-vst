@@ -85,3 +85,13 @@ has NO settings difference left to explain it.
 REFERENCE plugin's settings too.** The rule's first half was written
 after assuming EchoJay's voice type; the identical assumption was then
 made about Antares for a month.
+
+## antares_retune0_NEW.wav (Desktop, 2 Sep 2026 16:31) — settings confirmation
+
+Retune Speed 0, confirmed by Sean BY HAND on 2 Sep 2026 — no screenshot
+exists for this bounce. Audio evidence concordant: chromatic-tone occupancy
+0.6% (= the source's own rate, so no chromatic targeting; key D minor
+consistent), and the onset off-grid collapse (med 1.94c) is only reachable
+at a very fast retune. Comparison against EchoJay tau6 is FAIR per the
+§17.3 floor calibration (Antares 0 ≈ our 4–6 ms). All other settings per
+the 1 Sep matched block.
