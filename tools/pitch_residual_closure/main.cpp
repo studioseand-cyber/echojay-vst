@@ -1,5 +1,15 @@
-// pitch_residual_closure (2 Sep 2026, round-8 ruling): the differential
-// form, one tracker, no offline truth ruler.
+// pitch_residual_closure (2 Sep 2026, rounds 8-9): the differential
+// form, one tracker, no offline truth ruler. Round 9 re-expresses
+// everything as PER-INSTANT SIGNED differences (median|a|-median|b| is
+// not median|a-b| - the standing methodological correction) and reports
+// a THREE-LEG DECOMPOSITION using the effective-ratio tap:
+//   LEG 1  T(src)*effR vs T(out)     - does the shifter do what the
+//          applied ratio says? must close ~0 or everything upstream is moot
+//   LEG 2  effR vs target/f0Here     - what slew+bleed modify, and WHEN
+//   LEG 3  T(out) vs target          - the residual, now decomposable
+// PREDICTION (stated before the run): leg 2 ~3c on sustains, ~0 in the
+// first 50ms after an onset - a tau~100ms feedback has no time inside
+// an onset window.
 //
 //   f_out = f_in * target / f0Here
 //   => output off-grid-vs-target = 1200*log2( T(source)/f0Here )
@@ -60,6 +70,7 @@ static bool readWavMono (const char* path, std::vector<float>& out, double& fs)
 struct Render {
     std::vector<float> out;                       // latency-aligned
     std::vector<PsolaEngine::DbgRingTap> tap;     // inPos == aligned index
+    std::vector<PsolaEngine::DbgEffR> effR;       // 64-sample grid
 };
 static Render renderChain (const std::vector<float>& in, double fs, int vt,
                            float tau, bool chrom, bool tapOn)
@@ -119,6 +130,7 @@ static Render renderChain (const std::vector<float>& in, double fs, int vt,
     R.out.assign(in.size(),0.0f);
     for(size_t i=(size_t)lat;i<raw.size();++i) R.out[i-(size_t)lat]=raw[i];
     R.tap=sh.debugRingTapData();   // inPos = p = aligned output index
+    R.effR=sh.debugEffRData();
     return R;
 }
 static std::vector<double> fineTrack (const std::vector<float>& x, double fs, int vt, int& hop)
@@ -157,28 +169,41 @@ int main (int argc, char** argv)
     auto tSrc=fineTrack(in,fs,vt,hop);
     auto tOut=fineTrack(on.out,fs,vt,hop);
     const double hopS=hop/fs;
-    // tap lookup: last entry with inPos <= t
+    const auto& tapR=on.effR;
+    std::printf("effR entries: %zu\n",tapR.size());
     auto tapAt=[&](double t,double& f0,double& tg)
     { f0=0;tg=0;
       size_t lo=0,hi=on.tap.size();
       while(lo<hi){ size_t m=(lo+hi)/2; if((double)on.tap[m].inPos<=t)lo=m+1; else hi=m; }
       if(lo==0) return;
       f0=on.tap[lo-1].f0Here; tg=on.tap[lo-1].target; };
-    auto residuals=[&](long h0,long h1,std::vector<double>& pred,std::vector<double>& meas,
-                       std::vector<std::vector<double>>* trP,std::vector<std::vector<double>>* trM)
+    auto effAt=[&](double t)->double
+    { size_t lo=0,hi=tapR.size();
+      while(lo<hi){ size_t m=(lo+hi)/2; if((double)tapR[m].inPos<=t)lo=m+1; else hi=m; }
+      if(lo==0) return 0;
+      // only trust an entry within 256 samples (the grid is 64): a stale
+      // entry from before an unvoiced gap is not the current rate
+      if(t-(double)tapR[lo-1].inPos>256.0) return 0;
+      return (double)tapR[lo-1].effR; };
+    struct Legs { std::vector<double> l1,l2,l3; };
+    auto residuals=[&](long h0,long h1,Legs& L,
+                       std::vector<std::vector<double>>* tr2,
+                       std::vector<std::vector<double>>* tr3)
     { for(long h=h0;h<h1;++h)
       { if(h>=(long)tSrc.size()||h>=(long)tOut.size()) break;
         if(tSrc[(size_t)h]<=0||tOut[(size_t)h]<=0) continue;
-        double f0,tg; tapAt((double)h*hop+0.5*hop,f0,tg);
-        if(f0<=0||tg<=0) continue;
-        const double rp=1200.0*std::log2(tSrc[(size_t)h]/f0);
-        const double rm=1200.0*std::log2(tOut[(size_t)h]/tg);
-        if(std::fabs(rp)>200||std::fabs(rm)>200) continue;
-        pred.push_back(std::fabs(rp)); meas.push_back(std::fabs(rm));
+        const double t=(double)h*hop+0.5*hop;
+        double f0,tg; tapAt(t,f0,tg);
+        const double eff=effAt(t);
+        if(f0<=0||tg<=0||eff<=0) continue;
+        const double l1=1200.0*std::log2(tSrc[(size_t)h]*eff/tOut[(size_t)h]);
+        const double l2=1200.0*std::log2(eff*f0/tg);
+        const double l3=1200.0*std::log2(tOut[(size_t)h]/tg);
+        if(std::fabs(l3)>200||std::fabs(l1)>200) continue;
+        L.l1.push_back(l1); L.l2.push_back(l2); L.l3.push_back(l3);
         const size_t bin=(size_t)((h-h0)*hopS/0.005);
-        if(trP&&bin<trP->size()) (*trP)[bin].push_back(std::fabs(rp));
-        if(trM&&bin<trM->size()) (*trM)[bin].push_back(std::fabs(rm)); } };
-    // windows exactly as the other probes
+        if(tr2&&bin<tr2->size()) (*tr2)[bin].push_back(l2);
+        if(tr3&&bin<tr3->size()) (*tr3)[bin].push_back(l3); } };
     std::vector<long> onsets;
     { int uv=1000;
       for(size_t h=0;h<tSrc.size();++h)
@@ -186,31 +211,70 @@ int main (int argc, char** argv)
         if(uv*hopS>=0.06) onsets.push_back((long)h);
         uv=0; } }
     const long win=(long)std::lround(0.150/hopS);
-    auto q=[](std::vector<double> v,double f)->double
-    { if(v.empty())return -1; std::sort(v.begin(),v.end());
+    const long win50=(long)std::lround(0.050/hopS);
+    auto Q=[](std::vector<double> v,double f)->double
+    { if(v.empty())return 0; std::sort(v.begin(),v.end());
       return v[(size_t)std::min((double)v.size()-1.0,f*(double)v.size())]; };
-
-    // ---- 1: THE SUSTAIN GATE ------------------------------------------
-    std::vector<double> sp,smv;
+    auto row=[&](const char* nm,std::vector<double>& v)
+    { std::vector<double> a; for(double d:v) a.push_back(std::fabs(d));
+      std::printf("    %-6s signed med %+6.2fc  [p25 %+6.2f p75 %+6.2f]  med|.| %5.2fc  (n=%zu)\n",
+          nm,Q(v,0.5),Q(v,0.25),Q(v,0.75),Q(a,0.5),v.size()); };
+    Legs S,O,O50;
+    std::vector<std::vector<double>> tr2(30),tr3(30);
     { int run=0;
       for(size_t h=0;h<tSrc.size();++h)
       { if(tSrc[h]<=0){run=0;continue;} ++run;
         if(run==(int)std::lround(0.30/hopS))
-          residuals((long)h,(long)h+win,sp,smv,nullptr,nullptr); } }
-    std::printf("SUSTAIN GATE: predicted med %.2fc p75 %.2fc | measured med %.2fc p75 %.2fc (n=%zu)\n",
-        q(sp,0.5),q(sp,0.75),q(smv,0.5),q(smv,0.75),sp.size());
-
-    // ---- 2: onsets ----------------------------------------------------
-    std::vector<double> op,om;
-    std::vector<std::vector<double>> trP(30),trM(30);
-    for(long o:onsets) residuals(o,o+win,op,om,&trP,&trM);
-    std::printf("ONSETS (%zu): predicted med %.2fc p75 %.2fc p90 %.2fc | measured med %.2fc p75 %.2fc p90 %.2fc (n=%zu)\n",
-        onsets.size(),q(op,0.5),q(op,0.75),q(op,0.9),q(om,0.5),q(om,0.75),q(om,0.9),op.size());
+          residuals((long)h,(long)h+win,S,nullptr,nullptr); } }
+    for(long o:onsets){ residuals(o,o+win,O,&tr2,&tr3);
+                        residuals(o,o+win50,O50,nullptr,nullptr); }
+    std::printf("  SUSTAINS:\n");  row("leg1",S.l1); row("leg2",S.l2); row("leg3",S.l3);
+    std::printf("  ONSETS (150ms):\n"); row("leg1",O.l1); row("leg2",O.l2); row("leg3",O.l3);
+    std::printf("  ONSETS (first 50ms):\n"); row("leg1",O50.l1); row("leg2",O50.l2); row("leg3",O50.l3);
+    // FAILURE-BRANCH CORRELATIONS (round 9): leg 1 did not close on the
+    // first run, so report what its per-instant difference correlates
+    // with: (a) |pitch slope| - the displacement/delta-x-slope candidate;
+    // (b) the estimator-vs-tracker difference TS-F0 - the calibration-
+    // offset candidate (per-instant l1 = (TS-F0) + l2 - l3 exactly, so a
+    // HIGH correlation here with l2,l3 quiet means the gap and the
+    // "estimator error" are the same number seen twice, not two facts).
+    {
+        std::vector<double> l1v,slv,efv;
+        auto grab=[&](long h0,long h1)
+        { for(long h=h0;h<h1;++h)
+          { if(h+1>=(long)tSrc.size()||h>=(long)tOut.size()) break;
+            if(tSrc[(size_t)h]<=0||tSrc[(size_t)h+1]<=0||tOut[(size_t)h]<=0) continue;
+            const double t=(double)h*hop+0.5*hop;
+            double f0,tg; tapAt(t,f0,tg);
+            const double eff=effAt(t);
+            if(f0<=0||tg<=0||eff<=0) continue;
+            const double l1=1200.0*std::log2(tSrc[(size_t)h]*eff/tOut[(size_t)h]);
+            if(std::fabs(l1)>200) continue;
+            const double slope=std::fabs(1200.0*std::log2(tSrc[(size_t)h+1]/tSrc[(size_t)h]))/hopS;
+            const double ef=1200.0*std::log2(tSrc[(size_t)h]/f0);
+            if(std::fabs(ef)>200) continue;
+            l1v.push_back(l1); slv.push_back(slope); efv.push_back(ef); } };
+        { int run=0;
+          for(size_t h=0;h<tSrc.size();++h)
+          { if(tSrc[h]<=0){run=0;continue;} ++run;
+            if(run==(int)std::lround(0.30/hopS)) grab((long)h,(long)h+win); } }
+        for(long o:onsets) grab(o,o+win);
+        auto pearson=[&](std::vector<double>& a,std::vector<double>& b)->double
+        { const size_t n=std::min(a.size(),b.size()); if(n<10) return 0;
+          double ma=0,mb=0; for(size_t i=0;i<n;++i){ma+=a[i];mb+=b[i];} ma/=n;mb/=n;
+          double sab=0,sa=0,sb=0;
+          for(size_t i=0;i<n;++i){ sab+=(a[i]-ma)*(b[i]-mb); sa+=(a[i]-ma)*(a[i]-ma); sb+=(b[i]-mb)*(b[i]-mb); }
+          return sa>0&&sb>0?sab/std::sqrt(sa*sb):0; };
+        std::vector<double> l1a; for(double d:l1v) l1a.push_back(std::fabs(d));
+        std::printf("  LEG1 correlations (n=%zu): |l1| vs |slope| r=%+.2f | l1 vs (TS-F0) r=%+.2f | |l1| vs |TS-F0| r=%+.2f\n",
+            l1v.size(),pearson(l1a,slv),pearson(l1v,efv),
+            [&]{ std::vector<double> e2; for(double d:efv) e2.push_back(std::fabs(d)); return pearson(l1a,e2); }());
+    }
     auto traj=[&](const char* nm,std::vector<std::vector<double>>& tr)
-    { std::printf("  %s traj:",nm);
-      for(auto& b:tr){ if(b.empty()){std::printf("   .");continue;}
-        std::sort(b.begin(),b.end()); std::printf(" %3.0f",b[b.size()/2]); }
+    { std::printf("  %s traj (signed med, 5ms bins):",nm);
+      for(auto& b:tr){ if(b.empty()){std::printf("    .");continue;}
+        std::sort(b.begin(),b.end()); std::printf(" %+4.0f",b[b.size()/2]); }
       std::printf("\n"); };
-    traj("pred",trP); traj("meas",trM);
+    traj("leg2",tr2); traj("leg3",tr3);
     return 0;
 }

@@ -585,3 +585,88 @@ row yet measured.
 Onset numbers were produced by the run but ARE NOT READ, per the
 ruling's order of operations: no onset conclusion from a model that
 fails its own sustain check. The standing prediction remains unmarked.
+
+---
+
+# Round 9 (2 Sep 2026): three-leg decomposition - the PREDICTION FAILS
+# (the bleed is not the mask), LEG 1 does not close, and the remaining
+# gap is DEGENERATE between two accounts the instrument cannot separate.
+
+Methodological correction applied throughout: per-instant SIGNED
+differences, never medians of absolutes compared. (Now a standing
+constraint.)
+
+## Tap extension (approved): effective ratio
+
+PsolaEngine::debugEffRData - d(readPos)/dp = r - bleedApplied, sampled
+on a 64-sample grid inside spliceSample (splice jumps are whole
+fractional periods, phase-neutral, so this IS the emitted pitch
+factor). **BIT-IDENTITY RE-VERIFIED with the extended tap before any
+tapped data was read: IDENTICAL, both takes.**
+
+## The three legs (tau6, per-instant signed; NEW take, alto_tenor, D minor)
+
+                       SUSTAINS              ONSETS 150ms         FIRST 50ms
+    leg1 T(s)*eff/T(o) +3.72c med, 5.67 |.|  +3.55, 10.15 |.|    -2.18, 16.04 |.|
+    leg2 eff vs tgt/f0 +0.62c med, 0.99 |.|  -0.31,  0.89 |.|    -0.48,  0.91 |.|
+    leg3 T(o) vs tgt   -0.31c med, 1.74 |.|  -1.38,  4.86 |.|    +1.13,  7.10 |.|
+
+OLD take (chromatic, creak-dominated): leg2 likewise ~0 (1.79c |.|
+sustains); leg1 28.75c |.| sustains - both flanks of leg1 swamped by
+creak; carries no independent weight.
+
+## THE PREDICTION: **FAIL**, marked explicitly
+
+Predicted: leg2 ~3c on sustains, ~0 in the first 50ms. Measured: leg2
+is ~0 EVERYWHERE (0.99c sustains, 0.91c first-50ms, trajectory flat at
+0-1c). The slow-feedback account of round 8's gap is dead: slew+bleed
+modify the nominal ratio by under 1c at sustains. This is COHERENT with
+the shipped design rather than surprising - the 29 Aug shift-gate
+ruling gated the bleed off during sustained correction precisely
+because a running bleed was measured as convergence tax; the gate is
+why there is no mask. The round-8 "engine outperforms its ratio"
+framing was an artifact of comparing medians of absolutes - per-instant,
+the effective ratio IS the nominal ratio.
+
+## LEG 1 does not close - and what the failure correlates with
+
+Per the ruling: the problem is in the shifter leg, everything upstream
+is moot, stop. The ordered correlation report:
+
+    |l1| vs |pitch slope|: r=+0.14 (NEW) / +0.19 (OLD)
+        - the displacement/delta-x-slope candidate is NOT the driver
+    l1 vs (TS-F0) signed:  r=+0.25 / -0.07
+    |l1| vs |TS-F0|:       r=+0.40 / +0.42
+        - the gap's MAGNITUDE co-varies with the estimator-vs-tracker
+          disagreement: both blow up in the same hard-to-track regions
+
+## The degeneracy, stated honestly (the actual finding)
+
+Per instant, l1 = (TS-F0) + l2 - l3 EXACTLY - four quantities, one
+identity, three independent. With l2 ~ 0 and l3 ~ 0 at sustains, leg
+1's +3.7c and the apparent estimator error TS-F0 (~+2.8c signed) are
+THE SAME NUMBER SEEN TWICE, not two facts. The sustain web (output ON
+target, ratio nominal, yet tracker-vs-ring +2.8c) is arithmetically
+consistent with only two accounts:
+  (A) the shifter's emitted pitch deviates ~3c from f_in * eff; or
+  (B) the fine tracker's calibration DIFFERS between raw voice and
+      resampled/spliced voice by ~3c (config- and audio-character-
+      dependent bias), and the true estimator error is unmeasured by
+      everything so far.
+No quantity measured in rounds 7-9 separates (A) from (B): every ruler
+in the family shares the tracker, and the delta-x-slope caution plus
+the calibration web are both instrument phenomena. The correlation
+table leans neither way decisively (slope excluded; magnitude
+co-variation fits both).
+
+## The discriminating instrument, named for the next ruling, not built
+
+A SYNTHETIC TRUTH-BEARING TAKE: a resynthesized vowel-like signal with
+KNOWN f0(t) (onset scoop + vibrato, real-voice-like spectrum) rendered
+through the FULL chain. Truth is then known on BOTH sides: T's bias on
+raw truth calibrates the tracker; T(output) vs truth * eff closes leg 1
+against ground truth rather than against another tracker reading. One
+take, every existing tool applies unchanged.
+
+Stopped at the leg-1 clause. No fix, no bar, no flag beyond the
+approved debug taps.

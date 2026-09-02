@@ -409,6 +409,17 @@ public:
     void debugRingTap (bool on) noexcept { dbgTapOn_ = on; }
     const std::vector<DbgRingTap>& debugRingTapData() const noexcept { return dbgTap_; }
 
+    /** EFFECTIVE-RATIO TAP (round-9 ruling): the rate the read pointer
+        actually advances at - the slewed ratio minus the bleed decrement,
+        d(readPos)/dp = r - b - sampled on a 64-sample grid inside
+        spliceSample. Splice jumps move by whole fractional periods and
+        are phase-neutral, so this IS the emitted pitch factor. Same
+        binding conditions as the ring tap: dbgTapOn_-gated, off by
+        default, bit-identity re-verified with this field before any
+        tapped data is read. */
+    struct DbgEffR { uint64_t inPos; float effR; };
+    const std::vector<DbgEffR>& debugEffRData() const noexcept { return dbgTapR_; }
+
     // Drift carry (see emitMixed): gaps shorter than this keep the read
     // trajectory across the gap instead of re-anchoring. 0 = old behaviour.
     void setDriftCarryMs (float ms) noexcept
@@ -1538,6 +1549,7 @@ private:
         // ~4x by the ~1.6 Hz pole on top of the near-equilibrium bleed
         // already being small. Sustained correction runs untaxed; the
         // near-zero-shift blink discharges the bleed was built for keep it.
+        double bleedApplied = 0.0;
         if (driftBleed_)
         {
             const double x = std::fabs (r - 1.0) / kBleedMaxRate;
@@ -1547,7 +1559,10 @@ private:
                                          -kBleedMaxRate, kBleedMaxRate)
                            * (dbgBleedUngated_ ? 1.0 : bleedGate_);
             spliceDrift_ -= b;
+            bleedApplied = b;
         }
+        if (dbgTapOn_ && ((uint32_t) p & 63u) == 0u)
+            dbgTapR_.push_back ({ p, (float) (r - bleedApplied) });
 
         // Trigger a period-aligned splice before the drift can outrun the
         // lookahead: jump one FRACTIONAL period (fs / f0, not the rounded T
@@ -1690,6 +1705,7 @@ private:
     bool  dbgTapOn_ = false;
     float dbgTapF0_ = 0.0f, dbgTapTgt_ = 0.0f;
     std::vector<DbgRingTap> dbgTap_;
+    std::vector<DbgEffR> dbgTapR_;
     int    spliceFadeLen_ = 0, spliceFadePos_ = 0, spliceT_ = 0;
     float  methodMix_ = 0.0f;      // 0 = splice, 1 = grains
 
