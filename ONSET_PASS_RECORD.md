@@ -522,3 +522,66 @@ is within the instrument's own inconsistency and is not claimed.
 Stopped here per the prediction protocol: the result is not the
 confirmation branch, and claiming it would be fitting the conclusion
 to the wish.
+
+---
+
+# Round 8 (2 Sep 2026): tap built and PROVEN NEUTRAL; the differential
+# form's own sustain gate FAILS - the model of the engine is wrong.
+# Stopped at the gate, per protocol. Onset numbers not read.
+
+## Standing caution filed (ordered): DELTA x SLOPE AS INSTRUMENT ERROR
+
+Cross-ruler timing manufactures |slope| x delta cents - the OLD take's
+7ms alignment alone produced 7.2c of phantom error (round 7). This is
+the SAME delta x slope term ONSET_SHAKINESS_RESEARCH.md section 1
+identifies as a DESIGN error source, reappearing as an INSTRUMENT error
+source: any two rulers with a timing offset fabricate error
+proportional to pitch slope - which means they fabricate most exactly
+where we are looking (onsets). Filed beside magnitude-is-not-mechanism
+and the bleed-cap numeric coincidence.
+
+## The tap (approved engine change, debug-only)
+
+PsolaEngine::debugRingTap - change-triggered (inPos, f0Here, target)
+at the splice read site, dbgBridge_ family, off by default.
+**BIT-IDENTITY VERIFIED BEFORE ANY TAPPED DATA WAS READ:** tap-off vs
+tap-on renders byte-compared - IDENTICAL on both takes (636096 samples
+NEW / 393216 OLD; 3912 / 3139 tap entries).
+
+## The differential form and its gate (tools/pitch_residual_closure)
+
+One tracker T, prediction = 1200*log2(T(source)/f0Here_tapped),
+measurement = 1200*log2(T(output)/target_tapped). No reconstruction
+leg, no second ruler.
+
+    SUSTAIN GATE (NEW, alto_tenor, D minor, tau6, n=209):
+      predicted med 5.34c p75 8.39c | measured med 1.74c p75 3.67c
+    SUSTAIN GATE (OLD, low_male, chromatic, n=354):
+      predicted med 29.09c | measured med 25.29c (creak-dominated,
+      both sides; carries no independent weight)
+
+**GATE FAILED.** The measured leg lands exactly on the known 1.9c
+(1.74c) - the instrument's measurement side is sound. The PREDICTED leg
+reads 3x higher with the REAL ring values, no reconstruction involved.
+Therefore the naive model f_out = f_in * target / f0Here is WRONG about
+this engine: the output sits ~3.6c CLOSER to target at sustains than
+its own instantaneous ratio accounts for. The engine outperforms its
+own ratio.
+
+## The finding (named, not chased - the gate says stop)
+
+Some mechanism between the ratio and the emitted audio pulls pitch
+toward target beyond the instantaneous ratio. The size-consistent
+candidate, NAMED UNDER THE magnitude-is-not-mechanism CAUTION and not
+claimed: the shipped drift-bleed (<=3c cap, tau 100ms) - a feedback
+term steering accumulated drift toward zero, absent from the model;
+the observed gap is ~3.6c against its 3c cap. Other unmodelled terms:
+the 2ms ratio slew, splice re-anchoring. Establishing WHICH is the
+next instrument question, and it changes the onset prediction too: a
+tau-100ms feedback helps sustains far more than 150ms onsets, so the
+true onset/sustain contrast of the RESIDUAL may be larger than any
+row yet measured.
+
+Onset numbers were produced by the run but ARE NOT READ, per the
+ruling's order of operations: no onset conclusion from a model that
+fails its own sustain check. The standing prediction remains unmarked.

@@ -398,6 +398,17 @@ public:
     struct DbgBridge { uint64_t pos; int len; float f0, r; };
     const std::vector<DbgBridge>& debugBridges() const noexcept { return dbgBridge_; }
 
+    /** RING TAP (2 Sep 2026 ruling, round 8): records, at the splice
+        read site, the (input position, f0Here, target) triple the ratio
+        was actually computed from - change-triggered, so one entry per
+        value change. Debug family of dbgBridge_: off by default, and
+        PROVEN AUDIO-NEUTRAL BY BIT-IDENTITY (tools/pitch_residual_closure
+        renders with the tap off and on and byte-compares) before any
+        tapped data is read. Offline instrumentation only. */
+    struct DbgRingTap { uint64_t inPos; float f0Here, target; };
+    void debugRingTap (bool on) noexcept { dbgTapOn_ = on; }
+    const std::vector<DbgRingTap>& debugRingTapData() const noexcept { return dbgTap_; }
+
     // Drift carry (see emitMixed): gaps shorter than this keep the read
     // trajectory across the gap instead of re-anchoring. 0 = old behaviour.
     void setDriftCarryMs (float ms) noexcept
@@ -719,6 +730,13 @@ private:
                 const float f0Here = f0At ((uint64_t) std::max<int64_t> (0, rp));
                 const float tgt    = curTarget_;
                 const bool  ok     = f0Here > 0.0f && tgt > 0.0f;
+                if (dbgTapOn_ && ok
+                    && (f0Here != dbgTapF0_ || tgt != dbgTapTgt_))
+                {
+                    dbgTap_.push_back ({ (uint64_t) std::max<int64_t> (0, p),
+                                         f0Here, tgt });
+                    dbgTapF0_ = f0Here; dbgTapTgt_ = tgt;
+                }
 
                 // `ok` gates STATE UPDATES only, never emission: the read
                 // position is displaced from p, so it can land on an
@@ -1669,6 +1687,9 @@ private:
     double bridgeSeedT_ = 0.0;     // last accepted period (samples); 0 = disarmed
     double bridgeLen_ = 0.0;       // bridged samples in the current run
     std::vector<DbgBridge> dbgBridge_;
+    bool  dbgTapOn_ = false;
+    float dbgTapF0_ = 0.0f, dbgTapTgt_ = 0.0f;
+    std::vector<DbgRingTap> dbgTap_;
     int    spliceFadeLen_ = 0, spliceFadePos_ = 0, spliceT_ = 0;
     float  methodMix_ = 0.0f;      // 0 = splice, 1 = grains
 
