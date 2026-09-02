@@ -1985,6 +1985,17 @@ row of four rounds of panels, so the measurements compared a regression
 against itself. Standing instruction, beside "record the voice_type":
 STATE THE BASELINE'S FLAG CONFIGURATION IN EVERY PANEL.
 
+**THE MISSED-EVIDENCE REGISTER (2 Sep 2026 ruling - hypotheses about
+configurations nobody was in):** (1) every probe silently pinned
+low_male while Sean ran alto_tenor; (2) the ferry investigation's
+baseline contained envExp 5, the very change under test; (3) the
+follower attribution reasoned about shiftPreferred()'s path from
+architecture notes without checking which path the measured rows ran -
+natVib~=100 gates it, every measured row was natVib 0 (recorded at the
+relayer's own request; ONSET_PASS_RECORD round 6). Standing
+instruction, beside the other two: CHECK WHICH PATH AND WHICH
+CONFIGURATION A HYPOTHESIS APPLIES TO before proposing work on it.
+
 Review test for any change touching a seam, gap, resume, onset or
 confirm: name the state that crosses it, and name where it re-anchors.
 If it has no re-anchor site, it is instance seven. The shared primitive

@@ -437,3 +437,88 @@ delay as seen through a subtractor.
 
 Stopped per the step-1 instruction: no acceptance bar committed (it assumed
 the plan), no flag, no engine code.
+
+---
+
+# Round 7 (2 Sep 2026): the freshness measurement - built, three ruler
+# defects caught en route, verdict INSTRUMENT-LIMITED. Prediction neither
+# passed nor failed; stopped rather than over-claimed.
+
+## Record-keeping ordered with the round (done first)
+
+- Round 6 corroboration item (a), the tau->0 bit-identity, is marked
+  NOT-EVIDENCE here: it is explained entirely by kRetuneFloorMs=6
+  clamping - no sub-floor tau was reachable, so it cannot testify about
+  whether tau is in the transfer. Circular. The staleness case stands
+  unweakened on (b) tau-invariance of sustain jitter removal and (c)
+  PATH_UNIFICATION's measured cuts; either alone is sufficient.
+- WHY THE WRONG MODEL FIT (standing caution, beside the "-3.40c = the
+  3-cent bleed cap" numeric coincidence): a windowed f0 estimator and a
+  one-pole follower have similar low-pass transfer at 30-80ms
+  timescales; round 5's arithmetic closed on the wrong mechanism at
+  60-85% because of it. A MATCHING MAGNITUDE IS NOT A MATCHING MECHANISM
+  when two candidate models share a transfer shape over the measured
+  band.
+- CORRECTED MECHANISM (the ruling's statement, recorded): both plugins
+  are subtractors; ours divides by a SMEARED estimate. A ~40ms analysis
+  window during a sweeping onset returns a low-passed trajectory, and
+  lag compensation aligns that estimate in time WITHOUT making it less
+  smeared - time-alignment cannot recover smoothing. The 3-5c onset
+  floor is the high-frequency part of the singer's real onset motion
+  that the window removed and the subtractor then faithfully passed
+  through.
+
+## The tool and its three caught defects (each documented at the site)
+
+tools/pitch_f0_freshness: reference = per-cycle zero-phase band ZC
+(self-test bound on a known 200Hz + 25c/40ms scoop + 10c vibrato:
+median 0.87c, max 1.61c); ring reconstruction = the render harness's
+exact detection chain with the ring's write rule (gated hop value
+attributed lag back). Corrections caught by cross-checks, in order:
+  1. Raw per-cycle reference read the SINGER'S OWN cycle jitter as
+     estimator error (6.3c sustains vs known 1.9c output tuning) ->
+     3-cycle median.
+  2. The measured output floor was read through the fine tracker's own
+     smoothing -> residual resampled to the fine grid + 24ms moving
+     median.
+  3. The gate reconstruction queried inputPeriodicity against an UNFED
+     engine ring -> engine now processes slice-by-slice exactly as the
+     harness does.
+  4. Cross-ruler timing: a net alignment error manufactures
+     |slope|*Delta cents under vibrato -> Delta scanned on sustains
+     (NEW: -4ms; OLD: +7ms, which alone removed 7.2c of the OLD take's
+     apparent error - the alignment term was most of it there).
+
+## The numbers, both takes, at best alignment
+
+    NEW (alto_tenor):  onsets med 7.40c p75 13.43 p90 27.15 | sustains med 5.81c
+    OLD (low_male):    onsets med 8.17c p75 22.87 p90 50.95 | sustains med 5.84c
+
+## Why this is INSTRUMENT-LIMITED, not a verdict
+
+The sustain reading is the built-in consistency check, and it fails:
+the ACTUAL rendered output tunes sustains to 1.9c median off-grid
+(round 3, tools/pitch_sustain_tuning) - impossible through a ring that
+were truly 5.8c wrong at sustains. So the ruler pair carries ~4-5c of
+un-modelled real-material error (candidates: ZC bias under formant
+motion that a static-spectrum self-test cannot expose; residual
+reconstruction infidelity vs the real render's ring; non-commutation of
+tracker and resampler). The prediction band under test (1-2c vs 3-5c)
+sits BELOW the instrument's demonstrated error on real material.
+Therefore: PREDICTION NEITHER PASSED NOR FAILED. The onset-minus-sustain
+differential (+1.6c NEW, +2.3c OLD) points the predicted direction but
+is within the instrument's own inconsistency and is not claimed.
+
+## What would discriminate (named for the next ruling, not built)
+
+  1. A DEBUG RING TAP: dump the real render's f0 ring at read time
+     (debug-only accessor in EedPsolaEngine, same family as dbgBridge_)
+     - removes the reconstruction leg entirely; the ruling's no-engine-
+     change constraint means this needs approval first.
+  2. THE DIFFERENTIAL FORM: predicted output off-grid (from the tapped
+     ring) vs measured output off-grid through ONE tracker on the SAME
+     render - ruler biases cancel by construction.
+
+Stopped here per the prediction protocol: the result is not the
+confirmation branch, and claiming it would be fitting the conclusion
+to the wish.
