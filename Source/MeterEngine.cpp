@@ -362,12 +362,16 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
     {
         specAccumSamples = 0;
         specAccum.fill(-120.0f);
+        macroAccum.fill(-120.0f);
     }
     else
     {
         for (int b = 0; b < N; ++b)
             specAccum[(size_t)b] = std::max(specAccum[(size_t)b],
                                             smoothedSpectrum[(size_t)b]);
+        for (int bi = 0; bi < 6; ++bi)
+            macroAccum[(size_t)bi] = std::max(macroAccum[(size_t)bi],
+                                              smoothedMacroBands[(size_t)bi]);
         specAccumSamples += numSamples;
     }
 
@@ -378,11 +382,13 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
 
         while (specAccumSamples >= samplesPerSpecFrame)
         {
-            specRing[(size_t)specWritePos] = specAccum;
+            specRing[(size_t)specWritePos]  = specAccum;
+            macroRing[(size_t)specWritePos] = macroAccum;   // same frame, same index
             specWritePos = (specWritePos + 1) % kSpecHistFrames;
             specFrameCount = std::min(specFrameCount + 1, kSpecHistFrames);
             ++specFrameCounter;
-            specAccum = smoothedSpectrum;   // restart aggregation from current
+            specAccum  = smoothedSpectrum;    // restart aggregation from current
+            macroAccum = smoothedMacroBands;
             specAccumSamples -= samplesPerSpecFrame;
         }
     }
@@ -1005,6 +1011,83 @@ void MeterEngine::resetHoldState()
     tp100msAccum = 0.0f;
 }
 
+MeterEngine::SpectrumWindow MeterEngine::reduceSpectrumWindow(bool useMean) const
+{
+    SpectrumWindow w;
+    std::lock_guard<std::mutex> lock(dataMutex);   // the ring is written under it
+    if (specFrameCount <= 0) return w;             // valid stays false: omit the key
+
+    w.frames  = specFrameCount;
+    w.seconds = currentSampleRate > 0.0
+                    ? (float)(specFrameCount * (double) samplesPerSpecFrame / currentSampleRate)
+                    : 0.0f;
+    w.bins.fill(-120.0f);
+
+    // Oldest to newest is irrelevant to both statistics, so the walk is over
+    // the valid frames wherever they sit in the ring rather than in order.
+    const int start = (specWritePos - specFrameCount + kSpecHistFrames * 2) % kSpecHistFrames;
+    for (int f = 0; f < specFrameCount; ++f)
+    {
+        const auto& frame = specRing[(size_t)((start + f) % kSpecHistFrames)];
+        for (int b = 0; b < MeterData::numSpecBins; ++b)
+        {
+            if (useMean) w.bins[(size_t)b] += frame[(size_t)b];
+            else         w.bins[(size_t)b]  = std::max(w.bins[(size_t)b], frame[(size_t)b]);
+        }
+    }
+    if (useMean)
+        for (int b = 0; b < MeterData::numSpecBins; ++b)
+            w.bins[(size_t)b] /= (float) specFrameCount;
+
+    w.valid = true;
+    return w;
+}
+
+MeterEngine::MacroWindow MeterEngine::reduceMacroWindow(bool useMean) const
+{
+    MacroWindow w;
+    std::lock_guard<std::mutex> lock(dataMutex);
+    if (specFrameCount <= 0) return w;
+
+    w.frames  = specFrameCount;                 // one push loop, so identical
+    w.seconds = currentSampleRate > 0.0         // to the spectrum window by
+                    ? (float)(specFrameCount * (double) samplesPerSpecFrame / currentSampleRate)
+                    : 0.0f;                     // construction, not by luck
+    w.db.fill(-120.0f);
+
+    const int start = (specWritePos - specFrameCount + kSpecHistFrames * 2) % kSpecHistFrames;
+    for (int f = 0; f < specFrameCount; ++f)
+    {
+        const auto& frame = macroRing[(size_t)((start + f) % kSpecHistFrames)];
+        for (int bi = 0; bi < 6; ++bi)
+        {
+            if (useMean) w.db[(size_t)bi] += frame[(size_t)bi];
+            else         w.db[(size_t)bi]  = std::max(w.db[(size_t)bi], frame[(size_t)bi]);
+        }
+    }
+    if (useMean)
+        for (int bi = 0; bi < 6; ++bi)
+            w.db[(size_t)bi] /= (float) specFrameCount;
+
+    // REL IS RECOMPUTED FROM THE WINDOWED db, NEVER AVERAGED FROM PER-FRAME
+    // RELS, and this is the thing a later reader will get wrong. rel is a band
+    // minus the mean of the six in the SAME instant, so it is a difference of
+    // two quantities that both move frame to frame. The mean of a difference
+    // is not the difference of the means once the frames are weighted
+    // unevenly, which max-aggregation and gating both do: a loud frame lifts
+    // every band and its own mean together, contributing a near-zero rel that
+    // dilutes the very imbalance the window is meant to show. Reducing db
+    // first and taking one mean at the end asks the question once, of the
+    // window, which is what the number is supposed to mean.
+    float mean = 0.0f;
+    for (int bi = 0; bi < 6; ++bi) mean += w.db[(size_t)bi];
+    mean /= 6.0f;
+    for (int bi = 0; bi < 6; ++bi) w.rel[(size_t)bi] = w.db[(size_t)bi] - mean;
+
+    w.valid = true;
+    return w;
+}
+
 juce::String MeterEngine::getMeterDataJSON() const
 {
     return meterDataToJSON(getMeterData(), currentSampleRate);
@@ -1071,9 +1154,16 @@ juce::String MeterEngine::meterDataToJSON(const MeterData& d, double sampleRate)
     // signal; the whole key is omitted while none do (absent = unavailable)
     {
         juce::StringArray parts;
-        if (d.bandCrestSub >= 0.0f) parts.add("\"sub\":" + juce::String(d.bandCrestSub, 1));
-        if (d.bandCrestMid >= 0.0f) parts.add("\"mid\":" + juce::String(d.bandCrestMid, 1));
-        if (d.bandCrestTop >= 0.0f) parts.add("\"top\":" + juce::String(d.bandCrestTop, 1));
+        // EDGE-ENCODED KEYS (METER SNAPSHOT v3, see HANDOVER/meter-snapshot-v3.md).
+        // These were sub / mid / top, which collided with macroBands' sub
+        // (20-60 Hz) and mid (500-2000 Hz) inside the same JSON object while
+        // meaning below-120 and 120-5k here. The names now carry their edges so
+        // no token means two things. THE SERVER'S all-or-none CHECK IN
+        // parseExtendedMeter READS THE OLD NAMES and must land with this, or
+        // bandCrest parses to null on chat and capture alike.
+        if (d.bandCrestSub >= 0.0f) parts.add("\"lo120\":" + juce::String(d.bandCrestSub, 1));
+        if (d.bandCrestMid >= 0.0f) parts.add("\"mid120_5k\":" + juce::String(d.bandCrestMid, 1));
+        if (d.bandCrestTop >= 0.0f) parts.add("\"hi5k\":" + juce::String(d.bandCrestTop, 1));
         if (!parts.isEmpty())
             json += "\"bandCrest\":{" + parts.joinIntoString(",") + "},";
     }

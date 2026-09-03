@@ -2927,10 +2927,10 @@ void EchoJayProcessor::stopCapture()
     // - Everything else (including buses like Drum Bus, Vocal Bus): use PEAK-HOLD
     //   (captures actual frequency content without gaps/silence diluting the reading.
     //   Even buses like Drum Bus are fundamentally transient — averaging kills them.)
-    bool useAverage = (channelType == ChannelType::FullMix || 
-                       channelType == ChannelType::MasterBus ||
-                       channelType == ChannelType::MusicBus ||
-                       channelType == ChannelType::InstrumentBus);
+    // ONE predicate, shared with the chat injection (see spectrumUsesAverage
+    // in the header). The list used to live here alone; the injection needed
+    // the same rule and a second copy is how two answers to one question start.
+    bool useAverage = spectrumUsesAverage(channelType);
     
     bool hasPeakData = false;
     for (int i = 0; i < 64; ++i)

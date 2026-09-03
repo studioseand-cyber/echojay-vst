@@ -1,4 +1,5 @@
 #pragma once
+#include "MeterEngine.h"   // SpectrumWindow, for the v3 snapshot injection
 #include <JuceHeader.h>
 #include <functional>
 #include <memory>
@@ -774,7 +775,14 @@ public:
     //     arm and the same TEXT path as [CHAIN LEVELS]; touches neither
     //     nextChatIsExplicitCapture_ nor the `meters` body field. Returns ""
     //     when nothing was measurable, so no block is emitted at all.
-    static juce::String buildMeterSnapshotInjection(const juce::String& meterJson);
+    //     v3 adds the windowed spectrum: `spec` carries the reduced 64 bins,
+    //     `useMean` the statistic the caller chose from the channel type
+    //     (EchoJayProcessor::spectrumUsesAverage). An invalid window emits no
+    //     spectrum keys at all, exactly as an absent meter key emits nothing.
+    static juce::String buildMeterSnapshotInjection(const juce::String& meterJson,
+                                                    const MeterEngine::SpectrumWindow& spec,
+                                                    const MeterEngine::MacroWindow& macro,
+                                                    bool useMean);
 
     // Parse the chain block out of an assistant reply.
     // Returns true and fills chainJsonOut if a block (complete or truncated) is present.

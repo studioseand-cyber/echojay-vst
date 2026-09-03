@@ -3037,7 +3037,10 @@ juce::String EchoJayAPI::buildChainLevelsInjection(const ChainHost& chainHost)
     return b;
 }
 
-juce::String EchoJayAPI::buildMeterSnapshotInjection(const juce::String& meterJson)
+juce::String EchoJayAPI::buildMeterSnapshotInjection(const juce::String& meterJson,
+                                                     const MeterEngine::SpectrumWindow& spec,
+                                                     const MeterEngine::MacroWindow& macro,
+                                                     bool useMean)
 {
     // [METER SNAPSHOT v2]: the extended meter fields on a CHAIN turn, by the
     // same route [CHAIN LEVELS] already takes -- text on the last user
@@ -3100,8 +3103,55 @@ juce::String EchoJayAPI::buildMeterSnapshotInjection(const juce::String& meterJs
         parts.add("\"" + juce::String(key) + "\":"
                   + juce::JSON::toString(o->getProperty(key), true));
     };
-    copyObject("macroBands", { "sub", "low", "lowMid", "mid", "highMid", "air" });
-    copyObject("bandCrest",  { "sub", "mid", "top" });
+    // macroBands is NO LONGER COPIED FROM meterDataToJSON here (v3). That copy
+    // was the instantaneous EMA read at prompt time, which put two different
+    // windows in one block: a 12 second spectrum beside a 150 ms macro band,
+    // with only one of them saying so. It now comes from the macro ring, over
+    // the same frames as the spectrum, and states its own window. The capture
+    // payload still carries the instantaneous one, which is correct there: a
+    // capture already has its own window and its own averaging.
+    // v3 edge-encoded names, see HANDOVER/meter-snapshot-v3.md. The required
+    // set moves with the writer in MeterEngine::meterDataToJSON; if the two
+    // ever disagree the object is dropped, which is the safe direction.
+    copyObject("bandCrest",  { "lo120", "mid120_5k", "hi5k" });
+
+    // THE WINDOWED SPECTRUM (v3). Same absent-key discipline as everything
+    // above: an invalid window (no frames accumulated, i.e. nothing audible
+    // heard yet) emits no spectrum keys at all rather than a floor array.
+    //
+    // The window is HEARD audio, not wall clock: MeterEngine writes a ring
+    // frame only while the input is audible, so `seconds` is what the bins
+    // actually describe. It is stated as a key AND in the prose below, the way
+    // [CHAIN LEVELS] states "heard 1m30s", because a spectrum without its
+    // window invites the model to treat four seconds and four minutes alike.
+    if (macro.valid)
+    {
+        static const char* mbNames[6] = { "sub", "low", "lowMid", "mid", "highMid", "air" };
+        juce::String mb;
+        for (int bi = 0; bi < 6; ++bi)
+        {
+            if (bi > 0) mb << ",";
+            mb << "\"" << mbNames[bi] << "\":{\"db\":" << juce::String(macro.db[(size_t) bi], 1)
+               << ",\"rel\":" << juce::String(macro.rel[(size_t) bi], 1) << "}";
+        }
+        parts.add("\"macroBands\":{" + mb + "}");
+        parts.add("\"macroBandsHeard\":" + juce::String(macro.seconds, 1));
+        parts.add("\"macroBandsFrames\":" + juce::String(macro.frames));
+    }
+
+    if (spec.valid)
+    {
+        juce::String bins;
+        for (int b = 0; b < MeterData::numSpecBins; ++b)
+        {
+            if (b > 0) bins << ",";
+            bins << juce::String(spec.bins[(size_t) b], 1);
+        }
+        parts.add("\"spectrum\":[" + bins + "]");
+        parts.add(juce::String("\"spectrumStat\":\"") + (useMean ? "mean" : "peak") + "\"");
+        parts.add("\"spectrumHeard\":" + juce::String(spec.seconds, 1));
+        parts.add("\"spectrumFrames\":" + juce::String(spec.frames));
+    }
 
     // EVERY KEY ABSENT MEANS NO BLOCK AT ALL. A stopped transport measures
     // nothing, every guard in meterDataToJSON omits its key, parts is empty,
@@ -3111,10 +3161,15 @@ juce::String EchoJayAPI::buildMeterSnapshotInjection(const juce::String& meterJs
     // the server it would parse to the same nulls while spending the bytes.
     if (parts.isEmpty()) return {};
 
-    return "\n\n[METER SNAPSHOT v2: " + parts.joinIntoString(", ")
-         + " - measured on the live input, same convention as the capture"
-           " payload: a field absent here was not measurable, never assume a"
-           " value for it.]";
+    juce::String tail = " - measured on the live input, same convention as the"
+                        " capture payload: a field absent here was not measurable,"
+                        " never assume a value for it.";
+    if (spec.valid)
+        tail << " The spectrum is 64 log-spaced bins from 20 Hz to 20 kHz, "
+             << (useMean ? "averaged" : "peak-hold")
+             << " over the " << formatHeard(spec.seconds)
+             << " of audio heard so far.";
+    return "\n\n[METER SNAPSHOT v2: " + parts.joinIntoString(", ") + tail + "]";
 }
 
 juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& rack,

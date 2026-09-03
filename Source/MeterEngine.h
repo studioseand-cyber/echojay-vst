@@ -165,6 +165,44 @@ public:
     // thread pushes under dataMutex, the UI thread copies increments out.
     static constexpr int kSpecHistFrames = 300;
 
+    // ===== Windowed spectrum reduction (METER SNAPSHOT v3) ==================
+    // The ring above is 12 s of HEARD audio: frames are written only while the
+    // input is audible (the silence arm clears the accumulator instead of
+    // pushing a floor frame), so a session that played 4 s and paused reports
+    // 4 s. This reduces it to one 64-bin picture for the chat injection.
+    //
+    // useMean picks the statistic, and the CALLER decides it from the channel
+    // type through EchoJayProcessor::spectrumUsesAverage, which is the same
+    // predicate the capture path reads. Do not re-derive that list here.
+    //
+    // MEAN HERE IS A MEAN OF MAXIMA, and that is the one honest difference
+    // from the capture path. PluginProcessor.cpp:2930 averages raw per-block
+    // spectra; each ring frame is already the MAX of the display bins across
+    // its 40 ms, so averaging frames sits slightly above a true frame average
+    // on transient material. "peak" has no such gap: a max of per-frame maxima
+    // is exactly the capture's peak-hold.
+    struct SpectrumWindow
+    {
+        bool  valid   = false;                 // false => no frames, omit the key
+        int   frames  = 0;                     // frames the reduction ran over
+        float seconds = 0.0f;                  // frames / frame rate, HEARD audio
+        std::array<float, 64> bins {};         // dB, display-shaped, index 0 lowest
+    };
+    SpectrumWindow reduceSpectrumWindow(bool useMean) const;
+
+    // The macro-band half of the same window: same ring cadence, same frames,
+    // same useMean walk. `rel` is RECOMPUTED from the windowed db values, not
+    // averaged from the per-frame rels (see the comment at the recomputation).
+    struct MacroWindow
+    {
+        bool  valid   = false;
+        int   frames  = 0;
+        float seconds = 0.0f;
+        std::array<float, 6> db  {};   // sub, low, lowMid, mid, highMid, air
+        std::array<float, 6> rel {};   // db minus the six-band mean of THIS window
+    };
+    MacroWindow reduceMacroWindow(bool useMean) const;
+
     // Copies up to maxFrames frames newer than sinceCounter into dest
     // (oldest→newest), returns the count and the new counter value. The
     // counter is monotonic so callers can fetch incrementally.
@@ -270,6 +308,15 @@ private:
     // itself, which is written/read under dataMutex.
     std::array<std::array<float, 64>, kSpecHistFrames> specRing {};
     std::array<float, 64> specAccum {};
+    // Macro-band ring (METER SNAPSHOT v3): the SAME frames as specRing, six
+    // raw per-octave values instead of 64 display-shaped bins. 7,200 bytes.
+    // It exists because macroBands cannot be derived from specRing: those bins
+    // carry the display tilt, and integrating tilted bins would break the
+    // pink-referenced property the whole macro-band measurement rests on.
+    // Written in the same locked block, at the same 25 fps, max-aggregated
+    // between frames the same way, so both reductions describe one window.
+    std::array<std::array<float, 6>, kSpecHistFrames> macroRing {};
+    std::array<float, 6> macroAccum { -120.0f, -120.0f, -120.0f, -120.0f, -120.0f, -120.0f };
     int specWritePos = 0;
     int specFrameCount = 0;
     int specFrameCounter = 0;   // monotonic; survives resets

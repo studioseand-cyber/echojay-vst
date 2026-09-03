@@ -25444,8 +25444,15 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
         // the zero is logged either way, because a marker that silently stops
         // riding looks exactly like a marker that was never added.
         {
+            // v3: the statistic comes from the channel type through the SAME
+            // predicate the capture path reads, so a Drum Bus gets peak-hold
+            // in the chat block exactly as it does in a capture payload.
+            const bool useMean = processorRef.spectrumUsesAverage();
             const juce::String ms = EchoJayAPI::buildMeterSnapshotInjection(
-                                        processorRef.getMeterEngine().getMeterDataJSON());
+                                        processorRef.getMeterEngine().getMeterDataJSON(),
+                                        processorRef.getMeterEngine().reduceSpectrumWindow(useMean),
+                                        processorRef.getMeterEngine().reduceMacroWindow(useMean),
+                                        useMean);
             out += ms;
             EchoJay_NSLog((ms.isEmpty()
                               ? juce::String("EJLevels: METER SNAPSHOT omitted - nothing measurable yet")

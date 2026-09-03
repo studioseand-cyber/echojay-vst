@@ -193,6 +193,20 @@ public:
             || t == ChannelType::MusicBus || t == ChannelType::InstrumentBus;
     }
     bool selfKeyRoleIsMusic() const { return isMusicBusRole(channelType); }
+
+    // Which spectrum statistic this channel type takes (METER SNAPSHOT v3).
+    // Sustained full-range material gives a representative tonal balance when
+    // AVERAGED; transient sources are diluted by averaging and need PEAK-HOLD
+    // to show what is actually there, which is why Drum Bus sits on the peak
+    // side despite being a bus. Extracted from the capture path so the chat
+    // injection and the capture payload cannot drift onto different rules;
+    // stopCapture reads it too.
+    static bool spectrumUsesAverage(ChannelType t)
+    {
+        return t == ChannelType::FullMix || t == ChannelType::MasterBus
+            || t == ChannelType::MusicBus || t == ChannelType::InstrumentBus;
+    }
+    bool spectrumUsesAverage() const { return spectrumUsesAverage(channelType); }
     echojay::KeyEngine& getSelfKeyEngine() { return selfKeyEngine_; }
     // Millisecond stamp of the last published change (0 = never) — the age.
     juce::uint32 selfKeyChangeMs() const { return selfKeyWorker_.lastChangeMs(); }
