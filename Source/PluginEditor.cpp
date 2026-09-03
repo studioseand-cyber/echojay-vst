@@ -26891,9 +26891,19 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     const juce::String channelName = materialContextName(processorRef.getEffectiveChannelName());
     const juce::String genreName   = processorRef.getGenre();
 
+    // The nudge rides an EXPLICIT chain build only. turnTypeOverride is
+    // "chain_generate" on the brief-answers path, where the ask is
+    // unambiguously a build; hadChainFeed is not usable for this because the
+    // feed attaches on nearly every turn, so it would nag on general questions.
+    // The wider "asks about the sound of this channel" case is deliberately
+    // left to the server, which already classifies it and already owns the
+    // wording for it (NO_ANALYSIS_NOTE).
+    const bool askToPlay = liveMeterFields.isEmpty()
+                        && turnTypeOverride == "chain_generate";
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
         channelName, genreName,
-        processorRef.getPluginScanner().getPluginSummary(), liveMeterFields);
+        processorRef.getPluginScanner().getPluginSummary(), liveMeterFields,
+        askToPlay);
 
     // usage-v2: no meter blob on plain chat turns (see above). turnType is
     // chain_generate when the chain-feed injection rode along (the model is

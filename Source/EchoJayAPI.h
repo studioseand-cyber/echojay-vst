@@ -691,6 +691,12 @@ public:
     void fetchRemoteConfig();
     
     // Get the current system prompt — uses remote version if available, else hardcoded
+    // askToPlay: this turn needs measurement and has none, AND the caller knows
+    // the ask was an explicit chain build. Adds one nudge sentence to the
+    // empty branch. Deliberately NOT derived from hadChainFeed or
+    // messageNeedsPlugins: both are true on ordinary questions ("how do i" and
+    // "eq" are plugin cues), and a "play me something" on "how do I mix 808s"
+    // is worse than silence. See the note at the branch.
     // liveMeterFields: the keys the METER SNAPSHOT block actually put on THIS
     // turn, from buildMeterSnapshotInjection's emittedKeysOut. Empty means no
     // snapshot rode, which is the case the DATA AVAILABILITY paragraph was
@@ -700,7 +706,8 @@ public:
                                            const juce::String& genre,
                                            const juce::String& pluginSummary,
                                            const juce::StringArray& liveMeterFields
-                                               = juce::StringArray());
+                                               = juce::StringArray(),
+                                           bool askToPlay = false);
 
     // Returns true if a user message looks like it wants plugin suggestions /
     // a chain / a specific processing tool — i.e. a turn where we should

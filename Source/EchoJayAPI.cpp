@@ -2422,7 +2422,8 @@ void EchoJayAPI::setChatLanguage(const juce::String& code)
 juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
                                              const juce::String& genre,
                                              const juce::String& pluginSummary,
-                                             const juce::StringArray& liveMeterFields)
+                                             const juce::StringArray& liveMeterFields,
+                                             bool askToPlay)
 {
     juce::String prompt;
     
@@ -2525,6 +2526,36 @@ juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
     {
         prompt += "Meter data reaches you ONLY through explicit captures (a [CAPTURE ...] data block or attached capture payload) and Compare data. There is NO live meter feed on chat turns. Any earlier instruction about a LIVE METER block is obsolete: such a block will never be present, and you must NEVER produce one, imitate its format, or invent meter values.\n";
         prompt += "If the conversation contains NO capture data: do not describe or characterise the mix's loudness, dynamics, stereo image, tonal balance, or any metric in any way - you have no data at all. Do not guess, estimate, or speak in general terms about how it probably measures. ANSWER THE QUESTION THE USER ACTUALLY ASKED FIRST; do NOT open with a capture-status report. Only mention that a Capture would give you real numbers if the user asks about the sound, the mix, or the measurements - capture availability is context for your own reasoning, not a status line to lead with.\n\n";
+        // THE NUDGE, and the three things it is careful about (3 Sep 2026).
+        // Nothing measured means nothing has played through this channel since
+        // the plugin loaded: specFrameCount is cleared only in prepare(), so a
+        // stopped transport keeps whatever it heard.
+        //
+        // TWO NUMBERS BOUND THIS, AND THE SENTENCE ASKS FOR NEITHER.
+        //   40 ms  the VALIDITY floor: one ring frame, the first tick past
+        //          specFrameCount <= 0, which is all it takes for the block to
+        //          appear at all.
+        //   12 s   the FULL ring: 300 frames at 25 fps, the whole window the
+        //          reduction can describe.
+        // The floor is not a useful reading. Asking for a second would put 25
+        // frames into a 300-frame ring and the block would then report
+        // spectrumHeard 1.0 beside a spectrum built from a twelfth of its
+        // window, which is a measurement of the wrong thing stated with the
+        // confidence of the right one. So the sentence asks for a few seconds:
+        // enough of the ring to be worth citing, and something a person can
+        // actually act on. Do not put frame counts in front of a user.
+        //
+        // It rides ONLY an explicit chain build. The server's CHAIN GUIDANCE
+        // already forbids asking a chain turn to capture first or deferring a
+        // chain on meter data, so this asks them to PLAY, never to capture,
+        // and tells the model to build anyway. Those two prompts have to agree
+        // or they teach opposite things on the same turn.
+        //
+        // "press play" is the plugin's existing idiom for this (the key
+        // precondition note uses it), reused rather than a second voice for
+        // one idea.
+        if (askToPlay)
+            prompt += "NOTHING HAS PLAYED THROUGH THIS CHANNEL YET, so no live readings exist: build the chain from the request as usual and never defer it, but add one short sentence asking them to press play for a few seconds so the next turn carries a full reading rather than a sliver of one.\n\n";
     }
     else
     {
