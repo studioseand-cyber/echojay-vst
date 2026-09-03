@@ -515,3 +515,41 @@ positive control moved from 379,514 to 378,675 differing samples because
 it is now measured at seam 60, i.e. the shipped default. The round-21
 numbers were a valid measurement of the guard on a build one fix short of
 the default; they were not a measurement of the default.
+
+## 14. WHEN SEAN'S REPORT ARRIVES - act on the branch, do not re-ask (round-22 standing plan)
+
+Three items resolve on one datum: what his [DETECTED KEY] line names as the
+SOURCE (and the key / reference it shows).
+
+SOURCE EXTERNAL (bus Link, channel Link, capture):
+  1. Flip debugKeySelfGuard's default to ON (keySelfGuard_ { true }), build
+     the four plugin targets at -j 4, install via tools/install_local.sh
+     (~/Library only), dwarfdump --uuid, report the UUID. Tell him the flip
+     is a measured no-op for his configuration (section 12, third arm).
+  2. The stale-key mechanism (section 6) is CONFIRMED as the cause of the
+     press-play defect. Close it against that cause.
+  3. Proceed to the play-edge chromatic release against its committed bar
+     (section 7).
+
+SOURCE "THIS CHANNEL":
+  1. Do NOT install the flip silently. Explain what changes: the plugin
+     stops following a key derived from his own vocal and applies
+     chromatic. Say plainly that chromatic-unless-told is the industry-
+     normal default (Auto-Tune ships chromatic and expects the user to
+     pick a key), not a limitation, and that the key line tells him what
+     to set. Give him an A/B (guard off vs on, same take, same settings,
+     one file per comparison per the deliverable discipline) and record
+     which he prefers before anything ships.
+  2. The stale-key mechanism is NOT his press-play cause. Re-open section
+     9's branch with its candidates in the written order: (a) the
+     corrector's one-note mid-note resume at play; (b) the gate-suppressed
+     436-438 Hz self tuning estimate; (c) the fifteen-minute capture-to-bus
+     precedence flip; (d) gate hover; (e) the Logic-side behaviours the
+     offline chain cannot see. (f) The grid-phase realisation stays an
+     established null - do not re-chase it.
+
+EITHER WAY: if his key or reference is not D minor at 440, have him set
+both manually, and note whether that alone changes what he hears.
+
+Then the timing lag with its cancellation clause (SLOW_END_RECORD.md),
+unchanged. No speculative work while waiting.

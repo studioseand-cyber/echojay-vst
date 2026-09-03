@@ -1232,3 +1232,13 @@ applying saved params), so what Sean listened to is known to have been 60.
 Trace the live paths before reporting a default mismatch; the mismatch is
 a rule violation either way, but whether it voids a measurement depends on
 which path produced the measured binary's state.
+
+CONFIRMATION (round 22, ruled the strongest available): the third path the
+rule predicted appeared INSIDE THE SAME RUN that fixed it. The round-21
+test harness constructed bare processors and so measured the guard at
+seam 0, one fix short of the shipped default; the positive control moved
+379,514 -> 378,675 samples once the constructor consulted the schema. The
+identity arms (0 samples, both) carry the guard's evidence regardless, and
+the round-21 numbers stay beside the corrected ones rather than being
+silently re-run - a measurement of a build one fix short of the default
+is a valid measurement of that build, labelled as such.
