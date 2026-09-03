@@ -2020,3 +2020,17 @@ region, and remains handled by the env5 candidate's four-gate acceptance.
 The class-retiring question - routing everything through the shift path,
 which measures 3.7-8.3c at every tau and voice - is opened separately as
 a decision document (PATH_UNIFICATION_DECISION.md).
+
+**Addendum (3 Sep 2026 ruling, SLOW_END_RECORD.md): THE CAP IS A GIVEN-UP
+CAPABILITY, NOT A SAFETY LIMIT.** Antares' maximum retune and ours are
+different KINDS of setting. Theirs is INERT - measured on Sean's max-retune
+bounces, output-minus-source activity median 0.57c with 1.0% of hops over
+25c: a transparent end of the dial. Ours at 150 still corrects hard
+(commanded shift +18.5c mean over the first phrase; activity median
+6.25c, 16% of hops over 25c). We chose 150 ourselves, as a mitigation for
+the boundary snap exploding beyond it. So the cap HID a defect at the price
+of the transparent end of the dial - a setting Antares has and we do not.
+If the snap is ever fixed (the env5 candidate's four-gate acceptance, or
+path unification), this cap must be revisited and a genuinely inert slow
+end offered; until then "150 max" is to be read as "we gave up the
+transparent region", never as "the dial ends where it should".

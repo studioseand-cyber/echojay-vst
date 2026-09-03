@@ -187,3 +187,171 @@ a timing alignment question (pitchLag / f0At at the read pointer) that has
 never been measured as such. Both need their own bar. For Sean, now: keep
 retune LOW on this material (tau 6-40 is the calm end of every column
 above); the slow end is the broken end.
+
+# Round 17 CORRECTION (3 Sep 2026, ruling 2 diagnosis) - the "detector lead" was the RULER
+
+tools/pitch_lead_probe (synthetic 20-harmonic voice, analytic f0(t), 200c
+linear-in-cents glides at 0.25/0.5/1/2/4 c/ms, both directions, no gaps)
+measures three observers against truth at the position each claims to
+describe. Lead fitted as the time shift minimising |cents error| over the
+glide's central 60%. NEGATIVE = the observer LAGS the audio.
+
+    alto_tenor, 165 Hz         HOP event (raw)   RULER (8192-blk)   SHIFTER f0Here@read
+    0.25 c/ms                     -30.6 ms          -27.9 ms            -6.6 ms
+    0.5                           -30.7             -28.0               -6.6
+    1.0                           -30.5             -27.8               -6.5
+    2.0                           -30.2             -27.7               -6.4
+    4.0                           -29.4             -26.8               -6.7
+    low_male, 110 Hz              -41.9             -39.3              -10.1
+    steady-note |err| at the shifter: 0.04c (alto), 0.13c (low)
+
+THE DIRECTION IS LAG, NOT LEAD, AND THE MAGNITUDE IS 6.5 ms, NOT 30. The
+"src" track pitch_activity used as truth is the same estimator at 8192-
+sample blocks and LAGS THE AUDIO BY 27.9 ms (alto). Comparing the shifter's
+f0 (lag 6.5 ms) against it reads as a 21 ms LEAD - exactly the "24-42c on a
+1.25 c/ms glide" filed in section 3. RETRACTED: the DETECT bucket's
+direction and size, the "unintended 10c/47c" column (it was the same
+misalignment applied to the commanded ratio), and the detector-lead half
+of the 3s account. Sections 2-3 above stand for the ACTIVITY columns
+(both files carry the same ruler lag; the difference is unaffected) and
+for the seam self-check; their attribution and unintended columns are
+superseded by the aligned table below.
+
+## Aligned attribution (ruler lag 27.9 ms applied to every tap lookup; hard, ign OFF, seam 60)
+
+    tau   SNAP share/mean   SEAM        DETECT share / hops / mean / >25c   GLIDE share/mean   UNINTENDED med/p90   snap-window peak med
+      6    33.7%   6.8c    4.7%  3.4c   14.8%   6.4%   16.1c   38 of 111   46.8%   6.5c        1.20 /  7.1c          18.6c
+     40    19.9    9.5    15.6   7.3    17.0    8.0    20.0    54 of 229   47.5    8.7         1.37 /  8.6           19.1
+     80    24.3   10.2    17.5  10.7    15.8    7.2    26.2    84 of 384   42.4   11.4         1.46 / 10.1           28.0
+    120    24.4   11.2    17.0  11.7    15.6    7.2    29.0    89 of 443   42.9   12.8         1.48 / 10.8           31.6
+    150    24.8   11.4    16.7  12.2    15.8    7.1    31.0    94 of 455   42.6   13.6         1.51 / 11.0           32.0
+
+  - THE ENGINE DOES WHAT IT IS TOLD: unintended motion is 1.2-1.5c median,
+    7-11c p90, at every tau. The activity IS the commanded correction.
+  - GLIDE (the envelope in transit) is the largest bucket at every tau and
+    the one that grows most with tau in absolute terms (6.5 -> 13.6c): a
+    slow retune spends its time between source and target. That is the
+    CHARACTER region §17.4 describes, in these units.
+  - SNAP (the note-change chase + confirmation snap) is 34% at tau 6 and
+    20-25% above; its in-window peak grows 18.6 -> 32c with tau. It is
+    still the tau-scaling mechanism; it is a third the size claimed above.
+  - DETECT is now the GENUINE residual timing error: 6-8% of hops, 15-17%
+    of activity, and at tau 6 it holds 38 of the 111 events over 25c - a
+    third of the fast end's events. Tau-independent in cause; its per-hop
+    mean grows with tau only because the chase adds to it in the same hops.
+  - Sean's 3s event, aligned (tau 150, 3.24-3.31s): the corrector holds the
+    OLD note as target for ~60ms after the audio has moved (target-src
+    -34 -> -76c through the confirm window), commanded follows (-28 ->
+    -71c), output follows commanded (-31 -> -61c), then the confirm snap
+    (3.301s) brings it home in two hops. f0Here-src is -13..-20c inside
+    the fastest 20ms of the glide - the real lag - and here it REDUCES the
+    excursion (a lagging f0 on a rising glide makes the ratio less
+    negative). At tau 6 the same boundary shows -24c then a +29c overshoot:
+    the new target pulling a still-gliding source (+26c intended) plus the
+    lag's +12c. The chase is the event; the lag is a ~10-20c modifier.
+
+## The diagnosis (ruling 2): NOT (a); (b) plus (c), both measured
+
+Lead in MILLISECONDS is constant across glide rates at every observer
+(within 0.3 ms from 0.25 to 2 c/ms), so it is an alignment offset. It
+varies with SUNG PITCH and with VOICE TYPE:
+
+    shifter residual lag    110 Hz   165 Hz   250 Hz   330 Hz     (alto_tenor)
+                            -5.2     -6.5     -7.4     -7.9 ms
+                             80 Hz   110 Hz   160 Hz              (low_male)
+                            -8.3    -10.0    -11.4 ms
+
+The design (EedPitchEngine.h pitchLagFor) back-dates by frameLen/2 + one
+hop: "a frame spanning [p - frameLen, p] describes the middle of that
+span". Two things it misses:
+  (b) CENTROID, MIS-MODELLED: the frame is W + tauMax + 2 long, but YIN's
+      difference at lag tau correlates the span [s, s + W + tau); its
+      centroid is s + (W + tau)/2, not s + frameLen/2. The shortfall is
+      (tauMax - tau)/2 + 1 samples - ZERO at the voice type's lowest note,
+      tauMax/2 (6.25 ms alto, 9.1 ms low) at the top. Predicted span across
+      110 -> 330 Hz alto: 3.0 ms; measured: 2.7 ms.
+  (c) PIPELINE HOPS: the remainder is constant per voice type, 3.2 ms alto
+      / 5.5 ms low. One hop of it (2.67 ms) is the median-of-3 publish
+      stage (analyseHop step 6), a one-hop group delay pitchLagFor does not
+      count. The rest (~0.5 ms alto, ~2.8 ms low) is unidentified; the
+      low_male decimation stage is the candidate.
+  (a) OVER-CORRECTION: refuted. The compensation UNDER-corrects; nothing
+      subtracts too much. The clamp min(pitchLag, latency-1) is inactive
+      (1180 < 1799, 1660 < 2618).
+Model check: lag = frameLen - (W + tau)/2 + 2 hops predicts the raw hop
+lag at 1463 samples vs 1469 measured (alto, 165 Hz) and 2004 vs 2026
+(low, 110 Hz): within 0.1-0.5 ms.
+
+## The proposal (NOT built) and its bar
+
+Fix shape: make the ring-write back-dating per hop, from the hop's own
+period: lag_h = W/2 + tauMax + 2 - tau_h/2 + 2*hop (tau_h = fs/f0_h),
+in place of the constant frameLen/2 + hop. Same site (the f0 ring write in
+PsolaEngine::process, `lag`), no new state; the corrector's hop cadence is
+untouched. Both latencies leave headroom for the largest lag_h.
+
+THE BAR, before a line of engine code:
+  1. tools/pitch_lead_probe: shifter residual |lag| <= 1.0 ms at 110/165/
+     250/330 Hz alto_tenor and 80/110/160 Hz low_male, rates 0.25-2 c/ms
+     (4 c/ms informational: the estimator itself saturates there). Steady-
+     note f0Here error unchanged (<= 0.15c).
+  2. sourceNEW, hard, ign OFF, seam 60, tau 6 (the setting Sean uses): the
+     DETECT bucket's >25c count falls from 38 and its share of activity
+     from 14.8%; total >25c events do not rise.
+  3. Paired per-instant sustain delta median <= +0.15c, no contiguous >50ms
+     region worsening >2c (the standing sustain clause), both vib modes.
+  4. Onset off-grid MEDIAN not regressed, paired; tails reported.
+  5. OLD take falsifier: ign-vib ON word-start events stay 0.
+  6. Sean's ear on the 3.2s and 3.05s boundaries at tau 6 - hard gate.
+Ruler discipline for the bar: every tap comparison aligned by the measured
+ruler lag (PA_RULER_LAG), or against synthetic truth. Never the raw track.
+
+## 6. KeyEngine auto-key (ruling 3): what accumulates, what resets, what a stale key does
+
+DEFAULTS: EchoJay Pitch ships key_auto ON and reference_auto ON
+(EedPitchProcessor.h keyAuto_/refAuto_ {true}); choosing a key manually
+turns key_auto off. Whether Sean's session is on auto is not readable from
+here - the [DETECTED KEY] readout in his session answers it.
+
+THE FEED: one process-wide singleton (KeyFeed), published from the plugin
+processor's 1 Hz wall-clock timer, last writer wins across instances.
+Precedence (collectKeySources): keyed capture (fresh <= 15 min) > bus Link
+> "this channel" when its role is declared a music bus > channel Link >
+local chain; a vocal-channel local reading is POISONED (never auto-used).
+usable() = valid && confidence >= 0.50. AGE IS IGNORED except for captures:
+a bus or self reading of any age is applied with full confidence.
+
+WHAT ACCUMULATES (EedKeyEngine): a 32 s ring of decimated audio at 16 kHz;
+in continuous mode a fresh analysis every 2 s of NEW audio over up to the
+window (default 10 s), with hysteresis (the incumbent keeps the seat unless
+the challenger wins by a sensitivity-scaled margin) and a hold switch.
+Silence: waitingForSignal - the previous reading is KEPT ("a pass that
+completed over nothing tonal is reported rather than silently ignored").
+NOTHING RESETS ON TRANSPORT: no playhead read anywhere in the key path;
+reset() / clearAccumulation() run only from the device's reset control.
+Because passes need 2 s of new audio, a stopped transport freezes the key
+at its last value indefinitely, and a bounce - whose 1 Hz publish runs in
+wall time while audio runs faster - inherits whatever was live. Live and
+bounce therefore see the SAME key unless the live key changed after the
+bounce, or the bounce started under a different reading.
+
+WHAT A STALE OR WRONG KEY DOES TO THE TARGET: refreshAutoKey applies
+root + major/minor via applyScale with a cross-fade; nearest-enabled-degree
+selection then pulls every note outside the wrong scale a semitone to the
+nearest wrong degree. Measured historically (the confidence-gate comment):
+correcting to a wrong key pushed a take from 13c off the nearest note to
+29c. That is a TAKE-SCALE failure - every out-of-scale note, the whole
+take, exactly the shape of "a whole take sounding wrong live". Mode errors
+are the cheap case: D minor vs D major differ on three degrees (F/C/Bb vs
+F#/C#/B); relative major/minor share notes and are harmless.
+
+THE GAP THIS INVENTORY FOUND: the circularity guard covers the TUNING
+REFERENCE only (refCircular -> 440). The KEY ROOT AND MODE from a self-
+derived fact are applied unguarded. A vocal channel whose role is
+(mis)declared as a music bus keys the corrector off the singer's own
+melody - the third instance of the machinery this project has already
+shipped two defects in. Not measured; not in the offline chain. THE CHECK
+FOR SEAN (cheap, before anything else): with the take playing live, read
+the [DETECTED KEY] block - source name, root/mode, confidence, age - and
+compare it with the key the bounce was made under. If they differ, or the
+source is "this channel", that is the live-only complaint.

@@ -308,27 +308,34 @@ int main (int argc, char** argv)
         // ---- attribution from the taps -------------------------------------
         // commanded cents per hop from the effR tap (nearest inPos)
         std::vector<double> cmd(tSrc.size(),0.0); std::vector<char> haveCmd(tSrc.size(),0);
+        // RULER LAG (3 Sep 2026, ruling 2): the fine track at hop h describes audio
+        // rulerLag samples EARLIER (tools/pitch_lead_probe: 27.9ms alto_tenor,
+        // 39.3ms low_male; default from voice type, override PA_RULER_LAG=<samples>).
+        // Taps are indexed by the audio position they describe, so pair hop h with
+        // taps at h*hop - rulerLag. Activity d is unaffected (both files lag alike).
+        const double rulerLag = getenv("PA_RULER_LAG") ? atof(getenv("PA_RULER_LAG")) : (vt==2 ? 0.0393*fs : 0.0279*fs);
         { size_t k=0;
           for(size_t h=0;h<tSrc.size();++h)
-          { const double pos=(double)h*hop;
+          { const double pos=(double)h*hop-rulerLag;
             while(k+1<R.effR.size()&&(double)R.effR[k+1].inPos<=pos) ++k;
             if(!R.effR.empty()&&std::fabs((double)R.effR[k].inPos-pos)<2.0*hop&&R.effR[k].effR>0)
             { cmd[h]=1200.0*std::log2((double)R.effR[k].effR); haveCmd[h]=1; } } }
         // snap windows: >50c target jump between consecutive ring-tap entries
         std::vector<double> snapT; std::vector<double> seamT;
         for(size_t i=1;i<R.tap.size();++i)
-        { const double t1=(double)R.tap[i].inPos/fs;
+        { const double t1=((double)R.tap[i].inPos+rulerLag)/fs;
           if(R.tap[i].target>0&&R.tap[i-1].target>0&&std::fabs(cents(R.tap[i].target,R.tap[i-1].target))>50) snapT.push_back(t1);
           if((double)(R.tap[i].inPos-R.tap[i-1].inPos)>=0.015*fs) seamT.push_back(t1); }
         // detector error per hop: f0Here vs fine source track
         std::vector<double> detErr(tSrc.size(),0.0);
         { size_t k=0;
           for(size_t h=0;h<tSrc.size();++h)
-          { if(tSrc[h]<=0) continue; const double pos=(double)h*hop;
+          { if(tSrc[h]<=0) continue; const double pos=(double)h*hop-rulerLag;
             while(k+1<R.tap.size()&&(double)R.tap[k+1].inPos<=pos) ++k;
             if(!R.tap.empty()&&std::fabs((double)R.tap[k].inPos-pos)<2.0*hop&&R.tap[k].f0Here>0)
               detErr[h]=cents(R.tap[k].f0Here,tSrc[h]); } }
         const double seamWin=0.060;   // fixed window so ramp 0 and ramp 60 are comparable
+        // (ruler lag applied above in the cmd/detErr lookups)
         enum { SNAP, SEAM, DETECT, GLIDE, NB };
         static const char* nm[NB]={"SNAP(100ms after >50c target jump)","SEAM(60ms after >=15ms dry re-entry)","DETECT(|f0Here-src|>10c)","GLIDE(remainder)"};
         double sum[NB]={0,0,0,0}, sumCmd[NB]={0,0,0,0}; int cnt[NB]={0,0,0,0}; double total=0; int n25[NB]={0,0,0,0};
@@ -347,8 +354,8 @@ int main (int argc, char** argv)
             std::printf("    %-40s %5.1f%%  n %5d (%4.1f%%)  mean %6.2fc  cmd %6.2fc  >25c %d\n",
                 nm[b],total>0?100.0*sum[b]/total:0,cnt[b],hops.empty()?0:100.0*cnt[b]/(double)hops.size(),
                 cnt[b]?sum[b]/cnt[b]:0,cnt[b]?sumCmd[b]/cnt[b]:0,n25[b]);
-        std::printf("    UNINTENDED |d - commanded|: median %5.2fc  p90 %5.2fc  (n %zu)   snap windows %zu  seam re-entries %zu\n",
-            pct(resid,0.5),pct(resid,0.9),resid.size(),snapT.size(),seamT.size());
+        std::printf("    UNINTENDED |d - commanded|: median %5.2fc  p90 %5.2fc  (n %zu)   snap windows %zu  seam re-entries %zu   [ruler lag %.1fms applied]\n",
+            pct(resid,0.5),pct(resid,0.9),resid.size(),snapT.size(),seamT.size(),1000.0*rulerLag/fs);
         // per snap window: peak |d| and peak |cmd| (the confirmation snap's size vs tau)
         { std::vector<double> pd,pc;
           for(double sT:snapT)
@@ -360,7 +367,7 @@ int main (int argc, char** argv)
           std::printf("    DUMP %.2f-%.2fs  t | src Hz | out-src c | commanded c | f0Here-src c | target-src c\n",t0,t1);
           size_t k=0;
           for(const Hop& q:hops) if(q.t>=t0&&q.t<t1)
-          { const double pos=(double)q.h*hop; while(k+1<R.tap.size()&&(double)R.tap[k+1].inPos<=pos) ++k;
+          { const double pos=(double)q.h*hop-rulerLag; while(k+1<R.tap.size()&&(double)R.tap[k+1].inPos<=pos) ++k;
             const double tg=(!R.tap.empty()&&R.tap[k].target>0)?cents(R.tap[k].target,tSrc[q.h]):0;
             std::printf("      %6.3f %7.1f %+7.1f %+7.1f %+7.1f %+7.1f\n",q.t,tSrc[q.h],q.d,haveCmd[q.h]?cmd[q.h]:0.0,detErr[q.h],tg); } }
         // first 250ms: commanded vs measured

@@ -1104,3 +1104,30 @@ the bucket that scales with tau; the detector leads glides by ~30ms;
 event lists are analysis-grid-phase realisations (64 samples flips events)
 and must not be compared hop-for-hop across bounces. Transport-start effect
 measured: one note, bounded. Nothing built.
+
+## STANDING CAUTIONS promoted by the round-17 ruling (3 Sep 2026), filed beside
+## magnitude-is-not-mechanism:
+
+**EVENT LISTS ARE REALISATION-DEPENDENT. COMPARE DISTRIBUTIONS.** A
+64-sample pre-pad reproduced a "stale restart" event list exactly; the
+source is 64 mod 128 samples long, so the difference was 128-sample
+analysis-grid phase, not carried state. The same audio 1.3 ms later on the
+hop grid turns nothing at 1.41s into a -180c event and flips 4.29s from
++188 to -88, while the distribution moves by a tenth of a cent. Never
+compare event lists hop-for-hop across bounces made at different offsets.
+This came within one step of filing a state bug that does not exist.
+
+**OPEN RULER DISCREPANCY - do not cite until settled:** "opposite
+behaviour at word starts" (EchoJay moves pitch MORE at word starts than
+mid-note, Antares less). The container sees it on Sean's seam-60 bounce
+(6.04 vs 4.40c); tools/pitch_activity does not (13.0 vs 14.3c at seam 60)
+and sees it only at seam 0 (22.2 vs 16.9c). Recorded, not chased.
+
+**PROPOSED (by the round-17 correction, not yet ruled): A RULER BUILT ON
+THE ESTIMATOR UNDER TEST CARRIES ITS LAG.** The fine f0 track used as
+"source truth" is the production detector at a larger block size and lags
+the audio by 27.9 ms (alto_tenor); read against it, the shifter's
+correctly-compensated f0 (6.5 ms lag) filed as a 21 ms LEAD, wrong in sign
+and 3x in size, and half of an audible-artifact account was built on it.
+Align every tap comparison to the ruler's measured lag, or measure against
+synthetic analytic truth (tools/pitch_lead_probe), before attributing.
