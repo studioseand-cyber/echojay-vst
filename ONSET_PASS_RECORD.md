@@ -1041,3 +1041,57 @@ then 60). Default derivation: 60 = geometric midpoint of the ~30ms
 pitch-integration floor and Waves Tune RT's field-proven 120ms Note
 Transition default, AND the measured event-elimination point on this
 material. Plugin builds clean.
+
+# Round 16 (3 Sep 2026): ear gate PASSED; seam_attack_ms default 0 -> 60
+
+LEG 5 of the corrected bar closed: Sean heard ON's intro region at 60ms
+and reported no audible damage. All five legs now pass. The default flips
+to 60 in the schema (Source/EedPitchProcessor.cpp, kSeamAttackMs) with the
+derivation unchanged: geometric midpoint of the ~30ms pitch-integration
+floor and Waves Tune RT's 120ms Note Transition, and the measured
+event-elimination point on this material.
+
+## WHAT THIS FIXES, AND WHAT IT DOES NOT - the record, stated plainly
+
+**It fixes the SEAM STEP** (round 12's primary finding): the 9c
+instantaneous target step when the wet path resumed after a bit-exact-dry
+consonant, tau-independent, above the 8.6c JND - the whole of Sean's
+"word-start glitch" complaint on the production path. Measured: word-start
+glitch events OFF 100% -> 0% (zero events), ON 71% -> 20%, OLD-take
+falsifier 0 -> 0, paired sustain and onset medians unmoved.
+
+**It does NOT touch the ONSET-ACCURACY GAP against Antares** (round 4's
+primary finding, still open). At matched Retune 0, Antares corrects onsets
+to med 1.94c off-grid / all-voiced <5c 76.3%; our current-engine best is
+4.95c / 59.9% (2.6x looser). Seam attack moves in the OTHER direction at
+the tails BY DESIGN - it deliberately leaves the first tens of ms of each
+word start uncorrected (ramp from the dry pitch), which is why the onset
+p90 went 15.4 -> 22.7c (ON) / 18.4 -> 25.7c (OFF) in the v2 measurement.
+That is the fix's own shape, accepted by the bar as informational, and it
+means: anyone reading "onset events fixed" as "onsets fixed" is wrong.
+Section 4 of ONSET_SHAKINESS_RESEARCH.md (bypass-on-low-confidence,
+narrow-band tracker, detector-side rate limit) remains LIVE and untouched
+by this work. Closing the Antares onset gap is a separate pass with its
+own bar.
+
+## VALIDATION CAVEAT (carried on the default, until discharged)
+
+The 60ms default is validated on exactly two pieces of material: the
+standing NEW take (sourceNEW, one singer, one key, one already-corrected
+phrase) as the measured bar, and the OLD low-male take as the falsifier.
+Nothing else has been rendered through the ramp. REFERENCE_SET.md forbids
+substituting a take without a ruling, and no third take exists on disk, so
+**broader material validation is OWED, not done**: at minimum a different
+singer, a breathier/aspirated-consonant take (the population the audio-
+testimony discriminator was built for), and a fast-syllable take where
+60ms is a large fraction of the vowel. Until that lands the default is
+"flipped", not "shipped". Also owed: a re-measure of the OLD take's
+ign-vib OFF events (the falsifier ran ON only).
+
+## Re-opened by this round (its own item, NOT bundled with seam attack)
+
+DEFECT_VIBRATO_ON_TUNING_COST.md is re-opened as a standalone defect - see
+its 3 Sep 2026 section. Seam attack does not fix ON's residual (20% word-
+start fraction remains vs OFF's 0%), and the tuning cost cross-referenced
+there has now survived the ear pass its "understood and declined" status
+was conditioned on.

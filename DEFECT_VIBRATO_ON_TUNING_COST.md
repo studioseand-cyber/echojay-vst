@@ -139,3 +139,45 @@ tau6: 7 events vs OFF's 4 (29 Aug bounces: 11 vs 3; container: 30 vs
 12). If both costs stand after Sean's ear pass, this filing's
 "understood and declined" status needs revisiting. Note the OLD take
 inverts (ON 0 events, OFF 4) - the cost is material-dependent.
+
+## RE-OPENED 2026-09-03 - standalone, unbundled from the seam-attack work
+
+The 2 Sep cross-references above set a condition: "if both costs stand
+after Sean's ear pass, this filing's 'understood and declined' status
+needs revisiting." The ear pass has now happened (seam attack ear gate, ON
+intro region, 3 Sep) and both costs stand. Re-opened.
+
+What seam attack (default 60ms, ONSET_PASS_RECORD.md round 16) did and
+did not do for ignore-vibrato ON, on the NEW take:
+
+    word-start glitch events   OFF: 100% -> 0%  (zero events)
+                               ON:   71% -> 20% (1 of 5 remains)
+    paired sustain delta med   ON  +0.032c  OFF -0.009c
+    residual ON population     aperiodic 15-25ms mid-note re-entries in
+                               the turbulent intro, re-zeroing a 30c+
+                               standing correction (v1 dissection)
+
+So ON still carries an EVENT cost that OFF does not, on top of the tuning
+cost this file has measured since it was filed (same-semitone 86.2 -> 94.6
+after fix (d), never the 97-98 of OFF; 29 Aug container: onset p75 18.71c
+vs OFF's 12.77c). The seam-attack default was flipped on the strength of
+OFF's zero and ON's ear pass; it is NOT a fix for this defect and must not
+be cited as one.
+
+Why "unbundled": the seam work's bar was word-start continuity. The ON
+residual has a different mechanism (re-seed of slowCents_ from one sample
+at voicing resume, plus the ~35ms tracker-latency window the (d) fix could
+not reach) and a different discriminator problem (its re-entries are
+genuinely aperiodic and pass every seam test). Bundling it into the seam
+pass would have meant renegotiating a bar that already passed. It gets its
+own ruling and its own bar.
+
+Open for ruling (the same two questions as before, plus one):
+  1. Should ignore_vibrato remain the DEFAULT while it measurably costs
+     both tuning and glitch events on the reference take? (Material-
+     dependent: the OLD take inverts - ON 0 events, OFF 4.)
+  2. Is the detection-layer residual (the 7.0% vs 4.3% in-window rate)
+     worth touching now, given the F0JumpGate cautionary history?
+  3. NEW: does the ON residual event (1 of 5, intro region) survive on
+     broader material, or is it this take's turbulent intro alone?
+     Measure alongside the seam-attack broader validation that is owed.
