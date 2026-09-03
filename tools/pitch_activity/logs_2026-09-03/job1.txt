@@ -1,0 +1,71 @@
+source /Users/SeanD/Music/Logic/test/Bounces/sourceNEW.wav  voice alto_tenor  fs 48000  hop 128 (2.67ms)  voiced hops 3043  word starts 24
+
+FILE antaresmaxretune.wav  [lag +6 smp; compared 3016 hops; 27 src-voiced hops unvoiced in output; 0 octave-disagree excluded]
+  ACTIVITY |out-src|  median  0.57c  p75  1.31c  p90  2.49c  >25c  1.0%  mean  1.84c
+  FROM FILE START (mean |d| / signed mean d / n):  0-250ms  0.43/+0.23/74  250-500ms  0.28/-0.16/86  500-750ms  1.17/+1.17/94  750-1000ms  2.19/+2.17/70
+  FIRST 130ms signed d (cents, per hop): +1 +0 -1 -1 -1 +0 +0 +0 +0 +0 +0 +0 +0 +0 -0 -0 -0 -0 -0 -0 -0 -0 +0 -0
+  WORD-START (0-150ms) mean  1.75c (n 1002)   MID-NOTE mean  1.89c (n 2014)
+  EVENTS >25c: 17  1.93s:+35  3.82s:-37  4.67s:+77  4.73s:+28  4.78s:-313  4.97s:-43  5.02s:+54  5.11s:-53  5.27s:-239  5.41s:-118  5.84s:-176  7.17s:-47  8.03s:+122  8.21s:-26  8.54s:+155  9.57s:+39  9.79s:+26
+
+FILE echojaymaxretune.wav  [lag +0 smp; compared 2859 hops; 179 src-voiced hops unvoiced in output; 5 octave-disagree excluded]
+  ACTIVITY |out-src|  median  5.83c  p75 13.85c  p90 31.59c  >25c 12.7%  mean 12.77c
+  FROM FILE START (mean |d| / signed mean d / n):  0-250ms 19.63/-6.42/66  250-500ms  7.77/+7.77/81  500-750ms 21.87/+1.51/92  750-1000ms  3.45/-0.34/70
+  FIRST 130ms signed d (cents, per hop): -55 -54 -53 -53 -49 -46 -41 -33 -34 -25 -24 -20 -14 -11 -5 -4 -0 +1 +4 +5 +7 +7 +9 +10
+  WORD-START (0-150ms) mean 12.09c (n 967)   MID-NOTE mean 13.11c (n 1892)
+  EVENTS >25c: 47  0.07s:-55  0.24s:-67  0.62s:-67  1.41s:-180  1.93s:-206  2.18s:+32  2.48s:-85  2.84s:+76  3.10s:+72  3.30s:-61  3.38s:+88  3.41s:+37  4.19s:+142  4.29s:-88  4.43s:+82  4.48s:-27  4.57s:+48  4.69s:+98  4.78s:+55  4.97s:+26  5.11s:+30  5.34s:-34  5.41s:-59  5.60s:-69  6.18s:-148  6.50s:-213  6.86s:+265  8.26s:-176  8.54s:+32  8.82s:+54  ...
+
+SELF tau 150  seam 0ms  ign-vib ON  flex 0 hum 0 natvib 0  [lag +0 smp; compared 2628 hops; 410 src-voiced hops unvoiced in output; 5 octave-disagree excluded]
+  ACTIVITY |out-src|  median  6.99c  p75 22.12c  p90 63.53c  >25c 23.2%  mean 20.19c
+  FROM FILE START (mean |d| / signed mean d / n):  0-250ms 45.72/+29.37/71  250-500ms 40.84/-40.84/76  500-750ms 25.23/+22.54/94  750-1000ms  4.39/-1.48/69
+  FIRST 130ms signed d (cents, per hop): +2 +3 +4 +4 +7 +12 +18 +24 +25 +34 +36 +45 +47 +51 +56 +58 +60 +60 +64 +63 +64 +65 +64 +65
+  WORD-START (0-150ms) mean 24.50c (n 819)   MID-NOTE mean 18.24c (n 1809)
+  EVENTS >25c: 56  0.18s:+66  0.43s:-81  0.59s:+92  1.16s:-206  1.44s:+190  2.17s:+84  2.22s:+81  2.51s:-69  2.86s:-76  3.10s:+89  3.30s:-71  3.46s:+89  3.93s:+82  4.20s:+186  4.30s:-114  4.44s:+88  4.57s:+59  4.70s:+168  4.83s:-256  4.88s:-28  4.97s:+59  5.02s:+100  5.28s:-255  5.41s:+35  5.61s:-146  5.70s:+211  5.87s:-148  6.21s:+191  6.85s:+278  7.17s:-28  ...
+  ATTRIBUTION (share of total |d|; hops; mean |d|; mean |commanded|; >25c events in bucket):
+    SNAP(100ms after >50c target jump)        41.2%  n   815 (31.0%)  mean  26.79c  cmd  12.39c  >25c 236
+    SEAM(60ms after >=15ms dry re-entry)      17.5%  n   292 (11.1%)  mean  31.71c  cmd  26.29c  >25c 127
+    DETECT(|f0Here-src|>10c)                  19.7%  n   507 (19.3%)  mean  20.59c  cmd  39.01c  >25c 125
+    GLIDE(remainder)                          21.7%  n  1014 (38.6%)  mean  11.37c  cmd  10.24c  >25c 121
+    UNINTENDED |d - commanded|: median 10.20c  p90 63.46c  (n 2450)   snap windows 33  seam re-entries 54
+    FIRST 250ms: signed mean commanded +18.50c vs measured +29.56c (n 70)
+
+SELF tau 150  seam 60ms  ign-vib ON  flex 0 hum 0 natvib 0  [lag +0 smp; compared 2829 hops; 213 src-voiced hops unvoiced in output; 1 octave-disagree excluded]
+  ACTIVITY |out-src|  median  6.07c  p75 15.80c  p90 46.85c  >25c 17.3%  mean 15.04c
+  FROM FILE START (mean |d| / signed mean d / n):  0-250ms 45.72/+29.37/71  250-500ms 40.25/-39.33/78  500-750ms 19.99/+17.41/94  750-1000ms  4.05/-1.83/68
+  FIRST 130ms signed d (cents, per hop): +2 +3 +4 +4 +7 +12 +18 +24 +25 +34 +36 +45 +47 +51 +56 +58 +60 +60 +64 +63 +64 +65 +64 +65
+  WORD-START (0-150ms) mean 14.35c (n 946)   MID-NOTE mean 15.39c (n 1883)
+  EVENTS >25c: 51  0.18s:+66  0.43s:-81  0.50s:+33  0.59s:+86  1.14s:+28  1.93s:-206  2.18s:+37  2.48s:-87  2.85s:+77  3.10s:+77  3.30s:-71  3.46s:+89  4.20s:+169  4.29s:+254  4.44s:+89  4.57s:+58  4.70s:+158  4.78s:+51  5.11s:+34  5.38s:+42  5.41s:+35  5.60s:-67  5.85s:-27  6.18s:-133  6.86s:+274  7.77s:+30  8.06s:+69  8.25s:-182  8.43s:+28  8.51s:+27  ...
+  ATTRIBUTION (share of total |d|; hops; mean |d|; mean |commanded|; >25c events in bucket):
+    SNAP(100ms after >50c target jump)        40.8%  n   933 (33.0%)  mean  18.60c  cmd  10.80c  >25c 214
+    SEAM(60ms after >=15ms dry re-entry)       9.6%  n   366 (12.9%)  mean  11.13c  cmd  16.56c  >25c 39
+    DETECT(|f0Here-src|>10c)                  23.7%  n   525 (18.6%)  mean  19.24c  cmd  37.79c  >25c 122
+    GLIDE(remainder)                          25.9%  n  1005 (35.5%)  mean  10.98c  cmd  10.58c  >25c 114
+    UNINTENDED |d - commanded|: median  9.81c  p90 54.24c  (n 2605)   snap windows 33  seam re-entries 54
+    FIRST 250ms: signed mean commanded +18.50c vs measured +29.56c (n 70)
+
+SELF tau 150  seam 0ms  ign-vib ON  flex 55 hum 60 natvib 100  [lag +0 smp; compared 2985 hops; 58 src-voiced hops unvoiced in output; 0 octave-disagree excluded]
+  ACTIVITY |out-src|  median  1.44c  p75  3.84c  p90 10.30c  >25c  0.5%  mean  3.43c
+  FROM FILE START (mean |d| / signed mean d / n):  0-250ms 10.37/+8.77/65  250-500ms 10.68/-9.45/84  500-750ms  9.26/+5.90/94  750-1000ms  3.58/-1.88/70
+  FIRST 130ms signed d (cents, per hop): +0 +0 +1 +0 +1 +1 +1 +2 +2 +3 +3 +4 +4 +4 +5 +5 +6 +6 +7 +7 +8 +8 +8 +9
+  WORD-START (0-150ms) mean  3.88c (n 999)   MID-NOTE mean  3.20c (n 1986)
+  EVENTS >25c: 10  0.22s:-52  0.50s:+27  3.35s:+79  3.41s:-26  4.66s:+27  7.91s:+281  9.24s:-28  9.79s:+26  10.57s:-31  11.75s:+69
+  ATTRIBUTION (share of total |d|; hops; mean |d|; mean |commanded|; >25c events in bucket):
+    SNAP(100ms after >50c target jump)        23.4%  n  1039 (34.8%)  mean   2.31c  cmd   0.86c  >25c 11
+    SEAM(60ms after >=15ms dry re-entry)      16.6%  n   395 (13.2%)  mean   4.30c  cmd   4.68c  >25c 3
+    DETECT(|f0Here-src|>10c)                  21.0%  n   514 (17.2%)  mean   4.18c  cmd   4.74c  >25c 0
+    GLIDE(remainder)                          39.0%  n  1037 (34.7%)  mean   3.85c  cmd   3.46c  >25c 1
+    UNINTENDED |d - commanded|: median  0.84c  p90  4.21c  (n 2713)   snap windows 33  seam re-entries 54
+    FIRST 250ms: signed mean commanded +10.92c vs measured +8.63c (n 64)
+
+SELF tau 150  seam 60ms  ign-vib ON  flex 55 hum 60 natvib 100  [lag +0 smp; compared 2997 hops; 45 src-voiced hops unvoiced in output; 1 octave-disagree excluded]
+  ACTIVITY |out-src|  median  1.06c  p75  3.13c  p90  8.29c  >25c  0.3%  mean  2.73c
+  FROM FILE START (mean |d| / signed mean d / n):  0-250ms 10.37/+8.77/65  250-500ms 10.58/-9.35/84  500-750ms  8.06/+6.98/94  750-1000ms  3.54/-1.83/69
+  FIRST 130ms signed d (cents, per hop): +0 +0 +1 +0 +1 +1 +1 +2 +2 +3 +3 +4 +4 +4 +5 +5 +6 +6 +7 +7 +8 +8 +8 +9
+  WORD-START (0-150ms) mean  2.50c (n 1004)   MID-NOTE mean  2.85c (n 1993)
+  EVENTS >25c: 9  0.22s:-52  0.50s:+27  2.81s:+78  3.35s:+79  3.41s:-26  4.66s:+27  5.41s:-57  10.57s:-31  11.74s:+50
+  ATTRIBUTION (share of total |d|; hops; mean |d|; mean |commanded|; >25c events in bucket):
+    SNAP(100ms after >50c target jump)        19.5%  n  1043 (34.8%)  mean   1.53c  cmd   0.76c  >25c 3
+    SEAM(60ms after >=15ms dry re-entry)       8.7%  n   396 (13.2%)  mean   1.81c  cmd   2.90c  >25c 4
+    DETECT(|f0Here-src|>10c)                  25.8%  n   518 (17.3%)  mean   4.07c  cmd   4.66c  >25c 1
+    GLIDE(remainder)                          46.0%  n  1040 (34.7%)  mean   3.62c  cmd   3.35c  >25c 1
+    UNINTENDED |d - commanded|: median  0.79c  p90  4.21c  (n 2718)   snap windows 33  seam re-entries 54
+    FIRST 250ms: signed mean commanded +10.92c vs measured +8.63c (n 64)

@@ -1095,3 +1095,12 @@ its 3 Sep 2026 section. Seam attack does not fix ON's residual (20% word-
 start fraction remains vs OFF's 0%), and the tuning cost cross-referenced
 there has now survived the ear pass its "understood and declined" status
 was conditioned on.
+
+# Round 17 (3 Sep 2026): the slow end of the retune dial - see SLOW_END_RECORD.md
+
+Seam attack self-check: NOT our fix (60ms is calmer than 0 at tau 150 on
+every column). Sweep and attribution filed there; the note-boundary snap is
+the bucket that scales with tau; the detector leads glides by ~30ms;
+event lists are analysis-grid-phase realisations (64 samples flips events)
+and must not be compared hop-for-hop across bounces. Transport-start effect
+measured: one note, bounded. Nothing built.
