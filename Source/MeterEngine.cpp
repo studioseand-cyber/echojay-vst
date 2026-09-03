@@ -1152,6 +1152,27 @@ juce::String MeterEngine::meterDataToJSON(const MeterData& d, double sampleRate)
 
     // Per-band crest — subkeys appear as their band first has measurable
     // signal; the whole key is omitted while none do (absent = unavailable)
+    //
+    // A VALUE AT THE CLAMP BOUND IS NOT EMITTED (3 Sep 2026). computeBandCrest
+    // clamps to 0-40 dB, and 40.0 is reached by a mechanism that has nothing to
+    // do with the audio: the band peak decays with a 3 s amplitude constant
+    // while the band RMS decays with a 1 s one (its EMA is on POWER at 0.5 s),
+    // so once the input stops the ratio climbs at 5.8 dB/s and pins at the
+    // ceiling within about 5 seconds from a normal 12 dB crest. It then FREEZES
+    // there, because the pk > 0.001 guard stops updating lastVal once the peak
+    // falls under -60 dBFS, roughly 15 to 19 s after the stop. A prompt sent
+    // after that reports 40.0 on all three bands, which reads as "extremely
+    // peaky in every band" and is really "playback stopped a while ago".
+    //
+    // 40.0 also swallows every genuinely larger ratio, so at the bound the
+    // value carries no information in either direction: the true figure is
+    // 40 or more, or it is an artefact of the decay, and nothing in the number
+    // says which. Omitting is the honest emission, and it costs nothing to
+    // express here because absent already means unavailable throughout this
+    // block. The clamp, the time constants and the silence behaviour are
+    // deliberately NOT touched; this only stops publishing the saturated
+    // result. A value just under the bound is a real measurement and is kept,
+    // even where one decimal place prints it as 40.0.
     {
         juce::StringArray parts;
         // EDGE-ENCODED KEYS (METER SNAPSHOT v3, see HANDOVER/meter-snapshot-v3.md).
@@ -1161,9 +1182,11 @@ juce::String MeterEngine::meterDataToJSON(const MeterData& d, double sampleRate)
         // no token means two things. THE SERVER'S all-or-none CHECK IN
         // parseExtendedMeter READS THE OLD NAMES and must land with this, or
         // bandCrest parses to null on chat and capture alike.
-        if (d.bandCrestSub >= 0.0f) parts.add("\"lo120\":" + juce::String(d.bandCrestSub, 1));
-        if (d.bandCrestMid >= 0.0f) parts.add("\"mid120_5k\":" + juce::String(d.bandCrestMid, 1));
-        if (d.bandCrestTop >= 0.0f) parts.add("\"hi5k\":" + juce::String(d.bandCrestTop, 1));
+        constexpr float kCrestClamp = 40.0f;   // computeBandCrest's jlimit ceiling
+        auto crestUsable = [](float v) { return v >= 0.0f && v < kCrestClamp; };
+        if (crestUsable(d.bandCrestSub)) parts.add("\"lo120\":" + juce::String(d.bandCrestSub, 1));
+        if (crestUsable(d.bandCrestMid)) parts.add("\"mid120_5k\":" + juce::String(d.bandCrestMid, 1));
+        if (crestUsable(d.bandCrestTop)) parts.add("\"hi5k\":" + juce::String(d.bandCrestTop, 1));
         if (!parts.isEmpty())
             json += "\"bandCrest\":{" + parts.joinIntoString(",") + "},";
     }
