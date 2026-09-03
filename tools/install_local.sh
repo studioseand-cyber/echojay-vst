@@ -64,7 +64,7 @@ note "build dir: $BUILD_DIR"
 
 if [[ ! -d "$BUILD_DIR" ]]; then
     printf '\nFAIL: no build dir at %s\n' "$BUILD_DIR"
-    printf '      cmake -S . -B %s -DCMAKE_BUILD_TYPE=Release && cmake --build %s -j\n' \
+    printf '      cmake -S . -B %s -DCMAKE_BUILD_TYPE=Release && cmake --build %s --target EchoJay_AU EchoJay_VST3 EchoJayLink_AU EchoJayLink_VST3 -j 4\n' \
         "$(basename "$BUILD_DIR")" "$(basename "$BUILD_DIR")"
     exit 1
 fi
