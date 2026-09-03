@@ -1131,3 +1131,45 @@ correctly-compensated f0 (6.5 ms lag) filed as a 21 ms LEAD, wrong in sign
 and 3x in size, and half of an audible-artifact account was built on it.
 Align every tap comparison to the ruler's measured lag, or measure against
 synthetic analytic truth (tools/pitch_lead_probe), before attributing.
+
+## STANDING CAUTION (round-18 ruling A, promoted UNQUALIFIED; ranks above the
+## others in generality - they are about reading results, this is about
+## whether the instrument can produce one):
+
+**A RULER BUILT ON THE ESTIMATOR UNDER TEST CARRIES ITS LAG.** A fine f0
+track at a bigger block is the production detector and lags the audio by
+27.9 ms (alto_tenor); read against it, a correctly compensated f0 (6.5 ms
+lag) filed as a 21 ms LEAD - wrong in sign and 3x in size - and half of an
+audible-artifact account was built on it before tools/pitch_lead_probe
+measured against analytic truth. ANY FUTURE RULER MUST STATE WHAT
+ESTIMATOR IT SHARES WITH THE THING IT MEASURES, and either align to its
+measured lag or measure against synthetic truth. RETROACTIVE: round 7's
+INSTRUMENT-LIMITED verdict was the same family of error - a ruler pair
+sharing the estimator with the ring it reconstructed - caught there by a
+consistency check (sustains could not be 5.8c wrong through a ring that
+tunes them to 1.9c) rather than understood. Its "4-5c of un-modelled
+error" is this lag, unnamed.
+
+## STRUCTURAL FINDING (round-18 ruling B): THE ENGINE DOES WHAT IT IS TOLD
+
+With the ruler aligned (SLOW_END_RECORD.md, aligned attribution), the
+output's deviation from the COMMANDED ratio - the effective-ratio tap at
+the read pointer - is 1.2-1.5c median and 7-11c p90 at every tau from 6 to
+150, on the standing take, hard preset, both seam settings. THE SHIFTER IS
+EXONERATED. Every cent of onset activity that remains is a WRONG COMMAND:
+the envelope in transit (43-47% of activity), the note-change chase and
+its confirmation snap (20-34%, the tau-scaling part), the 6.5 ms detector
+lag entering the ratio (15-17%, a third of the >25c events at tau 6), and
+the seam ramp (which reduces activity). Nothing is in the resynthesis.
+
+This closes half the search space. The PSOLA-REGULARISATION HYPOTHESIS
+(round 3: "Antares is jitter-neutral by architecture, we resynthesise
+periods at our estimated marks"; round 4 JOB 4: survives, weakened,
+secondary) is NO LONGER RELEVANT TO THE ONSET PROBLEM: onset activity is
+commanded, not synthesised. It MAY STILL BEAR ON THE SUSTAIN DE-JITTERING
+QUESTION, which is separate and stays open exactly as round 4 left it: we
+remove 39% of the source's sustain period jitter where Antares at its
+fastest removes 20% (0.86 vs 1.13 c/hop), and whether that regularisation
+is the resynthesis or the tracker's median is unmeasured. It is a
+character question, not an artifact question, and it is not on the path
+to Sean's complaint.

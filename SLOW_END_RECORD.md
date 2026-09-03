@@ -306,6 +306,21 @@ THE BAR, before a line of engine code:
 Ruler discipline for the bar: every tap comparison aligned by the measured
 ruler lag (PA_RULER_LAG), or against synthetic truth. Never the raw track.
 
+BAR AMENDMENT (round-18 ruling, written BEFORE the build): THE CANCELLATION
+OUTCOME IS ANTICIPATED. In Sean's 3.2s event the lag REDUCES the chase
+excursion (a lagging f0 on a rising glide makes the ratio less negative:
+-64c commanded against -76.6c target error at 3.285s). Fixing the lag in
+isolation may therefore make that audible artifact WORSE. If leg 6 (or the
+3.05/3.2s event peaks in leg 2's render) worsens WHILE legs 1, 3, 4, 5 pass,
+THAT IS NOT A FAILED FIX AND DOES NOT TRIGGER REVERT: it is the predicted
+evidence that the chase must be addressed in the same pass, and the pass
+WIDENS to include it (the env5 release path or its successor) rather than
+reverting. Any other regression - a sustain miss, an onset median
+regression, a falsifier event, a steady-note error - reverts as normal.
+This is the one case where the revert rule is suspended, only this one,
+and only because it was predicted and written down first. SEQUENCE:
+ruling C (auto-key) and its bar first, then this.
+
 ## 6. KeyEngine auto-key (ruling 3): what accumulates, what resets, what a stale key does
 
 DEFAULTS: EchoJay Pitch ships key_auto ON and reference_auto ON

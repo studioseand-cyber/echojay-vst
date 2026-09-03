@@ -95,3 +95,21 @@ consistent), and the onset off-grid collapse (med 1.94c) is only reachable
 at a very fast retune. Comparison against EchoJay tau6 is FAIR per the
 §17.3 floor calibration (Antares 0 ≈ our 4–6 ms). All other settings per
 the 1 Sep matched block.
+
+## PROVENANCE AMENDMENT (3 Sep 2026, round-18 ruling C; DEFECT_AUTOKEY_PROVENANCE.md)
+
+The two standing EchoJay bounces (echojayignoreonNEW / echojayignoreoffNEW,
+29 Aug 16:42) were made 46 minutes BEFORE the circular-reference guard
+(1c5fb52, 17:28) and are tuned to 438.99 / 439.14 Hz - 3.4 / 4.0c flat of
+the 440 grid their off-grid columns were measured against, 2.1 / 2.7c flat
+of the source's own centre (439.68). Every absolute tuning number quoting
+them - including this file's "Sean's vib-off bounce: 61.7%" - carries that
+bias. Their applied KEY is recoverable only to an equivalence class
+(D minor / F major / C major / A minor / chromatic: identical on this
+phrase's E-F-G sustained content; every damaging wrong key is excluded).
+In-process renders (440 by construction, key fixed) remain the matched-
+pair instrument; the old 8.2 s trio's members were made under DIFFERENT
+keys and references (dry.wav is not in D minor; echojay3 at 434.5 Hz) and
+are for the hard-match gate ONLY, never for tuning. Until a bounce
+protocol records the [DETECTED KEY] readout at bounce time, every new
+bounce carries this risk.
