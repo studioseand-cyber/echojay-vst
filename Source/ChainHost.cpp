@@ -3869,6 +3869,12 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
             if (r.outOfRange && r.note.isNotEmpty())
             {
                 refusedBits.add(echojay::semanticLabel(r.semantic) + ": " + r.note);
+                // REFUSED, and recorded as refused. landed=false is the whole
+                // point: the model must be able to say "I tried and could
+                // not" without that reading as a change it made.
+                recordMove(slotIndex, s.desc.name, echojay::semanticLabel(r.semantic),
+                           (r.index >= 0 && r.index < s.liveReads.size()) ? s.liveReads[r.index] : juce::String(),
+                           r.note, juce::String(), /*landed*/ false);
                 continue;
             }
             if (! r.applied || r.staleDisplayKept) continue;   // bridged: annotated upstream
@@ -3889,6 +3895,15 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
             {
                 landedBits.add(label + arrow + "reads \"" + r.landedText.trim() + "\"" + approx);
                 landedIdx.add(r.index);
+                // LANDED, and only here. The before value is the last display
+                // sweep (refreshSlotParamReads, taken at the previous
+                // injection build), which is the newest reading that predates
+                // this write. applyOne never reads the control before writing
+                // it, so this is the honest "before" available and the entry
+                // simply carries nothing when no sweep has run.
+                recordMove(slotIndex, s.desc.name, label,
+                           (r.index >= 0 && r.index < s.liveReads.size()) ? s.liveReads[r.index] : juce::String(),
+                           r.landedText.trim(), juce::String(), /*landed*/ true);
                 continue;
             }
             // NO VERIFIED LANDING FOR THIS CONTROL. It goes on the asked line,
@@ -6186,6 +6201,18 @@ juce::StringArray ChainHost::getRecommendableNames() const
 const char* const ChainHost::kLandedPrefix  = "Landed: ";
 const char* const ChainHost::kAskedPrefix   = "Asked, not verified: ";
 const char* const ChainHost::kRefusedPrefix = "Refused: ";
+
+void ChainHost::recordMove(int slot, const juce::String& plugin, const juce::String& param,
+                           const juce::String& before, const juce::String& after,
+                           const juce::String& reason, bool landed)
+{
+    // Append, then drop from the FRONT past the bound: the newest moves are
+    // the ones a follow-up question is about ("why did you do that"), and an
+    // evicted move is one the model can no longer be asked about either way.
+    moveLog_.push_back({ moveTurn_, slot, plugin, param, before, after, reason, landed });
+    while ((int) moveLog_.size() > kMoveLogMax)
+        moveLog_.erase(moveLog_.begin());
+}
 
 void ChainHost::clearModelTiers(ChainSlot& s)
 {

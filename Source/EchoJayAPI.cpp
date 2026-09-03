@@ -1146,6 +1146,18 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
                                                 maxHistoryMessages, maxHistoryBytes);
     const int firstIdx = trim.firstIdx;
 
+    // THE TRIM IS THE TRIGGER (item 17). These three counts are the only
+    // honest signal that the model has stopped seeing the start of the
+    // conversation, and they are measured here rather than predicted from a
+    // byte threshold. A send whose history is empty is the first turn, which
+    // is the only session reset point the builder can see for itself.
+    if (roles.size() <= 1)
+    {
+        historyDroppedTotal_ = 0;
+        historyTrimWarned_   = false;
+    }
+    historyDroppedTotal_ += trim.droppedByCap + trim.droppedByBudget + trim.droppedByRole;
+
     // The trim observable: EVERY build logs what was kept and what each
     // stage dropped, INCLUDING the null result -- a line that only appeared
     // on a non-trivial trim could not distinguish "nothing was dropped"
@@ -2531,7 +2543,8 @@ juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
                                              const juce::String& genre,
                                              const juce::String& pluginSummary,
                                              const juce::StringArray& liveMeterFields,
-                                             bool askToPlay)
+                                             bool askToPlay,
+                                             int historyDroppedCount)
 {
     juce::String prompt;
     
@@ -2664,6 +2677,32 @@ juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
         // one idea.
         if (askToPlay)
             prompt += "NOTHING HAS PLAYED THROUGH THIS CHANNEL YET, so no live readings exist: build the chain from the request as usual and never defer it, but add one short sentence asking them to press play for a few seconds so the next turn carries a full reading rather than a sliver of one.\n\n";
+    }
+
+    // HISTORY TRIM (item 17, warning half). A FACT AND AN INSTRUCTION, in the
+    // same idiom as the paragraph above, present only on the turn the trim
+    // first drops something: the caller takes it once per session.
+    //
+    // THIS IS NOT A COST WARNING AND MUST NEVER BECOME ONE. Measured on 658
+    // v2 chat turns over nine days, turn 1 is 3.83 cents median and turns 3 to
+    // 11 sit at 1.20 to 1.32 cents, flat within 10 percent: the first turn
+    // pays the cache write and the rest read that prefix back at a tenth the
+    // rate. A long chat is CHEAPER per turn, not dearer, and a new chat costs
+    // about three times as much. So the paragraph never mentions cost, usage
+    // or expense, and never proposes starting a new chat: both would be false,
+    // and the second would push the user onto the expensive path.
+    //
+    // What it says instead is the thing that IS true and that the model cannot
+    // otherwise know: the oldest turns are no longer in front of it, so its
+    // memory of the early conversation is gone. The move log is named in the
+    // same breath, because that block DOES survive the trim and is the reason
+    // EchoJay can still answer what it did even where it cannot answer what
+    // was said.
+    if (historyDroppedCount > 0)
+    {
+        prompt += "EARLIER TURNS ARE NO LONGER BEING SENT: "
+               + juce::String(historyDroppedCount)
+               + " message(s) from the start of this conversation have dropped out of what you receive, so you may not recall the earliest part of it. Say so ONCE, briefly, in your own words, and then answer normally. Anything EchoJay itself changed is still listed in the [MOVE LOG v1] block, which does not drop out, so what was DONE remains known even where what was SAID does not. Do NOT shorten, defer or refuse any work because of this, do NOT suggest starting a new chat, do NOT mention cost or usage, and never raise it again.\n\n";
     }
     else
     {
@@ -2933,7 +2972,11 @@ const juce::StringArray& EchoJayAPI::historyStripMarkers()
         // The extended meter marker (2 Sep 2026): same arm, same per-turn
         // volatility. A stale snapshot resent as history would be read as a
         // second measurement of the same input.
-        "\n\n[METER SNAPSHOT v2"
+        "\n\n[METER SNAPSHOT v2",
+        // The move log (3 Sep 2026): rebuilt from plugin state every turn, so
+        // a copy left in history would be a second, older account of the same
+        // moves sitting beside the current one.
+        "\n\n[MOVE LOG v1"
     };
     return markers;
 }
@@ -3206,6 +3249,48 @@ juce::String EchoJayAPI::buildChainLevelsInjection(const ChainHost& chainHost)
           << " dB, so OPERATING " << fmt1(in.levelDb + pg) << " LUFS (set thresholds against this)";
     if (out.known && chainHost.getNumSlots() > 0)
         b << "; output " << fmt1(out.levelDb) << " LUFS (out-in " << fmt1(out.levelDb - in.levelDb) << " dB)";
+    b << "]";
+    return b;
+}
+
+juce::String EchoJayAPI::buildMoveLogInjection(const ChainHost& chainHost)
+{
+    const auto& log = chainHost.moveLogEntries();
+    if (log.empty()) return {};
+
+    // THE MARKER IS SAFE AGAINST containsCaptureMarkers BY THE SAME
+    // DISCIPLINE AS [METER SNAPSHOT v2]. Its two pattern arms need an
+    // uppercase run from the bracket followed by CHANNEL: or ANALYSIS: and a
+    // quote; the lowercase "v1" ends the [A-Z0-9 /&-]* class immediately, so
+    // neither can begin here whatever follows. The other three arms are the
+    // literals [PREVIOUS CAPTURE:, [SPECTRUM REFERENCE and "Band profile (avg
+    // dB". Renaming this marker means re-checking all five.
+    juce::String b;
+    b << "\n\n[MOVE LOG v1 - what EchoJay itself changed in this session, oldest first."
+         " Each line is turn, slot, plugin, control, before -> after. LANDED means the"
+         " control was read back at that value; REFUSED means the change was NOT made and"
+         " the reason follows. The BEFORE value is the last reading taken before the change,"
+         " from the previous turn's sweep, not an instant-before measurement: quote it as"
+         " what the control had been reading, never as its exact value at the moment of the"
+         " change. Cite these when asked what you did or why; never present a"
+         " REFUSED line as a change, and never invent a move that is not listed:]\n";
+    for (const auto& e : log)
+    {
+        b << (e.landed ? "LANDED  " : "REFUSED ")
+          << "t" << e.turn << " slot " << (e.slot + 1) << " \"" << e.plugin << "\"";
+        if (e.param.isNotEmpty()) b << " " << e.param;
+        if (e.landed)
+        {
+            if (e.before.isNotEmpty()) b << ": " << e.before.trim() << " -> " << e.after.trim();
+            else                       b << ": -> " << e.after.trim();
+        }
+        else
+        {
+            b << ": " << e.after.trim();   // the refusal note, not a value
+        }
+        if (e.reason.isNotEmpty()) b << " (" << e.reason.trim() << ")";
+        b << "\n";
+    }
     b << "]";
     return b;
 }

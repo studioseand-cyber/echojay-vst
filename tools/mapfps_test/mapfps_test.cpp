@@ -44,6 +44,7 @@
 #include "PluginCatalog.h"
 #include <fstream>
 #include <sstream>
+#include <regex>
 
 static int passN = 0, failN = 0;
 static void check (bool ok, const juce::String& name, const juce::String& detail = {})
@@ -4527,6 +4528,132 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // rule's header was already included for the feed and the ladder.
         check (ch.contains ("#include \"EJVariantPreference.h\""),
                "sp PIN4: the rank comes from the header already included for the other six paths");
+    }
+
+    // ---- Move log and chat-size warning (items 8 and 17) -------------------
+    {
+        std::cout << "move log + chat size warning:\n";
+        std::ifstream fch ("Source/ChainHost.cpp");
+        std::stringstream sch; sch << fch.rdbuf();
+        const auto chRaw = juce::String (sch.str());
+        const auto ch    = codeOnly (chRaw);
+        std::ifstream fap ("Source/EchoJayAPI.cpp");
+        std::stringstream sap; sap << fap.rdbuf();
+        const auto apRaw = juce::String (sap.str());
+        const auto ap    = codeOnly (apRaw);
+
+        // ml PIN1 -- A REFUSED MOVE IS NOT RECORDED AS LANDED. The partition
+        // already separates the two facts per slot; the log must not blur them
+        // back together. Both call sites are checked for their literal flag,
+        // and the refusal arm is checked to be the one that carries the note
+        // rather than a value.
+        {
+            const auto body = functionBody (chRaw, "void ChainHost::applyStructuredIfReady");
+            check (body.isNotEmpty(), "ml PIN1: applyStructuredIfReady found");
+            const auto refusedArm = body.fromFirstOccurrenceOf ("refusedBits.add", false, false)
+                                        .upToFirstOccurrenceOf ("continue;", false, false);
+            check (refusedArm.contains ("recordMove") && refusedArm.contains ("/*landed*/ false"),
+                   "ml PIN1: the REFUSAL arm records the move as NOT landed");
+            check (refusedArm.contains ("r.note"),
+                   "ml PIN1: and carries the refusal note, not a value it did not write");
+            const auto landedArm = body.fromFirstOccurrenceOf ("landedBits.add", false, false)
+                                       .upToFirstOccurrenceOf ("continue;", false, false);
+            check (landedArm.contains ("recordMove") && landedArm.contains ("/*landed*/ true"),
+                   "ml PIN1: the LANDED arm records the move as landed");
+            check (landedArm.contains ("r.landedText"),
+                   "ml PIN1: and carries what the control actually read back");
+            // No third writer: exactly two recordMove calls decide the flag.
+            int n = 0, at = 0;
+            while ((at = body.indexOf (at, "recordMove")) >= 0) { ++n; at += 8; }
+            check (n == 2, "ml PIN1: exactly two recorders, one per fact",
+                   "found " + juce::String (n));
+        }
+
+        // ml PIN2 -- the block never presents a refusal as a change, and the
+        // marker cannot trip the server's capture sniff.
+        {
+            const auto body = functionBody (apRaw, "juce::String EchoJayAPI::buildMoveLogInjection");
+            check (body.contains ("e.landed ? \"LANDED  \" : \"REFUSED \""),
+                   "ml PIN2: every line declares which fact it is");
+            // The instruction spans two C++ literals, so the assertion takes
+            // the half that lives inside one of them. A phrase that straddles
+            // a line break is a pin that fails on formatting, not on meaning.
+            check (body.contains ("REFUSED line as a change"),
+                   "ml PIN2: and the block says so to the model in words");
+            const juce::String marker ("\n\n[MOVE LOG v1 - what EchoJay itself changed");
+            const juce::String sample = marker + " ...]";
+            check (! std::regex_search (sample.toStdString(),
+                       std::regex (R"(\[[A-Z][A-Z0-9 /&-]*\s+CHANNEL:\s*")"))
+                   && ! std::regex_search (sample.toStdString(),
+                       std::regex (R"(\[[A-Z][A-Z0-9 /&-]*\s+ANALYSIS:\s*")"))
+                   && ! sample.containsIgnoreCase ("[PREVIOUS CAPTURE:")
+                   && ! sample.containsIgnoreCase ("[SPECTRUM REFERENCE")
+                   && ! sample.contains ("Band profile (avg dB"),
+                   "ml PIN2: the marker matches none of the five capture patterns");
+            check (ap.contains ("\"\\n\\n[MOVE LOG v1\""),
+                   "ml PIN2: and it is registered in historyStripMarkers");
+        }
+
+        // ml PIN3 -- the log outlives the rack. A slot removal or a rack clear
+        // must not erase a move the model has already been told about.
+        {
+            check (! ch.contains ("moveLog_.clear()"),
+                   "ml PIN3: nothing clears the move log");
+            const auto rec = functionBody (chRaw, "void ChainHost::recordMove");
+            check (rec.contains ("moveLog_.erase(moveLog_.begin())"),
+                   "ml PIN3: it is bounded from the FRONT, so the newest moves survive");
+            check (ch.contains ("kMoveLogMax"),
+                   "ml PIN3: and the bound is the named constant, not a literal");
+        }
+
+        // tr PIN1 -- ONCE PER SESSION, LATCHED, and triggered by the trim's own
+        // measurement rather than a byte threshold. The cost premise the
+        // previous version rested on was measured FALSE (658 v2 turns: turn 1
+        // 3.83 cents median, turns 3-11 flat at 1.20-1.32), so nothing here
+        // may key on size.
+        {
+            std::ifstream fh ("Source/EchoJayAPI.h");
+            std::stringstream sh; sh << fh.rdbuf();
+            const auto hdr = codeOnly (juce::String (sh.str()));
+            check (hdr.contains ("if (historyTrimWarned_ || historyDroppedTotal_ <= 0) return false;")
+                   && hdr.contains ("historyTrimWarned_ = true;"),
+                   "tr PIN1: the notice latches when taken, so it fires once per session");
+            const auto body = functionBody (apRaw, "juce::String EchoJayAPI::buildChatRequestBody");
+            check (body.contains ("historyDroppedTotal_ += trim.droppedByCap + trim.droppedByBudget + trim.droppedByRole;"),
+                   "tr PIN1: and the trigger is the trim's three drop counts, measured");
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se; se << fe.rdbuf();
+            const auto ed = codeOnly (juce::String (se.str()));
+            check (ed.contains ("api.takeHistoryTrimWarning() ? api.historyDroppedCount() : 0"),
+                   "tr PIN1: the prompt gets a count ONLY on the turn it fires");
+        }
+
+        // tr PIN2 -- IT NEVER SUPPRESSES AN ANSWER, AND NEVER MENTIONS COST.
+        // The four prohibitions are the ways a model does less when told
+        // something is wrong with the conversation; the cost and new-chat ones
+        // are claims measurement has shown to be false.
+        {
+            const auto body = functionBody (ap, "juce::String EchoJayAPI::buildSystemPrompt");
+            check (body.contains ("Do NOT shorten, defer or refuse any work because of this, do NOT suggest starting a new chat, do NOT mention cost or usage, and never raise it again."),
+                   "tr PIN2: the notice forbids shortening, deferring, refusing, a new chat, cost talk and re-raising");
+            check (! body.contains ("costs more than the last") && ! body.contains ("CHAT SIZE"),
+                   "tr PIN2: the cost warning is GONE, not disabled");
+            check (body.contains ("[MOVE LOG v1] block, which does not drop out"),
+                   "tr PIN2: and it names the block that survives the trim");
+            check (! body.contains ("compact") && ! body.contains ("summarise the conversation"),
+                   "tr PIN2: the compaction half is NOT in scope and is not present");
+        }
+
+        // ml PIN4 -- THE BEFORE VALUE DECLARES ITS PROVENANCE IN THE BLOCK.
+        // The contract saying so is not enough: the model reads the block, not
+        // the contract, and would otherwise cite a swept value as exact.
+        {
+            const auto body = functionBody (apRaw, "juce::String EchoJayAPI::buildMoveLogInjection");
+            check (body.contains ("from the previous turn's sweep, not an instant-before measurement"),
+                   "ml PIN4: the block states where the BEFORE value came from");
+            check (body.contains ("never as its exact value at the moment of the"),
+                   "ml PIN4: and forbids quoting it as exact");
+        }
     }
 
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";

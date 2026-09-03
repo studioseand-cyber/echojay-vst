@@ -283,6 +283,40 @@ public:
     void buildRecommendable(const std::vector<ScannedPlugin>& enabledPlugins,
                             const juce::String& formatFilter);
 
+    // ---- Move log (item 8) -------------------------------------------------
+    // WHAT ECHOJAY DID, not what the values ARE. modelLandedBits and its two
+    // siblings describe the LAST apply to a slot and are cleared by the next
+    // one (clearModelTiers, five sites), so nothing in the plugin could answer
+    // "what did you change five turns ago". This is that record: append-only,
+    // bounded, in memory, rebuilt into the prompt every turn and never persisted.
+    //
+    // LANDED AND REFUSED ARE DIFFERENT FACTS and the entry says which. A
+    // refusal is recorded because "we tried and could not" is a thing the
+    // model must be able to say; it is never recorded as a change.
+    struct MoveLogEntry
+    {
+        int          turn = 0;       // send ordinal within this session
+        int          slot = -1;      // slot index AT THE TIME, may not exist now
+        juce::String plugin;         // desc.name of that slot
+        juce::String param;          // semantic label, empty for a whole-slot move
+        juce::String before;         // last known display before the write, may be empty
+        juce::String after;          // what the control read after it, or the refusal note
+        juce::String reason;         // the model's rationale where one was captured
+        bool         landed = false; // false = refused or not verified; never a change
+    };
+    // BOUNDED BY COUNT, at one full build's worth of moves: 15 slots
+    // (LinkProcessor::kMaxChainSlots) at up to two dialled controls each,
+    // rounded down to 24 so a single build cannot evict its own first move
+    // while the block stays around 1.7 KB. See the contract for the byte and
+    // token measurement behind that number.
+    static constexpr int kMoveLogMax = 24;
+    void beginMoveTurn() noexcept { ++moveTurn_; }
+    int  currentMoveTurn() const noexcept { return moveTurn_; }
+    void recordMove(int slot, const juce::String& plugin, const juce::String& param,
+                    const juce::String& before, const juce::String& after,
+                    const juce::String& reason, bool landed);
+    const std::vector<MoveLogEntry>& moveLogEntries() const noexcept { return moveLog_; }
+
     // Display names of resolved entries (for AI prompt injection).
     juce::StringArray getRecommendableNames() const;
 
@@ -1650,6 +1684,13 @@ private:
     int                         dryRingWrite_ = 0;
 
     // Resolver cache (message thread only — no mutex needed)
+    // Move log storage. NOT cleared by a rack clear or a slot removal: the
+    // log records what EchoJay DID, and the model has already been told. A
+    // slot that no longer exists does not make the move it received untrue,
+    // and erasing it would let EchoJay deny an action it took.
+    std::vector<MoveLogEntry> moveLog_;
+    int moveTurn_ = 0;
+
     std::vector<RecommendableEntry> recommendable_;
     // Fingerprints already asked about via the FALLBACK leg. Deliberately NOT
     // mapsRequested_: that set is the exact-map fetch's, and sharing it is what

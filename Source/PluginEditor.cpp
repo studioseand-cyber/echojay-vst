@@ -25455,6 +25455,17 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
             // predicate the capture path reads, so a Drum Bus gets peak-hold
             // in the chat block exactly as it does in a capture payload.
             const bool useMean = processorRef.spectrumUsesAverage();
+            // [MOVE LOG v1]: what EchoJay itself changed, same arm and same
+            // text path. Empty until something has been applied.
+            {
+                const juce::String ml = EchoJayAPI::buildMoveLogInjection(chainHost);
+                out += ml;
+                if (ml.isNotEmpty())
+                    EchoJay_NSLog(("EJChat: MOVE LOG marker attached, "
+                                   + juce::String(ml.length()) + " chars, "
+                                   + juce::String((int) chainHost.moveLogEntries().size())
+                                   + " entries").toRawUTF8());
+            }
             const juce::String ms = EchoJayAPI::buildMeterSnapshotInjection(
                                         processorRef.getMeterEngine().getMeterDataJSON(),
                                         processorRef.getMeterEngine().reduceSpectrumWindow(useMean),
@@ -26900,10 +26911,17 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     // wording for it (NO_ANALYSIS_NOTE).
     const bool askToPlay = liveMeterFields.isEmpty()
                         && turnTypeOverride == "chain_generate";
+    // The move ordinal advances once per SEND, not once per applied control,
+    // so every move made between two sends shares a turn number.
+    processorRef.getChainHost().beginMoveTurn();
+    // History trim: taken once per session (the API marks it taken), so the
+    // notice rides this turn only. It reports the PREVIOUS send's drops,
+    // because this prompt is composed before this send's trim has run.
+    const int droppedNotice = api.takeHistoryTrimWarning() ? api.historyDroppedCount() : 0;
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
         channelName, genreName,
         processorRef.getPluginScanner().getPluginSummary(), liveMeterFields,
-        askToPlay);
+        askToPlay, droppedNotice);
 
     // usage-v2: no meter blob on plain chat turns (see above). turnType is
     // chain_generate when the chain-feed injection rode along (the model is

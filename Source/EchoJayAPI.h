@@ -707,7 +707,8 @@ public:
                                            const juce::String& pluginSummary,
                                            const juce::StringArray& liveMeterFields
                                                = juce::StringArray(),
-                                           bool askToPlay = false);
+                                           bool askToPlay = false,
+                                           int historyDroppedCount = 0);
 
     // Returns true if a user message looks like it wants plugin suggestions /
     // a chain / a specific processing tool — i.e. a turn where we should
@@ -793,6 +794,40 @@ public:
     //     `useMean` the statistic the caller chose from the channel type
     //     (EchoJayProcessor::spectrumUsesAverage). An invalid window emits no
     //     spectrum keys at all, exactly as an absent meter key emits nothing.
+    //   buildMoveLogInjection: the "[MOVE LOG v1: ...]" marker, what EchoJay
+    //     DID this session. Rebuilt from ChainHost::moveLogEntries() every
+    //     turn, registered in historyStripMarkers so it never accumulates in
+    //     the conversation, and empty when nothing has been applied.
+    static juce::String buildMoveLogInjection(const ChainHost& chainHost);
+
+    // ---- History trim notice (item 17, warning half) -----------------------
+    // NOT A COST WARNING. The cost premise was measured false on 658 v2 chat
+    // turns over nine days: turn 1 is 3.83 cents median, turns 3 to 11 sit at
+    // 1.20 to 1.32 cents, flat within 10 percent, because the first turn pays
+    // the cache write and every later turn reads that prefix back. A long chat
+    // does not cost more per turn, and telling a user it does would push them
+    // into a new chat, which costs about three times as much.
+    //
+    // What IS true is that the trim eventually stops sending the oldest turns,
+    // so the model can no longer recall them. That is the honest warning, and
+    // its trigger is the trim's own measurement rather than any arithmetic:
+    // buildChatRequestBody sets the flag the first time trimChatHistory drops
+    // anything by count, byte budget or role alignment.
+    //
+    // IT RIDES THE TURN AFTER THE FIRST DROP, and that is a consequence of the
+    // order, not an approximation: the system prompt is composed before
+    // buildChatRequestBody runs, so the current send's trim result does not
+    // exist yet when the paragraph is built. The first dropped turn is
+    // therefore reported on the next one.
+    int  historyDroppedCount() const noexcept { return historyDroppedTotal_; }
+    // True ONCE per session, on the first prompt build after a drop.
+    bool takeHistoryTrimWarning() noexcept
+    {
+        if (historyTrimWarned_ || historyDroppedTotal_ <= 0) return false;
+        historyTrimWarned_ = true;
+        return true;
+    }
+
     static juce::String buildMeterSnapshotInjection(const juce::String& meterJson,
                                                     const MeterEngine::SpectrumWindow& spec,
                                                     const MeterEngine::MacroWindow& macro,
@@ -859,6 +894,9 @@ public:
     // default is the live path; a fixture caller sets this before composing,
     // so a future one has to declare itself rather than inherit "live".
     static juce::String dumpSource;
+
+    int  historyDroppedTotal_ = 0;     // messages the trim has dropped this session
+    bool historyTrimWarned_   = false; // latched: the notice rides exactly one turn
 
     static juce::String remoteSystemPrompt;
     static int remotePromptVersion;
