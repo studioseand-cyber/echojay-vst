@@ -26,7 +26,7 @@ class EedPitchProcessor : public EedDeviceProcessor,
                           public echojay::KeyFeedConsumer
 {
 public:
-    EedPitchProcessor() = default;
+    EedPitchProcessor();   // consults the schema for every default (one source of truth)
 
     // KeyFeedConsumer: which instance hosts this device. Used by the auto
     // reference to recognise - and refuse - a tuning grid derived from the

@@ -1209,3 +1209,26 @@ is real; (2) no column or exemption in applyMode's correction_mode table;
 small commit, after a ruling on whether the mode table WRITES it (a
 character-bearing param every mode should set) or exempts it (a fix
 constant, not a mode choice) - the test's own question.
+
+## STANDING RULE (round-22 ruling): EVERY PARAMETER HAS EXACTLY ONE DEFAULT,
+## AND ANY CONSTRUCTION PATH THAT DOES NOT CONSULT IT IS A BUG, NOT AN EXEMPTION.
+
+The instance: seam_attack_ms advertised 60 in the schema and constructed at
+0 (PsolaEngine's member initialiser). Two sources of truth that disagree.
+Both live paths - registry creation and state restore - wrote the schema
+value first, so the installed plugin ran at 60; but that is luck holding
+until a third path appears (a preset loader, a test harness, a refactor),
+at which point it fails SILENTLY and in the worst direction: a fix that is
+not switched on, reported as measured. The round-21 suite came within one
+traced path of exactly that. Fixed by consulting the schema: the pitch
+device's constructor now calls resetParamsToDefaults() (the same call the
+registry and restore make) and the mode table writes seam_attack_ms from
+the schema default rather than a copied literal.
+
+Why the round-16 ear gate STANDS rather than needing a re-run: both live
+paths were traced before the finding was reported (EedDeviceRegistry.cpp
+creation; EedDeviceProcessor::setStateInformation writes defaults before
+applying saved params), so what Sean listened to is known to have been 60.
+Trace the live paths before reporting a default mismatch; the mismatch is
+a rule violation either way, but whether it voids a measurement depends on
+which path produced the measured binary's state.

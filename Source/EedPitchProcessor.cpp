@@ -462,6 +462,13 @@ juce::String EedPitchProcessor::applyMode (int mode)
     // missing: hard tune came out at 15.7 cents mean deviation against 13.0 for
     // the untouched signal - i.e. WORSE than not correcting.
     struct Preset { float retune, flex, humanize, naturalVib; bool ignoreVib; };
+    // seam_attack_ms is WRITTEN BY EVERY MODE (3 Sep 2026 ruling), at the
+    // schema's default - one source of truth, consulted here rather than
+    // copied: it is a fix constant (the word-start pitch-continuity ramp),
+    // not a mode choice, but a character-bearing param that a mode does not
+    // write is exactly how natural_vibrato shipped WORSE than dry (§12).
+    const float seamAttack = [&]
+    { const auto* sp = schema().find (kSeamAttackMs); return sp != nullptr ? (float) sp->def : 0.0f; }();
     // targeting_ignores_vibrato is ON in ALL FOUR modes. The spec's first §4
     // table set it off for tuned/hard, and that was a spec error (its author's
     // words), corrected in both places 2026-08-14: target selection without
@@ -483,6 +490,7 @@ juce::String EedPitchProcessor::applyMode (int mode)
     correct_.setHumanize (p.humanize);
     correct_.setIgnoreVibrato (p.ignoreVib);
     correct_.setNaturalVibrato (p.naturalVib);
+    forEachShifter ([&] (auto& e) { e.setSeamRampMs (seamAttack); });
 
     // Every mode preserves formants: the character is retune speed and how much
     // deviation survives, never whether it still sounds like the singer.
@@ -496,6 +504,7 @@ juce::String EedPitchProcessor::applyMode (int mode)
          + ", humanize " + juce::String (p.humanize, 0)
          + ", natural_vibrato " + juce::String (p.naturalVib, 0)
          + ", targeting_ignores_vibrato " + juce::String (p.ignoreVib ? "on" : "off")
+         + ", seam_attack_ms " + juce::String (seamAttack, 0)
          + ", formant_mode preserve";
 
     return "correction_mode " + name
@@ -709,6 +718,19 @@ void EedPitchProcessor::onStateApplied()
         refAuto_.store (true);
         lastAutoTuning_ = 0.0f;   // force the next refresh to re-apply
     }
+}
+
+// ONE DEFAULT PER PARAMETER (3 Sep 2026 ruling): a bare-constructed device
+// consults the schema for every default, the same call the registry and
+// state restore make. seam_attack_ms constructed at the engine's 0 against
+// the advertised 60 - both live paths happened to write the schema value
+// first, which is luck, not design, and a third path (a preset loader, a
+// harness, a refactor) would have run a fix that was not switched on and
+// reported it as measured. Any construction path that does not consult
+// the schema default is a bug, not an exemption.
+EedPitchProcessor::EedPitchProcessor()
+{
+    resetParamsToDefaults();
 }
 
 void EedPitchProcessor::resetParamsToDefaults()

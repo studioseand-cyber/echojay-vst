@@ -484,3 +484,34 @@ guard; all name seam_attack_ms, filed in ONSET_PASS_RECORD.md round 16):
      not exempted.
   3. seam_attack_ms has no hand control in the editor and no ledger
      exemption.
+
+## 13. RULING (round 22): the guard flips ON bundled with Sean's key-line report - one wait, not two
+
+The two decisions share one datum, his [DETECTED KEY] line:
+  - EXTERNAL source (bus Link, channel Link, capture): the flip is a
+    literal no-op for him (section 12, third arm: 0 samples differ). Flip,
+    install, nothing changes audibly. Report it as done.
+  - "THIS CHANNEL": the flip changes his sound substantially - from
+    key-snapping (off the singer's own melody) to chromatic. NOT to be
+    sprung mid-investigation while he is judging word starts: tell him
+    what will change, let him A/B it deliberately (guard off vs on, same
+    take, same settings), and record which he prefers.
+What to say when reporting the flip, verbatim in spirit: CHROMATIC-UNLESS-
+TOLD IS THE INDUSTRY-NORMAL DEFAULT. Auto-Tune ships chromatic and expects
+the user to pick a key. This is not a downgrade and is not to be described
+as a limitation; the key line already tells him what happened and what to
+do (set the key by hand, or give it a music-bus source), which is the
+readout pattern working as intended.
+Until the report: flag OFF in the tree, installed plugin unchanged.
+
+ADDENDUM (round 22, after the one-default fix): suite 150 PASS / 0 FAIL
+(run_2026-09-03_b.txt). The three seam_attack_ms failures cleared: every
+mode now reports "seam_attack_ms 60" in its applied summary, the bare
+constructor consults the schema, the coverage ledger names the param. THE
+RULING'S PREDICTION CAME TRUE IN THE SAME RUN: the round-21 render arms
+constructed bare processors, so they ran at seam 0 - the harness WAS the
+third path. The identity results stand (0 samples differ, both arms); the
+positive control moved from 379,514 to 378,675 differing samples because
+it is now measured at seam 60, i.e. the shipped default. The round-21
+numbers were a valid measurement of the guard on a build one fix short of
+the default; they were not a measurement of the default.

@@ -588,6 +588,9 @@ int main()
                                   "fidelity cost (schema text), so no knob until rebuilt" },
             { "mix",              "no UI yet - the chain wet knob covers the common case" },
             { "output_db",        "no UI yet" },
+            { "seam_attack_ms",   "no hand control yet - the word-start pitch-continuity ramp, "
+                                  "written by every mode at the schema default (60); a knob is a "
+                                  "UI decision pending Sean's broader-material validation" },
         };
         auto exemptUi = [&] (const std::string& id)
         {
