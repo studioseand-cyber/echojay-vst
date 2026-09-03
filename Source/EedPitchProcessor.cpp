@@ -68,7 +68,7 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           false },
 
         { EedPitchProcessor::kSeamAttackMs, "ms",
-          0.0, 150.0, 0.0,
+          0.0, 150.0, 60.0,
           "SEAM ATTACK (2 Sep 2026): at every word start the correction "
           "used to arrive as an instantaneous pitch STEP the moment the wet "
           "path resumed after the bit-exact-dry consonant (9 cents at the "
@@ -78,10 +78,12 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "same move as GSnap's Attack and Waves Tune RT's Note Transition. "
           "Measured at 60ms: word-start glitch events fall to ZERO "
           "(ignore-vib off) with no paired tuning regression. 0 = off "
-          "(pre-fix behaviour); DEFAULT 0 UNTIL THE EAR GATE PASSES, then "
-          "60 - the geometric midpoint of the ~30ms pitch-integration floor "
-          "and Waves' field-proven 120ms, and the measured event-elimination "
-          "point",
+          "(pre-fix behaviour). DEFAULT 60 (3 Sep 2026, ear gate passed on "
+          "the intro region - no audible damage): the geometric midpoint of "
+          "the ~30ms pitch-integration floor and Waves' field-proven 120ms, "
+          "and the measured event-elimination point. Validated on one "
+          "already-corrected take + one falsifier only - broader material "
+          "validation still owed before this default is called shipped",
           true },
 
         { EedPitchProcessor::kFlex, "%", 0.0, 100.0, 55.0,
