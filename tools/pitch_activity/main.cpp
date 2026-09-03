@@ -170,6 +170,17 @@ static long alignLag (const std::vector<float>& ref, const std::vector<float>& x
       if(s>bestV){ bestV=s; fine=L; } }
     return fine;   // x[i+lag] aligns with ref[i]
 }
+// PA_WRITE=<dir>: write every self render as float32 mono wav named by its spec
+static void writeWav (const std::string& path, const std::vector<float>& x, double fs)
+{
+    FILE* f=std::fopen(path.c_str(),"wb"); if(!f) return;
+    auto w32=[&](uint32_t v){ uint8_t b[4]={(uint8_t)v,(uint8_t)(v>>8),(uint8_t)(v>>16),(uint8_t)(v>>24)}; std::fwrite(b,1,4,f); };
+    auto w16=[&](uint16_t v){ uint8_t b[2]={(uint8_t)v,(uint8_t)(v>>8)}; std::fwrite(b,1,2,f); };
+    const uint32_t data=(uint32_t)(x.size()*4);
+    std::fwrite("RIFF",1,4,f); w32(36+data); std::fwrite("WAVE",1,4,f);
+    std::fwrite("fmt ",1,4,f); w32(16); w16(3); w16(1); w32((uint32_t)fs); w32((uint32_t)fs*4); w16(4); w16(32);
+    std::fwrite("data",1,4,f); w32(data); std::fwrite(x.data(),4,x.size(),f); std::fclose(f);
+}
 static double pct (std::vector<double> v, double q)
 { if(v.empty()) return 0; std::sort(v.begin(),v.end()); return v[std::min(v.size()-1,(size_t)(q*(double)v.size()))]; }
 static double cents (double a, double b) { return 1200.0*std::log2(a/b); }
@@ -256,6 +267,8 @@ int main (int argc, char** argv)
           if(std::fabs(f2-fs)>1){ std::printf("%s: fs %.0f != source %.0f\n",spec.c_str(),f2,fs); continue; }
           label="FILE "+spec.substr(5); const size_t sl=label.rfind('/'); if(sl!=std::string::npos) label="FILE "+label.substr(sl+1); }
         else { std::printf("bad spec %s\n",spec.c_str()); continue; }
+        if(haveTap&&getenv("PA_WRITE"))
+        { std::string nm=argv[a]; for(char& ch:nm) if(ch==':') ch='_'; nm=std::string(getenv("PA_WRITE"))+"/"+nm+".wav"; writeWav(nm,x,fs); std::printf("  wrote %s (%zu samples)\n",nm.c_str(),x.size()); }
         const long lag=haveTap?0:alignLag(src,x);
         int rh=0; auto tX=fineTrack(x,fs,vt,rh);
         // per-hop activity

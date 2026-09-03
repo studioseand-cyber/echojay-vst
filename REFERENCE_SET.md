@@ -113,3 +113,40 @@ keys and references (dry.wav is not in D minor; echojay3 at 434.5 Hz) and
 are for the hard-match gate ONLY, never for tuning. Until a bounce
 protocol records the [DETECTED KEY] readout at bounce time, every new
 bounce carries this risk.
+
+## THE ECHOJAY HALF, RE-MADE (3 Sep 2026, round-19 item 2) - key and reference EXPLICIT
+
+Rendered in-process by tools/pitch_activity (PA_WRITE) from sourceNEW on the
+working tree at commit 7667bee (engine headers; the plugin UUID is not the
+renderer - the commit is the identity), voice alto_tenor, KEY D MINOR SET
+MANUALLY (kMinor intervals + root 2), REFERENCE 440.0 SET MANUALLY, hard
+base (flex 0, humanize 0, natural-vib 0), seam_attack 60, envExp 0. Files
+at `/Users/SeanD/Music/Logic/test/Bounces/ref_2026-09-03/` (float32 mono
+48 kHz, 2,544,428 bytes each, peak 0.415):
+
+| file | md5 | settings | recovered ref | onset off-grid med/p75/p90 | all-voiced med / <5c / improve |
+|---|---|---|---|---|---|
+| ej_hard_ignOFF_tau6_seam60_Dminor_440.wav | ec8d3a53eb7cfc962bb7b2148d684df5 | tau 6, ign OFF | 439.81 Hz | 4.92 / 10.25 / 22.74 | 3.85c / 59.3% / 72.0% |
+| ej_hard_ignON_tau6_seam60_Dminor_440.wav | 5457ec5036d7b6def27ff2a6ed2d949f | tau 6, ign ON | 439.74 Hz | 5.04 / 10.70 / 25.67 | 3.85c / 59.1% / 70.1% |
+| ej_hard_ignOFF_tau150_seam60_Dminor_440.wav | ed7c6ab3b9f85785f7656d7c251eb589 | tau 150, ign OFF | 439.53 Hz | 8.66 / 28.16 / 40.08 | 6.87c / 40.9% / 50.4% |
+
+(off-grid to D natural minor at 440, tools/pitch_key_forensic; "recovered
+ref" is the forensic's read-back - hard correction at tau 6 leaves ~1c of
+the source's own 439.68 centre, which is the correction residual, not a
+reference defect; the 29 Aug bounces read 439.0-439.1.) These rows REPLACE
+echojayignoreonNEW / echojayignoreoffNEW for every tuning purpose; the old
+files stay on disk for the event-level and rough-span rows only, where the
+reference does not enter. Antares rows are LEFT AS THEY ARE: antaresNEW
+439.62 Hz, antares3 439.91 Hz - within 1.5c of 440, noted, not corrected.
+
+## STANDING RULE (round-19 ruling)
+
+**A REFERENCE SET MUST RECORD THE BUILD UUID (or the renderer's commit) AND
+THE APPLIED KEY AND REFERENCE, AND MUST BE RE-MADE AFTER ANY FIX THAT
+TOUCHES WHAT IT MEASURES.** Ours predated its own fix by 46 minutes and
+nobody noticed for a week. For a Logic bounce: read the [DETECTED KEY]
+line at bounce time (source, key, confidence, reference) and dwarfdump
+--uuid the installed bundle; write both beside the file name here BEFORE
+the first number is quoted from it. For an in-process render: the commit,
+the tool, and the settings string. A row without provenance is not a
+reference row.

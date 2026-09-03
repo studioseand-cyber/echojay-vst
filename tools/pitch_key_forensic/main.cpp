@@ -58,12 +58,30 @@ static bool readWavMono (const char* path, std::vector<float>& out, double& fs)
       else std::fseek(f,(long)(sz+(sz&1)),SEEK_CUR); }
     std::fclose(f); return false;
 }
+static long alignLag (const std::vector<float>& ref, const std::vector<float>& x)
+{
+    const int dec=16; std::vector<double> a,b;
+    for(size_t i=0;i+dec<=ref.size();i+=dec){ double s=0; for(int k=0;k<dec;++k)s+=std::fabs(ref[i+k]); a.push_back(s); }
+    for(size_t i=0;i+dec<=x.size();i+=dec){ double s=0; for(int k=0;k<dec;++k)s+=std::fabs(x[i+k]); b.push_back(s); }
+    const long span=4000/dec; long best=0; double bestV=-1;
+    for(long L=-span;L<=span;++L){ double s=0; long n=0; for(long i=0;i<(long)a.size();++i){ const long j=i+L; if(j<0||j>=(long)b.size()) continue; s+=a[(size_t)i]*b[(size_t)j]; ++n; } if(n>0&&s>bestV){ bestV=s; best=L; } }
+    long coarse=best*dec, fine=coarse; bestV=-1;
+    for(long L=coarse-64;L<=coarse+64;++L){ double s=0; for(size_t i=0;i<ref.size();i+=4){ const long j=(long)i+L; if(j<0||j>=(long)x.size()) continue; s+=(double)ref[i]*(double)x[(size_t)j]; } if(s>bestV){ bestV=s; fine=L; } }
+    return fine;
+}
 static const char* PC[12]={"C","C#","D","Eb","E","F","F#","G","G#","A","Bb","B"};
 static double pct(std::vector<double> v,double q){ if(v.empty())return 0; std::sort(v.begin(),v.end()); return v[std::min(v.size()-1,(size_t)(q*v.size()))]; }
 int main(int argc,char**argv)
 {
     if(argc<3){ std::printf("usage: %s <vt> <file.wav>...\n",argv[0]); return 1; }
     const int vt=atoi(argv[1]);
+    // optional source for improve-rate and onset windows (KF_SOURCE=<wav>)
+    std::vector<float> srcX; double srcFs=0; std::vector<double> srcC; std::vector<double> words; int srcHop=0;
+    if(getenv("KF_SOURCE")&&readWavMono(getenv("KF_SOURCE"),srcX,srcFs))
+    { PitchEngine e; e.prepare(srcFs,8192); e.setVoiceType(vt); e.setTracking(PitchEngine::kNormal); srcHop=e.inputHopLength(vt);
+      for(size_t p=0;p+(size_t)srcHop<=srcX.size();p+=(size_t)srcHop){ e.process(srcX.data()+p,nullptr,srcHop); const PitchReading r=e.getReading(); srcC.push_back(r.voiced&&r.f0Hz>0?1200.0*std::log2(r.f0Hz/440.0):NAN); }
+      int uv=1000; const double hs=srcHop/srcFs;
+      for(size_t h=0;h<srcC.size();++h){ if(std::isnan(srcC[h])){++uv;continue;} if(uv*hs>=0.06) words.push_back((double)h*hs); uv=0; } }
     static const int major[7]={0,2,4,5,7,9,11}, minor[7]={0,2,3,5,7,8,10};
     for(int a=2;a<argc;++a)
     {
@@ -99,6 +117,30 @@ int main(int argc,char**argv)
         std::printf("  OCCUPANCY (s):"); for(int p=0;p<12;++p) std::printf(" %s %.2f",PC[p],occ[p]); std::printf("\n");
         std::printf("  IN D NATURAL MINOR: %.1f%%   OUTSIDE: %.1f%%  (",100.0*dmin/std::max(1e-9,susS),100.0*(1.0-dmin/std::max(1e-9,susS)));
         for(int p=0;p<12;++p){ bool in=false; for(int d=0;d<7;++d) if((minor[d]+2)%12==p) in=true; if(!in&&occ[p]>0.005) std::printf(" %s %.2fs",PC[p],occ[p]); } std::printf(" )\n");
+        // ---- OFF-GRID TO D NATURAL MINOR at 440 and at the recovered reference ----
+        auto offgrid=[&](double refShiftC, std::vector<double>& onset, std::vector<double>& allv, double& under5, double& improve)
+        {
+            onset.clear(); allv.clear(); long n5=0, nImp=0, nCmp=0;
+            const long lag=srcX.empty()?0:alignLag(srcX,x);
+            for(size_t h=0;h<c.size();++h)
+            { if(std::isnan(c[h])) continue;
+              const double cc=c[h]-refShiftC;   // cents from the reference grid's A
+              // nearest D-natural-minor degree: pitch class of the semitone, then snap to scale
+              const double semi=cc/100.0; const long s0=std::lround(semi);
+              double bestD=1e9; for(long k=s0-2;k<=s0+2;++k){ const int pc=(int)(((k+9)%12+12)%12); bool in=false; for(int d=0;d<7;++d) if((minor[d]+2)%12==pc) in=true; if(in) bestD=std::min(bestD,std::fabs(cc-100.0*k)); }
+              allv.push_back(bestD); if(bestD<5) ++n5;
+              const double t=(double)h*hopS; bool ws=false; for(double w:words) if(t>=w&&t<w+0.150){ ws=true; break; }
+              if(ws) onset.push_back(bestD);
+              if(!srcC.empty()){ const long j=(long)std::llround(((double)h*hop-(double)lag)/srcHop); if(j>=0&&j<(long)srcC.size()&&!std::isnan(srcC[(size_t)j]))
+                { const double sc=srcC[(size_t)j]-refShiftC; const long t0=std::lround(sc/100.0); double bs=1e9; for(long k=t0-2;k<=t0+2;++k){ const int pc=(int)(((k+9)%12+12)%12); bool in=false; for(int d=0;d<7;++d) if((minor[d]+2)%12==pc) in=true; if(in) bs=std::min(bs,std::fabs(sc-100.0*k)); }
+                  ++nCmp; if(bestD<bs) ++nImp; } } }
+            under5=allv.empty()?0:100.0*n5/(double)allv.size(); improve=nCmp?100.0*nImp/(double)nCmp:-1;
+        };
+        for(int pass=0;pass<2;++pass)
+        { std::vector<double> on,al; double u5,imp; const double sh=pass?grid:0.0; offgrid(sh,on,al,u5,imp);
+          std::printf("  OFF-GRID vs D minor @ %s (%.2f Hz): onset(150ms) med %5.2f p75 %5.2f p90 %5.2f | all-voiced med %5.2f <5c %4.1f%%",
+              pass?"RECOVERED ref":"440          ",440.0*std::pow(2.0,sh/1200.0),pct(on,0.5),pct(on,0.75),pct(on,0.9),pct(al,0.5),u5);
+          if(imp>=0) std::printf(" | improve-rate vs source %4.1f%%",imp); std::printf("  (n onset %zu, all %zu)\n",on.size(),al.size()); }
         std::printf("  BEST-FIT KEYS:"); for(int i=0;i<4;++i){ const int k=order[i]; std::printf("  %s %s %.1f%%",PC[k%12],k<12?"maj":"min",100.0*best[k]); } std::printf("\n");
     }
     return 0;

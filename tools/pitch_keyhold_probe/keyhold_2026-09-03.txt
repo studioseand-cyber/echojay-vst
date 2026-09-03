@@ -1,0 +1,14 @@
+E2 STALE: primed on /Users/SeanD/Music/Logic/test/Bounces/dry.wav -> incumbent C# major conf 0.04; then 1.0s stopped silence; then sourceNEW from the top, NO reset
+    final: C major conf 0.02
+  INCUMBENT SURVIVED 1.813 s after play
+
+E3 SELF: primed on sourceNEW itself (stop at the end) -> incumbent C major conf 0.27; 1.0s silence; play from the top
+    final: C major conf 0.11
+
+E4 DAMAGE: sourceNEW through the production chain (hard, ign OFF, tau 6, seam 60) under CHROMATIC (stale conf below gate) until 1.81s then cross-fade to D minor, vs clean D minor
+   0.0- 2.5s: off-grid-to-Dminor median  stale  2.77c  clean  2.77c  source  5.45c | hops where stale and clean differ by >60c: 0 of 600 (0.0%)
+   2.5- 5.0s: off-grid-to-Dminor median  stale  4.12c  clean  4.12c  source  7.11c | hops where stale and clean differ by >60c: 0 of 728 (0.0%)
+   5.0-13.5s: off-grid-to-Dminor median  stale  4.09c  clean  4.09c  source  6.74c | hops where stale and clean differ by >60c: 0 of 1566 (0.0%)
+  semitone-moved runs (t, source Hz, stale vs clean cents from A440):
+
+E5 WHOLE TAKE, CHROMATIC (below-gate auto key on a solo vocal) vs D MINOR: 2 of 2896 voiced hops (0.1%, 0.01 s) land a semitone apart
