@@ -1173,3 +1173,26 @@ fastest removes 20% (0.86 vs 1.13 c/hop), and whether that regularisation
 is the resynthesis or the tracker's median is unmeasured. It is a
 character question, not an artifact question, and it is not on the path
 to Sean's complaint.
+
+## METHOD NOTE (round-20 ruling, standing): EVERY EXPERIMENT OF THIS SHAPE
+## CARRIES A POSITIVE CONTROL THAT IS EXPECTED TO FIRE; A NULL FROM IT
+## INVALIDATES THE RUN.
+
+The self-caught error, recorded as good practice: tools/pitch_keyhold_probe
+first passed ABSOLUTE PITCH CLASSES to PitchCorrect::setDegree where the
+corrector takes INTERVALS relative to the key root. Both the "stale" and the
+"clean" renders were mis-keyed (the clean "D minor" was D dorian), and the
+first result - 47% of hops moved by chromatic vs D minor - was an artifact
+that would have gone into the record as a product finding about the
+schema default. It was caught because the FORCED G MAJOR arm - a control
+that must move F to F# - returned ZERO hops moved. A control that should
+have shown an effect showing none invalidated the run; the convention was
+checked against the existing render tools (kMinor intervals + setKeyRoot),
+fixed, and the corrected numbers are what the record carries (chromatic
+vs D minor 0.1%; forced G major 47.6%).
+
+The rule: an experiment that measures the EFFECT of a configuration
+carries, in the same run, an arm whose configuration is known to produce
+an effect of known sign; if that arm reads null, nothing else in the run
+is reported. Beside magnitude-is-not-mechanism and the ruler-lag caution;
+this one is about the run's own validity rather than its reading.

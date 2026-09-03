@@ -249,3 +249,138 @@ semitone-moved share falls from 47.6% to <= 25%; (c) a same-key restart
 run SHORT (1 s of new audio instead of 2) is a ruling, not a default -
 listed as the lever that would take the window under 1 s, with its
 false-switch risk stated.
+
+## 7. RULING (round 20): the play-edge release goes to CHROMATIC; the bar is written against the ASYMMETRY
+
+THE ASYMMETRY, which is the argument: the two failure modes point in
+opposite directions and differ by roughly fifty to one. A stale WRONG key
+actively moves notes to wrong pitches - 47.6% of the first 2.5 s a
+semitone out (E->F, F->F#). CHROMATIC merely declines to snap to a scale;
+on this phrase it differs from D minor on 2 hops in the whole take.
+Section 4's principle restated: when the system is not sure, STOP
+CORRECTING rather than correct confidently on a guess.
+
+CAVEAT CARRIED: the 2-hop figure is a property of THIS phrase (E, F, G,
+largely in-scale). On material where the singer sits off-scale often,
+chromatic under-corrects noticeably for the length of the window. What
+generalises is the asymmetry - a wrong key's damage is a semitone per
+affected note, chromatic's is the singer's own off-scale drift on those
+notes - not the number 2. The bar below is written against the
+asymmetry.
+
+CONSIDERED AND DECLINED - a shorter first pass after the play edge (1 s
+of new audio instead of 2): it buys a smaller chromatic window (the cheap
+thing) at the cost of deriving the key from less evidence (the expensive
+thing). It optimises the side that does not hurt. The pass cadence stays
+at 2 s of new audio.
+
+DESIGN, superseding section 3(b) and section 6's bar amendment:
+  - PLAY EDGE (stopped -> playing, from the outer processor's play head):
+    the APPLIED scale goes to chromatic immediately (the existing
+    beginScaleCrossfade + applyScale(kScaleChromatic) path - the same
+    mechanism the confidence gate already uses) and stays chromatic until
+    the FIRST fresh pass after the edge publishes a usable reading. The
+    key engine's incumbent is NOT released to a challenger by hysteresis
+    at the edge; it is simply not applied until re-confirmed. If the
+    first fresh pass returns the same key, the cross-fade back is to the
+    same scale: 2 s of chromatic, nothing else.
+  - The readout says why: "chromatic (key held 37s - awaiting fresh pass)".
+
+THE BAR (replaces the earlier step-3 bar; NOT built until committed here):
+  1. tools/pitch_keyhold_probe, the forced-G-major arm (the positive
+     control that must fire - section 8): after the play edge the APPLIED
+     scale is chromatic from the first block; the G-major reading is not
+     applied at any time after the edge; the first usable post-edge pass
+     (>= 2 s of new audio) is applied when it arrives. Measured: the
+     0-2.5 s semitone-moved share vs the clean D-minor render falls from
+     47.6% to the chromatic-vs-D-minor floor of THIS material (0.1% here;
+     recorded as "the chromatic floor", not as 0.1%).
+  2. Same-key restart (E3 arm): the render after the edge equals the clean
+     render everywhere except inside the chromatic window, where it
+     equals a chromatic render; no third behaviour, no spurious cross-fade
+     beyond the two (to chromatic at the edge, back at the pass).
+  3. The off-scale-material arm (the caveat made measurable): a synthetic
+     take with 30% of notes deliberately 40c off-scale - under-correction
+     inside the window is bounded by the window length and the singer's
+     own error, never a semitone; recorded as the accepted cost.
+  4. Harness (JUCE processor, tools/pitch_mode_test): play-edge with an
+     external usable fact -> scale reads chromatic; after >= 2 s of
+     non-silent blocks and a fresh publish -> the key is applied; the
+     readout string contains "held" and "awaiting fresh pass" inside the
+     window and neither after.
+  5. Sean's ear, on a real press-play at his session (once section 9's
+     hold is resolved): the first 2 s must not be heard as off-key.
+
+## 8. THE SAME LOGIC EXTENDED: every low-confidence or stale key state prefers chromatic over a held key
+
+States that qualify, and what today's code does in each:
+  - CONFIDENCE BELOW GATE: already chromatic (never the last key). Keep.
+  - PLAY EDGE: section 7. Chromatic until the first fresh pass.
+  - SOURCE SILENT / LONG GAP (the key engine hears no signal for longer
+    than its window, 10 s default - transport stopped, or a source track
+    that has gone quiet): today the reading is KEPT and applied
+    indefinitely with full confidence. Under the asymmetry: a key whose
+    evidence is older than the window is a guess; apply CHROMATIC, show
+    "chromatic (key held 37s)", and let the next fresh pass restore it.
+  - SOURCE LOSS (primary gone: a Link unloaded, a pinned source missing,
+    the publisher's timer stopped): today, if the fact turns invalid the
+    gate already gives chromatic; if the publisher keeps republishing its
+    last resolved primary, the key is held with its age growing. Same
+    rule: age beyond the window -> chromatic, with the reason shown.
+  - SELF-DERIVED (section 2): chromatic, never followed.
+  - GATE HOVER (confidence oscillating around 0.50 on a marginal source):
+    chromatic <-> key toggles with a cross-fade every pass. Not damage in
+    the semitone sense, but audible churn; a gate with hysteresis (enter
+    at 0.50, leave at 0.40) is the obvious shape. Listed, not ruled.
+  - The one state that must NOT go chromatic on age: a key set MANUALLY.
+    Manual is not evidence-based and has no age.
+
+CONSISTENCY WITH SECTION 3's "held Ns readout + never change the applied
+key on age alone": half-consistent, and the half that conflicts is
+resolved in favour of the asymmetry. "Never change on age alone" was
+written to stop the device flipping to a NEW key on a clock; that stays.
+Flipping to CHROMATIC on age is the safe direction - it declines to
+correct - and it is what the asymmetry demands: if a key is too stale to
+trust, chromatic is the safer application even without a transport edge.
+Amended rule: AGE ALONE NEVER SELECTS A KEY; AGE BEYOND THE WINDOW
+DESELECTS ONE. The readout remains the visible half of it - "held Ns" is
+the reason string, no longer a warning about a key still in force. A
+paused song resumes through a play edge anyway, so the two rules meet:
+2 s of chromatic on every resume, then the confirmed key.
+
+## 9. HOLD: the mechanism reproduces the symptom; it is NOT YET Sean's established cause
+
+Section 6 established that a confident wrong key held across a stop
+reproduces "off key for a tiny bit when I press play, not in the bounce"
+exactly - PROVIDED the key source is EXTERNAL (bus Link, channel Link,
+capture). On a solo take the device's own channel never reaches the gate
+and stays chromatic, which cannot produce the symptom. So this is a
+mechanism that reproduces the symptom, not the established cause of his.
+THE PRESS-PLAY DEFECT STAYS OPEN until Sean reports what his [DETECTED
+KEY] line says and what it names as the source. He has been asked
+(section 4).
+
+THE BRANCH, recorded so it is not quietly forgotten - IF THE LINE SAYS
+"THIS CHANNEL" (or the key is manual): this mechanism is NOT what he is
+hearing, and the other candidates return, in this order:
+  (a) the corrector's mid-note resume at play - measured (SLOW_END_RECORD
+      round 17): one note, ~40c step healed within 40 ms at tau 6, an
+      altered first 500 ms at tau 150. Bounded, but real, and at his fast
+      setting it is a 40c event on the first note of every restart.
+  (b) the tuning-reference path: the self-derived tuning estimate reads
+      436-438 Hz on this take (E1) - gate-suppressed today, but any state
+      that lets it through (a mis-declared bus role; the pre-guard binary)
+      is a -8 to -16c grid shift, take-wide.
+  (c) capture -> bus precedence flip at 15 minutes (kCaptureKeyFreshMs): a
+      key change at a wall-clock moment, live-only, with a cross-fade.
+  (d) gate hover on a marginal external source (section 8).
+  (e) Logic-side behaviour the offline chain cannot see: whether Logic
+      feeds silence while stopped (decides whether the corrector's 200 ms
+      note rule and the gate's 30 ms forget ever fire across a stop), and
+      whether the plugin is processed at a different buffer size on the
+      first block after play (block-size independence is by design; the
+      grid-phase realisation difference is a null for "worse").
+  (f) NOT a candidate: the 128-sample analysis-grid phase (established
+      null: distributions identical, event lists merely re-realised).
+If the line names an external source and a key that is not D minor / F
+major, section 6 is the cause and section 7 is the fix.
