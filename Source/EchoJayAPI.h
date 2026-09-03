@@ -1174,7 +1174,12 @@ private:
     // a release build: the implementations are wrapped in
     // #if ECHOJAY_DEV_TRANSPORT, so the preview URL and the bypass secret are
     // not merely unused but absent from the binary. See CMakeLists.txt.
-    static juce::String transportEndpoint(const juce::String& configured);
+    // forPath: the request this call is resolving, named in the one-per-process
+    // EJNet line. That line used to say only which host, which read as though
+    // it covered every request; it describes the transport, and now says which
+    // request first went through it and that the answer applies to all of them.
+    static juce::String transportEndpoint(const juce::String& configured,
+                                          const juce::String& forPath = juce::String());
     static juce::String transportHeaders();
 
     // Helper: PATCH with a JSON body. Same thread and teardown discipline as

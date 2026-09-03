@@ -74,7 +74,8 @@ namespace
 // Base URL for a request: the dev override when one is configured, otherwise
 // whatever the plugin normally talks to. In a release build this is the
 // identity function and the compiler removes it.
-juce::String EchoJayAPI::transportEndpoint(const juce::String& configured)
+juce::String EchoJayAPI::transportEndpoint(const juce::String& configured,
+                                           const juce::String& forPath)
 {
    #if ECHOJAY_DEV_TRANSPORT
     const auto& dt = devTransport();
@@ -88,7 +89,7 @@ juce::String EchoJayAPI::transportEndpoint(const juce::String& configured)
     // pairing is the diagnosis when every authenticated call 404s (the user
     // exists only in the preview database). Host only; the bypass secret is
     // never logged, only whether one was loaded.
-    static const bool transportLogged = [&base]
+    static const bool transportLogged = [&base, &forPath]
     {
        #if ECHOJAY_DEV_TRANSPORT
         const char* dev = "on";
@@ -97,8 +98,17 @@ juce::String EchoJayAPI::transportEndpoint(const juce::String& configured)
         const char* dev = "off";
         const char* byp = "absent";
        #endif
+        // WHICH REQUEST THIS LINE DESCRIBES (3 Sep 2026). It fires once per
+        // process, on whichever request reaches here first, and for most of
+        // this file's life that was a chat call while the config fetch went
+        // somewhere else entirely. Naming the first caller and stating the
+        // scope stops one line being read as covering requests it never saw.
         EchoJay_NSLog(("EJNet: base=" + juce::URL(base).getDomain()
-                       + " devTransport=" + dev + " bypass=" + byp).toRawUTF8());
+                       + " devTransport=" + dev + " bypass=" + byp
+                       + " (first resolved for "
+                       + (forPath.isNotEmpty() ? forPath : juce::String("an unnamed request"))
+                       + "; applies to every request routed through transportEndpoint)")
+                          .toRawUTF8());
         return true;
     }();
     juce::ignoreUnused(transportLogged);
@@ -171,7 +181,7 @@ juce::String EchoJayAPI::pluginBaseUrl()
 {
     // Same production host apiEndpoint defaults to, routed through the dev
     // override so the webview and the API share whatever dev.json points at.
-    return transportEndpoint ("https://www.echojay.ai");
+    return transportEndpoint ("https://www.echojay.ai", "the webview base URL");
 }
 
 EchoJayAPI::EchoJayAPI()
@@ -236,7 +246,7 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
             // (this thread is not part of teardown and leaves no trace).
             if (!aliveFlag->load()) return;
 
-            juce::URL url(transportEndpoint(endpoint) + path);
+            juce::URL url(transportEndpoint(endpoint, path) + path);
             url = url.withPOSTData(body);
 
             juce::String headers = "Content-Type: application/json\r\n";
@@ -318,7 +328,7 @@ void EchoJayAPI::patchJSON(const juce::String& path, const juce::String& body,
     {
         if (!aliveFlag->load()) return;
 
-        juce::URL url(transportEndpoint(endpoint) + path);
+        juce::URL url(transportEndpoint(endpoint, path) + path);
         url = url.withPOSTData(body);
 
         juce::String headers = "Content-Type: application/json\r\n";
@@ -375,7 +385,7 @@ void EchoJayAPI::deleteJSON(const juce::String& path,
     {
         if (!aliveFlag->load()) return;
 
-        juce::URL url(transportEndpoint(endpoint) + path);
+        juce::URL url(transportEndpoint(endpoint, path) + path);
 
         juce::String headers;
         if (token.isNotEmpty())
@@ -498,7 +508,7 @@ void EchoJayAPI::getJSON(const juce::String& path,
         // the plugin module is what freezes the host seconds after removal.
         if (!aliveFlag->load()) return;
 
-        juce::URL url(transportEndpoint(endpoint) + path);
+        juce::URL url(transportEndpoint(endpoint, path) + path);
         
         juce::String headers;
         if (token.isNotEmpty())
@@ -1738,7 +1748,7 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
         {
             if (! aliveFlag->load() || handle->isCancelled()) return;
 
-            juce::URL url (transportEndpoint (endpoint) + "/api/chat-stream");
+            juce::URL url (transportEndpoint (endpoint, "/api/chat-stream") + "/api/chat-stream");
             url = url.withPOSTData (body);
 
             juce::String headers = "Content-Type: application/json\r\n";
@@ -2248,10 +2258,19 @@ void EchoJayAPI::fetchRemoteConfig()
     {
         if (!aliveFlag->load()) return; // plugin removed before thread ran
 
-        juce::URL url(endpoint + "/api/vst-config");
-        
+        // ROUTED LIKE EVERY OTHER REQUEST (3 Sep 2026). This site used the raw
+        // apiEndpoint and sent no transport headers, so it was the ONE call
+        // that ignored ~/.echojay/dev.json: pointing the plugin at a preview
+        // moved /api/chat and /api/chat-stream and left the config fetch on
+        // production, which then served the production prompt version while
+        // every other request spoke to the preview. A prompt fix on a branch
+        // could not reach the plugin no matter how often it was restarted, and
+        // nothing in the logs said why.
+        juce::URL url(transportEndpoint(endpoint, "/api/vst-config") + "/api/vst-config");
+
         int statusCode = 0;
         auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
+                           .withExtraHeaders(transportHeaders())   // empty in a release build
                            .withConnectionTimeoutMs(60000)
                            .withStatusCode(&statusCode);
         
@@ -2266,6 +2285,21 @@ void EchoJayAPI::fetchRemoteConfig()
             stream->readIntoMemoryBlock(mb);
             logNon2xx("/api/vst-config", statusCode,
                       juce::String::fromUTF8((const char*)mb.getData(), (int)mb.getSize()));
+            // WHICH PROMPT IS ACTUALLY IN FORCE, said plainly, because this is
+            // the failure that does not look like one. A protected preview
+            // without the bypass header answers 302 or 401; this path then
+            // takes no prompt, and buildSystemPrompt falls back to the
+            // hardcoded base, which carries NO plugin recommendation rules at
+            // all. Every chain build after that is degraded and the only
+            // symptom is worse answers. A status line alone did not say that,
+            // so the state is named: remote or fallback, and its version.
+            EchoJay_NSLog((juce::String("EJNet: config fetch FAILED, prompt in force = ")
+                           + (remoteSystemPrompt.isNotEmpty()
+                                  ? "REMOTE v" + juce::String(remotePromptVersion)
+                                    + " (kept from earlier this session)"
+                                  : juce::String("HARDCODED FALLBACK (no remote prompt, so no plugin "
+                                                 "recommendation rules) - a protected preview needs "
+                                                 "the bypass header in ~/.echojay/dev.json"))).toRawUTF8());
         }
         else if (stream != nullptr && statusCode == 200)
         {
@@ -2300,6 +2334,9 @@ void EchoJayAPI::fetchRemoteConfig()
                     announcement = obj->getProperty("announcement").toString();
                 
                 remoteConfigLoaded = true;
+                EchoJay_NSLog((juce::String("EJNet: config fetch ok, prompt in force = REMOTE v")
+                               + juce::String(remotePromptVersion)
+                               + " (served version " + juce::String(version) + ")").toRawUTF8());
                 
                 // Cache to disk so it works offline next time
                 auto cacheFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
@@ -2345,6 +2382,11 @@ void EchoJayAPI::fetchRemoteConfig()
                 }
             }
             remoteConfigLoaded = true;
+            EchoJay_NSLog((juce::String("EJNet: config fetch unreachable, prompt in force = ")
+                           + (remoteSystemPrompt.isNotEmpty()
+                                  ? "REMOTE v" + juce::String(remotePromptVersion) + " (from the disk cache)"
+                                  : juce::String("HARDCODED FALLBACK (no cache on disk, so no plugin "
+                                                 "recommendation rules)"))).toRawUTF8());
         }
     });
 }
