@@ -100,8 +100,23 @@ public:
         bool  refAuto        = false;
         float refApplied     = 440.0f;
         bool  refSelfIgnored = false;   // auto saw only this channel: using 440
+        // KEY-SIDE CIRCULARITY (3 Sep 2026, DEFECT_AUTOKEY_PROVENANCE.md §2):
+        // a usable fact was ignored for KEY ROOT/MODE because it was derived
+        // from this instance's own channel - chromatic applied, shown as such.
+        bool  keySelfIgnored = false;
     };
     AutoKeyState autoKeyState() const;
+
+    // THE KEY-SIDE CIRCULARITY GUARD, BEHIND A FLAG (3 Sep 2026, round-21
+    // ruling: build behind the flag, measure, report; default flips only by
+    // ruling). The reference guard (29 Aug) covers tuning only; key root and
+    // mode from the same self-derived fact were applied unguarded - a vocal
+    // channel declared a music bus keys the corrector off the singer's own
+    // melody. With the flag on, such a fact is UNMEASURED for key too: fall
+    // back to chromatic, never to the last key (the asymmetry: a wrong key
+    // moves notes a semitone, chromatic declines to snap).
+    void debugKeySelfGuard (bool on) noexcept { keySelfGuard_.store (on); }
+    bool keySelfGuardOn() const noexcept   { return keySelfGuard_.load(); }
 
     // The retune floor's effective value, for the knob readout (30 Aug
     // 2026: a mapping that lives only in schema text is a mapping the
@@ -227,6 +242,7 @@ private:
     std::atomic<bool> keyAuto_ { true };
     std::atomic<bool> refAuto_ { true };
     std::atomic<uint64_t> keyFeedSelfId_ { 0 };
+    std::atomic<bool>     keySelfGuard_ { false };   // see debugKeySelfGuard
     // The MANUAL reference field: only ever what a person entered (or its
     // 440 default). NEVER written from detection - the corrector's live
     // reference under auto lives in correct_ alone, so a state save cannot

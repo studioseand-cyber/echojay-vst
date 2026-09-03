@@ -562,7 +562,9 @@ void EedPitchEditor::paintKeyAttribution (juce::Graphics& g, juce::Rectangle<int
     // was rejected will read chromatic correction as the device misbehaving.
     g.setColour (C::amber);
     g.setFont (uiFont (9.0f, true));
-    g.drawText ((st.conf > 0.0f
+    g.drawText ((st.keySelfIgnored
+                    ? juce::String ("auto: only this track measurable - key not followed - using CHROMATIC")
+                  : st.conf > 0.0f
                     ? "auto: key confidence " + juce::String (st.conf, 2)
                         + " too low - using CHROMATIC"
                     : juce::String ("auto: no key detected - using CHROMATIC"))

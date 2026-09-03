@@ -1196,3 +1196,16 @@ carries, in the same run, an arm whose configuration is known to produce
 an effect of known sign; if that arm reads null, nothing else in the run
 is reported. Beside magnitude-is-not-mechanism and the ruler-lag caution;
 this one is about the run's own validity rather than its reading.
+
+## Round 16 LEDGER DEBT (found 3 Sep 2026 by running EchoJayPitchModeTest for the round-21 guard)
+
+seam_attack_ms shipped (364e587, default 60 in d637292) without its three
+ledger entries, and the suite is red on all three: (1) a bare-constructed
+device sits at the engine's 0, not the advertised 60 - NOT live (registry
+creation and state restore both write schema defaults first; Sean's
+session runs at 60; the ear gate stands), but the constructor-hygiene rule
+is real; (2) no column or exemption in applyMode's correction_mode table;
+(3) no hand control or exemption in the editor's coverage ledger. Own
+small commit, after a ruling on whether the mode table WRITES it (a
+character-bearing param every mode should set) or exempts it (a fix
+constant, not a mode choice) - the test's own question.

@@ -6,6 +6,9 @@
 #include "EedDeviceRegistry.h"
 #include "EedKeyFeed.h"
 #include <cstdio>
+#include <cstring>
+#include <functional>
+#include <vector>
 static int g_fail = 0;
 static void check (bool c, const juce::String& w)
 { std::printf ("  [%s] %s\n", c ? "PASS" : "FAIL", w.toRawUTF8()); if (! c) ++g_fail; }
@@ -198,6 +201,165 @@ int main()
         const auto st = p.autoKeyState();
         check (st.applied && st.sourceName == "Music Bus",
                "the state names its source for the UI: " + st.sourceName);
+    }
+
+    std::printf ("== KEY-SIDE CIRCULARITY GUARD (behind debugKeySelfGuard): a self-derived fact "
+                 "is not followed for key root/mode - chromatic, never the last key ==\n");
+    {
+        auto pump = [&] (int blocks)
+        {
+            juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m;
+            for (int i = 0; i < blocks; ++i) { b.clear(); p.processBlock (b, m); }
+        };
+        auto publishFact = [] (int root, bool minor, float conf, float tuning,
+                               const char* src, uint64_t publisher, bool selfDerived)
+        {
+            echojay::DetectedKeyFact f;
+            f.valid = true; f.root = root; f.minor = minor; f.confidence = conf;
+            f.tuningHz = tuning; f.fromBus = true;
+            f.publisherId = publisher; f.selfDerived = selfDerived;
+            std::strncpy (f.sourceName, src, sizeof (f.sourceName) - 1);
+            echojay::KeyFeed::instance().publish (f);
+        };
+        const auto* sp = EedPitchProcessor::schema().find (EedPitchProcessor::kScale);
+        auto allDegrees = [&]
+        { return sp != nullptr && sp->choiceLabel (p.getParamValue ("scale")) == "chromatic"; };
+
+        // Baseline: an EXTERNAL usable fact is followed (as before).
+        p.applyStructured (params ({ { "key_source", "auto" } }));
+        p.setKeyFeedSelfId (77);
+        publishFact (6, true, 0.86f, 441.3f, "Music Bus", 12345, false);
+        pump (4);
+        check (p.autoKeyState().applied && p.autoKeyState().root == 6 && p.autoKeyState().minor,
+               "baseline: an external fact is followed (F# minor)");
+
+        // THE DEFECT, documented with the flag OFF: the same fact stamped
+        // self-derived from THIS instance is still applied for key today.
+        p.debugKeySelfGuard (false);
+        publishFact (6, true, 0.86f, 438.0f, "this channel", 77, true);
+        pump (4);
+        check (p.autoKeyState().applied && ! p.autoKeyState().keySelfIgnored,
+               "flag OFF (today's build): the self-derived key IS followed - the defect");
+        check (std::abs (p.autoKeyState().refApplied - 440.0) < 0.1,
+               "...while the reference guard already ignores it (440)");
+
+        // THE GUARD, flag ON: chromatic, actively, and the state says why.
+        p.debugKeySelfGuard (true);
+        pump (4);
+        const auto st = p.autoKeyState();
+        check (! st.applied && st.fellBack, "flag ON: the self-derived key is NOT applied");
+        check (st.keySelfIgnored, "...keySelfIgnored is set for the readout");
+        check (allDegrees(), "...the scale reads chromatic");
+        check (std::abs (st.refApplied - 440.0) < 0.1, "...reference stays 440");
+        check (! (p.autoKeyState().root == 6 && p.autoKeyState().applied),
+               "...the PREVIOUS key (F# minor) did not survive - chromatic, not the last key");
+
+        // A self-derived fact from ANOTHER instance (a bus Link's own
+        // analysis) is legitimate and still followed.
+        publishFact (9, false, 0.9f, 441.0f, "Music Bus (Link)", 78, true);
+        pump (4);
+        check (p.autoKeyState().applied && p.autoKeyState().root == 9 && ! p.autoKeyState().minor
+               && ! p.autoKeyState().keySelfIgnored,
+               "a self-derived fact from ANOTHER instance is followed (A major)");
+
+        // An external fact restores key and reference.
+        publishFact (6, true, 0.86f, 441.3f, "Music Bus", 12345, false);
+        pump (4);
+        check (p.autoKeyState().applied && p.autoKeyState().root == 6 && p.autoKeyState().minor
+               && std::abs (p.autoKeyState().refApplied - 441.3) < 0.1,
+               "an external fact restores key (F# minor) and reference (441.3)");
+        p.debugKeySelfGuard (false);
+        p.setKeyFeedSelfId (0);
+        publishFact (6, true, 0.86f, 441.3f, "Music Bus", 12345, false);
+        pump (4);
+    }
+
+    std::printf ("== KEY-SIDE GUARD, RENDER BIT-IDENTITY on the standing take (bar item 2) ==\n");
+    {
+        // EJ_PITCH_SOURCE or the standing reference path; skipped, not
+        // failed, when the material is absent (the repo does not carry it).
+        const char* env = std::getenv ("EJ_PITCH_SOURCE");
+        juce::File src (env != nullptr ? juce::String (env)
+                                       : juce::String ("/Users/SeanD/Music/Logic/test/Bounces/sourceNEW.wav"));
+        juce::AudioBuffer<float> take;
+        double fs = 48000.0;
+        if (src.existsAsFile())
+        {
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::AudioFormatReader> r (wav.createReaderFor (src.createInputStream().release(), true));
+            if (r != nullptr)
+            {
+                fs = r->sampleRate;
+                take.setSize (1, (int) r->lengthInSamples);
+                r->read (&take, 0, (int) r->lengthInSamples, 0, true, false);
+            }
+        }
+        if (take.getNumSamples() == 0)
+            std::printf ("  [SKIP] material not found (%s) - render identity not measured\n", src.getFullPathName().toRawUTF8());
+        else
+        {
+            auto render = [&] (const std::function<void (EedPitchProcessor&)>& setup) -> std::vector<float>
+            {
+                EedPitchProcessor q;
+                q.prepareToPlay (fs, 512);
+                q.applyStructured (params ({ { "correction_mode", "hard" } }));
+                setup (q);
+                std::vector<float> out; out.reserve ((size_t) take.getNumSamples());
+                juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m;
+                for (int pos = 0; pos < take.getNumSamples(); pos += 512)
+                {
+                    const int n = juce::jmin (512, take.getNumSamples() - pos);
+                    b.clear();
+                    b.copyFrom (0, 0, take, 0, pos, n);
+                    b.copyFrom (1, 0, take, 0, pos, n);
+                    q.processBlock (b, m);
+                    for (int i = 0; i < n; ++i) out.push_back (b.getSample (0, i));
+                }
+                return out;
+            };
+            auto selfFact = [] (uint64_t publisher, bool selfDerived)
+            {
+                echojay::DetectedKeyFact f;
+                f.valid = true; f.root = 7; f.minor = false; f.confidence = 0.86f;   // G major: F -> F#, the damaging case
+                f.tuningHz = 440.0f; f.fromBus = true; f.publisherId = publisher; f.selfDerived = selfDerived;
+                std::strncpy (f.sourceName, "this channel", sizeof (f.sourceName) - 1);
+                echojay::KeyFeed::instance().publish (f);
+            };
+            auto identical = [] (const std::vector<float>& a, const std::vector<float>& b)
+            { return a.size() == b.size() && std::memcmp (a.data(), b.data(), a.size() * sizeof (float)) == 0; };
+            auto differing = [] (const std::vector<float>& a, const std::vector<float>& b)
+            { size_t n = 0; for (size_t i = 0; i < std::min (a.size(), b.size()); ++i) if (a[i] != b[i]) ++n; return n; };
+
+            // (a) guard ON + self-derived self fact  ==  manual chromatic
+            const auto guarded = render ([&] (EedPitchProcessor& q)
+            { q.setKeyFeedSelfId (77); q.debugKeySelfGuard (true); selfFact (77, true);
+              q.applyStructured (params ({ { "key_source", "auto" } })); });
+            const auto chromatic = render ([&] (EedPitchProcessor& q)
+            { q.setKeyFeedSelfId (0); echojay::KeyFeed::instance().publish (echojay::DetectedKeyFact {});
+              q.applyStructured (params ({ { "scale", "chromatic" } })); });
+            check (identical (guarded, chromatic),
+                   "guard ON + self-derived self fact renders BIT-IDENTICAL to manual chromatic ("
+                   + juce::String ((int) differing (guarded, chromatic)) + " samples differ)");
+            // The positive control: with the guard OFF the same self fact
+            // applies G major and the render MUST differ (F -> F#).
+            const auto unguarded = render ([&] (EedPitchProcessor& q)
+            { q.setKeyFeedSelfId (77); q.debugKeySelfGuard (false); selfFact (77, true);
+              q.applyStructured (params ({ { "key_source", "auto" } })); });
+            check (! identical (unguarded, chromatic),
+                   "POSITIVE CONTROL: guard OFF applies the self-derived G major and differs from chromatic ("
+                   + juce::String ((int) differing (unguarded, chromatic)) + " samples differ)");
+            // (b) guard ON vs OFF under an EXTERNAL fact: bit-identical (no change to the followed path)
+            const auto extOn = render ([&] (EedPitchProcessor& q)
+            { q.setKeyFeedSelfId (77); q.debugKeySelfGuard (true); selfFact (12345, false);
+              q.applyStructured (params ({ { "key_source", "auto" } })); });
+            const auto extOff = render ([&] (EedPitchProcessor& q)
+            { q.setKeyFeedSelfId (77); q.debugKeySelfGuard (false); selfFact (12345, false);
+              q.applyStructured (params ({ { "key_source", "auto" } })); });
+            check (identical (extOn, extOff),
+                   "guard ON vs OFF under an EXTERNAL fact: bit-identical ("
+                   + juce::String ((int) differing (extOn, extOff)) + " samples differ)");
+            echojay::KeyFeed::instance().publish (echojay::DetectedKeyFact {});
+        }
     }
 
     std::printf ("== below the gate it falls to CHROMATIC, not to the last key ==\n");

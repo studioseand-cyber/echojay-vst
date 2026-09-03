@@ -384,3 +384,103 @@ hearing, and the other candidates return, in this order:
       null: distributions identical, event lists merely re-realised).
 If the line names an external source and a key that is not D minor / F
 major, section 6 is the cause and section 7 is the fix.
+
+## 10. DESIGN NOTE (round 21): the readout inversion - same string, opposite meaning
+
+Under the pre-round-20 policy the proposed "held 37s" readout WARNED: a key
+is still in force and its evidence is 37 s old. Under chromatic-on-stale
+the same string EXPLAINS: a key is NOT in force, because its evidence is
+37 s old. Same words, opposite meaning - and the second is the honest one.
+A warning the user cannot act on (what would they do about a held key they
+cannot refresh?) is worse than a label that says what happened and why
+correction has gone chromatic. The readout is therefore specified as the
+REASON STRING beside the applied scale ("chromatic (key held 37s - awaiting
+fresh pass)"), never as a caution beside a key.
+
+The point that generalises: WHEN A POLICY INVERTS, CHECK WHETHER ITS
+READOUTS STILL MEAN WHAT THEY SAY. A readout is a sentence about state; a
+policy change rewrites the state's meaning underneath the same sentence.
+Every readout touched by a policy change is re-read, in the new policy,
+for what a user would conclude from it.
+
+## 11. FILED, NOT BUILT (round 21, low priority): manual-key DISAGREEMENT readout
+
+Manual keys are correctly exempt from age (section 8) - they are not
+evidence and have no clock. But exempt from age is not exempt from being
+WRONG: a user can set D minor on a song that is not in D minor, and today
+nothing validates it - no staleness, no disagreement, nothing on screen.
+
+PROPOSAL: when key_source is manual and the auto path (the same KeyFeed
+walk, running anyway) holds a USABLE reading that STRONGLY disagrees with
+the manual key - a different root that is not the relative major/minor,
+at confidence comfortably above the gate (>= 0.65, say), sustained for
+more than one pass - the key line shows it, amber, greyed as a reading:
+"key D minor (manual)   auto would say: G major 0.78 from \"Music Bus\"".
+No behaviour change; the manual key stays applied. Relative major/minor
+and enharmonic equivalents never trigger it (same degrees). Below the
+confidence bar it is silent - a weak auto reading is not grounds to
+second-guess a human.
+
+WHY FILE IT: the make-hidden-state-visible pattern caught a live user
+problem within a day of shipping the voice-fit warning (alto_tenor on a
+low-male take), and the same pattern is what this whole defect file is
+made of. Low priority because a wrong manual key is a user decision with
+a visible control, not hidden state - but a readout that says "the song
+disagrees with you" costs nothing at runtime and would have made the
+OLD-trio provenance mess (dry.wav not in D minor, echojay3 at 434.5 Hz)
+visible at the time instead of a week later by forensic. Left here.
+
+## 12. BUILT BEHIND THE FLAG AND MEASURED (round 21): the key-side circularity guard
+
+CODE (flag default OFF; flips only by ruling):
+  - EedPitchProcessor: `debugKeySelfGuard(bool)` / `keySelfGuard_`;
+    refreshAutoKey computes selfFact (selfDerived && publisherId == this
+    instance) once and uses it for BOTH guards; with the flag on,
+    keyUsable = usable && !selfFact drives the key block, so a self-derived
+    fact takes the existing !usable path: beginScaleCrossfade +
+    applyScale(chromatic), never the last key. AutoKeyState gains
+    keySelfIgnored (set only when a USABLE fact was refused on
+    circularity grounds).
+  - EedPitchEditor: fallback line reads "auto: only this track measurable -
+    key not followed - using CHROMATIC" when keySelfIgnored.
+  - tools/pitch_mode_test: two new blocks (the bar's items 1 and 2), run
+    log at tools/pitch_mode_test/run_2026-09-03.txt.
+
+MEASURED (EchoJayPitchModeTest, build-release, commit of this file):
+  bar 1, harness:
+    baseline external fact followed (F# minor)                         PASS
+    flag OFF: the self-derived key IS followed (the defect, documented)  PASS
+    flag OFF: the reference guard already ignores it (440)              PASS
+    flag ON: self-derived key NOT applied; keySelfIgnored set; scale
+      reads chromatic; reference 440; previous key did not survive      PASS x5
+    self-derived fact from ANOTHER instance (publisher 78) followed     PASS
+    external fact restores key (F# minor) and reference (441.3)         PASS
+  bar 2, render identity on sourceNEW (hard, 512-sample blocks, the
+  JUCE processor end to end), self fact = G major 0.86 (F -> F#):
+    guard ON + self-derived self fact == manual chromatic:  0 samples differ   PASS
+    POSITIVE CONTROL guard OFF vs chromatic:          379,514 samples differ   PASS
+    guard ON vs OFF under an EXTERNAL fact:                 0 samples differ   PASS
+  bar 3, readout string: present in source; verified by behaviour
+  (keySelfIgnored) not by strings (LTO caveat).
+The positive control fired (section 8's method note): the run is valid.
+
+FLAG STATE: OFF. The installed plugin is unchanged by this commit; the
+flip to ON is the next ruling on this file.
+
+PRE-EXISTING FAILURES SURFACED BY RUNNING THE SUITE (3, none from the
+guard; all name seam_attack_ms, filed in ONSET_PASS_RECORD.md round 16):
+  1. "every param constructs at its advertised default": a BARE
+     EedPitchProcessor constructs seam_attack_ms at 0 (PsolaEngine's
+     member initialiser) against the advertised 60. NOT a live defect:
+     the registry writes schema defaults on creation
+     (EedDeviceRegistry.cpp:87) and setStateInformation writes them
+     before applying saved params (EedDeviceProcessor.cpp:229), so an
+     added device and a restored session both run at 60 - the round-16
+     ear gate and the installed default stand. It IS the hygiene rule
+     the suite enforces (member initialisers match the schema; the pitch
+     device's constructor, unlike the other devices', does not call
+     resetParamsToDefaults). One-line fix, not made here.
+  2. seam_attack_ms is absent from applyMode's correction_mode table and
+     not exempted.
+  3. seam_attack_ms has no hand control in the editor and no ledger
+     exemption.

@@ -618,12 +618,23 @@ void EedPitchProcessor::refreshAutoKey()
     // 13 cents off the nearest note to 29, i.e. worse than not correcting.
     const bool usable = f.usable();
 
+    // A fact whose primary came from THIS instance's own channel: the
+    // reference guard below has always treated it as unmeasured for tuning.
+    // Behind keySelfGuard_ it is unmeasured for KEY ROOT/MODE as well (see
+    // debugKeySelfGuard): the corrector must not take its scale from the
+    // melody it is correcting. Chromatic, actively applied - never the last
+    // key - exactly as the confidence gate does.
+    const bool selfFact    = f.selfDerived && f.publisherId != 0
+                          && f.publisherId == keyFeedSelfId_.load (std::memory_order_relaxed);
+    const bool keyCircular = keySelfGuard_.load() && selfFact;
+    const bool keyUsable   = usable && ! keyCircular;
+
     if (keyAuto)
     {
-        const int  root  = usable ? f.root  : 0;
-        const bool minor = usable ? f.minor : false;
+        const int  root  = keyUsable ? f.root  : 0;
+        const bool minor = keyUsable ? f.minor : false;
 
-        if (! usable)
+        if (! keyUsable)
         {
             if (! lastAutoFellBack_)
             {
@@ -657,8 +668,7 @@ void EedPitchProcessor::refreshAutoKey()
     bool refCircular = false;
     if (refAuto)
     {
-        refCircular = f.selfDerived && f.publisherId != 0
-                   && f.publisherId == keyFeedSelfId_.load (std::memory_order_relaxed);
+        refCircular = selfFact;
         const float wantRef = (usable && ! refCircular && f.tuningHz > 0.0f)
                                 ? f.tuningHz : 440.0f;
         if (std::abs (wantRef - lastAutoTuning_) > 0.05f)
@@ -670,10 +680,11 @@ void EedPitchProcessor::refreshAutoKey()
 
     const juce::ScopedLock sl (autoLock_);
     autoState_.active     = keyAuto;
-    autoState_.applied    = keyAuto && usable;
-    autoState_.fellBack   = keyAuto && ! usable;
-    autoState_.root       = usable ? f.root : 0;
-    autoState_.minor      = usable && f.minor;
+    autoState_.applied    = keyAuto && keyUsable;
+    autoState_.fellBack   = keyAuto && ! keyUsable;
+    autoState_.root       = keyUsable ? f.root : 0;
+    autoState_.minor      = keyUsable && f.minor;
+    autoState_.keySelfIgnored = keyAuto && usable && keyCircular;
     autoState_.conf       = f.confidence;
     autoState_.tuningHz   = f.tuningHz;
     autoState_.sourceName = juce::String (juce::CharPointer_ASCII (f.sourceName));
