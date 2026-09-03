@@ -164,6 +164,7 @@ static void logNon2xx(const juce::String& path, int statusCode,
 }
 
 // Static members for remote config — shared across all plugin instances
+juce::String EchoJayAPI::dumpSource = "live-send";
 juce::String EchoJayAPI::remoteSystemPrompt;
 int EchoJayAPI::remotePromptVersion = 0;
 bool EchoJayAPI::remoteConfigLoaded = false;
@@ -1211,6 +1212,11 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
     // Classifier binding (split call). Absent on any turn the classifier
     // did not answer for, which is every turn when it is gated off — and
     // the server then classifies for itself exactly as it does today.
+    // Kept for the dev dump's filename: nextClassifyIntent_ is cleared two
+    // lines below, and the resolved turnType lives in a nested scope, so both
+    // are captured where they are still in hand rather than re-derived.
+    const juce::String dumpIntent = nextClassifyIntent_;
+    juce::String dumpTurnType = "chat";
     if (nextClassifyIntent_.isNotEmpty())
         body += ",\"classifyIntent\":" + juce::JSON::toString(nextClassifyIntent_);
     if (nextClassifyToken_.isNotEmpty())
@@ -1246,6 +1252,7 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
             tt = "chat";
         }
         body += ",\"turnType\":" + juce::JSON::toString(tt);
+        dumpTurnType = tt;                    // the RESOLVED label, after any downgrade
         if (nextChatBusCount_ > 0)
             body += ",\"busCount\":" + juce::String(nextChatBusCount_);
         // Per-send verification line: turn class + whether a payload rode
@@ -1340,11 +1347,70 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
             // So: log the RESOLVED path either way (it names the container when
             // that is where it went), and say plainly when the write failed.
             // An unreadable absence is what cost us the last two turns.
+            // PROVENANCE, IN THE FILE (3 Sep 2026). _dumpSource says which
+            // caller produced this body: the live send, or a fixture such as
+            // the gate's history-resend pin. A file whose origin can only be
+            // established by reading its message text is a file that misleads
+            // somebody at 2am, and one already did.
+            //
+            // Injected into the DUMP, never into the wire body: the payload
+            // the server receives is byte-for-byte what it was, and the dump
+            // differs from it by exactly this one underscore-prefixed field.
+            const juce::String dumpText =
+                body.startsWithChar('{')
+                    ? "{\"_dumpSource\":" + juce::JSON::toString(dumpSource) + "," + body.substring(1)
+                    : body;
+
             const bool dirOk = f.getParentDirectory().createDirectory().wasOk();
-            const bool wrote = dirOk && f.replaceWithText(body);
+            const bool wrote = dirOk && f.replaceWithText(dumpText);
+
+            // A ROLLING HISTORY BESIDE THE LATEST (3 Sep 2026). This file was
+            // overwritten every turn, so by the time a reply looked wrong the
+            // payload that produced it was already gone. That cost two
+            // investigations in one day: the question "what did we actually
+            // send" had no answer that survived the next turn.
+            //
+            // chat-body-debug.json itself is untouched and still the latest, so
+            // everything reading it keeps working. Beside it goes one file per
+            // turn, named so a chain turn can be told from a chat turn without
+            // opening it, and the directory is pruned to the newest kFiles.
+            // The timestamp leads so the names sort chronologically, which is
+            // also the order the prune walks.
+            if (dirOk)
+            {
+                constexpr int kKeepDumps = 20;
+                auto dir = f.getParentDirectory();
+                auto safe = [](juce::String t)
+                {
+                    t = t.retainCharacters("abcdefghijklmnopqrstuvwxyz"
+                                           "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_");
+                    return t.isNotEmpty() ? t : juce::String("none");
+                };
+                const auto stamp = juce::Time::getCurrentTime()
+                                       .formatted("%Y%m%d-%H%M%S");
+                auto hist = dir.getChildFile("chat-body-" + stamp
+                                             + "-tt_" + safe(dumpTurnType)
+                                             + "-ci_" + safe(dumpIntent) + ".json");
+                hist.replaceWithText(dumpText);
+
+                // Prune oldest-first. findChildFiles gives no order guarantee,
+                // so sort by name: the leading timestamp makes that
+                // chronological without stat-ing every file.
+                auto olds = dir.findChildFiles(juce::File::findFiles, false, "chat-body-*.json");
+                juce::StringArray names;
+                for (const auto& o : olds) names.add(o.getFileName());
+                names.sort(true);
+                for (int i = 0; i < names.size() - kKeepDumps; ++i)
+                    dir.getChildFile(names[i]).deleteFile();
+            }
+
             if (wrote)
                 EchoJay_NSLog(("EJChat: dev_mode body dump -> " + f.getFullPathName()
-                               + " (" + juce::String((int) body.getNumBytesAsUTF8()) + "b total)").toRawUTF8());
+                               + " (" + juce::String((int) body.getNumBytesAsUTF8()) + "b total)"
+                               + " source=" + dumpSource
+                               + " turnType=" + dumpTurnType
+                               + " classifyIntent=" + (dumpIntent.isNotEmpty() ? dumpIntent
+                                                                               : juce::String("none"))).toRawUTF8());
             else
                 EchoJay_NSLog(("EJChat: dev_mode body dump FAILED -> " + f.getFullPathName()
                                + (dirOk ? " (write refused)" : " (could not create directory)")

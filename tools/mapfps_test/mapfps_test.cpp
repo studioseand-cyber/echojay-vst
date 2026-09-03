@@ -70,6 +70,14 @@ struct EchoJayAPIRequestPin
     static juce::String compose (EchoJayAPI& a, const juce::StringArray& roles,
                                  const juce::StringArray& contents)
     {
+        // DECLARE THE FIXTURE. buildChatRequestBody dumps every body it builds
+        // when dev_mode is on, and the gate runs in the same account as the
+        // DAW, so this call overwrites ~/Documents/EchoJay/chat-body-debug.json
+        // with a fixture. It cannot be stopped without weakening the pin (the
+        // point is that this IS the shipped builder), so instead it is marked:
+        // the dump it writes says gate-fixture, and a harvest that finds one
+        // knows to discard it rather than reasoning from it.
+        EchoJayAPI::dumpSource = "gate-fixture (mapfps_test history-resend pin)";
         return a.buildChatRequestBody (roles, contents, "sys", {});
     }
 };
@@ -1573,8 +1581,19 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             // moved the silence to the write: userDocumentsDirectory redirects
             // into the same container the flag check did, and the old code
             // logged success without ever looking at replaceWithText's result.
-            check (body.contains ("const bool wrote = dirOk && f.replaceWithText(body);"),
+            // RE-AIMED AT THE PROPERTY (3 Sep 2026). This named the argument as
+            // well as the check, and the argument changed for a real reason:
+            // the dump is now the wire body plus a _dumpSource field, so it
+            // writes dumpText rather than body. What must stay true is that
+            // the result is consumed and gated on the directory, not which
+            // string went in.
+            check (body.contains ("const bool wrote = dirOk && f.replaceWithText("),
                    "dump: the write result is actually checked");
+            // And the dumped text is still the WIRE body, not a reconstruction:
+            // one field spliced after the opening brace, nothing else touched.
+            check (body.contains ("+ body.substring(1)")
+                   && body.contains ("_dumpSource"),
+                   "dump: what is written is the wire body plus exactly one provenance field");
             check (body.contains ("dev_mode body dump FAILED"),
                    "dump: a refused write logs a FAILED line, not a success line");
             check (body.contains ("EJChat: dev_mode body dump -> "),

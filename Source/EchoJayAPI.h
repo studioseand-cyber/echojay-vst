@@ -850,6 +850,16 @@ public:
     static const juce::Array<std::pair<juce::String, juce::String>>& chatLanguageList();
     
     // Remote prompt storage — static so all instances share the same prompt
+    // WHO WROTE THE DUMP (3 Sep 2026). buildChatRequestBody is the only writer
+    // of chat-body-debug.json, but it has TWO callers: the live send, and
+    // mapfps_test's history-resend pin, which the pre-commit gate runs. A
+    // commit taken between a turn and a harvest therefore replaces a real
+    // payload with a fixture, and until now the only way to tell was reading
+    // the message text. Every dump now declares its origin in the file. The
+    // default is the live path; a fixture caller sets this before composing,
+    // so a future one has to declare itself rather than inherit "live".
+    static juce::String dumpSource;
+
     static juce::String remoteSystemPrompt;
     static int remotePromptVersion;
     static bool remoteConfigLoaded;
