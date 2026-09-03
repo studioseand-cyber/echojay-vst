@@ -6238,16 +6238,18 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
     // uid); the attribution separates the DATA (main instance) from the CHAIN
     // (this channel). Main chat: empty uid, no attribution, unchanged.
     const juce::String cmpChanUid = effectiveChannelUid();
+    juce::StringArray liveMeterFields;
     compareContent += standardChainInjections(compareContent, /*alwaysAttach*/ true,
                                               nullptr, cmpChanUid,
                                               /*mainCaptureAttribution*/ false,
                                               /*captureOwnAttribution*/ false,
-                                              /*compareAttribution*/ cmpChanUid.isNotEmpty());
+                                              /*compareAttribution*/ cmpChanUid.isNotEmpty(),
+                                              &liveMeterFields);
     processorRef.chatContents.add(compareContent);
 
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
         materialContextName(processorRef.getEffectiveChannelName()), processorRef.getGenre(),
-        processorRef.getPluginScanner().getPluginSummary());
+        processorRef.getPluginScanner().getPluginSummary(), liveMeterFields);
 
     // SafePointer guard. The API's alive flag protects the API object's
     // lifetime, but the API outlives the editor: when the user removes the
@@ -25152,8 +25154,13 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
                                                     const juce::String& targetLinkUid,
                                                     bool mainCaptureAttribution,
                                                     bool captureOwnAttribution,
-                                                    bool compareAttribution)
+                                                    bool compareAttribution,
+                                                    juce::StringArray* meterFieldsOut)
 {
+    // The snapshot's emitted field list travels OUT so buildSystemPrompt can
+    // name what actually rode this turn. Cleared here, filled at the emission
+    // below, and left empty on every turn that attaches no snapshot.
+    if (meterFieldsOut != nullptr) meterFieldsOut->clear();
     juce::String out;
     bool hadFeed = false;
     auto& chainHost = processorRef.getChainHost();
@@ -25452,7 +25459,7 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
                                         processorRef.getMeterEngine().getMeterDataJSON(),
                                         processorRef.getMeterEngine().reduceSpectrumWindow(useMean),
                                         processorRef.getMeterEngine().reduceMacroWindow(useMean),
-                                        useMean);
+                                        useMean, meterFieldsOut);
             out += ms;
             EchoJay_NSLog((ms.isEmpty()
                               ? juce::String("EJLevels: METER SNAPSHOT omitted - nothing measurable yet")
@@ -26845,7 +26852,12 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     // standardChainInjections. hadChainFeed powers the turnType staging and
     // stage label below.
     bool hadChainFeed = false;
-    userContent += standardChainInjections(msg, false, &hadChainFeed, turnTargetUid);
+    juce::StringArray liveMeterFields;   // what the snapshot actually emitted
+    userContent += standardChainInjections(msg, false, &hadChainFeed, turnTargetUid,
+                                           /*mainCaptureAttribution*/ false,
+                                           /*captureOwnAttribution*/ false,
+                                           /*compareAttribution*/ false,
+                                           &liveMeterFields);
 
     // TIER 1 key precondition (KEY_PRECONDITION_SPEC.md §2.1): if this
     // message genuinely needs the key, none exists, and a bus Link does,
@@ -26881,7 +26893,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
 
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
         channelName, genreName,
-        processorRef.getPluginScanner().getPluginSummary());
+        processorRef.getPluginScanner().getPluginSummary(), liveMeterFields);
 
     // usage-v2: no meter blob on plain chat turns (see above). turnType is
     // chain_generate when the chain-feed injection rode along (the model is
@@ -32147,6 +32159,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
     // Channel chat active: the turn stays the channel's (declaration +
     // that Link's rack) but the DATA is the main instance's — the
     // attribution statement says so (false-attribution honesty fix).
+    juce::StringArray liveMeterFields;
     {
         // scopeLinkUid drives BOTH the injection target (STATE 2 live /
         // STATE 3 offline) and attribution. captureOwnAttribution rides only
@@ -32157,7 +32170,9 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
         captureContent += standardChainInjections(captureContent, /*alwaysAttach*/ true,
                                                   nullptr, scopeLinkUid,
                                                   /*mainCaptureAttribution*/ false,
-                                                  /*captureOwnAttribution*/ scopedOwnLive);
+                                                  /*captureOwnAttribution*/ scopedOwnLive,
+                                                  /*compareAttribution*/ false,
+                                                  &liveMeterFields);
     }
 
     if (askShelfVisible_)
@@ -32171,7 +32186,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
 
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
         materialContextName(ch), processorRef.getGenre(),
-        processorRef.getPluginScanner().getPluginSummary());
+        processorRef.getPluginScanner().getPluginSummary(), liveMeterFields);
 
     // Capture turns attach the snapshot's meter blob (identical JSON shape,
     // serialised from the capture's final averaged data). turnType: explicit

@@ -691,9 +691,16 @@ public:
     void fetchRemoteConfig();
     
     // Get the current system prompt — uses remote version if available, else hardcoded
+    // liveMeterFields: the keys the METER SNAPSHOT block actually put on THIS
+    // turn, from buildMeterSnapshotInjection's emittedKeysOut. Empty means no
+    // snapshot rode, which is the case the DATA AVAILABILITY paragraph was
+    // written for. Non-empty switches that paragraph to its data-present
+    // branch, which names these fields rather than a list kept in step here.
     static juce::String buildSystemPrompt(const juce::String& channelType,
                                            const juce::String& genre,
-                                           const juce::String& pluginSummary);
+                                           const juce::String& pluginSummary,
+                                           const juce::StringArray& liveMeterFields
+                                               = juce::StringArray());
 
     // Returns true if a user message looks like it wants plugin suggestions /
     // a chain / a specific processing tool — i.e. a turn where we should
@@ -782,7 +789,8 @@ public:
     static juce::String buildMeterSnapshotInjection(const juce::String& meterJson,
                                                     const MeterEngine::SpectrumWindow& spec,
                                                     const MeterEngine::MacroWindow& macro,
-                                                    bool useMean);
+                                                    bool useMean,
+                                                    juce::StringArray* emittedKeysOut = nullptr);
 
     // Parse the chain block out of an assistant reply.
     // Returns true and fills chainJsonOut if a block (complete or truncated) is present.

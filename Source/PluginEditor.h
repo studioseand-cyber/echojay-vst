@@ -93,7 +93,8 @@ private:
                                          const juce::String& targetLinkUid = juce::String(),
                                          bool mainCaptureAttribution = false,
                                          bool captureOwnAttribution = false,
-                                         bool compareAttribution = false);
+                                         bool compareAttribution = false,
+                                         juce::StringArray* meterFieldsOut = nullptr);
 
     // The conversation-conduct rule ("don't ask which channel; don't
     // volunteer capture/meter status") shared VERBATIM by both chat

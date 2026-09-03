@@ -2421,7 +2421,8 @@ void EchoJayAPI::setChatLanguage(const juce::String& code)
 
 juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
                                              const juce::String& genre,
-                                             const juce::String& pluginSummary)
+                                             const juce::String& pluginSummary,
+                                             const juce::StringArray& liveMeterFields)
 {
     juce::String prompt;
     
@@ -2500,9 +2501,42 @@ juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
     // field glossary the model imitated on payload-less chats (fabricated
     // blocks with invented values). Explicit later-override wording
     // neutralises those sections until the SaaS prompt is updated.
+    // TWO BRANCHES, ONE PRECEDENCE (3 Sep 2026). The paragraph below was
+    // written when a chat turn genuinely carried nothing, and it said so in
+    // the strongest terms available because the failure it fixed was the model
+    // fabricating LIVE METER blocks with invented numbers. Since v3 a chain
+    // turn DOES carry measured fields, so the no-data wording became false on
+    // exactly the turns it was meant to govern: a paragraph that overrides
+    // every earlier instruction and then asserts "you have no data at all"
+    // teaches the model to disbelieve the block sitting in front of it.
+    //
+    // The fix is to make the last word TRUE, not to demote it. The override
+    // header, the never-invent rule, the never-imitate-a-LIVE-METER-block rule
+    // and the never-echo-a-hidden-block rule are in BOTH branches, word for
+    // word in force. Only the availability claim differs.
+    //
+    // THE PRESENT BRANCH NAMES THE FIELDS THE BLOCK ACTUALLY EMITTED, from
+    // liveMeterFields, which buildMeterSnapshotInjection derives from what it
+    // wrote. Nothing here holds a copy of the field vocabulary, so a field
+    // added to the block reaches this paragraph with no edit here, and a field
+    // that failed its validity guard is never claimed as present.
     prompt += "DATA AVAILABILITY (THIS OVERRIDES ANY EARLIER INSTRUCTION ABOUT LIVE METERS):\n";
-    prompt += "Meter data reaches you ONLY through explicit captures (a [CAPTURE ...] data block or attached capture payload) and Compare data. There is NO live meter feed on chat turns. Any earlier instruction about a LIVE METER block is obsolete: such a block will never be present, and you must NEVER produce one, imitate its format, or invent meter values.\n";
-    prompt += "If the conversation contains NO capture data: do not describe or characterise the mix's loudness, dynamics, stereo image, tonal balance, or any metric in any way - you have no data at all. Do not guess, estimate, or speak in general terms about how it probably measures. ANSWER THE QUESTION THE USER ACTUALLY ASKED FIRST; do NOT open with a capture-status report. Only mention that a Capture would give you real numbers if the user asks about the sound, the mix, or the measurements - capture availability is context for your own reasoning, not a status line to lead with.\n\n";
+    if (liveMeterFields.isEmpty())
+    {
+        prompt += "Meter data reaches you ONLY through explicit captures (a [CAPTURE ...] data block or attached capture payload) and Compare data. There is NO live meter feed on chat turns. Any earlier instruction about a LIVE METER block is obsolete: such a block will never be present, and you must NEVER produce one, imitate its format, or invent meter values.\n";
+        prompt += "If the conversation contains NO capture data: do not describe or characterise the mix's loudness, dynamics, stereo image, tonal balance, or any metric in any way - you have no data at all. Do not guess, estimate, or speak in general terms about how it probably measures. ANSWER THE QUESTION THE USER ACTUALLY ASKED FIRST; do NOT open with a capture-status report. Only mention that a Capture would give you real numbers if the user asks about the sound, the mix, or the measurements - capture availability is context for your own reasoning, not a status line to lead with.\n\n";
+    }
+    else
+    {
+        prompt += "This turn carries MEASURED data in a [METER SNAPSHOT] block: "
+               + liveMeterFields.joinIntoString(", ")
+               + ". Those values were measured from the user's audio, not estimated, and you may cite them directly and by name.\n";
+        prompt += "Everything else is absent. The fields named above are the whole of what you have: anything not named there was not measurable on this turn, and absent means unavailable, NEVER zero, NEVER typical, NEVER inferred from the ones you do have. Do not characterise loudness, dynamics, stereo image or any metric that is not in that list; for those, an explicit capture is still the only source.\n";
+        if (liveMeterFields.contains("spectrum") && liveMeterFields.contains("macroBands"))
+            prompt += "For any claim about frequency content, the spectrum outranks macroBands: the spectrum is 64 bins over the stated window, macroBands is six wide bands, and where they disagree the spectrum is the finer measurement and the one to cite.\n";
+        prompt += "Each block states the window it describes (\"heard\" seconds) and, for the spectrum, the statistic used. Read those before citing: a figure over four seconds of heard audio is not a figure over four minutes, and saying which you are quoting is part of quoting it.\n";
+        prompt += "The rules that do not change: NEVER invent, estimate or guess a meter value; NEVER produce a LIVE METER block or imitate its format; NEVER echo a hidden bracketed block, or any part of one, back to the user - report what it means in your own words. ANSWER THE QUESTION THE USER ACTUALLY ASKED FIRST; do not open with a data-status report.\n\n";
+    }
 
     
     // Channel type context — tells AI what kind of audio this is and what to
@@ -3040,7 +3074,8 @@ juce::String EchoJayAPI::buildChainLevelsInjection(const ChainHost& chainHost)
 juce::String EchoJayAPI::buildMeterSnapshotInjection(const juce::String& meterJson,
                                                      const MeterEngine::SpectrumWindow& spec,
                                                      const MeterEngine::MacroWindow& macro,
-                                                     bool useMean)
+                                                     bool useMean,
+                                                     juce::StringArray* emittedKeysOut)
 {
     // [METER SNAPSHOT v2]: the extended meter fields on a CHAIN turn, by the
     // same route [CHAIN LEVELS] already takes -- text on the last user
@@ -3160,6 +3195,19 @@ juce::String EchoJayAPI::buildMeterSnapshotInjection(const juce::String& meterJs
     // present-but-meaningless block: it would read as data to a human, and to
     // the server it would parse to the same nulls while spending the bytes.
     if (parts.isEmpty()) return {};
+
+    // THE KEYS IT ACTUALLY EMITTED, derived from `parts` rather than listed
+    // again. Every part is "<key>":<value>, so the name is the text before the
+    // first colon with its quotes stripped. Deriving it here is what makes the
+    // DATA AVAILABILITY paragraph self-maintaining: a field added above
+    // reaches the system prompt with no edit there and none here.
+    if (emittedKeysOut != nullptr)
+    {
+        emittedKeysOut->clear();
+        for (const auto& part : parts)
+            emittedKeysOut->add(part.upToFirstOccurrenceOf(":", false, false)
+                                    .removeCharacters("\""));
+    }
 
     juce::String tail = " - measured on the live input, same convention as the"
                         " capture payload: a field absent here was not measurable,"
