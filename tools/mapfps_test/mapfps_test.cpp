@@ -40,6 +40,7 @@
 #include "EchoJayHistoryTrim.h"
 #include "EchoJayChannelChats.h"
 #include "EchoJayAPI.h"          // history-resend pin runs the REAL buildChatRequestBody
+#include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
 #include <fstream>
@@ -4879,6 +4880,72 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "ot PIN6: the target is settled before the plugin loads",
                    "anchor@" + juce::String (iAnchor) + " load@" + juce::String (iLoad));
         }
+    }
+
+    // ===== PSR ON SILENCE (4 Sep 2026) =====================================
+    // A live block carried "psr":0.4 beside a [CHAIN LEVELS] reading "no level
+    // known (heard 0s)", on an empty project where nothing had ever played.
+    // 0.4 dB of PSR is not reachable on programme material: it was two noise
+    // floors sitting near each other. The guard tested that both inputs
+    // cleared -90 dBFS, while the engine's own silence threshold is -80, so a
+    // channel in that 10 dB band was silent to everything except the one field
+    // that published a dynamics figure from it.
+    {
+        std::cout << "psr / plr / oversCount, gated on having heard anything:\n";
+        // The inputs a silent channel with a noise floor presents: both above
+        // the old -90 bar, 0.4 dB apart, and nothing ever heard.
+        MeterData quiet;
+        quiet.shortTerm         = -85.4f;
+        quiet.shortTermTruePeak = -85.0f;
+        quiet.truePeakMaxL      = -85.0f;
+        quiet.truePeakMaxR      = -85.0f;
+        quiet.integrated        = -85.0f;   // plr's inputs valid too, on purpose
+        quiet.oversCount        = 0;
+        quiet.heardFrames       = 0;        // nothing above kSilenceThreshold, ever
+
+        const auto silent = MeterEngine::meterDataToJSON (quiet, 48000.0);
+        check (! silent.contains ("\"psr\""),
+               "ps PIN1: psr is not published when nothing has been heard");
+        // The old guard would have passed this exact struct. If the input test
+        // were still the only one, the pin above cannot fail.
+        check (quiet.shortTermTruePeak > -90.0f && quiet.shortTerm > -90.0f,
+               "ps PIN1: and the inputs DID clear the old floor, so it is the new gate that held");
+        check (! silent.contains ("\"plr\"") && ! silent.contains ("\"oversCount\""),
+               "ps PIN2: plr and oversCount move with it");
+
+        // Heard: same numbers, and now they are a measurement of something.
+        MeterData heard = quiet;
+        heard.heardFrames = 1;
+        const auto live = MeterEngine::meterDataToJSON (heard, 48000.0);
+        check (live.contains ("\"psr\":0.4"),
+               "ps PIN3: once something has been heard the field publishes again");
+        check (live.contains ("\"plr\"") && live.contains ("\"oversCount\""),
+               "ps PIN3: and so do the other two");
+
+        // THE INPUT TESTS ARE KEPT, not replaced. A channel that played and
+        // stopped has heardFrames > 0 for the life of the ring while its
+        // short-term window empties to the -100 sentinel, and a difference of
+        // two sentinels is the same non-measurement by another route.
+        MeterData stopped;
+        stopped.heardFrames = 300;          // a full ring of real audio, earlier
+        stopped.shortTerm = -100.0f; stopped.shortTermTruePeak = -100.0f;
+        check (! MeterEngine::meterDataToJSON (stopped, 48000.0).contains ("\"psr\""),
+               "ps PIN4: a heard channel whose window has emptied still omits psr");
+
+        // ONE SIGNAL, NOT A FOURTH THRESHOLD. heardFrames mirrors the counter
+        // the spectrum windows already gate on, published on the same line it
+        // is counted and under the same lock.
+        std::ifstream fme ("Source/MeterEngine.cpp");
+        std::stringstream sme; sme << fme.rdbuf();
+        const auto me = codeOnly (juce::String (sme.str()));
+        check (me.contains ("data.heardFrames = specFrameCount;"),
+               "ps PIN5: heardFrames IS specFrameCount, not a second count");
+        check (me.contains ("if (specFrameCount <= 0) return w;"),
+               "ps PIN5: and it is the same condition the spectrum windows use");
+        int n = 0, at = 0;
+        while ((at = me.indexOf (at, "heard && ")) >= 0) { ++n; at += 6; }
+        check (n == 3, "ps PIN5: all three derived fields sit behind it",
+               "found " + juce::String (n));
     }
 
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";

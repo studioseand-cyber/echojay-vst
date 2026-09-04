@@ -387,6 +387,10 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
             specWritePos = (specWritePos + 1) % kSpecHistFrames;
             specFrameCount = std::min(specFrameCount + 1, kSpecHistFrames);
             ++specFrameCounter;
+            // Published on the same line it is counted, under the same lock,
+            // so no consumer can read a heardFrames that disagrees with the
+            // ring it describes.
+            data.heardFrames = specFrameCount;
             specAccum  = smoothedSpectrum;    // restart aggregation from current
             macroAccum = smoothedMacroBands;
             specAccumSamples -= samplesPerSpecFrame;
@@ -1140,13 +1144,37 @@ juce::String MeterEngine::meterDataToJSON(const MeterData& d, double sampleRate)
     // emitted as a 0.0 / 0 placeholder.
     // PSR: short-term true peak minus short-term LUFS (BS.1770 3s window).
     // PLR: max-hold true peak minus integrated LUFS.
+    //
+    // ALL THREE ARE GATED ON WHETHER ANYTHING WAS HEARD, not only on whether
+    // their inputs clear a floor (4 Sep 2026, live). psr was emitted as 0.4 on
+    // an empty project where nothing had ever played, in the same block whose
+    // [CHAIN LEVELS] read "no level known (heard 0s)" and from which every
+    // windowed field had correctly omitted itself. 0.4 dB of PSR is not
+    // reachable on programme material; it was two noise floors sitting near
+    // each other.
+    //
+    // THE FLOOR WAS SET BELOW THE ENGINE'S OWN DEFINITION OF SILENCE, which is
+    // the whole defect. kSilenceThreshold is 0.0001f, about -80 dBFS, and
+    // these guards tested -90, so a channel in that 10 dB band was silent to
+    // the silence detector, silent to the BS.1770 gate, silent to the spectrum
+    // ring, and still loud enough to publish a dynamics figure. The input test
+    // was not wrong about its inputs. It was answering a question nobody had
+    // asked: whether the numbers exist, rather than whether the result is a
+    // measurement of anything.
+    //
+    // heardFrames is the signal reduceSpectrumWindow and reduceMacroWindow
+    // already use, so this is one condition shared across the block rather
+    // than a fourth threshold to keep in step with the other three. The input
+    // tests are KEPT: they still exclude the -100 sentinels on a channel that
+    // has been heard but whose short-term window has since emptied.
     {
         float tpMax = std::max(d.truePeakMaxL, d.truePeakMaxR);
-        if (d.shortTermTruePeak > -90.0f && d.shortTerm > -90.0f)
+        const bool heard = d.heardFrames > 0;
+        if (heard && d.shortTermTruePeak > -90.0f && d.shortTerm > -90.0f)
             json += "\"psr\":" + juce::String(d.shortTermTruePeak - d.shortTerm, 1) + ",";
-        if (tpMax > -90.0f && d.integrated > -90.0f)
+        if (heard && tpMax > -90.0f && d.integrated > -90.0f)
             json += "\"plr\":" + juce::String(tpMax - d.integrated, 1) + ",";
-        if (tpMax > -90.0f)   // audio has been measured since the last reset
+        if (heard && tpMax > -90.0f)   // audio has been measured since the last reset
             json += "\"oversCount\":" + juce::String(d.oversCount) + ",";
     }
 

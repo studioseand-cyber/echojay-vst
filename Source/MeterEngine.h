@@ -117,6 +117,20 @@ struct MeterData {
     // all other meter values are stale snapshots from the last active
     // moment and should not be presented as current state.
     bool isSilent = true;
+
+    // HAS ANYTHING BEEN HEARD AT ALL, carried so the serialiser can ask.
+    // Mirrors MeterEngine::specFrameCount: the number of ~40 ms spectrum
+    // frames accumulated since prepare(), which advances ONLY in the
+    // not-silent branch of the silence test, so 0 means no audio above
+    // kSilenceThreshold (-80 dBFS) has ever reached this channel.
+    //
+    // This is not a new signal. It is the one reduceSpectrumWindow and
+    // reduceMacroWindow already gate on ("if (specFrameCount <= 0) return w"),
+    // lifted into MeterData because meterDataToJSON is static over this struct
+    // and could not see it. isSilent is NOT the same question: it says nothing
+    // is audible RIGHT NOW, which is also true of a track that played and
+    // stopped, and that track's measurements are real.
+    int heardFrames = 0;
 };
 
 class MeterEngine
