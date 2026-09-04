@@ -4948,6 +4948,135 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                "found " + juce::String (n));
     }
 
+    // ===== STEPPED CONTROLS (4 Sep 2026) ===================================
+    // A live turn asked for a Discrete Attack of 1 ms on a Shadow Hills
+    // Mastering Compressor and the plugin ended on 0.1. The map for that
+    // control is the ladder below, taken verbatim from the local registry
+    // (fp 8aadd531..., index 22): an anchored table whose normalised axis is a
+    // uniform 1/5 grid, which is what a walked switch looks like.
+    {
+        std::cout << "stepped controls, exact rung or nothing:\n";
+        auto mk = [] (std::initializer_list<std::pair<float,float>> rows)
+        {
+            juce::Array<juce::Array<float>> t;
+            for (auto& p : rows) { juce::Array<float> r; r.add (p.first); r.add (p.second); t.add (r); }
+            return t;
+        };
+        // The real Shadow Hills Discrete Attack table, float32 drift included.
+        const auto shadowHills = mk ({ {0.100000001490116f, 0.0f}, {0.5f, 0.200000002980232f},
+                                       {1.0f, 0.400000005960464f}, {5.0f, 0.600000023841858f},
+                                       {10.0f, 0.800000011920929f}, {30.0f, 1.0f} });
+
+        // sv PIN1 -- IT IS RECOGNISED AS A LADDER, and its rungs are the
+        // anchor values, in order.
+        const auto rungs = echojay::stepLadderValues (shadowHills);
+        check (rungs.size() == 6, "sv PIN1: the table is a step ladder",
+               "rungs " + juce::String (rungs.size()));
+        check (rungs.size() == 6 && std::abs (rungs[0] - 0.1f) < 1e-4f
+               && std::abs (rungs[5] - 30.0f) < 1e-4f,
+               "sv PIN1: and the rungs are its own values");
+
+        // sv PIN2 -- THE EXACT-MATCH CASE. 1 is a rung, and it must be found
+        // as one despite the table holding a float32 round-trip of it. This is
+        // the case the live turn should have taken.
+        check (echojay::stepLadderIndex (rungs, 1.0f) == 2,
+               "sv PIN2: an exact request finds its rung");
+        check (echojay::stepLadderIndex (rungs, 0.1f) == 0,
+               "sv PIN2: including one the map stores with float drift");
+        check (echojay::stepLadderIndex (rungs, 30.0f) == 5,
+               "sv PIN2: and one at the top of the ladder");
+
+        // sv PIN3 -- THE NEAR-MISS. 2 ms sits between rungs 1 and 5, and used
+        // to interpolate to a normalised the plugin would quantise to one of
+        // them. It is a miss, not a snap.
+        check (echojay::stepLadderIndex (rungs, 2.0f) < 0,
+               "sv PIN3: a value between rungs is a MISS, never snapped");
+        check (echojay::stepLadderIndex (rungs, 0.9f) < 0,
+               "sv PIN3: and being close to a rung does not make it one");
+        // The tolerance exists for float drift and nothing wider: half a
+        // percent off 30 is still off.
+        check (echojay::stepLadderIndex (rungs, 30.15f) < 0,
+               "sv PIN3: the tolerance is drift, not a snap radius");
+
+        // sv PIN4 -- A CONTINUOUS CONTROL IS NOT A LADDER, or this refuses
+        // real writes. The sampler walks 21 points, so a swept table reads
+        // M = 20 and the bound (M <= 19) is what separates the two.
+        {
+            juce::Array<juce::Array<float>> sweep;
+            for (int i = 0; i <= 20; ++i)
+            {
+                juce::Array<float> row;
+                row.add (-60.0f + 3.0f * (float) i);
+                row.add ((float) i / 20.0f);
+                sweep.add (row);
+            }
+            check (echojay::stepLadderValues (sweep).isEmpty(),
+                   "sv PIN4: a 21-point sweep is not a ladder");
+        }
+        // A two-rung switch IS one, and it is the class most likely to be
+        // asked for a value it does not have.
+        check (echojay::stepLadderValues (mk ({ {48.0f, 0.0f}, {96.0f, 1.0f} })).size() == 2,
+               "sv PIN4: a two-position switch is a ladder");
+        // An EVEN ladder counts too. The server's second test drops these from
+        // the printed note to save budget; they step exactly as hard, and they
+        // are 1,428 of the 2,141 ladders in the local registry.
+        check (echojay::stepLadderValues (mk ({ {6.0f, 0.0f}, {12.0f, 1.0f/3.0f},
+                                                {18.0f, 2.0f/3.0f}, {24.0f, 1.0f} })).size() == 4,
+               "sv PIN4: an evenly spaced ladder is still a ladder");
+
+        // sv PIN5 -- THE VERDICT, driven end to end. applyOne needs a loaded
+        // plugin and cannot be called here, so the whole decision including
+        // its sentence lives in checkStepLadder and the write path only obeys
+        // it. That is what makes this witnessable at all: the first draft of
+        // these pins tested the two helpers and a source ordering, and
+        // disabling the guard in applyOne reddened NOTHING.
+        {
+            const auto hit = echojay::checkStepLadder (shadowHills, 1.0f);
+            check (hit.isLadder && hit.onRung && std::abs (hit.snapped - 1.0f) < 1e-4f,
+                   "sv PIN5: an exact request is accepted at the STORED rung value");
+            check (hit.note.isEmpty(), "sv PIN5: and carries no refusal");
+
+            const auto miss = echojay::checkStepLadder (shadowHills, 2.0f);
+            check (miss.isLadder && ! miss.onRung, "sv PIN5: 2 ms is refused");
+            check (miss.note.contains ("asked 2") && miss.note.contains ("0.1|0.5|1|5|10|30")
+                   && miss.note.contains ("left manual"),
+                   "sv PIN5: and the refusal names what was asked AND what is reachable",
+                   miss.note);
+
+            // A continuous control must reach the interpolation untouched, or
+            // this refuses real writes.
+            juce::Array<juce::Array<float>> sweep2;
+            for (int i = 0; i <= 20; ++i)
+            {
+                juce::Array<float> row;
+                row.add (-60.0f + 3.0f * (float) i);
+                row.add ((float) i / 20.0f);
+                sweep2.add (row);
+            }
+            const auto cont = echojay::checkStepLadder (sweep2, -13.5f);
+            check (! cont.isLadder && ! cont.onRung && cont.note.isEmpty(),
+                   "sv PIN5: a continuous control is not judged at all");
+        }
+
+        // sv PIN6 -- THE WRITE PATH OBEYS THE VERDICT AND NOTHING ELSE, ahead
+        // of the interpolation. The guard is two lines so that a regression
+        // has to delete something this can name.
+        {
+            std::ifstream fa ("Source/EchoJayParamApply.h");
+            std::stringstream sa; sa << fa.rdbuf();
+            const auto ap = codeOnly (juce::String (sa.str()));
+            check (ap.contains ("if (ladderVerdict.isLadder && ! ladderVerdict.onRung)"),
+                   "sv PIN6: the refusal branch is the verdict, unmodified");
+            check (ap.contains ("if (ladderVerdict.onRung) target = ladderVerdict.snapped;"),
+                   "sv PIN6: and an accepted request writes the stored rung");
+            const int iV = ap.indexOf ("checkStepLadder (eff.table, target)");
+            const int iI = ap.indexOf ("norm = juce::jlimit (0.0f, 1.0f, interpolateAnchors");
+            check (iV > 0 && iI > iV,
+                   "sv PIN6: and it is decided BEFORE the interpolation",
+                   "verdict@" + juce::String (iV) + " interp@" + juce::String (iI));
+        }
+    }
+
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";
     return failN == 0 ? 0 : 1;
 }
