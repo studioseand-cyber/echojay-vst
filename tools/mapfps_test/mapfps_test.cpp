@@ -4721,6 +4721,166 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         }
     }
 
+    // ===== OP TARGETS v1 (4 Sep 2026) ======================================
+    // Two live failures in one Ableton session. An add landed in the wrong
+    // slot and the card confirmed the wrong slot in words; a replace hit a
+    // plugin the user had not agreed to and the card confirmed that too.
+    // Neither card was lying about the op: both rendered the op's slot NUMBER
+    // back as a name, so the words could never disagree with the number they
+    // were meant to check. See HANDOVER/op-targets-v1.md.
+    {
+        using Op = ChainHost::ChainEditOp;
+
+        // ot PIN1 -- the two wire keys reach the two fields, through the REAL
+        // parser. snake_case on the wire, camelCase in the struct, like
+        // wet_pct/wetPct and no_such/noSuchTerm.
+        {
+            const char* json = R"({"baseSlots":["EchoJay EQ","Newfangled Elevate"],"edit":[
+                {"op":"replace","slot":2,"slot_name":"Newfangled Elevate","name":"FG-X 2"},
+                {"op":"add","name":"Vertigo VSM-3","after":2,"after_name":"Bettermaker Bus Compressor DSP"}]})";
+            juce::StringArray base;
+            const auto ops = ChainHost::parseChainEditOps (juce::String (json), &base);
+            check (ops.size() == 2, "ot PIN1: both ops parse",
+                   "got " + juce::String ((int) ops.size()));
+            if (ops.size() == 2)
+            {
+                check (ops[0].slotName == "Newfangled Elevate",
+                       "ot PIN1: replace carries the plugin being REMOVED", ops[0].slotName);
+                // The field the schema never had: `name` is the plugin
+                // ARRIVING and always was, so the outgoing one had no home.
+                check (ops[0].name == "FG-X 2",
+                       "ot PIN1: and `name` still means the plugin arriving", ops[0].name);
+                check (ops[1].afterName == "Bettermaker Bus Compressor DSP",
+                       "ot PIN1: add carries its anchor by name", ops[1].afterName);
+            }
+        }
+
+        // ot PIN2 -- AN IDENTITY OP WHOSE NAMED TARGET IS NOT AT THAT SLOT IS
+        // REFUSED, and the refusal names BOTH sides. A refusal that says only
+        // "mismatch" cannot be acted on.
+        {
+            check (ChainHost::identityTargetMismatch ("FG-X 2", "FG-X 2", 2).isEmpty(),
+                   "ot PIN2: a name that matches its slot proceeds");
+            const auto why = ChainHost::identityTargetMismatch (
+                                 "Bettermaker Bus Compressor DSP", "FG-X 2", 2);
+            check (why.isNotEmpty(), "ot PIN2: a name that does not match is refused");
+            check (why.contains ("Bettermaker Bus Compressor DSP") && why.contains ("FG-X 2")
+                   && why.contains ("slot 3"),
+                   "ot PIN2: and the refusal names the claim, the rack and the slot", why);
+            // The comparator is the one the baseSlots guard already uses, so
+            // the two name checks cannot disagree about what a match is.
+            check (ChainHost::identityTargetMismatch ("CLA-76 (m)", "CLA-76", 0).isEmpty(),
+                   "ot PIN2: loose matching, same comparator as the baseSlots guard");
+        }
+
+        // ot PIN3 -- THE ADD ANCHOR, all four cases. Case 2 is failure B.
+        {
+            const juce::StringArray rack { "EchoJay EQ", "Bettermaker Bus Compressor DSP",
+                                           "Newfangled Elevate" };
+            // 1. Name and index agree: insert after it.
+            auto a = ChainHost::resolveAddAnchor ("Bettermaker Bus Compressor DSP", 1, rack);
+            check (!a.refused && a.insertAt == 2 && !a.fromName,
+                   "ot PIN3: name and index agree", juce::String (a.insertAt));
+            // 2. THE FAILURE B CASE. The model meant "after the Bettermaker I
+            //    just added", wrote after:2 in post-op numbering, and the
+            //    index resolves to the Newfangled. The name appears exactly
+            //    once, so the NAME WINS and the plugin lands where the model
+            //    meant. This is also the only way "after the plugin I just
+            //    added" can be said at all: a slot added earlier in the batch
+            //    has no original number.
+            a = ChainHost::resolveAddAnchor ("Bettermaker Bus Compressor DSP", 2, rack);
+            check (!a.refused && a.insertAt == 2 && a.fromName,
+                   "ot PIN3: a unique name beats a disagreeing index (failure B)",
+                   juce::String (a.insertAt));
+            // 3. Absent: nothing to place against.
+            a = ChainHost::resolveAddAnchor ("Pro-C 2", 1, rack);
+            check (a.refused && a.why.contains ("not in the rack"),
+                   "ot PIN3: an absent anchor is refused", a.why);
+            // 4. Duplicated: the index is the tie-breaker for a repeated name,
+            //    and we only get here because the index's slot does NOT bear
+            //    it, so the tie-breaker is already spent. Guessing between two
+            //    identical plugins is the other failure in a costume.
+            const juce::StringArray twins { "Pro-Q 3", "EchoJay EQ", "Pro-Q 3" };
+            a = ChainHost::resolveAddAnchor ("Pro-Q 3", 1, twins);
+            check (a.refused && a.why.contains ("2 times"),
+                   "ot PIN3: a duplicated anchor the index cannot resolve is refused", a.why);
+            // ... but the index DOES disambiguate when it points at one of them.
+            a = ChainHost::resolveAddAnchor ("Pro-Q 3", 2, twins);
+            check (!a.refused && a.insertAt == 3,
+                   "ot PIN3: and the index disambiguates when it points at one of them");
+        }
+
+        // ot PIN4 -- THE CARD SHOWS THE OP'S NAME, NOT THE LOOKUP. This is the
+        // part that makes the fix real: a validator behind a card that still
+        // renders the number back leaves the user consenting to the client's
+        // description of a slot rather than to the model's description of an
+        // action.
+        {
+            const juce::StringArray base { "EchoJay EQ", "Bettermaker Bus Compressor DSP",
+                                           "FG-X 2" };
+            Op rep; rep.op = "replace"; rep.slot = 2;
+            rep.slotName = "Bettermaker Bus Compressor DSP";   // the model's CLAIM
+            rep.name = "Shadow Hills Mastering Compressor";
+            const auto line = ChainHost::describeEditOp (rep, base);
+            check (line.contains ("Bettermaker Bus Compressor DSP"),
+                   "ot PIN4: the card prints the name the OP carried", line);
+            check (! line.contains ("FG-X 2"),
+                   "ot PIN4: and not the rack's occupant of that number", line);
+            Op ad; ad.op = "add"; ad.name = "Vertigo VSM-3"; ad.after = 2;
+            ad.afterName = "Bettermaker Bus Compressor DSP";
+            const auto aline = ChainHost::describeEditOp (ad, base);
+            check (aline.contains ("after Bettermaker Bus Compressor DSP"),
+                   "ot PIN4: an add prints its anchor by name", aline);
+            check (aline.contains ("slot 3"),
+                   "ot PIN4: and keeps the number beside it, to look at the rack with", aline);
+        }
+
+        // ot PIN5 -- AN OP WITH NEITHER FIELD BEHAVES EXACTLY AS TODAY, which
+        // is what lets this land before the server emits anything. Expand then
+        // contract: the client accepts the fields first, the server sends them
+        // second, and only a later landing may require them.
+        {
+            const juce::StringArray base { "EchoJay EQ", "Newfangled Elevate" };
+            check (ChainHost::identityTargetMismatch ("", "Newfangled Elevate", 1).isEmpty(),
+                   "ot PIN5: no claim, nothing to check");
+            auto a = ChainHost::resolveAddAnchor ("", 0, base);
+            check (!a.refused && a.insertAt == 1 && !a.fromName,
+                   "ot PIN5: the anchor arithmetic is unchanged without a name");
+            a = ChainHost::resolveAddAnchor ("", -2, base);
+            check (!a.refused && a.insertAt == base.size(),
+                   "ot PIN5: and an unresolvable index still appends, never aborts");
+            Op rep; rep.op = "replace"; rep.slot = 1; rep.name = "FG-X 2";
+            check (ChainHost::describeEditOp (rep, base).contains ("Newfangled Elevate"),
+                   "ot PIN5: and the card falls back to the rack lookup");
+        }
+
+        // ot PIN6 -- A MISMATCH REFUSES ONE OP AND THE BATCH CONTINUES. The
+        // verb matters: failAndStop marks every later op "not attempted",
+        // failButContinue records the failure and carries on because the op
+        // was a clean no-op. A name check runs before any mutation and before
+        // the load, so it is that same shape exactly.
+        {
+            std::ifstream fot ("Source/ChainHost.cpp");
+            std::stringstream sot; sot << fot.rdbuf();
+            const auto seq = functionBody (codeOnly (juce::String (sot.str())),
+                                           "void ChainHost::runNextEditOp");
+            int n = 0, at = 0;
+            while ((at = seq.indexOf (at, "refused: \" + ")) >= 0) { ++n; at += 8; }
+            check (n >= 6, "ot PIN6: every arm that can refuse a target does",
+                   "found " + juce::String (n));
+            check (! seq.contains ("failAndStop(\"replace refused")
+                   && ! seq.contains ("failAndStop(\"add refused"),
+                   "ot PIN6: and a refusal never aborts the batch");
+            // Settled BEFORE the fallible load, or a refused op leaves a
+            // plugin in the rack that nothing asked for.
+            const int iAnchor = seq.indexOf ("resolveAddAnchor");
+            const int iLoad   = seq.indexOf ("loadPluginAsync");
+            check (iAnchor > 0 && iLoad > iAnchor,
+                   "ot PIN6: the target is settled before the plugin loads",
+                   "anchor@" + juce::String (iAnchor) + " load@" + juce::String (iLoad));
+        }
+    }
+
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";
     return failN == 0 ? 0 : 1;
 }

@@ -1471,6 +1471,12 @@ std::vector<ChainHost::ChainEditOp> ChainHost::parseChainEditOps(
         op.on       = (bool)eo->getProperty("on");
         op.name     = eo->getProperty("name").toString().trim();
         op.settings = eo->getProperty("settings").toString().trim();
+        // OP TARGETS v1: the op's own words for what it is aiming at. Read
+        // unconditionally, like every other field here; absent keys leave
+        // them empty and the op then behaves exactly as it did before the
+        // fields existed, which is what lets an older server keep working.
+        op.slotName  = eo->getProperty("slot_name").toString().trim();
+        op.afterName = eo->getProperty("after_name").toString().trim();
         // Machine-readable dial values on add/replace: the server sends the
         // same settings_structured object a chain entry carries, so this is the
         // same key the build path reads. Only add/replace consume it (they are
@@ -1506,9 +1512,26 @@ juce::String ChainHost::describeEditOp(const ChainEditOp& op,
 {
     // Display is 1-BASED (matches the [CURRENT CHAIN] injection and the
     // model's numbering); op fields are internal 0-based post-parse.
-    auto slotName = [&baseSlots](int i) -> juce::String {
+    //
+    // OP TARGETS v1 (4 Sep 2026): THE WORDS COME FROM THE OP WHERE THE OP HAS
+    // WORDS. Every line here used to render slotName(op.slot), a lookup of the
+    // op's own NUMBER in baseSlots, so the card could not contradict the op:
+    // it WAS the op's number read back through a table. A user reading
+    // "replace FG-X 2 (slot 3)" was reading the client's opinion of slot 3,
+    // not the model's claim about what it was removing. On 4 September that
+    // opinion was correct and the action was still wrong, and Apply was
+    // tapped on it. The card is where consent is given, so it has to show the
+    // claim being consented to. The rack lookup remains the fallback for an
+    // op that carries no name, which is every op from a pre-v1 server.
+    auto rackAt = [&baseSlots](int i) -> juce::String {
         return (i >= 0 && i < baseSlots.size())
             ? baseSlots[i] : ("slot " + juce::String(i + 1));
+    };
+    auto targetWords = [&rackAt](const juce::String& fromOp, int i) -> juce::String {
+        return fromOp.trim().isNotEmpty() ? fromOp.trim() : rackAt(i);
+    };
+    auto slotName = [&targetWords, &op](int i) -> juce::String {
+        return targetWords(op.slotName, i);
     };
     // What a dial will ACTUALLY write, rendered from the STRUCTURED payload
     // (9 Aug 2026): the card showed the op's PROSE ("ratio 4") while the
@@ -1541,12 +1564,17 @@ juce::String ChainHost::describeEditOp(const ChainEditOp& op,
     };
     const juce::String payload = structuredSummary(op.structuredSettings);
     if (op.op == "add")
+        // The anchor's words come from after_name where the op carries it.
+        // "after slot 2 (Newfangled Elevate)" was the whole of failure B: the
+        // name in the parentheses was baseSlots[2], so it agreed with the
+        // number by construction and could not report that the model meant a
+        // different plugin. An op naming its anchor prints the anchor.
         return juce::String::fromUTF8("+ add ") + op.name
              + (op.after <= -1 ? juce::String(" first")
-                : op.after >= baseSlots.size()
+                : (op.after >= baseSlots.size() && op.afterName.trim().isEmpty())
                     ? juce::String(" at the end of the chain")
-                    : " after slot " + juce::String(op.after + 1)
-                      + " (" + slotName(op.after) + ")")
+                    : " after " + targetWords(op.afterName, op.after)
+                      + " (slot " + juce::String(op.after + 1) + ")")
              + (payload.isNotEmpty() ? " - sets " + payload : juce::String());
     if (op.op == "remove")
         return juce::String::fromUTF8("\xe2\x88\x92 remove ") + slotName(op.slot)
@@ -1871,10 +1899,24 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
         return (orig >= 0 && orig < (int)st->map.size()) ? st->map[(size_t)orig] : -1;
     };
 
+    // OP TARGETS v1: does the plugin the op NAMED sit where the op's number
+    // points? Empty means proceed (including the pre-v1 case where the op
+    // named nothing at all). Checked in the SEQUENCER and not in the
+    // pre-flight dry run, deliberately: the dry run's verb is abort-the-batch,
+    // and a wrong target on one op is no reason to throw away the others.
+    auto targetRefusal = [this, &op](int cur) -> juce::String {
+        if (cur < 0 || cur >= (int) slots_.size()) return {};
+        return identityTargetMismatch(op.slotName, slots_[(size_t)cur].desc.name, op.slot);
+    };
+
     if (op.op == "remove")
     {
         const int cur = curOf(op.slot);
         if (cur < 0) return failAndStop("remove failed: slot no longer present");
+        {
+            const auto why = targetRefusal(cur);
+            if (why.isNotEmpty()) return failButContinue("remove refused: " + why);
+        }
         const juce::String nm = slots_[(size_t)cur].desc.name;
         removeSlot(cur);
         for (auto& m : st->map) { if (m == cur) m = -1; else if (m > cur) --m; }
@@ -1885,6 +1927,10 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
     {
         const int cur = curOf(op.slot);
         if (cur < 0) return failAndStop("bypass failed: slot no longer present");
+        {
+            const auto why = targetRefusal(cur);
+            if (why.isNotEmpty()) return failButContinue("bypass refused: " + why);
+        }
         setSlotBypassed(cur, op.on);
         finishOpAndContinue(juce::String(op.on ? "bypassed " : "un-bypassed ")
                             + slots_[(size_t)cur].desc.name);
@@ -1894,6 +1940,10 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
     {
         const int cur = curOf(op.slot);
         if (cur < 0) return failAndStop("set_wet failed: slot no longer present");
+        {
+            const auto why = targetRefusal(cur);
+            if (why.isNotEmpty()) return failButContinue("set_wet refused: " + why);
+        }
         setSlotWet(cur, op.wetPct / 100.0f);
         EchoJay_NSLog(("EJEdit: set_wet slot=" + juce::String(cur + 1) + " \""
                        + slots_[(size_t)cur].desc.name + "\" wet=" + juce::String(op.wetPct, 1) + "%").toRawUTF8());
@@ -1905,6 +1955,10 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
     {
         const int cur = curOf(op.slot);
         if (cur < 0) return failAndStop("move failed: slot no longer present");
+        {
+            const auto why = targetRefusal(cur);
+            if (why.isNotEmpty()) return failButContinue("move refused: " + why);
+        }
         // Target: current position of the original occupant of `to`, else
         // clamp into the current rack
         int target = curOf(op.to);
@@ -1926,6 +1980,10 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
         // instead of the destructive replace.
         const int cur = curOf(op.slot);
         if (cur < 0) return failAndStop("set failed: slot no longer present");
+        {
+            const auto why = targetRefusal(cur);
+            if (why.isNotEmpty()) return failButContinue("set refused: " + why);
+        }
         const juce::String nm = slots_[(size_t)cur].desc.name;
         const bool dials = op.structuredSettings.getDynamicObject() != nullptr;
         if (op.settings.isNotEmpty())
@@ -1944,6 +2002,33 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
         // sequence CONTINUES with the remaining independent ops.
         // Honest miss (WithholdReason): a plugin this host withholds is
         // reported as such, not as "not resolvable".
+        // OP TARGETS v1: the target is settled BEFORE the load, so a refused
+        // op never leaves a plugin in the rack that nothing asked for. Both
+        // arms are pure reads at this point; nothing has moved yet.
+        int  addInsertAt = -1;
+        bool addFromName = false;
+        if (op.op == "add")
+        {
+            juce::StringArray rackNames;
+            for (const auto& sl : slots_) rackNames.add(sl.desc.name);
+            // -1 = "insert first", -2 = the index did not resolve (the slot it
+            // named was removed earlier in this batch, or is past the end).
+            const int anchorCur = op.after <= -1
+                ? -1
+                : (op.after < (int)st->map.size() && st->map[(size_t)op.after] >= 0
+                       ? st->map[(size_t)op.after] : -2);
+            const auto anchor = resolveAddAnchor(op.afterName, anchorCur, rackNames);
+            if (anchor.refused) return failButContinue("add refused: " + anchor.why);
+            addInsertAt = anchor.insertAt;
+            addFromName = anchor.fromName;
+        }
+        else
+        {
+            const int curTgt = curOf(op.slot);
+            const auto whyT = targetRefusal(curTgt);
+            if (whyT.isNotEmpty()) return failButContinue("replace refused: " + whyT);
+        }
+
         WithholdReason why = WithholdReason::None;
         juce::StringArray ambiguous;
         // resolveOfferedName, not resolveByName: the SAME rule the pre-flight
@@ -1961,7 +2046,7 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
         desc = preferInlineHostableDesc(desc);
         auto self = st;
         const auto theOp = op;
-        loadPluginAsync(desc, [this, self, theOp, desc](const juce::String& err)
+        loadPluginAsync(desc, [this, self, theOp, desc, addInsertAt, addFromName](const juce::String& err)
         {
             // Re-enter the sequencer context manually (we are mid-op)
             auto finish = [this, self](const juce::String& line)
@@ -2024,16 +2109,21 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
             if (theOp.op == "add")
             {
                 applyOpSettings(newCur);
-                int target = theOp.after <= -1 ? 0
-                    : (theOp.after < (int)self->map.size() && self->map[(size_t)theOp.after] >= 0
-                        ? self->map[(size_t)theOp.after] + 1
-                        : newCur);   // fallback: leave at end
+                // Settled before the load by resolveAddAnchor. Computed on the
+                // pre-load rack, which is still true here: the load APPENDS,
+                // so every index below the new slot is unchanged.
+                const int target = juce::jlimit(0, newCur, addInsertAt);
                 walkSlotTo(self->map, newCur, target);
                 // Entries at/after the insert point were fixed by walkSlotTo's
                 // swap bookkeeping; nothing else to update (new slot is not
                 // addressable by original numbering).
+                //
+                // The result line says WHICH anchor, not which number, when
+                // the position came from the name: "after slot 2" is exactly
+                // the sentence that was true and useless in failure B.
                 finish("added " + theOp.name
                        + (theOp.after <= -1 ? juce::String(" first")
+                          : addFromName     ? " after " + theOp.afterName
                                             : " after slot " + juce::String(theOp.after + 1)));
             }
             else // replace

@@ -626,6 +626,22 @@ public:
         float wetPct = -1.0f;
         juce::String name;      // add/replace: name from AVAILABLE PLUGINS
         juce::String settings;  // prose settings for the slot tile (display)
+        // ---- OP TARGETS v1 (4 Sep 2026): the op names what it is aiming at.
+        // Until now every op addressed its target by NUMBER alone, and every
+        // surface that appeared to confirm that number in words (the card,
+        // the progress label, the result line) rendered the number back
+        // through a lookup, so the words could never disagree with the number
+        // they were meant to check. Two live failures in one session.
+        //   slotName   the plugin this op expects to find AT `slot`. On a
+        //              replace that is the plugin being REMOVED, which the
+        //              schema had no way to say at all (`name` is the plugin
+        //              arriving, and always was).
+        //   afterName  the plugin an `add` expects to sit AFTER.
+        // BOTH OPTIONAL, ALWAYS. Empty means an older server that does not
+        // emit them, and the op then behaves exactly as it did before.
+        // See HANDOVER/op-targets-v1.md.
+        juce::String slotName;
+        juce::String afterName;
         // Server-decided no-such-control verdict riding the op (9 Aug
         // 2026): term the user asked for + provenance tier (deferred /
         // unmapped / complete). The card composes the REASON a suggestion
@@ -671,6 +687,89 @@ public:
             }
         return ops;
     }
+    // ---- OP TARGETS v1: the two target resolvers -------------------------
+    // Static and header-inline so the gate exercises the SHIPPED decision
+    // rather than a copy of it. Both are pure over a list of the current
+    // rack's names; neither touches a host.
+
+    // An identity target (remove/replace/move/bypass/set/set_wet). Returns an
+    // empty string when the op may proceed, or the refusal clause naming BOTH
+    // sides. A refusal that says only "mismatch" cannot be acted on.
+    // NO RECOVERY BY NAME HERE, deliberately: relocating an identity op
+    // because the name turned up elsewhere would mutate a plugin the op did
+    // not name, which is the harm this field exists to prevent. The dry run
+    // already draws this line in the other direction, and for the same
+    // reason: a positional target clamps, an identity target aborts.
+    static juce::String identityTargetMismatch (const juce::String& opSlotName,
+                                                const juce::String& rackName,
+                                                int slot0)
+    {
+        if (opSlotName.trim().isEmpty()) return {};          // no claim, nothing to check
+        if (namesMatchLoose (opSlotName, rackName)) return {};
+        return "this op named \"" + opSlotName.trim() + "\" at slot "
+             + juce::String (slot0 + 1) + ", but the rack has \"" + rackName + "\" there";
+    }
+
+    // Where an `add` should land.
+    //   anchorCur  the CURRENT index of the slot `after` resolved to, or -1
+    //              when the op said "insert first", or -2 when the index did
+    //              not resolve at all (removed, or past the end).
+    //   rackNames  the rack AS IT STANDS NOW, not the pre-batch rack. That is
+    //              the only reading under which the recovery below can work:
+    //              a slot added earlier in the same batch has no original
+    //              number (ChainHost.cpp says so at the walkSlotTo comment)
+    //              but it IS in the current rack under its name.
+    struct AddAnchor { int insertAt = 0; bool refused = false; bool fromName = false; juce::String why; };
+    static AddAnchor resolveAddAnchor (const juce::String& afterName, int anchorCur,
+                                       const juce::StringArray& rackNames)
+    {
+        AddAnchor r;
+        const auto want = afterName.trim();
+        // 1. "insert first": there is no anchor, so a name is meaningless.
+        if (anchorCur == -1) { r.insertAt = 0; return r; }
+        const bool indexOk = anchorCur >= 0 && anchorCur < rackNames.size();
+        // 2. No name: today's arithmetic, byte for byte. An unresolvable
+        //    index still appends at the end rather than aborting.
+        if (want.isEmpty())
+        {
+            r.insertAt = indexOk ? anchorCur + 1 : rackNames.size();
+            return r;
+        }
+        // 3. Name and index agree. The ordinary case, one string compare.
+        if (indexOk && namesMatchLoose (want, rackNames[anchorCur]))
+        {
+            r.insertAt = anchorCur + 1;
+            return r;
+        }
+        // They disagree. A POSITIONAL target may recover by name.
+        juce::Array<int> hits;
+        for (int i = 0; i < rackNames.size(); ++i)
+            if (namesMatchLoose (want, rackNames[i])) hits.add (i);
+        // 4. Exactly one: THE NAME WINS. This is the failure-B fix and the
+        //    only way "after the plugin I just added" can be expressed.
+        if (hits.size() == 1)
+        {
+            r.insertAt = hits[0] + 1;
+            r.fromName = true;
+            return r;
+        }
+        // 5. Absent: nothing to place against.
+        if (hits.isEmpty())
+        {
+            r.refused = true;
+            r.why = "\"" + want + "\" is not in the rack, so there is nothing to add after";
+            return r;
+        }
+        // 6. Duplicated: the index is the tie-breaker for a repeated name, and
+        //    we only reach this line because the index's own slot does NOT
+        //    bear the name, so the tie-breaker has already been spent.
+        //    Guessing between two identical plugins is failure C in a costume.
+        r.refused = true;
+        r.why = "\"" + want + "\" is in the rack " + juce::String (hits.size())
+              + " times and slot " + juce::String (anchorCur + 1) + " is not one of them";
+        return r;
+    }
+
     static std::vector<ChainEditOp> parseChainEditOps(const juce::String& editJson,
                                                       juce::StringArray* baseSlotsOut = nullptr,
                                                       juce::String* explanationOut = nullptr);
