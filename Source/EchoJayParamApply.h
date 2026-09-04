@@ -44,6 +44,14 @@ struct ApplyResult
     // controls["Name"] - a flat lookup by semantic returns void and the card
     // printed bare repeated labels ("freq Hz, gain dB, freq Hz, gain dB").
     juce::var    requestedValue;
+    // WHAT THE CONTROL READ BEFORE THIS WRITE (4 Sep 2026). Captured here
+    // because here is the only place it exists: applyOne holds the parameter
+    // and writes it, so anything asking afterwards gets the new value. The
+    // move log's first attempt used the slot's cached display sweep instead,
+    // which is taken once per SEND and therefore predates a slot built in the
+    // same turn: every entry came out with an empty before. Read once, before
+    // any branch writes.
+    juce::String beforeText;
     int          index = -1; // plugin parameter index
     bool         applied = false;
     float        normalized = 0.0f;
@@ -508,6 +516,8 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
         return r;
     }
     auto* param = params[index];
+    // BEFORE, read once and before every write path below.
+    r.beforeText = param->getCurrentValueAsText().trim();
 
     // SECOND GUARD, TAGGED MAPS ONLY (26 Aug 2026).
     //

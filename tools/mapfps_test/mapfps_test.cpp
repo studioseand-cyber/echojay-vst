@@ -2057,7 +2057,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         {
             std::ifstream fh ("Source/ChainHost.h");
             std::stringstream sh; sh << fh.rdbuf();
-            check (codeOnly (juce::String (sh.str())).contains ("bool anchorsUnverified = false; };"),
+            check (codeOnly (juce::String (sh.str())).contains ("bool anchorsUnverified = false;"),
                    "fb PIN3: the report field defaults false");
         }
 
@@ -4573,8 +4573,16 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // marker cannot trip the server's capture sniff.
         {
             const auto body = functionBody (apRaw, "juce::String EchoJayAPI::buildMoveLogInjection");
-            check (body.contains ("e.landed ? \"LANDED  \" : \"REFUSED \""),
+            check (body.contains ("case K::Dial:   b << (e.landed ? \"DIALLED \" : \"REFUSED \"); break;"),
                    "ml PIN2: every line declares which fact it is");
+            // A refusal is a refused DIAL. Nothing else in the switch can
+            // print REFUSED, so a structural entry cannot be read as one.
+            {
+                int n = 0, at = 0;
+                while ((at = body.indexOf (at, "\"REFUSED \"")) >= 0) { ++n; at += 6; }
+                check (n == 1, "ml PIN2: and only a dial can be refused",
+                       "REFUSED written " + juce::String (n) + " times");
+            }
             // The instruction spans two C++ literals, so the assertion takes
             // the half that lives inside one of them. A phrase that straddles
             // a line break is a pin that fails on formatting, not on meaning.
@@ -4644,15 +4652,72 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "tr PIN2: the compaction half is NOT in scope and is not present");
         }
 
-        // ml PIN4 -- THE BEFORE VALUE DECLARES ITS PROVENANCE IN THE BLOCK.
-        // The contract saying so is not enough: the model reads the block, not
-        // the contract, and would otherwise cite a swept value as exact.
+        // ml PIN4 -- THE BEFORE VALUE IS REAL NOW, AND THE PIN MOVED WITH IT.
+        // It used to assert wording explaining that the value came from a
+        // stale sweep. That value was empty on every emitted line, because the
+        // sweep runs once per SEND and a slot built in the same turn has never
+        // been swept. applyOne now reads the control immediately before it
+        // writes, so the field is populated and the excuse is gone: the pin
+        // asserts the capture rather than the disclaimer.
         {
-            const auto body = functionBody (apRaw, "juce::String EchoJayAPI::buildMoveLogInjection");
-            check (body.contains ("from the previous turn's sweep, not an instant-before measurement"),
-                   "ml PIN4: the block states where the BEFORE value came from");
-            check (body.contains ("never as its exact value at the moment of the"),
-                   "ml PIN4: and forbids quoting it as exact");
+            std::ifstream fpa ("Source/EchoJayParamApply.h");
+            std::stringstream spa; spa << fpa.rdbuf();
+            const auto pa = codeOnly (juce::String (spa.str()));
+            check (pa.contains ("juce::String beforeText;"),
+                   "ml PIN4: ApplyResult carries the pre-write reading");
+            check (pa.contains ("r.beforeText = param->getCurrentValueAsText().trim();"),
+                   "ml PIN4: read from the parameter itself");
+            // BEFORE ANY WRITE. The capture is worthless if a branch writes
+            // first, so its position is asserted, not just its presence.
+            const int iCapture = pa.indexOf ("r.beforeText = param->getCurrentValueAsText()");
+            const int iWrite   = pa.indexOf ("writeNorm (");
+            check (iCapture >= 0 && iWrite > iCapture,
+                   "ml PIN4: and captured BEFORE the first write path",
+                   "capture@" + juce::String (iCapture) + " write@" + juce::String (iWrite));
+            const auto blk = functionBody (apRaw, "juce::String EchoJayAPI::buildMoveLogInjection");
+            check (! blk.contains ("previous turn's sweep"),
+                   "ml PIN4: and the stale-sweep disclaimer is gone from the block");
+            check (blk.contains ("the control's reading immediately before the change"),
+                   "ml PIN4: replaced by what is now true");
+        }
+
+        // ml PIN5 -- STRUCTURAL MOVES ARE RECORDED, AND AS THEIR OWN KIND.
+        // The first version recorded dials only, so a block could carry a dial
+        // on a plugin with no record of that plugin ever arriving, and the
+        // model correctly answered that it had built no chain.
+        {
+            check (ch.contains ("recordStructural(MoveLogEntry::Kind::Load"),
+                   "ml PIN5: a slot arriving is recorded");
+            check (ch.contains ("recordStructural(MoveLogEntry::Kind::Remove"),
+                   "ml PIN5: a slot leaving is recorded");
+            check (ch.contains ("collapseLastPairIntoSwap(theOp.slot, theOp.name, oldName)"),
+                   "ml PIN5: and a replace collapses to ONE swap entry");
+            // Recorded in ChainHost, so every route in is covered by one
+            // recorder rather than each caller remembering.
+            // loadPluginAsync is the ONE way a slot arrives, and it has three
+            // arms. The async arm ends in completeLoad and is recorded there;
+            // the builtin and borrow arms return early and never reach it, so
+            // they are recorded in the entry point itself. All three, or a
+            // built-in device gets dialled with no record of arriving.
+            const auto load = functionBody (chRaw, "void ChainHost::loadPluginAsync");
+            int nLoad = 0, atLoad = 0;
+            while ((atLoad = load.indexOf (atLoad, "recordStructural")) >= 0) { ++nLoad; atLoad += 10; }
+            check (nLoad == 2, "ml PIN5: the two arms that bypass completeLoad record for themselves",
+                   "found " + juce::String (nLoad));
+            check (functionBody (chRaw, "void ChainHost::completeLoad").contains ("recordStructural"),
+                   "ml PIN5: and the async arm records where the slot lands");
+            const auto blk = functionBody (apRaw, "juce::String EchoJayAPI::buildMoveLogInjection");
+            check (blk.contains ("BUILT   ") && blk.contains ("SWAPPED ")
+                   && blk.contains ("REMOVED ") && blk.contains ("DIALLED "),
+                   "ml PIN5: and the block renders each kind under its own word");
+            // ml PIN6 -- A REASON IS A ROLE AND IS BOUNDED. The build loop
+            // hands over the model's per-slot prose, which is a role where the
+            // model wrote one and a paragraph of settings where it did not. An
+            // unclipped reason makes the measured bound meaningless.
+            check (ch.contains ("moveLog_.back().reason = clipMoveReason (reason);"),
+                   "ml PIN6: the annotation goes through the clip, not straight in");
+            check (ch.contains ("if (t.length() <= kMoveReasonMax) return t;"),
+                   "ml PIN6: and the clip is the named bound, not a literal");
         }
     }
 

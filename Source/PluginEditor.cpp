@@ -31171,6 +31171,11 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
                         {
                             // Store settings on the just-loaded slot (last slot in chain)
                             auto& ch4 = safeThis->processorRef.getChainHost();
+                            // MOVE LOG: the load recorded itself in ChainHost;
+                            // the model's own words for why this slot is here
+                            // live only in this loop, so they are attached to
+                            // that entry now rather than duplicated into it.
+                            ch4.annotateLastMove(settings);
                             if (settings.isNotEmpty())
                                 ch4.setSlotSettings(ch4.getNumSlots() - 1, settings);
                             // Auto-apply: hand the slot its structured

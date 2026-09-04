@@ -303,18 +303,60 @@ public:
         juce::String after;          // what the control read after it, or the refusal note
         juce::String reason;         // the model's rationale where one was captured
         bool         landed = false; // false = refused or not verified; never a change
+        // WHAT KIND OF MOVE THIS WAS (4 Sep 2026). The first version recorded
+        // only dials, because the recorders sat in the two arms of the dial
+        // partition. A live block therefore carried "slot 3 FG-X 2 Level
+        // Ceiling -> -0.10dB" with no record that FG-X 2 had ever arrived in
+        // slot 3, and the model correctly answered that it had not built a
+        // chain. Structural moves are their own kind so a build reads as a
+        // build rather than as a dial with no control.
+        enum class Kind { Dial, Load, Swap, Remove };
+        Kind kind = Kind::Dial;
     };
-    // BOUNDED BY COUNT, at one full build's worth of moves: 15 slots
-    // (LinkProcessor::kMaxChainSlots) at up to two dialled controls each,
-    // rounded down to 24 so a single build cannot evict its own first move
-    // while the block stays around 1.7 KB. See the contract for the byte and
-    // token measurement behind that number.
-    static constexpr int kMoveLogMax = 24;
+    // BOUNDED BY COUNT, not bytes, so the log cannot be trimmed mid-entry.
+    // RAISED FROM 24 TO 48 (4 Sep 2026), and the number is measured rather
+    // than chosen. Structural entries made one build bigger than the whole old
+    // bound: a maximal build is 15 slots (LinkProcessor::kMaxChainSlots) at one
+    // load entry plus up to two dials each, which is 45 entries. At 24 that
+    // build evicted its own first slots before the model ever saw them, which
+    // is the defect this bound exists to prevent. 48 holds a maximal build
+    // whole with three spare; measured on the shipped format it renders 2936 B
+    // with ordinary role text and 3698 B with every reason at kMoveReasonMax,
+    // which is about 924 tokens and 2.08 percent of a real 178 KB turn at the
+    // worst case. An ordinary 8-slot build is 24 entries and 1803 B, so the old
+    // bound was exactly full at the moment the build finished.
+    // A BUILD IS NOT SUMMARISED INTO ONE ENTRY. Summarising saves about 700 B
+    // of that 2936 and costs the two things the log is for: when each slot
+    // arrived, and which slot a later dial belongs to. At 1.65 percent of a
+    // turn that is not a trade worth making.
+    static constexpr int kMoveLogMax = 48;
     void beginMoveTurn() noexcept { ++moveTurn_; }
     int  currentMoveTurn() const noexcept { return moveTurn_; }
     void recordMove(int slot, const juce::String& plugin, const juce::String& param,
                     const juce::String& before, const juce::String& after,
                     const juce::String& reason, bool landed);
+    // Structural moves: a slot arriving, replacing another, or leaving. `gone`
+    // is the plugin that left, for a swap or a removal. Recorded in ChainHost
+    // rather than at the callers so every route into the rack is covered by
+    // one recorder: an AI build, a picker add, a chain-edit op and a recall
+    // all land here.
+    void recordStructural(MoveLogEntry::Kind kind, int slot,
+                          const juce::String& arrived, const juce::String& gone,
+                          const juce::String& reason);
+    // Attach a rationale to the newest entry, for the one caller that knows
+    // it: the AI build loop holds the model's role text and the load itself
+    // does not. No-op when the log is empty.
+    void annotateLastMove(const juce::String& reason);
+    // The longest a reason may render. See clipMoveReason.
+    static constexpr int kMoveReasonMax = 60;
+    static juce::String clipMoveReason (const juce::String& raw);
+    // A replace is a load and a removal back to back. Both are recorded by the
+    // recorders above, and this collapses that pair into ONE swap entry so the
+    // log reads as one act rather than two unrelated ones. Only collapses when
+    // the two newest entries really are that pair, so any other interleaving
+    // leaves them alone.
+    void collapseLastPairIntoSwap(int slot, const juce::String& arrived,
+                                  const juce::String& gone);
     const std::vector<MoveLogEntry>& moveLogEntries() const noexcept { return moveLog_; }
 
     // Display names of resolved entries (for AI prompt injection).
@@ -805,7 +847,13 @@ public:
                          // (see ApplyResult::anchorsUnverified). Carried so the
                          // report layer can refuse to present the value as
                          // exact; it never changes whether the write happens.
-                         bool anchorsUnverified = false; };
+                         bool anchorsUnverified = false;
+                         // The control's reading immediately BEFORE this write
+                         // (ApplyResult::beforeText). Carried across the same
+                         // boundary that once dropped `index`, and for the same
+                         // reason: the move log needs it and nothing downstream
+                         // can re-derive it once the value has been written.
+                         juce::String beforeText; };
     std::vector<ApplyReport> applyStructuredSettings (int slotIndex,
                                                       const juce::var& structuredSettings,
                                                       const juce::var& map);

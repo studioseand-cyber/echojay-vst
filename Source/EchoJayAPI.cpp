@@ -3267,26 +3267,48 @@ juce::String EchoJayAPI::buildMoveLogInjection(const ChainHost& chainHost)
     // dB". Renaming this marker means re-checking all five.
     juce::String b;
     b << "\n\n[MOVE LOG v1 - what EchoJay itself changed in this session, oldest first."
-         " Each line is turn, slot, plugin, control, before -> after. LANDED means the"
-         " control was read back at that value; REFUSED means the change was NOT made and"
-         " the reason follows. The BEFORE value is the last reading taken before the change,"
-         " from the previous turn's sweep, not an instant-before measurement: quote it as"
-         " what the control had been reading, never as its exact value at the moment of the"
-         " change. Cite these when asked what you did or why; never present a"
-         " REFUSED line as a change, and never invent a move that is not listed:]\n";
+         " Four kinds of line: BUILT is a plugin loaded into a slot, SWAPPED is one plugin"
+         " replaced by another, REMOVED is a slot taken out, and DIALLED is a control"
+         " changed on a slot that was already there. REFUSED is a change that was NOT made,"
+         " with the reason after it. A DIALLED line reads control: before -> after, and the"
+         " before value is the control's reading immediately before the change. Cite these"
+         " when asked what you did or why; never present a REFUSED line as a change, and"
+         " never invent a move that is not listed:]\n";
     for (const auto& e : log)
     {
-        b << (e.landed ? "LANDED  " : "REFUSED ")
-          << "t" << e.turn << " slot " << (e.slot + 1) << " \"" << e.plugin << "\"";
-        if (e.param.isNotEmpty()) b << " " << e.param;
-        if (e.landed)
+        using K = ChainHost::MoveLogEntry::Kind;
+        switch (e.kind)
         {
-            if (e.before.isNotEmpty()) b << ": " << e.before.trim() << " -> " << e.after.trim();
-            else                       b << ": -> " << e.after.trim();
+            case K::Load:   b << "BUILT   "; break;
+            case K::Swap:   b << "SWAPPED "; break;
+            case K::Remove: b << "REMOVED "; break;
+            case K::Dial:   b << (e.landed ? "DIALLED " : "REFUSED "); break;
         }
-        else
+        b << "t" << e.turn << " slot " << (e.slot + 1);
+        switch (e.kind)
         {
-            b << ": " << e.after.trim();   // the refusal note, not a value
+            case K::Load:
+                b << " \"" << e.after << "\"";
+                break;
+            case K::Swap:
+                b << " \"" << e.before << "\" -> \"" << e.after << "\"";
+                break;
+            case K::Remove:
+                b << " \"" << e.before << "\"";
+                break;
+            case K::Dial:
+                b << " \"" << e.plugin << "\"";
+                if (e.param.isNotEmpty()) b << " " << e.param;
+                if (e.landed)
+                {
+                    if (e.before.isNotEmpty()) b << ": " << e.before.trim() << " -> " << e.after.trim();
+                    else                       b << ": -> " << e.after.trim();
+                }
+                else
+                {
+                    b << ": " << e.after.trim();   // the refusal note, not a value
+                }
+                break;
         }
         if (e.reason.isNotEmpty()) b << " (" << e.reason.trim() << ")";
         b << "\n";

@@ -2062,6 +2062,10 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
                             catch (...) { oldState.reset(); }
 
                 removeSlot(oldCur);
+                // MOVE LOG: one act, one entry. The load above and this
+                // removal each recorded themselves; collapse them so the log
+                // says what left and what arrived in the same line.
+                collapseLastPairIntoSwap(theOp.slot, theOp.name, oldName);
                 for (auto& m : self->map) { if (m == oldCur) m = -1; else if (m > oldCur) --m; }
                 int fromCur = getNumSlots() - 1;   // new slot after the removal shift
                 walkSlotTo(self->map, fromCur, oldCur);
@@ -2358,7 +2362,7 @@ ChainHost::applyStructuredSettings (int slotIndex,
         out.push_back ({ r.semantic, r.applied, r.normalized, r.note,
                          r.landedText, r.displayVerified, r.readbackMismatch,
                          r.staleDisplayKept, r.requestedValue, r.outOfRange,
-                         r.index, r.anchorsUnverified });
+                         r.index, r.anchorsUnverified, r.beforeText });
 
     return out;
 }
@@ -2366,6 +2370,10 @@ ChainHost::applyStructuredSettings (int slotIndex,
 void ChainHost::removeSlot(int i)
 {
     if (i < 0 || i >= (int)slots_.size()) return;
+    // MOVE LOG: what left. Recorded before the slot goes, while its name is
+    // still in hand.
+    recordStructural(MoveLogEntry::Kind::Remove, i, juce::String(),
+                     slots_[(size_t) i].desc.name, juce::String());
     // Before the instance goes to the graveyard, where it stays ALIVE for
     // the session: a parked plugin with a leaked UI timer must not be able
     // to call a listener on a ChainHost that has since gone away.
@@ -2480,7 +2488,13 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
     EchoJay_NSLog(("EJPlace: stored \"" + slot.desc.name + "\" mfr=\""
                    + slot.desc.manufacturerName + "\" (async load)").toRawUTF8());
     slot.bypassed = false;
+    const auto arrivedName = slot.desc.name;
     slots_.push_back(std::move(slot));
+    // MOVE LOG: a slot arriving. One entry per load, so a build reads as a
+    // list of slots rather than as a dial with no control. The AI build loop
+    // annotates the reason afterwards, because the role text lives there.
+    recordStructural(MoveLogEntry::Kind::Load, (int) slots_.size() - 1,
+                     arrivedName, juce::String(), juce::String());
     // Pristine default, captured BEFORE any seed or dial (borrow reset).
     captureBorrowDefaultState((int) slots_.size() - 1);
     // A VST3 build inside an AU host is told in the rack, on every route
@@ -3873,8 +3887,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
                 // point: the model must be able to say "I tried and could
                 // not" without that reading as a change it made.
                 recordMove(slotIndex, s.desc.name, echojay::semanticLabel(r.semantic),
-                           (r.index >= 0 && r.index < s.liveReads.size()) ? s.liveReads[r.index] : juce::String(),
-                           r.note, juce::String(), /*landed*/ false);
+                           r.beforeText, r.note, juce::String(), /*landed*/ false);
                 continue;
             }
             if (! r.applied || r.staleDisplayKept) continue;   // bridged: annotated upstream
@@ -3895,15 +3908,11 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
             {
                 landedBits.add(label + arrow + "reads \"" + r.landedText.trim() + "\"" + approx);
                 landedIdx.add(r.index);
-                // LANDED, and only here. The before value is the last display
-                // sweep (refreshSlotParamReads, taken at the previous
-                // injection build), which is the newest reading that predates
-                // this write. applyOne never reads the control before writing
-                // it, so this is the honest "before" available and the entry
-                // simply carries nothing when no sweep has run.
+                // LANDED, and only here. beforeText is read inside applyOne
+                // immediately before the write, so it is the control's real
+                // prior value rather than a sweep that may predate the slot.
                 recordMove(slotIndex, s.desc.name, label,
-                           (r.index >= 0 && r.index < s.liveReads.size()) ? s.liveReads[r.index] : juce::String(),
-                           r.landedText.trim(), juce::String(), /*landed*/ true);
+                           r.beforeText, r.landedText.trim(), juce::String(), /*landed*/ true);
                 continue;
             }
             // NO VERIFIED LANDING FOR THIS CONTROL. It goes on the asked line,
@@ -4954,6 +4963,13 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
     if (isBuiltinDescription(desc))
     {
         const auto err = loadBuiltinNow(desc);
+        // MOVE LOG: this arm never reaches completeLoad, so the recorder that
+        // sits there cannot see it. A built-in slot arriving is a slot
+        // arriving; without this the block would carry a dial on a device with
+        // no record of that device ever being added.
+        if (err.isEmpty() && ! slots_.empty())
+            recordStructural(MoveLogEntry::Kind::Load, (int) slots_.size() - 1,
+                             desc.name, juce::String(), juce::String());
         if (callback) callback(err);
         return;
     }
@@ -4963,6 +4979,11 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
     // arrives through the same resolution path on every borrow.
     if (mode_ == Mode::Borrowed && borrowTryReuseInto(desc))
     {
+        // MOVE LOG: the third arm, and the same reason as the builtin one. A
+        // reused node is a new slot from the rack's point of view.
+        if (! slots_.empty())
+            recordStructural(MoveLogEntry::Kind::Load, (int) slots_.size() - 1,
+                             desc.name, juce::String(), juce::String());
         if (callback) callback({});
         return;
     }
@@ -6212,6 +6233,67 @@ void ChainHost::recordMove(int slot, const juce::String& plugin, const juce::Str
     moveLog_.push_back({ moveTurn_, slot, plugin, param, before, after, reason, landed });
     while ((int) moveLog_.size() > kMoveLogMax)
         moveLog_.erase(moveLog_.begin());
+}
+
+void ChainHost::recordStructural(MoveLogEntry::Kind kind, int slot,
+                                 const juce::String& arrived, const juce::String& gone,
+                                 const juce::String& reason)
+{
+    MoveLogEntry e;
+    e.turn   = moveTurn_;
+    e.slot   = slot;
+    e.plugin = arrived.isNotEmpty() ? arrived : gone;
+    e.before = gone;        // what left, for a swap or a removal
+    e.after  = arrived;     // what arrived, for a load or a swap
+    e.reason = reason;
+    e.landed = true;        // structural moves happened or were not recorded
+    e.kind   = kind;
+    moveLog_.push_back(std::move(e));
+    while ((int) moveLog_.size() > kMoveLogMax)
+        moveLog_.erase(moveLog_.begin());
+}
+
+void ChainHost::annotateLastMove(const juce::String& reason)
+{
+    if (moveLog_.empty() || reason.trim().isEmpty()) return;
+    moveLog_.back().reason = clipMoveReason (reason);
+}
+
+// A reason is a ROLE, not a settings dump, and the caller cannot promise that.
+// The AI build loop hands over the model's per-slot prose, which is a role
+// where the model wrote one ("transient control") and a full sentence of
+// settings where it did not. Unclipped, one BUILT line could be longer than
+// the twelve around it and the bound's measurement would mean nothing. Clipped
+// at a word boundary so the line still reads, with the length in one place so
+// the contract's byte table has something to point at.
+juce::String ChainHost::clipMoveReason (const juce::String& raw)
+{
+    auto t = raw.trim();
+    // One sentence at most: the first is the role where there is one.
+    const int stop = t.indexOfChar ('.');
+    if (stop > 0) t = t.substring (0, stop).trim();
+    if (t.length() <= kMoveReasonMax) return t;
+    auto cut = t.substring (0, kMoveReasonMax);
+    const int sp = cut.lastIndexOfChar (' ');
+    if (sp > kMoveReasonMax / 2) cut = cut.substring (0, sp);
+    return cut.trim() + "...";
+}
+
+void ChainHost::collapseLastPairIntoSwap(int slot, const juce::String& arrived,
+                                         const juce::String& gone)
+{
+    if (moveLog_.size() < 2) return;
+    auto& last = moveLog_[moveLog_.size() - 1];
+    auto& prev = moveLog_[moveLog_.size() - 2];
+    const bool pair = (last.kind == MoveLogEntry::Kind::Remove
+                       && prev.kind == MoveLogEntry::Kind::Load)
+                   || (last.kind == MoveLogEntry::Kind::Load
+                       && prev.kind == MoveLogEntry::Kind::Remove);
+    if (! pair) return;                       // something else happened between
+    const auto reason = prev.reason.isNotEmpty() ? prev.reason : last.reason;
+    moveLog_.pop_back();
+    moveLog_.pop_back();
+    recordStructural(MoveLogEntry::Kind::Swap, slot, arrived, gone, reason);
 }
 
 void ChainHost::clearModelTiers(ChainSlot& s)
