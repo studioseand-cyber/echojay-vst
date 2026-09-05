@@ -637,6 +637,7 @@ public:
         const float selectCents = (ignoreVibrato_.load() && ! slowProvisional)
                                     ? slowCents_ : inCents;
         const float degreeCents = nearestDegreeCents (CentsC { selectCents });
+        lastSelectCents_ = selectCents; lastDegreeCents_ = degreeCents; lastSlowProvisional_ = slowProvisional;   // round 56 instrumentation
 
         // The NOTE and the WOBBLE are separated here, and everything below
         // acts on the note. slowCents_ is where the note is; osc is the
@@ -906,6 +907,21 @@ public:
         vibrato (natural, balanced) are k=100 and take the slow path. */
     bool     shiftPreferred() const noexcept
     { return dbgForceShiftPath_ || std::fabs (natVib_.load() - 100.0f) < 0.5f; }
+    // Round 56 instrumentation (DEFECT_WRONG_NOTE_AT_TRANSITIONS): every state
+    // the note decision reads, as of the last process() call. Read-only.
+    struct DebugSnap
+    {
+        float inC, noteRefC, slowC, slowAgeMs, selectC, degreeC, curC, targetC, shiftC, aimC;
+        bool  haveNote, havePending, slowProvisional, ignoreVib;
+        float pendingC, confirmMs, gapMs, stableMs, depthEnv;
+        int   pendN; uint32_t noteChanges;
+    };
+    DebugSnap debugSnap() const noexcept
+    {
+        return { lastInCents_, noteRefCents_, slowCents_, slowAgeMs_, lastSelectCents_, lastDegreeCents_, curCents_, targetCents_, shiftCents_, lastAimCents_,
+                 haveNote_, havePending_, lastSlowProvisional_, ignoreVibrato_.load(),
+                 pendingCents_, confirmMs_, gapMs_, stableMs_, depthEnv_, pendN_, noteChanges_ };
+    }
     // Path-unification investigation (2 Sep 2026, Q1): force the shift
     // path at any natural_vibrato, to reproduce and dissect the recorded
     // "+7 clicks at k != 100" finding. Investigation-only.
@@ -1045,6 +1061,7 @@ private:
     bool  pendForgetOn_ = false;
     float pendBuf_[3] = { 0, 0, 0 };
     float slowAgeMs_ = 0.0f;   // ms since the slow track was (re)seeded
+    float lastSelectCents_ = 0.0f, lastDegreeCents_ = 0.0f; bool lastSlowProvisional_ = false;   // round 56 instrumentation
     std::atomic<float> flex_     { 0.0f };
     std::atomic<float> humanize_ { 0.0f };
     std::atomic<float> referenceHz_ { 440.0f };

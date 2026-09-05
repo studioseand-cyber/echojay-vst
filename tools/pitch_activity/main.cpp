@@ -158,6 +158,16 @@ static Render renderSelf (const std::vector<float>& in, double fs, int vt, bool 
                 if(c.grain){ if(g>0){ target=g; shift=0.0f; } }
                 else { const float t=corr.process(g,ev[h].voiced,hopMs);
                        if(t>0){ target=t; shift=corr.shiftPreferred()?corr.lastShiftCents():PsolaEngine::kNoShift; }
+                       if(const char* tw=getenv("PA_TRACE"))
+                       { double t0=0,t1=0; std::sscanf(tw,"%lf,%lf",&t0,&t1); const double th=(double)ev[h].inputPos/fs;
+                         if(th>=t0&&th<t1)
+                         { static bool hdr=false; if(!hdr){ hdr=true; std::printf("    TRACE t | det f0 voiced | gate lastGood bigJump gated | inC noteRef slowC(age) select degree prov | pend(C conf n) gap stable | cur target applied | path nc\n"); }
+                           const auto d=corr.debugSnap();
+                           std::printf("    %6.3f | %6.1f %d | %6.1f %d %6.1f | %+7.1f %+7.1f %+7.1f(%3.0f) %+7.1f %+7.1f %d | %d(%+6.1f %4.1f %d) %4.0f %4.0f | %+7.1f %+7.1f %+6.1f | %s %u\n",
+                             th,ev[h].f0Hz,ev[h].voiced?1:0,gate.lastGood(),gate.isBigJump(ev[h].f0Hz,ev[h].voiced)?1:0,g,
+                             d.inC,d.noteRefC,d.slowC,d.slowAgeMs,d.selectC,d.degreeC,d.slowProvisional?1:0,
+                             d.havePending?1:0,d.pendingC,d.confirmMs,d.pendN,d.gapMs,d.stableMs,
+                             d.curC,t>0?centsCFromHz(t,440.0f):0.0f,corr.shiftPreferred()?d.shiftC:(t>0?centsCFromHz(t,440.0f)-d.inC:0.0f),corr.shiftPreferred()?"SHIFT":"LEGACY",d.noteChanges); } }
                        if(fastRing&&ev[h].voiced&&g>0)
                        { // wobble reference for the fast term: the corrector's 140 ms slow track by default, or a faster one-pole on the hop pitch (PA_FASTSLOW_MS) - scoping only
                          static double fastRef=0; static bool haveRef=false; const double inC=centsCFromHz(g,440.0f);
