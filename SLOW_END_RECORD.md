@@ -641,3 +641,52 @@ dry source. He has been told plainly; the control he wants does not
 exist yet, is identified and measured - tau 44 depth 0.5: 2.54c activity
 vs 6.43c today, still improving the grid at 53.5% - and is blocked
 behind the skew.)
+
+# Round 31 (5 Sep 2026): SEAN'S ANSWER, and THE BAR for the depth control
+
+## Recorded plainly
+Sean's goal, in his words: MAKE THE SLOW END SOUND LIKE ANTARES, WITHOUT
+BREAKING WORD STARTS. Seven rounds went into timing internals and none
+into that. On the round-30 ear set, LEGS 2 AND 3 SOUND IDENTICAL TO HIM:
+the timing fix is INAUDIBLE on this material. It is INFRASTRUCTURE - the
+thing that makes depth 0 mean zero and so makes a depth control
+buildable - not an audible improvement, and it must never be described
+to him as one. The depth control is the whole remaining answer to his ask.
+
+## THE BAR (committed before the build; the timing fix ships INSIDE this change as its foundation)
+  1. DEPTH 0 IS BIT-EXACT IDENTITY on both takes, re-proven in the shipped
+     configuration (co-timed rings, per-hop lag, decision lookahead 6 ms,
+     confirm 15, the production depth mapping) with depth forced to 0.
+  2. RETUNE 150, gentle setting: activity materially below today's 6.25c,
+     toward Antares' neighbourhood (0.6-2.7c; Antares max retune measures
+     0.57c on this ruler), WITH THE IMPROVE-RATE REPORTED AT EVERY POINT.
+  3. RETUNE 44 the same, toward ~2.5c, improve-rate reported.
+  4. WORD-START EVENTS do not regress from the seam fix's zero (ign OFF,
+     NEW take, tools/pitch_glitch_events).
+  5. OLD-TAKE FALSIFIER unchanged (ign ON, tau 6: word-start events 0).
+  6. SUSTAIN TUNING does not regress (tools/pitch_sustain_tuning, retune
+     44 and the fast end).
+  7. SEAN'S EAR: does the gentle setting sound like Antares' slow end.
+     Ear set: retune 150 AND retune 44, three legs each - source /
+     Antares at its matching setting / EchoJay at its gentle setting -
+     Antares IN the clip.
+
+## PARAMETER DESIGN - decided here, justified in the commit
+Options: (1) a new "Amount" control (honest about what the parameter
+does; every existing session unchanged at Amount 100); (2) RE-MAP THE
+RETUNE DIAL so its slow end blends depth as well as speed (what Antares
+does implicitly; Sean gets what he expects from the control he already
+reaches for). DECISION: (2), re-map the dial. The trade: above the knee
+the dial's meaning changes - a saved retune of 120 (the natural preset)
+also gets a depth below 1, so natural's character moves toward Antares'
+natural; below the knee (tau <= 40) the mapping is exactly 1.0 and every
+fast-end session, including balanced (40) and Sean's 44 (0.97), stays
+where it is. The region above the knee is the one §17.7 records as a
+given-up capability; re-purposing it into what Antares' slow end is,
+rather than adding a second control Sean would have to learn to reach
+for, is the choice that serves his ask. Not shipped: option 1.
+The mapping, stated: depth(tau) = 1 for tau <= 40; linear from 1 at 40
+to 0.25 at 150 (tau 44 -> 0.97, 80 -> 0.73, 120 -> 0.45, 150 -> 0.25).
+The floor 0.25 is the measured Antares neighbourhood (tau 150 depth 0.25:
+2.2-2.7c); the knee 40 is §17.4's. Both are regime constants (§17.5) and
+are re-derived if the dial's range or the detector changes.
