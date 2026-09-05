@@ -1008,6 +1008,12 @@ writes retune_speed_ms/depth as before - a mode is off the curve by
 construction and the readout says so; Custom (the default) is on it.
 
 ## THE BAR (ruled; every leg measured before the install is described)
+  [WITHDRAWN in round 51, 5 Sep 2026 - by the reviewer, with the reason: this
+   guarantee was never asked for, and its cost was Sean's session opening
+   with its MAIN CONTROL reading "(off)" in a state he had to clear by
+   touching it ("why did it say off on the retune speed when i opened it").
+   Replaced by: ON LOAD, A SAVED STATE THAT IS NOT ON THE CURVE SNAPS TO THE
+   NEAREST DIAL POSITION AND USES THE CURVE'S VALUES. See round 51.]
   1. SAVED-STATE SEMANTICS. Nothing already saved is reinterpreted. Any
      state written before this change loads and renders BIT-IDENTICAL to
      today's binary: proved by render against Sean's exact saved state
@@ -1317,3 +1323,76 @@ zips and the latency log both went missing that way. The latency log now
 writes to /Users/SeanD/echojay-vst/latency-logs/latency.log and the log
 build lives in /Users/SeanD/echojay-vst/latency-logs/build/ (bundles
 git-ignored, the log read from the cloud side).
+
+
+# Round 51 (5 Sep 2026): TWO RULINGS WITHDRAWN by the reviewer - the off-curve state and the status line
+
+Sean, verbatim: "why did it say off on the retune speed when i opened it
+then i press up and down and its on and i dont want some green line
+saying its on needs to jsut be on."
+
+## Withdrawal 1 - THE OFF-CURVE STATE GOES (round 46 bar leg 1, marked withdrawn beside it)
+ON LOAD, A SAVED STATE THAT IS NOT ON THE CURVE SNAPS TO THE NEAREST DIAL
+POSITION AND USES THE CURVE'S VALUES. No "(off)" suffix, no override
+state, no strip. The dial always means what it says. Built:
+  - EedRetuneMap::nearestDial (retune_ms, depth): the dial whose curve
+    point is nearest in a space where 150 ms and depth 1.0 are the same
+    size (0.25-dial steps). onStateApplied snaps when the loaded values
+    are not on the curve. offCurve_, retuneOffCurve(), the "(off)"
+    readout and the refresh hack are deleted.
+  - DEPTH in ADVANCED (and a direct retune_speed_ms write from the model
+    or a chain) is a LIVE override while the plugin is open; it is NEVER a
+    loaded state - saving and reloading returns to the curve (suite: dial
+    200 with DEPTH 60 reloads as dial 92.25 = 139.1 ms / 26.6 %, the
+    nearest curve point).
+  - A MODE IS A DIAL POSITION: the mode table's retune selects the dial
+    (its ms on the curve's ms branch) and takes the curve's retune AND
+    depth there - natural = dial 78.6 = 120 ms / depth 29; balanced 40 ms
+    -> dial 33.9; tuned 8 ms -> dial 8.2; hard -> dial 0 = 6 ms (the
+    effective floor anyway). Until now a mode wrote depth 100 off the
+    curve, and a session saved in a mode would have reloaded snapped to
+    something else while the MODE combo still said the mode.
+  - THIS DELETES THE DEPTH TRAP BY CONSTRUCTION: the round-45 file with
+    depth 10 now loads as dial 36.5 = 45.4 ms / depth 48 % and renders at
+    65.8 % deviation from the source against dial 0's 69.5 % (the trap
+    rendered 11.4 %). There is no literal-values state to be stuck in.
+THIS CHANGES THE SOUND OF PRE-RE-MAP SESSIONS, stated plainly: by the
+distance from their saved values to the nearest curve point. SEAN'S SAVED
+STATE (3 Sep: retune 44.21 ms / depth 100): snaps to DIAL 0 = 6 ms /
+depth 100 - 38.2 ms in retune, 0 in depth - and its render is now BYTE-
+IDENTICAL to his retune-6 session's on both takes (the identity harness,
+re-baselined: sean_retune44.wav == sean_retune6.wav). In the round-38
+measurements that is activity 6.09 -> 4.49 c and off-grid 4.26 -> 2.33 c:
+the direction he chose by ear in round 40 ("B is better on both"). Said
+here rather than left for him to discover.
+
+## Withdrawal 2 - THE GREEN STATUS LINE GOES (round 50's diagnostic, marked withdrawn in DEFECT_CORRECTION_OFF_STATES.md)
+Deleted entirely: the front strip, the READOUTS-title status, the
+"CORRECTING / WEAKLY / NOT CORRECTING" logic, the live applied-shift ring.
+Normal operation shows nothing. The hard-off conditions are visible on
+their own controls (BYPASS dims the whole panel; CORRECT is a lit button
+in ADVANCED), so nothing is shown for them either. The two states the
+line existed to report are removed (the KEEP VIBRATO default and the
+depth trap), so it had nothing left to say. The trace's applied-shift
+field (both paths) stays: it is a diagnostic file, not a panel.
+
+## PRINCIPLE, filed: A PLUGIN DOES NOT TELL THE USER IT IS WORKING.
+If a state exists where it can look active and not be, THAT STATE IS THE
+DEFECT - remove it rather than labelling it.
+
+## Rendered and read before the install
+front.png (a plain "0", no line), front_after_advanced.png (identical to
+front), advanced.png (no status in the READOUTS title, the box inside its
+frame), front_depth_override.png (DEPTH 10 live: the front shows nothing
+special, because nothing is wrong that a reload does not undo). Layout
+audit 12/12 clean. Suite 196 PASS / 0 FAIL.
+
+## Installed (5 Sep 2026), ~/Library only, via tools/install_local.sh build-release
+  | plugin | arm64 UUID |
+  |---|---|
+  | AU   `EchoJay V2.component` | EE770F9D-CCC8-3840-965C-D8D62764EA41 |
+  | VST3 `EchoJay V2.vst3`      | CF7F3A1F-7C81-335A-8CFF-27996C62260C |
+AUHostingServiceXPC_arrow killed; Sean must relaunch Logic. His session
+opens at RETUNE 0 (a plain 0), corrected as his retune-6 session was; the
+log build in latency-logs/build is from round 50 and does not carry this
+change (it is for the live-only phasing only).

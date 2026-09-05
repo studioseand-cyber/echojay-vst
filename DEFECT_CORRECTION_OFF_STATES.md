@@ -42,7 +42,7 @@ DEFAULT IS NOW 0. The mode table is unchanged (natural/balanced keep at
 explicitly and render bit-identical (leg below); only a FRESH instance
 changes - to the sound that was measured and approved.
 
-### 2. THE DEPTH TRAP: a saved low depth loads under a dial that reads 0
+### 2. THE DEPTH TRAP: a saved low depth loads under a dial that reads 0 [CANNOT EXIST since round 51: a saved state off the curve snaps to the nearest dial position on load]
 A session saved by the round-45 build (front DEPTH knob, no `retune`
 field) with DEPTH turned down loads, under the round-46 rule "nothing
 already saved is reinterpreted", with that depth applied, the dial at 0
@@ -77,7 +77,14 @@ LIVE write takes manual" guard; the key path did not). Fixed: the guard
 now also excludes applyingState(). Suite: an AUTO file loads AUTO; a live
 key_root write still takes manual.
 
-## THE DIAGNOSTIC (ruled: the panel must answer "is correction actually running" at a glance)
+## THE DIAGNOSTIC - WITHDRAWN in round 51 (by the reviewer, with the reason)
+The line below was removed the same day: "I asked for it because two
+states let the plugin look active while barely correcting. The answer is
+to remove those states, not to narrate the plugin's health at the user."
+Both states are gone (the KEEP VIBRATO default, above; the depth trap, by
+the round-51 snap-on-load). Principle filed: A PLUGIN DOES NOT TELL THE
+USER IT IS WORKING. Kept for the record as written:
+## THE DIAGNOSTIC (ruled at the time: the panel must answer "is correction actually running" at a glance)
 A status line, front (above the ribbon) and ADVANCED (in the READOUTS
 title), from STATE and from MEASUREMENT:
   - green  "CORRECTING  6 ms / depth 100 %   applied 4.5 c (2 s median)"

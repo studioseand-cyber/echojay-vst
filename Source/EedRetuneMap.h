@@ -55,6 +55,25 @@ struct RetuneMap
         retuneMs = 150.0f; depth = 0.10f;
     }
 
+    // Round 51 (ruling withdrawn: no off-curve state): the dial position whose
+    // curve point is NEAREST to an arbitrary (retune_ms, depth), in a space
+    // where the full retune range (150 ms) and the full depth range (1.0)
+    // are the same size. A loaded state that is not on the curve snaps here.
+    static float nearestDial (float retuneMs, float depth) noexcept
+    {
+        const double pm = std::min (1.0, std::max (0.0, (double) retuneMs / 150.0));
+        const double pd = std::min (1.0, std::max (0.0, (double) depth));
+        double bestD = 1.0e9; float best = 0.0f;
+        for (float d = 0.0f; d <= kMaxDial; d += 0.25f)
+        {
+            float ms = 0.0f, dp = 1.0f; dialTo (d, ms, dp);
+            const double dx = ms / 150.0 - pm, dy = dp - pd;
+            const double dist = dx * dx + dy * dy;
+            if (dist < bestD) { bestD = dist; best = d; }
+        }
+        return best;
+    }
+
     // The inverse of the retune-ms branch alone: where a mode's retune sits
     // on the dial. Past 150 ms (the corrector's cap) the dial is at 100.
     static float dialForRetuneMs (float ms) noexcept

@@ -55,7 +55,7 @@ int main()
     {
         juce::String s = p.applyStructured (params ({ { "correction_mode", "hard" } }));
         std::printf ("    applied: %s\n", s.toRawUTF8());
-        check (p.getParamValue ("retune_speed_ms") == 0.0, "hard wrote retune_speed_ms 0");
+        check (std::abs (p.getParamValue ("retune_speed_ms") - 6.0) < 1.0e-4, "hard wrote retune_speed_ms 6 (round 51: a mode is a dial position; hard = dial 0 = the curve's 6 ms floor, which is the effective floor anyway)");
         check (p.getParamValue ("flex") == 0.0, "hard wrote flex 0");
         check (p.getParamValue ("humanize") == 0.0, "hard wrote humanize 0");
         // ON in every mode since the §4 table correction: target selection
@@ -424,7 +424,6 @@ int main()
             check (std::abs (q.getParamValue ("retune")) < 1.0e-6, "fresh instance: retune dial 0");
             check (std::abs (q.getParamValue ("retune_speed_ms") - 6.0) < 1.0e-4 && std::abs (q.getParamValue ("depth") - 100.0) < 1.0e-4,
                    "fresh instance: retune_speed_ms 6 / depth 100 (the round-40 default)");
-            check (! q.retuneOffCurve(), "fresh instance is ON the curve");
         }
         // Bar leg 2 (the pairs): the shipped mapping equals the round-40 v3 rows
         // (transfer_tf4_2026-09-05.txt) at the 18 measured positions, to the
@@ -442,71 +441,69 @@ int main()
             {
                 q.setParamValue ("retune", r.dial);
                 const double ms = q.getParamValue ("retune_speed_ms"), dp = q.getParamValue ("depth") * 0.01;
-                const bool ok = std::abs (ms - r.ms) <= 0.05 + 1.0e-9 && std::abs (dp - r.depth) <= 0.0005 + 1.0e-9 && ! q.retuneOffCurve();
+                const bool ok = std::abs (ms - r.ms) <= 0.05 + 1.0e-9 && std::abs (dp - r.depth) <= 0.0005 + 1.0e-9;
                 std::printf ("    dial %3.0f -> retune %7.3f ms  depth %.4f   (tf4 row %5.1f / %.3f) %s\n", r.dial, ms, dp, r.ms, r.depth, ok ? "" : "MISMATCH");
                 all = all && ok;
             }
             check (all, "the shipped mapping reproduces the 18 round-40 (retune, depth) pairs within the rows' printed precision, on-curve at every one");
         }
-        // Bar leg 5: DEPTH (and retune_speed_ms) as the override - off the curve, and back.
+        // Round 51: DEPTH / retune_speed_ms as a LIVE override (while the plugin is
+        // open), and a mode as a dial position. No off-curve state.
         {
             EedPitchProcessor q; q.prepareToPlay (48000.0, 512);
             q.setParamValue ("retune", 100.0);
-            check (std::abs (q.getParamValue ("retune_speed_ms") - 150.0) < 1.0e-3 && std::abs (q.getParamValue ("depth") - 25.0) < 1.0e-2 && ! q.retuneOffCurve(),
-                   "dial 100 -> 150 ms / depth 25, on the curve");
+            check (std::abs (q.getParamValue ("retune_speed_ms") - 150.0) < 1.0e-3 && std::abs (q.getParamValue ("depth") - 25.0) < 1.0e-2,
+                   "dial 100 -> 150 ms / depth 25");
             q.setParamValue ("depth", 50.0);
-            check (q.retuneOffCurve() && std::abs (q.getParamValue ("retune") - 100.0) < 1.0e-6 && std::abs (q.getParamValue ("depth") - 50.0) < 1.0e-3,
-                   "DEPTH turned by hand to 50: OFF the curve, the dial still reads 100, depth is what was set");
+            check (std::abs (q.getParamValue ("retune") - 100.0) < 1.0e-6 && std::abs (q.getParamValue ("depth") - 50.0) < 1.0e-3,
+                   "DEPTH turned by hand to 50: applied live, the dial still reads 100 (no suffix, no state)");
             q.setParamValue ("retune", 100.0);
-            check (! q.retuneOffCurve() && std::abs (q.getParamValue ("depth") - 25.0) < 1.0e-2, "turning RETUNE returns to the curve (depth back to 25)");
+            check (std::abs (q.getParamValue ("depth") - 25.0) < 1.0e-2, "turning RETUNE puts depth back on the curve (25)");
             q.setParamValue ("retune_speed_ms", 44.0);
-            check (q.retuneOffCurve() && std::abs (q.getParamValue ("retune_speed_ms") - 44.0) < 1.0e-4, "a direct retune_speed_ms write (the model's path) is honoured and shown off-curve");
-            // A mode writes its own retune/depth: off the curve by construction, dial at the mode's position.
+            check (std::abs (q.getParamValue ("retune_speed_ms") - 44.0) < 1.0e-4, "a direct retune_speed_ms write (the model's path) is honoured live");
             q.applyStructured (params ({ { "correction_mode", "natural" } }));
-            check (q.retuneOffCurve() && std::abs (q.getParamValue ("retune_speed_ms") - 120.0) < 1.0e-4 && std::abs (q.getParamValue ("retune") - 78.571) < 0.01,
-                   "mode natural: retune 120 / depth 100 as the table says, dial shown at 78.6 (the 120 ms position), off the curve");
+            check (std::abs (q.getParamValue ("retune") - 78.571) < 0.01 && std::abs (q.getParamValue ("retune_speed_ms") - 120.0) < 0.05 && std::abs (q.getParamValue ("depth") - 29.29) < 0.05,
+                   "mode natural is the DIAL POSITION of its 120 ms (78.6): 120 ms / depth 29 from the curve - the dial means what it says");
             q.setParamValue ("retune", 0.0);
-            check (! q.retuneOffCurve() && (int) std::lround (q.getParamValue ("correction_mode")) == 4, "turning the dial from a mode: custom, on the curve");
+            check ((int) std::lround (q.getParamValue ("correction_mode")) == 4, "turning the dial from a mode: custom");
         }
-        // Bar leg 1 (the semantics, before the render proof): an OLD file with no
-        // `retune` field loads its own retune_speed_ms/depth literally - off the
-        // curve at dial 0 - and a file saved by THIS build round-trips exactly.
+        // Round 51 (the round-46 leg-1 guarantee WITHDRAWN): a saved state that is
+        // not on the curve SNAPS to the nearest dial position on load.
         {
             const juce::String old44 =
                 "{\"v\": 1, \"bypassed\": false, \"params\": {\"correction_mode\": 4.0, \"correct\": 1.0, "
                 "\"retune_speed_ms\": 44.211582183837891, \"flex\": 0.0, \"humanize\": 0.0, \"key_source\": 1.0, \"key_root\": 2.0, \"scale\": 1.0}}";
             EedPitchProcessor q; q.prepareToPlay (48000.0, 512);
             q.setStateInformation (old44.toRawUTF8(), (int) old44.getNumBytesAsUTF8());
-            check (std::abs (q.getParamValue ("retune_speed_ms") - 44.211582) < 1.0e-4 && std::abs (q.getParamValue ("depth") - 100.0) < 1.0e-6,
-                   "Sean's 3 Sep file (retune 44.21, no depth, no retune field): loads retune_speed_ms 44.21 / depth 100 - NOT reinterpreted");
-            check (q.retuneOffCurve() && std::abs (q.getParamValue ("retune")) < 1.0e-6, "...shown OFF the curve at dial 0 (the readout explains)");
+            std::printf ("    Sean's 3 Sep file (retune 44.21 / depth 100) loads as dial %.2f = %.2f ms / depth %.0f %%  (distance snapped: %.1f ms in retune, %.0f points in depth)\n",
+                         q.getParamValue ("retune"), q.getParamValue ("retune_speed_ms"), q.getParamValue ("depth"),
+                         44.211582 - q.getParamValue ("retune_speed_ms"), 100.0 - q.getParamValue ("depth"));
+            check (std::abs (q.getParamValue ("retune")) < 1.0e-6 && std::abs (q.getParamValue ("retune_speed_ms") - 6.0) < 1.0e-4 && std::abs (q.getParamValue ("depth") - 100.0) < 1.0e-3,
+                   "Sean's 3 Sep file SNAPS to dial 0 = 6 ms / depth 100 (the nearest curve point, and the setting he chose by ear in round 40)");
             const juce::String old6 = old44.replace ("44.211582183837891", "6.0");
             q.setStateInformation (old6.toRawUTF8(), (int) old6.getNumBytesAsUTF8());
-            check (! q.retuneOffCurve() && std::abs (q.getParamValue ("retune_speed_ms") - 6.0) < 1.0e-6, "his session at retune 6 / depth 100: loads ON the curve at dial 0");
-            // Round trip from this build: dial 200 (on curve), and dial 200 + depth override (off curve) both survive a save/load.
+            check (std::abs (q.getParamValue ("retune")) < 1.0e-6 && std::abs (q.getParamValue ("retune_speed_ms") - 6.0) < 1.0e-6, "his session at retune 6 / depth 100: dial 0, unchanged");
             q.setParamValue ("retune", 200.0);
             juce::MemoryBlock st; q.getStateInformation (st);
             EedPitchProcessor r; r.prepareToPlay (48000.0, 512); r.setStateInformation (st.getData(), (int) st.getSize());
-            check (std::abs (r.getParamValue ("retune") - 200.0) < 1.0e-6 && std::abs (r.getParamValue ("retune_speed_ms") - 150.0) < 1.0e-3
-                   && std::abs (r.getParamValue ("depth") - 15.0) < 1.0e-2 && ! r.retuneOffCurve(),
-                   "save/load at dial 200: retune 200, 150 ms / depth 15, on the curve");
+            check (std::abs (r.getParamValue ("retune") - 200.0) < 1.0e-6 && std::abs (r.getParamValue ("retune_speed_ms") - 150.0) < 1.0e-3 && std::abs (r.getParamValue ("depth") - 15.0) < 1.0e-2,
+                   "save/load at dial 200: retune 200, 150 ms / depth 15");
             q.setParamValue ("depth", 60.0);
             q.getStateInformation (st);
             EedPitchProcessor r2; r2.prepareToPlay (48000.0, 512); r2.setStateInformation (st.getData(), (int) st.getSize());
-            check (std::abs (r2.getParamValue ("retune") - 200.0) < 1.0e-6 && std::abs (r2.getParamValue ("depth") - 60.0) < 1.0e-3 && r2.retuneOffCurve(),
-                   "save/load at dial 200 with DEPTH overridden to 60: the override survives the file and is shown off-curve");
-            // The schema order that makes this work: `retune` is listed before retune_speed_ms and depth.
+            std::printf ("    dial 200 with DEPTH overridden to 60 saved -> reloads as dial %.2f = %.1f ms / depth %.1f %%\n", r2.getParamValue ("retune"), r2.getParamValue ("retune_speed_ms"), r2.getParamValue ("depth"));
+            float ms = 0.0f, dp = 1.0f; echojay::RetuneMap::dialTo ((float) r2.getParamValue ("retune"), ms, dp);
+            check (std::abs (r2.getParamValue ("retune_speed_ms") - ms) < 0.05 && std::abs (r2.getParamValue ("depth") - dp * 100.0) < 0.5,
+                   "...the override is NOT a loaded state: reloading returns to the curve (the nearest dial position to 150 ms / 60 %)");
             int iR = -1, iMs = -1, iD = -1, n = 0;
             for (const auto& sp : EedPitchProcessor::schema().params())
             { if (sp.id == "retune") iR = n; if (sp.id == "retune_speed_ms") iMs = n; if (sp.id == "depth") iD = n; ++n; }
-            check (iR >= 0 && iR < iMs && iR < iD, "schema order: `retune` precedes retune_speed_ms and depth, so a saved file applies the dial first and the literals after");
+            check (iR >= 0 && iR < iMs && iR < iD, "schema order: `retune` precedes retune_speed_ms and depth");
         }
     }
 
-    std::printf ("== THE DEPTH TRAP (round 50, Sean's EJ1 'out of tune' bounce): a saved low depth loads under dial 0 ==\n");
+    std::printf ("== THE DEPTH TRAP CANNOT EXIST (round 51): a saved low depth SNAPS to the curve on load ==\n");
     {
-        // What the round-45 build saved when its FRONT DEPTH knob was turned
-        // down (no `retune` field yet; retune_speed_ms at the default 6).
         const juce::String saved45 =
             "{\"v\": 1, \"bypassed\": false, \"params\": {\"correction_mode\": 4.0, \"correct\": 1.0, "
             "\"retune_speed_ms\": 6.0, \"seam_attack_ms\": 60.0, \"flex\": 0.0, \"humanize\": 0.0, \"depth\": 10.0, "
@@ -515,15 +512,10 @@ int main()
             "\"tracking\": 1.0, \"formant_mode\": 1.0, \"formant_shift\": 0.0, \"low_latency\": 0.0, \"mix\": 100.0, \"output_db\": 0.0}}";
         EedPitchProcessor q; q.prepareToPlay (48000.0, 512);
         q.setStateInformation (saved45.toRawUTF8(), (int) saved45.getNumBytesAsUTF8());
-        std::printf ("    loaded: retune dial %.0f, retune_speed_ms %.1f, depth %.0f, off-curve %d, correct %.0f, mix %.0f\n",
-                     q.getParamValue ("retune"), q.getParamValue ("retune_speed_ms"), q.getParamValue ("depth"), q.retuneOffCurve() ? 1 : 0,
-                     q.getParamValue ("correct"), q.getParamValue ("mix"));
-        check (std::abs (q.getParamValue ("retune")) < 1.0e-6 && std::abs (q.getParamValue ("depth") - 10.0) < 1.0e-3 && q.retuneOffCurve(),
-               "REACHABLE: the file's depth 10 is applied, the dial reads 0 '(off)', and DEPTH is in ADVANCED - the front cannot show it");
-        q.setParamValue ("retune", 0.0);   // Sean's fix: touching RETUNE
-        check (std::abs (q.getParamValue ("depth") - 100.0) < 1.0e-3 && ! q.retuneOffCurve(),
-               "RESTORED BY TOUCHING: turning RETUNE (even back to 0) rewrites depth to 100 - exactly his report");
-
+        float ms = 0.0f, dp = 1.0f; echojay::RetuneMap::dialTo ((float) q.getParamValue ("retune"), ms, dp);
+        std::printf ("    the round-45 file (6 ms / depth 10) loads as dial %.2f = %.1f ms / depth %.0f %%\n", q.getParamValue ("retune"), q.getParamValue ("retune_speed_ms"), q.getParamValue ("depth"));
+        check (std::abs (q.getParamValue ("retune_speed_ms") - ms) < 0.05 && std::abs (q.getParamValue ("depth") - dp * 100.0) < 0.5 && q.getParamValue ("depth") > 30.0,
+               "the file's depth 10 is NOT applied: the state snaps to the nearest curve point, and the dial means what it says");
         const char* env = std::getenv ("EJ_PITCH_SOURCE");
         juce::File src (env != nullptr ? juce::String (env) : juce::String ("/Users/SeanD/Music/Logic/test/Bounces/sourceNEW.wav"));
         juce::AudioBuffer<float> take; double fs = 48000.0;
@@ -533,8 +525,7 @@ int main()
             std::unique_ptr<juce::AudioFormatReader> r (wav.createReaderFor (src.createInputStream().release(), true));
             if (r != nullptr) { fs = r->sampleRate; take.setSize (1, (int) r->lengthInSamples); r->read (&take, 0, (int) r->lengthInSamples, 0, true, false); }
         }
-        if (take.getNumSamples() == 0) std::printf ("  [SKIP] material not found - the trap is not rendered\n");
-        else
+        if (take.getNumSamples() > 0)
         {
             auto render = [&] (const std::function<void (EedPitchProcessor&)>& setup) -> std::vector<float>
             {
@@ -550,7 +541,6 @@ int main()
                 }
                 return out;
             };
-            // The corrector's delay: compare against the SOURCE delayed by the reported latency.
             EedPitchProcessor probe; probe.prepareToPlay (fs, 512); const int lat = probe.getLatencySamples();
             auto devFromSource = [&] (const std::vector<float>& out)
             {
@@ -558,29 +548,12 @@ int main()
                 for (size_t i = (size_t) lat; i < out.size(); ++i) { const double d = (double) out[i] - (double) take.getSample (0, (int) i - lat); e += d * d; sref += (double) take.getSample (0, (int) i - lat) * take.getSample (0, (int) i - lat); ++n; }
                 return n > 0 && sref > 0 ? 100.0 * std::sqrt (e / (double) n) / std::sqrt (sref / (double) n) : 0.0;
             };
-            // The same file with depth 100: the ONLY difference is the depth the trap loads.
             const juce::String saved45full = saved45.replace ("\"depth\": 10.0", "\"depth\": 100.0");
-            const auto dial0 = render ([&] (EedPitchProcessor& p) { p.setStateInformation (saved45full.toRawUTF8(), (int) saved45full.getNumBytesAsUTF8()); });
-            const auto trap  = render ([&] (EedPitchProcessor& p) { p.setStateInformation (saved45.toRawUTF8(), (int) saved45.getNumBytesAsUTF8()); });
-            const auto fixed = render ([&] (EedPitchProcessor& p) { p.setStateInformation (saved45.toRawUTF8(), (int) saved45.getNumBytesAsUTF8()); p.setParamValue ("retune", 0.0); });
-            const double dv0 = devFromSource (dial0), dvT = devFromSource (trap), dvF = devFromSource (fixed);
-            std::printf ("    deviation from the latency-aligned SOURCE (RMS %% of source): dial 0 %.1f%%   TRAP (depth 10, dial reads 0) %.1f%%   after the touch %.1f%%\n", dv0, dvT, dvF);
-            check (dvT < 0.5 * dv0, "the trapped render moves far less from the source than dial 0 does - it measures like nearly uncorrected audio (EJ1)");
-            size_t diff = 0; for (size_t i = 0; i < std::min (fixed.size(), dial0.size()); ++i) if (fixed[i] != dial0[i]) ++diff;
-            check (diff == 0 && fixed.size() == dial0.size(), "after the touch the render is BIT-IDENTICAL to dial 0 (EJ2 == the intended sound)");
-            if (const char* od = std::getenv ("EJ_DEPTH_TRAP_OUT"))
-            {
-                juce::File out (od); out.createDirectory();
-                auto writeWav = [&] (const char* name, const std::vector<float>& v)
-                {
-                    juce::AudioBuffer<float> o (1, (int) v.size()); for (size_t i = 0; i < v.size(); ++i) o.setSample (0, (int) i, v[i]);
-                    juce::File f = out.getChildFile (juce::String (name) + ".wav"); f.deleteFile();
-                    juce::WavAudioFormat wav; std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (new juce::FileOutputStream (f), fs, 1, 32, {}, 0));
-                    if (w != nullptr) { w->writeFromAudioSampleBuffer (o, 0, o.getNumSamples()); w.reset(); }
-                    std::printf ("  wrote %s\n", f.getFullPathName().toRawUTF8());
-                };
-                writeWav ("trap_dial0", dial0); writeWav ("trap_depth10", trap); writeWav ("trap_after_touch", fixed);
-            }
+            const auto dial0  = render ([&] (EedPitchProcessor& p) { p.setStateInformation (saved45full.toRawUTF8(), (int) saved45full.getNumBytesAsUTF8()); });
+            const auto loaded = render ([&] (EedPitchProcessor& p) { p.setStateInformation (saved45.toRawUTF8(), (int) saved45.getNumBytesAsUTF8()); });
+            const double dv0 = devFromSource (dial0), dvL = devFromSource (loaded);
+            std::printf ("    deviation from the latency-aligned SOURCE (RMS %% of source): dial 0 %.1f%%   the round-45 low-depth file as it now loads %.1f%%   (the trap rendered 11.4%% in round 50)\n", dv0, dvL);
+            check (dvL > 0.4 * dv0, "the loaded file corrects at the curve's depth - no longer nearly uncorrected");
         }
     }
 
@@ -1050,7 +1023,7 @@ int main()
                                     "uncontrolled - see EedPitchProcessor::onStateApplied" },
             { "transpose",        "INTERNAL, unexposed pending DEFECT_TRANSPOSE_OCTAVE (+12 gives 155c in one region; -12 loses 3.7 dB)" },
             { "target_hz",        "INTERNAL: the P1 fixed-target diagnostic path (UI_SIMPLIFICATION inventory)" },
-            { "retune_speed_ms",  "INTERNAL since round 46: driven by the RETUNE dial (`retune`); a direct write is the model's/chain's override, shown off-curve" },
+            { "retune_speed_ms",  "INTERNAL since round 46: driven by the RETUNE dial (`retune`); a direct write is a LIVE override; a saved state off the curve snaps to it on load (round 51)" },
             { "reset_stats",      "INTERNAL: a momentary readout reset (UI_SIMPLIFICATION inventory)" },
         };
         auto exemptUi = [&] (const std::string& id)
@@ -1162,7 +1135,7 @@ int main()
         snap ("advanced",       [] (EedPitchProcessor&, EedPitchEditor& e) { e.showAdvanced (true); });
         snap ("front_manualkey", [] (EedPitchProcessor& p, EedPitchEditor& e) { p.applyStructured (params ({ { "key_source", "manual" }, { "key_root", 2.0 }, { "scale", 1.0 }, { "reference_source", "manual" } })); e.showAdvanced (false); });
         snap ("front_after_advanced", [] (EedPitchProcessor&, EedPitchEditor& e) { e.showAdvanced (true); e.showAdvanced (false); });
-        snap ("front_depth_trap", [] (EedPitchProcessor& p, EedPitchEditor& e) { p.setParamValue ("depth", 10.0); e.showAdvanced (false); });
+        snap ("front_depth_override", [] (EedPitchProcessor& p, EedPitchEditor& e) { p.setParamValue ("depth", 10.0); e.showAdvanced (false); });
         snap ("advanced_340", [] (EedPitchProcessor&, EedPitchEditor& e) { e.setSize (620, 340); e.showAdvanced (true); });
     }
 

@@ -131,11 +131,14 @@ public:
     // readout says so - "150 (was 400)". Never a silent change to a saved
     // sound. Cleared by any live write.
     float retuneWasMs() const noexcept { return retuneWasMs_; }
-    // THE RETUNE DIAL (UI_SIMPLIFICATION round 46). retune_speed_ms and depth
-    // are internal, driven through EedRetuneMap; a direct write to either
-    // takes the device OFF THE CURVE until the dial is turned again.
+    // THE RETUNE DIAL (UI_SIMPLIFICATION round 46; round 51 withdrew the
+    // off-curve state). retune_speed_ms and depth are internal, driven through
+    // EedRetuneMap. A direct write to either (DEPTH in ADVANCED, the model, a
+    // chain) is a LIVE override for as long as the plugin is open; it is never
+    // a loaded state - a saved state off the curve SNAPS to the nearest dial
+    // position on load and uses the curve's values. The dial always means
+    // what it says.
     float retuneDial() const noexcept { return retuneDial_.load(); }
-    bool  retuneOffCurve() const noexcept { return offCurve_.load(); }
     void  curveAtDial (float& retuneMs, float& depth) const noexcept
     { echojay::RetuneMap::dialTo (retuneDial_.load(), retuneMs, depth); }
 
@@ -265,7 +268,6 @@ private:
     // launder a detected grid into a user setting (29 Aug 2026 defect).
     float retuneWasMs_ = 0.0f;   // pre-cap value from a clamped load; 0 = none
     std::atomic<float> retuneDial_ { 0.0f };   // the dial position; 0 = (6 ms, depth 1.0)
-    std::atomic<bool>  offCurve_   { false };  // retune_speed_ms/depth no longer equal the curve at retuneDial_
     // True when the corrector's (retune_ms, depth) equal the curve at the dial.
     bool onCurve() const noexcept
     {

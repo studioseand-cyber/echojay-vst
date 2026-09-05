@@ -81,10 +81,6 @@ public:
     // nothing advanced carried over to the front, readout rows tall enough.
     // Returns the violations; empty = clean.
     juce::StringArray auditLayout() const;
-    // Round 50: "is correction actually running" - the effective state from
-    // the parameters that can silence it, and the live applied correction.
-    struct Effective { bool correcting; juce::String text; };
-    Effective effectiveCorrection() const;
 private:
     juce::TextButton keyAutoBtn_ { "AUTO" };           // the badge on KEY/SCALE
     // The reference control (29 Aug 2026): Sean was stuck on a grid he could
@@ -99,12 +95,7 @@ private:
     juce::Rectangle<int> latencyBounds_, keyAttrBounds_;
     juce::Rectangle<int> offCurveBounds_;   // empty since round 49 (the strip is gone; the dial reads "(off)")
     juce::Rectangle<int> numbersBox_;       // round 49: the bounded numbers box at the top right of READOUTS
-    juce::Rectangle<int> statusBounds_;     // round 50: the correction-status strip (front: above the ribbon)
-    // Round 50: the live applied correction, |envC - inC| per traced hop over
-    // the last ~2 s, drained with the ribbon on the timer.
-    std::array<float, 512> appliedRing_ {};
-    int appliedN_ = 0, appliedW_ = 0;
-    float liveAppliedC_ = -1.0f;   // -1 = no voiced hops yet   // round 46: the strip that explains an off-curve retune_speed_ms/depth
+   // round 46: the strip that explains an off-curve retune_speed_ms/depth
     // Round 47 (Sean's screenshot): every advanced control carries its own
     // caption, and the panel is three framed groups. Captions and frames are
     // laid out with the controls and painted from these lists, so a label can

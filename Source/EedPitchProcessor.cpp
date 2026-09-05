@@ -392,10 +392,9 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
         correct_.setRetuneMs (ms);
         correct_.setDepth (dp);
         if (! applyingState()) retuneWasMs_ = 0.0f;
-        offCurve_.store (! onCurve());
         toCustomMode(); return true;
     }
-    if (id == kDepth)       { correct_.setDepth ((float) value * 0.01f); offCurve_.store (! onCurve()); return true; }
+    if (id == kDepth)       { correct_.setDepth ((float) value * 0.01f); return true; }   // a LIVE override (round 51); never a loaded state
     if (id == kMode)        { applyMode ((int) std::lround (value)); return true; }
     if (id == kNaturalVib)  { correct_.setNaturalVibrato ((float) value); toCustomMode(); return true; }
     if (id == kVibDepth)    { correct_.setVibDepthCents ((float) value);  return true; }
@@ -416,7 +415,6 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
         else if (! applyingState())
             retuneWasMs_ = 0.0f;
         correct_.setRetuneMs ((float) value);
-        offCurve_.store (! onCurve());
         toCustomMode(); return true;
     }
     if (id == kFlex)        { correct_.setFlex ((float) value);     toCustomMode(); return true; }
@@ -543,22 +541,24 @@ juce::String EedPitchProcessor::applyMode (int mode)
     const Preset& p = kPresets[m];
 
     const juce::ScopedValueSetter<bool> guard (applyingMode_, true);
-    // The RETUNE dial (round 46) is written by every mode too: at the position
-    // whose retune-ms branch matches the mode's retune. The mode's depth (100)
-    // is not the curve's there, so a mode is OFF THE CURVE by construction and
-    // the panel says so; turning the dial returns to it (and to custom).
-    retuneDial_.store (echojay::RetuneMap::dialForRetuneMs (p.retune));
-    correct_.setRetuneMs (p.retune);
+    // Round 51 (the off-curve state withdrawn): a mode is a DIAL POSITION - the
+    // one whose retune-ms branch matches the table's retune - and takes the
+    // curve's retune AND depth there, so the dial always means what it says
+    // and a session saved in a mode reloads as that mode. (Until round 51 a
+    // mode wrote the table's retune with depth 100, off the curve.)
+    {
+        const float d = echojay::RetuneMap::dialForRetuneMs (p.retune);
+        float ms = 0.0f, dp = 1.0f; echojay::RetuneMap::dialTo (d, ms, dp);
+        retuneDial_.store (d);
+        correct_.setRetuneMs (ms);
+        correct_.setDepth (dp);
+    }
     correct_.setFlex (p.flex);
     correct_.setHumanize (p.humanize);
     correct_.setIgnoreVibrato (p.ignoreVib);
     correct_.setNaturalVibrato (p.naturalVib);
     forEachShifter ([&] (auto& e) { e.setSeamRampMs (seamAttack); });
-    // DEPTH is written by every mode at the schema default (100): a mode is a
-    // character; depth is how much of it is applied. Same one-default rule as
-    // seam_attack_ms (round 22).
-    { const auto* dp = schema().find (kDepth); correct_.setDepth (dp != nullptr ? (float) dp->def * 0.01f : 1.0f); }
-    offCurve_.store (! onCurve());
+    // DEPTH follows the dial (round 51): written above from the curve.
 
     // Every mode preserves formants: the character is retune speed and how much
     // deviation survives, never whether it still sounds like the singer.
@@ -568,13 +568,12 @@ juce::String EedPitchProcessor::applyMode (int mode)
     juce::String name = spec != nullptr ? juce::String (spec->choiceLabel (m)) : juce::String (m);
 
     pendingModeSummary_ = "which set retune " + juce::String (retuneDial_.load(), 0)
-         + " (off the curve: the mode's depth), retune_speed_ms " + juce::String (p.retune, 0)
+         + " (retune_speed_ms " + juce::String (correct_.getRetuneMs(), 0) + ", depth " + juce::String (correct_.getDepth() * 100.0f, 0) + " from the curve)"
          + ", flex " + juce::String (p.flex, 0)
          + ", humanize " + juce::String (p.humanize, 0)
          + ", natural_vibrato " + juce::String (p.naturalVib, 0)
          + ", targeting_ignores_vibrato " + juce::String (p.ignoreVib ? "on" : "off")
          + ", seam_attack_ms " + juce::String (seamAttack, 0)
-         + ", depth 100"
          + ", formant_mode preserve";
 
     return "correction_mode " + name
@@ -783,10 +782,21 @@ void EedPitchProcessor::refreshAutoKey()
 // control restores a wanted manual value in one gesture.
 void EedPitchProcessor::onStateApplied()
 {
-    // A loaded file applies `retune` first (schema order) and its literal
-    // retune_speed_ms/depth after; whether they still sit on the curve is
-    // decided HERE from what actually landed, never from the file's age.
-    offCurve_.store (! onCurve());
+    // Round 51 (the round-46 leg-1 guarantee WITHDRAWN): a loaded state that is
+    // not on the curve SNAPS to the nearest dial position and uses the curve's
+    // values. There is no literal-values state for a session to be stuck in,
+    // so "correction off until you touch RETUNE" cannot exist. This changes
+    // the sound of pre-re-map sessions by the distance from their saved values
+    // to the nearest curve point (Sean's 3 Sep file: retune 44 / depth 100 ->
+    // dial 0 = 6 ms / 100 %, the setting he chose by ear in round 40).
+    if (! onCurve())
+    {
+        const float d = echojay::RetuneMap::nearestDial (correct_.getRetuneMs(), correct_.getDepth());
+        float ms = 0.0f, dp = 1.0f; echojay::RetuneMap::dialTo (d, ms, dp);
+        retuneDial_.store (d);
+        correct_.setRetuneMs (ms);
+        correct_.setDepth (dp);
+    }
     if (! refAuto_.load() && ! refManualByUser_.load())
     {
         refAuto_.store (true);

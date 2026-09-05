@@ -82,14 +82,9 @@ EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
     // what it actually is - "0 (6 ms)". Twice now this project was rescued
     // by showing a hidden derived value (reference provenance, placement
     // caption); same principle, one string.
-    retuneKnob_.formatValue = [this] (double v)
-    {
-        // The dial number, Antares-style. When retune_speed_ms or depth was
-        // written directly (a mode, the model, the DEPTH override) the device
-        // is OFF THE CURVE and the readout says so; the strip explains.
-        const juce::String n ((int) std::lround (v));
-        return proc_.retuneOffCurve() ? n + " (off)" : n;
-    };
+    // The dial number, Antares-style, and nothing else (round 51: the
+    // off-curve state is gone - the dial always means what it says).
+    retuneKnob_.formatValue = [] (double v) { return juce::String ((int) std::lround (v)); };
     setupKnob (refKnob_,    EedPitchProcessor::kReferenceHz, 0.0, 1, " Hz", "REF");
     setupKnob (flexKnob_,   EedPitchProcessor::kFlex,      0.0, 0, " %",  "FLEX");
     setupKnob (humanKnob_,  EedPitchProcessor::kHumanize,  0.0, 0, " %",  "HUMAN");
@@ -322,9 +317,6 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
         // indication, and the paragraph was the first thing a user saw.
         offCurveBounds_ = {};
         content.removeFromBottom (juce::jmin (4, content.getHeight()));
-        // Round 50: the correction-status strip above the ribbon - "is it
-        // actually correcting", at a glance, from state AND from measurement.
-        statusBounds_ = content.removeFromTop (juce::jmin (14, content.getHeight() / 4));
         ribbonBounds_ = content;
         // Round 50 (Sean's screenshot): NOTHING advanced carries over - every
         // advanced rectangle is cleared here, not just the panels.
@@ -349,7 +341,6 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
     };
 
     offCurveBounds_ = {};
-    statusBounds_ = {};
     content.removeFromBottom (juce::jmin (2, content.getHeight()));
 
     // Round 50 (Sean's screenshot: the box overflowed its frame): the READOUTS
@@ -455,21 +446,6 @@ void EedPitchEditor::paintContent (juce::Graphics& g)
         g.setFont (uiFont (9.0f, true));
         for (const auto& c : advCaptions_)
             if (! c.r.isEmpty()) g.drawText (c.text, c.r, juce::Justification::centred);
-    }
-    {
-        // Round 50: the correction status - painted on the front strip, and in
-        // the READOUTS title line in ADVANCED.
-        const auto eff = effectiveCorrection();
-        juce::Rectangle<int> where = statusBounds_;
-        if (where.isEmpty() && advanced_)
-            for (const auto& grp : advGroups_)
-                if (grp.title == "READOUTS") { where = grp.r.reduced (6, 0).removeFromTop (12); where.removeFromLeft (70); }
-        if (! where.isEmpty())
-        {
-            g.setColour (eff.correcting ? C::green : C::amber);
-            g.setFont (uiFont (juce::jmin (10.0f, where.getHeight() * 0.8f), ! eff.correcting));
-            g.drawText (eff.text, where, juce::Justification::centredLeft);
-        }
     }
     if (! numbersBox_.isEmpty())
     {
@@ -713,13 +689,6 @@ void EedPitchEditor::syncFromProcessor()
     };
     syncKnob (retuneKnob_, EedPitchProcessor::kRetune);
     {
-        // The dial's "(off)" suffix depends on state the knob's value does not
-        // carry: re-render the readout when the off-curve state changes.
-        static thread_local bool lastOff = false;
-        const bool off = proc_.retuneOffCurve();
-        if (off != lastOff) { lastOff = off; retuneKnob_.setRealValue (retuneKnob_.getRealValue() + 1.0e-6); retuneKnob_.setRealValue (proc_.getParamValue (EedPitchProcessor::kRetune)); }
-    }
-    {
         // Round 50 (Sean's screenshot: REF read 439.2 while the line said 440
         // auto): the round-25 display rule, applied to the front control -
         // WHILE ON AUTO, SHOW THE APPLIED VALUE GREYED, NOT THE STORED FIELD.
@@ -812,22 +781,6 @@ void EedPitchEditor::timerCallback()
     {
         EedPitchProcessor::TraceRec recs[512];
         const int n = proc_.drainTrace (recs, 512);
-        // Round 50: the live applied correction - |envC - inC| per voiced hop,
-        // median over the last ~2 s of hops. A device that is passing through
-        // shows 0.0 here whatever its panel says.
-        for (int i = 0; i < n; ++i)
-            if (recs[i].f0Hz > 0.0f)
-            {
-                appliedRing_[(size_t) appliedW_] = std::fabs (recs[i].envC);   // envC IS the applied shift, both paths
-                appliedW_ = (appliedW_ + 1) % (int) appliedRing_.size();
-                appliedN_ = juce::jmin ((int) appliedRing_.size(), appliedN_ + 1);
-            }
-        if (appliedN_ > 0)
-        {
-            std::array<float, 512> tmp = appliedRing_;
-            std::nth_element (tmp.begin(), tmp.begin() + appliedN_ / 2, tmp.begin() + appliedN_);
-            liveAppliedC_ = tmp[(size_t) (appliedN_ / 2)];
-        }
         if (n > 0)
         {
             if (! traceFile_.is_open())
@@ -897,38 +850,6 @@ const std::vector<const char*>& EedPitchEditor::handControlledParams()
 }
 
 // ---------------------------------------------------------------------------
-// Round 50: "is correction actually running"
-// ---------------------------------------------------------------------------
-EedPitchEditor::Effective EedPitchEditor::effectiveCorrection() const
-{
-    const bool  bypassed = proc_.isBypassed();
-    const bool  on       = proc_.getParamValue (EedPitchProcessor::kCorrect) >= 0.5;
-    const float depth    = (float) proc_.getParamValue (EedPitchProcessor::kDepth);
-    const float mix      = (float) proc_.getParamValue (EedPitchProcessor::kMix);
-    const float ms       = proc_.retuneEffectiveMs();
-    juce::StringArray why;
-    if (bypassed)     why.add ("BYPASSED");
-    if (! on)         why.add ("CORRECT is off (ADVANCED)");
-    if (depth < 0.5f) why.add ("depth " + juce::String (depth, 0) + " % (ADVANCED > DEPTH)");
-    if (mix < 0.5f)   why.add ("mix " + juce::String (mix, 0) + " % (ADVANCED)");
-    const bool keep  = proc_.getParamValue (EedPitchProcessor::kNaturalVib) >= 50.0;   // the shift path: note centres only
-    const bool weak = why.isEmpty() && depth < 30.0f;   // running, but so gently it will measure like dry
-    Effective e;
-    e.correcting = why.isEmpty() && ! weak;
-    juce::String live = liveAppliedC_ < 0.0f ? juce::String ("no voiced audio yet")
-                                             : "applied " + juce::String (liveAppliedC_, 1) + " c (2 s median)";
-    if (! why.isEmpty())
-        e.text = "NOT CORRECTING - " + why.joinIntoString (", ") + "   " + live;
-    else if (weak)
-        e.text = "CORRECTING WEAKLY - depth " + juce::String (depth, 0) + " % (ADVANCED > DEPTH; turn RETUNE to reset)   " + live;
-    else
-        e.text = "CORRECTING  " + juce::String (ms, 0) + " ms / depth " + juce::String (depth, 0) + " %"
-               + (proc_.retuneOffCurve() ? " (off the curve)" : "")
-               + (keep ? "   KEEP VIBRATO on: note centres only, the wobble stays" : "") + "   " + live;
-    return e;
-}
-
-// ---------------------------------------------------------------------------
 // Round 50: the layout audit (see the suite: EJ_EDITOR_SNAP and the always-on
 // bounds check at several sizes)
 // ---------------------------------------------------------------------------
@@ -969,7 +890,6 @@ juce::StringArray EedPitchEditor::auditLayout() const
         if (! latencyBounds_.isEmpty()) bad.add ("front: latency line carried over");
         if (! advGroups_.empty() || ! advCaptions_.empty()) bad.add ("front: advanced groups/captions carried over");
         if (ribbonBounds_.isEmpty() || ! within (ribbonBounds_, content)) bad.add ("front: ribbon missing or outside the content");
-        if (! statusBounds_.isEmpty() && ! within (statusBounds_, content)) bad.add ("front: status strip outside the content");
         return bad;
     }
     for (auto* c : advSet)
