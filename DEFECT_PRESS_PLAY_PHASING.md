@@ -312,3 +312,116 @@ prints the path. The log build and its scripts live in
 sequence: quit Logic, run install_log_build.command, open Logic, press
 play four or five times including once after jumping to a marker, quit
 Logic, run restore_working_build.command. Nothing to send.
+
+## 9. THE LOG, READ (round 52, 5 Sep 2026): the borrow alignment budget is the runtime latency change
+
+Sean's capture: /Users/SeanD/echojay-vst/latency-logs/latency.log, 361
+lines, 19:17:06 - 19:18:11, six PLAY edges, on the round-50 log build
+(the latency path is unchanged since; the log build has since been rebuilt
+at HEAD for any re-run).
+
+### What the log settles
+  - NOTHING CHANGES LATENCY AT PLAY. Every PLAY edge is followed by 50
+    logged blocks with a steady value and rebuildPending 0, e.g.
+        19:17:16.226  top: block  1/50  reported 1800  chainTotal 1800  rebuildPending 0  pos 43.937 s
+        19:17:29.450  top: block  1/50  reported 1800  chainTotal 1800  rebuildPending 0  pos 79.937 s
+    No "chain: latency debounce ARMED", no "onHostedLatencyChanged", no
+    "rebuildForLatencyIfChanged" anywhere in 361 lines. The 80 ms debounce
+    never fires. THE ROUND-47 PRIME SUSPECT IS EXONERATED.
+  - LOGIC SENDS reset() AT PLAY - and at every locate while playing:
+        19:17:16.221  top: reset() from the host
+        19:17:16.226  top: PLAY started at 43.937 s (block 1024 samples, nonRealtime 0)
+        19:17:16.226  chain: transport reset applied to the graph
+        19:17:16.227  pitch: transport reset applied (rings cleared)
+        19:17:18.651  top: reset() from the host          <- mid-playback (a locate)
+        19:17:18.656  pitch: transport reset applied (rings cleared)
+    THE ROUND-48 OPEN QUESTION IS CLOSED: the reset fix fires correctly on
+    every play. (A mid-playback locate clears the rings too - the host asked
+    for it; the output is silent for the reported latency and re-locks.)
+  - NO prepareToPlay at any play edge: once at load only
+    (19:17:06.818 top / 06.970 pitch, block 1024).
+  - THE ONLY ANOMALY IN 361 LINES:
+        19:17:39.496  setLatencySamples  PluginProcessor (site 3)  old   1800  new  18184  CHANGED -> host notified
+    18184 - 1800 = 16384 = kBorrowAlignBudgetFrames (PluginProcessor.h:443).
+    "site 3" is setBorrowBudgetActive(true): "EJCtx: alignment budget ON
+    (capable Link present) - PDC re-runs once". It fired 33 s after load,
+    10 s INTO A PLAY (run 4, 19:17:29 - 19:18:02). Every PLAY after it
+    reports 18184 against chainTotal 1800.
+
+### The question ruled to be answered by measurement: does the plugin actually delay by 18184 while the budget is on?
+tools/latency_impulse_test (an impulse through the top-level EchoJay V2
+processor, empty chain, 48 kHz / 1024, linked against the SHIPPING
+SharedCode library from build-release; the app-support folder snapshotted
+before and after):
+    budget OFF (fresh, no capable Link)          reported      0   impulse out at      0   MATCH
+    budget ON (capable Link seen), same instance reported  16384   impulse out at  16384   MATCH
+    budget OFF again                             reported      0   impulse out at      0   MATCH
+    budget ON before prepare (re-prepared)       reported  16384   impulse out at  16384   MATCH
+THE REPORT IS HONEST. When the budget is on the passthrough really is
+delayed by the full 16384 samples (alignPost_ at the constant budget,
+PluginProcessor.cpp ~1202) - 341.3 ms at 48 kHz - so "reported 18184,
+chainTotal 1800" is not a disagreement: the top level's own delay sits on
+top of the chain's. THE DEFECT IS THAT THE VALUE CHANGES MID-SESSION: at
+19:17:39 the passthrough delay AND the report jumped by 341 ms during
+live playback, and the host had to redo PDC for the whole project while
+the track was 341 ms out of place. Live-only by construction (a bounce
+never runs the registry pass mid-render). That is the phasing.
+(Harness note, on the record: constructing the top-level processor
+rewrote auth.json's mtime (same 474 bytes) and made one network poll -
+outside this defect, filed as seen.)
+
+### What engaged it, and whether it can engage on its own
+setBorrowBudgetActive has ONE writer: refreshLinkRegistry(), the
+registry pass (PluginProcessor.cpp:4604). It is called from the EDITOR:
+every 10 editor ticks (PluginEditor.cpp:21336), on a tab switch (11271),
+and on two apply paths. The registry is the MACHINE-WIDE directory
+~/Library/Application Support/EchoJay/link (LinkShm::resolveDir): a
+capable EchoJay Link in ANY project or host on the machine, publishing
+its sidecar, flips the budget in every EchoJay V2 whose window is open.
+YES, IT CAN ENGAGE WITHOUT THE USER DOING ANYTHING on this plugin - Sean
+had the window open (his screenshots), a capable Link's sidecar was
+listed or freshly published, and the pass flipped it during his fourth
+play. A latency change that fires on its own.
+
+### THE PROPOSAL (not built - waits for the ruling)
+The report is honest, so the budget is not removed from it. The fix is
+that THE VALUE NEVER MOVES WHILE THE HOST IS RUNNING AUDIO:
+  1. The budget decision is taken at prepareToPlay, and re-taken only
+     while the transport is STOPPED. A registry change seen during
+     playback is QUEUED and applied at the next STOP edge (or the next
+     prepare), report and delay together on the same block. Logic re-runs
+     PDC at the next play, which is what the design's "re-runs PDC once"
+     always meant.
+  2. SCOPE: only capable Links in THIS host process count for the budget
+     (the registry rows carry the host identity the prompt resolver
+     already reads). A Link in another project or DAW cannot move this
+     plugin's latency.
+  3. NOT proposed: a fixed pitch-device latency across voice types. The
+     log shows its report never moved (refreshLatency unchanged at every
+     play), so there is nothing to fix there; the number for the record
+     is 3 periods of the voice floor (1800 samples = 37.5 ms at alto/tenor).
+  Cost: a capable Link appearing during playback takes effect after the
+  next stop; users without Links pay no latency; users with Links pay the
+  341 ms they pay today, from the first play after it is seen.
+  The alternative the reviewer named - report the budget from the start,
+  always - costs 341 ms for every user with no Link and needs its own
+  ruling; it is not what this proposes.
+
+### THE BAR (for the ruling; every leg measured before the install is described)
+  a. THE REPORTED LATENCY NEVER CHANGES AFTER PREPARE, IN ANY STATE
+     INCLUDING BORROW: suite leg - with transportPlaying true, a registry
+     change that would flip the budget leaves getLatencySamples() unchanged
+     and the passthrough delay unchanged; at the STOP edge both change
+     together; the impulse test shows report == delay before and after.
+  b. IMPULSE TEST: tools/latency_impulse_test MATCH at both values, off,
+     on, off again, on-before-prepare (today's four legs), plus the
+     queued-then-applied case.
+  c. NO REGRESSION TO BORROW: tools/borrowhost_test's gate passes; the
+     engage/release path still never touches the report; the injection
+     pad and the passthrough pad flip on the same block.
+  d. SCOPE: a registry row from a foreign host pid does not flip the
+     budget; a row from this pid does (suite).
+  e. SEAN'S LOG RE-RUN on the fixed build, window open, with his Link
+     present: no setLatencySamples line during any PLAY; every "reported /
+     chainTotal" pair constant across all 50 blocks of every run; the one
+     allowed change lands between a STOP and the next PLAY.
