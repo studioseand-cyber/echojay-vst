@@ -58,6 +58,11 @@ before any mapping, per the ruling:
 -- natvib 100 at retune 6: /private/tmp/claude-502/-Users-SeanD-echojay-vst/8b86da2a-378d-4ecf-97c0-0e33f4993ece/scratchpad/nv/self_6_60_0_0_0_100.wav: notes 1 | depth ratio med 0.97 | rate src 6.00Hz out 6.00Hz | src depth med 41.9c 
 -- natvib 200 at retune 6: /private/tmp/claude-502/-Users-SeanD-echojay-vst/8b86da2a-378d-4ecf-97c0-0e33f4993ece/scratchpad/nv/self_6_60_0_0_0_200.wav: notes 0 | depth ratio med 0.00 | rate src 0.00Hz out 0.00Hz | src depth med 0.0c 
 
+  (Reading the ruler: "notes 0 / ratio 0.00" on the non-100 renders means
+  the ruler found no sustained note with 4-8 Hz modulation on the OUTPUT
+  side to qualify - i.e. none survived; at 100 the same source notes
+  qualify at a survival ratio of 0.96-0.97 at 6 Hz. The bit-identity of
+  the 0/40/150/200 renders is the primary evidence; the ruler agrees.)
   SO: the control is BINARY today - 100 keeps the vibrato, anything else
   removes it. The schema's "above 100 exaggerates" is false as shipped.
   The presets: natural/balanced 100 (keep), tuned 40 and hard 0 (remove).
