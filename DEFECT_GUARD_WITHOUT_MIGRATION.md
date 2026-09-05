@@ -182,8 +182,8 @@ restore, defaults, a mode write, or the model dialling a mode) and are
 restored on re-engage; legacy values have no flag and are adopted over -
 exactly the population to neutralise. The pattern already exists twice in
 this codebase: ref_manual_by_user / refManualByUser_ for the reference
-(EedPitchProcessor.h) and preGainUserSet for the chain pre-gain
-(PluginProcessor). KEY ROOT AND SCALE HAVE NO SUCH FLAG TODAY - one is
+(EedPitchProcessor.h) and the chain pre-gain's userSet flag (ChainHost::isPreGainUserSet,
+persisted as chainPreGainUserSet by PluginProcessor). KEY ROOT AND SCALE HAVE NO SUCH FLAG TODAY - one is
 added (key_manual_by_user), same semantics, same persistence.
 
 **RULE 2 - DISPLAY (approved, sharpened).** While a source is AUTO, its
