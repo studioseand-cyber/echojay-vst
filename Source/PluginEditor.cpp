@@ -25502,6 +25502,14 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
             EchoJay_NSLog("EJChat: DETECTED KEY injection attached");
         }
     }
+    // [ECHOJAY FEATURES v1]: what the APP can do, so a product question gets an
+    // answer instead of an improvisation. UNCONDITIONAL, on the same footing as
+    // [DETECTED KEY] above and for a plainer reason: "how do I save this" and
+    // "what does Capture do" carry no chain cue, so gating this on hadFeed or
+    // relevant would remove it from exactly the turns it exists for. Static
+    // text, so it costs the same on every turn and is stripped from history.
+    out += EchoJayAPI::buildEchoJayFeaturesInjection();
+
     if (hadChainFeedOut != nullptr) *hadChainFeedOut = hadFeed;
     return out;
 }

@@ -5077,6 +5077,124 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         }
     }
 
+    // ===== [ECHOJAY FEATURES v1] (4 Sep 2026) ==============================
+    // Read against the live system prompt that day, the model knew ONE product
+    // surface by name (Capture) and nothing about the Apply button, the tabs,
+    // saving a chain, wet/dry or any Settings control. Asked how to save a
+    // chain it had nothing to answer from and would improvise.
+    {
+        std::cout << "the features block, and the boundary that matters more:\n";
+        const auto blk = EchoJayAPI::buildEchoJayFeaturesInjection();
+
+        // ef PIN1 -- IT IS THERE, and it is the block the marker names.
+        check (blk.isNotEmpty(), "ef PIN1: the block is built");
+        check (blk.startsWith ("\n\n[ECHOJAY FEATURES v1"),
+               "ef PIN1: and opens with the registered marker");
+        check (blk.trim().endsWith ("]"), "ef PIN1: and closes its bracket");
+
+        // ef PIN2 -- THE DO-NOT-GUESS RULE, which matters more than any
+        // feature in here. A list of features with no boundary makes
+        // improvisation MORE likely, not less: it establishes that the model
+        // knows the product, and a model that believes it knows the product
+        // answers the next question too. If this block ever has to shrink,
+        // features go and this stays.
+        check (blk.contains ("THIS LIST IS THE WHOLE OF WHAT YOU KNOW ABOUT ECHOJAY"),
+               "ef PIN2: the block states its own boundary");
+        check (blk.contains ("never describe it") && blk.contains ("never guess at it")
+               && blk.contains ("never infer it"),
+               "ef PIN2: and forbids describing, guessing and inferring");
+        check (blk.contains ("check the manual"),
+               "ef PIN2: and names the correct answer for anything absent");
+        check (blk.contains ("worse than no answer"),
+               "ef PIN2: and says why, so the rule is not read as mere caution");
+
+        // ef PIN3 -- THE MARKER MISSES ALL FIVE CAPTURE PATTERNS
+        // (api/_prompt-shapes.js containsCaptureMarkers). Run against the real
+        // block, not a sample of the marker: the fifth arm is a literal that
+        // could be tripped by the BODY as easily as by the marker.
+        {
+            const auto sample = blk.toStdString();
+            check (! std::regex_search (sample,
+                       std::regex (R"(\[[A-Z][A-Z0-9 /&-]*\s+CHANNEL:\s*")"))
+                   && ! std::regex_search (sample,
+                       std::regex (R"(\[[A-Z][A-Z0-9 /&-]*\s+ANALYSIS:\s*")"))
+                   && ! blk.containsIgnoreCase ("[PREVIOUS CAPTURE:")
+                   && ! blk.containsIgnoreCase ("[SPECTRUM REFERENCE")
+                   && ! blk.contains ("Band profile (avg dB"),
+                   "ef PIN3: the block matches none of the five capture patterns");
+        }
+
+        // ef PIN4 -- REGISTERED IN historyStripMarkers. The text is identical
+        // on every turn, so a copy left in history is pure duplication.
+        {
+            std::ifstream fa ("Source/EchoJayAPI.cpp");
+            std::stringstream sa; sa << fa.rdbuf();
+            check (juce::String (sa.str()).contains ("\"\\n\\n[ECHOJAY FEATURES v1\""),
+                   "ef PIN4: the marker is registered in historyStripMarkers");
+        }
+
+        // ef PIN5 -- EVERY FEATURE SENTENCE HAS A CITATION RECORDED, which is
+        // the rule this block was built under: a claim nobody could cite does
+        // not go in. The citation table lives in the commit message beside the
+        // code; this asserts that each section of the block appears there on a
+        // line carrying a file:line reference. Deliberately coupled: adding a
+        // feature without citing it should fail the gate, not a review.
+        {
+            std::ifstream fc ("HANDOVER/commit-features-block.txt");
+            std::stringstream sc; sc << fc.rdbuf();
+            const auto msg = juce::String (sc.str());
+            check (msg.isNotEmpty(), "ef PIN5: the commit message is present to cite from");
+            const char* sections[] = { "TABS", "CAPTURE", "NOTHING REACHES",
+                                       "CHAINS SAVE", "EACH SLOT", "SETTINGS" };
+            juce::StringArray uncited;
+            auto lines = juce::StringArray::fromLines (msg);
+            for (const auto* sec : sections)
+            {
+                bool cited = false;
+                for (const auto& ln : lines)
+                    if (ln.contains (sec)
+                        && std::regex_search (ln.toStdString(),
+                                              std::regex (R"(\.(cpp|h|js):\d+)")))
+                    { cited = true; break; }
+                if (! cited) uncited.add (sec);
+                // The section must also actually BE in the block, or the table
+                // is citing something that is not claimed.
+                if (! blk.contains (sec)) uncited.add (juce::String (sec) + "(absent)");
+            }
+            check (uncited.isEmpty(),
+                   "ef PIN5: every feature sentence carries a file:line citation",
+                   "uncited: " + uncited.joinIntoString (", "));
+        }
+
+        // ef PIN6 -- IT RIDES EVERY TURN, not only chain turns. "How do I save
+        // this" and "what does Capture do" carry no chain cue, so a hadFeed or
+        // relevant gate would remove it from exactly the turns it exists for.
+        {
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se; se << fe.rdbuf();
+            const auto ed = codeOnly (juce::String (se.str()));
+            const auto body = functionBody (ed, "juce::String EchoJayEditor::standardChainInjections");
+            check (body.contains ("out += EchoJayAPI::buildEchoJayFeaturesInjection();"),
+                   "ef PIN6: attached in the ONE injection helper");
+            // THE LINE ITSELF MUST BE UNCONDITIONAL. A substring test passes
+            // happily on "if (hadFeed || relevant) out += ...", which is the
+            // exact regression this pin exists to catch: the first draft of it
+            // did, and the mutation walked straight through.
+            juce::String attachLine;
+            for (const auto& ln : juce::StringArray::fromLines (body))
+                if (ln.contains ("buildEchoJayFeaturesInjection")) { attachLine = ln.trim(); break; }
+            check (attachLine.startsWith ("out += EchoJayAPI::buildEchoJayFeaturesInjection();"),
+                   "ef PIN6: and the attach carries no condition of its own",
+                   attachLine);
+        }
+
+        // ef PIN7 -- THE COST IS BOUNDED AND KNOWN. Static text riding every
+        // turn: if it grows, it grows on every turn of every session.
+        check (blk.getNumBytesAsUTF8() < 3000,
+               "ef PIN7: the block stays under 3 KB",
+               juce::String ((int) blk.getNumBytesAsUTF8()) + " B");
+    }
+
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";
     return failN == 0 ? 0 : 1;
 }

@@ -798,6 +798,12 @@ public:
     //     DID this session. Rebuilt from ChainHost::moveLogEntries() every
     //     turn, registered in historyStripMarkers so it never accumulates in
     //     the conversation, and empty when nothing has been applied.
+    //   buildEchoJayFeaturesInjection: the "[ECHOJAY FEATURES v1 ...]" marker,
+    //   what the APP can do. Static text, verified line by line against the
+    //   code that implements it (HANDOVER/echojay-features-v1.md), and it
+    //   closes by telling the model that the list is the boundary of what it
+    //   knows. The boundary is the point; see the comment at the definition.
+    static juce::String buildEchoJayFeaturesInjection();
     static juce::String buildMoveLogInjection(const ChainHost& chainHost);
 
     // ---- History trim notice (item 17, warning half) -----------------------

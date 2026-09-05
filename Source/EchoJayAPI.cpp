@@ -2976,7 +2976,10 @@ const juce::StringArray& EchoJayAPI::historyStripMarkers()
         // The move log (3 Sep 2026): rebuilt from plugin state every turn, so
         // a copy left in history would be a second, older account of the same
         // moves sitting beside the current one.
-        "\n\n[MOVE LOG v1"
+        "\n\n[MOVE LOG v1",
+        // The features block (4 Sep 2026): static text describing the BUILD,
+        // identical on every turn, so a copy in history is pure duplication.
+        "\n\n[ECHOJAY FEATURES v1"
     };
     return markers;
 }
@@ -3250,6 +3253,80 @@ juce::String EchoJayAPI::buildChainLevelsInjection(const ChainHost& chainHost)
     if (out.known && chainHost.getNumSlots() > 0)
         b << "; output " << fmt1(out.levelDb) << " LUFS (out-in " << fmt1(out.levelDb - in.levelDb) << " dB)";
     b << "]";
+    return b;
+}
+
+// ===========================================================================
+// [ECHOJAY FEATURES v1] -- what EchoJay knows about EchoJay.
+//
+// WHY THIS EXISTS. Read against the live system prompt on 4 Sep 2026, the
+// model knew exactly ONE product surface by name: Capture, eleven mentions.
+// "EchoJay" appeared twice, both in the persona line. Zero mentions of the
+// Apply button, the tabs, saving a chain, wet/dry, or any Settings control.
+// Everything else in that prompt describes DATA IT RECEIVES, not the product
+// it lives inside. Asked "how do I save this chain" it had nothing to answer
+// from and would improvise, which on a recorded demo is the worst outcome
+// available.
+//
+// THE RULE ABOVE ALL OTHERS: every sentence below is verified against the
+// code that implements it, and the file and line are recorded in
+// HANDOVER/echojay-features-v1.md. A claim nobody could cite is not in here.
+// If you add a feature to this block, add its citation in the same edit.
+//
+// THE CLOSING RULE IS NOT DECORATION AND MUST NOT BE CUT. A list of features
+// with no boundary makes improvisation MORE likely, not less: it establishes
+// that the model knows about the product, and a model that believes it knows
+// the product will answer the next question too. The boundary is the feature.
+// If this block ever has to shrink, cut features and keep the boundary.
+//
+// THE MARKER IS SAFE AGAINST containsCaptureMarkers' five patterns
+// (api/_prompt-shapes.js). The two regex arms need an uppercase run from the
+// bracket followed by CHANNEL: or ANALYSIS: and a quote; "[ECHOJAY FEATURES
+// v1" ends the [A-Z0-9 /&-]* class at the lowercase "v", and the next word is
+// neither CHANNEL: nor ANALYSIS: in any case. The other three are the literals
+// "[PREVIOUS CAPTURE:", "[SPECTRUM REFERENCE" and "Band profile (avg dB", and
+// none of them appears here -- the third is why this block says "spectrum" and
+// never spells that phrase. A pin runs all five against the real marker.
+//
+// STATIC TEXT, and deliberately: this describes the BUILD, not the session.
+// Nothing here varies per turn, so it is registered in historyStripMarkers
+// like the others and rides only on the newest message.
+juce::String EchoJayAPI::buildEchoJayFeaturesInjection()
+{
+    juce::String b;
+    b << "\n\n[ECHOJAY FEATURES v1 - what the EchoJay app can do, so you can answer"
+         " questions about the product itself.\n"
+         "THIS LIST IS THE WHOLE OF WHAT YOU KNOW ABOUT ECHOJAY. If something is not"
+         " described here you do not know it: never describe it, never guess at it, and"
+         " never infer it from how other plugins or DAWs work. Say you are not sure and"
+         " suggest they check the manual. A confident wrong answer about this app is"
+         " worse than no answer.\n"
+         "TABS, in order: DASHBOARD (read and navigate, no chat there), VISUALISATION"
+         " (the particle visual), METERS (the meter readout), CHAT, COMPARE (two"
+         " captures side by side as A and B, with an AI Compare button), LINK (the"
+         " other EchoJay instances running on other channels, and their monitor),"
+         " CHAIN (the plugin rack), SETTINGS. They can talk to you from every tab"
+         " except Dashboard and Settings.\n"
+         "CAPTURE is the button in the top header, on every tab. It records a window"
+         " and gives figures averaged over it. The live meters are continuous instead:"
+         " the spectrum covers the last 12 seconds, 300 frames at 25 a second, and the"
+         " levels are current. Capture is the more precise read, live is what is"
+         " happening now.\n"
+         "NOTHING REACHES A PLUGIN WITHOUT THEM TAPPING FOR IT. A chain you propose"
+         " arrives as a card with a Build button; an edit arrives as a card with an"
+         " Apply button. A suggestion carrying no dialable values writes nothing at"
+         " all and only puts the numbers on the card to set by hand.\n"
+         "CHAINS SAVE AND COME BACK BY NAME. Save Chain and Save As are in the Chain"
+         " tab, and a saved chain can be loaded again by asking for it by name. You"
+         " cannot see what is inside a saved one, only its name.\n"
+         "EACH SLOT in the rack can be bypassed, removed, moved earlier or later, and"
+         " has its own wet/dry blend, with a master wet for the whole rack. Those are"
+         " controls in the Chain tab that they operate, not things you set.\n"
+         "SETTINGS holds their name, DAW, experience level, chat language, monitors,"
+         " headphones, genres, UI scale, a plugin scan with a View all list, a list of"
+         " plugins withheld from the chain list, and one toggle, \"Only suggest plugins"
+         " EchoJay can auto-dial (fewer options)\", which is OFF by default and applies"
+         " the moment it is ticked with nothing to save.]";
     return b;
 }
 
