@@ -471,3 +471,18 @@ ignore-vibrato OFF - the knee, not the fast end. At tau 40 the transit
 bucket is already 47.5% of activity and the >25c share has doubled from
 tau 6 (3.8% -> 7.9%); the timing lag's share is flat. The slow end begins
 where he works. Order stands, with more reason: slow end, then timing lag.
+
+## Round 25 addendum: the slow-end deliverable INCLUDES the seam-attack ear set re-cut at Sean's working point
+
+The round-16 ear gate ran on tau-6 renders. Sean works at retune 44.2 ms
+with ignore-vibrato OFF (state, 3 Sep). The seam mechanism is retune-
+independent (section 1: 60 calmer than 0 at every tau), so no change is
+expected - but it has not been heard where he actually works, and the fix
+is not called settled until it has. Folded into the slow-end pass, not a
+separate round: cut seam 0 vs seam 60 at self:44:60:0:0:0:0 vs
+self:44:0:0:0:0:0 on sourceNEW, one file per comparison, legs
+concatenated with 0.45 s gaps, jointly normalised, written to
+/Users/SeanD/echojay-vst-pitch/earclips/ with sizes and a non-silence peak
+check printed (the deliverable discipline), alongside the slow-end
+listening set (retune 44 vs 150, and the depth-blend candidates once
+they exist).
