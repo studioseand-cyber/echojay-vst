@@ -654,6 +654,11 @@ public:
         const float humanPct = humanize_.load();
         if (humanPct > 0.0f && stableMs_ >= kSustainMs)
             wanted *= 1.0f - 0.01f * humanPct;
+        // DEPTH-BLEND EXPERIMENT (5 Sep 2026, SLOW_END_RECORD round 23 item 1,
+        // INVESTIGATION ONLY, debug-gated, 1.0 = bit-identical): scales the
+        // correction's DEPTH independently of its speed, to measure whether a
+        // transparent slow end is a depth question rather than a tau question.
+        if (dbgDepthMode_ == 1) wanted *= dbgDepth_;   // mode 1: depth on the AIM (pre-envelope)
 
         // ---- the envelope --------------------------------------------------
         // The corrected NOTE, plus however much of the singer's own vibrato is
@@ -772,7 +777,7 @@ public:
             // phase-correct by construction. Descends from the k=100
             // structural solution (algebraic cancellation at the ring's
             // time), generalised to k != 100.
-            shiftCents_ = shiftSm_
+            shiftCents_ = ((dbgDepthMode_ == 2 && dbgDepth_ < 1.0f) ? dbgDepth_ * shiftSm_ : shiftSm_)
                         + (dbgFastRing_ ? 0.0f
                            : (natVib_.load() * 0.01f - 1.0f) * osc);
         }
@@ -815,7 +820,10 @@ public:
         }
 
         // ---- 5: transpose --------------------------------------------------
-        targetCents_ = curCents_ + vibNow_ + 100.0f * transpose_.load();
+        // mode 2: depth on the APPLIED SHIFT (post-envelope) - the output pitch
+        // blends between the live input pitch and the envelope's position.
+        const float envC = (dbgDepthMode_ == 2 && dbgDepth_ < 1.0f) ? inCents + dbgDepth_ * (curCents_ - inCents) : curCents_;
+        targetCents_ = envC + vibNow_ + 100.0f * transpose_.load();
         shiftCents_ += vibNow_ + 100.0f * transpose_.load();
 
         return hzFromCentsC (targetCents_, ref);
@@ -887,6 +895,7 @@ public:
     float debugDepthEnv() const noexcept { return depthEnv_; }
     float debugPendDepth() const noexcept { return pendDepth_; }
     void  debugEnvExperiment (int e) noexcept { envExp_ = e; }
+    void  debugDepthScale (float d, int mode = 1) noexcept { dbgDepth_ = std::clamp (d, 0.0f, 1.0f); dbgDepthMode_ = mode; }   // investigation only; depth 1 = off; mode 1 aim, 2 applied shift
     void  debugMedianSeed (int mode) noexcept { medianSeed_ = mode; }   // 0 off, 1 starts only, 2 +resume corridor
     void  debugPendForget (bool on) noexcept { pendForgetOn_ = on; }    // gated: rode ungated into the baseline for one commit - the exact pattern under repair
     uint32_t debugResumeReanchors() const noexcept { return resumeReanchors_; }
@@ -984,6 +993,8 @@ private:
     // the 20/30/50 sweep shows a monotone hard-6-vs-hard-400 trade with
     // both natural corners invariant at every value.
     int   envExp_ = 0;
+    float dbgDepth_ = 1.0f;      // see debugDepthScale
+    int   dbgDepthMode_ = 1;
     int   medianSeed_ = 0;       // 0 off, 1 starts only, 2 +resume corridor
     uint32_t resumeReanchors_ = 0;
     int   resumeJudge_ = 0;

@@ -1,0 +1,8 @@
+self_150_60_0_0_0_0_0_2 onset(150ms) med  9.49 p75 19.17 p90 31.65 | all-voiced med  8.01 <5c 34.5% | improve-rate vs source 35.6%  (n onset 985, all 2944)
+self_150_60_0_0_0_0_0.25_2 onset(150ms) med  7.42 p75 17.24 p90 29.49 | all-voiced med  7.15 <5c 37.8% | improve-rate vs source 43.2%  (n onset 990, all 2975)
+self_150_60_0_0_0_0_0.5_2 onset(150ms) med  8.64 p75 18.88 p90 32.14 | all-voiced med  7.71 <5c 37.0% | improve-rate vs source 47.8%  (n onset 986, all 2941)
+self_44_60_0_0_0_0_0_2 onset(150ms) med  9.49 p75 19.17 p90 31.65 | all-voiced med  8.01 <5c 34.5% | improve-rate vs source 35.6%  (n onset 985, all 2944)
+self_44_60_0_0_0_0_0.25_2 onset(150ms) med  7.49 p75 17.32 p90 29.87 | all-voiced med  6.81 <5c 39.1% | improve-rate vs source 46.3%  (n onset 989, all 2984)
+self_44_60_0_0_0_0_0.5_2 onset(150ms) med  7.25 p75 16.28 p90 29.03 | all-voiced med  6.30 <5c 42.4% | improve-rate vs source 53.5%  (n onset 985, all 2973)
+self_44_60_0_0_0_0_1_2 onset(150ms) med  7.79 p75 20.09 p90 37.55 | all-voiced med  5.32 <5c 48.3% | improve-rate vs source 58.2%  (n onset 975, all 2898)
+self_6_60_0_0_0_0_0.5_2 onset(150ms) med  7.01 p75 14.66 p90 25.15 | all-voiced med  5.96 <5c 44.2% | improve-rate vs source 56.7%  (n onset 973, all 2934)

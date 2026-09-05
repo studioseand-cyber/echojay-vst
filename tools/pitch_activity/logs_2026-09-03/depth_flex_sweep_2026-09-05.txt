@@ -1,0 +1,12 @@
+SELF tau 150  seam 60ms  ign-vib OFF  flex 0 hum 0 natvib 0 depth 0.50    median  6.73c  p75 17.91c  p90 41.01c  >25c 17.9%  mean 15.24c
+SELF tau 150  seam 60ms  ign-vib OFF  flex 0 hum 0 natvib 0 depth 0.25    median  6.95c  p75 18.46c  p90 42.84c  >25c 19.5%  mean 15.85c
+SELF tau 150  seam 60ms  ign-vib OFF  flex 0 hum 0 natvib 0 depth 0.00    median  7.21c  p75 19.59c  p90 46.16c  >25c 20.9%  mean 16.74c
+SELF tau 44  seam 60ms  ign-vib OFF  flex 0 hum 0 natvib 0 depth 0.50    median  5.96c  p75 14.56c  p90 32.72c  >25c 14.3%  mean 12.61c
+SELF tau 44  seam 60ms  ign-vib OFF  flex 0 hum 0 natvib 0 depth 0.25    median  6.69c  p75 16.85c  p90 37.72c  >25c 16.9%  mean 14.18c
+SELF tau 44  seam 60ms  ign-vib OFF  flex 0 hum 0 natvib 0 depth 0.00    median  7.30c  p75 18.60c  p90 42.48c  >25c 19.0%  mean 15.81c
+SELF tau 44  seam 60ms  ign-vib OFF  flex 25 hum 0 natvib 0 depth 1.00    median  5.41c  p75 11.72c  p90 24.12c  >25c  9.3%  mean 10.08c
+SELF tau 44  seam 60ms  ign-vib OFF  flex 55 hum 0 natvib 0 depth 1.00    median  6.02c  p75 13.14c  p90 26.20c  >25c 10.9%  mean 10.79c
+SELF tau 44  seam 60ms  ign-vib OFF  flex 80 hum 0 natvib 0 depth 1.00    median  6.26c  p75 14.87c  p90 28.30c  >25c 12.3%  mean 11.44c
+SELF tau 44  seam 60ms  ign-vib OFF  flex 100 hum 0 natvib 0 depth 1.00    median  6.53c  p75 15.73c  p90 29.61c  >25c 13.8%  mean 11.98c
+SELF tau 44  seam 60ms  ign-vib OFF  flex 0 hum 60 natvib 0 depth 1.00    median  5.24c  p75 11.69c  p90 23.53c  >25c  9.0%  mean 10.02c
+SELF tau 150  seam 60ms  ign-vib OFF  flex 0 hum 0 natvib 0 depth 1.00    median  6.25c  p75 15.98c  p90 37.56c  >25c 16.0%  mean 13.90c

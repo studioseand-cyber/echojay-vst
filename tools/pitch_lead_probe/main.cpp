@@ -75,7 +75,27 @@ int main(int argc,char**argv)
         1000.0*det.pitchLagFor(vt)/kFs,sh.latencySamples(),std::min(det.pitchLagFor(vt),std::max(0,sh.latencySamples()-1)),
         1000.0*std::min(det.pitchLagFor(vt),std::max(0,sh.latencySamples()-1))/kFs);
     struct Obs { uint64_t pos; double hz; };
-    std::vector<Obs> hopObs, shObs, rulerObs;
+    std::vector<Obs> hopObs, shObs, rulerObs, corrObs;
+    // CORRECTOR-IN-LOOP at depth 0 (applied-shift mode): the target is the hop's
+    // own pitch, so the emitted ratio should be exactly 1. Any deviation, in
+    // cents / glide rate, is the skew between the TARGET's clock (the hop) and
+    // the audio the shifter applies it to (the read pointer). Measured via the
+    // effective-ratio tap: obs hz = truth(p) * effR(p), compared with truth(p).
+    PitchCorrect corr; corr.prepare(kFs,hop); corr.initDegrees(); for(int k=0;k<12;++k) corr.setDegree(k,true,0);
+    corr.setRetuneMs(6.0f); corr.setFlex(0); corr.setHumanize(0); corr.setIgnoreVibrato(false); corr.setNaturalVibrato(0);
+    corr.debugDepthScale(0.0f,2); corr.reset(); F0JumpGate gate;
+    PsolaEngine sh2; sh2.prepare(kFs,256,PitchEngine::voiceRange(vt).fMinHz,worst);
+    sh2.setFormantMode(PsolaEngine::kFormantPreserve); sh2.setPitchLagSamples(det.pitchLagFor(vt)); sh2.setDriftBleed(true); sh2.debugRingTap(true);
+    { PitchEngine det2; det2.prepare(kFs,256); det2.setVoiceType(vt); det2.setTracking(PitchEngine::kNormal);
+      std::vector<float> raw2(N,0.0f); PitchEngine::HopEvent ev2[64]; float target=0,sliceF0=0; float shift=PsolaEngine::kNoShift; bool sliceVoiced=false;
+      for(size_t p=0;p+256<=N;p+=256)
+      { det2.process(x.data()+p,nullptr,256); const uint64_t blockStart=det2.inputPosition()-256; const int n=det2.drainHops(ev2,64); int cursor=0;
+        for(int h=0;h<=n;++h)
+        { int sliceEnd=256; if(h<n){ const int64_t rel=(int64_t)ev2[h].inputPos-(int64_t)blockStart; sliceEnd=(int)std::clamp(rel,(int64_t)cursor,(int64_t)256); }
+          if(sliceEnd>cursor){ sh2.process(x.data()+p+(size_t)cursor,raw2.data()+p+(size_t)cursor,sliceEnd-cursor,sliceF0,sliceVoiced,target,shift); cursor=sliceEnd; }
+          if(h<n){ const float g=gate.filter(ev2[h].f0Hz,ev2[h].voiced,det2.hopMs(),-1,-1); sliceF0=g; sliceVoiced=ev2[h].voiced;
+                   const float t=corr.process(g,ev2[h].voiced,det2.hopMs()); if(t>0){ target=t; shift=corr.shiftPreferred()?corr.lastShiftCents():PsolaEngine::kNoShift; } } } }
+      for(const auto& tp:sh2.debugEffRData()) if(tp.effR>0) corrObs.push_back({tp.inPos,T.hzAt((double)tp.inPos/kFs)*(double)tp.effR}); }
     std::vector<float> raw(N,0.0f);
     PitchEngine::HopEvent ev[64]; float target=0,sliceF0=0; float shift=0.0f; bool sliceVoiced=false;
     for(size_t p=0;p+256<=N;p+=256)
@@ -107,11 +127,14 @@ int main(int argc,char**argv)
           if(e<bestE){ bestE=e; best=s; } }
         return 1000.0*(double)best/kFs;
     };
-    std::printf("\n  rate     dir |   HOP event (raw)          |   RULER (8192-blk, at hop)  |   SHIFTER f0Here at read ptr\n");
-    std::printf("  c/ms         |  lead ms   mid-glide err   |  lead ms   mid-glide err    |  lead ms   mid-glide err\n");
+    const auto corrHeld=held(corrObs);
+    std::printf("\n  rate     dir |   HOP event (raw)          |   RULER (8192-blk, at hop)  |   SHIFTER f0Here at read ptr |  EMITTED @ depth 0 (target clock vs audio)\n");
+    std::printf("  c/ms         |  lead ms   mid-glide err   |  lead ms   mid-glide err    |  lead ms   mid-glide err     |  skew ms   mid-glide err\n");
     for(const Glide& g:glides)
-    { double e1,e2,e3; const double l1=fit(hopObs,g,e1), l2=fit(rulerObs,g,e2), l3=fit(shHeld,g,e3);
-      std::printf("  %5.2f  %s  | %+8.2f   %+7.1fc         | %+8.2f   %+7.1fc          | %+8.2f   %+7.1fc\n",g.rate,g.up?"up  ":"down",l1,e1,l2,e2,l3,e3); }
+    { double e1,e2,e3,e4; const double l1=fit(hopObs,g,e1), l2=fit(rulerObs,g,e2), l3=fit(shHeld,g,e3), l4=fit(corrHeld,g,e4);
+      std::printf("  %5.2f  %s  | %+8.2f   %+7.1fc         | %+8.2f   %+7.1fc          | %+8.2f   %+7.1fc          | %+8.2f   %+7.1fc\n",g.rate,g.up?"up  ":"down",l1,e1,l2,e2,l3,e3,l4,e4); }
+    { double se=0; int n=0; for(const Obs& q:corrHeld){ const double tt=(double)q.pos/kFs; if(tt>0.45&&tt<0.65){ se+=std::fabs(cents(q.hz,T.hzAt(tt))); ++n; } }
+      std::printf("  steady-note |emitted err| at depth 0: %.2fc (n %d)\n",n?se/n:0,n); }
     // steady-state sanity
     { double se=0; int n=0; for(const Obs& q:shHeld){ const double tt=(double)q.pos/kFs; if(tt>0.45&&tt<0.65){ se+=std::fabs(cents(q.hz,T.hzAt(tt))); ++n; } }
       std::printf("\n  steady-note |err| shifter f0Here: %.2fc (n %d)\n",n?se/n:0,n); }

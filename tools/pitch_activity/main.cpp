@@ -75,7 +75,7 @@ static std::vector<double> fineTrack (const std::vector<float>& x, double fs, in
       t.push_back(r.voiced&&r.f0Hz>0?(double)r.f0Hz:0.0); }
     return t;
 }
-struct Cfg { float tau=150, ramp=0, flex=0, hum=0, nat=0; bool ign=true; bool grain=false; float gapSec=-1; int resetMask=0; size_t resetAt=0; };
+struct Cfg { float tau=150, ramp=0, flex=0, hum=0, nat=0, depth=1; int depthMode=1; bool ign=true; bool grain=false; float gapSec=-1; int resetMask=0; size_t resetAt=0; };
 struct Render { std::vector<float> out; std::vector<PsolaEngine::DbgRingTap> tap; std::vector<PsolaEngine::DbgEffR> effR; };
 static Render renderSelf (const std::vector<float>& in, double fs, int vt, bool chrom, const Cfg& c)
 {
@@ -89,6 +89,7 @@ static Render renderSelf (const std::vector<float>& in, double fs, int vt, bool 
     else corr.setKeyRoot(0);
     corr.setRetuneMs(c.tau); corr.setFlex(c.flex); corr.setHumanize(c.hum);
     corr.setIgnoreVibrato(c.ign); corr.setNaturalVibrato(c.nat);
+    corr.debugDepthScale(c.depth,c.depthMode);
     corr.reset();
     F0JumpGate gate;
     float worst=PitchEngine::voiceRange(0).fMinHz;
@@ -235,7 +236,8 @@ int main (int argc, char** argv)
         {
             const bool stale=!spec.compare(0,6,"selfx:");
             Cfg c; int ign=1;
-            const int n=std::sscanf(spec.c_str()+(stale?6:5),"%f:%f:%d:%f:%f:%f:%f:%d",&c.tau,&c.ramp,&ign,&c.flex,&c.hum,&c.nat,&c.gapSec,&c.resetMask);
+            const int n=stale?std::sscanf(spec.c_str()+6,"%f:%f:%d:%f:%f:%f:%f:%d",&c.tau,&c.ramp,&ign,&c.flex,&c.hum,&c.nat,&c.gapSec,&c.resetMask)
+                              :std::sscanf(spec.c_str()+5,"%f:%f:%d:%f:%f:%f:%f:%d",&c.tau,&c.ramp,&ign,&c.flex,&c.hum,&c.nat,&c.depth,&c.depthMode);
             if(n<3){ std::printf("bad spec %s\n",spec.c_str()); continue; }
             c.ign=ign!=0;
             if(stale)
@@ -257,8 +259,8 @@ int main (int argc, char** argv)
             }
             else R=renderSelf(src,fs,vt,chrom,c);
             x=R.out; haveTap=true;
-            char b[200]; std::snprintf(b,sizeof b,"%s tau %.0f  seam %.0fms  ign-vib %s  flex %.0f hum %.0f natvib %.0f%s",
-                stale?"STALE-RESTART":"SELF",c.tau,c.ramp,c.ign?"ON":"OFF",c.flex,c.hum,c.nat,stale?"":"");
+            char b[200]; std::snprintf(b,sizeof b,"%s tau %.0f  seam %.0fms  ign-vib %s  flex %.0f hum %.0f natvib %.0f depth %.2f(%s)",
+                stale?"STALE-RESTART":"SELF",c.tau,c.ramp,c.ign?"ON":"OFF",c.flex,c.hum,c.nat,c.depth,c.depthMode==2?"applied":"aim");
             label=b; if(stale){ char g[96]; std::snprintf(g,sizeof g,"  (pass 2 after %.1fs stopped silence; reset mask %d)",c.gapSec,c.resetMask); label+=g; }
         }
         else if(!spec.compare(0,5,"file:"))

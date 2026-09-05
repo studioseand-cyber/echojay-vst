@@ -486,3 +486,122 @@ concatenated with 0.45 s gaps, jointly normalised, written to
 check printed (the deliverable discipline), alongside the slow-end
 listening set (retune 44 vs 150, and the depth-blend candidates once
 they exist).
+
+# Round 27 (5 Sep 2026): the slow-end characterisation - MEASURED, NOT BUILT. Depth is the answer, and it has a floor that is a second timing defect.
+
+## 0. Ear set re-cut at Sean's working point - DELIVERED
+/Users/SeanD/echojay-vst-pitch/earclips/
+  seamattack_retune44_ignOFF__A_seam0__B_seam60.wav   5,175,212 bytes, 2 x 13.25 s, 0.45 s gap, jointly normalised, peak 0.891
+  slowend_ignOFF_seam60__A_retune44__B_retune150.wav  5,175,212 bytes, same format
+Measured at retune 44 / ign OFF: seam 0 -> 60 takes activity median 6.43 ->
+5.04c, p90 30.4 -> 23.1c, word-start mean 17.4 -> 9.9c. Calmer at his
+setting too, as at every other tau. The gate waits on his ear.
+
+## 1. Option 1 measured: WHERE the depth blends decides everything
+
+Debug hook (EedPitchCorrect.h debugDepthScale, investigation only, default
+1.0 = BIT-IDENTICAL, verified by cmp on the retune-44 render):
+  mode 1, depth on the AIM (pre-envelope: wanted *= depth) - FAILS. Activity
+  RISES as depth falls, and tuning goes below the source:
+    tau 150: depth 1 -> 6.25c median, 16.0% >25c   depth 0 -> 7.21c, 20.9%
+    tau 44:  depth 1 -> 5.04c,  8.8%              depth 0 -> 7.30c, 19.0%
+    improve-rate vs source at depth 0: 45.5% / 45.9% (< 50% = moves pitch
+    AWAY from grid more often than toward). Mechanism: with wanted = 0 the
+    envelope still chases noteCents (the 140 ms slow track) and the applied
+    shift is curCents_ - inCents: the output follows a smoothed, lagged copy
+    of the singer instead of the singer. "Zero correction" on the aim is not
+    "no correction"; it is a different correction.
+  mode 2, depth on the APPLIED SHIFT (post-envelope: target = in + depth *
+  (env - in)) - WORKS, down to a floor:
+    tau 150: depth 0.5 -> 3.37c, 4.5% >25c; 0.25 -> 2.71c, 2.8%; 0 -> 3.09c, 5.1%
+    tau 44:  depth 0.5 -> 2.54c, 2.1%;        0.25 -> 2.38c, 2.1%; 0 -> 3.09c, 5.1%
+    improve-rate: tau 44 depth 0.5 = 53.5% (still corrects), 0.25 = 46.3%,
+    0 = 35.6%. Antares max retune on the same ruler: 0.57c, improve 57.0%.
+  The transparent end is a DEPTH question, not a tau question - and depth
+  0.25-0.5 on the applied shift at tau 44 is the "a little, gently" Sean
+  is reaching for: 2.4-2.5c activity, still improving the grid.
+
+## 2. The floor is a SECOND TIMING DEFECT: the target's clock vs the audio's
+
+Depth 0 should be identity (the unity control measures 0.00c). It is not:
+3.09c median, p90 14.4c, improve-rate 35.6% - worse than the dry source.
+tools/pitch_lead_probe, new arm, corrector in the loop at depth 0 on the
+synthetic glides, emitted pitch (truth x effR) vs truth:
+
+    alto_tenor 165 Hz      emitted LEADS the audio by +6.8..+13.3 ms
+                           (0.25 -> 4 c/ms; +11..+13 from 0.5 c/ms up)
+    low_male 110 Hz        +18.1..+20.8 ms
+    steady notes           0.00c (n 75, both)
+
+Constant in ms across glide rate, zero at rest: a pure alignment skew. The
+TARGET is computed at the hop from the published f0 (which describes audio
+30.6 ms before the hop) and applied to the shifter's read pointer AT ONCE,
+with none of the back-dating the f0 ring gets. The ratio target/f0Here
+therefore has a numerator and a denominator 11-13 ms apart (alto), 18-20
+(low male). The round-18 "6.5 ms lag" was the DENOMINATOR's half; the
+numerator leads by the rest. Consequences the record already contains
+without knowing their cause: the DETECT bucket at every tau; and - new -
+a vibrato-rate ripple in every setting: at 40c/6 Hz vibrato (peak slope
+~0.75 c/ms) the skew alone injects ~8-10c of error at the vibrato rate
+even when the corrector is asked to change nothing.
+
+FIX SHAPE (not built): write the TARGET into the same position-indexed
+ring as f0, at the same (per-hop corrected) back-dating, and read both at
+the read pointer - numerator and denominator co-timed by construction.
+The round-18 per-hop lag then aligns the pair to the audio. This ENLARGES
+the timing-lag item: it is one defect with two halves, and its size is
+11-20 ms, not 6.5.
+
+## 3. Options 2 and 3
+
+Option 2 (fix the snap, lift the cap): does not produce transparency - a
+longer journey to full commitment is still full commitment (§17.4's tau
+400 rows: within-3c 22.6%, all scoop). Cost is the snap fix's own bar,
+already reverted once. Not the answer to Sean's request; still worth
+doing for the snap itself.
+Option 3 (relabel the dial, route gentleness to Flex): REFUTED BY
+MEASUREMENT. Flex at tau 44 (his setting), ign OFF:
+    flex 0: 5.04c, improve 58.2%   25: 5.41c, 49.8%   55: 6.02c, 44.3%
+    80: 6.26c, 43.2%   100: 6.53c, 43.2%
+Flex scales the AIM (mode 1's mechanism): above ~25 it removes the
+correction and keeps the motion, tuning WORSE than the dry source. Flex
+is not a gentleness control on this architecture. Humanize 60: 5.24c,
+55.3% - mild, sustains only. The relabel would be honest about the knee
+(40-80) and dishonest about Flex.
+
+## 4. Verdict: cheaper AND more honest is Option 1, post-envelope depth - after the skew
+
+Option 1 is corrector-local, bit-identical at depth 1, and measured to
+reach 2.4-2.7c activity while still improving the grid. It is the honest
+control because it is what the user thinks the slow end of the retune
+dial already is. Its floor is the skew of section 2 (3.09c, improve
+35.6%): until the target and f0 clocks are co-timed, depth 0 is not
+transparent, it is a 3c-jittering copy. RECOMMENDED ORDER, for ruling:
+the co-timed target ring (the enlarged timing-lag item, with its
+cancellation clause intact) FIRST, because it is the floor under the
+slow end and a wrong number in a known place; then the depth control.
+This reverses the round-23 re-rank on new evidence, and says so.
+
+## 5. For Sean - the Flex advice is WITHDRAWN
+Round 23 said gentleness lives in Flex. Measured at his setting it does
+not: Flex >= 25 tunes worse than not correcting. Until a depth control
+exists: lower retune is the only gentleness available (tau 6-40, section
+2 rows), and the chain wet knob (MIX) sums two pitches and is NOT
+measured here as a depth control - not recommended either. He is
+reaching for a control the plugin does not have; that is the finding.
+
+## 6. THE BAR for the depth control (Option 1), written before any build
+  1. Depth 1.0 bit-identical to the shipped build (already measured true
+     for the hook; must stay true for the product control).
+  2. Synthetic truth: at depth 0, emitted pitch == truth within 0.5c at
+     every glide rate 0.25-2 c/ms and both voice types (requires the
+     section-2 skew fix; measured today: 11-20 ms lead).
+  3. sourceNEW, hard, ign OFF, seam 60, tau 44: depth 0.5 activity median
+     <= 2.6c with improve-rate >= 52%; depth 0 activity median <= 0.5c
+     (transparency), improve-rate == the unity control's.
+  4. Paired per-instant sustain clause and onset median clause at depth 1
+     unchanged (they are, by leg 1).
+  5. Mode table: every mode WRITES depth (natural/balanced get a ruled
+     value; tuned/hard 1.0); one default; ledger entries at birth.
+  6. Sean's ear on retune 44 at depth 1 / 0.5 / 0.25, one file, the
+     deliverable discipline.
