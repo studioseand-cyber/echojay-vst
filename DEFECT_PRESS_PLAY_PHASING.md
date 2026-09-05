@@ -518,3 +518,49 @@ L1, L2, L5 NEED SEAN'S MACHINE (a real Logic transport and a real Link) -
 AUHostingServiceXPC_arrow killed; Sean must relaunch Logic. Not touched:
 kBorrowAlignBudgetFrames (16384; the 1024 + 15360 split stays on the
 eighteen-constant register), no user-facing indicator, no always-on report.
+
+## 11. ROUND 54 (5 Sep 2026): hold. L3, L4, L6, L7 accepted; L5 discharged by the console harnesses (no editor exists there and the commits fired - Sean's Logic pass confirms it in a real host rather than establishing it). L1 and L2 open, on his capture.
+
+### L8, added to the bar: PRESS-PLAY IS CLEAN, by ear, at four points of the Logic pass
+  (i)   the first 2 s of the first play, no Link anywhere in the project;
+  (ii)  during playback as a Link is inserted;
+  (iii) the first 2 s of the play after the stop that commits it;
+  (iv)  during playback as the Link is removed.
+ATTRIBUTION, stated so it cannot be misread later: (i) is clean because
+C4 means an empty project has a WANTED budget of zero and nothing can
+ever flip - it is NOT evidence that the stop-queue works. Only (ii) and
+(iv) test the queue: those are the points where a change is PENDING
+during playback. A pass that reports "no phasing" without separating (i)
+from (ii)/(iv) has not tested the fix.
+
+### ACCEPTED RESIDUAL, recorded so a future round does not read it as a regression: MONITORING WHILE STOPPED
+Logic processes blocks with the transport stopped for live input
+monitoring. A commit lands in one of those blocks (that is the design:
+"a block observed with the transport STOPPED"), and the MONITOR path jumps
+by the budget - 16384 samples, 341 ms at 48 kHz - in a single block: a
+discontinuity in what a singer hears through the plugin while stopped,
+once, at the moment a capable Link appears or leaves. This is real and it
+is ACCEPTED, NOT FIXED. A discontinuity while stopped is not the defect
+under repair (a latency change during PLAYBACK that forced the host to
+redo PDC). The alternatives - defer the commit to a stopped-AND-not-
+streaming state, or cross-fade the delay change - both open work that is
+out of scope for closing this item. Do not fix it in this round.
+
+### How the log will be read when it arrives (the reviewer's criteria, on the record)
+PASS requires ALL of:
+  - ZERO setLatencySamples/commit lines between the first PLAY edge and the
+    first STOP edge, WITH the "borrow budget WANTED ON (pending ...)" line
+    present inside that window - proof the mechanism was reached and
+    declined to fire, not that nothing happened;
+  - exactly ONE commit line at that stop, reported moving to 18184;
+  - zero further lines across the next play;
+  - the removal producing a WANTED OFF line during play, zero reports, and
+    one commit at its stop, reported returning to chainTotal;
+  - no prepareToPlay at any play edge (as in round 52).
+THE FAILURE THAT MATTERS MOST: a WANTED line that never appears during
+playback. That is not a pass: the registry pass never saw the Link while
+playing - most likely the 1 Hz processor timer not running, or the
+in-process / host-identity match failing (an AU hosted out of process
+resolves a different identity than the Link's). Either is a real finding
+to be chased, not explained away. (The ruling text was cut off at this
+point; nothing beyond it is assumed.)

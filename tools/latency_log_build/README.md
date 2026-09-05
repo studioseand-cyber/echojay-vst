@@ -54,3 +54,14 @@ new 18184); play 2 constant at 18184 for all 50 blocks; in play 3 "WANTED
 OFF (pending)" and the commit only at its STOP.
   LOG build     AU arm64 6E91E383-2713-3385-A42E-8D903B88C372
   WORKING build AU arm64 7F0618CD-0ED5-3E98-9C4F-3E447E10B72B  (installed)
+
+### L8 - THE EAR CHECK (round 54): listen at four points, and keep them apart
+  (i)   the first 2 s of the first play, no Link anywhere in the project
+  (ii)  DURING playback as you insert the Link
+  (iii) the first 2 s of the play after the stop that commits it
+  (iv)  DURING playback as you remove the Link
+Report each one separately. ATTRIBUTION WARNING: (i) is clean because with
+no Link the wanted budget is zero and nothing can ever flip - it says
+NOTHING about whether the stop-queue works. Only (ii) and (iv) test the
+fix: those are the moments a change is pending while you play. "No
+phasing" without (ii) and (iv) named separately has not tested the fix.
