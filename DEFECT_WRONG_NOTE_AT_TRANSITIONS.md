@@ -160,3 +160,124 @@ The measured configuration runs the LEGACY path (every traced hop says
 so); the F0JumpGate never fired in either window (bigJump 0, gated =
 detector); the detector f0 is clean through both events (no octave
 error: the wrong note is a DECISION, not a tracking error).
+
+## ROUND 58 (5 Sep 2026): the condition isolated; the tree the reviewer read; the natural_vibrato thread closed; the 14 August premise measured
+
+### The tree, first - so the defaults are not re-litigated
+The reviewer's line numbers (kIgnoreVib at :72, kNaturalVib 100 at :133,
+kMode kNatural at :22, kDefRetuneMs 120 at :213) are the feat/pitch
+WORKTREE at /Users/SeanD/echojay-vst-pitch - whose Source last changed at
+96d87d6 and which does NOT contain the round-50 default change (git branch
+--contains 3330a0f lists only integration/reasoning-plus-pitch). The
+installed build (AU arm64 7F0618CD) is built from THIS branch, where:
+    Source/EedPitchProcessor.cpp:24-25   kMode default kCustom   (round 35/40)
+    Source/EedPitchProcessor.cpp:49      kRetune (the dial) default 0 = 6 ms / depth 100
+    Source/EedPitchCorrect.h:261         kDefRetuneMs 6
+    Source/EedPitchProcessor.cpp:201     kNaturalVib default 0    (round 50, commit 3330a0f)
+    Source/EedPitchProcessor.cpp:128     kIgnoreVib default 1     (ON)
+    Source/EedPitchProcessor.cpp:535-540 kPresets: ignoreVib true in all four modes (unchanged)
+    Source/EedPitchCorrect.h:1083        natVib_ { 100.0f }  <- a SECOND literal; dead at runtime
+                                         (resetParamsToDefaults() writes the schema's 0 at construction,
+                                         EedPitchProcessor.cpp:817) but it breaks "exactly one default" on paper
+So THE SHIPPED DEFAULT IS: custom, dial 0 (6 ms / depth 100), flex 0,
+humanize 0, natural_vibrato 0 (LEGACY path), IGN VIB ON, seam 60. That is
+the configuration that reproduced the bounce event for event. Sean's
+"IGN VIB was off" maps, as the reviewer said, to KEEP VIBRATO (the
+natural_vibrato knob): it is off by default; the IGN VIB button is on.
+My round-56 label "the shipped configuration renders 2 events" was WRONG:
+that render was spec self:6:60:0:... - IGN VIB OFF - not the shipped
+default. The reviewer's objection stands and is answered by the ladder.
+
+### STEP 2b - THE ONE-AT-A-TIME LADDER (tools/pitch_activity on source_different_bit.wav, D minor, depth 100 unless stated; the reviewer's ruler)
+    | configuration | retune | flex | hum | natvib | IGN VIB | events | total | median vs note |
+    |---|---|---|---|---|---|---|---|---|
+    | A0 natural preset (the reviewer's premise) | 120 | 55 | 60 | 100 | on | 0 | 0 ms | 11.61c |
+    | A1 retune -> 6 only | 6 | 55 | 60 | 100 | on | 1 | 51 ms | 12.57c |
+    | A2 flex -> 0 only | 120 | 0 | 60 | 100 | on | 0 | 0 ms | 12.06c |
+    | A3 humanize -> 0 only | 120 | 55 | 0 | 100 | on | 0 | 0 ms | 11.69c |
+    | A4 natural_vibrato -> 0 only | 120 | 55 | 60 | 0 | on | 15 | 856 ms | 15.87c |
+    | B1 retune 6 + flex 0 | 6 | 0 | 60 | 100 | on | 2 | 88 ms | 14.46c |
+    | B2 retune 6 + flex 0 + hum 0 | 6 | 0 | 0 | 100 | on | 2 | 88 ms | 14.48c |
+    | B3 = THE SHIPPED DEFAULT | 6 | 0 | 0 | 0 | on | 10 | 581 ms | 7.99c |
+    | C1 shipped default, IGN VIB off | 6 | 0 | 0 | 0 | OFF | 2 | 64 ms | 6.88c |
+    | D1 HEAD's natural mode (dial 78.6 = 120 ms / depth 29) | 120 | 55 | 60 | 100 | on | 0 | 0 ms | 11.05c |
+    | D2 natural preset, IGN VIB off | 120 | 55 | 60 | 100 | OFF | 0 | 0 ms | 10.89c |
+    | the bounce | | | | | | 10 | 541 ms | 7.99c |
+    (source median 11.00c; the natural-preset medians, 11-12c, are at or
+    above the source: on the shift path at depth 100 the note is barely
+    corrected at all, which is round 50's finding on this take.)
+THE DISCRIMINATOR: from the natural preset, NO single factor among retune,
+flex, humanize moves it (0-1 events); natural_vibrato 100 -> 0 ALONE takes
+it from 0 to 15 events / 856 ms - the switch from the SHIFT path to the
+LEGACY path, where the target is applied hard enough to be wrong. From the
+shipped default, IGN VIB on -> off ALONE takes it from 10 to 2. The
+condition is the PAIR: LEGACY PATH (natural_vibrato != 100) AND IGN VIB
+ON. Each alone is inert: the shift path with IGN VIB on shows 0-2 events
+(A0-B2), the legacy path with IGN VIB off shows 2 (C1).
+SEVERITY, explicitly: BOTH ARE THE SHIPPED DEFAULTS. A fresh insert on the
+installed build is B3. Every user hits this out of the box; it is not a
+path Sean chose. THIS OUTRANKS EVERYTHING ELSE OPEN. (On the stale
+feat/pitch defaults - natural preset - it does not fire, which is why it
+was never seen before round 50 moved the default onto the legacy path,
+and why the reviewer's premise build would not show it.)
+
+### The natural_vibrato thread - CLOSED: no lost fix; one second literal to remove; three measurements, three rulers
+The record's "default corrected to 0" is the SCHEMA default on this
+branch (3330a0f, round 50), not the hard-mode preset (which was always 0
+in kPresets). It is present in the installed build. The reviewer's 100 is
+the stale worktree. The corrector's member literal natVib_ { 100.0f }
+(EedPitchCorrect.h:1083) is a second default on paper, overwritten at
+construction; it should read 0 - a one-line change for the ruling, not
+made here. The three figures are three different measurements:
+  - 15.7c vs 13.0c (EedPitchProcessor.cpp:518, spec §12, August): MEAN
+    DEVIATION, hard tune vs the untouched signal, when modes did not write
+    natural_vibrato at all - the mode-table completeness finding;
+  - 22c vs 9c (feat/pitch's schema text, commit e23e3fa, "natvib trap
+    named"; reworded out in 480b259): NEAREST-NOTE cents, retune 0 with
+    natural_vibrato 100 vs hard mode, an earlier take and ruler;
+  - 8.71c vs 6.72c (round 50): pitch_key_forensic ALL-VOICED OFF-GRID vs
+    D minor @ 440 on sourceNEW at this branch's defaults, natural_vibrato
+    100 vs 0. The same qualitative finding measured three times on three
+    rulers; none of them is the hard-mode preset.
+
+### The 14 August premise, measured (the regression leg the fix must pass, with its positive control)
+The spec (PITCH_CORRECTION_SPEC.md:99-101, 180-186) states the artefact
+without numbers: "wide vibrato on a semitone boundary chatters between
+two notes" without the slow-track smoothing. Measured now:
+  On the real takes, IGN VIB off does NOT chatter more than on: note
+  switches per 250 ms sourceNEW 3.65 (on) vs 3.74 (off), source 3.77;
+  different bit 4.65 vs 5.35, source 5.47; and OFF has FEWER wrong-note
+  events (sourceNEW 0 vs 6 / 315 ms; different bit 2 vs 10). The premise
+  does not fire on either take - so a leg on this material would have
+  no positive control and would not be evidence.
+  Synthetic notes (synth_vibrato_probe.py beside the materials; 6 Hz
+  vibrato, 3 s; target-degree switches counted from PA_TRACE with
+  count_target_switches.py):
+    | note | IGN VIB on | IGN VIB off | pendings armed (hops) |
+    |---|---|---|---|
+    | F3 centred, +-60c (THE 14 AUG SCENARIO) | 62 switches / 2.6 s | 62 | 186/975 both |
+    | F3 + 50c (on the boundary), +-60c | 31 | 31 | 186/975 both |
+    | F3 + 50c (on the boundary), +-25c | 30 | 31 | 0/975 both |
+  IGN VIB ON GIVES NO PROTECTION AT ALL TODAY: on the centred wide vibrato
+  the 90c note-change threshold, measured from a phase-dependent raw
+  sample as the reference, arms a pending on every wide excursion, and a
+  pending makes the selection PROVISIONAL (= the instantaneous input),
+  which bypasses the slow track. On a note parked exactly on the boundary
+  the slow track itself straddles it (its +-5c ripple crosses the degree
+  line), with or without pendings - that case is ambiguous by
+  construction and is reported, not claimed. The reviewer's irony is the
+  finding: the 14 Aug cure and the transitions defect are ONE mechanism -
+  the reference is a sample, not a note.
+  THE REGRESSION LEG, defined: on the centred F3 +-60c note, after the
+  fix, IGN VIB ON must give ~0 target switches; POSITIVE CONTROL: IGN VIB
+  OFF must chatter at about twice the vibrato rate (~30-60 / 2.6 s). Today
+  both read 62, so the fix must DELIVER the 14 Aug protection, not merely
+  keep it. The design ruling's C1 (reference = the decided degree) is
+  what makes the pending stop arming on a +-60c vibrato around a note (60
+  < 90); C3's re-derivation of the threshold decides the margin.
+
+### What was NOT done this round
+No code. No default changed. The C1/C2/C3 build behind the flag waits on
+the ruling, with the six legs measured at BOTH the shipped default and the
+reviewer's premise configuration, events paired per instant, and the 14
+August leg above added.
