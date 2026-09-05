@@ -3344,12 +3344,14 @@ juce::String EchoJayAPI::buildMoveLogInjection(const ChainHost& chainHost)
     // dB". Renaming this marker means re-checking all five.
     juce::String b;
     b << "\n\n[MOVE LOG v1 - what EchoJay itself changed in this session, oldest first."
-         " Four kinds of line: BUILT is a plugin loaded into a slot, SWAPPED is one plugin"
+         " Five kinds of line: BUILT is a plugin YOU loaded into a slot, ADDED is a plugin"
+         " THE USER put in themselves and you did not, SWAPPED is one plugin"
          " replaced by another, REMOVED is a slot taken out, and DIALLED is a control"
          " changed on a slot that was already there. REFUSED is a change that was NOT made,"
          " with the reason after it. A DIALLED line reads control: before -> after, and the"
          " before value is the control's reading immediately before the change. Cite these"
-         " when asked what you did or why; never present a REFUSED line as a change, and"
+         " when asked what you did or why; never present a REFUSED line as a change,"
+         " never claim an ADDED line as your own work, and"
          " never invent a move that is not listed:]\n";
     for (const auto& e : log)
     {
@@ -3357,6 +3359,7 @@ juce::String EchoJayAPI::buildMoveLogInjection(const ChainHost& chainHost)
         switch (e.kind)
         {
             case K::Load:   b << "BUILT   "; break;
+            case K::Added:  b << "ADDED   "; break;
             case K::Swap:   b << "SWAPPED "; break;
             case K::Remove: b << "REMOVED "; break;
             case K::Dial:   b << (e.landed ? "DIALLED " : "REFUSED "); break;
@@ -3365,6 +3368,7 @@ juce::String EchoJayAPI::buildMoveLogInjection(const ChainHost& chainHost)
         switch (e.kind)
         {
             case K::Load:
+            case K::Added:
                 b << " \"" << e.after << "\"";
                 break;
             case K::Swap:

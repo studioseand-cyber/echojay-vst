@@ -4687,8 +4687,11 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // on a plugin with no record of that plugin ever arriving, and the
         // model correctly answered that it had built no chain.
         {
-            check (ch.contains ("recordStructural(MoveLogEntry::Kind::Load"),
-                   "ml PIN5: a slot arriving is recorded");
+            // Re-aimed 4 Sep: a slot arriving is still recorded, but through
+            // the origin gate now, so the recorder's name changed. The
+            // PROPERTY is unchanged and og PIN1-3 hold what the gate decides.
+            check (ch.contains ("recordLoadIfLicensed(origin,"),
+                   "ml PIN5: a slot arriving is recorded, as its origin licenses");
             check (ch.contains ("recordStructural(MoveLogEntry::Kind::Remove"),
                    "ml PIN5: a slot leaving is recorded");
             check (ch.contains ("collapseLastPairIntoSwap(theOp.slot, theOp.name, oldName)"),
@@ -4702,10 +4705,10 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             // built-in device gets dialled with no record of arriving.
             const auto load = functionBody (chRaw, "void ChainHost::loadPluginAsync");
             int nLoad = 0, atLoad = 0;
-            while ((atLoad = load.indexOf (atLoad, "recordStructural")) >= 0) { ++nLoad; atLoad += 10; }
+            while ((atLoad = load.indexOf (atLoad, "recordLoadIfLicensed")) >= 0) { ++nLoad; atLoad += 10; }
             check (nLoad == 2, "ml PIN5: the two arms that bypass completeLoad record for themselves",
                    "found " + juce::String (nLoad));
-            check (functionBody (chRaw, "void ChainHost::completeLoad").contains ("recordStructural"),
+            check (functionBody (chRaw, "void ChainHost::completeLoad").contains ("recordLoadIfLicensed"),
                    "ml PIN5: and the async arm records where the slot lands");
             const auto blk = functionBody (apRaw, "juce::String EchoJayAPI::buildMoveLogInjection");
             check (blk.contains ("BUILT   ") && blk.contains ("SWAPPED ")
@@ -5193,6 +5196,74 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         check (blk.getNumBytesAsUTF8() < 3000,
                "ef PIN7: the block stays under 3 KB",
                juce::String ((int) blk.getNumBytesAsUTF8()) + " B");
+    }
+
+    // ===== LOAD ORIGIN (4 Sep 2026) ========================================
+    // The structural recorder sat in completeLoad and fired on EVERY route in,
+    // so reopening a session wrote a BUILT line per restored slot at turn 0,
+    // and a saved-chain recall wrote one per slot of the recalled chain. Both
+    // routes are restoreNextSlot; EchoJay was claiming authorship of a rack it
+    // had merely restored.
+    {
+        std::cout << "load origin, and what each one licenses:\n";
+        using LO = ChainHost::LoadOrigin;
+        using K  = ChainHost::MoveLogEntry::Kind;
+
+        // og PIN1 -- A RESTORE RECORDS NOTHING. Driven five times because the
+        // reported defect was five slots producing five lines.
+        int recorded = 0;
+        for (int i = 0; i < 5; ++i)
+            if (ChainHost::loadRecordFor (LO::Restore).record) ++recorded;
+        check (recorded == 0, "og PIN1: a five-slot restore records nothing",
+               juce::String (recorded) + " entries");
+
+        // og PIN2 -- A USER ADD IS RECORDED, AND NOT AS A BUILD. EchoJay needs
+        // to know the slot appeared; it must never read as its own work.
+        const auto u = ChainHost::loadRecordFor (LO::User);
+        check (u.record, "og PIN2: a user add IS recorded");
+        check (u.kind == (int) K::Added, "og PIN2: as its own kind",
+               juce::String (u.kind));
+        check (u.kind != (int) K::Load, "og PIN2: and never as a Load/BUILT");
+
+        // og PIN3 -- AN ASSISTANT LOAD STILL RECORDS BUILT, unchanged.
+        const auto a = ChainHost::loadRecordFor (LO::Assistant);
+        check (a.record && a.kind == (int) K::Load,
+               "og PIN3: an assistant load still records BUILT");
+
+        // og PIN4 -- THE RENDERER GIVES THE NEW KIND ITS OWN WORD, and tells
+        // the model not to claim it. Source-pinned: buildMoveLogInjection
+        // needs a live ChainHost, which the gate cannot build.
+        {
+            std::ifstream fa ("Source/EchoJayAPI.cpp");
+            std::stringstream sa; sa << fa.rdbuf();
+            const auto apRaw2 = juce::String (sa.str());
+            const auto blk2 = functionBody (apRaw2, "juce::String EchoJayAPI::buildMoveLogInjection");
+            check (blk2.contains ("case K::Added:  b << \"ADDED   \"; break;"),
+                   "og PIN4: ADDED renders under its own word");
+            check (blk2.contains ("THE USER put in themselves and you did not"),
+                   "og PIN4: and the header says whose act it was");
+            check (blk2.contains ("never claim an ADDED line as your own work"),
+                   "og PIN4: and forbids claiming it");
+        }
+
+        // og PIN5 -- EVERY LOAD PATH DECLARES ITS ORIGIN. No default argument
+        // exists, so this cannot silently regress by omission; what it CAN do
+        // is regress by someone giving restoreNextSlot the wrong one.
+        {
+            std::ifstream fc ("Source/ChainHost.cpp");
+            std::stringstream sc; sc << fc.rdbuf();
+            const auto ch2 = codeOnly (juce::String (sc.str()));
+            check (ch2.contains ("loadPluginAsync(items[idx].desc, LoadOrigin::Restore,"),
+                   "og PIN5: restoreNextSlot loads as a RESTORE");
+            check (ch2.contains ("loadPluginAsync(desc, LoadOrigin::Assistant,"),
+                   "og PIN5: the edit-op arm loads as an ASSISTANT");
+            // The decision is read in ONE place; a second reader is a second
+            // opinion waiting to disagree.
+            int n = 0, at = 0;
+            while ((at = ch2.indexOf (at, "loadRecordFor")) >= 0) { ++n; at += 8; }
+            check (n == 1, "og PIN5: and the verdict is consumed in exactly one place",
+                   "found " + juce::String (n));
+        }
     }
 
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";

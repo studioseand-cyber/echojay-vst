@@ -28621,7 +28621,9 @@ void EchoJayEditor::showChainPluginPicker()
                 auto desc0 = bh0->preferInlineHostableDesc(picked);
                 safeThis->chainListPanel.statusText = "Loading " + desc0.name + "...";
                 safeThis->chainListPanel.repaint();
-                bh0->loadPluginAsync(desc0, [safeThis, picked](const juce::String& err)
+                // USER: the person picked this from the chain picker.
+                bh0->loadPluginAsync(desc0, ChainHost::LoadOrigin::User,
+                                     [safeThis, picked](const juce::String& err)
                 {
                     if (safeThis == nullptr) return;
                     auto* bh2 = safeThis->processorRef.borrowHost();
@@ -28687,7 +28689,9 @@ void EchoJayEditor::showChainPluginPicker()
             safeThis->chainListPanel.statusText = "Loading " + desc.name + "...";
             safeThis->chainListPanel.repaint();
 
-            ch2.loadPluginAsync(desc, [safeThis, desc](const juce::String& err)
+            // USER: same picker, local rack branch.
+            ch2.loadPluginAsync(desc, ChainHost::LoadOrigin::User,
+                                [safeThis, desc](const juce::String& err)
             {
                 if (safeThis == nullptr) return;
                 if (err.isNotEmpty())
@@ -31166,7 +31170,9 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
             juce::Timer::callAfterDelay(30, [safeThis, name, settings, structured, wetPct, skipped, loadNextPtr]() mutable
             {
                 if (safeThis == nullptr) return;
+                // ASSISTANT: the AI build loop placing a chain EchoJay designed.
                 safeThis->processorRef.getChainHost().loadByRecommendedName(name,
+                    ChainHost::LoadOrigin::Assistant,
                     [safeThis, name, settings, structured, wetPct, skipped, loadNextPtr](const juce::String& err) mutable
                     {
                         if (safeThis == nullptr) return;

@@ -293,6 +293,46 @@ public:
     // LANDED AND REFUSED ARE DIFFERENT FACTS and the entry says which. A
     // refusal is recorded because "we tried and could not" is a thing the
     // model must be able to say; it is never recorded as a change.
+    // WHO CAUSED THIS LOAD (4 Sep 2026, live). The move log's structural
+    // recorder sat in completeLoad and fired on EVERY route in, so reopening a
+    // session wrote a BUILT line per restored slot and a saved-chain recall
+    // wrote one per slot of the recalled chain: EchoJay claiming authorship of
+    // a rack it had merely restored, at turn 0, with no dials beneath it.
+    //
+    // SET BY THE CALLER, NEVER INFERRED HERE. completeLoad cannot tell a
+    // restore from a build by looking at the plugin, and every previous
+    // attempt in this file to guess a cause from local state is in the
+    // handover as a defect. There is no default argument: adding a load path
+    // must be a decision about what the log will say.
+    enum class LoadOrigin
+    {
+        Restore,    // session reload or saved-chain recall: records NOTHING
+        User,       // the user picked it themselves: records an Added entry
+        Assistant   // an EchoJay build or edit op: records a Built entry
+    };
+
+    // WHICH ENTRY, IF ANY, AN ORIGIN LICENSES. Pure and header-inline: the
+    // recorder that consumes this needs a live ChainHost, which the gate
+    // cannot build, so leaving the decision inside it would make it a branch
+    // no test can witness. Twice in this session a guard escaped its pin for
+    // exactly that reason.
+    struct LoadRecordVerdict
+    {
+        bool record = false;              // false = this origin claims nothing
+        int  kind   = 0;                  // MoveLogEntry::Kind, as an int (declared below)
+    };
+    static LoadRecordVerdict loadRecordFor (LoadOrigin origin) noexcept
+    {
+        LoadRecordVerdict v;
+        switch (origin)
+        {
+            case LoadOrigin::Restore:   return v;                       // records NOTHING
+            case LoadOrigin::User:      v.record = true; v.kind = 4; return v;  // Added
+            case LoadOrigin::Assistant: v.record = true; v.kind = 1; return v;  // Load
+        }
+        return v;
+    }
+
     struct MoveLogEntry
     {
         int          turn = 0;       // send ordinal within this session
@@ -310,7 +350,15 @@ public:
         // slot 3, and the model correctly answered that it had not built a
         // chain. Structural moves are their own kind so a build reads as a
         // build rather than as a dial with no control.
-        enum class Kind { Dial, Load, Swap, Remove };
+        // Added is the USER putting a plugin in. It is a separate kind from
+        // Load and not a flag on it, because the block renders one word per
+        // kind and the whole point is that this word must not be BUILT.
+        enum class Kind { Dial, Load, Swap, Remove, Added };
+        // loadRecordFor above returns these as ints (it is declared before the
+        // struct), so the two must agree. A reorder that breaks this stops the
+        // build instead of silently relabelling every user add as a build.
+        static_assert ((int) Kind::Load == 1 && (int) Kind::Added == 4,
+                       "loadRecordFor's kind codes must match Kind");
         Kind kind = Kind::Dial;
     };
     // BOUNDED BY COUNT, not bytes, so the log cannot be trimmed mid-entry.
@@ -340,6 +388,9 @@ public:
     // rather than at the callers so every route into the rack is covered by
     // one recorder: an AI build, a picker add, a chain-edit op and a recall
     // all land here.
+    // What an origin licenses, decided in ONE place; see the definition.
+    void recordLoadIfLicensed(LoadOrigin origin, int slot,
+                              const juce::String& arrivedName);
     void recordStructural(MoveLogEntry::Kind kind, int slot,
                           const juce::String& arrived, const juce::String& gone,
                           const juce::String& reason);
@@ -584,13 +635,20 @@ public:
 
     // Async-load the first recommendable entry whose displayName matches `name`
     // (case-insensitive). Callback: empty string on success, error message on fail.
+    // origin threaded, not fixed here: today the sole caller is the AI build
+    // loop (PluginEditor loadChainFromJson), but a name-addressed load is
+    // exactly the shape a user-driven path would reach for next.
     void loadByRecommendedName(const juce::String& name,
+                               LoadOrigin origin,
                                std::function<void(const juce::String&)> callback);
 
     // ---- Chain slot management (message thread) --------------------------
     // Async-append: loads the plugin and adds it to the end of the chain.
     // callback(error) — empty on success.
+    // origin has NO DEFAULT on purpose: see LoadOrigin. Every call site says
+    // who caused the load, and the move log records only what that licenses.
     void loadPluginAsync(const juce::PluginDescription& desc,
+                         LoadOrigin origin,
                          std::function<void(const juce::String& error)> callback);
 
     int                      getNumSlots()    const noexcept;
@@ -1494,7 +1552,8 @@ public:
     void asyncCreatePlugin(const juce::PluginDescription& d,
         std::function<void(std::unique_ptr<juce::AudioPluginInstance>, const juce::String&)> cb);
     void completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
-                      const juce::PluginDescription& desc);
+                      const juce::PluginDescription& desc,
+                      LoadOrigin origin);
     // reason travels into chain_blacklist.txt next to the path with an ISO
     // date; the first reason recorded for a path wins (it names the
     // original event, later duplicates are re-detections).

@@ -2046,7 +2046,8 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
         desc = preferInlineHostableDesc(desc);
         auto self = st;
         const auto theOp = op;
-        loadPluginAsync(desc, [this, self, theOp, desc, addInsertAt, addFromName](const juce::String& err)
+        loadPluginAsync(desc, LoadOrigin::Assistant,
+                        [this, self, theOp, desc, addInsertAt, addFromName](const juce::String& err)
         {
             // Re-enter the sequencer context manually (we are mid-op)
             auto finish = [this, self](const juce::String& line)
@@ -2557,7 +2558,8 @@ void ChainHost::asyncCreatePlugin(const juce::PluginDescription& d,
 }
 
 void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
-                              const juce::PluginDescription& desc)
+                              const juce::PluginDescription& desc,
+                              LoadOrigin origin)
 {
     // Any successful load clears a stale session load-failure mark
     sessionLoadFailed_.removeString(sessionLoadKey(desc.name, desc.pluginFormatName));
@@ -2580,11 +2582,13 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
     slot.bypassed = false;
     const auto arrivedName = slot.desc.name;
     slots_.push_back(std::move(slot));
-    // MOVE LOG: a slot arriving. One entry per load, so a build reads as a
-    // list of slots rather than as a dial with no control. The AI build loop
-    // annotates the reason afterwards, because the role text lives there.
-    recordStructural(MoveLogEntry::Kind::Load, (int) slots_.size() - 1,
-                     arrivedName, juce::String(), juce::String());
+    // MOVE LOG: a slot arriving, and ONLY where the origin licenses a claim.
+    // Restore records nothing: reopening a session or recalling a saved chain
+    // is not something EchoJay did, and the first version wrote a BUILT line
+    // per slot at turn 0 for both. User records a different kind, because the
+    // user putting a plugin in is a fact EchoJay needs and an act it did not
+    // perform. The decision is the caller's, made in ONE place below.
+    recordLoadIfLicensed(origin, (int) slots_.size() - 1, arrivedName);
     // Pristine default, captured BEFORE any seed or dial (borrow reset).
     captureBorrowDefaultState((int) slots_.size() - 1);
     // A VST3 build inside an AU host is told in the rack, on every route
@@ -4249,6 +4253,7 @@ static void pollVST3Validation(
     std::shared_ptr<struct VST3ValState> vs,
     juce::PluginDescription desc,
     int validationMark,
+    ChainHost::LoadOrigin origin,
     std::function<void(const juce::String&)> cb,
     int ticksLeft);
 
@@ -4263,6 +4268,7 @@ static void pollVST3Validation(
     std::shared_ptr<VST3ValState> vs,
     juce::PluginDescription desc,
     int validationMark,
+    ChainHost::LoadOrigin origin,
     std::function<void(const juce::String&)> cb,
     int ticksLeft)
 {
@@ -4279,10 +4285,10 @@ static void pollVST3Validation(
 
         host->saveToDisk();
         host->asyncCreatePlugin(fullDesc,
-            [host, cb, fullDesc](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
+            [host, cb, fullDesc, origin](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
             {
                 if (!inst) { cb(err.isNotEmpty() ? err : "createPluginInstance failed"); return; }
-                host->completeLoad(std::move(inst), fullDesc);
+                host->completeLoad(std::move(inst), fullDesc, origin);
                 cb({});
             });
         return;
@@ -4298,8 +4304,8 @@ static void pollVST3Validation(
         return;
     }
 
-    juce::Timer::callAfterDelay(100, [host, vs, desc, validationMark, cb, ticksLeft]() mutable {
-        pollVST3Validation(host, vs, desc, validationMark, cb, ticksLeft - 1);
+    juce::Timer::callAfterDelay(100, [host, vs, desc, validationMark, origin, cb, ticksLeft]() mutable {
+        pollVST3Validation(host, vs, desc, validationMark, origin, cb, ticksLeft - 1);
     });
 }
 
@@ -5044,6 +5050,7 @@ juce::String ChainHost::loadBuiltinNow(const juce::PluginDescription& desc)
 }
 
 void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
+                                LoadOrigin origin,
                                 std::function<void(const juce::String& error)> callback)
 {
     // Built-in device: constructed directly, no format manager, no scan.
@@ -5058,8 +5065,7 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
         // arriving; without this the block would carry a dial on a device with
         // no record of that device ever being added.
         if (err.isEmpty() && ! slots_.empty())
-            recordStructural(MoveLogEntry::Kind::Load, (int) slots_.size() - 1,
-                             desc.name, juce::String(), juce::String());
+            recordLoadIfLicensed(origin, (int) slots_.size() - 1, desc.name);
         if (callback) callback(err);
         return;
     }
@@ -5072,8 +5078,7 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
         // MOVE LOG: the third arm, and the same reason as the builtin one. A
         // reused node is a new slot from the rack's point of view.
         if (! slots_.empty())
-            recordStructural(MoveLogEntry::Kind::Load, (int) slots_.size() - 1,
-                             desc.name, juce::String(), juce::String());
+            recordLoadIfLicensed(origin, (int) slots_.size() - 1, desc.name);
         if (callback) callback({});
         return;
     }
@@ -5117,7 +5122,7 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
         // Through asyncCreatePlugin, so the death mark covers this branch
         // (AU, and VST3s already validated) and not only the fp pass.
         asyncCreatePlugin(fullDesc,
-            [this, callback, fullDesc](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
+            [this, callback, fullDesc, origin](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
             {
                 if (!inst)
                 {
@@ -5128,7 +5133,7 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
                     callback(err.isNotEmpty() ? err : "createPluginInstance returned nullptr");
                     return;
                 }
-                completeLoad(std::move(inst), fullDesc);
+                completeLoad(std::move(inst), fullDesc, origin);
                 callback({});
             });
         return;
@@ -5156,7 +5161,7 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
         }
     }).detach();
 
-    pollVST3Validation(this, vs, desc, validationMark, callback, 100);
+    pollVST3Validation(this, vs, desc, validationMark, origin, callback, 100);
 }
 
 // ---------------------------------------------------------------------------
@@ -6325,6 +6330,20 @@ void ChainHost::recordMove(int slot, const juce::String& plugin, const juce::Str
         moveLog_.erase(moveLog_.begin());
 }
 
+// ONE place decides what an origin licenses. completeLoad and the two arms of
+// loadPluginAsync that bypass it all call this rather than each testing the
+// enum, so a fourth load path cannot quietly grow a fourth opinion.
+void ChainHost::recordLoadIfLicensed(LoadOrigin origin, int slot,
+                                     const juce::String& arrivedName)
+{
+    // The verdict is loadRecordFor's, not this function's: the enum is read in
+    // exactly one place so the gate can drive the shipped answer.
+    const auto v = loadRecordFor(origin);
+    if (! v.record) return;   // Restore: not an act of EchoJay's
+    recordStructural(static_cast<MoveLogEntry::Kind>(v.kind), slot,
+                     arrivedName, juce::String(), juce::String());
+}
+
 void ChainHost::recordStructural(MoveLogEntry::Kind kind, int slot,
                                  const juce::String& arrived, const juce::String& gone,
                                  const juce::String& reason)
@@ -6864,6 +6883,7 @@ juce::StringArray ChainHost::getDialableRecommendableNames() const
 }
 
 void ChainHost::loadByRecommendedName(const juce::String& name,
+                                       LoadOrigin origin,
                                        std::function<void(const juce::String&)> callback)
 {
     juce::String nameLower = name.toLowerCase().trim();
@@ -6872,7 +6892,7 @@ void ChainHost::loadByRecommendedName(const juce::String& name,
         if (e.displayName.toLowerCase().trim() == nameLower)
         {
             // NEW instantiation — popout-only AUs may swap to their VST3 build
-            loadPluginAsync(preferInlineHostableDesc(e.desc), std::move(callback));
+            loadPluginAsync(preferInlineHostableDesc(e.desc), origin, std::move(callback));
             return;
         }
     }
@@ -6890,7 +6910,7 @@ void ChainHost::loadByRecommendedName(const juce::String& name,
         EchoJay_NSLog(("EJChain: resolve \"" + name + "\" -> " + matchLog).toRawUTF8());
         if (d.name.isNotEmpty())
         {
-            loadPluginAsync(preferInlineHostableDesc(d), std::move(callback));
+            loadPluginAsync(preferInlineHostableDesc(d), origin, std::move(callback));
             return;
         }
         // Honest miss (WithholdReason): the name matched a row this host
@@ -7083,7 +7103,11 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
     juce::String savedVersion = items[idx].savedVersion;
     juce::String savedUid     = items[idx].savedUid;
     juce::var slotParams = items[idx].params;
-    loadPluginAsync(items[idx].desc,
+    // RESTORE, and the same for both callers: a session reload
+    // (tryRestoreSlotsFromXml) and a saved-chain recall (restoreSavedChain).
+    // Neither is EchoJay building anything, and before this each wrote one
+    // BUILT line per slot at turn 0.
+    loadPluginAsync(items[idx].desc, LoadOrigin::Restore,
         [this, items = std::move(items), idx, wasBypassed, savedWet,
          stateB64, expectState, slotName, identifier, withholdState,
          savedFormat, savedVersion, savedUid, slotParams,
