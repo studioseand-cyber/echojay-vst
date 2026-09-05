@@ -493,3 +493,61 @@ NEXT (as ruled): the inventory ruling, then layout. No UI code yet. The
 transfer function above is what the re-mapped dial will implement when
 the inventory is ruled; DEPTH stays FRONT until that change (round 36
 ruling 3), and moves to ADVANCED in it.
+
+# Round 39 (5 Sep 2026): THE DIAL IS NOT MONOTONIC - a defect in ruling 1 that the transfer function exposed; a hard requirement; the fork waits on Sean's A/B
+
+## THE DEFECT
+From dial 0 to 40 activity RISES (4.49 -> 6.09c) and tuning LOOSENS (2.33
+-> 4.26c) before the taper takes over. A user sweeping up hears it get
+busier and less accurate for the first tenth of travel, then collapse.
+That is §17.4's knee surfacing on the front panel, a consequence of
+holding full depth across 0-40 (ruling 1 of round 38).
+
+## HARD REQUIREMENT (ruled; a requirement, not a preference)
+  THE DIAL MUST BE MONOTONIC IN ACTIVITY ACROSS ITS WHOLE LENGTH. TURN IT
+  UP, IT DOES LESS. That is the contract a control owes its user and it
+  is not negotiable against fit quality.
+
+## THE CHEAP FACT THAT DECIDES THE SHAPE
+Dial 0 (retune 6, full depth) DOMINATES retune 44 (Sean's working point,
+the provisional default) on BOTH axes on this take: less activity (4.49
+vs 6.09c) and better tuning (2.33 vs 4.26c off-grid; 69.7 vs 53.5% within
+5c; improve 79.6 vs 61.4%; word-start events 0 both). He chose 44 before
+the depth control existed and before several fixes landed, so it may be a
+leftover rather than a preference. HE HAS BEEN ASKED to A/B retune 6
+against retune 44 at full depth on his vocal. The clip is on disk:
+  /Users/SeanD/echojay-vst-pitch/earclips/dial_fastend_AB__A_source__B_retune6_depth100__C_retune44_depth100.wav
+  7,805,996 bytes, 3 legs, 0.45 s gaps, jointly normalised (both legs the shipped foundation, ign OFF, seam 60).
+
+THE TWO BRANCHES, neither built, not averaged:
+  - HE PREFERS 6: the 0-40 full-depth region collapses to a point; ruling
+    1's premise goes with it; the dial is monotonic by construction. Re-
+    map with a single fast-and-full anchor at 0 (6 ms, 1.0) and the fitted
+    taper above: 50 -> (80, 0.35), 100 -> (150, 0.25), 200 -> (150, 0.15),
+    400 -> (150, 0.10), linear between; the 0 -> 50 segment then carries
+    both the speed change and the collapse.
+  - HE PREFERS 44: keep a low region but make it monotonic by tapering
+    depth across it so the activity rise from slowing is offset. THE
+    RESIDUAL, from the existing grid (round 37) rather than a guess: at
+    retune 44, depth 0.75 measures 4.61c activity and depth 0.5 measures
+    3.07c; equality with dial 0's 4.49c falls at depth ~0.73, and strict
+    monotonicity needs a shade below that. "Roughly 1.0 -> 0.85 by dial
+    40" (the ruling's sketch) is NOT enough on this take - 0.85 lands
+    near 5.1c, still above dial 0. So branch B costs his exact setting
+    ~27% of its depth (1.0 -> ~0.73), taking its off-grid from 4.26c to
+    ~5.1c at an unchanged improve-rate (~62%). Stated as the mismatch
+    against his current setting; it is the price of a monotonic low
+    region on this material.
+  Do not build either until he answers.
+
+## THE SHIPPED DEFAULT, FLAGGED
+If retune 6 dominates retune 44 on this take, the provisional default
+shipped in round 36 (retune 44 / flex 0 / humanize 0) may itself be
+suboptimal. It was chosen because it is WHERE SEAN WORKS, not because it
+MEASURED BEST - the round-36 commit relied on the former ("the measured-
+safe neighbourhood, where Sean works and what he has ear-confirmed"). The
+two are not the same justification, and the record now says which one
+was used. Flagged for re-derivation alongside the broader material; the
+candidate that measures best on this take is retune 6 at full depth.
+
+The inventory ruling and layout still wait. No UI code.
