@@ -29,3 +29,8 @@ with a timestamp on every line for:
 
 The log build is identified by its UUID (below); the working build is the
 one `tools/install_local.sh build-release` installs.
+
+## Identity (5 Sep 2026)
+  LOG build     AU arm64 0876789A-AEB6-38F2-8754-66D7DA8F8AA9   (build-latencylog, EJ_LATENCY_LOG=ON)
+  WORKING build AU arm64 63AF3A3F-B080-3CB0-A60A-DF53F20CE371   (build-release, what is installed)
+Deliverable on the Desktop: /Users/SeanD/Desktop/EchoJay_LatencyLog_Build/

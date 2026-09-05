@@ -292,3 +292,12 @@ what he works in. He presses play four or five times and sends the file.
     answer may be to report a FIXED latency that never changes at runtime
     (the top level already adds a fixed alignment budget; the chain total
     is what moves).
+
+### The LOG build, delivered (5 Sep 2026)
+  /Users/SeanD/Desktop/EchoJay_LatencyLog_Build/
+    EchoJay V2.component            the LOG build, AU arm64 0876789A-AEB6-38F2-8754-66D7DA8F8AA9 (45 MB)
+    working/EchoJay V2.component    the WORKING build, AU arm64 63AF3A3F-B080-3CB0-A60A-DF53F20CE371 (45 MB)
+    install_log_build.command, restore_working_build.command, README.md
+The log strings are present in the LOG binary (6 markers found) and absent
+from the working one by construction (the macro is compiled out). The
+installed plugin right now is the WORKING build (63AF3A3F), verified.
