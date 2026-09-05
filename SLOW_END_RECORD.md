@@ -762,3 +762,8 @@ target formation; a knob sweep changes the applied shift in 2.67 ms
 steps of whatever the knob moved) - and it has NOT been measured. Nothing
 in the backlog starts until he reports. If the knob behaves under
 movement, the pitch work is done for now.
+
+## Round 33 (5 Sep 2026): REAL-SESSION USE CONFIRMED - the depth item is CLOSED in full
+Sean, in Logic, verbatim: "sounds good on those tests in logic aswell, i
+think were there." The real-session question of round 32 is answered
+without a smoothing complaint. The pitch work of this arc is done.
