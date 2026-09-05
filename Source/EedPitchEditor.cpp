@@ -19,7 +19,7 @@ namespace
 EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
     : DeviceEditorBase (p, "PITCH", kDefaultW, kDefaultH), proc_ (p)
 {
-    setHeaderHint ("KEY and SCALE (AUTO follows the bus - turn to override); RETUNE 0 = hard, 400 = transparent; ADVANCED for the rest");
+    setHeaderHint ("RETUNE 0 hard - 400 transparent");
 
     // voice_type items ARE the schema's choices, in the schema's order.
     styleCombo (voiceBox_);
@@ -326,38 +326,77 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
         return;
     }
 
-    // ADVANCED: a smaller ribbon, two dial rows, the mode/latency band, the readouts.
-    ribbonBounds_ = content.removeFromTop (juce::jmax (0, content.getHeight() / 4));
-    content.removeFromTop (juce::jmin (4, content.getHeight()));
+    // ADVANCED (round 47 layout): three FRAMED GROUPS, each with a title strip
+    // and its own captions, laid out bottom-up. The readouts take what the
+    // groups leave; the ribbon shows only if a useful strip remains.
+    advCaptions_.clear(); advGroups_.clear();
+    constexpr int kTitleH = 12, kCapStripH = 10, kFramePad = 4;
+    auto takeBottom = [&] (int h) { return content.removeFromBottom (juce::jmin (h, content.getHeight())); };
+    auto captioned = [&] (juce::Rectangle<int>& caps, juce::Rectangle<int>& row, int w, const char* cap) -> juce::Rectangle<int>
     {
-        auto band = content.removeFromBottom (juce::jmin (30, content.getHeight() / 4));
-        latencyBounds_ = band;
-        latencyBtn_.setBounds (band.removeFromLeft (juce::jmin (150, band.getWidth())).reduced (2, 3));
-        band.removeFromLeft (juce::jmin (6, band.getWidth()));
-        correctBtn_.setBounds (band.removeFromLeft (juce::jmin (90, band.getWidth())).reduced (2, 3));
-        band.removeFromLeft (juce::jmin (6, band.getWidth()));
-        modeBox_.setBounds (band.removeFromLeft (juce::jmin (120, band.getWidth())).reduced (2, 3));
-        band.removeFromLeft (juce::jmin (6, band.getWidth()));
-        trackBox_.setBounds (band.removeFromLeft (juce::jmin (100, band.getWidth())).reduced (2, 3));
-    }
+        w = juce::jmin (w, row.getWidth());
+        advCaptions_.push_back ({ caps.removeFromLeft (w), cap });
+        auto r = row.removeFromLeft (w);
+        caps.removeFromLeft (juce::jmin (6, caps.getWidth())); row.removeFromLeft (juce::jmin (6, row.getWidth()));
+        return r;
+    };
+
+    offCurveBounds_ = takeBottom (14);
+    content.removeFromBottom (juce::jmin (2, content.getHeight()));
+
+    // (1) VIBRATO GENERATOR: three dials + the shape choice, one frame.
     {
-        auto row = content.removeFromBottom (juce::jmin (kKnobH, content.getHeight() / 2));
+        auto grp = takeBottom (kTitleH + kKnobH + kFramePad);
+        advGroups_.push_back ({ grp, "VIBRATO GENERATOR  (added vibrato; the singer's own is KEEP VIBRATO on the front)" });
+        auto inner = grp.reduced (kFramePad, 0); inner.removeFromTop (kTitleH);
+        auto row = inner.removeFromTop (juce::jmin (kKnobH, inner.getHeight()));
         dial (vibDepthKnob_, row); dial (vibRateKnob_, row); dial (vibOnsetKnob_, row);
         row.removeFromLeft (juce::jmin (6, row.getWidth()));
-        vibShapeBox_.setBounds (row.removeFromLeft (juce::jmin (110, row.getWidth()))
-                                   .withSizeKeepingCentre (juce::jmin (110, row.getWidth()), kRowH).reduced (1));
+        auto cell = row.removeFromLeft (juce::jmin (110, row.getWidth()));
+        advCaptions_.push_back ({ cell.removeFromTop (kCapStripH), "SHAPE" });
+        vibShapeBox_.setBounds (cell.withSizeKeepingCentre (cell.getWidth(), juce::jmin (kRowH, cell.getHeight())).reduced (1, 0));
     }
+    content.removeFromBottom (juce::jmin (4, content.getHeight()));
+
+    // (2) CORRECTION: mode, tracking, lookahead, master enable - captions
+    //     above, the latency explanation on its own full-width line below.
     {
-        auto row = content.removeFromBottom (juce::jmin (kKnobH, content.getHeight() / 2));
-        dial (seamKnob_, row); dial (mixKnob_, row); dial (outKnob_, row); dial (fshiftKnob_, row);
-        dial (depthKnob_, row);   // the override (round 46): turning it is leaving the curve
+        auto grp = takeBottom (kTitleH + kCapStripH + kRowH + 13 + kFramePad);
+        advGroups_.push_back ({ grp, "CORRECTION" });
+        auto inner = grp.reduced (kFramePad, 0); inner.removeFromTop (kTitleH);
+        auto caps = inner.removeFromTop (kCapStripH);
+        auto row  = inner.removeFromTop (juce::jmin (kRowH, inner.getHeight()));
+        modeBox_.setBounds    (captioned (caps, row, 120, "MODE").reduced (1, 1));
+        trackBox_.setBounds   (captioned (caps, row, 100, "TRACKING").reduced (1, 1));
+        latencyBtn_.setBounds (captioned (caps, row, 130, "LOOKAHEAD").reduced (1, 1));
+        correctBtn_.setBounds (captioned (caps, row,  90, "MASTER ENABLE").reduced (1, 1));
+        latencyBounds_ = inner;   // the whole remaining line: nothing sits beside it
     }
-    offCurveBounds_ = content.removeFromBottom (juce::jmin (14, content.getHeight() / 4));
-    content.removeFromBottom (juce::jmin (2, content.getHeight()));
-    // The readouts: note + tuner bar | numbers | guard log.
-    notePanel_    = content.removeFromLeft (content.getWidth() * 2 / 5);
-    guardPanel_   = content.removeFromRight (juce::jmax (0, content.getWidth() / 2));
-    numbersPanel_ = content;
+    content.removeFromBottom (juce::jmin (4, content.getHeight()));
+
+    // (3) ENGINE: the dials. DEPTH is the curve override (round 46).
+    {
+        auto grp = takeBottom (kTitleH + kKnobH + kFramePad);
+        advGroups_.push_back ({ grp, "ENGINE  (DEPTH here is the override: turning it leaves the RETUNE curve)" });
+        auto inner = grp.reduced (kFramePad, 0); inner.removeFromTop (kTitleH);
+        auto row = inner.removeFromTop (juce::jmin (kKnobH, inner.getHeight()));
+        dial (seamKnob_, row); dial (mixKnob_, row); dial (outKnob_, row); dial (fshiftKnob_, row); dial (depthKnob_, row);
+    }
+    content.removeFromBottom (juce::jmin (4, content.getHeight()));
+
+    // (4) READOUTS: note + tuner bar | numbers | guard log, framed; then the ribbon.
+    {
+        // Everything the groups left: at the default size that is ~70 px,
+        // which the readouts need in full (four rows each side). The ribbon
+        // is the front's; the advanced view drops it rather than starve these.
+        auto grp = takeBottom (content.getHeight());
+        advGroups_.push_back ({ grp, "READOUTS" });
+        auto inner = grp.reduced (kFramePad, 0); inner.removeFromTop (kTitleH);
+        notePanel_    = inner.removeFromLeft (inner.getWidth() * 2 / 5);
+        guardPanel_   = inner.removeFromRight (juce::jmax (0, inner.getWidth() / 2));
+        numbersPanel_ = inner;
+    }
+    ribbonBounds_ = {};
 }
 
 void EedPitchEditor::paintContent (juce::Graphics& g)
@@ -377,6 +416,22 @@ void EedPitchEditor::paintContent (juce::Graphics& g)
                               proc_.corrector().getKeyRoot(), proc_.isBypassed());
     }
 
+    if (advanced_)
+    {
+        for (const auto& grp : advGroups_)
+        {
+            if (grp.r.isEmpty()) continue;
+            g.setColour (C::border2);
+            g.drawRoundedRectangle (grp.r.toFloat().reduced (0.5f), 3.0f, 1.0f);
+            g.setColour (C::text2);
+            g.setFont (uiFont (9.0f, true));
+            g.drawText (grp.title, grp.r.reduced (6, 0).removeFromTop (12), juce::Justification::centredLeft);
+        }
+        g.setColour (C::text3);
+        g.setFont (uiFont (9.0f, true));
+        for (const auto& c : advCaptions_)
+            if (! c.r.isEmpty()) g.drawText (c.text, c.r, juce::Justification::centred);
+    }
     if (! notePanel_.isEmpty())    paintNotePanel  (g, notePanel_, r);
     if (! numbersPanel_.isEmpty()) paintNumbers    (g, numbersPanel_, r);
     if (! guardPanel_.isEmpty())   paintGuardPanel (g, guardPanel_, r);
@@ -387,10 +442,18 @@ void EedPitchEditor::paintContent (juce::Graphics& g)
         float ms = 0.0f, dp = 1.0f; proc_.curveAtDial (ms, dp);
         g.setColour (C::amber);
         g.setFont (uiFont (juce::jmin (11.0f, offCurveBounds_.getHeight() * 0.85f), false));
-        g.drawText ("RETUNE off the curve: retune " + juce::String (proc_.retuneEffectiveMs(), 0) + " ms / depth "
-                    + juce::String (proc_.getParamValue (EedPitchProcessor::kDepth), 0) + " % set directly (a mode, the model, or DEPTH) - dial "
-                    + juce::String (proc_.retuneDial(), 0) + " would be " + juce::String (ms, 0) + " ms / " + juce::String (dp * 100.0f, 0)
-                    + " %; turn RETUNE to return",
+        g.drawText ("RETUNE off the curve: " + juce::String (proc_.retuneEffectiveMs(), 0) + " ms / depth "
+                    + juce::String (proc_.getParamValue (EedPitchProcessor::kDepth), 0) + " % were set directly; dial "
+                    + juce::String (proc_.retuneDial(), 0) + " = " + juce::String (ms, 0) + " ms / " + juce::String (dp * 100.0f, 0)
+                    + " %. Turn RETUNE to return.",
+                    offCurveBounds_, juce::Justification::centredLeft);
+    }
+    else if (! offCurveBounds_.isEmpty() && ! advanced_)
+    {
+        // The front's long hint lives here, where it fits (the header keeps a short one).
+        g.setColour (C::text3);
+        g.setFont (uiFont (9.0f, false));
+        g.drawText ("KEY and REF: the AUTO badge follows the bus - pick a key, or turn REF, to override; click AUTO to return.  RETUNE: 0 hard, 400 transparent.",
                     offCurveBounds_, juce::Justification::centredLeft);
     }
 
@@ -446,16 +509,19 @@ void EedPitchEditor::paintNotePanel (juce::Graphics& g, juce::Rectangle<int> are
 void EedPitchEditor::paintNumbers (juce::Graphics& g, juce::Rectangle<int> area,
                                    const echojay::PitchReading& r)
 {
-    const int rowH = juce::jmax (12, area.getHeight() / 4);
+    // Rows and fonts follow the area (round 47): four rows must fit whatever
+    // the advanced layout leaves, never overprint the row below.
+    const int rowH = juce::jmax (10, area.getHeight() / 4);
+    const float valPt = juce::jmin (11.0f, rowH - 2.0f), labPt = juce::jmin (9.0f, rowH - 3.0f);
     auto row = [&] (const char* label, const juce::String& value, juce::Colour col)
     {
         auto rr = area.removeFromTop (rowH);
         g.setColour (C::text3);
-        g.setFont (uiFont (9.0f));
+        g.setFont (uiFont (labPt));
         g.drawText (label, rr.removeFromLeft (rr.getWidth() * 2 / 5),
                     juce::Justification::centredLeft);
         g.setColour (col);
-        g.setFont (uiFont (11.0f, true));
+        g.setFont (uiFont (valPt, true));
         g.drawText (value, rr, juce::Justification::centredLeft);
     };
 
@@ -478,10 +544,11 @@ void EedPitchEditor::paintGuardPanel (juce::Graphics& g, juce::Rectangle<int> ar
                                       const echojay::PitchReading& r)
 {
     area.removeFromLeft (juce::jmin (8, area.getWidth() / 8));
-    const int rowH = juce::jmax (12, area.getHeight() / 4);
+    const int rowH = juce::jmax (10, area.getHeight() / 4);
+    const float bigPt = juce::jmin (11.0f, rowH - 2.0f), midPt = juce::jmin (10.0f, rowH - 2.0f), smallPt = juce::jmin (9.0f, rowH - 3.0f);
 
     g.setColour (C::text3);
-    g.setFont (uiFont (9.0f, true));
+    g.setFont (uiFont (smallPt, true));
     g.drawText ("OCTAVE GUARD", area.removeFromTop (rowH), juce::Justification::centredLeft);
 
     // Fires-constantly means the WINDOW is wrong for the material (spec
@@ -490,17 +557,17 @@ void EedPitchEditor::paintGuardPanel (juce::Graphics& g, juce::Rectangle<int> ar
     const juce::Colour rateCol = rate < 2.0 ? C::green : rate < 10.0 ? C::amber : C::red;
 
     g.setColour (r.guardFires > 0 ? C::text : C::text2);
-    g.setFont (uiFont (11.0f, true));
+    g.setFont (uiFont (bigPt, true));
     g.drawText (juce::String (r.guardFires) + " fires",
                 area.removeFromTop (rowH), juce::Justification::centredLeft);
 
     g.setColour (rateCol);
-    g.setFont (uiFont (10.0f, true));
+    g.setFont (uiFont (midPt, true));
     g.drawText (juce::String (rate, 1) + "% of voiced",
                 area.removeFromTop (rowH), juce::Justification::centredLeft);
 
     g.setColour (C::text3);
-    g.setFont (uiFont (9.0f));
+    g.setFont (uiFont (smallPt));
     g.drawText (juce::String (r.voicedHops) + " / " + juce::String (r.totalHops) + " hops voiced",
                 area.removeFromTop (rowH), juce::Justification::centredLeft);
 }
@@ -584,26 +651,16 @@ void EedPitchEditor::paintKeyAttribution (juce::Graphics& g, juce::Rectangle<int
 
 void EedPitchEditor::paintLatencyMode (juce::Graphics& g, juce::Rectangle<int> area)
 {
-    auto text = area;
-    text.removeFromLeft (juce::jmin (156, text.getWidth()));
-    if (text.getWidth() < 40) return;
-
+    // One line, full width, under the CORRECTION controls: the cost of the
+    // lookahead choice, stated where the choice is made, and nowhere near a
+    // button (round 47: the two-line caption overlapped CORRECT and truncated).
+    if (area.getHeight() < 8) return;
     const bool low = latencyBtn_.getToggleState();
-
-    // The COST, stated where the choice is made. A control that hides what it
-    // trades is a control the user cannot reason about.
     g.setColour (low ? C::amber : C::text3);
     g.setFont (uiFont (9.0f, low));
-    g.drawText (low ? "shorter lookahead - trades transient accuracy at onsets"
-                    : "full lookahead - host compensates the delay",
-                text.removeFromTop (text.getHeight() / 2),
-                juce::Justification::centredLeft);
-
-    g.setColour (C::text3);
-    g.setFont (uiFont (9.0f));
-    g.drawText (low ? "for a singer monitoring through the plugin"
-                    : "for mixing; switch to TRACKING if someone is singing through it",
-                text, juce::Justification::centredLeft);
+    g.drawText (low ? "TRACKING: shorter lookahead, trades onset accuracy - for a singer monitoring through the plugin"
+                    : "MIXING: full lookahead (" + juce::String (currentLatencyMs (false)) + " ms, the host compensates) - switch to TRACKING if someone is singing through it",
+                area, juce::Justification::centredLeft);
 }
 
 // ---------------------------------------------------------------------------

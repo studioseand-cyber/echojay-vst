@@ -11,6 +11,7 @@
 */
 
 #pragma once
+#include <vector>
 #include <fstream>
 
 #include "DeviceEditorBase.h"
@@ -69,6 +70,12 @@ private:
     juce::TextButton keepVibBtn_ { "KEEP VIBRATO" };   // natural_vibrato as the two-state control it is (round 44); the Natural Vibrato name is reserved
     juce::TextButton advBtn_     { "ADVANCED" };       // shows the advanced panel; UI state only
     bool advanced_ = false;
+public:
+    // For the offline snapshot harness (tools/pitch_mode_test EJ_EDITOR_SNAP):
+    // the panel a screenshot is taken of. Same path the ADVANCED button takes.
+    void showAdvanced (bool on) { advBtn_.setToggleState (on, juce::dontSendNotification); advanced_ = on; resized(); repaint(); }
+    void syncNow() { syncFromProcessor(); }   // what the 30 Hz timer does in a host
+private:
     juce::TextButton keyAutoBtn_ { "AUTO" };           // the badge on KEY/SCALE
     // The reference control (29 Aug 2026): Sean was stuck on a grid he could
     // neither see the origin of nor change. The knob edits the MANUAL field
@@ -81,6 +88,14 @@ private:
     juce::TextButton latencyBtn_;
     juce::Rectangle<int> latencyBounds_, keyAttrBounds_;
     juce::Rectangle<int> offCurveBounds_;   // round 46: the strip that explains an off-curve retune_speed_ms/depth
+    // Round 47 (Sean's screenshot): every advanced control carries its own
+    // caption, and the panel is three framed groups. Captions and frames are
+    // laid out with the controls and painted from these lists, so a label can
+    // never fall between another control's knob and its readout.
+    struct Caption { juce::Rectangle<int> r; juce::String text; };
+    struct Group   { juce::Rectangle<int> r; juce::String title; };
+    std::vector<Caption> advCaptions_;
+    std::vector<Group>   advGroups_;
     void paintKeyAttribution (juce::Graphics& g, juce::Rectangle<int> area);
     void paintLatencyMode (juce::Graphics& g, juce::Rectangle<int> area);
     void refreshLatencyButton();

@@ -1121,3 +1121,87 @@ RETUNE puts the session on the curve.
   dial shows "(off)" and the strip says so; turning RETUNE returns.
 - Front panel is 8 controls. This is the panel he asked for in the
   original request: depth automatic and linked to retune, dialable.
+
+# Round 47 (5 Sep 2026): Sean's two reports on AU 071A2E31 - the advanced panel's LAYOUT BUGS fixed and looked at; press-play phasing READ, not chased
+
+## Item 2 - the advanced panel: each named bug, and its fix
+From his screenshot (ruled: bugs, not density):
+  a. The second row's captions (VIB DEPTH / VIB RATE / VIB ONSET) sat directly
+     under the first row's value readouts, so "60 ms" read as VIB DEPTH when it
+     was SEAM. CAUSE: two knob rows stacked with no gap and nothing between
+     them; a knob's caption is at its top and its readout at its bottom, so
+     row 2's caption was the nearest text to row 1's readout. FIX: the panel is
+     THREE FRAMED GROUPS with a title strip each (ENGINE, CORRECTION, VIBRATO
+     GENERATOR) plus a framed READOUTS group; a frame line and a title sit
+     between any readout and the next caption. Standing rule, now in the
+     layout code: EVERY CAPTION IS LAID OUT WITH ITS CONTROL AND PAINTED FROM
+     THE SAME LIST (advCaptions_), so a label cannot fall between another
+     control's knob and its readout.
+  b. The lookahead caption ("full lookahead - host comp..." / "for mixing;
+     switch to TRAC...") truncated mid-sentence and overlapped CORRECT.
+     CAUSE: paintLatencyMode drew two lines in the BAND's rectangle, from
+     156 px in, across the buttons placed in the same band. FIX: one line,
+     full width, on its own row under the CORRECTION controls
+     ("MIXING: full lookahead (38 ms, the host compensates) - switch to
+     TRACKING if someone is singing through it"; TRACKING variant in amber).
+     Nothing shares its row.
+  c. CUSTOM and NORMAL had no captions. FIX: MODE, TRACKING, LOOKAHEAD and
+     MASTER ENABLE captions above each control; SHAPE above the vibrato shape.
+  d. The header hint truncated with an ellipsis. CAUSE: the hint is painted
+     between the title and the header's controls (VOICE + ADVANCED + BYPASS);
+     at 620 px that is ~250 px. FIX: header hint shortened to what fits
+     ("RETUNE 0 hard - 400 transparent"); the long hint moved to the strip
+     under the front's ribbon, which also carries the off-curve message
+     when there is one (the strip text was re-cut once to fit at 620).
+  Grouping pass: ENGINE (SEAM MIX OUT F.SHIFT DEPTH), CORRECTION (MODE
+  TRACKING LOOKAHEAD MASTER ENABLE + the latency line), VIBRATO GENERATOR
+  (VIB DEPTH / RATE / ONSET + SHAPE), READOUTS (note + tuner bar | numbers |
+  guard log). The readouts take all the height the groups leave (the
+  advanced view drops the ribbon rather than starve them) and their row
+  fonts follow the row height so four rows fit without overprinting.
+
+## LOOKED AT BEFORE SEAN DOES - the offline snapshot harness
+tools/pitch_mode_test: `EJ_EDITOR_SNAP=<dir>` renders the editor offscreen
+at 620x400 (2x) after four blocks of audio and one sync tick - front,
+front off-curve, advanced - to PNG. The three renders of this build are
+committed at tools/pitch_mode_test/snapshots_2026-09-05/. What they
+showed on the way (fixed before the install): the READOUTS group short
+enough to overprint its rows (fixed: adaptive rows, all remaining
+height); the off-curve strip clipping its last words (re-cut); and a
+harness-only artefact, the attribution line reading "key set by hand"
+before any audio had run (the harness now pumps blocks first, and the
+render shows the badges lit, the combos dimmed with the detected key, and
+"auto: F# minor ... ref 440.0 Hz (auto)"). A layout is not done until it
+has been rendered and read.
+
+## Item 1 - press-play phasing: READ, not chased (DEFECT_PRESS_PLAY_PHASING.md)
+Ruled a latency-class symptom. Every latency call site read; the map is
+in the defect file. In one paragraph: the pitch device reports latency
+only through refreshLatency(), which changes the number only when VOICE
+TYPE or LOW_LATENCY changes (JUCE's setter is a no-op otherwise, verified
+in the JUCE source); the number does not depend on block size; his
+session's voice type and lookahead equal the defaults, so nothing changes
+at load or at play. The chain host rebuilds the graph only on an actual
+slot latency change (80 ms debounce), and that rebuild is the one runtime
+mechanism in the plugin that can misalign for a moment - it does not fire
+without a change. Nothing blends against a delayed dry at start: the
+shifter's output is exactly the reported latency behind its input from
+the first sample; MIX is 100; the chain's dry legs are inert at full wet.
+THE INTERNAL CANDIDATE THAT WOULD SURVIVE SOLO: no layer overrides
+reset() (JUCE maps AudioUnitReset to it), and the device has no transport
+awareness, so across a stop/locate/play the shifter's co-timed rings keep
+the previous position's tail and the first ~38 ms + lag after play are
+synthesised from STALE decisions. Waiting on Sean's soloed answer before
+choosing a direction; the bar for the internal fix is written in the
+defect file (positive control: a mid-file restart without clearing must
+show the artefact).
+
+## Installed (5 Sep 2026), ~/Library only, via tools/install_local.sh build-release
+  | plugin | arm64 UUID |
+  |---|---|
+  | AU   `EchoJay V2.component` | 6DFD9437-04B6-3733-B63B-029CD0C21BC8 |
+  | VST3 `EchoJay V2.vst3`      | 757DEAB8-C337-35AF-86A5-26BFEC04E69B |
+AUHostingServiceXPC_arrow killed after the install; Sean must relaunch
+Logic. No engine code in this change: the audio path is the round-46
+build's, bit for bit (suite 180/0 unchanged; the snapshot harness is
+gated by an environment variable and runs no audio comparison).

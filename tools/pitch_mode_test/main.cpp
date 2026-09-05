@@ -947,6 +947,36 @@ int main()
         }
     }
 
+    // ---- EDITOR SNAPSHOTS (5 Sep 2026, round 47): EJ_EDITOR_SNAP=<dir> renders
+    // the panel offline to PNG - front, front off-curve, advanced - so a layout
+    // is LOOKED AT before Sean does (his screenshot found labels sitting under
+    // the wrong control). Offscreen: no window, no host.
+    if (const char* sdir = std::getenv ("EJ_EDITOR_SNAP"))
+    {
+        std::printf ("== EDITOR SNAPSHOTS -> %s ==\n", sdir);
+        juce::ScopedJuceInitialiser_GUI gui;
+        juce::File out (sdir); out.createDirectory();
+        auto snap = [&] (const char* name, const std::function<void (EedPitchProcessor&, EedPitchEditor&)>& setup)
+        {
+            EedPitchProcessor p; p.prepareToPlay (48000.0, 512);
+            std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
+            auto* pe = dynamic_cast<EedPitchEditor*> (ed.get());
+            if (pe == nullptr) { std::printf ("  no editor\n"); return; }
+            ed->setSize (620, 400);
+            setup (p, *pe);
+            { juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m; for (int i = 0; i < 4; ++i) { b.clear(); p.processBlock (b, m); } }   // a host runs audio: the auto-key state is a block-thread product
+            pe->syncNow();   // what the 30 Hz timer does in a host
+            juce::Image img = ed->createComponentSnapshot (ed->getLocalBounds(), false, 2.0f);
+            juce::File f = out.getChildFile (juce::String (name) + ".png"); f.deleteFile();
+            juce::FileOutputStream os (f);
+            juce::PNGImageFormat png; png.writeImageToStream (img, os);
+            std::printf ("  wrote %s (%dx%d)\n", f.getFileName().toRawUTF8(), img.getWidth(), img.getHeight());
+        };
+        snap ("front",          [] (EedPitchProcessor&, EedPitchEditor& e) { e.showAdvanced (false); });
+        snap ("front_offcurve", [] (EedPitchProcessor& p, EedPitchEditor& e) { p.setParamValue ("retune", 100.0); p.setParamValue ("depth", 50.0); e.showAdvanced (false); e.repaint(); });
+        snap ("advanced",       [] (EedPitchProcessor&, EedPitchEditor& e) { e.showAdvanced (true); });
+    }
+
     std::printf ("\n%s (%d failure%s)\n", g_fail == 0 ? "ALL PASS" : "FAILURES",
                  g_fail, g_fail == 1 ? "" : "s");
     return g_fail == 0 ? 0 : 1;
