@@ -741,3 +741,24 @@ INSTALLED (5 Sep 2026, tools/install_local.sh, ~/Library only; suite EchoJayPitc
   Sean must relaunch Logic before listening (AUHostingService killed). The DEPTH knob sits beside HUMAN;
   100 = the sound he has had all along at his settings; 25 at retune 150 and 50 at retune 44 are the
   ear-set legs. What to listen for: does leg C sound like Antares' slow end (leg B)?
+
+## Round 32 (5 Sep 2026): LEG 7 PASSES - THE DEPTH CONTROL'S BAR IS COMPLETE. ITEM CLOSED.
+
+Sean, on both depth clips, verbatim: "those two ear clips sound good."
+That completes the bar: legs 1-6 (arithmetic, above) plus his ear on
+retune 150 @ depth 25 against his own Antares max-retune bounce, and
+retune 44 @ depth 50 against the fast Antares bounce. Installed build
+AU B2ACDDBC-5CC9-3319-B710-0A939994FBF9 / VST3 41EBB278-CBAB-3745-91E9-756C7CBAD178.
+THE SLOW-END DEFECT IS CLOSED against this bar.
+
+## The one thing outstanding for him: REAL-SESSION USE
+Every depth measurement was at FIXED settings; nothing has tested the
+control being MOVED during playback. Asked of Sean specifically:
+  (a) do word starts stay clean while he rides the DEPTH knob?
+  (b) do depth changes produce any audible step or zip?
+If (b) yes, that is a PARAMETER-SMOOTHING item - depth is applied per hop
+from an atomic with no ramp (setDepth -> depth_.load() at the next hop's
+target formation; a knob sweep changes the applied shift in 2.67 ms
+steps of whatever the knob moved) - and it has NOT been measured. Nothing
+in the backlog starts until he reports. If the knob behaves under
+movement, the pitch work is done for now.

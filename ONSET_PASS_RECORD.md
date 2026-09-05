@@ -1242,3 +1242,64 @@ identity arms (0 samples, both) carry the guard's evidence regardless, and
 the round-21 numbers stay beside the corrected ones rather than being
 silently re-run - a measurement of a build one fix short of the default
 is a valid measurement of that build, labelled as such.
+
+# THE ARC (5 Sep 2026) - the answer to the original question, findable without reading thirty rounds
+
+THE COMPLAINT, in Sean's words: "the beginning of words sounds shaky" and
+"max retune speed should be subtle like Antares". TWO SEPARATE DEFECTS,
+BOTH NOW FIXED AND BOTH EAR-CONFIRMED:
+
+  1. WORD STARTS. Mechanism: a 9-cent TARGET STEP the moment the wet path
+     resumed after a bit-exact-dry consonant (round 12) - above the 8.6c
+     pitch JND, tau-independent, the whole of the complaint on the
+     production path. Fix: THE SEAM RAMP - the wet leg resumes at the dry
+     leg's pitch and ramps to full correction over seam_attack_ms (default
+     60; 364e587, d637292; rounds 13-16, bar committed before the code).
+     Measured: word-start glitch events 100% -> 0% (ign-vib OFF), OLD-take
+     falsifier 0 -> 0, paired sustain and onset medians unmoved. Ear gate
+     passed on the intro region; re-cut at his working point (retune 44,
+     ign OFF) in round 27, calmer there too.
+
+  2. THE SLOW END. Mechanism: RETUNE SETS SPEED, NOT DEPTH. Antares' dial
+     interpolates between "correct instantly" and "don't correct"; ours
+     interpolated between "correct instantly" and "correct eventually", so
+     at 150 ms against notes of a few hundred ms the correction was
+     permanently mid-journey - 8x Antares' movement and no closer to grid
+     (rounds 17, 23). Depth on the AIM fails (it keeps the motion and
+     drops the correction; Flex has the same shape and tunes worse than
+     dry above 25 - advice withdrawn); depth on the APPLIED SHIFT works
+     (round 27). Fix: THE DEPTH CONTROL (6fcbb0a) - how much of the
+     correction is applied, blended after the envelope, DEPTH knob beside
+     HUMAN, default 100 = the sound he had. Measured: retune 150 @ depth
+     25 -> 1.84c activity against 6.25c, improve-rate 58.0% (Antares max
+     0.57c / 57.0%); retune 44 @ 50 -> 3.07c at 63.0%; word starts stay at
+     zero. Sean on both clips: "those two ear clips sound good."
+
+  THE TIMING WORK (rounds 18, 27-30; TIMING_ALIGNMENT_RECORD.md) WAS
+  INFRASTRUCTURE. Sean heard no difference from it alone (legs 2 and 3
+  identical). Its value was making DEPTH 0 EXACT: before the co-timed
+  ratio, "zero correction" left 3.09c of movement and tuned worse than
+  the dry source, because the ratio's numerator and denominator described
+  audio 11-20 ms apart; after it, depth 0 is bit-exact identity, and the
+  same fix removed a predicted vibrato-rate ripple (10.5c peak alto,
+  16.2c low male -> 0). It ships inside the depth change as its
+  foundation and is never to be described as an audible improvement.
+
+  Not part of the answer, still on file: the note-boundary chase (the
+  confirm window, re-derived 25 -> 15 ms on the honest clock), the
+  onset-accuracy gap against Antares at Retune 0 (round 4, open), the
+  ignore-vibrato-ON residual (DEFECT_VIBRATO_ON_TUNING_COST, re-opened).
+
+# BACKLOG, in the ruled order (5 Sep 2026) - none of it blocks Sean; none starts before his real-session report
+  1. Broader material validation, still owed: seam fix and depth control
+     are validated on one already-corrected take plus one falsifier
+     (SEAM_ATTACK_VALIDATION_REQUEST.md on his Desktop; clean pop vocal
+     with hard consonants first).
+  2. adopt-on-engage against its eleven-leg bar, display and
+     serialisation rules folded in (DEFECT_GUARD_WITHOUT_MIGRATION.md).
+  3. The remaining eighteen constants, enumerated in
+     TIMING_ALIGNMENT_RECORD.md, re-derived in a proposed order
+     (kNoteConfirmMs done at 15).
+  4. DEFECT_VIBRATO_ON_TUNING_COST, re-opened and unbundled.
+  5. An Antares bounce at a mid retune (~50 on their dial), so the
+     retune-44 comparison stops leaning on a fast-setting proxy.
