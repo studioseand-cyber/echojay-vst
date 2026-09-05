@@ -551,3 +551,77 @@ was used. Flagged for re-derivation alongside the broader material; the
 candidate that measures best on this take is retune 6 at full depth.
 
 The inventory ruling and layout still wait. No UI code.
+
+# Round 40 (5 Sep 2026): BRANCH A - Sean's ear agrees with the measurement; ruling 1 WITHDRAWN; the curve verified; the default changes
+
+## Sean's answer, verbatim, against the A/B (dial_fastend_AB clip, round 39)
+"B is better on both" - retune 6 at full depth beats retune 44 by ear,
+agreeing with the measurement (activity 4.49 vs 6.09c, off-grid 2.33 vs
+4.26c). BRANCH A.
+
+## Ruling 1 (round 38) is WITHDRAWN, not amended - recorded beside the original
+Its premise was that Sean valued the fast-and-full point at 44; he does
+not. The deliberate-deviation reasoning goes with it. The 0-40 full-depth
+region collapses to a single fast anchor at dial 0.
+
+## THE CONSEQUENCE, said plainly rather than presented as the plan all along
+Antares' "missing middle" problem DISSOLVES. Our dial now matches their
+shape at every anchor AND has a usable region between 0 and 50 where
+theirs cliffs - not because we chose to deviate, but because a monotonic
+curve through those knots produces one. That is a better outcome than the
+deviation argued for in round 38.
+
+## THE CURVE, verified by measurement - the linear interpolation FAILED, the shaped one PASSES
+Knots (ruled): 0 -> (6 ms, 1.0); 50 -> (80, 0.35); 100 -> (150, 0.25);
+200 -> (150, 0.15); 400 -> (150, 0.10). Above 50, linear in dial between
+knots (verified monotone in every column, rounds 38 and 40). BELOW 50 the
+interpolation shape is not free - it is what the requirement selects:
+  v1 LINEAR in both (retune 6 -> 80, depth 1.0 -> 0.35, linear in dial):
+     FAILS. Activity at dial 5 is 4.86c and at dial 10 4.64c against
+     4.49c at dial 0; monotone only from dial 10. The chase grows faster
+     between retune 6 and 25 ms than a linear depth fall offsets.
+  v2 retune slow-start (6 + 74 t^2), depth linear:
+     median monotone except one 0.03c uptick at dial 15 (4.09 vs 4.06 -
+     within ruler noise, not strict); p90 rises 15.2 -> 18.1c and >25c
+     3.4 -> 6.0% through dials 10-30. Not accepted.
+  v3 retune slow-start (6 + 74 t^2), DEPTH LEADS (1 - 0.65 t^0.7):
+     MEDIAN STRICTLY DECREASING at all 18 positions (4.49, 4.16, 3.87,
+     3.66, 3.62, 3.47, 3.19, 3.12, 2.99, 2.81, 2.60, 2.34 | 2.12, 1.84,
+     1.50, 1.13, 0.94, 0.76c). Tail residual, stated: p90 exceeds dial
+     0's 15.59c by up to 0.58c at dials 25-35 (15.96 / 16.17 / 15.92) and
+     the >25c share by up to 1.2 points (3.7 -> 4.9%). Every position's
+     tails are below dial 40's of the withdrawn curve (30.2c / 13.3%).
+  v4 depth leads harder (1 - 0.65 t^0.5):
+     tails lower everywhere (p90 <= 14.7c) but the MEDIAN TIES at dials 25
+     and 30 (2.86 = 2.86), >25c 3.8 > 3.7 at dial 30, and the first two
+     dial units drop 14% of activity (an over-sensitive start). Not
+     accepted.
+  Full tables: tools/pitch_activity/logs_2026-09-03/transfer_tf2..tf5_2026-09-05.txt
+
+## THE FINAL TRANSFER FUNCTION, proposed (v3)
+    for dial d in [0, 50]:   t = d / 50
+        retune_ms = 6 + 74 * t^2
+        depth     = 1 - 0.65 * t^0.7
+    for dial d in [50, 400]: linear in d between (50: 80, 0.35), (100: 150, 0.25), (200: 150, 0.15), (400: 150, 0.10)
+Acceptance test (the round-39 requirement): median activity strictly
+decreasing across the whole dial - PASSED at 18 positions on sourceNEW.
+Tail residual as above. Antares anchors at 50/100/200/400 within the
+round-37 residuals. The 0-50 shape (exponents 2 and 0.7) is a regime
+constant (§17.5): re-verified on any material change and on the broader
+takes. Not built.
+
+## THE DEFAULT CHANGES: retune 6 / flex 0 / humanize 0 / depth 100 - provisional, with the hesitation on file
+Round 36 chose retune 44 on "where Sean works"; both the measurement and
+his ear now say retune 6 at full depth. Changed (kDefRetuneMs 44 -> 6;
+schema text). THE HESITATION, recorded, not blocked on: retune 6 / full
+depth maps to dial 0, the HARDEST setting, and defaulting a pitch
+corrector to maximum correction is unusual - Antares ships at retune 20,
+not 0. Our only material is one already-corrected, near-grid take, which
+flatters hard correction. Shipped now because it is what the ear and the
+numbers say; PROVISIONAL marker kept; "IS THE DEFAULT TOO HARD FOR RAW
+MATERIAL?" is explicitly part of the broader-material re-derivation.
+INSTALLED (suite 161/0; Logic running - relaunch before judging):
+    AU   arm64 F73AEAF0-BB43-3B28-848C-485AF2530AD5
+    VST3 arm64 185B5022-8BF4-34ED-B63D-B816AF6E700A
+
+NEXT (as ruled): the inventory ruling, then layout. Still no UI code.

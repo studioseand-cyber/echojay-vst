@@ -22,7 +22,7 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
     static const echojay::ParamSchema s ({
         { EedPitchProcessor::kMode, "",
           0.0, (double) (EedPitchProcessor::kNumModes - 1), (double) EedPitchProcessor::kCustom,
-          "PROVISIONAL DEFAULT = custom at retune 44 / flex 0 / humanize 0 / depth 100 (5 Sep 2026, UI_SIMPLIFICATION round 36): the shipped natural default (120/55/60) DETUNED the reference take - improve-rate 44.6%, off-grid 7.95c vs the source 6.72c - corroborating round 27 (flex >= 25 tunes worse than dry). Re-derived when broader material lands; this take is already near-grid. "
+          "PROVISIONAL DEFAULT = custom at retune 6 / flex 0 / humanize 0 / depth 100 (5 Sep 2026, UI_SIMPLIFICATION round 40): what measures best on the reference take (activity 4.49c, off-grid 2.33c, improve 79.6%) and what Sean's ear chose over retune 44 ('B is better on both'). Before it: retune 44 (round 36, chosen for where he worked, not what measured best) and natural 120/55/60 (which DETUNED the take: improve 44.6%). HESITATION ON FILE: this is the HARDEST setting and Antares ships at retune 20; the only material is one already-corrected, near-grid take that flatters hard correction. Re-derived on raw material with the explicit question: is the default too hard for raw material? "
           "the CHARACTER of the correction, and the fastest way to get one. "
           "natural is transparent - the tuning is tidied but the performance "
           "survives, and on a good take it is hard to hear; use it when the "

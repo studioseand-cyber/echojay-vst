@@ -258,7 +258,7 @@ public:
     // applies at the single use site, and retuneEffectiveMs() exists so
     // the UI can SHOW the mapping instead of hiding it.
     static constexpr float kRetuneFloorMs = 6.0f;
-    static constexpr float kDefRetuneMs   = 44.0f;    // PROVISIONAL DEFAULT (5 Sep 2026, UI_SIMPLIFICATION round 36): the measured-safe neighbourhood; was 120 (natural), which detuned the reference take
+    static constexpr float kDefRetuneMs   = 6.0f;     // PROVISIONAL DEFAULT (5 Sep 2026, UI_SIMPLIFICATION round 40): what measures best AND what Sean's ear chose (retune 6 beat 44 'on both'); was 44 (round 36, chosen for where he worked), before that 120 (natural, which detuned the reference take). Hesitation on file: dial 0 is the hardest setting and Antares ships at 20; re-derive on raw material
     static constexpr float kMinReferenceHz = 380.0f, kMaxReferenceHz = 500.0f;
     static constexpr float kMinTranspose  = -12.0f, kMaxTranspose  = 12.0f;
 
