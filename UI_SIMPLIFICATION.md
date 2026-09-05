@@ -362,3 +362,56 @@ INSTALLED (5 Sep 2026, provisional default + corrected schema flags + corrected 
     VST3 arm64 F655DD95-FE93-3887-BA86-9FD267B34C56
   Sean's session is unaffected (his saved params restore explicitly: retune 44.2 / flex 0 / humanize 0 already);
   a NEW instance now opens at custom 44 / 0 / 0 / depth 100 / seam 60. Relaunch Logic before judging anything.
+
+# Round 37 (5 Sep 2026): THE FIVE ANTARES BOUNCES - re-measured from Sean's files, the fit, the dial mapping
+
+## STANDING RULE (ruled): ALIGN QUASI-PERIODIC SIGNALS BY ENVELOPE, NOT BY WAVEFORM CORRELATION, OR VERIFY THE WAVEFORM LAG AGAINST AN ENVELOPE LAG.
+Waveform cross-correlation on a pitched voice locks onto whole pitch
+periods and returns a different lag per window (this machine, three
+0.5 s windows per file: -238/-112/-170 ... -268/-60/-232 samples - period
+multiples of ~290). Envelope correlation cannot lock onto a period.
+THE RE-CHECK of every Antares alignment cited in this record, by envelope:
+    file                                    cited lag        envelope lag   verdict
+    antares_retune0_NEW (round-4 ANT_0)     +252 (glitch tool)  +288        fine: this tool is envelope-coarse then waveform-refined within +-64 (< a quarter period)
+    antaresNEW (round-4 ANT_400)            +28                 +32         fine
+    antaresmaxretune (round 17)             +6                   0          fine
+    antares3 (27 Aug, the retune-44 clip's Antares leg)   +3996  -6720     WRONG: +3996 was a clamped search-window edge (+-4000); the true
+                                                                            offset is -6720 (140 ms). The round-31 retune-44 ear clip's Antares
+                                                                            leg was misaligned by 223 ms - a sequential listen, so not destructive,
+                                                                            but wrong. That clip is DELETED and re-cut below against 50.wav.
+    the five (0..400)                        container 0 all    +288, +32, +32, +32, +32   0.7-6 ms: irrelevant to hop-level rulers; the shape is unaffected
+The container's "+1714" for ANT_0 (round 4) was the container's own ruler; this machine never carried it.
+
+## THE FIVE, this ruler vs the container (sourceNEW reference; ours: pitch_activity / pitch_key_forensic / pitch_glitch_events)
+    retune | activity med (ours / cont) | off-grid (ours / cont) | <5c (ours / cont) | improve (ours / cont) | ws events ours (of total)
+       0   |   5.46 / 5.63              |  1.55 / 2.04           |  76.4 / 66.4      |  83.0 / 76.6          |  4 of 12
+      50   |   2.44 / 2.50              |  6.21 / 6.57           |  43.0 / 42.5      |  57.4 / 58.0          |  3 of 10
+     100   |   1.75 / 1.87              |  6.41 / 6.56           |  41.0 / 42.1      |  57.1 / 58.1          |  4 of 13
+     200   |   1.14 / 1.18              |  6.53 / 6.66           |  40.4 / 40.8      |  56.0 / 57.0          |  3 of 11
+     400   |   0.70 / 0.75              |  6.53 / 6.77           |  40.2 / 40.0      |  57.6 / 57.0          |  3 of 12
+AGREEMENT: activity within 0.12c everywhere; off-grid/improve within 0.5c / 1.5 points above 0; at retune 0 this ruler reads tighter (1.55 vs 2.04c, 76 vs 66% <5c) - the same tracker-window difference round 4 recorded (here vs container: 1.94 vs 1.15 then, opposite sign; the two rulers bracket it). THE SHAPE IS THE SAME ON BOTH: authority collapses between 0 and 50 (off-grid 1.55 -> 6.21 against the source's 6.72), then PLATEAUS 50 -> 400 (6.21 -> 6.53) while activity keeps falling (2.44 -> 0.70). Above ~50 Antares is not correcting; it is getting quieter about not correcting. And: Antares carries 3-4 WORD-START glitch events at every setting on this ruler (round 11 saw 13 events at ANT_0); our seam fix holds 0-1.
+
+## THE FIT (our grid: retune {6,20,44,80,150} x depth {1 .. 0.05}, hard base, ign OFF, seam 60, foundation on; full grid in tools/pitch_activity/logs_2026-09-03/fit_grid_2026-09-05.txt)
+    Antares dial | ours (retune_ms, depth) | activity ours/theirs | off-grid ours/theirs | <5c ours/theirs | improve ours/theirs | ws ours/theirs
+        0        | (6, 1.00)               |  4.49 / 5.46         |  2.33 / 1.55         |  69.7 / 76.4    |  79.6 / 83.0        |  0 / 4
+       50        | (80, 0.35)              |  2.34 / 2.44         |  6.37 / 6.21         |  42.5 / 43.0    |  60.2 / 57.4        |  0 / 3
+      100        | (150, 0.25)             |  1.84 / 1.75         |  6.75 / 6.41         |  40.3 / 41.0    |  58.0 / 57.1        |  0 / 4
+      200        | (150, 0.15)             |  1.13 / 1.14         |  6.96 / 6.53         |  39.3 / 40.4    |  59.1 / 56.0        |  1 / 3
+      400        | (150, 0.10)             |  0.76 / 0.70         |  6.80 / 6.53         |  39.2 / 40.2    |  60.3 / 57.6        |  1 / 3
+RESIDUALS: activity within 0.1c at 50-400; off-grid within +0.16..+0.43c (ours a shade looser on the plateau); <5c within 1.1 points; improve-rate ours +1..+3 points HIGHER at the same activity (we improve the grid slightly more per cent of movement); word-start events ours 0-1 vs theirs 3-4 (cleaner).
+THE POSITION THAT CANNOT BE MATCHED: ANTARES 0. Our fastest, fullest setting (retune 6, depth 1) is 0.8c looser off-grid (2.33 vs 1.55), 6.7 points fewer within 5c, 3.4 points lower improve-rate, and 1.0c LESS active. That is the round-4 onset-accuracy gap, still open, now bounded on this ruler. It is not a depth or speed question; nothing in the grid reaches it. Stated, not smoothed.
+WHAT CARRIES THE MATCH: DEPTH. Above 50 the retune value matters little (retune 44 with depth 0.35/0.25/0.15/0.10 gives 2.13/1.51/0.92/0.61c - also within reach); the fitted retune rises so that "slower" stays true on our dial, and the middle anchor (150 / 0.25 <-> Antares 100) was the round-31 correspondence the ruling said to start from - it holds: 1.84 vs 1.75c, 58.0 vs 57.1%.
+
+## THE 0-400 DIAL MAPPING, proposed (piecewise-linear between the five anchors; STEEP below 50, near-FLAT above)
+    dial   0 ->  retune   6 ms, depth 1.00
+    dial  50 ->  retune  80 ms, depth 0.35      (between 0 and 50: retune 6->80 and depth 1.00->0.35, linear in dial)
+    dial 100 ->  retune 150 ms, depth 0.25
+    dial 200 ->  retune 150 ms, depth 0.15
+    dial 400 ->  retune 150 ms, depth 0.10
+Below 50 the map is the whole of the authority collapse (depth 1.0 -> 0.35 in 50 dial units); above 50 depth drifts 0.35 -> 0.10 over 350 units while retune sits at our cap. A LINEAR DEPTH ACROSS 0-400 WOULD BE WRONG and is not proposed. Sean's ear-confirmed working points sit on the curve: his retune 44 / depth 1.0 (today's default) is NOT on it - it is a fast-and-full point Antares' dial does not offer (their 0 is faster and their 50 is shallower); the re-map makes that point unreachable from the dial and reachable only from the ADVANCED depth knob (ruling 4, hide not delete). Stated for the ruling.
+NOT BUILT: the re-map waits on the ruling; the curve is derived from measurement, not assumed.
+
+## The retune-44 ear clip RE-CUT against the mid-retune bounce that now exists
+  /Users/SeanD/echojay-vst-pitch/earclips/depth_retune44__A_source__B_antares_retune50__C_echojay_retune44_depth50.wav
+  3 legs x 13.25 s, 0.45 s gaps, jointly normalised; Antares 50 aligned by envelope (+32) and at the source's level (+0.0 dB, no gain);
+  the 27 Aug proxy clip is deleted (its Antares leg was misaligned by 223 ms).
