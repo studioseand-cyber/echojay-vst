@@ -87,7 +87,8 @@ private:
     // mode rather than a checkbox, and carries the number it costs.
     juce::TextButton latencyBtn_;
     juce::Rectangle<int> latencyBounds_, keyAttrBounds_;
-    juce::Rectangle<int> offCurveBounds_;   // round 46: the strip that explains an off-curve retune_speed_ms/depth
+    juce::Rectangle<int> offCurveBounds_;   // empty since round 49 (the strip is gone; the dial reads "(off)")
+    juce::Rectangle<int> numbersBox_;       // round 49: the bounded numbers box at the top right of READOUTS   // round 46: the strip that explains an off-curve retune_speed_ms/depth
     // Round 47 (Sean's screenshot): every advanced control carries its own
     // caption, and the panel is three framed groups. Captions and frames are
     // laid out with the controls and painted from these lists, so a label can

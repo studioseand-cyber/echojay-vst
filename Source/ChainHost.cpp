@@ -1,5 +1,6 @@
 #include "EchoJayBridgedAU.h"   // FIRST: pulls CoreFoundation before JUCE (Point ambiguity)
 #include "ChainHost.h"
+#include "EedLatencyLog.h"
 #include "EchoJayParamApply.h"
 #include "EchoJayParamMaps.h"
 #include "SurgicalEqProcessor.h"   // built-in EQ device (see kBuiltinFormat)
@@ -728,8 +729,8 @@ struct ChainHost::LatencyRebuilder : juce::AsyncUpdater, juce::Timer
 {
     explicit LatencyRebuilder(ChainHost& o) : owner(o) {}
     ~LatencyRebuilder() override { cancelPendingUpdate(); stopTimer(); }
-    void handleAsyncUpdate() override { startTimer(kDebounceMs); }
-    void timerCallback() override { stopTimer(); owner.rebuildForLatencyIfChanged(); }
+    void handleAsyncUpdate() override { EJ_LAT_LOG ("chain: latency debounce ARMED (%d ms)%s", kDebounceMs, isTimerRunning() ? " - re-armed, timer was running" : ""); startTimer(kDebounceMs); }
+    void timerCallback() override { stopTimer(); EJ_LAT_LOG ("chain: latency debounce FIRED -> rebuildForLatencyIfChanged"); owner.rebuildForLatencyIfChanged(); }
     static constexpr int kDebounceMs = 80;
     ChainHost& owner;
 };
@@ -824,6 +825,7 @@ ChainHost::~ChainHost()
 // ---------------------------------------------------------------------------
 void ChainHost::prepare(double sampleRate, int blockSize)
 {
+    EJ_LAT_LOG ("chain: prepare fs %.0f block %d", sampleRate, blockSize);
     sampleRate_ = sampleRate;
     blockSize_  = blockSize;
     prepared_   = true;
@@ -865,7 +867,10 @@ void ChainHost::process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi
     // (Also means master wet/dry costs nothing on an empty chain.)
     if (!prepared_ || !graph_) return;
     if (resetPending_.exchange(false, std::memory_order_acq_rel))
+    {
+        EJ_LAT_LOG ("chain: transport reset applied to the graph");
         graph_->reset();   // round 48: the transport reset, fanned out to every slot on the audio thread
+    }
     // Running level at the chain INPUT, before anything, including on an
     // empty rack: a build on an empty rack still needs to know the level.
     if (buffer.getNumChannels() >= 1)
@@ -4814,6 +4819,7 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
 void ChainHost::rebuildGraph()
 {
     if (!graph_) return;
+    EJ_LAT_LOG ("chain: rebuildGraph (slots %d, prepared %d)", (int) slots_.size(), prepared_ ? 1 : 0);
     // Remove all existing connections
     for (auto& c : graph_->getConnections())
         graph_->removeConnection(c);
@@ -6586,7 +6592,14 @@ void ChainHost::onHostedLatencyChanged() noexcept
 {
     // Any thread (a plugin may report a latency change from its own UI or
     // from the audio thread): nothing but a thread-safe trigger.
+    EJ_LAT_LOG ("chain: onHostedLatencyChanged (a slot reported a latency change) -> trigger");
     if (latencyRebuilder_) latencyRebuilder_->triggerAsyncUpdate();
+}
+
+bool ChainHost::latencyRebuildPending() const noexcept
+{
+    return latencyRebuilder_ != nullptr
+        && (latencyRebuilder_->isTimerRunning() || latencyRebuilder_->isUpdatePending());
 }
 
 void ChainHost::rebuildForLatencyIfChanged()
@@ -6609,6 +6622,7 @@ void ChainHost::rebuildForLatencyIfChanged()
             detail << (detail.isEmpty() ? "" : ", ") << slots_[si].desc.name << " " << was << "->" << now;
         }
     }
+    EJ_LAT_LOG ("chain: rebuildForLatencyIfChanged: %s%s", changed ? "CHANGED " : "no change", changed ? detail.toRawUTF8() : "");
     if (!changed) return;
     EchoJay_NSLog(("EJChain: hosted latency changed at runtime (" + detail
                    + "); rebuilding the graph so the wet/dry dry legs and the host "

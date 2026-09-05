@@ -3,6 +3,7 @@
 #include <thread>
 #include <atomic>
 #include "MeterEngine.h"
+#include "EedLatencyLog.h"
 #include "PluginScanner.h"
 #include "ReferenceAnalyser.h"
 #include "WaveformRecorder.h"
@@ -147,7 +148,7 @@ public:
 
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
-    void reset() override { chainHost.requestReset(); }   // round 48: AudioUnitReset reaches every hosted slot (DEFECT_PRESS_PLAY_PHASING)
+    void reset() override { EJ_LAT_LOG ("top: reset() from the host"); chainHost.requestReset(); }   // round 48: AudioUnitReset reaches every hosted slot (DEFECT_PRESS_PLAY_PHASING)
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
     // The host's name for this track (Logic's context name, VST3 channel
     // context). Read for the running level tally's source guard: a name
@@ -1125,6 +1126,7 @@ private:
     // Silence detection (triggers auto-stop when DAW stops)
     std::atomic<bool> audioSilent { true };
     std::atomic<bool> transportPlaying { false };
+    int latLogBlocks_ = 0;   // round 49: blocks still to log after a play start (EJ_LATENCY_LOG builds only)
     bool wasTransportPlaying = false;
     int silenceCounter = 0;
     bool wasReceivingAudio = false;

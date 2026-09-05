@@ -1,4 +1,5 @@
 #include "LinkProcessor.h"
+#include "EedLatencyLog.h"
 #include "LinkEditor.h"
 #include "LinkShm.h"
 #include "FaderTaper.h"   // shared mixer-fader mute taper (P17)
@@ -1787,7 +1788,7 @@ void LinkProcessor::clearChainInternal()
 
 void LinkProcessor::updateChainLatency()
 {
-    setLatencySamples(chainHost.getTotalLatencySamples());
+    ejSetLatencyLogged (*this, chainHost.getTotalLatencySamples(), "LinkProcessor #1");
 }
 
 void LinkProcessor::resyncChainModelFromHost()

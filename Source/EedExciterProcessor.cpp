@@ -3,6 +3,7 @@
 */
 
 #include "EedExciterProcessor.h"
+#include "EedLatencyLog.h"
 #include "EedExciterEditor.h"
 #include "EedDeviceRegistry.h"
 
@@ -88,7 +89,7 @@ void EedExciterProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     engine_.prepare (sampleRate, samplesPerBlock);
     engine_.reset();
 
-    setLatencySamples (engine_.latencySamples());
+    ejSetLatencyLogged (*this, engine_.latencySamples(), "EedExciterProcessor #1");
 }
 
 void EedExciterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)

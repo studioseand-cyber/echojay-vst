@@ -317,10 +317,10 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
         auto sw = row.removeFromLeft (juce::jmin (96, row.getWidth()));
         keepVibBtn_.setBounds (sw.removeFromTop (juce::jmin (kRowH, sw.getHeight())).reduced (1));
         vibBtn_.setBounds (sw.removeFromTop (juce::jmin (kRowH, sw.getHeight())).reduced (1));
-        // The off-curve strip: reserved always (no layout jump), painted
-        // only when retune_speed_ms/depth no longer follow the dial.
-        offCurveBounds_ = content.removeFromBottom (juce::jmin (14, content.getHeight() / 4));
-        content.removeFromBottom (juce::jmin (2, content.getHeight()));
+        // Round 49 (Sean): no off-curve strip - the dial's own "(off)" is the
+        // indication, and the paragraph was the first thing a user saw.
+        offCurveBounds_ = {};
+        content.removeFromBottom (juce::jmin (4, content.getHeight()));
         ribbonBounds_ = content;
         notePanel_ = numbersPanel_ = guardPanel_ = latencyBounds_ = none;
         return;
@@ -341,7 +341,7 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
         return r;
     };
 
-    offCurveBounds_ = takeBottom (14);
+    offCurveBounds_ = {};
     content.removeFromBottom (juce::jmin (2, content.getHeight()));
 
     // (1) VIBRATO GENERATOR: three dials + the shape choice, one frame.
@@ -393,8 +393,14 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
         advGroups_.push_back ({ grp, "READOUTS" });
         auto inner = grp.reduced (kFramePad, 0); inner.removeFromTop (kTitleH);
         notePanel_    = inner.removeFromLeft (inner.getWidth() * 2 / 5);
-        guardPanel_   = inner.removeFromRight (juce::jmax (0, inner.getWidth() / 2));
-        numbersPanel_ = inner;
+        // Round 49 (Sean): the numbers in ONE bounded box at the top right -
+        // F0 / CONF / STATE / IN on its left, the octave-guard figures on its
+        // right - not spread across the group. The box is drawn from numbersBox_.
+        inner.removeFromLeft (juce::jmin (8, inner.getWidth()));
+        numbersBox_   = inner.removeFromTop (juce::jmin (inner.getHeight(), 4 * 12 + 6));
+        auto box      = numbersBox_.reduced (6, 3);
+        guardPanel_   = box.removeFromRight (juce::jmax (0, box.getWidth() * 9 / 20));
+        numbersPanel_ = box;
     }
     ribbonBounds_ = {};
 }
@@ -432,31 +438,18 @@ void EedPitchEditor::paintContent (juce::Graphics& g)
         for (const auto& c : advCaptions_)
             if (! c.r.isEmpty()) g.drawText (c.text, c.r, juce::Justification::centred);
     }
+    if (! numbersBox_.isEmpty())
+    {
+        g.setColour (C::bg4);
+        g.fillRoundedRectangle (numbersBox_.toFloat(), 3.0f);
+        g.setColour (C::border2);
+        g.drawRoundedRectangle (numbersBox_.toFloat().reduced (0.5f), 3.0f, 1.0f);
+    }
     if (! notePanel_.isEmpty())    paintNotePanel  (g, notePanel_, r);
     if (! numbersPanel_.isEmpty()) paintNumbers    (g, numbersPanel_, r);
     if (! guardPanel_.isEmpty())   paintGuardPanel (g, guardPanel_, r);
     if (! latencyBounds_.isEmpty()) paintLatencyMode (g, latencyBounds_);
     if (! keyAttrBounds_.isEmpty()) paintKeyAttribution (g, keyAttrBounds_);
-    if (! offCurveBounds_.isEmpty() && proc_.retuneOffCurve())
-    {
-        float ms = 0.0f, dp = 1.0f; proc_.curveAtDial (ms, dp);
-        g.setColour (C::amber);
-        g.setFont (uiFont (juce::jmin (11.0f, offCurveBounds_.getHeight() * 0.85f), false));
-        g.drawText ("RETUNE off the curve: " + juce::String (proc_.retuneEffectiveMs(), 0) + " ms / depth "
-                    + juce::String (proc_.getParamValue (EedPitchProcessor::kDepth), 0) + " % were set directly; dial "
-                    + juce::String (proc_.retuneDial(), 0) + " = " + juce::String (ms, 0) + " ms / " + juce::String (dp * 100.0f, 0)
-                    + " %. Turn RETUNE to return.",
-                    offCurveBounds_, juce::Justification::centredLeft);
-    }
-    else if (! offCurveBounds_.isEmpty() && ! advanced_)
-    {
-        // The front's long hint lives here, where it fits (the header keeps a short one).
-        g.setColour (C::text3);
-        g.setFont (uiFont (9.0f, false));
-        g.drawText ("KEY and REF: the AUTO badge follows the bus - pick a key, or turn REF, to override; click AUTO to return.  RETUNE: 0 hard, 400 transparent.",
-                    offCurveBounds_, juce::Justification::centredLeft);
-    }
-
     g.setOpacity (1.0f);
 }
 
@@ -603,50 +596,51 @@ void EedPitchEditor::paintKeyAttribution (juce::Graphics& g, juce::Rectangle<int
                           + " - range suggests " + juce::String (sp->choiceLabel (best));
         }
     }
+    // Round 49 (Sean: "bottom one should stay whether set by hand or not"):
+    // the line is UNCONDITIONAL - key, reference and voice, in every state.
     const juce::String refLine =
-        ! st.refAuto        ? "   ref " + juce::String (st.refApplied, 1) + " Hz (manual)"
+        ! st.refAuto        ? "   ref " + juce::String (st.refApplied, 1) + " Hz (by hand)"
         : st.refSelfIgnored ? "   ref 440.0 Hz (auto: only this track measurable - not followed)"
         : "   ref " + juce::String (st.refApplied, 1) + " Hz (auto)";
-    if (! st.active)
+    if (voiceLine.isEmpty())
     {
-        g.setColour (C::text3);
-        g.setFont (uiFont (9.0f));
-        if (voiceLine.isNotEmpty()) g.setColour (C::amber);
-        g.drawText ("key set by hand" + refLine + voiceLine, area, juce::Justification::centredLeft);
-        return;
+        const auto* sp = EedPitchProcessor::schema().find (EedPitchProcessor::kVoiceType);
+        if (sp != nullptr)
+            voiceLine = "   voice " + juce::String (sp->choiceLabel (proc_.getParamValue (EedPitchProcessor::kVoiceType))).toUpperCase().replace ("_", "/");   // as the combo shows it
     }
-
-    if (st.applied)
+    static const char* kNames[12] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
+    const bool keyAuto = proc_.getParamValue (EedPitchProcessor::kKeySource) < 0.5;
+    juce::String keyLine;
+    juce::Colour col = C::text3;
+    if (! keyAuto)
     {
-        static const char* kNames[12] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
-        // GREYED, because in auto these are not the user's values to edit -
-        // they are a reading, and showing them as live controls would invite
-        // an edit that the next block silently overwrites.
-        g.setColour (C::text3);
-        g.setFont (uiFont (9.0f));
-        juce::String line;
-        line << "auto: " << kNames[st.root % 12] << (st.minor ? " minor" : " major")
-             << "  " << juce::String (st.tuningHz, 1) << " Hz"
-             << "  conf " << juce::String (st.conf, 2);
-        if (st.sourceName.isNotEmpty()) line << "   from \"" << st.sourceName << "\"";
-        line << refLine << voiceLine;
-        if (voiceLine.isNotEmpty()) g.setColour (C::amber);
-        g.drawText (line, area, juce::Justification::centredLeft);
-        return;
+        const auto* sc = EedPitchProcessor::schema().find (EedPitchProcessor::kScale);
+        const int root = (int) proc_.getParamValue (EedPitchProcessor::kKeyRoot);
+        keyLine = "key " + juce::String (kNames[juce::jlimit (0, 11, root)]) + " "
+                + (sc != nullptr ? juce::String (sc->choiceLabel (proc_.getParamValue (EedPitchProcessor::kScale))) : juce::String())
+                + " (by hand)";
     }
-
-    // The fallback is SHOWN, never silent. A user who cannot see that the key
-    // was rejected will read chromatic correction as the device misbehaving.
-    g.setColour (C::amber);
-    g.setFont (uiFont (9.0f, true));
-    g.drawText ((st.keySelfIgnored
-                    ? juce::String ("auto: only this track measurable - key not followed - using CHROMATIC")
-                  : st.conf > 0.0f
-                    ? "auto: key confidence " + juce::String (st.conf, 2)
-                        + " too low - using CHROMATIC"
-                    : juce::String ("auto: no key detected - using CHROMATIC"))
-                    + refLine,
-                area, juce::Justification::centredLeft);
+    else if (st.applied)
+    {
+        // Greyed in auto: these are a reading, not the user's values to edit.
+        keyLine << "key auto: " << kNames[st.root % 12] << (st.minor ? " minor" : " major")
+                << "  " << juce::String (st.tuningHz, 1) << " Hz"
+                << "  conf " << juce::String (st.conf, 2);
+        if (st.sourceName.isNotEmpty()) keyLine << "   from \"" << st.sourceName << "\"";
+    }
+    else
+    {
+        // The fallback is SHOWN, never silent: a user who cannot see that the
+        // key was rejected reads chromatic correction as the device misbehaving.
+        col = C::amber;
+        keyLine = st.keySelfIgnored ? juce::String ("key auto: only this track measurable - not followed - using CHROMATIC")
+                : st.conf > 0.0f    ? "key auto: confidence " + juce::String (st.conf, 2) + " too low - using CHROMATIC"
+                                    : juce::String ("key auto: no bus key yet - using CHROMATIC");
+    }
+    if (voiceLine.contains ("suggests")) col = C::amber;
+    g.setColour (col);
+    g.setFont (uiFont (9.0f, col == C::amber));
+    g.drawText (keyLine + refLine + voiceLine, area, juce::Justification::centredLeft);
 }
 
 void EedPitchEditor::paintLatencyMode (juce::Graphics& g, juce::Rectangle<int> area)

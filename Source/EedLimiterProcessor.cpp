@@ -3,6 +3,7 @@
 */
 
 #include "EedLimiterProcessor.h"
+#include "EedLatencyLog.h"
 #include "EedLimiterEditor.h"
 #include "EedDeviceRegistry.h"
 
@@ -132,7 +133,7 @@ void EedLimiterProcessor::applyLookahead()
     }
 
     // The number the DAW needs to keep this track in time with every other one.
-    setLatencySamples (delay_.delaySamples());
+    ejSetLatencyLogged (*this, delay_.delaySamples(), "EedLimiterProcessor #1");
 }
 
 // ---------------------------------------------------------------------------

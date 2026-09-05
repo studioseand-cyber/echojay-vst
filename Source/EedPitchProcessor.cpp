@@ -3,6 +3,7 @@
 */
 
 #include "EedPitchProcessor.h"
+#include "EedLatencyLog.h"
 #include "EedPitchEditor.h"
 #include "EedDeviceRegistry.h"
 
@@ -876,11 +877,12 @@ void EedPitchProcessor::refreshLatency()
     // 36->15 at +5c on source4 and beat the old contract's own ideal floor.
     forEachShifter ([&] (auto& e) { e.setDriftBleed (true); });
 
-    setLatencySamples (shifter().latencySamples());
+    ejSetLatencyLogged (*this, shifter().latencySamples(), "EedPitchProcessor refreshLatency");
 }
 
 void EedPitchProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
+    EJ_LAT_LOG ("pitch: prepareToPlay fs %.0f block %d (reported latency before: %d)", sampleRate, samplesPerBlock, getLatencySamples());
     sampleRate_ = sampleRate;
     engine_.prepare (sampleRate, samplesPerBlock);
 
@@ -942,6 +944,7 @@ void EedPitchProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 // suite's LOCATE-RESET leg, bit-identical to FRESH).
 void EedPitchProcessor::applyReset() noexcept
 {
+    EJ_LAT_LOG ("pitch: transport reset applied (rings cleared)");
     engine_.reset();
     forEachShifter ([] (auto& e) { e.reset(); });
     correct_.reset();

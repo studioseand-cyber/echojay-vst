@@ -1216,3 +1216,42 @@ AUHostingServiceXPC_arrow killed after the install; Sean must relaunch
 Logic. No engine code in this change: the audio path is the round-46
 build's, bit for bit (suite 180/0 unchanged; the snapshot harness is
 gated by an environment variable and runs no audio comparison).
+
+# Round 49 (5 Sep 2026): Sean's items 2 and 3 on AU 444376C2 - shipped together, rendered and read first
+
+## Item 2 - the off-curve strip is GONE; the bottom line is UNCONDITIONAL
+The amber "RETUNE off the curve: ... were set directly ..." strip under the
+ribbon is deleted, in both views. The dial's own "(off)" suffix stays as
+the indication (round 46). The bottom line now shows the current state in
+EVERY case (Sean: "bottom one should stay whether set by hand or not"):
+  key D minor (by hand)   ref 440.0 Hz (by hand)   voice ALTO/TENOR
+  key auto: F# minor  440.0 Hz  conf 0.90  from "Music Bus"   ref 440.0 Hz (auto)   voice ALTO/TENOR
+  key auto: no bus key yet - using CHROMATIC   ...   (amber, as before, for every fallback)
+Voice is always named, in the combo's spelling, amber with the range
+suggestion when the running pitch suggests another type (unchanged rule).
+The header hint stays short ("RETUNE 0 hard - 400 transparent"); the long
+front hint that shared the strip went with it.
+
+## Item 3 - the numbers in ONE box, top right
+READOUTS: the note name and its tuner bar stay on the left; F0 / CONF /
+STATE / IN and the octave-guard figures (fires, % of voiced, hops voiced)
+sit together in one bounded box at the top right of the group, numbers on
+its left column, guard on its right. Nothing else in the group.
+
+## Rendered and read before the install (the standing rule)
+tools/pitch_mode_test/snapshots_2026-09-05/: front.png, front_offcurve.png
+(dial "100 (off)", no strip), advanced.png (the box), and a new
+front_manualkey.png (key D minor by hand, reference by hand: the "(by hand)"
+branch of the unconditional line, badges unlit). One thing the render
+caught before Sean did: the voice read "alto_tenor" (the schema id) where
+the combo says ALTO/TENOR - now the combo's spelling.
+
+## Installed (5 Sep 2026), ~/Library only, via tools/install_local.sh build-release - the WORKING build
+  | plugin | arm64 UUID |
+  |---|---|
+  | AU   `EchoJay V2.component` | 63AF3A3F-B080-3CB0-A60A-DF53F20CE371 |
+  | VST3 `EchoJay V2.vst3`      | 5F3D1EE4-8AE4-3F95-8895-E47F19B30E7D |
+AUHostingServiceXPC_arrow killed; Sean must relaunch Logic. No engine
+change: the audio path is round 48's, bit for bit (the latency log is
+compiled out of this build). The LOG build is a separate deliverable
+(DEFECT_PRESS_PLAY_PHASING.md section 8).

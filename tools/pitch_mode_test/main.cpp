@@ -1046,6 +1046,7 @@ int main()
         snap ("front",          [] (EedPitchProcessor&, EedPitchEditor& e) { e.showAdvanced (false); });
         snap ("front_offcurve", [] (EedPitchProcessor& p, EedPitchEditor& e) { p.setParamValue ("retune", 100.0); p.setParamValue ("depth", 50.0); e.showAdvanced (false); e.repaint(); });
         snap ("advanced",       [] (EedPitchProcessor&, EedPitchEditor& e) { e.showAdvanced (true); });
+        snap ("front_manualkey", [] (EedPitchProcessor& p, EedPitchEditor& e) { p.applyStructured (params ({ { "key_source", "manual" }, { "key_root", 2.0 }, { "scale", 1.0 }, { "reference_source", "manual" } })); e.showAdvanced (false); });
     }
 
     std::printf ("\n%s (%d failure%s)\n", g_fail == 0 ? "ALL PASS" : "FAILURES",

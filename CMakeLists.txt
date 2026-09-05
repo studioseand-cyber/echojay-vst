@@ -346,6 +346,14 @@ target_sources(EchoJay PRIVATE
     Source/viz/WaveshaperView.h
 )
 
+# Round 49 (DEFECT_PRESS_PLAY_PHASING item 1): the timestamped latency log,
+# a DEBUG build Sean runs once and hands back. OFF here; the build-latencylog
+# directory is configured with -DEJ_LATENCY_LOG=ON. See Source/EedLatencyLog.h.
+option(EJ_LATENCY_LOG "Write ~/Library/Logs/EchoJay/latency.log from every latency report, chain rebuild and the first 50 blocks after play" OFF)
+if(EJ_LATENCY_LOG)
+    target_compile_definitions(EchoJay PUBLIC EJ_LATENCY_LOG=1)
+endif()
+
 target_compile_definitions(EchoJay PUBLIC
     JUCE_WEB_BROWSER=1   # Stage 2: the lazy webview Dashboard tab (DashboardWeb). Lifecycle keeps it free.
     JUCE_USE_CURL=1

@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "EedLatencyLog.h"
 #include "PluginEditor.h"
 #include "FaderTaper.h"   // shared mixer-fader mute taper (P17)
 #include "NativeClip.h"   // EchoJay_NSLog (memdiag)
@@ -331,7 +332,7 @@ EchoJayProcessor::EchoJayProcessor()
         // setLatencySamples (RACK_BORROW_IMPLEMENTATION_SPEC §2.3). This
         // host is Primary, so the gate is structural, not behavioral.
         if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
-            setLatencySamples(lat + reportedBudgetFrames());
+            ejSetLatencyLogged (*this, lat + reportedBudgetFrames(), "PluginProcessor onChainChanged");
         // The chain now produces different audio, so the held true peak / peak /
         // overs describe a signal that no longer exists (they were contradicting
         // a capture taken seconds later). Drop those holds; integrated LUFS / LRA
@@ -552,6 +553,7 @@ bool EchoJayProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 
 void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
+    EJ_LAT_LOG ("top: prepareToPlay fs %.0f block %d (reported latency before: %d)", sampleRate, samplesPerBlock, getLatencySamples());
     // Bus trim smoothing: the Link's 30ms ramp, same feel both sides
     busGainSmoothed_.reset(sampleRate, 0.030);
     busGainSmoothed_.setCurrentAndTargetValue(
@@ -583,7 +585,7 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     alignPre_.prepare(kBorrowAlignBudgetFrames + 1);
     alignPost_.prepare(kBorrowAlignBudgetFrames + 1);
     if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
-        setLatencySamples(lat + reportedBudgetFrames());
+        ejSetLatencyLogged (*this, lat + reportedBudgetFrames(), "PluginProcessor prepareToPlay");
     if (borrowHost_ != nullptr)
         borrowHost_->prepare(sampleRate, samplesPerBlock);
 }
@@ -607,6 +609,22 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         if (auto pos = playHead->getPosition())
         {
             bool playing = pos->getIsPlaying();
+#if EJ_LATENCY_LOG
+            {
+                // Round 49: the first 50 blocks after playback starts, with what
+                // the host was told and whether a chain rebuild is pending.
+                const bool was = transportPlaying.load(std::memory_order_relaxed);
+                if (playing && !was) { latLogBlocks_ = 50; EJ_LAT_LOG ("top: PLAY started at %.3f s (block %d samples, nonRealtime %d)", pos->getTimeInSeconds().orFallback(-1.0), buffer.getNumSamples(), isNonRealtime() ? 1 : 0); }
+                if (!playing && was) EJ_LAT_LOG ("top: STOP");
+                if (latLogBlocks_ > 0)
+                {
+                    --latLogBlocks_;
+                    EJ_LAT_LOG ("top: block %2d/50  reported %d  chainTotal %d  rebuildPending %d  pos %.3f s",
+                                50 - latLogBlocks_, getLatencySamples(), chainHost.hostReportableLatencySamples(),
+                                chainHost.latencyRebuildPending() ? 1 : 0, pos->getTimeInSeconds().orFallback(-1.0));
+                }
+            }
+#endif
             transportPlaying.store(playing);
 
             // Self key scheduler (§6.1/§5.4): a position landing far from
@@ -2492,7 +2510,7 @@ void EchoJayProcessor::setBorrowBudgetActive(bool active)
     if (borrowBudgetActive_.exchange(active, std::memory_order_relaxed) == active)
         return;
     if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
-        setLatencySamples(lat + reportedBudgetFrames());
+        ejSetLatencyLogged (*this, lat + reportedBudgetFrames(), "PluginProcessor (site 3)");
     EchoJay_NSLog(("EJCtx: alignment budget "
                    + juce::String(active ? "ON" : "OFF")
                    + " (capable Link " + (active ? "present" : "gone")

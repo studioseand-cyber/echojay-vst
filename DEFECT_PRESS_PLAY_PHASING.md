@@ -240,3 +240,55 @@ AUHostingServiceXPC_arrow killed after the install; Sean must relaunch
 Logic. What to listen for: press play from a marker after having played
 elsewhere - the first moment should now be the same as playing from that
 marker fresh. Continuous playback is bit-identical to before.
+
+## 8. Round 49 (5 Sep 2026): LIVE-ONLY. His offline Logic bounce is clean.
+
+Sean's report on AU 444376C2: the phasing happens in live playback; an
+offline bounce of the same session is clean. Ruled the better discriminator
+than the solo test (not asked again): the engine's output is CORRECT - an
+offline render proves it - and the fault is in LIVE PLAYBACK ALIGNMENT.
+
+RECORDED: the round-48 reset fix is correct on its own terms and is KEPT,
+and it is NOT this defect - if stale rings were the cause, the offline
+bounce would have been dirty too (a bounce locates and starts exactly as
+live playback does, through the same rings).
+
+What points where: the one live-only mechanism the round-47 reading found
+is the chain host rebuilding its graph on a slot latency change after an
+80 ms DEBOUNCE (section 2). 80 ms sits inside "the first second or so",
+and an offline bounce never exercises that path. Also checked, as asked:
+NOTHING in Source reads isNonRealtime()/setNonRealtime() - there is no
+realtime-only branch in the device or the chain; if the split is ours it
+comes from timing (a report or a rebuild landing during live playback),
+not from a code path that differs offline.
+
+### The timestamped log, built (tools/latency_log_build/, a DEBUG build)
+`EJ_LATENCY_LOG=1` (CMake option, the build-latencylog directory; OFF in
+every other build, where every macro is a no-op). Source/EedLatencyLog.h
+writes ~/Library/Logs/EchoJay/latency.log - wall clock, ms since open,
+thread - for:
+  - EVERY setLatencySamples call, at every site in the code base (the pitch
+    device's refreshLatency; the top-level's onChainChanged, prepareToPlay
+    and its third site; Link; compressor, exciter, gate, expander, limiter,
+    saturation): caller, old value, new value, changed-or-not (JUCE
+    notifies the host only on a change);
+  - the chain host: onHostedLatencyChanged (a slot reported), the debounce
+    ARMED / re-armed / FIRED, rebuildForLatencyIfChanged's verdict with the
+    slot and old -> new, every rebuildGraph, prepare, the transport reset;
+  - the top level: PLAY/STOP edges with position, block size and
+    isNonRealtime(); the FIRST 50 BLOCKS after play starts - block index,
+    the latency the host has been told, the chain's total, whether a
+    rebuild is pending, position; prepareToPlay on every layer; reset().
+Handed to Sean SEPARATELY (Desktop/EchoJay_LatencyLog_Build/): the log
+component, a copy of the working build, `install_log_build.command`,
+`restore_working_build.command`, and a README - so a logging build is not
+what he works in. He presses play four or five times and sends the file.
+
+### What the log decides
+  - A latency report or a rebuild inside the first second after play: THAT
+    is the defect, and the fix follows from WHICH (a report -> make it not
+    change at runtime; a rebuild -> the debounce path).
+  - Nothing fires: the next suspect is Logic's own PDC settling, and the
+    answer may be to report a FIXED latency that never changes at runtime
+    (the top level already adds a fixed alignment budget; the chain total
+    is what moves).

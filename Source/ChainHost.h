@@ -164,6 +164,7 @@ public:
     // Same synchronisation contract the chain already relies on for its
     // topology (processors are suspended across structural ops).
     void requestReset() noexcept { resetPending_.store(true, std::memory_order_release); }
+    bool latencyRebuildPending() const noexcept;   // round 49: debounce armed or async pending (the log reads it)
 
     // ---- List refresh (message thread) -----------------------------------
     void startScan();
