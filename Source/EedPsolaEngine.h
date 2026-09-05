@@ -190,6 +190,8 @@ public:
 
         in_.assign  (sz, 0.0f);
         f0_.assign  (sz, 0.0f);      // <= 0 means UNVOICED at that sample
+        tgt_.assign (sz, 0.0f);      // co-timed target ring (TIMING_ALIGNMENT_RECORD flag A)
+        sh_.assign  (sz, kNoShift);  // co-timed shift ring
         slowRing_.assign (sz, 0.0f);
         acc_.assign (sz, 0.0f);
         win_.assign (sz, 0.0f);
@@ -223,6 +225,8 @@ public:
     {
         std::fill (in_.begin(),  in_.end(),  0.0f);
         std::fill (f0_.begin(),  f0_.end(),  0.0f);
+        std::fill (tgt_.begin(), tgt_.end(), 0.0f);
+        std::fill (sh_.begin(),  sh_.end(),  kNoShift);
         std::fill (acc_.begin(), acc_.end(), 0.0f);
         std::fill (win_.begin(), win_.end(), 0.0f);
         write_ = 0; emitted_ = 0; placedTo_ = 0;
@@ -234,6 +238,7 @@ public:
         curTarget_ = 0.0f;
         spliceDrift_ = 0.0; spliceOldDrift_ = 0.0; spliceR_ = 0.0; spliceTf_ = 0.0;
         seamRampW_ = 1.0;
+        lastRingAt_ = -1;
         spliceFadeLen_ = 0; spliceFadePos_ = 0; spliceT_ = 0;
         methodMix_ = 0.0f;
         uvRun_ = 0;
@@ -507,7 +512,13 @@ public:
         // so it can never reach behind what has already been emitted - if the
         // lag exceeds the lookahead the compensation is simply reduced rather
         // than corrupting the past.
-        const int lag = std::min (pitchLag_, std::max (0, latency_ - 1));
+        int lagWanted = pitchLag_;
+        if (perHopLag_ && track > 0.0f && lagW_ > 0)
+        {
+            const double tauH = fs_ / (double) track;
+            lagWanted = (int) std::lround (0.5 * lagW_ + lagTauMax_ + 2.0 - 0.5 * tauH + 2.0 * lagHop_);
+        }
+        const int lag = std::min (lagWanted, std::max (0, latency_ - 1));
 
         // AUDIO-VERIFIED BRIDGING (29 Aug 2026 ruling). A tracker blink
         // inside a continuous note writes f0=0 into the ring, and every
@@ -566,11 +577,25 @@ public:
             }
             else bridgeSeedT_ = 0.0;       // cap reached or no seed
         }
-        for (int i = 0; i < n; ++i)
+        // CONTIGUITY under a per-hop lag (flag B): the back-dating changes with
+        // the hop's period, so consecutive calls would leave gaps (unwritten
+        // ring = unvoiced = a spurious seam) or overlaps. Start this call's
+        // writes at the sample after the last one written.
+        const int64_t atFirst = (int64_t) write_ - (int64_t) n - (int64_t) lag;
+        const int64_t atStart = (perHopLag_ && lastRingAt_ >= 0 && lastRingAt_ + 1 < atFirst) ? lastRingAt_ + 1 : atFirst;
+        for (int64_t at = atStart; at < atFirst + (int64_t) n; ++at)
         {
-            const int64_t at = (int64_t) write_ - (int64_t) n + i - (int64_t) lag;
             if (at < 0 || at < emitted_) continue;
             f0_[(size_t) ((uint32_t) (uint64_t) at & mask_)] = track;
+            // Flag D (investigation): TARGET LOOKAHEAD - the decision stamped
+            // `lookahead_` samples EARLIER than the audio it describes, bounded
+            // by the latency budget (positions already emitted are skipped).
+            const int64_t atT = at - (int64_t) tgtLookahead_;
+            if (atT >= 0 && atT >= emitted_)
+            {
+                tgt_[(size_t) ((uint32_t) (uint64_t) atT & mask_)] = targetHz;
+                sh_ [(size_t) ((uint32_t) (uint64_t) atT & mask_)] = shiftCents;
+            }
             // The fast-ring slow reference rides the SAME lag compensation
             // as the f0 it will divide - time-aligned by the proven
             // mechanism, not a new timing belief (2 Sep, fourth cut: the
@@ -578,6 +603,7 @@ public:
             if (fastRingOn_ && ! slowRing_.empty())
                 slowRing_[(size_t) ((uint32_t) (uint64_t) at & mask_)] = fastSlowHz_;
         }
+        lastRingAt_ = atFirst + (int64_t) n - 1;
 
         const float target = targetHz;
 
@@ -789,7 +815,9 @@ private:
                 // few cents of systematic error if ignored.
                 const int64_t rp = (int64_t) p + (int64_t) std::lround (spliceDrift_);
                 const float f0Here = f0At ((uint64_t) std::max<int64_t> (0, rp));
-                const float tgt    = curTarget_;
+                const float tgtCo  = coTimed_ ? tgtAt ((uint64_t) std::max<int64_t> (0, rp)) : 0.0f;
+                const float tgt    = (coTimed_ && tgtCo > 0.0f) ? tgtCo : curTarget_;
+                const float shHere = coTimed_ ? shAt ((uint64_t) std::max<int64_t> (0, rp)) : curShift_;
                 const bool  ok     = f0Here > 0.0f && tgt > 0.0f;
                 if (dbgTapOn_ && ok
                     && (f0Here != dbgTapF0_ || tgt != dbgTapTgt_))
@@ -831,8 +859,8 @@ private:
                         fastFactor = std::pow (std::clamp (dev, 0.84, 1.19),
                                                (double) fastK_ - 1.0);
                     }
-                    const double r = (curShift_ > kNoShift + 1.0f
-                        ? std::exp2 ((double) curShift_ / 1200.0)
+                    const double r = (shHere > kNoShift + 1.0f
+                        ? std::exp2 ((double) shHere / 1200.0)
                         : (double) tgt / (double) f0Here) * fastFactor;
                     const double absSt = std::fabs (std::log2 (r) * 12.0);
                     const float want = absSt <= kSpliceBandSt ? 0.0f : 1.0f;
@@ -963,6 +991,24 @@ private:
         if (p >= write_) return 0.0f;
         return f0_[(size_t) ((uint32_t) p & mask_)];
     }
+    float tgtAt (uint64_t p) const noexcept
+    {
+        if (p >= write_ || tgt_.empty()) return 0.0f;
+        return tgt_[(size_t) ((uint32_t) p & mask_)];
+    }
+    float shAt (uint64_t p) const noexcept
+    {
+        if (p >= write_ || sh_.empty()) return kNoShift;
+        return sh_[(size_t) ((uint32_t) p & mask_)];
+    }
+public:
+    void setCoTimedTarget (bool on) noexcept { coTimed_ = on; }
+    bool getCoTimedTarget() const noexcept  { return coTimed_; }
+    void setPerHopLag (bool on, int W, int tauMax, int hop) noexcept
+    { perHopLag_ = on; lagW_ = W; lagTauMax_ = tauMax; lagHop_ = hop; }
+    bool getPerHopLag() const noexcept { return perHopLag_; }
+    void setTargetLookahead (int samples) noexcept { tgtLookahead_ = std::max (0, samples); }
+private:
 
     // ---- analysis: find the next epoch -------------------------------------
     // Peak-pick inside [0.7T, 1.3T] past the previous epoch. Restricting the
@@ -1137,9 +1183,11 @@ private:
 
             // The target period, with the ratio clamped so an absurd
             // source/target combination degrades rather than explodes.
-            float ratio = curShift_ > kNoShift + 1.0f
-                              ? std::exp2 (curShift_ / 1200.0f)
-                              : target / f0;   // legacy: crosses the latency
+            const float shG  = coTimed_ ? shAt (nextSynth_) : curShift_;
+            const float tgtG = (coTimed_ && tgtAt (nextSynth_) > 0.0f) ? tgtAt (nextSynth_) : target;
+            float ratio = shG > kNoShift + 1.0f
+                              ? std::exp2 (shG / 1200.0f)
+                              : tgtG / f0;     // legacy (flag A off): crosses the latency
             ratio = std::clamp (ratio, 1.0f / kMaxRatio, kMaxRatio);
             const int Ts = std::max (4, (int) std::lround ((double) Ta / (double) ratio));
 
@@ -1753,6 +1801,18 @@ private:
     double ringSlowHz_ = 0.0;      // (unused by the one-reference cut)
     float  fastSlowHz_ = 0.0f;     // the corrector's slow track, per hop
     std::vector<float> slowRing_;  // lag-compensated slow reference
+    // TIMING ALIGNMENT (5 Sep 2026, TIMING_ALIGNMENT_RECORD.md): every quantity
+    // that meets in the ratio carries the same audio timestamp, structurally.
+    // Flag A: the target and the shift are written into position-indexed rings
+    // at the SAME back-dated position as f0, and read beside it. Flag B: the
+    // back-dating is the per-hop YIN centroid (frameLen - (W + tau)/2) plus the
+    // two pipeline hops, not the constant frameLen/2 + hop.
+    std::vector<float> tgt_, sh_;
+    bool   coTimed_   = false;     // flag A
+    bool   perHopLag_ = false;     // flag B
+    int    lagW_ = 0, lagTauMax_ = 0, lagHop_ = 128;
+    int64_t lastRingAt_ = -1;      // last ring position written (contiguity under flag B)
+    int    tgtLookahead_ = 0;      // flag D, samples
     double ringSlowK_ = 1.0 / (0.14 * 48000.0);   // set in prepare
     float  carryMs_ = 0.0f;        // drift carry threshold; 0 = off
     double carryLimit_ = 0.0;      // ...in samples, set with fs

@@ -30,12 +30,12 @@
 #include <functional>
 using namespace echojay;
 static const double kFs=48000.0;
-struct Seg { double t0,t1; double c0,c1; };   // cents relative to f_lo, linear in cents
+struct Seg { double t0,t1; double c0,c1; double vibDepth=0, vibHz=0; };   // cents relative to f_lo, linear in cents
 struct Truth
 {
     std::vector<Seg> segs; double fLo;
     double centsAt(double t) const
-    { for(const Seg& s:segs) if(t>=s.t0&&t<s.t1) return s.c0+(s.c1-s.c0)*(t-s.t0)/(s.t1-s.t0);
+    { for(const Seg& s:segs) if(t>=s.t0&&t<s.t1) return s.c0+(s.c1-s.c0)*(t-s.t0)/(s.t1-s.t0)+(s.vibDepth>0?s.vibDepth*std::sin(2*M_PI*s.vibHz*(t-s.t0)):0.0);
       return segs.empty()?0:(t<segs.front().t0?segs.front().c0:segs.back().c1); }
     double hzAt(double t) const { return fLo*std::pow(2.0,centsAt(t)/1200.0); }
 };
@@ -55,6 +55,7 @@ int main(int argc,char**argv)
       T.segs.push_back({t,t+0.4,200,200}); t+=0.4;
       T.segs.push_back({t,t+dur,200,0}); glides.push_back({t,t+dur,R,false}); t+=dur;
       T.segs.push_back({t,t+0.4,0,0}); t+=0.4; }
+    const double vibT0=t+0.2; T.segs.push_back({t,vibT0,0,0}); t=vibT0; T.segs.push_back({t,t+3.0,0,0,20.0,6.0}); const double vibT1=t+3.0; t=vibT1+0.2;
     const size_t N=(size_t)((t+0.3)*kFs);
     std::vector<float> x(N); double ph=0;
     for(size_t i=0;i<N;++i)
@@ -69,7 +70,9 @@ int main(int argc,char**argv)
     for(int k=1;k<PitchEngine::kNumVoiceTypes;++k) worst=std::min(worst,PitchEngine::voiceRange(k).fMinHz);
     PsolaEngine sh; sh.prepare(kFs,256,PitchEngine::voiceRange(vt).fMinHz,worst);
     sh.setFormantMode(PsolaEngine::kFormantPreserve); sh.setPitchLagSamples(det.pitchLagFor(vt));
-    sh.setDriftBleed(true); sh.debugRingTap(true);
+    sh.setDriftBleed(true);
+    if(getenv("PA_COTIMED")) sh.setCoTimedTarget(true);
+    if(getenv("PA_PERHOP")){ int W,tm,hp; det.lagModelFor(vt,W,tm,hp); sh.setPerHopLag(true,W,tm,hp); } sh.debugRingTap(true);
     std::printf("f_lo %.0f Hz (tau %.0f smp)  voice %s  fMin %.1f Hz  hop %d  windowLength %d  pitchLagFor %d smp (%.2f ms)  shifter latency %d  clamp min(lag,latency-1) = %d (%.2f ms)\n",
         fLo,kFs/fLo,PitchEngine::voiceRange(vt).id,PitchEngine::voiceRange(vt).fMinHz,hop,det.windowLength(),det.pitchLagFor(vt),
         1000.0*det.pitchLagFor(vt)/kFs,sh.latencySamples(),std::min(det.pitchLagFor(vt),std::max(0,sh.latencySamples()-1)),
@@ -85,7 +88,9 @@ int main(int argc,char**argv)
     corr.setRetuneMs(6.0f); corr.setFlex(0); corr.setHumanize(0); corr.setIgnoreVibrato(false); corr.setNaturalVibrato(0);
     corr.debugDepthScale(0.0f,2); corr.reset(); F0JumpGate gate;
     PsolaEngine sh2; sh2.prepare(kFs,256,PitchEngine::voiceRange(vt).fMinHz,worst);
-    sh2.setFormantMode(PsolaEngine::kFormantPreserve); sh2.setPitchLagSamples(det.pitchLagFor(vt)); sh2.setDriftBleed(true); sh2.debugRingTap(true);
+    sh2.setFormantMode(PsolaEngine::kFormantPreserve); sh2.setPitchLagSamples(det.pitchLagFor(vt)); sh2.setDriftBleed(true);
+    if(getenv("PA_COTIMED")) sh2.setCoTimedTarget(true);
+    if(getenv("PA_PERHOP")){ int W,tm,hp; det.lagModelFor(vt,W,tm,hp); sh2.setPerHopLag(true,W,tm,hp); } sh2.debugRingTap(true);
     { PitchEngine det2; det2.prepare(kFs,256); det2.setVoiceType(vt); det2.setTracking(PitchEngine::kNormal);
       std::vector<float> raw2(N,0.0f); PitchEngine::HopEvent ev2[64]; float target=0,sliceF0=0; float shift=PsolaEngine::kNoShift; bool sliceVoiced=false;
       for(size_t p=0;p+256<=N;p+=256)
@@ -135,6 +140,10 @@ int main(int argc,char**argv)
       std::printf("  %5.2f  %s  | %+8.2f   %+7.1fc         | %+8.2f   %+7.1fc          | %+8.2f   %+7.1fc          | %+8.2f   %+7.1fc\n",g.rate,g.up?"up  ":"down",l1,e1,l2,e2,l3,e3,l4,e4); }
     { double se=0; int n=0; for(const Obs& q:corrHeld){ const double tt=(double)q.pos/kFs; if(tt>0.45&&tt<0.65){ se+=std::fabs(cents(q.hz,T.hzAt(tt))); ++n; } }
       std::printf("  steady-note |emitted err| at depth 0: %.2fc (n %d)\n",n?se/n:0,n); }
+    { double se2=0,pk=0; int n=0; double sf=0,pkf=0; int nf=0;
+      for(const Obs& q:corrHeld){ const double tt=(double)q.pos/kFs; if(tt>vibT0+0.5&&tt<vibT1-0.1){ const double e=cents(q.hz,T.hzAt(tt)); se2+=e*e; pk=std::max(pk,std::fabs(e)); ++n; } }
+      for(const Obs& q:shHeld){ const double tt=(double)q.pos/kFs; if(tt>vibT0+0.5&&tt<vibT1-0.1){ const double e=cents(q.hz,T.hzAt(tt)); sf+=e*e; pkf=std::max(pkf,std::fabs(e)); ++nf; } }
+      std::printf("  RIPPLE on a 40c p-p / 6 Hz vibrato note: EMITTED@depth0 error rms %.2fc peak %.2fc (n %d) | f0Here error rms %.2fc peak %.2fc\n",n?std::sqrt(se2/n):0,pk,n,nf?std::sqrt(sf/nf):0,pkf); }
     // steady-state sanity
     { double se=0; int n=0; for(const Obs& q:shHeld){ const double tt=(double)q.pos/kFs; if(tt>0.45&&tt<0.65){ se+=std::fabs(cents(q.hz,T.hzAt(tt))); ++n; } }
       std::printf("\n  steady-note |err| shifter f0Here: %.2fc (n %d)\n",n?se/n:0,n); }

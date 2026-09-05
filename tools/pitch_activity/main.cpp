@@ -90,6 +90,8 @@ static Render renderSelf (const std::vector<float>& in, double fs, int vt, bool 
     corr.setRetuneMs(c.tau); corr.setFlex(c.flex); corr.setHumanize(c.hum);
     corr.setIgnoreVibrato(c.ign); corr.setNaturalVibrato(c.nat);
     corr.debugDepthScale(c.depth,c.depthMode);
+    if(getenv("PA_ENVEXP")) corr.debugEnvExperiment(atoi(getenv("PA_ENVEXP")));
+    if(getenv("PA_FORCESHIFT")) corr.debugForceShiftPath(true);
     corr.reset();
     F0JumpGate gate;
     float worst=PitchEngine::voiceRange(0).fMinHz;
@@ -98,6 +100,9 @@ static Render renderSelf (const std::vector<float>& in, double fs, int vt, bool 
     sh.setFormantMode(PsolaEngine::kFormantPreserve);
     sh.setPitchLagSamples(det.pitchLagFor(vt));
     sh.setDriftBleed(true);
+    if(getenv("PA_COTIMED")) sh.setCoTimedTarget(true);
+    if(getenv("PA_LOOKAHEAD")) sh.setTargetLookahead((int)std::lround(atof(getenv("PA_LOOKAHEAD"))*0.001*fs));
+    if(getenv("PA_PERHOP")){ int W,tm,hp; det.lagModelFor(vt,W,tm,hp); sh.setPerHopLag(true,W,tm,hp); }
     sh.debugRingTap(true);
     sh.setSeamRampMs(c.ramp);
     const int lat=sh.latencySamples();
@@ -304,6 +309,11 @@ int main (int argc, char** argv)
         std::printf("  FIRST 130ms signed d (cents, per hop):");
         int shown=0; for(const Hop& q:hops){ if(q.t<0.130&&shown<24){ std::printf(" %+.0f",q.d); ++shown; } }
         std::printf("\n");
+        if(getenv("PA_SLOPE_MIN"))
+        { const double smin=atof(getenv("PA_SLOPE_MIN")); std::vector<double> hi,lo;
+          for(const Hop& q:hops){ if(q.h==0||q.h+1>=tSrc.size()||tSrc[q.h-1]<=0||tSrc[q.h+1]<=0) continue;
+            const double slope=std::fabs(cents(tSrc[q.h+1],tSrc[q.h-1]))/(2.0*1000.0*hopS); (slope>=smin?hi:lo).push_back(std::fabs(q.d)); }
+          std::printf("  SLOPE SPLIT (|source slope| >= %.2f c/ms): moving hops n %zu median %5.2fc p90 %5.2fc | steady hops n %zu median %5.2fc p90 %5.2fc\n",smin,hi.size(),pct(hi,0.5),pct(hi,0.9),lo.size(),pct(lo,0.5),pct(lo,0.9)); }
         // word start vs mid-note
         { double sw=0,sm=0; int nw=0,nm=0;
           for(const Hop& q:hops)

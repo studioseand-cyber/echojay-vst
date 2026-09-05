@@ -347,6 +347,14 @@ public:
         return (c.frameLen / 2 + c.hopA) * c.decim;
     }
     int pitchLagSamples() const noexcept { return pitchLagFor (getVoiceType()); }
+    /** The window geometry behind pitchLagFor, for the shifter's per-hop
+        back-dating (TIMING_ALIGNMENT_RECORD.md flag B): W, tauMax and the
+        hop, all in INPUT samples. */
+    void lagModelFor (int voiceType, int& W, int& tauMax, int& hop) const noexcept
+    {
+        const Config c = deriveConfig (voiceType);
+        W = c.W * c.decim; tauMax = c.tauMax * c.decim; hop = c.hopA * c.decim;
+    }
 
     // The INPUT-domain hop for a voice type at the prepared sample rate, so
     // an offline driver can feed exactly one analysis hop per call and attach

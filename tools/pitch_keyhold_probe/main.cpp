@@ -100,7 +100,9 @@ static std::vector<float> render (const std::vector<float>& in, double fs, int v
     F0JumpGate gate;
     float worst=PitchEngine::voiceRange(0).fMinHz; for(int t=1;t<PitchEngine::kNumVoiceTypes;++t) worst=std::min(worst,PitchEngine::voiceRange(t).fMinHz);
     PsolaEngine sh; sh.prepare(fs,256,PitchEngine::voiceRange(vt).fMinHz,worst);
-    sh.setFormantMode(PsolaEngine::kFormantPreserve); sh.setPitchLagSamples(det.pitchLagFor(vt)); sh.setDriftBleed(true); sh.setSeamRampMs(60.0f);
+    sh.setFormantMode(PsolaEngine::kFormantPreserve); sh.setPitchLagSamples(det.pitchLagFor(vt)); sh.setDriftBleed(true);
+    if(getenv("PA_COTIMED")) sh.setCoTimedTarget(true);
+    if(getenv("PA_PERHOP")){ int W,tm,hp; det.lagModelFor(vt,W,tm,hp); sh.setPerHopLag(true,W,tm,hp); } sh.setSeamRampMs(60.0f);
     const int lat=sh.latencySamples();
     std::vector<float> raw(in.size(),0.0f); PitchEngine::HopEvent ev[64];
     float target=0,sliceF0=0; float shift=PsolaEngine::kNoShift; bool sliceVoiced=false; bool switched=false;
