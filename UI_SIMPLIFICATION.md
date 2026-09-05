@@ -135,6 +135,17 @@ subsumed by ruling 2's five-bounce sweep).
 # Round 34 (5 Sep 2026): the finding generalises - VERIFY BEFORE PLACING; the flagged calls; the vibrato knob's precondition
 
 ## STANDING RULE (ruling A): A PARAMETER'S DOCUMENTED BEHAVIOUR IS A CLAIM, NOT A FACT, UNTIL A RENDER SHOWS IT.
+(Filed beside it, round 48, 5 Sep 2026 - the visual counterpart, same
+wording:)
+## STANDING RULE (ruling A, visual): A LAYOUT'S CORRECTNESS IS A CLAIM, NOT A FACT, UNTIL A RENDER SHOWS IT.
+EVERY UI CHANGE IS RENDERED OFFLINE AND INSPECTED BEFORE THE USER SEES IT.
+Instrument: EchoJayPitchModeTest with EJ_EDITOR_SNAP=<dir> renders the
+editor offscreen at its default size (2x), after real audio blocks and a
+sync tick, in every view it has - and the renders are READ, not just
+produced. On its first run (round 47) it caught two bugs that would have
+reached Sean: the READOUTS group overprinting its rows, and the off-curve
+strip clipping its last words. The renders of each shipped layout are
+committed beside the change (tools/pitch_mode_test/snapshots_<date>/).
 natural_vibrato was a continuous parameter that was actually binary, with
 a false schema description and shipped presets sitting at "remove
 entirely". If one parameter's documented behaviour was fiction, THE

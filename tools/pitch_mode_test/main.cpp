@@ -947,7 +947,10 @@ int main()
         }
     }
 
-    // ---- EDITOR SNAPSHOTS (5 Sep 2026, round 47): EJ_EDITOR_SNAP=<dir> renders
+    // ---- EDITOR SNAPSHOTS (5 Sep 2026, round 47; STANDING RULE round 48, the
+    // visual counterpart of ruling A, same wording): A LAYOUT'S CORRECTNESS IS A
+    // CLAIM, NOT A FACT, UNTIL A RENDER SHOWS IT. EVERY UI CHANGE IS RENDERED
+    // OFFLINE AND INSPECTED BEFORE THE USER SEES IT. EJ_EDITOR_SNAP=<dir> renders
     // the panel offline to PNG - front, front off-curve, advanced - so a layout
     // is LOOKED AT before Sean does (his screenshot found labels sitting under
     // the wrong control). Offscreen: no window, no host.

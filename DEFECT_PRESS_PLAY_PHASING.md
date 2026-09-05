@@ -99,4 +99,48 @@ ignore it, and if it does not, the stale content is there regardless.
      control - must show the stale-start artefact) vs WITH clearing;
      bit-identity everywhere else; word-start events unchanged.
 
-Nothing is built. Waiting on Sean's soloed answer.
+## 6. RULED (round 48, 5 Sep 2026): BUILD THE reset() OVERRIDE NOW, without waiting for the solo answer
+
+A plugin that does not override reset() and carries synthesis state across
+a transport jump is wrong on its own terms; AudioUnitReset exists for
+precisely this. Stale ring content synthesised after a locate is a defect
+whether or not it is Sean's symptom (the round-21 reasoning: fix what is
+broken, let the symptom confirmation arrive separately). The mechanism
+also fits his words: grains synthesised from the previous position's ring
+content, combining with fresh input across the first 38 ms plus lag, is
+what "out of alignment for a tiny bit and phases" sounds like.
+
+THE BAR (committed before the code):
+  1. POSITIVE CONTROL: a mid-file restart WITHOUT clearing must show the
+     artefact, measurably. If it does not, the mechanism is not reachable
+     in the harness and the bar cannot test the fix - say so and stop.
+  2. reset() clears the co-timed rings, the corrector's state (curCents_,
+     slowCents_, noteRefCents_, pending), the seam state machine, and
+     anything else carrying position-dependent content. Every item it
+     clears is ENUMERATED with why it qualifies; every item it deliberately
+     leaves is enumerated too.
+  3. Continuous playback from the top is BIT-IDENTICAL to the current
+     build (the saved-state render references from the pre-round-46 binary,
+     NEW and OLD takes): the fix must not change anything that was not broken.
+  4. The first 150 ms after a locate no longer synthesises from stale
+     content - shown against the positive control.
+  5. Word-start events and the OLD-take falsifier unchanged (leg 3's
+     identity carries them: the continuous renders they are measured on
+     are bit-identical).
+  6. The KEY state is NOT cleared in reset() - that is the round-20
+     stale-key question with its own ruling and its own hysteresis design.
+     Kept separate; the commit says so.
+The solo answer, when it comes, does not invalidate this fix: "does not
+phase soloed" would mean there is ALSO a host-compensation issue, and the
+next step there is the timestamped latency logging (section 5A).
+
+METHOD for legs 1 and 4 (the harness, in tools/pitch_mode_test, gated by
+the material like every render block): FRESH = a fresh instance rendering
+the take from position P2. LOCATE-STALE = an instance that rendered from 0
+to P1 and then continued at P2 with nothing cleared (what a host does
+today). LOCATE-RESET = the same with reset() between. Both compared with
+FRESH sample by sample from P2: differing-sample count and the RMS of the
+difference over the first 150 ms (and where the difference ends). The
+positive control is LOCATE-STALE differing in the first 150 ms; the fix is
+LOCATE-RESET bit-identical to FRESH (reset == fresh by construction - the
+same functions prepare() calls).
