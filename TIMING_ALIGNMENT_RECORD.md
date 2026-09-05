@@ -160,3 +160,100 @@ tools/pitch_activity/logs_2026-09-03/timing_*.txt.
       larger shifter latency to buy more lookahead (a product trade), or
       a shorter confirm window now that the target clock is honest.
   (c) Whether to run flag C (gate testimony back-dating) before deciding.
+
+# Round 29 (5 Sep 2026): the clause honoured; the ripple as exemplar; MEASUREMENT CLOCK vs DECISION CLOCK separated and measured; flag C declined; the constants enumerated
+
+## Recorded as ruled
+  - THE CANCELLATION CLAUSE WAS WRITTEN BEFORE THE MEASUREMENT (round 18,
+    restated in this file's bar) precisely so that this outcome - activity
+    up, the 3.2s peak deeper - could not be argued either way afterwards.
+    It fired; it is honoured; the pass widens. Nothing reverts.
+  - THE RIPPLE is the exemplar of the PREDICT-MEASURE-REMOVE standard:
+    predicted from the mechanism in advance (~8-10c at vibrato rate in
+    every setting), measured (6.3c rms / 10.5c peak alto; 9.3 / 16.2 low
+    male), then removed to 0.00 by the fix that the mechanism named.
+
+## Flag E: SEPARATE THE MEASUREMENT CLOCK FROM THE DECISION CLOCK - built and measured
+
+Design: the ring carries the DECISION - the correction in cents relative
+to the hop's own f0, dec = 1200*log2(target/f0_hop) - stamped
+decLookahead_ samples early. At the read pointer the target is
+f0Here * 2^(dec/1200): f0Here cancels in the ratio (trivially co-timed),
+only the decision is advanced, and depth 0 (dec = 0) is identity at any
+lookahead. setDecisionLookahead; PA_DECLOOK.
+
+    A+B + decision lookahead (retune 44, ign OFF, depth 1)   activity med / >25c   off-grid / <5c / improve
+    0 ms                                                      7.24c / 18.2%         5.30 / 49.1% / 55.8%
+    2 / 4 / 6 ms                                              7.23 / 7.10 / 7.16c;  17.6 / 16.8 / 15.8%
+    6 ms                                                                            4.86 / 50.7% / 57.8%   <- BETTER tuning than shipped (5.32 / 48.3 / 58.2)
+    7 ms                                                      6.47c / 13.5%         5.89 / 46.1% / 54.6%   <- correction starting to be lost
+    8 ms                                                      4.00c /  7.6%         6.58 / 42.0% / 55.2%   <- ARTEFACT: writes behind emitted_ skipped
+    10 ms                                                     0.00c /  0.3%         6.60 / 39.9% / 11.9%   <- NO CORRECTION AT ALL, reads as "transparent"
+    depth 0 at 6 ms                                           0.00c                 (transparency preserved - the ruling's hypothesis CONFIRMED)
+    tau 6 at 6 ms: 4.41c / 3.6% (shipped 3.95 / 3.8);  tau 150 at 6 ms: 8.14c / 21.2% (shipped 6.25 / 16.0)
+
+WHAT IT SAYS: the decision can be advanced while the pairing stays co-
+timed, at ZERO transparency cost - the separation is real. Its reach is
+bounded by the same latency budget as flag D (writes behind the emitted
+pointer are skipped: ~6 ms valid at 256-sample blocks, 7 ms already
+partial), so it recovers only part of the take-wide rise: at retune 44
+the >25c share 18.2 -> 15.8% (shipped 8.8), p90 39.6 -> 35.0 (shipped
+23.1). It IMPROVES TUNING beyond shipped. The remainder is the chase,
+honestly shown, at the confirm window's length. The two product trades
+(larger shifter latency to extend the budget; a shorter confirm window
+now that the target clock is honest) are therefore NOT made unnecessary
+- they are what is left, and they are now cleanly separable from the
+timing fix.
+
+CAUTION FILED (beside the positive-control method note): A TRANSPARENCY
+READING NEEDS A CORRECTION CONTROL. 0.00c activity is "no correction
+applied" as readily as "correction applied and cancelled"; the L=10
+arm read as perfect transparency with an improve-rate of 11.9%. Every
+activity claim in this record from here on carries its improve-rate.
+
+## Flag C (gate testimony back-dating, row 7): RUN, and DECLINED with its numbers
+
+    gate: rejected hops 21 -> 19, confirmed jumps 4 -> 5 (one more accepted jump)
+    activity, C alone:   retune 44 5.04 -> 5.29c (>25c 8.8 -> 10.5%); tau 6 3.95 -> 3.93; tau 150 6.25 -> 7.29 (16.0 -> 20.0%)
+    with A+B+E7:         retune 44 6.47 -> 6.65; tau 6 4.05 -> 4.11; tau 150 7.69 -> 8.81 (19.5 -> 23.3%)
+The third site is real (the audio tested and the estimate vetted are 30 ms
+apart) and correcting it moves everything for the worse: the gate's
+early look at the NEW note's audio is, like the accidental target lead,
+doing useful work - it vets a jump against the audio that has already
+moved. Row 7's status: KNOWN, DELIBERATELY KEPT, with these numbers. If
+the gate is ever redesigned, the vetting position is a parameter, not a
+timestamp to be "fixed".
+
+## Audit row status after round 29
+  1 f0Here: RING, per-hop lag (B), residual 1.2-2.1 ms      2/3/6 target, shift, grain ratio: RING-STAMPED (A); decision advanced (E)
+  4/5/8: co-timed (unchanged)   7 gate testimony: KNOWN, KEPT (C declined)   9 seam discriminator period: hop clock (minor, unchanged)
+  10 vibNow/transpose: ride the decision ring under E (non-audio; correct)    11 emitDry: per call (unchanged)
+
+## STANDING RULE (ruled) and THE CONSTANTS, ENUMERATED - not re-derived
+
+  A CONSTANT CALIBRATED AGAINST A DEFECTIVE MECHANISM MUST BE RE-DERIVED
+  ONCE THE DEFECT IS FIXED. Every constant below was tuned against a
+  clock carrying an 11-20 ms skew (and, it now turns out, a 7 ms
+  accidental decision lead). Enumerated first; the order of re-derivation
+  is a ruling.
+
+  constant (value)                     where            calibrated against                                       under co-timing
+  kRetuneFloorMs (6 ms)                corrector        §17.3: Antares' 0 vs our 4-6 ms, output timing           SUSPECT - §17.3 already known to measure a non-discriminating property; and the floor's audible meaning was the skew's
+  kNoteConfirmMs (25 ms)               corrector        the note-change chase / snap as heard and measured        SUSPECT (HIGH) - tuned with 7 ms of the chase hidden; the remaining depth-1 rise IS this window
+  the 150 ms cap (kMaxRetuneMs)        corrector/§17.7  §17.4 U-curve, roughness/within-3c, all measured w/ skew  SUSPECT - the knee (40-80) and the cliff were read on a skewed clock; re-measure the sweep with A+B+E
+  seam_attack_ms default (60)          shifter/schema   word-start events at seam 0 vs 60, tail p90s (round 15)   SUSPECT - measured under skew; re-run the corrected bar's five legs with A+B+E before "shipped"
+  envExp 5's 30c applied-shift gate    corrector/§17.5  geometric midpoint of 8.3c shielded ceiling and 100c      SUSPECT - both bracket ends were applied-discontinuity measurements taken with the skew
+  kPendForgetMs (30), kGapForgetMs (30) corrector/gate  hop-clock evidence staleness                              LOW - hop clock only; but their audio-testimony inputs are row 7 (kept)
+  gate kConfirmMs (50), kBigJumpCents  gate             the user-stated 40-60 ms window; octave lattice           LOW/MEDIUM - testimony position kept deliberately (C declined)
+  kGapIsNoteChangeMs (200)             corrector        gap = note change, hop clock                              LOW
+  kVibratoSmoothMs (140)               corrector        slow-track smoothing; fix (d) re-seed measurements        MEDIUM - the re-seed windows were measured on output tuning with the skew
+  kSustainMs (180), kStableCents (60)  corrector        sustain judgement, hop clock                              LOW
+  kNoteChangeCents (90), kCorridorSlackC (15)  corrector  detection thresholds in cents                           LOW
+  3c drift-bleed cap, kBleedMaxRate    shifter          phase drift bound (§17.5 item 3)                          LOW - phase, not pitch timing
+  kSeamFadeMs (1.5)                    shifter          waveform crossfade at seams                               LOW - engine clock, ring-governed seams
+  seam ramp 15 ms floor / 0.5 periodicity  shifter      the census/bridge convention                              MEDIUM - period taken from the hop clock (row 9)
+  kSpliceBandSt (2.5)                  shifter          splice-vs-grain method switch on |ratio|                  LOW
+  kLookaheadDefault (3 periods, 1-4)   shifter          the synthesis lookahead -> the LATENCY BUDGET             NOW LOAD-BEARING - it bounds flags D/E at ~6 ms; the product trade
+  pitchLagFor = frameLen/2 + hop       detector         the design's own back-dating model                        THE DEFECT ITSELF - superseded by flag B's per-hop model
+  kWindowPeriods (2.5), kHopSeconds    detector         YIN window geometry                                       NOT SUSPECT - but now inputs to the lag model (B)
+  kContinuityMaxS, kHistoryClearS      detector         detector memory                                           LOW

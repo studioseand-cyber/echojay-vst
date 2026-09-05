@@ -192,6 +192,7 @@ public:
         f0_.assign  (sz, 0.0f);      // <= 0 means UNVOICED at that sample
         tgt_.assign (sz, 0.0f);      // co-timed target ring (TIMING_ALIGNMENT_RECORD flag A)
         sh_.assign  (sz, kNoShift);  // co-timed shift ring
+        dec_.assign (sz, 0.0f);      // decision ring: correction in cents vs the hop's own f0 (flag E)
         slowRing_.assign (sz, 0.0f);
         acc_.assign (sz, 0.0f);
         win_.assign (sz, 0.0f);
@@ -227,6 +228,7 @@ public:
         std::fill (f0_.begin(),  f0_.end(),  0.0f);
         std::fill (tgt_.begin(), tgt_.end(), 0.0f);
         std::fill (sh_.begin(),  sh_.end(),  kNoShift);
+        std::fill (dec_.begin(), dec_.end(), 0.0f);
         std::fill (acc_.begin(), acc_.end(), 0.0f);
         std::fill (win_.begin(), win_.end(), 0.0f);
         write_ = 0; emitted_ = 0; placedTo_ = 0;
@@ -596,6 +598,13 @@ public:
                 tgt_[(size_t) ((uint32_t) (uint64_t) atT & mask_)] = targetHz;
                 sh_ [(size_t) ((uint32_t) (uint64_t) atT & mask_)] = shiftCents;
             }
+            if (decMode_)
+            {
+                const int64_t atD = at - (int64_t) decLookahead_;
+                if (atD >= 0 && atD >= emitted_)
+                    dec_[(size_t) ((uint32_t) (uint64_t) atD & mask_)] =
+                        (track > 0.0f && targetHz > 0.0f) ? 1200.0f * std::log2 (targetHz / track) : 0.0f;
+            }
             // The fast-ring slow reference rides the SAME lag compensation
             // as the f0 it will divide - time-aligned by the proven
             // mechanism, not a new timing belief (2 Sep, fourth cut: the
@@ -816,7 +825,8 @@ private:
                 const int64_t rp = (int64_t) p + (int64_t) std::lround (spliceDrift_);
                 const float f0Here = f0At ((uint64_t) std::max<int64_t> (0, rp));
                 const float tgtCo  = coTimed_ ? tgtAt ((uint64_t) std::max<int64_t> (0, rp)) : 0.0f;
-                const float tgt    = (coTimed_ && tgtCo > 0.0f) ? tgtCo : curTarget_;
+                const float tgtDec = (decMode_ && f0Here > 0.0f) ? f0Here * std::exp2 (decAt ((uint64_t) std::max<int64_t> (0, rp)) / 1200.0f) : 0.0f;
+                const float tgt    = decMode_ ? (tgtDec > 0.0f ? tgtDec : curTarget_) : ((coTimed_ && tgtCo > 0.0f) ? tgtCo : curTarget_);
                 const float shHere = coTimed_ ? shAt ((uint64_t) std::max<int64_t> (0, rp)) : curShift_;
                 const bool  ok     = f0Here > 0.0f && tgt > 0.0f;
                 if (dbgTapOn_ && ok
@@ -1008,6 +1018,8 @@ public:
     { perHopLag_ = on; lagW_ = W; lagTauMax_ = tauMax; lagHop_ = hop; }
     bool getPerHopLag() const noexcept { return perHopLag_; }
     void setTargetLookahead (int samples) noexcept { tgtLookahead_ = std::max (0, samples); }
+    void setDecisionLookahead (bool on, int samples) noexcept { decMode_ = on; decLookahead_ = std::max (0, samples); }
+    float decAt (uint64_t p) const noexcept { if (p >= write_ || dec_.empty()) return 0.0f; return dec_[(size_t) ((uint32_t) p & mask_)]; }
 private:
 
     // ---- analysis: find the next epoch -------------------------------------
@@ -1184,7 +1196,8 @@ private:
             // The target period, with the ratio clamped so an absurd
             // source/target combination degrades rather than explodes.
             const float shG  = coTimed_ ? shAt (nextSynth_) : curShift_;
-            const float tgtG = (coTimed_ && tgtAt (nextSynth_) > 0.0f) ? tgtAt (nextSynth_) : target;
+            const float tgtG = decMode_ ? f0 * std::exp2 (decAt (nextSynth_) / 1200.0f)
+                             : ((coTimed_ && tgtAt (nextSynth_) > 0.0f) ? tgtAt (nextSynth_) : target);
             float ratio = shG > kNoShift + 1.0f
                               ? std::exp2 (shG / 1200.0f)
                               : tgtG / f0;     // legacy (flag A off): crosses the latency
@@ -1813,6 +1826,15 @@ private:
     int    lagW_ = 0, lagTauMax_ = 0, lagHop_ = 128;
     int64_t lastRingAt_ = -1;      // last ring position written (contiguity under flag B)
     int    tgtLookahead_ = 0;      // flag D, samples
+    // Flag E (round-29 ruling): SEPARATE THE MEASUREMENT CLOCK FROM THE DECISION
+    // CLOCK. The ring carries the DECISION - the correction in cents relative to
+    // the hop's own f0 - stamped decLookahead_ samples early; at the read
+    // pointer the target is f0Here * 2^(dec/1200), so f0Here cancels in the
+    // ratio (trivially co-timed) and only the decision is advanced. Depth 0
+    // (dec = 0) is identity at any lookahead.
+    std::vector<float> dec_;
+    bool   decMode_ = false;
+    int    decLookahead_ = 0;
     double ringSlowK_ = 1.0 / (0.14 * 48000.0);   // set in prepare
     float  carryMs_ = 0.0f;        // drift carry threshold; 0 = off
     double carryLimit_ = 0.0;      // ...in samples, set with fs

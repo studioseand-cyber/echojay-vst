@@ -101,6 +101,7 @@ static Render renderSelf (const std::vector<float>& in, double fs, int vt, bool 
     sh.setPitchLagSamples(det.pitchLagFor(vt));
     sh.setDriftBleed(true);
     if(getenv("PA_COTIMED")) sh.setCoTimedTarget(true);
+    if(getenv("PA_DECLOOK")) sh.setDecisionLookahead(true,(int)std::lround(atof(getenv("PA_DECLOOK"))*0.001*fs));
     if(getenv("PA_LOOKAHEAD")) sh.setTargetLookahead((int)std::lround(atof(getenv("PA_LOOKAHEAD"))*0.001*fs));
     if(getenv("PA_PERHOP")){ int W,tm,hp; det.lagModelFor(vt,W,tm,hp); sh.setPerHopLag(true,W,tm,hp); }
     sh.debugRingTap(true);
@@ -139,8 +140,11 @@ static Render renderSelf (const std::vector<float>& in, double fs, int vt, bool 
                 const bool seed=ev[h].voiced&&ev[h].f0Hz>0&&gate.lastGood()<=0;
                 if(gate.isBigJump(ev[h].f0Hz,ev[h].voiced)||seed)
                 { const double ref=seed?2.0*ev[h].f0Hz:gate.lastGood();
-                  rO=sh.inputPeriodicity(ev[h].inputPos,(int)std::lround(fs/ref));
-                  rN=sh.inputPeriodicity(ev[h].inputPos,(int)std::lround(fs/ev[h].f0Hz)); }
+                  // FLAG C (TIMING_ALIGNMENT_RECORD row 7): test the audio the estimate DESCRIBES
+                  // (inputPos - the raw detector lag), not the audio at the hop position.
+                  const uint64_t tpos = getenv("PA_GATEBACK") ? (uint64_t)std::max<int64_t>(0,(int64_t)ev[h].inputPos-(int64_t)(det.pitchLagFor(vt)+2*det.inputHopLength(vt))) : ev[h].inputPos;
+                  rO=sh.inputPeriodicity(tpos,(int)std::lround(fs/ref));
+                  rN=sh.inputPeriodicity(tpos,(int)std::lround(fs/ev[h].f0Hz)); }
                 const float g=gate.filter(ev[h].f0Hz,ev[h].voiced,hopMs,rO,rN);
                 sliceF0=g; sliceVoiced=ev[h].voiced;
                 if(c.grain){ if(g>0){ target=g; shift=0.0f; } }
@@ -153,6 +157,7 @@ static Render renderSelf (const std::vector<float>& in, double fs, int vt, bool 
     for(size_t i=(size_t)lat;i<raw.size();++i) R.out[i-(size_t)lat]=raw[i];
     R.tap=sh.debugRingTapData();
     R.effR=sh.debugEffRData();
+    std::printf("  [gate: rejected hops %u, confirmed jumps %u]\n",gate.rejectedHops(),gate.confirmedJumps());
     return R;
 }
 static long alignLag (const std::vector<float>& ref, const std::vector<float>& x)
