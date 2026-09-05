@@ -905,9 +905,63 @@ void EedPitchProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     refreshLatency();
 }
 
+// THE TRANSPORT RESET (round 48, DEFECT_PRESS_PLAY_PHASING). What a host's
+// Reset means: the next block is the first block after a discontinuity, and
+// nothing synthesised from here may come from audio before it. CLEARED, and
+// why each qualifies:
+//   engine_.reset()      the detector's input ring, scratch, decimation/hop
+//                        phase, sweep state, f0 history and continuity
+//                        memory, anti-alias filter states, published reading
+//                        - all derived from the previous position's audio;
+//   shifter.reset()      the co-timed rings (input, f0, target, shift,
+//                        decision, slow reference), the write/emit/place
+//                        heads, the splice and seam state machines (drift,
+//                        fade, ramp, bridge, method mix), the LPC coefficient
+//                        ring and synthesis state, the drift-bleed gate, the
+//                        last shift - the grains were being built from them;
+//   correct_.reset()     curCents_, slowCents_, noteRefCents_, the pending
+//                        note and its median buffer, the resume/seed medians,
+//                        the applied-shift pole and its snap latch, the
+//                        measured vibrato depth, the last-hop readbacks - the
+//                        envelope state the next block would glide FROM;
+//   f0Gate_.reset()      the jump gate's last-good f0 (a continuity memory);
+//   the block-to-block hold (lastTarget_/lastShift_/lastHopF0_/
+//                        lastHopVoiced_/lastCorrecting_) - the "hold the last
+//                        target through a gap" state, which would hold the
+//                        previous position's target into the new one;
+//   ribbonAccum_         the ribbon's decimation phase (display only; reset
+//                        so the first column lands where the audio does).
+// DELIBERATELY NOT CLEARED: every parameter; the KEY state (keyAuto_, the
+// auto-key memos lastAutoRoot_/lastAutoMinor_/lastAutoFellBack_/
+// lastAutoTuning_, the corrector's key/scale/degrees and scale cross-fade)
+// - round 20's stale-key question has its own ruling and its own hysteresis
+// design and is NOT bundled here; the latency memo (configuration); the
+// retune trace ring (an editor readout); the octave-guard statistics
+// (reset_stats' domain). Every clearing function here is the one prepare()
+// calls, so "reset == fresh instance" holds by construction (proved by the
+// suite's LOCATE-RESET leg, bit-identical to FRESH).
+void EedPitchProcessor::applyReset() noexcept
+{
+    engine_.reset();
+    forEachShifter ([] (auto& e) { e.reset(); });
+    correct_.reset();
+    f0Gate_.reset();
+    lastTarget_ = 0.0f;
+    lastShift_ = echojay::PsolaEngine::kNoShift;
+    lastHopF0_ = 0.0f;
+    lastHopVoiced_ = false;
+    lastCorrecting_ = false;
+    ribbonAccum_ = 0;
+}
+
 void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
+
+    // Before anything, including the bypass path: a reset that arrived since
+    // the last block is applied here, on the audio thread.
+    if (resetPending_.exchange (false, std::memory_order_acq_rel))
+        applyReset();
 
     // Clear any output channel with no input behind it — the one write this
     // device is allowed, and it never touches a channel that carries signal.

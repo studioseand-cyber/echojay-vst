@@ -144,3 +144,99 @@ difference over the first 150 ms (and where the difference ends). The
 positive control is LOCATE-STALE differing in the first 150 ms; the fix is
 LOCATE-RESET bit-identical to FRESH (reset == fresh by construction - the
 same functions prepare() calls).
+
+## 7. BUILT (round 48, 5 Sep 2026) - every leg measured
+
+### The mechanism, made to happen and then removed (legs 1 and 4)
+Harness in the suite (tools/pitch_mode_test, "TRANSPORT RESET"): the take
+(sourceNEW, D minor by hand) played 0 -> 4.00 s, then a LOCATE to 5.79 s
+and 0.99 s rendered; compared sample by sample with FRESH, a fresh
+instance rendering from 5.79 s.
+  | leg | first 150 ms | after 150 ms | last differing sample |
+  |---|---|---|---|
+  | LOCATE-STALE (today's build: nothing cleared) | 5712 / 7200 samples differ; diff RMS 132.6 % of the signal RMS | diff RMS 64.5 % | 992 ms (the whole render) |
+  | LOCATE-RESET (with reset()) | 0 / 7200 | 0.0 % | none - 0 samples differ in all |
+POSITIVE CONTROL: PASS - the stale start is reachable in the harness and
+large (the first 38 ms are the previous position's ring tail where FRESH
+has silence, and the grains after it are placed from stale epochs, so the
+waveform never re-converges within the second even where the pitch does).
+THE FIX: PASS - after reset() the locate renders BIT-IDENTICAL to a fresh
+instance from the same position, first 150 ms and all of it: "reset ==
+fresh by construction" is measured, not argued.
+
+### What reset() clears, and what it leaves (leg 2, enumerated; the same list is in the code beside applyReset())
+CLEARED - each carries the previous position's content:
+  - detector (PitchEngine::reset, new): input ring, frame/difference
+    scratch, decimation and hop phase, sweep state, f0 history and
+    continuity memory (hist_, lastF0_, hopsSinceVoiced_), anti-alias
+    filter states, hop-event list, published reading; config re-applied on
+    the next block exactly as prepare() does.
+  - shifter (PsolaEngine::reset, completed): the co-timed rings - input,
+    f0, target, shift, decision, and slowRing_ (was MISSED: the lag-
+    compensated slow reference); write/emit/place heads; splice and seam
+    state machines (drift, fade, ramp, bridge, method mix); LPC coefficient
+    ring and synthesis state; the drift-bleed gate bleedGate_ (was missed:
+    a 100 ms pole over recent shift); curShift_ (was missed).
+  - corrector (PitchCorrect::reset, completed): curCents_, slowCents_,
+    noteRefCents_, the pending note and its median buffer, the resume/seed
+    medians and judgement state, the applied-shift pole and its snap latch
+    (shiftSm_/shiftCents_/shiftSnap_ - were missed), the measured vibrato
+    depth, the slow track's age, the last-hop readbacks.
+  - the jump gate's last-good f0; the block-to-block hold (lastTarget_,
+    lastShift_, lastHopF0_, lastHopVoiced_, lastCorrecting_) - the "hold
+    the last target through a gap" state, which would otherwise hold the
+    previous position's target into the new one; the ribbon's decimation
+    phase (display).
+LEFT, deliberately:
+  - every parameter; the latency memo (configuration);
+  - THE KEY STATE: keyAuto_, the auto-key memos (lastAutoRoot_,
+    lastAutoMinor_, lastAutoFellBack_, lastAutoTuning_), the corrector's
+    key/scale/degrees and the scale cross-fade. Round 20's stale-key
+    question has its own ruling and its own hysteresis design; NOT bundled;
+  - the retune trace ring (an editor readout); the octave-guard
+    statistics (reset_stats' domain); resumeReanchors_ (a statistic);
+  - the humanize path holds no position content beyond the above.
+"Was missed" marks state that the pre-existing reset() functions (written
+for prepare()) did not cover: a reset that had merely been forwarded
+without completing them would have left the slow reference, the bleed
+gate and the shift pole stale - and LOCATE-RESET would not have been
+bit-identical to FRESH.
+
+### How the reset reaches the device
+JUCE maps AudioUnitReset to AudioProcessor::reset(). EchoJay V2 and Link
+now override it (PluginProcessor.h, LinkProcessor.h) -> ChainHost::
+requestReset() (a flag, any thread) -> at the top of the next
+ChainHost::process() on the audio thread, graph_->reset(), which calls
+reset() on every slot's processor (third-party plugins get the host
+semantics they expect). The pitch device's reset() is itself a flag,
+applied at the top of its next processBlock (before the bypass path), so
+a reset from any thread never races the block in flight. Caveat recorded:
+JUCE's graph reset iterates the node list without a lock, the same
+contract the chain already relies on for its topology (processors are
+suspended across structural ops); a reset landing in the same instant as
+a structural edit is the residual exposure, not new to this change.
+
+### Continuous playback unchanged (legs 3 and 5)
+The saved-state render-identity harness against the references produced
+by the pre-round-46 binary: NEW take 4/4 bit-identical, OLD take (dry.wav)
+4/4 bit-identical (0 samples differ). Word-start events and the OLD-take
+falsifier are measured on those continuous renders, so they are unchanged
+by identity. Suite: 182 PASS / 0 FAIL (180 + the two reset checks).
+
+### Whether Logic sends Reset at play
+Still not verified here. If it does, the fix applies at every play/locate.
+If it does not, the stale start remains reachable in Logic and the next
+step is a transport-discontinuity guard from the play head (a position
+jump larger than a block -> the same applyReset()), behind the same bar.
+Sean's soloed answer and his listen on this build decide which.
+
+### Installed (5 Sep 2026), ~/Library only, via tools/install_local.sh build-release
+  | plugin | arm64 UUID |
+  |---|---|
+  | AU   `EchoJay V2.component`   | 444376C2-3068-31F7-87FA-240DBB796588 |
+  | VST3 `EchoJay V2.vst3`        | 52799A77-B930-3E0E-A90E-84253B2038DB |
+  | AU   `EchoJay Link.component` | A8C23A25-5981-3278-9211-FFC1F558928A |
+AUHostingServiceXPC_arrow killed after the install; Sean must relaunch
+Logic. What to listen for: press play from a marker after having played
+elsewhere - the first moment should now be the same as playing from that
+marker fresh. Continuous playback is bit-identical to before.

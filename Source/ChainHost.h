@@ -156,6 +156,14 @@ public:
     void prepare(double sampleRate, int blockSize);
     void release();
     void process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi);
+    // Round 48 (DEFECT_PRESS_PLAY_PHASING): the host's transport reset, for
+    // every hosted slot. Flag from any thread; applied at the top of the next
+    // process() on the audio thread via the graph's reset(), which calls
+    // reset() on each node's processor (third-party plugins get the host
+    // semantics they expect; the built-in pitch device clears its rings).
+    // Same synchronisation contract the chain already relies on for its
+    // topology (processors are suspended across structural ops).
+    void requestReset() noexcept { resetPending_.store(true, std::memory_order_release); }
 
     // ---- List refresh (message thread) -----------------------------------
     void startScan();
@@ -1287,6 +1295,7 @@ private:
 
     // AudioProcessorGraph: input → [active slots in order] → output
     std::unique_ptr<juce::AudioProcessorGraph> graph_;
+    std::atomic<bool> resetPending_ { false };   // see requestReset()
     juce::AudioProcessorGraph::Node::Ptr inputNode_, outputNode_;
 
     std::vector<ChainSlot> slots_;

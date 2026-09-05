@@ -141,6 +141,11 @@ public:
 
 protected:
     void onStateApplied() override;
+    // Round 48 (DEFECT_PRESS_PLAY_PHASING): the host's transport reset
+    // (AudioUnitReset -> JUCE reset()). Flag only - the clearing runs at the
+    // top of the next processBlock, on the audio thread, so a reset arriving
+    // from any thread never races the block in flight. See applyReset().
+    void reset() override { resetPending_.store (true, std::memory_order_release); }
 public:
 
     // Writing the schema defaults must not be mistaken for the user reaching
@@ -274,6 +279,8 @@ private:
     // these per block would make the first slice of every block use a stale or
     // zero target, which is a block-rate artefact of exactly the kind the
     // slicing exists to remove.
+    std::atomic<bool> resetPending_ { false };
+    void applyReset() noexcept;   // audio thread; the enumerated clears
     float lastTarget_  = 0.0f;
     float lastShift_ = echojay::PsolaEngine::kNoShift;   // held with the target
     float lastHopF0_   = 0.0f;

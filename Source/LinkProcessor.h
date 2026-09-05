@@ -20,6 +20,7 @@ public:
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
     void releaseResources() override;
+    void reset() override { chainHost.requestReset(); }   // round 48: AudioUnitReset reaches every hosted slot (DEFECT_PRESS_PLAY_PHASING)
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
     // Editor

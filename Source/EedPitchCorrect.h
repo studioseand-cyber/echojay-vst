@@ -313,6 +313,24 @@ public:
         vibPhase_ = 0.0f; vibNow_ = 0.0f; noteMs_ = 0.0f;
         pendingCents_ = 0.0f; havePending_ = false;
         noteChanges_ = 0; gapResumes_ = 0;
+        // Round 48 (DEFECT_PRESS_PLAY_PHASING): everything else that carries
+        // the previous position's history - the applied-shift pole and its
+        // snap latch (shiftSm_/shiftCents_/shiftSnap_), the resume and seed
+        // medians and their judgement state, the measured vibrato depth and
+        // the pending-note median buffer, the slow track's age, and the
+        // last-hop readbacks the trace and the shifter's fast term consult.
+        // prepare() calls this, so a prepared instance is unchanged. NOT here,
+        // deliberately: every parameter, the key/scale/degrees and the scale
+        // cross-fade (round-20's question, its own ruling), the depth, and
+        // resumeReanchors_ (a statistic).
+        shiftSm_ = 0.0f; shiftCents_ = 0.0f; shiftSnap_ = true;
+        resumeJudge_ = 0; resumeBuf_[0] = resumeBuf_[1] = resumeBuf_[2] = 0.0f;
+        lastCorridorExcess_ = 0.0f; lastResumeOffset_ = 0.0f;
+        seedHops_ = 0; seedBuf_[0] = seedBuf_[1] = seedBuf_[2] = 0.0f;
+        depthEnv_ = 0.0f; pendDepth_ = 0.0f; pendN_ = 0;
+        pendBuf_[0] = pendBuf_[1] = pendBuf_[2] = 0.0f;
+        slowAgeMs_ = 0.0f;
+        lastInCents_ = 0.0f; lastSlowCents_ = 0.0f; lastOscCents_ = 0.0f; lastAimCents_ = 0.0f;
     }
 
     // ---- parameters --------------------------------------------------------

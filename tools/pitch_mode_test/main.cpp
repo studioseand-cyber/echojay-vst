@@ -580,6 +580,74 @@ int main()
         }
     }
 
+    std::printf ("== TRANSPORT RESET (round 48, DEFECT_PRESS_PLAY_PHASING): positive control, then the fix ==\n");
+    {
+        const char* env = std::getenv ("EJ_PITCH_SOURCE");
+        juce::File src (env != nullptr ? juce::String (env) : juce::String ("/Users/SeanD/Music/Logic/test/Bounces/sourceNEW.wav"));
+        juce::AudioBuffer<float> take; double fs = 48000.0;
+        if (src.existsAsFile())
+        {
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::AudioFormatReader> r (wav.createReaderFor (src.createInputStream().release(), true));
+            if (r != nullptr) { fs = r->sampleRate; take.setSize (1, (int) r->lengthInSamples); r->read (&take, 0, (int) r->lengthInSamples, 0, true, false); }
+        }
+        if (take.getNumSamples() == 0) std::printf ("  [SKIP] material not found - the reset legs are not measured\n");
+        else
+        {
+            // Block-aligned positions: play 0..P1, then LOCATE to P2 and render D.
+            const int blk = 512;
+            const int P1 = (int) (4.0 * fs) / blk * blk, P2 = (int) (5.8 * fs) / blk * blk, D = (int) (1.0 * fs) / blk * blk;
+            auto runFrom = [&] (EedPitchProcessor& q, int from, int len, std::vector<float>* out)
+            {
+                juce::AudioBuffer<float> b (2, blk); juce::MidiBuffer m;
+                for (int pos = from; pos < from + len && pos + blk <= take.getNumSamples(); pos += blk)
+                {
+                    b.clear(); b.copyFrom (0, 0, take, 0, pos, blk); b.copyFrom (1, 0, take, 0, pos, blk);
+                    q.processBlock (b, m);
+                    if (out != nullptr) for (int i = 0; i < blk; ++i) out->push_back (b.getSample (0, i));
+                }
+            };
+            auto make = [&] () { auto q = std::make_unique<EedPitchProcessor>(); q->prepareToPlay (fs, blk);
+                                 q->applyStructured (params ({ { "key_source", "manual" }, { "key_root", 2.0 }, { "scale", 1.0 } })); return q; };
+            std::vector<float> fresh, stale, cleared;
+            { auto q = make(); runFrom (*q, P2, D, &fresh); }                                   // FRESH: a fresh instance at P2
+            { auto q = make(); runFrom (*q, 0, P1, nullptr); runFrom (*q, P2, D, &stale); }   // LOCATE-STALE: what a host gets today
+            { auto q = make(); runFrom (*q, 0, P1, nullptr); static_cast<juce::AudioProcessor&> (*q).reset(); runFrom (*q, P2, D, &cleared); }   // LOCATE-RESET: the fix (the host's call, through the base class)
+            auto compare = [&] (const char* name, const std::vector<float>& a)
+            {
+                const int n150 = (int) (0.150 * fs);
+                size_t diff150 = 0, diffAll = 0; long lastDiff = -1; double e150 = 0, s150 = 0, eRest = 0, sRest = 0;
+                for (size_t i = 0; i < std::min (a.size(), fresh.size()); ++i)
+                {
+                    const double d = (double) a[i] - (double) fresh[i], f = (double) fresh[i];
+                    if (a[i] != fresh[i]) { ++diffAll; lastDiff = (long) i; if ((int) i < n150) ++diff150; }
+                    if ((int) i < n150) { e150 += d * d; s150 += f * f; } else { eRest += d * d; sRest += f * f; }
+                }
+                const double rms150 = std::sqrt (e150 / n150), rmsF150 = std::sqrt (s150 / n150);
+                const double rmsRest = std::sqrt (eRest / std::max<size_t> (1, a.size() - (size_t) n150)), rmsFRest = std::sqrt (sRest / std::max<size_t> (1, a.size() - (size_t) n150));
+                std::printf ("    %-13s vs FRESH: first 150 ms %6zu/%d samples differ, diff RMS %.5f (signal RMS %.5f, %.1f%%); after 150 ms diff RMS %.5f (%.1f%%); last differing sample at %.1f ms; %zu differ in all\n",
+                             name, diff150, n150, rms150, rmsF150, rmsF150 > 0 ? 100.0 * rms150 / rmsF150 : 0.0, rmsRest, rmsFRest > 0 ? 100.0 * rmsRest / rmsFRest : 0.0,
+                             lastDiff < 0 ? 0.0 : 1000.0 * lastDiff / fs, diffAll);
+                struct R { size_t diff150, diffAll; double pct150; } res { diff150, diffAll, rmsF150 > 0 ? 100.0 * rms150 / rmsF150 : 0.0 };
+                return res;
+            };
+            std::printf ("    P1 %.2f s -> locate -> P2 %.2f s, render %.2f s (%s)\n", P1 / fs, P2 / fs, D / fs, src.getFileName().toRawUTF8());
+            const auto rs = compare ("LOCATE-STALE", stale);
+            const auto rc = compare ("LOCATE-RESET", cleared);
+            // Bar leg 1, the positive control: without clearing, the first 150 ms
+            // after the locate are NOT the fresh render - the stale rings are
+            // audible in the numbers. If this fails the mechanism is unreachable
+            // here and the fix cannot be tested by this harness.
+            check (rs.diff150 > 0 && rs.pct150 > 1.0,
+                   "POSITIVE CONTROL: a locate WITHOUT clearing synthesises the first 150 ms from stale content (differs from FRESH by " + juce::String (rs.pct150, 1) + "% RMS)");
+            // Bar legs 2 and 4: after reset(), bit-identical to a fresh instance
+            // - not just in the first 150 ms but throughout, which is the
+            // "reset == fresh by construction" claim made measurable.
+            check (rc.diffAll == 0 && cleared.size() == fresh.size(),
+                   "THE FIX: a locate WITH reset() renders BIT-IDENTICAL to a fresh instance from the same position (" + juce::String ((int) rc.diffAll) + " samples differ)");
+        }
+    }
+
     // ---- PARAMETER VERIFICATION RENDERS (5 Sep 2026, UI_SIMPLIFICATION ruling A):
     // A PARAMETER'S DOCUMENTED BEHAVIOUR IS A CLAIM, NOT A FACT, UNTIL A RENDER
     // SHOWS IT. Gated by EJ_VERIFY_OUT=<dir>: renders the standing take through

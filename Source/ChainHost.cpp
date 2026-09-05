@@ -864,6 +864,8 @@ void ChainHost::process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi
     // certain prepare/rebuild orderings; bypassing it avoids that entirely.
     // (Also means master wet/dry costs nothing on an empty chain.)
     if (!prepared_ || !graph_) return;
+    if (resetPending_.exchange(false, std::memory_order_acq_rel))
+        graph_->reset();   // round 48: the transport reset, fanned out to every slot on the audio thread
     // Running level at the chain INPUT, before anything, including on an
     // empty rack: a build on an empty rack still needs to know the level.
     if (buffer.getNumChannels() >= 1)

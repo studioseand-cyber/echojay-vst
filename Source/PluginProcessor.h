@@ -147,6 +147,7 @@ public:
 
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
+    void reset() override { chainHost.requestReset(); }   // round 48: AudioUnitReset reaches every hosted slot (DEFECT_PRESS_PLAY_PHASING)
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
     // The host's name for this track (Logic's context name, VST3 channel
     // context). Read for the running level tally's source guard: a name

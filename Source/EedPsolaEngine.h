@@ -246,6 +246,16 @@ public:
         methodMix_ = 0.0f;
         uvRun_ = 0;
         bridgeSeedT_ = 0.0; bridgeLen_ = 0.0;
+        // Round 48 (DEFECT_PRESS_PLAY_PHASING): the three items below carried
+        // position content across a transport reposition because reset() had
+        // been written for prepare() only. slowRing_ is a co-timed ring like
+        // f0_/tgt_/sh_/dec_ (the lag-compensated slow reference the fast term
+        // reads); bleedGate_ is the drift-bleed's smoothed gate (a 100 ms pole
+        // over the recent shift - history); curShift_ is the last call's shift.
+        // prepare() calls this, so a prepared instance is unchanged.
+        std::fill (slowRing_.begin(), slowRing_.end(), 0.0f);
+        bleedGate_ = 1.0;
+        curShift_ = kNoShift;
     }
 
     // The active voice_type's floor. Changes the reported latency, which the
