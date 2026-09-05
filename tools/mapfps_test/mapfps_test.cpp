@@ -5266,6 +5266,93 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         }
     }
 
+    // ===== MOVE LOG PERSISTENCE (5 Sep 2026) ===============================
+    // The log lived only in memory, so reopening a session erased EchoJay's
+    // account of its own work and the model could be asked about nothing
+    // older than the current launch.
+    {
+        std::cout << "move log persistence, turn continuity and the boundary:\n";
+        using E = ChainHost::MoveLogEntry;
+        using K = E::Kind;
+        auto mk = [] (int turn, K k) { E e; e.turn = turn; e.kind = k; e.plugin = "X"; return e; };
+
+        // mp PIN1 -- THE TURN COUNTER CONTINUES, it does not restart. t7 in a
+        // restored log and t7 in this session would be two turns under one
+        // label, which is the ambiguity the ordinal exists to remove.
+        check (ChainHost::restoredMoveTurn (0, 7) == 7,
+               "mp PIN1: a restore continues from the saved turn");
+        check (ChainHost::restoredMoveTurn (0, 0) == 0,
+               "mp PIN1: and a fresh session still starts at 0");
+        // Only ever forward: a state re-apply mid-session must not rewind.
+        check (ChainHost::restoredMoveTurn (9, 4) == 9,
+               "mp PIN1: and it never moves backwards");
+
+        // mp PIN2 -- THE BOUNDARY SITS BETWEEN THE TWO SESSIONS, once.
+        {
+            std::vector<E> restored { mk (3, K::Load), mk (4, K::Dial) };
+            std::vector<E> live     { mk (1, K::Dial) };
+            const auto merged = ChainHost::mergeRestoredLog (restored, live, 48);
+            check (merged.size() == 4, "mp PIN2: restored + boundary + live",
+                   juce::String ((int) merged.size()));
+            check (merged.size() == 4 && merged[2].kind == K::SessionBreak,
+                   "mp PIN2: and the boundary sits between them");
+            int breaks = 0;
+            for (const auto& e : merged) if (e.kind == K::SessionBreak) ++breaks;
+            check (breaks == 1, "mp PIN2: exactly one boundary",
+                   juce::String (breaks));
+            // Nothing to restore means nothing to declare.
+            check (ChainHost::mergeRestoredLog ({}, live, 48).size() == 1,
+                   "mp PIN2: an empty restore adds no boundary");
+        }
+
+        // mp PIN3 -- RESTORED PLUS NEW NEVER EXCEEDS THE BOUND, oldest first,
+        // which is the eviction rule the live log already uses.
+        {
+            std::vector<E> restored, live;
+            for (int i = 0; i < 40; ++i) restored.push_back (mk (i, K::Dial));
+            for (int i = 0; i < 20; ++i) live.push_back (mk (100 + i, K::Dial));
+            const auto merged = ChainHost::mergeRestoredLog (restored, live, ChainHost::kMoveLogMax);
+            check ((int) merged.size() == ChainHost::kMoveLogMax,
+                   "mp PIN3: the merge is capped at kMoveLogMax",
+                   juce::String ((int) merged.size()));
+            check (merged.back().turn == 119,
+                   "mp PIN3: and the NEWEST survive, the oldest go");
+        }
+
+        // mp PIN4 -- IT ROUND-TRIPS THROUGH THE STATE BLOB, guarded and with
+        // no version integer, and a boundary is never written back or a
+        // session reopened five times stacks five of them.
+        {
+            std::ifstream fp ("Source/PluginProcessor.cpp");
+            std::stringstream sp; sp << fp.rdbuf();
+            const auto pp = codeOnly (juce::String (sp.str()));
+            check (pp.contains ("state->setProperty(\"moveLog\", moveLogVar);"),
+                   "mp PIN4: the log is written into the state blob");
+            check (pp.contains ("if (obj->hasProperty(\"moveLog\"))"),
+                   "mp PIN4: and read back guarded, with no else");
+            std::ifstream fc ("Source/ChainHost.cpp");
+            std::stringstream sc; sc << fc.rdbuf();
+            const auto ch3 = codeOnly (juce::String (sc.str()));
+            check (ch3.contains ("if (e.kind == MoveLogEntry::Kind::SessionBreak) continue;"),
+                   "mp PIN4: boundaries are never serialised");
+            check (ch3.contains ("moveTurn_ = restoredMoveTurn(moveTurn_,"),
+                   "mp PIN4: and the turn counter is restored through the shared rule");
+        }
+
+        // mp PIN5 -- THE BOUNDARY LINE SAYS WHAT IT MEANS. Source-pinned:
+        // buildMoveLogInjection needs a live ChainHost.
+        {
+            std::ifstream fa ("Source/EchoJayAPI.cpp");
+            std::stringstream sa; sa << fa.rdbuf();
+            const auto blk3 = functionBody (juce::String (sa.str()),
+                                            "juce::String EchoJayAPI::buildMoveLogInjection");
+            check (blk3.contains ("SESSION BREAK"),
+                   "mp PIN5: the boundary renders");
+            check (blk3.contains ("never describe one as something you"),
+                   "mp PIN5: and forbids presenting an old move as a recent one");
+        }
+    }
+
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";
     return failN == 0 ? 0 : 1;
 }

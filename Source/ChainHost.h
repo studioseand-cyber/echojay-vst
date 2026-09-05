@@ -353,7 +353,11 @@ public:
         // Added is the USER putting a plugin in. It is a separate kind from
         // Load and not a flag on it, because the block renders one word per
         // kind and the whole point is that this word must not be BUILT.
-        enum class Kind { Dial, Load, Swap, Remove, Added };
+        // SessionBreak is not a move. It is the line that says the moves
+        // above it belong to an earlier session, so the model cannot read a
+        // restored entry as something it just did. Never serialised: a
+        // session reopened five times must not accumulate five boundaries.
+        enum class Kind { Dial, Load, Swap, Remove, Added, SessionBreak };
         // loadRecordFor above returns these as ints (it is declared before the
         // struct), so the two must agree. A reorder that breaks this stops the
         // build instead of silently relabelling every user add as a build.
@@ -361,6 +365,43 @@ public:
                        "loadRecordFor's kind codes must match Kind");
         Kind kind = Kind::Dial;
     };
+    // ---- PERSISTENCE (5 Sep 2026) ----------------------------------------
+    // The log lived only in memory, so reopening a session lost every move
+    // EchoJay had made. Both halves of the restore are pure and header-inline
+    // for the same reason loadRecordFor is: the members they would otherwise
+    // hide in need a live ChainHost, which the gate cannot build.
+
+    // THE TURN COUNTER CONTINUES, it does not restart. t7 in a restored log
+    // and t7 in this session would be two different turns under one label,
+    // which is the ambiguity the ordinal exists to remove. A max rather than
+    // an assignment, so a restore arriving after moves have been made can
+    // only move it forward.
+    static int restoredMoveTurn (int currentTurn, int savedTurn) noexcept
+    {
+        return savedTurn > currentTurn ? savedTurn : currentTurn;
+    }
+
+    // Restored entries, then the boundary, then whatever this session already
+    // has. Trimmed FROM THE FRONT to max, so a restored log plus this
+    // session's moves can never exceed the bound and the oldest go first,
+    // which is the eviction rule the live log already uses.
+    static std::vector<MoveLogEntry> mergeRestoredLog (std::vector<MoveLogEntry> restored,
+                                                       const std::vector<MoveLogEntry>& live,
+                                                       int max)
+    {
+        if (! restored.empty())
+        {
+            MoveLogEntry br;
+            br.kind = MoveLogEntry::Kind::SessionBreak;
+            br.turn = restored.back().turn;
+            br.slot = -1;
+            restored.push_back (std::move (br));
+        }
+        restored.insert (restored.end(), live.begin(), live.end());
+        while ((int) restored.size() > max) restored.erase (restored.begin());
+        return restored;
+    }
+
     // BOUNDED BY COUNT, not bytes, so the log cannot be trimmed mid-entry.
     // RAISED FROM 24 TO 48 (4 Sep 2026), and the number is measured rather
     // than chosen. Structural entries made one build bigger than the whole old
@@ -388,6 +429,11 @@ public:
     // rather than at the callers so every route into the rack is covered by
     // one recorder: an AI build, a picker add, a chain-edit op and a recall
     // all land here.
+    // Move log state (5 Sep 2026). Void when there is nothing to say, so a
+    // session that made no moves grows no key in the blob.
+    juce::var getMoveLogStateVar() const;
+    void      restoreMoveLogState (const juce::var& v);
+
     // What an origin licenses, decided in ONE place; see the definition.
     void recordLoadIfLicensed(LoadOrigin origin, int slot,
                               const juce::String& arrivedName);

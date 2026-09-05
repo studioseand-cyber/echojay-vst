@@ -4120,6 +4120,12 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     // guard. An older build ignores it.
     state->setProperty("chainLevels", chainHost.getLevelsStateVar(chainHost.getHostTrackName()));
     state->setProperty("chainWarningDismissed", chainHost.chainWarningDismissed);
+    // Move log (5 Sep 2026): what EchoJay DID, so reopening a session does not
+    // erase its own account of itself. Void when nothing has happened, so a
+    // session that made no moves grows no key and reads identically in a build
+    // that predates this.
+    if (auto moveLogVar = chainHost.getMoveLogStateVar(); !moveLogVar.isVoid())
+        state->setProperty("moveLog", moveLogVar);
     // Saved chain identity: written only when there IS one, so a session
     // with no saved chain grows no keys and still reads identically in an
     // older build.
@@ -4303,6 +4309,12 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
         }
         
         // Restore chat history
+        // Move log: guarded, else-less, no version integer, exactly as the
+        // discipline above requires. Absent means a save from a build that
+        // predates this, and the log simply starts empty as it always did.
+        if (obj->hasProperty("moveLog"))
+            chainHost.restoreMoveLogState(obj->getProperty("moveLog"));
+
         if (auto* chatArr = obj->getProperty("chatHistory").getArray())
         {
             chatHistory.clear();

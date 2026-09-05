@@ -3356,6 +3356,16 @@ juce::String EchoJayAPI::buildMoveLogInjection(const ChainHost& chainHost)
     for (const auto& e : log)
     {
         using K = ChainHost::MoveLogEntry::Kind;
+        // The session boundary is not a move and carries no slot, so it is
+        // rendered whole and skips the turn/slot scaffolding below.
+        if (e.kind == K::SessionBreak)
+        {
+            b << "----- SESSION BREAK: everything ABOVE this line happened in an"
+                 " earlier session, before the plugin was reloaded. Those moves were"
+                 " real, but they are not recent: never describe one as something you"
+                 " have just done.\n";
+            continue;
+        }
         switch (e.kind)
         {
             case K::Load:   b << "BUILT   "; break;
@@ -3363,6 +3373,7 @@ juce::String EchoJayAPI::buildMoveLogInjection(const ChainHost& chainHost)
             case K::Swap:   b << "SWAPPED "; break;
             case K::Remove: b << "REMOVED "; break;
             case K::Dial:   b << (e.landed ? "DIALLED " : "REFUSED "); break;
+            case K::SessionBreak: break;   // handled above; never reached
         }
         b << "t" << e.turn << " slot " << (e.slot + 1);
         switch (e.kind)

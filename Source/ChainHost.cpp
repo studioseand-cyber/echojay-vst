@@ -6330,6 +6330,78 @@ void ChainHost::recordMove(int slot, const juce::String& plugin, const juce::Str
         moveLog_.erase(moveLog_.begin());
 }
 
+// ---------------------------------------------------------------------------
+// Move log persistence (5 Sep 2026). JSON, into the blob PluginProcessor
+// already writes; readable key names because 48 entries is about 11 KB
+// against a 16 MB slot-state cap, and a blob somebody can read in a crash
+// report is worth more than four saved kilobytes.
+// ---------------------------------------------------------------------------
+juce::var ChainHost::getMoveLogStateVar() const
+{
+    if (moveLog_.empty() && moveTurn_ == 0) return {};   // nothing to say, no key
+
+    auto o = std::make_unique<juce::DynamicObject>();
+    o->setProperty("turn", moveTurn_);
+    juce::Array<juce::var> arr;
+    for (const auto& e : moveLog_)
+    {
+        // Boundaries are made at restore time, one per restore. Writing them
+        // back would stack a new line every time the session is reopened.
+        if (e.kind == MoveLogEntry::Kind::SessionBreak) continue;
+        auto eo = std::make_unique<juce::DynamicObject>();
+        eo->setProperty("turn",   e.turn);
+        eo->setProperty("slot",   e.slot);
+        eo->setProperty("kind",   (int) e.kind);
+        eo->setProperty("plugin", e.plugin);
+        eo->setProperty("param",  e.param);
+        eo->setProperty("before", e.before);
+        eo->setProperty("after",  e.after);
+        eo->setProperty("reason", e.reason);
+        eo->setProperty("landed", e.landed);
+        arr.add(juce::var(eo.release()));
+    }
+    o->setProperty("entries", arr);
+    return juce::var(o.release());
+}
+
+void ChainHost::restoreMoveLogState (const juce::var& v)
+{
+    auto* o = v.getDynamicObject();
+    if (o == nullptr) return;
+
+    moveTurn_ = restoredMoveTurn(moveTurn_, (int) o->getProperty("turn"));
+
+    std::vector<MoveLogEntry> restored;
+    if (auto* arr = o->getProperty("entries").getArray())
+        for (const auto& ev : *arr)
+            if (auto* eo = ev.getDynamicObject())
+            {
+                MoveLogEntry e;
+                e.turn   = (int) eo->getProperty("turn");
+                e.slot   = (int) eo->getProperty("slot");
+                const int k = (int) eo->getProperty("kind");
+                // A kind this build does not know about (a newer build wrote
+                // it) reads as a Dial rather than indexing off the end of the
+                // renderer's switch. The line is then mislabelled, which is
+                // survivable; a bad cast is not.
+                e.kind   = (k >= 0 && k <= (int) MoveLogEntry::Kind::SessionBreak)
+                             ? (MoveLogEntry::Kind) k : MoveLogEntry::Kind::Dial;
+                e.plugin = eo->getProperty("plugin").toString();
+                e.param  = eo->getProperty("param").toString();
+                e.before = eo->getProperty("before").toString();
+                e.after  = eo->getProperty("after").toString();
+                e.reason = eo->getProperty("reason").toString();
+                e.landed = (bool) eo->getProperty("landed");
+                restored.push_back(std::move(e));
+            }
+    if (restored.empty()) return;   // a turn counter alone needs no boundary
+
+    moveLog_ = mergeRestoredLog(std::move(restored), moveLog_, kMoveLogMax);
+    EchoJay_NSLog(("EJMoveLog: restored " + juce::String((int) moveLog_.size())
+                   + " entries (incl. session boundary), turn continues at "
+                   + juce::String(moveTurn_)).toRawUTF8());
+}
+
 // ONE place decides what an origin licenses. completeLoad and the two arms of
 // loadPluginAsync that bypass it all call this rather than each testing the
 // enum, so a fourth load path cannot quietly grow a fourth opinion.
