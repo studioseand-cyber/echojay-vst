@@ -1,0 +1,12 @@
+  median  4.49c  p75  8.09c  p90 15.59c  >25c  3.7%  mean  7.27c || centre 1.43c ||  onset  | all-voiced  2.33 <5c 69.7% | improve-rate vs source 79.6%   || ev 1 ws 0   <- retune 6, LEGACY (shipped hard)
+  median  6.08c  p75 14.67c  p90 31.91c  >25c 12.6%  mean 12.57c || centre 7.18c ||  onset  | all-voiced  4.32 <5c 53.2% | improve-rate vs source 60.5%   || ev 6 ws 0   <- retune 6, SHIFT, hop-sampled removal (shipped shift path forced)
+  median  6.08c  p75 14.46c  p90 31.80c  >25c 12.5%  mean 12.53c || centre 7.18c ||  onset  | all-voiced  4.40 <5c 52.9% | improve-rate vs source 60.3%   || ev 7 ws 1   <- retune 6, SHIFT, ring-aligned removal
+  median  6.09c  p75 14.58c  p90 30.16c  >25c 13.3%  mean 12.52c || centre 7.38c ||  onset  | all-voiced  4.26 <5c 53.5% | improve-rate vs source 61.4%   || ev 7 ws 0   <- retune 44, LEGACY (shipped hard)
+  median  6.51c  p75 16.22c  p90 37.61c  >25c 15.8%  mean 14.07c || centre 4.47c ||  onset  | all-voiced  5.73 <5c 47.4% | improve-rate vs source 55.3%   || ev 8 ws 3   <- retune 44, SHIFT, hop-sampled removal (shipped shift path forced)
+  median  6.54c  p75 15.97c  p90 37.38c  >25c 15.7%  mean 14.03c || centre 4.47c ||  onset  | all-voiced  5.67 <5c 47.6% | improve-rate vs source 55.5%   || ev 8 ws 3   <- retune 44, SHIFT, ring-aligned removal
+  median 28.43c  p75 41.96c  p90 63.12c  >25c 55.4%  mean 30.59c || ev 4 ws 0   <- OLD ign 0, LEGACY
+  median 27.62c  p75 43.36c  p90 63.42c  >25c 54.7%  mean 31.41c || ev 2 ws 0   <- OLD ign 0, SHIFT hop-sampled
+  median 27.62c  p75 43.36c  p90 63.42c  >25c 54.9%  mean 31.39c || ev 3 ws 1   <- OLD ign 0, SHIFT ring-aligned
+  median 36.66c  p75 58.09c  p90 75.78c  >25c 66.3%  mean 39.90c || ev 1 ws 0   <- OLD ign 1, LEGACY
+  median 34.14c  p75 56.85c  p90 76.38c  >25c 64.1%  mean 39.04c || ev 2 ws 0   <- OLD ign 1, SHIFT hop-sampled
+  median 34.36c  p75 56.58c  p90 76.38c  >25c 64.0%  mean 39.00c || ev 2 ws 1   <- OLD ign 1, SHIFT ring-aligned

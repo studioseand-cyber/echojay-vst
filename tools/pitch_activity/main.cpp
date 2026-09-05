@@ -117,7 +117,7 @@ static Render renderSelf (const std::vector<float>& in, double fs, int vt, bool 
     const int lat=sh.latencySamples();
     std::vector<float> raw(in.size(),0.0f);
     PitchEngine::HopEvent ev[64];
-    float target=0, sliceF0=0; float shift=PsolaEngine::kNoShift; bool sliceVoiced=false;
+    float target=0, sliceF0=0; float shift=PsolaEngine::kNoShift; bool sliceVoiced=false; uint32_t lastNC=0;
     for(size_t p=0;p+256<=in.size();p+=256)
     {
         if(c.resetAt>0&&p<=c.resetAt&&p+256>c.resetAt&&c.resetMask)
@@ -158,7 +158,12 @@ static Render renderSelf (const std::vector<float>& in, double fs, int vt, bool 
                 if(c.grain){ if(g>0){ target=g; shift=0.0f; } }
                 else { const float t=corr.process(g,ev[h].voiced,hopMs);
                        if(t>0){ target=t; shift=corr.shiftPreferred()?corr.lastShiftCents():PsolaEngine::kNoShift; }
-                       if(fastRing&&ev[h].voiced&&g>0) sh.setFastRingSlowHz(hzFromCentsC(corr.lastSlowCents(),440.0f)); }
+                       if(fastRing&&ev[h].voiced&&g>0)
+                       { // wobble reference for the fast term: the corrector's 140 ms slow track by default, or a faster one-pole on the hop pitch (PA_FASTSLOW_MS) - scoping only
+                         static double fastRef=0; static bool haveRef=false; const double inC=centsCFromHz(g,440.0f);
+                         const double tauMs=getenv("PA_FASTSLOW_MS")?atof(getenv("PA_FASTSLOW_MS")):0.0;
+                         if(tauMs>0){ if(!haveRef||corr.noteChanges()!=lastNC){ fastRef=inC; haveRef=true; lastNC=corr.noteChanges(); } const double a=std::exp(-hopMs/tauMs); fastRef=inC+(fastRef-inC)*a; sh.setFastRingSlowHz(hzFromCentsC((float)fastRef,440.0f)); }
+                         else sh.setFastRingSlowHz(hzFromCentsC(corr.lastSlowCents(),440.0f)); } }
             }
         }
     }

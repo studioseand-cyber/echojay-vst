@@ -1325,3 +1325,15 @@ how it was found, on the harness's first run. Every new parameter's
 metadata is read back from the schema by the verification harness before
 it is placed; the harness renders a `boolean` param at 0 and 1 only, so a
 knob that shows up with two renders is mis-flagged.
+
+## STANDING RULE, EXTENDED (round-43 ruling): A PATH CHARACTERISED AGAINST A DEFECTIVE MECHANISM IS RE-DERIVED WITH THE CONSTANTS.
+"A constant calibrated against a defective mechanism must be re-derived
+once the defect is fixed" applies equally to a PATH whose behaviour was
+characterised on that mechanism. PATH_UNIFICATION_DECISION's "the shift
+path cannot snap" was measured on an engine with none of this week's
+foundation (no co-timed ratio, no per-hop lag, confirm 25, no seam ramp);
+its k = 0 figures were 13.1-16.3c against legacy's 10.5c, today's are
+4.40c against 2.33c. Re-measured on the current foundation (round 43):
+the deficit SURVIVES and is a property of the path (its centre is the
+140 ms slow track), not of the old engine - but that had to be measured,
+not inherited.

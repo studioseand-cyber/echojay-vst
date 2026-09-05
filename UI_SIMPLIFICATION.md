@@ -748,3 +748,64 @@ Order: merges and the front-panel set (done here, in the set) -> the
 vibrato gain with its bar -> layout. Still no layout code until the set
 is settled. Engine note: setFastRing's upper clamp raised 2 -> 3 for the
 scoping (production has fastRingOn_ off; no behaviour change).
+
+# Round 43 (5 Sep 2026): the shift path RE-MEASURED on the current foundation - the snap deficit is a property of the path; the fork is real; the choice is made knowing the number
+
+## Neutrality of the engine change (setFastRing clamp 2 -> 3), per the tap-neutrality discipline
+Tool renders before and after the change at the shipped default, retune 6
+and 44, hard and keep: BIT-IDENTICAL (four files). Safe for the next
+install; the fast ring is off in production.
+
+## THE MEASUREMENT (sourceNEW, ign OFF, hard base, foundation on; shiftpath_snap_remeasure_2026-09-05.txt)
+    retune | path at k = 0                        | activity med  p90   >25c | off-grid  <5c   improve | NOTE-CENTRE | ev / ws
+       6   | LEGACY (shipped hard)                |   4.49   15.6   3.7%     |  2.33   69.7   79.6     |   1.43c     | 1 / 0
+       6   | SHIFT, hop-sampled removal (shipped) |   6.08   31.9  12.6%     |  4.32   53.2   60.5     |   7.18c     | 6 / 0
+       6   | SHIFT, ring-aligned removal          |   6.08   31.8  12.5%     |  4.40   52.9   60.3     |   7.18c     | 7 / 1
+      44   | LEGACY                               |   6.09   30.2  13.3%     |  4.26   53.5   61.4     |   7.38c     | 7 / 0
+      44   | SHIFT, hop-sampled                   |   6.51   37.6  15.8%     |  5.73   47.4   55.3     |   4.47c     | 8 / 3
+      44   | SHIFT, ring-aligned                  |   6.54   37.4  15.7%     |  5.67   47.6   55.5     |   4.47c     | 8 / 3
+    OLD take (low_male, tau 6; the take is not in D minor, so activity and events only):
+      ign OFF: legacy 28.4c / ev 4 ws 0;  shift hop-sampled 27.6c / ev 2 ws 0;  shift ring-aligned 27.6c / ev 3 ws 1
+      ign ON:  legacy 36.7c / ev 1 ws 0;  shift hop-sampled 34.1c / ev 2 ws 0;  shift ring-aligned 34.4c / ev 2 ws 1   (the falsifier: hop-sampled 0, ring-aligned 1)
+    Onset dump at the 3.26 s note (retune 6, out-src cents): LEGACY reaches the note by 3.269 s (+3.7c); the SHIFT path is
+    still -48c at 3.280 s and reaches it at ~3.31 s - about 40 ms later. The two removal variants are within 0.1c of each
+    other everywhere: the removal mechanism is not the deficit.
+
+## VERDICT, stated explicitly
+THE SNAP DEFICIT IS A PROPERTY OF THE PATH, NOT AN ARTIFACT OF THE PRE-
+CO-TIMING ENGINE. Co-timing, per-hop lag, confirm 15 and the seam ramp are
+all in these renders and the deficit is 2.0c off-grid / 5.75c at the note
+centre / 19 points of improve-rate at the hard end, and ~40 ms of onset
+lateness. The cause is structural: the shift path's centre is the
+corrector's 140 ms slow track (shiftSm = curCents - slowCents), so every
+onset arrives at the smoothed pitch, not the note. The fork is REAL. It
+does not dissolve; the path switch does not retire on this evidence.
+
+## THE CHOICE, made knowing the number (for the ruling)
+  - k = 0 (remove vibrato / hard) lives on the LEGACY path: exact today.
+    Putting it on the shift path costs the hard end 2.0c and 19 points -
+    the end Sean's ear chose in round 40. Not acceptable.
+  - k = 1 (keep) lives on the SHIFT path: exact today (within rounding).
+    Putting it on the legacy path with dev^1 costs 3 word-start events
+    (4 vs 1), because the wobble reference (the slow track) lags at
+    onsets and the onset transient is re-added as "wobble".
+  - THE GAIN BETWEEN THEM must therefore be built on the LEGACY path with
+    the fast factor dev^k, and its onset problem is the WOBBLE REFERENCE,
+    not the path. Scoped: replacing the 140 ms slow track by a faster
+    one-pole reseeded at note changes, k = 1, retune 6:
+        reference        survival   centre   ev / ws
+        140 ms (today)     1.04     2.47c    11 / 4
+         60 ms             0.95     2.37c     9 / 2
+         30 ms             0.84     1.50c     9 / 4
+         15 ms             0.69     1.18c     2 / 1     (shipped keep: 0.97 / 2.57c / 3 / 1)
+    A faster reference removes the onset events and EATS THE VIBRATO IT IS
+    MEANT TO KEEP: no time constant serves both. The design question is
+    now named: a NOTE-CENTRE ESTIMATOR THAT IS FAST AT ONSETS AND SLOW
+    MID-NOTE - the vibrato-tracking problem itself (the corrector already
+    has the pieces: the note-change pending, the confirm window, the
+    re-seed). That is the item the bar's leg 3 (no word-start regression)
+    turns on, and it is DSP work for its own ruling.
+  - Until it is built: natural_vibrato stays the honest switch (0 =
+    legacy, 100 = shift path), the panel ships with KEEP VIBRATO, and the
+    Natural Vibrato name stays reserved.
+The seven-leg bar stands unchanged. Not built.
