@@ -560,7 +560,7 @@ PASS requires ALL of:
 THE FAILURE THAT MATTERS MOST: a WANTED line that never appears during
 playback. That is not a pass: the registry pass never saw the Link while
 playing - most likely the 1 Hz processor timer not running, or the
-in-process / host-identity match failing (an AU hosted out of process
-resolves a different identity than the Link's). Either is a real finding
-to be chased, not explained away. (The ruling text was cut off at this
-point; nothing beyond it is assumed.)
+in-process/host-identity filter rejecting a Link that should have counted.
+Those two suspects are the complete list for a missing wanted line -
+there is no third (round 55 completed the sentence the round-54 ruling
+had cut off). Either is a real finding to be chased, not explained away.
