@@ -809,3 +809,52 @@ does not dissolve; the path switch does not retire on this evidence.
     legacy, 100 = shift path), the panel ships with KEEP VIBRATO, and the
     Natural Vibrato name stays reserved.
 The seven-leg bar stands unchanged. Not built.
+
+# Round 44 (5 Sep 2026): SHIP THE SWITCH; START THE LAYOUT; the recurring pattern filed
+
+## Ruling - ship the switch, start the layout now
+natural_vibrato ships as KEEP VIBRATO, honestly labelled; the continuous
+gain becomes a NAMED BACKLOG ITEM, not a blocker. The reasoning, recorded
+for how future requirements are weighed: Sean asked for the +/-12 knob
+after INFERRING it from Antares' panel and assuming it was the ignore-
+vibrato control (corrected in round 33). He has never expressed a need to
+SCALE vibrato - only that the plugin be dialable, which was about
+decisions not being taken away from him. An honest two-state switch
+takes nothing away; a knob where two of twenty-four positions do anything
+would. DO NOT BLOCK A DELIVERY ON AN INFERRED REQUIREMENT. The panel he
+asked for has been four rounds behind "one more thing first".
+
+## Backlog item (named, unbuilt): THE NATURAL VIBRATO GAIN
+Seven-leg bar on file (round 42); DSP item: a note-centre estimator fast
+at onsets and slow mid-note (round 43). Ships when Sean asks for it.
+
+## DESIGN NOTE - the recurring pattern: ONE TIME CONSTANT AT NOTE STARTS, ANOTHER DURING SUSTAINS
+Three independent mechanisms now want exactly this:
+  1. THE DETECTOR'S ANALYSIS WINDOW - the W^3 variance-versus-bias
+     squeeze during a scoop (ONSET_SHAKINESS_RESEARCH.md section 2): a
+     long window is accurate on a sustain and biased on a glide.
+  2. kNoteConfirmMs - re-derived to 15 ms with co-timing on (round 30):
+     short enough to end the chase, long enough to reject a transient;
+     the OLD take showed 10 ms is too short and 25 too long.
+  3. THE WOBBLE REFERENCE for the vibrato gain (round 43): 140 ms keeps
+     the vibrato (survival 1.04) and re-adds the onset transient (4 word-
+     start events); 15 ms fixes the onsets (1 event) and eats the vibrato
+     (0.69). No single constant serves both.
+PROPOSAL, not built: ONE ONSET-AWARE TIME-CONSTANT PRIMITIVE - a scalar
+"onset-ness" o(t) in [0, 1], 1 at a note start and decaying to 0 over
+the first ~100-150 ms of a note, derived once from state the corrector
+already holds (the pending/confirm machinery, noteMs_, the seam ramp's
+re-entry flag, the gate's accepted jumps), and every time constant that
+wants two values takes tau(t) = tau_fast + (tau_slow - tau_fast) * (1 -
+o(t)). Call sites: (1) the detector's window length or its continuity
+bias (a short effective window while o is high - the round-4 "narrow-
+band re-estimation at onsets" idea in a different coat); (2) the confirm
+window (a short confirm right at an onset where a jump IS the note, a
+longer one mid-note where a jump is a wobble); (3) the wobble reference's
+pole (15 ms while o is high, 140 ms mid-note - exactly the two measured
+ends). One primitive, one definition of "how far into the note are we",
+three consumers - instead of three separate re-derivations that would
+each rediscover the same shape. The seed experiment for the corrector's
+slow track (seedExp 1, "30 ms relaxing to 140 over 300 ms", round 30's
+(a)) was a special case of it. Its own bar when picked up: each consumer
+measured alone against its current constant, then together.
