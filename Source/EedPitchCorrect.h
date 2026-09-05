@@ -258,7 +258,7 @@ public:
     // applies at the single use site, and retuneEffectiveMs() exists so
     // the UI can SHOW the mapping instead of hiding it.
     static constexpr float kRetuneFloorMs = 6.0f;
-    static constexpr float kDefRetuneMs   = 120.0f;
+    static constexpr float kDefRetuneMs   = 44.0f;    // PROVISIONAL DEFAULT (5 Sep 2026, UI_SIMPLIFICATION round 36): the measured-safe neighbourhood; was 120 (natural), which detuned the reference take
     static constexpr float kMinReferenceHz = 380.0f, kMaxReferenceHz = 500.0f;
     static constexpr float kMinTranspose  = -12.0f, kMaxTranspose  = 12.0f;
 
@@ -1027,8 +1027,8 @@ private:
     bool  pendForgetOn_ = false;
     float pendBuf_[3] = { 0, 0, 0 };
     float slowAgeMs_ = 0.0f;   // ms since the slow track was (re)seeded
-    std::atomic<float> flex_        { 55.0f };
-    std::atomic<float> humanize_    { 60.0f };
+    std::atomic<float> flex_     { 0.0f };
+    std::atomic<float> humanize_ { 0.0f };
     std::atomic<float> referenceHz_ { 440.0f };
     std::atomic<float> transpose_   { 0.0f };
     std::atomic<bool>  ignoreVibrato_ { true };

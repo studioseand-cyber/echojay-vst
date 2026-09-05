@@ -1303,3 +1303,15 @@ BOTH NOW FIXED AND BOTH EAR-CONFIRMED:
   4. DEFECT_VIBRATO_ON_TUNING_COST, re-opened and unbundled.
   5. An Antares bounce at a mid retune (~50 on their dial), so the
      retune-44 comparison stops leaning on a fast-setting proxy.
+
+## STANDING NOTE beside the one-default rule (round-36 ruling): THE COPY-PASTE METADATA HAZARD
+A new parameter added by copying an existing schema entry INHERITS ITS
+METADATA. depth copied seam_attack_ms and inherited a `true` in the
+boolean slot; natural_vibrato carried the same; all three continuous
+knobs were advertised to every schema reader as on/off switches. The
+error is invisible in the editor (its knobs ignore the flag) and visible
+only to the model, the dashboard and the verification harness - which is
+how it was found, on the harness's first run. Every new parameter's
+metadata is read back from the schema by the verification harness before
+it is placed; the harness renders a `boolean` param at 0 and 1 only, so a
+knob that shows up with two renders is mis-flagged.

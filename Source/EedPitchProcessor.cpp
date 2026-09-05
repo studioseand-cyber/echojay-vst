@@ -21,7 +21,8 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
 {
     static const echojay::ParamSchema s ({
         { EedPitchProcessor::kMode, "",
-          0.0, (double) (EedPitchProcessor::kNumModes - 1), (double) EedPitchProcessor::kNatural,
+          0.0, (double) (EedPitchProcessor::kNumModes - 1), (double) EedPitchProcessor::kCustom,
+          "PROVISIONAL DEFAULT = custom at retune 44 / flex 0 / humanize 0 / depth 100 (5 Sep 2026, UI_SIMPLIFICATION round 36): the shipped natural default (120/55/60) DETUNED the reference take - improve-rate 44.6%, off-grid 7.95c vs the source 6.72c - corroborating round 27 (flex >= 25 tunes worse than dry). Re-derived when broader material lands; this take is already near-grid. "
           "the CHARACTER of the correction, and the fastest way to get one. "
           "natural is transparent - the tuning is tidied but the performance "
           "survives, and on a good take it is hard to hear; use it when the "
@@ -86,13 +87,13 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "validation still owed before this default is called shipped",
           false },   // was `true` in the boolean slot: a continuous knob advertised as an on/off switch (5 Sep 2026 verification)
 
-        { EedPitchProcessor::kFlex, "%", 0.0, 100.0, 55.0,
+        { EedPitchProcessor::kFlex, "%", 0.0, 100.0, 0.0,      // PROVISIONAL DEFAULT 0 (was 55): measured to detune on the reference take
           "how much expressive drift is left alone before correction engages; "
           "high keeps slides, scoops and deliberate blue notes, 0 corrects "
           "every deviation however small",
           false },
 
-        { EedPitchProcessor::kHumanize, "%", 0.0, 100.0, 60.0,
+        { EedPitchProcessor::kHumanize, "%", 0.0, 100.0, 0.0,   // PROVISIONAL DEFAULT 0 (was 60), with the flex change
           "relaxes correction on SUSTAINED notes while keeping onsets tight, so "
           "long notes do not sound frozen. Sustain is judged from how long the "
           "pitch has been steady, not from how loud it is",

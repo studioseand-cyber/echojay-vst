@@ -288,3 +288,77 @@ TWO CAVEATS ON THE INSTRUMENT, found while using it:
   FOR RULING WITH THE INVENTORY: the default preset (finding 2); whether "keep vibrato" as a labelled
   switch belongs FRONT until the knob exists; where the DEPTH knob goes while the re-map waits on the bounces
   (today it is FRONT beside HUMAN, shipped in 6fcbb0a).
+
+# Round 36 (5 Sep 2026): three rulings and two notes; the default preset changes NOW
+
+## Ruling 1 - THE DEFAULT PRESET CHANGES NOW, MARKED PROVISIONAL
+A pitch corrector whose shipped default DETUNES is broken as a product,
+and it is the first thing every new user hears. natural at retune 120 /
+flex 55 / humanize 60: improve-rate 44.6%, off-grid 7.95c against the
+source's 6.72c (round 35), corroborating round 27 (flex >= 25 tunes worse
+than dry at retune 44) - two independent measurements implicate flex on
+this material. NEW DEFAULT: correction_mode custom at retune 44, flex 0,
+humanize 0, depth 100, seam_attack 60 - the measured-safe neighbourhood,
+where Sean works and what he has ear-confirmed. Schema defaults,
+PitchCorrect member defaults and the mode default changed together (one
+default per parameter). The four character presets are unchanged and
+selectable.
+THE CAVEAT, carried honestly: this take is already autotuned and therefore
+near-grid and hard to improve; on genuinely raw material flex 55 might
+help. The new default is PROVISIONAL and is re-derived when the broader
+takes land (SEAM_ATTACK_VALIDATION_REQUEST.md). But a demonstrably
+harmful default does not ship on the hope that other material rescues it.
+ON THE RECORD: this may be the origin of Sean's opening complaint - "the
+echojay pitch sounded awful on this vocal" - since a fresh instance at
+the shipped default is what he would have heard first, and the shipped
+default made this vocal's tuning worse than leaving it alone.
+
+## Ruling 2 - KEEP-VIBRATO GOES FRONT, HONESTLY LABELLED
+A two-state control whose label says so: "KEEP VIBRATO", on/off. NOT
+"Natural Vibrato" while it is a switch - naming a switch after Antares'
+continuous knob invites exactly the confusion that produced round 33.
+When the gain ships (ruling C's DSP, on the co-timed decision ring) it
+takes the same slot and earns the name then. THE NAME IS RESERVED, NOT
+WITHHELD.
+
+## Ruling 3 - DEPTH STAYS FRONT UNTIL THE RE-MAP EXISTS
+Sean asked for depth to be automatic and it will be, but the re-map waits
+on five Antares bounces that do not yet exist. Depth is the control that
+solved his problem and that he uses daily. A working control is not
+removed to satisfy a simplification that is not built. It moves to
+ADVANCED in the same change that ships the re-mapped dial, not before.
+
+## Note A - formant_mode does nothing in practice
+OFF and PRESERVE are bit-identical for every shift under 2.5 semitones -
+all pitch-correction use. Recorded plainly: THE CONTROL DOES NOTHING IN
+PRACTICE. Proposal for the ruling: not ADVANCED by habit - INTERNAL, no
+control, until a shift-mode use (transpose, formant_shift) exists on the
+front, at which point the switch means something and returns with it.
+
+## Note B - the copy-paste metadata hazard (filed beside the one-default rule in ONSET_PASS_RECORD)
+depth copied seam_attack_ms's schema entry and inherited its `true` in
+the boolean slot; natural_vibrato had the same. A new parameter added by
+copying an existing entry INHERITS ITS METADATA, and metadata errors are
+invisible because the editor's knobs ignore the flag - only schema readers
+(the model, the dashboard, the verification harness) see them.
+
+## Transpose: stays unexposed; DEFECT_TRANSPOSE_OCTAVE.md filed. VERIFY-FIRST IS VINDICATED:
+an unexposed parameter that had never been exercised turned out to be
+broken at +12 in one region (155c where an octave was asked, 2.55 s) and
+to lose 3.7 dB at -12. It would have shipped as a front-panel Transpose
+on the strength of its name.
+
+## The material-limited rows carry their caveat wherever cited
+dorian, harmonic minor and A minor render identically to D minor on
+sourceNEW because the take never visits B/Bb or C/C#. That is a
+limitation of the take, not a finding about the parameter. Any citation
+of those rows says so.
+
+Order unchanged: revised inventory -> rule -> layout. No UI code yet. The
+retune re-map waits on the five bounces; the pitch backlog stays parked.
+
+INSTALLED (5 Sep 2026, provisional default + corrected schema flags + corrected natural_vibrato text; suite 161/0):
+    AU   arm64 9EDF2852-B117-3155-8501-ECEE79465E8F
+    VST3 arm64 F655DD95-FE93-3887-BA86-9FD267B34C56
+  Sean's session is unaffected (his saved params restore explicitly: retune 44.2 / flex 0 / humanize 0 already);
+  a NEW instance now opens at custom 44 / 0 / 0 / depth 100 / seam 60. Relaunch Logic before judging anything.
