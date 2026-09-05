@@ -19,6 +19,7 @@
 #include "EedPitchEngine.h"
 #include "EedPsolaEngine.h"
 #include "EedPitchCorrect.h"
+#include "EedRetuneMap.h"
 #include "EedKeyFeed.h"
 #include "viz/PitchRibbonView.h"
 
@@ -57,6 +58,7 @@ public:
     static constexpr const char* kLowLatency  = "low_latency";
     // P2: the musical layer.
     static constexpr const char* kCorrect      = "correct";
+    static constexpr const char* kRetune       = "retune";           // the 0-400 dial (round 46); drives retune_speed_ms + depth
     static constexpr const char* kRetuneMs     = "retune_speed_ms";
     static constexpr const char* kFlex         = "flex";
     static constexpr const char* kHumanize     = "humanize";
@@ -129,6 +131,13 @@ public:
     // readout says so - "150 (was 400)". Never a silent change to a saved
     // sound. Cleared by any live write.
     float retuneWasMs() const noexcept { return retuneWasMs_; }
+    // THE RETUNE DIAL (UI_SIMPLIFICATION round 46). retune_speed_ms and depth
+    // are internal, driven through EedRetuneMap; a direct write to either
+    // takes the device OFF THE CURVE until the dial is turned again.
+    float retuneDial() const noexcept { return retuneDial_.load(); }
+    bool  retuneOffCurve() const noexcept { return offCurve_.load(); }
+    void  curveAtDial (float& retuneMs, float& depth) const noexcept
+    { echojay::RetuneMap::dialTo (retuneDial_.load(), retuneMs, depth); }
 
 protected:
     void onStateApplied() override;
@@ -250,6 +259,14 @@ private:
     // reference under auto lives in correct_ alone, so a state save cannot
     // launder a detected grid into a user setting (29 Aug 2026 defect).
     float retuneWasMs_ = 0.0f;   // pre-cap value from a clamped load; 0 = none
+    std::atomic<float> retuneDial_ { 0.0f };   // the dial position; 0 = (6 ms, depth 1.0)
+    std::atomic<bool>  offCurve_   { false };  // retune_speed_ms/depth no longer equal the curve at retuneDial_
+    // True when the corrector's (retune_ms, depth) equal the curve at the dial.
+    bool onCurve() const noexcept
+    {
+        float ms = 0.0f, dp = 1.0f; echojay::RetuneMap::dialTo (retuneDial_.load(), ms, dp);
+        return std::abs (correct_.getRetuneMs() - ms) <= 0.05f && std::abs (correct_.getDepth() - dp) <= 0.005f;
+    }
     std::atomic<float> manualRefHz_ { 440.0f };
     std::atomic<bool>  refManualByUser_ { false };
     // Carried ACROSS blocks. The slice before the first hop of a block

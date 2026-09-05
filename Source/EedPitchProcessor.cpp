@@ -45,9 +45,20 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "same reported latency",
           true },
 
+        { EedPitchProcessor::kRetune, "", 0.0, 400.0, 0.0,
+          "RETUNE - the front-panel dial (5 Sep 2026, UI_SIMPLIFICATION round 46), "
+          "0-400, Antares-calibrated. Drives retune_speed_ms AND depth through the "
+          "measured curve: 0 = (6 ms, depth 100 %) the hard end; 50 = (80 ms, 35 %); "
+          "100 = (150 ms, 25 %); 200 = (150 ms, 15 %); 400 = (150 ms, 10 %) the "
+          "transparent end. Median activity falls monotonically along it (measured "
+          "at 18 positions). Writing retune_speed_ms or depth directly takes the "
+          "device OFF THE CURVE (the panel says so) until this dial is turned. "
+          "Default 0 - the round-40 default, provisional (raw-material check owed)" },
+
         { EedPitchProcessor::kRetuneMs, "ms",
           (double) PitchCorrect::kMinRetuneMs, (double) PitchCorrect::kMaxRetuneMs,
           (double) PitchCorrect::kDefRetuneMs,
+          "INTERNAL since 5 Sep 2026 (round 46): driven by `retune`, the 0-400 dial; a direct write here takes the device off that curve. "
           "how fast pitch is pulled to the target - the time constant of an "
           "exponential glide, in honest milliseconds. 0 is the hard-tuned "
           "snap, 100+ is transparent and keeps the singer's own movement. "
@@ -99,6 +110,7 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "pitch has been steady, not from how loud it is",
           false },
         { EedPitchProcessor::kDepth, "%", 0.0, 100.0, 100.0,
+          "INTERNAL since 5 Sep 2026 (round 46): driven by `retune`, the 0-400 dial; a direct write here takes the device off that curve (it stays a dial in ADVANCED as the override). "
           "DEPTH (5 Sep 2026): how much of the correction is APPLIED. 100 is "
           "full correction (today's sound, bit-identical); 0 is exact identity "
           "- the dry voice. Blended AFTER the retune envelope on the applied "
@@ -361,7 +373,20 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
         return true;
     }
     if (id == kRefManualByUser) { refManualByUser_.store (value >= 0.5); return true; }
-    if (id == kDepth)       { correct_.setDepth ((float) value * 0.01f); return true; }
+    if (id == kRetune)
+    {
+        // The dial writes BOTH internals from the curve; by construction the
+        // device is on it afterwards.
+        const float d = (float) juce::jlimit (0.0, (double) echojay::RetuneMap::kMaxDial, value);
+        float ms = 0.0f, dp = 1.0f; echojay::RetuneMap::dialTo (d, ms, dp);
+        retuneDial_.store (d);
+        correct_.setRetuneMs (ms);
+        correct_.setDepth (dp);
+        if (! applyingState()) retuneWasMs_ = 0.0f;
+        offCurve_.store (! onCurve());
+        toCustomMode(); return true;
+    }
+    if (id == kDepth)       { correct_.setDepth ((float) value * 0.01f); offCurve_.store (! onCurve()); return true; }
     if (id == kMode)        { applyMode ((int) std::lround (value)); return true; }
     if (id == kNaturalVib)  { correct_.setNaturalVibrato ((float) value); toCustomMode(); return true; }
     if (id == kVibDepth)    { correct_.setVibDepthCents ((float) value);  return true; }
@@ -382,6 +407,7 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
         else if (! applyingState())
             retuneWasMs_ = 0.0f;
         correct_.setRetuneMs ((float) value);
+        offCurve_.store (! onCurve());
         toCustomMode(); return true;
     }
     if (id == kFlex)        { correct_.setFlex ((float) value);     toCustomMode(); return true; }
@@ -433,6 +459,7 @@ double EedPitchProcessor::getParamValue (const juce::String& id) const
     if (id == kLowLatency)  return shifter().getLookaheadPeriods() <= kLookaheadTracking + 0.01f
                                  ? 1.0 : 0.0;
     if (id == kKeySource)   return keyAuto_.load() ? 0.0 : 1.0;
+    if (id == kRetune)      return (double) retuneDial_.load();
     if (id == kDepth)       return (double) correct_.getDepth() * 100.0;
     if (id == kRefSource)   return refAuto_.load() ? 0.0 : 1.0;
     if (id == kMode)        return (double) modeIndex_.load();
@@ -502,6 +529,11 @@ juce::String EedPitchProcessor::applyMode (int mode)
     const Preset& p = kPresets[m];
 
     const juce::ScopedValueSetter<bool> guard (applyingMode_, true);
+    // The RETUNE dial (round 46) is written by every mode too: at the position
+    // whose retune-ms branch matches the mode's retune. The mode's depth (100)
+    // is not the curve's there, so a mode is OFF THE CURVE by construction and
+    // the panel says so; turning the dial returns to it (and to custom).
+    retuneDial_.store (echojay::RetuneMap::dialForRetuneMs (p.retune));
     correct_.setRetuneMs (p.retune);
     correct_.setFlex (p.flex);
     correct_.setHumanize (p.humanize);
@@ -512,6 +544,7 @@ juce::String EedPitchProcessor::applyMode (int mode)
     // character; depth is how much of it is applied. Same one-default rule as
     // seam_attack_ms (round 22).
     { const auto* dp = schema().find (kDepth); correct_.setDepth (dp != nullptr ? (float) dp->def * 0.01f : 1.0f); }
+    offCurve_.store (! onCurve());
 
     // Every mode preserves formants: the character is retune speed and how much
     // deviation survives, never whether it still sounds like the singer.
@@ -520,7 +553,8 @@ juce::String EedPitchProcessor::applyMode (int mode)
     const auto* spec = schema().find (kMode);
     juce::String name = spec != nullptr ? juce::String (spec->choiceLabel (m)) : juce::String (m);
 
-    pendingModeSummary_ = "which set retune_speed_ms " + juce::String (p.retune, 0)
+    pendingModeSummary_ = "which set retune " + juce::String (retuneDial_.load(), 0)
+         + " (off the curve: the mode's depth), retune_speed_ms " + juce::String (p.retune, 0)
          + ", flex " + juce::String (p.flex, 0)
          + ", humanize " + juce::String (p.humanize, 0)
          + ", natural_vibrato " + juce::String (p.naturalVib, 0)
@@ -735,6 +769,10 @@ void EedPitchProcessor::refreshAutoKey()
 // control restores a wanted manual value in one gesture.
 void EedPitchProcessor::onStateApplied()
 {
+    // A loaded file applies `retune` first (schema order) and its literal
+    // retune_speed_ms/depth after; whether they still sit on the curve is
+    // decided HERE from what actually landed, never from the file's age.
+    offCurve_.store (! onCurve());
     if (! refAuto_.load() && ! refManualByUser_.load())
     {
         refAuto_.store (true);

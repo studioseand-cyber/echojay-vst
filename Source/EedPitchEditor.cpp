@@ -19,7 +19,7 @@ namespace
 EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
     : DeviceEditorBase (p, "PITCH", kDefaultW, kDefaultH), proc_ (p)
 {
-    setHeaderHint ("KEY and SCALE (AUTO follows the bus - turn to override), RETUNE, DEPTH; ADVANCED for the rest");
+    setHeaderHint ("KEY and SCALE (AUTO follows the bus - turn to override); RETUNE 0 = hard, 400 = transparent; ADVANCED for the rest");
 
     // voice_type items ARE the schema's choices, in the schema's order.
     styleCombo (voiceBox_);
@@ -75,7 +75,7 @@ EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
             addAndMakeVisible (k);
         }
     };
-    setupKnob (retuneKnob_, EedPitchProcessor::kRetuneMs, 80.0, 0, " ms", "RETUNE");
+    setupKnob (retuneKnob_, EedPitchProcessor::kRetune, 50.0, 0, "", "RETUNE");   // the 0-400 dial (round 46): drives retune_speed_ms + depth
     // The retune FLOOR readout (30 Aug 2026 ruling): the dial keeps 0 so
     // muscle memory from other correctors finds it, but the readout states
     // what it actually is - "0 (6 ms)". Twice now this project was rescued
@@ -83,16 +83,11 @@ EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
     // caption); same principle, one string.
     retuneKnob_.formatValue = [this] (double v)
     {
-        // Load-clamp memory first (the cap): "150 (was 400)".
-        const float was = proc_.retuneWasMs();
-        if (was > 0.0f)
-            return juce::String ((int) std::lround (v)) + " (was " +
-                   juce::String ((int) std::lround (was)) + ")";
-        const double eff = (double) proc_.retuneEffectiveMs();
-        if (v + 0.01 < eff)
-            return juce::String ((int) std::lround (v)) + " (" +
-                   juce::String (eff, 0) + " ms)";
-        return juce::String ((int) std::lround (v)) + " ms";
+        // The dial number, Antares-style. When retune_speed_ms or depth was
+        // written directly (a mode, the model, the DEPTH override) the device
+        // is OFF THE CURVE and the readout says so; the strip explains.
+        const juce::String n ((int) std::lround (v));
+        return proc_.retuneOffCurve() ? n + " (off)" : n;
     };
     setupKnob (refKnob_,    EedPitchProcessor::kReferenceHz, 0.0, 1, " Hz", "REF");
     setupKnob (flexKnob_,   EedPitchProcessor::kFlex,      0.0, 0, " %",  "FLEX");
@@ -285,9 +280,9 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
     // Visibility follows the panel. Front controls: always. Advanced
     // controls and the readouts: only in the advanced panel.
     juce::Component* const advancedSet[] = { &modeBox_, &trackBox_, &latencyBtn_, &correctBtn_, &seamKnob_,
-                                             &mixKnob_, &outKnob_, &fshiftKnob_, &vibDepthKnob_, &vibRateKnob_,
+                                             &mixKnob_, &outKnob_, &fshiftKnob_, &depthKnob_, &vibDepthKnob_, &vibRateKnob_,
                                              &vibOnsetKnob_, &vibShapeBox_ };
-    juce::Component* const frontSet[]    = { &retuneKnob_, &flexKnob_, &humanKnob_, &depthKnob_, &refKnob_, &refAutoBtn_,
+    juce::Component* const frontSet[]    = { &retuneKnob_, &flexKnob_, &humanKnob_, &refKnob_, &refAutoBtn_,
                                              &keyBox_, &scaleBox_, &keyAutoBtn_, &keepVibBtn_, &vibBtn_ };
     for (auto* c : advancedSet) c->setVisible (advanced_);
     for (auto* c : frontSet)    c->setVisible (! advanced_);
@@ -301,7 +296,7 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
     {
         // FRONT: one row of controls under the ribbon, which takes the rest.
         auto row = content.removeFromBottom (juce::jmin (kKnobH, content.getHeight() / 2));
-        dial (retuneKnob_, row); dial (flexKnob_, row); dial (humanKnob_, row); dial (depthKnob_, row);
+        dial (retuneKnob_, row); dial (flexKnob_, row); dial (humanKnob_, row);
         row.removeFromLeft (juce::jmin (6, row.getWidth()));
         // KEY / SCALE with the AUTO badge beside them: the badge lights when
         // a bus is feeding the key; picking a key or scale overrides it;
@@ -322,7 +317,10 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
         auto sw = row.removeFromLeft (juce::jmin (96, row.getWidth()));
         keepVibBtn_.setBounds (sw.removeFromTop (juce::jmin (kRowH, sw.getHeight())).reduced (1));
         vibBtn_.setBounds (sw.removeFromTop (juce::jmin (kRowH, sw.getHeight())).reduced (1));
-        content.removeFromBottom (juce::jmin (4, content.getHeight()));
+        // The off-curve strip: reserved always (no layout jump), painted
+        // only when retune_speed_ms/depth no longer follow the dial.
+        offCurveBounds_ = content.removeFromBottom (juce::jmin (14, content.getHeight() / 4));
+        content.removeFromBottom (juce::jmin (2, content.getHeight()));
         ribbonBounds_ = content;
         notePanel_ = numbersPanel_ = guardPanel_ = latencyBounds_ = none;
         return;
@@ -352,8 +350,10 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
     {
         auto row = content.removeFromBottom (juce::jmin (kKnobH, content.getHeight() / 2));
         dial (seamKnob_, row); dial (mixKnob_, row); dial (outKnob_, row); dial (fshiftKnob_, row);
+        dial (depthKnob_, row);   // the override (round 46): turning it is leaving the curve
     }
-    content.removeFromBottom (juce::jmin (4, content.getHeight()));
+    offCurveBounds_ = content.removeFromBottom (juce::jmin (14, content.getHeight() / 4));
+    content.removeFromBottom (juce::jmin (2, content.getHeight()));
     // The readouts: note + tuner bar | numbers | guard log.
     notePanel_    = content.removeFromLeft (content.getWidth() * 2 / 5);
     guardPanel_   = content.removeFromRight (juce::jmax (0, content.getWidth() / 2));
@@ -382,6 +382,17 @@ void EedPitchEditor::paintContent (juce::Graphics& g)
     if (! guardPanel_.isEmpty())   paintGuardPanel (g, guardPanel_, r);
     if (! latencyBounds_.isEmpty()) paintLatencyMode (g, latencyBounds_);
     if (! keyAttrBounds_.isEmpty()) paintKeyAttribution (g, keyAttrBounds_);
+    if (! offCurveBounds_.isEmpty() && proc_.retuneOffCurve())
+    {
+        float ms = 0.0f, dp = 1.0f; proc_.curveAtDial (ms, dp);
+        g.setColour (C::amber);
+        g.setFont (uiFont (juce::jmin (11.0f, offCurveBounds_.getHeight() * 0.85f), false));
+        g.drawText ("RETUNE off the curve: retune " + juce::String (proc_.retuneEffectiveMs(), 0) + " ms / depth "
+                    + juce::String (proc_.getParamValue (EedPitchProcessor::kDepth), 0) + " % set directly (a mode, the model, or DEPTH) - dial "
+                    + juce::String (proc_.retuneDial(), 0) + " would be " + juce::String (ms, 0) + " ms / " + juce::String (dp * 100.0f, 0)
+                    + " %; turn RETUNE to return",
+                    offCurveBounds_, juce::Justification::centredLeft);
+    }
 
     g.setOpacity (1.0f);
 }
@@ -614,7 +625,7 @@ void EedPitchEditor::syncFromProcessor()
         const double v = proc_.getParamValue (id);
         if (std::abs (v - k.getRealValue()) > 1.0e-4) k.setRealValue (v);
     };
-    syncKnob (retuneKnob_, EedPitchProcessor::kRetuneMs);
+    syncKnob (retuneKnob_, EedPitchProcessor::kRetune);
     syncKnob (refKnob_,    EedPitchProcessor::kReferenceHz);
     {
         // Dim the REF knob in auto - it shows the manual FIELD, which auto
@@ -739,10 +750,10 @@ const std::vector<const char*>& EedPitchEditor::handControlledParams()
         EedPitchProcessor::kKeyRoot,       // keyBox_
         EedPitchProcessor::kScale,         // scaleBox_
         EedPitchProcessor::kKeySource,     // keyAutoBtn_ - the AUTO badge on KEY/SCALE
-        EedPitchProcessor::kRetuneMs,      // retuneKnob_
+        EedPitchProcessor::kRetune,        // retuneKnob_ - the 0-400 dial (round 46)
         EedPitchProcessor::kFlex,          // flexKnob_
         EedPitchProcessor::kHumanize,      // humanKnob_
-        EedPitchProcessor::kDepth,         // depthKnob_ (FRONT until the re-mapped dial ships)
+        EedPitchProcessor::kDepth,         // depthKnob_ (ADVANCED since round 46: the override off the curve)
         EedPitchProcessor::kNaturalVib,    // keepVibBtn_ - KEEP VIBRATO, the two-state control it is
         EedPitchProcessor::kIgnoreVib,     // vibBtn_
         EedPitchProcessor::kReferenceHz,   // refKnob_

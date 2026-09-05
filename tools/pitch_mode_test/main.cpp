@@ -416,6 +416,170 @@ int main()
         echojay::KeyFeed::instance().publish (echojay::DetectedKeyFact {});
     }
 
+    std::printf ("== THE RETUNE DIAL (round 46): the curve, the default, off-curve, saved-state semantics ==\n");
+    {
+        // Bar leg 6: a fresh instance is at dial 0 = (6 ms, depth 100).
+        {
+            EedPitchProcessor q; q.prepareToPlay (48000.0, 512);
+            check (std::abs (q.getParamValue ("retune")) < 1.0e-6, "fresh instance: retune dial 0");
+            check (std::abs (q.getParamValue ("retune_speed_ms") - 6.0) < 1.0e-4 && std::abs (q.getParamValue ("depth") - 100.0) < 1.0e-4,
+                   "fresh instance: retune_speed_ms 6 / depth 100 (the round-40 default)");
+            check (! q.retuneOffCurve(), "fresh instance is ON the curve");
+        }
+        // Bar leg 2 (the pairs): the shipped mapping equals the round-40 v3 rows
+        // (transfer_tf4_2026-09-05.txt) at the 18 measured positions, to the
+        // precision those rows were run at (retune %.1f ms, depth %.3f).
+        {
+            struct Row { double dial, ms, depth; };
+            static const Row kTf4[] = {
+                { 0, 6.0, 1.000 }, { 2, 6.1, 0.932 }, { 5, 6.7, 0.870 }, { 10, 9.0, 0.789 }, { 15, 12.7, 0.720 },
+                { 20, 17.8, 0.658 }, { 25, 24.5, 0.600 }, { 30, 32.6, 0.545 }, { 35, 42.3, 0.494 }, { 40, 53.4, 0.444 },
+                { 45, 65.9, 0.396 }, { 50, 80.0, 0.350 }, { 75, 115.0, 0.300 }, { 100, 150.0, 0.250 }, { 150, 150.0, 0.200 },
+                { 200, 150.0, 0.150 }, { 300, 150.0, 0.125 }, { 400, 150.0, 0.100 } };
+            EedPitchProcessor q; q.prepareToPlay (48000.0, 512);
+            bool all = true;
+            for (const auto& r : kTf4)
+            {
+                q.setParamValue ("retune", r.dial);
+                const double ms = q.getParamValue ("retune_speed_ms"), dp = q.getParamValue ("depth") * 0.01;
+                const bool ok = std::abs (ms - r.ms) <= 0.05 + 1.0e-9 && std::abs (dp - r.depth) <= 0.0005 + 1.0e-9 && ! q.retuneOffCurve();
+                std::printf ("    dial %3.0f -> retune %7.3f ms  depth %.4f   (tf4 row %5.1f / %.3f) %s\n", r.dial, ms, dp, r.ms, r.depth, ok ? "" : "MISMATCH");
+                all = all && ok;
+            }
+            check (all, "the shipped mapping reproduces the 18 round-40 (retune, depth) pairs within the rows' printed precision, on-curve at every one");
+        }
+        // Bar leg 5: DEPTH (and retune_speed_ms) as the override - off the curve, and back.
+        {
+            EedPitchProcessor q; q.prepareToPlay (48000.0, 512);
+            q.setParamValue ("retune", 100.0);
+            check (std::abs (q.getParamValue ("retune_speed_ms") - 150.0) < 1.0e-3 && std::abs (q.getParamValue ("depth") - 25.0) < 1.0e-2 && ! q.retuneOffCurve(),
+                   "dial 100 -> 150 ms / depth 25, on the curve");
+            q.setParamValue ("depth", 50.0);
+            check (q.retuneOffCurve() && std::abs (q.getParamValue ("retune") - 100.0) < 1.0e-6 && std::abs (q.getParamValue ("depth") - 50.0) < 1.0e-3,
+                   "DEPTH turned by hand to 50: OFF the curve, the dial still reads 100, depth is what was set");
+            q.setParamValue ("retune", 100.0);
+            check (! q.retuneOffCurve() && std::abs (q.getParamValue ("depth") - 25.0) < 1.0e-2, "turning RETUNE returns to the curve (depth back to 25)");
+            q.setParamValue ("retune_speed_ms", 44.0);
+            check (q.retuneOffCurve() && std::abs (q.getParamValue ("retune_speed_ms") - 44.0) < 1.0e-4, "a direct retune_speed_ms write (the model's path) is honoured and shown off-curve");
+            // A mode writes its own retune/depth: off the curve by construction, dial at the mode's position.
+            q.applyStructured (params ({ { "correction_mode", "natural" } }));
+            check (q.retuneOffCurve() && std::abs (q.getParamValue ("retune_speed_ms") - 120.0) < 1.0e-4 && std::abs (q.getParamValue ("retune") - 78.571) < 0.01,
+                   "mode natural: retune 120 / depth 100 as the table says, dial shown at 78.6 (the 120 ms position), off the curve");
+            q.setParamValue ("retune", 0.0);
+            check (! q.retuneOffCurve() && (int) std::lround (q.getParamValue ("correction_mode")) == 4, "turning the dial from a mode: custom, on the curve");
+        }
+        // Bar leg 1 (the semantics, before the render proof): an OLD file with no
+        // `retune` field loads its own retune_speed_ms/depth literally - off the
+        // curve at dial 0 - and a file saved by THIS build round-trips exactly.
+        {
+            const juce::String old44 =
+                "{\"v\": 1, \"bypassed\": false, \"params\": {\"correction_mode\": 4.0, \"correct\": 1.0, "
+                "\"retune_speed_ms\": 44.211582183837891, \"flex\": 0.0, \"humanize\": 0.0, \"key_source\": 1.0, \"key_root\": 2.0, \"scale\": 1.0}}";
+            EedPitchProcessor q; q.prepareToPlay (48000.0, 512);
+            q.setStateInformation (old44.toRawUTF8(), (int) old44.getNumBytesAsUTF8());
+            check (std::abs (q.getParamValue ("retune_speed_ms") - 44.211582) < 1.0e-4 && std::abs (q.getParamValue ("depth") - 100.0) < 1.0e-6,
+                   "Sean's 3 Sep file (retune 44.21, no depth, no retune field): loads retune_speed_ms 44.21 / depth 100 - NOT reinterpreted");
+            check (q.retuneOffCurve() && std::abs (q.getParamValue ("retune")) < 1.0e-6, "...shown OFF the curve at dial 0 (the readout explains)");
+            const juce::String old6 = old44.replace ("44.211582183837891", "6.0");
+            q.setStateInformation (old6.toRawUTF8(), (int) old6.getNumBytesAsUTF8());
+            check (! q.retuneOffCurve() && std::abs (q.getParamValue ("retune_speed_ms") - 6.0) < 1.0e-6, "his session at retune 6 / depth 100: loads ON the curve at dial 0");
+            // Round trip from this build: dial 200 (on curve), and dial 200 + depth override (off curve) both survive a save/load.
+            q.setParamValue ("retune", 200.0);
+            juce::MemoryBlock st; q.getStateInformation (st);
+            EedPitchProcessor r; r.prepareToPlay (48000.0, 512); r.setStateInformation (st.getData(), (int) st.getSize());
+            check (std::abs (r.getParamValue ("retune") - 200.0) < 1.0e-6 && std::abs (r.getParamValue ("retune_speed_ms") - 150.0) < 1.0e-3
+                   && std::abs (r.getParamValue ("depth") - 15.0) < 1.0e-2 && ! r.retuneOffCurve(),
+                   "save/load at dial 200: retune 200, 150 ms / depth 15, on the curve");
+            q.setParamValue ("depth", 60.0);
+            q.getStateInformation (st);
+            EedPitchProcessor r2; r2.prepareToPlay (48000.0, 512); r2.setStateInformation (st.getData(), (int) st.getSize());
+            check (std::abs (r2.getParamValue ("retune") - 200.0) < 1.0e-6 && std::abs (r2.getParamValue ("depth") - 60.0) < 1.0e-3 && r2.retuneOffCurve(),
+                   "save/load at dial 200 with DEPTH overridden to 60: the override survives the file and is shown off-curve");
+            // The schema order that makes this work: `retune` is listed before retune_speed_ms and depth.
+            int iR = -1, iMs = -1, iD = -1, n = 0;
+            for (const auto& sp : EedPitchProcessor::schema().params())
+            { if (sp.id == "retune") iR = n; if (sp.id == "retune_speed_ms") iMs = n; if (sp.id == "depth") iD = n; ++n; }
+            check (iR >= 0 && iR < iMs && iR < iD, "schema order: `retune` precedes retune_speed_ms and depth, so a saved file applies the dial first and the literals after");
+        }
+    }
+
+    // ---- SAVED-STATE RENDER IDENTITY (5 Sep 2026, UI_SIMPLIFICATION round 46, bar leg 1):
+    // EJ_STATE_RENDER_OUT=<dir>: renders the standing take (EJ_PITCH_SOURCE
+    // overrides) through saved states exactly as a host would load them. The
+    // FIRST run (the pre-change binary) writes <dir>/<name>.wav; every later
+    // run COMPARES against those files bit for bit. This is how "nothing
+    // already saved is reinterpreted" is proved rather than asserted.
+    if (const char* sdir = std::getenv ("EJ_STATE_RENDER_OUT"))
+    {
+        std::printf ("== SAVED-STATE RENDER IDENTITY -> %s ==\n", sdir);
+        const char* env = std::getenv ("EJ_PITCH_SOURCE");
+        juce::File src (env != nullptr ? juce::String (env) : juce::String ("/Users/SeanD/Music/Logic/test/Bounces/sourceNEW.wav"));
+        juce::AudioBuffer<float> take; double fs = 48000.0;
+        if (src.existsAsFile())
+        {
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::AudioFormatReader> r (wav.createReaderFor (src.createInputStream().release(), true));
+            if (r != nullptr) { fs = r->sampleRate; take.setSize (1, (int) r->lengthInSamples); r->read (&take, 0, (int) r->lengthInSamples, 0, true, false); }
+        }
+        if (take.getNumSamples() == 0) std::printf ("  [SKIP] material not found\n");
+        else
+        {
+            juce::File out (sdir); out.createDirectory();
+            // Sean's slot state as decoded from his Logic project (3 Sep 2026), verbatim.
+            const juce::String sean44 =
+                "{\"v\": 1, \"bypassed\": false, \"params\": {\"correction_mode\": 4.0, \"correct\": 1.0, "
+                "\"retune_speed_ms\": 44.211582183837891, \"flex\": 0.0, \"humanize\": 0.0, "
+                "\"targeting_ignores_vibrato\": 0.0, \"key_source\": 1.0, \"key_root\": 2.0, \"scale\": 1.0, "
+                "\"reference_source\": 0.0, \"reference_hz\": 439.19219970703125, \"ref_manual_by_user\": 0.0, "
+                "\"transpose\": 0.0, \"natural_vibrato\": 0.0, \"vib_depth_cents\": 0.0, \"vib_rate_hz\": 5.5, "
+                "\"vib_shape\": 0.0, \"vib_onset_ms\": 300.0, \"voice_type\": 1.0, \"tracking\": 1.0, "
+                "\"formant_mode\": 1.0, \"formant_shift\": 0.0, \"low_latency\": 0.0, \"mix\": 100.0, "
+                "\"output_db\": 0.0, \"target_hz\": 0.0, \"reset_stats\": 0.0}}";
+            const juce::String sean6  = sean44.replace ("44.211582183837891", "6.0");   // his session at the round-40 default
+            const juce::String sean6d = sean6.replace ("\"flex\": 0.0", "\"depth\": 100.0, \"seam_attack_ms\": 60.0, \"flex\": 0.0");   // as today's build saves it
+            struct Case { const char* name; juce::String state; };
+            const Case cases[] = { { "sean_retune44", sean44 }, { "sean_retune6", sean6 }, { "sean_retune6_depth100", sean6d }, { "fresh_default", {} } };
+            for (const auto& c : cases)
+            {
+                EedPitchProcessor q; q.prepareToPlay (fs, 512);
+                q.setKeyFeedSelfId (77);
+                echojay::KeyFeed::instance().publish (echojay::DetectedKeyFact {});
+                if (c.state.isNotEmpty()) q.setStateInformation (c.state.toRawUTF8(), (int) c.state.getNumBytesAsUTF8());
+                juce::AudioBuffer<float> o (1, take.getNumSamples());
+                juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m;
+                for (int pos = 0; pos < take.getNumSamples(); pos += 512)
+                {
+                    const int n = juce::jmin (512, take.getNumSamples() - pos);
+                    b.clear(); b.copyFrom (0, 0, take, 0, pos, n); b.copyFrom (1, 0, take, 0, pos, n);
+                    q.processBlock (b, m);
+                    o.copyFrom (0, pos, b, 0, 0, n);
+                }
+                const juce::String applied = "retune_speed_ms " + juce::String (q.getParamValue ("retune_speed_ms"), 2)
+                                           + " depth " + juce::String (q.getParamValue ("depth"), 1);
+                juce::File f = out.getChildFile (juce::String (c.name) + ".wav");
+                juce::WavAudioFormat wav;
+                if (f.existsAsFile())
+                {
+                    std::unique_ptr<juce::AudioFormatReader> r (wav.createReaderFor (f.createInputStream().release(), true));
+                    juce::AudioBuffer<float> ref;
+                    if (r != nullptr) { ref.setSize (1, (int) r->lengthInSamples); r->read (&ref, 0, (int) r->lengthInSamples, 0, true, false); }
+                    size_t diff = 0;
+                    const int n = juce::jmin (ref.getNumSamples(), o.getNumSamples());
+                    for (int i = 0; i < n; ++i) if (ref.getSample (0, i) != o.getSample (0, i)) ++diff;
+                    const bool same = ref.getNumSamples() == o.getNumSamples() && diff == 0;
+                    check (same, juce::String (c.name) + " renders BIT-IDENTICAL to the reference render (" + juce::String ((int) diff)
+                                 + " samples differ, " + juce::String (ref.getNumSamples()) + " vs " + juce::String (o.getNumSamples()) + "); applied " + applied);
+                }
+                else
+                {
+                    std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (new juce::FileOutputStream (f), fs, 1, 32, {}, 0));
+                    if (w != nullptr) { w->writeFromAudioSampleBuffer (o, 0, o.getNumSamples()); w.reset(); }
+                    std::printf ("  wrote reference %s (%d samples); applied %s\n", f.getFileName().toRawUTF8(), o.getNumSamples(), applied.toRawUTF8());
+                }
+            }
+        }
+    }
+
     // ---- PARAMETER VERIFICATION RENDERS (5 Sep 2026, UI_SIMPLIFICATION ruling A):
     // A PARAMETER'S DOCUMENTED BEHAVIOUR IS A CLAIM, NOT A FACT, UNTIL A RENDER
     // SHOWS IT. Gated by EJ_VERIFY_OUT=<dir>: renders the standing take through
@@ -704,6 +868,7 @@ int main()
                                     "uncontrolled - see EedPitchProcessor::onStateApplied" },
             { "transpose",        "INTERNAL, unexposed pending DEFECT_TRANSPOSE_OCTAVE (+12 gives 155c in one region; -12 loses 3.7 dB)" },
             { "target_hz",        "INTERNAL: the P1 fixed-target diagnostic path (UI_SIMPLIFICATION inventory)" },
+            { "retune_speed_ms",  "INTERNAL since round 46: driven by the RETUNE dial (`retune`); a direct write is the model's/chain's override, shown off-curve" },
             { "reset_stats",      "INTERNAL: a momentary readout reset (UI_SIMPLIFICATION inventory)" },
         };
         auto exemptUi = [&] (const std::string& id)

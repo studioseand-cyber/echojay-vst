@@ -80,6 +80,7 @@ private:
     // mode rather than a checkbox, and carries the number it costs.
     juce::TextButton latencyBtn_;
     juce::Rectangle<int> latencyBounds_, keyAttrBounds_;
+    juce::Rectangle<int> offCurveBounds_;   // round 46: the strip that explains an off-curve retune_speed_ms/depth
     void paintKeyAttribution (juce::Graphics& g, juce::Rectangle<int> area);
     void paintLatencyMode (juce::Graphics& g, juce::Rectangle<int> area);
     void refreshLatencyButton();

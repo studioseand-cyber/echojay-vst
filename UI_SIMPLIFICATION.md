@@ -1024,3 +1024,100 @@ construction and the readout says so; Custom (the default) is on it.
      the round-40 default; checked in the suite.
 FRONT goes to 8: RETUNE (0-400), FLEX, HUMAN, KEY+SCALE with AUTO, REF
 with AUTO, KEEP VIBRATO, IGN VIB, VOICE TYPE.
+
+## Round 46 step 2: THE RE-MAP BUILT - every leg measured
+
+Commit scope: `Source/EedRetuneMap.h` (new, the curve as one header shared
+by the processor and the measurement tools), `EedPitchProcessor.{h,cpp}`
+(the `retune` parameter, on/off-curve tracking, the mode table writes the
+dial), `EedPitchEditor.{h,cpp}` (RETUNE 0-400 on the front, DEPTH to
+ADVANCED, the off-curve strip), `tools/pitch_mode_test/main.cpp` (the
+saved-state render-identity harness, the dial checks, the ledger).
+
+### What the dial now reads
+RETUNE is a 0-400 dial, no unit, Antares-calibrated. 0 = (6 ms, depth
+100 %), the hard end and the default. 50 = (80 ms, 35 %). 100 = (150 ms,
+25 %). 200 = (150 ms, 15 %). 400 = (150 ms, 10 %), the transparent end.
+The readout shows the dial number; "(off)" is appended when
+retune_speed_ms or depth were written directly, and a strip under the
+ribbon says what is applied, what the dial would give, and that turning
+RETUNE returns to the curve. DEPTH sits in ADVANCED as the override.
+
+### THE BAR, leg by leg
+  1. SAVED-STATE SEMANTICS - PASS, by render. The pre-change test binary
+     rendered four states (Sean's 3 Sep file at retune 44.21; the same at
+     retune 6; retune 6 with depth 100 and seam 60 as today's build saves;
+     a fresh default instance) on the NEW take (sourceNEW) and the OLD
+     take (dry.wav). The post-change binary renders all EIGHT bit-
+     identical (0 samples differ; 636096 and 393216 samples each).
+     Harness: `EJ_STATE_RENDER_OUT=<dir>` in the mode test (writes on the
+     first run, compares afterwards). Semantics in the suite: the 3 Sep
+     file loads retune_speed_ms 44.21 / depth 100 at dial 0, off-curve;
+     the retune-6 file loads on-curve; dial 200 round-trips on-curve; dial
+     200 + DEPTH 60 round-trips off-curve with 60 intact; schema order
+     (`retune` before retune_speed_ms and depth) asserted.
+  2. THE CURVE - PASS. The shipped mapping equals the tf4 rows at all 18
+     positions (retune to 0.05 ms, depth to 0.0005; suite). pitch_activity
+     re-run through the shipped mapping's EXACT pairs, same invocation as
+     tf4 (tools/pitch_activity/logs_2026-09-03/transfer_SHIPPED_2026-09-05.txt):
+     max |median - tf4 row| = 0.01c (dial 15: 3.61 vs 3.62); every other
+     position identical to 0.01c; tails within the recorded residual (p90
+     max 16.11c at dial 30 vs dial 0's 15.59c, +0.52c against the recorded
+     +0.58c; >25c max 4.9%, as recorded).
+  3. MONOTONIC - PASS, re-checked on the re-run: median strictly
+     decreasing at all 18 positions (4.49, 4.16, 3.87, 3.66, 3.61, 3.47,
+     3.19, 3.12, 2.99, 2.81, 2.60, 2.34 | 2.12, 1.84, 1.50, 1.13, 0.94,
+     0.76c).
+  4. WORD STARTS - PASS. Dial 0 renders bit-identical to today's default
+     on both takes (leg 1), so the default's events are today's (ev 1 / ws
+     0 on NEW); the per-position ev/ws column on the re-run is identical
+     to tf4 at every position. OLD-take falsifier: the four OLD-take
+     renders are bit-identical, so its result is unchanged.
+  5. DEPTH OFF THE FRONT - DONE. It is the fifth dial of the ADVANCED row.
+     Suite: turning it to 50 at dial 100 -> off-curve, dial still reads
+     100, depth 50 applied; turning RETUNE -> back on the curve (depth
+     25). A direct retune_speed_ms write (the model's path) is honoured and
+     shown off-curve. A mode (natural) writes retune 120 / depth 100 as
+     the table says, the dial shows 78.6 (the 120 ms position), off-curve;
+     turning the dial gives custom, on-curve.
+  6. DEFAULT - PASS. Fresh instance: retune 0, retune_speed_ms 6, depth
+     100, on the curve.
+
+Suite: 180 PASS / 0 FAIL (162 before; the 18 new checks are the ones
+above). One failure during the build was the suite's own tolerance
+(0.6f x 100 = 60.000002 against 1e-6), fixed in the check, not the code.
+
+### What the mode table does now
+Every mode writes the dial (at the position whose retune-ms branch
+matches the mode's retune) and its own retune_speed_ms / depth 100 as
+before - so a mode is OFF THE CURVE by construction and the strip says
+so. Custom (the default) is on it. The mode-table completeness check
+passes with `retune` character-bearing.
+
+### Front panel: 8
+RETUNE (0-400), FLEX, HUMAN, KEY+SCALE with AUTO, REF with AUTO, KEEP
+VIBRATO, IGN VIB, VOICE TYPE (header). ADVANCED: 13 controls (the 12
+plus DEPTH). INTERNAL: retune_speed_ms joins formant_mode, transpose,
+target_hz, reset_stats, ref_manual_by_user - each exempted in the
+suite's ledger with its reason.
+
+### Installed (5 Sep 2026), ~/Library only, via tools/install_local.sh build-release
+  | plugin | arm64 UUID (the slice Logic loads; the x86_64 slice differs) |
+  |---|---|
+  | AU   `EchoJay V2.component` | 071A2E31-26F7-3309-9811-23218A54D368 |
+  | VST3 `EchoJay V2.vst3`      | C23D3B77-0206-3F03-8329-88100AD060F0 |
+AUHostingServiceXPC_arrow killed after the install. SEAN MUST RELAUNCH
+LOGIC before looking. His saved session loads and sounds exactly as it
+did (leg 1); the panel will show RETUNE at 0 "(off)" with the strip
+explaining that retune 44 ms / depth 100 % came from the file - turning
+RETUNE puts the session on the curve.
+
+### What Sean should hear and see
+- RETUNE reads 0 to 400. 0 is the hard end he chose in round 40 (the
+  default). Sweeping up gets progressively calmer and more transparent
+  the whole way - no busier region on the way (the round-39 requirement,
+  measured). 50 / 100 / 200 / 400 sit on Antares' anchors.
+- DEPTH is in ADVANCED. Turning it there leaves the curve; the front
+  dial shows "(off)" and the strip says so; turning RETUNE returns.
+- Front panel is 8 controls. This is the panel he asked for in the
+  original request: depth automatic and linked to retune, dialable.
