@@ -370,3 +370,96 @@ FOR SEAN (cheap, before anything else): with the take playing live, read
 the [DETECTED KEY] block - source name, root/mode, confidence, age - and
 compare it with the key the bounce was made under. If they differ, or the
 source is "this channel", that is the live-only complaint.
+
+# Round 23 (5 Sep 2026): RE-RANKED AHEAD OF THE TIMING LAG; the mechanism in its proper terms; the investigation plan
+
+## The re-rank and its reason
+
+Round 17 ranked the timing lag above the slow end on a magnitude of ~30 ms
+/ up to 42c. Round 18 RETRACTED that number: the real lag is 6.5 ms alto /
+10 ms low male, 6-8% of hops. The ranking was never re-examined after the
+retraction. Auto-key then jumped the queue on its own merits (reference-
+set contamination, take-scale failure). The slow end has therefore been
+sitting behind a priority built on a withdrawn number. Re-ranked: auto-key
+branch (done), THEN THE SLOW END, then the timing lag with its
+cancellation clause.
+
+## The mechanism, stated in the terms it should be filed under - the same shape as the fast-end architectural difference
+
+ANTARES' RETUNE DIAL INTERPOLATES BETWEEN "CORRECT INSTANTLY" AND "DON'T
+CORRECT". OURS INTERPOLATES BETWEEN "CORRECT INSTANTLY" AND "CORRECT
+EVENTUALLY". At 150 ms against notes of a few hundred ms, "eventually"
+never arrives inside a note, so the correction is PERMANENTLY MID-JOURNEY.
+That is precisely the measured result: 8x the movement (4.90c vs 0.61c
+median activity) and NO CLOSER TO GRID (7.08c vs the source's own 7.26c,
+container figures; this ruler: all-voiced median 6.87c at tau 150 vs
+6.72c source, section 2 rows). Their slow limit is transparency; ours is
+a slow commitment to full correction. Cross-reference round 17's aligned
+attribution: "envelope in transit is the largest bucket everywhere"
+(43-47% of activity, mean 6.5 -> 13.6c from tau 6 to 150) - the transit
+IS the slow end.
+
+## The self-inflicted part (link to PITCH_P0_VALIDATION.md §17.7 addendum, round-18 ruling 1)
+
+The 150 ms cap was a mitigation for the boundary snap exploding beyond it
+(§17.7). The cap patched the snap at the price of the transparent end of
+the dial. THE SETTING SEAN WAS REACHING FOR DOES NOT EXIST ON OUR PLUGIN
+BECAUSE OF A DEFECT WE WORKED AROUND RATHER THAN FIXED. Already filed as
+the §17.7 addendum ("a given-up capability, not a safety limit"); the two
+are one finding seen from the dial and from the cap.
+
+## What to investigate - NO BUILDING, BAR FIRST
+
+  1. DEPTH, NOT SPEED. Can the slow end be made to approach ZERO
+     CORRECTION DEPTH rather than slow convergence? Antares' slow limit is
+     transparent because the correction never commits, not because it is
+     slow. Characterise what the dial would have to blend - depth as well
+     as speed: e.g. the applied shift scaled by a depth term that falls
+     toward 0 as tau rises past the knee, so tau 150 = "a little, slowly"
+     rather than "all of it, slowly" - and what that breaks: the mode
+     table's meaning of natural (120) and balanced (40), the flex/humanize
+     interaction (both already scale depth by a different rule), the
+     note-boundary snap (a depth-scaled envelope snaps by a depth-scaled
+     step - possibly the cheap fix for the snap itself), and the record's
+     every tau-labelled measurement.
+  2. LIFT THE CAP BY FIXING THE SNAP. If the boundary snap is fixed (the
+     env5 release path or path unification, PATH_UNIFICATION_DECISION.md),
+     the cap can lift so that slow means slow-AND-SETTLED (400 ms on a
+     600 ms note does arrive) rather than slow-and-still-travelling. Cost:
+     the snap fix's own bar (four-part acceptance, once reverted at
+     f1d9f5f for the 5.2s -123c hold); risk: §17.4's all-scoop region
+     returns with the cap, and "settled" still means fully committed -
+     it is a longer journey to the same destination, not transparency.
+  3. RELABEL. The measured knee is 40-80 ms (section 2: activity and
+     >25c share both step up between 40 and 80). A third legitimate
+     answer is to relabel the dial's useful range and route gentleness to
+     Flex. Report which of 1/2/3 is cheaper and which is more honest with
+     the trade stated - to be measured, not argued: the depth-blend is a
+     corrector-local change with a synthetic-truth bar (activity median
+     at the dial's top must approach the source's own, i.e. transparency,
+     while tau 6-40 rows stay bit-identical); the cap-lift needs the snap
+     fix first; the relabel needs only the measurement in section 2
+     re-read at flex settings.
+
+## For Sean - the Flex advice, checked against the parameter semantics
+
+He is reaching for retune speed to get GENTLENESS. Retune sets SPEED (the
+one-pole time constant of the glide to the target), not depth. Flex is
+the DEPTH control in this architecture: "how much expressive drift is
+left alone before correction engages" - below the flex threshold the
+correction scales toward zero (wanted *= |wanted|/threshold), above it
+full correction; at 0 everything is corrected, at 100 only gross errors
+(> 100c) are. Humanize relaxes depth on SUSTAINED notes only (stableMs
+>= kSustainMs), leaving onsets tight. So: THE ADVICE IS CORRECT AS FAR AS
+IT GOES - gentleness lives in Flex (and Humanize for sustains), and
+Antares' slow setting behaves like a depth control only as a side effect
+of its architecture. THE CAVEAT HE SHOULD HEAR: Flex is a THRESHOLD on
+deviation, not a proportional blend - a note 20c off at flex 55 is
+corrected by (20/55) of its error (partial), a note 80c off is corrected
+fully; it leaves small drift and fixes big misses, which is what
+"gentle" usually means, but it is not a wet/dry on the correction. If
+what he wants is "a little of the correction, everywhere" - the Antares
+slow-limit feel - that is the depth blend of investigation item 1, and
+Flex does not give it to him today; MIX (the chain wet knob, 0-100) is
+the nearest existing control for that and is worth trying at his
+44 ms setting before anything is built.

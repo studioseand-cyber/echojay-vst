@@ -553,3 +553,64 @@ both manually, and note whether that alone changes what he hears.
 
 Then the timing lag with its cancellation clause (SLOW_END_RECORD.md),
 unchanged. No speculative work while waiting.
+
+## 15. SEAN'S SESSION STATE, READ (5 Sep 2026) - the fork resolves to MANUAL; branch executed
+
+Topology established by Sean: ONE EchoJay instance, on the vocal channel,
+in the rack. Read from Logic's project (test.logicx/Alternatives/000/
+ProjectData, saved 3 Sep 10:33; the AU preset plist after the "EchoJay V2"
+marker, jucePluginState JSON, chainSlotState slot 1 base64-decoded), and
+identical in every backup that carries the device (29 Aug 16:42, 30 Aug
+12:34):
+
+    key_source 1.0  -> MANUAL (auto is value < 0.5)
+    key_root 2, scale 1 -> D MINOR (kScaleMinor = 1), set by hand
+    reference_source 0.0 -> AUTO; reference_hz 439.192 (the exported live
+      value); ref_manual_by_user 0
+    correction_mode 4 (custom): retune 44.2 ms on 3 Sep (0.0 = floor 6 on
+      29/30 Aug), flex 0, humanize 0, targeting_ignores_vibrato OFF,
+      natural_vibrato 0, voice_type 1 (alto_tenor), tracking 1, formant
+      preserve, mix 100; seam_attack_ms absent (schema default 60 applies
+      on restore)
+    plugin: channelType 0 = "Mix Bus" (the default, prompt dismissed),
+      keySourcePin "" (auto walk), no captures, no Links.
+
+RESOLUTION: the key is MANUAL. Manual is exempt from the guard; the flip is
+a measured no-op for him (section 12, and by construction: keyAuto false
+never enters the guarded block). MANUAL BRANCH EXECUTED: default flipped
+ON (keySelfGuard_ { true }), four plugin targets rebuilt at -j 4,
+installed via install_local.sh to ~/Library, 5 Sep 09:54. No A/B needed.
+    AU   arm64 EFC45BBB-928D-3A17-BDAA-99ACA0A62202
+    VST3 arm64 424A5275-86B9-368B-B155-D39016D3AC4B
+  Logic Pro was running at install; AUHostingService killed; Sean must
+  relaunch Logic before any listening counts (stale-binary discipline).
+
+TWO THINGS THE STATE ALSO SETTLES:
+  - The saved reference_hz 439.192 Hz IS the circular auto-reference value
+    the forensic recovered from his 29 Aug bounces (439.14 / 438.99 Hz).
+    Section 1's provenance finding is confirmed from state, not only from
+    audio. Under today's guard the auto reference resolves to 440 (a
+    self-derived fact is refused; and on this topology no other source
+    exists), so his CURRENT grid is 440 while the saved field still says
+    439.19 - the laundering path onStateApplied guards against, and the
+    readout's ref line shows it.
+  - channelType 0 = FullMix ("Mix Bus") on a vocal channel, and
+    isMusicBusRole(FullMix) is TRUE: his instance's own KeyEngine runs on
+    his vocal and "this channel" sits in the BUS tier of the auto walk.
+    That is the self-derived fact his AUTO REFERENCE consumed before the
+    guard (439.19 Hz - now explained end to end from state), and it is the
+    exact mis-declared-role case the key guard was built for. It does not
+    bite his KEY today because the key is manual; the reference guard
+    holds at 440. The key guard being ON is what stands between him and
+    keying off his own vocal the day he switches key_source back to auto.
+
+ROUND-20 PRECONDITION, SHARPENED: round 20 wrote "on a solo take the
+device's own channel never reaches the gate and stays chromatic", and
+Sean reads D minor live. The state says why: the key is MANUAL. The
+precondition as written did not describe his session - it described the
+auto path he is not on. Recorded against section 6/9: for Sean, the
+stale-key mechanism cannot be his press-play cause (a manual key has no
+staleness), and the press-play defect proceeds on section 9's written
+candidate order, (a) first. His reference IS auto and IS held-through-
+silence state - but it resolves to 440 under the guard in his topology,
+so a stale reference cannot move him either.

@@ -114,7 +114,8 @@ public:
     // channel declared a music bus keys the corrector off the singer's own
     // melody. With the flag on, such a fact is UNMEASURED for key too: fall
     // back to chromatic, never to the last key (the asymmetry: a wrong key
-    // moves notes a semitone, chromatic declines to snap).
+    // moves notes a semitone, chromatic declines to snap). DEFAULT ON since
+    // 5 Sep 2026 (round-23 ruling); the setter remains for the A/B harness.
     void debugKeySelfGuard (bool on) noexcept { keySelfGuard_.store (on); }
     bool keySelfGuardOn() const noexcept   { return keySelfGuard_.load(); }
 
@@ -242,7 +243,7 @@ private:
     std::atomic<bool> keyAuto_ { true };
     std::atomic<bool> refAuto_ { true };
     std::atomic<uint64_t> keyFeedSelfId_ { 0 };
-    std::atomic<bool>     keySelfGuard_ { false };   // see debugKeySelfGuard
+    std::atomic<bool>     keySelfGuard_ { true };    // ON by ruling (round 23, 5 Sep 2026): Sean's key is MANUAL, the flip is a measured no-op for him; see debugKeySelfGuard
     // The MANUAL reference field: only ever what a person entered (or its
     // 440 default). NEVER written from detection - the corrector's live
     // reference under auto lives in correct_ alone, so a state save cannot

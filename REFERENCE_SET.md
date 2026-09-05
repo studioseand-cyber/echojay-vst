@@ -150,3 +150,14 @@ line at bounce time (source, key, confidence, reference) and dwarfdump
 the first number is quoted from it. For an in-process render: the commit,
 the tool, and the settings string. A row without provenance is not a
 reference row.
+
+## SEAN'S SESSION SETTINGS, READ FROM STATE (5 Sep 2026; DEFECT_AUTOKEY_PROVENANCE.md §15)
+
+Not assumed, not asked - decoded from test.logicx ProjectData (3 Sep 10:33):
+key MANUAL D minor; reference AUTO (resolves to 440 under the guard on his
+one-instance topology; the saved field carries the pre-guard 439.19);
+voice alto_tenor; custom mode: retune 44.2 ms (was 0/floor on 29-30 Aug),
+flex 0, humanize 0, ignore-vibrato OFF, natural-vibrato 0, formant
+preserve; seam_attack_ms at the schema default 60. The matched in-process
+configuration for his current session is therefore self:44:60:0:0:0:0 -
+NOT tau 6 - and ear renders for him are made there until he moves it.
