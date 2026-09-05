@@ -1,3 +1,4 @@
+#include "EJDialWrites.h"
 #include "PluginEditor.h"
 #include "DashboardWeb.h"        // stage 2: the lazy webview Dashboard surface
 #include "ChainPluginPicker.h"   // P13: the searchable "+" picker (shared with the Link)
@@ -1313,6 +1314,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     autoDialToggle.onClick = [this] { api.setAutoDialMode(autoDialToggle.getToggleState()); };
     addAndMakeVisible(autoDialToggle);
 
+    // Do-not-dial toggle (Settings): applies immediately, no Save needed
+    dialWritesToggle.setColour(juce::ToggleButton::textColourId, C::text2);
+    dialWritesToggle.setColour(juce::ToggleButton::tickColourId, C::blue);
+    dialWritesToggle.setVisible(false);
+    dialWritesToggle.onClick = [this] { api.setDialWritesBlocked(dialWritesToggle.getToggleState()); };
+    addAndMakeVisible(dialWritesToggle);
+
     // Load and apply persisted scale before first paint
     loadUIScale();
     applyUIScale(uiScale_);
@@ -2132,9 +2140,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         // local-editable: wet writes go to the borrowed host.
         const juce::String uid = chainViewUid();
         if (auto* bh = processorRef.borrowHostIfActiveFor(uid))
-        { bh->setSlotWet(i, v); return; }
+        { bh->setSlotWet(i, v, ChainHost::WetSource::User); return; }
         if (uid.isNotEmpty()) return;
-        processorRef.getChainHost().setSlotWet(i, v);
+        // USER: the hand on the knob. Do-not-dial must never block this.
+        processorRef.getChainHost().setSlotWet(i, v, ChainHost::WetSource::User);
     };
     chainListPanel.onMasterWet = [this](float v) {
         const juce::String uid = chainViewUid();
@@ -2665,6 +2674,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         juce::Component* settingsMovers[] = {
             &settingsName, &settingsMonitors, &settingsHeadphones, &settingsGenres,
             &settingsExpLevel, &settingsLanguage, &uiScaleCombo, &autoDialToggle,
+                                     &dialWritesToggle,
             &settingsScanBtn, &viewAllPluginsBtn, &settingsWithheldToggleBtn_,
             &saveSettingsBtn, &settingsManualBtn, &settingsSavedLabel,
             &settingsHelpBtn, &dumpMetersBtn, &logoutBtn, &settingsOrbCard_ };
@@ -11017,6 +11027,8 @@ void EchoJayEditor::showSettingsView()
     }
     autoDialToggle.setToggleState(api.getAutoDialMode(), juce::dontSendNotification);
     autoDialToggle.setVisible(true);
+    dialWritesToggle.setToggleState(api.getDialWritesBlocked(), juce::dontSendNotification);
+    dialWritesToggle.setVisible(true);
 
     // Plugins row: scan button + View all + Help & Support. No inline list.
     settingsScanBtn.setVisible(true);
@@ -11121,6 +11133,7 @@ void EchoJayEditor::hideSettingsView()
     saveSettingsBtn.setVisible(false); settingsSavedLabel.setVisible(false);
     uiScaleCombo.setVisible(false);
     autoDialToggle.setVisible(false);
+    dialWritesToggle.setVisible(false);
     for (auto& b : dawButtons) b.setVisible(false);
     viewAllPluginsBtn.setVisible(false);
     settingsScanBtn.setVisible(false);
@@ -20070,6 +20083,9 @@ void EchoJayEditor::resized()
             // CHAIN SUGGESTIONS: auto-dial toggle (full width, honest label)
             sy += labelGap;
             autoDialToggle.setBounds(sx, sy, sw, fh); sy += fh + 8;
+            // ... and do-not-dial directly beneath it, same width, no gap of
+            // its own: they are two halves of one question about suggestions.
+            dialWritesToggle.setBounds(sx, sy, sw, fh); sy += fh + 8;
 
             // PLUGINS: scan button + "View all" beside it
             sy += labelGap;
@@ -22986,6 +23002,7 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
     // "Done - ratio and attack updated" relay over a dial that never
     // happened. Nothing prose-only ever rides the model's success line.
     juce::StringArray touchedNames, undialledNames, proseOnlySetNames, serverDropped;
+    juce::StringArray blockedParts;   // DO NOT DIAL: the user's own setting, not a failure
     if (auto* ops = eo->getProperty("edit").getArray())
         for (auto& opv : *ops)
         {
@@ -23091,6 +23108,13 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 }
                 zeroParts.add(di.name);
                 break;
+            case ChainHost::DialStatus::writesBlocked:
+                // DO NOT DIAL. NOT zeroParts: that bucket's sentence is
+                // "needs hand-dialing", which is what an unsupported plugin
+                // gets, and a user who switched dialling off themselves would
+                // read it as their plugin being the problem.
+                blockedParts.add(di.name);
+                break;
             case ChainHost::DialStatus::pending:
                 // Fetch never answered inside the cap: NEVER fall through
                 // to the model's success line - conservative wording, and a
@@ -23108,7 +23132,8 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
 
     juce::String bubble;
     if (partialParts.empty() && zeroParts.isEmpty() && staleParts.isEmpty()
-        && zeroOorParts.empty() && proseOnlySetNames.isEmpty())
+        && zeroOorParts.empty() && proseOnlySetNames.isEmpty()
+        && blockedParts.isEmpty())
     {
         // Clean dial: SILENCE (9 Aug 2026, Sean's rule). The model's result
         // line is NEVER relayed any more - a filter the model can evade by
@@ -23145,6 +23170,18 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                         + (p.oor.size() == 1
                                ? " asked a value outside its mapped range - the card names the range; treat the value as intent, not a number."
                                : " asked values outside their mapped ranges - the card names the ranges; treat the values as intent, not numbers.");
+        }
+        if (!blockedParts.isEmpty())
+        {
+            // DO NOT DIAL, in the same words as the card and the summary, and
+            // pointing at Settings. Says nothing about the plugin, because
+            // nothing is wrong with the plugin.
+            const bool one = blockedParts.size() == 1;
+            bubble += (bubble.isEmpty() ? juce::String() : juce::String(" "));
+            bubble += "Dialling is turned off in Settings, so nothing was written to "
+                    + blockedParts.joinIntoString(" or ")
+                    + (one ? " - the values are on its card to set by hand."
+                           : " - the values are on their cards to set by hand.");
         }
         if (!zeroParts.isEmpty())
         {
@@ -23191,9 +23228,12 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
         bubble += "Nothing was written to " + proseOnlySetNames.joinIntoString(", ")
                 + " - dial in the values on " + (one ? juce::String("its card by hand.")
                                                      : juce::String("their cards by hand."));
-        for (auto& an : proseOnlySetNames)
-            logDialMiss(an, juce::String(), "edit_set_no_dial", {},
-                        juce::String(), juce::String(), 0, juce::String());   // A7.1 slotless
+        // Same rule as emitDialMissRows: under the mode this is the user's own
+        // setting, not a plugin that could not be dialled.
+        if (! echojay::dialWritesBlocked())
+            for (auto& an : proseOnlySetNames)
+                logDialMiss(an, juce::String(), "edit_set_no_dial", {},
+                            juce::String(), juce::String(), 0, juce::String());   // A7.1 slotless
     }
     if (!serverDropped.isEmpty())
     {
@@ -23338,6 +23378,16 @@ void EchoJayEditor::logDialMissesWhenSettled(int attemptsLeft)
 // lost. See the header for what had drifted and why it mattered.
 void EchoJayEditor::emitDialMissRows(const ChainHost::SlotDialInfo& di)
 {
+    // ===== DO NOT DIAL (5 Sep 2026) =====
+    // A WRITE THE USER TOLD US NOT TO MAKE IS NOT A MISS. These rows feed
+    // ej:dial-declines, which is the corpus the mapping work reads to decide
+    // which plugins need attention and which controls are unreachable. A mode
+    // that refuses every write on purpose would flood it with rows saying the
+    // map failed, and the misdial reports built on that corpus would then be
+    // measuring a setting rather than a mapping. Suppressed at the ONE emitter
+    // rather than at its three call sites, so a fourth cannot miss it.
+    if (echojay::dialWritesBlocked()) return;
+
     for (const auto& row : echojay::dialMissRowsFor(di))
         logDialMiss(di.name, di.fp, row.reason, row.names,
                     di.format, di.uid, di.requestedCount, di.requestedSource,
@@ -23881,6 +23931,17 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
                 // "Applied 1 change" reads as a dial count (9 Aug 2026, the
                 // third of three surfaces contradicting the honest bubble).
                 summary = "Suggested settings added to the card - nothing written automatically";
+            else if (safeThis->api.getDialWritesBlocked()
+                     && results.joinIntoString("; ").contains("not dialled"))
+                // MIXED CARD UNDER THE MODE. The structure really did apply,
+                // so "Applied N of M" would be wrong in the other direction;
+                // what is false is calling the whole thing applied when no
+                // value was written. Names the mode and where it lives, in the
+                // same words as the receipt-time card string, and does NOT
+                // start with "Changes applied" or "Applied <n> change", so
+                // editResultIsFullSuccess leaves it amber.
+                summary = "Structure applied. Dialling is turned off in Settings, so no "
+                          "values were written - they are on the card to set by hand.";
             else if (applied == total)
                 // NO COUNT (25 Aug 2026). The number counted OPS -- `total` is
                 // ops.size() and `applied` is incremented once per op in
@@ -27517,7 +27578,30 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
                 bool allConsumed = false;
                 juce::StringArray consumed;
                 const auto remaining = consumeSuggestionSetsAtReceipt(editJson, allConsumed, consumed);
-                if (!consumed.isEmpty())
+                // ===== DO NOT DIAL (5 Sep 2026), MECHANISM A =====
+                // The SAME pair the suggestion path below already uses:
+                // editApplied true retires the Apply button (the if/else at the
+                // card render) while keeping every op line visible, and
+                // editResult carries the reason. No new UI state, no disabled
+                // button, and the card still shows every value to dial by hand.
+                //
+                // The string says WHY in plain words rather than leaving the
+                // reader to infer it from a missing button: a card that simply
+                // lost its Apply reads as broken.
+                // ONLY FOR A VALUES-ONLY CARD. A block that adds, removes,
+                // replaces, moves or bypasses keeps its Apply button: the mode
+                // blocks writing VALUES, not changing the chain, and Build
+                // still builds. Those cards apply their structure and the
+                // write guards refuse their values, which the apply path
+                // already reports per control on the hand-dial line.
+                if (api.getDialWritesBlocked() && editJson.isNotEmpty()
+                    && ChainHost::opsAreValuesOnly(ChainHost::parseChainEditOps(editJson)))
+                {
+                    cm.editApplied = true;
+                    cm.editResult  = "Suggested settings only. Dialling is turned off in Settings, so nothing was written. The values are on the card to set by hand.";
+                    refreshChainPanelForView(true);
+                }
+                else if (!consumed.isEmpty())
                 {
                     if (allConsumed)
                     {

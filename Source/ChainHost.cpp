@@ -1,3 +1,4 @@
+#include "EJDialWrites.h"
 #include "EchoJayBridgedAU.h"   // FIRST: pulls CoreFoundation before JUCE (Point ambiguity)
 #include "ChainHost.h"
 #include "EJVariantPreference.h"
@@ -1985,14 +1986,32 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
             if (why.isNotEmpty()) return failButContinue("set refused: " + why);
         }
         const juce::String nm = slots_[(size_t)cur].desc.name;
-        const bool dials = op.structuredSettings.getDynamicObject() != nullptr;
+        const bool hasPayload = op.structuredSettings.getDynamicObject() != nullptr;
+        // NARROW FIX (5 Sep 2026), and its narrowness is deliberate. This line
+        // has NEVER consulted the write outcome: setSlotStructuredSettings
+        // below STORES the payload and defers, and applyStructuredIfReady can
+        // return without writing on pending, noMap, mapIdentityMismatch,
+        // mapNoCoverage and builtinPayloadUnmatched, none of which have
+        // happened yet when this runs. So a first-encounter plugin with no
+        // cached map has always reported "dialled" having written nothing.
+        // That is a real defect with a wider blast radius than this feature
+        // (it needs the op's result deferred until the dial settles, which is
+        // the sequencer's result contract) and it is filed as its own item.
+        //
+        // What IS knowable here, synchronously and with certainty, is the
+        // mode: when writes are blocked the guard is unconditional, so no
+        // write will happen and this line must not say one did.
+        const bool dials = hasPayload && ! echojay::dialWritesBlocked();
         if (op.settings.isNotEmpty())
             setSlotSettings(cur, op.settings);
-        if (dials)
-            setSlotStructuredSettings(cur, op.structuredSettings);
+        if (hasPayload)
+            setSlotStructuredSettings(cur, op.structuredSettings);   // fills the card either way
         // The result line is what every downstream summary reads: a
         // prose-only set "dialled" nothing and must not say it did.
-        finishOpAndContinue((dials ? "dialled " : "suggested settings for ") + nm);
+        finishOpAndContinue(hasPayload && ! dials
+                                ? "settings on the card for " + nm
+                                    + " (not dialled: dialling is off in Settings)"
+                                : (dials ? "dialled " : "suggested settings for ") + nm);
         return;
     }
     if (op.op == "add" || op.op == "replace")
@@ -2194,9 +2213,20 @@ void ChainHost::setMasterWet(float wet01)
     bumpChainRevision();
 }
 
-void ChainHost::setSlotWet(int i, float wet01)
+void ChainHost::setSlotWet(int i, float wet01, WetSource src)
 {
     if (i < 0 || i >= (int)slots_.size()) return;
+    // ===== DO NOT DIAL (5 Sep 2026) =====
+    // Not a plugin parameter, but it CHANGES THE SOUND, and the mode means
+    // EchoJay does not change the sound. Guarded here rather than at the ops
+    // that reach it (set_wet, and wet_pct riding an add or replace) so a
+    // fourth caller cannot arrive without it.
+    //
+    // ONLY EchoJay's OWN writes. The user dragging the wet knob reaches this
+    // same function, and blocking that would lock the user out of the hand
+    // control the mode exists to hand back to them. A Restore is the session's
+    // saved value and is not a change either.
+    if (src == WetSource::Assistant && echojay::dialWritesBlocked()) return;
     auto& s = slots_[(size_t)i];
     s.wet = juce::jlimit(0.0f, 1.0f, wet01);
     bumpChainRevision();
@@ -3883,6 +3913,12 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         s.dialStatus = DialStatus::applied;
     else if (s.dialAppliedCount > 0)
         s.dialStatus = DialStatus::partial;
+    else if (echojay::dialWritesBlocked())
+        // DO NOT DIAL: nothing was written because the user asked for nothing
+        // to be written. Its own status so the bubble can say that instead of
+        // the unsupported-plugin sentence, and so the dial-miss emitter can
+        // skip it: a deliberate setting is not a miss.
+        s.dialStatus = DialStatus::writesBlocked;
     else
         // The map covered it and the writes were ATTEMPTED — this is the only
         // status that wrote anything, which is why it is the only one the
@@ -7190,7 +7226,7 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
                 int lastSlot = (int)slots_.size() - 1;
                 if (lastSlot >= 0)
                 {
-                    setSlotWet(lastSlot, savedWet);
+                    setSlotWet(lastSlot, savedWet, WetSource::Restore);
                     if (wasBypassed) setSlotBypassed(lastSlot, true);
                     // Withheld chunks were already explained by the note that
                     // decided it (restoreSavedChain); no second line here.

@@ -40,6 +40,7 @@
 #include "EchoJayHistoryTrim.h"
 #include "EchoJayChannelChats.h"
 #include "EchoJayAPI.h"          // history-resend pin runs the REAL buildChatRequestBody
+#include "EJDialWrites.h"      // do-not-dial: the shipped predicate
 #include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
@@ -5196,6 +5197,207 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         check (blk.getNumBytesAsUTF8() < 3000,
                "ef PIN7: the block stays under 3 KB",
                juce::String ((int) blk.getNumBytesAsUTF8()) + " B");
+    }
+
+    // ===== DO NOT DIAL (5 Sep 2026) ========================================
+    // EchoJay suggests every value and writes none; the user hand-dials from
+    // the card. Three code paths write a value and they share no call stack,
+    // so the mode is one flag read by all three rather than three plumbings
+    // that can disagree.
+    {
+        std::cout << "do not dial: suggest every value, write none:\n";
+        const bool restore = echojay::dialWritesBlocked();
+
+        // dw PIN1 -- THE FLAG REACHES THE WIRE ONLY WHEN THE TOGGLE IS ON, and
+        // never as a false: the server reads it with a strict === true
+        // (api/chat-stream.js:924), so a literal false would read as "the user
+        // turned it off" rather than "this client cannot do it".
+        {
+            std::ifstream fa ("Source/EchoJayAPI.cpp");
+            std::stringstream sa; sa << fa.rdbuf();
+            const auto ap = codeOnly (juce::String (sa.str()));
+            check (ap.contains ("if (dialWritesBlocked)\n        body += \",\\\"dialWritesBlocked\\\":true\";"),
+                   "dw PIN1: the flag is sent only when the mode is on");
+            check (! ap.contains ("\\\"dialWritesBlocked\\\":false"),
+                   "dw PIN1: and never as a false");
+            check (ap.contains ("obj->setProperty(\"dialWritesBlocked\", dialWritesBlocked);"),
+                   "dw PIN1: it persists like the toggle beside it");
+            check (ap.contains ("dialWritesBlocked = (bool) obj->getProperty(\"dialWritesBlocked\");"),
+                   "dw PIN1: and is read back at startup");
+        }
+
+        // dw PIN2 -- A WRITE ATTEMPTED UNDER THE MODE DOES NOT REACH A
+        // PARAMETER. applyOne needs a loaded plugin so the gate cannot call
+        // it; what IS driven here is the shipped predicate all three guards
+        // read, and the guards are pinned at their sites below.
+        echojay::setDialWritesBlocked (true);
+        check (echojay::dialWritesBlocked(), "dw PIN2: the mode reads back on");
+        {
+            std::ifstream fp ("Source/EchoJayParamApply.h");
+            std::stringstream sp; sp << fp.rdbuf();
+            const auto pa = codeOnly (juce::String (sp.str()));
+            const int iGuard = pa.indexOf ("if (dialWritesBlocked())");
+            const int iWrite = pa.indexOf ("param->setValueNotifyingHost (n);");
+            check (iGuard > 0 && iWrite > iGuard,
+                   "dw PIN2: the third-party guard sits BEFORE the write",
+                   "guard@" + juce::String (iGuard) + " write@" + juce::String (iWrite));
+            // Before the first branch, not per-arm: a per-arm guard is one a
+            // fifth arm gets added above.
+            const int iKind = pa.indexOf ("const auto kind = mapEntry.getProperty");
+            check (iGuard > 0 && iKind > iGuard,
+                   "dw PIN2: and before the first branch, not inside one");
+            check (pa.contains ("on the card to set by hand"),
+                   "dw PIN2: and the refusal says where the value went");
+        }
+
+        // dw PIN3 -- A BUILT-IN DEVICE WRITE IS BLOCKED TOO. This is the path
+        // a single guard misses: a built-in writes its own state through
+        // setParamValue and never touches a juce parameter, so guarding only
+        // EchoJayParamApply.h would leave EchoJay's own EQ dialling itself
+        // while every third-party plugin correctly refused.
+        {
+            std::ifstream fd ("Source/EedDeviceProcessor.cpp");
+            std::stringstream sd; sd << fd.rdbuf();
+            const auto ed = codeOnly (juce::String (sd.str()));
+            const int iG = ed.indexOf ("if (echojay::dialWritesBlocked()) return {};");
+            const int iW = ed.indexOf ("if (! setParamValue (canonicalId, v))");
+            check (iG > 0 && iW > iG,
+                   "dw PIN3: the built-in guard sits before setParamValue",
+                   "guard@" + juce::String (iG) + " write@" + juce::String (iW));
+        }
+
+        // dw PIN4 -- THE WET BLEND IS BLOCKED FOR ECHOJAY AND NOT FOR THE USER.
+        // It is not a plugin parameter, but it changes the sound. Blocking the
+        // user's own knob would lock them out of the hand control the mode
+        // exists to hand back.
+        {
+            std::ifstream fc ("Source/ChainHost.cpp");
+            std::stringstream sc; sc << fc.rdbuf();
+            const auto ch4 = codeOnly (juce::String (sc.str()));
+            check (ch4.contains ("if (src == WetSource::Assistant && echojay::dialWritesBlocked()) return;"),
+                   "dw PIN4: wet is blocked for the assistant only");
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se; se << fe.rdbuf();
+            check (codeOnly (juce::String (se.str()))
+                       .contains ("setSlotWet(i, v, ChainHost::WetSource::User);"),
+                   "dw PIN4: and the knob under the user's hand says so");
+        }
+
+        // dw PIN5 -- THE TWO TOGGLES ARE INDEPENDENT. autoDial governs WHICH
+        // PLUGINS are offered; this governs WHETHER VALUES ARE WRITTEN. Four
+        // combinations, and the mode never consults the other.
+        {
+            std::ifstream fa2 ("Source/EchoJayAPI.h");
+            std::stringstream sa2; sa2 << fa2.rdbuf();
+            const auto ah = codeOnly (juce::String (sa2.str()));
+            check (ah.contains ("bool dialWritesBlocked = false;")
+                   && ah.contains ("bool autoDialMode = false;"),
+                   "dw PIN5: two separate members, two separate defaults");
+            std::ifstream fd2 ("Source/EJDialWrites.h");
+            std::stringstream sd2; sd2 << fd2.rdbuf();
+            check (! juce::String (sd2.str()).contains ("autoDial"),
+                   "dw PIN5: and the write guard never consults auto-dial");
+        }
+
+        // dw PIN6 -- BUILD STILL BUILDS. The Apply button is retired only for a
+        // card whose ops are values ONLY; anything that changes the rack's
+        // shape keeps it, because this mode blocks writing values and not
+        // adding slots.
+        {
+            using Op = ChainHost::ChainEditOp;
+            Op setOp;  setOp.op  = "set";
+            Op wetOp;  wetOp.op  = "set_wet";
+            Op addOp;  addOp.op  = "add";
+            check (ChainHost::opsAreValuesOnly ({ setOp, wetOp }),
+                   "dw PIN6: a values-only card retires Apply");
+            check (! ChainHost::opsAreValuesOnly ({ setOp, addOp }),
+                   "dw PIN6: a card that ADDS keeps its Apply button");
+            check (! ChainHost::opsAreValuesOnly ({}),
+                   "dw PIN6: and an empty block is not values-only");
+        }
+
+        // dw PIN7 -- THE SET ARM STOPS CLAIMING A DIAL UNDER THE MODE, and the
+        // summary stops reading as applied. NARROW on purpose: this line has
+        // never consulted the write outcome at all (see the open list), and
+        // the general fix defers the op result until the dial settles.
+        {
+            std::ifstream fc ("Source/ChainHost.cpp");
+            std::stringstream sc; sc << fc.rdbuf();
+            const auto ch5 = codeOnly (juce::String (sc.str()));
+            check (ch5.contains ("const bool dials = hasPayload && ! echojay::dialWritesBlocked();"),
+                   "dw PIN7: the op's success no longer follows payload presence alone");
+            check (ch5.contains ("(not dialled: dialling is off in Settings)"),
+                   "dw PIN7: and the op line names the mode");
+            // The card still gets filled: the payload is stored either way.
+            check (ch5.contains ("if (hasPayload)\n            setSlotStructuredSettings"),
+                   "dw PIN7: the values still reach the card");
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se; se << fe.rdbuf();
+            const auto ed2 = codeOnly (juce::String (se.str()));
+            check (ed2.contains ("summary = \"Structure applied. Dialling is turned off in Settings, so no \""),
+                   "dw PIN7: the mixed-card summary says what happened");
+            // editResultIsFullSuccess only greens "Changes applied" / "Applied
+            // <n> change", so this wording is amber by construction.
+            check (! juce::String ("Structure applied. Dialling is turned off").startsWith ("Changes applied"),
+                   "dw PIN7: and is not painted as a full success");
+        }
+
+        // dw PIN8 -- THE MODE HAS ITS OWN SENTENCE, not the unsupported-plugin
+        // one. "needs hand-dialing" is what a plugin with no usable map gets;
+        // a user who switched dialling off would read it as their plugin being
+        // the problem.
+        {
+            std::ifstream fh ("Source/ChainHost.h");
+            std::stringstream sh; sh << fh.rdbuf();
+            check (codeOnly (juce::String (sh.str())).contains ("writesRejected, writesBlocked,"),
+                   "dw PIN8: the mode is its own DialStatus");
+            std::ifstream fe2 ("Source/PluginEditor.cpp");
+            std::stringstream se2; se2 << fe2.rdbuf();
+            const auto ed3 = codeOnly (juce::String (se2.str()));
+            check (ed3.contains ("blockedParts.add(di.name);"),
+                   "dw PIN8: and its own bucket, not zeroParts");
+            check (ed3.contains ("\"Dialling is turned off in Settings, so nothing was written to \""),
+                   "dw PIN8: with its own sentence, pointing at Settings");
+        }
+
+        // dw PIN9 -- A DELIBERATE SETTING IS NOT A DIAL MISS. These rows feed
+        // ej:dial-declines, the corpus the mapping work reads; a mode that
+        // refuses every write would flood it with rows saying the map failed.
+        {
+            std::ifstream fe3 ("Source/PluginEditor.cpp");
+            std::stringstream se3; se3 << fe3.rdbuf();
+            const auto ed4 = codeOnly (juce::String (se3.str()));
+            const int iEmit  = ed4.indexOf ("void EchoJayEditor::emitDialMissRows");
+            const int iGuard = ed4.indexOf (iEmit, "if (echojay::dialWritesBlocked()) return;");
+            const int iBody  = ed4.indexOf (iEmit, "logDialMiss");
+            check (iEmit > 0 && iGuard > iEmit && iBody > iGuard,
+                   "dw PIN9: the ONE emitter returns before it logs anything",
+                   "emit@" + juce::String (iEmit) + " guard@" + juce::String (iGuard));
+            check (ed4.contains ("if (! echojay::dialWritesBlocked())\n            for (auto& an : proseOnlySetNames)"),
+                   "dw PIN9: and the edit path's own row is suppressed too");
+        }
+
+        // dw PIN10 -- THE MIXED CARD, END TO END. Structure applies, values do
+        // not, the summary does not say applied, and nothing is logged as a
+        // miss. Composed from the four predicates the shipped path uses.
+        {
+            using Op = ChainHost::ChainEditOp;
+            Op addOp; addOp.op = "add";  addOp.name = "Pro-C 2";
+            Op setOp; setOp.op = "set";  setOp.slot = 1;
+            check (! ChainHost::opsAreValuesOnly ({ addOp, setOp }),
+                   "dw PIN10: a mixed card keeps its Apply button");
+            check (echojay::dialWritesBlocked(),
+                   "dw PIN10: with the mode on");
+            std::ifstream fe4 ("Source/PluginEditor.cpp");
+            std::stringstream se4; se4 << fe4.rdbuf();
+            const auto ed5 = codeOnly (juce::String (se4.str()));
+            check (ed5.contains ("summary = \"Structure applied. Dialling is turned off in Settings, so no \""),
+                   "dw PIN10: the summary says structure applied and values were not");
+            check (ed5.contains ("if (echojay::dialWritesBlocked()) return;"),
+                   "dw PIN10: and no dial miss is recorded for it");
+        }
+
+        echojay::setDialWritesBlocked (restore);
     }
 
     // ===== LOAD ORIGIN (4 Sep 2026) ========================================

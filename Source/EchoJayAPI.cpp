@@ -1221,6 +1221,13 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
     // it for chain turns with a live plugin feed and ignores it elsewhere.
     if (autoDialMode)
         body += ",\"autoDial\":true";
+    // DO NOT DIAL rides the same way and on the SAME terms: present only when
+    // on, never as a false. The server reads it with a strict === true
+    // (api/chat-stream.js:924), so a literal false would be read as "the user
+    // has this off" rather than "this client does not have the feature", and
+    // an absent key is the honest wire state for both.
+    if (dialWritesBlocked)
+        body += ",\"dialWritesBlocked\":true";
     // Classifier binding (split call). Absent on any turn the classifier
     // did not answer for, which is every turn when it is gated off — and
     // the server then classifies for itself exactly as it does today.
@@ -1270,6 +1277,7 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
         // Per-send verification line: turn class + whether a payload rode
         EchoJay_NSLog(("EJChat: send turnType=" + tt
                        + " autoDial=" + (autoDialMode ? juce::String("on") : juce::String("off"))
+                       + " dialWrites=" + (dialWritesBlocked ? juce::String("BLOCKED") : juce::String("on"))
                        + (nextChatBusCount_ > 0 ? " busCount=" + juce::String(nextChatBusCount_)
                                                 : juce::String())
                        + " payload=" + (metersBlob.isNotEmpty()
@@ -3324,9 +3332,15 @@ juce::String EchoJayAPI::buildEchoJayFeaturesInjection()
          " controls in the Chain tab that they operate, not things you set.\n"
          "SETTINGS holds their name, DAW, experience level, chat language, monitors,"
          " headphones, genres, UI scale, a plugin scan with a View all list, a list of"
-         " plugins withheld from the chain list, and one toggle, \"Only suggest plugins"
-         " EchoJay can auto-dial (fewer options)\", which is OFF by default and applies"
-         " the moment it is ticked with nothing to save.]";
+         " plugins withheld from the chain list, and TWO toggles, both OFF by default"
+         " and both applying the moment they are ticked with nothing to save."
+         " \"Only suggest plugins EchoJay can auto-dial (fewer options)\" narrows which"
+         " plugins you may offer. \"Suggest settings but never dial them (you set the"
+         " values by hand)\" means you still put every value on the card and none of"
+         " them is written: say so plainly if they ask why nothing moved, and never"
+         " claim to have applied anything while it is on. The two are independent and"
+         " easy to confuse: the first is about WHICH PLUGINS, the second about WHETHER"
+         " VALUES ARE WRITTEN.]";
     return b;
 }
 
@@ -3786,6 +3800,10 @@ void EchoJayAPI::loadSettings()
 
         // Absent property -> false: auto-dial mode defaults OFF.
         autoDialMode = (bool) obj->getProperty("autoDialMode");
+        // Absent on a settings file that predates this, which leaves the
+        // member false: dialling works as it always has until asked not to.
+        dialWritesBlocked = (bool) obj->getProperty("dialWritesBlocked");
+        echojay::setDialWritesBlocked(dialWritesBlocked);   // mirror at startup
         
         // Check if the saved usage is from this period — reset if we've
         // rolled into a new month. Period is monthly across all tiers in
@@ -3819,6 +3837,7 @@ void EchoJayAPI::saveSettings() const
     obj->setProperty("messagesUsedToday", userInfo.messagesUsedToday);
     obj->setProperty("usageDate", juce::Time::getCurrentTime().formatted("%Y-%m-%d"));
     obj->setProperty("autoDialMode", autoDialMode);
+    obj->setProperty("dialWritesBlocked", dialWritesBlocked);
     
     file.replaceWithText(juce::JSON::toString(juce::var(obj)));
 }

@@ -2,6 +2,7 @@
     EedDeviceProcessor.cpp  —  see EedDeviceProcessor.h.
 */
 
+#include "EJDialWrites.h"
 #include "EedDeviceProcessor.h"
 
 EedDeviceProcessor::EedDeviceProcessor()
@@ -85,6 +86,20 @@ juce::String EedDeviceProcessor::applyParams (const juce::var& paramsObject,
 {
     if (appliedOut != nullptr) *appliedOut = 0;
     if (skippedOut != nullptr) *skippedOut = 0;
+
+    // ===== DO NOT DIAL (5 Sep 2026) =====
+    // THE PATH A SINGLE GUARD MISSES. A built-in device writes its own state
+    // through setParamValue and never touches a juce::AudioProcessorParameter,
+    // so the guard in EchoJayParamApply.h does not cover it. Guarding only
+    // there would leave every third-party plugin correctly refusing to move
+    // while EchoJay's own EQ dialled itself, which is a worse product than the
+    // mode not existing.
+    //
+    // Returns empty, which the caller (ChainHost::applyStructuredIfReady)
+    // already treats as "the device placed nothing", so the settings still
+    // reach the card by the normal route and nothing here has to know about
+    // cards.
+    if (echojay::dialWritesBlocked()) return {};
 
     auto* obj = paramsObject.getDynamicObject();
     if (obj == nullptr) return {};

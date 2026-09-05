@@ -2117,7 +2117,7 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
                 if (structuredForSlot.getDynamicObject() != nullptr
                     || structuredForSlot.isArray())
                     self->chainHost.setSlotStructuredSettings(hostIdx, structuredForSlot);
-                self->chainHost.setSlotWet(hostIdx, slot.wet);
+                self->chainHost.setSlotWet(hostIdx, slot.wet, ChainHost::WetSource::Restore);
                 if (wantBypass)
                     self->chainHost.setSlotBypassed(hostIdx, true);
                 // Restore the hosted plugin's saved state (session restore)
@@ -2253,7 +2253,7 @@ void LinkProcessor::setChainSlotWet(int idx, float wet01)
     auto& s = chainModel[(size_t)idx];
     s.wet = juce::jlimit(0.0f, 1.0f, wet01);   // model copy = serialisation source
     if (s.hostIdx >= 0)
-        chainHost.setSlotWet(s.hostIdx, s.wet);
+        chainHost.setSlotWet(s.hostIdx, s.wet, ChainHost::WetSource::Restore);
     stampLocalRackEdit();
 }
 

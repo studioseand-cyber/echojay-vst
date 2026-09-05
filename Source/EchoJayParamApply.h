@@ -31,6 +31,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_core/juce_core.h>
+#include "EJDialWrites.h"
 
 namespace echojay
 {
@@ -667,6 +668,24 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
         }
     }
 
+    // ===== DO NOT DIAL (5 Sep 2026) =====
+    // BEFORE THE FIRST BRANCH, not inside writeNorm, and before `kind` is even
+    // read: every arm below this line writes, and a guard placed per-arm is a
+    // guard a fifth arm will be added above. r.applied stays false, so the
+    // control lands in the hand-dial list exactly as an unmapped one does, and
+    // beforeText above has already been captured so the card can still show
+    // what the control reads now.
+    //
+    // The VALUE IS NOT LOST BY THIS. setSlotSettings and
+    // setSlotStructuredSettings run on their own path and are deliberately not
+    // guarded: they are what puts the number on the card to dial by hand.
+    if (dialWritesBlocked())
+    {
+        r.note = "not written: EchoJay is set to suggest values without "
+                 "dialling them, so this one is on the card to set by hand";
+        return r;
+    }
+
     const auto kind = mapEntry.getProperty ("kind", "").toString();
 
     // Every write is read back before success is claimed. The pre-write
@@ -675,6 +694,11 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
     const float prevNorm = param->getValue();
     auto writeNorm = [param] (float n)
     {
+        // BELT, not the guard. The guard is the early return below, before the
+        // first branch; this exists because every previous "one place decides"
+        // in this session grew a second caller within a week, and a write that
+        // slips past the early return would be silent.
+        if (dialWritesBlocked()) return;
         // Change gesture: the correct pattern for driving a hosted plugin's
         // parameter, so the plugin and any automation see a clean
         // begin/change/end rather than a bare value poke.

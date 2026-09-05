@@ -1078,6 +1078,10 @@ private:
     // narrows to what the toggle actually delivers: which plugins get
     // suggested, and the cost of that restriction.
     juce::ToggleButton autoDialToggle { "Only suggest plugins EchoJay can auto-dial (fewer options)" };
+    // DO NOT DIAL (5 Sep 2026). Beside the one above and INDEPENDENT of it:
+    // that one governs which plugins are offered, this one governs whether
+    // values are written at all.
+    juce::ToggleButton dialWritesToggle { "Suggest settings but never dial them (you set the values by hand)" };
     float uiScale_ = 1.0f;          // current scale factor
     void applyUIScale(float scale);
     void saveUIScale() const;

@@ -590,8 +590,14 @@ public:
     //                           No map is involved at all. Payload-shape-side.
     //                           An ENUM VALUE ONLY: it has no wire reason, and
     //                           a pin asserts the emitter yields zero rows.
+    // writesBlocked is the DO NOT DIAL mode and nothing else. It is a separate
+    // status rather than a flavour of writesRejected because the two mean
+    // opposite things to the reader: writesRejected says the plugin or its map
+    // let us down, writesBlocked says the user asked for this. Telling a user
+    // their plugin "needs hand-dialing" when they themselves switched dialling
+    // off reads as the plugin being unsupported.
     enum class DialStatus { none, pending, applied, partial, noMap,
-                            mapNoCoverage, writesRejected,
+                            mapNoCoverage, writesRejected, writesBlocked,
                             mapIdentityMismatch, builtinPayloadUnmatched };
     struct SlotDialInfo {
         juce::String      name;
@@ -874,6 +880,21 @@ public:
         return r;
     }
 
+    // DOES THIS BLOCK ONLY SET VALUES? True when every op is a value-only op
+    // (set / set_wet) and none of them changes the rack's shape. Do-not-dial
+    // retires the Apply button for these, because under the mode there is
+    // nothing left for Apply to do; a block that ADDS, REMOVES, REPLACES,
+    // MOVES or BYPASSES keeps its button, because the mode blocks writing
+    // values and not changing the chain. Pure and header-inline so the gate
+    // drives the shipped predicate.
+    static bool opsAreValuesOnly (const std::vector<ChainEditOp>& ops) noexcept
+    {
+        if (ops.empty()) return false;      // nothing is not "values only"
+        for (const auto& o : ops)
+            if (o.op != "set" && o.op != "set_wet") return false;
+        return true;
+    }
+
     static std::vector<ChainEditOp> parseChainEditOps(const juce::String& editJson,
                                                       juce::StringArray* baseSlotsOut = nullptr,
                                                       juce::String* explanationOut = nullptr);
@@ -964,7 +985,13 @@ public:
     // are rebuild-free — values flow through shared atomics, never rewiring.
     void  setMasterWet(float wet01);
     float getMasterWet() const noexcept { return masterWet_.load(std::memory_order_relaxed); }
-    void  setSlotWet(int i, float wet01);
+    // WHO IS TURNING THE KNOB (5 Sep 2026). Do-not-dial means EchoJay does not
+    // change the sound; it does NOT mean the user cannot. setSlotWet is the one
+    // setter both reach, so it takes the source, and the DEFAULT IS Assistant
+    // because that is the safe polarity: a call site added without thinking is
+    // blocked in the mode rather than silently writing through it.
+    enum class WetSource { Assistant, User, Restore };
+    void  setSlotWet(int i, float wet01, WetSource src = WetSource::Assistant);
     float getSlotWet(int i) const;
 
     // ---- Running level (LevelTally, 17 Aug 2026) --------------------------

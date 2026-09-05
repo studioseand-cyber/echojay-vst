@@ -1,4 +1,6 @@
 #pragma once
+
+#include "EJDialWrites.h"
 #include "MeterEngine.h"   // SpectrumWindow, for the v3 snapshot injection
 #include <JuceHeader.h>
 #include <functional>
@@ -680,6 +682,17 @@ public:
     // profile blob means a web-side settings save can never clobber it.
     bool getAutoDialMode() const { return autoDialMode; }
     void setAutoDialMode(bool on) { autoDialMode = on; saveSettings(); }
+    // DO NOT DIAL (5 Sep 2026): suggest every value, write none. Independent
+    // of autoDialMode on purpose, and the two are easy to confuse: autoDial
+    // governs WHICH PLUGINS are offered, this governs WHETHER VALUES ARE
+    // WRITTEN. Either can be on without the other.
+    bool getDialWritesBlocked() const { return dialWritesBlocked; }
+    void setDialWritesBlocked(bool on)
+    {
+        dialWritesBlocked = on;
+        echojay::setDialWritesBlocked(on);   // the write guards read this
+        saveSettings();
+    }
 
     // Update plugins list from scanner (merges with existing)
     void updatePluginsFromScanner(const juce::String& scannedPlugins);
@@ -1168,6 +1181,7 @@ private:
     UserInfo userInfo;
     UserSettings userSettings;
     bool autoDialMode = false;   // see get/setAutoDialMode()
+    bool dialWritesBlocked = false;  // see get/setDialWritesBlocked()
     
     // Shared flag: set to false in destructor so in-flight callbacks
     // know the object is gone and skip any member access.
