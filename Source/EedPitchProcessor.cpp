@@ -185,15 +185,16 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           false },
 
         { EedPitchProcessor::kNaturalVib, "%", 0.0, 200.0, 100.0,
-          "how much of the SINGER'S OWN vibrato survives correction. 100 keeps "
-          "it exactly as sung, 0 flattens it out for a dead-still note, above "
-          "100 exaggerates what is already there. This is not a generator - it "
-          "only scales movement the singer actually made, so it does nothing "
-          "on a note held straight. It applies at EVERY retune speed: at "
-          "retune 0 the note snaps but the wobble still rides on top, so a "
-          "brief of 'hard tuned' or 'match Auto-Tune retune 0' needs this at "
-          "0 (correction_mode hard writes exactly that)",
-          false },
+          "AS SHIPPED THIS IS A SWITCH, NOT A GAIN (measured 5 Sep 2026, "
+          "UI_SIMPLIFICATION.md ruling 3): 100 keeps the singer's own vibrato "
+          "exactly as sung; EVERY OTHER VALUE removes it entirely - 0, 40, 150 "
+          "and 200 render bit-identically. The intended gain (0 dead-still, "
+          "200 exaggerated) reaches the audio only on the shift path, which is "
+          "selected only at 100; making it a true gain at every value is DSP "
+          "work with its own bar (the ring-aligned fast term). Presets: "
+          "natural and balanced 100 (keep); tuned 40 and hard 0 (REMOVE). "
+          "Applies at every retune speed",
+          true },
 
         { EedPitchProcessor::kVibDepth, "c", 0.0, 100.0, 0.0,
           "depth of ADDED vibrato, in cents. 0 is off and is the default - "

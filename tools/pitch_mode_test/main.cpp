@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstring>
 #include <functional>
+#include <algorithm>
 #include <vector>
 static int g_fail = 0;
 static void check (bool c, const juce::String& w)
@@ -413,6 +414,76 @@ int main()
         check (std::abs (st.refApplied - 439.19) < 0.01,
                "switching reference_source to manual APPLIES the persisted 439.19 - the guard never fires on a loaded value");
         echojay::KeyFeed::instance().publish (echojay::DetectedKeyFact {});
+    }
+
+    // ---- PARAMETER VERIFICATION RENDERS (5 Sep 2026, UI_SIMPLIFICATION ruling A):
+    // A PARAMETER'S DOCUMENTED BEHAVIOUR IS A CLAIM, NOT A FACT, UNTIL A RENDER
+    // SHOWS IT. Gated by EJ_VERIFY_OUT=<dir>: renders the standing take through
+    // a FRESH processor at the schema defaults, then once per (param, value) -
+    // min / mid / max / default for numerics, every choice for choice params,
+    // both states for booleans - through the REAL setParamValue path (the path
+    // a knob takes). Offline rulers then say whether the renders differ and in
+    // which direction. natural_vibrato was the param whose description was
+    // fiction; this is the method that caught it, applied to all of them.
+    if (const char* vdir = std::getenv ("EJ_VERIFY_OUT"))
+    {
+        std::printf ("== PARAMETER VERIFICATION RENDERS -> %s ==\n", vdir);
+        const char* env = std::getenv ("EJ_PITCH_SOURCE");
+        juce::File src (env != nullptr ? juce::String (env) : juce::String ("/Users/SeanD/Music/Logic/test/Bounces/sourceNEW.wav"));
+        juce::AudioBuffer<float> take; double fs = 48000.0;
+        if (src.existsAsFile())
+        {
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::AudioFormatReader> r (wav.createReaderFor (src.createInputStream().release(), true));
+            if (r != nullptr) { fs = r->sampleRate; take.setSize (1, (int) r->lengthInSamples); r->read (&take, 0, (int) r->lengthInSamples, 0, true, false); }
+        }
+        if (take.getNumSamples() == 0) std::printf ("  [SKIP] material not found\n");
+        else
+        {
+            juce::File out (vdir); out.createDirectory();
+            auto renderTo = [&] (const juce::String& name, const std::function<void (EedPitchProcessor&)>& setup)
+            {
+                EedPitchProcessor q; q.prepareToPlay (fs, 512);
+                q.applyStructured (params ({ { "key_source", "manual" }, { "key_root", 2.0 }, { "scale", 1.0 } }));   // D minor by hand: the take's key, so tuning params act
+                setup (q);
+                juce::AudioBuffer<float> o (1, take.getNumSamples());
+                juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m;
+                for (int pos = 0; pos < take.getNumSamples(); pos += 512)
+                {
+                    const int n = juce::jmin (512, take.getNumSamples() - pos);
+                    b.clear(); b.copyFrom (0, 0, take, 0, pos, n); b.copyFrom (1, 0, take, 0, pos, n);
+                    q.processBlock (b, m);
+                    o.copyFrom (0, pos, b, 0, 0, n);
+                }
+                juce::File f = out.getChildFile (name + ".wav"); f.deleteFile();
+                juce::WavAudioFormat wav;
+                std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (new juce::FileOutputStream (f), fs, 1, 32, {}, 0));
+                if (w != nullptr) { w->writeFromAudioSampleBuffer (o, 0, o.getNumSamples()); w.reset(); }
+                std::printf ("  wrote %s\n", f.getFileName().toRawUTF8());
+            };
+            renderTo ("default", [] (EedPitchProcessor&) {});
+            for (const auto& sp : EedPitchProcessor::schema().params())
+            {
+                const juce::String id (sp.id);
+                if (id == "reset_stats" || id == "ref_manual_by_user" || id == "target_hz") continue;   // momentary / provenance flag / P1 diagnostic
+                std::vector<double> values;
+                if (! sp.choices.empty()) { for (size_t i = 0; i < sp.choices.size(); ++i) values.push_back ((double) i); }
+                else if (sp.boolean) { values = { 0.0, 1.0 }; }
+                else { values = { sp.min, 0.5 * (sp.min + sp.max), sp.max }; if (std::find (values.begin(), values.end(), sp.def) == values.end()) values.push_back (sp.def); }
+                for (double v : values)
+                {
+                    juce::String label = sp.choices.empty() ? juce::String (v, 2) : juce::String (sp.choiceLabel (v));
+                    renderTo (id + "__" + label.replaceCharacter ('/', '-'), [&] (EedPitchProcessor& q)
+                    {
+                        if (id == "formant_shift") q.setParamValue ("formant_mode", 2.0);            // shift only audible in shift mode
+                        if (id == "vib_rate_hz" || id == "vib_shape" || id == "vib_onset_ms") q.setParamValue ("vib_depth_cents", 30.0);   // the generator needs a depth to show rate/shape/onset
+                        if (id == "key_source") { echojay::DetectedKeyFact f; f.valid = true; f.root = 7; f.minor = false; f.confidence = 0.9f; f.tuningHz = 440.0f; f.publisherId = 999; std::strncpy (f.sourceName, "Bus", 4); echojay::KeyFeed::instance().publish (f); }
+                        q.setParamValue (id, v);
+                    });
+                    if (id == "key_source") echojay::KeyFeed::instance().publish (echojay::DetectedKeyFact {});
+                }
+            }
+        }
     }
 
     std::printf ("== below the gate it falls to CHROMATIC, not to the last key ==\n");

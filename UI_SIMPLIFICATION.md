@@ -131,3 +131,61 @@ the adopt-on-engage rules (parked backlog).
 Broader material validation; adopt-on-engage; the eighteen constants;
 DEFECT_VIBRATO_ON_TUNING_COST; the mid-retune Antares bounce (now
 subsumed by ruling 2's five-bounce sweep).
+
+# Round 34 (5 Sep 2026): the finding generalises - VERIFY BEFORE PLACING; the flagged calls; the vibrato knob's precondition
+
+## STANDING RULE (ruling A): A PARAMETER'S DOCUMENTED BEHAVIOUR IS A CLAIM, NOT A FACT, UNTIL A RENDER SHOWS IT.
+natural_vibrato was a continuous parameter that was actually binary, with
+a false schema description and shipped presets sitting at "remove
+entirely". If one parameter's documented behaviour was fiction, THE
+INVENTORY CANNOT BE BUILT ON NAMES. Before any parameter is placed FRONT
+(and for every ADVANCED parameter a user could reasonably reach) it is
+verified by the method that caught this one: render at several values
+across its range, confirm the renders differ, confirm the direction of
+change matches the description, report every one that does not.
+Instrument: EchoJayPitchModeTest with EJ_VERIFY_OUT=<dir> renders the
+standing take through a FRESH processor via the real setParamValue path
+at min / mid / max / default (numerics), every choice (choice params),
+both states (booleans), on a D-minor-by-hand base; the offline rulers
+(pitch_activity, pitch_key_forensic, pitch_vibdepth, RMS, alignment lag)
+then report differs / direction. The table follows in round 35.
+
+## Ruling B - the flagged calls
+  VOICE TYPE -> FRONT. Antares has Input Type on its front panel, and this
+  investigation's own evidence says getting it wrong costs accuracy:
+  every probe pinned low_male while Sean ran alto_tenor for a month, and
+  DEFECT_VOICE_TYPE_DEFAULT is open. A control that is costly when wrong
+  does not get buried.
+  TRACKING -> ADVANCED for now. Antares has it on the front, but ours is
+  our detector's parameter, not theirs, and after the vibrato finding its
+  semantics are unverified. Promoted to FRONT only if verification shows
+  it behaves as described AND maps meaningfully onto Antares' Tracking.
+  TRANSPOSE -> verify before giving it any control. An unexposed parameter
+  has never been exercised by a user; there is no reason to assume it
+  works. If it does, FRONT (Antares has it). If it does not, file it and
+  leave it unexposed.
+
+## Ruling C - THE NATURAL VIBRATO KNOB DOES NOT SHIP UNTIL THE GAIN APPLIES
+A 24-position control where two positions do anything is worse than the
+button it replaces. The fix is the fast term reaching the audio at every
+value - the ring-aligned hybrid ruled in PATH_UNIFICATION_DECISION.md and
+never built, whose original corrector-side attempt produced +7 clicks
+because (k-1)*osc was hop-sampled and applied a third of a vibrato cycle
+late. THE CONVERGENCE, recorded: THE CO-TIMED DECISION RING BUILT THIS
+WEEK (TIMING_ALIGNMENT_RECORD flags A/E) IS EXACTLY THE PHASE-CORRECT
+CARRIER THAT ATTEMPT LACKED - a per-sample, position-indexed quantity
+read beside f0Here at the read pointer. (k-1)*osc written into that ring
+is applied at the audio's own instant, not a hop late. It is real DSP
+work, scoped with its own bar before building (the bar sketched in
+ruling 3: vibdepth survival ~0.0 / ~1.0 / ~2.0 at 0 / 100 / 200 on the
+synthetic vibrato note and on sourceNEW's sustains; the round-28 "+7
+clicks / 13.1c at k = 0" not reproduced; bit-identical at 100).
+Until then natural_vibrato STAYS THE BUTTON IT EFFECTIVELY IS, and the
+schema description is CORRECTED NOW to say so (done, this commit): 100
+keeps, everything else removes; presets tuned (40) and hard (0) both
+mean REMOVE. SEAN HAS BEEN TOLD his tuned and hard presets remove all
+vibrato - a product fact he needed regardless of the UI work.
+
+## Ruling D - the retune curve waits on the five bounces; the request is on his Desktop. Not guessed.
+
+## Order for this phase: verification table -> revised inventory -> rule on it -> layout. No UI code until the inventory is ruled. The pitch backlog stays parked.
