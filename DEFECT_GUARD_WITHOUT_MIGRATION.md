@@ -237,3 +237,67 @@ THE BAR, additional legs (7-11) on top of legs 1-6 above:
      consumed on restore); the mode test's schema/ledger walks are taught
      that the *_applied ids are annotations, not params.
 Sequence: after the slow end and the timing lag, as ruled.
+
+## Round 27 CHECK: does ref_manual_by_user mean what its name says? PARTLY - a finding, re-rule before building
+
+1. SEAN'S STATE: ref_manual_by_user = 0.0 on 30 Aug and 3 Sep; ABSENT on
+   29 Aug 16:42 (the field predates nothing - it did not exist before the
+   29 Aug 17:28 fix). FALSE, and truthful: he never engaged the manual
+   reference.
+
+2. WHO WRITES IT (every site, EedPitchProcessor.cpp):
+   - line 393, setParamValue(kReferenceHz), live (not defaults, not state
+     apply): a VALUE write -> flips to manual AND sets the flag. The
+     genuine "user typed it" path (or the model dialling a value).
+   - line 345, setParamValue(kRefSource = manual), live: the SOURCE SWITCH
+     ALONE, no value written -> sets the flag on WHATEVER THE FIELD HOLDS.
+   - line 348, setParamValue(kRefManualByUser): state restore replays the
+     persisted flag.
+   - The auto-derivation path (refreshAutoKey) NEVER writes it, and never
+     writes manualRefHz_ either: the 439.19 reached the field through the
+     pre-fix state export, replayed on load with the flag absent/false.
+
+THE FINDING: the flag does NOT discriminate value provenance. It means
+"manual was engaged by a live action", not "the value was written by the
+user". One gesture - flipping reference_source to manual without typing
+anything, by hand or via applyStructured - stamps a laundered 439.19 as
+user-set. That is "case 3, not constructible" from round 25, and it IS
+constructible: every user who flipped the reference switch to manual
+after 29 Aug 17:28 without typing a value carries flag TRUE with the
+laundered field, is ALREADY MANUAL (so adopt-on-engage never fires - no
+transition), and applies 439.19 today. Sean is not in that population.
+Its size is unknown; its members show "ref 439.2 Hz (manual)" on the
+status line, which is the only thing that surfaces it.
+
+WHAT THIS DOES TO LEGS 7-11: they stand for VALUES WRITTEN GOING FORWARD
+only if the flag is RE-SCOPED FIRST: set at line 393 (a value write), NOT
+at line 345 (the source switch). Under adopt-on-engage the switch adopts
+the applied value and does not flag it; typing flags it. That is a re-
+rule, not an addition, because it changes what an existing persisted
+flag is allowed to mean. Three options for the ruling, none built:
+  (A) Re-scope the flag going forward and ACCEPT the legacy switch-only
+      population as unreachable by adopt-on-engage; their mitigation is
+      the visible "(manual)" status line plus the display rule. Cheapest;
+      leaves a bounded, visible population on a 3.2c-flat grid.
+  (B) Re-scope the flag AND, on load, treat a flagged manual reference
+      whose value is not 440 as SUSPECT ONCE: keep applying it (no
+      destructive reset), but show it loudly ("manual ref 439.2 - typed,
+      or inherited? set it to confirm") until the user touches the knob
+      (which re-flags it under the new meaning). Migration-shaped only
+      in the readout; the value is never changed by the plugin.
+  (C) Treat the legacy flag as meaningless (ignore persisted flags
+      written before a version stamp; add ref_flag_version) and adopt on
+      the first post-upgrade load for anyone manual-without-typed-value -
+      this is the migration the round-25 ruling declined, and it cannot
+      tell a typed 439.19 from a switched one either. Listed to show it
+      was considered; not recommended.
+Recommendation: (B). It keeps the round-25 principle (no destructive
+reset), closes the visibility gap for the population (A) abandons, and
+costs one readout string and one version-aware load check.
+
+KEY ROOT / SCALE: no flag exists today, so nothing is mis-named there;
+the new key_manual_by_user is DEFINED from the start as a value write
+(key_root or scale written live), never the key_source switch.
+
+The standing caution, restated for this instance: a flag existing is not
+the same as the flag meaning what its name says - trace every writer.
