@@ -564,3 +564,11 @@ in-process/host-identity filter rejecting a Link that should have counted.
 Those two suspects are the complete list for a missing wanted line -
 there is no third (round 55 completed the sentence the round-54 ruling
 had cut off). Either is a real finding to be chased, not explained away.
+
+## 12. CLOSED (round 56, 5 Sep 2026)
+Sean reports the tests pass on Link and main: L1 and L2 CONFIRMED IN-HOST
+(his capture on the HEAD log build), L5 confirmed in-host (discharged by
+the console harnesses in round 54, confirmed by the Logic pass). With L3,
+L4, L6, L7 accepted in round 54 and L8 heard by Sean, the bar is met.
+THIS DEFECT IS CLOSED AND IS NOT TO BE REOPENED. The accepted residual
+(section 11, monitoring while stopped) stands as recorded.
