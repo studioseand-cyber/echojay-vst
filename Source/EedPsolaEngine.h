@@ -218,6 +218,7 @@ public:
         synState_.assign ((size_t) kMaxLpcOrder, 0.0);
 
         seamFade_ = std::max (1, (int) std::lround (fs_ * (double) kSeamFadeMs * 0.001));
+        decLookahead_ = 0;   // SHIPPED 0 (5 Sep 2026): 6 ms measured a word-start event at the seam ramp on the NEW take (SLOW_END_RECORD round 31, leg 4); the mechanism stays (setDecisionLookahead) for the re-evaluation
 
         reset();
     }
@@ -1821,8 +1822,8 @@ private:
     // back-dating is the per-hop YIN centroid (frameLen - (W + tau)/2) plus the
     // two pipeline hops, not the constant frameLen/2 + hop.
     std::vector<float> tgt_, sh_;
-    bool   coTimed_   = false;     // flag A
-    bool   perHopLag_ = false;     // flag B
+    bool   coTimed_   = true;      // flag A - SHIPPED 5 Sep 2026 (the timing foundation)
+    bool   perHopLag_ = true;      // flag B - SHIPPED; effective once setPerHopLag supplies the geometry
     int    lagW_ = 0, lagTauMax_ = 0, lagHop_ = 128;
     int64_t lastRingAt_ = -1;      // last ring position written (contiguity under flag B)
     int    tgtLookahead_ = 0;      // flag D, samples
@@ -1833,7 +1834,7 @@ private:
     // ratio (trivially co-timed) and only the decision is advanced. Depth 0
     // (dec = 0) is identity at any lookahead.
     std::vector<float> dec_;
-    bool   decMode_ = false;
+    bool   decMode_ = true;        // flag E - SHIPPED; lookahead set in prepare (6 ms)
     int    decLookahead_ = 0;
     double ringSlowK_ = 1.0 / (0.14 * 48000.0);   // set in prepare
     float  carryMs_ = 0.0f;        // drift carry threshold; 0 = off

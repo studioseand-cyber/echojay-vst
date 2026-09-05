@@ -274,7 +274,7 @@ public:
 
     // How long a new pitch must hold before it counts as a note change rather
     // than a scoop or an overshoot.
-    static constexpr float kNoteConfirmMs = 25.0f;
+    static constexpr float kNoteConfirmMs = 15.0f;   // RE-DERIVED 5 Sep 2026 with co-timing on (TIMING_ALIGNMENT_RECORD round 30): shortest window with a clean OLD-take falsifier; was 25 on the skewed clock
 
     // Sustain for humanize: how long f0 must stay inside kStableCents.
     static constexpr float kSustainMs   = 180.0f;
@@ -329,6 +329,16 @@ public:
     void setTranspose (float st) noexcept { transpose_.store (std::clamp (st, kMinTranspose, kMaxTranspose)); }
     float getTranspose() const noexcept   { return transpose_.load(); }
     void setIgnoreVibrato (bool b) noexcept { ignoreVibrato_.store (b); }
+    /** DEPTH (5 Sep 2026, SLOW_END_RECORD round 31): how much of the correction
+        is APPLIED, 0..1, blended AFTER the envelope on the applied shift -
+        target = in + depth * (env - in). 1 = today's full correction (bit-
+        identical); 0 = exact identity (proven under co-timing). This is the
+        control the slow end of the dial pretends to be: Antares' slow end is
+        transparent because it never commits, not because it is slow. Depth on
+        the AIM (pre-envelope) was measured and rejected - it keeps the motion
+        and drops the correction (round 27). */
+    void setDepth (float d) noexcept { depth_.store (std::clamp (d, 0.0f, 1.0f)); }
+    float getDepth() const noexcept  { return depth_.load(); }
     bool getIgnoreVibrato() const noexcept  { return ignoreVibrato_.load(); }
 
     // Scale degrees are indexed 0..11 as semitones above the KEY ROOT.
@@ -777,7 +787,8 @@ public:
             // phase-correct by construction. Descends from the k=100
             // structural solution (algebraic cancellation at the ring's
             // time), generalised to k != 100.
-            shiftCents_ = ((dbgDepthMode_ == 2 && dbgDepth_ < 1.0f) ? dbgDepth_ * shiftSm_ : shiftSm_)
+            const float depthSh = dbgDepthMode_ == 2 ? dbgDepth_ : depth_.load();
+            shiftCents_ = (depthSh < 1.0f ? depthSh * shiftSm_ : shiftSm_)
                         + (dbgFastRing_ ? 0.0f
                            : (natVib_.load() * 0.01f - 1.0f) * osc);
         }
@@ -822,7 +833,8 @@ public:
         // ---- 5: transpose --------------------------------------------------
         // mode 2: depth on the APPLIED SHIFT (post-envelope) - the output pitch
         // blends between the live input pitch and the envelope's position.
-        const float envC = (dbgDepthMode_ == 2 && dbgDepth_ < 1.0f) ? inCents + dbgDepth_ * (curCents_ - inCents) : curCents_;
+        const float depthNow = dbgDepthMode_ == 2 ? dbgDepth_ : depth_.load();
+        const float envC = depthNow < 1.0f ? inCents + depthNow * (curCents_ - inCents) : curCents_;
         targetCents_ = envC + vibNow_ + 100.0f * transpose_.load();
         shiftCents_ += vibNow_ + 100.0f * transpose_.load();
 
@@ -1020,6 +1032,7 @@ private:
     std::atomic<float> referenceHz_ { 440.0f };
     std::atomic<float> transpose_   { 0.0f };
     std::atomic<bool>  ignoreVibrato_ { true };
+    std::atomic<float> depth_ { 1.0f };
     std::atomic<int>   keyRoot_     { 0 };
 
     std::array<std::atomic<bool>, 12>  degEnabled_ {};

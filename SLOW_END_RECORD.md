@@ -690,3 +690,54 @@ to 0.25 at 150 (tau 44 -> 0.97, 80 -> 0.73, 120 -> 0.45, 150 -> 0.25).
 The floor 0.25 is the measured Antares neighbourhood (tau 150 depth 0.25:
 2.2-2.7c); the knee 40 is §17.4's. Both are regime constants (§17.5) and
 are re-derived if the dial's range or the detector changes.
+
+## Round 31 BUILD: the depth control, on the timing foundation - measured against the bar
+
+DESIGN REVISION, recorded: the round-31 bar's leg 3 demands gentleness at
+RETUNE 44 - Sean's working point - and a re-mapped dial cannot provide
+that below the knee by construction (44 -> depth 0.97). The pick is
+therefore REVISED to the honest control: a DEPTH parameter ("depth", %,
+0-100, default 100 = today's sound, bit-identical), blended after the
+envelope on the applied shift, with a DEPTH knob beside RETUNE / FLEX /
+HUMAN. Every mode writes 100 (one default). The re-map's trade (natural
+preset's character moving; the slow end re-purposed) is not taken; the
+retune dial keeps its meaning; gentleness is a knob Sean turns at ANY
+retune. The readout names it. Not shipped: the re-map.
+
+THE FOUNDATION AS SHIPPED, inside this change: co-timed target/shift
+rings (A) and per-hop lag (B) ON by default; kNoteConfirmMs 25 -> 15;
+DECISION LOOKAHEAD SHIPPED AT 0 - 6 ms measured a word-start event at
+the seam ramp (tau 6, ign OFF: shipped 0 -> 1; lookahead 0 -> 0), and
+leg 4 is binding; the mechanism stays for re-evaluation once its
+interaction with the seam ramp is understood. Justified as what makes
+zero mean zero, NOT as an audible improvement (Sean heard none).
+
+THE LEGS (foundation at depth 100 unless stated; ign OFF; NEW take):
+  1 depth 0 bit-exact identity, shipped configuration       PASS  0.00c on NEW (retune 44 and 150) and OLD
+  2 retune 150, gentle (depth 25): activity 1.84c (today 6.25c), improve-rate 58.0%   PASS  (Antares max 0.57c / 57.0%; depth 15: 1.02c / 58.9%)
+  3 retune 44, gentle (depth 50): activity 3.07c (today 5.04c at depth 100), improve-rate 63.0%   PASS toward 2.5c (depth 35: 1.96c / 63.0%)
+  4 word-start events, ign OFF: tau 6  0 -> 0 (one mid-note event, was 0); retune 44 0 -> 0; gentle settings 0 / 0   PASS
+                                (informational: retune 150 at depth 100: 2 word-start events of 6 - the chase un-hidden at full depth; 0 at depth 25)
+  5 OLD-take falsifier (ign ON, tau 6): word-start 0 of 1 (shipped 0 of 1)   PASS
+  6 sustain tuning: retune 44 off-grid 2.3 -> 1.1c, improve 81.1 -> 81.0%; tau 6 2.8 -> 1.9c, 80.7 -> 86.0%   PASS
+    (at depth 50, retune 44: 3.3c / 79.0% - the gentle setting's expected cost, not a regression of the default)
+  7 Sean's ear                                              PENDING - the ear sets below
+  Foundation at depth 100, for the record (more movement, better landing):
+    retune 44: activity 6.09c (5.04), >25c 13.3% (8.8), off-grid 4.26c (5.32), <5c 53.5% (48.3), improve 61.4% (58.2)
+    tau 6:     4.49c (3.95), 3.7% (3.8), 2.33c (3.85), 69.7% (59.3), 79.6% (72.0)
+    retune 150: 7.12c (6.25), 16.6% (16.0), 6.84c (6.87), 42.1% (40.9), 50.5% (50.4)
+
+THE EAR SETS (three legs each, source / Antares at its matching setting / EchoJay gentle, 0.45 s gaps):
+  /Users/SeanD/echojay-vst-pitch/earclips/depth_retune150__A_source__B_antares_maxretune__C_echojay_retune150_depth25.wav
+     7,805,996 bytes; Antares = his 3 Sep max-retune bounce, aligned (+6 samples); per-leg peaks 0.891 / 0.890 / 0.891
+  /Users/SeanD/echojay-vst-pitch/earclips/depth_retune44__A_source__B_antares_fast_27Aug_levelmatched__C_echojay_retune44_depth50.wav
+     7,805,996 bytes; Antares = antares3.wav (27 Aug, settings unrecorded, tight - a fast setting), aligned (+3996 samples) and
+     RMS level-matched to the source (x0.644, -3.8 dB by RMS; its peak sat 6.5 dB above the source's). Per-leg RMS after matching 0.1064 / 0.1064 / 0.1063. NO ANTARES BOUNCE EXISTS AT A MID RETUNE; one at
+     Retune ~50 on their dial is requested for an honest retune-44 comparison. Stated on the clip's name.
+
+INSTALLED (5 Sep 2026, tools/install_local.sh, ~/Library only; suite EchoJayPitchModeTest 161 PASS / 0 FAIL):
+    AU   arm64 B2ACDDBC-5CC9-3319-B710-0A939994FBF9
+    VST3 arm64 41EBB278-CBAB-3745-91E9-756C7CBAD178
+  Sean must relaunch Logic before listening (AUHostingService killed). The DEPTH knob sits beside HUMAN;
+  100 = the sound he has had all along at his settings; 25 at retune 150 and 50 at retune 44 are the
+  ear-set legs. What to listen for: does leg C sound like Antares' slow end (leg B)?

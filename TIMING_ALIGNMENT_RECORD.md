@@ -333,3 +333,10 @@ the transparent end of the dial; leg C has neither. THE QUESTION: does
 the extra movement read as better tuning, or as the plugin working too
 hard? Both answers are useful and neither is a failure. Flags stay OFF
 and nothing installs until he answers.
+
+## Round 31: SHIPPED as the foundation of the depth control (SLOW_END_RECORD round 31)
+Flags A and B default ON; kNoteConfirmMs 15; decision lookahead default 0
+(6 ms costs a word-start event at the seam ramp - measured, tau 6 ign
+OFF 0 -> 1; the mechanism stays). Sean heard legs 2 and 3 as identical:
+this is infrastructure, described as such and never as an audible
+improvement. Flag D (target lookahead) and flag C stay off/declined.

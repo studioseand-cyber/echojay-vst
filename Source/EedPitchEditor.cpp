@@ -141,6 +141,7 @@ EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
     setupKnob (refKnob_,    EedPitchProcessor::kReferenceHz, 0.0, 1, " Hz", "REF");
     setupKnob (flexKnob_,   EedPitchProcessor::kFlex,      0.0, 0, " %",  "FLEX");
     setupKnob (humanKnob_,  EedPitchProcessor::kHumanize,  0.0, 0, " %",  "HUMAN");
+    setupKnob (depthKnob_,  EedPitchProcessor::kDepth,     100.0, 0, " %",  "DEPTH");   // 5 Sep 2026: how much of the correction is applied - the gentleness control
 
     auto setupCombo = [this] (juce::ComboBox& b, const char* id, const char* prefix)
     {
@@ -310,7 +311,7 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
         {
             k.setBounds (row.removeFromLeft (juce::jmin (kKnobW, row.getWidth())));
         };
-        dial (retuneKnob_); dial (flexKnob_); dial (humanKnob_);
+        dial (retuneKnob_); dial (flexKnob_); dial (humanKnob_); dial (depthKnob_);
         row.removeFromLeft (juce::jmin (6, row.getWidth()));
 
         auto col = row.removeFromLeft (juce::jmin (116, row.getWidth()));
@@ -635,6 +636,7 @@ void EedPitchEditor::syncFromProcessor()
     }
     syncKnob (flexKnob_,   EedPitchProcessor::kFlex);
     syncKnob (humanKnob_,  EedPitchProcessor::kHumanize);
+    syncKnob (depthKnob_,  EedPitchProcessor::kDepth);
 
     auto syncBox = [this] (juce::ComboBox& b, const char* id)
     {
@@ -756,6 +758,7 @@ const std::vector<const char*>& EedPitchEditor::handControlledParams()
         EedPitchProcessor::kRetuneMs,      // retuneKnob_
         EedPitchProcessor::kFlex,          // flexKnob_
         EedPitchProcessor::kHumanize,      // humanKnob_
+        EedPitchProcessor::kDepth,         // depthKnob_ (5 Sep 2026)
         EedPitchProcessor::kTargetHz,      // targetKnob_
         EedPitchProcessor::kReferenceHz,   // refKnob_ - the control Sean lacked (29 Aug 2026)
         EedPitchProcessor::kRefSource,     // refAutoBtn_ - the way back to auto

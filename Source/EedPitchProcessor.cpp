@@ -97,6 +97,19 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "long notes do not sound frozen. Sustain is judged from how long the "
           "pitch has been steady, not from how loud it is",
           false },
+        { EedPitchProcessor::kDepth, "%", 0.0, 100.0, 100.0,
+          "DEPTH (5 Sep 2026): how much of the correction is APPLIED. 100 is "
+          "full correction (today's sound, bit-identical); 0 is exact identity "
+          "- the dry voice. Blended AFTER the retune envelope on the applied "
+          "shift, so it is the control the slow end of the retune dial only "
+          "pretends to be: Antares' slow end is transparent because it never "
+          "commits, not because it is slow. Measured on the reference take: "
+          "retune 150 at 25 -> 1.7c of movement (Antares max retune 0.6c) "
+          "while still improving the grid at 58%; retune 44 at 50 -> 2.8c at "
+          "64%. Gentleness lives HERE, not in Flex (which is a threshold and "
+          "tunes worse than dry above 25 on this material). Every mode writes "
+          "100 - a mode is a character, depth is how much of it you take",
+          true },
 
         { EedPitchProcessor::kIgnoreVib, "", 0.0, 1.0, 1.0,
           "stops a wide vibrato flipping the target between neighbouring notes. "
@@ -346,6 +359,7 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
         return true;
     }
     if (id == kRefManualByUser) { refManualByUser_.store (value >= 0.5); return true; }
+    if (id == kDepth)       { correct_.setDepth ((float) value * 0.01f); return true; }
     if (id == kMode)        { applyMode ((int) std::lround (value)); return true; }
     if (id == kNaturalVib)  { correct_.setNaturalVibrato ((float) value); toCustomMode(); return true; }
     if (id == kVibDepth)    { correct_.setVibDepthCents ((float) value);  return true; }
@@ -417,6 +431,7 @@ double EedPitchProcessor::getParamValue (const juce::String& id) const
     if (id == kLowLatency)  return shifter().getLookaheadPeriods() <= kLookaheadTracking + 0.01f
                                  ? 1.0 : 0.0;
     if (id == kKeySource)   return keyAuto_.load() ? 0.0 : 1.0;
+    if (id == kDepth)       return (double) correct_.getDepth() * 100.0;
     if (id == kRefSource)   return refAuto_.load() ? 0.0 : 1.0;
     if (id == kMode)        return (double) modeIndex_.load();
     if (id == kNaturalVib)  return (double) correct_.getNaturalVibrato();
@@ -491,6 +506,10 @@ juce::String EedPitchProcessor::applyMode (int mode)
     correct_.setIgnoreVibrato (p.ignoreVib);
     correct_.setNaturalVibrato (p.naturalVib);
     forEachShifter ([&] (auto& e) { e.setSeamRampMs (seamAttack); });
+    // DEPTH is written by every mode at the schema default (100): a mode is a
+    // character; depth is how much of it is applied. Same one-default rule as
+    // seam_attack_ms (round 22).
+    { const auto* dp = schema().find (kDepth); correct_.setDepth (dp != nullptr ? (float) dp->def * 0.01f : 1.0f); }
 
     // Every mode preserves formants: the character is retune speed and how much
     // deviation survives, never whether it still sounds like the singer.
@@ -505,6 +524,7 @@ juce::String EedPitchProcessor::applyMode (int mode)
          + ", natural_vibrato " + juce::String (p.naturalVib, 0)
          + ", targeting_ignores_vibrato " + juce::String (p.ignoreVib ? "on" : "off")
          + ", seam_attack_ms " + juce::String (seamAttack, 0)
+         + ", depth 100"
          + ", formant_mode preserve";
 
     return "correction_mode " + name
@@ -804,6 +824,10 @@ void EedPitchProcessor::refreshLatency()
     // on - a stale estimate makes note-change detection fire late, which P2's
     // envelope would then act on from the wrong place.
     forEachShifter ([&] (auto& e) { e.setPitchLagSamples (engine_.pitchLagFor (vt)); });
+    // TIMING FOUNDATION (5 Sep 2026, TIMING_ALIGNMENT_RECORD): the shifter's
+    // per-hop back-dating needs the detector's window geometry for this voice.
+    { int W = 0, tauMax = 0, hop = 128; engine_.lagModelFor (vt, W, tauMax, hop);
+      forEachShifter ([&] (auto& e) { e.setPerHopLag (true, W, tauMax, hop); }); }
 
     // Drift bleed ON in the shipped path (5 Sep 2026 ruling): the per-span
     // drift discharge at v/uv boundaries was measured as the field's

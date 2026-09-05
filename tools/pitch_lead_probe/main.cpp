@@ -72,7 +72,7 @@ int main(int argc,char**argv)
     sh.setFormantMode(PsolaEngine::kFormantPreserve); sh.setPitchLagSamples(det.pitchLagFor(vt));
     sh.setDriftBleed(true);
     if(getenv("PA_COTIMED")) sh.setCoTimedTarget(true);
-    if(getenv("PA_PERHOP")){ int W,tm,hp; det.lagModelFor(vt,W,tm,hp); sh.setPerHopLag(true,W,tm,hp); } sh.debugRingTap(true);
+    { int W,tm,hp; det.lagModelFor(vt,W,tm,hp); sh.setPerHopLag(true,W,tm,hp); } sh.debugRingTap(true);
     std::printf("f_lo %.0f Hz (tau %.0f smp)  voice %s  fMin %.1f Hz  hop %d  windowLength %d  pitchLagFor %d smp (%.2f ms)  shifter latency %d  clamp min(lag,latency-1) = %d (%.2f ms)\n",
         fLo,kFs/fLo,PitchEngine::voiceRange(vt).id,PitchEngine::voiceRange(vt).fMinHz,hop,det.windowLength(),det.pitchLagFor(vt),
         1000.0*det.pitchLagFor(vt)/kFs,sh.latencySamples(),std::min(det.pitchLagFor(vt),std::max(0,sh.latencySamples()-1)),
@@ -90,7 +90,7 @@ int main(int argc,char**argv)
     PsolaEngine sh2; sh2.prepare(kFs,256,PitchEngine::voiceRange(vt).fMinHz,worst);
     sh2.setFormantMode(PsolaEngine::kFormantPreserve); sh2.setPitchLagSamples(det.pitchLagFor(vt)); sh2.setDriftBleed(true);
     if(getenv("PA_COTIMED")) sh2.setCoTimedTarget(true);
-    if(getenv("PA_PERHOP")){ int W,tm,hp; det.lagModelFor(vt,W,tm,hp); sh2.setPerHopLag(true,W,tm,hp); } sh2.debugRingTap(true);
+    { int W,tm,hp; det.lagModelFor(vt,W,tm,hp); sh2.setPerHopLag(true,W,tm,hp); } sh2.debugRingTap(true);
     { PitchEngine det2; det2.prepare(kFs,256); det2.setVoiceType(vt); det2.setTracking(PitchEngine::kNormal);
       std::vector<float> raw2(N,0.0f); PitchEngine::HopEvent ev2[64]; float target=0,sliceF0=0; float shift=PsolaEngine::kNoShift; bool sliceVoiced=false;
       for(size_t p=0;p+256<=N;p+=256)

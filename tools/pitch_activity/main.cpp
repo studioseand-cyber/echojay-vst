@@ -89,7 +89,7 @@ static Render renderSelf (const std::vector<float>& in, double fs, int vt, bool 
     else corr.setKeyRoot(0);
     corr.setRetuneMs(c.tau); corr.setFlex(c.flex); corr.setHumanize(c.hum);
     corr.setIgnoreVibrato(c.ign); corr.setNaturalVibrato(c.nat);
-    corr.debugDepthScale(c.depth,c.depthMode);
+    if(getenv("PA_DEPTH")) corr.setDepth((float)atof(getenv("PA_DEPTH"))); else corr.debugDepthScale(c.depth,c.depthMode);
     if(getenv("PA_ENVEXP")) corr.debugEnvExperiment(atoi(getenv("PA_ENVEXP")));
     if(getenv("PA_CONFIRM")) corr.debugNoteConfirmMs((float)atof(getenv("PA_CONFIRM")));
     if(getenv("PA_FORCESHIFT")) corr.debugForceShiftPath(true);
@@ -104,7 +104,7 @@ static Render renderSelf (const std::vector<float>& in, double fs, int vt, bool 
     if(getenv("PA_COTIMED")) sh.setCoTimedTarget(true);
     if(getenv("PA_DECLOOK")) sh.setDecisionLookahead(true,(int)std::lround(atof(getenv("PA_DECLOOK"))*0.001*fs));
     if(getenv("PA_LOOKAHEAD")) sh.setTargetLookahead((int)std::lround(atof(getenv("PA_LOOKAHEAD"))*0.001*fs));
-    if(getenv("PA_PERHOP")){ int W,tm,hp; det.lagModelFor(vt,W,tm,hp); sh.setPerHopLag(true,W,tm,hp); }
+    { int W,tm,hp; det.lagModelFor(vt,W,tm,hp); sh.setPerHopLag(true,W,tm,hp); }
     sh.debugRingTap(true);
     sh.setSeamRampMs(c.ramp);
     const int lat=sh.latencySamples();

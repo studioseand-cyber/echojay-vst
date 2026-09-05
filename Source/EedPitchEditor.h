@@ -73,7 +73,7 @@ private:
     int  currentLatencyMs (bool lowLatency) const;
     juce::TextButton resetBtn_ { "RESET" };
     echojay::device::EchoJayDeviceKnob targetKnob_, retuneKnob_, flexKnob_, humanKnob_,
-                                       refKnob_;
+                                       depthKnob_, refKnob_;
 
     juce::Rectangle<int> notePanel_, numbersPanel_, guardPanel_, ribbonBounds_;
 

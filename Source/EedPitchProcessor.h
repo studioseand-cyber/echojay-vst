@@ -60,6 +60,7 @@ public:
     static constexpr const char* kRetuneMs     = "retune_speed_ms";
     static constexpr const char* kFlex         = "flex";
     static constexpr const char* kHumanize     = "humanize";
+    static constexpr const char* kDepth        = "depth";
     static constexpr const char* kKeyRoot      = "key_root";
     static constexpr const char* kScale        = "scale";
     static constexpr const char* kReferenceHz  = "reference_hz";
