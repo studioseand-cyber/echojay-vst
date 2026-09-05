@@ -1275,6 +1275,16 @@ BOTH NOW FIXED AND BOTH EAR-CONFIRMED:
      0.57c / 57.0%); retune 44 @ 50 -> 3.07c at 63.0%; word starts stay at
      zero. Sean on both clips: "those two ear clips sound good."
 
+  THE WORD-START RESULT, AGAINST THE REFERENCE PLUGIN (round 37, 5 Sep
+  2026): on this ruler (tools/pitch_glitch_events, sourceNEW) Antares
+  carries 3-4 WORD-START GLITCH EVENTS AT EVERY RETUNE SETTING (0 / 50 /
+  100 / 200 / 400: 4 / 3 / 4 / 3 / 3 of 10-13 events); EchoJay with the
+  seam fix holds 0-1 across the whole dial. The defect this investigation
+  opened on - "the begining sylabls sound shakey" - is now CLEANER THAN
+  THE REFERENCE PLUGIN. Caveat carried: one take (sourceNEW, already
+  near-grid) plus the OLD falsifier; the broader material is still owed
+  (SEAM_ATTACK_VALIDATION_REQUEST.md).
+
   THE TIMING WORK (rounds 18, 27-30; TIMING_ALIGNMENT_RECORD.md) WAS
   INFRASTRUCTURE. Sean heard no difference from it alone (legs 2 and 3
   identical). Its value was making DEPTH 0 EXACT: before the co-timed

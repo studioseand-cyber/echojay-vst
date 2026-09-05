@@ -750,6 +750,14 @@ retune 150 @ depth 25 against his own Antares max-retune bounce, and
 retune 44 @ depth 50 against the fast Antares bounce. Installed build
 AU B2ACDDBC-5CC9-3319-B710-0A939994FBF9 / VST3 41EBB278-CBAB-3745-91E9-756C7CBAD178.
 THE SLOW-END DEFECT IS CLOSED against this bar.
+RECORDED BESIDE THE APPROVAL (round 38): the retune-44 clip he approved
+had a MISALIGNED Antares leg - the 27 Aug bounce's +3996 lag was a clamped
+search-window edge; the true offset is -6720 samples (223 ms). A
+sequential listen, so not destructive, but wrong. HIS APPROVAL STANDS on
+the retune-150 clip, which was correctly aligned (+6 by envelope, 0 by
+the re-check) and carries the argument. The retune-44 comparison is re-
+cut against the Antares 50 bounce that now exists (UI_SIMPLIFICATION
+round 37) and delivered for a fresh listen.
 
 ## The one thing outstanding for him: REAL-SESSION USE
 Every depth measurement was at FIXED settings; nothing has tested the

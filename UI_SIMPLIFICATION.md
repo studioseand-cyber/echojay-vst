@@ -415,3 +415,81 @@ NOT BUILT: the re-map waits on the ruling; the curve is derived from measurement
   /Users/SeanD/echojay-vst-pitch/earclips/depth_retune44__A_source__B_antares_retune50__C_echojay_retune44_depth50.wav
   3 legs x 13.25 s, 0.45 s gaps, jointly normalised; Antares 50 aligned by envelope (+32) and at the source's level (+0.0 dB, no gain);
   the 27 Aug proxy clip is deleted (its Antares leg was misaligned by 223 ms).
+
+# Round 38 (5 Sep 2026): the dial's FULL TRANSFER FUNCTION under ruling 1, measured at thirteen positions
+
+## Ruling 1 - DO NOT REPRODUCE ANTARES' MISSING MIDDLE (a DELIBERATE DEVIATION, not an approximation of the fit)
+Their dial has no intermediate region: 0 gives 1.55c off-grid, 50 gives
+6.21c against the source's 6.72, and nothing exists between. Sean's
+working setting - retune 44 at FULL depth, shipped as the provisional
+default in round 36 and ear-confirmed - is a fast-and-full point their
+dial cannot express. Copying the gap would delete a setting he uses daily
+to replicate a coarseness with no use in it. MAPPING: dial 0 to 40 holds
+DEPTH AT 1.0 while retune varies 6 -> 44 ms; above 50 the fitted taper
+exactly (depth 0.35 -> 0.10, retune at the cap). At 0 and at 50-400 our
+numbers mean what theirs mean; between, we offer a usable region they do
+not. Sean has been told and can overrule toward strict identity.
+
+## THE TRANSFER FUNCTION - exact (retune_ms, depth) at every dial position
+Piecewise-linear in dial between six knots:
+    dial   0 : (  6 ms, 1.000)
+    dial  40 : ( 44 ms, 1.000)      <- the fast-and-full region ends here (Sean's default)
+    dial  50 : ( 80 ms, 0.350)      <- Antares 50, fitted
+    dial 100 : (150 ms, 0.250)      <- Antares 100, fitted (the round-31 anchor)
+    dial 200 : (150 ms, 0.150)      <- Antares 200, fitted
+    dial 400 : (150 ms, 0.100)      <- Antares 400, fitted
+Between knots both coordinates interpolate linearly in dial units, so:
+dial 10 = (15.5, 1.0); 20 = (25, 1.0); 30 = (34.5, 1.0); 45 = (62, 0.675);
+75 = (115, 0.30); 150 = (150, 0.20); 300 = (150, 0.125). The 40 -> 50
+segment carries the whole authority collapse (depth 1.0 -> 0.35 in ten
+dial units) - by design, it is where Antares' 0 -> 50 cliff lives.
+
+## MEASURED ACROSS ITS LENGTH (sourceNEW, hard base, ign OFF, seam 60, foundation on; tools/pitch_activity/logs_2026-09-03/transfer_function_2026-09-05.txt)
+    dial | (retune, depth)  | activity med  p75    p90   >25c | off-grid  <5c   improve | ev / ws   | Antares at this dial (activity / off-grid / improve / ws)
+       0 | (6, 1.00)        |   4.49   8.09  15.59   3.7 |  2.33   69.7   79.6  | 1 / 0     |  5.46 / 1.55 / 83.0 / 4
+      10 | (15.5, 1.00)     |   5.27  10.70  21.71   8.5 |  2.67   63.6   70.4  | 3 / 1     |  -
+      20 | (25, 1.00)       |   5.46  12.99  26.38  10.6 |  3.35   58.2   66.8  | 4 / 0     |  -
+      30 | (34.5, 1.00)     |   5.70  13.96  28.65  11.7 |  3.75   55.8   63.8  | 5 / 0     |  -
+      40 | (44, 1.00)       |   6.09  14.58  30.16  13.3 |  4.26   53.5   61.4  | 7 / 0     |  -   (the provisional default; ear-confirmed)
+      45 | (62, 0.675)      |   4.46  10.78  23.88   9.3 |  5.71   46.5   59.5  | 4 / 0     |  -
+      50 | (80, 0.35)       |   2.34   5.70  13.19   2.4 |  6.37   42.5   60.2  | 4 / 0     |  2.44 / 6.21 / 57.4 / 3
+      75 | (115, 0.30)      |   2.12   5.14  12.18   1.7 |  6.54   41.4   58.0  | 3 / 0     |  -
+     100 | (150, 0.25)      |   1.84   4.52  10.67   1.0 |  6.75   40.3   58.0  | 3 / 0     |  1.75 / 6.41 / 57.1 / 4
+     150 | (150, 0.20)      |   1.50   3.66   8.42   0.6 |  6.86   39.5   58.2  | 1 / 0     |  -
+     200 | (150, 0.15)      |   1.13   2.74   6.21   0.4 |  6.96   39.3   59.1  | 3 / 1     |  1.14 / 6.53 / 56.0 / 3
+     300 | (150, 0.125)     |   0.94   2.26   5.13   0.4 |  6.87   39.3   59.6  | 2 / 1     |  -
+     400 | (150, 0.10)      |   0.76   1.80   4.14   0.2 |  6.80   39.2   60.3  | 2 / 1     |  0.70 / 6.53 / 57.6 / 3
+WHAT THE CURVE DOES, plainly: from 0 to 40 the dial slows the correction
+at full depth - tuning loosens from 2.33 to 4.26c and ACTIVITY RISES from
+4.49 to 6.09c (the chase lengthens with retune; this is the round-17
+finding in the dial's own units). Activity PEAKS AT DIAL 40, the end of
+the fast-and-full region, then falls monotonically through the taper:
+6.09 -> 4.46 -> 2.34 -> ... -> 0.76c. A user sweeping the dial up will
+hear it get busier to 40 and then progressively calmer and more
+transparent. Above 50 every column tracks the Antares anchors within the
+round-37 residuals (activity within 0.1c; off-grid +0.16..+0.43c; improve
++1..+3 points; word-start 0-1 vs 3-4). Below 40 there is no Antares
+comparison: that is the deviation.
+
+## Ruling 2 - THE UNMATCHED POSITION IS BOUNDED; filed, not pursued
+Antares 0: ours 2.33c off-grid against their 1.55, 6.7 points fewer
+within 5 cents, and nothing in the depth-by-speed grid closes it. The
+round-4 onset-accuracy gap is now BOUNDED AT 0.78c rather than open-
+ended. Recorded against trigger A of the rebuild ruling - the narrow-
+band per-cycle detector (ONSET_SHAKINESS_RESEARCH.md section 4: Auto-
+Tune's tracker searches +-N/2 lags around the current period with sub-
+sample refinement; the ruling itself is cited from the round-38 ruling
+text, not from a repo file of that name). Left unpursued: Sean's
+priorities are the slow end and simplification, and 0.78c at the hardest
+setting is not what he is asking about.
+
+## Ruling 3 - the word-start result is recorded as a win in the arc (ONSET_PASS_RECORD.md), with its caveat.
+
+## The compromised clip, recorded beside the approval (SLOW_END_RECORD round 32) - and the re-cut delivered
+  /Users/SeanD/echojay-vst-pitch/earclips/depth_retune44__A_source__B_antares_retune50__C_echojay_retune44_depth50.wav   7,805,996 bytes
+  Antares 50 by envelope (+32), at source level; for a fresh listen. The round-31 approval stands on the retune-150 clip.
+
+NEXT (as ruled): the inventory ruling, then layout. No UI code yet. The
+transfer function above is what the re-mapped dial will implement when
+the inventory is ruled; DEPTH stays FRONT until that change (round 36
+ruling 3), and moves to ADVANCED in it.
