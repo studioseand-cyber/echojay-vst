@@ -170,3 +170,70 @@ The three claims of §1 hold end to end: the applied grid under auto is
 the applied grid on the manual switch - the guard never fires on a loaded
 value. The suite is the bar's harness leg for the migration when it is
 built (leg 1 will flip the FIELD expectation from 439.19 to 440.0).
+
+## Round 26: three rules folded into the adopt-on-engage bar
+
+**RULE 1 - THE USER-SET FLAG (fixes the ruling's own hole).** Adopt-on-
+engage as first stated destroys a genuinely typed value: someone who set
+439.19 deliberately, switched to auto, and switches back would get 440.
+ADOPT-ON-ENGAGE FIRES ONLY WHEN NO USER-SET FLAG IS PRESENT. New values
+carry the flag (set by a user action on the control, never by state
+restore, defaults, a mode write, or the model dialling a mode) and are
+restored on re-engage; legacy values have no flag and are adopted over -
+exactly the population to neutralise. The pattern already exists twice in
+this codebase: ref_manual_by_user / refManualByUser_ for the reference
+(EedPitchProcessor.h) and preGainUserSet for the chain pre-gain
+(PluginProcessor). KEY ROOT AND SCALE HAVE NO SUCH FLAG TODAY - one is
+added (key_manual_by_user), same semantics, same persistence.
+
+**RULE 2 - DISPLAY (approved, sharpened).** While a source is AUTO, its
+manual knob shows THE APPLIED VALUE, GREYED - not the stored field. The
+stored number is true of nothing under adopt-on-engage: not applied now,
+not what engaging will apply. Dead data beside live data is the exact
+configuration that produced the round-24 false alarm with the full record
+in hand. Same test as rule 1: stored value shown when flagged (it is what
+engaging will restore), applied value greyed when not. Same rule for key
+root and scale.
+
+**RULE 3 - SERIALISATION (approved; OUTRANKS the display rule).**
+SERIALISED STATE IS SELF-DESCRIBING: IF A FIELD IS NOT IN EFFECT, THE FILE
+NAMES WHAT IS. Write the APPLIED values alongside the stored ones -
+overwrite neither: e.g. "reference_hz": 439.19 stays, and
+"reference_hz_applied": 440.0 (plus "reference_source_applied": "auto")
+is written beside it; likewise key_root_applied / scale_applied. The
+readers are not hypothetical: a chain share carries the stale number into
+another user's session, and the model reading the JSON is how the round-
+24 alarm started. A reader must not need the engine's precedence rules to
+know what the plugin is doing. Generalise to any future auto/manual pair.
+The forensic decoder (pitch_key_forensic's state read) prints both.
+
+**REACHABILITY ADDITION.** Setting a source to manual via applyStructured
+WITHOUT supplying a value is an ENGAGE (adopt), never a silent adoption
+of the stored field. Supplying a value with the switch sets the value and
+the flag, as the knob would.
+
+THE BAR, additional legs (7-11) on top of legs 1-6 above:
+  7. FLAGGED VALUE SURVIVES AN AUTO ROUND-TRIP: type 439.19 on the REF
+     knob (flag set), switch to auto (applied 440), switch back to manual
+     -> applied 439.19, field 439.19, flag still set; persists through a
+     save/load.
+  8. UNFLAGGED LEGACY VALUE IS ADOPTED OVER: Sean's state (no flag,
+     439.19) -> engage manual -> 440 (leg 1 restated under the flag test);
+     a legacy state with reference_source manual and no flag loads as
+     auto (the existing onStateApplied migration) and engaging adopts
+     440.
+  9. MODEL PATH: applyStructured ({"reference_source": "manual"}) with no
+     value adopts the applied value; applyStructured ({"reference_source":
+     "manual", "reference_hz": 441.0}) applies 441.0 and sets the flag;
+     the same two shapes for key_source with/without key_root/scale.
+ 10. DISPLAY: with Sean's state on auto, the REF knob's displayed value
+     is 440.0 greyed (not 439.19); after leg 7's typed value and a switch
+     to auto, the knob shows 439.19 (flagged) greyed; key/scale knobs
+     follow the same test.
+ 11. SERIALISATION: getStateInformation on Sean's loaded state contains
+     both "reference_hz": 439.19 and "reference_hz_applied": 440.0 (and
+     the key/scale applied fields); a state written before this change
+     loads unchanged (the applied fields are read-only annotations, never
+     consumed on restore); the mode test's schema/ledger walks are taught
+     that the *_applied ids are annotations, not params.
+Sequence: after the slow end and the timing lag, as ruled.
