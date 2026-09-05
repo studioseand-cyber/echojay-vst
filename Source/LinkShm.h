@@ -1107,6 +1107,15 @@ struct RackSidecar {
     // never sends a plan — the never-half-see pattern, again.
     bool  structureEditCapable = false;
     bool  inContextCapable = false;
+    // Round 53 (C4, the borrow-budget ruling): WHO published this sidecar.
+    // publisherPid is the writing process; host* is ChainHost::getHostIdentity()
+    // of the writer (the DAW process, or the helper it resolved to). A main
+    // counts a rack towards its alignment budget ONLY when the host identity
+    // is its own AND the publisher is still alive. Absent (an older Link)
+    // reads 0 and never counts - fail closed, never half-engage.
+    int   publisherPid = 0;
+    int   hostPid = 0;
+    juce::int64 hostStartSec = 0, hostStartUsec = 0;
     // Mute/solo layer (27 Aug 2026). Additive at v:1, written only when
     // true, absent reads false — the carved-bit convention throughout.
     // muteUser is the user's own mix mute (persists in the Link's saved
@@ -1757,6 +1766,13 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
     if (rc.borrowCapable) obj->setProperty("borrowCapable", true);
     if (rc.structureEditCapable) obj->setProperty("structureEditCapable", true);
     if (rc.inContextCapable) obj->setProperty("inContextCapable", true);
+    if (rc.publisherPid > 0)
+    {
+        obj->setProperty("publisherPid", rc.publisherPid);
+        obj->setProperty("hostPid",      rc.hostPid);
+        obj->setProperty("hostStartSec", rc.hostStartSec);
+        obj->setProperty("hostStartUsec", rc.hostStartUsec);
+    }
     if (rc.muteEngaged) obj->setProperty("muteEngaged", true);
     if (rc.muteUser) obj->setProperty("muteUser", true);
     if (rc.soloOn) obj->setProperty("soloOn", true);
@@ -1824,6 +1840,10 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
     rc.borrowCapable     = obj->hasProperty("borrowCapable") && (bool)obj->getProperty("borrowCapable");
     rc.structureEditCapable = obj->hasProperty("structureEditCapable") && (bool)obj->getProperty("structureEditCapable");
     rc.inContextCapable = obj->hasProperty("inContextCapable") && (bool)obj->getProperty("inContextCapable");
+    rc.publisherPid  = obj->hasProperty("publisherPid")  ? (int) obj->getProperty("publisherPid") : 0;
+    rc.hostPid       = obj->hasProperty("hostPid")       ? (int) obj->getProperty("hostPid") : 0;
+    rc.hostStartSec  = obj->hasProperty("hostStartSec")  ? (juce::int64) obj->getProperty("hostStartSec") : 0;
+    rc.hostStartUsec = obj->hasProperty("hostStartUsec") ? (juce::int64) obj->getProperty("hostStartUsec") : 0;
     rc.muteEngaged = obj->hasProperty("muteEngaged") && (bool)obj->getProperty("muteEngaged");
     rc.muteUser = obj->hasProperty("muteUser") && (bool)obj->getProperty("muteUser");
     rc.soloOn = obj->hasProperty("soloOn") && (bool)obj->getProperty("soloOn");

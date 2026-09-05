@@ -35,7 +35,7 @@ for a in args[1:]:
     out.append(a)
 cmd = (['clang++'] + out + ['-I', os.path.abspath('Source'),
         'tools/borrowhost_test/borrowhost_test.cpp',
-        'build/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a',
+        'build-release/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a',   # round 53: the object code that SHIPS
         '-framework','Cocoa','-framework','CoreAudio','-framework','CoreMIDI',
         '-framework','AudioToolbox','-framework','Accelerate','-framework','QuartzCore',
         '-framework','IOKit','-framework','Security','-framework','WebKit',

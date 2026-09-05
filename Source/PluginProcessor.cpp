@@ -1,4 +1,6 @@
 #include "PluginProcessor.h"
+#include <signal.h>
+#include <unistd.h>
 #include "EedLatencyLog.h"
 #include "PluginEditor.h"
 #include "FaderTaper.h"   // shared mixer-fader mute taper (P17)
@@ -584,6 +586,10 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     // (pre-sum alignment vs final pad) varies; the total never does.
     alignPre_.prepare(kBorrowAlignBudgetFrames + 1);
     alignPost_.prepare(kBorrowAlignBudgetFrames + 1);
+    // Round 53: prepare is the guaranteed re-decision point - the pending
+    // budget becomes the committed one HERE, before the report below.
+    borrowBudgetActive_.store(borrowBudgetWanted_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    if (! borrowBudgetActive_.load(std::memory_order_relaxed)) borrowInContextOk_.store(false, std::memory_order_relaxed);
     if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
         ejSetLatencyLogged (*this, lat + reportedBudgetFrames(), "PluginProcessor prepareToPlay");
     if (borrowHost_ != nullptr)
@@ -609,6 +615,11 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         if (auto pos = playHead->getPosition())
         {
             bool playing = pos->getIsPlaying();
+            // Round 53 (C1/C2): a block observed with the transport STOPPED is
+            // the second and last place the budget commits. Unknown transport
+            // state never reaches here (no play head / no position = playing).
+            if (! playing && borrowBudgetWanted_.load(std::memory_order_relaxed) != borrowBudgetActive_.load(std::memory_order_relaxed))
+                commitBorrowBudget("PluginProcessor commit at STOPPED block");
 #if EJ_LATENCY_LOG
             {
                 // Round 49: the first 50 blocks after playback starts, with what
@@ -1511,6 +1522,11 @@ void EchoJayProcessor::timerCallback()
 {
     applyHostTrackNameIfDirty();
     scheduleSelfKeyPass();
+    // Round 53 (C5): THE EDITOR MUST NOT DECIDE AUDIO LATENCY. The Link
+    // registry pass - whose output is the WANTED borrow budget - runs on this
+    // processor-owned 1 Hz timer, window open or closed. The editor still
+    // calls it on its own user actions (a tab switch, an apply) for the list.
+    refreshLinkRegistry();
 
     // Keep the KeyFeed alive without an editor. EchoJay Pitch follows the
     // session key through KeyFeed; when the ONLY publisher was the editor's
@@ -2128,7 +2144,10 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
     // §8 same rule: in-context OK = announced AND fits the budget, decided
     // the instant the session exists; the chain watcher re-checks live.
     borrowChainLat_.store(0, std::memory_order_relaxed);
-    borrowInContextOk_.store(inContextCapable && alignPad(0) >= 0,
+    // Round 53 (C1): in-context needs the COMMITTED budget - a pending one is
+    // inert here too; borrowing against an unreported budget is the defect.
+    borrowInContextOk_.store(inContextCapable && alignPad(0) >= 0
+                             && borrowBudgetActive_.load(std::memory_order_relaxed),
                              std::memory_order_relaxed);
 
     // Bind the ring, editBegin's idiom: seek to the cushion so the audition
@@ -2505,12 +2524,23 @@ juce::AudioProcessorEditor* EchoJayProcessor::createSlotEditorForView(
     return getChainHost().createEditorForSlot(slot);
 }
 
-void EchoJayProcessor::setBorrowBudgetActive(bool active)
+void EchoJayProcessor::commitBorrowBudget(const char* where)
 {
-    if (borrowBudgetActive_.exchange(active, std::memory_order_relaxed) == active)
+    // THE ONLY WRITER of borrowBudgetActive_. Called from prepareToPlay and
+    // from a processBlock that observed the transport STOPPED - nowhere else.
+    const bool wanted = borrowBudgetWanted_.load(std::memory_order_relaxed);
+    if (borrowBudgetActive_.exchange(wanted, std::memory_order_relaxed) == wanted)
         return;
+    // The delay line starts clean at the new value (it held nothing useful:
+    // the transport was stopped, or we are inside prepare). A session that
+    // was in-context against the OLD budget cannot keep it - its arithmetic
+    // assumed that passthrough delay; it drops to the solo fallback.
+    alignPost_.buf.clear(); alignPost_.w = 0;
+    if (! wanted) borrowInContextOk_.store(false, std::memory_order_relaxed);
     if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
-        ejSetLatencyLogged (*this, lat + reportedBudgetFrames(), "PluginProcessor (site 3)");
+        ejSetLatencyLogged (*this, lat + reportedBudgetFrames(), where);
+    EJ_LAT_LOG ("top: borrow budget COMMITTED %s at %s (passthrough delay and report move together)", wanted ? "ON" : "OFF", where);
+    const bool active = wanted;
     EchoJay_NSLog(("EJCtx: alignment budget "
                    + juce::String(active ? "ON" : "OFF")
                    + " (capable Link " + (active ? "present" : "gone")
@@ -4712,33 +4742,46 @@ void EchoJayProcessor::refreshLinkRegistry()
         for (const auto& si : linkSlotInfos)
             if (si.uid.isNotEmpty()) listed.add(si.uid);
         listed.sort(false);
-        const juce::String key = listed.joinIntoString("|");
-        if (key != ctxCapSetKey_)
+        // ROUND 53 (C4): every pass, not only on a set change - liveness is
+        // not cacheable. A rack counts only if its sidecar announces
+        // in-context capability, was published from THIS host identity, and
+        // its publisher process is still alive (kill(pid, 0)). A cached row
+        // whose publisher died is re-read once (the Link may have restarted
+        // with a new pid); still dead = not counted. The result is the WANTED
+        // budget only - inert until prepareToPlay or a STOPPED block commits it.
+        bool anyCapable = false;
         {
-            ctxCapSetKey_ = key;
-            bool anyCapable = false;
             int err2 = 0;
             const juce::String dir2 = LinkShm::resolveDir(err2);
+            const auto& me = ChainHost::getHostIdentity();
+            auto readRow = [&](const juce::String& u, BudgetRow& out) -> bool
+            {
+                const auto rc = dir2.isNotEmpty() ? LinkShm::readRackSidecar(dir2, u) : LinkShm::RackSidecar{};
+                if (rc.uid != u) return false;   // not published yet: retry next pass
+                out = BudgetRow{ rc.inContextCapable, rc.publisherPid, rc.hostPid, rc.hostStartSec, rc.hostStartUsec };
+                return true;
+            };
+            auto alive = [](int pid) { return pid > 0 && ::kill((pid_t) pid, 0) == 0; };
             for (const auto& u : listed)
             {
                 auto itc = ctxCapCache_.find(u);
                 if (itc == ctxCapCache_.end())
                 {
-                    // Cache only a sidecar that was actually PUBLISHED (uid
-                    // echoes back) — a just-launched Link's sidecar can lag
-                    // its registry row, and a cached false would stick. An
-                    // unpublished sidecar leaves the uid uncached; the next
-                    // set change (or this one re-keying) retries.
-                    const auto rc = dir2.isNotEmpty()
-                        ? LinkShm::readRackSidecar(dir2, u)
-                        : LinkShm::RackSidecar{};
-                    if (rc.uid != u) { ctxCapSetKey_.clear(); continue; }
-                    itc = ctxCapCache_.emplace(u, rc.inContextCapable).first;
+                    BudgetRow row;
+                    if (! readRow(u, row)) continue;
+                    itc = ctxCapCache_.emplace(u, row).first;
                 }
-                if (itc->second) { anyCapable = true; break; }
+                if (! alive(itc->second.publisherPid))
+                {
+                    BudgetRow row;
+                    if (! readRow(u, row)) continue;
+                    itc->second = row;
+                }
+                if (budgetRowCounts(itc->second, me, alive(itc->second.publisherPid))) { anyCapable = true; break; }
             }
-            setBorrowBudgetActive(anyCapable);
         }
+        if (borrowBudgetWanted_.exchange(anyCapable, std::memory_order_relaxed) != anyCapable)
+            EJ_LAT_LOG ("top: borrow budget WANTED %s (pending: inert until prepareToPlay or a STOPPED block)", anyCapable ? "ON" : "OFF");
     }
 
     // ---- Mute/solo snapshot (27 Aug 2026, MUTE_SOLO_SPEC §3/§5/§6.1) ----

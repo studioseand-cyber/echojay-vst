@@ -1711,7 +1711,7 @@ int main()
                "no capable Link: no alignment budget is carried",
                juce::String (latBare));
         // The 0->1 capable-Link transition is THE one PDC event.
-        mainProc.setBorrowBudgetActive (true);
+        mainProc.setBorrowBudgetWanted (true); mainProc.commitBorrowBudget ("borrowhost_test");   // round 53: wanted + committed
         const int lat0 = mainProc.getLatencySamples();
         check (lat0 == latBare + EchoJayProcessor::kBorrowAlignBudgetFrames,
                "a capable Link present: the budget is carried",
@@ -1724,7 +1724,7 @@ int main()
         mainProc.borrowRelease (false);
         check (mainProc.getLatencySamples() == lat0,
                "RELEASE does not touch the report");
-        mainProc.setBorrowBudgetActive (false);
+        mainProc.setBorrowBudgetWanted (false); mainProc.commitBorrowBudget ("borrowhost_test");   // round 53: wanted + committed
         check (mainProc.getLatencySamples() == latBare,
                "the last capable Link leaving withdraws the budget");
 
@@ -1732,7 +1732,7 @@ int main()
         // ---- in-context path injected an UNINITIALISED buffer — peak 746,
         // ---- pinned meters. A DSP path with no level assertion is how it
         // ---- reached a user; every §8 mode now proves bounded output).
-        mainProc.setBorrowBudgetActive (true);
+        mainProc.setBorrowBudgetWanted (true);   // round 53: committed by the prepare below (L6: "with the budget committed at prepare")
         mainProc.prepareToPlay (48000.0, 512);
         mainProc.borrowEngageBegin ("uid-lvl", "lease-lvl", true, true);
         // The rig plays the Link's confirmation (the injection ramps in
@@ -2184,7 +2184,7 @@ int main()
                         mainProc.processBlock (blk, midi);
                     }
                 };
-                mainProc.setBorrowBudgetActive (true);
+                mainProc.setBorrowBudgetWanted (true); mainProc.commitBorrowBudget ("borrowhost_test");   // round 53: wanted + committed
                 sidecarMute (false, false);          // clean slate
                 mainProc.borrowEngageBegin (ruid, "lease-ms2", true, true);
                 mainProc.borrowMuteConfirmedOnce_.store (true, std::memory_order_relaxed);
@@ -2235,7 +2235,7 @@ int main()
                        "muted AND soloed: mute wins the strip OR",
                        juce::String (mainProc.borrowCtxMixNow(), 3));
                 mainProc.borrowRelease (false);
-                mainProc.setBorrowBudgetActive (false);
+                mainProc.setBorrowBudgetWanted (false); mainProc.commitBorrowBudget ("borrowhost_test");   // round 53: wanted + committed
                 LinkShm::storeRelease (&rslots[fi2].inUse, 0u);
                 juce::File (LinkShm::rackSidecarPath (rdir, fuid2)).deleteFile();
             }
@@ -2406,7 +2406,7 @@ int main()
         {
             int errA = 0;
             const juce::String adir = LinkShm::resolveDir (errA);
-            mainProc.setBorrowBudgetActive (true);
+            mainProc.setBorrowBudgetWanted (true);   // round 53: committed by the prepare below (L6: "with the budget committed at prepare")
             mainProc.prepareToPlay (48000.0, bs);
             mainProc.setPlayHead (&alignPH);
             alignPH.pos = 0;
@@ -2498,7 +2498,7 @@ int main()
             const juce::int64 skew = mainProc.borrowAlignSkew_.load();
             mainProc.borrowRelease (false);
             EchoJayAlignTestAccess::disconnect (mainProc, 2);
-            mainProc.setBorrowBudgetActive (false);
+            mainProc.setBorrowBudgetWanted (false); mainProc.commitBorrowBudget ("borrowhost_test");   // round 53: wanted + committed
             mainProc.setPlayHead (nullptr);
             juce::File (adir + "audio_align.bin").deleteFile();
             return { (iPass >= 0 && iInj >= 0) ? iInj - iPass : 99999, skew };
@@ -2564,7 +2564,7 @@ int main()
             const int bs = 512;
             int errA = 0;
             const juce::String adir = LinkShm::resolveDir (errA);
-            mainProc.setBorrowBudgetActive (true);
+            mainProc.setBorrowBudgetWanted (true);   // round 53: committed by the prepare below (L6: "with the budget committed at prepare")
             mainProc.prepareToPlay (48000.0, bs);
             mainProc.setPlayHead (&alignPH);
             alignPH.pos = 0; alignPH.playing = true;
@@ -2668,11 +2668,11 @@ int main()
                    juce::String (peak, 3));
             mainProc.borrowRelease (false);
             EchoJayAlignTestAccess::disconnect (mainProc, 2);
-            mainProc.setBorrowBudgetActive (false);
+            mainProc.setBorrowBudgetWanted (false); mainProc.commitBorrowBudget ("borrowhost_test");   // round 53: wanted + committed
             mainProc.setPlayHead (nullptr);
             juce::File (adir + "audio_align.bin").deleteFile();
         }
-        mainProc.setBorrowBudgetActive (false);
+        mainProc.setBorrowBudgetWanted (false); mainProc.commitBorrowBudget ("borrowhost_test");   // round 53: wanted + committed
         // The level arm alone can false-pass on a fresh process (OS pages
         // arrive zeroed; Sean's garbage came from recycled heap), so the
         // two causes are ALSO pinned: the drain runs for every live

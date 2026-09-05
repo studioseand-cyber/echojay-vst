@@ -1,4 +1,5 @@
 #include "LinkProcessor.h"
+#include <unistd.h>
 #include "EedLatencyLog.h"
 #include "LinkEditor.h"
 #include "LinkShm.h"
@@ -311,6 +312,14 @@ void LinkProcessor::publishRackSidecar()
     rc.borrowCapable = true;   // this binary honors the rack-scoped lease
     rc.structureEditCapable = true;   // and can journal/apply a structure plan
     rc.inContextCapable     = true;   // §8: mutes on lease muteOut
+    {
+        // Round 53 (C4): who we are, so a main counts us only from its own host.
+        const auto& h = ChainHost::getHostIdentity();
+        rc.publisherPid  = (int) ::getpid();
+        rc.hostPid       = h.pid;
+        rc.hostStartSec  = h.startSec;
+        rc.hostStartUsec = h.startUsec;
+    }
     rc.muteEngaged = linkMuteWanted();   // ACTUAL silence, any reason
     rc.muteUser = muteUserOn_.load(std::memory_order_relaxed);
     rc.soloOn   = soloOn_.load(std::memory_order_relaxed);

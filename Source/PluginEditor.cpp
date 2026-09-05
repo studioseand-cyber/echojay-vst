@@ -21329,12 +21329,11 @@ void EchoJayEditor::timerCallback()
     // -------------------------------------------------------------------------
     //  Link registry refresh every 10 ticks (~500 ms at 20 fps)
     // -------------------------------------------------------------------------
-    linkRefreshTick++;
-    if (linkRefreshTick >= 10)
-    {
-        linkRefreshTick = 0;
-        processorRef.refreshLinkRegistry();
-    }
+    // Round 53 (C5): the periodic registry pass moved to the PROCESSOR's own
+    // 1 Hz timer (EchoJayProcessor::timerCallback) - whether this window is
+    // open must not change the audio. The explicit refreshes on a tab
+    // switch and on apply stay: they refresh the list on a user action.
+    linkRefreshTick = 0;
     // SYNC follow diagnostics — 1/s while Compare is open and sync rolls
     if (currentView == View::Compare && processorRef.cmpSyncToTransport.load()
         && ++cmpSyncDiagTick_ >= 20)

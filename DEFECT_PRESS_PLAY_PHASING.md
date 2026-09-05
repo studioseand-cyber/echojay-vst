@@ -425,3 +425,96 @@ that THE VALUE NEVER MOVES WHILE THE HOST IS RUNNING AUDIO:
      present: no setLatencySamples line during any PLAY; every "reported /
      chainTotal" pair constant across all 50 blocks of every run; the one
      allowed change lands between a STOP and the next PLAY.
+
+## 10. ROUND 53 (5 Sep 2026): THE FIX BUILT to the ruling - queue-to-next-stop, five conditions, seven legs
+
+### The five conditions, as implemented
+  C1 ONE COMMITTED BUDGET. `borrowBudgetActive_` is the delay applied
+     (alignPost_ at the constant budget), the value reported
+     (reportedBudgetFrames), and the value the borrow path reads (in-context
+     engage now requires it). It is written ONLY by commitBorrowBudget(),
+     called from exactly two places: prepareToPlay, and a processBlock that
+     observed the transport STOPPED. The registry pass writes only
+     `borrowBudgetWanted_`, which is inert: not applied, not reported, not
+     read by the borrow path (the engage decision reads the committed value,
+     so borrowing against an unreported budget cannot happen). When a budget
+     commits DOWN, an in-context session drops to the solo fallback (its
+     arithmetic assumed the old passthrough delay).
+  C2 UNKNOWN = PLAYING. The commit sits inside `if (playHead) if (position)`;
+     no play head or no position never reaches it. prepareToPlay re-decides.
+  C3 BOTH DIRECTIONS QUEUE: the commit is `active != wanted`, either way.
+  C4 SCOPING. The Link's sidecar now carries publisherPid and the host
+     identity (pid + process start, ChainHost::getHostIdentity - the DAW, or
+     the helper it resolves to). A rack counts only if in-context capable,
+     host identity == ours, publisher pid alive (kill(pid,0)); a cached row
+     whose publisher died is re-read once (a restarted Link) and otherwise
+     ignored. Absent fields (an old Link) never count - fail closed.
+     Evaluated EVERY pass (liveness is not cacheable).
+  C5 THE EDITOR DOES NOT DECIDE AUDIO LATENCY. refreshLinkRegistry() runs on
+     the processor's own 1 Hz timer; the editor's periodic call is gone (its
+     tab-switch/apply refreshes remain, for the list). The installer now
+     installs the LINK with the main (an old Link would never count).
+
+### The seven legs
+L3  REPORT AND DELAY MOVE TOGETHER, INCLUDING WHILE PENDING
+    tools/latency_impulse_test, top-level EchoJay V2, empty chain, 48 kHz /
+    1024, a fake play head the test drives, latency notifications counted
+    through the processor's listener (what the host receives):
+    | state | reported | impulse out at | notifications |
+    |---|---|---|---|
+    | (a) budget off, fresh, stopped | 0 | 0 | 0 after prepare |
+    | (b) wanted ON during PLAYBACK: pending | 0 | 0 | 0 |
+    | (b') wanted ON, transport UNKNOWN (C2) | 0 | 0 | 0 |
+    | (c) committed at STOP | 16384 | 16384 | exactly 1 |
+    | play again | 16384 | - | 0 further |
+    | (d) wanted OFF during PLAYBACK: pending-down (C3) | 16384 | 16384 | 0 |
+    | (e) committed-down at STOP | 0 | 0 | exactly 1 |
+    | wanted ON before prepare -> committed at prepare | 16384 | 16384 | - |
+    (b) and (d) are the half-engagement legs: nothing moved. ALL PASS.
+L7  QUIET SESSION: fresh instance, no Link: 1200 blocks of alternating
+    play/stop, reported stays 0 (= chain total), ZERO notifications after
+    prepare. PASS.
+L4  SCOPING (the decision function, driven directly): POSITIVE CONTROL an
+    in-process capable live row COUNTS; a row from a different host
+    process does not; same pid with a different process start (recycled
+    pid) does not; a DEAD publisher does not; an old sidecar with no
+    fields never does; a live in-process row that is not in-context
+    capable does not. Liveness probe: own pid alive, pid 999999 dead. PASS.
+L6  NO REGRESSION: tools/pitch_mode_test 196 PASS / 0 FAIL (unchanged).
+    tools/borrowhost_test, adapted to the committed budget (wanted +
+    prepare where it prepared, wanted + commit where it did not) and
+    linked against the SHIPPING library (build-release): PASS - 311 ok,
+    the one FAIL is its planted negative control; "no capable Link: no
+    alignment budget is carried [0]", "a capable Link present: the budget
+    is carried [16384]", "in-context OK at engage", "the last capable Link
+    leaving withdraws the budget", "IN-CONTEXT output stays bounded over
+    60 real blocks", "a chain-latency jump produces NO mix discontinuity
+    beyond the ramp".
+L1, L2, L5 NEED SEAN'S MACHINE (a real Logic transport and a real Link) -
+    the log build at HEAD is in latency-logs/build. POSITIVE CONTROL for
+    L1 on the pre-fix build: his round-52 capture, the natural occurrence
+    of the same mechanism (a capable Link seen mid-playback):
+        19:17:39.496  setLatencySamples  PluginProcessor (site 3)  old 1800  new 18184  CHANGED -> host notified
+    The procedure (also in latency-logs/build/README.md): Logic quit; run
+    install_log_build.command (it installs the LOG main; the Link installed
+    is the new one, EE5CF406); open the session with NO EchoJay Link in it
+    and the EchoJay window CLOSED (L5); press play; while playing, insert
+    an EchoJay Link on another track; keep playing 30 s; stop; play again
+    10 s; stop; while playing again, remove the Link; stop. Expected in
+    the log: "borrow budget WANTED ON (pending ...)" during the first play,
+    ZERO setLatencySamples lines between that PLAY and its STOP; at the
+    STOP one "COMMITTED ON at PluginProcessor commit at STOPPED block" with
+    old 1800 new 18184; the next play's 50 blocks constant at 18184; the
+    removal: WANTED OFF pending, committed at the following stop.
+
+### Installed (5 Sep 2026), ~/Library only, via tools/install_local.sh build-release
+  | plugin | arm64 UUID |
+  |---|---|
+  | AU   `EchoJay V2.component`   | 7F0618CD-0ED5-3E98-9C4F-3E447E10B72B |
+  | VST3 `EchoJay V2.vst3`        | F58B37CA-8490-39AE-9EF1-4BE706076E43 |
+  | AU   `EchoJay Link.component` | EE5CF406-57E2-325E-93E4-8D3F0616962B |
+  | VST3 `EchoJay Link.vst3`      | 78441F93-E292-3FD7-BD1D-18B6EF960104 |
+  | LOG build (latency-logs/build only) | 6E91E383-2713-3385-A42E-8D903B88C372 |
+AUHostingServiceXPC_arrow killed; Sean must relaunch Logic. Not touched:
+kBorrowAlignBudgetFrames (16384; the 1024 + 15360 split stays on the
+eighteen-constant register), no user-facing indicator, no always-on report.

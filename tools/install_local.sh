@@ -137,6 +137,14 @@ VST3_SRC="$(find_artefact 'EchoJay V2.vst3')"
 install_one "AudioUnit" "$AU_SRC"   "$AU_DEST"
 install_one "VST3"      "$VST3_SRC" "$VST3_DEST"
 
+# Round 53: the LINK is part of the same build (its sidecar carries the
+# publisher's pid and host identity that the main's alignment budget now
+# requires - an old Link never counts). It is installed with the main.
+LINK_AU_SRC="$(find_artefact 'EchoJay Link.component')"
+LINK_VST3_SRC="$(find_artefact 'EchoJay Link.vst3')"
+install_one "Link AudioUnit" "$LINK_AU_SRC"   "$AU_DEST"
+install_one "Link VST3"      "$LINK_VST3_SRC" "$VST3_DEST"
+
 # ---------------------------------------------------------------------------
 # The AU cache maps a component id to a scanned binary. Leaving it in place is
 # the other way a host ends up on code that is no longer on disk.
@@ -153,6 +161,12 @@ if [[ -f "$AU_DEST/EchoJay V2.component/Contents/MacOS/EchoJay V2" ]]; then
 fi
 if [[ -f "$VST3_DEST/EchoJay V2.vst3/Contents/MacOS/EchoJay V2" ]]; then
     note "VST3 $(uuid_of "$VST3_DEST/EchoJay V2.vst3/Contents/MacOS/EchoJay V2")"
+fi
+if [[ -f "$AU_DEST/EchoJay Link.component/Contents/MacOS/EchoJay Link" ]]; then
+    note "Link AU   $(uuid_of "$AU_DEST/EchoJay Link.component/Contents/MacOS/EchoJay Link")"
+fi
+if [[ -f "$VST3_DEST/EchoJay Link.vst3/Contents/MacOS/EchoJay Link" ]]; then
+    note "Link VST3 $(uuid_of "$VST3_DEST/EchoJay Link.vst3/Contents/MacOS/EchoJay Link")"
 fi
 note "compare against a crash report's \"EchoJay V2\" image UUID before believing"
 note "a fix did not work."

@@ -586,11 +586,32 @@ public:
     // added latency. The transition re-runs PDC once, on the deliberate and
     // rare act of adding/removing a Link — never on rack browsing. ONE
     // writer: the registry pass, via setBorrowBudgetActive.
-    std::atomic<bool> borrowBudgetActive_ { false };
-    void setBorrowBudgetActive(bool active);
+    // ROUND 53 (the borrow-budget ruling, DEFECT_PRESS_PLAY_PHASING §10):
+    // ONE COMMITTED BUDGET. borrowBudgetActive_ is the delay actually
+    // applied (alignPost_), the value reported (reportedBudgetFrames), and
+    // the value the borrow path reads (in-context engage). It changes in
+    // EXACTLY TWO PLACES, both through commitBorrowBudget(): prepareToPlay,
+    // and a block observed with the transport STOPPED. The registry pass
+    // writes only borrowBudgetWanted_, which is INERT: not applied, not
+    // reported, not read by the borrow path. A transport whose state is
+    // unknown (no play head, no position) counts as PLAYING: no commit.
+    std::atomic<bool> borrowBudgetActive_ { false };   // COMMITTED - the one value
+    std::atomic<bool> borrowBudgetWanted_ { false };   // PENDING - inert
+    void setBorrowBudgetWanted(bool wanted) noexcept
+    { borrowBudgetWanted_.store(wanted, std::memory_order_relaxed); }
+    void commitBorrowBudget(const char* where);        // the only writer of borrowBudgetActive_
     int  reportedBudgetFrames() const noexcept
     { return borrowBudgetActive_.load(std::memory_order_relaxed)
                  ? kBorrowAlignBudgetFrames : 0; }
+    // C4, the scoping decision as a pure function (the suite drives it):
+    // a rack counts only if it announces in-context capability, its host
+    // identity is OURS (pid + process start), and its publisher is alive.
+    struct BudgetRow { bool inContextCapable = false; int publisherPid = 0; int hostPid = 0; juce::int64 hostStartSec = 0, hostStartUsec = 0; };
+    static bool budgetRowCounts(const BudgetRow& r, const ChainHost::HostIdentity& me, bool publisherAlive) noexcept
+    {
+        return r.inContextCapable && r.publisherPid > 0 && publisherAlive
+            && r.hostPid == me.pid && r.hostStartSec == me.startSec && r.hostStartUsec == me.startUsec;
+    }
     bool borrowApplyInFlight_ = false;
 
     // ---- Mute/solo layer (27 Aug 2026, MUTE_SOLO_SPEC) -------------------
@@ -1262,8 +1283,7 @@ private:
     // Resolved shared directory (message thread, set once in ensureLinkRegistryOpen)
     juce::String linkResolvedDir;
     juce::int64  lastFileReapMs_ = 0;   // dead-uid file sweep throttle (~5 min)
-    juce::String ctxCapSetKey_;          // §8.3: listed-uid set fingerprint
-    std::map<juce::String, bool> ctxCapCache_;   // uid -> inContextCapable
+    std::map<juce::String, BudgetRow> ctxCapCache_;   // uid -> what its sidecar said (round 53: with publisher + host)
 
     // Registry mapping (message thread)
     void*  linkRegMap = nullptr;
