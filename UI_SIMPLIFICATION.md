@@ -967,3 +967,60 @@ does nothing.
 3. ADVANCED shows the readouts and the twelve engineering controls.
 4. If anything is cramped at 620x400, say which control; the layout
    clamps every width and nothing overlaps at the default size.
+
+# Round 46 (5 Sep 2026): THE SEQUENCING ERROR, and THE RE-MAP BAR - written before the code
+
+## THE ERROR, recorded with its cause
+Sean asked, in the original UI request, for depth to be AUTOMATIC AND
+LINKED TO RETUNE. Round 35 ruling 3 kept DEPTH on the front "until the
+re-map ships" - defensible while the re-map was unmeasured. Round 40
+measured and verified the curve (monotonic at 18 positions, on file).
+The layout (round 45) then shipped with the OLD 0-150 ms dial AND a
+DEPTH knob on the front: the opposite of the simplification he asked
+for. CAUSE: a ruling written under one state of evidence was not
+revisited when the evidence changed. The reviewer's error in sequencing;
+the builder's error in executing a ruling whose premise had expired
+without saying so. Standing rule from it: WHEN A MEASUREMENT LANDS,
+RE-READ EVERY RULING THAT CITED ITS ABSENCE.
+
+## THE RE-MAP: what is built
+A NEW PARAMETER `retune` (0-400, unitless, Antares-calibrated) drives
+`retune_speed_ms` and `depth` through the round-40 v3 transfer function:
+    dial d in [0, 50]:   t = d/50;  retune_ms = 6 + 74 t^2;  depth = 1 - 0.65 t^0.7
+    dial d in [50, 400]: linear in d between (50: 80 ms, 0.35), (100: 150, 0.25), (200: 150, 0.15), (400: 150, 0.10)
+`retune_speed_ms` and `depth` BECOME INTERNAL, keeping their ids and
+ranges: the model and the chain host can still write them directly, and
+a direct write takes the device OFF THE CURVE (flag + readout). Turning
+the dial puts it back on. The mode table writes the dial at the position
+whose retune-ms branch matches the mode's retune (its inverse), and
+writes retune_speed_ms/depth as before - a mode is off the curve by
+construction and the readout says so; Custom (the default) is on it.
+
+## THE BAR (ruled; every leg measured before the install is described)
+  1. SAVED-STATE SEMANTICS. Nothing already saved is reinterpreted. Any
+     state written before this change loads and renders BIT-IDENTICAL to
+     today's binary: proved by render against Sean's exact saved state
+     (retune 44.21 / depth 100, the 3 Sep decode) AND the retune 6 / depth
+     100 state, AND a fresh default instance, against WAV renders produced
+     by the pre-change test binary (same method as round 24).
+     Mechanism: the schema lists `retune` before retune_speed_ms/depth, so
+     a saved file applies the dial first and the literal ms/depth after;
+     an old file with no `retune` field gets dial 0 then its own ms/depth.
+  2. The dial reproduces the round-40 v3 curve at the 18 measured
+     positions: the (retune_ms, depth) pairs from the shipped mapping
+     equal the tf4 rows, and pitch_activity re-run through the shipped
+     mapping reproduces the tf4 medians within the recorded residuals.
+  3. Monotonic in median activity across the full range (the round-39
+     hard requirement) - re-checked on the re-run, not inherited.
+  4. Word-start events do not regress: dial 0 renders bit-identical to
+     today's default (leg 1), so the default's event count is today's;
+     the per-position ev/ws column is re-run with leg 2. OLD-take
+     falsifier: unchanged by the same identity (EJ_PITCH_SOURCE render
+     against the OLD take, bit-identical).
+  5. DEPTH leaves the front in the same change. It stays a dial in
+     ADVANCED as an override (the dialable principle): turning it takes
+     the device off the curve and the panel says so, in both views.
+  6. A fresh instance defaults to dial 0 = (6 ms, depth 1.0), matching
+     the round-40 default; checked in the suite.
+FRONT goes to 8: RETUNE (0-400), FLEX, HUMAN, KEY+SCALE with AUTO, REF
+with AUTO, KEEP VIBRATO, IGN VIB, VOICE TYPE.
