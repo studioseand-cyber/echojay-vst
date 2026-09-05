@@ -614,3 +614,29 @@ staleness), and the press-play defect proceeds on section 9's written
 candidate order, (a) first. His reference IS auto and IS held-through-
 silence state - but it resolves to 440 under the guard in his topology,
 so a stale reference cannot move him either.
+
+## 16. SEAN'S ACTUAL WORKING SETTINGS contradict a carried assumption; the priority re-examined
+
+retune_speed_ms 44.21 (since the 3 Sep 10:33 save; 0 = floor 6 on 29-30
+Aug), targeting_ignores_vibrato OFF, correction_mode 4 (custom), flex 0,
+humanize 0, natural_vibrato 0. HE WORKS AT THE KNEE, NOT THE FAST END.
+Round 17's ranking put the timing lag first partly because "Sean works at
+the fast end and reports it indistinguishable from Antares there"; the
+state says he moved to 44 ms on 3 Sep, the day the slow-end complaint was
+filed. Re-read at his setting (SLOW_END_RECORD.md aligned attribution,
+ign OFF, seam 60, tau 40 row): activity median 4.92c / p90 21.9c / 7.9%
+over 25c (vs 3.95 / 14.5 / 3.8% at tau 6); GLIDE (envelope in transit)
+47.5% of activity, mean 8.7c; SNAP 19.9%; DETECT (the timing lag) 17.0%
+of activity on 8.0% of hops, 54 of 229 events over 25c. At the knee the
+transit bucket is already the largest and growing; the lag's share is
+flat (14.8% -> 17.0%). THIS STRENGTHENS THE RE-RANK: the slow-end
+degradation begins exactly where he sits, and the timing lag is the same
+size there as at the fast end. Order stands: slow end, then timing lag.
+
+TWO CONSEQUENCES FOR THE RECORD: (i) the seam-attack ear gate (round 16)
+was rendered at tau 6 while his live listening since 3 Sep is at 44 ms
+with ignore-vibrato OFF - the gate is not void (60 is calmer than 0 at
+every tau, section 1 of SLOW_END_RECORD), but the render he judged was
+not his working point; the next ear render is made at self:44:60:0:0:0:0
+(REFERENCE_SET.md). (ii) DEFECT_VIBRATO_ON_TUNING_COST's re-opened ON
+residual is not what he hears live: he runs OFF.

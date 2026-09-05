@@ -362,6 +362,59 @@ int main()
         }
     }
 
+    std::printf ("== SEAN'S SAVED STATE (3 Sep 2026): what is DISPLAYED vs what is APPLIED ==\n");
+    {
+        // The pitch device's slot state exactly as decoded from his Logic
+        // project (DEFECT_AUTOKEY_PROVENANCE.md §15): reference_source auto,
+        // reference_hz 439.19 persisted from the pre-guard era.
+        static const char* kSeanState =
+            "{\"v\": 1, \"bypassed\": false, \"params\": {\"correction_mode\": 4.0, \"correct\": 1.0, "
+            "\"retune_speed_ms\": 44.211582183837891, \"flex\": 0.0, \"humanize\": 0.0, "
+            "\"targeting_ignores_vibrato\": 0.0, \"key_source\": 1.0, \"key_root\": 2.0, \"scale\": 1.0, "
+            "\"reference_source\": 0.0, \"reference_hz\": 439.19219970703125, \"ref_manual_by_user\": 0.0, "
+            "\"transpose\": 0.0, \"natural_vibrato\": 0.0, \"vib_depth_cents\": 0.0, \"vib_rate_hz\": 5.5, "
+            "\"vib_shape\": 0.0, \"vib_onset_ms\": 300.0, \"voice_type\": 1.0, \"tracking\": 1.0, "
+            "\"formant_mode\": 1.0, \"formant_shift\": 0.0, \"low_latency\": 0.0, \"mix\": 100.0, "
+            "\"output_db\": 0.0, \"target_hz\": 0.0, \"reset_stats\": 0.0}}";
+        EedPitchProcessor q;
+        q.prepareToPlay (48000.0, 512);
+        q.setKeyFeedSelfId (77);
+        echojay::KeyFeed::instance().publish (echojay::DetectedKeyFact {});   // his topology: no external fact
+        q.setStateInformation (kSeanState, (int) std::strlen (kSeanState));
+        auto pump = [&] (int blocks)
+        { juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m; for (int i = 0; i < blocks; ++i) { b.clear(); q.processBlock (b, m); } };
+        pump (4);
+        auto st = q.autoKeyState();
+        std::printf ("    loaded: key_source %s, reference_source %s, reference_hz FIELD %.2f, APPLIED %.2f, seam_attack_ms %.0f, retune %.2f\n",
+                     q.getParamValue ("key_source") < 0.5 ? "auto" : "manual", st.refAuto ? "auto" : "manual",
+                     q.getParamValue ("reference_hz"), st.refApplied, q.getParamValue ("seam_attack_ms"), q.getParamValue ("retune_speed_ms"));
+        check (! st.active, "key is MANUAL (not on the auto path)");
+        check (st.refAuto, "reference is AUTO");
+        check (std::abs (st.refApplied - 440.0) < 0.05, "APPLIED reference under auto with no source is 440.0");
+        check (std::abs (q.getParamValue ("reference_hz") - 439.19) < 0.01,
+               "...while the reference_hz FIELD (the REF knob) still reads the persisted 439.19 - DORMANT contamination");
+        check (std::abs (q.getParamValue ("seam_attack_ms") - 60.0) < 0.01, "seam_attack_ms absent from the state -> schema default 60 applied");
+        // FullMix role on a vocal: his own KeyEngine publishes a self-derived fact
+        {
+            echojay::DetectedKeyFact f; f.valid = true; f.root = 0; f.minor = false; f.confidence = 0.86f;
+            f.tuningHz = 439.19f; f.fromBus = true; f.publisherId = 77; f.selfDerived = true;
+            std::strncpy (f.sourceName, "this channel", sizeof (f.sourceName) - 1);
+            echojay::KeyFeed::instance().publish (f);
+        }
+        pump (4); st = q.autoKeyState();
+        check (std::abs (st.refApplied - 440.0) < 0.05 && st.refSelfIgnored,
+               "a self-derived 439.19 fact from his own channel is refused: applied stays 440 (refSelfIgnored)");
+        check (! st.active, "...and his MANUAL key is untouched by the key guard (not on the auto path)");
+        // THE DORMANT VALUE WAKES UP: switching reference to manual applies the field.
+        echojay::KeyFeed::instance().publish (echojay::DetectedKeyFact {});
+        q.applyStructured (params ({ { "reference_source", "manual" } }));
+        pump (4); st = q.autoKeyState();
+        std::printf ("    after reference_source -> manual: APPLIED %.2f\n", st.refApplied);
+        check (std::abs (st.refApplied - 439.19) < 0.01,
+               "switching reference_source to manual APPLIES the persisted 439.19 - the guard never fires on a loaded value");
+        echojay::KeyFeed::instance().publish (echojay::DetectedKeyFact {});
+    }
+
     std::printf ("== below the gate it falls to CHROMATIC, not to the last key ==\n");
     {
         auto pump = [&] (int blocks)

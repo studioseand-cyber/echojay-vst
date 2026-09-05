@@ -463,3 +463,11 @@ slow-limit feel - that is the depth blend of investigation item 1, and
 Flex does not give it to him today; MIX (the chain wet knob, 0-100) is
 the nearest existing control for that and is worth trying at his
 44 ms setting before anything is built.
+
+## Round 24 addendum: the re-rank is STRENGTHENED by Sean's actual setting
+
+Read from state (DEFECT_AUTOKEY_PROVENANCE.md §16): retune 44.2 ms,
+ignore-vibrato OFF - the knee, not the fast end. At tau 40 the transit
+bucket is already 47.5% of activity and the >25c share has doubled from
+tau 6 (3.8% -> 7.9%); the timing lag's share is flat. The slow end begins
+where he works. Order stands, with more reason: slow end, then timing lag.
