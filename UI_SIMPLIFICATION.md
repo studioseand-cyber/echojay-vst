@@ -1255,3 +1255,65 @@ AUHostingServiceXPC_arrow killed; Sean must relaunch Logic. No engine
 change: the audio path is round 48's, bit for bit (the latency log is
 compiled out of this build). The LOG build is a separate deliverable
 (DEFECT_PRESS_PLAY_PHASING.md section 8).
+
+# Round 50 (5 Sep 2026): Sean's three items on AU 444376C2 - the state bug (DEFECT_CORRECTION_OFF_STATES.md), the stale REF, two layout bugs; the audit rule extended
+
+## Item 1 - in its own file: DEFECT_CORRECTION_OFF_STATES.md
+Two reachable "looks active, barely corrects" states measured on the
+reference take (the default KEEP VIBRATO on: 8.71c / 30.1% - worse than the
+source; a saved low depth under dial 0: 6.53c = the source), a third state
+bug of the same class fixed (key_source AUTO loaded as MANUAL), the
+diagnostic status line on both views, and the PROVISIONAL default change
+natural_vibrato 100 -> 0 with its measurement and hesitation.
+
+## Item 2 - the REF knob showed the stored field while on auto
+Sean's screenshot: REF 439.2 Hz while the line said "ref 440.0 Hz (auto ...
+not followed)" - the laundered pre-guard value of the round-24 false alarm.
+The round-25 display rule (WHILE ON AUTO, SHOW THE APPLIED VALUE GREYED,
+NOT THE STORED FIELD) was implemented for the attribution line and never
+for the front control. Fixed in syncFromProcessor: on auto the knob is set
+to autoKeyState().refApplied (greyed, as before); turning it still writes
+reference_hz and takes manual. KEY checked: the combos read key_root/scale,
+which the auto path WRITES (correct_.setKeyRoot / applyScale), so they
+already show the applied values; under the chromatic fallback SCALE shows
+CHROMATIC and KEY shows the last root, which chromatic ignores.
+
+## Item 3 - two layout bugs, and why the harness missed them
+  a. The READOUTS box painted on the FRONT: numbersBox_ was set by the
+     advanced layout and never cleared by the front layout - a carry-over
+     Sean reached by opening ADVANCED and going back. The harness rendered
+     each view from a fresh editor, so it never took that path. FIXED: the
+     front layout clears every advanced rectangle (box, panels, latency
+     line, groups, captions), not just the panels.
+  b. The box content overflowed its frame: the readout painters used a
+     MINIMUM row height (10 px), so a short READOUTS group (his window is
+     shorter than the harness's 400 px) drew four rows taller than the box.
+     FIXED twice over: rows are exactly a quarter of the area (fonts follow,
+     6-11 pt), and the READOUTS group is reserved FIRST at the height its
+     rows need; the three control groups shrink into what remains, never
+     the readouts.
+
+## THE STANDING RULE, EXTENDED (ruled): the harness renders EVERY view, at
+## several sizes, along the user's path - and ASSERTS bounds
+EedPitchEditor::auditLayout() returns violations; the suite runs it at
+620x400, 620x340, 760x480 and 560x300, in FRONT, ADVANCED and FRONT AFTER
+ADVANCED (the carry-over path), and checks: every control visible in its
+view and inside the content; in ADVANCED every control and caption inside
+a group frame, groups inside the content and not overlapping, the numbers
+box inside READOUTS and its two panels inside the box, rows tall enough to
+read, the latency line inside CORRECTION; on the FRONT no advanced
+control visible and no advanced rectangle carried over. 12 checks, all
+clean. Snapshots now include front_after_advanced, front_depth_trap (the
+amber status) and advanced_340 (the short window). What the audit and the
+new renders caught before Sean did this round: the "(off)" suffix not
+refreshing when only the off-curve state changed (fixed), and the voice
+name in the schema's spelling (fixed in 49).
+
+## STANDING RULE (ruled, the third occurrence): ANY FILE THE USER MUST
+## PRODUCE OR RETRIEVE GOES IN A CONNECTED FOLDER
+Connected: echojay-vst, echojay-vst-pitch, echojay, Documents, JUCE.
+NOT connected: Desktop, ~/Library, temp paths. Never those - the ear-clip
+zips and the latency log both went missing that way. The latency log now
+writes to /Users/SeanD/echojay-vst/latency-logs/latency.log and the log
+build lives in /Users/SeanD/echojay-vst/latency-logs/build/ (bundles
+git-ignored, the log read from the cloud side).

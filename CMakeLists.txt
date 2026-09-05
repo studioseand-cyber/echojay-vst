@@ -349,7 +349,7 @@ target_sources(EchoJay PRIVATE
 # Round 49 (DEFECT_PRESS_PLAY_PHASING item 1): the timestamped latency log,
 # a DEBUG build Sean runs once and hands back. OFF here; the build-latencylog
 # directory is configured with -DEJ_LATENCY_LOG=ON. See Source/EedLatencyLog.h.
-option(EJ_LATENCY_LOG "Write ~/Library/Logs/EchoJay/latency.log from every latency report, chain rebuild and the first 50 blocks after play" OFF)
+option(EJ_LATENCY_LOG "Write <repo>/latency-logs/latency.log from every latency report, chain rebuild and the first 50 blocks after play" OFF)
 if(EJ_LATENCY_LOG)
     target_compile_definitions(EchoJay PUBLIC EJ_LATENCY_LOG=1)
 endif()

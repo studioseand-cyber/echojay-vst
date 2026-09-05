@@ -198,7 +198,15 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "shifts the corrected result in semitones, after correction",
           false },
 
-        { EedPitchProcessor::kNaturalVib, "%", 0.0, 200.0, 100.0,
+        { EedPitchProcessor::kNaturalVib, "%", 0.0, 200.0, 0.0,
+          "DEFAULT 0 = KEEP VIBRATO OFF (PROVISIONAL, round 50, 5 Sep 2026; was 100). "
+          "MEASURED on the reference take, all-voiced off-grid vs D minor @ 440: "
+          "the defaults with 100 render 8.71c / 30.1% within 5c - WORSE THAN THE "
+          "SOURCE (6.72c / 39.8%) and worse at onsets too (10.41c vs 8.26c); with 0 "
+          "they render 2.44c / 66.2%. Every ear-confirmed clip and every dial "
+          "measurement of rounds 31-46 was made at 0; the schema default never "
+          "went through the measurement. The mode table is unchanged (natural "
+          "and balanced keep at 100). "
           "AS SHIPPED THIS IS A SWITCH, NOT A GAIN (measured 5 Sep 2026, "
           "UI_SIMPLIFICATION.md ruling 3): 100 keeps the singer's own vibrato "
           "exactly as sung; EVERY OTHER VALUE removes it entirely - 0, 40, 150 "
@@ -419,11 +427,16 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
         // Setting the key by hand IS choosing manual - otherwise the next
         // block silently overwrites it and the control looks broken.
         correct_.setKeyRoot ((int) std::lround (value));
-        if (! writingDefaults_) keyAuto_.store (false);
+        // Round 50: a STATE LOAD replays the field and decides the mode via
+        // key_source (which the schema applies first); only a LIVE write is a
+        // hand on the control. Without this, every session saved in AUTO
+        // loaded as MANUAL - the reference path had the guard, the key path
+        // did not (the same "applied differently on load" class as the trap).
+        if (! writingDefaults_ && ! applyingState()) keyAuto_.store (false);
         return true;
     }
     if (id == kScale)       { applyScale ((int) std::lround (value));
-                              if (! writingDefaults_) keyAuto_.store (false); return true; }
+                              if (! writingDefaults_ && ! applyingState()) keyAuto_.store (false); return true; }
     if (id == kReferenceHz)
     {
         // The value lands in the MANUAL FIELD. Only a LIVE write - a person
@@ -1116,8 +1129,12 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
                     r.slowC = correct_.lastSlowCents();
                     r.oscC  = correct_.lastOscCents();
                     r.aimC  = correct_.lastAimCents();
-                    r.envC  = t > 0.0f ? correct_.lastShiftCents()
-                                       : 0.0f;   // the APPLIED shift (3 Sep)
+                    // The APPLIED shift, in cents, on EITHER path (round 50):
+                    // the shift path applies lastShiftCents(); the legacy path
+                    // applies the target, so its shift is target vs the hop's f0.
+                    r.envC  = t <= 0.0f ? 0.0f
+                            : correct_.shiftPreferred() ? correct_.lastShiftCents()
+                                                        : 1200.0f * std::log2 (t / gatedF0);
                     traceW_.store (w + 1, std::memory_order_release);
                 }
             }

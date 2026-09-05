@@ -503,6 +503,120 @@ int main()
         }
     }
 
+    std::printf ("== THE DEPTH TRAP (round 50, Sean's EJ1 'out of tune' bounce): a saved low depth loads under dial 0 ==\n");
+    {
+        // What the round-45 build saved when its FRONT DEPTH knob was turned
+        // down (no `retune` field yet; retune_speed_ms at the default 6).
+        const juce::String saved45 =
+            "{\"v\": 1, \"bypassed\": false, \"params\": {\"correction_mode\": 4.0, \"correct\": 1.0, "
+            "\"retune_speed_ms\": 6.0, \"seam_attack_ms\": 60.0, \"flex\": 0.0, \"humanize\": 0.0, \"depth\": 10.0, "
+            "\"targeting_ignores_vibrato\": 0.0, \"key_source\": 1.0, \"key_root\": 2.0, \"scale\": 1.0, "
+            "\"reference_source\": 0.0, \"reference_hz\": 440.0, \"natural_vibrato\": 0.0, \"voice_type\": 1.0, "
+            "\"tracking\": 1.0, \"formant_mode\": 1.0, \"formant_shift\": 0.0, \"low_latency\": 0.0, \"mix\": 100.0, \"output_db\": 0.0}}";
+        EedPitchProcessor q; q.prepareToPlay (48000.0, 512);
+        q.setStateInformation (saved45.toRawUTF8(), (int) saved45.getNumBytesAsUTF8());
+        std::printf ("    loaded: retune dial %.0f, retune_speed_ms %.1f, depth %.0f, off-curve %d, correct %.0f, mix %.0f\n",
+                     q.getParamValue ("retune"), q.getParamValue ("retune_speed_ms"), q.getParamValue ("depth"), q.retuneOffCurve() ? 1 : 0,
+                     q.getParamValue ("correct"), q.getParamValue ("mix"));
+        check (std::abs (q.getParamValue ("retune")) < 1.0e-6 && std::abs (q.getParamValue ("depth") - 10.0) < 1.0e-3 && q.retuneOffCurve(),
+               "REACHABLE: the file's depth 10 is applied, the dial reads 0 '(off)', and DEPTH is in ADVANCED - the front cannot show it");
+        q.setParamValue ("retune", 0.0);   // Sean's fix: touching RETUNE
+        check (std::abs (q.getParamValue ("depth") - 100.0) < 1.0e-3 && ! q.retuneOffCurve(),
+               "RESTORED BY TOUCHING: turning RETUNE (even back to 0) rewrites depth to 100 - exactly his report");
+
+        const char* env = std::getenv ("EJ_PITCH_SOURCE");
+        juce::File src (env != nullptr ? juce::String (env) : juce::String ("/Users/SeanD/Music/Logic/test/Bounces/sourceNEW.wav"));
+        juce::AudioBuffer<float> take; double fs = 48000.0;
+        if (src.existsAsFile())
+        {
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::AudioFormatReader> r (wav.createReaderFor (src.createInputStream().release(), true));
+            if (r != nullptr) { fs = r->sampleRate; take.setSize (1, (int) r->lengthInSamples); r->read (&take, 0, (int) r->lengthInSamples, 0, true, false); }
+        }
+        if (take.getNumSamples() == 0) std::printf ("  [SKIP] material not found - the trap is not rendered\n");
+        else
+        {
+            auto render = [&] (const std::function<void (EedPitchProcessor&)>& setup) -> std::vector<float>
+            {
+                EedPitchProcessor p; p.prepareToPlay (fs, 512); setup (p);
+                std::vector<float> out; out.reserve ((size_t) take.getNumSamples());
+                juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m;
+                for (int pos = 0; pos < take.getNumSamples(); pos += 512)
+                {
+                    const int n = juce::jmin (512, take.getNumSamples() - pos);
+                    b.clear(); b.copyFrom (0, 0, take, 0, pos, n); b.copyFrom (1, 0, take, 0, pos, n);
+                    p.processBlock (b, m);
+                    for (int i = 0; i < n; ++i) out.push_back (b.getSample (0, i));
+                }
+                return out;
+            };
+            // The corrector's delay: compare against the SOURCE delayed by the reported latency.
+            EedPitchProcessor probe; probe.prepareToPlay (fs, 512); const int lat = probe.getLatencySamples();
+            auto devFromSource = [&] (const std::vector<float>& out)
+            {
+                double e = 0, sref = 0; size_t n = 0;
+                for (size_t i = (size_t) lat; i < out.size(); ++i) { const double d = (double) out[i] - (double) take.getSample (0, (int) i - lat); e += d * d; sref += (double) take.getSample (0, (int) i - lat) * take.getSample (0, (int) i - lat); ++n; }
+                return n > 0 && sref > 0 ? 100.0 * std::sqrt (e / (double) n) / std::sqrt (sref / (double) n) : 0.0;
+            };
+            // The same file with depth 100: the ONLY difference is the depth the trap loads.
+            const juce::String saved45full = saved45.replace ("\"depth\": 10.0", "\"depth\": 100.0");
+            const auto dial0 = render ([&] (EedPitchProcessor& p) { p.setStateInformation (saved45full.toRawUTF8(), (int) saved45full.getNumBytesAsUTF8()); });
+            const auto trap  = render ([&] (EedPitchProcessor& p) { p.setStateInformation (saved45.toRawUTF8(), (int) saved45.getNumBytesAsUTF8()); });
+            const auto fixed = render ([&] (EedPitchProcessor& p) { p.setStateInformation (saved45.toRawUTF8(), (int) saved45.getNumBytesAsUTF8()); p.setParamValue ("retune", 0.0); });
+            const double dv0 = devFromSource (dial0), dvT = devFromSource (trap), dvF = devFromSource (fixed);
+            std::printf ("    deviation from the latency-aligned SOURCE (RMS %% of source): dial 0 %.1f%%   TRAP (depth 10, dial reads 0) %.1f%%   after the touch %.1f%%\n", dv0, dvT, dvF);
+            check (dvT < 0.5 * dv0, "the trapped render moves far less from the source than dial 0 does - it measures like nearly uncorrected audio (EJ1)");
+            size_t diff = 0; for (size_t i = 0; i < std::min (fixed.size(), dial0.size()); ++i) if (fixed[i] != dial0[i]) ++diff;
+            check (diff == 0 && fixed.size() == dial0.size(), "after the touch the render is BIT-IDENTICAL to dial 0 (EJ2 == the intended sound)");
+            if (const char* od = std::getenv ("EJ_DEPTH_TRAP_OUT"))
+            {
+                juce::File out (od); out.createDirectory();
+                auto writeWav = [&] (const char* name, const std::vector<float>& v)
+                {
+                    juce::AudioBuffer<float> o (1, (int) v.size()); for (size_t i = 0; i < v.size(); ++i) o.setSample (0, (int) i, v[i]);
+                    juce::File f = out.getChildFile (juce::String (name) + ".wav"); f.deleteFile();
+                    juce::WavAudioFormat wav; std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (new juce::FileOutputStream (f), fs, 1, 32, {}, 0));
+                    if (w != nullptr) { w->writeFromAudioSampleBuffer (o, 0, o.getNumSamples()); w.reset(); }
+                    std::printf ("  wrote %s\n", f.getFullPathName().toRawUTF8());
+                };
+                writeWav ("trap_dial0", dial0); writeWav ("trap_depth10", trap); writeWav ("trap_after_touch", fixed);
+            }
+        }
+    }
+
+    std::printf ("== KEY_SOURCE SURVIVES A STATE LOAD (round 50: the key setters flipped auto to manual on load) ==\n");
+    {
+        const juce::String autoState =
+            "{\"v\": 1, \"bypassed\": false, \"params\": {\"key_source\": 0.0, \"key_root\": 2.0, \"scale\": 1.0}}";
+        EedPitchProcessor q; q.prepareToPlay (48000.0, 512);
+        q.setStateInformation (autoState.toRawUTF8(), (int) autoState.getNumBytesAsUTF8());
+        check (q.getParamValue ("key_source") < 0.5, "a session saved with key_source AUTO loads as AUTO (key_root/scale replayed from the file do not take manual)");
+        q.setParamValue ("key_root", 4.0);
+        check (q.getParamValue ("key_source") >= 0.5, "...while a LIVE key_root write still takes manual");
+    }
+
+    std::printf ("== LAYOUT AUDIT (round 50, the standing rule extended): every view, several sizes, no carry-over, everything inside its frame ==\n");
+    {
+        juce::ScopedJuceInitialiser_GUI gui;
+        const int sizes[][2] = { { 620, 400 }, { 620, 340 }, { 760, 480 }, { 560, 300 } };
+        for (const auto& sz : sizes)
+        {
+            EedPitchProcessor p; p.prepareToPlay (48000.0, 512);
+            std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
+            auto* pe = dynamic_cast<EedPitchEditor*> (ed.get());
+            if (pe == nullptr) { check (false, "editor"); break; }
+            ed->setSize (sz[0], sz[1]);
+            const char* views[] = { "front", "advanced", "front after advanced" };
+            for (int v = 0; v < 3; ++v)
+            {
+                pe->showAdvanced (v == 1);
+                const auto bad = pe->auditLayout();
+                for (const auto& b : bad) std::printf ("      %dx%d %s: %s\n", sz[0], sz[1], views[v], b.toRawUTF8());
+                check (bad.isEmpty(), juce::String (sz[0]) + "x" + juce::String (sz[1]) + " " + views[v] + ": layout clean (" + juce::String (bad.size()) + " violations)");
+            }
+        }
+    }
+
     // ---- SAVED-STATE RENDER IDENTITY (5 Sep 2026, UI_SIMPLIFICATION round 46, bar leg 1):
     // EJ_STATE_RENDER_OUT=<dir>: renders the standing take (EJ_PITCH_SOURCE
     // overrides) through saved states exactly as a host would load them. The
@@ -1047,6 +1161,9 @@ int main()
         snap ("front_offcurve", [] (EedPitchProcessor& p, EedPitchEditor& e) { p.setParamValue ("retune", 100.0); p.setParamValue ("depth", 50.0); e.showAdvanced (false); e.repaint(); });
         snap ("advanced",       [] (EedPitchProcessor&, EedPitchEditor& e) { e.showAdvanced (true); });
         snap ("front_manualkey", [] (EedPitchProcessor& p, EedPitchEditor& e) { p.applyStructured (params ({ { "key_source", "manual" }, { "key_root", 2.0 }, { "scale", 1.0 }, { "reference_source", "manual" } })); e.showAdvanced (false); });
+        snap ("front_after_advanced", [] (EedPitchProcessor&, EedPitchEditor& e) { e.showAdvanced (true); e.showAdvanced (false); });
+        snap ("front_depth_trap", [] (EedPitchProcessor& p, EedPitchEditor& e) { p.setParamValue ("depth", 10.0); e.showAdvanced (false); });
+        snap ("advanced_340", [] (EedPitchProcessor&, EedPitchEditor& e) { e.setSize (620, 340); e.showAdvanced (true); });
     }
 
     std::printf ("\n%s (%d failure%s)\n", g_fail == 0 ? "ALL PASS" : "FAILURES",

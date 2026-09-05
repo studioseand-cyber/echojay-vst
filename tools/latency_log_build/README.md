@@ -3,7 +3,10 @@
 What it is: EchoJay V2 (AU) built with `EJ_LATENCY_LOG=1`. It sounds and
 behaves exactly like the installed build, and additionally writes
 
-    ~/Library/Logs/EchoJay/latency.log
+    /Users/SeanD/echojay-vst/latency-logs/latency.log
+
+(a folder the cloud side reads directly - nothing to locate or send; the
+install script moves any previous log aside as latency.previous.log).
 
 with a timestamp on every line for:
   - every latency report to the host (`setLatencySamples`): old value, new
@@ -21,11 +24,10 @@ with a timestamp on every line for:
    `~/Library/Audio/Plug-Ins/Components/EchoJay V2.component`, clears the AU
    cache and kills the AU hosting service).
 3. Open the session, press PLAY, let it run ~3 s, STOP. Do that four or five
-   times, from the same marker and from different ones. Also once from the
-   top after a locate.
+   times, including once after jumping to a marker.
 4. Quit Logic.
 5. Double-click `restore_working_build.command` (puts the normal build back).
-6. Send `~/Library/Logs/EchoJay/latency.log` (the whole file).
+6. Nothing to send: the log is in the repo folder and is read from there.
 
 The log build is identified by its UUID (below); the working build is the
 one `tools/install_local.sh build-release` installs.
@@ -33,4 +35,4 @@ one `tools/install_local.sh build-release` installs.
 ## Identity (5 Sep 2026)
   LOG build     AU arm64 0876789A-AEB6-38F2-8754-66D7DA8F8AA9   (build-latencylog, EJ_LATENCY_LOG=ON)
   WORKING build AU arm64 63AF3A3F-B080-3CB0-A60A-DF53F20CE371   (build-release, what is installed)
-Deliverable on the Desktop: /Users/SeanD/Desktop/EchoJay_LatencyLog_Build/
+Deliverable (connected folder): /Users/SeanD/echojay-vst/latency-logs/build/

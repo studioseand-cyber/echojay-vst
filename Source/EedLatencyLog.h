@@ -5,7 +5,8 @@
     other build every macro here is a no-op and ejSetLatencyLogged is a plain
     forward to setLatencySamples.
 
-    Writes ~/Library/Logs/EchoJay/latency.log: wall clock, ms since the log
+    Writes /Users/SeanD/echojay-vst/latency-logs/latency.log (a CONNECTED
+    folder): wall clock, ms since the log
     opened, thread, then the line. Writes happen on whichever thread calls -
     including the audio thread - which is why this is a debug build and not
     the one Sean works in.
@@ -36,10 +37,11 @@ inline void ejLatencyLog (const char* fmt, ...)
     {
         if (tried) return;
         tried = true;
+        // STANDING RULE (round 50): ANY FILE THE USER MUST PRODUCE OR RETRIEVE
+        // GOES IN A CONNECTED FOLDER - the repo, never ~/Library, never the
+        // Desktop, never a temp path. The cloud side reads it from here.
         const char* home = std::getenv ("HOME");
-        std::string dir = std::string (home != nullptr ? home : "/tmp") + "/Library/Logs";
-        ::mkdir (dir.c_str(), 0755);
-        dir += "/EchoJay";
+        std::string dir = std::string (home != nullptr ? home : "/Users/SeanD") + "/echojay-vst/latency-logs";
         ::mkdir (dir.c_str(), 0755);
         f = std::fopen ((dir + "/latency.log").c_str(), "a");
         if (f == nullptr) return;

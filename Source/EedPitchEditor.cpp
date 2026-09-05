@@ -3,6 +3,7 @@
 */
 
 #include "EedPitchEditor.h"
+#include <algorithm>
 
 using namespace echojay::device;
 using namespace echojay::device::metrics;
@@ -321,8 +322,14 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
         // indication, and the paragraph was the first thing a user saw.
         offCurveBounds_ = {};
         content.removeFromBottom (juce::jmin (4, content.getHeight()));
+        // Round 50: the correction-status strip above the ribbon - "is it
+        // actually correcting", at a glance, from state AND from measurement.
+        statusBounds_ = content.removeFromTop (juce::jmin (14, content.getHeight() / 4));
         ribbonBounds_ = content;
-        notePanel_ = numbersPanel_ = guardPanel_ = latencyBounds_ = none;
+        // Round 50 (Sean's screenshot): NOTHING advanced carries over - every
+        // advanced rectangle is cleared here, not just the panels.
+        notePanel_ = numbersPanel_ = guardPanel_ = latencyBounds_ = numbersBox_ = none;
+        advGroups_.clear(); advCaptions_.clear();
         return;
     }
 
@@ -342,11 +349,23 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
     };
 
     offCurveBounds_ = {};
+    statusBounds_ = {};
     content.removeFromBottom (juce::jmin (2, content.getHeight()));
+
+    // Round 50 (Sean's screenshot: the box overflowed its frame): the READOUTS
+    // group is reserved FIRST, at the height its rows need, and the three
+    // control groups shrink into what remains - never the other way round.
+    constexpr int kReadoutRows = 4, kReadoutRowH = 12;
+    const int readoutsWant = kTitleH + kReadoutRows * kReadoutRowH + 6 + 4;
+    const int groupsWant   = (kTitleH + kKnobH + kFramePad) * 2 + (kTitleH + kCapStripH + kRowH + 13 + kFramePad) + 8;
+    const int readoutsH    = juce::jlimit (0, content.getHeight(), juce::jmax (readoutsWant, content.getHeight() - groupsWant));
+    auto readoutsArea      = content.removeFromTop (readoutsH);
+    content.removeFromTop (juce::jmin (4, content.getHeight()));
+    const int groupShare   = juce::jmax (0, (content.getHeight() - 8) / 3);   // each control group gets a third of what is left
 
     // (1) VIBRATO GENERATOR: three dials + the shape choice, one frame.
     {
-        auto grp = takeBottom (kTitleH + kKnobH + kFramePad);
+        auto grp = takeBottom (juce::jmin (kTitleH + kKnobH + kFramePad, groupShare));
         advGroups_.push_back ({ grp, "VIBRATO GENERATOR  (added vibrato; the singer's own is KEEP VIBRATO on the front)" });
         auto inner = grp.reduced (kFramePad, 0); inner.removeFromTop (kTitleH);
         auto row = inner.removeFromTop (juce::jmin (kKnobH, inner.getHeight()));
@@ -361,7 +380,7 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
     // (2) CORRECTION: mode, tracking, lookahead, master enable - captions
     //     above, the latency explanation on its own full-width line below.
     {
-        auto grp = takeBottom (kTitleH + kCapStripH + kRowH + 13 + kFramePad);
+        auto grp = takeBottom (juce::jmin (kTitleH + kCapStripH + kRowH + 13 + kFramePad, groupShare));
         advGroups_.push_back ({ grp, "CORRECTION" });
         auto inner = grp.reduced (kFramePad, 0); inner.removeFromTop (kTitleH);
         auto caps = inner.removeFromTop (kCapStripH);
@@ -376,7 +395,7 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
 
     // (3) ENGINE: the dials. DEPTH is the curve override (round 46).
     {
-        auto grp = takeBottom (kTitleH + kKnobH + kFramePad);
+        auto grp = takeBottom (juce::jmin (kTitleH + kKnobH + kFramePad, groupShare));
         advGroups_.push_back ({ grp, "ENGINE  (DEPTH here is the override: turning it leaves the RETUNE curve)" });
         auto inner = grp.reduced (kFramePad, 0); inner.removeFromTop (kTitleH);
         auto row = inner.removeFromTop (juce::jmin (kKnobH, inner.getHeight()));
@@ -386,10 +405,9 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
 
     // (4) READOUTS: note + tuner bar | numbers | guard log, framed; then the ribbon.
     {
-        // Everything the groups left: at the default size that is ~70 px,
-        // which the readouts need in full (four rows each side). The ribbon
-        // is the front's; the advanced view drops it rather than starve these.
-        auto grp = takeBottom (content.getHeight());
+        // The area reserved above, plus whatever the groups did not need.
+        auto grp = readoutsArea.withHeight (readoutsArea.getHeight() + juce::jmax (0, content.getHeight()));
+        content = {};
         advGroups_.push_back ({ grp, "READOUTS" });
         auto inner = grp.reduced (kFramePad, 0); inner.removeFromTop (kTitleH);
         notePanel_    = inner.removeFromLeft (inner.getWidth() * 2 / 5);
@@ -397,7 +415,7 @@ void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
         // F0 / CONF / STATE / IN on its left, the octave-guard figures on its
         // right - not spread across the group. The box is drawn from numbersBox_.
         inner.removeFromLeft (juce::jmin (8, inner.getWidth()));
-        numbersBox_   = inner.removeFromTop (juce::jmin (inner.getHeight(), 4 * 12 + 6));
+        numbersBox_   = inner.removeFromTop (juce::jmin (inner.getHeight(), kReadoutRows * kReadoutRowH + 6));
         auto box      = numbersBox_.reduced (6, 3);
         guardPanel_   = box.removeFromRight (juce::jmax (0, box.getWidth() * 9 / 20));
         numbersPanel_ = box;
@@ -437,6 +455,21 @@ void EedPitchEditor::paintContent (juce::Graphics& g)
         g.setFont (uiFont (9.0f, true));
         for (const auto& c : advCaptions_)
             if (! c.r.isEmpty()) g.drawText (c.text, c.r, juce::Justification::centred);
+    }
+    {
+        // Round 50: the correction status - painted on the front strip, and in
+        // the READOUTS title line in ADVANCED.
+        const auto eff = effectiveCorrection();
+        juce::Rectangle<int> where = statusBounds_;
+        if (where.isEmpty() && advanced_)
+            for (const auto& grp : advGroups_)
+                if (grp.title == "READOUTS") { where = grp.r.reduced (6, 0).removeFromTop (12); where.removeFromLeft (70); }
+        if (! where.isEmpty())
+        {
+            g.setColour (eff.correcting ? C::green : C::amber);
+            g.setFont (uiFont (juce::jmin (10.0f, where.getHeight() * 0.8f), ! eff.correcting));
+            g.drawText (eff.text, where, juce::Justification::centredLeft);
+        }
     }
     if (! numbersBox_.isEmpty())
     {
@@ -504,8 +537,10 @@ void EedPitchEditor::paintNumbers (juce::Graphics& g, juce::Rectangle<int> area,
 {
     // Rows and fonts follow the area (round 47): four rows must fit whatever
     // the advanced layout leaves, never overprint the row below.
-    const int rowH = juce::jmax (10, area.getHeight() / 4);
-    const float valPt = juce::jmin (11.0f, rowH - 2.0f), labPt = juce::jmin (9.0f, rowH - 3.0f);
+    // Round 50: rows are EXACTLY a quarter of the area - a minimum row height
+    // is how the box overflowed its frame in Sean's screenshot.
+    const int rowH = juce::jmax (1, area.getHeight() / 4);
+    const float valPt = juce::jlimit (6.0f, 11.0f, rowH - 2.0f), labPt = juce::jlimit (6.0f, 9.0f, rowH - 3.0f);
     auto row = [&] (const char* label, const juce::String& value, juce::Colour col)
     {
         auto rr = area.removeFromTop (rowH);
@@ -537,8 +572,8 @@ void EedPitchEditor::paintGuardPanel (juce::Graphics& g, juce::Rectangle<int> ar
                                       const echojay::PitchReading& r)
 {
     area.removeFromLeft (juce::jmin (8, area.getWidth() / 8));
-    const int rowH = juce::jmax (10, area.getHeight() / 4);
-    const float bigPt = juce::jmin (11.0f, rowH - 2.0f), midPt = juce::jmin (10.0f, rowH - 2.0f), smallPt = juce::jmin (9.0f, rowH - 3.0f);
+    const int rowH = juce::jmax (1, area.getHeight() / 4);   // round 50: no minimum (see paintNumbers)
+    const float bigPt = juce::jlimit (6.0f, 11.0f, rowH - 2.0f), midPt = juce::jlimit (6.0f, 10.0f, rowH - 2.0f), smallPt = juce::jlimit (6.0f, 9.0f, rowH - 3.0f);
 
     g.setColour (C::text3);
     g.setFont (uiFont (smallPt, true));
@@ -677,7 +712,26 @@ void EedPitchEditor::syncFromProcessor()
         if (std::abs (v - k.getRealValue()) > 1.0e-4) k.setRealValue (v);
     };
     syncKnob (retuneKnob_, EedPitchProcessor::kRetune);
-    syncKnob (refKnob_,    EedPitchProcessor::kReferenceHz);
+    {
+        // The dial's "(off)" suffix depends on state the knob's value does not
+        // carry: re-render the readout when the off-curve state changes.
+        static thread_local bool lastOff = false;
+        const bool off = proc_.retuneOffCurve();
+        if (off != lastOff) { lastOff = off; retuneKnob_.setRealValue (retuneKnob_.getRealValue() + 1.0e-6); retuneKnob_.setRealValue (proc_.getParamValue (EedPitchProcessor::kRetune)); }
+    }
+    {
+        // Round 50 (Sean's screenshot: REF read 439.2 while the line said 440
+        // auto): the round-25 display rule, applied to the front control -
+        // WHILE ON AUTO, SHOW THE APPLIED VALUE GREYED, NOT THE STORED FIELD.
+        // Turning the knob still writes reference_hz, which takes manual.
+        const bool refAutoNow = proc_.getParamValue (EedPitchProcessor::kRefSource) < 0.5;
+        if (refAutoNow)
+        {
+            const double ap = (double) proc_.autoKeyState().refApplied;
+            if (std::abs (ap - refKnob_.getRealValue()) > 1.0e-3) refKnob_.setRealValue (ap);
+        }
+        else syncKnob (refKnob_, EedPitchProcessor::kReferenceHz);
+    }
     {
         // Dim the REF knob in auto - it shows the manual FIELD, which auto
         // is not using; the attribution line carries the live grid.
@@ -758,6 +812,22 @@ void EedPitchEditor::timerCallback()
     {
         EedPitchProcessor::TraceRec recs[512];
         const int n = proc_.drainTrace (recs, 512);
+        // Round 50: the live applied correction - |envC - inC| per voiced hop,
+        // median over the last ~2 s of hops. A device that is passing through
+        // shows 0.0 here whatever its panel says.
+        for (int i = 0; i < n; ++i)
+            if (recs[i].f0Hz > 0.0f)
+            {
+                appliedRing_[(size_t) appliedW_] = std::fabs (recs[i].envC);   // envC IS the applied shift, both paths
+                appliedW_ = (appliedW_ + 1) % (int) appliedRing_.size();
+                appliedN_ = juce::jmin ((int) appliedRing_.size(), appliedN_ + 1);
+            }
+        if (appliedN_ > 0)
+        {
+            std::array<float, 512> tmp = appliedRing_;
+            std::nth_element (tmp.begin(), tmp.begin() + appliedN_ / 2, tmp.begin() + appliedN_);
+            liveAppliedC_ = tmp[(size_t) (appliedN_ / 2)];
+        }
         if (n > 0)
         {
             if (! traceFile_.is_open())
@@ -824,4 +894,110 @@ const std::vector<const char*>& EedPitchEditor::handControlledParams()
         EedPitchProcessor::kVibShape,      // vibShapeBox_ (ADVANCED)
     };
     return ids;
+}
+
+// ---------------------------------------------------------------------------
+// Round 50: "is correction actually running"
+// ---------------------------------------------------------------------------
+EedPitchEditor::Effective EedPitchEditor::effectiveCorrection() const
+{
+    const bool  bypassed = proc_.isBypassed();
+    const bool  on       = proc_.getParamValue (EedPitchProcessor::kCorrect) >= 0.5;
+    const float depth    = (float) proc_.getParamValue (EedPitchProcessor::kDepth);
+    const float mix      = (float) proc_.getParamValue (EedPitchProcessor::kMix);
+    const float ms       = proc_.retuneEffectiveMs();
+    juce::StringArray why;
+    if (bypassed)     why.add ("BYPASSED");
+    if (! on)         why.add ("CORRECT is off (ADVANCED)");
+    if (depth < 0.5f) why.add ("depth " + juce::String (depth, 0) + " % (ADVANCED > DEPTH)");
+    if (mix < 0.5f)   why.add ("mix " + juce::String (mix, 0) + " % (ADVANCED)");
+    const bool keep  = proc_.getParamValue (EedPitchProcessor::kNaturalVib) >= 50.0;   // the shift path: note centres only
+    const bool weak = why.isEmpty() && depth < 30.0f;   // running, but so gently it will measure like dry
+    Effective e;
+    e.correcting = why.isEmpty() && ! weak;
+    juce::String live = liveAppliedC_ < 0.0f ? juce::String ("no voiced audio yet")
+                                             : "applied " + juce::String (liveAppliedC_, 1) + " c (2 s median)";
+    if (! why.isEmpty())
+        e.text = "NOT CORRECTING - " + why.joinIntoString (", ") + "   " + live;
+    else if (weak)
+        e.text = "CORRECTING WEAKLY - depth " + juce::String (depth, 0) + " % (ADVANCED > DEPTH; turn RETUNE to reset)   " + live;
+    else
+        e.text = "CORRECTING  " + juce::String (ms, 0) + " ms / depth " + juce::String (depth, 0) + " %"
+               + (proc_.retuneOffCurve() ? " (off the curve)" : "")
+               + (keep ? "   KEEP VIBRATO on: note centres only, the wobble stays" : "") + "   " + live;
+    return e;
+}
+
+// ---------------------------------------------------------------------------
+// Round 50: the layout audit (see the suite: EJ_EDITOR_SNAP and the always-on
+// bounds check at several sizes)
+// ---------------------------------------------------------------------------
+juce::StringArray EedPitchEditor::auditLayout() const
+{
+    juce::StringArray bad;
+    const auto content = contentBounds();
+    auto within = [] (juce::Rectangle<int> a, juce::Rectangle<int> b) { return b.contains (a); };
+    auto name = [&] (const juce::Component* c) -> juce::String
+    {
+        const std::pair<const juce::Component*, const char*> names[] = {
+            { &retuneKnob_, "RETUNE" }, { &flexKnob_, "FLEX" }, { &humanKnob_, "HUMAN" }, { &depthKnob_, "DEPTH" }, { &refKnob_, "REF" },
+            { &seamKnob_, "SEAM" }, { &mixKnob_, "MIX" }, { &outKnob_, "OUT" }, { &fshiftKnob_, "F.SHIFT" }, { &vibDepthKnob_, "VIB DEPTH" },
+            { &vibRateKnob_, "VIB RATE" }, { &vibOnsetKnob_, "VIB ONSET" }, { &keyBox_, "KEY" }, { &scaleBox_, "SCALE" }, { &modeBox_, "MODE" },
+            { &trackBox_, "TRACKING" }, { &vibShapeBox_, "SHAPE" }, { &keyAutoBtn_, "KEY AUTO" }, { &refAutoBtn_, "REF AUTO" },
+            { &keepVibBtn_, "KEEP VIBRATO" }, { &vibBtn_, "IGN VIB" }, { &latencyBtn_, "LOOKAHEAD" }, { &correctBtn_, "CORRECT" } };
+        for (const auto& n : names) if (n.first == c) return n.second;
+        return "?";
+    };
+    const juce::Component* frontSet[] = { &retuneKnob_, &flexKnob_, &humanKnob_, &refKnob_, &refAutoBtn_, &keyBox_, &scaleBox_, &keyAutoBtn_, &keepVibBtn_, &vibBtn_ };
+    const juce::Component* advSet[]   = { &modeBox_, &trackBox_, &latencyBtn_, &correctBtn_, &seamKnob_, &mixKnob_, &outKnob_, &fshiftKnob_, &depthKnob_,
+                                          &vibDepthKnob_, &vibRateKnob_, &vibOnsetKnob_, &vibShapeBox_ };
+    auto groupFor = [&] (juce::Rectangle<int> r) -> const Group*
+    { for (const auto& grp : advGroups_) if (within (r, grp.r)) return &grp; return nullptr; };
+
+    if (! advanced_)
+    {
+        for (auto* c : frontSet)
+        {
+            if (! c->isVisible()) bad.add ("front: " + name (c) + " not visible");
+            else if (! within (c->getBounds(), content)) bad.add ("front: " + name (c) + " outside the content area " + c->getBounds().toString());
+        }
+        for (auto* c : advSet) if (c->isVisible()) bad.add ("front: advanced control " + name (c) + " visible");
+        if (! numbersBox_.isEmpty())   bad.add ("front: READOUTS numbers box carried over " + numbersBox_.toString());
+        if (! notePanel_.isEmpty())    bad.add ("front: note panel carried over");
+        if (! numbersPanel_.isEmpty()) bad.add ("front: numbers panel carried over");
+        if (! guardPanel_.isEmpty())   bad.add ("front: guard panel carried over");
+        if (! latencyBounds_.isEmpty()) bad.add ("front: latency line carried over");
+        if (! advGroups_.empty() || ! advCaptions_.empty()) bad.add ("front: advanced groups/captions carried over");
+        if (ribbonBounds_.isEmpty() || ! within (ribbonBounds_, content)) bad.add ("front: ribbon missing or outside the content");
+        if (! statusBounds_.isEmpty() && ! within (statusBounds_, content)) bad.add ("front: status strip outside the content");
+        return bad;
+    }
+    for (auto* c : advSet)
+    {
+        if (! c->isVisible()) { bad.add ("advanced: " + name (c) + " not visible"); continue; }
+        if (! within (c->getBounds(), content)) bad.add ("advanced: " + name (c) + " outside the content area " + c->getBounds().toString());
+        if (groupFor (c->getBounds()) == nullptr) bad.add ("advanced: " + name (c) + " not inside any group frame " + c->getBounds().toString());
+    }
+    for (auto* c : frontSet) if (c->isVisible()) bad.add ("advanced: front control " + name (c) + " visible");
+    for (const auto& grp : advGroups_) if (! within (grp.r, content)) bad.add ("advanced: group '" + grp.title.upToFirstOccurrenceOf (" ", false, false) + "' outside the content " + grp.r.toString());
+    for (const auto& cap : advCaptions_) if (groupFor (cap.r) == nullptr) bad.add ("advanced: caption '" + cap.text + "' outside every group " + cap.r.toString());
+    const Group* readouts = nullptr; for (const auto& grp : advGroups_) if (grp.title == "READOUTS") readouts = &grp;
+    if (readouts == nullptr) bad.add ("advanced: no READOUTS group");
+    else
+    {
+        if (! within (numbersBox_, readouts->r)) bad.add ("advanced: numbers box outside READOUTS " + numbersBox_.toString() + " vs " + readouts->r.toString());
+        if (! within (notePanel_, readouts->r)) bad.add ("advanced: note panel outside READOUTS");
+        if (! within (numbersPanel_, numbersBox_)) bad.add ("advanced: numbers panel outside its box");
+        if (! within (guardPanel_, numbersBox_)) bad.add ("advanced: guard panel outside its box");
+        // The painters draw exactly four rows of area/4 each, so the rows fit by
+        // construction; what can still go wrong is a box too short to READ.
+        if (numbersPanel_.getHeight() < 4 * 8) bad.add ("advanced: numbers rows too short to read (" + juce::String (numbersPanel_.getHeight()) + " px for 4 rows)");
+        if (guardPanel_.getHeight() < 4 * 8) bad.add ("advanced: guard rows too short to read (" + juce::String (guardPanel_.getHeight()) + " px for 4 rows)");
+    }
+    const Group* corr = nullptr; for (const auto& grp : advGroups_) if (grp.title == "CORRECTION") corr = &grp;
+    if (corr != nullptr && ! within (latencyBounds_, corr->r)) bad.add ("advanced: latency line outside CORRECTION");
+    for (const auto& grp : advGroups_)
+        for (const auto& other : advGroups_)
+            if (&grp != &other && grp.r.intersects (other.r)) bad.add ("advanced: groups overlap: " + grp.title.upToFirstOccurrenceOf (" ", false, false) + " / " + other.title.upToFirstOccurrenceOf (" ", false, false));
+    return bad;
 }

@@ -301,3 +301,14 @@ what he works in. He presses play four or five times and sends the file.
 The log strings are present in the LOG binary (6 markers found) and absent
 from the working one by construction (the macro is compiled out). The
 installed plugin right now is the WORKING build (63AF3A3F), verified.
+
+### Round 50: the log moved to a CONNECTED folder
+Sean could not reach ~/Library/Logs (hidden, and empty until a run). The
+log now writes /Users/SeanD/echojay-vst/latency-logs/latency.log; the
+install script creates the folder, moves any previous log aside as
+latency.previous.log so a stale file is never read as a fresh run, and
+prints the path. The log build and its scripts live in
+/Users/SeanD/echojay-vst/latency-logs/build/ (git-ignored bundles). The
+sequence: quit Logic, run install_log_build.command, open Logic, press
+play four or five times including once after jumping to a marker, quit
+Logic, run restore_working_build.command. Nothing to send.
