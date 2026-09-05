@@ -91,6 +91,7 @@ static Render renderSelf (const std::vector<float>& in, double fs, int vt, bool 
     corr.setIgnoreVibrato(c.ign); corr.setNaturalVibrato(c.nat);
     if(getenv("PA_DEPTH")) corr.setDepth((float)atof(getenv("PA_DEPTH"))); else corr.debugDepthScale(c.depth,c.depthMode);
     if(getenv("PA_ENVEXP")) corr.debugEnvExperiment(atoi(getenv("PA_ENVEXP")));
+    if(getenv("PA_REF")) corr.setReferenceHz((float)atof(getenv("PA_REF")));
     if(getenv("PA_CONFIRM")) corr.debugNoteConfirmMs((float)atof(getenv("PA_CONFIRM")));
     if(getenv("PA_FORCESHIFT")) corr.debugForceShiftPath(true);
     corr.reset();

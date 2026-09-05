@@ -189,3 +189,102 @@ vibrato - a product fact he needed regardless of the UI work.
 ## Ruling D - the retune curve waits on the five bounces; the request is on his Desktop. Not guessed.
 
 ## Order for this phase: verification table -> revised inventory -> rule on it -> layout. No UI code until the inventory is ruled. The pitch backlog stays parked.
+
+# Round 35 (5 Sep 2026): THE VERIFICATION TABLE - every parameter rendered before it is placed
+
+Method (ruling A): EchoJayPitchModeTest with EJ_VERIFY_OUT renders sourceNEW
+through a fresh processor at the schema defaults (the NATURAL preset: retune
+120, flex 55, humanize 60, natural_vibrato 100) with D minor set by hand,
+then once per (parameter, value) through the real setParamValue path:
+min / mid / max / default for numerics, every choice, both boolean states.
+105 renders. Offline: samples differing from the default render, RMS, and
+alignment lag (python); activity + tuning (pitch_activity, pitch_key_forensic
+with the source), sustains (pitch_sustain_tuning), the generator's size by
+render-vs-default activity, direct ACF f0 for transpose, and channel-exact
+comparison for bypass. Run log: tools/pitch_mode_test/verify_2026-09-05/.
+
+TWO CAVEATS ON THE INSTRUMENT, found while using it:
+  - sourceNEW is STEREO (L-R at -12 dB re L). The harness renders CHANNEL 0;
+    every offline ruler averages L+R. Pitch rulers do not care; sample-exact
+    checks must compare against channel 0 (the bypass "residual" of -18 dB
+    was exactly this and nothing else).
+  - The NATURAL-preset base hides small effects: flex 55 leaves +-55c of
+    deviation alone, so the reference and scale changes barely show at
+    natural; they were re-verified at hard (retune 6, flex 0) where they
+    show in full. Verification bases must be stated with the verdict.
+
+  parameter                  values rendered                    differs?   direction vs description                                                verdict
+  correct                    0 / 1                              yes        0 = bypass: SAMPLE-EXACT copy of channel 0 delayed 1800 (37.5 ms)       VERIFIED
+  correction_mode            5 choices                          yes        natural = default; custom = keep; balanced/tuned/hard differ            VERIFIED (presets act)
+  retune_speed_ms            0 / 75 / 120 / 150                 yes        activity rises with tau at natural (1.21 -> 1.68c); full sweep round 17  VERIFIED
+  flex                       0 / 50 / 55 / 100                  yes        more flex = less tuning (improve 46.5 -> 44.9%), as described            VERIFIED (and: >= 25 tunes worse than dry, round 27)
+  humanize                   0 / 50 / 60 / 100                  yes        sustain off-grid 4.8 -> 5.1 -> 5.6c: relaxes sustains, small            VERIFIED
+  depth                      0 / 1 % (flag bug) + rounds 27-31   yes        0 = identity, 25/50/100 measured (round 31)                               VERIFIED
+  natural_vibrato            0 / 1 (flag bug) + round 33 sweep  yes        BINARY: 100 keeps, all else removes; description was false (corrected)   VERIFIED AS A SWITCH
+  targeting_ignores_vibrato  0 / 1                              yes        OFF differs; detector-side (round 4/vibrato defect file)                  VERIFIED
+  key_root                   12 roots                           mostly     A and D identical (A minor = D minor on the degrees this take visits)    VERIFIED; material-limited
+  scale                      11 choices                         mostly     minor = default; custom = keep; dorian and harmonic minor identical to  VERIFIED; material-limited
+                                                                           minor (they differ only on B/Bb and C/C#, unvisited here); chromatic differs
+  key_source                 auto / manual                      yes        auto follows an external G-major fact (F -> F#); manual = default        VERIFIED
+  reference_hz               380 / 440 / 500 (+415/430/450/466) yes        grid offset -39.5c @430, +37.3c @450; 380/500 behave as a grid modulo a   VERIFIED (schema range = engine clamp 380-500)
+                                                                           semitone (-1.7c @415, +20.4c @500); hidden at natural, shown at hard
+  reference_source           auto / manual                      no         identical with no source and field 440 - expected; the state tests cover it   VERIFIED elsewhere (round 24)
+  transpose                  -12 / 0 / +12                      yes        -12: 164.4 -> 82.8 Hz at every probe (level -3.7 dB); +12: 326.5/331 Hz at   WORKS WITH A DEFECT - not FRONT-ready
+                                                                           3.15/4.05 s but 179.8 Hz at 2.55 s (a ~155c shift where 1200c was asked)
+  voice_type                 5 choices                          yes        all differ; LATENCY changes per type (+816 low_male, +3968 bass, -992 soprano)   VERIFIED (a fit-to-material control; latency reported)
+  tracking                   relaxed / normal / tight           yes        tight -> more untracked hops (178 vs 162 relaxed), improve 46.3 vs 44.2%   VERIFIED as a strictness; NOT Antares' Tracking
+  formant_mode               off / preserve / shift             partly     OFF == PRESERVE bit-identically: within the 2.5-st splice band the resampler   VERIFIED WITH A FINDING
+                                                                           does no formant work, so the switch only acts on large shifts; SHIFT differs and drops level 2.4 dB even at 0 st
+  formant_shift              -12 / 0 / +12 (in shift mode)      yes        RMS -1.7 / -2.4 / -3.0 dB; timbre direction not measured                    VERIFIED differs; direction unmeasured
+  low_latency                0 / 1                              yes        output arrives 608 samples (12.7 ms) EARLIER                               VERIFIED
+  mix                        0 / 50 / 100                       yes        0 = dry (sample-exact), 50 = -0.4 dB sum, 100 = default                    VERIFIED
+  output_db                  -24 / 0 / +24                      yes        exactly -24.0 / +24.0 dB                                                  VERIFIED
+  seam_attack_ms             0 / 1 (flag bug) + rounds 15-27    yes        0 vs 60 measured at every tau (calmer)                                     VERIFIED
+  vib_depth_cents            0 / 50 / 100                       yes        generated vibrato size 7.4c / 15.1c median (scales with depth)             VERIFIED
+  vib_rate_hz / vib_shape / vib_onset_ms   sweeps at depth 30   yes        rate 10 Hz 4.6c; onset 3000 ms -> 0.44c (vibrato never arrives on short notes)   VERIFIED
+  target_hz / reset_stats / ref_manual_by_user   not rendered   -          diagnostic / momentary / provenance flag                                   INTERNAL
+
+## FINDINGS FROM THE TABLE (beyond the vibrato switch)
+  1. THREE CONTINUOUS PARAMETERS WERE FLAGGED AS BOOLEAN in the schema:
+     natural_vibrato (0-200), seam_attack_ms (0-150), depth (0-100, copied
+     from seam). The flag advertises "on/off switch" to every schema
+     reader (the model, the dashboard, the harness - which rendered them
+     at 0 and 1). Corrected to false in this commit. The editor was
+     unaffected (its knobs ignore the flag) - which is why nobody saw it.
+  2. THE DEFAULT PRESET TUNES WORSE THAN THE DRY SOURCE ON THIS TAKE:
+     natural (retune 120, flex 55, humanize 60) - improve-rate 44.6%,
+     all-voiced off-grid 7.95c vs the source's 6.72c. Consistent with the
+     round-27 Flex finding (>= 25 tunes worse than dry). A fresh device
+     on a solo vocal at its shipped default makes the tuning worse. For
+     ruling with the inventory: the default preset is a product decision.
+  3. formant_mode OFF and PRESERVE are the same sound for every correction
+     under 2.5 semitones (the splice band) - i.e. for all pitch-correction
+     use. The switch only means something on large shifts (transpose,
+     formant_shift); on the front panel it would be a control that does
+     nothing. ADVANCED.
+  4. transpose +12 has a regional failure (2.55 s: 179.8 Hz where ~329 was
+     asked - a splice-band-sized shift instead of an octave) and -12 loses
+     3.7 dB. Verify-first was right: it does not get a control until this
+     is filed and fixed. Filed here; DEFECT_TRANSPOSE_OCTAVE.md is the
+     follow-up when the phase allows.
+  5. Verification on ONE take cannot discriminate scales or roots that
+     differ only on degrees the take never visits (dorian, harmonic minor,
+     A minor all render identically to D minor here). Not a defect; a
+     limit of the material, to be stated wherever those rows are cited.
+
+## THE REVISED INVENTORY (for ruling; layout follows)
+  FRONT:     key_root (Key), scale (Scale), key_source (auto/manual, small - the way back to auto),
+             retune_speed_ms (re-mapped to 0-400 once the five bounces calibrate it - ruling 2),
+             flex (Flex-Tune), humanize (Humanize), targeting_ignores_vibrato (button),
+             reference_hz + reference_source (Detune, with the auto button small),
+             correct (on/off), voice_type (Input Type - ruling B),
+             natural_vibrato AS THE TWO-STATE CONTROL IT IS ("keep vibrato" on/off; the knob waits on ruling C's DSP)
+  ADVANCED:  depth (survives under the dial), seam_attack_ms (a fix), tracking (ours, not theirs),
+             formant_mode + formant_shift (no effect under 2.5 st; shift mode drops level),
+             low_latency, correction_mode (presets), mix, output_db, the create-vibrato block,
+             transpose (until its defect is fixed; then FRONT)
+  INTERNAL:  ref_manual_by_user, target_hz, reset_stats
+  READOUTS (ADVANCED, always visible there): detected-key line, voice-fit suggestion, reference provenance line
+  FOR RULING WITH THE INVENTORY: the default preset (finding 2); whether "keep vibrato" as a labelled
+  switch belongs FRONT until the knob exists; where the DEPTH knob goes while the re-map waits on the bounces
+  (today it is FRONT beside HUMAN, shipped in 6fcbb0a).

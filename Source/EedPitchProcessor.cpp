@@ -84,7 +84,7 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "and the measured event-elimination point. Validated on one "
           "already-corrected take + one falsifier only - broader material "
           "validation still owed before this default is called shipped",
-          true },
+          false },   // was `true` in the boolean slot: a continuous knob advertised as an on/off switch (5 Sep 2026 verification)
 
         { EedPitchProcessor::kFlex, "%", 0.0, 100.0, 55.0,
           "how much expressive drift is left alone before correction engages; "
@@ -109,7 +109,7 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "64%. Gentleness lives HERE, not in Flex (which is a threshold and "
           "tunes worse than dry above 25 on this material). Every mode writes "
           "100 - a mode is a character, depth is how much of it you take",
-          true },
+          false },   // was `true` in the boolean slot: a continuous knob advertised as an on/off switch (5 Sep 2026 verification)
 
         { EedPitchProcessor::kIgnoreVib, "", 0.0, 1.0, 1.0,
           "stops a wide vibrato flipping the target between neighbouring notes. "
@@ -194,7 +194,7 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "work with its own bar (the ring-aligned fast term). Presets: "
           "natural and balanced 100 (keep); tuned 40 and hard 0 (REMOVE). "
           "Applies at every retune speed",
-          true },
+          false },   // was `true` in the boolean slot: a continuous knob advertised as an on/off switch (5 Sep 2026 verification)
 
         { EedPitchProcessor::kVibDepth, "c", 0.0, 100.0, 0.0,
           "depth of ADDED vibrato, in cents. 0 is off and is the default - "
