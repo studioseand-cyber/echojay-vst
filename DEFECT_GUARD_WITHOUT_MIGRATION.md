@@ -301,3 +301,21 @@ the new key_manual_by_user is DEFINED from the start as a value write
 
 The standing caution, restated for this instance: a flag existing is not
 the same as the flag meaning what its name says - trace every writer.
+
+## Round 28 ruling 3: flag option (B) APPROVED, with the rule that names why
+
+Re-scope ref_manual_by_user to VALUE WRITES (line 393 only; the source
+switch at line 345 no longer sets it), and show a flagged non-440 manual
+reference LOUDLY ONCE until the user touches the knob (which re-flags it
+under the new meaning).
+  RE-SCOPING A FIELD'S MEANING IS A DATA MIGRATION EVEN WHEN NO CODE
+  WRITES IT DIFFERENTLY.
+Existing true values were written under the old meaning ("manual was
+engaged") and will lie under the new one ("the value was typed"). A pre-
+existing true is therefore UNKNOWN PROVENANCE, not typed - and THAT is the
+reason for the loud-once readout: it is the behavioural treatment of
+unknown provenance (keep applying, never reset, say so until a human
+confirms), not a side effect of re-scoping. Same failure as this file's
+title from the other angle: a guard without migration leaves the past
+armed; a re-scope without migration leaves the past mislabelled. Legs
+7-11 stand only after this re-rule is built, as ordered.

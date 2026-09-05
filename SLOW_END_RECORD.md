@@ -605,3 +605,39 @@ reaching for a control the plugin does not have; that is the finding.
      value; tuned/hard 1.0); one default; ledger entries at birth.
   6. Sean's ear on retune 44 at depth 1 / 0.5 / 0.25, one file, the
      deliverable discipline.
+
+## Round 28 ruling 1: the reversal is a DEPENDENCY, not a change of mind
+
+Depth 0 is not identity - 3.09c activity, 35.6% improve-rate, worse than
+doing nothing. That is the strongest form of internal evidence: a control
+at zero that is not a no-op needs no reference plugin and no ruler
+argument. And the skew is the FLOOR under the depth control: building
+depth first ships a control that can never reach the transparency it
+exists to provide. A before B because B stands on A. Round 23's order is
+superseded on that basis, not on preference.
+
+## Round 28 ruling 2: THE TIMING CLASS IS A DISCIPLINE, not a patch
+
+Third independent time-alignment finding: round 18's denominator half-lag
+(6.5 ms alto / 10 ms low male); now the numerator stamped at the hop and
+applied at the read pointer (11-13 / 18-20 ms apart). Same class,
+different sites: quantities combined into one ratio describing different
+instants of audio.
+  EVERY QUANTITY THAT MEETS IN THE RATIO CARRIES THE SAME AUDIO TIMESTAMP,
+  ENFORCED STRUCTURALLY RATHER THAN REMEMBERED PER CALL SITE.
+Two sites found by measurement; a third is assumed to exist. The co-timed
+target ring work AUDITS every quantity that reaches the ratio and reports
+its stamping (section below) rather than fixing the two known sites.
+BAR LEG ADDED - THE PREDICTED RIPPLE: ~8-10c at vibrato rate, present in
+every setting. If real it affects every user everywhere and reads as
+general unsteadiness rather than a locatable event - most of what this
+investigation has chased. Measured before and after; if it does not
+appear, that is said, because its absence weakens the skew account.
+
+## Round 28: the Flex advice - withdrawal recorded beside the original
+(Round 23 "For Sean - the Flex advice": WITHDRAWN in round 27 §5 and by
+the ruling. Measured at his retune 44, flex >= 25 tunes WORSE than the
+dry source. He has been told plainly; the control he wants does not
+exist yet, is identified and measured - tau 44 depth 0.5: 2.54c activity
+vs 6.43c today, still improving the grid at 53.5% - and is blocked
+behind the skew.)
