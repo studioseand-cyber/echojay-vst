@@ -19,7 +19,7 @@ namespace
 EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
     : DeviceEditorBase (p, "PITCH", kDefaultW, kDefaultH), proc_ (p)
 {
-    setHeaderHint ("set CORRECT, pick KEY and SCALE, dial RETUNE for character");
+    setHeaderHint ("KEY and SCALE (AUTO follows the bus - turn to override), RETUNE, DEPTH; ADVANCED for the rest");
 
     // voice_type items ARE the schema's choices, in the schema's order.
     styleCombo (voiceBox_);
@@ -58,51 +58,7 @@ EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
     };
     addAndMakeVisible (trackBox_);
 
-    styleCombo (formantBox_);
-    if (const auto* spec = EedPitchProcessor::schema().find (EedPitchProcessor::kFormantMode))
-    {
-        for (std::size_t i = 0; i < spec->choices.size(); ++i)
-        {
-            // `off` is a transpose-time control - measured identical to
-            // preserve at correction-sized shifts (the gate asserts it) -
-            // so its item says when it matters instead of posing as an
-            // equal choice.
-            juce::String label = "FORM " + juce::String (spec->choices[i]).toUpperCase();
-            if (juce::String (spec->choices[i]) == "off") label << " (TRANSPOSE)";
-            formantBox_.addItem (label, (int) i + 1);
-        }
-        formantBox_.setSelectedId (
-            (int) proc_.getParamValue (EedPitchProcessor::kFormantMode) + 1,
-            juce::dontSendNotification);
-    }
-    formantBox_.onChange = [this]
-    {
-        if (! suppressCallbacks_ && formantBox_.getSelectedId() > 0)
-            proc_.setParamValue (EedPitchProcessor::kFormantMode,
-                                 (double) (formantBox_.getSelectedId() - 1));
-    };
-    addAndMakeVisible (formantBox_);
 
-    // The P1 target. Range comes from the SCHEMA, never re-typed, so the dial
-    // physically cannot travel somewhere the AI is not allowed to dial.
-    if (const auto* spec = EedPitchProcessor::schema().find (EedPitchProcessor::kTargetHz))
-    {
-        targetKnob_.setSpec (spec->min, spec->max, 400.0, 1, " Hz", "TARGET", spec->def);
-        targetKnob_.setRealValue (proc_.getParamValue (EedPitchProcessor::kTargetHz));
-        targetKnob_.onValueChange = [this]
-        {
-            if (! suppressCallbacks_)
-                proc_.setParamValue (EedPitchProcessor::kTargetHz,
-                                     targetKnob_.getRealValue());
-        };
-        addAndMakeVisible (targetKnob_);
-    }
-
-    // Momentary action, driven THROUGH the schema path like an AI move.
-    styleButton (resetBtn_, false);
-    resetBtn_.onClick = [this]
-    { proc_.setParamValue (EedPitchProcessor::kResetStats, 1.0); };
-    addAndMakeVisible (resetBtn_);
 
     // ---- P2 controls ------------------------------------------------------
     auto setupKnob = [this] (echojay::device::EchoJayDeviceKnob& k, const char* id,
@@ -142,6 +98,26 @@ EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
     setupKnob (flexKnob_,   EedPitchProcessor::kFlex,      0.0, 0, " %",  "FLEX");
     setupKnob (humanKnob_,  EedPitchProcessor::kHumanize,  0.0, 0, " %",  "HUMAN");
     setupKnob (depthKnob_,  EedPitchProcessor::kDepth,     100.0, 0, " %",  "DEPTH");   // 5 Sep 2026: how much of the correction is applied - the gentleness control
+    // ADVANCED dials.
+    setupKnob (seamKnob_,   EedPitchProcessor::kSeamAttackMs, 60.0, 0, " ms", "SEAM");
+    setupKnob (mixKnob_,    EedPitchProcessor::kMix,       100.0, 0, " %",  "MIX");
+    setupKnob (outKnob_,    EedPitchProcessor::kOutputDb,    0.0, 1, " dB", "OUT");
+    setupKnob (vibDepthKnob_, EedPitchProcessor::kVibDepth, 0.0, 0, " c",  "VIB DEPTH");
+    setupKnob (vibRateKnob_,  EedPitchProcessor::kVibRate,  5.5, 1, " Hz", "VIB RATE");
+    setupKnob (vibOnsetKnob_, EedPitchProcessor::kVibOnset, 300.0, 0, " ms", "VIB ONSET");
+    // FORMANT SHIFT drives formant_mode: the mode switch does nothing by itself
+    // for any correction under 2.5 st (round 35), so it is internal and the
+    // dial that needs it sets it - non-zero shift = shift mode, zero = preserve.
+    setupKnob (fshiftKnob_, EedPitchProcessor::kFormantShift, 0.0, 1, " st", "F.SHIFT");
+    fshiftKnob_.onValueChange = [this]
+    {
+        if (suppressCallbacks_) return;
+        const double v = fshiftKnob_.getRealValue();
+        proc_.setParamValue (EedPitchProcessor::kFormantMode,
+                             std::abs (v) > 0.05 ? (double) echojay::PsolaEngine::kFormantShift
+                                                 : (double) echojay::PsolaEngine::kFormantPreserve);
+        proc_.setParamValue (EedPitchProcessor::kFormantShift, v);
+    };
 
     auto setupCombo = [this] (juce::ComboBox& b, const char* id, const char* prefix)
     {
@@ -165,6 +141,7 @@ EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
     setupCombo (modeBox_,  EedPitchProcessor::kMode,    "");
     setupCombo (keyBox_,   EedPitchProcessor::kKeyRoot, "KEY ");
     setupCombo (scaleBox_, EedPitchProcessor::kScale,   "");
+    setupCombo (vibShapeBox_, EedPitchProcessor::kVibShape, "VIB ");
 
     auto setupToggle = [this] (juce::TextButton& b, const char* id)
     {
@@ -179,6 +156,25 @@ EedPitchEditor::EedPitchEditor (EedPitchProcessor& p)
     };
     setupToggle (correctBtn_, EedPitchProcessor::kCorrect);
     setupToggle (vibBtn_,     EedPitchProcessor::kIgnoreVib);
+
+    // KEEP VIBRATO: natural_vibrato is a two-state control as shipped (100
+    // keeps the singer's vibrato on the shift path; anything else removes it
+    // on the legacy path - measured, UI_SIMPLIFICATION round 33/43). The
+    // button says so. The continuous gain is a named backlog item.
+    styleButton (keepVibBtn_, true);
+    keepVibBtn_.setToggleState (proc_.getParamValue (EedPitchProcessor::kNaturalVib) >= 50.0,
+                                juce::dontSendNotification);
+    keepVibBtn_.onClick = [this]
+    {
+        if (suppressCallbacks_) return;
+        proc_.setParamValue (EedPitchProcessor::kNaturalVib, keepVibBtn_.getToggleState() ? 100.0 : 0.0);
+    };
+    addAndMakeVisible (keepVibBtn_);
+
+    // ADVANCED: shows the engineering panel in place of the front row.
+    styleButton (advBtn_, true);
+    advBtn_.onClick = [this] { advanced_ = advBtn_.getToggleState(); resized(); repaint(); };
+    addAndMakeVisible (advBtn_);
 
     // THE WAY BACK TO AUTO. Touching key or scale takes manual control (by
     // design - an edit the next block silently overwrites would look
@@ -253,11 +249,8 @@ void EedPitchEditor::layoutHeaderLeading (juce::Rectangle<int>& bar)
     const int w = juce::jmin (110, bar.getWidth());
     voiceBox_.setBounds (bar.removeFromRight (w).reduced (0, 3));
     bar.removeFromRight (6);
-    const int tw = juce::jmin (84, bar.getWidth());
-    trackBox_.setBounds (bar.removeFromRight (tw).reduced (0, 3));
-    bar.removeFromRight (6);
-    const int fw = juce::jmin (108, bar.getWidth());
-    formantBox_.setBounds (bar.removeFromRight (fw).reduced (0, 3));
+    const int aw = juce::jmin (84, bar.getWidth());
+    advBtn_.setBounds (bar.removeFromRight (aw).reduced (0, 3));
     bar.removeFromRight (6);
 }
 
@@ -282,84 +275,89 @@ void EedPitchEditor::refreshLatencyButton()
 void EedPitchEditor::layoutContent (juce::Rectangle<int> content)
 {
     if (content.isEmpty()) return;
-
     content.reduce (juce::jmin (kPad, content.getWidth() / 4),
                     juce::jmin (6, content.getHeight() / 4));
 
-    // THE RIBBON gets the top half of the content: it is the signature view,
-    // and the numbers are supporting detail rather than the point.
-    ribbonBounds_ = content.removeFromTop (juce::jmax (0, content.getHeight() / 2));
-    content.removeFromTop (juce::jmin (4, content.getHeight()));
+    const juce::Rectangle<int> none;
+    auto dial = [] (echojay::device::EchoJayDeviceKnob& k, juce::Rectangle<int>& row)
+    { k.setBounds (row.removeFromLeft (juce::jmin (kKnobW, row.getWidth()))); };
 
-    // The key ATTRIBUTION line, directly under the readout: where the key
-    // came from is what makes a wrong key diagnosable.
+    // Visibility follows the panel. Front controls: always. Advanced
+    // controls and the readouts: only in the advanced panel.
+    juce::Component* const advancedSet[] = { &modeBox_, &trackBox_, &latencyBtn_, &correctBtn_, &seamKnob_,
+                                             &mixKnob_, &outKnob_, &fshiftKnob_, &vibDepthKnob_, &vibRateKnob_,
+                                             &vibOnsetKnob_, &vibShapeBox_ };
+    juce::Component* const frontSet[]    = { &retuneKnob_, &flexKnob_, &humanKnob_, &depthKnob_, &refKnob_, &refAutoBtn_,
+                                             &keyBox_, &scaleBox_, &keyAutoBtn_, &keepVibBtn_, &vibBtn_ };
+    for (auto* c : advancedSet) c->setVisible (advanced_);
+    for (auto* c : frontSet)    c->setVisible (! advanced_);
+
+    // The key ATTRIBUTION line, in both panels: where the key and the
+    // reference came from is what makes a wrong one diagnosable, and it
+    // is the badge's explanation.
     keyAttrBounds_ = content.removeFromBottom (juce::jmin (16, content.getHeight() / 5));
 
-    // The latency MODE gets its own band, full width, because it is a
-    // workflow decision rather than a tweak.
+    if (! advanced_)
     {
-        auto band = content.removeFromBottom (juce::jmin (34, content.getHeight() / 3));
-        latencyBounds_ = band;
-        latencyBtn_.setBounds (band.removeFromLeft (juce::jmin (150, band.getWidth()))
-                                   .reduced (2, 5));
-    }
-
-    // P2 controls: dials, then key/scale, then the two switches.
-    {
+        // FRONT: one row of controls under the ribbon, which takes the rest.
         auto row = content.removeFromBottom (juce::jmin (kKnobH, content.getHeight() / 2));
-        auto dial = [&row] (echojay::device::EchoJayDeviceKnob& k)
-        {
-            k.setBounds (row.removeFromLeft (juce::jmin (kKnobW, row.getWidth())));
-        };
-        dial (retuneKnob_); dial (flexKnob_); dial (humanKnob_); dial (depthKnob_);
+        dial (retuneKnob_, row); dial (flexKnob_, row); dial (humanKnob_, row); dial (depthKnob_, row);
         row.removeFromLeft (juce::jmin (6, row.getWidth()));
-
-        auto col = row.removeFromLeft (juce::jmin (116, row.getWidth()));
-        // THREE rows share the column EVENLY. Stacking them at kRowH each
-        // needed 72 px in a 58 px band, so the third row - the SCALE combo -
-        // was silently squeezed to a ~10 px sliver: present in the code,
-        // synced, dialable by the model, and invisible to the user, who
-        // reasonably reported "the panel shows KEY only". A control the
-        // model can set and the user cannot see is invisible state.
-        const int comboH = juce::jmax (1, col.getHeight() / 3);
-        modeBox_.setBounds (col.removeFromTop (comboH).reduced (1));
+        // KEY / SCALE with the AUTO badge beside them: the badge lights when
+        // a bus is feeding the key; picking a key or scale overrides it;
+        // clicking the badge returns to auto.
+        auto col = row.removeFromLeft (juce::jmin (104, row.getWidth()));
+        const int comboH = juce::jmax (1, col.getHeight() / 2);
         keyBox_.setBounds (col.removeFromTop (comboH).reduced (1));
         scaleBox_.setBounds (col.removeFromTop (comboH).reduced (1));
-
-        // The AUTO/MANUAL toggle sits beside the two controls it governs,
-        // spanning the key and scale rows.
-        auto kcol = row.removeFromLeft (juce::jmin (46, row.getWidth()));
-        kcol.removeFromTop (comboH);
-        keyAutoBtn_.setBounds (kcol.reduced (1));
-
+        auto badge = row.removeFromLeft (juce::jmin (40, row.getWidth()));
+        keyAutoBtn_.setBounds (badge.reduced (1, comboH / 4));
         row.removeFromLeft (juce::jmin (6, row.getWidth()));
-        auto sw = row.removeFromLeft (juce::jmin (80, row.getWidth()));
-        correctBtn_.setBounds (sw.removeFromTop (juce::jmin (kRowH, sw.getHeight())).reduced (1));
+        // REF dial with its own badge.
+        dial (refKnob_, row);
+        auto rb = row.removeFromLeft (juce::jmin (40, row.getWidth()));
+        refAutoBtn_.setBounds (rb.reduced (1, rb.getHeight() / 4));
+        row.removeFromLeft (juce::jmin (6, row.getWidth()));
+        // The two switches.
+        auto sw = row.removeFromLeft (juce::jmin (96, row.getWidth()));
+        keepVibBtn_.setBounds (sw.removeFromTop (juce::jmin (kRowH, sw.getHeight())).reduced (1));
         vibBtn_.setBounds (sw.removeFromTop (juce::jmin (kRowH, sw.getHeight())).reduced (1));
+        content.removeFromBottom (juce::jmin (4, content.getHeight()));
+        ribbonBounds_ = content;
+        notePanel_ = numbersPanel_ = guardPanel_ = latencyBounds_ = none;
+        return;
     }
 
-    // The target dial sits hard right; the REF control stacks beneath it
-    // (knob + its AUTO), and the readout columns share the rest.
+    // ADVANCED: a smaller ribbon, two dial rows, the mode/latency band, the readouts.
+    ribbonBounds_ = content.removeFromTop (juce::jmax (0, content.getHeight() / 4));
+    content.removeFromTop (juce::jmin (4, content.getHeight()));
     {
-        auto rcol = content.removeFromRight (juce::jmin (kKnobW, content.getWidth()));
-        targetKnob_.setBounds (rcol.removeFromTop (juce::jmin (kKnobH, rcol.getHeight())));
-        refKnob_.setBounds (rcol.removeFromTop (juce::jmin (kKnobH, rcol.getHeight())));
-        refAutoBtn_.setBounds (rcol.removeFromTop (juce::jmin (kRowH, rcol.getHeight()))
-                                   .reduced (1));
+        auto band = content.removeFromBottom (juce::jmin (30, content.getHeight() / 4));
+        latencyBounds_ = band;
+        latencyBtn_.setBounds (band.removeFromLeft (juce::jmin (150, band.getWidth())).reduced (2, 3));
+        band.removeFromLeft (juce::jmin (6, band.getWidth()));
+        correctBtn_.setBounds (band.removeFromLeft (juce::jmin (90, band.getWidth())).reduced (2, 3));
+        band.removeFromLeft (juce::jmin (6, band.getWidth()));
+        modeBox_.setBounds (band.removeFromLeft (juce::jmin (120, band.getWidth())).reduced (2, 3));
+        band.removeFromLeft (juce::jmin (6, band.getWidth()));
+        trackBox_.setBounds (band.removeFromLeft (juce::jmin (100, band.getWidth())).reduced (2, 3));
     }
-    content.removeFromRight (juce::jmin (6, content.getWidth()));
-
-    // Three columns: note + tuner bar | numbers | guard log.
+    {
+        auto row = content.removeFromBottom (juce::jmin (kKnobH, content.getHeight() / 2));
+        dial (vibDepthKnob_, row); dial (vibRateKnob_, row); dial (vibOnsetKnob_, row);
+        row.removeFromLeft (juce::jmin (6, row.getWidth()));
+        vibShapeBox_.setBounds (row.removeFromLeft (juce::jmin (110, row.getWidth()))
+                                   .withSizeKeepingCentre (juce::jmin (110, row.getWidth()), kRowH).reduced (1));
+    }
+    {
+        auto row = content.removeFromBottom (juce::jmin (kKnobH, content.getHeight() / 2));
+        dial (seamKnob_, row); dial (mixKnob_, row); dial (outKnob_, row); dial (fshiftKnob_, row);
+    }
+    content.removeFromBottom (juce::jmin (4, content.getHeight()));
+    // The readouts: note + tuner bar | numbers | guard log.
     notePanel_    = content.removeFromLeft (content.getWidth() * 2 / 5);
     guardPanel_   = content.removeFromRight (juce::jmax (0, content.getWidth() / 2));
     numbersPanel_ = content;
-
-    // RESET pinned to the guard panel's bottom.
-    auto btnArea = guardPanel_;
-    resetBtn_.setBounds (btnArea.removeFromBottom (juce::jmin (kRowH, btnArea.getHeight()))
-                                .removeFromLeft (juce::jmin (74, btnArea.getWidth()))
-                                .translated (8, 0));
-    guardPanel_.removeFromBottom (juce::jmin (kRowH + 4, guardPanel_.getHeight()));
 }
 
 void EedPitchEditor::paintContent (juce::Graphics& g)
@@ -610,13 +608,6 @@ void EedPitchEditor::syncFromProcessor()
     if (trackBox_.getSelectedId() != wantTrk)
         trackBox_.setSelectedId (wantTrk, juce::dontSendNotification);
 
-    const int wantFm = (int) proc_.getParamValue (EedPitchProcessor::kFormantMode) + 1;
-    if (formantBox_.getSelectedId() != wantFm)
-        formantBox_.setSelectedId (wantFm, juce::dontSendNotification);
-
-    const double wantHz = proc_.getParamValue (EedPitchProcessor::kTargetHz);
-    if (std::abs (wantHz - targetKnob_.getRealValue()) > 1.0e-4)
-        targetKnob_.setRealValue (wantHz);
 
     auto syncKnob = [this] (echojay::device::EchoJayDeviceKnob& k, const char* id)
     {
@@ -637,6 +628,13 @@ void EedPitchEditor::syncFromProcessor()
     syncKnob (flexKnob_,   EedPitchProcessor::kFlex);
     syncKnob (humanKnob_,  EedPitchProcessor::kHumanize);
     syncKnob (depthKnob_,  EedPitchProcessor::kDepth);
+    syncKnob (seamKnob_,   EedPitchProcessor::kSeamAttackMs);
+    syncKnob (mixKnob_,    EedPitchProcessor::kMix);
+    syncKnob (outKnob_,    EedPitchProcessor::kOutputDb);
+    syncKnob (fshiftKnob_, EedPitchProcessor::kFormantShift);
+    syncKnob (vibDepthKnob_, EedPitchProcessor::kVibDepth);
+    syncKnob (vibRateKnob_,  EedPitchProcessor::kVibRate);
+    syncKnob (vibOnsetKnob_, EedPitchProcessor::kVibOnset);
 
     auto syncBox = [this] (juce::ComboBox& b, const char* id)
     {
@@ -648,6 +646,7 @@ void EedPitchEditor::syncFromProcessor()
     syncBox (modeBox_,  EedPitchProcessor::kMode);
     syncBox (keyBox_,   EedPitchProcessor::kKeyRoot);
     syncBox (scaleBox_, EedPitchProcessor::kScale);
+    syncBox (vibShapeBox_, EedPitchProcessor::kVibShape);
 
     // In key_source = auto the key and scale combos show the DETECTED values
     // (the syncs above read them back) and dim, because they are a reading,
@@ -667,19 +666,6 @@ void EedPitchEditor::syncFromProcessor()
             keyAutoBtn_.setToggleState (keyAuto, juce::dontSendNotification);
     }
 
-    // The formant combo rests DIM on preserve (the default, and the right
-    // answer for correction) and lights up only when the setting departs -
-    // off and shift are not equal-prominence choices when one of them does
-    // nothing at correction-sized shifts and the other costs fidelity.
-    {
-        const bool departed =
-            (int) proc_.getParamValue (EedPitchProcessor::kFormantMode)
-                != (int) echojay::PsolaEngine::kFormantPreserve;
-        const float alpha = departed ? 1.0f : 0.55f;
-        if (std::abs (formantBox_.getAlpha() - alpha) > 0.01f)
-            formantBox_.setAlpha (alpha);
-    }
-
     auto syncToggle = [this] (juce::TextButton& b, const char* id)
     {
         const bool want = proc_.getParamValue (id) >= 0.5;
@@ -687,6 +673,10 @@ void EedPitchEditor::syncFromProcessor()
     };
     syncToggle (correctBtn_, EedPitchProcessor::kCorrect);
     syncToggle (vibBtn_,     EedPitchProcessor::kIgnoreVib);
+    {
+        const bool keep = proc_.getParamValue (EedPitchProcessor::kNaturalVib) >= 50.0;
+        if (keepVibBtn_.getToggleState() != keep) keepVibBtn_.setToggleState (keep, juce::dontSendNotification);
+    }
 
     // The AI can move low_latency and voice_type, and both change the number
     // printed on the mode button.
@@ -745,24 +735,31 @@ void EedPitchEditor::timerCallback()
 const std::vector<const char*>& EedPitchEditor::handControlledParams()
 {
     static const std::vector<const char*> ids = {
-        EedPitchProcessor::kVoiceType,     // voiceBox_
-        EedPitchProcessor::kTracking,      // trackBox_
-        EedPitchProcessor::kFormantMode,   // formantBox_
-        EedPitchProcessor::kMode,          // modeBox_
+        EedPitchProcessor::kVoiceType,     // voiceBox_ (header; FRONT)
         EedPitchProcessor::kKeyRoot,       // keyBox_
         EedPitchProcessor::kScale,         // scaleBox_
-        EedPitchProcessor::kKeySource,     // keyAutoBtn_ - closes the one-way gap
-        EedPitchProcessor::kCorrect,       // correctBtn_
-        EedPitchProcessor::kIgnoreVib,     // vibBtn_
-        EedPitchProcessor::kLowLatency,    // latencyBtn_
+        EedPitchProcessor::kKeySource,     // keyAutoBtn_ - the AUTO badge on KEY/SCALE
         EedPitchProcessor::kRetuneMs,      // retuneKnob_
         EedPitchProcessor::kFlex,          // flexKnob_
         EedPitchProcessor::kHumanize,      // humanKnob_
-        EedPitchProcessor::kDepth,         // depthKnob_ (5 Sep 2026)
-        EedPitchProcessor::kTargetHz,      // targetKnob_
-        EedPitchProcessor::kReferenceHz,   // refKnob_ - the control Sean lacked (29 Aug 2026)
-        EedPitchProcessor::kRefSource,     // refAutoBtn_ - the way back to auto
-        EedPitchProcessor::kResetStats,    // resetBtn_
+        EedPitchProcessor::kDepth,         // depthKnob_ (FRONT until the re-mapped dial ships)
+        EedPitchProcessor::kNaturalVib,    // keepVibBtn_ - KEEP VIBRATO, the two-state control it is
+        EedPitchProcessor::kIgnoreVib,     // vibBtn_
+        EedPitchProcessor::kReferenceHz,   // refKnob_
+        EedPitchProcessor::kRefSource,     // refAutoBtn_ - the AUTO badge on REF
+        EedPitchProcessor::kMode,          // modeBox_ (ADVANCED)
+        EedPitchProcessor::kTracking,      // trackBox_ (ADVANCED)
+        EedPitchProcessor::kLowLatency,    // latencyBtn_ (ADVANCED)
+        EedPitchProcessor::kCorrect,       // correctBtn_ (ADVANCED - the chain has the slot on/off)
+        EedPitchProcessor::kSeamAttackMs,  // seamKnob_ (ADVANCED)
+        EedPitchProcessor::kMix,           // mixKnob_ (ADVANCED)
+        EedPitchProcessor::kOutputDb,      // outKnob_ (ADVANCED)
+        EedPitchProcessor::kFormantShift,  // fshiftKnob_ (ADVANCED)
+        EedPitchProcessor::kFormantMode,   // set by fshiftKnob_ (non-zero shift = shift mode; the switch alone does nothing under 2.5 st)
+        EedPitchProcessor::kVibDepth,      // vibDepthKnob_ (ADVANCED)
+        EedPitchProcessor::kVibRate,       // vibRateKnob_ (ADVANCED)
+        EedPitchProcessor::kVibOnset,      // vibOnsetKnob_ (ADVANCED)
+        EedPitchProcessor::kVibShape,      // vibShapeBox_ (ADVANCED)
     };
     return ids;
 }

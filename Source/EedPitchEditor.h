@@ -53,10 +53,23 @@ private:
 
     EedPitchProcessor& proc_;
 
-    juce::ComboBox   voiceBox_, trackBox_, formantBox_, keyBox_, scaleBox_, modeBox_;
+    // THE SET (UI_SIMPLIFICATION.md rounds 41-44): FRONT = key (+AUTO badge),
+    // scale, retune, flex, humanize, KEEP VIBRATO, ignore-vibrato, reference
+    // (+AUTO badge), voice type, depth (until the re-mapped dial ships).
+    // ADVANCED = mode, tracking, latency, correct, seam attack, mix, output,
+    // formant shift (which drives formant_mode), the vibrato generator, and
+    // the readouts. INTERNAL (no control) = formant_mode as a switch,
+    // transpose, target_hz, reset_stats, ref_manual_by_user.
+    // THE DIALABLE PRINCIPLE: every front control is a dial or an explicit
+    // choice; AUTO is a badge on the control it governs, and turning the
+    // control overrides it.
+    juce::ComboBox   voiceBox_, trackBox_, keyBox_, scaleBox_, modeBox_, vibShapeBox_;
     juce::TextButton correctBtn_ { "CORRECT" };
     juce::TextButton vibBtn_     { "IGN VIB" };
-    juce::TextButton keyAutoBtn_ { "AUTO" };
+    juce::TextButton keepVibBtn_ { "KEEP VIBRATO" };   // natural_vibrato as the two-state control it is (round 44); the Natural Vibrato name is reserved
+    juce::TextButton advBtn_     { "ADVANCED" };       // shows the advanced panel; UI state only
+    bool advanced_ = false;
+    juce::TextButton keyAutoBtn_ { "AUTO" };           // the badge on KEY/SCALE
     // The reference control (29 Aug 2026): Sean was stuck on a grid he could
     // neither see the origin of nor change. The knob edits the MANUAL field
     // (turning it takes manual control); the AUTO button returns the mode;
@@ -71,9 +84,9 @@ private:
     void paintLatencyMode (juce::Graphics& g, juce::Rectangle<int> area);
     void refreshLatencyButton();
     int  currentLatencyMs (bool lowLatency) const;
-    juce::TextButton resetBtn_ { "RESET" };
-    echojay::device::EchoJayDeviceKnob targetKnob_, retuneKnob_, flexKnob_, humanKnob_,
-                                       depthKnob_, refKnob_;
+    echojay::device::EchoJayDeviceKnob retuneKnob_, flexKnob_, humanKnob_, depthKnob_, refKnob_,
+                                       seamKnob_, mixKnob_, outKnob_, fshiftKnob_,
+                                       vibDepthKnob_, vibRateKnob_, vibOnsetKnob_;
 
     juce::Rectangle<int> notePanel_, numbersPanel_, guardPanel_, ribbonBounds_;
 

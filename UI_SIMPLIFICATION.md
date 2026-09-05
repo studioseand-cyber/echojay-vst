@@ -858,3 +858,112 @@ each rediscover the same shape. The seed experiment for the corrector's
 slow track (seedExp 1, "30 ms relaxing to 140 over 300 ms", round 30's
 (a)) was a special case of it. Its own bar when picked up: each consumer
 measured alone against its current constant, then together.
+
+## Round 45 (5 Sep 2026): THE LAYOUT, BUILT against the settled set
+
+Built exactly against the round-44 ruling. `Source/EedPitchEditor.{h,cpp}`,
+one change, no engine code touched.
+
+### What the panel is now
+
+**HEADER:** the device name, VOICE TYPE (front, an explicit choice), an
+ADVANCED toggle, bypass. Tracking and the formant-mode combo LEFT the
+header (tracking is advanced; formant_mode is internal - see below).
+
+**FRONT (the default view):** the ribbon takes the top of the panel; one
+row of controls sits under it, in this order left to right:
+
+| control | param | kind | note |
+|---|---|---|---|
+| RETUNE | retune_ms | dial, 0-150 ms | the existing dial; the 0-400 re-map is its own change with its own bar |
+| FLEX | flex | dial | |
+| HUMAN | humanize | dial | |
+| DEPTH | depth | dial | FRONT until the re-map ships (round 35 ruling), then advanced |
+| KEY / SCALE | key_root / scale | two choices, stacked | the AUTO badge sits beside them |
+| AUTO (badge) | key_source | two-state, lit = following the bus | picking a key or scale overrides it; clicking the badge returns to auto |
+| REF | reference_hz | dial | |
+| AUTO (badge) | reference_source | two-state | turning REF overrides it; clicking returns to auto |
+| KEEP VIBRATO | natural_vibrato | switch: on = 100, off = 0 | the honest two-state control (round 44); the gain is backlog |
+| IGN VIB | ignore_vib | switch | |
+
+The key ATTRIBUTION line stays at the foot of both views - it is the
+badge's explanation (which bus, which take, "only this track measurable").
+
+**ADVANCED (toggle in the header, replaces the front row):** a quarter-
+height ribbon; the readouts (note + tuner bar, the numbers, the guard
+log); a dial row SEAM (seam_attack_ms), MIX, OUT (output_db), F.SHIFT
+(formant_shift); the generator row VIB DEPTH, VIB RATE, VIB ONSET, VIB
+shape; and the band LOW-LATENCY mode, CORRECT, MODE (correction_mode),
+TRACK (tracking). 12 advanced controls, as ruled.
+
+**INTERNAL (no control):** formant_mode, transpose, target_hz,
+reset_stats, ref_manual_by_user. formant_mode is DRIVEN by the F.SHIFT
+dial: non-zero shift sets shift mode, zero sets preserve. The switch on
+its own does nothing under 2.5 st of correction (round 35 measurement),
+so a switch a user can flip to no effect would have been the dead
+control the whole phase removes. target_hz (the P1 diagnostic path) and
+reset_stats (a momentary) left the panel. The params all remain in the
+schema, dialable by the model and the chain host.
+
+### The dialable principle, checked control by control
+
+Every front control is a dial or an explicit choice. The two AUTO badges
+are the only automatic behaviour on the front, each on the control it
+governs, each overridden by turning that control. Nothing on the front
+does nothing.
+
+### Ledgers
+
+- `handControlledParams()` lists the 25 controlled ids with the control
+  that owns each (formant_mode credited to the F.SHIFT dial, honestly).
+- The mode test's no-UI exemption ledger now carries exactly the four
+  internal params with a stated reason each (ref_manual_by_user,
+  transpose, target_hz, reset_stats). The previous exemptions for
+  natural_vibrato, seam_attack_ms, mix, output_db, formant_shift and the
+  vib_* generator are GONE - they have controls now, so the test would
+  fail if one were dropped again.
+
+### Build, test, install (5 Sep 2026)
+
+- Built at `-j 4`, the four plugin targets + the mode test only, detached
+  with a log, in both `build` (validation) and `build-release` (the
+  install source - the previously installed AU matched build-release's
+  binary, checked by UUID before choosing).
+- Mode test suite: **162 PASS / 0 FAIL** (was 161). The UI-coverage
+  block passes for every schema param with exactly the four internal
+  exemptions above.
+- Installed via `tools/install_local.sh build-release` to `~/Library`
+  only. Installed arm64 slices (the slices Logic loads on this Mac; the
+  binaries are universal, and the x86_64 slice carries a different UUID -
+  read the arm64 line):
+
+  | plugin | arm64 UUID |
+  |---|---|
+  | AU  `EchoJay V2.component` | F3F4EF73-CCD0-3BA4-BB54-A7DAF988791E |
+  | VST3 `EchoJay V2.vst3`     | 9186ECA3-7EB2-39CF-9ED9-B0B5D74C0777 |
+
+- AUHostingServiceXPC_arrow killed after the install (it survived a
+  name kill and went by pid). **Sean must relaunch Logic** before
+  forming any opinion; a saved session with the old panel loads with the
+  same params - nothing in the state format changed.
+
+### What this change is NOT
+
+- Not an audible change. No engine code moved; the render path is the
+  installed round-44 foundation (default retune 6 / depth 100 / seam 60).
+- Not the 0-400 dial. RETUNE is still the 0-150 ms dial; the re-map is
+  a separate change behind its own bar (saved-state semantics, dial <->
+  depth override), and DEPTH moves to advanced only then.
+- Not the vibrato gain. KEEP VIBRATO is the two-state control the
+  parameter actually is; the continuous gain waits on the 7-leg bar.
+
+### What Sean should check (a panel check, not a listening test)
+
+1. The front reads: RETUNE, FLEX, HUMAN, DEPTH, KEY/SCALE with AUTO,
+   REF with AUTO, KEEP VIBRATO, IGN VIB, VOICE in the header, ADVANCED.
+2. Pick a key by hand: the AUTO badge goes out, the attribution line says
+   manual. Click AUTO: the badge lights and the bus key returns (his
+   session has key MANUAL D minor, so AUTO stays out there - correct).
+3. ADVANCED shows the readouts and the twelve engineering controls.
+4. If anything is cramped at 620x400, say which control; the layout
+   clamps every width and nothing overlaps at the default size.

@@ -702,19 +702,9 @@ int main()
         static const NoUi kNoUi[] = {
             { "ref_manual_by_user", "internal provenance marker, deliberately "
                                     "uncontrolled - see EedPitchProcessor::onStateApplied" },
-            { "transpose",        "no UI yet" },
-            { "natural_vibrato",  "no UI yet - character-relevant, worth a knob eventually" },
-            { "vib_depth_cents",  "no UI yet - added-vibrato block has no panel" },
-            { "vib_rate_hz",      "no UI yet - added-vibrato block has no panel" },
-            { "vib_shape",        "no UI yet - added-vibrato block has no panel" },
-            { "vib_onset_ms",     "no UI yet - added-vibrato block has no panel" },
-            { "formant_shift",    "no UI yet - and the shift path carries a measured "
-                                  "fidelity cost (schema text), so no knob until rebuilt" },
-            { "mix",              "no UI yet - the chain wet knob covers the common case" },
-            { "output_db",        "no UI yet" },
-            { "seam_attack_ms",   "no hand control yet - the word-start pitch-continuity ramp, "
-                                  "written by every mode at the schema default (60); a knob is a "
-                                  "UI decision pending Sean's broader-material validation" },
+            { "transpose",        "INTERNAL, unexposed pending DEFECT_TRANSPOSE_OCTAVE (+12 gives 155c in one region; -12 loses 3.7 dB)" },
+            { "target_hz",        "INTERNAL: the P1 fixed-target diagnostic path (UI_SIMPLIFICATION inventory)" },
+            { "reset_stats",      "INTERNAL: a momentary readout reset (UI_SIMPLIFICATION inventory)" },
         };
         auto exemptUi = [&] (const std::string& id)
         {
