@@ -141,6 +141,15 @@ int main(int argc,char**argv)
           std::printf("  OFF-GRID vs D minor @ %s (%.2f Hz): onset(150ms) med %5.2f p75 %5.2f p90 %5.2f | all-voiced med %5.2f <5c %4.1f%%",
               pass?"RECOVERED ref":"440          ",440.0*std::pow(2.0,sh/1200.0),pct(on,0.5),pct(on,0.75),pct(on,0.9),pct(al,0.5),u5);
           if(imp>=0) std::printf(" | improve-rate vs source %4.1f%%",imp); std::printf("  (n onset %zu, all %zu)\n",on.size(),al.size()); }
+        // NOTE-CENTRE off-grid (vibrato-neutral): per voiced run >= 200 ms, the run's MEAN cents -> its off-grid to D minor; duration-weighted median over runs
+        { std::vector<std::pair<double,double>> runs; size_t s0=0;
+          for(size_t h=1;h<=c.size();++h)
+          { const bool cont=h<c.size()&&!std::isnan(c[h])&&!std::isnan(c[h-1])&&std::fabs(c[h]-c[h-1])<12.0;
+            if(!cont){ if(!std::isnan(c[s0])&&(h-s0)*hopS>=0.200){ double m=0; for(size_t k=s0;k<h;++k) m+=c[k]; m/=(double)(h-s0);
+                const long t0=std::lround(m/100.0); double bd=1e9; for(long k=t0-2;k<=t0+2;++k){ const int pc=(int)(((k+9)%12+12)%12); for(int d=0;d<7;++d) if((minor[d]+2)%12==pc) bd=std::min(bd,std::fabs(m-100.0*k)); }
+                runs.push_back({bd,(double)(h-s0)*hopS}); } s0=h; } }
+          std::sort(runs.begin(),runs.end()); double tot=0; for(auto& r:runs) tot+=r.second; double acc=0, med=0; for(auto& r:runs){ acc+=r.second; if(acc>=tot/2){ med=r.first; break; } }
+          std::printf("  NOTE-CENTRE off-grid vs D minor (runs >= 200ms, mean pitch per run, duration-weighted median): %.2fc over %zu runs / %.1fs\n",med,runs.size(),tot); }
         std::printf("  BEST-FIT KEYS:"); for(int i=0;i<4;++i){ const int k=order[i]; std::printf("  %s %s %.1f%%",PC[k%12],k<12?"maj":"min",100.0*best[k]); } std::printf("\n");
     }
     return 0;

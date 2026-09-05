@@ -645,3 +645,106 @@ now, moving to advanced with the re-mapped dial; formant_mode proposed
 INTERNAL; voice_type front per the ruling; tracking advanced pending
 verification against Antares' eps; transpose unexposed pending its
 octave defect). Layout follows his ruling on the set. No UI code.
+
+# Round 42 (5 Sep 2026): "yes lets do it, remember that it needs to be dialabble" - the set settled; the vibrato gain moves up, scoped with its bar
+
+## Interpretation, stated so it can be corrected
+Proceed with both merges; the target is ANTARES PRO'S PANEL - real controls
+the user turns - NOT the Access-style minimal panel where choices are made
+automatically. "Dialable" reads as a rejection of "decided for you". If
+Sean corrects this, re-rule.
+
+## DESIGN PRINCIPLE (ruled): DIALABLE
+  EVERY FRONT-PANEL CONTROL IS A CONTINUOUS DIAL OR AN EXPLICIT CHOICE.
+  NOTHING IMPORTANT IS AUTOMATIC-ONLY. WHERE AN AUTO MODE EXISTS (KEY,
+  REFERENCE), IT IS A STATE OF A CONTROL THE USER CAN ALWAYS OVERRIDE BY
+  TURNING IT. It applies to the ADVANCED panel too: DEPTH stays a dial
+  there; it does not vanish into the curve.
+
+## THE MERGES (in the set; no UI code yet - CONTROL_INVENTORY_FOR_RULING.md v2, Desktop + repo)
+  - key_source folds into the KEY control: auto is a BADGE on the dial;
+    turning the dial takes it to manual. The value is never hidden by the
+    mode. This also fixes the round-23 discoverability problem: the
+    provenance state lived away from the value it governs, which is why
+    the key source could not be read from the UI.
+  - reference_source folds into the REFERENCE control the same way.
+  - `correct` DOES NOT EARN ITS FRONT SLOT: the chain has a per-slot on/off
+    (ChainHost::setSlotBypassed, latency-accounted), the device's own
+    bypass runs the delay line at target 0, and round-35 verified that
+    correct=0, mix=0 and bypass render the identical dry signal. It moves
+    to ADVANCED as the model's master enable.
+  Front: 13 -> 11 (merges) -> 10 when DEPTH moves with the re-mapped dial;
+  `correct` leaving takes it to 9 at that point. 27 controls for 29
+  parameters.
+
+## THE NATURAL VIBRATO GAIN MOVES UP - it is the only front control that fails the dialable principle
+Sean asked for Antares' +/-12 knob and ours is a switch because the gain
+reaches audio only at natural_vibrato exactly 100. That blocks the panel
+he asked for. Scoped here with its bar; NOT BUILT. THE CONVERGENCE (round
+34) restated: the fast term must reach the audio at EVERY value, carried
+on the co-timed ring - the phase-correct carrier the original corrector-
+side attempt lacked (+7 clicks; (k-1)*osc hop-sampled and applied a third
+of a vibrato cycle late).
+
+SCOPING MEASUREMENTS (tools/pitch_activity PA_FASTRING, the engine's
+existing ring-aligned fast term: a slow-pitch ring written co-timed with
+f0, fastFactor = dev^(exponent) at the read pointer; corrector's hop term
+removed; vibdepth survival ratio; the new vibrato-neutral NOTE-CENTRE
+off-grid; word-start events; logs vibgain_A/B_2026-09-05.txt):
+  Formulation A - SHIFT PATH for every k, exponent k-1:
+    k     surv   activity   centre-off-grid   ws events   (retune 6)
+    0     0.00    6.08c        7.18c            1          <- FAILS the hard end: shipped hard is 4.49c / 1.43c (the smoothed track cannot snap)
+    0.5   0.72    4.30c        -                1
+    1     0.97    4.16c        2.57c            1          <- the shipped keep within float rounding (max |diff| 2.2e-7; exact with a k=1 branch)
+    1.5   1.27    7.71c        -                (10 ev)
+    2     1.51   10.64c        5.55c            (11 ev)
+  Formulation B - LEGACY PATH for every k, exponent k (k = 0 exact today's hard):
+    0     0.00    4.49c        1.43c            0          <- BIT-IDENTICAL to shipped hard
+    0.5   0.72    4.70c        2.31c            1
+    1     1.04    6.14c        2.47c            4          <- FAILS word starts: the re-added wobble rides the onset excursions (shipped keep: 1)
+    1.5   1.27    8.36c        4.51c            4
+    2     (ruler saw no note)  10.16c   4.90c   4
+  Read plainly: NEITHER PATH SERVES THE WHOLE RANGE. The shift path owns
+  k >= 1 (k = 1 exact), the legacy path owns k = 0 (exact) and probably
+  k < 1; the crossing at k = 1 is a path switch (PATH_UNIFICATION's
+  question, now with numbers), and EXAGGERATION (k > 1) costs centre
+  tuning 2.5 -> 4.5-5.5c and 4-11 events on both. A +/-12 knob whose top
+  half degrades tuning is a product question for the ruling, separate
+  from the DSP.
+
+THE BAR (before any build; the ruled legs plus the two the scoping showed
+are needed):
+  1. THE GAIN APPLIES MONOTONICALLY across the range: vibdepth survival
+     ratio strictly increasing over k in {0, 0.25, 0.5, 0.75, 1, 1.5, 2}
+     on the synthetic vibrato note and on sourceNEW's sustains, with
+     k = 0 -> <= 0.05 and k = 1 -> 0.95..1.05.
+  2. BIT-IDENTITY AT THE VALUE THAT MEANS UNCHANGED: k = 1 renders
+     bit-exact to today's natural_vibrato 100 (a k = 1 branch that skips
+     the multiply; rounding-level differences do not pass). AND k = 0
+     renders bit-exact to today's natural_vibrato 0 (the hard preset) -
+     the scoping shows only the legacy path can give this.
+  3. NO WORD-START REGRESSION: ign OFF NEW take, word-start events at every
+     k in the sweep <= today's at the nearest shipped value (0 at k = 0,
+     1 at k = 1); B's 4 at k = 1 fails this today.
+  4. THE OLD-TAKE FALSIFIER unchanged at k = 0 and k = 1 (ign ON, tau 6).
+  5. TUNING, vibrato-neutral: NOTE-CENTRE off-grid at k = 0 and k = 1 not
+     worse than today's (1.43c / 2.57c at retune 6); at k = 2 the cost
+     REPORTED, not gated - it is the product's call whether +12 ships.
+  6. NO CLICKS: the LTP event count at k = 0 and k = 2 not above today's
+     hard and keep (1 and 3 at retune 6) - the round-28 "+7 clicks at k
+     = 0" not reproduced.
+  7. SEAN'S EAR ON A SWEEP: one file, k = 0 / 0.5 / 1 / 1.5 / 2 as legs,
+     his settings.
+  Only after it passes does the control take the Natural Vibrato name and
+  the +/-12 range (mapping proposed in round 33). Until then the switch
+  stays and keeps its honest label.
+  Design fork for the bar to decide (not pre-chosen): A for k >= 1 and B
+  for k < 1 with a crossfade at 1; or the corrector's shift path made to
+  snap (the PATH_UNIFICATION question); or dev^k on the legacy path with
+  the onset excursions excluded (the seam-ramp / confirm-window state as
+  the mask). Each is a measurement against legs 1-6.
+
+Order: merges and the front-panel set (done here, in the set) -> the
+vibrato gain with its bar -> layout. Still no layout code until the set
+is settled. Engine note: setFastRing's upper clamp raised 2 -> 3 for the
+scoping (production has fastRingOn_ off; no behaviour change).

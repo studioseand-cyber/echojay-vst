@@ -1807,7 +1807,7 @@ public:
     // Ring-aligned fast vibrato term (2 Sep 2026 experiment; see the
     // splice block). k in 0..2 (natural_vibrato/100).
     void setFastRing (bool on, float k) noexcept
-    { fastRingOn_ = on; fastK_ = std::clamp (k, 0.0f, 2.0f); }
+    { fastRingOn_ = on; fastK_ = std::clamp (k, 0.0f, 3.0f); }   // upper bound 2 -> 3 (5 Sep 2026) so the legacy-path formulation (exponent k) can be scoped up to k = 2
     void setFastRingSlowHz (float hz) noexcept { fastSlowHz_ = hz; }
 private:
     bool   fastRingOn_ = false;

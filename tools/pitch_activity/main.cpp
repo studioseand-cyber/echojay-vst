@@ -94,6 +94,11 @@ static Render renderSelf (const std::vector<float>& in, double fs, int vt, bool 
     if(getenv("PA_REF")) corr.setReferenceHz((float)atof(getenv("PA_REF")));
     if(getenv("PA_CONFIRM")) corr.debugNoteConfirmMs((float)atof(getenv("PA_CONFIRM")));
     if(getenv("PA_FORCESHIFT")) corr.debugForceShiftPath(true);
+    // NATURAL VIBRATO GAIN scoping (UI_SIMPLIFICATION round 42): the ring-aligned
+    // fast term - slow pitch written co-timed with f0, fastFactor = dev^(k-1) at
+    // the read pointer - with the corrector's hop-sampled (k-1)*osc removed.
+    const bool fastRing = getenv("PA_FASTRING")!=nullptr; const float fastK = fastRing ? (float)atof(getenv("PA_FASTRING")) : 1.0f;
+    if(fastRing) corr.debugFastRing(true);
     corr.reset();
     F0JumpGate gate;
     float worst=PitchEngine::voiceRange(0).fMinHz;
@@ -102,6 +107,7 @@ static Render renderSelf (const std::vector<float>& in, double fs, int vt, bool 
     sh.setFormantMode(PsolaEngine::kFormantPreserve);
     sh.setPitchLagSamples(det.pitchLagFor(vt));
     sh.setDriftBleed(true);
+    if(fastRing) sh.setFastRing(true,fastK);
     if(getenv("PA_COTIMED")) sh.setCoTimedTarget(true);
     if(getenv("PA_DECLOOK")) sh.setDecisionLookahead(true,(int)std::lround(atof(getenv("PA_DECLOOK"))*0.001*fs));
     if(getenv("PA_LOOKAHEAD")) sh.setTargetLookahead((int)std::lround(atof(getenv("PA_LOOKAHEAD"))*0.001*fs));
@@ -151,7 +157,8 @@ static Render renderSelf (const std::vector<float>& in, double fs, int vt, bool 
                 sliceF0=g; sliceVoiced=ev[h].voiced;
                 if(c.grain){ if(g>0){ target=g; shift=0.0f; } }
                 else { const float t=corr.process(g,ev[h].voiced,hopMs);
-                       if(t>0){ target=t; shift=corr.shiftPreferred()?corr.lastShiftCents():PsolaEngine::kNoShift; } }
+                       if(t>0){ target=t; shift=corr.shiftPreferred()?corr.lastShiftCents():PsolaEngine::kNoShift; }
+                       if(fastRing&&ev[h].voiced&&g>0) sh.setFastRingSlowHz(hzFromCentsC(corr.lastSlowCents(),440.0f)); }
             }
         }
     }
