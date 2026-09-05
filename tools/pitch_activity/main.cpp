@@ -91,6 +91,7 @@ static Render renderSelf (const std::vector<float>& in, double fs, int vt, bool 
     corr.setIgnoreVibrato(c.ign); corr.setNaturalVibrato(c.nat);
     corr.debugDepthScale(c.depth,c.depthMode);
     if(getenv("PA_ENVEXP")) corr.debugEnvExperiment(atoi(getenv("PA_ENVEXP")));
+    if(getenv("PA_CONFIRM")) corr.debugNoteConfirmMs((float)atof(getenv("PA_CONFIRM")));
     if(getenv("PA_FORCESHIFT")) corr.debugForceShiftPath(true);
     corr.reset();
     F0JumpGate gate;
@@ -157,7 +158,7 @@ static Render renderSelf (const std::vector<float>& in, double fs, int vt, bool 
     for(size_t i=(size_t)lat;i<raw.size();++i) R.out[i-(size_t)lat]=raw[i];
     R.tap=sh.debugRingTapData();
     R.effR=sh.debugEffRData();
-    std::printf("  [gate: rejected hops %u, confirmed jumps %u]\n",gate.rejectedHops(),gate.confirmedJumps());
+    std::printf("  [gate: rejected hops %u, confirmed jumps %u | corrector: note changes %u, gap resumes %u]\n",gate.rejectedHops(),gate.confirmedJumps(),corr.noteChanges(),corr.gapResumes());
     return R;
 }
 static long alignLag (const std::vector<float>& ref, const std::vector<float>& x)

@@ -556,7 +556,7 @@ public:
                 {
                     if (pendN_ > 0 && pendN_ < 3) pendBuf_[pendN_++] = inCents;
                     confirmMs_ += stepMs_;
-                    if (confirmMs_ >= kNoteConfirmMs)
+                    if (confirmMs_ >= dbgConfirmMs_)
                     {
                         // A genuine note change: restart AT the new note so the
                         // interval does not become a portamento.
@@ -895,6 +895,7 @@ public:
     float debugDepthEnv() const noexcept { return depthEnv_; }
     float debugPendDepth() const noexcept { return pendDepth_; }
     void  debugEnvExperiment (int e) noexcept { envExp_ = e; }
+    void  debugNoteConfirmMs (float ms) noexcept { dbgConfirmMs_ = ms > 0.0f ? ms : kNoteConfirmMs; }   // re-derivation sweep (round 30); default = kNoteConfirmMs, bit-identical
     void  debugDepthScale (float d, int mode = 1) noexcept { dbgDepth_ = std::clamp (d, 0.0f, 1.0f); dbgDepthMode_ = mode; }   // investigation only; depth 1 = off; mode 1 aim, 2 applied shift
     void  debugMedianSeed (int mode) noexcept { medianSeed_ = mode; }   // 0 off, 1 starts only, 2 +resume corridor
     void  debugPendForget (bool on) noexcept { pendForgetOn_ = on; }    // gated: rode ungated into the baseline for one commit - the exact pattern under repair
@@ -994,6 +995,7 @@ private:
     // both natural corners invariant at every value.
     int   envExp_ = 0;
     float dbgDepth_ = 1.0f;      // see debugDepthScale
+    float dbgConfirmMs_ = kNoteConfirmMs;   // see debugNoteConfirmMs
     int   dbgDepthMode_ = 1;
     int   medianSeed_ = 0;       // 0 off, 1 starts only, 2 +resume corridor
     uint32_t resumeReanchors_ = 0;

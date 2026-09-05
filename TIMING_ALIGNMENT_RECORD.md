@@ -257,3 +257,79 @@ timestamp to be "fixed".
   pitchLagFor = frameLen/2 + hop       detector         the design's own back-dating model                        THE DEFECT ITSELF - superseded by flag B's per-hop model
   kWindowPeriods (2.5), kHopSeconds    detector         YIN window geometry                                       NOT SUSPECT - but now inputs to the lag model (B)
   kContinuityMaxS, kHistoryClearS      detector         detector memory                                           LOW
+
+# Round 30 (5 Sep 2026): flag C as out-of-sample confirmation; the improve-rate rule; kNoteConfirmMs re-derived; the ear set cut
+
+## Recorded as ruled
+  - FLAG C's DECLINE IS AN OUT-OF-SAMPLE CONFIRMATION. The ratio/decision
+    distinction was derived from the target-lead case. Flag C is a
+    different site it was not built from, and the principle predicts that
+    co-timing a DECISION should hurt. It does, at every tau, alone and
+    combined. A principle that predicts a result it was not fitted to is
+    worth more than one that explains its own origin case. General form:
+      NOT EVERY MISALIGNMENT IS AN ERROR. MISALIGNMENT IN THE RATIO IS
+      ARITHMETIC AND MUST BE FIXED; MISALIGNMENT IN A DECISION MAY BE
+      DOING WORK.
+    Row 7 stays known and deliberately kept.
+  - STANDING (beside the positive-control note): EVERY TRANSPARENCY OR
+    ACTIVITY CLAIM CARRIES ITS IMPROVE-RATE. The 10 ms row read perfect
+    transparency at an 11.9% improve-rate - a metric measuring the
+    absence of the thing it exists to measure.
+  - THE REMAINING QUESTION IS AN EAR QUESTION. More movement with better
+    landing is what an honest corrector looks like; whether honest-and-
+    more-active beats skewed-and-calmer is Sean's judgement, not another
+    metric's.
+
+## kNoteConfirmMs RE-DERIVED with co-timing on (A+B+E6), the one constant touched
+
+    confirm   retune 44: activity / >25c / off-grid / <5c / improve   tau 6: off-grid / <5c / improve   tau 150: off-grid / <5c / improve   note changes (NEW)   OLD falsifier (ign ON, tau 6): word-start / total events
+    5 ms      5.32c / 11.7% / 4.13 / 55.0 / 61.8                       2.23 / 71.9 / 80.2                8.75 / 35.9 / 42.5                  45                   (not run)
+    10 ms     5.24c / 11.6% / 3.79 / 57.2 / 63.9                       2.26 / 71.6 / 79.0                6.90 / 40.8 / 49.1                  44                   1 / 4   FAIL (+ octave-disagree hops 9 -> 15-21)
+    15 ms     5.58c / 11.8% / 4.01 / 56.1 / 62.3                       2.26 / 71.5 / 78.4                6.52 / 40.7 / 50.4                  40                   0 / 3   pass
+    20 ms     6.23c / 13.6% / 4.41 / 53.0 / (see log)                  2.28 / 71.4 / (log)               7.10 / 39.8 / (log)                 36                   0 / 1   pass
+    25 ms     7.16c / 15.8% / 4.86 / 50.7 / 57.8                       2.33 / 71.3 / 78.3                8.05 / 39.4 / 46.9                  32                   0 / 1   pass
+    30 / 40   7.45 / 7.73c; 18.5 / 20.4%; tuning worse than 25 on every column
+    SHIPPED   5.04c /  8.8% / 5.32 / 48.3 / 58.2                       3.85 / 59.3 / 72.0                6.87 / 40.9 / 50.4                  32                   0 / 1
+    LTP glitch events, retune 44 (shipped 6): confirm 25 -> 11, 15 -> (not run), 10 -> 5, 5 -> 3
+
+THE PICK: 15 ms. Reasoning: with the target clock honest, the chase IS the
+confirm window, so shortening it is the direct lever - every tuning
+column improves monotonically down to 10 ms on the NEW take. But the
+window exists to reject transients ("a jump has to HOLD to count"), and
+its cost appears at 10 ms on the creaky OLD take: a word-start event
+where there was none, and the wrong-octave hop count doubles. 15 ms is
+the shortest window that keeps the OLD falsifier clean, and on the NEW
+take it is within 0.2c off-grid and 1 point of <5c of the 10 ms optimum
+at Sean's setting, best at tau 150, and takes the note-change count from
+32 to 40 (not 44). 5 ms is where the false-change cost shows even on the
+NEW take at slow retune (tau 150 improve 42.5%). A regime-dependent
+constant per §17.5: validated on alto_tenor (NEW) and low_male (OLD), tau
+6-150, both vibrato modes at 44; re-derive if the detector or the gate
+changes. The other eighteen constants stay enumerated and unrun.
+
+## THE CANDIDATE (retune 44, ign OFF, seam 60, depth 1): A + B + E(6 ms) + confirm 15
+    activity 5.58c (shipped 5.04) | >25c 11.8% (8.8%) | off-grid 4.01c (5.32) | <5c 56.1% (48.3%) | improve-rate 62.3% (58.2%)
+    tau 6:   off-grid 2.26c (3.85) | <5c 71.5% (59.3%) | improve 78.4% (72.0%)
+    OLD falsifier: word-start events 0 (of 3 total; shipped 0 of 1)
+    depth 0 at this configuration: 0.00c (transparency preserved by construction)
+
+## THE EAR SET - DELIVERED (the deliverable discipline: real path, sizes, peak check)
+  /Users/SeanD/echojay-vst-pitch/earclips/
+    timing_retune44_ignOFF__A_source__B_shipped__C_cotimed_declook6_confirm15.wav   7,805,996 bytes  3 legs x 13.25 s, 0.45 s gaps, jointly normalised, peak 0.891
+    timing_retune44_ignOFF__leg1_source.wav                                          2,544,428 bytes  peak 0.891
+    timing_retune44_ignOFF__leg2_shipped.wav                                         2,544,428 bytes
+    timing_retune44_ignOFF__leg3_candidate_cotimed_declook6_confirm15.wav            2,544,428 bytes
+  Legs: A the dry source; B the installed build (EFC45BBB) at his exact
+  settings; C the candidate (flags default OFF in the tree; the render is
+  the flags-on offline chain, bit-identical to the plugin path when off).
+
+## WHAT SEAN IS LISTENING FOR, in plain terms
+The new build corrects more accurately but moves more visibly. Leg C
+lands closer to the note than leg B (off-grid 4.0c vs 5.3c; 56% of hops
+within 5c vs 48%) and it moves the pitch more on the way there (median
+movement 5.6c vs 5.0c, and more moments over 25c). Part of leg B's calm
+was a timing fault that also produced a vibrato-rate ripple and broke
+the transparent end of the dial; leg C has neither. THE QUESTION: does
+the extra movement read as better tuning, or as the plugin working too
+hard? Both answers are useful and neither is a failure. Flags stay OFF
+and nothing installs until he answers.

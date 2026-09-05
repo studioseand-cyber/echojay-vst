@@ -1,0 +1,42 @@
+confirm 5 ms tau 44:  median  5.32c  p75 12.48c  p90 28.08c  >25c 11.7%  mean 10.39c
+confirm 5 ms tau 6:  median  4.29c  p75  8.03c  p90 15.31c  >25c  3.1%  mean  6.80c
+confirm 5 ms tau 150:  median  7.31c  p75 17.39c  p90 35.69c  >25c 16.1%  mean 13.75c
+    tau 44 tuning: onset(150ms) med  6.24 p75 16.77 p90 33.32 | all-voiced med  4.13 <5c 55.0% | improve-rate vs source 
+    tau 6 tuning: onset(150ms) med  2.85 p75  8.09 p90 23.97 | all-voiced med  2.23 <5c 71.9% | improve-rate vs source 8
+    tau 150 tuning: onset(150ms) med 10.35 p75 20.02 p90 39.50 | all-voiced med  8.75 <5c 35.9% | improve-rate vs source
+confirm 10 ms tau 44:  median  5.24c  p75 12.55c  p90 26.93c  >25c 11.6%  mean 10.78c
+confirm 10 ms tau 6:  median  4.33c  p75  8.05c  p90 15.70c  >25c  3.4%  mean  6.91c
+confirm 10 ms tau 150:  median  6.28c  p75 15.22c  p90 35.69c  >25c 15.2%  mean 13.29c
+    tau 44 tuning: onset(150ms) med  6.36 p75 16.69 p90 33.23 | all-voiced med  3.79 <5c 57.2% | improve-rate vs source 
+    tau 6 tuning: onset(150ms) med  2.91 p75  8.27 p90 24.69 | all-voiced med  2.26 <5c 71.6% | improve-rate vs source 7
+    tau 150 tuning: onset(150ms) med  8.75 p75 20.01 p90 41.35 | all-voiced med  6.90 <5c 40.8% | improve-rate vs source
+confirm 15 ms tau 44:  median  5.58c  p75 13.22c  p90 27.24c  >25c 11.8%  mean 11.39c
+confirm 15 ms tau 6:  median  4.39c  p75  8.09c  p90 16.06c  >25c  3.6%  mean  7.01c
+confirm 15 ms tau 150:  median  6.78c  p75 15.23c  p90 36.29c  >25c 15.1%  mean 13.86c
+    tau 44 tuning: onset(150ms) med  7.00 p75 17.81 p90 33.94 | all-voiced med  4.01 <5c 56.1% | improve-rate vs source 
+    tau 6 tuning: onset(150ms) med  2.94 p75  8.36 p90 24.62 | all-voiced med  2.26 <5c 71.5% | improve-rate vs source 7
+    tau 150 tuning: onset(150ms) med  7.98 p75 20.23 p90 38.50 | all-voiced med  6.52 <5c 40.7% | improve-rate vs source
+confirm 20 ms tau 44:  median  6.23c  p75 15.06c  p90 30.96c  >25c 13.6%  mean 12.79c
+confirm 20 ms tau 6:  median  4.45c  p75  8.18c  p90 16.17c  >25c  3.6%  mean  7.17c
+confirm 20 ms tau 150:  median  7.66c  p75 18.06c  p90 39.97c  >25c 16.9%  mean 15.55c
+    tau 44 tuning: onset(150ms) med  7.32 p75 19.60 p90 37.18 | all-voiced med  4.41 <5c 53.0% | improve-rate vs source 
+    tau 6 tuning: onset(150ms) med  2.97 p75  8.52 p90 24.62 | all-voiced med  2.28 <5c 71.4% | improve-rate vs source 7
+    tau 150 tuning: onset(150ms) med  8.57 p75 21.49 p90 37.94 | all-voiced med  7.10 <5c 39.8% | improve-rate vs source
+confirm 25 ms tau 44:  median  7.16c  p75 16.75c  p90 34.97c  >25c 15.8%  mean 14.22c
+confirm 25 ms tau 6:  median  4.41c  p75  8.15c  p90 16.18c  >25c  3.6%  mean  7.16c
+confirm 25 ms tau 150:  median  8.14c  p75 20.61c  p90 46.00c  >25c 21.2%  mean 17.59c
+    tau 44 tuning: onset(150ms) med  8.41 p75 23.62 p90 40.91 | all-voiced med  4.86 <5c 50.7% | improve-rate vs source 
+    tau 6 tuning: onset(150ms) med  3.02 p75  8.64 p90 24.33 | all-voiced med  2.33 <5c 71.3% | improve-rate vs source 7
+    tau 150 tuning: onset(150ms) med  9.67 p75 27.38 p90 42.16 | all-voiced med  8.05 <5c 39.4% | improve-rate vs source
+confirm 30 ms tau 44:  median  7.45c  p75 18.80c  p90 38.29c  >25c 18.5%  mean 15.36c
+confirm 30 ms tau 6:  median  4.40c  p75  8.15c  p90 16.17c  >25c  3.6%  mean  7.17c
+confirm 30 ms tau 150:  median  9.34c  p75 24.54c  p90 50.32c  >25c 24.5%  mean 19.77c
+    tau 44 tuning: onset(150ms) med  9.78 p75 27.14 p90 43.43 | all-voiced med  5.18 <5c 49.1% | improve-rate vs source 
+    tau 6 tuning: onset(150ms) med  2.91 p75  8.72 p90 24.30 | all-voiced med  2.26 <5c 71.3% | improve-rate vs source 7
+    tau 150 tuning: onset(150ms) med 11.40 p75 32.76 p90 45.69 | all-voiced med  8.75 <5c 37.2% | improve-rate vs source
+confirm 40 ms tau 44:  median  7.73c  p75 20.37c  p90 41.08c  >25c 20.4%  mean 16.32c
+confirm 40 ms tau 6:  median  4.35c  p75  8.15c  p90 16.16c  >25c  3.6%  mean  7.16c
+confirm 40 ms tau 150:  median 10.00c  p75 27.02c  p90 59.51c  >25c 27.0%  mean 21.66c
+    tau 44 tuning: onset(150ms) med  9.83 p75 28.82 p90 45.00 | all-voiced med  5.45 <5c 48.1% | improve-rate vs source 
+    tau 6 tuning: onset(150ms) med  3.00 p75  8.65 p90 24.30 | all-voiced med  2.32 <5c 71.3% | improve-rate vs source 7
+    tau 150 tuning: onset(150ms) med 12.12 p75 35.22 p90 51.95 | all-voiced med  8.94 <5c 37.7% | improve-rate vs source
