@@ -1,0 +1,43 @@
+# EchoJay Pitch - the full control inventory, for Sean to rule on (5 Sep 2026)
+
+Every parameter the device has, one per line: name | placement | what it does | the Antares equivalent.
+Placement is a proposal. Argue with any line. Layout follows the ruling, not before.
+
+## FRONT PANEL (13)
+key_root                  | FRONT | The key's root note (C..B) that correction snaps to.                                              | Key
+scale                     | FRONT | The scale (major, minor, chromatic, ...) whose notes are allowed.                                 | Scale
+key_source                | FRONT | Auto-detect the key from a bus, or set it by hand; small control, the way back to auto. CLOSE CALL: Antares has no auto. | no equivalent
+retune_speed_ms           | FRONT | THE dial, re-mapped 0-400: how fast AND how much it corrects, on the measured Antares curve.       | Retune Speed 0-400
+flex                      | FRONT | How much expressive drift is left alone before correction engages (0 = correct everything).        | Flex-Tune
+humanize                  | FRONT | Relaxes correction on held notes only, so long notes do not sound frozen.                          | Humanize
+natural_vibrato           | FRONT | *** KEEP VIBRATO - a TWO-STATE switch: on keeps the singer's vibrato, off removes it. Labelled as the switch it is. The name "Natural Vibrato" is RESERVED for this slot until the continuous gain ships (DSP work, not built). *** | Natural Vibrato (theirs is a -12..+12 knob; ours is a switch today)
+targeting_ignores_vibrato | FRONT | Stops wide vibrato confusing which note is being aimed at (a detector setting, not a sound one).    | Targeting Ignores Vibrato
+reference_hz              | FRONT | The tuning reference (440) the grid is built on.                                                    | Detune
+reference_source          | FRONT | Auto reference from a bus, or manual; small control beside REF. CLOSE CALL: Antares has no auto.    | no equivalent
+correct                   | FRONT | The on/off.                                                                                          | (bypass)
+voice_type                | FRONT | *** Fits the detector to the voice (soprano / alto-tenor / low male / bass / instrument). FRONT per the ruling: getting it wrong costs accuracy and every probe once pinned the wrong one for a month. *** | Input Type
+depth                     | FRONT | *** How much of the correction is applied (100 = full, 0 = the dry voice). The control that fixed the slow end and that you use daily. FRONT FOR NOW; it moves to ADVANCED in the same change that ships the re-mapped dial, because the dial will drive it. *** | no equivalent as a control (inside their dial)
+
+## ADVANCED PANEL (11)
+seam_attack_ms            | ADVANCED | The word-start fix: the correction ramps in over this many ms when the wet path resumes after a consonant (default 60). A FIX, not a taste control. | no equivalent (prior art: GSnap Attack, Waves Note Transition)
+tracking                  | ADVANCED | *** Detector strictness (relaxed / normal / tight): tighter drops more doubtful frames. ADVANCED pending verification that it maps onto Antares' Tracking (eps); it is our detector's parameter, not theirs. *** | Tracking (different semantics)
+formant_shift             | ADVANCED | Shifts the vocal timbre up/down (throat size) - only audible in formant SHIFT mode, and that mode drops level 2.4 dB. CLOSE CALL: internal, with formant_mode. | Throat Length
+low_latency               | ADVANCED | Lower latency at some cost to tracking. CLOSE CALL: Antares has it as a front mode switch.          | Low Latency mode
+correction_mode           | ADVANCED | The character presets (natural / balanced / tuned / hard / custom); the default is now custom at retune 6 / flex 0 / humanize 0. CLOSE CALL: Antares ships presets. | presets
+mix                       | ADVANCED | Wet/dry blend. The chain's wet knob already covers this. CLOSE CALL: Antares has Mix on the front.  | Mix
+output_db                 | ADVANCED | Output trim.                                                                                        | no equivalent
+vib_depth_cents           | ADVANCED | Generated vibrato: depth.                                                                            | Create Vibrato: Amount
+vib_rate_hz               | ADVANCED | Generated vibrato: rate.                                                                             | Create Vibrato: Rate
+vib_shape                 | ADVANCED | Generated vibrato: shape (sine / triangle / ramp).                                                   | Create Vibrato: Shape
+vib_onset_ms              | ADVANCED | Generated vibrato: how long after a note starts it begins.                                           | Create Vibrato: Onset Delay
+
+## INTERNAL / NO CONTROL (5)
+formant_mode              | INTERNAL | *** PROPOSED INTERNAL, not advanced: off and preserve are the SAME SOUND for every correction under 2.5 semitones, which is all pitch-correction use. It only means something for octave shifts. A switch that does nothing does not earn a panel slot. *** | Formant (theirs is front; ours does nothing in practice)
+transpose                 | INTERNAL | *** UNEXPOSED pending its defect: +12 gives a 155-cent shift instead of an octave in one region, -12 loses 3.7 dB (DEFECT_TRANSPOSE_OCTAVE). FRONT once fixed - Antares has it. *** | Transpose
+ref_manual_by_user        | INTERNAL | A bookkeeping flag: was the reference typed by hand. Never a control.                               | no equivalent
+target_hz                 | INTERNAL | An engineering diagnostic (fixed-target test path).                                                  | no equivalent
+reset_stats               | INTERNAL | A momentary readout reset.                                                                            | no equivalent
+
+Readouts (not parameters; live in the ADVANCED panel, always visible there): the detected-key line, the voice-fit suggestion, the reference provenance line.
+
+TOTAL 29 parameters: 13 front, 11 advanced, 5 internal.

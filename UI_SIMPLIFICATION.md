@@ -625,3 +625,23 @@ INSTALLED (suite 161/0; Logic running - relaunch before judging):
     VST3 arm64 185B5022-8BF4-34ED-B63D-B816AF6E700A
 
 NEXT (as ruled): the inventory ruling, then layout. Still no UI code.
+
+# Round 41 (5 Sep 2026): the constraint did the design work; THE INVENTORY PRINTED FOR SEAN
+
+Recorded as ruled: the monotonicity requirement SELECTING the curve shape
+(linear failed, depth-leading passed) is the right kind of outcome - a
+constraint doing design work rather than a fit being tuned until it looks
+acceptable. The residual (p90 up to 0.6c above dial 0 through dials
+25-35, >25c share up to 1.2 points) stays visible in round 40 as
+reported.
+
+THE FULL CONTROL INVENTORY for Sean's ruling is CONTROL_INVENTORY_FOR_RULING.md
+(on his Desktop and in the repo): every parameter, one per line, grouped
+by placement with counts (13 front / 11 advanced / 5 internal), the
+Antares equivalent or "no equivalent", close calls marked on the line,
+and the six flagged items on their own lines (KEEP VIBRATO front as a
+two-state switch with the Natural Vibrato name reserved; DEPTH front for
+now, moving to advanced with the re-mapped dial; formant_mode proposed
+INTERNAL; voice_type front per the ruling; tracking advanced pending
+verification against Antares' eps; transpose unexposed pending its
+octave defect). Layout follows his ruling on the set. No UI code.
