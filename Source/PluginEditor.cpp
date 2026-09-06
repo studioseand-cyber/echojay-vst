@@ -14040,6 +14040,11 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
     label("GENRES YOU WORK WITH");
     label("UI SCALE");
     label("CHAIN SUGGESTIONS");
+    // The do-not-dial toggle sits directly beneath the auto-dial toggle
+    // (resized() places it, same height, no label of its own), so the paint
+    // cursor must step past it too or the next heading paints under it.
+    // (6 Sep 2026, merge gate V3: the render showed YOUR PLUGINS hidden.)
+    y += fh + 8;
 
     g.setColour(C::text3);
     g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
