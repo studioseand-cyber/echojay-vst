@@ -20,6 +20,7 @@
 
 #if JUCE_MAC || JUCE_LINUX
   #include <sys/mman.h>
+#include <signal.h>   // kill(pid, 0): publisher liveness (reaper)
   #include <sys/stat.h>
   #include <fcntl.h>
   #include <unistd.h>
@@ -119,7 +120,19 @@ static constexpr uint32_t kRegMagic      = 0xEC4A2002u;
 /// predicate, consumed by both plugins, so no "is it bus, otherwise
 /// channel" branch can quietly mis-sort a value added later.
 inline bool placementIsPostFader(int p) { return p == 1 || p == 3; }
-static constexpr int      kRegMaxSlots   = 16;
+// 256 SLOTS (6 Sep 2026 ruling): the requirement is 45 Links with real
+// headroom; 16 filled up in one afternoon of Pro Tools inserts (16/16 live).
+// Region = 64 + 256*128 + 256*128 = 65,600 bytes of shared file. The cost
+// that matters is not the region but anything sized by this on the AUDIO
+// path - see EchoJayProcessor::processBlock, which walks a compact LIVE list,
+// never this ceiling.
+static constexpr int      kRegMaxSlots   = 256;
+// LAYOUT VERSION, checked on open: a region whose header carries a different
+// version or slot count is REJECTED (errno EPROTO, lastRegistryLayoutError
+// says why). Builds of the 16-slot layout keep using registry_v2.bin; this
+// layout lives in registry_v3.bin, so old and new never share a file.
+static constexpr uint32_t kRegLayoutVersion = 2;
+inline juce::String& lastRegistryLayoutError() { static juce::String e; return e; }
 static constexpr int      kRegStaleCycles = 60;   // ~30 s at 2 Hz probing
 
 // 128 bytes per slot (2 cache lines)
@@ -405,7 +418,7 @@ inline juce::String makeAudioFilename(const juce::String& linkName)
 /// bumped because openFileMapped ftruncates to the opener's size — an old
 /// build opening a v2 file would shrink it under a live v2 mapping (SIGBUS).
 /// Separate files mean old and new builds simply don't see each other.
-static inline const char* kRegistryFilename = "registry_v2.bin";
+static inline const char* kRegistryFilename = "registry_v3.bin";   // v2 = the 16-slot layout, left to old builds
 
 // =============================================================================
 //  Registry liveness (25 Aug 2026): a slot is LISTED only after its heartbeat
@@ -837,8 +850,24 @@ inline void* openRegistry(const juce::String& dir, int& fd_out, int& errno_out)
     if (casStrong(&regHeader(map)->magic, 0u, kRegMagic))
     {
         std::memset(regSlots(map), 0, (size_t)kRegMaxSlots * sizeof(RegistrySlot));
-        regHeader(map)->version  = 1;
+        regHeader(map)->version  = kRegLayoutVersion;
         regHeader(map)->maxSlots = (uint32_t)kRegMaxSlots;
+    }
+    else if (regHeader(map)->version != kRegLayoutVersion
+          || regHeader(map)->maxSlots != (uint32_t)kRegMaxSlots)
+    {
+        // THE LAYOUT CHECK (6 Sep 2026 ruling): a region written by a build
+        // with a different layout is rejected cleanly, never read through the
+        // wrong struct. The caller logs lastRegistryLayoutError().
+        lastRegistryLayoutError() = "registry layout mismatch: file " + path
+            + " is layout v" + juce::String((int) regHeader(map)->version)
+            + " with " + juce::String((int) regHeader(map)->maxSlots)
+            + " slots; this build needs v" + juce::String((int) kRegLayoutVersion)
+            + " with " + juce::String(kRegMaxSlots) + " - REFUSING to use it";
+        closeMapped(map, kRegSize, fd_out, {}, /*doUnlink=*/false);
+        fd_out = -1;
+        errno_out = EPROTO;
+        return nullptr;
     }
     errno_out = 0;
     return map;
@@ -1950,4 +1979,28 @@ inline bool readMeterFrame(void* regMap, int slotIdx, LinkMeterFrame& out)
     return false;
 }
 
+
+// DEAD-PUBLISHER ROW REAPER (6 Sep 2026 ruling): a row whose sidecar names a
+// process that no longer exists is reclaimed, so 45 Links still fit after a
+// day's churn. Called by a claimant that found the registry full. Rows with no
+// sidecar or an unreadable pid are left alone (fail closed).
+inline int reapDeadPublisherSlots(void* regMap, const juce::String& dir)
+{
+    if (!regMap) return 0;
+    int reaped = 0;
+    RegistrySlot* slots = regSlots(regMap);
+    for (int i = 0; i < kRegMaxSlots; ++i)
+    {
+        if (loadAcquire(&slots[i].inUse) == 0) continue;
+        char ub[13] = {}; std::memcpy(ub, slots[i].instanceUid, 12);
+        const juce::String uid = juce::String::fromUTF8(ub);
+        if (uid.isEmpty()) continue;
+        const auto rc = readRackSidecar(dir, uid);
+        if (!rc.valid || rc.uid != uid || rc.publisherPid <= 0) continue;
+        if (::kill((pid_t) rc.publisherPid, 0) == 0 || errno != ESRCH) continue;   // alive, or unknowable
+        reapSlot(regMap, i);
+        ++reaped;
+    }
+    return reaped;
+}
 } // namespace LinkShm

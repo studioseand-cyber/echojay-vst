@@ -913,15 +913,18 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         const bool isCapturing = (captureState.load() == CaptureState::Capturing);
         const bool gotLccLock  = isCapturing && linkCaptureSpinLock.tryEnter();
 
-        // O(N) slot→lcc lookup on stack
-        LinkCaptureChannel* lccBySlot[kMaxLinkSlots] = {};
-        if (gotLccLock)
-            for (auto& c : linkCaptureChannels)
-                if (c->slotIdx >= 0 && c->slotIdx < kMaxLinkSlots)
-                    lccBySlot[c->slotIdx] = c.get();
+        // THE LIVE LIST (6 Sep 2026): walk the connected slots only, never the
+        // 256-slot ceiling; the capture-channel lookup scans the (short) live
+        // vector instead of a ceiling-sized stack array.
+        const int liveN = liveSlotCount_.load(std::memory_order_acquire);
+        auto lccFor = [&](int slot) -> LinkCaptureChannel* {
+            if (!gotLccLock) return nullptr;
+            for (auto& c : linkCaptureChannels) if (c->slotIdx == slot) return c.get();
+            return nullptr; };
 
-        for (int li = 0; li < kMaxLinkSlots; ++li)
+        for (int lk = 0; lk < liveN; ++lk)
         {
+            const int li = liveSlotIdx_[(size_t) lk];
             auto& ls = activeLinkSlots[li];
             if (!ls.lock.tryEnter()) continue;
             if (ls.map != nullptr)
@@ -1125,7 +1128,7 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                     ls.lock.exit();
                     continue;
                 }
-                LinkCaptureChannel* lcc = gotLccLock ? lccBySlot[li] : nullptr;
+                LinkCaptureChannel* lcc = gotLccLock ? lccFor(li) : nullptr;
                 if (lcc != nullptr)
                 {
                     int nReq = std::min(buffer.getNumSamples(), (int)lcc->tmpBufL.size());
@@ -4553,6 +4556,8 @@ void EchoJayProcessor::ensureLinkRegistryOpen()
     consumerDiag.regKey = linkResolvedDir;
     int err = 0;
     linkRegMap = LinkShm::openRegistry(linkResolvedDir, linkRegFd, err);
+    if (linkRegMap == nullptr && err == EPROTO)   // 6 Sep 2026: a foreign layout is refused, and said so
+        EchoJay_NSLog(("EJLink: " + lastRegistryLayoutError()).toRawUTF8());
     consumerDiag.regOpened = (linkRegMap != nullptr);
     consumerDiag.regErrno  = err;
 }
@@ -4626,6 +4631,7 @@ void EchoJayProcessor::disconnectLinkAudioSlot(int i)
 
 void EchoJayProcessor::disconnectAllLinkSlotsNow()
 {
+    liveSlotCount_.store(0, std::memory_order_release);   // 6 Sep 2026: the audio thread walks nothing until the next walk
     for (int i = 0; i < kMaxLinkSlots; ++i)
     {
         void* old = nullptr;
@@ -4743,6 +4749,7 @@ void EchoJayProcessor::refreshLinkRegistry()
     }
 
     linkSlotInfos = std::move(newInfos);
+    publishLiveSlotList();
 
     // §8.3 refinement: the budget follows CAPABLE-LINK PRESENCE. The
     // capability lives in the sidecar, read once per uid and cached; the
@@ -4944,4 +4951,17 @@ bool EchoJayProcessor::readLinkMeterFrame(int regIdx, LinkMeterFrame& out)
     // refreshLinkRegistry, which owns linkRegMap
     if (linkRegMap == nullptr) return false;
     return LinkShm::readMeterFrame(linkRegMap, regIdx, out);
+}
+
+
+// THE LIVE LIST (6 Sep 2026 ruling): indices of the slots that hold a mapped
+// ring, published for processBlock. Indices first, count last (release), so
+// the audio thread never reads an index that was not written.
+void EchoJayProcessor::publishLiveSlotList()
+{
+    int n = 0;
+    for (int i = 0; i < kMaxLinkSlots; ++i)
+        if (activeLinkSlots[(size_t) i].map != nullptr)
+            liveSlotIdx_[(size_t) n++] = i;
+    liveSlotCount_.store(n, std::memory_order_release);
 }

@@ -272,6 +272,7 @@ public:
         bool         ringOpened = false;
         int          ringErrno  = 0;
         uint32_t     heartbeat  = 0;
+        bool         regFull    = false;   // 6 Sep 2026: the registry had no slot for us - REPORTED, never silent
     };
     Diag diag;
 
@@ -450,6 +451,27 @@ private:
     // by the holder's heartbeat across claim-retry ticks. Reset when the
     // holder slot changes or the question resolves.
     LinkShm::UidClaimGate uidGate_;
+    // THE CHUNK'S IDENTITY (6 Sep 2026, the invariant): what setStateInformation
+    // restored - its uid, and whether THIS host process run authored it. Seeded
+    // names survive ONLY when this instance genuinely continues the chunk's
+    // identity (instanceUid_ == chunkUid_ after the claim). A chunk authored by
+    // this very process run whose uid no slot holds is a host SEED from an
+    // instance that has since gone (Pro Tools re-applies the plugin's last
+    // chunk to a fresh insert), never a from-disk reopen after a quit: it
+    // re-mints. Residual, recorded: a session closed and reopened INSIDE one
+    // host run re-mints too and drops typed names (the identity was destroyed
+    // in this process and the reopen is indistinguishable from a seed).
+    juce::String chunkUid_;
+    bool         chunkAuthoredHere_ = false;
+    // NAME PROVENANCE (6 Sep 2026 ruling): a seeded name is PROVISIONAL, a
+    // host-delivered or user-typed name is AUTHORITATIVE. The invariant's clear
+    // discards only a provisional name, whatever order the host's
+    // TrackNameChanged and the gate's clear arrive in.
+    bool hostNameFromHost_   = false;   // true once updateTrackProperties delivered it
+    bool typedNameFromUser_  = false;   // true once the user typed it (markTypedNameAuthoritative)
+public:
+    void markTypedNameAuthoritative() { typedNameFromUser_ = true; }
+private:
     int uidGateHolder_ = -1;
     // Host track name stash (see the Phase N block above). appliedHostName_
     // is message-thread-only change detection for the timer's apply pass.

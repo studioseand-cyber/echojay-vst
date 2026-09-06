@@ -1195,6 +1195,8 @@ void LinkProcessor::ensureRegistryOpen()
     regMap = LinkShm::openRegistry(resolvedDir, regFd, err);
     diag.regOpened = (regMap != nullptr);
     diag.regErrno  = err;
+    if (regMap == nullptr && err == EPROTO)
+        EchoJay_NSLog(("EJLinkState: " + lastRegistryLayoutError()).toRawUTF8());
 }
 
 juce::String LinkProcessor::effectiveFilePart() const
@@ -1225,10 +1227,14 @@ void LinkProcessor::updateTrackProperties(const TrackProperties& props)
     const juce::String n = juce::String(*props.name).trim();
     {
         const juce::ScopedLock sl(hostNameLock_);
+        hostNameFromHost_ = true;   // AUTHORITATIVE from here on, even if equal to a seeded value
         if (hostTrackName_ == n) return;
         hostTrackName_ = n;
     }
     hostNameDirty_.store(true, std::memory_order_release);
+    // PROVENANCE LOG (6 Sep 2026): the only line that proves the HOST delivered
+    // a name; the timer's "host track name" line also fires for a seeded one.
+    EchoJay_NSLog(("EJLinkState: host DELIVERED track name \"" + n + "\" (uid " + instanceUid_ + ")").toRawUTF8());
 }
 
 juce::String LinkProcessor::getHostTrackName() const
@@ -1305,19 +1311,10 @@ void LinkProcessor::claimRegistrySlot()
                     // names: those are the cases the seeding was built for (a
                     // replacement incarnation on the same track; a session
                     // reopen in a host that never re-sends the name).
-                    const juce::String seededTyped = linkName;
-                    juce::String seededHost;
-                    {
-                        const juce::ScopedLock sl(hostNameLock_);
-                        seededHost = hostTrackName_;
-                        hostTrackName_.clear();
-                    }
-                    appliedHostName_.clear();
-                    linkName.clear();
+                    // the seeded names are dropped by the invariant below (uid changed)
                     EchoJay_NSLog(("EJLinkState: uid " + old + " held by a "
                         "PROVEN-LIVE instance (duplicate) -> regenerated "
-                        + instanceUid_ + "; seeded names dropped (typed \""
-                        + seededTyped + "\", host \"" + seededHost + "\")").toRawUTF8());
+                        + instanceUid_).toRawUTF8());
                     break;
                 }
                 case LinkShm::UidClaimGate::Decision::AdoptGhost:
@@ -1330,8 +1327,53 @@ void LinkProcessor::claimRegistrySlot()
             }
             uidGateHolder_ = -1;
         }
-        else uidGateHolder_ = -1;
+        else
+        {
+            uidGateHolder_ = -1;
+            // NO HOLDER (6 Sep 2026, L5): a chunk this host process run authored,
+            // whose uid no slot holds, is a seed from an instance that has since
+            // gone - not a reopen from disk. Re-mint; the invariant below drops
+            // its names.
+            if (chunkAuthoredHere_ && chunkUid_.isNotEmpty() && instanceUid_ == chunkUid_)
+            {
+                instanceUid_ = juce::String::toHexString(
+                    juce::Random::getSystemRandom().nextInt64()).removeCharacters("-").substring(0, 10);
+                EchoJay_NSLog(("EJLinkState: uid " + chunkUid_ + " came from a chunk authored in THIS host run "
+                    "and no slot holds it (a seed from a gone instance) -> regenerated " + instanceUid_).toRawUTF8());
+            }
+        }
     }
+    // THE INVARIANT (6 Sep 2026 ruling): the seeded names survive only when this
+    // instance continues the chunk's identity. Whatever arm ran above - re-mint
+    // against a live holder, re-mint with no holder, or any arm nobody has
+    // thought of - if the uid this instance ends up with is NOT the uid that
+    // arrived in the chunk, no field from that chunk answers "which Link is
+    // this": drop the host track name and the typed name. AdoptGhost and a plain
+    // restore keep the uid, so they keep the names. Checked BEFORE claimSlot
+    // reads effectiveDisplayName(), so the row publishes what is true.
+    if (chunkUid_.isNotEmpty() && instanceUid_ != chunkUid_)
+    {
+        // PROVENANCE (6 Sep 2026 ruling): only a PROVISIONAL (seeded) name is
+        // dropped. A name the host delivered or the user typed is authoritative
+        // and survives, whether it arrived before or after this point.
+        juce::String droppedTyped, droppedHost, keptHost;
+        {
+            const juce::ScopedLock sl(hostNameLock_);
+            if (hostNameFromHost_) keptHost = hostTrackName_;
+            else { droppedHost = hostTrackName_; hostTrackName_.clear(); appliedHostName_.clear(); }
+        }
+        if (typedNameFromUser_) { /* keep */ } else { droppedTyped = linkName; linkName.clear(); }
+        EchoJay_NSLog(("EJLinkState: chunk uid " + chunkUid_ + " != this instance " + instanceUid_
+            + ": seeded names dropped (typed \"" + droppedTyped + "\", host \"" + droppedHost
+            + "\"); authoritative kept (host \"" + keptHost + "\", typed " + (typedNameFromUser_ ? "\"" + linkName + "\"" : juce::String("none")) + ")").toRawUTF8());
+    }
+    // From here on this instance IS its identity: no chunk is pending. Both
+    // fields are cleared, because updateShmState releases and re-claims the
+    // slot on every publish (a rename, a host-name arrival) and a re-claim
+    // that still saw "authored here, uid == chunk uid" would re-mint AGAIN -
+    // seen as three re-mints in a row in the first run of L5.
+    chunkUid_.clear();
+    chunkAuthoredHere_ = false;
     const juce::String audioFilename = "audio_" + effectiveFilePart() + ".bin";
 
     regSlotIdx = LinkShm::claimSlot(regMap,
@@ -1340,6 +1382,20 @@ void LinkProcessor::claimRegistrySlot()
                                      instanceUid_,
                                      (float)hostSampleRate,
                                      (uint32_t)hostNumChannels);
+    if (regSlotIdx < 0)
+    {
+        // FULL (6 Sep 2026 ruling): reclaim rows whose publisher process is
+        // gone, retry once, and if still full SAY SO - to the log and to the
+        // user (diag.regFull, shown by the Link editor). Never silent.
+        const int reaped = LinkShm::reapDeadPublisherSlots(regMap, resolvedDir);
+        if (reaped > 0)
+            regSlotIdx = LinkShm::claimSlot(regMap, effectiveDisplayName(), audioFilename, instanceUid_,
+                                            (float)hostSampleRate, (uint32_t)hostNumChannels);
+        EchoJay_NSLog(("EJLinkState: registry had no free slot; reaped " + juce::String(reaped)
+            + " dead-publisher row(s); " + (regSlotIdx >= 0 ? "claimed slot " + juce::String(regSlotIdx)
+            : juce::String("STILL FULL - ") + juce::String(kRegMaxSlots) + " slots all held by live publishers; this Link is NOT registered")).toRawUTF8());
+    }
+    diag.regFull = (regSlotIdx < 0);
     diag.slotIdx = regSlotIdx;
 }
 
@@ -2589,6 +2645,13 @@ void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
     obj->setProperty("editorW",  editorW);
     obj->setProperty("editorH",  editorH);
     obj->setProperty("instanceUid", instanceUid_);
+    {   // the author: this host process run (pid + start time), so a restore can
+        // tell a from-disk reopen from a chunk the host re-applied in this run
+        const auto& h = ChainHost::getHostIdentity();
+        obj->setProperty("authorPid",       (int) ::getpid());
+        obj->setProperty("authorStartSec",  (double) h.startSec);
+        obj->setProperty("authorStartUsec", (double) h.startUsec);
+    }
     // muteUser is channel mix identity and persists. soloOn is DELIBERATELY
     // ABSENT and must stay absent: a saved solo is how a project opens
     // silent and nobody knows why (MUTE_SOLO_SPEC §4; the gate pins this).
@@ -2608,7 +2671,7 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
     auto v = juce::JSON::parse(json);
     if (auto* obj = v.getDynamicObject())
     {
-        if (obj->hasProperty("linkName")) linkName = obj->getProperty("linkName").toString();
+        if (obj->hasProperty("linkName")) { linkName = obj->getProperty("linkName").toString(); typedNameFromUser_ = false; }   // seeded: provisional
         if (obj->hasProperty("linkOn"))   linkOn.store((bool)obj->getProperty("linkOn"));
         if (obj->hasProperty("gainDb"))
             gainDb_.store(juce::jlimit(kGainMinDb, kGainMaxDb,
@@ -2625,6 +2688,14 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
             genre = obj->getProperty("genre").toString();
         if (obj->getProperty("instanceUid").toString().isNotEmpty())
             instanceUid_ = obj->getProperty("instanceUid").toString();
+        chunkUid_ = instanceUid_;
+        {
+            const auto& h = ChainHost::getHostIdentity();
+            chunkAuthoredHere_ = obj->hasProperty("authorPid")
+                && (int) obj->getProperty("authorPid") == (int) ::getpid()
+                && (juce::int64)(double) obj->getProperty("authorStartSec")  == h.startSec
+                && (juce::int64)(double) obj->getProperty("authorStartUsec") == h.startUsec;
+        }
         if (obj->hasProperty("muteUser"))
             muteUserOn_.store((bool) obj->getProperty("muteUser"),
                               std::memory_order_relaxed);
@@ -2637,6 +2708,7 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
             {
                 const juce::ScopedLock sl(hostNameLock_);
                 hostTrackName_ = obj->getProperty("hostTrackName").toString();
+                hostNameFromHost_ = false;   // seeded: PROVISIONAL until the host or the user says otherwise
             }
             hostNameDirty_.store(true, std::memory_order_release);
         }

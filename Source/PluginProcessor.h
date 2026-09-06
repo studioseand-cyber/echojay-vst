@@ -1292,7 +1292,14 @@ public:
     struct LinkCaptureChannel; // defined in PluginProcessor.cpp
 
 private:
-    static constexpr int kMaxLinkSlots = 16;
+    static constexpr int kMaxLinkSlots = kRegMaxSlots;   // the registry ceiling (256 since 6 Sep 2026) - NEVER walked per block, see liveSlotIdx_
+    // THE LIVE LIST (6 Sep 2026 ruling): the audio thread walks only the slots
+    // the message-thread walk connected. Written by refreshLinkRegistry /
+    // disconnectAllLinkSlotsNow (indices first, then the count with release);
+    // a slot disconnected between walks still has map == nullptr under its lock.
+    std::array<int, kRegMaxSlots> liveSlotIdx_ {};
+    std::atomic<int>              liveSlotCount_ { 0 };
+    void publishLiveSlotList();
 
     // Resolved shared directory (message thread, set once in ensureLinkRegistryOpen)
     juce::String linkResolvedDir;

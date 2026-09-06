@@ -162,6 +162,11 @@ Manager with a session open on that machine). This Mac builds and installs.
      current UI (6 Sep 2026: the simplified Settings panel and the 0-400 retune
      dial mark 2.26.4 against the July 2.23.0).
 
+### THE REGISTRY LAYOUT (6 Sep 2026): registry_v3.bin, 256 slots, version-checked
+V2 and Link share ~/Library/Application Support/EchoJay/link/registry_v3.bin (layout v2, 256
+slots). A build refuses a file of another layout and logs it. Builds before 6 Sep 2026 use
+registry_v2.bin (16 slots) and cannot see v3 Links: SHIP V2 AND LINK TOGETHER, always.
+
 ## 3. Build the installer .pkg
 
 ```

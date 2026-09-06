@@ -92,8 +92,10 @@ static int cloneLeg()
     if (a->diag.slotIdx < 0 || b->diag.slotIdx < 0 || a->diag.slotIdx == b->diag.slotIdx) { std::printf ("  ONE SLOT (or none) FOR TWO INSTANCES\n"); bad = 1; }
     else if (ra.uid == rb.uid) { std::printf ("  TWO SLOTS, SAME UID (the gate did not re-mint)\n"); bad = 1; }
     else if (ra.file == rb.file) { std::printf ("  distinct uids, ONE RING FILE (name-keyed file)\n"); bad = 2; }
-    // C2 (6 Sep 2026 ruling): the duplicate's chunk belonged to a live instance, so its seeded typed name is dropped - the duplicate publishes EMPTY
-    if (bad == 0 && ! (ra.name == "Vox" && rb.name.isEmpty())) { std::printf ("  the duplicate kept the seeded name (C2)\n"); bad = 1; }
+    // THE INVARIANT (6 Sep 2026): neither instance originated this chunk (its
+    // author, the seed instance, is gone): A re-mints under the no-holder rule
+    // (L5) and B against live A - both publish EMPTY, never the seeded "Vox".
+    if (bad == 0 && (ra.name == "Vox" || rb.name == "Vox")) { std::printf ("  a duplicate published the seeded name (the invariant)\n"); bad = 1; }
     std::printf ("  -> %s\n", bad ? "FAIL" : "PASS");
     drain(); a.reset(); b.reset(); drain();
     return bad;
@@ -352,11 +354,59 @@ static int storm (int cycles, int lifeMs, int deadPid)
     return (int) burned.size();
 }
 
+// L5/L6/L7 (6 Sep 2026, "third and beyond"): the invariant is that seeded
+// names survive ONLY when the instance genuinely continues the chunk's identity.
+static int l5l6l7()
+{
+    int err = 0; const auto dir = LinkShm::resolveDir (err);
+    int fd = -1, rerr = 0; void* reg = LinkShm::openRegistry (dir, fd, rerr);
+    int bad = 0;
+    std::printf ("== L5: a chunk whose uid is held by NO slot (its author is gone), seeded into a fresh instance ==\n");
+    {
+        juce::MemoryBlock chunk; juce::String authorUid;
+        { auto z = std::make_unique<LinkProcessor>(); z->linkName = "Vox"; z->prepareToPlay (48000.0, 512); nameFromHost (*z, "Track Z"); z->updateShmState(); pump (40); z->getStateInformation (chunk); authorUid = z->getInstanceUidForTest(); drain(); z.reset(); drain(); }
+        const auto legStart = juce::Time::getCurrentTime();
+        auto n = std::make_unique<LinkProcessor>(); n->prepareToPlay (48000.0, 512); n->setStateInformation (chunk.getData(), (int) chunk.getSize()); pump (120);
+        n->updateShmState(); n->updateShmState(); pump (40);   // re-publishes (a rename, a host name) must NOT re-mint again
+        const auto nUid = slotUid (reg, n->diag.slotIdx);
+        int transientSidecars = 0;   // sidecars written during this leg under a uid that is neither the author's nor the newcomer's
+        for (auto& f : juce::File (dir).findChildFiles (juce::File::findFiles, false, "rack-*.json"))
+            if (f.getLastModificationTime() >= legStart) { const auto u = f.getFileNameWithoutExtension().fromFirstOccurrenceOf ("rack-", false, false); if (u != authorUid && u != nUid && u != n->getInstanceUidForTest()) ++transientSidecars; }
+        std::printf ("  author uid %s (gone)   newcomer: slot %d uid %s (instance uid %s) typed \"%s\" host \"%s\" published \"%s\"   transient sidecars: %d\n", authorUid.toRawUTF8(), n->diag.slotIdx, nUid.toRawUTF8(), n->getInstanceUidForTest().toRawUTF8(), n->linkName.toRawUTF8(), n->getHostTrackName().toRawUTF8(), slotName (reg, n->diag.slotIdx).toRawUTF8(), transientSidecars);
+        const bool ok = n->diag.slotIdx >= 0 && nUid != authorUid && nUid == n->getInstanceUidForTest() && n->linkName.isEmpty() && n->getHostTrackName().isEmpty() && transientSidecars == 0;
+        std::printf ("  -> %s (as ruled: mints its own uid, publishes neither seeded name)\n", ok ? "PASS" : "FAIL"); bad |= ok ? 0 : 1;
+        drain(); n.reset(); drain();
+    }
+    std::printf ("== L6: FIVE fresh inserts in sequence, each seeded with the PREVIOUS instance's current chunk ==\n");
+    {
+        std::vector<std::unique_ptr<LinkProcessor>> v; std::set<juce::String> uids, names;
+        v.push_back (std::make_unique<LinkProcessor>()); v.back()->linkName = "Vox"; v.back()->prepareToPlay (48000.0, 512); nameFromHost (*v.back(), "Track 1"); v.back()->updateShmState(); pump (40);
+        for (int i = 1; i < 5; ++i)
+        {
+            juce::MemoryBlock chunk; v.back()->getStateInformation (chunk);
+            v.push_back (std::make_unique<LinkProcessor>()); v.back()->prepareToPlay (48000.0, 512); v.back()->setStateInformation (chunk.getData(), (int) chunk.getSize()); pump (120);
+        }
+        for (auto& l : v) { const auto u = slotUid (reg, l->diag.slotIdx), nm = slotName (reg, l->diag.slotIdx); uids.insert (u); names.insert (nm + "|" + u);
+                            std::printf ("  insert: slot %d uid %s published \"%s\"\n", l->diag.slotIdx, u.toRawUTF8(), nm.toRawUTF8()); }
+        std::set<juce::String> pubNames; for (auto& l : v) pubNames.insert (slotName (reg, l->diag.slotIdx));
+        // five identities; the first keeps "Vox"; every later one publishes EMPTY (numbered by the main plugin) - so no two published names collide except empties, which the main plugin numbers
+        int nonEmptyDupes = 0; { std::map<juce::String,int> c; for (auto& l : v) { auto nm = slotName (reg, l->diag.slotIdx); if (nm.isNotEmpty()) ++c[nm]; } for (auto& kv : c) if (kv.second > 1) nonEmptyDupes += kv.second - 1; }
+        const bool ok = uids.size() == 5 && ! uids.count (juce::String()) && nonEmptyDupes == 0;
+        std::printf ("  -> %s (five distinct uids: %d; duplicated non-empty names: %d)\n", ok ? "PASS" : "FAIL", (int) uids.size(), nonEmptyDupes); bad |= ok ? 0 : 2;
+        drain(); v.clear(); drain();
+    }
+    std::printf ("== L7: AdoptGhost and a plain restore still keep their names (uid unchanged) ==\n");
+    { const int g = ghostLegs(); (void) g; }
+    return bad;
+}
+
 int main (int argc, char** argv)
 {
     std::setvbuf (stdout, nullptr, _IONBF, 0);
     juce::ScopedJuceInitialiser_GUI init;
     if (argc > 1 && juce::String (argv[1]) == "race20") return race20();
+    if (argc > 1 && juce::String (argv[1]) == "l567")   return l5l6l7();
+    if (argc > 1 && juce::String (argv[1]) == "l6x20")  { int pass = 0; for (int r = 0; r < 20; ++r) { int rr = l5l6l7(); if ((rr & 2) == 0) ++pass; } std::printf ("L6 x20: %d/20\n", pass); return pass == 20 ? 0 : 1; }
     if (argc > 1 && juce::String (argv[1]) == "storm")  { storm (30, 1000, 0); storm (5, 1000, 999999); return 0; }
     const int ctl  = leg ("POSITIVE CONTROL, two different names", "VoxA", "VoxB", true);
     const int same = leg ("THE DEFECT, the same typed name",      "Vox",  "Vox",  true);
