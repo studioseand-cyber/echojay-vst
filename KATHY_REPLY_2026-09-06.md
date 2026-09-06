@@ -107,9 +107,43 @@ Sean says the shoot is done.
 - Your defect is recorded as DATA LOSS (defaults written, nothing
   restored), your find, and your fix shape (no default, inert on the
   restore path by construction) as the right one.
-- feat/ejmap e727891 is a fast-forward of 131aa5e, fine. feat/bulk-ingest
-  b76df80 is NOT on the remote as of our fetch - please push it; the pair
-  lands together or not at all.
+- feat/ejmap e727891 (echojay-vst) is a fast-forward of 131aa5e, fine.
+  feat/bulk-ingest b76df80 (echojay-saas) - CORRECTED, see the follow-up
+  below: our first version of this bullet said it was not on the remote.
+  It is a branch of echojay-saas and we had fetched echojay-vst. The pair
+  still lands together or not at all.
 - V8 (explicit ParamSource at every call site) and V9 (saved values survive
   a reload with do-not-dial ON, with the pre-fix run as the positive
   control) are added to the plan.
+
+
+---
+
+## Follow-up 2 (6 Sep 2026): a correction, ours; and one note, offered not pressed
+
+CORRECTION. We told you feat/bulk-ingest b76df80 "is NOT on the remote as
+of our fetch" and asked you to re-push it. That was wrong, and the error
+was ours. b76df80 is a branch of echojay-saas, a different repository, and
+we had fetched echojay-vst. A ref of echojay-saas could never have shown up
+in that fetch, so its absence told us nothing, and the report that it never
+landed was false. Please disregard the re-push request. So: ONE push failure
+today, not two, and it was ours (fd43f4d, a GitHub auth drop in the agent
+shell), not yours. We are saying this explicitly because a wrong shared fact
+corrodes confidence in the ones that were right, and the rest of that
+message stands.
+
+Rule we have filed from it, so it does not recur: every hash on the record
+carries its repository name, and a ref's absence is evidence only in the
+repository that owns it. The staging note now reads: the two halves of the
+gzipped-contribute change span two repositories, e727891 (echojay-vst) and
+b76df80 (echojay-saas); they still land together, and the check that both
+are present is two ls-remotes against two remotes, printed side by side with
+the local hashes.
+
+ONE NOTE, entirely your call, different project: WEB_MIXER_BUILD_SPEC.md is
+870 lines that exist in exactly one place on one laptop. It is the same
+exposure we spent today eliminating on Sean's Mac (133 commits on no
+remote). Worth a commit somewhere if you want it. Offered, not pressed.
+
+Still holding on our side for your hash table, Sean's push of fd43f4d, and
+the end of the shoot.

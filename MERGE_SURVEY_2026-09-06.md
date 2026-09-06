@@ -287,11 +287,20 @@ EQ three if her side misses them.
 
 ### Two new branches from her side
     origin/feat/ejmap        e727891 (30 Aug, Kathy)  - a FAST-FORWARD of 131aa5e (the tip surveyed on 6 Sep): +2 commits, "ejextract: gzip the contribute post ..." and an aucoverage_test change; tools only
-    feat/bulk-ingest         b76df80                  - NOT ON THE REMOTE as of this fetch (no origin/feat/bulk-ingest); it must be pushed before it can be staged
+    feat/bulk-ingest         b76df80 (echojay-saas)   - a branch of a DIFFERENT REPOSITORY, echojay-saas. CORRECTED 6 Sep (see section 10):
+                                                      the first version of this line said "NOT ON THE REMOTE as of this fetch". That was
+                                                      wrong. We fetched echojay-vst; a ref of echojay-saas could never have appeared there,
+                                                      and its absence was evidence of nothing. Its presence is verified by an ls-remote
+                                                      against the echojay-saas remote, not by a fetch of this one.
 These are the TWO HALVES of the gzipped-contribute change and must land
-TOGETHER: half of it is not a shippable state. Neither branch contains our
-base d68da09 (they fork from the older 0e48804 line), so they are a
-separate stage of their own, after the integration merge, taken as a pair.
+TOGETHER: half of it is not a shippable state. THE TWO HALVES SPAN TWO
+REPOSITORIES: e727891 in echojay-vst, b76df80 in echojay-saas. The
+verification that both are present is therefore TWO ls-remotes against TWO
+remotes, printed side by side with the local hashes, not one fetch. e727891
+does not contain our base d68da09 (it forks from the older 0e48804 line),
+so on the plugin side it is a separate stage of its own, after the
+integration merge, and it is staged only when the echojay-saas ls-remote
+shows b76df80 in the same breath.
 
 ### Added to the verification plan
   V8  Every applyParams and applyStructured call site in the MERGED tree
@@ -302,3 +311,102 @@ separate stage of their own, after the integration merge, taken as a pair.
       code (defaults written, values gone) and PASS after - the positive
       control is the pre-fix run. Instrument: a pitch-device state with
       non-default values loaded under dialWritesBlocked() true, read back.
+
+
+## 10. CORRECTION TO THE RECORD (6 Sep 2026), the rule it files, and the disk sweep
+
+### The correction, ours to make
+Section 9 as first written said feat/bulk-ingest b76df80 was "NOT ON THE
+REMOTE as of this fetch" and the reply to Kathy asked her to re-push it.
+That was WRONG. b76df80 is a branch of echojay-saas, a different
+repository. We fetched echojay-vst. A ref of another repository could never
+have appeared in that fetch, so its absence there was evidence of nothing,
+and the report that it "never landed" was a false shared fact. Section 9
+and the reply are corrected above and in KATHY_REPLY_2026-09-06.md, and the
+correction is said to Kathy explicitly, because a wrong shared fact corrodes
+confidence in the ones that were right.
+
+Consequence: there was ONE push failure today, not two, and it was OURS:
+fd43f4d, the GitHub authentication drop in the agent shell (no TTY for the
+credential prompt). Kathy's side had none.
+
+### THE RULE (filed): A REF'S ABSENCE IS EVIDENCE ONLY IN THE REPOSITORY THAT OWNS IT
+Every hash on the record carries its repository name. "b76df80" quoted
+bare read as a plugin-repo branch, and the fetch that "failed to find it"
+was a fetch of the wrong repository. This is the same error as quoting a
+line number from an unverified tree, one axis over: the tree rule says a
+line is a claim until the tree is shown; this rule says a ref is a claim
+until the repository is shown. Applied from here: hashes are written as
+`<hash> (<repository>)` wherever the repository is not the plugin repo, and
+an "is it pushed" check names the remote it was run against.
+
+### The disk sweep (6 Sep 2026, read-only, no build)
+Kathy's sweep found ten further clones on her disk that her worktree list
+had not enumerated; ours had enumerated worktrees only. This closes the
+gap with a sweep of the WHOLE home directory for any `.git` (directory or
+file), pruning only ~/Library (swept separately to depth 6, caches
+excluded: nothing found), node_modules and the Trash.
+
+Instrument: `find /Users/SeanD -name .git \( -type d -o -type f \)`, then
+per repository `git remote get-url origin`, `git rev-parse --abbrev-ref
+HEAD`, `git rev-list --count HEAD --not --remotes` (commits contained in
+no remote ref), `git status --short | wc -l`, `git stash list`.
+
+    repository (under ~)        remote                    branch                          unpushed  loose  note
+    echojay-vst                 studioseand-cyber/echojay-vst  integration/reasoning-plus-pitch   1     0    fd43f4d (this repo), awaiting Sean's push
+    echojay-vst-pitch           (worktree of echojay-vst)  feat/pitch                          0    25    HEAD 39ace45 on origin/backup/seand-mac-feat-pitch-2026-09-06; loose = 23 ear-clip .wav files (63.7 MB) + "Claude outputs/INTRO-GATE_ON.wav" + .DS_Store, all UNTRACKED, see below
+    ej-dynamics                 (worktree)                 feat/viz-dynamics                   0     0    HEAD e8c8b3d on the pushed feat-pitch backup branch
+    ej-harmonic                 (worktree)                 feat/viz-harmonic                   0     0    fff12cf, same
+    ej-mod                      (worktree)                 feat/viz-mod                        0     0    6a09075, same
+    ejd-dynamics                (worktree)                 feat/depth-dynamics                 0     0    0ebd920, same
+    ejd-harmonic                (worktree)                 feat/depth-harmonic                 0     0    2cf3ca5, same
+    ejd-keyui                   (worktree)                 feat/key-passive-meters             0    21    935b943, same; loose = 21 compiled test binaries under test/ (atest, keytest, ...), not source
+    ejd-mod                     (worktree)                 feat/depth-mod                      0     0    29dd06a, same
+    ejd-stereo                  (worktree)                 feat/depth-stereo                   0     0    2d0fd63, same
+    ejd-time                    (worktree)                 feat/depth-time                     0     0    436ce7b, same
+    JUCE                        juce-framework/JUCE        detached                            0     0    the framework checkout, not ours
+    .codex/.tmp/plugins         (no remote)                main                                1     0    an OpenAI Codex plugin-marketplace cache (5266 files, one commit "Add ClickUp website URL (#384)"); a tool's download, not EchoJay work
+    Dropbox/ECHOJAY FILES/BACKUP 18 May/... x4            (none)                     unreadable                       ?     -    see below
+    ej-installed-backup, -dev, -merge, -shoot               not git                    plain folders of installed bundles + REVERT.command
+
+Stashes: none in any repository. Worktrees: `git worktree list` in
+echojay-vst shows exactly the eleven above (main + ten); the ten "clones"
+in Sean's home are all worktrees of the one repository, every HEAD on a
+pushed backup branch, so the earlier worktree inventory was complete for
+the plugin repo. The sweep, not the list, is what now says so.
+
+The two findings the sweep adds:
+
+  (a) UNCOMMITTED EAR CLIPS in echojay-vst-pitch. 24 .wav files (63.7 MB),
+      the rendered A/B clips from rounds 12-59 (seam-attack, retune-dial,
+      timing, note-transition EVENT_A/B/C, INTRO-GATE), untracked and
+      existing in exactly one place. They are reproducible from the
+      committed renders and rulers in principle, but every one carries a
+      listening verdict on the record and re-rendering does not reproduce
+      the verdict. Not committed by this pass: 64 MB of audio in the
+      plugin repo is a decision for Sean (commit under earclips/ with
+      LFS, or copy to a connected folder outside the repo). Flagged, not
+      acted on.
+
+  (b) FOUR DROPBOX SNAPSHOTS of the repo from 18 May (echojay-vst-v110
+      twice, "echojay-vst-v110 23", echojay-vst-v109). Git refuses to
+      open any of them: HEAD, every file under refs/heads, and every
+      reflog is a ZERO-BYTE file (Dropbox sync stripped them). Loose
+      objects survive (709 / 637 / 478 / 28). No branch tip is readable,
+      so "commits contained in no remote ref" is UNANSWERABLE there
+      without repairing HEAD, which is a write and outside this pass.
+      Their config has no remote at all, so they predate the GitHub
+      remote; they are May file backups, not live clones. Recorded as
+      unknown, not as clean.
+
+Everything else: clean, from the sweep.
+
+### fd43f4d, still unpushed (ours)
+    remote refs/heads/backup/seand-mac-integration-2026-09-06 = d7c293853d25  (ls-remote, 6 Sep)
+    local  HEAD (integration/reasoning-plus-pitch)             = fd43f4d84f7d
+The agent shell has no TTY for the credential prompt. Sean runs, from
+Terminal, no force:
+    cd ~/echojay-vst && git push origin integration/reasoning-plus-pitch:refs/heads/backup/seand-mac-integration-2026-09-06
+Then ls-remote is re-run here and the pair printed. The commit recording
+this section will sit behind it on the same branch, so the pair after his
+push should read TWO commits ahead of d7c2938 until then and equal after.
