@@ -410,3 +410,36 @@ B3 improve-rate, B4 (word starts, retune 150 / depth 25, the 18-dial
 sweep), B5 suite, B6 clips, B8 (the natVib_ literal and the schema-vs-
 member test). Nothing shipped; the flag defaults to 0 (bit-identical) in
 the tree. IGN VIB off was not touched.
+
+## ROUND 60 RULING, FILED (6 Sep 2026) - round 59 PAUSED for Sean's shoot; nothing from the flag ships
+ACCEPTED: R1 (2 / 75 ms / 6.67c), R3 unchanged, the R4 stop and its
+shift-path diagnosis. B7 DELIVERED: the 14 August protection worked for
+the first time on 6 Sep 2026 (with C1 behind the flag); it was inert from
+2026-08-14 to that date.
+C1 SPLIT, APPROVED WITH ONE CONDITION: the note reference = the decided
+degree on BOTH paths; the slow seed = the degree on the legacy path, the
+sample on the shift path - expressed as TWO DISTINCT, DIFFERENTLY-NAMED
+things with separate lifetimes (the selector-seed and the measurement-
+origin), NOT one field read conditionally by path. Then the full matrix
+re-run, reported against the prediction (R1/R2/R3 unchanged, R4 back to
+baseline), including if it misses.
+R2 - the control before accepting the lag explanation: the ANTARES SLOW
+BOUNCES from the dial fit, through the SAME ruler, at the setting matching
+R2's time constant. Antares ~7 -> the instrument measures the time
+constant, B1's absolute number is retired at R2 and replaced by parity to
+Antares at the matched setting; Antares ~2 -> the defect is real at slow
+retune. Either way: R2's paired list, and whether the remaining events
+trail toward the OLD note right after a source change (lag) or lead /
+land on a third note (not lag).
+STANDING RULE (the reviewer's own error, filed): A RULER VALIDATED AT ONE
+CONFIGURATION IS A CLAIM AT ANOTHER. B1's figure was calibrated at retune
+6 and carried to retune 120 without asking whether the instrument meant
+the same thing there.
+C3 - 70 IS PROVISIONAL, margin on the record: over 34 sustained source
+segments the peak excursion from the note centre is median 41.9c, p75
+47.4, p90 53.8, p95 54.7, max 56.5 - about 13.5c of real margin (the probe
+showed 10). 21% of segments already exceed 50c on a moderate-vibrato take;
+a wider singer eats the margin and fails the 14 August way. KNOWN
+EXPOSURE. 70 is not final until the heavy-vibrato bounce from the owed
+five-bounce set has been run - on Sean's list AFTER the shoot.
+STILL HELD: B3, B4, B5, B6, B8. Nothing ships until they clear.
