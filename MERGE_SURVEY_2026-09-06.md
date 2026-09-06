@@ -110,3 +110,72 @@ that built the binary with its commit (custom, dial 0 at 6 ms, depth 100,
 flex 0, humanize 0, natural_vibrato 0, IGN VIB on, seam 60).
 Nothing of this runs until Sean says the shoot is done; the shoot build
 (F03A4363) and ~/ej-installed-backup-shoot stay untouched.
+
+## 6. THE OTHER DIRECTION (same day, still read-only)
+
+### 6.0 OUR COMMITS ARE NOT ON ANY REMOTE - THE LARGEST RISK, AND IT IS OPEN
+`git rev-list --count HEAD --not --remotes` = 130: every commit since the
+base (rounds 15-60, 27 Aug - 6 Sep) exists ONLY on this Mac. No remote ref
+contains HEAD; the tracking branch has diverged. Two remedies were attempted
+and both were refused by the permission classifier: a push to a NEW branch
+name (no force) and a git bundle into Dropbox. SEAN MUST RUN THE PUSH
+HIMSELF (one line, no force, a new branch name, nothing else touched):
+    git push origin HEAD:refs/heads/backup/seand-mac-2026-09-06
+Until that has run, nothing here should be merged, rebased or reset.
+
+### 6.1 Reverse overlap: our 129 against her heavy files
+    ChainHost.{h,cpp}     ours 3: 1c5fb52 (reference provenance / KeyFeed), c75b222 (the transport reset flag + graph reset in process()), 222b4fe (latency log lines, latencyRebuildPending)
+    PluginEditor.{h,cpp}  ours 2: 2f02c65 (the periodic refreshLinkRegistry tick removed from the editor timer, C5), da6939f (the withheld section removed)
+    LinkProcessor.{h,cpp} ours 3: c75b222 (reset() override), 222b4fe (a setLatencySamples log wrap), 2f02c65 (the sidecar publisher pid + host identity)
+    PluginProcessor.{h,cpp} ours 4: 1c5fb52, c75b222 (reset), 222b4fe (log + first-50-blocks), 2f02c65 (one committed budget; the 1 Hz registry pass on the processor timer)
+    EchoJayAPI.*, EchoJayParamApply.h, MeterEngine.*, DashboardWeb.*, every new EJ*.h: ours 0.
+Sean's "Link work on chains in the main plugin" is NOT among our 129: it
+is in the BASE (his 25-27 Aug borrow §8 / mute-solo / rack-row commits,
+pushed 27 Aug) and therefore on both sides already. His "load of UI
+updates" are his 14 remote commits of 21-25 Aug (dashboard webview login,
+dial-miss rows, card composer) plus Kathy's editor work; none of ours.
+
+### 6.2 SAME-FUNCTION, NO-CONFLICT (every function both sides modified; per-commit hunk headers, both sides against the base)
+    | file :: function | ours | hers | read |
+    |---|---|---|---|
+    | ChainHost.cpp :: file scope (includes) | 1c5fb52, 222b4fe | 8 of hers | THE conflict (a); independent lines, keep all |
+    | ChainHost.h :: class body (public/private regions) | 1c5fb52, c75b222, 222b4fe | 18 of hers | member ADDITIONS only; no identifier appears on both sides (checked both ways); independent |
+    | ChainHost.cpp :: any function | 0 in common | | her 35 functions (applyStructuredIfReady, runNextEditOp, buildRecommendable, loadPluginAsync, resolveByName ...) vs our 9 (process, rebuildForLatencyIfChanged, LatencyRebuilder, prepare, rebuildGraph, KeyFeed sites): DISJOINT |
+    | PluginEditor.cpp :: EchoJayEditor (ctor) | da6939f: movers list, the withheld toggle handler removed | 5 of hers: dashEntry_, onNeedFallbackMaps, dialWritesToggle setup | independent apart from the movers line = conflict (b) |
+    | PluginEditor.cpp :: showSettingsView | da6939f: rebuildSettingsWithheld() call removed | aa455ff: her toggle's state + visible | different controls; independent |
+    | PluginEditor.cpp :: hideSettingsView | da6939f: two withheld setVisible(false) removed | aa455ff: her toggle hidden | independent |
+    | PluginEditor.cpp :: resized | da6939f: the withheld layout block removed (sy no longer advanced by it) | 9b20735, aa455ff, c1a18df: her toggle laid out directly BELOW autoDialToggle and ABOVE the PLUGINS row; the dash panel text; the ask-chip exemption | her toggle sits above our removed block, so the Settings column is consistent after the merge (toggle, PLUGINS row, then the bottom row); independent - but the merged panel MUST be rendered (settings_snapshot) since both sides moved the Settings layout |
+    | PluginEditor.cpp :: timerCallback | 2f02c65: the periodic refreshLinkRegistry() tick removed (C5); da6939f: rebuildSettingsWithheld() removed from the scan-finished path | 32be312: buildRecommendable(feedRowsWithSessionExclusions(...)) at three sites | same function, different lines: her session-exclusions feed vs our registry-pass move; independent in code. refreshLinkRegistry callers: base 10, hers 10, ours 10 (she added none; we moved one to the processor) |
+    | PluginEditor.h :: class body | da6939f (members removed) | 11 of hers (members added) | independent |
+    | LinkProcessor.h :: public | c75b222: reset() override | ac78f08: buildChainFromSpec gains a LoadOrigin parameter | independent |
+    | LinkProcessor.cpp :: any function | 0 in common | | her buildChainFromSpec / addChainPluginManually / setChainSlotWet / restoreChainFromVar / pollChainCommand vs our sidecar publish block and the log wrap: DISJOINT |
+    | PluginProcessor.h :: public | c75b222, 222b4fe, 2f02c65 (reset, the committed budget API) | 8df84ef (spectrumUsesAverage) | independent |
+    | PluginProcessor.cpp :: any function | 0 in common | | her stopCapture / get+setStateInformation (move log) vs our processBlock / prepareToPlay / commitBorrowBudget / refreshLinkRegistry / timerCallback: DISJOINT |
+    | EedDeviceProcessor.cpp :: any function | 0 in common | | her applyParams guard vs our 7fe50fd (onStateApplied): DISJOINT - but see the question below |
+Removed-API check: setBorrowBudgetActive (deleted by us in 2f02c65) - her
+tree's 4 occurrences are the BASE's own definition and call, not new
+callers; the merge takes our deletion cleanly. Her compile-gating commit
+5460609 touches only tools/mapfps_test/build_and_run.sh. No identifier
+introduced by either side appears in the other's tree.
+The Link sidecar / registry path, specifically: her two LinkProcessor
+commits and her Link gating do not touch the sidecar publisher, the
+registry pass, the processor timer or the budget; our C4/C5 changes
+survive the merge untouched by construction. What DOES need a look after
+the merge is behavioural, not textual: her do-not-dial gate on
+ChainHost::setSlotWet and applyParams sits on paths the borrow session and
+the state restore use - the question below.
+
+### 6.3 THE QUESTION FOR KATHY (held until Sean confirms the push; paste-ready)
+  Kathy - one question on aa455ff ("Suggest every value and write none").
+  The dialWritesBlocked() guard sits at the top of
+  EedDeviceProcessor::applyParams. That function is also the path
+  EedDeviceProcessor::setStateInformation takes to restore a saved session
+  (applyParams(parsed["params"]) at ~line 244 in your tree), so with the
+  setting ON a reload restores nothing for every built-in device - pitch,
+  EQ, all of them come back at their schema defaults. Your EJDialWrites.h
+  note exempts applyRestoredParams for exactly this reason; the built-in
+  restore path goes through applyParams rather than applyStructured, so
+  it is not covered by that exemption. Was that intended? If not, would
+  the guard belong in applyStructured (the model's path) instead? It is
+  your call - I have not touched it. (The setting defaults off, so nobody
+  is hit at defaults.)
