@@ -14,6 +14,9 @@
 #include "EchoJayWorkspace.h"
 #include "CodecRender.h"
 #include "DashboardTab.h"
+#include "EJDialTally.h"
+#include "EJDialMissRows.h"
+#include "EJRefusalLine.h"   // the refusal bubble sentence + its remedy rule
 
 // Stage 2: the lazy webview Dashboard surface. Full type in DashboardWeb.h,
 // included from PluginEditor.cpp; the header only needs the incomplete type for
@@ -296,6 +299,19 @@ private:
     bool dashWebLoaded_               = false;  // onLoadResult(true): webview shown over native
     bool dashWebFailedThisSelection_ = false;   // no retry until the next Dashboard selection
     void reconcileDashboardWeb();               // lazy construct/destroy of dashWeb_
+    // Dashboard auth handoff (CONTRACT_dashboard_auth_handoff.md §2/§5).
+    // beginDashboardHandoff is the ONE mint-and-navigate driver every entry
+    // funnels into; failDashboardSurface is the one author of the failure
+    // behaviours (message on the panel, failed-selection latch, deferred
+    // webview destroy, the [dash-handoff] terminal log line). State resets
+    // per Dashboard selection in reconcileDashboardWeb's construct branch.
+    void beginDashboardHandoff();
+    void failDashboardSurface(const juce::String& landing, const juce::String& panelMsg);
+    juce::String dashEntry_ { "tab" };   // tab | deeplink | recreate
+    juce::String dashPanelMsg_;          // overrides the panel copy when set
+    int  dashMintStatus_   = 0;          // last mint HTTP status, for the log
+    bool dashMintRetried_  = false;      // §5: 5xx/unreachable gets ONE retry
+    bool dashRemintUsed_   = false;      // §5: redeem failure gets ONE re-mint
 
     // Stage 3: the bridge navigation guard (§8 idempotency), shared by loadChain
     // AND openChat — both switch tabs and so tear down the webview. NOT a boolean
@@ -1052,7 +1068,15 @@ private:
     // to plugins EchoJay can dial in automatically (server param maps).
     // State lives in EchoJayAPI (local settings file) and rides chat bodies;
     // the toggle applies immediately, independent of the Save button.
-    juce::ToggleButton autoDialToggle { "Only suggest plugins EchoJay can auto-dial (fewer options, every suggestion one-click)" };
+    // THE ONE-CLICK CLAUSE CAME OUT (Kathy, 25 Aug 2026;
+    // CONTRACT_pool_and_third_branch 11f). It was ACCURATE when written: on a
+    // chain BUILD, pass 2 exposes the picked plugins' controls, so a suggested
+    // slot really was one click from dialled. The suggestion branch being built
+    // now introduces an edit-turn case where it is not. Rather than keep a
+    // promise that is true on one path and false on another, the promise
+    // narrows to what the toggle actually delivers: which plugins get
+    // suggested, and the cost of that restriction.
+    juce::ToggleButton autoDialToggle { "Only suggest plugins EchoJay can auto-dial (fewer options)" };
     float uiScale_ = 1.0f;          // current scale factor
     void applyUIScale(float scale);
     void saveUIScale() const;
@@ -1092,10 +1116,18 @@ private:
         juce::String editAltPrompt; // "Suggest an alternative" follow-up (load
                                     // failures only); cleared once tapped
         juce::String editAltLabel;  // short display label for the alt tap
-        // Result-bubble "stop suggesting" chip (build failures): the failed
-        // plugin names. NOT persisted — the exclusion itself is session-
-        // scoped (chainFailSessionSeen_), and the chip is a just-failed-now
-        // action, so a reloaded bubble keeps its alt chip but not this one.
+        // RETIRED 29 Aug 2026, with the chip and handler it fed. These two
+        // fields are the last of the batch "stop suggesting" chip; they are
+        // still parsed off restored bubbles, so they stay as inert carriers
+        // rather than being removed from the message schema.
+        //
+        // The comment that stood here claimed the exclusion was "NOT persisted"
+        // and "session-scoped (chainFailSessionSeen_)". All of that was false:
+        // the handler called disablePluginByName, which writes
+        // plugin_disabled.json AND unticks the Settings checklist, and
+        // chainFailSessionSeen_ is a re-prompt suppressor with exactly one
+        // read that the feed never consults. The single door to exclusion is
+        // now showNextFailPrompt, which says what it does.
         juce::StringArray excludeNames;
         bool excludeApplied = false;
         juce::String displayText;   // tap-generated user turns: what the
@@ -1168,22 +1200,22 @@ private:
     // THE shared display source: both text-layout passes (measure + paint)
     // MUST get their string from here so heights and pixels cannot disagree.
     //
-    // Edit turns show the CARD ONLY (9 Aug 2026): the preamble is written
-    // before the outcome exists, so it can only ever be a prediction
-    // rendered as a statement - "Dialling Ratio to 4" sat above three
-    // surfaces saying nothing was written. Instruction is a ceiling, never
-    // a floor: four rounds of it were each absorbed at the surface and none
-    // guaranteed. The card is the one place proposal grammar is TRUE,
-    // because it has an Apply button and speaks before the outcome by
-    // design. Keyed on editData non-empty, so blockless replies (declines,
-    // advice, ASK) keep their prose untouched. PLUGIN DISPLAY ONLY: the
-    // model still writes the preamble (protocol unchanged, other clients
-    // unaffected); the web app renders its own and is a separate, later
-    // decision.
+    // Edit turns render PROSE + CARD, in that order (21 Aug 2026, reversing
+    // the 9 Aug card-only rule). The 9 Aug decision suppressed the preamble
+    // because it was a prediction rendered as a statement ("Dialling Ratio
+    // to 4" above three surfaces saying nothing was written) and four
+    // rounds of instruction had not held. The contract has since inverted
+    // that ground: the preamble is MANDATORY and forward-looking by rule
+    // ("nothing has happened yet"), and it is the ONE carrier of the
+    // honesty content the card cannot hold — the card says "Release 4",
+    // only the prose says the user asked in milliseconds, this knob has no
+    // milliseconds, and 4 is a ballpark estimate. Suppressing it here
+    // deleted the caveat and left the card sounding certain about an
+    // estimate — the exact failure the honesty rule exists to remove. So:
+    // no special case. A block-only reply (empty content after extraction)
+    // still renders card-alone via textH == 0 in both passes.
     static const juce::String& displayedText(const ChatMsg& m)
     {
-        static const juce::String kCardOnly;
-        if (m.role == "assistant" && m.editData.isNotEmpty()) return kCardOnly;
         return m.displayText.isNotEmpty() ? m.displayText : m.content;
     }
     bool chatLoading = false;
@@ -1222,6 +1254,21 @@ private:
     // Result stage: a local assistant bubble (persisted, block-less).
     // altPrompt (optional) attaches a Suggest-an-alternative pill to the
     // bubble (build failures) - same one-shot machinery as edit cards.
+    // refused_ops (25 Aug 2026, CONTRACT_pool_and_third_branch 11e). With the
+    // auto-dial toggle on, the server removes an add/replace naming a plugin it
+    // has no settings map for, deletes the block's `result` claim, and lists
+    // what it took out under `refused_ops` INSIDE the machine block.
+    //
+    // Nothing in this system edits prose, and the server deliberately does not
+    // start: its own comment says "the honest sentence is composed by the
+    // client from refused_ops, exactly as it already composes hand-dial copy
+    // from dropped_controls". So the reply still reads "adding Fresh Air"
+    // while the card no longer contains it, and without this the refusal is
+    // silent to the reader.
+    //
+    // Same shape as the dropped_controls copy: name the thing, carry the
+    // SERVER's reason rather than a client paraphrase, one local bubble.
+    void announceRefusedOps(const juce::String& chainJson, const juce::String& editJson);
     void appendLocalResultBubble(const juce::String& text,
                                  const juce::String& altPrompt = juce::String(),
                                  const juce::String& altLabel  = juce::String(),
@@ -1260,12 +1307,42 @@ private:
     void logDialMiss(const juce::String& plugin, const juce::String& fp,
                      const juce::String& reason, const juce::StringArray& manual,
                      const juce::String& format = {}, const juce::String& uid = {},
-                     int requested = -1, const juce::String& requestedSource = {});
+                     int requested = -1, const juce::String& requestedSource = {},
+                     bool builtinSlot = false,
+                     // A9 §2: further reasons for the SAME control, ranked.
+                     // Empty writes no key at all — the wire must not carry an
+                     // empty array, so absence stays distinguishable from
+                     // "one reason and nothing else applied".
+                     const juce::StringArray& alsoReasons = {});
+    // A9 step 1: THE dial-miss emitter. Every settle walker calls this and
+    // NONE of them calls logDialMiss directly any more — the reason set has
+    // one author (echojay::dialMissRowsFor, EJDialMissRows.h) so three turn
+    // types cannot report three different row populations for one slot state.
+    // The walkers keep only their own bubble composition, which genuinely
+    // does differ between them. Non-walker callers of logDialMiss (the two
+    // refine sites) are untouched: their rows are per-dropped-name and carry
+    // no SlotDialInfo.
+    void emitDialMissRows(const ChainHost::SlotDialInfo& di);
     // dial-3 carrier (A7.3): the declined-name batch for THIS send, read
     // from events.jsonl above the watermark. "" = nothing to ship. Sets
     // pendingDeclineWatermark_; handleChatReply's success branch commits it.
     juce::String buildDialDeclinesBatchJson();
     juce::int64 pendingDeclineWatermark_ = -1;
+    // dial-4 A8: the attempt tally — a DELTA since the last successful send,
+    // file-persisted beside the watermark (it survives what the watermark
+    // survives, including an editor recreate), staged into the A7.3 envelope
+    // at body build, subtracted only on send success. Accumulated at the
+    // settle walkers (noteDialTallyFromInfo, once per slot-turn) and the two
+    // refine sites (noteDialTallyRefine); built-ins never enter (A8.1b).
+    echojay::DialAttemptTally dialTally_;
+    echojay::DialAttemptTally pendingShippedTally_;   // staged subset, awaiting success
+    bool dialTallyLoaded_      = false;               // lazy one-shot file load
+    bool dialTallyPendingShip_ = false;
+    void loadDialTallyIfNeeded();
+    void saveDialTally();
+    void noteDialTallyFromInfo(const ChainHost::SlotDialInfo& di);
+    void noteDialTallyRefine(const juce::String& pluginName, bool opReachesApply,
+                             int droppedCount);
     // Alt pill on PLAIN messages (result bubbles): height helper shared by
     // the measure and paint passes (edit cards carry their pill inside
     // editCardHeight; this returns 0 for them)
@@ -1374,6 +1451,29 @@ private:
     juce::String findOrCreateChannelChatId(const juce::String& linkUid,
                                            const juce::String& linkNameNow);
     juce::Rectangle<int> chatBoxRect_;
+    // ---- Reaper key-routing hint [key-hint] --------------------------------
+    // Reaper's -[REAPERapp sendEvent:] resolves the space bar as a transport
+    // accelerator BEFORE the plugin NSView is offered the key (its "user is
+    // typing" test is isKindOfClass NSTextView/NSTextField, which a JUCE view
+    // is not), and no code fix exists plugin-side: JUCE's VST3 wrapper never
+    // implements IPlugView::onKeyDown (SDK default returns kResultFalse), the
+    // REAPER named-config-parm API has no keyboard entry (vocabulary dumped
+    // from the 7.x binary, 21 Aug 2026), and the per-FX WAK chunk flag is only
+    // reachable by track-chunk surgery that can reinstantiate ourselves. So:
+    // tell the user, by name — Reaper only, added-by-name if another host is
+    // ever reported, never by category. Retires on DISMISS, not on show: the
+    // hint is for the moment the user types and gets no spaces, which is
+    // after the strip appeared, and a user who has not pressed Got it has
+    // not read it. The marker file counts every show ("shows") so an absurd
+    // count with no dismissal reads as "strip invisible", a different
+    // defect. Both events log under [key-hint].
+    juce::Label      keyHintLabel_;
+    juce::TextButton keyHintDismissBtn_ { "Got it" };
+    bool             keyHintActive_ = false;
+    void maybeShowReaperKeyHint();     // ctor: host + marker-file gate
+    void syncReaperKeyHint();          // 20 Hz pass: bounds + visibility
+    void dismissReaperKeyHint();       // click: hide, persist, log
+    static juce::File keyHintMarkerFile();
     bool lastPillEligible_ = false;    // timer change-detect -> resized()
     juce::String lastLockedUid_;       // } active-chat target: a live<->offline
     bool lastLockedLive_ = false;      // } flip changes pill TEXT WIDTH -> relayout
@@ -1510,6 +1610,11 @@ private:
     // chain as displayRows_[i]. Authored by resized(), never by paint().
     std::vector<ChainRow>              chainDisplayRows_;
     std::vector<juce::Rectangle<int>>  chainRowRects_;
+    // [shelf-overlap] one-shot latch (P66 part 2b): the ask shelf is exempt
+    // from the chains-mode hide and relies on the chatScrollBottom formula
+    // chain to keep chain rows clear of it; if a row rect ever intersects
+    // the shelf rect anyway, resized() logs it ONCE per editor instance.
+    bool chainShelfOverlapLogged_ = false;
     std::vector<juce::Rectangle<int>>  chainRowStarRects_;
     // -1 = not a row (a group heading occupies the slot instead).
     std::vector<int>                   chainRowIsHeading_;
@@ -4391,6 +4496,13 @@ private:
     // Shared disable action (local + Link build failures): untick in the
     // scanner (plugin_disabled.json), refresh checklist, rebuild recommendable.
     void disablePluginByName(const juce::String& name);
+    // "Not now": exclude from the AI feed for THIS RUN only. Writes nothing -
+    // no plugin_disabled.json, no checklist untick - so the plugin is back at
+    // next launch. The session store is a TU-local static in the .cpp, not a
+    // member here, so no gate-linked layout changes. Non-virtual by design.
+    void excludeFromFeedThisSession(const juce::String& name);
+    std::vector<ScannedPlugin>
+        feedRowsWithSessionExclusions(std::vector<ScannedPlugin> rows) const;
     // Link build results with load_failed entries: one dialog, per-plugin
     // "don't suggest again" toggle rows (no modal chain).
     std::set<juce::String> chainFailSessionSeen_; // names user chose "Keep it" this session

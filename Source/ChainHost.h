@@ -54,6 +54,39 @@ public:
         float wet = 1.0f;       // per-slot wet/dry (0..1, 1 = fully wet)
         juce::String manufacturer;  // catalogue identity — editorPlacement's
                                     // float-by-identity rule keys on it
+        // THE MODEL'S COPY of the same slot's settings text, and the reason
+        // there are two (24 Aug 2026). `settings` above serves the CARD and is
+        // governed by the 9 Aug rule: a successful write shows nothing extra,
+        // because surfacing an internal proof class as user-facing doubt would
+        // fire on the entire setread corpus forever (ChainHost.cpp, the comment
+        // above appliedSummary.add). The MODEL has the opposite requirement: it
+        // must never read a requested value as slot state, so it needs the
+        // Landed / Asked, not verified / Refused tiering.
+        //
+        // One field could not satisfy both. This is not a cosmetic split; the
+        // two audiences want opposite things about the same fact.
+        //
+        // EMPTY means "no dial echo is current for this slot" and the reader
+        // uses `settings` instead — the same string it reads today. That is a
+        // different SOURCE, not a fallback hiding a missing value: on those
+        // paths (prose guidance, stale-map notes, built-in applies) no tiering
+        // was ever computed, so there is nothing being concealed.
+        juce::String settingsForModel;
+        // TRUE when this slot's parameters were actually read this turn.
+        //
+        // It exists to stop an EMPTY settingsForModel meaning two things. The
+        // 6a fallback served the card string whenever the model string was
+        // empty, which was right while "empty" could only mean "no tiering was
+        // computed". Suppression added a second cause: every tier entry had a
+        // live read and was correctly dropped. The fallback then handed the
+        // model the card's raw value -- the exact number the suppression had
+        // just removed. Measured: reads said Vol was 3.3, the card said
+        // "Applied automatically\nVol 7", and the reply used 7.
+        //
+        // So the reader must ask "was there a reading?", not "is the string
+        // empty?". A slot with a reading composes from the tiers alone; a slot
+        // without one still falls back, because there the card is all we have.
+        bool hasLiveReads = false;
     };
 
     // ---- Mode (RACK_BORROW_IMPLEMENTATION_SPEC §2, 21 Aug 2026) -----------
@@ -213,7 +246,16 @@ public:
     // (chain_state_oversize.txt), never the crash list. Measured in the
     // fingerprint pass and at first rack (completeLoad); the file is the
     // authority and deleting a line offers the plugin again.
-    enum class WithholdReason { None, CrashBlacklisted, ArchitectureIncompatible, Unreadable, SettingsTooLarge };
+    // Ambiguous is NOT a withhold and is deliberately in this enum anyway
+    // (31 Aug 2026). isWithheld is an explicit allow-list, so a new member is
+    // not-withheld by construction -- Unreadable is already here on exactly
+    // that footing -- and this is the enum every caller of resolveByName
+    // already reads to turn "empty" into a sentence. A parallel enum would
+    // have meant a second out-param at three call sites that each have to say
+    // ONE thing about one name. Ambiguous carries no text of its own: the
+    // candidates ARE the reason, so ambiguousNameText authors it from them.
+    enum class WithholdReason { None, CrashBlacklisted, ArchitectureIncompatible,
+                                Unreadable, SettingsTooLarge, Ambiguous };
     static bool isWithheld(WithholdReason r) noexcept
     {
         return r == WithholdReason::CrashBlacklisted
@@ -228,6 +270,13 @@ public:
     // its VST3 has no arm64 build, so it cannot run in this host". Empty for
     // None and Unreadable (nothing to explain: the row is offered).
     static juce::String withholdReasonText(WithholdReason r);
+    // The clause for WithholdReason::Ambiguous, which withholdReasonText
+    // cannot author because the reason is the candidate list itself. Names
+    // EVERY candidate: the fuzzy "closest:" list in resolveByName's total-miss
+    // branch is capped at 3 and would drop one of the four "UAD Neve" rows,
+    // and this is a different computation -- the exact set the rank could not
+    // choose between -- so it must not inherit that cap.
+    static juce::String ambiguousNameText(const juce::StringArray& candidates);
 
     // ---- Settings ↔ ChainHost resolver (message thread) -----------------
     // A "recommendable" plugin is BOTH enabled in the Settings checklist AND
@@ -245,6 +294,17 @@ public:
 
     // Display names of resolved entries (for AI prompt injection).
     juce::StringArray getRecommendableNames() const;
+
+    // The feed table itself, names AND the registrations they resolve to.
+    // Exposed for the pins (28 Aug 2026): the registry-sourced Waves rows are
+    // refused against the REGISTRATIONS the feed already carries, and a name
+    // list drops exactly the half of each row that decides that. Header-inline
+    // and read-only, so mapfps_test can call it against the previous build's
+    // lib; it adds no data member, so the object layout is untouched.
+    const std::vector<RecommendableEntry>& recommendableEntries() const noexcept
+    {
+        return recommendable_;
+    }
 
     // name -> fingerprint for the chat body's mapFps field (per-fp exact
     // controls exposure, 9 Aug 2026). Rack slots first - a loaded slot's fp
@@ -265,6 +325,70 @@ public:
     // The server parses up to MAP_FPS_MAX (2000) and both must move together:
     // raising one alone changes nothing, since the smaller cap still binds.
     juce::String buildMapFpsJson(int maxEntries = 2000) const;
+    // 6c section 8a: every racked slot's CURRENT parameter reads, display text
+    // keyed by parameter index, as a JSON ARRAY. Staged and consumed exactly
+    // like mapFps. Carries BOTH the 1-based slot number and the plugin name
+    // (8b) so the server needs nothing else to join: it must not depend on
+    // [CURRENT CHAIN], which is gated on hadFeed||relevant and does not ride
+    // every turn, and a join that works only on some turns is worse than no
+    // join because its absence is silent.
+    juce::String buildSlotParamReadsJson() const;
+
+    // PRODUCT FALLBACK, the delivery half (26 Aug 2026).
+    //
+    // The dial fetch asks GET /api/params/maps?fps=..., and the server's
+    // product fallback is gated on the identities= form, so it can never fire
+    // for this client. Rather than change the dial fetch's shape, a racked
+    // slot whose fp came back mapless asks POST /api/params/lookup in the
+    // default "lookup" mode, which runs the tiered resolver and returns the
+    // prior version's map already tagged served_from + anchors_unverified.
+    // That path is live and NOT behind PARAMS_PRODUCT_FALLBACK.
+    //
+    // The body carries what lookupTiered's guards need: without param_count
+    // it refuses every candidate with "no_count_sent", and param_names is what
+    // the name guard compares. Both come off the LIVE instance, so they
+    // describe the binary actually loaded rather than a scan row.
+    //
+    // Empty string = nothing to ask.
+    juce::String buildFallbackLookupJson() const;
+    // One slot's ask, for the dial-time trigger. Shares fallbackEntryForSlot
+    // with the rack-wide builder so there is one composer, not two.
+    juce::String buildFallbackLookupJsonForSlot(int slot) const;
+    // THE one composer. Returns a void var when this slot cannot be asked
+    // about, with whyOut naming which of the three reasons applied, so an
+    // empty body is never silent again.
+    juce::var fallbackEntryForSlot(int slot, juce::String& whyOut) const;
+    // Stores each result's map under the fp that ASKED for it, not the fp it
+    // was served from: applyStructuredIfReady looks up by the slot's own fp.
+    // The map keeps its own fp field naming its true origin, which is why the
+    // integrity check needs its tagged exemption.
+    void storeFallbackMaps(const juce::var& resultsArray);
+
+    // ONE SWEEP PER TURN, AND BOTH CONSUMERS USE IT (24 Aug 2026).
+    //
+    // This is not a convenience. The defect it fixes is TWO STORES FOR ONE
+    // CONTROL: slotParamReads said Vol was 8.2 and the settings echo said 3.7,
+    // both in the same body, and the model quoted the stale one despite its
+    // "not verified" label. If the injection suppressed on one read while the
+    // body shipped a different read, the disagreement would simply move.
+    //
+    // refreshSlotParamReads() takes the sweep and caches it;
+    // buildSlotParamReadsJson() serialises THAT CACHE rather than re-reading;
+    // hasLiveReadForIndex() answers the suppression question from it.
+    void refreshSlotParamReads();
+    bool hasLiveReadForIndex(int slot, int paramIndex) const;
+    // Did this slot answer the sweep at all? See SlotInfo::hasLiveReads.
+    bool slotHasLiveReads(int slot) const;
+
+    // The model's settings line for one slot, composed HERE because this is
+    // the only place the echo (authored at apply time) and the live reads
+    // (taken at send time) are both in hand. Where a live read exists for a
+    // control, its echoed value is REMOVED: two numbers for one control is
+    // worse than either alone. Refused entries always keep their number --
+    // "asked 50.00, range is [1.00..7.00], left manual" is the record of a
+    // rejected request, not a claim about current state, and it is the only
+    // place that number exists.
+    juce::String modelSettingsForSlot(int slot) const;
 
     // ---- Apply-time honesty (26 Jul 2026) ----
     // Per-slot auto-dial outcome. The result bubble may only relay the
@@ -278,7 +402,33 @@ public:
     //   noMap       — no local map for this fingerprint, nothing written
     //   unusableMap — map exists but none of the REQUESTED semantics were
     //                 writable, nothing written
-    enum class DialStatus { none, pending, applied, partial, noMap, unusableMap };
+    // A9 step 3: `unusableMap` is RETIRED, not reassigned, and is gone from
+    // this enum rather than kept as a spare — an enum value carrying a retired
+    // name is a store holding a fact we have declared false. It had FOUR
+    // producers with four different owners, and the name described only one:
+    //
+    //   mapNoCoverage           ChainHost.cpp, report.empty(). The map covered
+    //                           none of what was asked. No write attempted.
+    //                           Corpus-side.
+    //   writesRejected          ChainHost.cpp, the final else. The map covered
+    //                           it, writes were attempted, none stuck. Host or
+    //                           plugin-side. The ONLY one that can pair with
+    //                           readback_mismatch (A9 §1c), because it is the
+    //                           only one that wrote anything.
+    //   mapIdentityMismatch     the map's own `fp` FIELD disagrees with the
+    //                           slot's live fingerprint, so the apply is
+    //                           refused wholesale before the map's contents are
+    //                           ever read. Not "poor coverage" — coverage
+    //                           UNASSESSED. Keying/transport/cache-side.
+    //   builtinPayloadUnmatched a built-in device is present and the payload
+    //                           resolved neither accepted shape (flat semantic
+    //                           bag vs {"params":{...}} or its array form).
+    //                           No map is involved at all. Payload-shape-side.
+    //                           An ENUM VALUE ONLY: it has no wire reason, and
+    //                           a pin asserts the emitter yields zero rows.
+    enum class DialStatus { none, pending, applied, partial, noMap,
+                            mapNoCoverage, writesRejected,
+                            mapIdentityMismatch, builtinPayloadUnmatched };
     struct SlotDialInfo {
         juce::String      name;
         juce::String      fp;          // fingerprint (for event logging)
@@ -300,6 +450,12 @@ public:
         juce::String      uid;             // hex uid, same rendering as getSlotIdentity; "" = none
         int               requestedCount = 0;
         juce::String      requestedSource;  // "apply" | "keys"
+        // dial-4 A8.1b: the built-in exclusion needs the distinction AT the
+        // settle walkers, and dial STATUS cannot carry it — the built-in
+        // apply sets applied/partial/unusableMap exactly like a third-party
+        // slot. APPENDED last (stale-lib ABI: test TUs pair this header with
+        // the previous build's lib until the next full build).
+        bool              builtin = false;
     };
     std::vector<SlotDialInfo> getDialInfos() const;
     // One line per slot, at the END of a build, saying what actually dialled.
@@ -317,8 +473,10 @@ public:
     // True when no slot is DialStatus::pending (bubble may compose).
     bool dialStateSettled() const;
     // Recommendable display names whose local map passes the dial-signals
-    // threshold (>=2 usable CORE semantics). Used by the dark 2.1 markers
-    // and 2.4 dialFlags; shares echojay::mapIsDialableForSignals.
+    // threshold (>=2 usable CORE semantics); shares
+    // echojay::mapIsDialableForSignals. Its two consumers are the P16
+    // feed-split branch and the settle walker. The dark "(dial)" markers and
+    // dialFlags were the third and were deleted on 25 Aug 2026.
     juce::StringArray getDialableRecommendableNames() const;
     // Feed split (P16). The model's list becomes the DIALABLE subset, but a
     // fresh machine has no local fp, so dialability also consults the server's
@@ -612,7 +770,22 @@ public:
     struct ApplyReport { juce::String semantic; bool applied; float normalized; juce::String note;
                          juce::String landedText; bool displayVerified = false; bool readbackMismatch = false;
                          bool staleDisplayKept = false; juce::var requestedValue;
-                         bool outOfRange = false; };
+                         bool outOfRange = false;
+                         // THE PARAMETER INDEX, revived 24 Aug. A9's contract
+                         // recorded that ApplyResult carries it and that it was
+                         // dropped at this boundary, and wrote down the trail
+                         // "for anyone who needs it later". 6c needs it: the
+                         // echo's entries are labelled with semanticLabel(),
+                         // which strips units and underscores, so a label
+                         // cannot be turned back into a map key ("low cut freq"
+                         // from "low_cut_freq_hz" is guesswork) and the live
+                         // reads are index-keyed. -1 where no index exists.
+                         int index = -1;
+                         // The served map's anchors came from another version
+                         // (see ApplyResult::anchorsUnverified). Carried so the
+                         // report layer can refuse to present the value as
+                         // exact; it never changes whether the write happens.
+                         bool anchorsUnverified = false; };
     std::vector<ApplyReport> applyStructuredSettings (int slotIndex,
                                                       const juce::var& structuredSettings,
                                                       const juce::var& map);
@@ -650,6 +823,17 @@ public:
     // Networking is the editor's job (EchoJayAPI lives there): ChainHost
     // asks for fps through this and receives results via storeParamMaps.
     std::function<void(const juce::StringArray& fps)> onNeedParamMaps;
+    // PRODUCT FALLBACK, its own trigger (27 Aug 2026). It used to ride
+    // onNeedParamMaps' completion, which was the wrong event twice over: that
+    // fires when a fingerprint is FIRST asked about, usually before the plugin
+    // is racked (so the body was empty and returned silently), and mapsRequested_
+    // then suppresses it forever, so the moment that actually needs a fallback
+    // -- a dial resolving against a racked, mapless slot -- had no fetch to hang
+    // off. Measured: zero EJFallback lines on a live turn that needed one.
+    //
+    // The body is composed by ChainHost because only it knows which slot missed
+    // and what that slot's live param count and names are.
+    std::function<void(const juce::String& body)> onNeedFallbackMaps;
 
     // Fired after an async auto-apply mutates a slot's settings display so
     // the rack UI can refresh. Always called on the message thread.
@@ -712,10 +896,49 @@ public:
     // A genuine miss leaves *withheldOut at None. Callers turn that into
     // "cannot run in this host" instead of "not found", which is the one
     // case where the user can act on the truth.
+    //
+    // Ambiguity (31 Aug 2026): when the name ties between DIFFERENT PRODUCTS
+    // the ladder refuses rather than picking, *withheldOut receives Ambiguous
+    // and ambiguousOut (optional) receives every tied candidate. The withheld
+    // pool is NOT then searched: the name was found, several times over, and
+    // reporting it as withheld would name a reason that was never checked.
     juce::PluginDescription resolveByName(const juce::String& rawName,
                                           const juce::String& formatFilter,
                                           juce::String* matchLogOut = nullptr,
-                                          WithholdReason* withheldOut = nullptr) const;
+                                          WithholdReason* withheldOut = nullptr,
+                                          juce::StringArray* ambiguousOut = nullptr) const;
+
+    // Resolve a name THE MODEL WAS OFFERED (28 Aug 2026, the second Waves seam).
+    // The feed carries recommendable_'s displayName, which for Waves is the
+    // MARKETING name ("Renaissance Vox"); resolveByName searches entries_, which
+    // holds the SHELL name ("RVox (s)"). Only buildRecommendable knew the alias
+    // between them, so all 30 rows 66de26d/5abe833 recovered were nameable by the
+    // model and refused by the chain-edit validator: "add the API 550" came back
+    // '"API 550" not in the loadable plugin list' while the feed offered it.
+    //
+    // ADDITIVE BY CONSTRUCTION, and the ORDER is the whole of it. resolveByName
+    // runs FIRST and its answer always wins; recommendable_ is consulted ONLY
+    // where that returned empty. So no name that resolves today can resolve to
+    // anything else tomorrow.
+    //
+    // The opposite order -- feed table first -- reads like the obvious one and
+    // is wrong, MEASURED not argued: the mutation that consults recommendable_
+    // first re-points 32 of the 34 Waves rows the gate sweeps, the first being
+    // CLA-2A (m) -> CLA-2A (s). The feed's base-name key takes the BEST channel
+    // variant (insertPreferredBase, EJVariantPreference.h) while resolveByName's
+    // ladder lands on whichever registration sorts first, so the two disagree on
+    // the variant almost everywhere they both answer. Deciding the feed is right
+    // may even be defensible; doing it silently inside a fix for a different
+    // seam is not. of PIN B holds the line.
+    //
+    // Callers: the chain-edit validator and its apply, which MUST agree -- a name
+    // that passes the dry run and then fails to load is the shape that aborts a
+    // batch halfway. NOT restore: saved chains carry desc.name (buildChainSlotsVar
+    // writes the slot's own registration), so a displayName lookup there would
+    // answer a question restore never asks.
+    juce::PluginDescription resolveOfferedName(const juce::String& rawName,
+                                               WithholdReason* withheldOut = nullptr,
+                                               juce::StringArray* ambiguousOut = nullptr) const;
 
     // ---- Built-in devices (EchoJay-owned nodes hosted as ordinary slots) ---
     // The chain otherwise only hosts what formatManager_ can instantiate from
@@ -1114,11 +1337,44 @@ public:
     int    blockSize_  = 512;
 
 private:
+    struct ChainSlot;   // defined immediately below
+    // Clears every part of the model's tiered copy. A member, because
+    // ChainSlot is private; static, because it touches nothing else.
+    static void clearModelTiers(ChainSlot& s);
+    // One definition each; see ChainHost.cpp.
+    static const char* const kLandedPrefix;
+    static const char* const kAskedPrefix;
+    static const char* const kRefusedPrefix;
+
     struct ChainSlot {
         juce::AudioProcessorGraph::Node::Ptr node;
         juce::PluginDescription              desc;
         bool                                 bypassed = false;
         juce::String                         settings;   // AI-suggested dial-in guidance
+        // The model's tiered copy, held STRUCTURED rather than composed.
+        //
+        // It used to be a joined string built at apply time. 6c's suppression
+        // needs to drop individual entries that now have a live read, and the
+        // reads do not exist until send time -- so composing early would mean
+        // re-splitting a joined string later, which is the packed-string
+        // escaping problem this project keeps refusing. The entries are kept
+        // apart until modelSettingsForSlot() composes them.
+        //
+        // The PARTITION is still authored in exactly one place (the tiered
+        // block in applyStructuredIfReady). Only the assembly moved.
+        // Refused entries carry no index: they are never suppressed.
+        juce::StringArray                    modelLandedBits;
+        juce::Array<int>                     modelLandedIdx;
+        juce::StringArray                    modelAskedBits;
+        juce::Array<int>                     modelAskedIdx;
+        juce::StringArray                    modelRefusedBits;
+        // Cached live reads for this slot, index-parallel with the plugin's
+        // parameters. EMPTY means no sweep has been taken (or it failed), and
+        // that is the case where the echo must be KEPT: then it is the only
+        // source we have.
+        juce::StringArray                    liveReads;
+        bool                                 liveReadFailed = false;
+        int                                  liveParamCount = 0;   // TRUE count, so truncated is knowable
         // Per-slot wet/dry: `wet` is the persisted value; `wetShared` is the
         // audio-thread copy read by this slot's SlotWetBlend graph node.
         // Both created lazily in rebuildGraph(), removed in removeSlot().
@@ -1133,6 +1389,13 @@ private:
         juce::StringArray                    dialManual;                // unwritten control labels
         juce::StringArray                    dialReadbackMiss;          // wrote wrong, reverted
         juce::StringArray                    dialUnconfirmed;           // written, display stale (bridged)
+        // Controls dialled through a PRODUCT FALLBACK, and the identity its
+        // anchors came from. The write happened and the control resolved by
+        // name; only the value's exactness is unasserted (~19% anchor drift,
+        // MAP_CARRY_FORWARD). Same shape as dialUnconfirmed because it is the
+        // same kind of fact: a successful write that must not be silent.
+        juce::StringArray                    dialApproximate;
+        juce::String                         dialServedFrom;
         int                                  dialAppliedCount = 0;
         // dial-3 denominator (CONTRACT_racked_slot_controls.md A3/A7.2):
         // report.size() from the LAST apply loop; -1 = the apply never ran,
@@ -1409,6 +1672,10 @@ private:
 
     // Resolver cache (message thread only — no mutex needed)
     std::vector<RecommendableEntry> recommendable_;
+    // Fingerprints already asked about via the FALLBACK leg. Deliberately NOT
+    // mapsRequested_: that set is the exact-map fetch's, and sharing it is what
+    // let the prefetch suppress the fallback. Separate set, separate question.
+    juce::StringArray fallbackRequested_;
     int recommendableEnabledIn_ = 0;   // how many enabled scanner entries were fed in
     juce::String recommendableFormat_; // filter used for the last build (fallback resolves honour it)
     bool hasResolved_ = false;         // latched by buildRecommendable once inputs were real

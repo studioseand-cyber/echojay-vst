@@ -217,7 +217,38 @@ inline juce::String formatSemanticSetting (const juce::String& key, const juce::
     if (key.endsWith ("_hz"))  return key.dropLastCharacters (3).replaceCharacter ('_', ' ') + " " + v + "Hz";
     if (key.endsWith ("_pct")) return key.dropLastCharacters (4).replaceCharacter ('_', ' ') + " " + v + "%";
     if (key.endsWith ("_s"))   return key.dropLastCharacters (2).replaceCharacter ('_', ' ') + " " + v + "s";
-    return key + " " + v;
+
+    // A LABEL GETS A COLON; A NUMBER DOES NOT (25 Aug 2026).
+    //
+    // Pro-Q 3's mode control is NAMED "Band 1 Used" and its labels are
+    // {Unused, Used}, so the fall-through rendered "Band 1 Used Used": the
+    // name and the value separated by a space, with nothing to say which is
+    // which. Not rare -- 442 control/label pairs across 37 of the 128 cached
+    // maps have a name ending in one of its own labels ("HP On/Off"+"Off",
+    // "EQ High Bell"+"Bell"), and six have a name EQUAL to a label ("In"+"In").
+    //
+    // Deleting the duplicate would be worse than the duplicate. "Band 1 Used"
+    // alone is a bare control name, indistinguishable from the card merely
+    // mentioning the control, and its two states would read "Band 1 Used" and
+    // "Band 1 Used Unused". The separator carries the distinction the line
+    // exists for; removing a word destroys it.
+    //
+    // NUMBERS ARE UNTOUCHED, and the guard is not decoration: semanticToFloat
+    // accepts a STRING and parses a number out of it, so "7" can reach an
+    // anchored control, apply, and stay a string in requestedValue. Keying the
+    // colon on isString() alone would then turn "Vol 7" into "Vol: 7" -- a
+    // numeric render changing, which is exactly what must not happen. So a
+    // value that opens like a number keeps the space. Cost, measured: 4 of the
+    // corpus's 6,881 mode labels are numeric text (SPL IRON's sign switches,
+    // label "0") and keep today's spacing.
+    //
+    // The TIERED line is deliberately not converging on this. It renders modes
+    // as `Band 1 Used -> reads "Used"` for the model; this is the card, for a
+    // person, and the two are different lines for different readers.
+    const bool opensLikeNumber = v.isEmpty()
+                              || juce::CharacterFunctions::isDigit (v[0])
+                              || v[0] == '-' || v[0] == '+' || v[0] == '.';
+    return key + (value.isString() && ! opensLikeNumber ? ": " : " ") + v;
 }
 
 } // namespace echojay

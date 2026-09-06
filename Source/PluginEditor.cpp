@@ -3,11 +3,12 @@
 #include "ChainPluginPicker.h"   // P13: the searchable "+" picker (shared with the Link)
 #include "EJStreamBlockParser.h" // incremental block parser (spec step 3/4)
 #include "EJRecall.h"            // saved-chain recall decision logic (pure)
+#include "EJDisableReasons.h"   // WHY a uid sits in plugin_disabled.json
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics (EJChat:)
 #include "EchoJayLogo.h"  // embedded logo PNG — Settings orb card glyph source
 #include "EchoJayVisualiserTexture.h"  // shared SPECTRUM/SPECTROGRAM texture
 #include "EchoJayEventLog.h"   // events.jsonl + machine_id (dial_miss telemetry)
-#include "EchoJayParamApply.h" // kDialSignalsEnabled + dial predicate (shared)
+#include "EchoJayParamApply.h" // the shared dial predicate + semanticLabel
 #include "EchoJayChannelLabel.h" // channelLabelUsable — ONE uid-passthrough test
 #include "EchoJayChannelChats.h" // latestChatForLink — the many-chats-per-channel
                                  // selection, header-inline for the unit test
@@ -445,6 +446,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // to the default. A fresh instance reads 0, which is Dashboard.
     currentTab = static_cast<Tab>(juce::jlimit(0, kTabCount - 1,
                                                processorRef.lastTabIndex));
+    if (currentTab == Tab::Dashboard) dashEntry_ = "recreate";   // [dash-handoff] entry attribution
 
     // ---- Session C: the Dashboard tab -----------------------------------
     // ONE child component owns the whole surface. It scrolls, so the layout
@@ -821,6 +823,22 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                     }
                     safeThis->processorRef.getChainHost()
                         .storeParamMaps(json.getProperty("maps", juce::var()));
+                });
+        };
+        // PRODUCT FALLBACK, on its OWN trigger (27 Aug 2026). It used to hang
+        // off the fetch completion above, which fires when a fingerprint is
+        // first asked about -- before the plugin is racked, so the body was
+        // empty -- and mapsRequested_ then suppressed any later fetch, so it
+        // never ran on the dial that needed it. ChainHost now calls this from
+        // the mapless-dial path with the body already composed.
+        chainHostRef.onNeedFallbackMaps = [safeThis](const juce::String& body)
+        {
+            if (safeThis == nullptr || body.isEmpty()) return;
+            safeThis->api.lookupFallbackMaps(body,
+                [safeThis](const juce::var& results)
+                {
+                    if (safeThis == nullptr || results.isVoid()) return;
+                    safeThis->processorRef.getChainHost().storeFallbackMaps(results);
                 });
         };
         chainHostRef.onSlotSettingsChanged = [safeThis]()
@@ -1762,6 +1780,28 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // No restore from processor state: the router selection is transient
     // by design (RESET, not sticky) — every main chat opens untargeted.
     addChildComponent(chatTargetBtn);
+
+    // [key-hint] Reaper-only keyboard-routing hint (why + scope rules: the
+    // member comment in PluginEditor.h). The wording names the SETTING and
+    // where it lives, spelled the way Reaper's own menu spells it, because
+    // "your host is intercepting keys" helps nobody.
+    keyHintLabel_.setText("Reaper takes the space bar for transport. "
+                          "Right-click EchoJay in the FX chain and turn on "
+                          "\"Send all keyboard input to plug-in\".",
+                          juce::dontSendNotification);
+    keyHintLabel_.setFont(juce::Font(juce::FontOptions(11.5f)));
+    keyHintLabel_.setJustificationType(juce::Justification::centredLeft);
+    keyHintLabel_.setColour(juce::Label::textColourId, C::text);
+    keyHintLabel_.setColour(juce::Label::backgroundColourId, C::bg4);
+    keyHintLabel_.setColour(juce::Label::outlineColourId, C::amber.withAlpha(0.55f));
+    keyHintLabel_.setMinimumHorizontalScale(1.0f);   // wrap, never squash
+    addChildComponent(keyHintLabel_);
+    keyHintDismissBtn_.setColour(juce::TextButton::buttonColourId, C::amber.withAlpha(0.18f));
+    keyHintDismissBtn_.setColour(juce::TextButton::textColourOnId,  C::amber);
+    keyHintDismissBtn_.setColour(juce::TextButton::textColourOffId, C::amber);
+    keyHintDismissBtn_.onClick = [this] { dismissReaperKeyHint(); };
+    addChildComponent(keyHintDismissBtn_);
+    maybeShowReaperKeyHint();
 
     // "Aa" text-size toggle sits in the chat header. Cycles a preset list
     // of scales so users can bump chat readability without a settings trip.
@@ -2730,6 +2770,7 @@ EchoJayEditor::~EchoJayEditor() {
     // stale hook. SafePointer already makes late fires no-ops; this is the
     // belt to that brace.
     processorRef.getChainHost().onNeedParamMaps = nullptr;
+    processorRef.getChainHost().onNeedFallbackMaps = nullptr;
     processorRef.getChainHost().onSlotSettingsChanged = nullptr;
     // If the user changed ticks and closed without hitting Done, commit the
     // local selection now so it isn't lost (disk persist; server is best-effort
@@ -3109,6 +3150,9 @@ void EchoJayEditor::updateOnboardingPrompts()
     chatInput.setVisible(chatOk);
     chatSendBtn.setVisible(chatOk);
     chatTextSizeBtn.setVisible(chatOk);
+    // [key-hint] rides the same per-tick authority as the composer it sits
+    // over, so every tab/overlay rule above applies to it for free.
+    syncReaperKeyHint();
     compareBtn.setEnabled(!anyPrompt);
     captureBtn.setEnabled(!anyPrompt);
     settingsBtn.setEnabled(!anyPrompt);
@@ -6260,6 +6304,12 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
             cm.chainData = chainJson;
             cm.gainData  = gainJson;
             cm.editData  = editJson;
+
+            // The server refused an add and said so in the BLOCK, not in the
+            // prose; without this the reply still claims it happened. Fresh
+            // receipts only -- the workspace-restore path (cm.editData =
+            // msg.editJson) must not re-announce a refusal already read.
+            safeThis->announceRefusedOps(chainJson, editJson);
             cm.figuresData = figuresJson;   // client-built card, not from the reply
             // STEP 4: the build gate is structural and reads the SAME unified
             // source (compareTop_/compareBot_ via slotChannelUid) the context
@@ -11235,7 +11285,8 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
                 refreshChainPanelForView(false);
                 chainListPanel.masterKnob.setValue(ch.getMasterWet());
                 // Rebuild resolver
-                ch.buildRecommendable(processorRef.getPluginScanner().getPlugins(), chainFormatFilter_);
+                ch.buildRecommendable(feedRowsWithSessionExclusions(
+                    processorRef.getPluginScanner().getPlugins()), chainFormatFilter_);
                 // Prefetch param maps for known fingerprints (throttled inside)
                 ch.requestMapPrefetch();
             }
@@ -11310,6 +11361,13 @@ void EchoJayEditor::reconcileDashboardWeb()
         dashWeb_ = std::make_unique<echojay::DashboardWeb>();
         addChildComponent (*dashWeb_);   // hidden until it loads; native stays up
         bridgeNavAcceptedMs_ = 0;      // fresh webview on (re)entering the Dashboard
+        // Auth-handoff state, per selection (contract §2/§5): a fresh entry
+        // gets a fresh mint, one fresh retry allowance, one fresh re-mint
+        // allowance, and a clean panel.
+        dashMintRetried_ = false;
+        dashRemintUsed_  = false;
+        dashMintStatus_  = 0;
+        dashPanelMsg_.clear();
         auto safe = juce::Component::SafePointer<EchoJayEditor> (this);
 
         // Stage 3: the loadChain bridge. DashboardWeb has already validated the
@@ -11330,37 +11388,149 @@ void EchoJayEditor::reconcileDashboardWeb()
             safe->bridgeOpenChat (chatId, std::move (answer));
         };
 
-        dashWeb_->onLoadResult = [safe] (bool ok)
+        dashWeb_->onLoadResult = [safe] (bool ok, const juce::String& reason)
         {
             if (safe == nullptr) return;
             if (ok)
             {
+                EchoJay_NSLog(("EJDash: [dash-handoff] entry=" + safe->dashEntry_
+                               + " mint=" + juce::String(safe->dashMintStatus_)
+                               + " remint=" + juce::String(safe->dashRemintUsed_ ? 1 : 0)
+                               + " landing=dashboard").toRawUTF8());
+                safe->dashEntry_ = "tab";
                 safe->dashWebLoaded_ = true;   // swap native -> webview
                 safe->resized();
                 return;
             }
-            // FAILURE (gate 404 / network error): keep native, no retry until
-            // the next selection, and DESTROY the dead webview so its ~150 MB of
-            // resident WebKit processes do not sit behind the native view until
-            // tab-away — on precisely the path where the user gets nothing.
-            //
-            // DEFERRED, deliberately: this callback fires from inside the
-            // webview's own evaluateJavascript completion, so resetting dashWeb_
-            // on this stack would free the webview under itself (use-after-free).
-            // callAsync frees it on a later message-loop turn once that stack has
-            // unwound; the SafePointer makes a torn-down editor a no-op.
-            safe->dashWebFailedThisSelection_ = true;
-            juce::MessageManager::callAsync ([safe]
+            // The two handoff failures are DIFFERENT and only one deserves a
+            // retry (21 Aug, after four tokens burned re-running one race):
+            //   no_landing — no load-finish on the bound target inside the
+            //     redeem budget: the redeem genuinely did not happen. ONE
+            //     re-mint, on the SAME live webview, then stop.
+            //   no_marker — the target landed (the redeem WORKED) and the
+            //     page never rendered its marker. NEVER re-mint: a fresh
+            //     token re-runs the same race and proves nothing. Its own
+            //     landing value; the distinction lives in the log, the
+            //     panel keeps one simple sentence for both.
+            if (reason == "no_landing" && ! safe->dashRemintUsed_)
             {
-                if (safe == nullptr) return;
-                safe->dashWeb_.reset();        // frees the resident WebKit processes
-                safe->dashWebLoaded_ = false;
-                safe->resized();               // native stays up (reconcile won't
-                                               // reconstruct: failed-this-selection)
-            });
+                safe->dashRemintUsed_ = true;
+                auto safe2 = safe;
+                safe->api.mintDashboardHandoff([safe2](int sc, juce::String goPath)
+                {
+                    if (safe2 == nullptr) return;
+                    safe2->dashMintStatus_ = sc;
+                    if (sc == 200 && goPath.isNotEmpty() && safe2->dashWeb_ != nullptr)
+                    { safe2->dashWeb_->startWithHandoff(goPath); return; }
+                    safe2->failDashboardSurface("no_landing",
+                        juce::String::fromUTF8("Couldn\xe2\x80\x99t sign the dashboard in \xe2\x80\x94 reopen the tab to try again."));
+                });
+                return;
+            }
+            // Network error keeps the existing offline panel line; every
+            // other terminal reason logs itself verbatim as the landing.
+            // failDashboardSurface destroys the webview DEFERRED — this
+            // callback fires from inside the webview's own
+            // evaluateJavascript completion, and freeing it on this stack
+            // would be a use-after-free (the original destroy path's rule,
+            // kept).
+            if (reason == "net")
+                safe->failDashboardSurface("net", juce::String());
+            else
+                safe->failDashboardSurface(reason,
+                    juce::String::fromUTF8("Couldn\xe2\x80\x99t sign the dashboard in \xe2\x80\x94 reopen the tab to try again."));
         };
-        dashWeb_->start();
+        // Contract §2: mint on every navigation into the surface, never
+        // stockpile — this replaces the direct start() with mint-then-
+        // navigate, and every entry funnels through this one construct.
+        beginDashboardHandoff();
     }
+}
+
+// The ONE mint-and-navigate driver (CONTRACT_dashboard_auth_handoff.md §2).
+// Every entry into the dashboard surface — tab click, deep link, editor
+// recreate — funnels through reconcileDashboardWeb into here, so "mint on
+// every navigation" is this single call site and never-stockpile falls out
+// of the destroy-on-leave lifecycle. The mint is async (postJSON worker,
+// alive-guarded message-thread callback): nothing blocks the UI thread and
+// the panel shows "Loading your dashboard…" throughout, so no blank webview
+// is ever visible. §5 behaviours live here and in onLoadResult above.
+void EchoJayEditor::beginDashboardHandoff()
+{
+    // ENTRY line, BEFORE the mint (21 Aug 2026): a flow that never starts
+    // and a flow that hangs were the same observation twice in one day. An
+    // instrument that only speaks on its outcome is silent on its null.
+    // Emitted to BOTH sinks on purpose — the terminal [dash-handoff] lines
+    // go to the unified log while the [dashweb] navigation lines go to
+    // dash-poll.log, and that split is exactly how "zero EJDash lines" read
+    // as "never ran" while the file log held the whole story.
+    EchoJay_NSLog(("EJDash: [dash-handoff] begin entry=" + dashEntry_).toRawUTF8());
+    ejDashLog("[dash-handoff] begin entry=" + dashEntry_);
+    auto safe = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.mintDashboardHandoff([safe](int sc, juce::String goPath)
+    {
+        if (safe == nullptr) return;
+        safe->dashMintStatus_ = sc;
+        if (sc == 200 && goPath.isNotEmpty())
+        {
+            if (safe->dashWeb_ != nullptr)
+                safe->dashWeb_->startWithHandoff(goPath);
+            return;
+        }
+        if (sc == 404)
+        {
+            // NOT an error (§5): the dashboard flags are dark for this
+            // account. Say so plainly, do not retry, do not navigate.
+            safe->failDashboardSurface("not_enabled",
+                juce::String::fromUTF8("The dashboard isn\xe2\x80\x99t enabled for this account yet."));
+            return;
+        }
+        if (sc == 401)
+        {
+            // The PLUGIN's own JWT expired (§5): route to the plugin's own
+            // login. A login inside the webview cannot fix the plugin's
+            // token — sending the user there would be a loop with no exit.
+            safe->failDashboardSurface("login_required", juce::String());
+            safe->showLoginScreen();
+            return;
+        }
+        if (! safe->dashMintRetried_)
+        {
+            // 5xx or unreachable (§5): exactly one retry.
+            safe->dashMintRetried_ = true;
+            safe->beginDashboardHandoff();
+            return;
+        }
+        safe->failDashboardSurface("unreachable",
+            juce::String::fromUTF8("Couldn\xe2\x80\x99t reach ")
+                + juce::URL(EchoJayAPI::pluginBaseUrl()).getDomain()
+                + juce::String::fromUTF8(" \xe2\x80\x94 check your connection and reopen the tab."));
+    });
+}
+
+// The one author of the dashboard-surface failure behaviours (§5): the
+// terminal [dash-handoff] line, the panel copy, the no-retry latch for this
+// selection, and the DEFERRED webview destroy (never on the caller's stack —
+// onLoadResult arrives from inside the webview's own JS completion).
+void EchoJayEditor::failDashboardSurface(const juce::String& landing,
+                                         const juce::String& panelMsg)
+{
+    EchoJay_NSLog(("EJDash: [dash-handoff] entry=" + dashEntry_
+                   + " mint=" + juce::String(dashMintStatus_)
+                   + " remint=" + juce::String(dashRemintUsed_ ? 1 : 0)
+                   + " landing=" + landing).toRawUTF8());
+    dashEntry_ = "tab";
+    if (panelMsg.isNotEmpty()) dashPanelMsg_ = panelMsg;
+    dashWebFailedThisSelection_ = true;
+    auto safe = juce::Component::SafePointer<EchoJayEditor>(this);
+    juce::MessageManager::callAsync ([safe]
+    {
+        if (safe == nullptr) return;
+        safe->dashWeb_.reset();        // frees the resident WebKit processes
+        safe->dashWebLoaded_ = false;
+        safe->resized();               // native/panel stays up (reconcile won't
+                                       // reconstruct: failed-this-selection)
+    });
 }
 
 // Stage 3: the loadChain bridge handler. DashboardWeb has already validated the
@@ -11638,7 +11808,7 @@ void EchoJayEditor::followDashLink(const echojay::DashLink& link)
     if (s == "visualiser")  { switchToTab(Tab::Visualisation); return; }
     if (s == "compare")     { switchToTab(Tab::Compare);       return; }
     if (s == "settings")    { switchToTab(Tab::Settings);      return; }
-    if (s == "dashboard")   { switchToTab(Tab::Dashboard);     return; }
+    if (s == "dashboard")   { dashEntry_ = "deeplink"; switchToTab(Tab::Dashboard); return; }
 
     // surface == "web" never reaches here: the view renders those as text and
     // builds no zone for them, because there is no plugin-to-web token path
@@ -12878,6 +13048,15 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
         }
 
         layoutChatMessages();
+        // Relayout AFTER the restore (P66 part 1, 21 Aug 2026): the resized()
+        // above ran against the PREVIOUS chat's messages, and the ask shelf
+        // is positioned only inside resized()'s shelf block — so a restored
+        // unanswered ask appeared only when some unrelated relayout happened
+        // by (a window resize, a tab switch, the content height timer). This
+        // pass sees the restored list: the shelf lays out NOW, and the
+        // scroll-to-bottom below lands on the real content height instead of
+        // the previous chat's.
+        resized();
         // Scroll to bottom, and RE-PIN: opening a chat always starts at the
         // newest message with the follow behaviour on. Save/restore guard,
         // same re-entrancy rule as followBottomIfPinned.
@@ -16084,6 +16263,41 @@ namespace {
 // Paint
 // ============================================================================
 
+// Did this chain edit apply IN FULL? (25 Aug 2026)
+//
+// The retired card's outcome line was coloured by testing the text for the
+// prefix "Applied". That is a rule naming a token the renderer must print, and
+// the two drifted apart the moment the wording changed: once the full-success
+// line became "Changes applied", the ONLY remaining strings starting with
+// "Applied" were the partial-failure form "Applied N of M - <reasons>", which
+// by construction occurs only when N < M. The success colour had come to mean
+// exactly the failure case.
+//
+// So key on the distinction the string actually encodes -- full versus partial
+// -- rather than on a word at its front. Full success is:
+//
+//   "Changes applied" / "Changes applied on \"X\""   the current wording
+//   "Applied 1 change" / "Applied 3 changes"        legacy, and legacy on "X"
+//
+// The legacy forms stay green because editResult is persisted to the workspace
+// as _editResult and restored, so sessions saved before today still carry them
+// and must not change colour under us.
+//
+// The test after "Applied " is what follows the NUMBER: " change..." is a full
+// apply, " of ..." is a partial. Not a search for the word anywhere in the
+// line, because the reason text can legitimately contain it -- "the chain on
+// \"X\" changed" is one of the amber strings.
+static bool editResultIsFullSuccess (const juce::String& r)
+{
+    if (r.startsWith ("Changes applied")) return true;
+    if (! r.startsWith ("Applied "))      return false;
+    const auto rest = r.fromFirstOccurrenceOf ("Applied ", false, false);
+    int i = 0;
+    while (i < rest.length() && juce::CharacterFunctions::isDigit (rest[i])) ++i;
+    if (i == 0) return false;                       // "Applied " with no count
+    return rest.substring (i).startsWith (" change");
+}
+
 void EchoJayEditor::paint(juce::Graphics& g)
 {
     auto bounds = getLocalBounds();
@@ -17886,7 +18100,10 @@ void EchoJayEditor::paint(juce::Graphics& g)
                     }
                     if (msg.editApplied)
                     {
-                        g.setColour(msg.editResult.startsWith("Applied")
+                        // Green only for a FULL apply; see
+                        // editResultIsFullSuccess above for why the old prefix
+                        // test had come to paint the partial-failure case green.
+                        g.setColour(editResultIsFullSuccess(msg.editResult)
                                     ? juce::Colour(0xff22c55e) : juce::Colour(0xfff59e0b));
                         g.setFont(juce::Font(juce::FontOptions(10.5f)));
                         g.drawText(msg.editResult, ex, ey + 2, bubbleW - 20, 14,
@@ -18271,7 +18488,12 @@ void EchoJayEditor::resized()
         // consciously traded away for this (MERGE_NOTES). Signed-out keeps its
         // existing line on dashView_ above.
         dashWebPanel_.setBounds (dashRect);
-        dashWebPanel_.setText (webFailed
+        // Handoff failure copy wins when set (§5: not-enabled / unreachable /
+        // redeem-failed each get their own words); the offline line covers
+        // the net class; "Loading…" covers mint-in-flight and page load.
+        dashWebPanel_.setText (dashPanelMsg_.isNotEmpty()
+                                   ? dashPanelMsg_
+                                   : webFailed
                                    ? juce::String::fromUTF8 ("You\xe2\x80\x99re offline \xe2\x80\x94 go online to view your dashboard")
                                    : juce::String::fromUTF8 ("Loading your dashboard\xe2\x80\xa6"),
                                juce::dontSendNotification);
@@ -18939,8 +19161,38 @@ void EchoJayEditor::resized()
                 chainBuildBtns[(size_t)i].setVisible(false);
             for (int i = 0; i < kMaxWavePlayBtns; ++i)
                 wavePlayOverlays[(size_t)i].setVisible(false);
-            for (auto& ab : askChipBtns) ab->setVisible(false);
-            briefCard_.setVisible(false);
+
+            // THE EXEMPTION (P66 part 2b, 21 Aug 2026): the ask chips and the
+            // brief card are NOT hidden here. This block hides chat FURNITURE;
+            // an unanswered ask is not furniture, it is a question waiting on
+            // the user, and a mode must never hide a pending question — the
+            // invisible-ask defect arrived twice in one week through two
+            // doors (a trigger landing in chains mode, fixed by the
+            // presentReplaceAsk flip; and an editor recreate restoring into
+            // chains mode, which this exemption fixes without yanking the
+            // user out of the mode they chose). Geometry is safe by
+            // RESERVATION, not floating: the shelf block above authored
+            // askShelfRect_, chatScrollBottom stepped itself above the shelf
+            // (the ONE formula chain), and listBottom == chatScrollBottom
+            // clamped the rows — so no chain row is laid under the shelf.
+
+            // The instrument for that claim ([shelf-overlap], once per
+            // editor instance): this block has produced four overlap bugs,
+            // so the invariant is checked at runtime rather than assumed.
+            // It is NOT pinned headlessly on purpose — the invariant lives
+            // in resized()'s block ordering, which no pure extract can
+            // witness; a headless test of the formula would re-derive the
+            // formula and pass by construction.
+            if (askShelfVisible_ && !chainShelfOverlapLogged_)
+                for (const auto& rr : chainRowRects_)
+                    if (!rr.isEmpty() && rr.intersects(askShelfRect_))
+                    {
+                        chainShelfOverlapLogged_ = true;
+                        EchoJay_NSLog(("EJChains: [shelf-overlap] chain row "
+                                       + rr.toString() + " intersects ask shelf "
+                                       + askShelfRect_.toString()).toRawUTF8());
+                        break;
+                    }
         }
     }
     // Content height from THE single source (measureChatContentHeight), the
@@ -19733,7 +19985,7 @@ void EchoJayEditor::timerCallback()
             auto scanned = processorRef.getPluginScanner().getPlugins();
             if (!scanned.empty())
             {
-                ch.buildRecommendable(scanned, chainFormatFilter_);
+                ch.buildRecommendable(feedRowsWithSessionExclusions(scanned), chainFormatFilter_);
                 // Entries just became ready: prefetch param maps for every
                 // fingerprint the persistent index knows (throttled inside),
                 // so a Build later this session needs no round trip.
@@ -19766,7 +20018,8 @@ void EchoJayEditor::timerCallback()
             // itself (EJScan: resolver rebuilt).
             bool entriesReady = ch.getNumPlugins() > 0;
             if (entriesReady && !ch.hasResolvedRecommendable())
-                ch.buildRecommendable(processorRef.getPluginScanner().getPlugins(), chainFormatFilter_);
+                ch.buildRecommendable(feedRowsWithSessionExclusions(
+                    processorRef.getPluginScanner().getPlugins()), chainFormatFilter_);
 
             // The staleness text that briefly lived here (13 Aug, morning)
             // moved to a header label and then out of the UI entirely
@@ -20011,7 +20264,7 @@ void EchoJayEditor::timerCallback()
             auto scanned = sc.getPlugins();
             if (n > 0 && !scanned.empty())
             {
-                ch.buildRecommendable(scanned, chainFormatFilter_);
+                ch.buildRecommendable(feedRowsWithSessionExclusions(scanned), chainFormatFilter_);
                 ch.requestMapPrefetch();
             }
             if (chainListModel)
@@ -21725,8 +21978,9 @@ EchoJayEditor::resultChipList(const ChatMsg& m) const
     // sole door to the same action, so the chip was a redundant second door -
     // and with two chips present its label wrapped to two lines in a one-line
     // pill. Only the alternatives chip remains; the multi-chip machinery stays
-    // for it (and any future chip). The kind==1 handler in onResultChipTapped
-    // is now unreachable but left as the documented exclude action.
+    // for it (and any future chip). The kind==1 handler it fed was DELETED on
+    // 29 Aug 2026: it had been unreachable since this removal, and its comment
+    // described behaviour it never had.
     std::vector<ResultChip> chips;
     if (m.editAltPrompt.isNotEmpty())
         chips.push_back({ m.editAltPrompt.startsWith("These")
@@ -21771,16 +22025,50 @@ void EchoJayEditor::onResultChipTapped(int msgIdx, int kind)
         sendChatMessage(prompt, label);
         return;
     }
-    // Exclude (session-scoped, iLok rule: never persisted, never auto-
-    // unticks anything): stop suggesting ALL failed plugins from this build
-    // in ONE interaction. chainFailSessionSeen_ is the live-session state
-    // consumed by the recommendable feed's exclusion.
-    if (m.excludeApplied || m.excludeNames.isEmpty()) return;
-    for (const auto& n : m.excludeNames)
-        disablePluginByName(n);
-    m.excludeApplied = true;
-    resized();
-    repaint();
+    // The batch "stop suggesting" handler (kind == 1) was DELETED 29 Aug 2026.
+    // It had been unreachable since the chip was removed from resultChipList,
+    // and its comment was wrong on three counts: it said session-scoped while
+    // calling disablePluginByName (which persists), said it never unticks
+    // anything (it unticks the Settings checklist), and said
+    // chainFailSessionSeen_ fed the recommendable exclusion (it has one read,
+    // as a re-prompt suppressor, and the feed never consults it). Dead code
+    // whose comment documents behaviour the code never had is worse than no
+    // documentation: it is what a reader trusts. Batch exclusion is also the
+    // shape the spec's reversed load_failed.txt was reversed FOR, so this is
+    // not a door to reopen. The per-plugin modal is the only exclusion door.
+}
+
+void EchoJayEditor::announceRefusedOps(const juce::String& chainJson,
+                                       const juce::String& editJson)
+{
+    // Names in block order, each with the SERVER's reason. Carrying the reason
+    // rather than restating it keeps one author for the sentence: a client
+    // paraphrase would go stale silently if the server's wording changed,
+    // which is the shape this file keeps being bitten by.
+    // The op's "case" rides alongside its reason since the server's 558fc1d:
+    // not_owned | no_map | unresolved. It is read but never rendered -- the
+    // sentence stays the server's -- and it decides one thing only, whether the
+    // Settings remedy is true for this turn. See EJRefusalLine.h.
+    std::vector<echojay::RefusedOp> ops;
+    auto collect = [&](const juce::String& json)
+    {
+        if (json.isEmpty()) return;
+        auto v = juce::JSON::parse(json);
+        auto* o = v.getDynamicObject();
+        if (o == nullptr) return;
+        if (auto* arr = o->getProperty("refused_ops").getArray())
+            for (auto& rv : *arr)
+                if (auto* r = rv.getDynamicObject())
+                    ops.push_back({ r->getProperty("name").toString().trim(),
+                                    r->getProperty("reason").toString().trim(),
+                                    r->getProperty("case").toString().trim() });
+    };
+    collect(chainJson);
+    collect(editJson);
+
+    const auto line = echojay::refusalLineFor(ops);
+    if (line.isEmpty()) return;
+    appendLocalResultBubble(line);
 }
 
 void EchoJayEditor::appendLocalResultBubble(const juce::String& text,
@@ -21837,19 +22125,17 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
     std::vector<PartialPart> partialParts, zeroOorParts;
     for (const auto& di : ch.getDialInfos())
     {
-        // Written-but-display-stale (bridged report-only) is recorded
-        // queryably whatever the slot status: the write was kept on norm
-        // proof and the display disagreement must not vanish into the
-        // applied count.
-        if (!di.unconfirmed.isEmpty())
-            logDialMiss(di.name, di.fp, "stale_display_kept", di.unconfirmed,
-                        di.format, di.uid, di.requestedCount, di.requestedSource);
-        // Range refusals are recorded whatever the slot status: the bubble
-        // must never say "use the values on its card" about a value the
-        // card says will not map onto this version.
-        if (!di.outOfRange.isEmpty())
-            logDialMiss(di.name, di.fp, "out_of_range", di.outOfRange,
-                        di.format, di.uid, di.requestedCount, di.requestedSource);
+        // dial-4 A8: population, counted where the rows are logged so the
+        // two derive from the same snapshot. Once per slot-turn — this
+        // walker and logDialMissesWhenSettled are if/else alternatives at
+        // their call site, and the edit walker is a different turn type.
+        noteDialTallyFromInfo(di);
+        // A9 step 1: rows here, bubble below. This walker no longer decides
+        // WHICH reasons a slot state produces — one author, three callers.
+        emitDialMissRows(di);
+        // Bubble composition ONLY. These branches genuinely differ between
+        // the build and edit walkers (and walker 3 composes no bubble at
+        // all), which is why the row set moved out and this stayed.
         switch (di.status)
         {
             case ChainHost::DialStatus::applied:
@@ -21857,48 +22143,39 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                 break;
             case ChainHost::DialStatus::partial:
                 partialParts.push_back({ di.name, di.manual, di.outOfRange });
-                logDialMiss(di.name, di.fp, "partial", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource);
-                if (!di.readbackMiss.isEmpty())
-                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
-                                di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
             case ChainHost::DialStatus::noMap:
                 // Stale-map ladder, unmapped rung: the plugin loaded at a
-                // version the corpus has no mapping for. Its wording names
-                // the actual reason, and only this shape earns the
-                // suggest-an-alternative pill below.
+                // version the corpus has no mapping for. Only this shape
+                // earns the suggest-an-alternative pill below.
                 if (di.staleIndexedFp.isNotEmpty())
                 {
                     staleParts.add(di.name);
-                    logDialMiss(di.name, di.fp, "stale_unmapped", di.manual,
-                                di.format, di.uid, di.requestedCount, di.requestedSource);
                     break;
                 }
                 zeroParts.add(di.name);
-                logDialMiss(di.name, di.fp, "no_map", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
-            case ChainHost::DialStatus::unusableMap:
+            // A9 step 3: unusableMap split four ways. BUBBLE COMPOSITION IS
+            // UNCHANGED — all four compose exactly as the one value did, so
+            // this commit moves the reason vocabulary and not a word of what
+            // the user reads. Listed separately rather than fallen through so
+            // a later change to one of them cannot silently take the other three.
+            case ChainHost::DialStatus::mapNoCoverage:
+            case ChainHost::DialStatus::writesRejected:
+            case ChainHost::DialStatus::mapIdentityMismatch:
+            case ChainHost::DialStatus::builtinPayloadUnmatched:
                 if (!di.outOfRange.isEmpty())
                 {
                     zeroOorParts.push_back({ di.name, di.manual, di.outOfRange });
-                    logDialMiss(di.name, di.fp, "unusable_map", di.manual);
                     break;
                 }
                 zeroParts.add(di.name);
-                logDialMiss(di.name, di.fp, "unusable_map", di.manual);
-                if (!di.readbackMiss.isEmpty())
-                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
-                                di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
             case ChainHost::DialStatus::pending:
                 // Fetch never answered inside the cap: NEVER fall through to
                 // the model's success line - conservative wording, and the
                 // late apply (if it lands) updates the slot card anyway.
                 zeroParts.add(di.name);
-                logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
             case ChainHost::DialStatus::none:
                 break;
@@ -22027,30 +22304,13 @@ void EchoJayEditor::composeStaleAltFollowUp(const juce::StringArray& staleNames,
 // same-named slots are indistinguishable at this level - a name-level
 // approximation, accepted.
 // dial-3 (A7.2, "keys" source): requested-entry count of one edit op's
-// settings_structured — top-level flat keys, plus entries of "controls",
-// plus "bands" elements: the same granularity applySettings reports one
-// result per. Used for refine_dropped rows, whose names are removed
-// SERVER-side and never reach the client apply's report.size().
+// settings_structured. Used for refine_dropped rows, whose names are removed
+// SERVER-side and never reach the client apply's report.size(). Since A8.1a
+// the semantic has ONE implementation, shared with getDialInfos' fallback,
+// so the two keys-sourced sites cannot diverge again.
 static int structuredRequestCount (const juce::var& structured)
 {
-    auto* o = structured.getDynamicObject();
-    if (o == nullptr) return 0;
-    int n = 0;
-    for (auto& kv : o->getProperties())
-    {
-        const auto k = kv.name.toString();
-        if (k == "controls")
-        {
-            if (auto* co = kv.value.getDynamicObject()) n += co->getProperties().size();
-        }
-        else if (k == "bands")
-        {
-            if (auto* ba = kv.value.getArray()) n += ba->size();
-        }
-        else
-            ++n;
-    }
-    return n;
+    return echojay::requestedEntryCount (structured);
 }
 
 void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson,
@@ -22122,6 +22382,12 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 // format||name and flags it, per A2).
                 const int reqCount = structuredRequestCount(
                     opv.getProperty("settings_structured", juce::var()));
+                // dial-4 A8.1a: this op's apply ALSO runs (its surviving
+                // settings reach applyStructuredIfReady, whose walker bumps
+                // applies) — so this site contributes the dropped entries'
+                // count ONLY. Bumping applies here too is the double-count
+                // the mapfps_test pin exists for.
+                noteDialTallyRefine(plug, /*opReachesApply*/ true, dc->size());
                 for (auto& dv : *dc)
                     if (auto* dobj = dv.getDynamicObject())
                     {
@@ -22129,7 +22395,8 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                             + " on " + plug + " (" + dobj->getProperty("reason").toString() + ")");
                         logDialMiss(plug, juce::String(), "refine_dropped",
                                     { dobj->getProperty("name").toString() },
-                                    juce::String(), juce::String(), reqCount, "keys");
+                                    juce::String(), juce::String(), reqCount, "keys",
+                                    ChainHost::isBuiltinName(plug));
                     }
             }
         }
@@ -22140,12 +22407,12 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
     for (const auto& di : ch.getDialInfos())
     {
         if (!touchedNames.contains(di.name)) continue;
-        if (!di.unconfirmed.isEmpty())   // bridged report-only: same record as the build path
-            logDialMiss(di.name, di.fp, "stale_display_kept", di.unconfirmed,
-                        di.format, di.uid, di.requestedCount, di.requestedSource);
-        if (!di.outOfRange.isEmpty())    // range refusals: same record as the build path
-            logDialMiss(di.name, di.fp, "out_of_range", di.outOfRange,
-                        di.format, di.uid, di.requestedCount, di.requestedSource);
+        // dial-4 A8: population for the touched slots, beside their rows.
+        noteDialTallyFromInfo(di);
+        // A9 step 1: rows here (one author), bubble below. This walker used
+        // to compose the same reason set by hand; the edit path and the build
+        // path can no longer disagree about one slot state.
+        emitDialMissRows(di);
         switch (di.status)
         {
             case ChainHost::DialStatus::applied:
@@ -22153,11 +22420,6 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 break;
             case ChainHost::DialStatus::partial:
                 partialParts.push_back({ di.name, di.manual, di.outOfRange });
-                logDialMiss(di.name, di.fp, "partial", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource);
-                if (!di.readbackMiss.isEmpty())
-                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
-                                di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
             case ChainHost::DialStatus::noMap:
                 // Stale-map ladder, unmapped rung: same diversion as the
@@ -22165,34 +22427,31 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 if (di.staleIndexedFp.isNotEmpty())
                 {
                     staleParts.add(di.name);
-                    logDialMiss(di.name, di.fp, "stale_unmapped", di.manual,
-                                di.format, di.uid, di.requestedCount, di.requestedSource);
                     break;
                 }
                 zeroParts.add(di.name);
-                logDialMiss(di.name, di.fp, "no_map", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
-            case ChainHost::DialStatus::unusableMap:
+            // A9 step 3: unusableMap split four ways. BUBBLE COMPOSITION IS
+            // UNCHANGED — all four compose exactly as the one value did, so
+            // this commit moves the reason vocabulary and not a word of what
+            // the user reads. Listed separately rather than fallen through so
+            // a later change to one of them cannot silently take the other three.
+            case ChainHost::DialStatus::mapNoCoverage:
+            case ChainHost::DialStatus::writesRejected:
+            case ChainHost::DialStatus::mapIdentityMismatch:
+            case ChainHost::DialStatus::builtinPayloadUnmatched:
                 if (!di.outOfRange.isEmpty())
                 {
                     zeroOorParts.push_back({ di.name, di.manual, di.outOfRange });
-                    logDialMiss(di.name, di.fp, "unusable_map", di.manual);
                     break;
                 }
                 zeroParts.add(di.name);
-                logDialMiss(di.name, di.fp, "unusable_map", di.manual);
-                if (!di.readbackMiss.isEmpty())
-                    logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
-                                di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
             case ChainHost::DialStatus::pending:
                 // Fetch never answered inside the cap: NEVER fall through
                 // to the model's success line - conservative wording, and a
                 // late apply (if it lands) updates the slot card anyway.
                 zeroParts.add(di.name);
-                logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource);
                 break;
             case ChainHost::DialStatus::none:
                 // Touched and carried settings, yet nothing structured
@@ -22363,10 +22622,26 @@ juce::String EchoJayEditor::consumeSuggestionSetsAtReceipt(const juce::String& e
                                          : " couldn't be set by name on ")
                     + infos[(size_t) idx].name
                     + " - the values are on its card to dial by hand.");
+                // dial-4 A8.1a: a receipt-consumed op NEVER reaches the apply
+                // pipeline, so this is its only site — it bumps applies AND
+                // carries the dropped entries' count.
+                noteDialTallyRefine(infos[(size_t) idx].name,
+                                    /*opReachesApply*/ false, dc->size());
+                // dial-4 A8.8: requested rides the row, or the batch builder
+                // skips it as pre-contract shape and the reason stays
+                // censored — receipt-path refine_dropped had never shipped a
+                // single row in the life of the counter. A consumed op's
+                // settings_structured is void by the suggestionOnly test, so
+                // the op's requested-entry count (A7.2) reduces to the
+                // dropped entries themselves: dc->size(), source "keys" —
+                // the same count the tally accumulated one line up. No slot
+                // identity, same reasoning as the Apply-path site.
                 for (auto& dv : *dc)
                     if (auto* dobj = dv.getDynamicObject())
                         logDialMiss(infos[(size_t) idx].name, juce::String(),
-                                    "refine_dropped", { dobj->getProperty("name").toString() });
+                                    "refine_dropped", { dobj->getProperty("name").toString() },
+                                    juce::String(), juce::String(), dc->size(), "keys",
+                                    ChainHost::isBuiltinName(infos[(size_t) idx].name));
             }
         }
     }
@@ -22399,30 +22674,46 @@ void EchoJayEditor::logDialMissesWhenSettled(int attemptsLeft)
                                             : "dial NOT settled, retry budget exhausted");
     for (const auto& di : ch.getDialInfos())
     {
-        if (di.status == ChainHost::DialStatus::noMap)
-            logDialMiss(di.name, di.fp, "no_map", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource);
-        else if (di.status == ChainHost::DialStatus::unusableMap)
-            logDialMiss(di.name, di.fp, "unusable_map", di.manual);
-        else if (di.status == ChainHost::DialStatus::partial)
-            logDialMiss(di.name, di.fp, "partial", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource);
-        else if (di.status == ChainHost::DialStatus::pending)
-            logDialMiss(di.name, di.fp, "map_fetch_timeout", di.manual,
-                            di.format, di.uid, di.requestedCount, di.requestedSource);
-        if ((di.status == ChainHost::DialStatus::partial
-             || di.status == ChainHost::DialStatus::unusableMap)
-            && !di.readbackMiss.isEmpty())
-            logDialMiss(di.name, di.fp, "readback_mismatch", di.readbackMiss,
-                                di.format, di.uid, di.requestedCount, di.requestedSource);
+        // dial-4 A8: population, beside the rows (see the build walker).
+        noteDialTallyFromInfo(di);
+        // A9 step 1: this walker composes NO bubble, so the shared emitter is
+        // its whole body now. It previously hand-rolled a SHORTER reason set
+        // than the other two — no stale_display_kept, no out_of_range, and a
+        // stale-ladder noMap reported as plain "no_map" — so a dirty-load
+        // build reported strictly less than a clean one about identical slot
+        // state. That gap closes by construction here.
+        emitDialMissRows(di);
     }
+}
+
+// A9 step 1 (22 Aug 2026): the ONE dial-miss emitter. The reason set is
+// derived by echojay::dialMissRowsFor (EJDialMissRows.h, pure and pinned in
+// tools/mapfps_test); this function only turns those rows into events. Every
+// field comes off the same SlotDialInfo, so two callers handed identical slot
+// state write identical rows — which is the property the three walkers had
+// lost. See the header for what had drifted and why it mattered.
+void EchoJayEditor::emitDialMissRows(const ChainHost::SlotDialInfo& di)
+{
+    for (const auto& row : echojay::dialMissRowsFor(di))
+        logDialMiss(di.name, di.fp, row.reason, row.names,
+                    di.format, di.uid, di.requestedCount, di.requestedSource,
+                    di.builtin, row.alsoReasons);
 }
 
 void EchoJayEditor::logDialMiss(const juce::String& plugin, const juce::String& fp,
                                 const juce::String& reason, const juce::StringArray& manual,
                                 const juce::String& format, const juce::String& uid,
-                                int requested, const juce::String& requestedSource)
+                                int requested, const juce::String& requestedSource,
+                                bool builtinSlot, const juce::StringArray& alsoReasons)
 {
+    // dial-4 A8.1b (corrected 22 Aug): built-ins leave the ROWS as well as
+    // the tally — refused HERE, at the one emitter, so the walkers cannot
+    // disagree about it. A built-in failing to take a setting is a real
+    // failure with a different cause and no map in it; folding it into a
+    // map-path rate would swamp what this instrument measures. Slot walkers
+    // pass di.builtin; name-only sites pass ChainHost::isBuiltinName;
+    // slotless reasons (A7.1) have no slot to be built-in and default false.
+    if (! echojay::dialRowAdmits(builtinSlot)) return;
     // events.jsonl schema v1 (EchoJayEventLog.h): upload-ready field names.
     auto* f = new juce::DynamicObject();
     f->setProperty("plugin", plugin);
@@ -22437,6 +22728,17 @@ void EchoJayEditor::logDialMiss(const juce::String& plugin, const juce::String& 
     // dial-3 (A2/A7.2): key halves + denominator. "requested" present is
     // the NEW-shape marker the batch builder ships on; absent rows are
     // pre-contract history and are never retro-shipped (A2).
+    // A9 §2: the partition's second half. Written ONLY when non-empty, in the
+    // same conditional-field idiom as fp/format/uid — an empty array on the
+    // wire would make "one reason applied" indistinguishable from "several
+    // applied and we dropped them". Slotless and refine-site rows never pass
+    // this, and §2 binds the server never to expect it on them.
+    if (! alsoReasons.isEmpty())
+    {
+        juce::Array<juce::var> ar;
+        for (auto& a : alsoReasons) ar.add(a);
+        f->setProperty("also_reasons", ar);
+    }
     if (format.isNotEmpty())          f->setProperty("format", format);
     if (uid.isNotEmpty())             f->setProperty("uid", uid);
     if (requested >= 0)               f->setProperty("requested", requested);
@@ -22455,15 +22757,70 @@ static juce::File dialDeclineWatermarkFile()
     return echojay::eventLogDir().getChildFile("dial_declines_watermark.txt");
 }
 
+// dial-4 A8.4: the attempt tally lives beside the watermark, in the same
+// client store, so it survives exactly what the watermark survives (editor
+// recreate included — the in-memory copy is a lazily loaded cache of this).
+static juce::File dialTallyFile()
+{
+    return echojay::eventLogDir().getChildFile("dial_attempt_tally.json");
+}
+
+void EchoJayEditor::loadDialTallyIfNeeded()
+{
+    if (dialTallyLoaded_) return;
+    dialTallyLoaded_ = true;
+    auto f = dialTallyFile();
+    if (f.existsAsFile())
+        dialTally_ = echojay::DialAttemptTally::fromAttemptsVar(
+            juce::JSON::parse(f.loadFileAsString()));
+}
+
+void EchoJayEditor::saveDialTally()
+{
+    auto f = dialTallyFile();
+    f.getParentDirectory().createDirectory();
+    f.replaceWithText(juce::JSON::toString(dialTally_.toAttemptsVar(), true) + "\n");
+}
+
+// The settle-walker site: one settled slot-turn, clean included — this is
+// what makes the denominator marginal rather than conditional (A8's whole
+// reason). Status `none` is not a slot-turn (no settings this turn), and a
+// built-in never enters (A8.1b, via the same dialTallyAdmits the pin tests).
+void EchoJayEditor::noteDialTallyFromInfo(const ChainHost::SlotDialInfo& di)
+{
+    if (di.status == ChainHost::DialStatus::none) return;
+    loadDialTallyIfNeeded();
+    echojay::noteDialApplySite(dialTally_, di.format, di.uid,
+                               di.requestedCount, di.builtin);
+    saveDialTally();
+}
+
+// The refine sites: dropped_controls entries, absent from report.size() by
+// construction. opReachesApply is A8.1a's once-rule — the Apply-path site
+// passes true (the apply site bumps applies for that slot-turn), the
+// receipt-consumed site passes false (this is its only site).
+void EchoJayEditor::noteDialTallyRefine(const juce::String& pluginName,
+                                        bool opReachesApply, int droppedCount)
+{
+    loadDialTallyIfNeeded();
+    echojay::noteDialRefineSite(dialTally_, opReachesApply, droppedCount,
+                                ChainHost::isBuiltinName(pluginName));
+    saveDialTally();
+}
+
 juce::String EchoJayEditor::buildDialDeclinesBatchJson()
 {
     pendingDeclineWatermark_ = -1;
+    // dial-4 A8.4: a fresh stage voids any previous unshipped stage, exactly
+    // as the watermark line above does — the tally itself is untouched until
+    // the SUCCESS handler subtracts what actually shipped.
+    dialTallyPendingShip_ = false;
+    pendingShippedTally_  = {};
     const juce::int64 wm = dialDeclineWatermarkFile().loadFileAsString().trim().getLargeIntValue();
     auto f = echojay::eventLogDir().getChildFile("events.jsonl");
-    if (! f.existsAsFile()) return {};
 
     juce::StringArray lines;
-    lines.addLines(f.loadFileAsString());
+    if (f.existsAsFile()) lines.addLines(f.loadFileAsString());
     juce::Array<juce::var> rows;   // file order == t ascending (append-only)
     for (auto& ln : lines)
     {
@@ -22491,6 +22848,12 @@ juce::String EchoJayEditor::buildDialDeclinesBatchJson()
             r->setProperty("plugin", eo->getProperty("plugin"));
             r->setProperty("requested", eo->getProperty("requested"));
             r->setProperty("requestedSource", eo->getProperty("requested_source").toString());
+            // A9 §2: carried through only when the event has it, so a row with
+            // one reason reaches the server with no key rather than an empty
+            // array. The explosion below is now 1 name -> 1 row, because the
+            // partition already made the event per-control.
+            if (const auto ar = eo->getProperty("also_reasons"); ar.isArray())
+                r->setProperty("also_reasons", ar);
             r->setProperty("t", (double) t);
             rows.add(juce::var(r));
         };
@@ -22500,8 +22863,6 @@ juce::String EchoJayEditor::buildDialDeclinesBatchJson()
         else
             addRow({});
     }
-    if (rows.isEmpty()) return {};
-
     // A7.3 caps: backlog 256 — the OLDEST are dropped and COUNTED (the
     // shipped rows' max t then moves the watermark past them, so a drop is
     // permanent, never a silent re-queue). Per-turn 32, oldest first; the
@@ -22513,12 +22874,44 @@ juce::String EchoJayEditor::buildDialDeclinesBatchJson()
     juce::int64 maxT = -1;
     for (auto& r : ship)
         maxT = juce::jmax(maxT, (juce::int64) (double) r.getProperty("t", juce::var()));
-    pendingDeclineWatermark_ = maxT;
+    pendingDeclineWatermark_ = maxT;   // -1 when no rows: nothing to commit
+
+    // dial-4 A8: the attempt tally rides the same envelope. Staged as a
+    // SNAPSHOT (consumed-at-build, the mapFps pattern — a transport retry
+    // cannot ship it twice); the success handler subtracts exactly this
+    // snapshot, so applies accumulated between stage and success survive.
+    // Cap 32 entries per turn (A8.1); overflow waits for the next turn,
+    // never truncates silently.
+    loadDialTallyIfNeeded();
+    juce::var attemptsVar;
+    {
+        echojay::DialAttemptTally staged;
+        for (const auto& e : dialTally_.entries)
+        {
+            if (e.applies == 0 && e.requested == 0) continue;
+            if ((int) staged.entries.size() >= 32) break;   // overflow rides next turn
+            staged.entries.push_back(e);
+        }
+        if (! staged.empty())
+        {
+            attemptsVar           = staged.toAttemptsVar();
+            pendingShippedTally_  = std::move(staged);
+            dialTallyPendingShip_ = true;
+        }
+    }
+
+    // A8.1: the envelope ships whenever attempts is non-empty, EVEN with
+    // rows empty — clean-only stretches are the whole disease; a tally that
+    // only rides decline turns reproduces the conditional denominator one
+    // level up.
+    if (ship.isEmpty() && ! dialTallyPendingShip_) return {};
 
     auto* env = new juce::DynamicObject();
     env->setProperty("batch", juce::Uuid().toDashedString());  // A7.3: random per batch, dedupe key, deliberately NOT machine_id
     env->setProperty("rows", juce::var(ship));
     env->setProperty("dropped", dropped);
+    if (dialTallyPendingShip_)
+        env->setProperty("attempts", attemptsVar);
     return juce::JSON::toString(juce::var(env), true);
 }
 
@@ -22845,8 +23238,19 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
                 // third of three surfaces contradicting the honest bubble).
                 summary = "Suggested settings added to the card - nothing written automatically";
             else if (applied == total)
-                summary = "Applied " + juce::String(applied)
-                        + (applied == 1 ? " change" : " changes");
+                // NO COUNT (25 Aug 2026). The number counted OPS -- `total` is
+                // ops.size() and `applied` is incremented once per op in
+                // finishOpAndContinue -- while the card printed beneath it
+                // lists the SETTINGS by name. One `set` op carrying three
+                // controls read "Applied 1 change" above a card showing
+                // Attack 2, Release 7, Ratio 4.
+                //
+                // Not fixed by counting settings instead. The card already
+                // names every one of them, so any number here is a second
+                // store for the same fact and can only ever disagree with the
+                // list beside it. There is no case where the count tells the
+                // reader something the list does not.
+                summary = "Changes applied";
             else
                 summary = "Applied " + juce::String(applied) + " of "
                         + juce::String(total) + " - "
@@ -23205,9 +23609,11 @@ void EchoJayEditor::pollLinkEditAck(const juce::String& linkUid, int seq, int at
                     juce::String summary, altPrompt, altLabel, bubble;
                     if (status == "ok")
                     {
-                        summary = "Applied " + juce::String(totalOps)
-                                + (totalOps == 1 ? " change" : " changes")
-                                + " on \"" + targetLabel + "\"";
+                        // Same as the local path above: totalOps is ops.size(),
+                        // not a setting count, and the card lists the settings.
+                        // The target label stays -- it says WHICH Link channel,
+                        // which nothing else on this line carries.
+                        summary = "Changes applied on \"" + targetLabel + "\"";
                         auto ev = juce::JSON::parse(editDataKey);
                         if (auto* eo = ev.getDynamicObject())
                             bubble = eo->getProperty("result").toString().trim();
@@ -23685,6 +24091,95 @@ void EchoJayEditor::layoutChatBox(juce::Rectangle<int> box)
                               && chatModelLabel.getText().isNotEmpty());
 }
 
+// ---- [key-hint] Reaper keyboard-routing hint --------------------------------
+// Scope and mechanism: the member comment in PluginEditor.h. All four
+// functions are deliberately dumb — the ONLY intelligence is "is the host
+// Reaper" and "has this install seen the hint".
+
+juce::File EchoJayEditor::keyHintMarkerFile()
+{
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+               .getChildFile("Application Support/EchoJay/key_hint_reaper.json");
+}
+
+void EchoJayEditor::maybeShowReaperKeyHint()
+{
+    // Reaper BY NAME (hostFilename contains "reaper",
+    // juce_PluginHostType.cpp) — never "VST3" and never "not Logic". If
+    // another host is ever reported it gets added by name, not by category.
+    if (! juce::PluginHostType().isReaper()) return;
+
+    // Retire on DISMISS, not on show (21 Aug 2026 correction): the hint is
+    // for the moment the user types and gets no spaces, which is AFTER the
+    // strip appeared — retiring on show can spend it on an occasion nobody
+    // was looking. A user who has not pressed Got it has not read it.
+    auto marker = keyHintMarkerFile();
+    auto v = juce::JSON::parse(marker.loadFileAsString());
+    auto* existing = v.getDynamicObject();
+    if (existing != nullptr && existing->hasProperty("dismissed")) return;
+
+    keyHintActive_ = true;
+    // The marker still records every show: "shown" = first, "shows" = count.
+    // If the count ever reaches something absurd with no dismissal, the
+    // strip is INVISIBLE rather than ignored — a different defect, and one
+    // hit twice this week.
+    juce::DynamicObject::Ptr obj = existing != nullptr ? existing
+                                                       : new juce::DynamicObject();
+    const auto now = juce::Time::getCurrentTime().toISO8601(true);
+    if (! obj->hasProperty("shown")) obj->setProperty("shown", now);
+    const int shows = (int) obj->getProperty("shows") + 1;
+    obj->setProperty("shows", shows);
+    obj->setProperty("last_shown", now);
+    marker.getParentDirectory().createDirectory();
+    marker.replaceWithText(juce::JSON::toString(juce::var(obj.get()), true) + "\n");
+    EchoJay_NSLog(("EJHint: [key-hint] shown host=Reaper shows="
+                   + juce::String(shows)).toRawUTF8());
+}
+
+void EchoJayEditor::syncReaperKeyHint()
+{
+    const bool show = keyHintActive_ && chatInput.isVisible();
+    if (show)
+    {
+        // Floating strip anchored above the composer box (chatBoxRect_ is
+        // the ONE geometry truth) — no surface's height math is touched.
+        constexpr int kH = 56, kBtnW = 58;
+        auto strip = juce::Rectangle<int>(chatBoxRect_.getX(),
+                                          chatBoxRect_.getY() - kH - 4,
+                                          chatBoxRect_.getWidth(), kH);
+        const bool wasVisible = keyHintLabel_.isVisible();
+        keyHintDismissBtn_.setBounds(strip.removeFromRight(kBtnW)
+                                          .withSizeKeepingCentre(kBtnW - 8, 22));
+        keyHintLabel_.setBounds(strip);
+        if (! wasVisible)
+        {
+            // Front once, on appearance — the modal overlay path never gets
+            // here (chatOk is false while any prompt is up), so this cannot
+            // sit over an overlay.
+            keyHintLabel_.toFront(false);
+            keyHintDismissBtn_.toFront(false);
+        }
+    }
+    keyHintLabel_.setVisible(show);
+    keyHintDismissBtn_.setVisible(show);
+}
+
+void EchoJayEditor::dismissReaperKeyHint()
+{
+    keyHintActive_ = false;
+    keyHintLabel_.setVisible(false);
+    keyHintDismissBtn_.setVisible(false);
+
+    auto marker = keyHintMarkerFile();
+    auto v = juce::JSON::parse(marker.loadFileAsString());
+    juce::DynamicObject::Ptr obj = v.getDynamicObject() != nullptr
+                                       ? v.getDynamicObject()
+                                       : new juce::DynamicObject();
+    obj->setProperty("dismissed", juce::Time::getCurrentTime().toISO8601(true));
+    marker.replaceWithText(juce::JSON::toString(juce::var(obj.get()), true) + "\n");
+    EchoJay_NSLog("EJHint: [key-hint] dismissed");
+}
+
 void EchoJayEditor::showChatTargetMenu()
 {
     if (effectiveChannelUid().isNotEmpty()) return;   // channel chat: pill is locked
@@ -24020,6 +24515,16 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
     juce::String out;
     bool hadFeed = false;
     auto& chainHost = processorRef.getChainHost();
+    // ONE SWEEP PER TURN, TAKEN HERE, USED TWICE (24 Aug 2026). The injection
+    // below suppresses an echoed value wherever a live read exists, and
+    // sendChatMessage serialises the same cache onto the wire further down.
+    // Both must see the SAME numbers: the defect being fixed is two stores
+    // disagreeing about one control, and re-reading at each consumer would
+    // move that disagreement rather than remove it. This is also the only
+    // point in the send flow that runs BEFORE the injection is built --
+    // setNextChatParamReads is ~84 lines later, so a sweep taken there would
+    // arrive after [CURRENT CHAIN] had already been composed.
+    chainHost.refreshSlotParamReads();
 
     // Feed split (P16), behind a runtime kill switch (feed_split_on.txt, absent
     // by default). OFF => today's full undifferentiated list and NO existence
@@ -24078,18 +24583,11 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
         // suggestedTarget CUT (authorised): the feed no longer names other
         // Links to the model on ANY turn — routing to a Link is solely the
         // user's act (pill or banner selector) BEFORE the message is sent.
-        // 2.1 "(dial)" feed markers + 2.4 dialFlags (26 Jul 2026): built but
-        // DARK - kDialSignalsEnabled stays false until the server-side
-        // explainer for the marker exists. Threshold: >=2 usable CORE
-        // semantics (echojay::mapIsDialableForSignals), NOT raw usable
-        // count - spiff (mix_pct+position) must not be marked dialable.
-        if (echojay::kDialSignalsEnabled)
-        {
-            const auto dialable = chainHost.getDialableRecommendableNames();
-            for (auto& rn : recommendable)
-                if (dialable.contains(rn)) rn += " (dial)";
-            api.setNextDialFlags(dialable);
-        }
+        // The "(dial)" feed markers and the dialFlags array lived here behind
+        // kDialSignalsEnabled and are DELETED (25 Aug 2026). Superseded by the
+        // category tag, which discriminates where the dial signal did not:
+        // 467 of 859 feed names against 1,183 of 1,185 products. See the note
+        // where the constant was, in EchoJayParamApply.h.
         out += EchoJayAPI::buildChainInjection(recommendable);
         hadFeed = true;
         EchoJay_NSLog(("EJChat: chain injection attached -- "
@@ -25762,6 +26260,13 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
                 }
         api.setNextChatMapFps(juce::JSON::toString(fpsVar, true));
     }
+    // 6c section 8a: staged beside mapFps and from the same rack, but OUTSIDE
+    // the mapFps guard above -- reads are worth sending whenever a slot exists,
+    // even on a turn where no fingerprint resolved.
+    {
+        api.setNextChatParamReads(
+            processorRef.getChainHost().buildSlotParamReadsJson());
+    }
     // dial-3 (A7.3): the declined-name batch rides THIS send's body,
     // consumed at body build like mapFps — so the transport's internal
     // limit-refresh retry resends WITHOUT the field rather than twice with
@@ -26047,6 +26552,17 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
                 juce::String(pendingDeclineWatermark_) + "\n");
             pendingDeclineWatermark_ = -1;
         }
+        // dial-4 A8.4: reset ONLY on send success, and by SUBTRACTING the
+        // staged snapshot — never by clearing, so slot-turns accumulated
+        // between stage and this reply survive into the next batch. A failed
+        // send never reaches here; the untouched tally rides the next turn.
+        if (dialTallyPendingShip_)
+        {
+            dialTally_.subtract(pendingShippedTally_);
+            saveDialTally();
+            pendingShippedTally_  = {};
+            dialTallyPendingShip_ = false;
+        }
         hadChainOpener = EchoJayAPI::extractChainBlock(visibleReply, chainJson);
         if (EchoJayAPI::extractGainBlock(visibleReply, gainJson))
             EchoJay_NSLog("EJChat: gain proposal block received");
@@ -26258,6 +26774,12 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
         cm.gainData  = gainJson;    // empty if no gain proposal block
         cm.askData   = askJson;     // empty if no ask block
         cm.editData  = editJson;    // empty if no chain-edit block
+
+        // The server refused an add and said so in the BLOCK, not in the
+        // prose; without this the reply still claims it happened. Fresh
+        // receipts only -- the workspace-restore path (cm.editData =
+        // msg.editJson) must not re-announce a refusal already read.
+        announceRefusedOps(chainJson, editJson);
         // Staleness anchor: the rack revision the model's baseSlots
         // describe. -1 after reload (in-memory counter, see header).
         // Targeted turns (Phase R) anchor to the LINK's sidecar
@@ -27812,6 +28334,59 @@ void EchoJayEditor::pollLinkChainAck(const juce::String& linkUid, int seq,
     });
 }
 
+// SESSION-SCOPED FEED EXCLUSION (29 Aug 2026), the mechanism the spec always
+// described and the code never had. Before this there were exactly two stores:
+// plugin_disabled.json (persistent, and the same file as the Settings
+// checklist) and chainFailSessionSeen_ (a re-prompt suppressor with one read,
+// consumed by nothing). So "exclude for this session" was unavailable, and the
+// only door out of a load failure wrote to disk.
+//
+// A TU-LOCAL STATIC, not a member of anything. Adding a data member to
+// EchoJayEditor or ChainHost would change a layout the gate's stale SharedCode
+// link still holds the old shape of, and these pins are meant to run without a
+// rebuild. Process-lifetime is also the correct scope: "this session" means
+// this run of the host, and several editor instances share one process.
+//
+// NOT reusing setPluginEnabled's in-memory set, deliberately: that set is
+// REPLACED wholesale by maybeReloadEnabledState whenever plugin_disabled.json's
+// mtime moves (applyReloadedDisabledSet), so any other instance's save, or any
+// checklist click, would silently resurrect the exclusion mid-session. An
+// exclusion that survives only until someone else writes a file is worse than
+// none, because nothing says it went away.
+static std::set<juce::String>& sessionFeedExcludedUids()
+{
+    static std::set<juce::String> s;
+    return s;
+}
+
+std::vector<ScannedPlugin>
+EchoJayEditor::feedRowsWithSessionExclusions(std::vector<ScannedPlugin> rows) const
+{
+    const auto& ex = sessionFeedExcludedUids();
+    if (ex.empty()) return rows;
+    for (auto& r : rows)
+        if (r.enabled && ex.count(r.uid) > 0) r.enabled = false;
+    return rows;
+}
+
+void EchoJayEditor::excludeFromFeedThisSession(const juce::String& name)
+{
+    auto& scanner = processorRef.getPluginScanner();
+    for (auto& p : scanner.getPlugins())
+        if (ChainHost::namesMatchLoose(name, p.name))
+        {
+            sessionFeedExcludedUids().insert(p.uid);
+            EchoJay_NSLog(("EJExclude: session-only \"" + p.name
+                           + "\" uid=" + p.uid + " (Not now; nothing written)").toRawUTF8());
+            break;
+        }
+    // Rebuild so the feed drops it now. Nothing is saved: no
+    // setPluginEnabled, no saveEnabledState, no checklist refresh.
+    auto& ch = processorRef.getChainHost();
+    ch.buildRecommendable(feedRowsWithSessionExclusions(scanner.getPlugins()),
+                          chainFormatFilter_);
+}
+
 void EchoJayEditor::disablePluginByName(const juce::String& name)
 {
     auto& scanner = processorRef.getPluginScanner();
@@ -27823,12 +28398,18 @@ void EchoJayEditor::disablePluginByName(const juce::String& name)
         {
             scanner.setPluginEnabled(p.uid, false);
             scanner.saveEnabledState();
+            // WHY, beside the uid. This is the load-failure door; the Settings
+            // checklist stamps its own reason at its own commit. Without this
+            // the file records that a plugin is off and nothing about how it
+            // got that way, which is exactly the question that could not be
+            // answered for the two rows found on 29 Aug.
+            echojay::recordDisableReasons({ p.uid }, echojay::kDisableWhyLoadFailure);
             // Keep Settings checklist in sync
             if (settingsChecklist)
                 settingsChecklist->refresh();
             // Rebuild resolver so the AI no longer sees this plugin
             auto& ch = processorRef.getChainHost();
-            ch.buildRecommendable(scanner.getPlugins(), chainFormatFilter_);
+            ch.buildRecommendable(feedRowsWithSessionExclusions(scanner.getPlugins()), chainFormatFilter_);
             break;
         }
     }
@@ -29981,21 +30562,45 @@ void EchoJayEditor::showNextFailPrompt(juce::StringArray names, int idx)
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
 
-    juce::AlertWindow::showOkCancelBox(
+    // THREE OUTCOMES, BECAUSE THE CAUSE IS USUALLY TRANSIENT (29 Aug 2026).
+    // This prompt names a LICENCE as the likely cause and then, until now,
+    // offered only permanent exclusion or nothing: a user whose iLok was
+    // unplugged had no correct button. The middle one is that button.
+    //
+    //   Don't suggest again  PERSISTENT. Unticks the plugin in Settings, which
+    //                        is the same store, so the disclosure below says so
+    //                        and says where to undo it. Reason recorded.
+    //   Not now              THIS SESSION ONLY. Excluded from the feed now,
+    //                        nothing written, back next launch.
+    //   Keep it              NO EXCLUSION AT ALL. Stays suggestable; we simply
+    //                        stop asking about it this session.
+    //
+    // "Not now" and "Keep it" are NOT synonyms and the difference is the feed:
+    // Not now takes the plugin out of it for this session, Keep it leaves it
+    // in. Before this change the two live buttons very nearly were synonyms,
+    // which is how the modal came to be the only door to a permanent write.
+    juce::AlertWindow::showYesNoCancelBox(
         juce::AlertWindow::WarningIcon,
         "Plugin failed to load",
-        "\"" + name + "\" failed to load (this often means it isn't licensed).\n"
-        "Stop EchoJay from suggesting it?",
-        "Don't suggest again", "Keep it",
+        "\"" + name + "\" failed to load (this often means it isn't licensed, "
+        "or a dongle isn't plugged in).\n"
+        "Stop EchoJay from suggesting it?\n\n"
+        "\"Don't suggest again\" unticks it in Settings > Plugins. You can "
+        "re-tick it there any time.",
+        "Don't suggest again", "Not now", "Keep it",
         nullptr,
         juce::ModalCallbackFunction::create([safeThis, names, idx, name](int result) mutable
         {
             if (!safeThis) return;
-            if (result == 1) // "Don't suggest again"
+            if (result == 1)        // "Don't suggest again" — persistent
             {
                 safeThis->disablePluginByName(name);
             }
-            else // "Keep it" — don't prompt again this session
+            else if (result == 2)   // "Not now" — session-scoped exclusion
+            {
+                safeThis->excludeFromFeedThisSession(name);
+            }
+            else                    // "Keep it" — no exclusion, just stop asking
             {
                 safeThis->chainFailSessionSeen_.insert(name);
             }
@@ -30974,6 +31579,12 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
             cm.chainData = chainJson;
             cm.gainData  = gainJson;
             cm.editData  = editJson;
+
+            // The server refused an add and said so in the BLOCK, not in the
+            // prose; without this the reply still claims it happened. Fresh
+            // receipts only -- the workspace-restore path (cm.editData =
+            // msg.editJson) must not re-announce a refusal already read.
+            safeThis2->announceRefusedOps(chainJson, editJson);
             // A CHAIN_EDIT from a capture in a channel chat targets THAT
             // channel's rack (same anchoring as the chat path).
             if (editJson.isNotEmpty())

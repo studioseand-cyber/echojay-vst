@@ -301,6 +301,23 @@ public:
     void setNextChatMapFps(const juce::String& jsonObject)
     { nextChatMapFps_ = (jsonObject == "{}" ? juce::String() : jsonObject); }
 
+    // 6c section 8a: the racked slots' CURRENT parameter reads, staged from
+    // ChainHost::buildSlotParamReadsJson and consumed at body build exactly
+    // like mapFps. A JSON ARRAY, so "[]"/empty stages nothing. THE MODEL NEVER
+    // READS THIS FIELD: the server joins it by index at its one print site
+    // onto the controls it has already decided to expose, which is the whole
+    // reason the client does not select (6c §2, §3, §8c).
+    void setNextChatParamReads(const juce::String& jsonArray)
+    { nextChatParamReads_ = (jsonArray == "[]" ? juce::String() : jsonArray); }
+
+    // Dashboard auth handoff (CONTRACT_dashboard_auth_handoff.md §2): mint a
+    // single-use 120 s handoff for the webview. Minted FRESH on every entry
+    // to the dashboard surface, never stockpiled; the callback gets the raw
+    // HTTP status (200/401/404/5xx, 0 = unreachable) and on 200 the
+    // "/go#t=...&to=..." path. The token inside it is never logged and never
+    // stored beyond the immediate navigation.
+    void mintDashboardHandoff(std::function<void(int statusCode, juce::String goPath)> onDone);
+
     // dial-3 declined-name batch (CONTRACT_racked_slot_controls.md A7.3):
     // envelope {batch, rows, dropped}, staged by the editor per send,
     // consumed at body build like mapFps. Empty stages nothing; a server
@@ -357,6 +374,7 @@ public:
     {
         nextChatMeters_.clear();
         nextChatMapFps_.clear();
+        nextChatParamReads_.clear();
         nextChatDialDeclines_.clear();
         nextChatTurnType_.clear();
         nextChatBusCount_ = 0;
@@ -595,11 +613,6 @@ public:
     void setNextClassifyBinding(const juce::String& intent, const juce::String& token)
     { nextClassifyIntent_ = intent; nextClassifyToken_ = token; }
 
-    // 2.4 dialFlags (26 Jul 2026, DARK): names from the AVAILABLE PLUGINS
-    // feed whose LOCAL map passes the dial-signals threshold. Staged per
-    // send by the editor only when kDialSignalsEnabled; rides the body as
-    // "dialFlags":[...] and clears after the send.
-    void setNextDialFlags(const juce::StringArray& names) { nextDialFlags_ = names; }
     
     // ============ User Settings (synced with web app) ============
 
@@ -618,6 +631,19 @@ public:
     void fetchDialableIdentities(const std::vector<echojay::IdentityRef>& plugins,
                                  std::function<void(bool ok, std::set<juce::String> dialableIks)> onComplete);
 
+    // PRODUCT FALLBACK (26 Aug 2026). Same endpoint as the existence index,
+    // the OTHER mode: "lookup" runs the tiered resolver and returns a map per
+    // plugin, tagged served_from + anchors_unverified when it had to reach
+    // back a version. The body is composed by ChainHost, which is the only
+    // layer that knows which racked fps came back mapless and what their live
+    // param counts and names are, so this is a pass-through: it exists
+    // because postJSON is private, not to reshape anything.
+    //
+    // onComplete gets the raw results array on a 200 and a void var otherwise.
+    // A non-200 must leave the slot mapless rather than half-served.
+    void lookupFallbackMaps(const juce::String& body,
+                            std::function<void(const juce::var& results)> onComplete);
+
     // Fetch settings from server
     void fetchSettings(std::function<void(bool success)> onComplete = nullptr);
     
@@ -629,12 +655,28 @@ public:
     UserSettings getUserSettings() const { return userSettings; }
 
     // Auto-dial mode (Settings toggle, default off): when on, every
-    // /api/chat body carries "autoDial":true and the server restricts chain
-    // suggestions to plugins EchoJay has param maps for (so every suggested
-    // slot is one-click dialable). Persisted in the LOCAL settings file, not
-    // the server profile: the flag only means anything on this machine, and
-    // keeping it out of the shared profile blob means a web-side settings
-    // save can never clobber it.
+    // /api/chat body carries "autoDial":true.
+    //
+    // CORRECTED 25 Aug 2026. This comment used to say the server "restricts
+    // chain suggestions to plugins EchoJay has param maps for (so every
+    // suggested slot is one-click dialable)". NOTHING RESTRICTS ANYTHING
+    // TODAY. api/_auto-dial-check.js checkAutoDial is report-only: it builds
+    // an allowed set, calls detectAutoDialViolations, returns them for
+    // logging, and fails open when the registry read is empty. The reply is
+    // not changed and no suggestion is withheld.
+    //
+    // Enforcement is SPECIFIED, not built: CONTRACT_pool_and_third_branch 11e
+    // (the toggle measured, and the ruling on how it is enforced) and 11f
+    // (Kathy's ruling, 25 Aug: prevention via the [AUTO-DIAL MODE ON] note,
+    // then a backstop that refuses an op naming an unmappable plugin).
+    //
+    // Stated this bluntly on purpose. A client comment asserting a server
+    // behaviour that does not exist is how this went unnoticed, and softening
+    // it into vagueness would leave the next reader in the same position.
+    //
+    // Persisted in the LOCAL settings file, not the server profile: the flag
+    // only means anything on this machine, and keeping it out of the shared
+    // profile blob means a web-side settings save can never clobber it.
     bool getAutoDialMode() const { return autoDialMode; }
     void setAutoDialMode(bool on) { autoDialMode = on; saveSettings(); }
 
@@ -697,9 +739,22 @@ public:
     // slotLevelNotes: optional per-slot running-level clause (index-parallel
     // with rack.slots; an empty string draws nothing for that slot). Only the
     // local-rack adapter fills it today; a Link's rack carries no tally yet.
+    // slotModelSettings: optional per-slot MODEL settings text, index-parallel
+    // in the same way and for the same reason — RackSidecarSlot is a versioned
+    // wire struct the Link app reads, so a new per-slot fact rides beside it
+    // rather than in it. Null, or empty for a given slot, means "no tiered
+    // string exists for this slot" and the sidecar's own `settings` is used:
+    // that is the Link path, where the rack arrived from another machine and
+    // the tiering was never computed here.
     static juce::String buildCurrentChainInjection(const LinkShm::RackSidecar& rack,
                                                    const juce::String& channelLabel,
-                                                   const juce::StringArray* slotLevelNotes = nullptr);
+                                                   const juce::StringArray* slotLevelNotes = nullptr,
+                                                   const juce::StringArray* slotModelSettings = nullptr,
+    // slotHasLiveReads: index-parallel again. TRUE means this slot's
+    // parameters were read this turn, so an EMPTY model string means
+    // "everything was suppressed" and NOT "no tiering exists" -- and the card
+    // string must not be borrowed. Null (the Link path) falls back as before.
+                                                   const juce::Array<bool>* slotHasLiveReads = nullptr);
     // Running level (LevelTally, 17 Aug 2026), rendered for the model.
     //   formatLevelClause: one point, "in -19.2 dBFS RMS (p90 -15.5), peak
     //     -6.0, crest 12 dB, heard 2m10s (describes ~2m10s)" or the loud null
@@ -1018,9 +1073,9 @@ private:
     juce::String deviceId;
     juce::String nextChatMeters_;   // staged by setNextChatMeters()
     juce::String nextChatMapFps_;   // staged by setNextChatMapFps(); "" = none
+    juce::String nextChatParamReads_;   // 6c §8a: staged by setNextChatParamReads(); "" = none
     juce::String nextChatDialDeclines_;  // dial-3 batch envelope; "" = none
     juce::String nextChatTurnType_; // staged by setNextChatTurnType(); "" = "chat"
-    juce::StringArray nextDialFlags_; // see setNextDialFlags(); cleared per send
     juce::String nextClassifyIntent_, nextClassifyToken_; // setNextClassifyBinding()
     int          nextChatBusCount_ = 0;
     bool         nextChatIsExplicitCapture_ = false;   // see stageCapturePayload

@@ -3,6 +3,7 @@
 #include "EJReplyBlocks.h"   // the whole-reply block strip (moved verbatim, spec step 3)
 #include "ChainHost.h"    // buildCurrentChainInjection reads the live rack
 #include "LinkShm.h"      // RackSidecar — targeted [CURRENT CHAIN] (Phase R)
+#include "EJSettingsClip.h" // the model-side slot-settings cap, and its marker
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics
 #include "EqPresets.h"    // the EQ teaching block lists presets from the table
 #include "EchoJayChannelLabel.h" // kChannelChooserCapability — the classify flag
@@ -114,6 +115,25 @@ juce::String EchoJayAPI::transportHeaders()
         return "x-vercel-protection-bypass: " + dt.bypass + "\r\n";
    #endif
     return {};
+}
+
+// ============ Dashboard auth handoff (CONTRACT_dashboard_auth_handoff.md §2) ==
+// Mint a single-use, 120-second handoff for the webview. maxAttempts=1 on
+// purpose: §5 gives the FLOW exactly one retry on 5xx/unreachable and the
+// editor counts it — a transport-level auto-retry here would stack with
+// that and mint tokens nobody navigates to. The response's token is inside
+// the returned /go# path and is never logged (DashboardWeb redacts "#t=");
+// nothing here stores it.
+void EchoJayAPI::mintDashboardHandoff(std::function<void(int, juce::String)> onDone)
+{
+    postJSON("/api/v2/handoff", "{\"to\":\"/dashboard\"}",
+        [onDone](const juce::var& json, int statusCode)
+        {
+            juce::String goPath;
+            if (statusCode == 200)
+                goPath = json.getProperty("url", juce::var()).toString();
+            if (onDone) onDone(statusCode, goPath);
+        }, /*maxAttempts*/ 1);
 }
 
 // ============ Failure-path logging ============
@@ -1178,13 +1198,6 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
     // it for chain turns with a live plugin feed and ignores it elsewhere.
     if (autoDialMode)
         body += ",\"autoDial\":true";
-    if (! nextDialFlags_.isEmpty())
-    {
-        juce::Array<juce::var> arr;
-        for (auto& n : nextDialFlags_) arr.add(n);
-        body += ",\"dialFlags\":" + juce::JSON::toString(juce::var(arr), true);
-        nextDialFlags_.clear();
-    }
     // Classifier binding (split call). Absent on any turn the classifier
     // did not answer for, which is every turn when it is gated off — and
     // the server then classifies for itself exactly as it does today.
@@ -1246,6 +1259,19 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
         body += ",\"mapFps\":" + nextChatMapFps_;
         nextChatMapFps_.clear();
     }
+    // 6c section 8a: the racked slots' current parameter READS. Rides beside
+    // mapFps and is consumed the same way, so the transport's limit-refresh
+    // retry resends WITHOUT the field rather than twice with it. Deliberately
+    // NOT inside any block the model reads: the server joins it by index at
+    // fmtControl, its ONE print site, onto the controls it has already decided
+    // to expose -- so no selection rule exists twice (§8c). On a message
+    // already carrying 68,930 characters of [AVAILABLE PLUGINS], and cached
+    // nowhere, because the newest user turn is fresh input by design.
+    if (nextChatParamReads_.isNotEmpty())
+    {
+        body += ",\"slotParamReads\":" + nextChatParamReads_;
+        nextChatParamReads_.clear();
+    }
     // dialDeclines (dial-3, A7.3): consumed per send exactly like mapFps,
     // so the limit-refresh retry resends WITHOUT the field rather than
     // twice with it. The editor moves the watermark only on the success
@@ -1270,17 +1296,50 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
     // dev_mode: dump the EXACT outgoing body for diffing against server
     // logs (same switch as the Dump meters button)
     {
-        static const bool devMode = juce::File::getSpecialLocation(
-            juce::File::userApplicationDataDirectory)
-            .getChildFile("EchoJay").getChildFile("dev_mode").existsAsFile();
-        if (devMode)
+        // TWO REASONS THIS NEVER FIRED IN A DAW (24 Aug 2026). Both were in
+        // this block, and both were invisible: the dump simply was not there,
+        // which reads exactly like "nothing was sent".
+        //
+        // 1. IT OPEN-CODED THE GATE. ChainHost::devModeActive() checks the
+        //    absolute /Users/.../.echojay_dev FIRST, precisely because Logic
+        //    hosts AUs in the sandboxed AUHostingService where
+        //    userApplicationDataDirectory resolves into the SERVICE's
+        //    container and the real ~/Library/EchoJay/dev_mode is unreachable.
+        //    This copy had only the container-relative half, so in-DAW it was
+        //    always false — the one place the dump is actually needed.
+        //
+        // 2. static const bool: evaluated ONCE per process, at the first send.
+        //    Creating dev_mode after the plugin loaded did nothing until a
+        //    restart. Now read per send, the same call the stream_chains flag
+        //    already makes for the same reason ("the whole point of the flag is
+        //    flipping it mid-session ... one stat per send is free").
+        if (ChainHost::devModeActive())
         {
             auto f = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
                          .getChildFile("EchoJay").getChildFile("chat-body-debug.json");
-            f.getParentDirectory().createDirectory();
-            f.replaceWithText(body);
-            EchoJay_NSLog(("EJChat: dev_mode body dump -> " + f.getFullPathName()
-                           + " (" + juce::String((int) body.getNumBytesAsUTF8()) + "b total)").toRawUTF8());
+            // THE WRITE HALF HAS THE SAME SANDBOX PROBLEM AS THE GATE HAD, and
+            // fixing only the gate would have moved the silence rather than
+            // removed it. userDocumentsDirectory redirects into the
+            // AUHostingService container under Logic exactly as
+            // userApplicationDataDirectory does, so in-DAW this lands somewhere
+            // the operator will not think to look, and a sandbox may refuse it
+            // outright. The old code ignored replaceWithText's result and then
+            // logged success unconditionally — a line claiming a dump that
+            // might never have been written.
+            //
+            // So: log the RESOLVED path either way (it names the container when
+            // that is where it went), and say plainly when the write failed.
+            // An unreadable absence is what cost us the last two turns.
+            const bool dirOk = f.getParentDirectory().createDirectory().wasOk();
+            const bool wrote = dirOk && f.replaceWithText(body);
+            if (wrote)
+                EchoJay_NSLog(("EJChat: dev_mode body dump -> " + f.getFullPathName()
+                               + " (" + juce::String((int) body.getNumBytesAsUTF8()) + "b total)").toRawUTF8());
+            else
+                EchoJay_NSLog(("EJChat: dev_mode body dump FAILED -> " + f.getFullPathName()
+                               + (dirOk ? " (write refused)" : " (could not create directory)")
+                               + " -- sandboxed host? the gate passed, the write did not")
+                                  .toRawUTF8());
         }
     }
 
@@ -2895,13 +2954,21 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const ChainHost& chainHost)
     rack.revision  = chainHost.getChainRevision();
     rack.masterWet = chainHost.getMasterWet();
     juce::StringArray notes;
+    // The model's settings text rides index-parallel too (24 Aug 2026). The
+    // sidecar still carries s.settings so the Link app's own readers are
+    // untouched; the formatter prefers this array for the model's line.
+    juce::StringArray modelSettings;
+    juce::Array<bool>  hasLiveReads;
     int i = 0;
     for (const auto& s : chainHost.getAllSlotInfos())
     {
         rack.slots.push_back({ s.name, s.format, s.settings, s.bypassed, s.wet });
+        modelSettings.add(s.settingsForModel);
+        hasLiveReads.add(s.hasLiveReads);
         notes.add(formatSlotLevelNote(chainHost, i++));
     }
-    return buildCurrentChainInjection(rack, juce::String(), &notes);
+    return buildCurrentChainInjection(rack, juce::String(), &notes, &modelSettings,
+                                      &hasLiveReads);
 }
 
 // ---- running level, rendered ----------------------------------------------
@@ -2968,7 +3035,9 @@ juce::String EchoJayAPI::buildChainLevelsInjection(const ChainHost& chainHost)
 
 juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& rack,
                                                     const juce::String& channelLabel,
-                                                    const juce::StringArray* slotLevelNotes)
+                                                    const juce::StringArray* slotLevelNotes,
+                                                    const juce::StringArray* slotModelSettings,
+                                                    const juce::Array<bool>* slotHasLiveReads)
 {
     if (!rack.valid || rack.slots.empty()) return {};
 
@@ -3018,12 +3087,40 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& 
         if (slotLevelNotes != nullptr && i < slotLevelNotes->size() && (*slotLevelNotes)[i].isNotEmpty())
             block << "; " << (*slotLevelNotes)[i];
         block << ")";
-        auto settings = s.settings.trim();
+        // THE MODEL READS ITS OWN STRING (24 Aug 2026). The card's copy and
+        // the model's copy answer to opposite rules — see
+        // ChainHost::SlotInfo::settingsForModel — so this line takes the tiered
+        // one when it exists. When it does not, the slot never had a tiering
+        // computed (prose only, a stale-map rung, a built-in, or a rack that
+        // arrived over the Link wire) and the card's string is all there is.
+        // THE FALLBACK IS CONDITIONED ON A READING, NOT ON EMPTINESS.
+        //
+        // An empty model string used to mean one thing, "no tiering was
+        // computed", and borrowing the card string was right. Suppression gave
+        // it a second meaning: every entry had a live read and was correctly
+        // dropped. Falling back there handed the model the card's raw
+        // value -- the very number just suppressed -- and it used it.
+        //
+        // So: a slot that answered the sweep composes from its tiers alone and
+        // emits NOTHING when they are empty. A slot that did not answer
+        // (readFailed, or no reads at all) still falls back, because the card
+        // is then the only source there is. That also keeps setSlotSettings'
+        // PROSE out of the model's string wherever a reading exists, which the
+        // same fallback had been quietly reintroducing.
+        const bool slotWasRead = (slotHasLiveReads != nullptr && i < slotHasLiveReads->size()
+                                  && (*slotHasLiveReads)[i]);
+        const auto modelText = (slotModelSettings != nullptr && i < slotModelSettings->size())
+                                 ? (*slotModelSettings)[i].trim() : juce::String();
+        const auto picked = modelText.isNotEmpty() ? modelText
+                          : (slotWasRead ? juce::String() : s.settings.trim());
+        // ONE clip for whichever string was picked, and it SAYS SO when it
+        // cuts. The old form dropped the tail behind a bare ellipsis, and the
+        // unverified group lives at the tail — so a silent cut removed exactly
+        // the words that mark a value as untrusted. See EJSettingsClip.h for
+        // why 500, and why the marker is load-bearing rather than cosmetic.
+        const auto settings = echojay::clipModelSettings(picked);
         if (settings.isNotEmpty())
-            block << juce::String::fromUTF8(" \xe2\x80\x94 settings: ")
-                  << (settings.length() > 120
-                        ? settings.substring(0, 120) + juce::String::fromUTF8("\xe2\x80\xa6")
-                        : settings);
+            block << juce::String::fromUTF8(" \xe2\x80\x94 settings: ") << settings;
         block << "\n";
     }
     if (rack.masterWet < 0.995f)
@@ -3263,6 +3360,30 @@ UserSettings UserSettings::fromJSON(const juce::var& json)
 }
 
 // ============ Settings Sync (via /api/data — profile field) ============
+
+void EchoJayAPI::lookupFallbackMaps(const juce::String& body,
+                                    std::function<void(const juce::var& results)> onComplete)
+{
+    if (body.isEmpty() || onComplete == nullptr) return;
+    postJSON("/api/params/lookup", body, [onComplete](const juce::var& json, int sc)
+    {
+        if (sc != 200)
+        {
+            EchoJay_NSLog(("EJFallback: /api/params/lookup status "
+                           + juce::String(sc) + " -- slots stay mapless").toRawUTF8());
+            onComplete(juce::var());
+            return;
+        }
+        // LOGGED ON SUCCESS TOO, not only on failure. A leg that only speaks
+        // when it breaks cannot be told apart from a leg that never ran, which
+        // is precisely what happened on the first live test.
+        auto results = json.getProperty("results", juce::var());
+        EchoJay_NSLog(("EJFallback: lookup 200, "
+                       + juce::String(results.isArray() ? results.getArray()->size() : 0)
+                       + " result(s)").toRawUTF8());
+        onComplete(results);
+    });
+}
 
 void EchoJayAPI::fetchWhatsNew(std::function<void(const juce::var&)> onComplete)
 {

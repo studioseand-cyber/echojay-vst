@@ -199,6 +199,180 @@ int main()
                "the real AMEK q entry passes usableParamEntry");
     }
 
+    // ---- BORROWED LABELS: the mode-branch escape (29 Aug 2026) -------------
+    // The class-1 label join attaches a sibling's labels to a binary that
+    // reports its value as an ORDINAL. The text comparison then compares a name
+    // against a number, and before the escape applyOne reverted every such
+    // write. MEASURED on the Saturn 2 pilot, from this path:
+    //   asked "Warm Tape", plugin shows "6", value restored
+    // and "Warm Tape" IS index 6 - the write was right, the instrument wrong.
+    //
+    // The two halves are pinned AGAINST each other. Half A alone passes with no
+    // gate at all; Half B is what makes the gate mean something.
+    {
+        std::cout << "borrowed-label mode escape:\n";
+        const juce::ScopedJuceInitialiser_GUI juceInit;
+
+        // Saturn 2's Band 1 Style label ladder, k/27, verbatim in shape.
+        const char* kStyle[] = { "Subtle Tube", "Clean Tube", "Warm Tube", "Broken Tube",
+                                 "Subtle Tape", "Clean Tape", "Warm Tape", "Old Tape" };
+        const int   kN = 8;
+        auto normFor = [] (int i) { return (float) i / (float) (kN - 1); };
+
+        // How the fixture answers getText: like an AU (the ordinal), like a
+        // VST3 (the label), or like a plugin that ignores writes entirely.
+        enum class Face { Ordinal, Label, WrongLabel };
+
+        // A HostedParameter, not a bare AudioProcessorParameter: an
+        // AudioPluginInstance accepts only those, which is also what applyOne
+        // meets in the field.
+        struct FixtureParam final : public juce::HostedAudioProcessorParameter
+        {
+            juce::String getParameterID() const override { return "style"; }
+            FixtureParam (Face f, int n, const char** labels, bool ignoreWrites)
+                : face (f), steps (n), names (labels), frozen (ignoreWrites) {}
+            Face face; int steps; const char** names; bool frozen;
+            float v = 0.0f;
+            float getValue() const override { return v; }
+            void  setValue (float nv) override { if (! frozen) v = nv; }
+            float getDefaultValue() const override { return 0.0f; }
+            juce::String getName (int) const override { return "Band 1 Style"; }
+            juce::String getLabel() const override { return {}; }
+            int   getNumSteps() const override { return steps; }
+            bool  isDiscrete() const override { return true; }
+            juce::String getText (float nv, int) const override
+            {
+                const int i = juce::jlimit (0, steps - 1,
+                                            (int) std::lround (nv * (float) (steps - 1)));
+                if (face == Face::Ordinal)    return juce::String (i);
+                if (face == Face::WrongLabel) return "Definitely Not It";
+                return names[i];
+            }
+            float getValueForText (const juce::String&) const override { return 0.0f; }
+        };
+
+        struct FixturePlugin final : public juce::AudioPluginInstance
+        {
+            void fillInPluginDescription (juce::PluginDescription&) const override {}
+            const juce::String getName() const override { return "Fixture"; }
+            void prepareToPlay (double, int) override {}
+            void releaseResources() override {}
+            void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override {}
+            double getTailLengthSeconds() const override { return 0.0; }
+            bool acceptsMidi() const override { return false; }
+            bool producesMidi() const override { return false; }
+            juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+            bool hasEditor() const override { return false; }
+            int getNumPrograms() override { return 1; }
+            int getCurrentProgram() override { return 0; }
+            void setCurrentProgram (int) override {}
+            const juce::String getProgramName (int) override { return {}; }
+            void changeProgramName (int, const juce::String&) override {}
+            void getStateInformation (juce::MemoryBlock&) override {}
+            void setStateInformation (const void*, int) override {}
+        };
+
+        // A mode entry; joinedFrom empty => labels measured on THIS binary.
+        auto modeEntry = [&] (const juce::String& joinedFrom)
+        {
+            juce::DynamicObject::Ptr e = new juce::DynamicObject();
+            e->setProperty ("index", 0);
+            e->setProperty ("kind", "mode");
+            e->setProperty ("caseInsensitiveOk", true);
+            // BOTH fixtures carry trust "setread", because the corpus does:
+            // 5,772 of 5,772 genuine mode controls have it. Without this the
+            // trust-gate mutation below would redden nothing and the gate pin
+            // would be worthless - the exact trap this block exists to close.
+            e->setProperty ("trust", "setread");
+            juce::DynamicObject::Ptr labs = new juce::DynamicObject();
+            for (int i = 0; i < kN; ++i) labs->setProperty (juce::Identifier (kStyle[i]), normFor (i));
+            e->setProperty ("labels", juce::var (labs.get()));
+            if (joinedFrom.isNotEmpty()) e->setProperty ("joined_from", joinedFrom);
+            return juce::var (e.get());
+        };
+        auto run = [&] (Face face, bool frozen, const juce::String& joinedFrom,
+                        const juce::String& ask, echojay::ApplyResult& out, float& landedNorm)
+        {
+            FixturePlugin p;
+            auto owned = std::make_unique<FixtureParam> (face, kN, kStyle, frozen);
+            auto* fp = owned.get();
+            p.addHostedParameter (std::move (owned));
+            out = echojay::applyOne (p, "Band 1 Style", modeEntry (joinedFrom), ask);
+            landedNorm = fp->v;
+        };
+
+        echojay::ApplyResult r; float landed = -1.0f;
+        const juce::String kSrc = "3ead8437660dd53fc82e0e8843ed38dc659a739b743d510b7fca30e299758b64";
+
+        // HALF A. Borrowed labels, plugin answers with the ordinal "6".
+        run (Face::Ordinal, false, kSrc, "Warm Tape", r, landed);
+        check (r.applied, "half A: a joined control APPLIES against an ordinal-returning plugin");
+        check (! r.displayVerified,
+               "half A: and does NOT claim display verification");
+        check (! r.readbackMismatch, "half A: it is not a readback mismatch");
+        check (std::abs (landed - normFor (6)) < 1.0e-6f,
+               "half A: the parameter actually moved to \"Warm Tape\" (index 6)",
+               "landed norm " + juce::String (landed, 6));
+        check (r.note == "applied (display unverifiable on this plugin)",
+               "half A: reuses the existing unverifiable-display result state", r.note);
+
+        // HALF B. THE PIN THAT MAKES THE GATE MEAN SOMETHING. Native labels, no
+        // joined_from, and the plugin reports the WRONG label: must still revert.
+        // Re-gate the escape on trust=="setread" and this goes red, because every
+        // genuine mode control in the corpus carries that trust (5,772 of 5,772).
+        run (Face::WrongLabel, false, {}, "Warm Tape", r, landed);
+        check (! r.applied, "half B: a NATIVE mode control still reverts on wrong text");
+        check (r.readbackMismatch, "half B: and reports a readback mismatch");
+        check (std::abs (landed - 0.0f) < 1.0e-6f,
+               "half B: the parameter is restored to its pre-write value",
+               "landed norm " + juce::String (landed, 6));
+
+        // The escape is not a rubber stamp: a write that does not stick reverts.
+        run (Face::Ordinal, /*frozen*/ true, kSrc, "Warm Tape", r, landed);
+        check (! r.applied && r.readbackMismatch,
+               "not a rubber stamp: a joined control whose write is ignored still reverts", r.note);
+
+        // Strictness is untouched where the text DOES work: a joined control on a
+        // plugin that happens to answer with the label verifies the strict way.
+        run (Face::Label, false, kSrc, "Warm Tape", r, landed);
+        check (r.applied && r.displayVerified,
+               "text-agreeing joined control still takes the STRICT path and verifies");
+
+        // An unknown label is still refused, gate or no gate.
+        run (Face::Ordinal, false, kSrc, "Not A Style", r, landed);
+        check (! r.applied && r.note.startsWith ("unknown mode label"),
+               "an unknown label is still refused on a joined control", r.note);
+
+        // CORPUS FACT, so nobody reintroduces the trust gate believing it
+        // discriminates: measured across 133 maps, every genuine mode control
+        // carries trust "setread". The escape must therefore key on provenance.
+        {
+            auto f = juce::File::getSpecialLocation (juce::File::userHomeDirectory)
+                        .getChildFile ("Library/EchoJay/param_maps.json");
+            int modeCtl = 0, modeSetread = 0;
+            if (auto root = juce::JSON::parse (f.loadFileAsString());
+                auto* maps = root.getProperty ("maps", juce::var()).getDynamicObject())
+            {
+                for (auto& kv : maps->getProperties())
+                    if (auto* ctls = kv.value.getProperty ("controls", juce::var()).getDynamicObject())
+                        for (auto& c : ctls->getProperties())
+                            if (c.value.getProperty ("kind", juce::var()).toString() == "mode"
+                                && c.value.getProperty ("labels", juce::var()).getDynamicObject() != nullptr)
+                            {
+                                ++modeCtl;
+                                if (c.value.getProperty ("trust", juce::var()).toString() == "setread")
+                                    ++modeSetread;
+                            }
+            }
+            if (modeCtl == 0)
+                std::cout << "  SKIP  corpus-fact pin (no cached maps on this machine)\n";
+            else
+                check (modeSetread == modeCtl,
+                       "corpus fact: trust \"setread\" is on EVERY mode control, so it cannot gate the escape",
+                       juce::String (modeSetread) + " of " + juce::String (modeCtl));
+        }
+    }
+
     std::cout << passN << " passed, " << failN << " failed\n";
     return failN == 0 ? 0 : 1;
 }

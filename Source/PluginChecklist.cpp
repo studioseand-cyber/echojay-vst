@@ -1,4 +1,5 @@
 #include "PluginChecklist.h"
+#include "EJDisableReasons.h"
 #include <algorithm>
 #include <map>
 
@@ -146,6 +147,13 @@ void PluginChecklistComponent::commit()
     }
     if (! toDisable.isEmpty()) scanner.setManyEnabled(toDisable, false);
     if (! toEnable.isEmpty())  scanner.setManyEnabled(toEnable, true);
+    // WHY, beside the uid (29 Aug 2026). The other disable door is the
+    // load-failure modal; without a reason on both, a row in
+    // plugin_disabled.json is unattributable and the file cannot answer the
+    // one question ever asked of it. Re-enabling CLEARS the reason rather
+    // than leaving it to outlive its subject.
+    echojay::recordDisableReasons(toDisable, echojay::kDisableWhySettings);
+    echojay::clearDisableReasons(toEnable);
 
     committedDisabled = disabled;
     dirty = false;

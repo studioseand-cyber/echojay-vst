@@ -1,8 +1,14 @@
 #include "EchoJayBridgedAU.h"   // FIRST: pulls CoreFoundation before JUCE (Point ambiguity)
 #include "ChainHost.h"
 #include "EedLatencyLog.h"
+#include "EJVariantPreference.h"
+#include "EJWavesAlias.h"
+#include "EJWavesRegistryFeed.h"   // Waves candidates come from the scan, not the catalog
+#include "EJNameLadder.h"          // normalizeName, trailingModelNumber, the match ladder
+#include "EJParamReads.h"    // 6c section 8: one slot's current reads, header-inline for the pins
 #include "EchoJayParamApply.h"
 #include "EchoJayParamMaps.h"
+#include "EJDialTally.h"          // dial-4 A8: requestedEntryCount, the A7.2 keys semantic
 #include "SurgicalEqProcessor.h"   // built-in EQ device (see kBuiltinFormat)
 #include "EedKeyFeed.h"            // KeyFeedConsumer: builtins learn their owner
 #include "LinkShm.h"               // the EQ curve's grid, clamp and point count
@@ -24,12 +30,12 @@
  #include <mach-o/loader.h>   // MH_MAGIC, mach_header (arch gate)
 #endif
 
-// Defined later in this file (used by the shared name resolution above it)
-static juce::String normalizeName(const juce::String& raw);
-// Trailing all-digits MODEL number (the token normalizeName strips as a
-// "version"), or empty. Lets resolveByName keep "AMEK EQ 250" and "AMEK EQ
-// 200" distinct while still tolerating genuine version suffixes.
-static juce::String trailingModelNumber(const juce::String& raw);
+// The name helpers and the match ladder live in EJNameLadder.h (28 Aug 2026):
+// the ladder is what every non-feed path resolves through, and a pin cannot run
+// it from the previous build's lib. Unqualified here so the twenty call sites
+// below read exactly as they did.
+using echojay::normalizeName;
+using echojay::trailingModelNumber;
 
 // ---------------------------------------------------------------------------
 // File path helpers
@@ -1392,10 +1398,25 @@ std::vector<ChainHost::SlotInfo> ChainHost::getAllSlotInfos() const
 
 ChainHost::SlotInfo ChainHost::getSlotInfo(int i) const
 {
-    if (i < 0 || i >= (int)slots_.size()) return { {}, false, {}, {}, 1.0f };
-    return { slots_[i].desc.name, slots_[i].bypassed, slots_[i].settings,
-             slots_[i].desc.pluginFormatName, slots_[i].wet,
-             slots_[i].desc.manufacturerName };
+    // ASSIGNED BY NAME, not by position (1 Sep 2026, resolving the merge that
+    // grew SlotInfo on BOTH sides at once). The note above getAllSlotInfos
+    // calls positional init a trap on its "fourth visit"; a merge in which two
+    // branches each append a field is precisely the fifth. Named assignment
+    // means a future field cannot silently land in the wrong slot, and the
+    // out-of-range return states what it returns instead of counting braces.
+    SlotInfo info;
+    info.bypassed = false;
+    if (i < 0 || i >= (int)slots_.size()) return info;
+    const auto& s = slots_[(size_t)i];
+    info.name             = s.desc.name;
+    info.bypassed         = s.bypassed;
+    info.settings         = s.settings;
+    info.format           = s.desc.pluginFormatName;
+    info.wet              = s.wet;
+    info.manufacturer     = s.desc.manufacturerName;   // remote, 27 Aug
+    info.settingsForModel = modelSettingsForSlot(i);   // local, 24 Aug
+    info.hasLiveReads     = slotHasLiveReads(i);       // local, 24 Aug
+    return info;
 }
 
 ChainHost::SlotIdentity ChainHost::getSlotIdentity(int slot) const
@@ -1413,6 +1434,9 @@ void ChainHost::setSlotSettings(int i, const juce::String& settings)
 {
     if (i < 0 || i >= (int)slots_.size()) return;
     slots_[i].settings = settings;
+    // New prose for this slot: any dial echo it had describes an older
+    // request. Clear it rather than let it outlive its map (see the field).
+    clearModelTiers(slots_[i]);
 }
 
 // ---------------------------------------------------------------------------
@@ -1670,16 +1694,30 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
             // Slot numbers in error text are 1-BASED (the numbering the
             // model and user see); s itself is internal 0-based
             auto slotLabel = [](int s) { return "slot " + juce::String(s + 1); };
+            // ONE author for the "why this name did not resolve" clause, so
+            // the add and replace arms cannot drift. THREE outcomes, not two:
+            // a name nothing has, a name this host withholds, and a name that
+            // several DIFFERENT products answer to -- the last names all of
+            // them, because a refusal the reader cannot act on is barely a
+            // refusal.
+            auto missText = [](WithholdReason why, const juce::StringArray& ambiguous)
+            {
+                if (why == WithholdReason::Ambiguous) return ambiguousNameText(ambiguous);
+                if (why == WithholdReason::None)      return juce::String("not in the loadable plugin list");
+                return withholdReasonText(why);
+            };
             auto validSlot = [&](int s) {
                 return s >= 0 && s < n && alive[(size_t)s];
             };
             if (op.op == "add")
             {
                 if (op.name.isEmpty()) return bad("add without a plugin name");
-                if (auto why = WithholdReason::None; resolveByName(op.name, {}, nullptr, &why).name.isEmpty())
-                    return bad("\"" + op.name + "\" "
-                               + (why == WithholdReason::None ? juce::String("not in the loadable plugin list")
-                                                              : withholdReasonText(why)));
+                {
+                    auto why = WithholdReason::None;
+                    juce::StringArray ambiguous;
+                    if (resolveOfferedName(op.name, &why, &ambiguous).name.isEmpty())
+                        return bad("\"" + op.name + "\" " + missText(why, ambiguous));
+                }
                 // Positional target: out-of-range/removed "after" CLAMPS to
                 // append-at-end (the runtime add path already does this) —
                 // aborting the whole batch over a position was worse than an
@@ -1699,10 +1737,12 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
             {
                 if (!validSlot(op.slot)) return bad(slotLabel(op.slot) + " does not exist");
                 if (op.name.isEmpty()) return bad("replace without a plugin name");
-                if (auto why = WithholdReason::None; resolveByName(op.name, {}, nullptr, &why).name.isEmpty())
-                    return bad("\"" + op.name + "\" "
-                               + (why == WithholdReason::None ? juce::String("not in the loadable plugin list")
-                                                              : withholdReasonText(why)));
+                {
+                    auto why = WithholdReason::None;
+                    juce::StringArray ambiguous;
+                    if (resolveOfferedName(op.name, &why, &ambiguous).name.isEmpty())
+                        return bad("\"" + op.name + "\" " + missText(why, ambiguous));
+                }
             }
             else if (op.op == "move")
             {
@@ -1913,11 +1953,19 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
         // Honest miss (WithholdReason): a plugin this host withholds is
         // reported as such, not as "not resolvable".
         WithholdReason why = WithholdReason::None;
-        auto desc = resolveByName(op.name, {}, nullptr, &why);
+        juce::StringArray ambiguous;
+        // resolveOfferedName, not resolveByName: the SAME rule the pre-flight
+        // dry run above used. A name that passes validation and then misses
+        // here aborts a batch halfway, which is the one failure the dry run
+        // exists to prevent.
+        auto desc = resolveOfferedName(op.name, &why, &ambiguous);
         if (desc.name.isEmpty())
             return failButContinue(op.op + " failed: \"" + op.name + "\" "
-                                   + (why == WithholdReason::None ? juce::String("not resolvable")
-                                                                  : withholdReasonText(why)));
+                                   + (why == WithholdReason::Ambiguous
+                                          ? ambiguousNameText(ambiguous)
+                                      : why == WithholdReason::None
+                                          ? juce::String("not resolvable")
+                                          : withholdReasonText(why)));
         desc = preferInlineHostableDesc(desc);
         auto self = st;
         const auto theOp = op;
@@ -2317,7 +2365,8 @@ ChainHost::applyStructuredSettings (int slotIndex,
     for (auto& r : results)
         out.push_back ({ r.semantic, r.applied, r.normalized, r.note,
                          r.landedText, r.displayVerified, r.readbackMismatch,
-                         r.staleDisplayKept, r.requestedValue, r.outOfRange });
+                         r.staleDisplayKept, r.requestedValue, r.outOfRange,
+                         r.index, r.anchorsUnverified });
 
     return out;
 }
@@ -2618,6 +2667,40 @@ void ChainHost::setSlotStructuredSettings(int i, const juce::var& structured)
         pendingMapFps_.addIfNotAlreadyThere(fp);
         onNeedParamMaps(juce::StringArray(fp));
     }
+    // PRODUCT FALLBACK, TRIGGERED HERE (27 Aug 2026) and not on the exact
+    // fetch's completion. THIS is the event that needs it: a dial resolving
+    // against a racked slot whose fingerprint has no map. The slot exists, so
+    // its live param_count and param_names are readable now, which is what the
+    // server's guards require.
+    //
+    // fallbackRequested_ is its OWN set. Keying off mapsRequested_ was the
+    // defect: the prefetch adds every known fp to that set before the rack
+    // exists, which then suppressed the only fetch the fallback could have
+    // hung off. Separate question, separate ledger, and it still stops the same
+    // fp being re-asked in a loop.
+    //
+    // structuredSettings and structuredApplied=false were set above and are not
+    // touched here, so the request survives the round trip and storeFallbackMaps
+    // has something to apply when the map lands.
+    if (!slots_[(size_t)i].structuredApplied && fp.isNotEmpty()
+        && paramMaps_.find(fp) == paramMaps_.end()
+        && !fallbackRequested_.contains(fp) && onNeedFallbackMaps)
+    {
+        const auto body = buildFallbackLookupJsonForSlot(i);
+        if (body.isNotEmpty())
+        {
+            fallbackRequested_.add(fp);
+            // Rides pendingMapFps_ so the line below marks the slot pending
+            // rather than noMap while the answer is in flight, and so the
+            // bubble does not claim "no map" about a slot still being asked
+            // about. storeFallbackMaps clears it on arrival.
+            pendingMapFps_.addIfNotAlreadyThere(fp);
+            EchoJay_NSLog(("EJFallback: asking for slot " + juce::String(i + 1)
+                           + " (\"" + slots_[(size_t)i].desc.name + "\") fp "
+                           + fp.substring(0, 12) + " -- no exact map").toRawUTF8());
+            onNeedFallbackMaps(body);
+        }
+    }
     // The applyStructuredIfReady above ran BEFORE the fetch kicked, so a
     // first-encounter slot got noMap; correct it to pending while the
     // answer is in flight.
@@ -2782,6 +2865,7 @@ bool ChainHost::settleStaleRung(int i)
             if (! s.settings.startsWith(note))
             {
                 s.settings = s.settings.isEmpty() ? note : note + "\n" + s.settings;
+                clearModelTiers(s);   // stale-map rung: the echo's map no longer applies
                 changed = true;
             }
         }
@@ -2799,7 +2883,10 @@ bool ChainHost::settleStaleRung(int i)
     const juce::String note = "This version of " + s.desc.name
         + " is newer than any mapping we hold, so these controls need dialling by hand.";
     if (! s.settings.startsWith(note))
+    {
         s.settings = s.settings.isEmpty() ? note : note + "\n" + s.settings;
+        clearModelTiers(s);   // stale-map rung: no mapping, no tiering
+    }
     return true;
 }
 
@@ -3139,6 +3226,9 @@ juce::String ChainHost::devApplyEqJson(int slotIndex, const juce::String& json)
     if (slotIndex >= 0 && slotIndex < (int)slots_.size())
     {
         slots_[(size_t)slotIndex].settings = "Applied automatically\n" + summary;
+        // No tiering was computed on this path, so the model must not keep an
+        // older one beside a newer card.
+        clearModelTiers(slots_[(size_t)slotIndex]);
         slots_[(size_t)slotIndex].dialAppliedCount = applied;
         slots_[(size_t)slotIndex].dialStatus =
             (skipped > 0) ? DialStatus::partial : DialStatus::applied;
@@ -3290,7 +3380,10 @@ void ChainHost::logDialSummary(const juce::String& reason) const
             case DialStatus::applied:     return "applied";
             case DialStatus::partial:     return "partial";
             case DialStatus::noMap:       return "noMap";
-            case DialStatus::unusableMap: return "unusableMap";
+            case DialStatus::mapNoCoverage:           return "mapNoCoverage";
+            case DialStatus::writesRejected:          return "writesRejected";
+            case DialStatus::mapIdentityMismatch:     return "mapIdentityMismatch";
+            case DialStatus::builtinPayloadUnmatched: return "builtinPayloadUnmatched";
         }
         return "?";
     };
@@ -3455,6 +3548,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         if (summary.isNotEmpty())
         {
             s.settings   = "Applied automatically\n" + summary;
+            clearModelTiers(s);   // built-in: no map, no tiering
             // Honest verdict, same contract as the mapped path: anything the
             // device could not place (the EQ was full, an id was unknown) is
             // partial, not success.
@@ -3467,7 +3561,11 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
             // failure is a shape mismatch and the keys ARE the diagnosis: a
             // flat semantic bag ({"low_cut_freq_hz":80,...}) is the anchor-path
             // shape and the device wants {"params":{...}} or its array form.
-            s.dialStatus = DialStatus::unusableMap;
+            // A9 step 3: its OWN value. No map exists on this path at all
+            // (a built-in deliberately never gets a fingerprint), so neither
+            // "the map covered nothing" nor "the writes were rejected" is a
+            // true sentence about it. Enum value only — no wire reason.
+            s.dialStatus = DialStatus::builtinPayloadUnmatched;
             juce::StringArray got;
             if (auto* o = s.structuredSettings.getDynamicObject())
                 for (auto& kv : o->getProperties()) got.add(kv.name.toString());
@@ -3538,14 +3636,29 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
     // keying bug (server response, cache merge, disk corruption) before a
     // wrong-layout map can touch a single parameter.
     const auto mapFp = it->second.getProperty("fp", juce::var()).toString();
-    if (mapFp != s.fp)
+    // A PRODUCT FALLBACK IS THE ONE LEGITIMATE DISAGREEMENT (26 Aug 2026).
+    // The server serves a prior version's map in this identity's place and
+    // tags it anchors_unverified + served_from, so its fp field NAMES ANOTHER
+    // BINARY by design. Refusing it here would make the fallback unreachable.
+    //
+    // Narrow on purpose: only a map carrying the tag is exempt. Every other
+    // fp disagreement is still the keying bug this check was built to catch,
+    // and an untagged mismatch still refuses exactly as before.
+    const bool servedAsFallback = (bool) it->second.getProperty("anchors_unverified", false);
+    if (mapFp != s.fp && ! servedAsFallback)
     {
         EchoJay_NSLog(("EJParamApply: map fp mismatch for slot " + juce::String(slotIndex)
                        + " (\"" + s.desc.name + "\"): key " + s.fp.substring(0, 12)
                        + " vs map.fp " + (mapFp.isEmpty() ? juce::String("(missing)")
                                                           : mapFp.substring(0, 12))
                        + ", apply refused").toRawUTF8());
-        s.dialStatus = DialStatus::unusableMap;
+        // A9 step 3: NOT mapNoCoverage. The apply is refused here BEFORE
+        // applyStructuredSettings is called, so the map's contents are never
+        // read and its coverage is unassessed rather than poor. The owner is
+        // keying/transport/cache, which is the one failure on this list that
+        // says OUR pipeline is broken; folding it into a corpus-quality or a
+        // vendor-behaviour bucket would hide it behind the wrong reader.
+        s.dialStatus = DialStatus::mapIdentityMismatch;
         return;
     }
 
@@ -3584,6 +3697,8 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
     s.dialManual.clear();
     s.dialReadbackMiss.clear();
     s.dialUnconfirmed.clear();
+    s.dialApproximate.clear();
+    s.dialServedFrom = it->second.getProperty("served_from", juce::var()).toString();
     s.dialOutOfRange.clear();
     // dial-3 denominator (A3): the count of settings the model asked for,
     // stored HERE because appliedCount + manual.size() is not a substitute
@@ -3624,6 +3739,15 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
             // revert gone, the caveat must surface instead.
             if (r.staleDisplayKept)
                 s.dialUnconfirmed.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
+            // THE 9 AUG SILENCE RULE DOES NOT REACH HERE (26 Aug 2026). That
+            // rule says a successful write shows nothing extra, and it was
+            // right because silence meant "it landed as asked". On a product
+            // fallback the anchors came from another version and drift on
+            // ~19% of controls, so silence would be asserting something we
+            // measured to be false a fifth of the time. Named here, on the
+            // card, and marked to the model.
+            if (r.anchorsUnverified)
+                s.dialApproximate.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
         }
         else
         {
@@ -3654,13 +3778,16 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
     // would still overclaim (the spiff class of bug).
     s.dialAppliedCount = (int) appliedSummary.size();
     if (report.empty())
-        s.dialStatus = DialStatus::unusableMap;   // structured present, nothing requested survived
+        s.dialStatus = DialStatus::mapNoCoverage; // structured present, nothing requested survived
     else if (s.dialManual.isEmpty())
         s.dialStatus = DialStatus::applied;
     else if (s.dialAppliedCount > 0)
         s.dialStatus = DialStatus::partial;
     else
-        s.dialStatus = DialStatus::unusableMap;
+        // The map covered it and the writes were ATTEMPTED — this is the only
+        // status that wrote anything, which is why it is the only one the
+        // emitter lets pair with readback_mismatch (A9 §1c).
+        s.dialStatus = DialStatus::writesRejected;
 
     // Card honesty (20 Aug 2026): the card read "attack 3ms, release 7ms"
     // while the knobs went to positions 3 and 7 on a 1..7 scale — the
@@ -3670,8 +3797,27 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
     //   - display-verified: the plugin's own display text is ground truth.
     //   - bridged (staleDisplayKept): already annotated as unverifiable
     //     upstream; nothing is added here.
-    //   - setread / unparseable display: the written value, in the MAP's
-    //     vocabulary.
+    //   - setread / unparseable display / position: the written value, in
+    //     the MAP's vocabulary, on its OWN line marked unverified.
+    //
+    // 6a (24 Aug 2026), and it is NOT the one-line swap the contract
+    // imagined. landedText was never "unused" here: the displayVerified
+    // branch below has always reported it. What was wrong is that the OTHER
+    // three tiers printed r.requestedValue through the same arrow, so a
+    // request and a landing were byte-identical to the reader.
+    //
+    // Those three tiers cannot be fixed by reading landedText instead,
+    // because on every one of them the read is known-untrustworthy at the
+    // moment it is taken, not merely unverified:
+    //   - setread maps EXIST because the plugin's getText ignores its
+    //     argument (EchoJayParamApply.h, the method switch). The string is a
+    //     lie by the map's own declaration.
+    //   - position: "positions carry no display expectation" (:470).
+    //   - unparseable: typedReadbackMatch already returned 0 on that text.
+    // So the honest report on those tiers is the value we ASKED for, said as
+    // a request. Marked, not omitted: a control that was written and then
+    // dropped from the card is indistinguishable from one never requested,
+    // and an unreadable absence is the defect this contract is about.
     // THE RULE: the card must never restate a unit the map does not
     // declare. Where the map's unit is null or disagrees with the key's
     // suffix, show the range instead. That is the whole of tonight's
@@ -3715,7 +3861,11 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
                        ? juce::String((int) std::lround(v)) : juce::String(v, 2);
         };
         const auto arrow = juce::String::fromUTF8(" \xe2\x86\x92 ");
-        juce::StringArray landedBits, refusedBits;
+        juce::StringArray landedBits, askedBits, refusedBits;
+        // Index beside each SUPPRESSIBLE entry, so injection-build time can ask
+        // "does this control have a live read?" without inverting a lossy
+        // label. Refused entries need none: they are never suppressed.
+        juce::Array<int> landedIdx, askedIdx;
         for (auto& r : report)
         {
             // Range refusals name the mapped range ON THE CARD, inheriting
@@ -3731,39 +3881,84 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
             }
             if (! r.applied || r.staleDisplayKept) continue;   // bridged: annotated upstream
             const auto label = echojay::semanticLabel(r.semantic);
+            // AN APPROXIMATE VALUE IS NOT A LANDING, whatever the display
+            // says. displayVerified means the knob shows what we wrote; on a
+            // product fallback the unverified part is whether what we wrote
+            // corresponds to what was ASKED, because the anchor mapping came
+            // from another version. So the annotation rides the entry rather
+            // than the tier: the tier still says how the write went, and the
+            // suffix says the number cannot be trusted to the request.
+            const juce::String approx = r.anchorsUnverified
+                ? juce::String(" (approximate, mapped from ")
+                    + (s.dialServedFrom.isNotEmpty() ? s.dialServedFrom : juce::String("another version"))
+                    + ")"
+                : juce::String();
             if (r.displayVerified && r.landedText.trim().isNotEmpty())
             {
-                landedBits.add(label + arrow + "reads \"" + r.landedText.trim() + "\"");
+                landedBits.add(label + arrow + "reads \"" + r.landedText.trim() + "\"" + approx);
+                landedIdx.add(r.index);
                 continue;
             }
+            // NO VERIFIED LANDING FOR THIS CONTROL. It goes on the asked line,
+            // never the landed one: the whole point of 6a is that the reader
+            // can tell the two apart, and putting a request behind the same
+            // arrow as a landing is the original defect wearing a new name.
             const auto entry = entryFor(r.semantic);
             const auto unit  = declaredUnit(entry, r.semantic);
             float lo = 0.0f, hi = 0.0f;
             if (unit.isNotEmpty())
-                landedBits.add(label + arrow + r.requestedValue.toString() + " " + unit);
+                { askedBits.add(label + arrow + r.requestedValue.toString() + " " + unit + approx); askedIdx.add(r.index); }
             else if (rangeOf(entry, lo, hi))
-                landedBits.add(label + arrow + r.requestedValue.toString()
-                               + " (this knob runs " + num(lo) + ".." + num(hi) + ")");
+                { askedBits.add(label + arrow + r.requestedValue.toString()
+                              + " (this knob runs " + num(lo) + ".." + num(hi) + ")" + approx); askedIdx.add(r.index); }
             else
-                landedBits.add(label + arrow + r.requestedValue.toString());
+                { askedBits.add(label + arrow + r.requestedValue.toString() + approx); askedIdx.add(r.index); }
         }
-        if (! landedBits.isEmpty() || ! refusedBits.isEmpty())
+        if (! landedBits.isEmpty() || ! askedBits.isEmpty() || ! refusedBits.isEmpty())
         {
             // Idempotent on re-apply (map arrival, re-dial): previous
-            // Landed/Refused lines are replaced, never stacked.
-            static const char* kLandedPrefix  = "Landed: ";
-            static const char* kRefusedPrefix = "Refused: ";
+            // Landed/Asked/Refused lines are replaced, never stacked. The
+            // asked prefix MUST be stripped here too, or a re-dial stacks a
+            // second unverified line under the first.
             juce::StringArray kept;
             for (auto& line : juce::StringArray::fromLines(s.settings))
-                if (! line.startsWith(kLandedPrefix) && ! line.startsWith(kRefusedPrefix))
+                if (! line.startsWith(kLandedPrefix) && ! line.startsWith(kAskedPrefix)
+                    && ! line.startsWith(kRefusedPrefix))
                     kept.add(line);
             while (! kept.isEmpty() && kept[kept.size() - 1].trim().isEmpty())
                 kept.remove(kept.size() - 1);
+            // ONE PARTITION, BUILT ONCE, CONSUMED TWICE. landedBits /
+            // askedBits / refusedBits are decided exactly once above; these
+            // three lines are composed exactly once here; and both consumers
+            // below take THESE lines. Nothing downstream re-decides what counts
+            // as landed versus asked, which is the whole point of the split.
+            juce::StringArray tierLines;
             if (! landedBits.isEmpty())
-                kept.add(kLandedPrefix + landedBits.joinIntoString(", "));
+                tierLines.add(kLandedPrefix + landedBits.joinIntoString(", "));
+            if (! askedBits.isEmpty())
+                tierLines.add(kAskedPrefix + askedBits.joinIntoString(", "));
             if (! refusedBits.isEmpty())
-                kept.add(kRefusedPrefix + refusedBits.joinIntoString("; "));
+                tierLines.add(kRefusedPrefix + refusedBits.joinIntoString("; "));
+            kept.addArray(tierLines);
+            // The CARD keeps the prose. Unchanged from before the split,
+            // including the fact that the "Applied automatically" writer below
+            // overwrites it whenever anything applied, so this assignment is
+            // observable only on the nothing-applied path (refusals only).
             s.settings = kept.joinIntoString("\n");
+            // THE MODEL GETS THE TIERS ONLY, NOT THE PROSE (24 Aug 2026).
+            // `kept` opens with whatever setSlotSettings wrote, which is the
+            // model's own suggested-settings description. Handing that back
+            // inside a field about control values is the same conflation this
+            // whole contract removes: description read as state.
+            //
+            // STORED STRUCTURED, NOT COMPOSED. The entries stay apart until
+            // modelSettingsForSlot() assembles them at injection-build time,
+            // because that is the only moment both the echo and the live reads
+            // are in hand. Composing here and re-splitting there would be the
+            // packed-string escaping problem again.
+            s.modelLandedBits  = landedBits;   s.modelLandedIdx = landedIdx;
+            s.modelAskedBits   = askedBits;    s.modelAskedIdx  = askedIdx;
+            s.modelRefusedBits = refusedBits;
             if (onSlotSettingsChanged) onSlotSettingsChanged();
         }
     }
@@ -3777,6 +3972,17 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         if (!s.dialUnconfirmed.isEmpty())
             s.settings += "\n" + s.dialUnconfirmed.joinIntoString(", ")
                         + ": written - display could not be confirmed on this bridged plugin";
+        // Approximate values get their own line, for the same reason the
+        // bridged caveat has one: the write succeeded and the number is not
+        // one we can stand behind. Naming the version it was mapped FROM is
+        // the whole point -- it tells the reader why, and that dialling by
+        // hand is the remedy.
+        if (!s.dialApproximate.isEmpty())
+            s.settings += "\n" + s.dialApproximate.joinIntoString(", ")
+                        + ": approximate - mapped from "
+                        + (s.dialServedFrom.isNotEmpty() ? s.dialServedFrom
+                                                         : juce::String("another version"))
+                        + ", dial by hand if it matters";
     }
 }
 
@@ -4257,7 +4463,33 @@ bool ChainHost::planStageOne(const juce::PluginDescription& d, juce::String& why
                     ++hexHits;
                 if (nm && um && byBoth.name.isEmpty()) byBoth = e;
                 else if (um && byUid.name.isEmpty())   byUid  = e;
-                else if (nm && byName.name.isEmpty())  byName = e;
+                else if (nm)
+                {
+                    // CHANNEL VARIANT AT THE NAME TIER (1 Sep 2026, merging the
+                    // reasoning line in). WaveShell registers one AU per channel
+                    // configuration and namesMatchLoose strips the suffix, so
+                    // "CLA-76" matches CLA-76 (m) AND (s); first-wins took
+                    // whichever was scanned first, which is the mono build. That
+                    // is the defect 28d3f53 closed in the resolver ladder,
+                    // arriving here by a route that did not exist when the six
+                    // paths were inventoried. Same rank, same header.
+                    //
+                    // THE RANK SITS UNDER AN EXACT NAME, NEVER OVER IT. A saved
+                    // or borrowed rack carries desc.name, the full registration,
+                    // so a plan identity naming "CLA-76 (m)" asked for the mono
+                    // build and must keep it; namesMatchLoose would otherwise let
+                    // the rank re-point it to (s).
+                    //
+                    // ONLY THIS TIER. byBoth and byUid are pinned by uid, and
+                    // each variant carries its own (Abbey Road Chambers (m)
+                    // 59527463, (m->s) 59527476, (s) 5952747d), so where a uid
+                    // matched the variant was already chosen by whoever authored
+                    // the identity and the rank must not second-guess it.
+                    // THE RULE ITSELF IS IN THE HEADER, called not copied, so
+                    // the three behaviours above are pinned by calling it.
+                    if (echojay::channelVariantShouldReplace(e.name, byName.name, d.name))
+                        byName = e;
+                }
             };
             for (const auto& e : knownPlugins_.getTypes()) scan(e);
             for (const auto& e : entries_) scan(e);
@@ -5001,7 +5233,8 @@ bool ChainHost::namesMatchLoose(const juce::String& incoming,
 juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
                                                  const juce::String& formatFilter,
                                                  juce::String* matchLogOut,
-                                                 WithholdReason* withheldOut) const
+                                                 WithholdReason* withheldOut,
+                                                 juce::StringArray* ambiguousOut) const
 {
     if (withheldOut) *withheldOut = WithholdReason::None;
     auto raw  = rawName.trim();
@@ -5044,57 +5277,33 @@ juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
     if (formatFilter.isEmpty())
         cands = collapseAuPreferring(cands);
 
-    // Normalised (case/punctuation/version-token tolerant). Model-number guard:
-    // normalizeName strips a trailing number as a version, which collapses
-    // "AMEK EQ 250" and "AMEK EQ 200" to the same stem. When the request AND
-    // the candidate each carry a trailing number and they DIFFER, the number is
-    // a model, not a version, so it is not a match. A number on only one side
-    // (e.g. "Saturn 2" vs a plugin named "Saturn") still tolerates the strip.
+    // Kept for the "closest" line at the bottom; the ladder derives its own.
     auto keyIn = normalizeName(base);
-    auto numIn = trailingModelNumber(base);
 
-    // The match ladder, exact / stripped / stripped+manufacturer / normalised,
-    // as ONE function so the offered pool and the withheld pool are searched
-    // by identical rules: a name that would have resolved to a withheld row
-    // is reported as withheld, never as not found. Returns the index into
-    // pool, or -1; how receives the rung that matched.
+    // THE MATCH LADDER IS IN EJNameLadder.h (28 Aug 2026), and it now PREFERS
+    // THE STEREO REGISTRATION on its two collapsing rungs. This function used
+    // to take whichever row sorted first, so every collapsed base name -- every
+    // Waves product, since WaveShell registers one AU per channel configuration
+    // -- resolved to the MONO build here while the feed's own table resolved it
+    // to the stereo one (9c4f629). Add ops, saved-chain recall with a bare name
+    // and every Link path go through this ladder and nothing else, so they all
+    // loaded the mono build of a stereo plugin.
+    //
+    // The EXACT rung is untouched and stays first: a name carrying a suffix
+    // means that registration. The rule RANKS, it never filters, so a product
+    // registered only in mono still resolves to its mono build. The pool is
+    // built above, after the format filter and the withhold gate, so the
+    // preference composes with the filter rather than reaching past it.
     auto matchIn = [&](const juce::Array<juce::PluginDescription>& pool,
-                       juce::String& how) -> int
+                       juce::String& how,
+                       juce::StringArray* ambig = nullptr) -> int
     {
-        for (int i = 0; i < pool.size(); ++i)
-            if (pool.getReference(i).name.equalsIgnoreCase(raw)) { how = "exact"; return i; }
-
-        // Parenthetical-stripped match, manufacturer as tie-breaker
-        juce::Array<int> baseHits;
-        for (int i = 0; i < pool.size(); ++i)
-            if (pool.getReference(i).name.equalsIgnoreCase(base)) baseHits.add(i);
-        if (baseHits.size() == 1) { how = "stripped"; return baseHits[0]; }
-        if (baseHits.size() > 1)
-        {
-            if (manu.isNotEmpty())
-                for (int i : baseHits)
-                    if (pool.getReference(i).manufacturerName.containsIgnoreCase(manu))
-                    { how = "stripped+manufacturer"; return i; }
-            how = "stripped (first of several)";
-            return baseHits[0];
-        }
-
-        for (int i = 0; i < pool.size(); ++i)
-        {
-            const auto& d = pool.getReference(i);
-            if (normalizeName(stripParenthetical(d.name)) == keyIn)
-            {
-                auto numCand = trailingModelNumber(stripParenthetical(d.name));
-                if (numIn.isNotEmpty() && numCand.isNotEmpty() && numIn != numCand)
-                    continue;
-                how = "normalised"; return i;
-            }
-        }
-        return -1;
+        return echojay::matchInPool(pool, raw, base, manu, how, ambig);
     };
 
     juce::String how;
-    if (const int i = matchIn(cands, how); i >= 0)
+    juce::StringArray ambiguous;
+    if (const int i = matchIn(cands, how, &ambiguous); i >= 0)
     {
         const auto& d = cands.getReference(i);
         if (matchLogOut)
@@ -5102,10 +5311,24 @@ juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
         return d;
     }
 
+    // AMBIGUOUS, and it returns HERE rather than falling through (31 Aug
+    // 2026). The name was found -- several times over -- so searching the
+    // withheld pool next would answer a question nobody asked, and could
+    // report "withheld" as the reason a name that resolves twice did not
+    // resolve. A refusal must name what it saw, and what this saw is a tie.
+    if (ambiguous.size() > 1)
+    {
+        if (withheldOut)  *withheldOut  = WithholdReason::Ambiguous;
+        if (ambiguousOut) *ambiguousOut = ambiguous;
+        if (matchLogOut)
+            *matchLogOut = how + " -> refused; candidates: " + ambiguous.joinIntoString(", ");
+        return {};
+    }
+
     // Honest miss: the name is on this machine, this host keeps it back.
     // Still empty (nothing resolves that cannot load), but the caller can
     // say so instead of "not found".
-    if (const int i = matchIn(withheld, how); i >= 0)
+    if (const int i = matchIn(withheld, how); i >= 0)   // no ambiguousOut: see above
     {
         const auto& d   = withheld.getReference(i);
         const auto  why = withheldWhy[i];
@@ -5134,6 +5357,51 @@ juce::PluginDescription ChainHost::resolveByName(const juce::String& rawName,
                      + (close.isEmpty() ? juce::String("(none)")
                                         : close.joinIntoString(", "));
     }
+    return {};
+}
+
+// Resolve a name the model was OFFERED: the registry first, then the feed's own
+// displayName -> desc table. See the header for why the order is not the other
+// way round. Message thread, matching loadByRecommendedName's convention for
+// touching recommendable_ (buildRecommendable writes it on the same thread).
+juce::PluginDescription ChainHost::resolveOfferedName(const juce::String& rawName,
+                                                      WithholdReason* withheldOut,
+                                                      juce::StringArray* ambiguousOut) const
+{
+    WithholdReason why = WithholdReason::None;
+    juce::StringArray ambiguous;
+    auto d = resolveByName(rawName, {}, nullptr, &why, &ambiguous);
+    if (d.name.isNotEmpty())
+    {
+        if (withheldOut) *withheldOut = why;   // None on a hit, by contract
+        return d;
+    }
+
+    // MISS. The registry does not know this name -- but the feed may have
+    // offered it, under a display name the alias resolved at scan time. An
+    // exact, case-insensitive displayName match only: recommendable_ is a
+    // lookup table of names we ourselves published, not a second fuzzy ladder.
+    const auto want = rawName.trim();
+    for (const auto& e : recommendable_)
+        if (e.displayName.trim().equalsIgnoreCase(want))
+        {
+            EchoJay_NSLog(("EJChain: [offered-name] \"" + want + "\" -> \""
+                           + e.desc.name + "\" (feed displayName; registry missed)")
+                              .toRawUTF8());
+            // recommendable_ is built from the LOADABLE set, so a row that is
+            // in it is not withheld: the earlier reason described a different
+            // row the ladder happened to reach, and must not travel with this
+            // answer.
+            if (withheldOut) *withheldOut = WithholdReason::None;
+            return e.desc;
+        }
+
+    // The feed table is consulted BEFORE the ambiguity is reported, and that
+    // order is deliberate: a name the feed itself published is a name we chose
+    // to offer, so it is answerable even when the registry ladder found the
+    // request tied. Only a name nothing can answer is refused as ambiguous.
+    if (withheldOut)  *withheldOut  = why;
+    if (ambiguousOut) *ambiguousOut = ambiguous;
     return {};
 }
 
@@ -5473,6 +5741,11 @@ juce::String ChainHost::withholdReasonText(WithholdReason r)
                  + juce::File::descriptionOfSizeInBytes((juce::int64) kSessionStateMaxSlotBytes)
                  + " a session can save per plugin, so a chain holding it could not be saved "
                    "(chain_state_oversize.txt; deleting its line there offers it again)";
+        case WithholdReason::Ambiguous:
+            // The candidates are the reason, and this function does not have
+            // them. ambiguousNameText authors it; returning empty here keeps
+            // the two from disagreeing about one refusal.
+            break;
         case WithholdReason::Unreadable:
         case WithholdReason::None:
             break;
@@ -5480,51 +5753,25 @@ juce::String ChainHost::withholdReasonText(WithholdReason r)
     return {};
 }
 
+juce::String ChainHost::ambiguousNameText(const juce::StringArray& candidates)
+{
+    if (candidates.size() < 2) return {};
+    // EVERY candidate, in pool order, no cap: see the header. A refusal that
+    // lists three of four names is a refusal the reader cannot act on, and
+    // the one it drops is the one they wanted often enough to matter.
+    return "matches " + juce::String(candidates.size())
+         + " installed plugins and nothing chooses between them: "
+         + candidates.joinIntoString(", ")
+         + " - name one of them exactly";
+}
+
 // ---------------------------------------------------------------------------
 // Settings ↔ ChainHost resolver
 // ---------------------------------------------------------------------------
 
-// Normalize a plugin name for fuzzy matching:
-//   lowercase, trim whitespace, collapse internal runs of spaces/punctuation
-//   to a single space, strip trailing version suffixes like " 3" / " v2" / " 2.0".
-static juce::String normalizeName(const juce::String& raw)
-{
-    juce::String s = raw.toLowerCase().trim();
-    // Replace common punctuation chars that differ between sources with space
-    s = s.replace("-", " ").replace("_", " ").replace(".", " ");
-    // Collapse multiple spaces
-    while (s.contains("  ")) s = s.replace("  ", " ");
-    // Strip trailing version tokens: " 3", " v2", " 2", " ii", " iii"
-    s = s.trimEnd();
-    juce::StringArray parts = juce::StringArray::fromTokens(s, " ", "");
-    if (parts.size() >= 2)
-    {
-        const auto& last = parts[parts.size() - 1];
-        bool isVersion = last.containsOnly("0123456789") ||
-                         (last.startsWithChar('v') && last.substring(1).containsOnly("0123456789")) ||
-                         last == "ii" || last == "iii" || last == "iv";
-        if (isVersion) parts.remove(parts.size() - 1);
-    }
-    return parts.joinIntoString(" ").trim();
-}
-
-// The trailing all-digits token normalizeName would strip, or empty. Mirrors
-// that tokenization so the number it returns is exactly the one stripped. Only
-// bare digits count as a model (v2 / II / III stay version suffixes); those are
-// still stripped and never guarded.
-static juce::String trailingModelNumber(const juce::String& raw)
-{
-    juce::String s = raw.toLowerCase().trim();
-    s = s.replace("-", " ").replace("_", " ").replace(".", " ");
-    while (s.contains("  ")) s = s.replace("  ", " ");
-    juce::StringArray parts = juce::StringArray::fromTokens(s.trim(), " ", "");
-    if (parts.size() >= 2)
-    {
-        const auto& last = parts[parts.size() - 1];
-        if (last.containsOnly("0123456789")) return last;
-    }
-    return {};
-}
+// normalizeName and trailingModelNumber are in EJNameLadder.h, beside the
+// ladder that uses them; `using` declarations at the top of this file keep every
+// call site unqualified.
 
 void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
                                     const juce::String& formatFilter)
@@ -5610,6 +5857,34 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
         if (stem != keyed && nameMap.find(stem) == nameMap.end())
             nameMap[stem] = d;
     };
+    // The base-name key is NOT first-wins (27 Aug 2026). Where several
+    // registrations collapse to one base name, the best channel variant claims
+    // it; see EJVariantPreference.h for the rank and the measurement behind it.
+    auto insertPreferredBase = [&nameMap, &modelKey](const juce::String& baseName,
+                                                     const juce::PluginDescription& d)
+    {
+        const std::string keyed = modelKey(baseName);
+        auto itK = nameMap.find(keyed);
+        if (itK == nameMap.end()
+            || echojay::channelVariantIsBetter(d.name, itK->second.name))
+            nameMap[keyed] = d;
+        const std::string stem = normalizeName(baseName).toStdString();
+        if (stem != keyed)
+        {
+            auto itS = nameMap.find(stem);
+            if (itS == nameMap.end()
+                || echojay::channelVariantIsBetter(d.name, itS->second.name))
+                nameMap[stem] = d;
+        }
+    };
+
+    // Registry base names, for the Waves marketing-name alias (EJWavesAlias.h).
+    // Collected here rather than re-derived, so the alias searches exactly the
+    // set the nameMap was built from -- arch-gated, blacklist-gated, and all.
+    juce::StringArray registryBaseNames;
+    for (const auto& d : loadable)
+        registryBaseNames.addIfNotAlreadyThere(stripParenthetical(d.name));
+
     for (const auto& d : loadable)
     {
         insertName(d.name, d);
@@ -5620,7 +5895,7 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
         // of the AI feed entirely, and the model told the user a plugin
         // RUNNING IN THEIR RACK was "not in your available plugins".
         const auto base = stripParenthetical(d.name);
-        if (base != d.name) insertName(base, d);
+        if (base != d.name) insertPreferredBase(base, d);
     }
 
     // Filter enabled scanner plugins and resolve against the map
@@ -5648,6 +5923,15 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
     // Model-keyed slot first (exact product), then the bare stem guarded by
     // the c3ad9be predicate: a stem hit whose entry carries a DIFFERENT
     // trailing number than this row is a different product, not a resolution.
+    //
+    // THE SECOND TIER IS EXACTLY ONE SHAPE, and knowing that is what makes the
+    // guard below safe (measured 31 Aug 2026). modelKey is normalizeName plus
+    // "\n" + trailingModelNumber when there IS a bare trailing number, so when
+    // there is none the model key and the bare stem are the SAME STRING: a
+    // tier-1 miss is then a tier-2 miss on an identical lookup. Tier 2 is
+    // therefore reachable ONLY when the request carries a bare trailing number
+    // the entry does not. Verified against all 1,491 scanner rows on this
+    // machine: zero counter-examples.
     auto lookupName = [&nameMap, &modelKey](const juce::String& n)
     {
         auto it = nameMap.find(modelKey(n));
@@ -5659,9 +5943,89 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
             const auto numEn = trailingModelNumber(stripParenthetical(it->second.name));
             if (numIn.isNotEmpty() && numEn.isNotEmpty() && numIn != numEn)
                 return nameMap.end();
+            // DIRECTION A: the request carries a number, the entry carries
+            // none. THE FEED PATH REFUSES THIS, and EJNameLadder.h's ladder
+            // deliberately does not -- see the note beside its tolerance for
+            // why the two diverge rather than one of them being wrong.
+            //
+            // WHAT IT COSTS AND WHAT IT BUYS, MEASURED over this machine's
+            // 1,491 scanner rows: tier 2 has exactly ONE member, and it is the
+            // defect. Logic Pro's stock "DeEsser 2" reached this branch, the
+            // strip took its "2", and it bound to WAVES' "DeEsser (s)" -- a
+            // different vendor's plugin, advertised to the model under Logic's
+            // name. Logic's DeEsser 2 is not in entries_ at all (stock plugins
+            // are not standalone AUs), so the strip was the only reason that
+            // name resolved to anything. Refusing costs zero correct bindings
+            // here and removes that one.
+            //
+            // DIRECTION B IS UNTOUCHED and is the useful half: an entry that
+            // carries a number the request does not ("Pro-Q" finding "Pro-Q 3",
+            // "Saturn" finding "Saturn 2") still binds, because that asymmetry
+            // reaches tier 1, not here.
+            //
+            // NOT KEYED ON THE VENDOR, and that was the measured decision
+            // rather than the obvious one. A vendor comparison looks like the
+            // natural test and fails on this data: scanner and registry vendor
+            // strings disagree outright on 73 of 654 resolved pairs (11.2%) --
+            // developer against distributor ("Adptr" / "Se" against "Plugin
+            // Alliance"), a CATEGORY sitting in the field ("Pitch Shift" for
+            // MAutoPitch), brand renames -- and 851 of 860 VST3 registry rows
+            // carry no manufacturer at all, so it fails open exactly where it
+            // would be needed. 72 of those 73 disagreements resolve on tier 1
+            // where the name matched byte-for-byte and the vendor is beside
+            // the point. The number asymmetry tests what actually went wrong.
+            if (numIn.isNotEmpty() && numEn.isEmpty())
+            {
+                // LOGGED, ALWAYS. A refusal that is silent is indistinguishable
+                // from one that never fired, and what it removes is a name
+                // quietly missing from the feed on someone else's machine.
+                EchoJay_NSLog(("EJScan: [name-guard] REFUSED \"" + n + "\" -> \""
+                               + it->second.name + "\" [" + it->second.pluginFormatName
+                               + "]: direction-A number asymmetry (request carries \""
+                               + numIn + "\", entry carries none)").toRawUTF8());
+                return nameMap.end();
+            }
         }
         return it;
     };
+
+    // ONE RESOLUTION LADDER, ASKED BY BOTH BRANCHES (30 Aug 2026). The disabled
+    // branch has to resolve a row exactly as the enabled branch does, or the
+    // suppression it derives would answer a different question from the offer it
+    // exists to cancel. Factored rather than copied, for the reason the variant
+    // rule is reused rather than restated in EJWavesRegistryFeed.h: a second
+    // copy of a ladder drifts, and the drift is invisible until a name stops
+    // resolving. logAlias is false for disabled rows only so the [waves-alias]
+    // stream keeps meaning "a row the model was offered".
+    auto resolveScannerRow = [&](const ScannedPlugin& sp, bool logAlias)
+    {
+        auto it = lookupName(sp.name);
+        if (it == nameMap.end() && sp.name.containsChar(':'))
+            it = lookupName(sp.name.fromFirstOccurrenceOf(":", false, false).trim());
+        if (it == nameMap.end() && sp.manufacturer == "Waves")
+        {
+            const auto aliased = echojay::wavesAliasFor(sp.name, registryBaseNames);
+            if (aliased.isNotEmpty())
+            {
+                it = lookupName(aliased);
+                if (it != nameMap.end() && logAlias)
+                    EchoJay_NSLog(("EJScan: [waves-alias] \"" + sp.name + "\" -> \""
+                                   + it->second.name + "\"").toRawUTF8());
+            }
+        }
+        return it;
+    };
+
+    // What the user UNTICKED, resolved to registrations. This cannot be derived
+    // downstream from uids: a scanner uid keys the catalog MARKETING name while
+    // these registrations carry the SHELL name -- "API 2500" keys
+    // api_2500_waves and "API-2500 (s)" keys api-2500_waves, one hyphen apart
+    // and never equal. Measured here: of 289 registry products only 31 produce
+    // a uid any scanner row also produces, so a uid test would have missed 258
+    // and looked like it worked. The name ladder is the one bridge between the
+    // two vocabularies this codebase has, so the untick crosses on it -- and
+    // crosses as a REGISTRATION, leaving scope and collapse to the header.
+    std::vector<juce::PluginDescription> untickedRegistrations;
 
     for (const auto& sp : allPlugins)
     {
@@ -5669,16 +6033,26 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
         {
             ++excludedRows;
             excludedUids.insert(sp.uid);
+            // THE UNTICK HAS TO REACH THE REGISTRY PATH, or it does not remove
+            // the plugin, it RENAMES it: this row leaving `resolved` is exactly
+            // what lets the registry path offer the same product again under
+            // its shell base name. Resolved, not classified -- whether this is
+            // a Waves row and what product it collapses to are the header's
+            // calls, and a copy of them here is the thing wr PIN7 forbids.
+            auto dit = resolveScannerRow(sp, false);
+            if (dit != nameMap.end()) untickedRegistrations.push_back(dit->second);
             continue;
         }
         ++enabledCount;
 
-        // Try exact normalized name (model-keyed, stem-guarded — see lookupName)
-        auto it = lookupName(sp.name);
-
-        // If not found, try without manufacturer prefix ("Fab Filter: Pro-Q 3" → "pro q 3")
-        if (it == nameMap.end() && sp.name.containsChar(':'))
-            it = lookupName(sp.name.fromFirstOccurrenceOf(":", false, false).trim());
+        // Exact normalized name (model-keyed, stem-guarded), then the
+        // manufacturer-prefix strip, then the WAVES MARKETING-NAME ALIAS
+        // (28 Aug 2026) -- the scanner injects Waves' marketing names
+        // (expandWavesCatalog) while the shell registers shorter ones, so 35 of
+        // 69 ticked Waves rows resolved to nothing and the model called
+        // installed plugins missing. All three now live in resolveScannerRow
+        // above, which the disabled branch asks too.
+        auto it = resolveScannerRow(sp, true);
 
         if (it != nameMap.end())
         {
@@ -5707,14 +6081,61 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
         }
     }
 
+    // WAVES CANDIDATES COME FROM THE REGISTRY, NOT THE CATALOG (28 Aug 2026).
+    // Everything above walks SCANNER rows, so a Waves product could only enter
+    // the feed if the 69-name curated catalog happened to name it. This
+    // machine's registry holds 289 Waves products and the feed carried 64 of
+    // them, so the gate was hiding 225 installed plugins from the model while
+    // the user looked at them in the Chain browser. The catalog is neither
+    // deleted nor bypassed: its rows still resolve in the loop above, at their
+    // own positions, under the marketing names real sessions use, and they are
+    // the only Waves names cold start has. They are simply no longer the
+    // membership test. See EJWavesRegistryFeed.h for the scope predicate, the
+    // collapse and the two refusals.
+    //
+    // APPEND-ONLY, AND THAT IS THE WHOLE OF THE ADDITIVE ARGUMENT: nameMap is
+    // not touched, the loop above is not touched, and no row already in
+    // `resolved` is rewritten, re-pointed or reordered. Every non-Waves
+    // resolution is therefore byte-identical to what it was, by construction
+    // rather than by inspection. NO DECISION LIVES HERE -- the header owns
+    // scope, collapse, variant and both refusals, so the pins can run the
+    // shipped bytes against the real registry without a rebuild.
+    const int scannerResolved = (int) resolved.size();
+    const auto wavesRows = echojay::wavesRegistryFeedRows(loadable, resolved, untickedRegistrations);
+    for (const auto& r : wavesRows.rows)
+    {
+        pushedNames.insert(r.name);
+        resolved.push_back({ r.name, r.desc });
+    }
+    // Logged on EVERY build, including at zero, for the same reason the
+    // arch-withheld line above is: a Waves catalogue that silently stops
+    // reaching the model looks exactly like a model that stopped naming Waves
+    // plugins. Zero under a VST3 format filter is the expected reading (the
+    // registrations are AudioUnits), and so is zero with no entries cache.
+    EchoJay_NSLog(("EJScan: " + juce::String((int) wavesRows.rows.size())
+                   + " Waves product(s) added from the registry, of "
+                   + juce::String(wavesRows.products) + " registered ("
+                   + juce::String(wavesRows.alreadyOffered)
+                   + " already offered under another name, "
+                   + juce::String(wavesRows.nameTakenByOther)
+                   + " name(s) held by a different plugin, "
+                   + juce::String(wavesRows.untickedInSettings)
+                   + " unticked in Settings)").toRawUTF8());
+
     // The resolver coverage triple, relocated from a never-rendered label
     // (13 Aug 2026, the dead-layer sweep) and promoted from DBG to a
     // release-build line: unmatched is the number that would have flagged a
     // starving resolver, and it existed nowhere a release build could see.
-    // N resolved here MUST equal feed= on the EJMapFps line - both count
-    // recommendable_. A divergence between those two lines is a FINDING
-    // (two counts of one population disagreeing), not a rounding
-    // difference.
+    // THE NUMBER THAT MUST EQUAL feed= ON THE EJMapFps LINE IS feed= HERE,
+    // NOT resolved= (28 Aug 2026). Both still count recommendable_, but
+    // recommendable_ no longer comes from the scanner walk alone: `resolved`
+    // is the scanner half and keeps the identity that made this line
+    // checkable at a glance,
+    //     enabled = resolved + duplicates + unmatched,
+    // while the registry-sourced Waves rows are named separately and the two
+    // are summed into feed=. A divergence between feed= here and feed= on the
+    // EJMapFps line is a FINDING (two counts of one population disagreeing),
+    // not a rounding difference.
     // input and excluded ride the line (13 Aug 2026, the Brainworx 56) so
     // the accounting is checkable on ONE line: input - excluded = enabled,
     // and excluded against the EJScan set-size lines is one subtraction in
@@ -5730,13 +6151,15 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
     // With rows unique, excluded ROWS equals excluded UIDS; a gap means
     // duplicate rows have come back, and the line says so itself instead of
     // waiting for someone to derive it by hand.
-    EchoJay_NSLog(("EJScan: resolver rebuilt, " + juce::String((int) resolved.size())
+    EchoJay_NSLog(("EJScan: resolver rebuilt, " + juce::String(scannerResolved)
                    + " resolved (input=" + juce::String((int) allPlugins.size())
                    + ", enabled=" + juce::String(enabledCount)
                    + ", excluded=" + juce::String(excludedRows)
                    + " from " + juce::String((int) excludedUids.size()) + " uid(s)"
                    + ", duplicates=" + juce::String(duplicateNames)
-                   + ", unmatched=" + juce::String(enabledCount - (int) resolved.size() - duplicateNames)
+                   + ", unmatched=" + juce::String(enabledCount - scannerResolved - duplicateNames)
+                   + ", wavesFromRegistry=" + juce::String((int) wavesRows.rows.size())
+                   + ", feed=" + juce::String((int) resolved.size())
                    + ")"
                    + (excludedRows != (int) excludedUids.size()
                           ? juce::String(" [DUPLICATE ROWS: excluded rows exceed uids]")
@@ -5766,6 +6189,268 @@ juce::StringArray ChainHost::getRecommendableNames() const
     for (const auto& e : recommendable_)
         names.add(e.displayName);
     return names;
+}
+
+// So the five non-tiered writers of `settings` invalidate every part of the
+// model's copy, not whichever field someone remembered.
+// THE TIER PREFIXES, defined once. They are written by the card composer at
+// apply time and by modelSettingsForSlot at injection time, and a literal
+// duplicated across two sites is a rename waiting to desynchronise them.
+const char* const ChainHost::kLandedPrefix  = "Landed: ";
+const char* const ChainHost::kAskedPrefix   = "Asked, not verified: ";
+const char* const ChainHost::kRefusedPrefix = "Refused: ";
+
+void ChainHost::clearModelTiers(ChainSlot& s)
+{
+    s.modelLandedBits.clear();  s.modelLandedIdx.clear();
+    s.modelAskedBits.clear();   s.modelAskedIdx.clear();
+    s.modelRefusedBits.clear();
+}
+
+void ChainHost::refreshSlotParamReads()
+{
+    for (int i = 0; i < (int) slots_.size(); ++i)
+    {
+        auto& s = slots_[(size_t) i];
+        // THE ONE SWEEP, through the shared header read so the pins exercise
+        // these bytes rather than a copy of them.
+        s.liveReads = echojay::readAllParamDisplays(getSlotProcessor(i),
+                                                    s.liveReadFailed, s.liveParamCount);
+    }
+}
+
+bool ChainHost::slotHasLiveReads(int slot) const
+{
+    if (slot < 0 || slot >= (int) slots_.size()) return false;
+    const auto& s = slots_[(size_t) slot];
+    return ! s.liveReadFailed && ! s.liveReads.isEmpty();
+}
+
+bool ChainHost::hasLiveReadForIndex(int slot, int paramIndex) const
+{
+    if (slot < 0 || slot >= (int) slots_.size()) return false;
+    if (paramIndex < 0) return false;               // no index, no join, keep the echo
+    const auto& s = slots_[(size_t) slot];
+    if (s.liveReadFailed) return false;             // the echo is the only source
+    if (paramIndex >= s.liveReads.size()) return false;   // beyond the sweep, or none taken
+    // An EMPTY read is not a live value. The plugin answered with nothing, so
+    // the echo is still the only number anyone has for this control.
+    return s.liveReads[paramIndex].trim().isNotEmpty();
+}
+
+juce::String ChainHost::modelSettingsForSlot(int slot) const
+{
+    if (slot < 0 || slot >= (int) slots_.size()) return {};
+    const auto& s = slots_[(size_t) slot];
+
+    // SUPPRESSION, and it is conditional on an ACTUAL read. A control whose
+    // index has a non-empty live read loses its echoed value entirely: the
+    // read is now the better source and two numbers for one control is worse
+    // than either alone. Everything else is kept untouched -- a readFailed
+    // slot, an index the sweep never reached, a control with no index, and
+    // every refused entry.
+    auto keep = [this, slot](const juce::StringArray& bits, const juce::Array<int>& idx)
+    {
+        juce::StringArray out;
+        for (int i = 0; i < bits.size(); ++i)
+        {
+            const int pi = i < idx.size() ? idx[i] : -1;
+            if (! hasLiveReadForIndex(slot, pi)) out.add(bits[i]);
+        }
+        return out;
+    };
+    const auto landed = keep(s.modelLandedBits, s.modelLandedIdx);
+    const auto asked  = keep(s.modelAskedBits,  s.modelAskedIdx);
+
+    juce::StringArray lines;
+    if (! landed.isEmpty())              lines.add(kLandedPrefix + landed.joinIntoString(", "));
+    if (! asked.isEmpty())               lines.add(kAskedPrefix + asked.joinIntoString(", "));
+    // NEVER SUPPRESSED. A refusal is a record of a request that was rejected,
+    // not a claim about where the knob sits, and the number it names exists
+    // nowhere else.
+    if (! s.modelRefusedBits.isEmpty())  lines.add(kRefusedPrefix + s.modelRefusedBits.joinIntoString("; "));
+    return lines.joinIntoString("\n");
+}
+
+juce::var ChainHost::fallbackEntryForSlot(int slot, juce::String& whyOut) const
+{
+    whyOut = {};
+    if (slot < 0 || slot >= (int) slots_.size()) { whyOut = "no such slot"; return {}; }
+    const auto& s = slots_[(size_t) slot];
+    if (s.fp.isEmpty())                              { whyOut = "slot has no fingerprint"; return {}; }
+    if (paramMaps_.find(s.fp) != paramMaps_.end())   { whyOut = "already mapped exactly"; return {}; }
+    auto* proc = getSlotProcessor(slot);
+    if (proc == nullptr)                             { whyOut = "no live instance"; return {}; }
+
+    juce::DynamicObject::Ptr o = new juce::DynamicObject();
+    o->setProperty("ik", echojay::identityKeyForDescription(s.desc));
+    o->setProperty("fp", s.fp);
+    if (s.desc.manufacturerName.isNotEmpty())
+        o->setProperty("manufacturer", s.desc.manufacturerName);
+    auto& params = proc->getParameters();
+    o->setProperty("param_count", params.size());
+    // The name guard's input. Capped for the same reason the reads sweep is:
+    // a pathological plugin must not put twenty thousand names in a request
+    // body. kParamNameQueryLen, not a literal: the tagged-path assertion in
+    // applyOne re-reads with the same constant, so the string it compares is
+    // the one the server verified.
+    juce::Array<juce::var> names;
+    const int n = juce::jmin(params.size(), echojay::kMaxParamReadsPerSlot);
+    for (int p = 0; p < n; ++p)
+        names.add(params[p] != nullptr ? params[p]->getName(echojay::kParamNameQueryLen)
+                                       : juce::String());
+    o->setProperty("param_names", names);
+    return juce::var(o.get());
+}
+
+static juce::String wrapFallbackBody(const juce::Array<juce::var>& plugins)
+{
+    juce::DynamicObject::Ptr root = new juce::DynamicObject();
+    root->setProperty("mode", "lookup");
+    root->setProperty("plugins", juce::var(plugins));
+    return juce::JSON::toString(juce::var(root.get()), true);
+}
+
+juce::String ChainHost::buildFallbackLookupJsonForSlot(int slot) const
+{
+    juce::String why;
+    auto e = fallbackEntryForSlot(slot, why);
+    if (e.getDynamicObject() == nullptr)
+    {
+        // NEVER SILENT (27 Aug 2026). The previous version returned an empty
+        // string here and the caller returned without a word, so "the leg
+        // never fired" and "the leg fired and had nothing to ask" were
+        // indistinguishable in the log -- which is exactly the pair that cost
+        // a live test.
+        EchoJay_NSLog(("EJFallback: slot " + juce::String(slot + 1) + " not asked -- "
+                       + why).toRawUTF8());
+        return {};
+    }
+    juce::Array<juce::var> one; one.add(e);
+    return wrapFallbackBody(one);
+}
+
+juce::String ChainHost::buildFallbackLookupJson() const
+{
+    juce::Array<juce::var> plugins;
+    juce::StringArray asked, reasons;
+    for (int i = 0; i < (int) slots_.size(); ++i)
+    {
+        juce::String why;
+        auto e = fallbackEntryForSlot(i, why);
+        if (e.getDynamicObject() == nullptr) { reasons.addIfNotAlreadyThere(why); continue; }
+        const auto fp = slots_[(size_t) i].fp;
+        if (asked.contains(fp)) continue;          // one ask per fp
+        plugins.add(e);
+        asked.add(fp);
+    }
+    if (plugins.isEmpty())
+    {
+        EchoJay_NSLog(("EJFallback: nothing to ask across " + juce::String((int) slots_.size())
+                       + " slot(s) -- "
+                       + (reasons.isEmpty() ? juce::String("no slots") : reasons.joinIntoString("; ")))
+                          .toRawUTF8());
+        return {};
+    }
+    return wrapFallbackBody(plugins);
+}
+
+void ChainHost::storeFallbackMaps(const juce::var& resultsArray)
+{
+    auto* arr = resultsArray.getArray();
+    if (arr == nullptr) return;
+    int stored = 0, refused = 0;
+    for (auto& rv : *arr)
+    {
+        auto* r = rv.getDynamicObject();
+        if (r == nullptr) continue;
+        const auto ik  = r->getProperty("ik").toString();
+        const auto map = r->getProperty("map");
+        if (map.getDynamicObject() == nullptr)
+        {
+            // A miss is a real answer and it is logged, not swallowed: the
+            // reason names WHY the newest mapped version refused (names
+            // disagreed, fewer params, manufacturer mismatch), which is the
+            // difference between "no map exists" and "one exists and is not
+            // safe for this binary".
+            ++refused;
+            EchoJay_NSLog(("EJFallback: no map for " + ik + " -- tier "
+                           + r->getProperty("tier").toString() + ", reason "
+                           + r->getProperty("reason").toString()).toRawUTF8());
+            continue;
+        }
+        // Store under the fp that ASKED. Every slot sharing that identity
+        // finds it, and the exact-fp path is untouched because this only runs
+        // for fps that had no map at all.
+        juce::String wantFp;
+        for (const auto& sl : slots_)
+            if (echojay::identityKeyForDescription(sl.desc) == ik) { wantFp = sl.fp; break; }
+        if (wantFp.isEmpty()) continue;
+        paramMaps_[wantFp] = map;
+        fpFetchedAt_[wantFp] = juce::Time::currentTimeMillis();
+        ++stored;
+        EchoJay_NSLog(("EJFallback: " + ik + " served from "
+                       + r->getProperty("served_from").toString() + " (tier "
+                       + r->getProperty("tier").toString()
+                       + ", anchors_unverified="
+                       + juce::String((int) (bool) map.getProperty("anchors_unverified", false))
+                       + ")").toRawUTF8());
+    }
+    if (stored > 0) saveParamMapsToDisk();
+    EchoJay_NSLog(("EJFallback: " + juce::String(stored) + " served, "
+                   + juce::String(refused) + " refused").toRawUTF8());
+
+    // RE-APPLY, mirroring storeParamMaps (27 Aug 2026). Without this the map
+    // landed in the cache and nothing dialled: setSlotStructuredSettings runs
+    // applyStructuredIfReady BEFORE kicking any fetch, so the waiting slot has
+    // already settled as pending/noMap and only a re-evaluation can move it.
+    // The tagged map would have sat unused until some later turn happened to
+    // re-trigger a dial, which is indistinguishable from the feature not
+    // working.
+    for (auto& rv : *arr)
+        if (auto* r = rv.getDynamicObject())
+            for (const auto& sl : slots_)
+                if (echojay::identityKeyForDescription(sl.desc) == r->getProperty("ik").toString())
+                    pendingMapFps_.removeString(sl.fp);
+    bool changed = false;
+    for (int i = 0; i < (int)slots_.size(); ++i)
+    {
+        const bool wasApplied = slots_[(size_t)i].structuredApplied;
+        applyStructuredIfReady(i, DialTrigger::mapArrived);
+        if (!wasApplied && slots_[(size_t)i].structuredApplied) changed = true;
+        if (settleStaleRung(i)) changed = true;
+    }
+    if (changed && onSlotSettingsChanged) onSlotSettingsChanged();
+}
+
+juce::String ChainHost::buildSlotParamReadsJson() const
+{
+    juce::Array<juce::var> arr;
+    for (int i = 0; i < (int) slots_.size(); ++i)
+    {
+        const auto& s = slots_[(size_t) i];
+        const auto name = s.desc.name;
+        // SERIALISES THE CACHED SWEEP, never a fresh read. The suppression at
+        // injection time and the values on the wire must come from the SAME
+        // sweep, or the two-stores defect this fixes simply moves: the echo
+        // would be dropped on one number and a different number shipped.
+        //
+        // THE SLOT APPEARS EITHER WAY (8d). No instance is readFailed, NOT an
+        // absent entry: 8d gives absence its own meaning ("stale client or old
+        // build, print exactly as today"), so a slot that exists and could not
+        // be read must not borrow it. Logged; the note stays clean.
+        if (s.liveReadFailed)
+            EchoJay_NSLog(("EJParamReads: slot " + juce::String(i + 1) + " (\"" + name
+                           + "\") readFailed -- no hosted instance").toRawUTF8());
+        arr.add(echojay::slotParamReadsVar(
+            i + 1,                                  // 1-based, as [CURRENT CHAIN] prints
+            name,
+            s.liveParamCount,                       // TRUE count: drives `truncated`
+            [&s](int p) { return s.liveReads[p]; },
+            s.liveReadFailed));
+    }
+    if (arr.isEmpty()) return {};
+    return juce::JSON::toString(juce::var(arr), true);
 }
 
 juce::String ChainHost::buildMapFpsJson(int maxEntries) const
@@ -5873,9 +6558,13 @@ std::vector<ChainHost::SlotDialInfo> ChainHost::getDialInfos() const
 {
     std::vector<SlotDialInfo> out;
     out.reserve(slots_.size());
-    for (const auto& s : slots_)
+    for (int i = 0; i < (int) slots_.size(); ++i)
     {
+        const auto& s = slots_[(size_t) i];
         SlotDialInfo di;
+        // dial-4 A8.1b: status cannot distinguish a built-in (its apply sets
+        // applied/partial/unusableMap too), so the flag travels explicitly.
+        di.builtin      = isBuiltinSlot(i);
         di.name         = s.desc.name;
         di.fp           = s.fp;
         di.status       = s.dialStatus;
@@ -5891,19 +6580,34 @@ std::vector<ChainHost::SlotDialInfo> ChainHost::getDialInfos() const
         di.format = s.desc.pluginFormatName;
         if (s.desc.uniqueId != 0)
             di.uid = juce::String::toHexString(s.desc.uniqueId);
-        if (s.dialRequestedCount >= 0)
+        // A8.8: unusableMap is keys-sourced BY DESIGNATION, even when the
+        // apply loop ran (report empty, or everything manual): its report
+        // count is 0 or short on exactly the turns the reason describes, and
+        // requested 0 both hid the row from the batch builder and would be
+        // barred from every rate by the A7.1 reader rule. The pre-apply entry
+        // count is the honest denominator for "map exists, nothing usable".
+        // A9 step 3: the exact translation of the old
+        // "!= DialStatus::unusableMap" — all four values that name inherited,
+        // so the A8.8 designation covers every one of them (§3a).
+        const bool wasUnusableMap = (s.dialStatus == DialStatus::mapNoCoverage
+                                  || s.dialStatus == DialStatus::writesRejected
+                                  || s.dialStatus == DialStatus::mapIdentityMismatch
+                                  || s.dialStatus == DialStatus::builtinPayloadUnmatched);
+        if (s.dialRequestedCount >= 0 && ! wasUnusableMap)
         {
             di.requestedCount  = s.dialRequestedCount;
             di.requestedSource = "apply";
         }
         else
         {
-            // The apply never ran (no_map / fetch timeout / stale rungs):
-            // the denominator is the pre-apply count of requested entries.
-            int n = 0;
-            if (auto* o = s.structuredSettings.getDynamicObject())
-                n = o->getProperties().size();
-            di.requestedCount  = n;
+            // The apply never ran (no_map / fetch timeout / stale rungs), or
+            // unusableMap per above: the denominator is the pre-apply count
+            // of requested entries — A7.2's entry semantic via the ONE shared
+            // implementation (A8.1a: the old top-level property count here
+            // made a controls object with five entries count as one, so the
+            // tally would inherit a denominator the rows' numerator can
+            // structurally exceed).
+            di.requestedCount  = echojay::requestedEntryCount(s.structuredSettings);
             di.requestedSource = "keys";
         }
         out.push_back(std::move(di));
