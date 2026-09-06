@@ -362,12 +362,16 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
     {
         specAccumSamples = 0;
         specAccum.fill(-120.0f);
+        macroAccum.fill(-120.0f);
     }
     else
     {
         for (int b = 0; b < N; ++b)
             specAccum[(size_t)b] = std::max(specAccum[(size_t)b],
                                             smoothedSpectrum[(size_t)b]);
+        for (int bi = 0; bi < 6; ++bi)
+            macroAccum[(size_t)bi] = std::max(macroAccum[(size_t)bi],
+                                              smoothedMacroBands[(size_t)bi]);
         specAccumSamples += numSamples;
     }
 
@@ -378,11 +382,17 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
 
         while (specAccumSamples >= samplesPerSpecFrame)
         {
-            specRing[(size_t)specWritePos] = specAccum;
+            specRing[(size_t)specWritePos]  = specAccum;
+            macroRing[(size_t)specWritePos] = macroAccum;   // same frame, same index
             specWritePos = (specWritePos + 1) % kSpecHistFrames;
             specFrameCount = std::min(specFrameCount + 1, kSpecHistFrames);
             ++specFrameCounter;
-            specAccum = smoothedSpectrum;   // restart aggregation from current
+            // Published on the same line it is counted, under the same lock,
+            // so no consumer can read a heardFrames that disagrees with the
+            // ring it describes.
+            data.heardFrames = specFrameCount;
+            specAccum  = smoothedSpectrum;    // restart aggregation from current
+            macroAccum = smoothedMacroBands;
             specAccumSamples -= samplesPerSpecFrame;
         }
     }
@@ -1005,6 +1015,83 @@ void MeterEngine::resetHoldState()
     tp100msAccum = 0.0f;
 }
 
+MeterEngine::SpectrumWindow MeterEngine::reduceSpectrumWindow(bool useMean) const
+{
+    SpectrumWindow w;
+    std::lock_guard<std::mutex> lock(dataMutex);   // the ring is written under it
+    if (specFrameCount <= 0) return w;             // valid stays false: omit the key
+
+    w.frames  = specFrameCount;
+    w.seconds = currentSampleRate > 0.0
+                    ? (float)(specFrameCount * (double) samplesPerSpecFrame / currentSampleRate)
+                    : 0.0f;
+    w.bins.fill(-120.0f);
+
+    // Oldest to newest is irrelevant to both statistics, so the walk is over
+    // the valid frames wherever they sit in the ring rather than in order.
+    const int start = (specWritePos - specFrameCount + kSpecHistFrames * 2) % kSpecHistFrames;
+    for (int f = 0; f < specFrameCount; ++f)
+    {
+        const auto& frame = specRing[(size_t)((start + f) % kSpecHistFrames)];
+        for (int b = 0; b < MeterData::numSpecBins; ++b)
+        {
+            if (useMean) w.bins[(size_t)b] += frame[(size_t)b];
+            else         w.bins[(size_t)b]  = std::max(w.bins[(size_t)b], frame[(size_t)b]);
+        }
+    }
+    if (useMean)
+        for (int b = 0; b < MeterData::numSpecBins; ++b)
+            w.bins[(size_t)b] /= (float) specFrameCount;
+
+    w.valid = true;
+    return w;
+}
+
+MeterEngine::MacroWindow MeterEngine::reduceMacroWindow(bool useMean) const
+{
+    MacroWindow w;
+    std::lock_guard<std::mutex> lock(dataMutex);
+    if (specFrameCount <= 0) return w;
+
+    w.frames  = specFrameCount;                 // one push loop, so identical
+    w.seconds = currentSampleRate > 0.0         // to the spectrum window by
+                    ? (float)(specFrameCount * (double) samplesPerSpecFrame / currentSampleRate)
+                    : 0.0f;                     // construction, not by luck
+    w.db.fill(-120.0f);
+
+    const int start = (specWritePos - specFrameCount + kSpecHistFrames * 2) % kSpecHistFrames;
+    for (int f = 0; f < specFrameCount; ++f)
+    {
+        const auto& frame = macroRing[(size_t)((start + f) % kSpecHistFrames)];
+        for (int bi = 0; bi < 6; ++bi)
+        {
+            if (useMean) w.db[(size_t)bi] += frame[(size_t)bi];
+            else         w.db[(size_t)bi]  = std::max(w.db[(size_t)bi], frame[(size_t)bi]);
+        }
+    }
+    if (useMean)
+        for (int bi = 0; bi < 6; ++bi)
+            w.db[(size_t)bi] /= (float) specFrameCount;
+
+    // REL IS RECOMPUTED FROM THE WINDOWED db, NEVER AVERAGED FROM PER-FRAME
+    // RELS, and this is the thing a later reader will get wrong. rel is a band
+    // minus the mean of the six in the SAME instant, so it is a difference of
+    // two quantities that both move frame to frame. The mean of a difference
+    // is not the difference of the means once the frames are weighted
+    // unevenly, which max-aggregation and gating both do: a loud frame lifts
+    // every band and its own mean together, contributing a near-zero rel that
+    // dilutes the very imbalance the window is meant to show. Reducing db
+    // first and taking one mean at the end asks the question once, of the
+    // window, which is what the number is supposed to mean.
+    float mean = 0.0f;
+    for (int bi = 0; bi < 6; ++bi) mean += w.db[(size_t)bi];
+    mean /= 6.0f;
+    for (int bi = 0; bi < 6; ++bi) w.rel[(size_t)bi] = w.db[(size_t)bi] - mean;
+
+    w.valid = true;
+    return w;
+}
+
 juce::String MeterEngine::getMeterDataJSON() const
 {
     return meterDataToJSON(getMeterData(), currentSampleRate);
@@ -1057,23 +1144,77 @@ juce::String MeterEngine::meterDataToJSON(const MeterData& d, double sampleRate)
     // emitted as a 0.0 / 0 placeholder.
     // PSR: short-term true peak minus short-term LUFS (BS.1770 3s window).
     // PLR: max-hold true peak minus integrated LUFS.
+    //
+    // ALL THREE ARE GATED ON WHETHER ANYTHING WAS HEARD, not only on whether
+    // their inputs clear a floor (4 Sep 2026, live). psr was emitted as 0.4 on
+    // an empty project where nothing had ever played, in the same block whose
+    // [CHAIN LEVELS] read "no level known (heard 0s)" and from which every
+    // windowed field had correctly omitted itself. 0.4 dB of PSR is not
+    // reachable on programme material; it was two noise floors sitting near
+    // each other.
+    //
+    // THE FLOOR WAS SET BELOW THE ENGINE'S OWN DEFINITION OF SILENCE, which is
+    // the whole defect. kSilenceThreshold is 0.0001f, about -80 dBFS, and
+    // these guards tested -90, so a channel in that 10 dB band was silent to
+    // the silence detector, silent to the BS.1770 gate, silent to the spectrum
+    // ring, and still loud enough to publish a dynamics figure. The input test
+    // was not wrong about its inputs. It was answering a question nobody had
+    // asked: whether the numbers exist, rather than whether the result is a
+    // measurement of anything.
+    //
+    // heardFrames is the signal reduceSpectrumWindow and reduceMacroWindow
+    // already use, so this is one condition shared across the block rather
+    // than a fourth threshold to keep in step with the other three. The input
+    // tests are KEPT: they still exclude the -100 sentinels on a channel that
+    // has been heard but whose short-term window has since emptied.
     {
         float tpMax = std::max(d.truePeakMaxL, d.truePeakMaxR);
-        if (d.shortTermTruePeak > -90.0f && d.shortTerm > -90.0f)
+        const bool heard = d.heardFrames > 0;
+        if (heard && d.shortTermTruePeak > -90.0f && d.shortTerm > -90.0f)
             json += "\"psr\":" + juce::String(d.shortTermTruePeak - d.shortTerm, 1) + ",";
-        if (tpMax > -90.0f && d.integrated > -90.0f)
+        if (heard && tpMax > -90.0f && d.integrated > -90.0f)
             json += "\"plr\":" + juce::String(tpMax - d.integrated, 1) + ",";
-        if (tpMax > -90.0f)   // audio has been measured since the last reset
+        if (heard && tpMax > -90.0f)   // audio has been measured since the last reset
             json += "\"oversCount\":" + juce::String(d.oversCount) + ",";
     }
 
     // Per-band crest — subkeys appear as their band first has measurable
     // signal; the whole key is omitted while none do (absent = unavailable)
+    //
+    // A VALUE AT THE CLAMP BOUND IS NOT EMITTED (3 Sep 2026). computeBandCrest
+    // clamps to 0-40 dB, and 40.0 is reached by a mechanism that has nothing to
+    // do with the audio: the band peak decays with a 3 s amplitude constant
+    // while the band RMS decays with a 1 s one (its EMA is on POWER at 0.5 s),
+    // so once the input stops the ratio climbs at 5.8 dB/s and pins at the
+    // ceiling within about 5 seconds from a normal 12 dB crest. It then FREEZES
+    // there, because the pk > 0.001 guard stops updating lastVal once the peak
+    // falls under -60 dBFS, roughly 15 to 19 s after the stop. A prompt sent
+    // after that reports 40.0 on all three bands, which reads as "extremely
+    // peaky in every band" and is really "playback stopped a while ago".
+    //
+    // 40.0 also swallows every genuinely larger ratio, so at the bound the
+    // value carries no information in either direction: the true figure is
+    // 40 or more, or it is an artefact of the decay, and nothing in the number
+    // says which. Omitting is the honest emission, and it costs nothing to
+    // express here because absent already means unavailable throughout this
+    // block. The clamp, the time constants and the silence behaviour are
+    // deliberately NOT touched; this only stops publishing the saturated
+    // result. A value just under the bound is a real measurement and is kept,
+    // even where one decimal place prints it as 40.0.
     {
         juce::StringArray parts;
-        if (d.bandCrestSub >= 0.0f) parts.add("\"sub\":" + juce::String(d.bandCrestSub, 1));
-        if (d.bandCrestMid >= 0.0f) parts.add("\"mid\":" + juce::String(d.bandCrestMid, 1));
-        if (d.bandCrestTop >= 0.0f) parts.add("\"top\":" + juce::String(d.bandCrestTop, 1));
+        // EDGE-ENCODED KEYS (METER SNAPSHOT v3, see HANDOVER/meter-snapshot-v3.md).
+        // These were sub / mid / top, which collided with macroBands' sub
+        // (20-60 Hz) and mid (500-2000 Hz) inside the same JSON object while
+        // meaning below-120 and 120-5k here. The names now carry their edges so
+        // no token means two things. THE SERVER'S all-or-none CHECK IN
+        // parseExtendedMeter READS THE OLD NAMES and must land with this, or
+        // bandCrest parses to null on chat and capture alike.
+        constexpr float kCrestClamp = 40.0f;   // computeBandCrest's jlimit ceiling
+        auto crestUsable = [](float v) { return v >= 0.0f && v < kCrestClamp; };
+        if (crestUsable(d.bandCrestSub)) parts.add("\"lo120\":" + juce::String(d.bandCrestSub, 1));
+        if (crestUsable(d.bandCrestMid)) parts.add("\"mid120_5k\":" + juce::String(d.bandCrestMid, 1));
+        if (crestUsable(d.bandCrestTop)) parts.add("\"hi5k\":" + juce::String(d.bandCrestTop, 1));
         if (!parts.isEmpty())
             json += "\"bandCrest\":{" + parts.joinIntoString(",") + "},";
     }

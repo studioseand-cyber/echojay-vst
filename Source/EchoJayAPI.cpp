@@ -74,7 +74,8 @@ namespace
 // Base URL for a request: the dev override when one is configured, otherwise
 // whatever the plugin normally talks to. In a release build this is the
 // identity function and the compiler removes it.
-juce::String EchoJayAPI::transportEndpoint(const juce::String& configured)
+juce::String EchoJayAPI::transportEndpoint(const juce::String& configured,
+                                           const juce::String& forPath)
 {
    #if ECHOJAY_DEV_TRANSPORT
     const auto& dt = devTransport();
@@ -88,7 +89,7 @@ juce::String EchoJayAPI::transportEndpoint(const juce::String& configured)
     // pairing is the diagnosis when every authenticated call 404s (the user
     // exists only in the preview database). Host only; the bypass secret is
     // never logged, only whether one was loaded.
-    static const bool transportLogged = [&base]
+    static const bool transportLogged = [&base, &forPath]
     {
        #if ECHOJAY_DEV_TRANSPORT
         const char* dev = "on";
@@ -97,8 +98,17 @@ juce::String EchoJayAPI::transportEndpoint(const juce::String& configured)
         const char* dev = "off";
         const char* byp = "absent";
        #endif
+        // WHICH REQUEST THIS LINE DESCRIBES (3 Sep 2026). It fires once per
+        // process, on whichever request reaches here first, and for most of
+        // this file's life that was a chat call while the config fetch went
+        // somewhere else entirely. Naming the first caller and stating the
+        // scope stops one line being read as covering requests it never saw.
         EchoJay_NSLog(("EJNet: base=" + juce::URL(base).getDomain()
-                       + " devTransport=" + dev + " bypass=" + byp).toRawUTF8());
+                       + " devTransport=" + dev + " bypass=" + byp
+                       + " (first resolved for "
+                       + (forPath.isNotEmpty() ? forPath : juce::String("an unnamed request"))
+                       + "; applies to every request routed through transportEndpoint)")
+                          .toRawUTF8());
         return true;
     }();
     juce::ignoreUnused(transportLogged);
@@ -154,6 +164,7 @@ static void logNon2xx(const juce::String& path, int statusCode,
 }
 
 // Static members for remote config — shared across all plugin instances
+juce::String EchoJayAPI::dumpSource = "live-send";
 juce::String EchoJayAPI::remoteSystemPrompt;
 int EchoJayAPI::remotePromptVersion = 0;
 bool EchoJayAPI::remoteConfigLoaded = false;
@@ -171,7 +182,7 @@ juce::String EchoJayAPI::pluginBaseUrl()
 {
     // Same production host apiEndpoint defaults to, routed through the dev
     // override so the webview and the API share whatever dev.json points at.
-    return transportEndpoint ("https://www.echojay.ai");
+    return transportEndpoint ("https://www.echojay.ai", "the webview base URL");
 }
 
 EchoJayAPI::EchoJayAPI()
@@ -236,7 +247,7 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
             // (this thread is not part of teardown and leaves no trace).
             if (!aliveFlag->load()) return;
 
-            juce::URL url(transportEndpoint(endpoint) + path);
+            juce::URL url(transportEndpoint(endpoint, path) + path);
             url = url.withPOSTData(body);
 
             juce::String headers = "Content-Type: application/json\r\n";
@@ -318,7 +329,7 @@ void EchoJayAPI::patchJSON(const juce::String& path, const juce::String& body,
     {
         if (!aliveFlag->load()) return;
 
-        juce::URL url(transportEndpoint(endpoint) + path);
+        juce::URL url(transportEndpoint(endpoint, path) + path);
         url = url.withPOSTData(body);
 
         juce::String headers = "Content-Type: application/json\r\n";
@@ -375,7 +386,7 @@ void EchoJayAPI::deleteJSON(const juce::String& path,
     {
         if (!aliveFlag->load()) return;
 
-        juce::URL url(transportEndpoint(endpoint) + path);
+        juce::URL url(transportEndpoint(endpoint, path) + path);
 
         juce::String headers;
         if (token.isNotEmpty())
@@ -498,7 +509,7 @@ void EchoJayAPI::getJSON(const juce::String& path,
         // the plugin module is what freezes the host seconds after removal.
         if (!aliveFlag->load()) return;
 
-        juce::URL url(transportEndpoint(endpoint) + path);
+        juce::URL url(transportEndpoint(endpoint, path) + path);
         
         juce::String headers;
         if (token.isNotEmpty())
@@ -1135,6 +1146,18 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
                                                 maxHistoryMessages, maxHistoryBytes);
     const int firstIdx = trim.firstIdx;
 
+    // THE TRIM IS THE TRIGGER (item 17). These three counts are the only
+    // honest signal that the model has stopped seeing the start of the
+    // conversation, and they are measured here rather than predicted from a
+    // byte threshold. A send whose history is empty is the first turn, which
+    // is the only session reset point the builder can see for itself.
+    if (roles.size() <= 1)
+    {
+        historyDroppedTotal_ = 0;
+        historyTrimWarned_   = false;
+    }
+    historyDroppedTotal_ += trim.droppedByCap + trim.droppedByBudget + trim.droppedByRole;
+
     // The trim observable: EVERY build logs what was kept and what each
     // stage dropped, INCLUDING the null result -- a line that only appeared
     // on a non-trivial trim could not distinguish "nothing was dropped"
@@ -1198,9 +1221,21 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
     // it for chain turns with a live plugin feed and ignores it elsewhere.
     if (autoDialMode)
         body += ",\"autoDial\":true";
+    // DO NOT DIAL rides the same way and on the SAME terms: present only when
+    // on, never as a false. The server reads it with a strict === true
+    // (api/chat-stream.js:924), so a literal false would be read as "the user
+    // has this off" rather than "this client does not have the feature", and
+    // an absent key is the honest wire state for both.
+    if (dialWritesBlocked)
+        body += ",\"dialWritesBlocked\":true";
     // Classifier binding (split call). Absent on any turn the classifier
     // did not answer for, which is every turn when it is gated off — and
     // the server then classifies for itself exactly as it does today.
+    // Kept for the dev dump's filename: nextClassifyIntent_ is cleared two
+    // lines below, and the resolved turnType lives in a nested scope, so both
+    // are captured where they are still in hand rather than re-derived.
+    const juce::String dumpIntent = nextClassifyIntent_;
+    juce::String dumpTurnType = "chat";
     if (nextClassifyIntent_.isNotEmpty())
         body += ",\"classifyIntent\":" + juce::JSON::toString(nextClassifyIntent_);
     if (nextClassifyToken_.isNotEmpty())
@@ -1236,11 +1271,13 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
             tt = "chat";
         }
         body += ",\"turnType\":" + juce::JSON::toString(tt);
+        dumpTurnType = tt;                    // the RESOLVED label, after any downgrade
         if (nextChatBusCount_ > 0)
             body += ",\"busCount\":" + juce::String(nextChatBusCount_);
         // Per-send verification line: turn class + whether a payload rode
         EchoJay_NSLog(("EJChat: send turnType=" + tt
                        + " autoDial=" + (autoDialMode ? juce::String("on") : juce::String("off"))
+                       + " dialWrites=" + (dialWritesBlocked ? juce::String("BLOCKED") : juce::String("on"))
                        + (nextChatBusCount_ > 0 ? " busCount=" + juce::String(nextChatBusCount_)
                                                 : juce::String())
                        + " payload=" + (metersBlob.isNotEmpty()
@@ -1330,11 +1367,70 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
             // So: log the RESOLVED path either way (it names the container when
             // that is where it went), and say plainly when the write failed.
             // An unreadable absence is what cost us the last two turns.
+            // PROVENANCE, IN THE FILE (3 Sep 2026). _dumpSource says which
+            // caller produced this body: the live send, or a fixture such as
+            // the gate's history-resend pin. A file whose origin can only be
+            // established by reading its message text is a file that misleads
+            // somebody at 2am, and one already did.
+            //
+            // Injected into the DUMP, never into the wire body: the payload
+            // the server receives is byte-for-byte what it was, and the dump
+            // differs from it by exactly this one underscore-prefixed field.
+            const juce::String dumpText =
+                body.startsWithChar('{')
+                    ? "{\"_dumpSource\":" + juce::JSON::toString(dumpSource) + "," + body.substring(1)
+                    : body;
+
             const bool dirOk = f.getParentDirectory().createDirectory().wasOk();
-            const bool wrote = dirOk && f.replaceWithText(body);
+            const bool wrote = dirOk && f.replaceWithText(dumpText);
+
+            // A ROLLING HISTORY BESIDE THE LATEST (3 Sep 2026). This file was
+            // overwritten every turn, so by the time a reply looked wrong the
+            // payload that produced it was already gone. That cost two
+            // investigations in one day: the question "what did we actually
+            // send" had no answer that survived the next turn.
+            //
+            // chat-body-debug.json itself is untouched and still the latest, so
+            // everything reading it keeps working. Beside it goes one file per
+            // turn, named so a chain turn can be told from a chat turn without
+            // opening it, and the directory is pruned to the newest kFiles.
+            // The timestamp leads so the names sort chronologically, which is
+            // also the order the prune walks.
+            if (dirOk)
+            {
+                constexpr int kKeepDumps = 20;
+                auto dir = f.getParentDirectory();
+                auto safe = [](juce::String t)
+                {
+                    t = t.retainCharacters("abcdefghijklmnopqrstuvwxyz"
+                                           "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_");
+                    return t.isNotEmpty() ? t : juce::String("none");
+                };
+                const auto stamp = juce::Time::getCurrentTime()
+                                       .formatted("%Y%m%d-%H%M%S");
+                auto hist = dir.getChildFile("chat-body-" + stamp
+                                             + "-tt_" + safe(dumpTurnType)
+                                             + "-ci_" + safe(dumpIntent) + ".json");
+                hist.replaceWithText(dumpText);
+
+                // Prune oldest-first. findChildFiles gives no order guarantee,
+                // so sort by name: the leading timestamp makes that
+                // chronological without stat-ing every file.
+                auto olds = dir.findChildFiles(juce::File::findFiles, false, "chat-body-*.json");
+                juce::StringArray names;
+                for (const auto& o : olds) names.add(o.getFileName());
+                names.sort(true);
+                for (int i = 0; i < names.size() - kKeepDumps; ++i)
+                    dir.getChildFile(names[i]).deleteFile();
+            }
+
             if (wrote)
                 EchoJay_NSLog(("EJChat: dev_mode body dump -> " + f.getFullPathName()
-                               + " (" + juce::String((int) body.getNumBytesAsUTF8()) + "b total)").toRawUTF8());
+                               + " (" + juce::String((int) body.getNumBytesAsUTF8()) + "b total)"
+                               + " source=" + dumpSource
+                               + " turnType=" + dumpTurnType
+                               + " classifyIntent=" + (dumpIntent.isNotEmpty() ? dumpIntent
+                                                                               : juce::String("none"))).toRawUTF8());
             else
                 EchoJay_NSLog(("EJChat: dev_mode body dump FAILED -> " + f.getFullPathName()
                                + (dirOk ? " (write refused)" : " (could not create directory)")
@@ -1738,7 +1834,7 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
         {
             if (! aliveFlag->load() || handle->isCancelled()) return;
 
-            juce::URL url (transportEndpoint (endpoint) + "/api/chat-stream");
+            juce::URL url (transportEndpoint (endpoint, "/api/chat-stream") + "/api/chat-stream");
             url = url.withPOSTData (body);
 
             juce::String headers = "Content-Type: application/json\r\n";
@@ -2248,10 +2344,19 @@ void EchoJayAPI::fetchRemoteConfig()
     {
         if (!aliveFlag->load()) return; // plugin removed before thread ran
 
-        juce::URL url(endpoint + "/api/vst-config");
-        
+        // ROUTED LIKE EVERY OTHER REQUEST (3 Sep 2026). This site used the raw
+        // apiEndpoint and sent no transport headers, so it was the ONE call
+        // that ignored ~/.echojay/dev.json: pointing the plugin at a preview
+        // moved /api/chat and /api/chat-stream and left the config fetch on
+        // production, which then served the production prompt version while
+        // every other request spoke to the preview. A prompt fix on a branch
+        // could not reach the plugin no matter how often it was restarted, and
+        // nothing in the logs said why.
+        juce::URL url(transportEndpoint(endpoint, "/api/vst-config") + "/api/vst-config");
+
         int statusCode = 0;
         auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
+                           .withExtraHeaders(transportHeaders())   // empty in a release build
                            .withConnectionTimeoutMs(60000)
                            .withStatusCode(&statusCode);
         
@@ -2266,6 +2371,21 @@ void EchoJayAPI::fetchRemoteConfig()
             stream->readIntoMemoryBlock(mb);
             logNon2xx("/api/vst-config", statusCode,
                       juce::String::fromUTF8((const char*)mb.getData(), (int)mb.getSize()));
+            // WHICH PROMPT IS ACTUALLY IN FORCE, said plainly, because this is
+            // the failure that does not look like one. A protected preview
+            // without the bypass header answers 302 or 401; this path then
+            // takes no prompt, and buildSystemPrompt falls back to the
+            // hardcoded base, which carries NO plugin recommendation rules at
+            // all. Every chain build after that is degraded and the only
+            // symptom is worse answers. A status line alone did not say that,
+            // so the state is named: remote or fallback, and its version.
+            EchoJay_NSLog((juce::String("EJNet: config fetch FAILED, prompt in force = ")
+                           + (remoteSystemPrompt.isNotEmpty()
+                                  ? "REMOTE v" + juce::String(remotePromptVersion)
+                                    + " (kept from earlier this session)"
+                                  : juce::String("HARDCODED FALLBACK (no remote prompt, so no plugin "
+                                                 "recommendation rules) - a protected preview needs "
+                                                 "the bypass header in ~/.echojay/dev.json"))).toRawUTF8());
         }
         else if (stream != nullptr && statusCode == 200)
         {
@@ -2300,6 +2420,9 @@ void EchoJayAPI::fetchRemoteConfig()
                     announcement = obj->getProperty("announcement").toString();
                 
                 remoteConfigLoaded = true;
+                EchoJay_NSLog((juce::String("EJNet: config fetch ok, prompt in force = REMOTE v")
+                               + juce::String(remotePromptVersion)
+                               + " (served version " + juce::String(version) + ")").toRawUTF8());
                 
                 // Cache to disk so it works offline next time
                 auto cacheFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
@@ -2345,6 +2468,11 @@ void EchoJayAPI::fetchRemoteConfig()
                 }
             }
             remoteConfigLoaded = true;
+            EchoJay_NSLog((juce::String("EJNet: config fetch unreachable, prompt in force = ")
+                           + (remoteSystemPrompt.isNotEmpty()
+                                  ? "REMOTE v" + juce::String(remotePromptVersion) + " (from the disk cache)"
+                                  : juce::String("HARDCODED FALLBACK (no cache on disk, so no plugin "
+                                                 "recommendation rules)"))).toRawUTF8());
         }
     });
 }
@@ -2421,7 +2549,10 @@ void EchoJayAPI::setChatLanguage(const juce::String& code)
 
 juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
                                              const juce::String& genre,
-                                             const juce::String& pluginSummary)
+                                             const juce::String& pluginSummary,
+                                             const juce::StringArray& liveMeterFields,
+                                             bool askToPlay,
+                                             int historyDroppedCount)
 {
     juce::String prompt;
     
@@ -2500,9 +2631,98 @@ juce::String EchoJayAPI::buildSystemPrompt(const juce::String& channelType,
     // field glossary the model imitated on payload-less chats (fabricated
     // blocks with invented values). Explicit later-override wording
     // neutralises those sections until the SaaS prompt is updated.
+    // TWO BRANCHES, ONE PRECEDENCE (3 Sep 2026). The paragraph below was
+    // written when a chat turn genuinely carried nothing, and it said so in
+    // the strongest terms available because the failure it fixed was the model
+    // fabricating LIVE METER blocks with invented numbers. Since v3 a chain
+    // turn DOES carry measured fields, so the no-data wording became false on
+    // exactly the turns it was meant to govern: a paragraph that overrides
+    // every earlier instruction and then asserts "you have no data at all"
+    // teaches the model to disbelieve the block sitting in front of it.
+    //
+    // The fix is to make the last word TRUE, not to demote it. The override
+    // header, the never-invent rule, the never-imitate-a-LIVE-METER-block rule
+    // and the never-echo-a-hidden-block rule are in BOTH branches, word for
+    // word in force. Only the availability claim differs.
+    //
+    // THE PRESENT BRANCH NAMES THE FIELDS THE BLOCK ACTUALLY EMITTED, from
+    // liveMeterFields, which buildMeterSnapshotInjection derives from what it
+    // wrote. Nothing here holds a copy of the field vocabulary, so a field
+    // added to the block reaches this paragraph with no edit here, and a field
+    // that failed its validity guard is never claimed as present.
     prompt += "DATA AVAILABILITY (THIS OVERRIDES ANY EARLIER INSTRUCTION ABOUT LIVE METERS):\n";
-    prompt += "Meter data reaches you ONLY through explicit captures (a [CAPTURE ...] data block or attached capture payload) and Compare data. There is NO live meter feed on chat turns. Any earlier instruction about a LIVE METER block is obsolete: such a block will never be present, and you must NEVER produce one, imitate its format, or invent meter values.\n";
-    prompt += "If the conversation contains NO capture data: do not describe or characterise the mix's loudness, dynamics, stereo image, tonal balance, or any metric in any way - you have no data at all. Do not guess, estimate, or speak in general terms about how it probably measures. ANSWER THE QUESTION THE USER ACTUALLY ASKED FIRST; do NOT open with a capture-status report. Only mention that a Capture would give you real numbers if the user asks about the sound, the mix, or the measurements - capture availability is context for your own reasoning, not a status line to lead with.\n\n";
+    if (liveMeterFields.isEmpty())
+    {
+        prompt += "Meter data reaches you ONLY through explicit captures (a [CAPTURE ...] data block or attached capture payload) and Compare data. There is NO live meter feed on chat turns. Any earlier instruction about a LIVE METER block is obsolete: such a block will never be present, and you must NEVER produce one, imitate its format, or invent meter values.\n";
+        prompt += "If the conversation contains NO capture data: do not describe or characterise the mix's loudness, dynamics, stereo image, tonal balance, or any metric in any way - you have no data at all. Do not guess, estimate, or speak in general terms about how it probably measures. ANSWER THE QUESTION THE USER ACTUALLY ASKED FIRST; do NOT open with a capture-status report. Only mention that a Capture would give you real numbers if the user asks about the sound, the mix, or the measurements - capture availability is context for your own reasoning, not a status line to lead with.\n\n";
+        // THE NUDGE, and the three things it is careful about (3 Sep 2026).
+        // Nothing measured means nothing has played through this channel since
+        // the plugin loaded: specFrameCount is cleared only in prepare(), so a
+        // stopped transport keeps whatever it heard.
+        //
+        // TWO NUMBERS BOUND THIS, AND THE SENTENCE ASKS FOR NEITHER.
+        //   40 ms  the VALIDITY floor: one ring frame, the first tick past
+        //          specFrameCount <= 0, which is all it takes for the block to
+        //          appear at all.
+        //   12 s   the FULL ring: 300 frames at 25 fps, the whole window the
+        //          reduction can describe.
+        // The floor is not a useful reading. Asking for a second would put 25
+        // frames into a 300-frame ring and the block would then report
+        // spectrumHeard 1.0 beside a spectrum built from a twelfth of its
+        // window, which is a measurement of the wrong thing stated with the
+        // confidence of the right one. So the sentence asks for a few seconds:
+        // enough of the ring to be worth citing, and something a person can
+        // actually act on. Do not put frame counts in front of a user.
+        //
+        // It rides ONLY an explicit chain build. The server's CHAIN GUIDANCE
+        // already forbids asking a chain turn to capture first or deferring a
+        // chain on meter data, so this asks them to PLAY, never to capture,
+        // and tells the model to build anyway. Those two prompts have to agree
+        // or they teach opposite things on the same turn.
+        //
+        // "press play" is the plugin's existing idiom for this (the key
+        // precondition note uses it), reused rather than a second voice for
+        // one idea.
+        if (askToPlay)
+            prompt += "NOTHING HAS PLAYED THROUGH THIS CHANNEL YET, so no live readings exist: build the chain from the request as usual and never defer it, but add one short sentence asking them to press play for a few seconds so the next turn carries a full reading rather than a sliver of one.\n\n";
+    }
+
+    // HISTORY TRIM (item 17, warning half). A FACT AND AN INSTRUCTION, in the
+    // same idiom as the paragraph above, present only on the turn the trim
+    // first drops something: the caller takes it once per session.
+    //
+    // THIS IS NOT A COST WARNING AND MUST NEVER BECOME ONE. Measured on 658
+    // v2 chat turns over nine days, turn 1 is 3.83 cents median and turns 3 to
+    // 11 sit at 1.20 to 1.32 cents, flat within 10 percent: the first turn
+    // pays the cache write and the rest read that prefix back at a tenth the
+    // rate. A long chat is CHEAPER per turn, not dearer, and a new chat costs
+    // about three times as much. So the paragraph never mentions cost, usage
+    // or expense, and never proposes starting a new chat: both would be false,
+    // and the second would push the user onto the expensive path.
+    //
+    // What it says instead is the thing that IS true and that the model cannot
+    // otherwise know: the oldest turns are no longer in front of it, so its
+    // memory of the early conversation is gone. The move log is named in the
+    // same breath, because that block DOES survive the trim and is the reason
+    // EchoJay can still answer what it did even where it cannot answer what
+    // was said.
+    if (historyDroppedCount > 0)
+    {
+        prompt += "EARLIER TURNS ARE NO LONGER BEING SENT: "
+               + juce::String(historyDroppedCount)
+               + " message(s) from the start of this conversation have dropped out of what you receive, so you may not recall the earliest part of it. Say so ONCE, briefly, in your own words, and then answer normally. Anything EchoJay itself changed is still listed in the [MOVE LOG v1] block, which does not drop out, so what was DONE remains known even where what was SAID does not. Do NOT shorten, defer or refuse any work because of this, do NOT suggest starting a new chat, do NOT mention cost or usage, and never raise it again.\n\n";
+    }
+    else
+    {
+        prompt += "This turn carries MEASURED data in a [METER SNAPSHOT] block: "
+               + liveMeterFields.joinIntoString(", ")
+               + ". Those values were measured from the user's audio, not estimated, and you may cite them directly and by name.\n";
+        prompt += "Everything else is absent. The fields named above are the whole of what you have: anything not named there was not measurable on this turn, and absent means unavailable, NEVER zero, NEVER typical, NEVER inferred from the ones you do have. Do not characterise loudness, dynamics, stereo image or any metric that is not in that list; for those, an explicit capture is still the only source.\n";
+        if (liveMeterFields.contains("spectrum") && liveMeterFields.contains("macroBands"))
+            prompt += "For any claim about frequency content, the spectrum outranks macroBands: the spectrum is 64 bins over the stated window, macroBands is six wide bands, and where they disagree the spectrum is the finer measurement and the one to cite.\n";
+        prompt += "Each block states the window it describes (\"heard\" seconds) and, for the spectrum, the statistic used. Read those before citing: a figure over four seconds of heard audio is not a figure over four minutes, and saying which you are quoting is part of quoting it.\n";
+        prompt += "The rules that do not change: NEVER invent, estimate or guess a meter value; NEVER produce a LIVE METER block or imitate its format; NEVER echo a hidden bracketed block, or any part of one, back to the user - report what it means in your own words. ANSWER THE QUESTION THE USER ACTUALLY ASKED FIRST; do not open with a data-status report.\n\n";
+    }
 
     
     // Channel type context — tells AI what kind of audio this is and what to
@@ -2756,7 +2976,18 @@ const juce::StringArray& EchoJayAPI::historyStripMarkers()
         "\n\n[CURRENT RACK EMPTY",
         // The running level marker (17 Aug 2026): rides after the rack
         // block on the same arm, varies per turn, never belongs in history.
-        "\n\n[CHAIN LEVELS"
+        "\n\n[CHAIN LEVELS",
+        // The extended meter marker (2 Sep 2026): same arm, same per-turn
+        // volatility. A stale snapshot resent as history would be read as a
+        // second measurement of the same input.
+        "\n\n[METER SNAPSHOT v2",
+        // The move log (3 Sep 2026): rebuilt from plugin state every turn, so
+        // a copy left in history would be a second, older account of the same
+        // moves sitting beside the current one.
+        "\n\n[MOVE LOG v1",
+        // The features block (4 Sep 2026): static text describing the BUILD,
+        // identical on every turn, so a copy in history is pure duplication.
+        "\n\n[ECHOJAY FEATURES v1"
     };
     return markers;
 }
@@ -3033,6 +3264,314 @@ juce::String EchoJayAPI::buildChainLevelsInjection(const ChainHost& chainHost)
     return b;
 }
 
+// ===========================================================================
+// [ECHOJAY FEATURES v1] -- what EchoJay knows about EchoJay.
+//
+// WHY THIS EXISTS. Read against the live system prompt on 4 Sep 2026, the
+// model knew exactly ONE product surface by name: Capture, eleven mentions.
+// "EchoJay" appeared twice, both in the persona line. Zero mentions of the
+// Apply button, the tabs, saving a chain, wet/dry, or any Settings control.
+// Everything else in that prompt describes DATA IT RECEIVES, not the product
+// it lives inside. Asked "how do I save this chain" it had nothing to answer
+// from and would improvise, which on a recorded demo is the worst outcome
+// available.
+//
+// THE RULE ABOVE ALL OTHERS: every sentence below is verified against the
+// code that implements it, and the file and line are recorded in
+// HANDOVER/echojay-features-v1.md. A claim nobody could cite is not in here.
+// If you add a feature to this block, add its citation in the same edit.
+//
+// THE CLOSING RULE IS NOT DECORATION AND MUST NOT BE CUT. A list of features
+// with no boundary makes improvisation MORE likely, not less: it establishes
+// that the model knows about the product, and a model that believes it knows
+// the product will answer the next question too. The boundary is the feature.
+// If this block ever has to shrink, cut features and keep the boundary.
+//
+// THE MARKER IS SAFE AGAINST containsCaptureMarkers' five patterns
+// (api/_prompt-shapes.js). The two regex arms need an uppercase run from the
+// bracket followed by CHANNEL: or ANALYSIS: and a quote; "[ECHOJAY FEATURES
+// v1" ends the [A-Z0-9 /&-]* class at the lowercase "v", and the next word is
+// neither CHANNEL: nor ANALYSIS: in any case. The other three are the literals
+// "[PREVIOUS CAPTURE:", "[SPECTRUM REFERENCE" and "Band profile (avg dB", and
+// none of them appears here -- the third is why this block says "spectrum" and
+// never spells that phrase. A pin runs all five against the real marker.
+//
+// STATIC TEXT, and deliberately: this describes the BUILD, not the session.
+// Nothing here varies per turn, so it is registered in historyStripMarkers
+// like the others and rides only on the newest message.
+juce::String EchoJayAPI::buildEchoJayFeaturesInjection()
+{
+    juce::String b;
+    b << "\n\n[ECHOJAY FEATURES v1 - what the EchoJay app can do, so you can answer"
+         " questions about the product itself.\n"
+         "THIS LIST IS THE WHOLE OF WHAT YOU KNOW ABOUT ECHOJAY. If something is not"
+         " described here you do not know it: never describe it, never guess at it, and"
+         " never infer it from how other plugins or DAWs work. Say you are not sure and"
+         " suggest they check the manual. A confident wrong answer about this app is"
+         " worse than no answer.\n"
+         "TABS, in order: DASHBOARD (read and navigate, no chat there), VISUALISATION"
+         " (the particle visual), METERS (the meter readout), CHAT, COMPARE (two"
+         " captures side by side as A and B, with an AI Compare button), LINK (the"
+         " other EchoJay instances running on other channels, and their monitor),"
+         " CHAIN (the plugin rack), SETTINGS. They can talk to you from every tab"
+         " except Dashboard and Settings.\n"
+         "CAPTURE is the button in the top header, on every tab. It records a window"
+         " and gives figures averaged over it. The live meters are continuous instead:"
+         " the spectrum covers the last 12 seconds, 300 frames at 25 a second, and the"
+         " levels are current. Capture is the more precise read, live is what is"
+         " happening now.\n"
+         "NOTHING REACHES A PLUGIN WITHOUT THEM TAPPING FOR IT. A chain you propose"
+         " arrives as a card with a Build button; an edit arrives as a card with an"
+         " Apply button. A suggestion carrying no dialable values writes nothing at"
+         " all and only puts the numbers on the card to set by hand.\n"
+         "CHAINS SAVE AND COME BACK BY NAME. Save Chain and Save As are in the Chain"
+         " tab, and a saved chain can be loaded again by asking for it by name. You"
+         " cannot see what is inside a saved one, only its name.\n"
+         "EACH SLOT in the rack can be bypassed, removed, moved earlier or later, and"
+         " has its own wet/dry blend, with a master wet for the whole rack. Those are"
+         " controls in the Chain tab that they operate, not things you set.\n"
+         "SETTINGS holds their name, DAW, experience level, chat language, monitors,"
+         " headphones, genres, UI scale, a plugin scan with a View all list, a list of"
+         " plugins withheld from the chain list, and TWO toggles, both OFF by default"
+         " and both applying the moment they are ticked with nothing to save."
+         " \"Only suggest plugins EchoJay can auto-dial (fewer options)\" narrows which"
+         " plugins you may offer. \"Suggest settings but never dial them (you set the"
+         " values by hand)\" means you still put every value on the card and none of"
+         " them is written: say so plainly if they ask why nothing moved, and never"
+         " claim to have applied anything while it is on. The two are independent and"
+         " easy to confuse: the first is about WHICH PLUGINS, the second about WHETHER"
+         " VALUES ARE WRITTEN.]";
+    return b;
+}
+
+juce::String EchoJayAPI::buildMoveLogInjection(const ChainHost& chainHost)
+{
+    const auto& log = chainHost.moveLogEntries();
+    if (log.empty()) return {};
+
+    // THE MARKER IS SAFE AGAINST containsCaptureMarkers BY THE SAME
+    // DISCIPLINE AS [METER SNAPSHOT v2]. Its two pattern arms need an
+    // uppercase run from the bracket followed by CHANNEL: or ANALYSIS: and a
+    // quote; the lowercase "v1" ends the [A-Z0-9 /&-]* class immediately, so
+    // neither can begin here whatever follows. The other three arms are the
+    // literals [PREVIOUS CAPTURE:, [SPECTRUM REFERENCE and "Band profile (avg
+    // dB". Renaming this marker means re-checking all five.
+    juce::String b;
+    b << "\n\n[MOVE LOG v1 - what EchoJay itself changed in this session, oldest first."
+         " Five kinds of line: BUILT is a plugin YOU loaded into a slot, ADDED is a plugin"
+         " THE USER put in themselves and you did not, SWAPPED is one plugin"
+         " replaced by another, REMOVED is a slot taken out, and DIALLED is a control"
+         " changed on a slot that was already there. REFUSED is a change that was NOT made,"
+         " with the reason after it. A DIALLED line reads control: before -> after, and the"
+         " before value is the control's reading immediately before the change. Cite these"
+         " when asked what you did or why; never present a REFUSED line as a change,"
+         " never claim an ADDED line as your own work, and"
+         " never invent a move that is not listed:]\n";
+    for (const auto& e : log)
+    {
+        using K = ChainHost::MoveLogEntry::Kind;
+        // The session boundary is not a move and carries no slot, so it is
+        // rendered whole and skips the turn/slot scaffolding below.
+        if (e.kind == K::SessionBreak)
+        {
+            b << "----- SESSION BREAK: everything ABOVE this line happened in an"
+                 " earlier session, before the plugin was reloaded. Those moves were"
+                 " real, but they are not recent: never describe one as something you"
+                 " have just done.\n";
+            continue;
+        }
+        switch (e.kind)
+        {
+            case K::Load:   b << "BUILT   "; break;
+            case K::Added:  b << "ADDED   "; break;
+            case K::Swap:   b << "SWAPPED "; break;
+            case K::Remove: b << "REMOVED "; break;
+            case K::Dial:   b << (e.landed ? "DIALLED " : "REFUSED "); break;
+            case K::SessionBreak: break;   // handled above; never reached
+        }
+        b << "t" << e.turn << " slot " << (e.slot + 1);
+        switch (e.kind)
+        {
+            case K::Load:
+            case K::Added:
+                b << " \"" << e.after << "\"";
+                break;
+            case K::Swap:
+                b << " \"" << e.before << "\" -> \"" << e.after << "\"";
+                break;
+            case K::Remove:
+                b << " \"" << e.before << "\"";
+                break;
+            case K::Dial:
+                b << " \"" << e.plugin << "\"";
+                if (e.param.isNotEmpty()) b << " " << e.param;
+                if (e.landed)
+                {
+                    if (e.before.isNotEmpty()) b << ": " << e.before.trim() << " -> " << e.after.trim();
+                    else                       b << ": -> " << e.after.trim();
+                }
+                else
+                {
+                    b << ": " << e.after.trim();   // the refusal note, not a value
+                }
+                break;
+        }
+        if (e.reason.isNotEmpty()) b << " (" << e.reason.trim() << ")";
+        b << "\n";
+    }
+    b << "]";
+    return b;
+}
+
+juce::String EchoJayAPI::buildMeterSnapshotInjection(const juce::String& meterJson,
+                                                     const MeterEngine::SpectrumWindow& spec,
+                                                     const MeterEngine::MacroWindow& macro,
+                                                     bool useMean,
+                                                     juce::StringArray* emittedKeysOut)
+{
+    // [METER SNAPSHOT v2]: the extended meter fields on a CHAIN turn, by the
+    // same route [CHAIN LEVELS] already takes -- text on the last user
+    // message, no body field, no capture flag.
+    //
+    // WHY TEXT AND NOT THE `meters` BODY FIELD. That field is explicit-capture
+    // only (EchoJayAPI.cpp, the metersBlob dispatch) because a stray blob made
+    // the server classify a plain chat as capture_analysis. Nothing here goes
+    // near it: nextChatIsExplicitCapture_ is untouched, the capture path is
+    // exactly as it was. The server needs no change either -- parseExtendedMeter
+    // (api/_classifier.js) is a TEXT scanner over stable + volatile + the last
+    // user message, and buildExtendedMeterContext renders whatever it finds
+    // into prose for the model.
+    //
+    // THE MARKER MUST MATCH NONE OF containsCaptureMarkers' five patterns
+    // (api/_prompt-shapes.js): the two "<WORD> CHANNEL:/ANALYSIS:" shapes need
+    // an uppercase run followed by that word and a quote, "[PREVIOUS CAPTURE:"
+    // and "[SPECTRUM REFERENCE" are literals, and the fifth is the literal
+    // "Band profile (avg dB". "[METER SNAPSHOT v2: " matches none -- the
+    // lowercase "v2" alone puts it outside the first two character classes --
+    // and it was verified clean in the server run. Do not rename it without
+    // re-checking all five.
+    //
+    // SOURCED FROM meterDataToJSON, NOT RE-DERIVED. Its absent-key convention
+    // is the server's null convention: a key that is not there means
+    // unavailable, never a placeholder zero. Copying keys forward preserves
+    // that for free; recomputing would be a second opinion about availability.
+    auto v = juce::JSON::parse(meterJson);
+    auto* o = v.getDynamicObject();
+    if (o == nullptr) return {};
+
+    juce::StringArray parts;
+    auto copyNumber = [&](const char* key)
+    {
+        if (! o->hasProperty(key)) return;                  // absent = unavailable
+        const auto val = o->getProperty(key);
+        if (! (val.isDouble() || val.isInt() || val.isInt64())) return;
+        parts.add("\"" + juce::String(key) + "\":" + val.toString());
+    };
+    copyNumber("psr");
+    copyNumber("plr");
+    copyNumber("oversCount");
+
+    // ALL-OR-NOTHING, and the two objects differ in how they can fail.
+    // macroBands is written by meterDataToJSON with all six names or not at
+    // all, so a partial one should be impossible; bandCrest genuinely can be
+    // partial (its three subkeys appear as each band first gets signal). The
+    // server treats a partial object as UNAVAILABLE for both, so emitting one
+    // is strictly worse than emitting nothing: it costs bytes and yields the
+    // same null. Both are checked the same way rather than trusting the
+    // writer, because the cost of the check is nil and the cost of being
+    // wrong is a field that reads present and parses to null.
+    auto copyObject = [&](const char* key, const juce::StringArray& required)
+    {
+        if (! o->hasProperty(key)) return;
+        auto* obj = o->getProperty(key).getDynamicObject();
+        if (obj == nullptr) return;
+        for (const auto& r : required)
+            if (! obj->hasProperty(r)) return;              // partial = omit entirely
+        parts.add("\"" + juce::String(key) + "\":"
+                  + juce::JSON::toString(o->getProperty(key), true));
+    };
+    // macroBands is NO LONGER COPIED FROM meterDataToJSON here (v3). That copy
+    // was the instantaneous EMA read at prompt time, which put two different
+    // windows in one block: a 12 second spectrum beside a 150 ms macro band,
+    // with only one of them saying so. It now comes from the macro ring, over
+    // the same frames as the spectrum, and states its own window. The capture
+    // payload still carries the instantaneous one, which is correct there: a
+    // capture already has its own window and its own averaging.
+    // v3 edge-encoded names, see HANDOVER/meter-snapshot-v3.md. The required
+    // set moves with the writer in MeterEngine::meterDataToJSON; if the two
+    // ever disagree the object is dropped, which is the safe direction.
+    copyObject("bandCrest",  { "lo120", "mid120_5k", "hi5k" });
+
+    // THE WINDOWED SPECTRUM (v3). Same absent-key discipline as everything
+    // above: an invalid window (no frames accumulated, i.e. nothing audible
+    // heard yet) emits no spectrum keys at all rather than a floor array.
+    //
+    // The window is HEARD audio, not wall clock: MeterEngine writes a ring
+    // frame only while the input is audible, so `seconds` is what the bins
+    // actually describe. It is stated as a key AND in the prose below, the way
+    // [CHAIN LEVELS] states "heard 1m30s", because a spectrum without its
+    // window invites the model to treat four seconds and four minutes alike.
+    if (macro.valid)
+    {
+        static const char* mbNames[6] = { "sub", "low", "lowMid", "mid", "highMid", "air" };
+        juce::String mb;
+        for (int bi = 0; bi < 6; ++bi)
+        {
+            if (bi > 0) mb << ",";
+            mb << "\"" << mbNames[bi] << "\":{\"db\":" << juce::String(macro.db[(size_t) bi], 1)
+               << ",\"rel\":" << juce::String(macro.rel[(size_t) bi], 1) << "}";
+        }
+        parts.add("\"macroBands\":{" + mb + "}");
+        parts.add("\"macroBandsHeard\":" + juce::String(macro.seconds, 1));
+        parts.add("\"macroBandsFrames\":" + juce::String(macro.frames));
+    }
+
+    if (spec.valid)
+    {
+        juce::String bins;
+        for (int b = 0; b < MeterData::numSpecBins; ++b)
+        {
+            if (b > 0) bins << ",";
+            bins << juce::String(spec.bins[(size_t) b], 1);
+        }
+        parts.add("\"spectrum\":[" + bins + "]");
+        parts.add(juce::String("\"spectrumStat\":\"") + (useMean ? "mean" : "peak") + "\"");
+        parts.add("\"spectrumHeard\":" + juce::String(spec.seconds, 1));
+        parts.add("\"spectrumFrames\":" + juce::String(spec.frames));
+    }
+
+    // EVERY KEY ABSENT MEANS NO BLOCK AT ALL. A stopped transport measures
+    // nothing, every guard in meterDataToJSON omits its key, parts is empty,
+    // and this returns "" -- so standardChainInjections appends nothing and the
+    // turn carries no marker. An empty "[METER SNAPSHOT v2: ]" would be a
+    // present-but-meaningless block: it would read as data to a human, and to
+    // the server it would parse to the same nulls while spending the bytes.
+    if (parts.isEmpty()) return {};
+
+    // THE KEYS IT ACTUALLY EMITTED, derived from `parts` rather than listed
+    // again. Every part is "<key>":<value>, so the name is the text before the
+    // first colon with its quotes stripped. Deriving it here is what makes the
+    // DATA AVAILABILITY paragraph self-maintaining: a field added above
+    // reaches the system prompt with no edit there and none here.
+    if (emittedKeysOut != nullptr)
+    {
+        emittedKeysOut->clear();
+        for (const auto& part : parts)
+            emittedKeysOut->add(part.upToFirstOccurrenceOf(":", false, false)
+                                    .removeCharacters("\""));
+    }
+
+    juce::String tail = " - measured on the live input, same convention as the"
+                        " capture payload: a field absent here was not measurable,"
+                        " never assume a value for it.";
+    if (spec.valid)
+        tail << " The spectrum is 64 log-spaced bins from 20 Hz to 20 kHz, "
+             << (useMean ? "averaged" : "peak-hold")
+             << " over the " << formatHeard(spec.seconds)
+             << " of audio heard so far.";
+    return "\n\n[METER SNAPSHOT v2: " + parts.joinIntoString(", ") + tail + "]";
+}
+
 juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& rack,
                                                     const juce::String& channelLabel,
                                                     const juce::StringArray* slotLevelNotes,
@@ -3261,6 +3800,10 @@ void EchoJayAPI::loadSettings()
 
         // Absent property -> false: auto-dial mode defaults OFF.
         autoDialMode = (bool) obj->getProperty("autoDialMode");
+        // Absent on a settings file that predates this, which leaves the
+        // member false: dialling works as it always has until asked not to.
+        dialWritesBlocked = (bool) obj->getProperty("dialWritesBlocked");
+        echojay::setDialWritesBlocked(dialWritesBlocked);   // mirror at startup
         
         // Check if the saved usage is from this period — reset if we've
         // rolled into a new month. Period is monthly across all tiers in
@@ -3294,6 +3837,7 @@ void EchoJayAPI::saveSettings() const
     obj->setProperty("messagesUsedToday", userInfo.messagesUsedToday);
     obj->setProperty("usageDate", juce::Time::getCurrentTime().formatted("%Y-%m-%d"));
     obj->setProperty("autoDialMode", autoDialMode);
+    obj->setProperty("dialWritesBlocked", dialWritesBlocked);
     
     file.replaceWithText(juce::JSON::toString(juce::var(obj)));
 }

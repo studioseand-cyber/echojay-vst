@@ -198,7 +198,10 @@ public:
     // structured array of {name, kind, detail, resolvedName} objects where
     // kind is "built" / "not_found" / "load_failed" / "skipped" — the sender
     // uses load_failed to offer the don't-suggest-again flow.
+    // origin threaded: restoreChainFromVar restores, pollChainCommand
+    // applies an EchoJay build. The two disagree, so neither can be fixed here.
     void buildChainFromSpec(std::vector<ChainBuildItem> spec,
+                            ChainHost::LoadOrigin origin,
                             std::function<void(const juce::StringArray&,
                                                const juce::var&)> onDone);
 

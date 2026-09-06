@@ -1,3 +1,4 @@
+#include "EJDialWrites.h"
 #include "EchoJayBridgedAU.h"   // FIRST: pulls CoreFoundation before JUCE (Point ambiguity)
 #include "ChainHost.h"
 #include "EedLatencyLog.h"
@@ -1479,6 +1480,12 @@ std::vector<ChainHost::ChainEditOp> ChainHost::parseChainEditOps(
         op.on       = (bool)eo->getProperty("on");
         op.name     = eo->getProperty("name").toString().trim();
         op.settings = eo->getProperty("settings").toString().trim();
+        // OP TARGETS v1: the op's own words for what it is aiming at. Read
+        // unconditionally, like every other field here; absent keys leave
+        // them empty and the op then behaves exactly as it did before the
+        // fields existed, which is what lets an older server keep working.
+        op.slotName  = eo->getProperty("slot_name").toString().trim();
+        op.afterName = eo->getProperty("after_name").toString().trim();
         // Machine-readable dial values on add/replace: the server sends the
         // same settings_structured object a chain entry carries, so this is the
         // same key the build path reads. Only add/replace consume it (they are
@@ -1514,9 +1521,26 @@ juce::String ChainHost::describeEditOp(const ChainEditOp& op,
 {
     // Display is 1-BASED (matches the [CURRENT CHAIN] injection and the
     // model's numbering); op fields are internal 0-based post-parse.
-    auto slotName = [&baseSlots](int i) -> juce::String {
+    //
+    // OP TARGETS v1 (4 Sep 2026): THE WORDS COME FROM THE OP WHERE THE OP HAS
+    // WORDS. Every line here used to render slotName(op.slot), a lookup of the
+    // op's own NUMBER in baseSlots, so the card could not contradict the op:
+    // it WAS the op's number read back through a table. A user reading
+    // "replace FG-X 2 (slot 3)" was reading the client's opinion of slot 3,
+    // not the model's claim about what it was removing. On 4 September that
+    // opinion was correct and the action was still wrong, and Apply was
+    // tapped on it. The card is where consent is given, so it has to show the
+    // claim being consented to. The rack lookup remains the fallback for an
+    // op that carries no name, which is every op from a pre-v1 server.
+    auto rackAt = [&baseSlots](int i) -> juce::String {
         return (i >= 0 && i < baseSlots.size())
             ? baseSlots[i] : ("slot " + juce::String(i + 1));
+    };
+    auto targetWords = [&rackAt](const juce::String& fromOp, int i) -> juce::String {
+        return fromOp.trim().isNotEmpty() ? fromOp.trim() : rackAt(i);
+    };
+    auto slotName = [&targetWords, &op](int i) -> juce::String {
+        return targetWords(op.slotName, i);
     };
     // What a dial will ACTUALLY write, rendered from the STRUCTURED payload
     // (9 Aug 2026): the card showed the op's PROSE ("ratio 4") while the
@@ -1549,12 +1573,17 @@ juce::String ChainHost::describeEditOp(const ChainEditOp& op,
     };
     const juce::String payload = structuredSummary(op.structuredSettings);
     if (op.op == "add")
+        // The anchor's words come from after_name where the op carries it.
+        // "after slot 2 (Newfangled Elevate)" was the whole of failure B: the
+        // name in the parentheses was baseSlots[2], so it agreed with the
+        // number by construction and could not report that the model meant a
+        // different plugin. An op naming its anchor prints the anchor.
         return juce::String::fromUTF8("+ add ") + op.name
              + (op.after <= -1 ? juce::String(" first")
-                : op.after >= baseSlots.size()
+                : (op.after >= baseSlots.size() && op.afterName.trim().isEmpty())
                     ? juce::String(" at the end of the chain")
-                    : " after slot " + juce::String(op.after + 1)
-                      + " (" + slotName(op.after) + ")")
+                    : " after " + targetWords(op.afterName, op.after)
+                      + " (slot " + juce::String(op.after + 1) + ")")
              + (payload.isNotEmpty() ? " - sets " + payload : juce::String());
     if (op.op == "remove")
         return juce::String::fromUTF8("\xe2\x88\x92 remove ") + slotName(op.slot)
@@ -1879,10 +1908,24 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
         return (orig >= 0 && orig < (int)st->map.size()) ? st->map[(size_t)orig] : -1;
     };
 
+    // OP TARGETS v1: does the plugin the op NAMED sit where the op's number
+    // points? Empty means proceed (including the pre-v1 case where the op
+    // named nothing at all). Checked in the SEQUENCER and not in the
+    // pre-flight dry run, deliberately: the dry run's verb is abort-the-batch,
+    // and a wrong target on one op is no reason to throw away the others.
+    auto targetRefusal = [this, &op](int cur) -> juce::String {
+        if (cur < 0 || cur >= (int) slots_.size()) return {};
+        return identityTargetMismatch(op.slotName, slots_[(size_t)cur].desc.name, op.slot);
+    };
+
     if (op.op == "remove")
     {
         const int cur = curOf(op.slot);
         if (cur < 0) return failAndStop("remove failed: slot no longer present");
+        {
+            const auto why = targetRefusal(cur);
+            if (why.isNotEmpty()) return failButContinue("remove refused: " + why);
+        }
         const juce::String nm = slots_[(size_t)cur].desc.name;
         removeSlot(cur);
         for (auto& m : st->map) { if (m == cur) m = -1; else if (m > cur) --m; }
@@ -1893,6 +1936,10 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
     {
         const int cur = curOf(op.slot);
         if (cur < 0) return failAndStop("bypass failed: slot no longer present");
+        {
+            const auto why = targetRefusal(cur);
+            if (why.isNotEmpty()) return failButContinue("bypass refused: " + why);
+        }
         setSlotBypassed(cur, op.on);
         finishOpAndContinue(juce::String(op.on ? "bypassed " : "un-bypassed ")
                             + slots_[(size_t)cur].desc.name);
@@ -1902,6 +1949,10 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
     {
         const int cur = curOf(op.slot);
         if (cur < 0) return failAndStop("set_wet failed: slot no longer present");
+        {
+            const auto why = targetRefusal(cur);
+            if (why.isNotEmpty()) return failButContinue("set_wet refused: " + why);
+        }
         setSlotWet(cur, op.wetPct / 100.0f);
         EchoJay_NSLog(("EJEdit: set_wet slot=" + juce::String(cur + 1) + " \""
                        + slots_[(size_t)cur].desc.name + "\" wet=" + juce::String(op.wetPct, 1) + "%").toRawUTF8());
@@ -1913,6 +1964,10 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
     {
         const int cur = curOf(op.slot);
         if (cur < 0) return failAndStop("move failed: slot no longer present");
+        {
+            const auto why = targetRefusal(cur);
+            if (why.isNotEmpty()) return failButContinue("move refused: " + why);
+        }
         // Target: current position of the original occupant of `to`, else
         // clamp into the current rack
         int target = curOf(op.to);
@@ -1934,15 +1989,37 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
         // instead of the destructive replace.
         const int cur = curOf(op.slot);
         if (cur < 0) return failAndStop("set failed: slot no longer present");
+        {
+            const auto why = targetRefusal(cur);
+            if (why.isNotEmpty()) return failButContinue("set refused: " + why);
+        }
         const juce::String nm = slots_[(size_t)cur].desc.name;
-        const bool dials = op.structuredSettings.getDynamicObject() != nullptr;
+        const bool hasPayload = op.structuredSettings.getDynamicObject() != nullptr;
+        // NARROW FIX (5 Sep 2026), and its narrowness is deliberate. This line
+        // has NEVER consulted the write outcome: setSlotStructuredSettings
+        // below STORES the payload and defers, and applyStructuredIfReady can
+        // return without writing on pending, noMap, mapIdentityMismatch,
+        // mapNoCoverage and builtinPayloadUnmatched, none of which have
+        // happened yet when this runs. So a first-encounter plugin with no
+        // cached map has always reported "dialled" having written nothing.
+        // That is a real defect with a wider blast radius than this feature
+        // (it needs the op's result deferred until the dial settles, which is
+        // the sequencer's result contract) and it is filed as its own item.
+        //
+        // What IS knowable here, synchronously and with certainty, is the
+        // mode: when writes are blocked the guard is unconditional, so no
+        // write will happen and this line must not say one did.
+        const bool dials = hasPayload && ! echojay::dialWritesBlocked();
         if (op.settings.isNotEmpty())
             setSlotSettings(cur, op.settings);
-        if (dials)
-            setSlotStructuredSettings(cur, op.structuredSettings);
+        if (hasPayload)
+            setSlotStructuredSettings(cur, op.structuredSettings);   // fills the card either way
         // The result line is what every downstream summary reads: a
         // prose-only set "dialled" nothing and must not say it did.
-        finishOpAndContinue((dials ? "dialled " : "suggested settings for ") + nm);
+        finishOpAndContinue(hasPayload && ! dials
+                                ? "settings on the card for " + nm
+                                    + " (not dialled: dialling is off in Settings)"
+                                : (dials ? "dialled " : "suggested settings for ") + nm);
         return;
     }
     if (op.op == "add" || op.op == "replace")
@@ -1952,6 +2029,33 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
         // sequence CONTINUES with the remaining independent ops.
         // Honest miss (WithholdReason): a plugin this host withholds is
         // reported as such, not as "not resolvable".
+        // OP TARGETS v1: the target is settled BEFORE the load, so a refused
+        // op never leaves a plugin in the rack that nothing asked for. Both
+        // arms are pure reads at this point; nothing has moved yet.
+        int  addInsertAt = -1;
+        bool addFromName = false;
+        if (op.op == "add")
+        {
+            juce::StringArray rackNames;
+            for (const auto& sl : slots_) rackNames.add(sl.desc.name);
+            // -1 = "insert first", -2 = the index did not resolve (the slot it
+            // named was removed earlier in this batch, or is past the end).
+            const int anchorCur = op.after <= -1
+                ? -1
+                : (op.after < (int)st->map.size() && st->map[(size_t)op.after] >= 0
+                       ? st->map[(size_t)op.after] : -2);
+            const auto anchor = resolveAddAnchor(op.afterName, anchorCur, rackNames);
+            if (anchor.refused) return failButContinue("add refused: " + anchor.why);
+            addInsertAt = anchor.insertAt;
+            addFromName = anchor.fromName;
+        }
+        else
+        {
+            const int curTgt = curOf(op.slot);
+            const auto whyT = targetRefusal(curTgt);
+            if (whyT.isNotEmpty()) return failButContinue("replace refused: " + whyT);
+        }
+
         WithholdReason why = WithholdReason::None;
         juce::StringArray ambiguous;
         // resolveOfferedName, not resolveByName: the SAME rule the pre-flight
@@ -1969,7 +2073,8 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
         desc = preferInlineHostableDesc(desc);
         auto self = st;
         const auto theOp = op;
-        loadPluginAsync(desc, [this, self, theOp, desc](const juce::String& err)
+        loadPluginAsync(desc, LoadOrigin::Assistant,
+                        [this, self, theOp, desc, addInsertAt, addFromName](const juce::String& err)
         {
             // Re-enter the sequencer context manually (we are mid-op)
             auto finish = [this, self](const juce::String& line)
@@ -2032,16 +2137,21 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
             if (theOp.op == "add")
             {
                 applyOpSettings(newCur);
-                int target = theOp.after <= -1 ? 0
-                    : (theOp.after < (int)self->map.size() && self->map[(size_t)theOp.after] >= 0
-                        ? self->map[(size_t)theOp.after] + 1
-                        : newCur);   // fallback: leave at end
+                // Settled before the load by resolveAddAnchor. Computed on the
+                // pre-load rack, which is still true here: the load APPENDS,
+                // so every index below the new slot is unchanged.
+                const int target = juce::jlimit(0, newCur, addInsertAt);
                 walkSlotTo(self->map, newCur, target);
                 // Entries at/after the insert point were fixed by walkSlotTo's
                 // swap bookkeeping; nothing else to update (new slot is not
                 // addressable by original numbering).
+                //
+                // The result line says WHICH anchor, not which number, when
+                // the position came from the name: "after slot 2" is exactly
+                // the sentence that was true and useless in failure B.
                 finish("added " + theOp.name
                        + (theOp.after <= -1 ? juce::String(" first")
+                          : addFromName     ? " after " + theOp.afterName
                                             : " after slot " + juce::String(theOp.after + 1)));
             }
             else // replace
@@ -2070,6 +2180,10 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
                             catch (...) { oldState.reset(); }
 
                 removeSlot(oldCur);
+                // MOVE LOG: one act, one entry. The load above and this
+                // removal each recorded themselves; collapse them so the log
+                // says what left and what arrived in the same line.
+                collapseLastPairIntoSwap(theOp.slot, theOp.name, oldName);
                 for (auto& m : self->map) { if (m == oldCur) m = -1; else if (m > oldCur) --m; }
                 int fromCur = getNumSlots() - 1;   // new slot after the removal shift
                 walkSlotTo(self->map, fromCur, oldCur);
@@ -2107,9 +2221,20 @@ void ChainHost::setMasterWet(float wet01)
     bumpChainRevision();
 }
 
-void ChainHost::setSlotWet(int i, float wet01)
+void ChainHost::setSlotWet(int i, float wet01, WetSource src)
 {
     if (i < 0 || i >= (int)slots_.size()) return;
+    // ===== DO NOT DIAL (5 Sep 2026) =====
+    // Not a plugin parameter, but it CHANGES THE SOUND, and the mode means
+    // EchoJay does not change the sound. Guarded here rather than at the ops
+    // that reach it (set_wet, and wet_pct riding an add or replace) so a
+    // fourth caller cannot arrive without it.
+    //
+    // ONLY EchoJay's OWN writes. The user dragging the wet knob reaches this
+    // same function, and blocking that would lock the user out of the hand
+    // control the mode exists to hand back to them. A Restore is the session's
+    // saved value and is not a change either.
+    if (src == WetSource::Assistant && echojay::dialWritesBlocked()) return;
     auto& s = slots_[(size_t)i];
     s.wet = juce::jlimit(0.0f, 1.0f, wet01);
     bumpChainRevision();
@@ -2366,7 +2491,7 @@ ChainHost::applyStructuredSettings (int slotIndex,
         out.push_back ({ r.semantic, r.applied, r.normalized, r.note,
                          r.landedText, r.displayVerified, r.readbackMismatch,
                          r.staleDisplayKept, r.requestedValue, r.outOfRange,
-                         r.index, r.anchorsUnverified });
+                         r.index, r.anchorsUnverified, r.beforeText });
 
     return out;
 }
@@ -2374,6 +2499,10 @@ ChainHost::applyStructuredSettings (int slotIndex,
 void ChainHost::removeSlot(int i)
 {
     if (i < 0 || i >= (int)slots_.size()) return;
+    // MOVE LOG: what left. Recorded before the slot goes, while its name is
+    // still in hand.
+    recordStructural(MoveLogEntry::Kind::Remove, i, juce::String(),
+                     slots_[(size_t) i].desc.name, juce::String());
     // Before the instance goes to the graveyard, where it stays ALIVE for
     // the session: a parked plugin with a leaked UI timer must not be able
     // to call a listener on a ChainHost that has since gone away.
@@ -2467,7 +2596,8 @@ void ChainHost::asyncCreatePlugin(const juce::PluginDescription& d,
 }
 
 void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
-                              const juce::PluginDescription& desc)
+                              const juce::PluginDescription& desc,
+                              LoadOrigin origin)
 {
     // Any successful load clears a stale session load-failure mark
     sessionLoadFailed_.removeString(sessionLoadKey(desc.name, desc.pluginFormatName));
@@ -2488,7 +2618,15 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
     EchoJay_NSLog(("EJPlace: stored \"" + slot.desc.name + "\" mfr=\""
                    + slot.desc.manufacturerName + "\" (async load)").toRawUTF8());
     slot.bypassed = false;
+    const auto arrivedName = slot.desc.name;
     slots_.push_back(std::move(slot));
+    // MOVE LOG: a slot arriving, and ONLY where the origin licenses a claim.
+    // Restore records nothing: reopening a session or recalling a saved chain
+    // is not something EchoJay did, and the first version wrote a BUILT line
+    // per slot at turn 0 for both. User records a different kind, because the
+    // user putting a plugin in is a fact EchoJay needs and an act it did not
+    // perform. The decision is the caller's, made in ONE place below.
+    recordLoadIfLicensed(origin, (int) slots_.size() - 1, arrivedName);
     // Pristine default, captured BEFORE any seed or dial (borrow reset).
     captureBorrowDefaultState((int) slots_.size() - 1);
     // A VST3 build inside an AU host is told in the rack, on every route
@@ -3783,6 +3921,12 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         s.dialStatus = DialStatus::applied;
     else if (s.dialAppliedCount > 0)
         s.dialStatus = DialStatus::partial;
+    else if (echojay::dialWritesBlocked())
+        // DO NOT DIAL: nothing was written because the user asked for nothing
+        // to be written. Its own status so the bubble can say that instead of
+        // the unsupported-plugin sentence, and so the dial-miss emitter can
+        // skip it: a deliberate setting is not a miss.
+        s.dialStatus = DialStatus::writesBlocked;
     else
         // The map covered it and the writes were ATTEMPTED — this is the only
         // status that wrote anything, which is why it is the only one the
@@ -3877,6 +4021,11 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
             if (r.outOfRange && r.note.isNotEmpty())
             {
                 refusedBits.add(echojay::semanticLabel(r.semantic) + ": " + r.note);
+                // REFUSED, and recorded as refused. landed=false is the whole
+                // point: the model must be able to say "I tried and could
+                // not" without that reading as a change it made.
+                recordMove(slotIndex, s.desc.name, echojay::semanticLabel(r.semantic),
+                           r.beforeText, r.note, juce::String(), /*landed*/ false);
                 continue;
             }
             if (! r.applied || r.staleDisplayKept) continue;   // bridged: annotated upstream
@@ -3897,6 +4046,11 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
             {
                 landedBits.add(label + arrow + "reads \"" + r.landedText.trim() + "\"" + approx);
                 landedIdx.add(r.index);
+                // LANDED, and only here. beforeText is read inside applyOne
+                // immediately before the write, so it is the control's real
+                // prior value rather than a sweep that may predate the slot.
+                recordMove(slotIndex, s.desc.name, label,
+                           r.beforeText, r.landedText.trim(), juce::String(), /*landed*/ true);
                 continue;
             }
             // NO VERIFIED LANDING FOR THIS CONTROL. It goes on the asked line,
@@ -4143,6 +4297,7 @@ static void pollVST3Validation(
     std::shared_ptr<struct VST3ValState> vs,
     juce::PluginDescription desc,
     int validationMark,
+    ChainHost::LoadOrigin origin,
     std::function<void(const juce::String&)> cb,
     int ticksLeft);
 
@@ -4157,6 +4312,7 @@ static void pollVST3Validation(
     std::shared_ptr<VST3ValState> vs,
     juce::PluginDescription desc,
     int validationMark,
+    ChainHost::LoadOrigin origin,
     std::function<void(const juce::String&)> cb,
     int ticksLeft)
 {
@@ -4173,10 +4329,10 @@ static void pollVST3Validation(
 
         host->saveToDisk();
         host->asyncCreatePlugin(fullDesc,
-            [host, cb, fullDesc](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
+            [host, cb, fullDesc, origin](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
             {
                 if (!inst) { cb(err.isNotEmpty() ? err : "createPluginInstance failed"); return; }
-                host->completeLoad(std::move(inst), fullDesc);
+                host->completeLoad(std::move(inst), fullDesc, origin);
                 cb({});
             });
         return;
@@ -4192,8 +4348,8 @@ static void pollVST3Validation(
         return;
     }
 
-    juce::Timer::callAfterDelay(100, [host, vs, desc, validationMark, cb, ticksLeft]() mutable {
-        pollVST3Validation(host, vs, desc, validationMark, cb, ticksLeft - 1);
+    juce::Timer::callAfterDelay(100, [host, vs, desc, validationMark, origin, cb, ticksLeft]() mutable {
+        pollVST3Validation(host, vs, desc, validationMark, origin, cb, ticksLeft - 1);
     });
 }
 
@@ -4942,6 +5098,7 @@ juce::String ChainHost::loadBuiltinNow(const juce::PluginDescription& desc)
 }
 
 void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
+                                LoadOrigin origin,
                                 std::function<void(const juce::String& error)> callback)
 {
     // Built-in device: constructed directly, no format manager, no scan.
@@ -4951,6 +5108,12 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
     if (isBuiltinDescription(desc))
     {
         const auto err = loadBuiltinNow(desc);
+        // MOVE LOG: this arm never reaches completeLoad, so the recorder that
+        // sits there cannot see it. A built-in slot arriving is a slot
+        // arriving; without this the block would carry a dial on a device with
+        // no record of that device ever being added.
+        if (err.isEmpty() && ! slots_.empty())
+            recordLoadIfLicensed(origin, (int) slots_.size() - 1, desc.name);
         if (callback) callback(err);
         return;
     }
@@ -4960,6 +5123,10 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
     // arrives through the same resolution path on every borrow.
     if (mode_ == Mode::Borrowed && borrowTryReuseInto(desc))
     {
+        // MOVE LOG: the third arm, and the same reason as the builtin one. A
+        // reused node is a new slot from the rack's point of view.
+        if (! slots_.empty())
+            recordLoadIfLicensed(origin, (int) slots_.size() - 1, desc.name);
         if (callback) callback({});
         return;
     }
@@ -5003,7 +5170,7 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
         // Through asyncCreatePlugin, so the death mark covers this branch
         // (AU, and VST3s already validated) and not only the fp pass.
         asyncCreatePlugin(fullDesc,
-            [this, callback, fullDesc](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
+            [this, callback, fullDesc, origin](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
             {
                 if (!inst)
                 {
@@ -5014,7 +5181,7 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
                     callback(err.isNotEmpty() ? err : "createPluginInstance returned nullptr");
                     return;
                 }
-                completeLoad(std::move(inst), fullDesc);
+                completeLoad(std::move(inst), fullDesc, origin);
                 callback({});
             });
         return;
@@ -5042,7 +5209,7 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
         }
     }).detach();
 
-    pollVST3Validation(this, vs, desc, validationMark, callback, 100);
+    pollVST3Validation(this, vs, desc, validationMark, origin, callback, 100);
 }
 
 // ---------------------------------------------------------------------------
@@ -6200,6 +6367,165 @@ const char* const ChainHost::kLandedPrefix  = "Landed: ";
 const char* const ChainHost::kAskedPrefix   = "Asked, not verified: ";
 const char* const ChainHost::kRefusedPrefix = "Refused: ";
 
+void ChainHost::recordMove(int slot, const juce::String& plugin, const juce::String& param,
+                           const juce::String& before, const juce::String& after,
+                           const juce::String& reason, bool landed)
+{
+    // Append, then drop from the FRONT past the bound: the newest moves are
+    // the ones a follow-up question is about ("why did you do that"), and an
+    // evicted move is one the model can no longer be asked about either way.
+    moveLog_.push_back({ moveTurn_, slot, plugin, param, before, after, reason, landed });
+    while ((int) moveLog_.size() > kMoveLogMax)
+        moveLog_.erase(moveLog_.begin());
+}
+
+// ---------------------------------------------------------------------------
+// Move log persistence (5 Sep 2026). JSON, into the blob PluginProcessor
+// already writes; readable key names because 48 entries is about 11 KB
+// against a 16 MB slot-state cap, and a blob somebody can read in a crash
+// report is worth more than four saved kilobytes.
+// ---------------------------------------------------------------------------
+juce::var ChainHost::getMoveLogStateVar() const
+{
+    if (moveLog_.empty() && moveTurn_ == 0) return {};   // nothing to say, no key
+
+    auto o = std::make_unique<juce::DynamicObject>();
+    o->setProperty("turn", moveTurn_);
+    juce::Array<juce::var> arr;
+    for (const auto& e : moveLog_)
+    {
+        // Boundaries are made at restore time, one per restore. Writing them
+        // back would stack a new line every time the session is reopened.
+        if (e.kind == MoveLogEntry::Kind::SessionBreak) continue;
+        auto eo = std::make_unique<juce::DynamicObject>();
+        eo->setProperty("turn",   e.turn);
+        eo->setProperty("slot",   e.slot);
+        eo->setProperty("kind",   (int) e.kind);
+        eo->setProperty("plugin", e.plugin);
+        eo->setProperty("param",  e.param);
+        eo->setProperty("before", e.before);
+        eo->setProperty("after",  e.after);
+        eo->setProperty("reason", e.reason);
+        eo->setProperty("landed", e.landed);
+        arr.add(juce::var(eo.release()));
+    }
+    o->setProperty("entries", arr);
+    return juce::var(o.release());
+}
+
+void ChainHost::restoreMoveLogState (const juce::var& v)
+{
+    auto* o = v.getDynamicObject();
+    if (o == nullptr) return;
+
+    moveTurn_ = restoredMoveTurn(moveTurn_, (int) o->getProperty("turn"));
+
+    std::vector<MoveLogEntry> restored;
+    if (auto* arr = o->getProperty("entries").getArray())
+        for (const auto& ev : *arr)
+            if (auto* eo = ev.getDynamicObject())
+            {
+                MoveLogEntry e;
+                e.turn   = (int) eo->getProperty("turn");
+                e.slot   = (int) eo->getProperty("slot");
+                const int k = (int) eo->getProperty("kind");
+                // A kind this build does not know about (a newer build wrote
+                // it) reads as a Dial rather than indexing off the end of the
+                // renderer's switch. The line is then mislabelled, which is
+                // survivable; a bad cast is not.
+                e.kind   = (k >= 0 && k <= (int) MoveLogEntry::Kind::SessionBreak)
+                             ? (MoveLogEntry::Kind) k : MoveLogEntry::Kind::Dial;
+                e.plugin = eo->getProperty("plugin").toString();
+                e.param  = eo->getProperty("param").toString();
+                e.before = eo->getProperty("before").toString();
+                e.after  = eo->getProperty("after").toString();
+                e.reason = eo->getProperty("reason").toString();
+                e.landed = (bool) eo->getProperty("landed");
+                restored.push_back(std::move(e));
+            }
+    if (restored.empty()) return;   // a turn counter alone needs no boundary
+
+    moveLog_ = mergeRestoredLog(std::move(restored), moveLog_, kMoveLogMax);
+    EchoJay_NSLog(("EJMoveLog: restored " + juce::String((int) moveLog_.size())
+                   + " entries (incl. session boundary), turn continues at "
+                   + juce::String(moveTurn_)).toRawUTF8());
+}
+
+// ONE place decides what an origin licenses. completeLoad and the two arms of
+// loadPluginAsync that bypass it all call this rather than each testing the
+// enum, so a fourth load path cannot quietly grow a fourth opinion.
+void ChainHost::recordLoadIfLicensed(LoadOrigin origin, int slot,
+                                     const juce::String& arrivedName)
+{
+    // The verdict is loadRecordFor's, not this function's: the enum is read in
+    // exactly one place so the gate can drive the shipped answer.
+    const auto v = loadRecordFor(origin);
+    if (! v.record) return;   // Restore: not an act of EchoJay's
+    recordStructural(static_cast<MoveLogEntry::Kind>(v.kind), slot,
+                     arrivedName, juce::String(), juce::String());
+}
+
+void ChainHost::recordStructural(MoveLogEntry::Kind kind, int slot,
+                                 const juce::String& arrived, const juce::String& gone,
+                                 const juce::String& reason)
+{
+    MoveLogEntry e;
+    e.turn   = moveTurn_;
+    e.slot   = slot;
+    e.plugin = arrived.isNotEmpty() ? arrived : gone;
+    e.before = gone;        // what left, for a swap or a removal
+    e.after  = arrived;     // what arrived, for a load or a swap
+    e.reason = reason;
+    e.landed = true;        // structural moves happened or were not recorded
+    e.kind   = kind;
+    moveLog_.push_back(std::move(e));
+    while ((int) moveLog_.size() > kMoveLogMax)
+        moveLog_.erase(moveLog_.begin());
+}
+
+void ChainHost::annotateLastMove(const juce::String& reason)
+{
+    if (moveLog_.empty() || reason.trim().isEmpty()) return;
+    moveLog_.back().reason = clipMoveReason (reason);
+}
+
+// A reason is a ROLE, not a settings dump, and the caller cannot promise that.
+// The AI build loop hands over the model's per-slot prose, which is a role
+// where the model wrote one ("transient control") and a full sentence of
+// settings where it did not. Unclipped, one BUILT line could be longer than
+// the twelve around it and the bound's measurement would mean nothing. Clipped
+// at a word boundary so the line still reads, with the length in one place so
+// the contract's byte table has something to point at.
+juce::String ChainHost::clipMoveReason (const juce::String& raw)
+{
+    auto t = raw.trim();
+    // One sentence at most: the first is the role where there is one.
+    const int stop = t.indexOfChar ('.');
+    if (stop > 0) t = t.substring (0, stop).trim();
+    if (t.length() <= kMoveReasonMax) return t;
+    auto cut = t.substring (0, kMoveReasonMax);
+    const int sp = cut.lastIndexOfChar (' ');
+    if (sp > kMoveReasonMax / 2) cut = cut.substring (0, sp);
+    return cut.trim() + "...";
+}
+
+void ChainHost::collapseLastPairIntoSwap(int slot, const juce::String& arrived,
+                                         const juce::String& gone)
+{
+    if (moveLog_.size() < 2) return;
+    auto& last = moveLog_[moveLog_.size() - 1];
+    auto& prev = moveLog_[moveLog_.size() - 2];
+    const bool pair = (last.kind == MoveLogEntry::Kind::Remove
+                       && prev.kind == MoveLogEntry::Kind::Load)
+                   || (last.kind == MoveLogEntry::Kind::Load
+                       && prev.kind == MoveLogEntry::Kind::Remove);
+    if (! pair) return;                       // something else happened between
+    const auto reason = prev.reason.isNotEmpty() ? prev.reason : last.reason;
+    moveLog_.pop_back();
+    moveLog_.pop_back();
+    recordStructural(MoveLogEntry::Kind::Swap, slot, arrived, gone, reason);
+}
+
 void ChainHost::clearModelTiers(ChainSlot& s)
 {
     s.modelLandedBits.clear();  s.modelLandedIdx.clear();
@@ -6678,6 +7004,7 @@ juce::StringArray ChainHost::getDialableRecommendableNames() const
 }
 
 void ChainHost::loadByRecommendedName(const juce::String& name,
+                                       LoadOrigin origin,
                                        std::function<void(const juce::String&)> callback)
 {
     juce::String nameLower = name.toLowerCase().trim();
@@ -6686,7 +7013,7 @@ void ChainHost::loadByRecommendedName(const juce::String& name,
         if (e.displayName.toLowerCase().trim() == nameLower)
         {
             // NEW instantiation — popout-only AUs may swap to their VST3 build
-            loadPluginAsync(preferInlineHostableDesc(e.desc), std::move(callback));
+            loadPluginAsync(preferInlineHostableDesc(e.desc), origin, std::move(callback));
             return;
         }
     }
@@ -6704,7 +7031,7 @@ void ChainHost::loadByRecommendedName(const juce::String& name,
         EchoJay_NSLog(("EJChain: resolve \"" + name + "\" -> " + matchLog).toRawUTF8());
         if (d.name.isNotEmpty())
         {
-            loadPluginAsync(preferInlineHostableDesc(d), std::move(callback));
+            loadPluginAsync(preferInlineHostableDesc(d), origin, std::move(callback));
             return;
         }
         // Honest miss (WithholdReason): the name matched a row this host
@@ -6897,7 +7224,11 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
     juce::String savedVersion = items[idx].savedVersion;
     juce::String savedUid     = items[idx].savedUid;
     juce::var slotParams = items[idx].params;
-    loadPluginAsync(items[idx].desc,
+    // RESTORE, and the same for both callers: a session reload
+    // (tryRestoreSlotsFromXml) and a saved-chain recall (restoreSavedChain).
+    // Neither is EchoJay building anything, and before this each wrote one
+    // BUILT line per slot at turn 0.
+    loadPluginAsync(items[idx].desc, LoadOrigin::Restore,
         [this, items = std::move(items), idx, wasBypassed, savedWet,
          stateB64, expectState, slotName, identifier, withholdState,
          savedFormat, savedVersion, savedUid, slotParams,
@@ -6908,7 +7239,7 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
                 int lastSlot = (int)slots_.size() - 1;
                 if (lastSlot >= 0)
                 {
-                    setSlotWet(lastSlot, savedWet);
+                    setSlotWet(lastSlot, savedWet, WetSource::Restore);
                     if (wasBypassed) setSlotBypassed(lastSlot, true);
                     // Withheld chunks were already explained by the note that
                     // decided it (restoreSavedChain); no second line here.

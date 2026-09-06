@@ -40,10 +40,13 @@
 #include "EchoJayHistoryTrim.h"
 #include "EchoJayChannelChats.h"
 #include "EchoJayAPI.h"          // history-resend pin runs the REAL buildChatRequestBody
+#include "EJDialWrites.h"      // do-not-dial: the shipped predicate
+#include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
 #include <fstream>
 #include <sstream>
+#include <regex>
 
 static int passN = 0, failN = 0;
 static void check (bool ok, const juce::String& name, const juce::String& detail = {})
@@ -70,6 +73,14 @@ struct EchoJayAPIRequestPin
     static juce::String compose (EchoJayAPI& a, const juce::StringArray& roles,
                                  const juce::StringArray& contents)
     {
+        // DECLARE THE FIXTURE. buildChatRequestBody dumps every body it builds
+        // when dev_mode is on, and the gate runs in the same account as the
+        // DAW, so this call overwrites ~/Documents/EchoJay/chat-body-debug.json
+        // with a fixture. It cannot be stopped without weakening the pin (the
+        // point is that this IS the shipped builder), so instead it is marked:
+        // the dump it writes says gate-fixture, and a harvest that finds one
+        // knows to discard it rather than reasoning from it.
+        EchoJayAPI::dumpSource = "gate-fixture (mapfps_test history-resend pin)";
         return a.buildChatRequestBody (roles, contents, "sys", {});
     }
 };
@@ -1573,8 +1584,19 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             // moved the silence to the write: userDocumentsDirectory redirects
             // into the same container the flag check did, and the old code
             // logged success without ever looking at replaceWithText's result.
-            check (body.contains ("const bool wrote = dirOk && f.replaceWithText(body);"),
+            // RE-AIMED AT THE PROPERTY (3 Sep 2026). This named the argument as
+            // well as the check, and the argument changed for a real reason:
+            // the dump is now the wire body plus a _dumpSource field, so it
+            // writes dumpText rather than body. What must stay true is that
+            // the result is consumed and gated on the directory, not which
+            // string went in.
+            check (body.contains ("const bool wrote = dirOk && f.replaceWithText("),
                    "dump: the write result is actually checked");
+            // And the dumped text is still the WIRE body, not a reconstruction:
+            // one field spliced after the opening brace, nothing else touched.
+            check (body.contains ("+ body.substring(1)")
+                   && body.contains ("_dumpSource"),
+                   "dump: what is written is the wire body plus exactly one provenance field");
             check (body.contains ("dev_mode body dump FAILED"),
                    "dump: a refused write logs a FAILED line, not a success line");
             check (body.contains ("EJChat: dev_mode body dump -> "),
@@ -2037,7 +2059,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         {
             std::ifstream fh ("Source/ChainHost.h");
             std::stringstream sh; sh << fh.rdbuf();
-            check (codeOnly (juce::String (sh.str())).contains ("bool anchorsUnverified = false; };"),
+            check (codeOnly (juce::String (sh.str())).contains ("bool anchorsUnverified = false;"),
                    "fb PIN3: the report field defaults false");
         }
 
@@ -4508,6 +4530,1029 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // rule's header was already included for the feed and the ladder.
         check (ch.contains ("#include \"EJVariantPreference.h\""),
                "sp PIN4: the rank comes from the header already included for the other six paths");
+    }
+
+    // ---- Move log and chat-size warning (items 8 and 17) -------------------
+    {
+        std::cout << "move log + chat size warning:\n";
+        std::ifstream fch ("Source/ChainHost.cpp");
+        std::stringstream sch; sch << fch.rdbuf();
+        const auto chRaw = juce::String (sch.str());
+        const auto ch    = codeOnly (chRaw);
+        std::ifstream fap ("Source/EchoJayAPI.cpp");
+        std::stringstream sap; sap << fap.rdbuf();
+        const auto apRaw = juce::String (sap.str());
+        const auto ap    = codeOnly (apRaw);
+
+        // ml PIN1 -- A REFUSED MOVE IS NOT RECORDED AS LANDED. The partition
+        // already separates the two facts per slot; the log must not blur them
+        // back together. Both call sites are checked for their literal flag,
+        // and the refusal arm is checked to be the one that carries the note
+        // rather than a value.
+        {
+            const auto body = functionBody (chRaw, "void ChainHost::applyStructuredIfReady");
+            check (body.isNotEmpty(), "ml PIN1: applyStructuredIfReady found");
+            const auto refusedArm = body.fromFirstOccurrenceOf ("refusedBits.add", false, false)
+                                        .upToFirstOccurrenceOf ("continue;", false, false);
+            check (refusedArm.contains ("recordMove") && refusedArm.contains ("/*landed*/ false"),
+                   "ml PIN1: the REFUSAL arm records the move as NOT landed");
+            check (refusedArm.contains ("r.note"),
+                   "ml PIN1: and carries the refusal note, not a value it did not write");
+            const auto landedArm = body.fromFirstOccurrenceOf ("landedBits.add", false, false)
+                                       .upToFirstOccurrenceOf ("continue;", false, false);
+            check (landedArm.contains ("recordMove") && landedArm.contains ("/*landed*/ true"),
+                   "ml PIN1: the LANDED arm records the move as landed");
+            check (landedArm.contains ("r.landedText"),
+                   "ml PIN1: and carries what the control actually read back");
+            // No third writer: exactly two recordMove calls decide the flag.
+            int n = 0, at = 0;
+            while ((at = body.indexOf (at, "recordMove")) >= 0) { ++n; at += 8; }
+            check (n == 2, "ml PIN1: exactly two recorders, one per fact",
+                   "found " + juce::String (n));
+        }
+
+        // ml PIN2 -- the block never presents a refusal as a change, and the
+        // marker cannot trip the server's capture sniff.
+        {
+            const auto body = functionBody (apRaw, "juce::String EchoJayAPI::buildMoveLogInjection");
+            check (body.contains ("case K::Dial:   b << (e.landed ? \"DIALLED \" : \"REFUSED \"); break;"),
+                   "ml PIN2: every line declares which fact it is");
+            // A refusal is a refused DIAL. Nothing else in the switch can
+            // print REFUSED, so a structural entry cannot be read as one.
+            {
+                int n = 0, at = 0;
+                while ((at = body.indexOf (at, "\"REFUSED \"")) >= 0) { ++n; at += 6; }
+                check (n == 1, "ml PIN2: and only a dial can be refused",
+                       "REFUSED written " + juce::String (n) + " times");
+            }
+            // The instruction spans two C++ literals, so the assertion takes
+            // the half that lives inside one of them. A phrase that straddles
+            // a line break is a pin that fails on formatting, not on meaning.
+            check (body.contains ("REFUSED line as a change"),
+                   "ml PIN2: and the block says so to the model in words");
+            const juce::String marker ("\n\n[MOVE LOG v1 - what EchoJay itself changed");
+            const juce::String sample = marker + " ...]";
+            check (! std::regex_search (sample.toStdString(),
+                       std::regex (R"(\[[A-Z][A-Z0-9 /&-]*\s+CHANNEL:\s*")"))
+                   && ! std::regex_search (sample.toStdString(),
+                       std::regex (R"(\[[A-Z][A-Z0-9 /&-]*\s+ANALYSIS:\s*")"))
+                   && ! sample.containsIgnoreCase ("[PREVIOUS CAPTURE:")
+                   && ! sample.containsIgnoreCase ("[SPECTRUM REFERENCE")
+                   && ! sample.contains ("Band profile (avg dB"),
+                   "ml PIN2: the marker matches none of the five capture patterns");
+            check (ap.contains ("\"\\n\\n[MOVE LOG v1\""),
+                   "ml PIN2: and it is registered in historyStripMarkers");
+        }
+
+        // ml PIN3 -- the log outlives the rack. A slot removal or a rack clear
+        // must not erase a move the model has already been told about.
+        {
+            check (! ch.contains ("moveLog_.clear()"),
+                   "ml PIN3: nothing clears the move log");
+            const auto rec = functionBody (chRaw, "void ChainHost::recordMove");
+            check (rec.contains ("moveLog_.erase(moveLog_.begin())"),
+                   "ml PIN3: it is bounded from the FRONT, so the newest moves survive");
+            check (ch.contains ("kMoveLogMax"),
+                   "ml PIN3: and the bound is the named constant, not a literal");
+        }
+
+        // tr PIN1 -- ONCE PER SESSION, LATCHED, and triggered by the trim's own
+        // measurement rather than a byte threshold. The cost premise the
+        // previous version rested on was measured FALSE (658 v2 turns: turn 1
+        // 3.83 cents median, turns 3-11 flat at 1.20-1.32), so nothing here
+        // may key on size.
+        {
+            std::ifstream fh ("Source/EchoJayAPI.h");
+            std::stringstream sh; sh << fh.rdbuf();
+            const auto hdr = codeOnly (juce::String (sh.str()));
+            check (hdr.contains ("if (historyTrimWarned_ || historyDroppedTotal_ <= 0) return false;")
+                   && hdr.contains ("historyTrimWarned_ = true;"),
+                   "tr PIN1: the notice latches when taken, so it fires once per session");
+            const auto body = functionBody (apRaw, "juce::String EchoJayAPI::buildChatRequestBody");
+            check (body.contains ("historyDroppedTotal_ += trim.droppedByCap + trim.droppedByBudget + trim.droppedByRole;"),
+                   "tr PIN1: and the trigger is the trim's three drop counts, measured");
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se; se << fe.rdbuf();
+            const auto ed = codeOnly (juce::String (se.str()));
+            check (ed.contains ("api.takeHistoryTrimWarning() ? api.historyDroppedCount() : 0"),
+                   "tr PIN1: the prompt gets a count ONLY on the turn it fires");
+        }
+
+        // tr PIN2 -- IT NEVER SUPPRESSES AN ANSWER, AND NEVER MENTIONS COST.
+        // The four prohibitions are the ways a model does less when told
+        // something is wrong with the conversation; the cost and new-chat ones
+        // are claims measurement has shown to be false.
+        {
+            const auto body = functionBody (ap, "juce::String EchoJayAPI::buildSystemPrompt");
+            check (body.contains ("Do NOT shorten, defer or refuse any work because of this, do NOT suggest starting a new chat, do NOT mention cost or usage, and never raise it again."),
+                   "tr PIN2: the notice forbids shortening, deferring, refusing, a new chat, cost talk and re-raising");
+            check (! body.contains ("costs more than the last") && ! body.contains ("CHAT SIZE"),
+                   "tr PIN2: the cost warning is GONE, not disabled");
+            check (body.contains ("[MOVE LOG v1] block, which does not drop out"),
+                   "tr PIN2: and it names the block that survives the trim");
+            check (! body.contains ("compact") && ! body.contains ("summarise the conversation"),
+                   "tr PIN2: the compaction half is NOT in scope and is not present");
+        }
+
+        // ml PIN4 -- THE BEFORE VALUE IS REAL NOW, AND THE PIN MOVED WITH IT.
+        // It used to assert wording explaining that the value came from a
+        // stale sweep. That value was empty on every emitted line, because the
+        // sweep runs once per SEND and a slot built in the same turn has never
+        // been swept. applyOne now reads the control immediately before it
+        // writes, so the field is populated and the excuse is gone: the pin
+        // asserts the capture rather than the disclaimer.
+        {
+            std::ifstream fpa ("Source/EchoJayParamApply.h");
+            std::stringstream spa; spa << fpa.rdbuf();
+            const auto pa = codeOnly (juce::String (spa.str()));
+            check (pa.contains ("juce::String beforeText;"),
+                   "ml PIN4: ApplyResult carries the pre-write reading");
+            check (pa.contains ("r.beforeText = param->getCurrentValueAsText().trim();"),
+                   "ml PIN4: read from the parameter itself");
+            // BEFORE ANY WRITE. The capture is worthless if a branch writes
+            // first, so its position is asserted, not just its presence.
+            const int iCapture = pa.indexOf ("r.beforeText = param->getCurrentValueAsText()");
+            const int iWrite   = pa.indexOf ("writeNorm (");
+            check (iCapture >= 0 && iWrite > iCapture,
+                   "ml PIN4: and captured BEFORE the first write path",
+                   "capture@" + juce::String (iCapture) + " write@" + juce::String (iWrite));
+            const auto blk = functionBody (apRaw, "juce::String EchoJayAPI::buildMoveLogInjection");
+            check (! blk.contains ("previous turn's sweep"),
+                   "ml PIN4: and the stale-sweep disclaimer is gone from the block");
+            check (blk.contains ("the control's reading immediately before the change"),
+                   "ml PIN4: replaced by what is now true");
+        }
+
+        // ml PIN5 -- STRUCTURAL MOVES ARE RECORDED, AND AS THEIR OWN KIND.
+        // The first version recorded dials only, so a block could carry a dial
+        // on a plugin with no record of that plugin ever arriving, and the
+        // model correctly answered that it had built no chain.
+        {
+            // Re-aimed 4 Sep: a slot arriving is still recorded, but through
+            // the origin gate now, so the recorder's name changed. The
+            // PROPERTY is unchanged and og PIN1-3 hold what the gate decides.
+            check (ch.contains ("recordLoadIfLicensed(origin,"),
+                   "ml PIN5: a slot arriving is recorded, as its origin licenses");
+            check (ch.contains ("recordStructural(MoveLogEntry::Kind::Remove"),
+                   "ml PIN5: a slot leaving is recorded");
+            check (ch.contains ("collapseLastPairIntoSwap(theOp.slot, theOp.name, oldName)"),
+                   "ml PIN5: and a replace collapses to ONE swap entry");
+            // Recorded in ChainHost, so every route in is covered by one
+            // recorder rather than each caller remembering.
+            // loadPluginAsync is the ONE way a slot arrives, and it has three
+            // arms. The async arm ends in completeLoad and is recorded there;
+            // the builtin and borrow arms return early and never reach it, so
+            // they are recorded in the entry point itself. All three, or a
+            // built-in device gets dialled with no record of arriving.
+            const auto load = functionBody (chRaw, "void ChainHost::loadPluginAsync");
+            int nLoad = 0, atLoad = 0;
+            while ((atLoad = load.indexOf (atLoad, "recordLoadIfLicensed")) >= 0) { ++nLoad; atLoad += 10; }
+            check (nLoad == 2, "ml PIN5: the two arms that bypass completeLoad record for themselves",
+                   "found " + juce::String (nLoad));
+            check (functionBody (chRaw, "void ChainHost::completeLoad").contains ("recordLoadIfLicensed"),
+                   "ml PIN5: and the async arm records where the slot lands");
+            const auto blk = functionBody (apRaw, "juce::String EchoJayAPI::buildMoveLogInjection");
+            check (blk.contains ("BUILT   ") && blk.contains ("SWAPPED ")
+                   && blk.contains ("REMOVED ") && blk.contains ("DIALLED "),
+                   "ml PIN5: and the block renders each kind under its own word");
+            // ml PIN6 -- A REASON IS A ROLE AND IS BOUNDED. The build loop
+            // hands over the model's per-slot prose, which is a role where the
+            // model wrote one and a paragraph of settings where it did not. An
+            // unclipped reason makes the measured bound meaningless.
+            check (ch.contains ("moveLog_.back().reason = clipMoveReason (reason);"),
+                   "ml PIN6: the annotation goes through the clip, not straight in");
+            check (ch.contains ("if (t.length() <= kMoveReasonMax) return t;"),
+                   "ml PIN6: and the clip is the named bound, not a literal");
+        }
+    }
+
+    // ===== OP TARGETS v1 (4 Sep 2026) ======================================
+    // Two live failures in one Ableton session. An add landed in the wrong
+    // slot and the card confirmed the wrong slot in words; a replace hit a
+    // plugin the user had not agreed to and the card confirmed that too.
+    // Neither card was lying about the op: both rendered the op's slot NUMBER
+    // back as a name, so the words could never disagree with the number they
+    // were meant to check. See HANDOVER/op-targets-v1.md.
+    {
+        using Op = ChainHost::ChainEditOp;
+
+        // ot PIN1 -- the two wire keys reach the two fields, through the REAL
+        // parser. snake_case on the wire, camelCase in the struct, like
+        // wet_pct/wetPct and no_such/noSuchTerm.
+        {
+            const char* json = R"({"baseSlots":["EchoJay EQ","Newfangled Elevate"],"edit":[
+                {"op":"replace","slot":2,"slot_name":"Newfangled Elevate","name":"FG-X 2"},
+                {"op":"add","name":"Vertigo VSM-3","after":2,"after_name":"Bettermaker Bus Compressor DSP"}]})";
+            juce::StringArray base;
+            const auto ops = ChainHost::parseChainEditOps (juce::String (json), &base);
+            check (ops.size() == 2, "ot PIN1: both ops parse",
+                   "got " + juce::String ((int) ops.size()));
+            if (ops.size() == 2)
+            {
+                check (ops[0].slotName == "Newfangled Elevate",
+                       "ot PIN1: replace carries the plugin being REMOVED", ops[0].slotName);
+                // The field the schema never had: `name` is the plugin
+                // ARRIVING and always was, so the outgoing one had no home.
+                check (ops[0].name == "FG-X 2",
+                       "ot PIN1: and `name` still means the plugin arriving", ops[0].name);
+                check (ops[1].afterName == "Bettermaker Bus Compressor DSP",
+                       "ot PIN1: add carries its anchor by name", ops[1].afterName);
+            }
+        }
+
+        // ot PIN2 -- AN IDENTITY OP WHOSE NAMED TARGET IS NOT AT THAT SLOT IS
+        // REFUSED, and the refusal names BOTH sides. A refusal that says only
+        // "mismatch" cannot be acted on.
+        {
+            check (ChainHost::identityTargetMismatch ("FG-X 2", "FG-X 2", 2).isEmpty(),
+                   "ot PIN2: a name that matches its slot proceeds");
+            const auto why = ChainHost::identityTargetMismatch (
+                                 "Bettermaker Bus Compressor DSP", "FG-X 2", 2);
+            check (why.isNotEmpty(), "ot PIN2: a name that does not match is refused");
+            check (why.contains ("Bettermaker Bus Compressor DSP") && why.contains ("FG-X 2")
+                   && why.contains ("slot 3"),
+                   "ot PIN2: and the refusal names the claim, the rack and the slot", why);
+            // The comparator is the one the baseSlots guard already uses, so
+            // the two name checks cannot disagree about what a match is.
+            check (ChainHost::identityTargetMismatch ("CLA-76 (m)", "CLA-76", 0).isEmpty(),
+                   "ot PIN2: loose matching, same comparator as the baseSlots guard");
+        }
+
+        // ot PIN3 -- THE ADD ANCHOR, all four cases. Case 2 is failure B.
+        {
+            const juce::StringArray rack { "EchoJay EQ", "Bettermaker Bus Compressor DSP",
+                                           "Newfangled Elevate" };
+            // 1. Name and index agree: insert after it.
+            auto a = ChainHost::resolveAddAnchor ("Bettermaker Bus Compressor DSP", 1, rack);
+            check (!a.refused && a.insertAt == 2 && !a.fromName,
+                   "ot PIN3: name and index agree", juce::String (a.insertAt));
+            // 2. THE FAILURE B CASE. The model meant "after the Bettermaker I
+            //    just added", wrote after:2 in post-op numbering, and the
+            //    index resolves to the Newfangled. The name appears exactly
+            //    once, so the NAME WINS and the plugin lands where the model
+            //    meant. This is also the only way "after the plugin I just
+            //    added" can be said at all: a slot added earlier in the batch
+            //    has no original number.
+            a = ChainHost::resolveAddAnchor ("Bettermaker Bus Compressor DSP", 2, rack);
+            check (!a.refused && a.insertAt == 2 && a.fromName,
+                   "ot PIN3: a unique name beats a disagreeing index (failure B)",
+                   juce::String (a.insertAt));
+            // 3. Absent: nothing to place against.
+            a = ChainHost::resolveAddAnchor ("Pro-C 2", 1, rack);
+            check (a.refused && a.why.contains ("not in the rack"),
+                   "ot PIN3: an absent anchor is refused", a.why);
+            // 4. Duplicated: the index is the tie-breaker for a repeated name,
+            //    and we only get here because the index's slot does NOT bear
+            //    it, so the tie-breaker is already spent. Guessing between two
+            //    identical plugins is the other failure in a costume.
+            const juce::StringArray twins { "Pro-Q 3", "EchoJay EQ", "Pro-Q 3" };
+            a = ChainHost::resolveAddAnchor ("Pro-Q 3", 1, twins);
+            check (a.refused && a.why.contains ("2 times"),
+                   "ot PIN3: a duplicated anchor the index cannot resolve is refused", a.why);
+            // ... but the index DOES disambiguate when it points at one of them.
+            a = ChainHost::resolveAddAnchor ("Pro-Q 3", 2, twins);
+            check (!a.refused && a.insertAt == 3,
+                   "ot PIN3: and the index disambiguates when it points at one of them");
+        }
+
+        // ot PIN4 -- THE CARD SHOWS THE OP'S NAME, NOT THE LOOKUP. This is the
+        // part that makes the fix real: a validator behind a card that still
+        // renders the number back leaves the user consenting to the client's
+        // description of a slot rather than to the model's description of an
+        // action.
+        {
+            const juce::StringArray base { "EchoJay EQ", "Bettermaker Bus Compressor DSP",
+                                           "FG-X 2" };
+            Op rep; rep.op = "replace"; rep.slot = 2;
+            rep.slotName = "Bettermaker Bus Compressor DSP";   // the model's CLAIM
+            rep.name = "Shadow Hills Mastering Compressor";
+            const auto line = ChainHost::describeEditOp (rep, base);
+            check (line.contains ("Bettermaker Bus Compressor DSP"),
+                   "ot PIN4: the card prints the name the OP carried", line);
+            check (! line.contains ("FG-X 2"),
+                   "ot PIN4: and not the rack's occupant of that number", line);
+            Op ad; ad.op = "add"; ad.name = "Vertigo VSM-3"; ad.after = 2;
+            ad.afterName = "Bettermaker Bus Compressor DSP";
+            const auto aline = ChainHost::describeEditOp (ad, base);
+            check (aline.contains ("after Bettermaker Bus Compressor DSP"),
+                   "ot PIN4: an add prints its anchor by name", aline);
+            check (aline.contains ("slot 3"),
+                   "ot PIN4: and keeps the number beside it, to look at the rack with", aline);
+        }
+
+        // ot PIN5 -- AN OP WITH NEITHER FIELD BEHAVES EXACTLY AS TODAY, which
+        // is what lets this land before the server emits anything. Expand then
+        // contract: the client accepts the fields first, the server sends them
+        // second, and only a later landing may require them.
+        {
+            const juce::StringArray base { "EchoJay EQ", "Newfangled Elevate" };
+            check (ChainHost::identityTargetMismatch ("", "Newfangled Elevate", 1).isEmpty(),
+                   "ot PIN5: no claim, nothing to check");
+            auto a = ChainHost::resolveAddAnchor ("", 0, base);
+            check (!a.refused && a.insertAt == 1 && !a.fromName,
+                   "ot PIN5: the anchor arithmetic is unchanged without a name");
+            a = ChainHost::resolveAddAnchor ("", -2, base);
+            check (!a.refused && a.insertAt == base.size(),
+                   "ot PIN5: and an unresolvable index still appends, never aborts");
+            Op rep; rep.op = "replace"; rep.slot = 1; rep.name = "FG-X 2";
+            check (ChainHost::describeEditOp (rep, base).contains ("Newfangled Elevate"),
+                   "ot PIN5: and the card falls back to the rack lookup");
+        }
+
+        // ot PIN6 -- A MISMATCH REFUSES ONE OP AND THE BATCH CONTINUES. The
+        // verb matters: failAndStop marks every later op "not attempted",
+        // failButContinue records the failure and carries on because the op
+        // was a clean no-op. A name check runs before any mutation and before
+        // the load, so it is that same shape exactly.
+        {
+            std::ifstream fot ("Source/ChainHost.cpp");
+            std::stringstream sot; sot << fot.rdbuf();
+            const auto seq = functionBody (codeOnly (juce::String (sot.str())),
+                                           "void ChainHost::runNextEditOp");
+            int n = 0, at = 0;
+            while ((at = seq.indexOf (at, "refused: \" + ")) >= 0) { ++n; at += 8; }
+            check (n >= 6, "ot PIN6: every arm that can refuse a target does",
+                   "found " + juce::String (n));
+            check (! seq.contains ("failAndStop(\"replace refused")
+                   && ! seq.contains ("failAndStop(\"add refused"),
+                   "ot PIN6: and a refusal never aborts the batch");
+            // Settled BEFORE the fallible load, or a refused op leaves a
+            // plugin in the rack that nothing asked for.
+            const int iAnchor = seq.indexOf ("resolveAddAnchor");
+            const int iLoad   = seq.indexOf ("loadPluginAsync");
+            check (iAnchor > 0 && iLoad > iAnchor,
+                   "ot PIN6: the target is settled before the plugin loads",
+                   "anchor@" + juce::String (iAnchor) + " load@" + juce::String (iLoad));
+        }
+    }
+
+    // ===== PSR ON SILENCE (4 Sep 2026) =====================================
+    // A live block carried "psr":0.4 beside a [CHAIN LEVELS] reading "no level
+    // known (heard 0s)", on an empty project where nothing had ever played.
+    // 0.4 dB of PSR is not reachable on programme material: it was two noise
+    // floors sitting near each other. The guard tested that both inputs
+    // cleared -90 dBFS, while the engine's own silence threshold is -80, so a
+    // channel in that 10 dB band was silent to everything except the one field
+    // that published a dynamics figure from it.
+    {
+        std::cout << "psr / plr / oversCount, gated on having heard anything:\n";
+        // The inputs a silent channel with a noise floor presents: both above
+        // the old -90 bar, 0.4 dB apart, and nothing ever heard.
+        MeterData quiet;
+        quiet.shortTerm         = -85.4f;
+        quiet.shortTermTruePeak = -85.0f;
+        quiet.truePeakMaxL      = -85.0f;
+        quiet.truePeakMaxR      = -85.0f;
+        quiet.integrated        = -85.0f;   // plr's inputs valid too, on purpose
+        quiet.oversCount        = 0;
+        quiet.heardFrames       = 0;        // nothing above kSilenceThreshold, ever
+
+        const auto silent = MeterEngine::meterDataToJSON (quiet, 48000.0);
+        check (! silent.contains ("\"psr\""),
+               "ps PIN1: psr is not published when nothing has been heard");
+        // The old guard would have passed this exact struct. If the input test
+        // were still the only one, the pin above cannot fail.
+        check (quiet.shortTermTruePeak > -90.0f && quiet.shortTerm > -90.0f,
+               "ps PIN1: and the inputs DID clear the old floor, so it is the new gate that held");
+        check (! silent.contains ("\"plr\"") && ! silent.contains ("\"oversCount\""),
+               "ps PIN2: plr and oversCount move with it");
+
+        // Heard: same numbers, and now they are a measurement of something.
+        MeterData heard = quiet;
+        heard.heardFrames = 1;
+        const auto live = MeterEngine::meterDataToJSON (heard, 48000.0);
+        check (live.contains ("\"psr\":0.4"),
+               "ps PIN3: once something has been heard the field publishes again");
+        check (live.contains ("\"plr\"") && live.contains ("\"oversCount\""),
+               "ps PIN3: and so do the other two");
+
+        // THE INPUT TESTS ARE KEPT, not replaced. A channel that played and
+        // stopped has heardFrames > 0 for the life of the ring while its
+        // short-term window empties to the -100 sentinel, and a difference of
+        // two sentinels is the same non-measurement by another route.
+        MeterData stopped;
+        stopped.heardFrames = 300;          // a full ring of real audio, earlier
+        stopped.shortTerm = -100.0f; stopped.shortTermTruePeak = -100.0f;
+        check (! MeterEngine::meterDataToJSON (stopped, 48000.0).contains ("\"psr\""),
+               "ps PIN4: a heard channel whose window has emptied still omits psr");
+
+        // ONE SIGNAL, NOT A FOURTH THRESHOLD. heardFrames mirrors the counter
+        // the spectrum windows already gate on, published on the same line it
+        // is counted and under the same lock.
+        std::ifstream fme ("Source/MeterEngine.cpp");
+        std::stringstream sme; sme << fme.rdbuf();
+        const auto me = codeOnly (juce::String (sme.str()));
+        check (me.contains ("data.heardFrames = specFrameCount;"),
+               "ps PIN5: heardFrames IS specFrameCount, not a second count");
+        check (me.contains ("if (specFrameCount <= 0) return w;"),
+               "ps PIN5: and it is the same condition the spectrum windows use");
+        int n = 0, at = 0;
+        while ((at = me.indexOf (at, "heard && ")) >= 0) { ++n; at += 6; }
+        check (n == 3, "ps PIN5: all three derived fields sit behind it",
+               "found " + juce::String (n));
+    }
+
+    // ===== STEPPED CONTROLS (4 Sep 2026) ===================================
+    // A live turn asked for a Discrete Attack of 1 ms on a Shadow Hills
+    // Mastering Compressor and the plugin ended on 0.1. The map for that
+    // control is the ladder below, taken verbatim from the local registry
+    // (fp 8aadd531..., index 22): an anchored table whose normalised axis is a
+    // uniform 1/5 grid, which is what a walked switch looks like.
+    {
+        std::cout << "stepped controls, exact rung or nothing:\n";
+        auto mk = [] (std::initializer_list<std::pair<float,float>> rows)
+        {
+            juce::Array<juce::Array<float>> t;
+            for (auto& p : rows) { juce::Array<float> r; r.add (p.first); r.add (p.second); t.add (r); }
+            return t;
+        };
+        // The real Shadow Hills Discrete Attack table, float32 drift included.
+        const auto shadowHills = mk ({ {0.100000001490116f, 0.0f}, {0.5f, 0.200000002980232f},
+                                       {1.0f, 0.400000005960464f}, {5.0f, 0.600000023841858f},
+                                       {10.0f, 0.800000011920929f}, {30.0f, 1.0f} });
+
+        // sv PIN1 -- IT IS RECOGNISED AS A LADDER, and its rungs are the
+        // anchor values, in order.
+        const auto rungs = echojay::stepLadderValues (shadowHills);
+        check (rungs.size() == 6, "sv PIN1: the table is a step ladder",
+               "rungs " + juce::String (rungs.size()));
+        check (rungs.size() == 6 && std::abs (rungs[0] - 0.1f) < 1e-4f
+               && std::abs (rungs[5] - 30.0f) < 1e-4f,
+               "sv PIN1: and the rungs are its own values");
+
+        // sv PIN2 -- THE EXACT-MATCH CASE. 1 is a rung, and it must be found
+        // as one despite the table holding a float32 round-trip of it. This is
+        // the case the live turn should have taken.
+        check (echojay::stepLadderIndex (rungs, 1.0f) == 2,
+               "sv PIN2: an exact request finds its rung");
+        check (echojay::stepLadderIndex (rungs, 0.1f) == 0,
+               "sv PIN2: including one the map stores with float drift");
+        check (echojay::stepLadderIndex (rungs, 30.0f) == 5,
+               "sv PIN2: and one at the top of the ladder");
+
+        // sv PIN3 -- THE NEAR-MISS. 2 ms sits between rungs 1 and 5, and used
+        // to interpolate to a normalised the plugin would quantise to one of
+        // them. It is a miss, not a snap.
+        check (echojay::stepLadderIndex (rungs, 2.0f) < 0,
+               "sv PIN3: a value between rungs is a MISS, never snapped");
+        check (echojay::stepLadderIndex (rungs, 0.9f) < 0,
+               "sv PIN3: and being close to a rung does not make it one");
+        // The tolerance exists for float drift and nothing wider: half a
+        // percent off 30 is still off.
+        check (echojay::stepLadderIndex (rungs, 30.15f) < 0,
+               "sv PIN3: the tolerance is drift, not a snap radius");
+
+        // sv PIN4 -- A CONTINUOUS CONTROL IS NOT A LADDER, or this refuses
+        // real writes. The sampler walks 21 points, so a swept table reads
+        // M = 20 and the bound (M <= 19) is what separates the two.
+        {
+            juce::Array<juce::Array<float>> sweep;
+            for (int i = 0; i <= 20; ++i)
+            {
+                juce::Array<float> row;
+                row.add (-60.0f + 3.0f * (float) i);
+                row.add ((float) i / 20.0f);
+                sweep.add (row);
+            }
+            check (echojay::stepLadderValues (sweep).isEmpty(),
+                   "sv PIN4: a 21-point sweep is not a ladder");
+        }
+        // A two-rung switch IS one, and it is the class most likely to be
+        // asked for a value it does not have.
+        check (echojay::stepLadderValues (mk ({ {48.0f, 0.0f}, {96.0f, 1.0f} })).size() == 2,
+               "sv PIN4: a two-position switch is a ladder");
+        // An EVEN ladder counts too. The server's second test drops these from
+        // the printed note to save budget; they step exactly as hard, and they
+        // are 1,428 of the 2,141 ladders in the local registry.
+        check (echojay::stepLadderValues (mk ({ {6.0f, 0.0f}, {12.0f, 1.0f/3.0f},
+                                                {18.0f, 2.0f/3.0f}, {24.0f, 1.0f} })).size() == 4,
+               "sv PIN4: an evenly spaced ladder is still a ladder");
+
+        // sv PIN5 -- THE VERDICT, driven end to end. applyOne needs a loaded
+        // plugin and cannot be called here, so the whole decision including
+        // its sentence lives in checkStepLadder and the write path only obeys
+        // it. That is what makes this witnessable at all: the first draft of
+        // these pins tested the two helpers and a source ordering, and
+        // disabling the guard in applyOne reddened NOTHING.
+        {
+            const auto hit = echojay::checkStepLadder (shadowHills, 1.0f);
+            check (hit.isLadder && hit.onRung && std::abs (hit.snapped - 1.0f) < 1e-4f,
+                   "sv PIN5: an exact request is accepted at the STORED rung value");
+            check (hit.note.isEmpty(), "sv PIN5: and carries no refusal");
+
+            const auto miss = echojay::checkStepLadder (shadowHills, 2.0f);
+            check (miss.isLadder && ! miss.onRung, "sv PIN5: 2 ms is refused");
+            check (miss.note.contains ("asked 2") && miss.note.contains ("0.1|0.5|1|5|10|30")
+                   && miss.note.contains ("left manual"),
+                   "sv PIN5: and the refusal names what was asked AND what is reachable",
+                   miss.note);
+
+            // A continuous control must reach the interpolation untouched, or
+            // this refuses real writes.
+            juce::Array<juce::Array<float>> sweep2;
+            for (int i = 0; i <= 20; ++i)
+            {
+                juce::Array<float> row;
+                row.add (-60.0f + 3.0f * (float) i);
+                row.add ((float) i / 20.0f);
+                sweep2.add (row);
+            }
+            const auto cont = echojay::checkStepLadder (sweep2, -13.5f);
+            check (! cont.isLadder && ! cont.onRung && cont.note.isEmpty(),
+                   "sv PIN5: a continuous control is not judged at all");
+        }
+
+        // sv PIN6 -- THE WRITE PATH OBEYS THE VERDICT AND NOTHING ELSE, ahead
+        // of the interpolation. The guard is two lines so that a regression
+        // has to delete something this can name.
+        {
+            std::ifstream fa ("Source/EchoJayParamApply.h");
+            std::stringstream sa; sa << fa.rdbuf();
+            const auto ap = codeOnly (juce::String (sa.str()));
+            check (ap.contains ("if (ladderVerdict.isLadder && ! ladderVerdict.onRung)"),
+                   "sv PIN6: the refusal branch is the verdict, unmodified");
+            check (ap.contains ("if (ladderVerdict.onRung) target = ladderVerdict.snapped;"),
+                   "sv PIN6: and an accepted request writes the stored rung");
+            const int iV = ap.indexOf ("checkStepLadder (eff.table, target)");
+            const int iI = ap.indexOf ("norm = juce::jlimit (0.0f, 1.0f, interpolateAnchors");
+            check (iV > 0 && iI > iV,
+                   "sv PIN6: and it is decided BEFORE the interpolation",
+                   "verdict@" + juce::String (iV) + " interp@" + juce::String (iI));
+        }
+    }
+
+    // ===== [ECHOJAY FEATURES v1] (4 Sep 2026) ==============================
+    // Read against the live system prompt that day, the model knew ONE product
+    // surface by name (Capture) and nothing about the Apply button, the tabs,
+    // saving a chain, wet/dry or any Settings control. Asked how to save a
+    // chain it had nothing to answer from and would improvise.
+    {
+        std::cout << "the features block, and the boundary that matters more:\n";
+        const auto blk = EchoJayAPI::buildEchoJayFeaturesInjection();
+
+        // ef PIN1 -- IT IS THERE, and it is the block the marker names.
+        check (blk.isNotEmpty(), "ef PIN1: the block is built");
+        check (blk.startsWith ("\n\n[ECHOJAY FEATURES v1"),
+               "ef PIN1: and opens with the registered marker");
+        check (blk.trim().endsWith ("]"), "ef PIN1: and closes its bracket");
+
+        // ef PIN2 -- THE DO-NOT-GUESS RULE, which matters more than any
+        // feature in here. A list of features with no boundary makes
+        // improvisation MORE likely, not less: it establishes that the model
+        // knows the product, and a model that believes it knows the product
+        // answers the next question too. If this block ever has to shrink,
+        // features go and this stays.
+        check (blk.contains ("THIS LIST IS THE WHOLE OF WHAT YOU KNOW ABOUT ECHOJAY"),
+               "ef PIN2: the block states its own boundary");
+        check (blk.contains ("never describe it") && blk.contains ("never guess at it")
+               && blk.contains ("never infer it"),
+               "ef PIN2: and forbids describing, guessing and inferring");
+        check (blk.contains ("check the manual"),
+               "ef PIN2: and names the correct answer for anything absent");
+        check (blk.contains ("worse than no answer"),
+               "ef PIN2: and says why, so the rule is not read as mere caution");
+
+        // ef PIN3 -- THE MARKER MISSES ALL FIVE CAPTURE PATTERNS
+        // (api/_prompt-shapes.js containsCaptureMarkers). Run against the real
+        // block, not a sample of the marker: the fifth arm is a literal that
+        // could be tripped by the BODY as easily as by the marker.
+        {
+            const auto sample = blk.toStdString();
+            check (! std::regex_search (sample,
+                       std::regex (R"(\[[A-Z][A-Z0-9 /&-]*\s+CHANNEL:\s*")"))
+                   && ! std::regex_search (sample,
+                       std::regex (R"(\[[A-Z][A-Z0-9 /&-]*\s+ANALYSIS:\s*")"))
+                   && ! blk.containsIgnoreCase ("[PREVIOUS CAPTURE:")
+                   && ! blk.containsIgnoreCase ("[SPECTRUM REFERENCE")
+                   && ! blk.contains ("Band profile (avg dB"),
+                   "ef PIN3: the block matches none of the five capture patterns");
+        }
+
+        // ef PIN4 -- REGISTERED IN historyStripMarkers. The text is identical
+        // on every turn, so a copy left in history is pure duplication.
+        {
+            std::ifstream fa ("Source/EchoJayAPI.cpp");
+            std::stringstream sa; sa << fa.rdbuf();
+            check (juce::String (sa.str()).contains ("\"\\n\\n[ECHOJAY FEATURES v1\""),
+                   "ef PIN4: the marker is registered in historyStripMarkers");
+        }
+
+        // ef PIN5 -- EVERY FEATURE SENTENCE HAS A CITATION RECORDED, which is
+        // the rule this block was built under: a claim nobody could cite does
+        // not go in. The citation table lives in the commit message beside the
+        // code; this asserts that each section of the block appears there on a
+        // line carrying a file:line reference. Deliberately coupled: adding a
+        // feature without citing it should fail the gate, not a review.
+        {
+            std::ifstream fc ("HANDOVER/commit-features-block.txt");
+            std::stringstream sc; sc << fc.rdbuf();
+            const auto msg = juce::String (sc.str());
+            check (msg.isNotEmpty(), "ef PIN5: the commit message is present to cite from");
+            const char* sections[] = { "TABS", "CAPTURE", "NOTHING REACHES",
+                                       "CHAINS SAVE", "EACH SLOT", "SETTINGS" };
+            juce::StringArray uncited;
+            auto lines = juce::StringArray::fromLines (msg);
+            for (const auto* sec : sections)
+            {
+                bool cited = false;
+                for (const auto& ln : lines)
+                    if (ln.contains (sec)
+                        && std::regex_search (ln.toStdString(),
+                                              std::regex (R"(\.(cpp|h|js):\d+)")))
+                    { cited = true; break; }
+                if (! cited) uncited.add (sec);
+                // The section must also actually BE in the block, or the table
+                // is citing something that is not claimed.
+                if (! blk.contains (sec)) uncited.add (juce::String (sec) + "(absent)");
+            }
+            check (uncited.isEmpty(),
+                   "ef PIN5: every feature sentence carries a file:line citation",
+                   "uncited: " + uncited.joinIntoString (", "));
+        }
+
+        // ef PIN6 -- IT RIDES EVERY TURN, not only chain turns. "How do I save
+        // this" and "what does Capture do" carry no chain cue, so a hadFeed or
+        // relevant gate would remove it from exactly the turns it exists for.
+        {
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se; se << fe.rdbuf();
+            const auto ed = codeOnly (juce::String (se.str()));
+            const auto body = functionBody (ed, "juce::String EchoJayEditor::standardChainInjections");
+            check (body.contains ("out += EchoJayAPI::buildEchoJayFeaturesInjection();"),
+                   "ef PIN6: attached in the ONE injection helper");
+            // THE LINE ITSELF MUST BE UNCONDITIONAL. A substring test passes
+            // happily on "if (hadFeed || relevant) out += ...", which is the
+            // exact regression this pin exists to catch: the first draft of it
+            // did, and the mutation walked straight through.
+            juce::String attachLine;
+            for (const auto& ln : juce::StringArray::fromLines (body))
+                if (ln.contains ("buildEchoJayFeaturesInjection")) { attachLine = ln.trim(); break; }
+            check (attachLine.startsWith ("out += EchoJayAPI::buildEchoJayFeaturesInjection();"),
+                   "ef PIN6: and the attach carries no condition of its own",
+                   attachLine);
+        }
+
+        // ef PIN7 -- THE COST IS BOUNDED AND KNOWN. Static text riding every
+        // turn: if it grows, it grows on every turn of every session.
+        check (blk.getNumBytesAsUTF8() < 3000,
+               "ef PIN7: the block stays under 3 KB",
+               juce::String ((int) blk.getNumBytesAsUTF8()) + " B");
+    }
+
+    // ===== DO NOT DIAL (5 Sep 2026) ========================================
+    // EchoJay suggests every value and writes none; the user hand-dials from
+    // the card. Three code paths write a value and they share no call stack,
+    // so the mode is one flag read by all three rather than three plumbings
+    // that can disagree.
+    {
+        std::cout << "do not dial: suggest every value, write none:\n";
+        const bool restore = echojay::dialWritesBlocked();
+
+        // dw PIN1 -- THE FLAG REACHES THE WIRE ONLY WHEN THE TOGGLE IS ON, and
+        // never as a false: the server reads it with a strict === true
+        // (api/chat-stream.js:924), so a literal false would read as "the user
+        // turned it off" rather than "this client cannot do it".
+        {
+            std::ifstream fa ("Source/EchoJayAPI.cpp");
+            std::stringstream sa; sa << fa.rdbuf();
+            const auto ap = codeOnly (juce::String (sa.str()));
+            check (ap.contains ("if (dialWritesBlocked)\n        body += \",\\\"dialWritesBlocked\\\":true\";"),
+                   "dw PIN1: the flag is sent only when the mode is on");
+            check (! ap.contains ("\\\"dialWritesBlocked\\\":false"),
+                   "dw PIN1: and never as a false");
+            check (ap.contains ("obj->setProperty(\"dialWritesBlocked\", dialWritesBlocked);"),
+                   "dw PIN1: it persists like the toggle beside it");
+            check (ap.contains ("dialWritesBlocked = (bool) obj->getProperty(\"dialWritesBlocked\");"),
+                   "dw PIN1: and is read back at startup");
+        }
+
+        // dw PIN2 -- A WRITE ATTEMPTED UNDER THE MODE DOES NOT REACH A
+        // PARAMETER. applyOne needs a loaded plugin so the gate cannot call
+        // it; what IS driven here is the shipped predicate all three guards
+        // read, and the guards are pinned at their sites below.
+        echojay::setDialWritesBlocked (true);
+        check (echojay::dialWritesBlocked(), "dw PIN2: the mode reads back on");
+        {
+            std::ifstream fp ("Source/EchoJayParamApply.h");
+            std::stringstream sp; sp << fp.rdbuf();
+            const auto pa = codeOnly (juce::String (sp.str()));
+            const int iGuard = pa.indexOf ("if (dialWritesBlocked())");
+            const int iWrite = pa.indexOf ("param->setValueNotifyingHost (n);");
+            check (iGuard > 0 && iWrite > iGuard,
+                   "dw PIN2: the third-party guard sits BEFORE the write",
+                   "guard@" + juce::String (iGuard) + " write@" + juce::String (iWrite));
+            // Before the first branch, not per-arm: a per-arm guard is one a
+            // fifth arm gets added above.
+            const int iKind = pa.indexOf ("const auto kind = mapEntry.getProperty");
+            check (iGuard > 0 && iKind > iGuard,
+                   "dw PIN2: and before the first branch, not inside one");
+            check (pa.contains ("on the card to set by hand"),
+                   "dw PIN2: and the refusal says where the value went");
+        }
+
+        // dw PIN3 -- A BUILT-IN DEVICE WRITE IS BLOCKED TOO. This is the path
+        // a single guard misses: a built-in writes its own state through
+        // setParamValue and never touches a juce parameter, so guarding only
+        // EchoJayParamApply.h would leave EchoJay's own EQ dialling itself
+        // while every third-party plugin correctly refused.
+        {
+            std::ifstream fd ("Source/EedDeviceProcessor.cpp");
+            std::stringstream sd; sd << fd.rdbuf();
+            const auto ed = codeOnly (juce::String (sd.str()));
+            const int iG = ed.indexOf ("if (echojay::dialWritesBlocked()) return {};");
+            const int iW = ed.indexOf ("if (! setParamValue (canonicalId, v))");
+            check (iG > 0 && iW > iG,
+                   "dw PIN3: the built-in guard sits before setParamValue",
+                   "guard@" + juce::String (iG) + " write@" + juce::String (iW));
+        }
+
+        // dw PIN4 -- THE WET BLEND IS BLOCKED FOR ECHOJAY AND NOT FOR THE USER.
+        // It is not a plugin parameter, but it changes the sound. Blocking the
+        // user's own knob would lock them out of the hand control the mode
+        // exists to hand back.
+        {
+            std::ifstream fc ("Source/ChainHost.cpp");
+            std::stringstream sc; sc << fc.rdbuf();
+            const auto ch4 = codeOnly (juce::String (sc.str()));
+            check (ch4.contains ("if (src == WetSource::Assistant && echojay::dialWritesBlocked()) return;"),
+                   "dw PIN4: wet is blocked for the assistant only");
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se; se << fe.rdbuf();
+            check (codeOnly (juce::String (se.str()))
+                       .contains ("setSlotWet(i, v, ChainHost::WetSource::User);"),
+                   "dw PIN4: and the knob under the user's hand says so");
+        }
+
+        // dw PIN5 -- THE TWO TOGGLES ARE INDEPENDENT. autoDial governs WHICH
+        // PLUGINS are offered; this governs WHETHER VALUES ARE WRITTEN. Four
+        // combinations, and the mode never consults the other.
+        {
+            std::ifstream fa2 ("Source/EchoJayAPI.h");
+            std::stringstream sa2; sa2 << fa2.rdbuf();
+            const auto ah = codeOnly (juce::String (sa2.str()));
+            check (ah.contains ("bool dialWritesBlocked = false;")
+                   && ah.contains ("bool autoDialMode = false;"),
+                   "dw PIN5: two separate members, two separate defaults");
+            std::ifstream fd2 ("Source/EJDialWrites.h");
+            std::stringstream sd2; sd2 << fd2.rdbuf();
+            check (! juce::String (sd2.str()).contains ("autoDial"),
+                   "dw PIN5: and the write guard never consults auto-dial");
+        }
+
+        // dw PIN6 -- BUILD STILL BUILDS. The Apply button is retired only for a
+        // card whose ops are values ONLY; anything that changes the rack's
+        // shape keeps it, because this mode blocks writing values and not
+        // adding slots.
+        {
+            using Op = ChainHost::ChainEditOp;
+            Op setOp;  setOp.op  = "set";
+            Op wetOp;  wetOp.op  = "set_wet";
+            Op addOp;  addOp.op  = "add";
+            check (ChainHost::opsAreValuesOnly ({ setOp, wetOp }),
+                   "dw PIN6: a values-only card retires Apply");
+            check (! ChainHost::opsAreValuesOnly ({ setOp, addOp }),
+                   "dw PIN6: a card that ADDS keeps its Apply button");
+            check (! ChainHost::opsAreValuesOnly ({}),
+                   "dw PIN6: and an empty block is not values-only");
+        }
+
+        // dw PIN7 -- THE SET ARM STOPS CLAIMING A DIAL UNDER THE MODE, and the
+        // summary stops reading as applied. NARROW on purpose: this line has
+        // never consulted the write outcome at all (see the open list), and
+        // the general fix defers the op result until the dial settles.
+        {
+            std::ifstream fc ("Source/ChainHost.cpp");
+            std::stringstream sc; sc << fc.rdbuf();
+            const auto ch5 = codeOnly (juce::String (sc.str()));
+            check (ch5.contains ("const bool dials = hasPayload && ! echojay::dialWritesBlocked();"),
+                   "dw PIN7: the op's success no longer follows payload presence alone");
+            check (ch5.contains ("(not dialled: dialling is off in Settings)"),
+                   "dw PIN7: and the op line names the mode");
+            // The card still gets filled: the payload is stored either way.
+            check (ch5.contains ("if (hasPayload)\n            setSlotStructuredSettings"),
+                   "dw PIN7: the values still reach the card");
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se; se << fe.rdbuf();
+            const auto ed2 = codeOnly (juce::String (se.str()));
+            check (ed2.contains ("summary = \"Structure applied. Dialling is turned off in Settings, so no \""),
+                   "dw PIN7: the mixed-card summary says what happened");
+            // editResultIsFullSuccess only greens "Changes applied" / "Applied
+            // <n> change", so this wording is amber by construction.
+            check (! juce::String ("Structure applied. Dialling is turned off").startsWith ("Changes applied"),
+                   "dw PIN7: and is not painted as a full success");
+        }
+
+        // dw PIN8 -- THE MODE HAS ITS OWN SENTENCE, not the unsupported-plugin
+        // one. "needs hand-dialing" is what a plugin with no usable map gets;
+        // a user who switched dialling off would read it as their plugin being
+        // the problem.
+        {
+            std::ifstream fh ("Source/ChainHost.h");
+            std::stringstream sh; sh << fh.rdbuf();
+            check (codeOnly (juce::String (sh.str())).contains ("writesRejected, writesBlocked,"),
+                   "dw PIN8: the mode is its own DialStatus");
+            std::ifstream fe2 ("Source/PluginEditor.cpp");
+            std::stringstream se2; se2 << fe2.rdbuf();
+            const auto ed3 = codeOnly (juce::String (se2.str()));
+            check (ed3.contains ("blockedParts.add(di.name);"),
+                   "dw PIN8: and its own bucket, not zeroParts");
+            check (ed3.contains ("\"Dialling is turned off in Settings, so nothing was written to \""),
+                   "dw PIN8: with its own sentence, pointing at Settings");
+        }
+
+        // dw PIN9 -- A DELIBERATE SETTING IS NOT A DIAL MISS. These rows feed
+        // ej:dial-declines, the corpus the mapping work reads; a mode that
+        // refuses every write would flood it with rows saying the map failed.
+        {
+            std::ifstream fe3 ("Source/PluginEditor.cpp");
+            std::stringstream se3; se3 << fe3.rdbuf();
+            const auto ed4 = codeOnly (juce::String (se3.str()));
+            const int iEmit  = ed4.indexOf ("void EchoJayEditor::emitDialMissRows");
+            const int iGuard = ed4.indexOf (iEmit, "if (echojay::dialWritesBlocked()) return;");
+            const int iBody  = ed4.indexOf (iEmit, "logDialMiss");
+            check (iEmit > 0 && iGuard > iEmit && iBody > iGuard,
+                   "dw PIN9: the ONE emitter returns before it logs anything",
+                   "emit@" + juce::String (iEmit) + " guard@" + juce::String (iGuard));
+            check (ed4.contains ("if (! echojay::dialWritesBlocked())\n            for (auto& an : proseOnlySetNames)"),
+                   "dw PIN9: and the edit path's own row is suppressed too");
+        }
+
+        // dw PIN10 -- THE MIXED CARD, END TO END. Structure applies, values do
+        // not, the summary does not say applied, and nothing is logged as a
+        // miss. Composed from the four predicates the shipped path uses.
+        {
+            using Op = ChainHost::ChainEditOp;
+            Op addOp; addOp.op = "add";  addOp.name = "Pro-C 2";
+            Op setOp; setOp.op = "set";  setOp.slot = 1;
+            check (! ChainHost::opsAreValuesOnly ({ addOp, setOp }),
+                   "dw PIN10: a mixed card keeps its Apply button");
+            check (echojay::dialWritesBlocked(),
+                   "dw PIN10: with the mode on");
+            std::ifstream fe4 ("Source/PluginEditor.cpp");
+            std::stringstream se4; se4 << fe4.rdbuf();
+            const auto ed5 = codeOnly (juce::String (se4.str()));
+            check (ed5.contains ("summary = \"Structure applied. Dialling is turned off in Settings, so no \""),
+                   "dw PIN10: the summary says structure applied and values were not");
+            check (ed5.contains ("if (echojay::dialWritesBlocked()) return;"),
+                   "dw PIN10: and no dial miss is recorded for it");
+        }
+
+        echojay::setDialWritesBlocked (restore);
+    }
+
+    // ===== LOAD ORIGIN (4 Sep 2026) ========================================
+    // The structural recorder sat in completeLoad and fired on EVERY route in,
+    // so reopening a session wrote a BUILT line per restored slot at turn 0,
+    // and a saved-chain recall wrote one per slot of the recalled chain. Both
+    // routes are restoreNextSlot; EchoJay was claiming authorship of a rack it
+    // had merely restored.
+    {
+        std::cout << "load origin, and what each one licenses:\n";
+        using LO = ChainHost::LoadOrigin;
+        using K  = ChainHost::MoveLogEntry::Kind;
+
+        // og PIN1 -- A RESTORE RECORDS NOTHING. Driven five times because the
+        // reported defect was five slots producing five lines.
+        int recorded = 0;
+        for (int i = 0; i < 5; ++i)
+            if (ChainHost::loadRecordFor (LO::Restore).record) ++recorded;
+        check (recorded == 0, "og PIN1: a five-slot restore records nothing",
+               juce::String (recorded) + " entries");
+
+        // og PIN2 -- A USER ADD IS RECORDED, AND NOT AS A BUILD. EchoJay needs
+        // to know the slot appeared; it must never read as its own work.
+        const auto u = ChainHost::loadRecordFor (LO::User);
+        check (u.record, "og PIN2: a user add IS recorded");
+        check (u.kind == (int) K::Added, "og PIN2: as its own kind",
+               juce::String (u.kind));
+        check (u.kind != (int) K::Load, "og PIN2: and never as a Load/BUILT");
+
+        // og PIN3 -- AN ASSISTANT LOAD STILL RECORDS BUILT, unchanged.
+        const auto a = ChainHost::loadRecordFor (LO::Assistant);
+        check (a.record && a.kind == (int) K::Load,
+               "og PIN3: an assistant load still records BUILT");
+
+        // og PIN4 -- THE RENDERER GIVES THE NEW KIND ITS OWN WORD, and tells
+        // the model not to claim it. Source-pinned: buildMoveLogInjection
+        // needs a live ChainHost, which the gate cannot build.
+        {
+            std::ifstream fa ("Source/EchoJayAPI.cpp");
+            std::stringstream sa; sa << fa.rdbuf();
+            const auto apRaw2 = juce::String (sa.str());
+            const auto blk2 = functionBody (apRaw2, "juce::String EchoJayAPI::buildMoveLogInjection");
+            check (blk2.contains ("case K::Added:  b << \"ADDED   \"; break;"),
+                   "og PIN4: ADDED renders under its own word");
+            check (blk2.contains ("THE USER put in themselves and you did not"),
+                   "og PIN4: and the header says whose act it was");
+            check (blk2.contains ("never claim an ADDED line as your own work"),
+                   "og PIN4: and forbids claiming it");
+        }
+
+        // og PIN5 -- EVERY LOAD PATH DECLARES ITS ORIGIN. No default argument
+        // exists, so this cannot silently regress by omission; what it CAN do
+        // is regress by someone giving restoreNextSlot the wrong one.
+        {
+            std::ifstream fc ("Source/ChainHost.cpp");
+            std::stringstream sc; sc << fc.rdbuf();
+            const auto ch2 = codeOnly (juce::String (sc.str()));
+            check (ch2.contains ("loadPluginAsync(items[idx].desc, LoadOrigin::Restore,"),
+                   "og PIN5: restoreNextSlot loads as a RESTORE");
+            check (ch2.contains ("loadPluginAsync(desc, LoadOrigin::Assistant,"),
+                   "og PIN5: the edit-op arm loads as an ASSISTANT");
+            // The decision is read in ONE place; a second reader is a second
+            // opinion waiting to disagree.
+            int n = 0, at = 0;
+            while ((at = ch2.indexOf (at, "loadRecordFor")) >= 0) { ++n; at += 8; }
+            check (n == 1, "og PIN5: and the verdict is consumed in exactly one place",
+                   "found " + juce::String (n));
+        }
+    }
+
+    // ===== MOVE LOG PERSISTENCE (5 Sep 2026) ===============================
+    // The log lived only in memory, so reopening a session erased EchoJay's
+    // account of its own work and the model could be asked about nothing
+    // older than the current launch.
+    {
+        std::cout << "move log persistence, turn continuity and the boundary:\n";
+        using E = ChainHost::MoveLogEntry;
+        using K = E::Kind;
+        auto mk = [] (int turn, K k) { E e; e.turn = turn; e.kind = k; e.plugin = "X"; return e; };
+
+        // mp PIN1 -- THE TURN COUNTER CONTINUES, it does not restart. t7 in a
+        // restored log and t7 in this session would be two turns under one
+        // label, which is the ambiguity the ordinal exists to remove.
+        check (ChainHost::restoredMoveTurn (0, 7) == 7,
+               "mp PIN1: a restore continues from the saved turn");
+        check (ChainHost::restoredMoveTurn (0, 0) == 0,
+               "mp PIN1: and a fresh session still starts at 0");
+        // Only ever forward: a state re-apply mid-session must not rewind.
+        check (ChainHost::restoredMoveTurn (9, 4) == 9,
+               "mp PIN1: and it never moves backwards");
+
+        // mp PIN2 -- THE BOUNDARY SITS BETWEEN THE TWO SESSIONS, once.
+        {
+            std::vector<E> restored { mk (3, K::Load), mk (4, K::Dial) };
+            std::vector<E> live     { mk (1, K::Dial) };
+            const auto merged = ChainHost::mergeRestoredLog (restored, live, 48);
+            check (merged.size() == 4, "mp PIN2: restored + boundary + live",
+                   juce::String ((int) merged.size()));
+            check (merged.size() == 4 && merged[2].kind == K::SessionBreak,
+                   "mp PIN2: and the boundary sits between them");
+            int breaks = 0;
+            for (const auto& e : merged) if (e.kind == K::SessionBreak) ++breaks;
+            check (breaks == 1, "mp PIN2: exactly one boundary",
+                   juce::String (breaks));
+            // Nothing to restore means nothing to declare.
+            check (ChainHost::mergeRestoredLog ({}, live, 48).size() == 1,
+                   "mp PIN2: an empty restore adds no boundary");
+        }
+
+        // mp PIN3 -- RESTORED PLUS NEW NEVER EXCEEDS THE BOUND, oldest first,
+        // which is the eviction rule the live log already uses.
+        {
+            std::vector<E> restored, live;
+            for (int i = 0; i < 40; ++i) restored.push_back (mk (i, K::Dial));
+            for (int i = 0; i < 20; ++i) live.push_back (mk (100 + i, K::Dial));
+            const auto merged = ChainHost::mergeRestoredLog (restored, live, ChainHost::kMoveLogMax);
+            check ((int) merged.size() == ChainHost::kMoveLogMax,
+                   "mp PIN3: the merge is capped at kMoveLogMax",
+                   juce::String ((int) merged.size()));
+            check (merged.back().turn == 119,
+                   "mp PIN3: and the NEWEST survive, the oldest go");
+        }
+
+        // mp PIN4 -- IT ROUND-TRIPS THROUGH THE STATE BLOB, guarded and with
+        // no version integer, and a boundary is never written back or a
+        // session reopened five times stacks five of them.
+        {
+            std::ifstream fp ("Source/PluginProcessor.cpp");
+            std::stringstream sp; sp << fp.rdbuf();
+            const auto pp = codeOnly (juce::String (sp.str()));
+            check (pp.contains ("state->setProperty(\"moveLog\", moveLogVar);"),
+                   "mp PIN4: the log is written into the state blob");
+            check (pp.contains ("if (obj->hasProperty(\"moveLog\"))"),
+                   "mp PIN4: and read back guarded, with no else");
+            std::ifstream fc ("Source/ChainHost.cpp");
+            std::stringstream sc; sc << fc.rdbuf();
+            const auto ch3 = codeOnly (juce::String (sc.str()));
+            check (ch3.contains ("if (e.kind == MoveLogEntry::Kind::SessionBreak) continue;"),
+                   "mp PIN4: boundaries are never serialised");
+            check (ch3.contains ("moveTurn_ = restoredMoveTurn(moveTurn_,"),
+                   "mp PIN4: and the turn counter is restored through the shared rule");
+        }
+
+        // mp PIN5 -- THE BOUNDARY LINE SAYS WHAT IT MEANS. Source-pinned:
+        // buildMoveLogInjection needs a live ChainHost.
+        {
+            std::ifstream fa ("Source/EchoJayAPI.cpp");
+            std::stringstream sa; sa << fa.rdbuf();
+            const auto blk3 = functionBody (juce::String (sa.str()),
+                                            "juce::String EchoJayAPI::buildMoveLogInjection");
+            check (blk3.contains ("SESSION BREAK"),
+                   "mp PIN5: the boundary renders");
+            check (blk3.contains ("never describe one as something you"),
+                   "mp PIN5: and forbids presenting an old move as a recent one");
+        }
     }
 
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";

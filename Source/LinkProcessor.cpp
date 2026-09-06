@@ -1964,6 +1964,7 @@ juce::String LinkProcessor::getMonoFoldNote() const
 }
 
 void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
+                                      ChainHost::LoadOrigin origin,
                                        std::function<void(const juce::StringArray&,
                                                           const juce::var&)> onDone)
 {
@@ -2026,7 +2027,7 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
     };
 
     auto stepPtr = std::make_shared<std::function<void()>>();
-    *stepPtr = [self, results, detail, items, idx, isDisabled, addDetail, stepPtr, onDone]()
+    *stepPtr = [self, results, detail, items, idx, isDisabled, addDetail, stepPtr, onDone, origin]()
     {
         // Wait for an in-flight scan before resolving (poll, bounded)
         if (self->chainHost.isScanning())
@@ -2102,7 +2103,7 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
         // AU and VST3 state blobs are not interchangeable.
         if (stateB64.isEmpty())
             desc = self->chainHost.preferInlineHostableDesc(desc);
-        self->chainHost.loadPluginAsync(desc,
+        self->chainHost.loadPluginAsync(desc, origin,
             [self, results, addDetail, slot, stateB64, wantBypass, structuredForSlot, stepPtr,
              name = item.name, resolvedName = desc.name]
             (const juce::String& err) mutable
@@ -2126,7 +2127,7 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
                 if (structuredForSlot.getDynamicObject() != nullptr
                     || structuredForSlot.isArray())
                     self->chainHost.setSlotStructuredSettings(hostIdx, structuredForSlot);
-                self->chainHost.setSlotWet(hostIdx, slot.wet);
+                self->chainHost.setSlotWet(hostIdx, slot.wet, ChainHost::WetSource::Restore);
                 if (wantBypass)
                     self->chainHost.setSlotBypassed(hostIdx, true);
                 // Restore the hosted plugin's saved state (session restore)
@@ -2183,7 +2184,9 @@ void LinkProcessor::addChainPluginManually(const juce::PluginDescription& desc,
     }
     // NEW instantiation — popout-only AUs may swap to their VST3 build
     auto hostDesc = chainHost.preferInlineHostableDesc(desc);
-    chainHost.loadPluginAsync(hostDesc,
+    // USER: the sole caller is the Link's own plugin picker
+    // (LinkEditor.cpp:516), which is a person choosing a plugin.
+    chainHost.loadPluginAsync(hostDesc, ChainHost::LoadOrigin::User,
         [this, done, name = desc.name](const juce::String& err)
     {
         if (err.isNotEmpty()) { if (done) done(err); return; }
@@ -2260,7 +2263,7 @@ void LinkProcessor::setChainSlotWet(int idx, float wet01)
     auto& s = chainModel[(size_t)idx];
     s.wet = juce::jlimit(0.0f, 1.0f, wet01);   // model copy = serialisation source
     if (s.hostIdx >= 0)
-        chainHost.setSlotWet(s.hostIdx, s.wet);
+        chainHost.setSlotWet(s.hostIdx, s.wet, ChainHost::WetSource::Restore);
     stampLocalRackEdit();
 }
 
@@ -2327,7 +2330,9 @@ void LinkProcessor::restoreChainFromVar(const juce::var& v)
             spec.push_back(std::move(item));
     }
     if (!spec.empty())
-        buildChainFromSpec(std::move(spec), nullptr);   // missing → named slot, no crash
+        // RESTORE: rebuilding a rack from a saved var, not a build.
+        buildChainFromSpec(std::move(spec), ChainHost::LoadOrigin::Restore,
+                           nullptr);   // missing → named slot, no crash
 }
 
 // =============================================================================
@@ -2479,7 +2484,9 @@ void LinkProcessor::pollChainCommand()
                        + " with settings_structured").toRawUTF8());
     }
 
-    buildChainFromSpec(std::move(spec),
+    // ASSISTANT: a build command arriving from the main plugin, which is
+    // an EchoJay chain being placed on this channel.
+    buildChainFromSpec(std::move(spec), ChainHost::LoadOrigin::Assistant,
         [this, seq](const juce::StringArray& results, const juce::var& detail)
     {
         int failures = 0;

@@ -1,3 +1,4 @@
+#include "EJDialWrites.h"
 #include "PluginEditor.h"
 #include "DashboardWeb.h"        // stage 2: the lazy webview Dashboard surface
 #include "ChainPluginPicker.h"   // P13: the searchable "+" picker (shared with the Link)
@@ -1313,6 +1314,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     autoDialToggle.onClick = [this] { api.setAutoDialMode(autoDialToggle.getToggleState()); };
     addAndMakeVisible(autoDialToggle);
 
+    // Do-not-dial toggle (Settings): applies immediately, no Save needed
+    dialWritesToggle.setColour(juce::ToggleButton::textColourId, C::text2);
+    dialWritesToggle.setColour(juce::ToggleButton::tickColourId, C::blue);
+    dialWritesToggle.setVisible(false);
+    dialWritesToggle.onClick = [this] { api.setDialWritesBlocked(dialWritesToggle.getToggleState()); };
+    addAndMakeVisible(dialWritesToggle);
+
     // Load and apply persisted scale before first paint
     loadUIScale();
     applyUIScale(uiScale_);
@@ -2132,9 +2140,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         // local-editable: wet writes go to the borrowed host.
         const juce::String uid = chainViewUid();
         if (auto* bh = processorRef.borrowHostIfActiveFor(uid))
-        { bh->setSlotWet(i, v); return; }
+        { bh->setSlotWet(i, v, ChainHost::WetSource::User); return; }
         if (uid.isNotEmpty()) return;
-        processorRef.getChainHost().setSlotWet(i, v);
+        // USER: the hand on the knob. Do-not-dial must never block this.
+        processorRef.getChainHost().setSlotWet(i, v, ChainHost::WetSource::User);
     };
     chainListPanel.onMasterWet = [this](float v) {
         const juce::String uid = chainViewUid();
@@ -2665,6 +2674,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         juce::Component* settingsMovers[] = {
             &settingsName, &settingsMonitors, &settingsHeadphones, &settingsGenres,
             &settingsExpLevel, &settingsLanguage, &uiScaleCombo, &autoDialToggle,
+                                     &dialWritesToggle,
             &settingsScanBtn, &viewAllPluginsBtn,
             &saveSettingsBtn, &settingsManualBtn, &settingsSavedLabel,
             &settingsHelpBtn, &dumpMetersBtn, &logoutBtn, &settingsOrbCard_ };
@@ -6229,16 +6239,18 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
     // uid); the attribution separates the DATA (main instance) from the CHAIN
     // (this channel). Main chat: empty uid, no attribution, unchanged.
     const juce::String cmpChanUid = effectiveChannelUid();
+    juce::StringArray liveMeterFields;
     compareContent += standardChainInjections(compareContent, /*alwaysAttach*/ true,
                                               nullptr, cmpChanUid,
                                               /*mainCaptureAttribution*/ false,
                                               /*captureOwnAttribution*/ false,
-                                              /*compareAttribution*/ cmpChanUid.isNotEmpty());
+                                              /*compareAttribution*/ cmpChanUid.isNotEmpty(),
+                                              &liveMeterFields);
     processorRef.chatContents.add(compareContent);
 
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
         materialContextName(processorRef.getEffectiveChannelName()), processorRef.getGenre(),
-        processorRef.getPluginScanner().getPluginSummary());
+        processorRef.getPluginScanner().getPluginSummary(), liveMeterFields);
 
     // SafePointer guard. The API's alive flag protects the API object's
     // lifetime, but the API outlives the editor: when the user removes the
@@ -11006,6 +11018,8 @@ void EchoJayEditor::showSettingsView()
     }
     autoDialToggle.setToggleState(api.getAutoDialMode(), juce::dontSendNotification);
     autoDialToggle.setVisible(true);
+    dialWritesToggle.setToggleState(api.getDialWritesBlocked(), juce::dontSendNotification);
+    dialWritesToggle.setVisible(true);
 
     // Plugins row: scan button + View all + Help & Support. No inline list.
     settingsScanBtn.setVisible(true);
@@ -11106,6 +11120,7 @@ void EchoJayEditor::hideSettingsView()
     saveSettingsBtn.setVisible(false); settingsSavedLabel.setVisible(false);
     uiScaleCombo.setVisible(false);
     autoDialToggle.setVisible(false);
+    dialWritesToggle.setVisible(false);
     for (auto& b : dawButtons) b.setVisible(false);
     viewAllPluginsBtn.setVisible(false);
     settingsScanBtn.setVisible(false);
@@ -19457,6 +19472,9 @@ void EchoJayEditor::resized()
             // CHAIN SUGGESTIONS: auto-dial toggle (full width, honest label)
             sy += labelGap;
             autoDialToggle.setBounds(sx, sy, sw, fh); sy += fh + 8;
+            // ... and do-not-dial directly beneath it, same width, no gap of
+            // its own: they are two halves of one question about suggestions.
+            dialWritesToggle.setBounds(sx, sy, sw, fh); sy += fh + 8;
 
             // PLUGINS: scan button + "View all" beside it
             sy += labelGap;
@@ -22342,6 +22360,7 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
     // "Done - ratio and attack updated" relay over a dial that never
     // happened. Nothing prose-only ever rides the model's success line.
     juce::StringArray touchedNames, undialledNames, proseOnlySetNames, serverDropped;
+    juce::StringArray blockedParts;   // DO NOT DIAL: the user's own setting, not a failure
     if (auto* ops = eo->getProperty("edit").getArray())
         for (auto& opv : *ops)
         {
@@ -22447,6 +22466,13 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 }
                 zeroParts.add(di.name);
                 break;
+            case ChainHost::DialStatus::writesBlocked:
+                // DO NOT DIAL. NOT zeroParts: that bucket's sentence is
+                // "needs hand-dialing", which is what an unsupported plugin
+                // gets, and a user who switched dialling off themselves would
+                // read it as their plugin being the problem.
+                blockedParts.add(di.name);
+                break;
             case ChainHost::DialStatus::pending:
                 // Fetch never answered inside the cap: NEVER fall through
                 // to the model's success line - conservative wording, and a
@@ -22464,7 +22490,8 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
 
     juce::String bubble;
     if (partialParts.empty() && zeroParts.isEmpty() && staleParts.isEmpty()
-        && zeroOorParts.empty() && proseOnlySetNames.isEmpty())
+        && zeroOorParts.empty() && proseOnlySetNames.isEmpty()
+        && blockedParts.isEmpty())
     {
         // Clean dial: SILENCE (9 Aug 2026, Sean's rule). The model's result
         // line is NEVER relayed any more - a filter the model can evade by
@@ -22501,6 +22528,18 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                         + (p.oor.size() == 1
                                ? " asked a value outside its mapped range - the card names the range; treat the value as intent, not a number."
                                : " asked values outside their mapped ranges - the card names the ranges; treat the values as intent, not numbers.");
+        }
+        if (!blockedParts.isEmpty())
+        {
+            // DO NOT DIAL, in the same words as the card and the summary, and
+            // pointing at Settings. Says nothing about the plugin, because
+            // nothing is wrong with the plugin.
+            const bool one = blockedParts.size() == 1;
+            bubble += (bubble.isEmpty() ? juce::String() : juce::String(" "));
+            bubble += "Dialling is turned off in Settings, so nothing was written to "
+                    + blockedParts.joinIntoString(" or ")
+                    + (one ? " - the values are on its card to set by hand."
+                           : " - the values are on their cards to set by hand.");
         }
         if (!zeroParts.isEmpty())
         {
@@ -22547,9 +22586,12 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
         bubble += "Nothing was written to " + proseOnlySetNames.joinIntoString(", ")
                 + " - dial in the values on " + (one ? juce::String("its card by hand.")
                                                      : juce::String("their cards by hand."));
-        for (auto& an : proseOnlySetNames)
-            logDialMiss(an, juce::String(), "edit_set_no_dial", {},
-                        juce::String(), juce::String(), 0, juce::String());   // A7.1 slotless
+        // Same rule as emitDialMissRows: under the mode this is the user's own
+        // setting, not a plugin that could not be dialled.
+        if (! echojay::dialWritesBlocked())
+            for (auto& an : proseOnlySetNames)
+                logDialMiss(an, juce::String(), "edit_set_no_dial", {},
+                            juce::String(), juce::String(), 0, juce::String());   // A7.1 slotless
     }
     if (!serverDropped.isEmpty())
     {
@@ -22694,6 +22736,16 @@ void EchoJayEditor::logDialMissesWhenSettled(int attemptsLeft)
 // lost. See the header for what had drifted and why it mattered.
 void EchoJayEditor::emitDialMissRows(const ChainHost::SlotDialInfo& di)
 {
+    // ===== DO NOT DIAL (5 Sep 2026) =====
+    // A WRITE THE USER TOLD US NOT TO MAKE IS NOT A MISS. These rows feed
+    // ej:dial-declines, which is the corpus the mapping work reads to decide
+    // which plugins need attention and which controls are unreachable. A mode
+    // that refuses every write on purpose would flood it with rows saying the
+    // map failed, and the misdial reports built on that corpus would then be
+    // measuring a setting rather than a mapping. Suppressed at the ONE emitter
+    // rather than at its three call sites, so a fourth cannot miss it.
+    if (echojay::dialWritesBlocked()) return;
+
     for (const auto& row : echojay::dialMissRowsFor(di))
         logDialMiss(di.name, di.fp, row.reason, row.names,
                     di.format, di.uid, di.requestedCount, di.requestedSource,
@@ -23237,6 +23289,17 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
                 // "Applied 1 change" reads as a dial count (9 Aug 2026, the
                 // third of three surfaces contradicting the honest bubble).
                 summary = "Suggested settings added to the card - nothing written automatically";
+            else if (safeThis->api.getDialWritesBlocked()
+                     && results.joinIntoString("; ").contains("not dialled"))
+                // MIXED CARD UNDER THE MODE. The structure really did apply,
+                // so "Applied N of M" would be wrong in the other direction;
+                // what is false is calling the whole thing applied when no
+                // value was written. Names the mode and where it lives, in the
+                // same words as the receipt-time card string, and does NOT
+                // start with "Changes applied" or "Applied <n> change", so
+                // editResultIsFullSuccess leaves it amber.
+                summary = "Structure applied. Dialling is turned off in Settings, so no "
+                          "values were written - they are on the card to set by hand.";
             else if (applied == total)
                 // NO COUNT (25 Aug 2026). The number counted OPS -- `total` is
                 // ops.size() and `applied` is incremented once per op in
@@ -24510,8 +24573,13 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
                                                     const juce::String& targetLinkUid,
                                                     bool mainCaptureAttribution,
                                                     bool captureOwnAttribution,
-                                                    bool compareAttribution)
+                                                    bool compareAttribution,
+                                                    juce::StringArray* meterFieldsOut)
 {
+    // The snapshot's emitted field list travels OUT so buildSystemPrompt can
+    // name what actually rode this turn. Cleared here, filled at the emission
+    // below, and left empty on every turn that attaches no snapshot.
+    if (meterFieldsOut != nullptr) meterFieldsOut->clear();
     juce::String out;
     bool hadFeed = false;
     auto& chainHost = processorRef.getChainHost();
@@ -24795,6 +24863,40 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
             EchoJay_NSLog(("EJLevels: CHAIN LEVELS marker attached, " + juce::String(lv.length())
                            + " chars: " + lv.substring(0, 160).replace("\n", " ")).toRawUTF8());
         }
+        // [METER SNAPSHOT v2]: psr / plr / oversCount / macroBands / bandCrest
+        // on the SAME arm and the same text path. The builder copies whatever
+        // meterDataToJSON currently has and returns "" when it has nothing, so
+        // a stopped transport attaches no marker rather than an empty one --
+        // the zero is logged either way, because a marker that silently stops
+        // riding looks exactly like a marker that was never added.
+        {
+            // v3: the statistic comes from the channel type through the SAME
+            // predicate the capture path reads, so a Drum Bus gets peak-hold
+            // in the chat block exactly as it does in a capture payload.
+            const bool useMean = processorRef.spectrumUsesAverage();
+            // [MOVE LOG v1]: what EchoJay itself changed, same arm and same
+            // text path. Empty until something has been applied.
+            {
+                const juce::String ml = EchoJayAPI::buildMoveLogInjection(chainHost);
+                out += ml;
+                if (ml.isNotEmpty())
+                    EchoJay_NSLog(("EJChat: MOVE LOG marker attached, "
+                                   + juce::String(ml.length()) + " chars, "
+                                   + juce::String((int) chainHost.moveLogEntries().size())
+                                   + " entries").toRawUTF8());
+            }
+            const juce::String ms = EchoJayAPI::buildMeterSnapshotInjection(
+                                        processorRef.getMeterEngine().getMeterDataJSON(),
+                                        processorRef.getMeterEngine().reduceSpectrumWindow(useMean),
+                                        processorRef.getMeterEngine().reduceMacroWindow(useMean),
+                                        useMean, meterFieldsOut);
+            out += ms;
+            EchoJay_NSLog((ms.isEmpty()
+                              ? juce::String("EJLevels: METER SNAPSHOT omitted - nothing measurable yet")
+                              : "EJLevels: METER SNAPSHOT marker attached, "
+                                + juce::String(ms.length()) + " chars: "
+                                + ms.substring(0, 200).replace("\n", " ")).toRawUTF8());
+        }
     }
 
     // [SAVED CHAINS]: names and ids only, riding the SAME arms as the chain
@@ -24819,6 +24921,14 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
             EchoJay_NSLog("EJChat: DETECTED KEY injection attached");
         }
     }
+    // [ECHOJAY FEATURES v1]: what the APP can do, so a product question gets an
+    // answer instead of an improvisation. UNCONDITIONAL, on the same footing as
+    // [DETECTED KEY] above and for a plainer reason: "how do I save this" and
+    // "what does Capture do" carry no chain cue, so gating this on hadFeed or
+    // relevant would remove it from exactly the turns it exists for. Static
+    // text, so it costs the same on every turn and is stripped from history.
+    out += EchoJayAPI::buildEchoJayFeaturesInjection();
+
     if (hadChainFeedOut != nullptr) *hadChainFeedOut = hadFeed;
     return out;
 }
@@ -26180,7 +26290,12 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     // standardChainInjections. hadChainFeed powers the turnType staging and
     // stage label below.
     bool hadChainFeed = false;
-    userContent += standardChainInjections(msg, false, &hadChainFeed, turnTargetUid);
+    juce::StringArray liveMeterFields;   // what the snapshot actually emitted
+    userContent += standardChainInjections(msg, false, &hadChainFeed, turnTargetUid,
+                                           /*mainCaptureAttribution*/ false,
+                                           /*captureOwnAttribution*/ false,
+                                           /*compareAttribution*/ false,
+                                           &liveMeterFields);
 
     // TIER 1 key precondition (KEY_PRECONDITION_SPEC.md §2.1): if this
     // message genuinely needs the key, none exists, and a bus Link does,
@@ -26214,9 +26329,26 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     const juce::String channelName = materialContextName(processorRef.getEffectiveChannelName());
     const juce::String genreName   = processorRef.getGenre();
 
+    // The nudge rides an EXPLICIT chain build only. turnTypeOverride is
+    // "chain_generate" on the brief-answers path, where the ask is
+    // unambiguously a build; hadChainFeed is not usable for this because the
+    // feed attaches on nearly every turn, so it would nag on general questions.
+    // The wider "asks about the sound of this channel" case is deliberately
+    // left to the server, which already classifies it and already owns the
+    // wording for it (NO_ANALYSIS_NOTE).
+    const bool askToPlay = liveMeterFields.isEmpty()
+                        && turnTypeOverride == "chain_generate";
+    // The move ordinal advances once per SEND, not once per applied control,
+    // so every move made between two sends shares a turn number.
+    processorRef.getChainHost().beginMoveTurn();
+    // History trim: taken once per session (the API marks it taken), so the
+    // notice rides this turn only. It reports the PREVIOUS send's drops,
+    // because this prompt is composed before this send's trim has run.
+    const int droppedNotice = api.takeHistoryTrimWarning() ? api.historyDroppedCount() : 0;
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
         channelName, genreName,
-        processorRef.getPluginScanner().getPluginSummary());
+        processorRef.getPluginScanner().getPluginSummary(), liveMeterFields,
+        askToPlay, droppedNotice);
 
     // usage-v2: no meter blob on plain chat turns (see above). turnType is
     // chain_generate when the chain-feed injection rode along (the model is
@@ -26804,7 +26936,30 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
                 bool allConsumed = false;
                 juce::StringArray consumed;
                 const auto remaining = consumeSuggestionSetsAtReceipt(editJson, allConsumed, consumed);
-                if (!consumed.isEmpty())
+                // ===== DO NOT DIAL (5 Sep 2026), MECHANISM A =====
+                // The SAME pair the suggestion path below already uses:
+                // editApplied true retires the Apply button (the if/else at the
+                // card render) while keeping every op line visible, and
+                // editResult carries the reason. No new UI state, no disabled
+                // button, and the card still shows every value to dial by hand.
+                //
+                // The string says WHY in plain words rather than leaving the
+                // reader to infer it from a missing button: a card that simply
+                // lost its Apply reads as broken.
+                // ONLY FOR A VALUES-ONLY CARD. A block that adds, removes,
+                // replaces, moves or bypasses keeps its Apply button: the mode
+                // blocks writing VALUES, not changing the chain, and Build
+                // still builds. Those cards apply their structure and the
+                // write guards refuse their values, which the apply path
+                // already reports per control on the hand-dial line.
+                if (api.getDialWritesBlocked() && editJson.isNotEmpty()
+                    && ChainHost::opsAreValuesOnly(ChainHost::parseChainEditOps(editJson)))
+                {
+                    cm.editApplied = true;
+                    cm.editResult  = "Suggested settings only. Dialling is turned off in Settings, so nothing was written. The values are on the card to set by hand.";
+                    refreshChainPanelForView(true);
+                }
+                else if (!consumed.isEmpty())
                 {
                     if (allConsumed)
                     {
@@ -27908,7 +28063,9 @@ void EchoJayEditor::showChainPluginPicker()
                 auto desc0 = bh0->preferInlineHostableDesc(picked);
                 safeThis->chainListPanel.statusText = "Loading " + desc0.name + "...";
                 safeThis->chainListPanel.repaint();
-                bh0->loadPluginAsync(desc0, [safeThis, picked](const juce::String& err)
+                // USER: the person picked this from the chain picker.
+                bh0->loadPluginAsync(desc0, ChainHost::LoadOrigin::User,
+                                     [safeThis, picked](const juce::String& err)
                 {
                     if (safeThis == nullptr) return;
                     auto* bh2 = safeThis->processorRef.borrowHost();
@@ -27974,7 +28131,9 @@ void EchoJayEditor::showChainPluginPicker()
             safeThis->chainListPanel.statusText = "Loading " + desc.name + "...";
             safeThis->chainListPanel.repaint();
 
-            ch2.loadPluginAsync(desc, [safeThis, desc](const juce::String& err)
+            // USER: same picker, local rack branch.
+            ch2.loadPluginAsync(desc, ChainHost::LoadOrigin::User,
+                                [safeThis, desc](const juce::String& err)
             {
                 if (safeThis == nullptr) return;
                 if (err.isNotEmpty())
@@ -30453,7 +30612,9 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
             juce::Timer::callAfterDelay(30, [safeThis, name, settings, structured, wetPct, skipped, loadNextPtr]() mutable
             {
                 if (safeThis == nullptr) return;
+                // ASSISTANT: the AI build loop placing a chain EchoJay designed.
                 safeThis->processorRef.getChainHost().loadByRecommendedName(name,
+                    ChainHost::LoadOrigin::Assistant,
                     [safeThis, name, settings, structured, wetPct, skipped, loadNextPtr](const juce::String& err) mutable
                     {
                         if (safeThis == nullptr) return;
@@ -30466,6 +30627,11 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
                         {
                             // Store settings on the just-loaded slot (last slot in chain)
                             auto& ch4 = safeThis->processorRef.getChainHost();
+                            // MOVE LOG: the load recorded itself in ChainHost;
+                            // the model's own words for why this slot is here
+                            // live only in this loop, so they are attached to
+                            // that entry now rather than duplicated into it.
+                            ch4.annotateLastMove(settings);
                             if (settings.isNotEmpty())
                                 ch4.setSlotSettings(ch4.getNumSlots() - 1, settings);
                             // Auto-apply: hand the slot its structured
@@ -31482,6 +31648,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
     // Channel chat active: the turn stays the channel's (declaration +
     // that Link's rack) but the DATA is the main instance's — the
     // attribution statement says so (false-attribution honesty fix).
+    juce::StringArray liveMeterFields;
     {
         // scopeLinkUid drives BOTH the injection target (STATE 2 live /
         // STATE 3 offline) and attribution. captureOwnAttribution rides only
@@ -31492,7 +31659,9 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
         captureContent += standardChainInjections(captureContent, /*alwaysAttach*/ true,
                                                   nullptr, scopeLinkUid,
                                                   /*mainCaptureAttribution*/ false,
-                                                  /*captureOwnAttribution*/ scopedOwnLive);
+                                                  /*captureOwnAttribution*/ scopedOwnLive,
+                                                  /*compareAttribution*/ false,
+                                                  &liveMeterFields);
     }
 
     if (askShelfVisible_)
@@ -31506,7 +31675,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
 
     auto sysPrompt = EchoJayAPI::buildSystemPrompt(
         materialContextName(ch), processorRef.getGenre(),
-        processorRef.getPluginScanner().getPluginSummary());
+        processorRef.getPluginScanner().getPluginSummary(), liveMeterFields);
 
     // Capture turns attach the snapshot's meter blob (identical JSON shape,
     // serialised from the capture's final averaged data). turnType: explicit

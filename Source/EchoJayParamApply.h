@@ -31,6 +31,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_core/juce_core.h>
+#include "EJDialWrites.h"
 
 namespace echojay
 {
@@ -44,6 +45,14 @@ struct ApplyResult
     // controls["Name"] - a flat lookup by semantic returns void and the card
     // printed bare repeated labels ("freq Hz, gain dB, freq Hz, gain dB").
     juce::var    requestedValue;
+    // WHAT THE CONTROL READ BEFORE THIS WRITE (4 Sep 2026). Captured here
+    // because here is the only place it exists: applyOne holds the parameter
+    // and writes it, so anything asking afterwards gets the new value. The
+    // move log's first attempt used the slot's cached display sweep instead,
+    // which is taken once per SEND and therefore predates a slot built in the
+    // same turn: every entry came out with an empty before. Read once, before
+    // any branch writes.
+    juce::String beforeText;
     int          index = -1; // plugin parameter index
     bool         applied = false;
     float        normalized = 0.0f;
@@ -271,6 +280,109 @@ struct EffectiveAnchors
     juce::Array<juce::Array<float>> table;
     bool ok = false;
 };
+
+// ---------------------------------------------------------------------------
+// STEP LADDERS (4 Sep 2026). An anchor table is a LADDER when its normalised
+// axis sits on a uniform grid COARSER than the sampler's own: the map builder
+// walked a switch's positions rather than sweeping a continuous control. The
+// reachable values are then the anchor values and nothing between them.
+//
+// This is the server's test one from enumeratedSteps (lib/params-lib.js),
+// implemented here because the client's copy of a map carries `anchors` and
+// not `steps`: the server derives the list for PRINTING and does not store it,
+// so a client that wants to know cannot ask. The two must agree; the constants
+// are named after the server's and the rule is the same three lines.
+//
+// TEST TWO IS DELIBERATELY NOT PORTED. Server-side it asks whether the gaps
+// are uneven ENOUGH to be worth printing instead of a span, which is a note
+// budget question. A control with an even ladder (a 12-position selector, an
+// 8 dB ladder) steps exactly as hard as an uneven one, and refusing to notice
+// that would leave 1,428 of the 2,141 ladders in the local registry unguarded.
+//
+// TESTED AS d * M, NOT 1 / d, for the same reason the server says: stored
+// normalised values carry sweep float noise, and the reciprocal multiplies it
+// by M squared.
+inline juce::Array<float> stepLadderValues (const juce::Array<juce::Array<float>>& table)
+{
+    juce::Array<float> none;
+    const int n = table.size();
+    if (n < 2) return none;
+    constexpr float kNormEps = 1.0e-5f;
+    constexpr int   kSweepPoints = 21;      // the sampler's N for a continuous control
+
+    juce::Array<float> vals, norms;
+    for (const auto& pr : table)
+    {
+        if (pr.size() < 2) return none;
+        vals.add (pr[0]);
+        norms.add (pr[1]);
+    }
+    auto sortedNorms = norms;
+    std::sort (sortedNorms.begin(), sortedNorms.end());
+    float d = 1.0f;
+    for (int i = 1; i < n; ++i) d = juce::jmin (d, sortedNorms[i] - sortedNorms[i - 1]);
+    if (! (d > kNormEps)) return none;
+    for (int i = 1; i < n; ++i)
+    {
+        const float g = (sortedNorms[i] - sortedNorms[i - 1]) / d;
+        if (std::abs (g - std::round (g)) >= kNormEps) return none;
+    }
+    const int M = (int) std::round (1.0f / d);
+    if (std::abs (d * (float) M - 1.0f) >= kNormEps || M < 1 || M > kSweepPoints - 2) return none;
+
+    auto sorted = vals;
+    std::sort (sorted.begin(), sorted.end());
+    for (int i = 1; i < n; ++i)
+        if (! (sorted[i] > sorted[i - 1])) return none;     // a dedupe, not a ladder
+    return sorted;
+}
+
+// Which rung a request lands on, or -1 when it lands between rungs. EXACT
+// ONLY, with a tolerance that exists for float drift and nothing else: the
+// map stores 0.100000001490116 where the plugin steps at 0.1, so a bare == on
+// a double request would miss every rung it was meant to hit. It is NOT a
+// snap: 2 on a ladder of {0.1|0.5|1|5|10|30} is a miss, and is meant to be.
+inline int stepLadderIndex (const juce::Array<float>& ladder, float target)
+{
+    for (int i = 0; i < ladder.size(); ++i)
+    {
+        const float tol = 1.0e-4f * juce::jmax (1.0f, std::abs (ladder[i]));
+        if (std::abs (target - ladder[i]) <= tol) return i;
+    }
+    return -1;
+}
+
+// THE WHOLE DECISION, INCLUDING ITS SENTENCE, in one pure function. applyOne
+// needs a loaded plugin and cannot be called from the gate, so a verdict left
+// inline there is a branch no test can witness. This is the shipped decision;
+// the write path does nothing with a ladder that is not decided here.
+struct LadderVerdict
+{
+    bool         isLadder = false;   // the table is a walked switch
+    bool         onRung   = false;   // ... and the request is one of its values
+    float        snapped  = 0.0f;    // the STORED rung value, when onRung
+    juce::String note;               // the refusal sentence, when not
+};
+
+inline LadderVerdict checkStepLadder (const juce::Array<juce::Array<float>>& table, float target)
+{
+    LadderVerdict v;
+    const auto ladder = stepLadderValues (table);
+    if (ladder.isEmpty()) return v;                 // continuous: not our business
+    v.isLadder = true;
+    const int rung = stepLadderIndex (ladder, target);
+    if (rung >= 0) { v.onRung = true; v.snapped = ladder[rung]; return v; }
+    auto trim = [] (float f) {
+        return juce::String (f, 4).trimCharactersAtEnd ("0").trimCharactersAtEnd (".");
+    };
+    juce::StringArray rungs;
+    for (auto r : ladder) rungs.add (trim (r));
+    // Names what was asked AND what was reachable: a refusal the reader cannot
+    // act on is barely a refusal.
+    v.note = "asked " + trim (target) + ", this control steps {"
+           + rungs.joinIntoString ("|") + "}, left manual";
+    return v;
+}
 
 inline EffectiveAnchors dominantMonotonicTable (const juce::Array<juce::Array<float>>& anchors)
 {
@@ -508,6 +620,8 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
         return r;
     }
     auto* param = params[index];
+    // BEFORE, read once and before every write path below.
+    r.beforeText = param->getCurrentValueAsText().trim();
 
     // SECOND GUARD, TAGGED MAPS ONLY (26 Aug 2026).
     //
@@ -554,6 +668,24 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
         }
     }
 
+    // ===== DO NOT DIAL (5 Sep 2026) =====
+    // BEFORE THE FIRST BRANCH, not inside writeNorm, and before `kind` is even
+    // read: every arm below this line writes, and a guard placed per-arm is a
+    // guard a fifth arm will be added above. r.applied stays false, so the
+    // control lands in the hand-dial list exactly as an unmapped one does, and
+    // beforeText above has already been captured so the card can still show
+    // what the control reads now.
+    //
+    // The VALUE IS NOT LOST BY THIS. setSlotSettings and
+    // setSlotStructuredSettings run on their own path and are deliberately not
+    // guarded: they are what puts the number on the card to dial by hand.
+    if (dialWritesBlocked())
+    {
+        r.note = "not written: EchoJay is set to suggest values without "
+                 "dialling them, so this one is on the card to set by hand";
+        return r;
+    }
+
     const auto kind = mapEntry.getProperty ("kind", "").toString();
 
     // Every write is read back before success is claimed. The pre-write
@@ -562,6 +694,11 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
     const float prevNorm = param->getValue();
     auto writeNorm = [param] (float n)
     {
+        // BELT, not the guard. The guard is the early return below, before the
+        // first branch; this exists because every previous "one place decides"
+        // in this session grew a second caller within a week, and a write that
+        // slips past the early return would be silent.
+        if (dialWritesBlocked()) return;
         // Change gesture: the correct pattern for driving a hosted plugin's
         // parameter, so the plugin and any automation see a clean
         // begin/change/end rather than a bare value poke.
@@ -745,6 +882,36 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
                + "], left manual";
         return r;
     }
+
+    // A STEPPED CONTROL'S REQUEST MUST BE ONE OF ITS STEPS (4 Sep 2026, live).
+    // A Shadow Hills Discrete Attack steps {0.1|0.5|1|5|10|30 ms}; ask for 2
+    // and interpolateAnchors returns a normalised BETWEEN two rungs, which the
+    // plugin then quantises to whichever rung is nearer. What happened next
+    // depended on an 0.02 tolerance in the setread branch below that has
+    // nothing to do with the step spacing: land within it and the write is
+    // reported as applied AT THE REQUESTED VALUE while the knob sits on a
+    // different rung, land outside it and the write is reverted and blamed on
+    // the plugin ("write did not stick"). Both are wrong, and neither tells the
+    // user what the reachable values were.
+    //
+    // REFUSED RATHER THAN SNAPPED, and the rule is already written in this
+    // file: a knob left where it was is better than a knob on a value nobody
+    // asked for. Snapping 2 ms to 1 ms silently is the defect, not the fix, and
+    // a refusal that prints the ladder is something the user can act on. It
+    // also fails safe if the ladder detection is ever wrong about a continuous
+    // control: the cost is one refused write with the anchor values printed,
+    // against a wrong write that reports success.
+    const auto ladderVerdict = checkStepLadder (eff.table, target);
+    if (ladderVerdict.isLadder && ! ladderVerdict.onRung)
+    {
+        r.note = ladderVerdict.note;
+        return r;
+    }
+    // Snap to the STORED rung so the interpolation lands exactly on its own
+    // anchor: the request is a double (1.0) and the table holds a float32
+    // round-trip (0.100000001490116), and the drift between them is enough to
+    // put the normalised a hair off the rung.
+    if (ladderVerdict.onRung) target = ladderVerdict.snapped;
 
     norm = juce::jlimit (0.0f, 1.0f, interpolateAnchors (eff.table, target));
     writeNorm (norm);

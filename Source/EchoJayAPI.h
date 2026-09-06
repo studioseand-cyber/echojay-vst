@@ -1,4 +1,7 @@
 #pragma once
+
+#include "EJDialWrites.h"
+#include "MeterEngine.h"   // SpectrumWindow, for the v3 snapshot injection
 #include <JuceHeader.h>
 #include <functional>
 #include <memory>
@@ -679,6 +682,17 @@ public:
     // profile blob means a web-side settings save can never clobber it.
     bool getAutoDialMode() const { return autoDialMode; }
     void setAutoDialMode(bool on) { autoDialMode = on; saveSettings(); }
+    // DO NOT DIAL (5 Sep 2026): suggest every value, write none. Independent
+    // of autoDialMode on purpose, and the two are easy to confuse: autoDial
+    // governs WHICH PLUGINS are offered, this governs WHETHER VALUES ARE
+    // WRITTEN. Either can be on without the other.
+    bool getDialWritesBlocked() const { return dialWritesBlocked; }
+    void setDialWritesBlocked(bool on)
+    {
+        dialWritesBlocked = on;
+        echojay::setDialWritesBlocked(on);   // the write guards read this
+        saveSettings();
+    }
 
     // Update plugins list from scanner (merges with existing)
     void updatePluginsFromScanner(const juce::String& scannedPlugins);
@@ -690,9 +704,24 @@ public:
     void fetchRemoteConfig();
     
     // Get the current system prompt — uses remote version if available, else hardcoded
+    // askToPlay: this turn needs measurement and has none, AND the caller knows
+    // the ask was an explicit chain build. Adds one nudge sentence to the
+    // empty branch. Deliberately NOT derived from hadChainFeed or
+    // messageNeedsPlugins: both are true on ordinary questions ("how do i" and
+    // "eq" are plugin cues), and a "play me something" on "how do I mix 808s"
+    // is worse than silence. See the note at the branch.
+    // liveMeterFields: the keys the METER SNAPSHOT block actually put on THIS
+    // turn, from buildMeterSnapshotInjection's emittedKeysOut. Empty means no
+    // snapshot rode, which is the case the DATA AVAILABILITY paragraph was
+    // written for. Non-empty switches that paragraph to its data-present
+    // branch, which names these fields rather than a list kept in step here.
     static juce::String buildSystemPrompt(const juce::String& channelType,
                                            const juce::String& genre,
-                                           const juce::String& pluginSummary);
+                                           const juce::String& pluginSummary,
+                                           const juce::StringArray& liveMeterFields
+                                               = juce::StringArray(),
+                                           bool askToPlay = false,
+                                           int historyDroppedCount = 0);
 
     // Returns true if a user message looks like it wants plugin suggestions /
     // a chain / a specific processing tool — i.e. a turn where we should
@@ -766,6 +795,63 @@ public:
     static juce::String formatHeard(float seconds);
     static juce::String formatSlotLevelNote(const ChainHost& chainHost, int slot);
     static juce::String buildChainLevelsInjection(const ChainHost& chainHost);
+    //   buildMeterSnapshotInjection: the "[METER SNAPSHOT v2: ...]" marker
+    //     carrying psr / plr / oversCount / macroBands / bandCrest on a CHAIN
+    //     turn. Takes meterDataToJSON's output and copies the present keys
+    //     forward, so its absent-key convention (and the server's matching
+    //     null convention) is preserved rather than re-decided. Rides the same
+    //     arm and the same TEXT path as [CHAIN LEVELS]; touches neither
+    //     nextChatIsExplicitCapture_ nor the `meters` body field. Returns ""
+    //     when nothing was measurable, so no block is emitted at all.
+    //     v3 adds the windowed spectrum: `spec` carries the reduced 64 bins,
+    //     `useMean` the statistic the caller chose from the channel type
+    //     (EchoJayProcessor::spectrumUsesAverage). An invalid window emits no
+    //     spectrum keys at all, exactly as an absent meter key emits nothing.
+    //   buildMoveLogInjection: the "[MOVE LOG v1: ...]" marker, what EchoJay
+    //     DID this session. Rebuilt from ChainHost::moveLogEntries() every
+    //     turn, registered in historyStripMarkers so it never accumulates in
+    //     the conversation, and empty when nothing has been applied.
+    //   buildEchoJayFeaturesInjection: the "[ECHOJAY FEATURES v1 ...]" marker,
+    //   what the APP can do. Static text, verified line by line against the
+    //   code that implements it (HANDOVER/echojay-features-v1.md), and it
+    //   closes by telling the model that the list is the boundary of what it
+    //   knows. The boundary is the point; see the comment at the definition.
+    static juce::String buildEchoJayFeaturesInjection();
+    static juce::String buildMoveLogInjection(const ChainHost& chainHost);
+
+    // ---- History trim notice (item 17, warning half) -----------------------
+    // NOT A COST WARNING. The cost premise was measured false on 658 v2 chat
+    // turns over nine days: turn 1 is 3.83 cents median, turns 3 to 11 sit at
+    // 1.20 to 1.32 cents, flat within 10 percent, because the first turn pays
+    // the cache write and every later turn reads that prefix back. A long chat
+    // does not cost more per turn, and telling a user it does would push them
+    // into a new chat, which costs about three times as much.
+    //
+    // What IS true is that the trim eventually stops sending the oldest turns,
+    // so the model can no longer recall them. That is the honest warning, and
+    // its trigger is the trim's own measurement rather than any arithmetic:
+    // buildChatRequestBody sets the flag the first time trimChatHistory drops
+    // anything by count, byte budget or role alignment.
+    //
+    // IT RIDES THE TURN AFTER THE FIRST DROP, and that is a consequence of the
+    // order, not an approximation: the system prompt is composed before
+    // buildChatRequestBody runs, so the current send's trim result does not
+    // exist yet when the paragraph is built. The first dropped turn is
+    // therefore reported on the next one.
+    int  historyDroppedCount() const noexcept { return historyDroppedTotal_; }
+    // True ONCE per session, on the first prompt build after a drop.
+    bool takeHistoryTrimWarning() noexcept
+    {
+        if (historyTrimWarned_ || historyDroppedTotal_ <= 0) return false;
+        historyTrimWarned_ = true;
+        return true;
+    }
+
+    static juce::String buildMeterSnapshotInjection(const juce::String& meterJson,
+                                                    const MeterEngine::SpectrumWindow& spec,
+                                                    const MeterEngine::MacroWindow& macro,
+                                                    bool useMean,
+                                                    juce::StringArray* emittedKeysOut = nullptr);
 
     // Parse the chain block out of an assistant reply.
     // Returns true and fills chainJsonOut if a block (complete or truncated) is present.
@@ -818,6 +904,19 @@ public:
     static const juce::Array<std::pair<juce::String, juce::String>>& chatLanguageList();
     
     // Remote prompt storage — static so all instances share the same prompt
+    // WHO WROTE THE DUMP (3 Sep 2026). buildChatRequestBody is the only writer
+    // of chat-body-debug.json, but it has TWO callers: the live send, and
+    // mapfps_test's history-resend pin, which the pre-commit gate runs. A
+    // commit taken between a turn and a harvest therefore replaces a real
+    // payload with a fixture, and until now the only way to tell was reading
+    // the message text. Every dump now declares its origin in the file. The
+    // default is the live path; a fixture caller sets this before composing,
+    // so a future one has to declare itself rather than inherit "live".
+    static juce::String dumpSource;
+
+    int  historyDroppedTotal_ = 0;     // messages the trim has dropped this session
+    bool historyTrimWarned_   = false; // latched: the notice rides exactly one turn
+
     static juce::String remoteSystemPrompt;
     static int remotePromptVersion;
     static bool remoteConfigLoaded;
@@ -1082,6 +1181,7 @@ private:
     UserInfo userInfo;
     UserSettings userSettings;
     bool autoDialMode = false;   // see get/setAutoDialMode()
+    bool dialWritesBlocked = false;  // see get/setDialWritesBlocked()
     
     // Shared flag: set to false in destructor so in-flight callbacks
     // know the object is gone and skip any member access.
@@ -1142,7 +1242,12 @@ private:
     // a release build: the implementations are wrapped in
     // #if ECHOJAY_DEV_TRANSPORT, so the preview URL and the bypass secret are
     // not merely unused but absent from the binary. See CMakeLists.txt.
-    static juce::String transportEndpoint(const juce::String& configured);
+    // forPath: the request this call is resolving, named in the one-per-process
+    // EJNet line. That line used to say only which host, which read as though
+    // it covered every request; it describes the transport, and now says which
+    // request first went through it and that the answer applies to all of them.
+    static juce::String transportEndpoint(const juce::String& configured,
+                                          const juce::String& forPath = juce::String());
     static juce::String transportHeaders();
 
     // Helper: PATCH with a JSON body. Same thread and teardown discipline as

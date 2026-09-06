@@ -292,6 +292,179 @@ public:
     void buildRecommendable(const std::vector<ScannedPlugin>& enabledPlugins,
                             const juce::String& formatFilter);
 
+    // ---- Move log (item 8) -------------------------------------------------
+    // WHAT ECHOJAY DID, not what the values ARE. modelLandedBits and its two
+    // siblings describe the LAST apply to a slot and are cleared by the next
+    // one (clearModelTiers, five sites), so nothing in the plugin could answer
+    // "what did you change five turns ago". This is that record: append-only,
+    // bounded, in memory, rebuilt into the prompt every turn and never persisted.
+    //
+    // LANDED AND REFUSED ARE DIFFERENT FACTS and the entry says which. A
+    // refusal is recorded because "we tried and could not" is a thing the
+    // model must be able to say; it is never recorded as a change.
+    // WHO CAUSED THIS LOAD (4 Sep 2026, live). The move log's structural
+    // recorder sat in completeLoad and fired on EVERY route in, so reopening a
+    // session wrote a BUILT line per restored slot and a saved-chain recall
+    // wrote one per slot of the recalled chain: EchoJay claiming authorship of
+    // a rack it had merely restored, at turn 0, with no dials beneath it.
+    //
+    // SET BY THE CALLER, NEVER INFERRED HERE. completeLoad cannot tell a
+    // restore from a build by looking at the plugin, and every previous
+    // attempt in this file to guess a cause from local state is in the
+    // handover as a defect. There is no default argument: adding a load path
+    // must be a decision about what the log will say.
+    enum class LoadOrigin
+    {
+        Restore,    // session reload or saved-chain recall: records NOTHING
+        User,       // the user picked it themselves: records an Added entry
+        Assistant   // an EchoJay build or edit op: records a Built entry
+    };
+
+    // WHICH ENTRY, IF ANY, AN ORIGIN LICENSES. Pure and header-inline: the
+    // recorder that consumes this needs a live ChainHost, which the gate
+    // cannot build, so leaving the decision inside it would make it a branch
+    // no test can witness. Twice in this session a guard escaped its pin for
+    // exactly that reason.
+    struct LoadRecordVerdict
+    {
+        bool record = false;              // false = this origin claims nothing
+        int  kind   = 0;                  // MoveLogEntry::Kind, as an int (declared below)
+    };
+    static LoadRecordVerdict loadRecordFor (LoadOrigin origin) noexcept
+    {
+        LoadRecordVerdict v;
+        switch (origin)
+        {
+            case LoadOrigin::Restore:   return v;                       // records NOTHING
+            case LoadOrigin::User:      v.record = true; v.kind = 4; return v;  // Added
+            case LoadOrigin::Assistant: v.record = true; v.kind = 1; return v;  // Load
+        }
+        return v;
+    }
+
+    struct MoveLogEntry
+    {
+        int          turn = 0;       // send ordinal within this session
+        int          slot = -1;      // slot index AT THE TIME, may not exist now
+        juce::String plugin;         // desc.name of that slot
+        juce::String param;          // semantic label, empty for a whole-slot move
+        juce::String before;         // last known display before the write, may be empty
+        juce::String after;          // what the control read after it, or the refusal note
+        juce::String reason;         // the model's rationale where one was captured
+        bool         landed = false; // false = refused or not verified; never a change
+        // WHAT KIND OF MOVE THIS WAS (4 Sep 2026). The first version recorded
+        // only dials, because the recorders sat in the two arms of the dial
+        // partition. A live block therefore carried "slot 3 FG-X 2 Level
+        // Ceiling -> -0.10dB" with no record that FG-X 2 had ever arrived in
+        // slot 3, and the model correctly answered that it had not built a
+        // chain. Structural moves are their own kind so a build reads as a
+        // build rather than as a dial with no control.
+        // Added is the USER putting a plugin in. It is a separate kind from
+        // Load and not a flag on it, because the block renders one word per
+        // kind and the whole point is that this word must not be BUILT.
+        // SessionBreak is not a move. It is the line that says the moves
+        // above it belong to an earlier session, so the model cannot read a
+        // restored entry as something it just did. Never serialised: a
+        // session reopened five times must not accumulate five boundaries.
+        enum class Kind { Dial, Load, Swap, Remove, Added, SessionBreak };
+        // loadRecordFor above returns these as ints (it is declared before the
+        // struct), so the two must agree. A reorder that breaks this stops the
+        // build instead of silently relabelling every user add as a build.
+        static_assert ((int) Kind::Load == 1 && (int) Kind::Added == 4,
+                       "loadRecordFor's kind codes must match Kind");
+        Kind kind = Kind::Dial;
+    };
+    // ---- PERSISTENCE (5 Sep 2026) ----------------------------------------
+    // The log lived only in memory, so reopening a session lost every move
+    // EchoJay had made. Both halves of the restore are pure and header-inline
+    // for the same reason loadRecordFor is: the members they would otherwise
+    // hide in need a live ChainHost, which the gate cannot build.
+
+    // THE TURN COUNTER CONTINUES, it does not restart. t7 in a restored log
+    // and t7 in this session would be two different turns under one label,
+    // which is the ambiguity the ordinal exists to remove. A max rather than
+    // an assignment, so a restore arriving after moves have been made can
+    // only move it forward.
+    static int restoredMoveTurn (int currentTurn, int savedTurn) noexcept
+    {
+        return savedTurn > currentTurn ? savedTurn : currentTurn;
+    }
+
+    // Restored entries, then the boundary, then whatever this session already
+    // has. Trimmed FROM THE FRONT to max, so a restored log plus this
+    // session's moves can never exceed the bound and the oldest go first,
+    // which is the eviction rule the live log already uses.
+    static std::vector<MoveLogEntry> mergeRestoredLog (std::vector<MoveLogEntry> restored,
+                                                       const std::vector<MoveLogEntry>& live,
+                                                       int max)
+    {
+        if (! restored.empty())
+        {
+            MoveLogEntry br;
+            br.kind = MoveLogEntry::Kind::SessionBreak;
+            br.turn = restored.back().turn;
+            br.slot = -1;
+            restored.push_back (std::move (br));
+        }
+        restored.insert (restored.end(), live.begin(), live.end());
+        while ((int) restored.size() > max) restored.erase (restored.begin());
+        return restored;
+    }
+
+    // BOUNDED BY COUNT, not bytes, so the log cannot be trimmed mid-entry.
+    // RAISED FROM 24 TO 48 (4 Sep 2026), and the number is measured rather
+    // than chosen. Structural entries made one build bigger than the whole old
+    // bound: a maximal build is 15 slots (LinkProcessor::kMaxChainSlots) at one
+    // load entry plus up to two dials each, which is 45 entries. At 24 that
+    // build evicted its own first slots before the model ever saw them, which
+    // is the defect this bound exists to prevent. 48 holds a maximal build
+    // whole with three spare; measured on the shipped format it renders 2936 B
+    // with ordinary role text and 3698 B with every reason at kMoveReasonMax,
+    // which is about 924 tokens and 2.08 percent of a real 178 KB turn at the
+    // worst case. An ordinary 8-slot build is 24 entries and 1803 B, so the old
+    // bound was exactly full at the moment the build finished.
+    // A BUILD IS NOT SUMMARISED INTO ONE ENTRY. Summarising saves about 700 B
+    // of that 2936 and costs the two things the log is for: when each slot
+    // arrived, and which slot a later dial belongs to. At 1.65 percent of a
+    // turn that is not a trade worth making.
+    static constexpr int kMoveLogMax = 48;
+    void beginMoveTurn() noexcept { ++moveTurn_; }
+    int  currentMoveTurn() const noexcept { return moveTurn_; }
+    void recordMove(int slot, const juce::String& plugin, const juce::String& param,
+                    const juce::String& before, const juce::String& after,
+                    const juce::String& reason, bool landed);
+    // Structural moves: a slot arriving, replacing another, or leaving. `gone`
+    // is the plugin that left, for a swap or a removal. Recorded in ChainHost
+    // rather than at the callers so every route into the rack is covered by
+    // one recorder: an AI build, a picker add, a chain-edit op and a recall
+    // all land here.
+    // Move log state (5 Sep 2026). Void when there is nothing to say, so a
+    // session that made no moves grows no key in the blob.
+    juce::var getMoveLogStateVar() const;
+    void      restoreMoveLogState (const juce::var& v);
+
+    // What an origin licenses, decided in ONE place; see the definition.
+    void recordLoadIfLicensed(LoadOrigin origin, int slot,
+                              const juce::String& arrivedName);
+    void recordStructural(MoveLogEntry::Kind kind, int slot,
+                          const juce::String& arrived, const juce::String& gone,
+                          const juce::String& reason);
+    // Attach a rationale to the newest entry, for the one caller that knows
+    // it: the AI build loop holds the model's role text and the load itself
+    // does not. No-op when the log is empty.
+    void annotateLastMove(const juce::String& reason);
+    // The longest a reason may render. See clipMoveReason.
+    static constexpr int kMoveReasonMax = 60;
+    static juce::String clipMoveReason (const juce::String& raw);
+    // A replace is a load and a removal back to back. Both are recorded by the
+    // recorders above, and this collapses that pair into ONE swap entry so the
+    // log reads as one act rather than two unrelated ones. Only collapses when
+    // the two newest entries really are that pair, so any other interleaving
+    // leaves them alone.
+    void collapseLastPairIntoSwap(int slot, const juce::String& arrived,
+                                  const juce::String& gone);
+    const std::vector<MoveLogEntry>& moveLogEntries() const noexcept { return moveLog_; }
+
     // Display names of resolved entries (for AI prompt injection).
     juce::StringArray getRecommendableNames() const;
 
@@ -426,8 +599,14 @@ public:
     //                           No map is involved at all. Payload-shape-side.
     //                           An ENUM VALUE ONLY: it has no wire reason, and
     //                           a pin asserts the emitter yields zero rows.
+    // writesBlocked is the DO NOT DIAL mode and nothing else. It is a separate
+    // status rather than a flavour of writesRejected because the two mean
+    // opposite things to the reader: writesRejected says the plugin or its map
+    // let us down, writesBlocked says the user asked for this. Telling a user
+    // their plugin "needs hand-dialing" when they themselves switched dialling
+    // off reads as the plugin being unsupported.
     enum class DialStatus { none, pending, applied, partial, noMap,
-                            mapNoCoverage, writesRejected,
+                            mapNoCoverage, writesRejected, writesBlocked,
                             mapIdentityMismatch, builtinPayloadUnmatched };
     struct SlotDialInfo {
         juce::String      name;
@@ -522,13 +701,20 @@ public:
 
     // Async-load the first recommendable entry whose displayName matches `name`
     // (case-insensitive). Callback: empty string on success, error message on fail.
+    // origin threaded, not fixed here: today the sole caller is the AI build
+    // loop (PluginEditor loadChainFromJson), but a name-addressed load is
+    // exactly the shape a user-driven path would reach for next.
     void loadByRecommendedName(const juce::String& name,
+                               LoadOrigin origin,
                                std::function<void(const juce::String&)> callback);
 
     // ---- Chain slot management (message thread) --------------------------
     // Async-append: loads the plugin and adds it to the end of the chain.
     // callback(error) — empty on success.
+    // origin has NO DEFAULT on purpose: see LoadOrigin. Every call site says
+    // who caused the load, and the move log records only what that licenses.
     void loadPluginAsync(const juce::PluginDescription& desc,
+                         LoadOrigin origin,
                          std::function<void(const juce::String& error)> callback);
 
     int                      getNumSlots()    const noexcept;
@@ -564,6 +750,22 @@ public:
         float wetPct = -1.0f;
         juce::String name;      // add/replace: name from AVAILABLE PLUGINS
         juce::String settings;  // prose settings for the slot tile (display)
+        // ---- OP TARGETS v1 (4 Sep 2026): the op names what it is aiming at.
+        // Until now every op addressed its target by NUMBER alone, and every
+        // surface that appeared to confirm that number in words (the card,
+        // the progress label, the result line) rendered the number back
+        // through a lookup, so the words could never disagree with the number
+        // they were meant to check. Two live failures in one session.
+        //   slotName   the plugin this op expects to find AT `slot`. On a
+        //              replace that is the plugin being REMOVED, which the
+        //              schema had no way to say at all (`name` is the plugin
+        //              arriving, and always was).
+        //   afterName  the plugin an `add` expects to sit AFTER.
+        // BOTH OPTIONAL, ALWAYS. Empty means an older server that does not
+        // emit them, and the op then behaves exactly as it did before.
+        // See HANDOVER/op-targets-v1.md.
+        juce::String slotName;
+        juce::String afterName;
         // Server-decided no-such-control verdict riding the op (9 Aug
         // 2026): term the user asked for + provenance tier (deferred /
         // unmapped / complete). The card composes the REASON a suggestion
@@ -609,6 +811,104 @@ public:
             }
         return ops;
     }
+    // ---- OP TARGETS v1: the two target resolvers -------------------------
+    // Static and header-inline so the gate exercises the SHIPPED decision
+    // rather than a copy of it. Both are pure over a list of the current
+    // rack's names; neither touches a host.
+
+    // An identity target (remove/replace/move/bypass/set/set_wet). Returns an
+    // empty string when the op may proceed, or the refusal clause naming BOTH
+    // sides. A refusal that says only "mismatch" cannot be acted on.
+    // NO RECOVERY BY NAME HERE, deliberately: relocating an identity op
+    // because the name turned up elsewhere would mutate a plugin the op did
+    // not name, which is the harm this field exists to prevent. The dry run
+    // already draws this line in the other direction, and for the same
+    // reason: a positional target clamps, an identity target aborts.
+    static juce::String identityTargetMismatch (const juce::String& opSlotName,
+                                                const juce::String& rackName,
+                                                int slot0)
+    {
+        if (opSlotName.trim().isEmpty()) return {};          // no claim, nothing to check
+        if (namesMatchLoose (opSlotName, rackName)) return {};
+        return "this op named \"" + opSlotName.trim() + "\" at slot "
+             + juce::String (slot0 + 1) + ", but the rack has \"" + rackName + "\" there";
+    }
+
+    // Where an `add` should land.
+    //   anchorCur  the CURRENT index of the slot `after` resolved to, or -1
+    //              when the op said "insert first", or -2 when the index did
+    //              not resolve at all (removed, or past the end).
+    //   rackNames  the rack AS IT STANDS NOW, not the pre-batch rack. That is
+    //              the only reading under which the recovery below can work:
+    //              a slot added earlier in the same batch has no original
+    //              number (ChainHost.cpp says so at the walkSlotTo comment)
+    //              but it IS in the current rack under its name.
+    struct AddAnchor { int insertAt = 0; bool refused = false; bool fromName = false; juce::String why; };
+    static AddAnchor resolveAddAnchor (const juce::String& afterName, int anchorCur,
+                                       const juce::StringArray& rackNames)
+    {
+        AddAnchor r;
+        const auto want = afterName.trim();
+        // 1. "insert first": there is no anchor, so a name is meaningless.
+        if (anchorCur == -1) { r.insertAt = 0; return r; }
+        const bool indexOk = anchorCur >= 0 && anchorCur < rackNames.size();
+        // 2. No name: today's arithmetic, byte for byte. An unresolvable
+        //    index still appends at the end rather than aborting.
+        if (want.isEmpty())
+        {
+            r.insertAt = indexOk ? anchorCur + 1 : rackNames.size();
+            return r;
+        }
+        // 3. Name and index agree. The ordinary case, one string compare.
+        if (indexOk && namesMatchLoose (want, rackNames[anchorCur]))
+        {
+            r.insertAt = anchorCur + 1;
+            return r;
+        }
+        // They disagree. A POSITIONAL target may recover by name.
+        juce::Array<int> hits;
+        for (int i = 0; i < rackNames.size(); ++i)
+            if (namesMatchLoose (want, rackNames[i])) hits.add (i);
+        // 4. Exactly one: THE NAME WINS. This is the failure-B fix and the
+        //    only way "after the plugin I just added" can be expressed.
+        if (hits.size() == 1)
+        {
+            r.insertAt = hits[0] + 1;
+            r.fromName = true;
+            return r;
+        }
+        // 5. Absent: nothing to place against.
+        if (hits.isEmpty())
+        {
+            r.refused = true;
+            r.why = "\"" + want + "\" is not in the rack, so there is nothing to add after";
+            return r;
+        }
+        // 6. Duplicated: the index is the tie-breaker for a repeated name, and
+        //    we only reach this line because the index's own slot does NOT
+        //    bear the name, so the tie-breaker has already been spent.
+        //    Guessing between two identical plugins is failure C in a costume.
+        r.refused = true;
+        r.why = "\"" + want + "\" is in the rack " + juce::String (hits.size())
+              + " times and slot " + juce::String (anchorCur + 1) + " is not one of them";
+        return r;
+    }
+
+    // DOES THIS BLOCK ONLY SET VALUES? True when every op is a value-only op
+    // (set / set_wet) and none of them changes the rack's shape. Do-not-dial
+    // retires the Apply button for these, because under the mode there is
+    // nothing left for Apply to do; a block that ADDS, REMOVES, REPLACES,
+    // MOVES or BYPASSES keeps its button, because the mode blocks writing
+    // values and not changing the chain. Pure and header-inline so the gate
+    // drives the shipped predicate.
+    static bool opsAreValuesOnly (const std::vector<ChainEditOp>& ops) noexcept
+    {
+        if (ops.empty()) return false;      // nothing is not "values only"
+        for (const auto& o : ops)
+            if (o.op != "set" && o.op != "set_wet") return false;
+        return true;
+    }
+
     static std::vector<ChainEditOp> parseChainEditOps(const juce::String& editJson,
                                                       juce::StringArray* baseSlotsOut = nullptr,
                                                       juce::String* explanationOut = nullptr);
@@ -699,7 +999,13 @@ public:
     // are rebuild-free — values flow through shared atomics, never rewiring.
     void  setMasterWet(float wet01);
     float getMasterWet() const noexcept { return masterWet_.load(std::memory_order_relaxed); }
-    void  setSlotWet(int i, float wet01);
+    // WHO IS TURNING THE KNOB (5 Sep 2026). Do-not-dial means EchoJay does not
+    // change the sound; it does NOT mean the user cannot. setSlotWet is the one
+    // setter both reach, so it takes the source, and the DEFAULT IS Assistant
+    // because that is the safe polarity: a call site added without thinking is
+    // blocked in the mode rather than silently writing through it.
+    enum class WetSource { Assistant, User, Restore };
+    void  setSlotWet(int i, float wet01, WetSource src = WetSource::Assistant);
     float getSlotWet(int i) const;
 
     // ---- Running level (LevelTally, 17 Aug 2026) --------------------------
@@ -785,7 +1091,13 @@ public:
                          // (see ApplyResult::anchorsUnverified). Carried so the
                          // report layer can refuse to present the value as
                          // exact; it never changes whether the write happens.
-                         bool anchorsUnverified = false; };
+                         bool anchorsUnverified = false;
+                         // The control's reading immediately BEFORE this write
+                         // (ApplyResult::beforeText). Carried across the same
+                         // boundary that once dropped `index`, and for the same
+                         // reason: the move log needs it and nothing downstream
+                         // can re-derive it once the value has been written.
+                         juce::String beforeText; };
     std::vector<ApplyReport> applyStructuredSettings (int slotIndex,
                                                       const juce::var& structuredSettings,
                                                       const juce::var& map);
@@ -1327,7 +1639,8 @@ public:
     void asyncCreatePlugin(const juce::PluginDescription& d,
         std::function<void(std::unique_ptr<juce::AudioPluginInstance>, const juce::String&)> cb);
     void completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
-                      const juce::PluginDescription& desc);
+                      const juce::PluginDescription& desc,
+                      LoadOrigin origin);
     // reason travels into chain_blacklist.txt next to the path with an ISO
     // date; the first reason recorded for a path wins (it names the
     // original event, later duplicates are re-detections).
@@ -1671,6 +1984,13 @@ private:
     int                         dryRingWrite_ = 0;
 
     // Resolver cache (message thread only — no mutex needed)
+    // Move log storage. NOT cleared by a rack clear or a slot removal: the
+    // log records what EchoJay DID, and the model has already been told. A
+    // slot that no longer exists does not make the move it received untrue,
+    // and erasing it would let EchoJay deny an action it took.
+    std::vector<MoveLogEntry> moveLog_;
+    int moveTurn_ = 0;
+
     std::vector<RecommendableEntry> recommendable_;
     // Fingerprints already asked about via the FALLBACK leg. Deliberately NOT
     // mapsRequested_: that set is the exact-map fetch's, and sharing it is what

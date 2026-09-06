@@ -2990,10 +2990,10 @@ void EchoJayProcessor::stopCapture()
     // - Everything else (including buses like Drum Bus, Vocal Bus): use PEAK-HOLD
     //   (captures actual frequency content without gaps/silence diluting the reading.
     //   Even buses like Drum Bus are fundamentally transient — averaging kills them.)
-    bool useAverage = (channelType == ChannelType::FullMix || 
-                       channelType == ChannelType::MasterBus ||
-                       channelType == ChannelType::MusicBus ||
-                       channelType == ChannelType::InstrumentBus);
+    // ONE predicate, shared with the chat injection (see spectrumUsesAverage
+    // in the header). The list used to live here alone; the injection needed
+    // the same rule and a second copy is how two answers to one question start.
+    bool useAverage = spectrumUsesAverage(channelType);
     
     bool hasPeakData = false;
     for (int i = 0; i < 64; ++i)
@@ -4183,6 +4183,12 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     // guard. An older build ignores it.
     state->setProperty("chainLevels", chainHost.getLevelsStateVar(chainHost.getHostTrackName()));
     state->setProperty("chainWarningDismissed", chainHost.chainWarningDismissed);
+    // Move log (5 Sep 2026): what EchoJay DID, so reopening a session does not
+    // erase its own account of itself. Void when nothing has happened, so a
+    // session that made no moves grows no key and reads identically in a build
+    // that predates this.
+    if (auto moveLogVar = chainHost.getMoveLogStateVar(); !moveLogVar.isVoid())
+        state->setProperty("moveLog", moveLogVar);
     // Saved chain identity: written only when there IS one, so a session
     // with no saved chain grows no keys and still reads identically in an
     // older build.
@@ -4366,6 +4372,12 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
         }
         
         // Restore chat history
+        // Move log: guarded, else-less, no version integer, exactly as the
+        // discipline above requires. Absent means a save from a build that
+        // predates this, and the log simply starts empty as it always did.
+        if (obj->hasProperty("moveLog"))
+            chainHost.restoreMoveLogState(obj->getProperty("moveLog"));
+
         if (auto* chatArr = obj->getProperty("chatHistory").getArray())
         {
             chatHistory.clear();
