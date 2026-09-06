@@ -1198,11 +1198,19 @@ void LinkProcessor::ensureRegistryOpen()
 
 juce::String LinkProcessor::effectiveFilePart() const
 {
-    // Deliberately linkName-only (NOT effectiveDisplayName): a host track
-    // name arriving or changing must never rename the audio ring file —
-    // display is cosmetic, file identity stays stable.
-    auto safe = LinkShm::makeSafeFilePart(linkName.trim());
-    return safe.isNotEmpty() ? safe : "untitled_" + instanceUid_;
+    // UID-KEYED (6 Sep 2026, shoot-day defect): the ring file used to be
+    // named from the user-typed linkName, so two Links carrying the same
+    // typed name (a duplicated track or a pasted insert restores the same
+    // name into both) opened the SAME ring file - openRingProducer zeroes the
+    // header on open, so the second instance wiped the first's ring and both
+    // rows in the main plugin read one file. Rows were already uid-keyed and
+    // distinct (the uid claim gate re-mints a duplicate); only the FILE was
+    // keyed on the name. instanceUid_ is unique per instance, saved and
+    // restored with the state, re-minted for a proven-live duplicate before
+    // this is consulted (claimRegistrySlot), and never changes on a host or
+    // user rename - so the ring never renames either. The name stays purely
+    // cosmetic: displayName in the registry slot.
+    return instanceUid_;
 }
 
 void LinkProcessor::updateTrackProperties(const TrackProperties& props)
