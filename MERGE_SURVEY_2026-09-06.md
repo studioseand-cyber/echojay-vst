@@ -179,3 +179,32 @@ the state restore use - the question below.
   the guard belong in applyStructured (the model's path) instead? It is
   your call - I have not touched it. (The setting defaults off, so nobody
   is hit at defaults.)
+
+## 7. WHAT IS ALREADY ON BOTH SIDES (verified 6 Sep 2026, `git merge-base --is-ancestor <commit> aa455ff`, every one YES)
+Sean's chain-control work in the main plugin is contained in Kathy's tip:
+    e52066d  editor placement: ONE decision; the Link stops floating builtins
+    b94c346  panes: no auto-open off-tab; the rack menu closes editors first
+    6853ea2  editor panes: the MISSING slot speaks; EJPane instruments all four
+    ef5a4df  editor panes: the sizing half of the builtin lift
+    7a30edf  rack row: tick + M + S centred on the pill
+    e4262c3  mixer strips: the tick/M/S group centred, in the stored rects
+    637212f  mute/solo: one author, two placements; the rack's drift named and gated
+    06e789f  mute/solo layout: lamps get their own space
+    68cbc6e  (Kathy) offer the auto-dial toggle only where turning it off would change the answer
+    19f3c36  placement: every reader goes through the ONE decision
+    0d99d0e  first open: the restored tab is ENTERED, not just displayed
+    d68da09  the two-line read: getAllSlotInfos dropped the sixth field  (the merge base itself)
+Her commit f6ac073 of 1 September - "merge: Sean's Link and rack-borrow
+work into the naming, feed and dial branch" - integrated it herself. It is
+on both sides, cannot conflict, and cannot be lost.
+
+The only genuinely two-sided work is ours since d68da09 on the shared
+non-pitch files: da6939f (the Settings removal), 2f02c65 (the committed
+borrow budget, the sidecar identity, the processor-owned registry pass),
+222b4fe (the latency log; the round-48 reset kept), c75b222 (the transport
+reset), 1c5fb52 (the reference grid provenance) - and, surfaced by the
+same check, 7fe50fd (the reference laundering severed at the state layer:
+EedDeviceProcessor::onStateApplied), which shares its FILE with Kathy's
+aa455ff guard but not its function; it auto-merges and its behaviour is
+covered by the pitch suite's saved-state checks. The V1-V6 legs cover the
+five; V6's read-back and the suite cover the sixth.
