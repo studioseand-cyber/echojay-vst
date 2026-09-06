@@ -445,16 +445,42 @@ struct RegLiveness
 //  Pure so all three arms gate functionally; the caller re-observes on its
 //  claim-retry tick (~1s; producers bump ~1Hz, so live proves in 1-2 ticks).
 // =============================================================================
+// THE FLOOR IS TIME, NOT COUNTS (6 Sep 2026 ruling, C4a). The five-observation
+// rule assumed ~1 s claim retries against ~1 Hz bumps; in fact the holder
+// bumps on every 30 Hz tick, the claim retry runs on every 30 Hz tick, and a
+// seeded fresh insert observes several times inside one message-loop turn
+// (setState sync + queued updateShmState calls). Five observations could land
+// between two bumps of a LIVE holder - measured 2 of 4 harness runs adopting
+// a live sibling's uid. Liveness is a property of time: AdoptGhost now also
+// needs kUidGateFloorMs since this holder was first observed. The floor is
+// DERIVED, not picked: it is the product's own freshness window - a row whose
+// heartbeat has not moved for 3500 ms is already "not fresh" to the Link's
+// solo scan (LinkProcessor.cpp, `fresh = (nowMs - lastHbMoveMs) < 3500.0`)
+// and stale to the main plugin (~3 s) - so a holder frozen through the floor
+// is dead by the same rule everywhere. Measured against the Pro Tools storm
+// (incarnations 0.7-1.2 s, two of 25 gaps at 3.5-3.8 s): an incarnation that
+// dies inside the floor never adopts and never re-mints - no identity burned,
+// no orphan; the slot simply stays unclaimed until an incarnation outlives it.
+// C4b: a holder whose PUBLISHER PID IS DEAD (round 53's sidecar field, kill(pid,0))
+// is adopted at once - a dead process is not ambiguous, and the unclean-kill
+// case the gate was built for stays fast. The floor applies only while the
+// pid is alive: the one case (dead incarnation vs live sibling in one process)
+// that heartbeat time alone can resolve.
+static constexpr juce::int64 kUidGateFloorMs = 3500;
 struct UidClaimGate
 {
     enum class Decision { Wait, Remint, AdoptGhost };
     RegLiveness live;
     int ticks = 0;
-    Decision observe (uint32_t holderHb, int frozenTicksNeeded = 5)
+    juce::int64 firstMs = 0;
+    Decision observe (uint32_t holderHb, bool publisherAlive, juce::int64 nowMs,
+                      int frozenTicksNeeded = 5, juce::int64 floorMs = kUidGateFloorMs)
     {
+        if (ticks == 0) firstMs = nowMs;
         ++ticks;
-        if (live.observe (holderHb)) return Decision::Remint;
-        if (ticks >= frozenTicksNeeded) return Decision::AdoptGhost;
+        if (live.observe (holderHb)) return Decision::Remint;        // a climb proves live, at any cadence
+        if (! publisherAlive) return Decision::AdoptGhost;           // C4b: dead process, no floor
+        if (ticks >= frozenTicksNeeded && nowMs - firstMs >= floorMs) return Decision::AdoptGhost;   // C4a
         return Decision::Wait;
     }
 };

@@ -12,6 +12,9 @@
 #include "LinkProcessor.h"
 #include "LinkShm.h"
 #include <cstdio>
+#include <unistd.h>
+#include <set>
+#include <vector>
 
 // A console process has no application run loop; JUCE's message queue and
 // timers dispatch through the main CFRunLoop, so pump it by hand. Drained
@@ -81,14 +84,16 @@ static int cloneLeg()
     pump (200);
     int err = 0; const auto dir = LinkShm::resolveDir (err);
     int fd = -1, rerr = 0; void* reg = LinkShm::openRegistry (dir, fd, rerr);
-    auto rows = rowsNamed (reg, "Vox");
-    std::printf ("  registry rows named Vox: %d   A slot %d   B slot %d\n", (int) rows.size(), a->diag.slotIdx, b->diag.slotIdx);
-    for (auto& r : rows) std::printf ("    row uid %-12s file %-28s\n", r.uid.toRawUTF8(), r.file.toRawUTF8());
+    auto* sl = LinkShm::regSlots (reg);
+    auto rowOf = [&] (int idx) { Row r; if (idx >= 0) { r.name = juce::String::fromUTF8 (sl[idx].displayName); r.file = juce::String::fromUTF8 (sl[idx].audioFile); r.uid = juce::String::fromUTF8 (sl[idx].instanceUid); } return r; };
+    const Row ra = rowOf (a->diag.slotIdx), rb = rowOf (b->diag.slotIdx);
+    std::printf ("  A slot %d uid %s name \"%s\" file %s\n  B slot %d uid %s name \"%s\" file %s\n", a->diag.slotIdx, ra.uid.toRawUTF8(), ra.name.toRawUTF8(), ra.file.toRawUTF8(), b->diag.slotIdx, rb.uid.toRawUTF8(), rb.name.toRawUTF8(), rb.file.toRawUTF8());
     int bad = 0;
-    if (rows.size() != 2) { std::printf ("  ONE ROW FOR TWO INSTANCES\n"); bad = 1; }
-    else if (rows[0].uid == rows[1].uid) { std::printf ("  TWO ROWS, SAME UID (the gate did not re-mint)\n"); bad = 1; }
-    else if (rows[0].file == rows[1].file) { std::printf ("  two rows, distinct uids, ONE RING FILE (name-keyed file)\n"); bad = 2; }
-    if (a->diag.slotIdx == b->diag.slotIdx) { std::printf ("  BOTH INSTANCES HOLD THE SAME SLOT %d\n", a->diag.slotIdx); bad = 1; }
+    if (a->diag.slotIdx < 0 || b->diag.slotIdx < 0 || a->diag.slotIdx == b->diag.slotIdx) { std::printf ("  ONE SLOT (or none) FOR TWO INSTANCES\n"); bad = 1; }
+    else if (ra.uid == rb.uid) { std::printf ("  TWO SLOTS, SAME UID (the gate did not re-mint)\n"); bad = 1; }
+    else if (ra.file == rb.file) { std::printf ("  distinct uids, ONE RING FILE (name-keyed file)\n"); bad = 2; }
+    // C2 (6 Sep 2026 ruling): the duplicate's chunk belonged to a live instance, so its seeded typed name is dropped - the duplicate publishes EMPTY
+    if (bad == 0 && ! (ra.name == "Vox" && rb.name.isEmpty())) { std::printf ("  the duplicate kept the seeded name (C2)\n"); bad = 1; }
     std::printf ("  -> %s\n", bad ? "FAIL" : "PASS");
     drain(); a.reset(); b.reset(); drain();
     return bad;
@@ -111,16 +116,14 @@ static int burstLeg()
     for (int i = 0; i < 6; ++i) b->updateShmState();   // synchronous burst, no timer tick in between
     int err = 0; const auto dir = LinkShm::resolveDir (err);
     int fd = -1, rerr = 0; void* reg = LinkShm::openRegistry (dir, fd, rerr);
-    auto rows = rowsNamed (reg, "Vox");
-    std::printf ("  after the burst: rows named Vox: %d   A slot %d   B slot %d\n", (int) rows.size(), a->diag.slotIdx, b->diag.slotIdx);
-    for (auto& r : rows) std::printf ("    row uid %-12s file %-28s\n", r.uid.toRawUTF8(), r.file.toRawUTF8());
+    std::printf ("  after the burst: A slot %d   B slot %d\n", a->diag.slotIdx, b->diag.slotIdx);
     pump (100);   // then let both timers run ~2 s, as the host would after loading
-    rows = rowsNamed (reg, "Vox");
-    std::printf ("  2 s later:       rows named Vox: %d   A slot %d   B slot %d\n", (int) rows.size(), a->diag.slotIdx, b->diag.slotIdx);
-    for (auto& r : rows) std::printf ("    row uid %-12s file %-28s\n", r.uid.toRawUTF8(), r.file.toRawUTF8());
+    auto* sl = LinkShm::regSlots (reg);
+    auto uidAt = [&] (int idx) { return idx >= 0 ? juce::String::fromUTF8 (sl[idx].instanceUid) : juce::String ("(none)"); };
+    std::printf ("  2 s later:       A slot %d uid %s   B slot %d uid %s\n", a->diag.slotIdx, uidAt (a->diag.slotIdx).toRawUTF8(), b->diag.slotIdx, uidAt (b->diag.slotIdx).toRawUTF8());
     int bad = 0;
-    if (rows.size() != 2 || a->diag.slotIdx == b->diag.slotIdx) { std::printf ("  ONE SLOT FOR TWO INSTANCES (the gate adopted a live holder as a ghost)\n"); bad = 1; }
-    else if (rows[0].uid == rows[1].uid) { std::printf ("  TWO ROWS, ONE UID\n"); bad = 1; }
+    if (a->diag.slotIdx < 0 || b->diag.slotIdx < 0 || a->diag.slotIdx == b->diag.slotIdx) { std::printf ("  ONE SLOT FOR TWO INSTANCES (the gate adopted a live holder as a ghost)\n"); bad = 1; }
+    else if (uidAt (a->diag.slotIdx) == uidAt (b->diag.slotIdx)) { std::printf ("  TWO SLOTS, ONE UID\n"); bad = 1; }
     std::printf ("  -> %s\n", bad ? "FAIL" : "PASS");
     drain(); a.reset(); b.reset(); drain();
     return bad;
@@ -189,17 +192,181 @@ static int ghostLegs()
     return bad;
 }
 
-int main()
+// THE SEEDED-CHUNK LEGS (6 Sep 2026 ruling, C1/C2/C3). Pro Tools seeds a fresh
+// insert with the plugin's last chunk. A chunk that belongs to another LIVE
+// instance must contribute NO field that answers "which Link is this":
+// neither its host track name nor its typed name. The seeding stays for the
+// two cases it was built for: AdoptGhost (a replacement incarnation on the
+// same track) and a plain restore (session reopen).
+static juce::String slotName (void* reg, int idx) { return idx >= 0 ? juce::String::fromUTF8 (LinkShm::regSlots (reg)[idx].displayName) : juce::String ("(no slot)"); }
+static juce::String slotUid  (void* reg, int idx) { return idx >= 0 ? juce::String::fromUTF8 (LinkShm::regSlots (reg)[idx].instanceUid) : juce::String ("(no slot)"); }
+static void nameFromHost (LinkProcessor& l, const char* name) { juce::AudioProcessor::TrackProperties tp; tp.name = std::make_optional (juce::String (name)); l.updateTrackProperties (tp); }
+
+static int l4Leg (LinkProcessor& a, const juce::MemoryBlock& chunkA, void* reg)
+{
+    std::printf ("== L4: THREE fresh inserts beside live Link A, each seeded with A's chunk -> three DISTINCT identities and names ==\n");
+    std::vector<std::unique_ptr<LinkProcessor>> v;
+    for (int i = 0; i < 3; ++i) { v.push_back (std::make_unique<LinkProcessor>()); v.back()->prepareToPlay (48000.0, 512); v.back()->setStateInformation (chunkA.getData(), (int) chunkA.getSize()); pump (60); }
+    pump (150);
+    std::set<juce::String> uids, names; std::set<int> slotsUsed;
+    for (auto& l : v) { uids.insert (slotUid (reg, l->diag.slotIdx)); names.insert (slotName (reg, l->diag.slotIdx)); slotsUsed.insert (l->diag.slotIdx);
+                        std::printf ("  insert: slot %d uid %s published \"%s\"\n", l->diag.slotIdx, slotUid (reg, l->diag.slotIdx).toRawUTF8(), slotName (reg, l->diag.slotIdx).toRawUTF8()); }
+    const bool distinctIds = uids.size() == 3 && slotsUsed.size() == 3 && ! slotsUsed.count (-1) && ! uids.count (a.getInstanceUidForTest());
+    const bool noFalseNames = names.size() == 1 && names.count (juce::String());
+    const bool aIntact = a.diag.slotIdx >= 0 && slotUid (reg, a.diag.slotIdx) == a.getInstanceUidForTest();
+    std::printf ("  A still holds its slot %d with its uid: %s\n  -> %s (three uids/slots, none A's; every published name EMPTY so the main plugin numbers them Untitled 1..3)\n", a.diag.slotIdx, aIntact ? "yes" : "NO", (distinctIds && noFalseNames && aIntact) ? "PASS" : "FAIL");
+    drain(); v.clear(); drain();
+    return (distinctIds && noFalseNames && aIntact) ? 0 : 8;
+}
+
+static int seededLegs()
+{
+    int err = 0; const auto dir = LinkShm::resolveDir (err);
+    int fd = -1, rerr = 0; void* reg = LinkShm::openRegistry (dir, fd, rerr);
+    if (reg == nullptr) { std::printf ("== SEEDED LEGS: registry not mappable (%d)\n", rerr); return 99; }
+    int bad = 0;
+    // Link A: live, typed name "Vox", host track name "Track A"
+    auto a = std::make_unique<LinkProcessor>(); a->linkName = "Vox"; a->prepareToPlay (48000.0, 512); nameFromHost (*a, "Track A"); a->updateShmState(); pump (60);
+    juce::MemoryBlock chunkA; a->getStateInformation (chunkA);
+    std::printf ("== L1: a chunk from PROVEN-LIVE Link A (typed \"Vox\", host \"Track A\", uid %s) seeded into fresh Link B ==\n", a->getInstanceUidForTest().toRawUTF8());
+    {
+        auto b = std::make_unique<LinkProcessor>(); b->prepareToPlay (48000.0, 512);
+        b->setStateInformation (chunkA.getData(), (int) chunkA.getSize());
+        pump (150);   // the gate: A's heartbeat climbs -> re-mint
+        const auto disp = b->effectiveDisplayName(); const auto host = b->getHostTrackName(); const auto typed = b->linkName;
+        std::printf ("  B: slot %d uid %s  typed \"%s\"  host \"%s\"  published \"%s\"\n", b->diag.slotIdx, slotUid (reg, b->diag.slotIdx).toRawUTF8(), typed.toRawUTF8(), host.toRawUTF8(), slotName (reg, b->diag.slotIdx).toRawUTF8());
+        const bool ok = b->diag.slotIdx >= 0 && slotUid (reg, b->diag.slotIdx) != a->getInstanceUidForTest() && typed.isEmpty() && host.isEmpty() && disp.isEmpty() && slotName (reg, b->diag.slotIdx).isEmpty();
+        std::printf ("  -> %s (B must publish NEITHER \"Vox\" NOR \"Track A\")\n", ok ? "PASS" : "FAIL"); bad |= ok ? 0 : 1;
+        drain(); b.reset(); drain();
+    }
+    bad |= l4Leg (*a, chunkA, reg);
+    if (false) {
+        std::vector<std::unique_ptr<LinkProcessor>> v;
+        for (int i = 0; i < 3; ++i) { v.push_back (std::make_unique<LinkProcessor>()); v.back()->prepareToPlay (48000.0, 512); v.back()->setStateInformation (chunkA.getData(), (int) chunkA.getSize()); pump (60); }
+        pump (150);
+        std::set<juce::String> uids, names; std::set<int> slotsUsed;
+        for (auto& l : v) { uids.insert (slotUid (reg, l->diag.slotIdx)); names.insert (slotName (reg, l->diag.slotIdx)); slotsUsed.insert (l->diag.slotIdx);
+                            std::printf ("  insert: slot %d uid %s published \"%s\"\n", l->diag.slotIdx, slotUid (reg, l->diag.slotIdx).toRawUTF8(), slotName (reg, l->diag.slotIdx).toRawUTF8()); }
+        const bool distinctIds = uids.size() == 3 && slotsUsed.size() == 3 && ! slotsUsed.count (-1) && ! uids.count (a->getInstanceUidForTest());
+        const bool noFalseNames = names.size() == 1 && names.count (juce::String());   // all EMPTY: the main plugin numbers them (C3, proven in the main-archive leg)
+        std::printf ("  -> %s (three uids/slots, none A's; every published name EMPTY so the main plugin numbers them Untitled 1..3)\n", (distinctIds && noFalseNames) ? "PASS" : "FAIL"); bad |= (distinctIds && noFalseNames) ? 0 : 8;
+        drain(); v.clear(); drain();
+    }
+    drain(); a.reset(); drain();
+    auto* slots = LinkShm::regSlots (reg);
+    const char* U = "deadbeef02";
+    auto plant = [&]() -> int { for (int i = kRegMaxSlots - 1; i >= 0; --i) if (LinkShm::loadAcquire (&slots[i].inUse) == 0) { std::memset (&slots[i], 0, sizeof (RegistrySlot)); std::strncpy (slots[i].displayName, "Vox", 39); std::strncpy (slots[i].audioFile, "audio_x.bin", 47); std::strncpy (slots[i].instanceUid, U, 10); slots[i].sampleRate = 48000.0f; slots[i].numChannels = 2; LinkShm::storeRelease (&slots[i].heartbeat, 7u); LinkShm::storeRelease (&slots[i].inUse, 1u); return i; } return -1; };
+    const juce::String seeded = "{\"linkName\":\"Vox\",\"linkOn\":true,\"instanceUid\":\"" + juce::String (U) + "\",\"hostTrackName\":\"Track A\"}";
+    std::printf ("== L2: AdoptGhost (a frozen slot carries the chunk's uid) still KEEPS the seeded names ==\n");
+    {
+        const int g = plant();
+        auto c = std::make_unique<LinkProcessor>(); c->prepareToPlay (48000.0, 512); c->setStateInformation (seeded.toRawUTF8(), (int) seeded.getNumBytesAsUTF8()); pump (200);
+        std::printf ("  C: slot %d (ghost was %d) uid %s typed \"%s\" host \"%s\" published \"%s\"\n", c->diag.slotIdx, g, slotUid (reg, c->diag.slotIdx).toRawUTF8(), c->linkName.toRawUTF8(), c->getHostTrackName().toRawUTF8(), slotName (reg, c->diag.slotIdx).toRawUTF8());
+        const bool ok = c->diag.slotIdx >= 0 && slotUid (reg, c->diag.slotIdx) == U && c->linkName == "Vox" && c->getHostTrackName() == "Track A" && slotName (reg, c->diag.slotIdx) == "Vox";
+        std::printf ("  -> %s\n", ok ? "PASS" : "FAIL"); bad |= ok ? 0 : 2;
+        drain(); c.reset(); drain(); for (int i = 0; i < kRegMaxSlots; ++i) if (LinkShm::loadAcquire (&slots[i].inUse) && juce::String::fromUTF8 (slots[i].instanceUid) == U) LinkShm::releaseSlot (reg, i);
+    }
+    std::printf ("== L3: a plain restore (no holder anywhere) keeps both names ==\n");
+    {
+        auto d = std::make_unique<LinkProcessor>(); d->prepareToPlay (48000.0, 512); d->setStateInformation (seeded.toRawUTF8(), (int) seeded.getNumBytesAsUTF8()); pump (100);
+        std::printf ("  D: slot %d uid %s typed \"%s\" host \"%s\" published \"%s\"\n", d->diag.slotIdx, slotUid (reg, d->diag.slotIdx).toRawUTF8(), d->linkName.toRawUTF8(), d->getHostTrackName().toRawUTF8(), slotName (reg, d->diag.slotIdx).toRawUTF8());
+        const bool ok = d->diag.slotIdx >= 0 && slotUid (reg, d->diag.slotIdx) == U && d->linkName == "Vox" && d->getHostTrackName() == "Track A" && slotName (reg, d->diag.slotIdx) == "Vox";
+        std::printf ("  -> %s\n", ok ? "PASS" : "FAIL"); bad |= ok ? 0 : 4;
+        drain(); d.reset(); drain();
+    }
+    return bad;
+}
+
+// C4c: a race leg that passes once proves nothing. Twenty consecutive runs each.
+static int race20()
+{
+    int err = 0; const auto dir = LinkShm::resolveDir (err);
+    int fd = -1, rerr = 0; void* reg = LinkShm::openRegistry (dir, fd, rerr);
+    int l4pass = 0, burstpass = 0;
+    for (int r = 0; r < 20; ++r)
+    {
+        auto a = std::make_unique<LinkProcessor>(); a->linkName = "Vox"; a->prepareToPlay (48000.0, 512); nameFromHost (*a, "Track A"); a->updateShmState(); pump (40);
+        juce::MemoryBlock chunkA; a->getStateInformation (chunkA);
+        if (l4Leg (*a, chunkA, reg) == 0) ++l4pass;
+        drain(); a.reset(); drain();
+        if (burstLeg() == 0) ++burstpass;
+    }
+    std::printf ("RACE20: L4 %d/20   burst %d/20\n", l4pass, burstpass);
+    return (l4pass == 20 && burstpass == 20) ? 0 : 1;
+}
+
+// THE STORM MEASUREMENT (6 Sep 2026 ruling): Pro Tools tore the Link down and
+// re-created it ~30 times in 30 s, each incarnation restoring the same chunk,
+// each finding its predecessor's slot frozen (never released). Simulated with
+// the frozen slot planted by hand each cycle (its sidecar naming THIS process
+// as publisher - the same-pid case the floor exists for), an incarnation that
+// lives ~lifeMs, then goes. Counted: identities burned (re-mints), sidecars and
+// ring files left behind for uids other than the seed, adoptions, and how long
+// after the storm the first surviving incarnation registers.
+static int storm (int cycles, int lifeMs, int deadPid)
+{
+    int err = 0; const auto dir = LinkShm::resolveDir (err);
+    int fd = -1, rerr = 0; void* reg = LinkShm::openRegistry (dir, fd, rerr);
+    auto* slots = LinkShm::regSlots (reg);
+    const juce::String U = "5707aaaaaa";
+    const juce::String chunk = "{\"linkName\":\"\",\"linkOn\":true,\"instanceUid\":\"" + U + "\",\"hostTrackName\":\"bass 2\"}";
+    auto plant = [&]() -> int { for (int i = kRegMaxSlots - 1; i >= 0; --i) if (LinkShm::loadAcquire (&slots[i].inUse) == 0) { std::memset (&slots[i], 0, sizeof (RegistrySlot)); std::strncpy (slots[i].displayName, "bass 2", 39); std::strncpy (slots[i].audioFile, ("audio_" + U + ".bin").toRawUTF8(), 47); std::strncpy (slots[i].instanceUid, U.toRawUTF8(), 10); slots[i].sampleRate = 48000.0f; slots[i].numChannels = 2; LinkShm::storeRelease (&slots[i].heartbeat, 7u); LinkShm::storeRelease (&slots[i].inUse, 1u); return i; } return -1; };
+    auto writeSide = [&]() { LinkShm::RackSidecar rc; rc.valid = true; rc.uid = U; rc.name = "bass 2"; rc.revision = 1; rc.publisherPid = deadPid > 0 ? deadPid : (int) getpid(); rc.hostPid = rc.publisherPid; LinkShm::writeRackSidecar (dir, rc); };
+    writeSide();
+    { const auto rc = LinkShm::readRackSidecar (dir, U); std::printf ("== STORM: %d incarnations, ~%d ms each, seeded uid %s; predecessor's sidecar reads valid=%d publisherPid=%d (%s) ==\n", cycles, lifeMs, U.toRawUTF8(), (int) rc.valid, rc.publisherPid, (rc.publisherPid > 0 && ::kill ((pid_t) rc.publisherPid, 0) == 0) ? "ALIVE" : "DEAD"); }
+    // Each incarnation: restored from the chunk, lives ~lifeMs, then is DESTROYED
+    // (Pro Tools tore it down). What Pro Tools left behind - the predecessor's
+    // slot still claimed with a frozen heartbeat, and its sidecar - is
+    // re-planted after each death, because the destructor here releases the
+    // slot and deletes the files that a killed process would have left.
+    std::set<juce::String> burned; int adoptions = 0, unregistered = 0, sidecarOverwrittenByNewcomer = 0;
+    const auto t0 = juce::Time::currentTimeMillis();
+    for (int c = 0; c < cycles; ++c)
+    {
+        bool ghost = false; for (int i = 0; i < kRegMaxSlots; ++i) if (LinkShm::loadAcquire (&slots[i].inUse) && juce::String::fromUTF8 (slots[i].instanceUid) == U) ghost = true;
+        if (! ghost) plant();
+        auto inc = std::make_unique<LinkProcessor>(); inc->prepareToPlay (48000.0, 512);
+        inc->setStateInformation (chunk.toRawUTF8(), (int) chunk.getNumBytesAsUTF8());
+        pump (lifeMs / 20);
+        const juce::String myUid = inc->getInstanceUidForTest();
+        if (inc->diag.slotIdx >= 0 && myUid == U) ++adoptions;
+        else if (inc->diag.slotIdx >= 0) burned.insert (myUid);
+        else ++unregistered;
+        { const auto rc = LinkShm::readRackSidecar (dir, U); if (rc.valid && rc.publisherPid == (int) getpid() && deadPid > 0) ++sidecarOverwrittenByNewcomer; }
+        drain(); inc.reset(); drain();          // torn down; a killed process would not release - re-plant what it left
+        if (adoptions > 0 || true) { bool g2 = false; for (int i = 0; i < kRegMaxSlots; ++i) if (LinkShm::loadAcquire (&slots[i].inUse) && juce::String::fromUTF8 (slots[i].instanceUid) == U) g2 = true; if (! g2) plant(); }
+        if (deadPid > 0) writeSide();          // a dead predecessor's sidecar stays as it was
+    }
+    const auto stormMs = juce::Time::currentTimeMillis() - t0;
+    auto survivor = std::make_unique<LinkProcessor>(); survivor->prepareToPlay (48000.0, 512);
+    survivor->setStateInformation (chunk.toRawUTF8(), (int) chunk.getNumBytesAsUTF8());
+    const auto s0 = juce::Time::currentTimeMillis(); juce::int64 regAt = -1;
+    for (int t = 0; t < 400 && regAt < 0; ++t) { pump (1); if (survivor->diag.slotIdx >= 0) regAt = juce::Time::currentTimeMillis() - s0; }
+    std::printf ("  storm ran %lld ms: identities burned (re-minted AND claimed) %d, adoptions during the storm %d, incarnations that died unregistered %d\n", (long long) stormMs, (int) burned.size(), adoptions, unregistered);
+    std::printf ("  orphans a killed process would leave = one sidecar + one ring per burned identity = %d + %d\n", (int) burned.size(), (int) burned.size());
+    if (deadPid > 0) std::printf ("  the predecessor's DEAD-pid sidecar was overwritten by a newcomer's own live pid before its claim in %d of %d cycles\n", sidecarOverwrittenByNewcomer, cycles);
+    std::printf ("  survivor registered %lld ms after the storm (slot %d, uid %s) -> %s\n", (long long) regAt, survivor->diag.slotIdx, survivor->getInstanceUidForTest().toRawUTF8(), survivor->getInstanceUidForTest() == U ? "ADOPTED the seed uid" : (regAt < 0 ? "STILL UNREGISTERED after 8 s" : "re-minted"));
+    drain(); survivor.reset(); drain();
+    for (int i = 0; i < kRegMaxSlots; ++i) if (LinkShm::loadAcquire (&slots[i].inUse) && juce::String::fromUTF8 (slots[i].instanceUid) == U) LinkShm::releaseSlot (reg, i);
+    juce::File (LinkShm::rackSidecarPath (dir, U)).deleteFile();
+    return (int) burned.size();
+}
+
+int main (int argc, char** argv)
 {
     std::setvbuf (stdout, nullptr, _IONBF, 0);
     juce::ScopedJuceInitialiser_GUI init;
+    if (argc > 1 && juce::String (argv[1]) == "race20") return race20();
+    if (argc > 1 && juce::String (argv[1]) == "storm")  { storm (30, 1000, 0); storm (5, 1000, 999999); return 0; }
     const int ctl  = leg ("POSITIVE CONTROL, two different names", "VoxA", "VoxB", true);
     const int same = leg ("THE DEFECT, the same typed name",      "Vox",  "Vox",  true);
     const int clone = cloneLeg();
     const int burst = burstLeg();
     const int ghost = ghostLegs();
+    const int seeded = seededLegs();
+    std::printf ("seeded legs: L1 %s   L2 %s   L3 %s   L4 %s\n", (seeded & 1) ? "FAIL" : "PASS", (seeded & 2) ? "FAIL" : "PASS", (seeded & 4) ? "FAIL" : "PASS", (seeded & 8) ? "FAIL" : "PASS");
     std::printf ("ghost legs: fresh-beside-ghost %s   restore-adopts %s\n", (ghost & 1) ? "FAIL" : "PASS", (ghost & 2) ? "FAIL" : "PASS");
     std::printf ("control: %s   same-name: %s   clone: %s   burst: %s\n", ctl == 0 ? "PASS" : "FAIL", same == 0 ? "PASS (two files)" : "FAIL (one file shared by two Links)",
                  clone == 0 ? "PASS" : (clone == 2 ? "FAIL (one ring file)" : "FAIL (one slot / one uid)"), burst == 0 ? "PASS" : "FAIL (one slot)");
-    return ctl != 0 ? 2 : (same | clone | burst | ghost);
+    return ctl != 0 ? 2 : (same | clone | burst | ghost | (seeded ? 16 : 0));
 }

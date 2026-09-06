@@ -1,0 +1,131 @@
+== STORM: 30 incarnations, ~1000 ms each, seeded uid 5707aaaaaa; predecessor's sidecar reads valid=1 publisherPid=68470 (ALIVE) ==
+2026-09-06 17:52:11.990 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:12.000 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:12.000 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:12.069 link2_c4[68470:1795993] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-06 17:52:12.069 link2_c4[68470:1795993] EJPrompt: session project "Nafe smallz Aitch Luxury" from previous host, ignoring, will prompt (file "Pro Tools" pid=55105 start=1788706358 vs current "Terminal" pid=496 start=1788433286.527607)
+2026-09-06 17:52:12.069 link2_c4[68470:1795993] EJPrompt: session genre "Hip-Hop" from previous host, ignoring, will prompt (file "Pro Tools" pid=55105 start=1788706358 vs current "Terminal" pid=496 start=1788433286.527607)
+2026-09-06 17:52:13.541 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:13.541 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:13.541 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:15.077 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:15.077 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:15.077 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:16.628 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:16.628 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:16.628 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:18.165 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:18.165 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:18.165 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:19.698 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:19.698 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:19.698 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:21.231 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:21.231 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:21.231 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:22.775 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:22.775 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:22.775 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:24.300 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:24.300 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:24.300 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:25.831 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:25.831 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:25.831 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:27.343 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:27.343 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:27.343 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:28.874 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:28.874 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:28.874 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:30.399 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:30.399 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:30.400 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:31.926 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:31.926 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:31.926 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:33.433 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:33.433 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:33.433 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:34.974 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:34.974 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:34.974 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:36.513 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:36.513 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:36.513 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:38.067 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:38.067 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:38.067 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:39.594 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:39.594 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:39.594 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:41.118 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:41.118 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:41.118 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:42.659 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:42.659 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:42.659 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:44.186 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:44.186 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:44.186 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:45.695 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:45.695 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:45.695 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:47.223 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:47.223 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:47.223 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:48.758 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:48.758 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:48.758 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:50.291 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:50.291 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:50.291 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:51.815 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:51.815 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:51.815 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:53.322 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:53.322 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:53.322 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:54.876 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:54.876 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:54.876 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:56.408 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:56.408 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:56.408 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:52:57.955 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:52:57.955 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:52:57.955 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:53:02.333 link2_c4[68470:1795993] EJLinkState: uid 5707aaaaaa held by a FROZEN ghost slot 15 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+  storm ran 45937 ms: identities burned (re-minted AND claimed) 0, adoptions during the storm 0, incarnations that died unregistered 30
+  orphans a killed process would leave = one sidecar + one ring per burned identity = 0 + 0
+  survivor registered 4389 ms after the storm (slot 0, uid 5707aaaaaa) -> ADOPTED the seed uid
+== STORM: 5 incarnations, ~1000 ms each, seeded uid 5707aaaaaa; predecessor's sidecar reads valid=1 publisherPid=999999 (DEAD) ==
+2026-09-06 17:53:02.650 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:53:02.650 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:53:02.650 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:53:02.650 link2_c4[68470:1795993] EJLinkState: uid 5707aaaaaa held by a FROZEN ghost slot 15 (publisher pid DEAD) -> ghost reaped, uid adopted
+2026-09-06 17:53:04.205 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:53:04.205 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:53:04.205 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:53:04.206 link2_c4[68470:1795993] EJLinkState: uid 5707aaaaaa held by a FROZEN ghost slot 15 (publisher pid DEAD) -> ghost reaped, uid adopted
+2026-09-06 17:53:05.746 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:53:05.746 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:53:05.746 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:53:05.747 link2_c4[68470:1795993] EJLinkState: uid 5707aaaaaa held by a FROZEN ghost slot 15 (publisher pid DEAD) -> ghost reaped, uid adopted
+2026-09-06 17:53:07.306 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:53:07.306 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:53:07.306 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:53:07.306 link2_c4[68470:1795993] EJLinkState: uid 5707aaaaaa held by a FROZEN ghost slot 15 (publisher pid DEAD) -> ghost reaped, uid adopted
+2026-09-06 17:53:08.835 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:53:08.835 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:53:08.835 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:53:08.835 link2_c4[68470:1795993] EJLinkState: uid 5707aaaaaa held by a FROZEN ghost slot 15 (publisher pid DEAD) -> ghost reaped, uid adopted
+2026-09-06 17:53:10.369 link2_c4[68470:1795993] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:53:10.369 link2_c4[68470:1795993] EJLinkState: post-init linkOn=1 name="" uid=5707aaaaaa
+2026-09-06 17:53:10.369 link2_c4[68470:1795993] EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 17:53:10.370 link2_c4[68470:1795993] EJLinkState: uid 5707aaaaaa held by a FROZEN ghost slot 15 (publisher pid DEAD) -> ghost reaped, uid adopted
+  storm ran 7713 ms: identities burned (re-minted AND claimed) 0, adoptions during the storm 5, incarnations that died unregistered 0
+  orphans a killed process would leave = one sidecar + one ring per burned identity = 0 + 0
+  the predecessor's DEAD-pid sidecar was overwritten by a newcomer's own live pid before its claim in 5 of 5 cycles
+  survivor registered 25 ms after the storm (slot 0, uid 5707aaaaaa) -> ADOPTED the seed uid
+exit=0

@@ -71,6 +71,7 @@ public:
     void updateTrackProperties(const TrackProperties& props) override;
     juce::String getHostTrackName() const;      // any thread
     juce::String effectiveDisplayName() const;  // the precedence chain
+    juce::String getInstanceUidForTest() const { return instanceUid_; }   // harness read-back only (6 Sep 2026)
 
     // ---- Built-in gain stage (v0.5.7) ------------------------------------
     // A single wideband gain on the signal path, applied POST-chain and

@@ -1,4 +1,5 @@
 #include "LinkProcessor.h"
+#include <signal.h>   // kill(pid, 0): publisher liveness (C4b)
 #include <unistd.h>
 #include "EedLatencyLog.h"
 #include "LinkEditor.h"
@@ -1268,7 +1269,17 @@ void LinkProcessor::claimRegistrySlot()
         if (holder >= 0)
         {
             if (uidGateHolder_ != holder) { uidGate_ = {}; uidGateHolder_ = holder; }
-            switch (uidGate_.observe(holderHb))
+            // C4b (6 Sep 2026): the holder's sidecar names the process that
+            // published it (round 53). A dead publisher is adopted at once;
+            // an unpublished or unreadable sidecar fails CLOSED (treated as
+            // alive, so the time floor applies).
+            bool publisherAlive = true;
+            {
+                const auto rc = LinkShm::readRackSidecar(resolvedDir, instanceUid_);
+                if (rc.valid && rc.uid == instanceUid_ && rc.publisherPid > 0)
+                    publisherAlive = (::kill((pid_t) rc.publisherPid, 0) == 0);
+            }
+            switch (uidGate_.observe(holderHb, publisherAlive, juce::Time::currentTimeMillis()))
             {
                 case LinkShm::UidClaimGate::Decision::Wait:
                     return;   // undecided: stay unregistered, retry next tick
@@ -1277,15 +1288,43 @@ void LinkProcessor::claimRegistrySlot()
                     auto old = instanceUid_;
                     instanceUid_ = juce::String::toHexString(
                         juce::Random::getSystemRandom().nextInt64()).removeCharacters("-").substring(0, 10);
+                    // THE CHUNK WAS NOT OURS (6 Sep 2026 ruling, C1 + C2). A
+                    // PROVEN-LIVE holder means the state this instance restored
+                    // belongs to ANOTHER LIVE instance: Pro Tools seeds a fresh
+                    // insert with the plugin's last chunk (observed 16:59:50,
+                    // "setState ... post-init uid=<the first Link's> ... host
+                    // track name 'bass 2'"). No field in that chunk that answers
+                    // "which Link is this" is ours: the uid (re-minted above),
+                    // the host track name (C1) and the typed name (C2). Cleared
+                    // here, BEFORE claimSlot reads effectiveDisplayName(), so
+                    // the row publishes empty and the main plugin numbers it
+                    // "Untitled N" (unique by construction: getLinkDisplayList
+                    // numbers untitled rows in uid order) until the host's own
+                    // TrackNameChanged or the user's typing names this track.
+                    // The AdoptGhost arm and a plain restore keep the seeded
+                    // names: those are the cases the seeding was built for (a
+                    // replacement incarnation on the same track; a session
+                    // reopen in a host that never re-sends the name).
+                    const juce::String seededTyped = linkName;
+                    juce::String seededHost;
+                    {
+                        const juce::ScopedLock sl(hostNameLock_);
+                        seededHost = hostTrackName_;
+                        hostTrackName_.clear();
+                    }
+                    appliedHostName_.clear();
+                    linkName.clear();
                     EchoJay_NSLog(("EJLinkState: uid " + old + " held by a "
                         "PROVEN-LIVE instance (duplicate) -> regenerated "
-                        + instanceUid_).toRawUTF8());
+                        + instanceUid_ + "; seeded names dropped (typed \""
+                        + seededTyped + "\", host \"" + seededHost + "\")").toRawUTF8());
                     break;
                 }
                 case LinkShm::UidClaimGate::Decision::AdoptGhost:
                     LinkShm::reapSlot(regMap, holder);
                     EchoJay_NSLog(("EJLinkState: uid " + instanceUid_
                         + " held by a FROZEN ghost slot " + juce::String(holder)
+                        + (publisherAlive ? " (publisher alive, floor elapsed)" : " (publisher pid DEAD)")
                         + " -> ghost reaped, uid adopted").toRawUTF8());
                     break;
             }
