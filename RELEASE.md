@@ -125,6 +125,43 @@ MERGE_2026-09-06.md). OPEN QUESTIONS FOR PACE, for whoever raises them: renew
 or confirm the Eden Tools licence, and obtain either Eden 5.10.5 (the
 demonstrated-good tool for the SDK-5 config) or a Fusion Tools licence for 6.
 
+### THE WORKING AAX PROCEDURE (6 Sep 2026): build HERE, sign THERE, install HERE
+Signing happens on admins-MacBook-Pro (Eden 5.10.4/5.10.5 generation, the
+Developer ID certificate, iLok_1AC756 attached - the Eden Tools licence lives
+on that iLok, so it must be attached there or moved to cloud in iLok License
+Manager with a session open on that machine). This Mac builds and installs.
+  1. BUILD here (build-release, -DAAX_SDK_PATH, quote "AAX SDK found at", -j 4,
+     targets EchoJay_AAX EchoJayLink_AAX). Record the arm64 UUIDs.
+  2. PACKAGE with ditto, NEVER cp or Finder zip - wraptool's v1 signature format
+     puts a SYMLINK inside the package (Contents/Resources/__Pace_Eden/Signatures/
+     codesign.dsig) and plain cp corrupts the signature:
+       ditto -c -k --sequesterRsrc --keepParent "<bundle>.aaxplugin" <name>_unsigned.zip
+  3. SIGN there: ditto -x -k the zip; `security find-identity -v -p codesigning`
+     on THAT machine for --signid; wraptool sign --verbose --account seand123
+     --wcguid B4184F90-2F4F-11F1-A9B9-00505692C25A --signid "<its string>"
+     --in <unpacked> --out <a different path>; wraptool verify; codesign -dv
+     --verbose=4. Package the SIGNED bundle with the same ditto line.
+  4. INSTALL here: ditto -x -k into a STAGING folder (never straight into Avid);
+     `xattr -dr com.apple.quarantine "<bundle>"` on each (they crossed machines
+     and are NOT notarised - Gatekeeper's `spctl` says "rejected, Unnotarized
+     Developer ID", expected; the strip is what lets Pro Tools load them);
+     verify on the arrived bundles (codesign chain to Apple Root CA, team
+     8BT5F9B887, today's timestamp, __Pace_Eden.bundle present, both slices,
+     arm64 UUID == the one built); back up the Avid folder with REVERT.command
+     beside it; then, with an admin password:
+       sudo ditto "<staging>/EchoJay V2.aaxplugin"   "/Library/Application Support/Avid/Audio/Plug-Ins/EchoJay V2.aaxplugin"
+       sudo ditto "<staging>/EchoJay Link.aaxplugin" "/Library/Application Support/Avid/Audio/Plug-Ins/EchoJay Link.aaxplugin"
+     (remove the old bundle directories first: ditto merges into an existing
+     directory). ditto for EVERY copy - the symlink again.
+  5. CLEAR the Pro Tools validation caches before launching Pro Tools:
+     ~/Library/Preferences/Avid/Pro Tools/InstalledAAXPlugIns(.xml) and
+     ~/Library/Caches/Avid - Pro Tools caches a rejection and keeps refusing a
+     plugin it once failed.
+  6. In Pro Tools, in this order so a failure is diagnosable: the plugin appears
+     and passes validation; it inserts; audio passes; its window shows the
+     current UI (6 Sep 2026: the simplified Settings panel and the 0-400 retune
+     dial mark 2.26.4 against the July 2.23.0).
+
 ## 3. Build the installer .pkg
 
 ```
