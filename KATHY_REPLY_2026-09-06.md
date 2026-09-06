@@ -147,3 +147,40 @@ remote). Worth a commit somewhere if you want it. Offered, not pressed.
 
 Still holding on our side for your hash table, Sean's push of fd43f4d, and
 the end of the shoot.
+
+
+---
+
+## Follow-up 3 (6 Sep 2026): the merge is done on a branch; three things for you
+
+Sean moved the merge BEFORE the shoot. Both stages are on merge/kathy-2026-09-06
+(0075fe8 base..f6ac073, 9177b96 f6ac073..aa455ff). Exactly the two predicted
+conflicts (#1 the include block, #2 the movers list), resolved as written; #3
+auto-merged with onStateApplied() intact and V7 passes. Build clean, both
+formats load and pass audio, pitch suite 196/0, every derived value read back.
+Record: MERGE_2026-09-06.md.
+
+1. YOUR FIX IS NOT IN aa455ff. The merged tree has the guard inside
+   applyParams (EedDeviceProcessor.cpp:102) and setStateInformation calling
+   applyParams with no source argument (:245). V9 - our new harness,
+   tools/merge_gate_tests/v9_dialwrites_restore_test.cpp - reproduces the data
+   loss exactly: with the toggle ON at restore, retune 200 -> 0, natural_vibrato
+   50 -> 0, flex 30 -> 0 (positive control with the toggle OFF passes). It is
+   your find; the harness is the regression test for your fix. When the
+   ParamSource change lands, V8's call-site list is in the record (twelve sites
+   in Source/, three of them in Surgical EQ, plus four in tools/).
+
+2. A LAYOUT DEFECT IN YOUR TREE, caught by the render, fixed on the merge branch
+   in one line. Your do-not-dial toggle is placed by resized() beneath the
+   auto-dial toggle and the cursor steps past it (:19477), but paintSettingsView
+   does not step, so the YOUR PLUGINS heading paints half-hidden behind your
+   toggle at every window size. Same code at your line 14586, so it is in
+   aa455ff, not made by the merge. Fix: `y += fh + 8;` after
+   label("CHAIN SUGGESTIONS") in the paint. Renders before and after are in
+   tools/settings_snapshot/snapshots_2026-09-06/merge_9177b96/. If you want it
+   shaped differently, the fix is one commit and yours to replace.
+
+3. A ONE-NAME DELTA: the settings harness counts 540 enabled names resolving
+   in neither format on the merged tree, 539 on the shoot build; the chain feed
+   (2328, AU view 2129) is identical. Your resolver/feed changes are in this
+   tree, so one name moved sides. Noted, not chased.
