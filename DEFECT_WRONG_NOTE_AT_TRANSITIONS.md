@@ -281,3 +281,44 @@ No code. No default changed. The C1/C2/C3 build behind the flag waits on
 the ruling, with the six legs measured at BOTH the shipped default and the
 reviewer's premise configuration, events paired per instant, and the 14
 August leg above added.
+
+## ROUND 59 (6 Sep 2026): two corrections to the record, then the build
+
+### Correction 1 - THE RULE: A CODE FACT IS A CLAIM UNTIL THE TREE IT CAME FROM IS SHOWN TO BE THE ONE THAT BUILT THE INSTALLED BINARY.
+The reviewer's line numbers in round 58 came from the feat/pitch worktree
+(stopped at 96d87d6), not from the branch that built the installed binary,
+and the inference drawn from them ("IGN VIB cannot be the discriminator")
+was wrong. From here every quoted line number carries its commit. The
+lines in the round-58 section are commit dd03c90's tree unless marked.
+
+### Correction 2 - "each factor alone is inert" was WRONG; the ladder itself refutes it.
+From the natural preset, moving ONLY natural_vibrato 100 -> 0 goes from 0
+events to 15 events / 856 ms. Corrected statement: retune, flex and
+humanize are inert; GIVEN IGN VIB ON (every preset, and the default),
+natural_vibrato != 100 is SUFFICIENT ON ITS OWN. Both conditions are
+necessary; neither is individually harmless.
+
+### The worst row is not the default row
+retune 120 + natural_vibrato 0 + IGN VIB on: 15 events / 856 ms, worse
+than the shipped default's 10 / 581. Slow retune is the configuration
+nine rounds fitted to Antares. It is a first-class row of the fix matrix.
+
+### THE FIX MATRIX (ruled) - every leg measured at each row
+    | row | retune | flex | hum | natVib | IGN VIB | baseline |
+    |---|---|---|---|---|---|---|
+    | R1 shipped default | 6 | 0 | 0 | 0 | on | 10 ev / 581 ms |
+    | R2 worst case | 120 | 55 | 60 | 0 | on | 15 ev / 856 ms |
+    | R3 protection-off control (GUARD) | 6 | 0 | 0 | 0 | off | 2 ev / 64 ms |
+    | R4 natural preset (GUARD) | 120 | 55 | 60 | 100 | on | 0 ev / 0 ms |
+R3 and R4 are guard rows: a fix that improves R1/R2 while degrading R3 or
+R4 is a swap, rejected. B1-B6 stand at every row; B2 (median vs the
+source's own note must hold at or below its current value) is judged AT
+EACH ROW independently. B7: the 14 August protection delivered (centred
+F3 +-60c probe: IGN VIB on -> near zero switches; OFF must still chatter
+at about twice the vibrato rate - the positive control that must fire).
+B8: one default per parameter ENFORCED - the corrector's natVib_ literal
+aligned with the schema, and a test that fails if any engine-backed
+parameter's member initialiser disagrees with its schema default.
+IGN VIB off is NOT the fix and is not shipped silently: permitted only as
+a labelled fallback, only if the fix fails its bar, only as a recorded
+decision put to the reviewer with the failing numbers.
