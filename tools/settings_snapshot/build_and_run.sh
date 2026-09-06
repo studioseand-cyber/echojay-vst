@@ -19,7 +19,7 @@ for a in args[1:]:
     out.append(a)
 cmd = (['clang++'] + out + ['-I', os.path.abspath('Source'),
         'tools/settings_snapshot/settings_snapshot.cpp',
-        'build-release/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a',
+        os.environ.get('LIB', 'build-release/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a'),   # LIB=<path> selects the library under test (round 60: before/after)
         '-framework','Cocoa','-framework','CoreAudio','-framework','CoreMIDI',
         '-framework','AudioToolbox','-framework','Accelerate','-framework','QuartzCore',
         '-framework','IOKit','-framework','Security','-framework','WebKit',
