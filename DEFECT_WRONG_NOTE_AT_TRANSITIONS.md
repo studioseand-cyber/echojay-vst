@@ -322,3 +322,91 @@ parameter's member initialiser disagrees with its schema default.
 IGN VIB off is NOT the fix and is not shipped silently: permitted only as
 a labelled fallback, only if the fix fails its bar, only as a recorded
 decision put to the reviewer with the failing numbers.
+
+## ROUND 59 (6 Sep 2026): C1/C2/C3 BUILT BEHIND THE FLAG, THE MATRIX MEASURED - AND A STOP CONDITION: R4 DEGRADES UNDER C1
+
+### What was built (commit 72c4a85's tree + this change; Source/EedPitchCorrect.h)
+Behind `debugNoteDecision(bits)` (0 = shipped, bit-identical - verified:
+the R1 render with the flag off is byte-identical to round 58's) and
+`debugNoteChangeCents(c)` (C3):
+  C1 (bit 1): at a note start and at a confirmed change, noteRefCents_
+      and the slow-track seed are the DECIDED DEGREE (nearestDegreeCents
+      of the sample), not the sample.
+  C2 (bit 2): a gap resume arms a provisional window of kNoteConfirmMs
+      (selection = the input); when it closes, the median of the fresh
+      samples decides: a different degree from the reference is a note
+      change (reference and slow seed := that degree under C1, envelope
+      snapped, ++noteChanges_), the same degree re-seeds the slow track
+      from the degree. The window is cleared by reset().
+  C3: kNoteChangeCents (90) is the parameter under sweep: 90 / 80 / 70 / 60.
+tools/pitch_activity: PA_NOTEDEC=<bits> PA_NOTECHG=<cents>.
+
+### THE MATRIX (source_different_bit.wav, D minor, the reviewer's ruler; events >= 25 ms / total / median vs the source's own note)
+    | config | R1 shipped default | R2 worst (retune 120) | R3 IGN VIB off (GUARD) | R4 natural preset (GUARD) |
+    |---|---|---|---|---|
+    | baseline | 10 / 581 ms / 7.99c | 15 / 856 / 15.87c | 2 / 64 / 6.88c | 0 / 0 / 11.61c |
+    | C1 only (90) | 7 / 381 / 7.27 | 10 / 509 / 11.46 | 2 / 64 / 6.86 | **4 / 173 / 14.75** |
+    | C2 only (90) | 8 / 461 / 7.65 | 11 / 664 / 16.78 | 2 / 64 / 6.87 | 0 / 0 / 11.75 |
+    | C1+C2, 90 | 6 / 299 / 7.10 | 10 / 437 / 12.88 | 2 / 64 / 6.82 | **5 / 243 / 16.28** |
+    | C1+C2, 80 | 5 / 197 / 6.64 | 9 / 331 / 12.43 | 2 / 64 / 6.78 | **5 / 243 / 15.98** |
+    | C1+C2, 70 | **2 / 75 / 6.67** | 7 / 275 / 12.96 | 2 / 64 / 6.77 | **5 / 243 / 16.14** |
+    | C1+C2, 60 | 2 / 72 / 6.79 | 6 / 240 / 12.92 | 2 / 64 / 6.79 | **6 / 280 / 15.80** |
+  R1 at C1+C2 threshold 70: B1 MET (2 events / 75 ms; Antares 2 / 67),
+  B2 MET (median 6.67c <= 7.99c). PAIRED PER INSTANT: REMOVED 8 of the 10
+  (0.581-0.667 -92c, 0.987 +83, 2.893 -98, 3.013 -112, 5.512 -98,
+  6.163-6.245 -88, 7.288-7.368 +127, 7.789 +107 - both worked instances
+  and the whole E3/F3 family); KEPT 2, both shortened (1.077 43->37 ms
+  -95 -> -94c; 2.568 the octave-scale 37 ms event, unchanged); ADDED none.
+  R2 at threshold 70: 15 -> 7 events, 856 -> 275 ms, median 15.87 -> 12.96
+  (B2 met), B1 NOT met in absolute terms. Paired: REMOVED 8 (both worked
+  instances among them), KEPT 7 all shortened or lower-peaked (1.077 75 ->
+  43 ms, -162 -> -103c; 6.163 88 -> 45 ms, -94 -> -47c), ADDED none. At
+  retune 120 / depth 100 a correct decision still leaves the ENVELOPE
+  ~100 ms behind a 100c step, which the ruler reads as ">40c from the
+  note" for most of that glide; the remaining R2 events are that lag,
+  not a wrong target. Whether B1's absolute number applies to a slow-
+  retune row is for the ruling.
+  R3 (guard): unchanged at every configuration, median 6.88 -> 6.77.
+  C3 on this file: 70 is the first threshold that clears the E3/F3 family
+  at R1 (90/80 leave 5-6); 60 adds nothing at R1 and one event at R4; 70
+  keeps a 10c margin above the +-60c probe. Re-derived value: 70.
+
+### B7 - THE 14 AUGUST PROTECTION, DELIVERED, WITH ITS POSITIVE CONTROL FIRING
+Centred F3, +-60c at 6 Hz, 2.6 s, target-degree switches from the trace:
+    | | IGN VIB ON | IGN VIB OFF | pendings armed |
+    |---|---|---|---|
+    | shipped (bits 0) | 62 | 62 | 186/975 both |
+    | C1+C2, 90 / 80 / 70 / 60 | 0 / 0 / 0 / 0 | 62 / 62 / 62 / 62 | 0/975 (ON) |
+ON is quiet because the reference is the note and +-60c never reaches
+the threshold; OFF still chatters at twice the vibrato rate (23.8/s) -
+the probe reaches the mechanism. B7 MET at every threshold.
+
+### THE STOP CONDITION: R4 DEGRADES UNDER C1 - reported before any iteration, as ruled
+The natural preset (SHIFT path, natural_vibrato 100) goes from 0 events
+to 4 (C1) / 5 (C1+C2) - all ADDED, none present in the baseline:
+    0.051-0.104 +108c, 2.395-2.432 +64c, 2.568-2.605 -110c, 6.168-6.213 -46c (C1);
+    C1+C2 at 70 adds 6.891-6.928 +133c and lengthens 6.165 to 75 ms.
+THE CAUSE, from the trace at 2.37-2.44 (R4, bits 0 vs bits 1): on the
+SHIFT path the slow track is not a target selector - it is THE NOTE THE
+APPLIED SHIFT IS MEASURED FROM (shiftCents_ = cur - slow). With C1 the
+note change at 2.419 seeds the slow track at the DEGREE (-700) instead
+of the sample (-625): the applied shift jumps from +3.5c to +77c on the
+next hop and stays there - a snap, on the path whose whole design is not
+to snap. The baseline seeds at the sample and applies ~0 through the
+change. C1's REFERENCE half is fine on both paths (it is what quiets
+B7); C1's SLOW-SEED half is wrong on the shift path.
+C2 alone does not degrade R4 (0 / 0).
+THE AMENDMENT PROPOSED FOR THE RULING (not built): split C1 - the NOTE
+REFERENCE is the decided degree on both paths; the SLOW SEED is the
+degree only on the LEGACY path (where the slow track selects the target)
+and stays the sample on the SHIFT path (where it is the applied
+correction's baseline). Predicted: R1/R2/R3 unchanged from the table
+(they are legacy or IGN-off rows; the seed rule only differs on the
+shift path), R4 returns to its baseline, B7 unchanged (the probe is
+legacy-path). Measured only after the ruling.
+
+### Not done this round, held by the stop
+B3 improve-rate, B4 (word starts, retune 150 / depth 25, the 18-dial
+sweep), B5 suite, B6 clips, B8 (the natVib_ literal and the schema-vs-
+member test). Nothing shipped; the flag defaults to 0 (bit-identical) in
+the tree. IGN VIB off was not touched.

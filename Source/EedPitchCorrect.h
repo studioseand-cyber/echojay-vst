@@ -331,6 +331,7 @@ public:
         pendBuf_[0] = pendBuf_[1] = pendBuf_[2] = 0.0f;
         slowAgeMs_ = 0.0f;
         lastInCents_ = 0.0f; lastSlowCents_ = 0.0f; lastOscCents_ = 0.0f; lastAimCents_ = 0.0f;
+        resumeProvMs_ = 0.0f; resumeN_ = 0;   // round 59: the C2 window does not survive a reset
     }
 
     // ---- parameters --------------------------------------------------------
@@ -439,6 +440,15 @@ public:
         // gap has already cleared haveNote_ above.
         const bool resuming = gapMs_ > 0.0f && haveNote_;
         if (resuming) ++gapResumes_;
+        // ROUND 59, C2 (behind noteDecExp_ bit 2): A GAP RESUME RE-DECIDES THE
+        // TARGET FROM THE FRESH AUDIO for one confirm window. The 200 ms rule
+        // keeps the note (haveNote_) and the envelope position; the SELECTION
+        // is provisional (= the input) for kNoteConfirmMs, and at the end of
+        // the window the median of the fresh samples decides: a different
+        // degree from the reference is a note change (reference and slow seed
+        // := that degree under C1), the same degree just re-seeds the slow
+        // track from the degree (not from one phase-dependent sample).
+        if ((noteDecExp_ & 2) && resuming) { resumeProvMs_ = dbgConfirmMs_; resumeN_ = 0; }
         // THE SHARED ANCHOR at gap resumes (1 Sep 2026 ruling; §17.6, the
         // re-anchor rule): the resume keeps the TARGET (the 200ms rule -
         // same note) but the envelope's POSITION is pre-gap state applied
@@ -503,8 +513,8 @@ public:
             // one mid-swing audio sample - unbiased by vibrato phase by
             // construction, inheriting only the note decision the corrector
             // targets anyway. (30 Aug 2026 three-way; nothing shipped.)
-            slowCents_ = seedExp_ == 3 ? nearestDegreeCents (CentsC { inCents })
-                                       : inCents;
+            slowCents_ = (seedExp_ == 3 || (noteDecExp_ & 1)) ? nearestDegreeCents (CentsC { inCents })
+                                                             : inCents;   // C1: the seed is the degree
             haveSlow_ = true;
             slowAgeMs_ = 0.0f;
             depthEnv_ = 0.0f;
@@ -528,7 +538,10 @@ public:
             haveNote_ = true;
             curCents_ = inCents;               // start AT the note, not behind it
             shiftSnap_ = true;
-            noteRefCents_ = inCents;
+            // ROUND 59, C1 (behind noteDecExp_ bit 1): THE REFERENCE IS THE NOTE,
+            // NOT THE SAMPLE - the decided degree, so the 90c re-arm is measured
+            // from a note and a phase-dependent start sample never becomes it.
+            noteRefCents_ = (noteDecExp_ & 1) ? nearestDegreeCents (CentsC { inCents }) : inCents;
             stableMs_ = 0.0f; confirmMs_ = 0.0f; havePending_ = false;
             noteMs_ = 0.0f; vibPhase_ = 0.0f;
             seedHops_ = 1; seedBuf_[0] = inCents;
@@ -566,9 +579,9 @@ public:
             // for a single frame and can never accumulate the confirm window,
             // so the reset would never fire at all.
             const float from = noteRefCents_;
-            if (std::fabs (inCents - from) > kNoteChangeCents)
+            if (std::fabs (inCents - from) > noteChangeC_)
             {
-                if (! havePending_ || std::fabs (inCents - pendingCents_) > kNoteChangeCents)
+                if (! havePending_ || std::fabs (inCents - pendingCents_) > noteChangeC_)
                 {
                     // Latch the SUSTAIN's depth at pending formation:
                     // depthEnv_ here is last hop's value - the note's wobble
@@ -590,11 +603,11 @@ public:
                         // interval does not become a portamento.
                         curCents_ = inCents;
                         shiftSnap_ = true;
-                        slowCents_ = seedExp_ == 3
-                            ? nearestDegreeCents (CentsC { inCents }) : inCents;
+                        slowCents_ = (seedExp_ == 3 || (noteDecExp_ & 1))
+                            ? nearestDegreeCents (CentsC { inCents }) : inCents;   // C1
                         slowAgeMs_ = 0.0f;
                         depthEnv_ = 0.0f;
-                        noteRefCents_ = inCents;
+                        noteRefCents_ = (noteDecExp_ & 1) ? nearestDegreeCents (CentsC { inCents }) : inCents;   // C1
                         stableMs_ = 0.0f;
                         noteMs_ = 0.0f; vibPhase_ = 0.0f;
                         havePending_ = false;
@@ -612,6 +625,36 @@ public:
         if (std::fabs (inCents - noteRefCents_) <= kStableCents) stableMs_ += stepMs_;
         else                                                     stableMs_ = 0.0f;
         noteMs_ += stepMs_;
+        // C2: the resume window runs here; when it closes, the fresh median decides.
+        if (resumeProvMs_ > 0.0f)
+        {
+            resumeWin_[resumeN_ % 3] = inCents; ++resumeN_;
+            resumeProvMs_ -= stepMs_;
+            if (resumeProvMs_ <= 0.0f)
+            {
+                const int n = std::min (resumeN_, 3);
+                float a = resumeWin_[0], b = n > 1 ? resumeWin_[1] : a, c2 = n > 2 ? resumeWin_[2] : b;
+                const float med = n > 2 ? std::max (std::min (a, b), std::min (std::max (a, b), c2)) : (n > 1 ? 0.5f * (a + b) : a);
+                const float deg = nearestDegreeCents (CentsC { med });
+                if (std::fabs (deg - nearestDegreeCents (CentsC { noteRefCents_ })) > 0.5f)
+                {
+                    // the resume landed on another note: a note change, decided from fresh audio
+                    noteRefCents_ = (noteDecExp_ & 1) ? deg : med;
+                    slowCents_ = (noteDecExp_ & 1) ? deg : med;
+                    slowAgeMs_ = 0.0f; depthEnv_ = 0.0f;
+                    curCents_ = inCents; shiftSnap_ = true;
+                    stableMs_ = 0.0f; noteMs_ = 0.0f; vibPhase_ = 0.0f;
+                    havePending_ = false; confirmMs_ = 0.0f;
+                    ++noteChanges_;
+                }
+                else if (noteDecExp_ & 1)
+                {
+                    // same note: re-seed the slow track from the DEGREE, never from one sample
+                    slowCents_ = deg; slowAgeMs_ = 0.0f;
+                }
+                resumeProvMs_ = 0.0f;
+            }
+        }
 
         // ---- 1..2: nearest enabled degree, plus its bias -------------------
         // (d) PROVISIONAL SELECTION ON PENDING EVIDENCE (30 Aug 2026
@@ -632,7 +675,8 @@ public:
         // (Experiment (b), retained for the record: provisional for the
         // slow track's first 90ms - measured a dead end, 11.7 -> 10.7%.)
         const bool slowProvisional = (seedExp_ != 4 && havePending_)
-                                  || (seedExp_ == 2 && slowAgeMs_ < 90.0f);
+                                  || (seedExp_ == 2 && slowAgeMs_ < 90.0f)
+                                  || resumeProvMs_ > 0.0f;   // C2
         // (seedExp_ 4 = the pre-(d) shipped behaviour, for measured A/Bs.)
         const float selectCents = (ignoreVibrato_.load() && ! slowProvisional)
                                     ? slowCents_ : inCents;
@@ -941,6 +985,12 @@ public:
     float debugDepthEnv() const noexcept { return depthEnv_; }
     float debugPendDepth() const noexcept { return pendDepth_; }
     void  debugEnvExperiment (int e) noexcept { envExp_ = e; }
+    // ROUND 59: the note-decision fix behind an investigation flag (bit 1 = C1
+    // the reference is the decided degree; bit 2 = C2 a gap resume re-decides
+    // for one confirm window) and the note-change threshold as a parameter
+    // (C3, re-derived by measurement). 0 / kNoteChangeCents = bit-identical.
+    void  debugNoteDecision (int bits) noexcept { noteDecExp_ = bits; }
+    void  debugNoteChangeCents (float c) noexcept { noteChangeC_ = c > 0.0f ? c : kNoteChangeCents; }
     void  debugNoteConfirmMs (float ms) noexcept { dbgConfirmMs_ = ms > 0.0f ? ms : kNoteConfirmMs; }   // re-derivation sweep (round 30); default = kNoteConfirmMs, bit-identical
     void  debugDepthScale (float d, int mode = 1) noexcept { dbgDepth_ = std::clamp (d, 0.0f, 1.0f); dbgDepthMode_ = mode; }   // investigation only; depth 1 = off; mode 1 aim, 2 applied shift
     void  debugMedianSeed (int mode) noexcept { medianSeed_ = mode; }   // 0 off, 1 starts only, 2 +resume corridor
@@ -1042,6 +1092,9 @@ private:
     int   envExp_ = 0;
     float dbgDepth_ = 1.0f;      // see debugDepthScale
     float dbgConfirmMs_ = kNoteConfirmMs;   // see debugNoteConfirmMs
+    int   noteDecExp_ = 0;                  // round 59: C1 | C2 bits; 0 = shipped (bit-identical)
+    float noteChangeC_ = kNoteChangeCents;  // round 59: C3, the threshold under re-derivation
+    float resumeProvMs_ = 0.0f; float resumeWin_[3] = { 0, 0, 0 }; int resumeN_ = 0;   // C2 window
     int   dbgDepthMode_ = 1;
     int   medianSeed_ = 0;       // 0 off, 1 starts only, 2 +resume corridor
     uint32_t resumeReanchors_ = 0;

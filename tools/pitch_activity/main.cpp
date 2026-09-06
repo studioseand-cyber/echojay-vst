@@ -93,6 +93,8 @@ static Render renderSelf (const std::vector<float>& in, double fs, int vt, bool 
     if(getenv("PA_ENVEXP")) corr.debugEnvExperiment(atoi(getenv("PA_ENVEXP")));
     if(getenv("PA_REF")) corr.setReferenceHz((float)atof(getenv("PA_REF")));
     if(getenv("PA_CONFIRM")) corr.debugNoteConfirmMs((float)atof(getenv("PA_CONFIRM")));
+    if(getenv("PA_NOTEDEC")) corr.debugNoteDecision(atoi(getenv("PA_NOTEDEC")));           // round 59: C1|C2 bits
+    if(getenv("PA_NOTECHG")) corr.debugNoteChangeCents((float)atof(getenv("PA_NOTECHG")));  // round 59: C3 threshold
     if(getenv("PA_FORCESHIFT")) corr.debugForceShiftPath(true);
     // NATURAL VIBRATO GAIN scoping (UI_SIMPLIFICATION round 42): the ring-aligned
     // fast term - slow pitch written co-timed with f0, fastFactor = dev^(k-1) at
