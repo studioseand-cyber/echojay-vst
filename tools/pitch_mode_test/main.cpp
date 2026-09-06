@@ -227,7 +227,7 @@ int main()
         { return sp != nullptr && sp->choiceLabel (p.getParamValue ("scale")) == "chromatic"; };
 
         // Baseline: an EXTERNAL usable fact is followed (as before).
-        p.applyStructured (params ({ { "key_source", "auto" } }));
+        p.applyStructured (params ({ { "key_source", "auto" } }), EedDeviceProcessor::ParamSource::Assistant);
         p.setKeyFeedSelfId (77);
         publishFact (6, true, 0.86f, 441.3f, "Music Bus", 12345, false);
         pump (4);
@@ -303,7 +303,7 @@ int main()
             {
                 EedPitchProcessor q;
                 q.prepareToPlay (fs, 512);
-                q.applyStructured (params ({ { "correction_mode", "hard" } }));
+                q.applyStructured (params ({ { "correction_mode", "hard" } }), EedDeviceProcessor::ParamSource::Assistant);
                 setup (q);
                 std::vector<float> out; out.reserve ((size_t) take.getNumSamples());
                 juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m;
@@ -334,10 +334,10 @@ int main()
             // (a) guard ON + self-derived self fact  ==  manual chromatic
             const auto guarded = render ([&] (EedPitchProcessor& q)
             { q.setKeyFeedSelfId (77); q.debugKeySelfGuard (true); selfFact (77, true);
-              q.applyStructured (params ({ { "key_source", "auto" } })); });
+              q.applyStructured (params ({ { "key_source", "auto" } }), EedDeviceProcessor::ParamSource::Assistant); });
             const auto chromatic = render ([&] (EedPitchProcessor& q)
             { q.setKeyFeedSelfId (0); echojay::KeyFeed::instance().publish (echojay::DetectedKeyFact {});
-              q.applyStructured (params ({ { "scale", "chromatic" } })); });
+              q.applyStructured (params ({ { "scale", "chromatic" } }), EedDeviceProcessor::ParamSource::Assistant); });
             check (identical (guarded, chromatic),
                    "guard ON + self-derived self fact renders BIT-IDENTICAL to manual chromatic ("
                    + juce::String ((int) differing (guarded, chromatic)) + " samples differ)");
@@ -345,17 +345,17 @@ int main()
             // applies G major and the render MUST differ (F -> F#).
             const auto unguarded = render ([&] (EedPitchProcessor& q)
             { q.setKeyFeedSelfId (77); q.debugKeySelfGuard (false); selfFact (77, true);
-              q.applyStructured (params ({ { "key_source", "auto" } })); });
+              q.applyStructured (params ({ { "key_source", "auto" } }), EedDeviceProcessor::ParamSource::Assistant); });
             check (! identical (unguarded, chromatic),
                    "POSITIVE CONTROL: guard OFF applies the self-derived G major and differs from chromatic ("
                    + juce::String ((int) differing (unguarded, chromatic)) + " samples differ)");
             // (b) guard ON vs OFF under an EXTERNAL fact: bit-identical (no change to the followed path)
             const auto extOn = render ([&] (EedPitchProcessor& q)
             { q.setKeyFeedSelfId (77); q.debugKeySelfGuard (true); selfFact (12345, false);
-              q.applyStructured (params ({ { "key_source", "auto" } })); });
+              q.applyStructured (params ({ { "key_source", "auto" } }), EedDeviceProcessor::ParamSource::Assistant); });
             const auto extOff = render ([&] (EedPitchProcessor& q)
             { q.setKeyFeedSelfId (77); q.debugKeySelfGuard (false); selfFact (12345, false);
-              q.applyStructured (params ({ { "key_source", "auto" } })); });
+              q.applyStructured (params ({ { "key_source", "auto" } }), EedDeviceProcessor::ParamSource::Assistant); });
             check (identical (extOn, extOff),
                    "guard ON vs OFF under an EXTERNAL fact: bit-identical ("
                    + juce::String ((int) differing (extOn, extOff)) + " samples differ)");
@@ -408,7 +408,7 @@ int main()
         check (! st.active, "...and his MANUAL key is untouched by the key guard (not on the auto path)");
         // THE DORMANT VALUE WAKES UP: switching reference to manual applies the field.
         echojay::KeyFeed::instance().publish (echojay::DetectedKeyFact {});
-        q.applyStructured (params ({ { "reference_source", "manual" } }));
+        q.applyStructured (params ({ { "reference_source", "manual" } }), EedDeviceProcessor::ParamSource::Assistant);
         pump (4); st = q.autoKeyState();
         std::printf ("    after reference_source -> manual: APPLIED %.2f\n", st.refApplied);
         check (std::abs (st.refApplied - 439.19) < 0.01,
@@ -461,7 +461,7 @@ int main()
             check (std::abs (q.getParamValue ("depth") - 25.0) < 1.0e-2, "turning RETUNE puts depth back on the curve (25)");
             q.setParamValue ("retune_speed_ms", 44.0);
             check (std::abs (q.getParamValue ("retune_speed_ms") - 44.0) < 1.0e-4, "a direct retune_speed_ms write (the model's path) is honoured live");
-            q.applyStructured (params ({ { "correction_mode", "natural" } }));
+            q.applyStructured (params ({ { "correction_mode", "natural" } }), EedDeviceProcessor::ParamSource::Assistant);
             check (std::abs (q.getParamValue ("retune") - 78.571) < 0.01 && std::abs (q.getParamValue ("retune_speed_ms") - 120.0) < 0.05 && std::abs (q.getParamValue ("depth") - 29.29) < 0.05,
                    "mode natural is the DIAL POSITION of its 120 ms (78.6): 120 ms / depth 29 from the curve - the dial means what it says");
             q.setParamValue ("retune", 0.0);
@@ -695,7 +695,7 @@ int main()
                 }
             };
             auto make = [&] () { auto q = std::make_unique<EedPitchProcessor>(); q->prepareToPlay (fs, blk);
-                                 q->applyStructured (params ({ { "key_source", "manual" }, { "key_root", 2.0 }, { "scale", 1.0 } })); return q; };
+                                 q->applyStructured (params ({ { "key_source", "manual" }, { "key_root", 2.0 }, { "scale", 1.0 } }), EedDeviceProcessor::ParamSource::Assistant); return q; };
             std::vector<float> fresh, stale, cleared;
             { auto q = make(); runFrom (*q, P2, D, &fresh); }                                   // FRESH: a fresh instance at P2
             { auto q = make(); runFrom (*q, 0, P1, nullptr); runFrom (*q, P2, D, &stale); }   // LOCATE-STALE: what a host gets today
@@ -763,7 +763,7 @@ int main()
             auto renderTo = [&] (const juce::String& name, const std::function<void (EedPitchProcessor&)>& setup)
             {
                 EedPitchProcessor q; q.prepareToPlay (fs, 512);
-                q.applyStructured (params ({ { "key_source", "manual" }, { "key_root", 2.0 }, { "scale", 1.0 } }));   // D minor by hand: the take's key, so tuning params act
+                q.applyStructured (params ({ { "key_source", "manual" }, { "key_root", 2.0 }, { "scale", 1.0 } }), EedDeviceProcessor::ParamSource::Assistant);   // D minor by hand: the take's key, so tuning params act
                 setup (q);
                 juce::AudioBuffer<float> o (1, take.getNumSamples());
                 juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m;
@@ -1133,7 +1133,7 @@ int main()
         snap ("front",          [] (EedPitchProcessor&, EedPitchEditor& e) { e.showAdvanced (false); });
         snap ("front_offcurve", [] (EedPitchProcessor& p, EedPitchEditor& e) { p.setParamValue ("retune", 100.0); p.setParamValue ("depth", 50.0); e.showAdvanced (false); e.repaint(); });
         snap ("advanced",       [] (EedPitchProcessor&, EedPitchEditor& e) { e.showAdvanced (true); });
-        snap ("front_manualkey", [] (EedPitchProcessor& p, EedPitchEditor& e) { p.applyStructured (params ({ { "key_source", "manual" }, { "key_root", 2.0 }, { "scale", 1.0 }, { "reference_source", "manual" } })); e.showAdvanced (false); });
+        snap ("front_manualkey", [] (EedPitchProcessor& p, EedPitchEditor& e) { p.applyStructured (params ({ { "key_source", "manual" }, { "key_root", 2.0 }, { "scale", 1.0 }, { "reference_source", "manual" } }), EedDeviceProcessor::ParamSource::Assistant); e.showAdvanced (false); });
         snap ("front_after_advanced", [] (EedPitchProcessor&, EedPitchEditor& e) { e.showAdvanced (true); e.showAdvanced (false); });
         snap ("front_depth_override", [] (EedPitchProcessor& p, EedPitchEditor& e) { p.setParamValue ("depth", 10.0); e.showAdvanced (false); });
         snap ("advanced_340", [] (EedPitchProcessor&, EedPitchEditor& e) { e.setSize (620, 340); e.showAdvanced (true); });
