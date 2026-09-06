@@ -61,7 +61,18 @@ AAX must be PACE-signed or Pro Tools will refuse to load it. Requirements:
   QUOTE is "AAX SDK found at <path>" - without it AAX is silently absent.
 - The iLok (physical) plugged in, holding the signing credential
 - PACE account: `seand123`
-- wcguid: `B4184F90-2F4F-11F1-A9B9-00505692C25A`
+- wcguid: `B4184F90-2F4F-11F1-A9B9-00505692C25A` - CONFIRMED FROM PACE CENTRAL
+  on 6 Sep 2026 (the button inside iLok License Manager; the authoritative
+  source, not this file): wrap configuration for product "Echojay", created
+  2026-04-03, SDK Version 5 (an EDEN 5 config), experience "Signing Only"
+  (digitally sign true, encrypt false, Fusion false, non-Beta wrapper). The
+  July 2026 bundles were wrapped by Eden 5.10.5 against it - the
+  demonstrated-good pairing. Eden 6 against this v5 config is UNTESTED as of
+  this note; any wraptool error naming an SDK, wrapper or Eden version is
+  that fork, resolved by a PACE support request for a v6 config or by Eden
+  5.10.5 alongside - never by guessing. The bundle itself does not record its
+  wcguid (its dsig carries the publisher and product GUIDs only), so this
+  value can only ever be re-checked in PACE Central.
 - Apple signing identity used by wraptool:
   `Developer ID Application: Sean Donoghue (8BT5F9B887)`
 
@@ -79,10 +90,17 @@ renamed and none gained a required companion. Eden 6 also offers `verify`
   --wcguid B4184F90-2F4F-11F1-A9B9-00505692C25A \
   --signid "Developer ID Application: Sean Donoghue (8BT5F9B887)" \
   --in  "build-release/EchoJay_artefacts/Release/AAX/EchoJay V2.aaxplugin" \
-  --out "build-release/EchoJay_artefacts/Release/AAX/EchoJay V2.aaxplugin"
+  --out "build-release/EchoJay_artefacts/Release/AAX/signed/EchoJay V2.aaxplugin"
 ```
-(and the same for `EchoJayLink_artefacts/Release/AAX/EchoJay Link.aaxplugin`;
-the build directory is whichever one built the bundle being signed.)
+OUT-OF-PLACE, deliberately: --out is a different path from --in, so the
+unsigned original survives and a half-completed wrap costs a retry, not a
+rebuild. Then `wraptool verify --in <the signed bundle>` and
+`codesign -dv --verbose=4 <the signed bundle>`; only a bundle that passes
+both goes to /Library/Application Support/Avid/Audio/Plug-Ins/. Same for
+`EchoJayLink_artefacts/Release/AAX/EchoJay Link.aaxplugin` -> its own
+`signed/`. The build directory is whichever one built the bundle.
+--signid must match `security find-identity -v -p codesigning` on the
+signing Mac character for character.
 
 Without the iLok present this step fails; VST3/AU packaging can proceed
 without it (deselect AAX in the installer or accept the unsigned-AAX build
