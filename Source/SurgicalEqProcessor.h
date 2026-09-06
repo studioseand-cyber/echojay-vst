@@ -165,6 +165,7 @@ public:
     //   * an OBJECT carrying "params" → the universal flat path, handled by
     //                 EedDeviceProcessor for the device-global knobs.
     juce::String applyStructured (const juce::var& structured,
+                                  ParamSource src,
                                   int* appliedOut = nullptr,
                                   int* skippedOut = nullptr) override;
 

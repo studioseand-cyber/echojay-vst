@@ -108,6 +108,7 @@ public:
     // The pitch_scale array move (spec §5.1). MERGE semantics keyed on
     // `semitone`: an omitted degree keeps its current state.
     juce::String applyStructured (const juce::var& structured,
+                                  ParamSource src,
                                   int* appliedOut = nullptr,
                                   int* skippedOut = nullptr) override;
 

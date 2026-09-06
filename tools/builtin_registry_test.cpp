@@ -27,6 +27,7 @@
 
 #include <JuceHeader.h>
 
+#include "EJDialWrites.h"
 #include "EedDeviceRegistry.h"
 #include "EedDeviceProcessor.h"
 #include "EedAutoPanProcessor.h"
@@ -258,7 +259,7 @@ int main()
 
         int applied = 0, skipped = 0;
         const auto summary = device->applyStructured (
-            paramsMove ({ { "level_db", -6.0 }, { "pan", 0.5 } }), &applied, &skipped);
+            paramsMove ({ { "level_db", -6.0 }, { "pan", 0.5 } }), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
 
         check (applied == 2 && skipped == 0, "2 params applied, 0 skipped");
         check (summary.isNotEmpty(), "summary: " + summary);
@@ -281,7 +282,7 @@ int main()
         const auto summary = device->applyStructured (
             paramsMove ({ { "time_ms", 375.0 }, { "feedback", 62.0 }, { "mix", 45.0 },
                           { "ping_pong", true }, { "stereo_offset", -25.0 },
-                          { "filter_lp_hz", 3200.0 } }), &applied, &skipped);
+                          { "filter_lp_hz", 3200.0 } }), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
 
         check (applied == 6 && skipped == 0, "6 params applied, 0 skipped");
         check (summary.isNotEmpty(), "summary: " + summary);
@@ -301,7 +302,7 @@ int main()
         check (delay != nullptr, "constructed as an EedDelayProcessor");
 
         echojay::publishHostTempo (120.0);
-        device->applyStructured (paramsMove ({ { "sync", true }, { "sync_division", 9 } }));
+        device->applyStructured (paramsMove ({ { "sync", true }, { "sync_division", 9 } }), EedDeviceProcessor::ParamSource::Assistant);
 
         check (near (device->getParamValue ("sync_division"), 9.0), "landed on index 9");
         check (juce::String (echojay::DelayEngine::divisionName (9)) == "1/4",
@@ -310,7 +311,7 @@ int main()
                "which at 120 BPM is exactly 500 ms");
 
         // Out of range must clamp to a real division, not wrap or land nowhere.
-        device->applyStructured (paramsMove ({ { "sync_division", 99 } }));
+        device->applyStructured (paramsMove ({ { "sync_division", 99 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("sync_division"),
                      (double) (echojay::DelayEngine::kNumDivisions - 1)),
                "an out-of-range index clamps to the longest note");
@@ -325,7 +326,7 @@ int main()
         int applied = 0, skipped = 0;
         device->applyStructured (
             paramsMove ({ { "size", 85.0 }, { "decay_s", 4.5 }, { "predelay_ms", 60.0 },
-                          { "damping", 30.0 }, { "width", 80.0 }, { "mix", 22.0 } }),
+                          { "damping", 30.0 }, { "width", 80.0 }, { "mix", 22.0 } }), EedDeviceProcessor::ParamSource::Assistant,
             &applied, &skipped);
 
         check (applied == 6 && skipped == 0, "6 params applied, 0 skipped");
@@ -406,7 +407,7 @@ int main()
                "a fresh reverb is on hall, the neutral algorithm");
 
         int applied = 0, skipped = 0;
-        const auto s = device->applyStructured (paramsMove ({ { "algorithm", "plate" } }),
+        const auto s = device->applyStructured (paramsMove ({ { "algorithm", "plate" } }), EedDeviceProcessor::ParamSource::Assistant,
                                                 &applied, &skipped);
         check (applied == 1 && skipped == 0, "algorithm = \"plate\" applied");
         check (near (device->getParamValue ("algorithm"), 2.0), "landed on plate (index 2)");
@@ -414,16 +415,16 @@ int main()
         check (rev->engine().getAlgorithm() == echojay::ReverbAlgorithm::Plate,
                "the ENGINE is on plate, not just the param");
 
-        device->applyStructured (paramsMove ({ { "algorithm", "SPRING" } }));
+        device->applyStructured (paramsMove ({ { "algorithm", "SPRING" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("algorithm"), 3.0), "matching is case-insensitive");
 
-        device->applyStructured (paramsMove ({ { "algorithm", 4 } }));
+        device->applyStructured (paramsMove ({ { "algorithm", 4 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("algorithm"), 4.0), "a numeric index works too");
         check (rev->engine().getAlgorithm() == echojay::ReverbAlgorithm::Ambience,
                "index 4 is ambience");
 
         int a2 = 0, s2 = 0;
-        device->applyStructured (paramsMove ({ { "algorithm", "cathedral" } }), &a2, &s2);
+        device->applyStructured (paramsMove ({ { "algorithm", "cathedral" } }), EedDeviceProcessor::ParamSource::Assistant, &a2, &s2);
         check (s2 == 1, "an unknown algorithm is SKIPPED, not guessed at");
         check (near (device->getParamValue ("algorithm"), 4.0),
                "and leaves the algorithm where it was");
@@ -434,7 +435,7 @@ int main()
         {
             const auto want = echojay::reverbAlgorithmFromIndex (i);
             device->applyStructured (paramsMove ({
-                { "algorithm", echojay::reverbAlgorithmName (want) } }));
+                { "algorithm", echojay::reverbAlgorithmName (want) } }), EedDeviceProcessor::ParamSource::Assistant);
             allReach = allReach && rev->engine().getAlgorithm() == want
                                 && near (device->getParamValue ("algorithm"), (double) i);
         }
@@ -454,13 +455,13 @@ int main()
         check (near (device->getParamValue ("duck"), 0.0), "and duck defaults to off");
 
         int applied = 0, skipped = 0;
-        device->applyStructured (paramsMove ({ { "diffusion", 35.0 }, { "duck", 60.0 } }),
+        device->applyStructured (paramsMove ({ { "diffusion", 35.0 }, { "duck", 60.0 } }), EedDeviceProcessor::ParamSource::Assistant,
                                  &applied, &skipped);
         check (applied == 2 && skipped == 0, "2 params applied, 0 skipped");
         check (near (device->getParamValue ("diffusion"), 35.0), "diffusion EXACTLY 35");
         check (near (device->getParamValue ("duck"), 60.0),      "duck EXACTLY 60");
 
-        device->applyStructured (paramsMove ({ { "diffusion", 900.0 }, { "duck", -20.0 } }));
+        device->applyStructured (paramsMove ({ { "diffusion", 900.0 }, { "duck", -20.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("diffusion"), 100.0), "900 clamps to 100");
         check (near (device->getParamValue ("duck"), 0.0),        "a negative duck clamps to 0");
     }
@@ -474,7 +475,7 @@ int main()
         check (near (device->getParamValue ("mode"), 0.0), "a fresh delay is digital");
 
         int applied = 0, skipped = 0;
-        const auto s = device->applyStructured (paramsMove ({ { "mode", "tape" } }),
+        const auto s = device->applyStructured (paramsMove ({ { "mode", "tape" } }), EedDeviceProcessor::ParamSource::Assistant,
                                                 &applied, &skipped);
         check (applied == 1 && skipped == 0, "mode = \"tape\" applied");
         check (near (device->getParamValue ("mode"), 1.0), "landed on tape (index 1)");
@@ -482,11 +483,11 @@ int main()
         check (del->engine().getMode() == echojay::DelayMode::Tape,
                "the ENGINE is on tape, not just the param");
 
-        device->applyStructured (paramsMove ({ { "mode", "ANALOG" } }));
+        device->applyStructured (paramsMove ({ { "mode", "ANALOG" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("mode"), 2.0), "matching is case-insensitive");
 
         int a2 = 0, s2 = 0;
-        device->applyStructured (paramsMove ({ { "mode", "bucket" } }), &a2, &s2);
+        device->applyStructured (paramsMove ({ { "mode", "bucket" } }), EedDeviceProcessor::ParamSource::Assistant, &a2, &s2);
         check (s2 == 1, "an unknown mode is SKIPPED, not guessed at");
         check (near (device->getParamValue ("mode"), 2.0), "and leaves the mode where it was");
 
@@ -495,7 +496,7 @@ int main()
         {
             const auto want = echojay::delayModeFromIndex (i);
             device->applyStructured (paramsMove ({
-                { "mode", echojay::delayModeName (want) } }));
+                { "mode", echojay::delayModeName (want) } }), EedDeviceProcessor::ParamSource::Assistant);
             allReach = allReach && del->engine().getMode() == want
                                 && near (device->getParamValue ("mode"), (double) i);
         }
@@ -512,15 +513,15 @@ int main()
         auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
         auto* del    = dynamic_cast<EedDelayProcessor*> (proc.get());
 
-        device->applyStructured (paramsMove ({ { "mode", "pingpong" } }));
+        device->applyStructured (paramsMove ({ { "mode", "pingpong" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (del->engine().effectivePingPong(), "mode = pingpong bounces on its own");
         check (near (device->getParamValue ("ping_pong"), 0.0),
                "WITHOUT silently flipping the ping_pong param");
 
-        device->applyStructured (paramsMove ({ { "mode", "tape" } }));
+        device->applyStructured (paramsMove ({ { "mode", "tape" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (! del->engine().effectivePingPong(), "back to tape, the bounce is gone");
 
-        device->applyStructured (paramsMove ({ { "ping_pong", true } }));
+        device->applyStructured (paramsMove ({ { "ping_pong", true } }), EedDeviceProcessor::ParamSource::Assistant);
         check (del->engine().effectivePingPong() && near (device->getParamValue ("mode"), 1.0),
                "and the switch bounces a TAPE echo, leaving the mode on tape");
     }
@@ -534,13 +535,13 @@ int main()
         check (near (device->getParamValue ("duck"), 0.0),      "and so does duck");
 
         int applied = 0, skipped = 0;
-        device->applyStructured (paramsMove ({ { "diffusion", 45.0 }, { "duck", 70.0 } }),
+        device->applyStructured (paramsMove ({ { "diffusion", 45.0 }, { "duck", 70.0 } }), EedDeviceProcessor::ParamSource::Assistant,
                                  &applied, &skipped);
         check (applied == 2 && skipped == 0, "2 params applied, 0 skipped");
         check (near (device->getParamValue ("diffusion"), 45.0), "diffusion EXACTLY 45");
         check (near (device->getParamValue ("duck"), 70.0),      "duck EXACTLY 70");
 
-        device->applyStructured (paramsMove ({ { "duck", 400.0 } }));
+        device->applyStructured (paramsMove ({ { "duck", 400.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("duck"), 100.0), "400 clamps to 100");
     }
 
@@ -552,7 +553,7 @@ int main()
         auto a = makeByName ("EchoJay Reverb");
         auto* da = dynamic_cast<EedDeviceProcessor*> (a.get());
         da->applyStructured (paramsMove ({ { "algorithm", "spring" },
-                                           { "diffusion", 22.0 }, { "duck", 55.0 } }));
+                                           { "diffusion", 22.0 }, { "duck", 55.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         juce::MemoryBlock rb;
         da->getStateInformation (rb);
 
@@ -567,7 +568,7 @@ int main()
         auto c = makeByName ("EchoJay Delay");
         auto* dc = dynamic_cast<EedDeviceProcessor*> (c.get());
         dc->applyStructured (paramsMove ({ { "mode", "analog" }, { "diffusion", 30.0 },
-                                           { "duck", 65.0 }, { "ping_pong", true } }));
+                                           { "duck", 65.0 }, { "ping_pong", true } }), EedDeviceProcessor::ParamSource::Assistant);
         juce::MemoryBlock dblob;
         dc->getStateInformation (dblob);
 
@@ -580,6 +581,86 @@ int main()
         check (near (dd->getParamValue ("duck"), 65.0),     "duck restored");
         check (near (dd->getParamValue ("ping_pong"), 1.0),
                "and ping_pong restored ALONGSIDE the mode, not instead of it");
+    }
+
+    std::printf ("== DO NOT DIAL: a restore keeps the user's values, an assistant "
+                 "apply is still refused ==\n");
+    {
+        // THE DEFECT THIS EXISTS TO CATCH, and why "not blocked" is not the
+        // assertion. The do-not-dial guard used to sit at the top of applyParams
+        // knowing nothing about its caller, and setStateInformation reaches
+        // applyParams too. A reload therefore ran resetParamsToDefaults() and
+        // then had the apply that puts the saved values back REFUSED: the device
+        // came back at schema defaults and the blob holding the user's real
+        // values had already been spent. A test that only asserted "restore was
+        // not blocked" would have passed on the broken build, because nothing
+        // was blocked - the reset ran and the apply returned quietly. So this
+        // block asserts the VALUES, and asserts they differ from the defaults,
+        // which is what makes the mutation red.
+
+        auto s0 = makeByName ("EchoJay Reverb");
+        auto* saver = dynamic_cast<EedDeviceProcessor*> (s0.get());
+        check (saver != nullptr, "do-not-dial: the saving device exists");
+
+        // The defaults are READ, never assumed, so this stays sharp if a schema
+        // default ever moves onto one of the values below.
+        auto f0 = makeByName ("EchoJay Reverb");
+        auto* fresh = dynamic_cast<EedDeviceProcessor*> (f0.get());
+        const double defAlgorithm = fresh->getParamValue ("algorithm");
+        const double defDiffusion = fresh->getParamValue ("diffusion");
+        const double defDuck      = fresh->getParamValue ("duck");
+
+        saver->applyStructured (paramsMove ({ { "algorithm", "spring" },
+                                              { "diffusion", 22.0 },
+                                              { "duck", 55.0 } }),
+                                EedDeviceProcessor::ParamSource::Assistant);
+        const double savedAlgorithm = saver->getParamValue ("algorithm");
+
+        check (! near (savedAlgorithm, defAlgorithm)
+               && ! near (22.0, defDiffusion)
+               && ! near (55.0, defDuck),
+               "do-not-dial: the saved values are nothing like the defaults, so a "
+               "reset-to-defaults regression cannot pass this block by accident");
+
+        juce::MemoryBlock blob;
+        saver->getStateInformation (blob);
+
+        // ---- everything below runs with the mode ON ------------------------
+        echojay::setDialWritesBlocked (true);
+
+        auto r0 = makeByName ("EchoJay Reverb");
+        auto* restored = dynamic_cast<EedDeviceProcessor*> (r0.get());
+        restored->setStateInformation (blob.getData(), (int) blob.getSize());
+
+        check (near (restored->getParamValue ("algorithm"), savedAlgorithm),
+               "DO NOT DIAL + restore: algorithm is the saved one, not the default");
+        check (near (restored->getParamValue ("diffusion"), 22.0),
+               "DO NOT DIAL + restore: diffusion is 22, the value the user saved");
+        check (near (restored->getParamValue ("duck"), 55.0),
+               "DO NOT DIAL + restore: duck is 55, the value the user saved");
+
+        // ---- and the feature is still the feature ---------------------------
+        const auto refused = restored->applyStructured (
+            paramsMove ({ { "diffusion", 91.0 } }),
+            EedDeviceProcessor::ParamSource::Assistant);
+        check (refused.isEmpty(),
+               "DO NOT DIAL: an assistant apply to a built-in places nothing");
+        check (near (restored->getParamValue ("diffusion"), 22.0),
+               "DO NOT DIAL: and it did not move the knob either, so the restore "
+               "fix did not quietly undo the mode");
+
+        // A hand on the device's own control is not the assistant.
+        restored->applyStructured (paramsMove ({ { "duck", 33.0 } }),
+                                   EedDeviceProcessor::ParamSource::User);
+        check (near (restored->getParamValue ("duck"), 33.0),
+               "DO NOT DIAL: a User move still lands, because the mode hands "
+               "controls back rather than taking them away");
+
+        // The flag is process-wide. Leaving it set would silently disarm every
+        // apply in every block that runs after this one.
+        echojay::setDialWritesBlocked (false);
+        check (! echojay::dialWritesBlocked(),
+               "do-not-dial: the mode is off again for the rest of the run");
     }
 
     std::printf ("== the Time depth choices are ADVERTISED by name ==\n");
@@ -626,10 +707,10 @@ int main()
                         device->applyStructured (paramsMove ({
                             { "algorithm", "hall" },
                             { "diffusion", (double) echojay::kReverbDiffusionUnityPct },
-                            { "duck", 0.0 } }));
+                            { "duck", 0.0 } }), EedDeviceProcessor::ParamSource::Assistant);
                     else
                         device->applyStructured (paramsMove ({
-                            { "mode", "digital" }, { "diffusion", 0.0 }, { "duck", 0.0 } }));
+                            { "mode", "digital" }, { "diffusion", 0.0 }, { "duck", 0.0 } }), EedDeviceProcessor::ParamSource::Assistant);
                 }
                 proc->setPlayConfigDetails (2, 2, 48000.0, 512);
                 proc->prepareToPlay (48000.0, 512);
@@ -686,18 +767,18 @@ int main()
         check (near (device->getParamValue ("mode"), 0.0), "a fresh chorus is classic");
 
         int applied = 0, skipped = 0;
-        const auto s = device->applyStructured (paramsMove ({ { "mode", "ensemble" } }),
+        const auto s = device->applyStructured (paramsMove ({ { "mode", "ensemble" } }), EedDeviceProcessor::ParamSource::Assistant,
                                                 &applied, &skipped);
         check (applied == 1 && skipped == 0, "mode = \"ensemble\" applied");
         check (s.contains ("ensemble"), "and reads back BY NAME: " + s);
         check (cho->engine().getMode() == echojay::ChorusMode::Ensemble,
                "the ENGINE is on ensemble, not just the param");
 
-        device->applyStructured (paramsMove ({ { "mode", "DIMENSION" } }));
+        device->applyStructured (paramsMove ({ { "mode", "DIMENSION" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("mode"), 2.0), "matching is case-insensitive");
 
         int a2 = 0, s2 = 0;
-        device->applyStructured (paramsMove ({ { "mode", "flanger" } }), &a2, &s2);
+        device->applyStructured (paramsMove ({ { "mode", "flanger" } }), EedDeviceProcessor::ParamSource::Assistant, &a2, &s2);
         check (s2 == 1, "an unknown mode is SKIPPED, not guessed at");
         check (near (device->getParamValue ("mode"), 2.0), "and leaves the mode where it was");
 
@@ -705,13 +786,13 @@ int main()
         for (int i = 0; i < echojay::kNumChorusModes; ++i)
         {
             const auto want = echojay::chorusModeFromIndex (i);
-            device->applyStructured (paramsMove ({ { "mode", echojay::chorusModeName (want) } }));
+            device->applyStructured (paramsMove ({ { "mode", echojay::chorusModeName (want) } }), EedDeviceProcessor::ParamSource::Assistant);
             allReach = allReach && cho->engine().getMode() == want
                                 && near (device->getParamValue ("mode"), (double) i);
         }
         check (allReach, "all three modes resolve by name and reach the engine");
 
-        device->applyStructured (paramsMove ({ { "mode", 1 } }));
+        device->applyStructured (paramsMove ({ { "mode", 1 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (cho->engine().getMode() == echojay::ChorusMode::Ensemble,
                "a numeric index works too");
     }
@@ -729,13 +810,13 @@ int main()
         check (near (device->getParamValue ("tone"), 0.0), "tone defaults to flat");
 
         int applied = 0, skipped = 0;
-        device->applyStructured (paramsMove ({ { "spread", 80.0 }, { "tone", -3.5 } }),
+        device->applyStructured (paramsMove ({ { "spread", 80.0 }, { "tone", -3.5 } }), EedDeviceProcessor::ParamSource::Assistant,
                                  &applied, &skipped);
         check (applied == 2 && skipped == 0, "2 params applied, 0 skipped");
         check (near (device->getParamValue ("spread"), 80.0), "spread EXACTLY 80");
         check (near (device->getParamValue ("tone"), -3.5),   "tone EXACTLY -3.5");
 
-        device->applyStructured (paramsMove ({ { "spread", 400.0 }, { "tone", -20.0 } }));
+        device->applyStructured (paramsMove ({ { "spread", 400.0 }, { "tone", -20.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("spread"), 100.0), "400 clamps to 100");
         check (near (device->getParamValue ("tone"), -6.0),    "-20 clamps to -6");
     }
@@ -751,7 +832,7 @@ int main()
                      (double) echojay::PhaserEngine::kDefaultSpreadDeg),
                "stereo_spread defaults to 90, the shipped offset");
 
-        const auto s = device->applyStructured (paramsMove ({ { "mode", "vintage" } }));
+        const auto s = device->applyStructured (paramsMove ({ { "mode", "vintage" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (s.contains ("vintage"), "mode = \"vintage\" reads back BY NAME: " + s);
         check (pha->engine().getMode() == echojay::PhaserMode::Vintage,
                "the ENGINE is on vintage, not just the param");
@@ -759,21 +840,21 @@ int main()
                "and the default 6 dialled stages run as vintage's 4");
 
         int a2 = 0, s2 = 0;
-        device->applyStructured (paramsMove ({ { "mode", "univibe" } }), &a2, &s2);
+        device->applyStructured (paramsMove ({ { "mode", "univibe" } }), EedDeviceProcessor::ParamSource::Assistant, &a2, &s2);
         check (s2 == 1, "an unknown mode is SKIPPED, not guessed at");
 
         bool allReach = true;
         for (int i = 0; i < echojay::kNumPhaserModes; ++i)
         {
             const auto want = echojay::phaserModeFromIndex (i);
-            device->applyStructured (paramsMove ({ { "mode", echojay::phaserModeName (want) } }));
+            device->applyStructured (paramsMove ({ { "mode", echojay::phaserModeName (want) } }), EedDeviceProcessor::ParamSource::Assistant);
             allReach = allReach && pha->engine().getMode() == want;
         }
         check (allReach, "all three modes resolve by name and reach the engine");
 
-        device->applyStructured (paramsMove ({ { "stereo_spread", 135.0 } }));
+        device->applyStructured (paramsMove ({ { "stereo_spread", 135.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("stereo_spread"), 135.0), "stereo_spread EXACTLY 135");
-        device->applyStructured (paramsMove ({ { "stereo_spread", 720.0 } }));
+        device->applyStructured (paramsMove ({ { "stereo_spread", 720.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("stereo_spread"), 360.0), "720 clamps to 360");
     }
 
@@ -785,7 +866,7 @@ int main()
 
         check (near (device->getParamValue ("mode"), 0.0), "a fresh tremolo is the sine circuit");
 
-        const auto s = device->applyStructured (paramsMove ({ { "mode", "bias" } }));
+        const auto s = device->applyStructured (paramsMove ({ { "mode", "bias" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (s.contains ("bias"), "mode = \"bias\" reads back BY NAME: " + s);
         check (trm->engine().getMode() == echojay::TremoloMode::Bias,
                "the ENGINE is on bias, not just the param");
@@ -794,7 +875,7 @@ int main()
         for (int i = 0; i < echojay::kNumTremoloModes; ++i)
         {
             const auto want = echojay::tremoloModeFromIndex (i);
-            device->applyStructured (paramsMove ({ { "mode", echojay::tremoloModeName (want) } }));
+            device->applyStructured (paramsMove ({ { "mode", echojay::tremoloModeName (want) } }), EedDeviceProcessor::ParamSource::Assistant);
             allReach = allReach && trm->engine().getMode() == want;
         }
         check (allReach, "all three circuits resolve by name and reach the engine");
@@ -802,24 +883,24 @@ int main()
         // The shape choice grew names with the depth pass: the new shapes
         // resolve by name, the old NUMERIC form keeps working (the backend
         // spec promises "shape": 2 forever), and the engine gets the index.
-        device->applyStructured (paramsMove ({ { "shape", "random" } }));
+        device->applyStructured (paramsMove ({ { "shape", "random" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("shape"), (double) echojay::LfoCore::kRandom),
                "shape = \"random\" lands on the sample-and-hold shape");
         check (trm->engine().lfo().getShape() == echojay::LfoCore::kRandom,
                "and the LFO is running it");
 
-        device->applyStructured (paramsMove ({ { "shape", "harmonic" } }));
+        device->applyStructured (paramsMove ({ { "shape", "harmonic" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("shape"), (double) echojay::LfoCore::kHarmonic),
                "shape = \"harmonic\" lands too");
 
-        device->applyStructured (paramsMove ({ { "shape", 2 } }));
+        device->applyStructured (paramsMove ({ { "shape", 2 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (trm->engine().lfo().getShape() == echojay::LfoCore::kSquare,
                "the numeric form still works: shape 2 is square");
 
-        device->applyStructured (paramsMove ({ { "smoothing_ms", 120.0 } }));
+        device->applyStructured (paramsMove ({ { "smoothing_ms", 120.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("smoothing_ms"), 120.0),
                "smoothing_ms EXACTLY 120 - the random glide is dialable");
-        device->applyStructured (paramsMove ({ { "smoothing_ms", 9999.0 } }));
+        device->applyStructured (paramsMove ({ { "smoothing_ms", 9999.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("smoothing_ms"),
                      (double) echojay::LfoCore::kMaxSmoothingMs),
                "and clamps to the core's ceiling");
@@ -837,12 +918,12 @@ int main()
                      (double) (int) echojay::AutoPanMode::ConstantPower),
                "a fresh auto pan is constant_power, the shipped law");
 
-        const auto s = device->applyStructured (paramsMove ({ { "mode", "binaural" } }));
+        const auto s = device->applyStructured (paramsMove ({ { "mode", "binaural" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (s.contains ("binaural"), "mode = \"binaural\" reads back BY NAME: " + s);
         check (pan->engine().getMode() == echojay::AutoPanMode::Binaural,
                "the ENGINE is on binaural, not just the param");
 
-        device->applyStructured (paramsMove ({ { "mode", "Constant Power" } }));
+        device->applyStructured (paramsMove ({ { "mode", "Constant Power" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (pan->engine().getMode() == echojay::AutoPanMode::ConstantPower,
                "\"Constant Power\" matches constant_power (tolerant folding)");
 
@@ -850,17 +931,17 @@ int main()
         for (int i = 0; i < echojay::kNumAutoPanModes; ++i)
         {
             const auto want = echojay::autoPanModeFromIndex (i);
-            device->applyStructured (paramsMove ({ { "mode", echojay::autoPanModeName (want) } }));
+            device->applyStructured (paramsMove ({ { "mode", echojay::autoPanModeName (want) } }), EedDeviceProcessor::ParamSource::Assistant);
             allReach = allReach && pan->engine().getMode() == want;
         }
         check (allReach, "all three laws resolve by name and reach the engine");
 
-        device->applyStructured (paramsMove ({ { "width", 35.0 } }));
+        device->applyStructured (paramsMove ({ { "width", 35.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("width"), 35.0), "width EXACTLY 35");
-        device->applyStructured (paramsMove ({ { "width", 250.0 } }));
+        device->applyStructured (paramsMove ({ { "width", 250.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("width"), 100.0), "250 clamps to 100");
 
-        device->applyStructured (paramsMove ({ { "shape", "random" } }));
+        device->applyStructured (paramsMove ({ { "shape", "random" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (pan->engine().lfo().getShape() == echojay::LfoCore::kRandom,
                "shape = \"random\" reaches the LFO here too");
     }
@@ -870,7 +951,7 @@ int main()
         auto a = makeByName ("EchoJay Chorus");
         auto* da = dynamic_cast<EedDeviceProcessor*> (a.get());
         da->applyStructured (paramsMove ({ { "mode", "dimension" },
-                                           { "spread", 75.0 }, { "tone", 2.5 } }));
+                                           { "spread", 75.0 }, { "tone", 2.5 } }), EedDeviceProcessor::ParamSource::Assistant);
         juce::MemoryBlock cb;
         da->getStateInformation (cb);
 
@@ -883,7 +964,7 @@ int main()
 
         auto c = makeByName ("EchoJay Phaser");
         auto* dc = dynamic_cast<EedDeviceProcessor*> (c.get());
-        dc->applyStructured (paramsMove ({ { "mode", "vintage" }, { "stereo_spread", 150.0 } }));
+        dc->applyStructured (paramsMove ({ { "mode", "vintage" }, { "stereo_spread", 150.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         juce::MemoryBlock pb;
         dc->getStateInformation (pb);
 
@@ -896,7 +977,7 @@ int main()
         auto e = makeByName ("EchoJay Tremolo");
         auto* de = dynamic_cast<EedDeviceProcessor*> (e.get());
         de->applyStructured (paramsMove ({ { "mode", "optical" }, { "shape", "harmonic" },
-                                           { "smoothing_ms", 80.0 } }));
+                                           { "smoothing_ms", 80.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         juce::MemoryBlock tb;
         de->getStateInformation (tb);
 
@@ -910,7 +991,7 @@ int main()
         auto f = makeByName ("EchoJay Auto Pan");
         auto* df = dynamic_cast<EedDeviceProcessor*> (f.get());
         df->applyStructured (paramsMove ({ { "mode", "linear" }, { "width", 60.0 },
-                                           { "shape", "random" } }));
+                                           { "shape", "random" } }), EedDeviceProcessor::ParamSource::Assistant);
         juce::MemoryBlock ab;
         df->getStateInformation (ab);
 
@@ -987,7 +1068,7 @@ int main()
                         params->setProperty (juce::Identifier (p.first), p.second);
                     juce::DynamicObject::Ptr root = new juce::DynamicObject();
                     root->setProperty ("params", juce::var (params.get()));
-                    device->applyStructured (juce::var (root.get()));
+                    device->applyStructured (juce::var (root.get()), EedDeviceProcessor::ParamSource::Assistant);
                 }
                 proc->setPlayConfigDetails (2, 2, 48000.0, 512);
                 proc->prepareToPlay (48000.0, 512);
@@ -1039,7 +1120,7 @@ int main()
             device->applyStructured (paramsMove ({ { "shape", "random" },
                                                    { "smoothing_ms", 150.0 },
                                                    { "rate_hz", 8.0 },
-                                                   { "depth", 100.0 } }));
+                                                   { "depth", 100.0 } }), EedDeviceProcessor::ParamSource::Assistant);
             proc->setPlayConfigDetails (2, 2, 48000.0, 512);
             proc->prepareToPlay (48000.0, 512);
 
@@ -1065,8 +1146,8 @@ int main()
     {
         auto proc = makeByName ("EchoJay Gain");
         auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
-        device->applyStructured (paramsMove ({ { "level_db", -6.0 }, { "pan", 0.5 } }));
-        device->applyStructured (paramsMove ({ { "level_db", -3.0 } }));   // pan not mentioned
+        device->applyStructured (paramsMove ({ { "level_db", -6.0 }, { "pan", 0.5 } }), EedDeviceProcessor::ParamSource::Assistant);
+        device->applyStructured (paramsMove ({ { "level_db", -3.0 } }), EedDeviceProcessor::ParamSource::Assistant);   // pan not mentioned
 
         check (near (device->getParamValue ("level_db"), -3.0), "level_db updated");
         check (near (device->getParamValue ("pan"), 0.5),       "pan SURVIVED the second move");
@@ -1080,7 +1161,7 @@ int main()
 
         int applied = 0, skipped = 0;
         const auto summary = device->applyStructured (
-            paramsMove ({ { "level_db", 999.0 }, { "wobble", 3.0 } }), &applied, &skipped);
+            paramsMove ({ { "level_db", 999.0 }, { "wobble", 3.0 } }), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
 
         check (near (device->getParamValue ("level_db"), 24.0), "999 dB clamped to the +24 max");
         check (applied == 1, "the in-schema param applied");
@@ -1094,17 +1175,17 @@ int main()
         auto proc = makeByName ("EchoJay Phase Invert");
         auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
 
-        device->applyStructured (paramsMove ({ { "invert_left", true } }));
+        device->applyStructured (paramsMove ({ { "invert_left", true } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("invert_left"), 1.0), "JSON true -> on");
 
-        device->applyStructured (paramsMove ({ { "invert_left", "off" } }));
+        device->applyStructured (paramsMove ({ { "invert_left", "off" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("invert_left"), 0.0), "the string \"off\" -> off");
 
-        device->applyStructured (paramsMove ({ { "invert_right", "1" } }));
+        device->applyStructured (paramsMove ({ { "invert_right", "1" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("invert_right"), 1.0), "the string \"1\" -> on");
 
         int applied = 0, skipped = 0;
-        device->applyStructured (paramsMove ({ { "invert_left", "auto" } }), &applied, &skipped);
+        device->applyStructured (paramsMove ({ { "invert_left", "auto" } }), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
         check (skipped == 1, "a non-numeric string is rejected, NOT silently read as 0");
     }
 
@@ -1116,12 +1197,12 @@ int main()
 
         juce::Array<juce::var> arr;
         arr.add (juce::var (1.0));
-        check (device->applyStructured (juce::var (arr)).isEmpty(),
+        check (device->applyStructured (juce::var (arr), EedDeviceProcessor::ParamSource::Assistant).isEmpty(),
                "bare array -> empty summary (\"this wasn't for me\")");
 
         juce::DynamicObject::Ptr bag = new juce::DynamicObject();
         bag->setProperty ("warmth", "more");                 // anchor-path semantics
-        check (device->applyStructured (juce::var (bag.get())).isEmpty(),
+        check (device->applyStructured (juce::var (bag.get()), EedDeviceProcessor::ParamSource::Assistant).isEmpty(),
                "a flat semantic bag -> empty summary");
     }
 
@@ -1143,14 +1224,14 @@ int main()
         bands.add (juce::var (band.get()));
 
         int applied = 0, skipped = 0;
-        const auto s1 = device->applyStructured (juce::var (bands), &applied, &skipped);
+        const auto s1 = device->applyStructured (juce::var (bands), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
         check (applied == 1, "bare eq_bands array still applies (1 band)");
         check (s1.isNotEmpty(), "summary: " + s1);
         check (near (eq->getBand (0).freqHz, 400.0, 0.5), "band landed at 400 Hz exactly");
         check (near (eq->getBand (0).gainDb, -3.5, 0.01), "band landed at -3.5 dB exactly");
 
         // The universal flat path, on the same device.
-        const auto s2 = device->applyStructured (paramsMove ({ { "output_db", -2.0 } }));
+        const auto s2 = device->applyStructured (paramsMove ({ { "output_db", -2.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (s2.isNotEmpty(), "params summary: " + s2);
         check (near (eq->getOutputDb(), -2.0, 0.01), "output_db dialled through params");
     }
@@ -1186,20 +1267,20 @@ int main()
 
         const auto s = device->applyStructured (eqBandsMove ({
             { { "type", "highshelf" }, { "freq_hz", 10000.0 }, { "gain_db", 3.0 },
-              { "q", 0.707 }, { "channel", "side" } } }));
+              { "q", 0.707 }, { "channel", "side" } } }), EedDeviceProcessor::ParamSource::Assistant);
         check (eq->getBand (0).channel == echojay::BandChannel::Side,
                "channel:\"side\" landed on the band");
         check (s.contains ("[side]"), "and the summary says so: " + s);
 
         device->applyStructured (eqBandsMove ({
             { { "band", 2 }, { "type", "bell" }, { "freq_hz", 300.0 },
-              { "gain_db", -2.0 }, { "q", 2.0 }, { "channel", "m" } } }));
+              { "gain_db", -2.0 }, { "q", 2.0 }, { "channel", "m" } } }), EedDeviceProcessor::ParamSource::Assistant);
         check (eq->getBand (1).channel == echojay::BandChannel::Mid,
                "single-letter \"m\" resolves to mid");
 
         device->applyStructured (eqBandsMove ({
             { { "band", 3 }, { "type", "bell" }, { "freq_hz", 500.0 },
-              { "gain_db", 1.0 }, { "q", 1.0 }, { "channel", "surround" } } }));
+              { "gain_db", 1.0 }, { "q", 1.0 }, { "channel", "surround" } } }), EedDeviceProcessor::ParamSource::Assistant);
         check (eq->getBand (2).channel == echojay::BandChannel::Stereo,
                "an unknown channel keeps the stereo default, never guesses");
 
@@ -1219,21 +1300,21 @@ int main()
         auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
 
         device->applyStructured (eqBandsMove ({
-            { { "type", "notch" }, { "note", "G5" }, { "q", 8.0 } } }));
+            { { "type", "notch" }, { "note", "G5" }, { "q", 8.0 } } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (eq->getBand (0).freqHz, 783.99, 1.0),
                "{note:\"G5\"} lands on 784 Hz (got "
                + juce::String (eq->getBand (0).freqHz, 2) + ")");
 
         device->applyStructured (eqBandsMove ({
             { { "band", 2 }, { "type", "bell" }, { "note", "A4" },
-              { "freq_hz", 1234.0 }, { "gain_db", -1.0 }, { "q", 1.0 } } }));
+              { "freq_hz", 1234.0 }, { "gain_db", -1.0 }, { "q", 1.0 } } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (eq->getBand (1).freqHz, 1234.0, 0.5),
                "explicit freq_hz WINS over note when both are sent");
 
         int a = 0, sk = 0;
         device->applyStructured (eqBandsMove ({
             { { "band", 3 }, { "type", "bell" }, { "note", "H9" },
-              { "gain_db", 2.0 }, { "q", 1.0 } } }), &a, &sk);
+              { "gain_db", 2.0 }, { "q", 1.0 } } }), EedDeviceProcessor::ParamSource::Assistant, &a, &sk);
         check (near (eq->getBand (2).freqHz, 1000.0, 0.5),
                "an unparseable note falls back to the default freq, never guesses");
     }
@@ -1254,7 +1335,7 @@ int main()
         settings->setProperty ("phase_mode", "linear");
         juce::DynamicObject::Ptr move = new juce::DynamicObject();
         move->setProperty ("eq_settings", juce::var (settings.get()));
-        const auto s = device->applyStructured (juce::var (move.get()));
+        const auto s = device->applyStructured (juce::var (move.get()), EedDeviceProcessor::ParamSource::Assistant);
 
         check (eq->getPhaseMode() == SurgicalEqProcessor::PhaseMode::Linear,
                "eq_settings.phase_mode:\"linear\" landed");
@@ -1267,15 +1348,15 @@ int main()
                "getTailLengthSeconds is wired, not the 0.0 stub");
 
         // Via the universal flat path: by NAME and by index.
-        device->applyStructured (paramsMove ({ { "phase_mode", "zero" } }));
+        device->applyStructured (paramsMove ({ { "phase_mode", "zero" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (eq->getPhaseMode() == SurgicalEqProcessor::PhaseMode::Zero
             && proc->getLatencySamples() == 0,
                "params phase_mode:\"zero\" flips back and re-reports 0");
-        device->applyStructured (paramsMove ({ { "phase_mode", 1 } }));
+        device->applyStructured (paramsMove ({ { "phase_mode", 1 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (eq->getPhaseMode() == SurgicalEqProcessor::PhaseMode::Linear,
                "a numeric index works too");
 
-        device->applyStructured (paramsMove ({ { "ms_mode", true } }));
+        device->applyStructured (paramsMove ({ { "ms_mode", true } }), EedDeviceProcessor::ParamSource::Assistant);
         check (eq->getMsMode(), "ms_mode dials through params");
 
         // The advertisement carries the choice names.
@@ -1293,7 +1374,7 @@ int main()
 
         juce::DynamicObject::Ptr move = new juce::DynamicObject();
         move->setProperty ("eq_preset", "Vocal Clarity");        // tolerant spelling
-        const auto s = device->applyStructured (juce::var (move.get()));
+        const auto s = device->applyStructured (juce::var (move.get()), EedDeviceProcessor::ParamSource::Assistant);
         check (s.contains ("vocal-clarity"), "preset loads by tolerant name: " + s);
         check (eq->getBand (0).enabled
             && eq->getBand (0).type == echojay::BandType::HighPass
@@ -1313,14 +1394,14 @@ int main()
         juce::DynamicObject::Ptr move2 = new juce::DynamicObject();
         move2->setProperty ("eq_preset", "vocal-clarity");
         move2->setProperty ("eq_bands", juce::var (bandArr));
-        device->applyStructured (juce::var (move2.get()));
+        device->applyStructured (juce::var (move2.get()), EedDeviceProcessor::ParamSource::Assistant);
         check (near (eq->getBand (1).gainDb, -4.0, 0.01),
                "\"preset, then cut 300 harder\" is one move: band 2 reads -4 dB");
 
         // An unknown preset is an honest miss that changes nothing.
         juce::DynamicObject::Ptr move3 = new juce::DynamicObject();
         move3->setProperty ("eq_preset", "smiley-face");
-        const auto s3 = device->applyStructured (juce::var (move3.get()));
+        const auto s3 = device->applyStructured (juce::var (move3.get()), EedDeviceProcessor::ParamSource::Assistant);
         check (s3.contains ("unknown") && s3.contains ("vocal-clarity"),
                "the miss lists what DOES exist: " + s3);
         check (near (eq->getBand (1).gainDb, -4.0, 0.01), "and nothing moved");
@@ -1347,7 +1428,7 @@ int main()
         };
 
         // BEFORE audio: the honest "nothing to analyse" answer.
-        const auto sQuiet = device->applyStructured (huntMove ("medium", true));
+        const auto sQuiet = device->applyStructured (huntMove ("medium", true), EedDeviceProcessor::ParamSource::Assistant);
         check (sQuiet.contains ("no signal"), "silence answers honestly: " + sQuiet);
 
         // ~2 s of noise + a screaming 3.7 kHz resonance through processBlock —
@@ -1375,10 +1456,10 @@ int main()
         // A hand-dialled band first, so the hunt has something it must NOT eat.
         device->applyStructured (eqBandsMove ({
             { { "band", 1 }, { "type", "bell" }, { "freq_hz", 150.0 },
-              { "gain_db", 2.0 }, { "q", 1.0 } } }));
+              { "gain_db", 2.0 }, { "q", 1.0 } } }), EedDeviceProcessor::ParamSource::Assistant);
 
         int applied = 0, skipped = 0;
-        const auto s = device->applyStructured (huntMove ("medium", true),
+        const auto s = device->applyStructured (huntMove ("medium", true), EedDeviceProcessor::ParamSource::Assistant,
                                                 &applied, &skipped);
         check (applied >= 1, "the hunt placed band(s): " + s);
         check (s.contains ("hunt"), "and reported as a hunt");
@@ -1423,7 +1504,7 @@ int main()
                 proc2->processBlock (buf, midi);
             }
         }
-        dev2->applyStructured (huntMove ("medium", false));
+        dev2->applyStructured (huntMove ("medium", false), EedDeviceProcessor::ParamSource::Assistant);
         bool notched = false;
         for (int i = 0; i < SurgicalEqProcessor::kNumBands; ++i)
         {
@@ -1439,7 +1520,7 @@ int main()
         weird->setProperty ("type", "make_it_pop");
         juce::DynamicObject::Ptr root = new juce::DynamicObject();
         root->setProperty ("eq_action", juce::var (weird.get()));
-        const auto sW = device->applyStructured (juce::var (root.get()));
+        const auto sW = device->applyStructured (juce::var (root.get()), EedDeviceProcessor::ParamSource::Assistant);
         check (sW.contains ("tame_resonances"),
                "unknown action names what IS available: " + sW);
     }
@@ -1452,13 +1533,13 @@ int main()
 
         device->applyStructured (eqBandsMove ({
             { { "type", "highshelf" }, { "freq_hz", 10000.0 }, { "gain_db", 3.0 },
-              { "q", 0.707 }, { "channel", "side" } } }));
+              { "q", 0.707 }, { "channel", "side" } } }), EedDeviceProcessor::ParamSource::Assistant);
         juce::DynamicObject::Ptr settings = new juce::DynamicObject();
         settings->setProperty ("phase_mode", "linear");
         settings->setProperty ("ms_mode", true);
         juce::DynamicObject::Ptr move = new juce::DynamicObject();
         move->setProperty ("eq_settings", juce::var (settings.get()));
-        device->applyStructured (juce::var (move.get()));
+        device->applyStructured (juce::var (move.get()), EedDeviceProcessor::ParamSource::Assistant);
 
         juce::MemoryBlock blob;
         proc->getStateInformation (blob);
@@ -1501,7 +1582,7 @@ int main()
             {
                 device->applyStructured (paramsMove ({
                     { "output_db", 0.0 }, { "auto_gain", false },
-                    { "phase_mode", "zero" }, { "ms_mode", false } }));
+                    { "phase_mode", "zero" }, { "ms_mode", false } }), EedDeviceProcessor::ParamSource::Assistant);
                 // …and a band set that exercises the P2 default channel too
                 juce::DynamicObject::Ptr b = new juce::DynamicObject();
                 b->setProperty ("type", "bell");
@@ -1510,7 +1591,7 @@ int main()
                 b->setProperty ("q", 2.0);
                 b->setProperty ("channel", "stereo");
                 juce::Array<juce::var> arr; arr.add (juce::var (b.get()));
-                device->applyStructured (juce::var (arr));
+                device->applyStructured (juce::var (arr), EedDeviceProcessor::ParamSource::Assistant);
             }
             else
             {
@@ -1520,7 +1601,7 @@ int main()
                 b->setProperty ("gain_db", -3.0);
                 b->setProperty ("q", 2.0);
                 juce::Array<juce::var> arr; arr.add (juce::var (b.get()));
-                device->applyStructured (juce::var (arr));
+                device->applyStructured (juce::var (arr), EedDeviceProcessor::ParamSource::Assistant);
             }
             proc->setPlayConfigDetails (2, 2, 48000.0, 512);
             proc->prepareToPlay (48000.0, 512);
@@ -1572,20 +1653,20 @@ int main()
 
         int applied = 0, skipped = 0;
         const auto summary = device->applyStructured (
-            paramsMove ({ { "type", "diode" } }), &applied, &skipped);
+            paramsMove ({ { "type", "diode" } }), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
         check (applied == 1 && skipped == 0, "type = \"diode\" applied");
         check (near (device->getParamValue ("type"), 2.0), "landed on the diode curve (index 2)");
         check (summary.contains ("diode"), "and reads back BY NAME: " + summary);
 
-        device->applyStructured (paramsMove ({ { "type", "TUBE" } }));
+        device->applyStructured (paramsMove ({ { "type", "TUBE" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("type"), 0.0), "matching is case-insensitive");
 
-        device->applyStructured (paramsMove ({ { "type", 3 } }));
+        device->applyStructured (paramsMove ({ { "type", 3 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("type"), 3.0), "a numeric index still works");
 
-        device->applyStructured (paramsMove ({ { "type", "diode" } }));
+        device->applyStructured (paramsMove ({ { "type", "diode" } }), EedDeviceProcessor::ParamSource::Assistant);
         int a2 = 0, s2 = 0;
-        device->applyStructured (paramsMove ({ { "type", "germanium" } }), &a2, &s2);
+        device->applyStructured (paramsMove ({ { "type", "germanium" } }), EedDeviceProcessor::ParamSource::Assistant, &a2, &s2);
         check (s2 == 1, "an unknown choice is SKIPPED, not guessed at");
         check (near (device->getParamValue ("type"), 2.0), "and leaves the curve where it was");
 
@@ -1603,7 +1684,7 @@ int main()
         auto sat = makeByName ("EchoJay Saturation");
         auto* satDev = dynamic_cast<EedDeviceProcessor*> (sat.get());
         satDev->applyStructured (paramsMove ({ { "drive_db", 18.0 }, { "tone_db", -4.5 },
-                                               { "mix", 60.0 }, { "output_db", -2.0 } }));
+                                               { "mix", 60.0 }, { "output_db", -2.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (satDev->getParamValue ("drive_db"), 18.0),  "drive_db exact");
         check (near (satDev->getParamValue ("tone_db"), -4.5),   "tone_db exact");
         check (near (satDev->getParamValue ("mix"), 60.0),       "mix exact");
@@ -1618,7 +1699,7 @@ int main()
         auto* tapeDev = dynamic_cast<EedDeviceProcessor*> (tape.get());
         tapeDev->applyStructured (paramsMove ({ { "speed_ips", 30.0 }, { "wow", 0.0 },
                                                 { "flutter", 55.0 }, { "head_bump_db", 4.0 },
-                                                { "bias", -40.0 } }));
+                                                { "bias", -40.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (tapeDev->getParamValue ("speed_ips"), 30.0),    "speed_ips exact");
         check (near (tapeDev->getParamValue ("flutter"), 55.0),      "flutter exact");
         check (near (tapeDev->getParamValue ("head_bump_db"), 4.0),  "head_bump_db exact");
@@ -1632,7 +1713,7 @@ int main()
         auto ex = makeByName ("EchoJay Exciter");
         auto* exDev = dynamic_cast<EedDeviceProcessor*> (ex.get());
         exDev->applyStructured (paramsMove ({ { "freq_hz", 5500.0 }, { "amount", 35.0 },
-                                              { "mode", "tape" } }));
+                                              { "mode", "tape" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (exDev->getParamValue ("freq_hz"), 5500.0), "freq_hz exact");
         check (near (exDev->getParamValue ("amount"), 35.0),    "amount exact");
         check (near (exDev->getParamValue ("mode"), 1.0),       "mode = \"tape\" resolved");
@@ -1662,7 +1743,7 @@ int main()
                "a fresh saturation is on both, the neutral emphasis");
 
         int applied = 0, skipped = 0;
-        const auto s = device->applyStructured (paramsMove ({ { "emphasis", "even" } }),
+        const auto s = device->applyStructured (paramsMove ({ { "emphasis", "even" } }), EedDeviceProcessor::ParamSource::Assistant,
                                                 &applied, &skipped);
         check (applied == 1 && skipped == 0, "emphasis = \"even\" applied");
         check (near (device->getParamValue ("emphasis"), 0.0), "landed on even (index 0)");
@@ -1670,11 +1751,11 @@ int main()
         check (sat->core().getEmphasis() == echojay::harmonic::Emphasis::Even,
                "the CORE is on even, not just the param");
 
-        device->applyStructured (paramsMove ({ { "emphasis", "ODD" } }));
+        device->applyStructured (paramsMove ({ { "emphasis", "ODD" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("emphasis"), 1.0), "matching is case-insensitive");
 
         int a2 = 0, s2 = 0;
-        device->applyStructured (paramsMove ({ { "emphasis", "third" } }), &a2, &s2);
+        device->applyStructured (paramsMove ({ { "emphasis", "third" } }), EedDeviceProcessor::ParamSource::Assistant, &a2, &s2);
         check (s2 == 1, "an unknown emphasis is SKIPPED, not guessed at");
         check (near (device->getParamValue ("emphasis"), 1.0),
                "and leaves the emphasis where it was");
@@ -1694,20 +1775,20 @@ int main()
         // A LIVE move — no re-prepare — must land on the engine AND republish
         // the latency, or the host would compensate for a number that is no
         // longer true.
-        device->applyStructured (paramsMove ({ { "oversample", "8x" } }));
+        device->applyStructured (paramsMove ({ { "oversample", "8x" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("oversample"), 2.0), "oversample = \"8x\" landed");
         check (proc->getLatencySamples() == 48,
                "8x republishes 48 samples WITHOUT a re-prepare (got "
                + juce::String (proc->getLatencySamples()) + ")");
 
-        device->applyStructured (paramsMove ({ { "oversample", 0 } }));
+        device->applyStructured (paramsMove ({ { "oversample", 0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (proc->getLatencySamples() == 30, "a numeric index works too: 2x is 30 samples");
 
         // "16x" would coerce to the number 16 and clamp onto 8x — the funnel's
         // documented digit-salvage behaviour — so the unknown-label case is
         // tested with a label that carries no digits at all.
         int a2 = 0, s2 = 0;
-        device->applyStructured (paramsMove ({ { "oversample", "ultra" } }), &a2, &s2);
+        device->applyStructured (paramsMove ({ { "oversample", "ultra" } }), EedDeviceProcessor::ParamSource::Assistant, &a2, &s2);
         check (s2 == 1, "an unadvertised quality is SKIPPED, not guessed at");
         check (proc->getLatencySamples() == 30, "and leaves the setting where it was");
     }
@@ -1721,13 +1802,13 @@ int main()
         check (near (device->getParamValue ("hpf_hz"), 0.0), "hpf_hz defaults to 0 (full band)");
 
         int applied = 0, skipped = 0;
-        device->applyStructured (paramsMove ({ { "bias", -35.0 }, { "hpf_hz", 120.0 } }),
+        device->applyStructured (paramsMove ({ { "bias", -35.0 }, { "hpf_hz", 120.0 } }), EedDeviceProcessor::ParamSource::Assistant,
                                  &applied, &skipped);
         check (applied == 2 && skipped == 0, "2 params applied, 0 skipped");
         check (near (device->getParamValue ("bias"), -35.0),   "bias EXACTLY -35");
         check (near (device->getParamValue ("hpf_hz"), 120.0), "hpf_hz EXACTLY 120");
 
-        device->applyStructured (paramsMove ({ { "bias", 400.0 }, { "hpf_hz", 9999.0 } }));
+        device->applyStructured (paramsMove ({ { "bias", 400.0 }, { "hpf_hz", 9999.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("bias"), 100.0),   "bias 400 clamps to 100");
         check (near (device->getParamValue ("hpf_hz"), 500.0), "hpf_hz 9999 clamps to 500");
     }
@@ -1742,7 +1823,7 @@ int main()
                "a fresh tape is the studio machine, the neutral mode");
 
         int applied = 0, skipped = 0;
-        const auto s = device->applyStructured (paramsMove ({ { "mode", "cassette" } }),
+        const auto s = device->applyStructured (paramsMove ({ { "mode", "cassette" } }), EedDeviceProcessor::ParamSource::Assistant,
                                                 &applied, &skipped);
         check (applied == 1 && skipped == 0, "mode = \"cassette\" applied");
         check (near (device->getParamValue ("mode"), 2.0), "landed on cassette (index 2)");
@@ -1750,11 +1831,11 @@ int main()
         check (tape->engine().getMachine() == echojay::TapeMachine::Cassette,
                "the ENGINE is on cassette, not just the param");
 
-        device->applyStructured (paramsMove ({ { "mode", "VINTAGE" } }));
+        device->applyStructured (paramsMove ({ { "mode", "VINTAGE" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("mode"), 1.0), "matching is case-insensitive");
 
         int a2 = 0, s2 = 0;
-        device->applyStructured (paramsMove ({ { "mode", "dictaphone" } }), &a2, &s2);
+        device->applyStructured (paramsMove ({ { "mode", "dictaphone" } }), EedDeviceProcessor::ParamSource::Assistant, &a2, &s2);
         check (s2 == 1, "an unknown machine is SKIPPED, not guessed at");
         check (near (device->getParamValue ("mode"), 1.0), "and leaves the machine where it was");
 
@@ -1763,7 +1844,7 @@ int main()
         {
             const auto want = echojay::tapeMachineFromIndex (i);
             device->applyStructured (paramsMove ({
-                { "mode", echojay::tapeMachineName (want) } }));
+                { "mode", echojay::tapeMachineName (want) } }), EedDeviceProcessor::ParamSource::Assistant);
             allReach = allReach && tape->engine().getMachine() == want
                                 && near (device->getParamValue ("mode"), (double) i);
         }
@@ -1784,13 +1865,13 @@ int main()
         check (near (device->getParamValue ("crosstalk"), 0.0), "and so does crosstalk");
 
         int applied = 0, skipped = 0;
-        device->applyStructured (paramsMove ({ { "hiss", 40.0 }, { "crosstalk", 25.0 } }),
+        device->applyStructured (paramsMove ({ { "hiss", 40.0 }, { "crosstalk", 25.0 } }), EedDeviceProcessor::ParamSource::Assistant,
                                  &applied, &skipped);
         check (applied == 2 && skipped == 0, "2 params applied, 0 skipped");
         check (near (device->getParamValue ("hiss"), 40.0),      "hiss EXACTLY 40");
         check (near (device->getParamValue ("crosstalk"), 25.0), "crosstalk EXACTLY 25");
 
-        device->applyStructured (paramsMove ({ { "hiss", 900.0 }, { "crosstalk", -5.0 } }));
+        device->applyStructured (paramsMove ({ { "hiss", 900.0 }, { "crosstalk", -5.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("hiss"), 100.0),    "900 clamps to 100");
         check (near (device->getParamValue ("crosstalk"), 0.0), "a negative clamps to 0");
     }
@@ -1806,25 +1887,25 @@ int main()
                                                             "split as shipped");
 
         // The two NEW characters, by name, all the way to the engine.
-        device->applyStructured (paramsMove ({ { "mode", "odd" } }));
+        device->applyStructured (paramsMove ({ { "mode", "odd" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("mode"), 2.0)
                && ex->engine().getMode() == 2, "mode = \"odd\" reaches the engine (index 2)");
 
-        device->applyStructured (paramsMove ({ { "mode", "EVEN" } }));
+        device->applyStructured (paramsMove ({ { "mode", "EVEN" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("mode"), 3.0)
                && ex->engine().getMode() == 3, "mode = \"even\" too, case-insensitively");
 
         // And the frozen pair still resolves exactly as before the pass.
-        device->applyStructured (paramsMove ({ { "mode", "tube" } }));
+        device->applyStructured (paramsMove ({ { "mode", "tube" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("mode"), 0.0), "tube keeps index 0");
-        device->applyStructured (paramsMove ({ { "mode", "tape" } }));
+        device->applyStructured (paramsMove ({ { "mode", "tape" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("mode"), 1.0), "tape keeps index 1");
 
         int applied = 0, skipped = 0;
-        device->applyStructured (paramsMove ({ { "focus", 65.0 } }), &applied, &skipped);
+        device->applyStructured (paramsMove ({ { "focus", 65.0 } }), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
         check (applied == 1 && near (device->getParamValue ("focus"), 65.0),
                "focus EXACTLY 65");
-        device->applyStructured (paramsMove ({ { "focus", 300.0 } }));
+        device->applyStructured (paramsMove ({ { "focus", 300.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("focus"), 100.0), "300 clamps to 100");
     }
 
@@ -1833,7 +1914,7 @@ int main()
         auto a = makeByName ("EchoJay Saturation");
         auto* da = dynamic_cast<EedDeviceProcessor*> (a.get());
         da->applyStructured (paramsMove ({ { "emphasis", "odd" }, { "bias", -30.0 },
-                                           { "hpf_hz", 90.0 }, { "oversample", "8x" } }));
+                                           { "hpf_hz", 90.0 }, { "oversample", "8x" } }), EedDeviceProcessor::ParamSource::Assistant);
         juce::MemoryBlock sb;
         da->getStateInformation (sb);
 
@@ -1849,7 +1930,7 @@ int main()
         auto c = makeByName ("EchoJay Tape");
         auto* dc = dynamic_cast<EedDeviceProcessor*> (c.get());
         dc->applyStructured (paramsMove ({ { "mode", "cassette" }, { "hiss", 45.0 },
-                                           { "crosstalk", 20.0 } }));
+                                           { "crosstalk", 20.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         juce::MemoryBlock tb;
         dc->getStateInformation (tb);
 
@@ -1863,7 +1944,7 @@ int main()
 
         auto e = makeByName ("EchoJay Exciter");
         auto* de = dynamic_cast<EedDeviceProcessor*> (e.get());
-        de->applyStructured (paramsMove ({ { "mode", "even" }, { "focus", 55.0 } }));
+        de->applyStructured (paramsMove ({ { "mode", "even" }, { "focus", 55.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         juce::MemoryBlock eb;
         de->getStateInformation (eb);
 
@@ -1920,13 +2001,13 @@ int main()
                     if (n == "EchoJay Saturation")
                         device->applyStructured (paramsMove ({
                             { "emphasis", "both" }, { "bias", 0.0 },
-                            { "hpf_hz", 0.0 }, { "oversample", "4x" } }));
+                            { "hpf_hz", 0.0 }, { "oversample", "4x" } }), EedDeviceProcessor::ParamSource::Assistant);
                     else if (n == "EchoJay Tape")
                         device->applyStructured (paramsMove ({
-                            { "mode", "studio" }, { "hiss", 0.0 }, { "crosstalk", 0.0 } }));
+                            { "mode", "studio" }, { "hiss", 0.0 }, { "crosstalk", 0.0 } }), EedDeviceProcessor::ParamSource::Assistant);
                     else
                         device->applyStructured (paramsMove ({
-                            { "mode", "tube" }, { "focus", 0.0 } }));
+                            { "mode", "tube" }, { "focus", 0.0 } }), EedDeviceProcessor::ParamSource::Assistant);
                 }
                 proc->setPlayConfigDetails (2, 2, 48000.0, 512);
                 proc->prepareToPlay (48000.0, 512);
@@ -2022,7 +2103,7 @@ int main()
         int applied = 0, skipped = 0;
         const auto summary = device->applyStructured (
             paramsMove ({ { "width", 140.0 }, { "bass_mono_hz", 120.0 },
-                          { "output_trim_db", -1.5 } }), &applied, &skipped);
+                          { "output_trim_db", -1.5 } }), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
 
         check (applied == 3 && skipped == 0, "3 params applied, 0 skipped");
         check (summary.isNotEmpty(), "summary: " + summary);
@@ -2042,7 +2123,7 @@ int main()
         check (near (device->getParamValue ("mix"), 100.0),           "mix defaults to 100%");
 
         int applied = 0, skipped = 0;
-        device->applyStructured (paramsMove ({ { "haas_ms", 22.0 }, { "mix", 60.0 } }),
+        device->applyStructured (paramsMove ({ { "haas_ms", 22.0 }, { "mix", 60.0 } }), EedDeviceProcessor::ParamSource::Assistant,
                                  &applied, &skipped);
         check (applied == 2 && skipped == 0, "a partial move applies both params");
         check (near (device->getParamValue ("haas_ms"), 22.0), "haas_ms landed EXACTLY at 22");
@@ -2061,7 +2142,7 @@ int main()
 
         int applied = 0, skipped = 0;
         device->applyStructured (paramsMove ({ { "Width", 75.0 },
-                                              { "bassMonoHz", 90.0 } }), &applied, &skipped);
+                                              { "bassMonoHz", 90.0 } }), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
         check (applied == 2 && skipped == 0, "\"Width\" and \"bassMonoHz\" both applied");
         check (near (device->getParamValue ("width"), 75.0),        "capitalised id landed");
         check (near (device->getParamValue ("bass_mono_hz"), 90.0), "camelCase id landed");
@@ -2077,7 +2158,7 @@ int main()
         auto proc = makeByName ("EchoJay Stereoizer");
         auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
         device->applyStructured (paramsMove ({ { "width", 200.0 }, { "haas_ms", 30.0 },
-                                              { "mono_maker_hz", 200.0 }, { "mix", 75.0 } }));
+                                              { "mono_maker_hz", 200.0 }, { "mix", 75.0 } }), EedDeviceProcessor::ParamSource::Assistant);
 
         proc->setPlayConfigDetails (2, 2, 48000.0, 512);
         proc->prepareToPlay (48000.0, 512);
@@ -2168,7 +2249,7 @@ int main()
             check (sz != nullptr, "constructed as an EedStereoizerProcessor");
 
             device->applyStructured (paramsMove ({ { "width", 150.0 }, { "haas_ms", 20.0 },
-                                                  { "mono_maker_hz", 0.0 }, { "mix", 100.0 } }));
+                                                  { "mono_maker_hz", 0.0 }, { "mix", 100.0 } }), EedDeviceProcessor::ParamSource::Assistant);
             proc->setPlayConfigDetails (2, 2, 48000.0, 512);
             proc->prepareToPlay (48000.0, 512);
             runMono (*proc);
@@ -2186,7 +2267,7 @@ int main()
             auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
 
             device->applyStructured (paramsMove ({ { "width", 100.0 }, { "haas_ms", 0.0 },
-                                                  { "mono_maker_hz", 0.0 }, { "mix", 100.0 } }));
+                                                  { "mono_maker_hz", 0.0 }, { "mix", 100.0 } }), EedDeviceProcessor::ParamSource::Assistant);
             proc->setPlayConfigDetails (2, 2, 48000.0, 512);
             proc->prepareToPlay (48000.0, 512);
             runMono (*proc);
@@ -2203,7 +2284,7 @@ int main()
     {
         auto a = makeByName ("EchoJay Gain");
         auto* da = dynamic_cast<EedDeviceProcessor*> (a.get());
-        da->applyStructured (paramsMove ({ { "level_db", -12.0 }, { "pan", -0.75 } }));
+        da->applyStructured (paramsMove ({ { "level_db", -12.0 }, { "pan", -0.75 } }), EedDeviceProcessor::ParamSource::Assistant);
         da->setBypassed (true);
 
         juce::MemoryBlock blob;
@@ -2227,7 +2308,7 @@ int main()
 
         auto b = makeByName ("EchoJay Gain");
         auto* db = dynamic_cast<EedDeviceProcessor*> (b.get());
-        db->applyStructured (paramsMove ({ { "level_db", -20.0 }, { "pan", 1.0 } }));
+        db->applyStructured (paramsMove ({ { "level_db", -20.0 }, { "pan", 1.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         db->setStateInformation (blob.getData(), (int) blob.getSize());
 
         check (near (db->getParamValue ("level_db"), 0.0), "level_db reset to default");
@@ -2257,7 +2338,7 @@ int main()
         device->applyStructured (paramsMove ({ { "rate_hz", 6.5 },
                                                { "depth", 80.0 },
                                                { "stereo_phase", 180.0 },
-                                               { "mix", 75.0 } }), &applied, &skipped);
+                                               { "mix", 75.0 } }), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
         check (applied == 4 && skipped == 0, "Tremolo: 4 params applied, 0 skipped");
         check (near (device->getParamValue ("rate_hz"), 6.5),        "rate_hz landed at 6.5");
         check (near (device->getParamValue ("depth"), 80.0),         "depth landed at 80");
@@ -2266,11 +2347,11 @@ int main()
 
         // A discrete param is ROUNDED, not truncated: shape 1.6 is a square, and
         // an off-by-one here would silently hand the user the wrong waveform.
-        device->applyStructured (paramsMove ({ { "shape", 1.6 } }));
+        device->applyStructured (paramsMove ({ { "shape", 1.6 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("shape"), 2.0), "shape 1.6 rounds to 2 (square)");
 
         // The tempo-sync interlock, as the model would send it.
-        device->applyStructured (paramsMove ({ { "sync", true }, { "sync_division", 8.0 } }));
+        device->applyStructured (paramsMove ({ { "sync", true }, { "sync_division", 8.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("sync"), 1.0),          "sync on");
         check (near (device->getParamValue ("sync_division"), 8.0), "division landed at 1/8");
     }
@@ -2281,7 +2362,7 @@ int main()
 
         int applied = 0, skipped = 0;
         const auto summary = device->applyStructured (
-            paramsMove ({ { "depth", 100.0 }, { "mix", 50.0 } }), &applied, &skipped);
+            paramsMove ({ { "depth", 100.0 }, { "mix", 50.0 } }), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
 
         check (near (device->getParamValue ("depth"), 100.0), "Auto Pan: depth landed at 100");
         // Auto Pan publishes no MIX on purpose (panning is a placement, not a
@@ -2297,13 +2378,13 @@ int main()
         device->applyStructured (paramsMove ({ { "delay_ms", 25.0 },
                                                { "voices", "3" },        // string from JSON
                                                { "feedback", -50.0 },
-                                               { "mix", 100.0 } }));
+                                               { "mix", 100.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("delay_ms"), 25.0),  "Chorus: delay_ms landed at 25");
         check (near (device->getParamValue ("voices"), 3.0),     "Chorus: the string \"3\" -> 3 voices");
         check (near (device->getParamValue ("feedback"), -50.0), "Chorus: negative feedback landed");
 
         // Out of range in both directions, clamped to the advertised limits.
-        device->applyStructured (paramsMove ({ { "voices", 99.0 }, { "delay_ms", 0.0 } }));
+        device->applyStructured (paramsMove ({ { "voices", 99.0 }, { "delay_ms", 0.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("voices"), 4.0),    "Chorus: 99 voices clamped to 4");
         check (near (device->getParamValue ("delay_ms"), 1.0),  "Chorus: 0 ms clamped to the 1 ms floor");
     }
@@ -2314,14 +2395,14 @@ int main()
 
         device->applyStructured (paramsMove ({ { "center_freq", 2000.0 },
                                                { "stages", 12.0 },
-                                               { "feedback", 80.0 } }));
+                                               { "feedback", 80.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("center_freq"), 2000.0), "Phaser: center_freq landed at 2 kHz");
         check (near (device->getParamValue ("stages"), 12.0),        "Phaser: 12 stages landed");
         check (near (device->getParamValue ("feedback"), 80.0),      "Phaser: feedback landed at 80");
 
         // "centerFreq" / "center-freq" are the same id: a near-miss spelling has
         // to land, or the move is a silent no-op with nothing to see.
-        device->applyStructured (paramsMove ({ { "centerFreq", 400.0 } }));
+        device->applyStructured (paramsMove ({ { "centerFreq", 400.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("center_freq"), 400.0),
                "Phaser: \"centerFreq\" resolves to the same param");
     }
@@ -2341,8 +2422,8 @@ int main()
 
             // Chorus and Phaser are wet by default, so mute the wet path: what is
             // under test here is that the dry path arrives intact.
-            device->applyStructured (paramsMove ({ { "mix", 0.0 } }));
-            device->applyStructured (paramsMove ({ { "depth", 0.0 } }));
+            device->applyStructured (paramsMove ({ { "mix", 0.0 } }), EedDeviceProcessor::ParamSource::Assistant);
+            device->applyStructured (paramsMove ({ { "depth", 0.0 } }), EedDeviceProcessor::ParamSource::Assistant);
 
             proc->prepareToPlay (48000.0, 512);
 
@@ -2642,7 +2723,7 @@ int main()
         int applied = 0, skipped = 0;
         const auto s = device->applyStructured (
             paramsMove ({ { "threshold_db", -24.0 }, { "ratio", 6.0 },
-                          { "attack_ms", 3.0 }, { "mix", 50.0 } }), &applied, &skipped);
+                          { "attack_ms", 3.0 }, { "mix", 50.0 } }), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
 
         check (applied == 4 && skipped == 0, "4 params applied, 0 skipped");
         check (s.isNotEmpty(), "summary: " + s);
@@ -2656,7 +2737,7 @@ int main()
                "release_ms untouched by a move that did not mention it");
 
         // Clamp: a ratio of 100:1 is not in the contract.
-        device->applyStructured (paramsMove ({ { "ratio", 100.0 } }));
+        device->applyStructured (paramsMove ({ { "ratio", 100.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("ratio"), 20.0), "ratio clamped to the advertised 20 max");
     }
 
@@ -2666,7 +2747,7 @@ int main()
         auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
 
         proc->prepareToPlay (48000.0, 512);
-        device->applyStructured (paramsMove ({ { "lookahead_ms", 5.0 } }));
+        device->applyStructured (paramsMove ({ { "lookahead_ms", 5.0 } }), EedDeviceProcessor::ParamSource::Assistant);
 
         // 5 ms at 48 kHz. An unreported delay puts this track out of time with
         // the whole session, so the number itself is the feature.
@@ -2674,7 +2755,7 @@ int main()
                "5 ms lookahead at 48k reports 240 samples (got "
                + juce::String (proc->getLatencySamples()) + ")");
 
-        device->applyStructured (paramsMove ({ { "lookahead_ms", 0.0 } }));
+        device->applyStructured (paramsMove ({ { "lookahead_ms", 0.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (proc->getLatencySamples() == 0, "zero lookahead reports zero latency");
     }
 
@@ -2683,13 +2764,13 @@ int main()
         auto proc = makeByName ("EchoJay De-Esser");
         auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
 
-        device->applyStructured (paramsMove ({ { "mode", false } }));
+        device->applyStructured (paramsMove ({ { "mode", false } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("mode"), 0.0), "JSON false -> wide");
 
-        device->applyStructured (paramsMove ({ { "mode", "on" } }));
+        device->applyStructured (paramsMove ({ { "mode", "on" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("mode"), 1.0), "the string \"on\" -> split");
 
-        device->applyStructured (paramsMove ({ { "listen", 1 } }));
+        device->applyStructured (paramsMove ({ { "listen", 1 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("listen"), 1.0), "1 -> listen on");
     }
 
@@ -2715,35 +2796,35 @@ int main()
         check (near (device->getParamValue ("detector"), 1.0), "and detects RMS");
 
         int applied = 0, skipped = 0;
-        const auto s = device->applyStructured (paramsMove ({ { "mode", "punch" } }),
+        const auto s = device->applyStructured (paramsMove ({ { "mode", "punch" } }), EedDeviceProcessor::ParamSource::Assistant,
                                                 &applied, &skipped);
         check (applied == 1 && skipped == 0, "mode = \"punch\" applied");
         check (near (device->getParamValue ("mode"), 2.0), "landed on punch (index 2)");
         check (s.contains ("punch"), "and reads back BY NAME: " + s);
 
-        device->applyStructured (paramsMove ({ { "mode", "GLUE" } }));
+        device->applyStructured (paramsMove ({ { "mode", "GLUE" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("mode"), 1.0), "matching is case-insensitive");
 
-        device->applyStructured (paramsMove ({ { "mode", 3 } }));
+        device->applyStructured (paramsMove ({ { "mode", 3 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("mode"), 3.0), "a numeric index still works");
 
         int a2 = 0, s2 = 0;
-        device->applyStructured (paramsMove ({ { "mode", "vari-mu" } }), &a2, &s2);
+        device->applyStructured (paramsMove ({ { "mode", "vari-mu" } }), EedDeviceProcessor::ParamSource::Assistant, &a2, &s2);
         check (s2 == 1, "an unknown character is SKIPPED, not guessed at");
         check (near (device->getParamValue ("mode"), 3.0), "and leaves the mode where it was");
 
         // THE MODE MUST REACH THE DSP, not just the getter. Each one reshapes the
         // dialled times, so the effective attack is the observable proof.
         device->applyStructured (paramsMove ({ { "attack_ms", 10.0 },
-                                               { "release_ms", 100.0 } }));
+                                               { "release_ms", 100.0 } }), EedDeviceProcessor::ParamSource::Assistant);
 
-        device->applyStructured (paramsMove ({ { "mode", "clean" } }));
+        device->applyStructured (paramsMove ({ { "mode", "clean" } }), EedDeviceProcessor::ParamSource::Assistant);
         const double cleanAtk = comp->effectiveAttackMs();
 
-        device->applyStructured (paramsMove ({ { "mode", "punch" } }));
+        device->applyStructured (paramsMove ({ { "mode", "punch" } }), EedDeviceProcessor::ParamSource::Assistant);
         const double punchAtk = comp->effectiveAttackMs();
 
-        device->applyStructured (paramsMove ({ { "mode", "smooth" } }));
+        device->applyStructured (paramsMove ({ { "mode", "smooth" } }), EedDeviceProcessor::ParamSource::Assistant);
         const double smoothAtk = comp->effectiveAttackMs();
 
         check (near (cleanAtk, 10.0, 1e-9), "clean runs the dialled 10 ms attack");
@@ -2765,7 +2846,7 @@ int main()
                                                { "auto_release", true },
                                                { "detector", "peak" },
                                                { "stereo_link", 60.0 },
-                                               { "range_db", 8.0 } }), &applied, &skipped);
+                                               { "range_db", 8.0 } }), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
 
         check (applied == 6 && skipped == 0, "6 params applied, 0 skipped");
         check (near (device->getParamValue ("sc_hpf_hz"), 120.0),   "sc_hpf_hz EXACTLY 120");
@@ -2777,12 +2858,12 @@ int main()
 
         // rms by name too, since it is the default and the one a model will send
         // most often.
-        device->applyStructured (paramsMove ({ { "detector", "rms" } }));
+        device->applyStructured (paramsMove ({ { "detector", "rms" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("detector"), 1.0), "detector = \"rms\" resolved");
 
         device->applyStructured (paramsMove ({ { "sc_hpf_hz", 5000.0 },
                                                { "stereo_link", 250.0 },
-                                               { "range_db", -5.0 } }));
+                                               { "range_db", -5.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("sc_hpf_hz"), 500.0),   "5 kHz clamped to the 500 max");
         check (near (device->getParamValue ("stereo_link"), 100.0), "250% clamped to 100");
         check (near (device->getParamValue ("range_db"), 0.0),      "a negative range clamped to 0");
@@ -2803,12 +2884,12 @@ int main()
             check (proc->getLatencySamples() == 0,
                    juce::String (name) + " defaults to ZERO latency");
 
-            device->applyStructured (paramsMove ({ { "lookahead_ms", 5.0 } }));
+            device->applyStructured (paramsMove ({ { "lookahead_ms", 5.0 } }), EedDeviceProcessor::ParamSource::Assistant);
             check (proc->getLatencySamples() == 240,
                    juce::String (name) + ": 5 ms at 48k reports 240 samples (got "
                    + juce::String (proc->getLatencySamples()) + ")");
 
-            device->applyStructured (paramsMove ({ { "lookahead_ms", 0.0 } }));
+            device->applyStructured (paramsMove ({ { "lookahead_ms", 0.0 } }), EedDeviceProcessor::ParamSource::Assistant);
             check (proc->getLatencySamples() == 0,
                    juce::String (name) + ": back to zero lookahead, zero latency");
         }
@@ -2827,7 +2908,7 @@ int main()
         // signal PATH, not the gain.
         device->applyStructured (paramsMove ({ { "lookahead_ms", 0.0 },
                                                { "threshold_db", 0.0 },
-                                               { "mode", "clean" } }));
+                                               { "mode", "clean" } }), EedDeviceProcessor::ParamSource::Assistant);
         proc->setPlayConfigDetails (2, 2, 48000.0, 512);
         proc->prepareToPlay (48000.0, 512);
 
@@ -2848,7 +2929,7 @@ int main()
         auto proc = makeByName ("EchoJay Compressor");
         auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
 
-        device->applyStructured (paramsMove ({ { "lookahead_ms", 2.0 } }));
+        device->applyStructured (paramsMove ({ { "lookahead_ms", 2.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         proc->setPlayConfigDetails (2, 2, 48000.0, 512);
         proc->prepareToPlay (48000.0, 512);
         device->setBypassed (true);
@@ -2878,7 +2959,7 @@ int main()
         int applied = 0, skipped = 0;
         const auto s = device->applyStructured (paramsMove ({ { "mode", "clip" },
                                                              { "true_peak", true },
-                                                             { "sc_hpf_hz", 40.0 } }),
+                                                             { "sc_hpf_hz", 40.0 } }), EedDeviceProcessor::ParamSource::Assistant,
                                                 &applied, &skipped);
         check (applied == 3 && skipped == 0, "3 params applied, 0 skipped");
         check (near (device->getParamValue ("mode"), 2.0), "mode = \"clip\" landed on index 2");
@@ -2886,27 +2967,27 @@ int main()
         check (near (device->getParamValue ("true_peak"), 1.0), "true_peak is on");
         check (near (device->getParamValue ("sc_hpf_hz"), 40.0), "sc_hpf_hz EXACTLY 40");
 
-        device->applyStructured (paramsMove ({ { "mode", "punchy" } }));
+        device->applyStructured (paramsMove ({ { "mode", "punchy" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("mode"), 1.0), "and punchy by name");
 
         // CLIP ignores the lookahead, and must therefore report NO latency — a
         // device that delays without a reason is a device that is wrong.
-        device->applyStructured (paramsMove ({ { "lookahead_ms", 5.0 } }));
+        device->applyStructured (paramsMove ({ { "lookahead_ms", 5.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         proc->prepareToPlay (48000.0, 512);
         check (proc->getLatencySamples() == 240, "punchy honours the 5 ms lookahead");
 
-        device->applyStructured (paramsMove ({ { "mode", "clip" } }));
+        device->applyStructured (paramsMove ({ { "mode", "clip" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (proc->getLatencySamples() == 0, "clip reports ZERO latency despite the 5 ms");
         check (near (device->getParamValue ("lookahead_ms"), 5.0),
                "while the dialled 5 ms is REMEMBERED, not destroyed");
 
-        device->applyStructured (paramsMove ({ { "mode", "transparent" } }));
+        device->applyStructured (paramsMove ({ { "mode", "transparent" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (proc->getLatencySamples() == 240, "and comes back when the mode does");
 
         // The release survives clip too, for the same reason: clip drives the
         // core's release to zero, so the dialled value has to live elsewhere.
-        device->applyStructured (paramsMove ({ { "release_ms", 300.0 } }));
-        device->applyStructured (paramsMove ({ { "mode", "clip" } }));
+        device->applyStructured (paramsMove ({ { "release_ms", 300.0 } }), EedDeviceProcessor::ParamSource::Assistant);
+        device->applyStructured (paramsMove ({ { "mode", "clip" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("release_ms"), 300.0),
                "the dialled release survives a trip through clip");
     }
@@ -2922,7 +3003,7 @@ int main()
         // the whole difference between the two.
         device->applyStructured (paramsMove ({ { "mode", "clip" },
                                                { "ceiling_db", -6.0 },
-                                               { "true_peak", false } }));
+                                               { "true_peak", false } }), EedDeviceProcessor::ParamSource::Assistant);
         proc->setPlayConfigDetails (2, 2, 48000.0, 512);
         proc->prepareToPlay (48000.0, 512);
 
@@ -2960,23 +3041,23 @@ int main()
         check (gate != nullptr && ! gate->isDucking(), "and the DSP agrees it is gating");
 
         int applied = 0, skipped = 0;
-        const auto s = device->applyStructured (paramsMove ({ { "mode", "duck" } }),
+        const auto s = device->applyStructured (paramsMove ({ { "mode", "duck" } }), EedDeviceProcessor::ParamSource::Assistant,
                                                 &applied, &skipped);
         check (applied == 1 && skipped == 0, "mode = \"duck\" applied");
         check (near (device->getParamValue ("mode"), 1.0), "landed on index 1");
         check (s.contains ("duck"), "and reads back by name: " + s);
         check (gate->isDucking(), "the DSP is now in Duck mode, not merely the param");
 
-        device->applyStructured (paramsMove ({ { "mode", 0 } }));
+        device->applyStructured (paramsMove ({ { "mode", 0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (! gate->isDucking(), "and index 0 puts it back");
 
         // The selective-trigger pair.
         device->applyStructured (paramsMove ({ { "sc_hpf_hz", 80.0 },
-                                               { "sc_lpf_hz", 250.0 } }));
+                                               { "sc_lpf_hz", 250.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("sc_hpf_hz"), 80.0),  "sc_hpf_hz EXACTLY 80");
         check (near (device->getParamValue ("sc_lpf_hz"), 250.0), "sc_lpf_hz EXACTLY 250");
 
-        device->applyStructured (paramsMove ({ { "sc_lpf_hz", 10.0 } }));
+        device->applyStructured (paramsMove ({ { "sc_lpf_hz", 10.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("sc_lpf_hz"), 200.0),
                "and 10 Hz clamps up to the advertised 200 floor");
     }
@@ -2997,7 +3078,7 @@ int main()
                                                    { "hysteresis_db", 0.0 },
                                                    { "attack_ms", 0.5 },
                                                    { "hold_ms", 0.0 },
-                                                   { "release_ms", 10.0 } }));
+                                                   { "release_ms", 10.0 } }), EedDeviceProcessor::ParamSource::Assistant);
             proc->setPlayConfigDetails (2, 2, 48000.0, 512);
             proc->prepareToPlay (48000.0, 512);
 
@@ -3026,12 +3107,12 @@ int main()
 
         int applied = 0, skipped = 0;
         device->applyStructured (paramsMove ({ { "sc_hpf_hz", 90.0 },
-                                               { "lookahead_ms", 3.0 } }), &applied, &skipped);
+                                               { "lookahead_ms", 3.0 } }), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
         check (applied == 2 && skipped == 0, "2 params applied, 0 skipped");
         check (near (device->getParamValue ("sc_hpf_hz"), 90.0),   "sc_hpf_hz EXACTLY 90");
         check (near (device->getParamValue ("lookahead_ms"), 3.0), "lookahead_ms EXACTLY 3");
 
-        device->applyStructured (paramsMove ({ { "lookahead_ms", 99.0 } }));
+        device->applyStructured (paramsMove ({ { "lookahead_ms", 99.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("lookahead_ms"),
                      EedExpanderProcessor::kMaxLookaheadMs),
                "99 ms clamped to the buffer's maximum - never reallocated");
@@ -3046,11 +3127,11 @@ int main()
 
         check (near (device->getParamValue ("auto_threshold"), 0.0), "defaults to off");
 
-        device->applyStructured (paramsMove ({ { "threshold_db", -34.0 } }));
+        device->applyStructured (paramsMove ({ { "threshold_db", -34.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (de->effectiveThresholdDb(), -34.0, 0.01),
                "with auto off, the DSP compares against the dialled threshold");
 
-        device->applyStructured (paramsMove ({ { "auto_threshold", "on" } }));
+        device->applyStructured (paramsMove ({ { "auto_threshold", "on" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("auto_threshold"), 1.0), "the string \"on\" -> on");
         check (near (device->getParamValue ("threshold_db"), -34.0),
                "and the DIALLED threshold is untouched while it is ignored");
@@ -3079,7 +3160,7 @@ int main()
                "and STILL round-trips as the -34 that was dialled");
 
         // Switching auto off has to hand the dial back at once.
-        device->applyStructured (paramsMove ({ { "auto_threshold", false } }));
+        device->applyStructured (paramsMove ({ { "auto_threshold", false } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (de->effectiveThresholdDb(), -34.0, 0.01),
                "switching it off restores the dialled threshold immediately");
     }
@@ -3099,7 +3180,7 @@ int main()
 
         int applied = 0, skipped = 0;
         const auto s = device->applyStructured (
-            paramsMove ({ { "band3_mode", "smooth" } }), &applied, &skipped);
+            paramsMove ({ { "band3_mode", "smooth" } }), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
         check (applied == 1 && skipped == 0, "band3_mode = \"smooth\" applied");
         check (near (device->getParamValue ("band3_mode"), 3.0), "landed on index 3");
         check (s.contains ("smooth"), "and reads back by name: " + s);
@@ -3107,7 +3188,7 @@ int main()
                "the band's CORE is in smooth, not just the param");
 
         // It has to reach the knee too, or the mode is a label on nothing.
-        device->applyStructured (paramsMove ({ { "band3_knee_db", 6.0 } }));
+        device->applyStructured (paramsMove ({ { "band3_knee_db", 6.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (mb->bandEffectiveKneeDb (2) > 6.0f,
                "smooth widened band 3's knee to "
                + juce::String (mb->bandEffectiveKneeDb (2), 1) + " dB");
@@ -3120,7 +3201,7 @@ int main()
         arr.add (juce::var (e.get()));
 
         int a2 = 0, s2 = 0;
-        device->applyStructured (juce::var (arr), &a2, &s2);
+        device->applyStructured (juce::var (arr), EedDeviceProcessor::ParamSource::Assistant, &a2, &s2);
         check (a2 == 1 && s2 == 0, "comp_bands can set a band's mode too");
         check (near (device->getParamValue ("band1_mode"), 2.0), "band 1 is now punch");
 
@@ -3130,7 +3211,7 @@ int main()
         e2->setProperty ("character", "glue");
         juce::Array<juce::var> arr2;
         arr2.add (juce::var (e2.get()));
-        device->applyStructured (juce::var (arr2));
+        device->applyStructured (juce::var (arr2), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("band2_mode"), 1.0),
                "\"character\" is accepted as a spelling of the same knob");
     }
@@ -3142,14 +3223,14 @@ int main()
 
         check (near (device->getParamValue ("detector"), 1.0), "defaults to rms");
 
-        device->applyStructured (paramsMove ({ { "detector", "peak" } }));
+        device->applyStructured (paramsMove ({ { "detector", "peak" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("detector"), 0.0), "peak by name");
 
         // A per-band spelling must be REFUSED, not silently absorbed: this is one
         // setting for the device, and a band1_detector that appeared to work would
         // be a control that does nothing.
         int applied = 0, skipped = 0;
-        const auto s = device->applyStructured (paramsMove ({ { "band1_detector", "rms" } }),
+        const auto s = device->applyStructured (paramsMove ({ { "band1_detector", "rms" } }), EedDeviceProcessor::ParamSource::Assistant,
                                                 &applied, &skipped);
         check (applied == 0 && skipped == 1, "band1_detector is refused, not guessed at");
         check (s.contains ("band1_detector"), "and named in the summary: " + s);
@@ -3166,7 +3247,7 @@ int main()
         da->applyStructured (paramsMove ({ { "mode", "smooth" }, { "detector", "peak" },
                                            { "sc_hpf_hz", 90.0 }, { "lookahead_ms", 3.5 },
                                            { "auto_release", true }, { "stereo_link", 40.0 },
-                                           { "range_db", 6.0 } }));
+                                           { "range_db", 6.0 } }), EedDeviceProcessor::ParamSource::Assistant);
 
         juce::MemoryBlock blob;
         da->getStateInformation (blob);
@@ -3187,7 +3268,7 @@ int main()
         auto lim = makeByName ("EchoJay Limiter");
         auto* dl = dynamic_cast<EedDeviceProcessor*> (lim.get());
         dl->applyStructured (paramsMove ({ { "mode", "clip" }, { "true_peak", true },
-                                           { "sc_hpf_hz", 30.0 } }));
+                                           { "sc_hpf_hz", 30.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         juce::MemoryBlock lb;
         dl->getStateInformation (lb);
 
@@ -3201,7 +3282,7 @@ int main()
         auto gt = makeByName ("EchoJay Gate");
         auto* dg = dynamic_cast<EedDeviceProcessor*> (gt.get());
         dg->applyStructured (paramsMove ({ { "mode", "duck" }, { "sc_hpf_hz", 70.0 },
-                                           { "sc_lpf_hz", 400.0 }, { "lookahead_ms", 2.0 } }));
+                                           { "sc_lpf_hz", 400.0 }, { "lookahead_ms", 2.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         juce::MemoryBlock gb;
         dg->getStateInformation (gb);
 
@@ -3215,7 +3296,7 @@ int main()
         auto de = makeByName ("EchoJay De-Esser");
         auto* dd = dynamic_cast<EedDeviceProcessor*> (de.get());
         dd->applyStructured (paramsMove ({ { "auto_threshold", true },
-                                           { "threshold_db", -22.0 } }));
+                                           { "threshold_db", -22.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         juce::MemoryBlock deb;
         dd->getStateInformation (deb);
 
@@ -3228,7 +3309,7 @@ int main()
 
         auto mb = makeByName ("EchoJay 4-Band Compressor");
         auto* dm = dynamic_cast<EedDeviceProcessor*> (mb.get());
-        dm->applyStructured (paramsMove ({ { "band2_mode", "punch" }, { "detector", "peak" } }));
+        dm->applyStructured (paramsMove ({ { "band2_mode", "punch" }, { "detector", "peak" } }), EedDeviceProcessor::ParamSource::Assistant);
         juce::MemoryBlock mbb;
         dm->getStateInformation (mbb);
 
@@ -3310,18 +3391,18 @@ int main()
                "a fresh device is on full, the neutral mode");
 
         int applied = 0, skipped = 0;
-        device->applyStructured (paramsMove ({ { "mode", "multiband" } }),
+        device->applyStructured (paramsMove ({ { "mode", "multiband" } }), EedDeviceProcessor::ParamSource::Assistant,
                                  &applied, &skipped);
         check (applied == 1 && skipped == 0, "mode = \"multiband\" applied");
         check (sw->engine().getWidthMode() == echojay::WidthMode::Multiband,
                "and the ENGINE is actually split three ways now");
 
-        device->applyStructured (paramsMove ({ { "mode", 0.0 } }));
+        device->applyStructured (paramsMove ({ { "mode", 0.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (sw->engine().getWidthMode() == echojay::WidthMode::Full,
                "the index form reaches the same switch");
 
         int a2 = 0, s2 = 0;
-        device->applyStructured (paramsMove ({ { "mode", "sideways" } }), &a2, &s2);
+        device->applyStructured (paramsMove ({ { "mode", "sideways" } }), EedDeviceProcessor::ParamSource::Assistant, &a2, &s2);
         check (s2 == 1, "an unknown mode is SKIPPED, not guessed at");
     }
 
@@ -3345,7 +3426,7 @@ int main()
                                                { "width_high", 160.0 },
                                                { "xover_low_hz", 120.0 },
                                                { "xover_high_hz", 4000.0 },
-                                               { "rotation", -12.0 } }),
+                                               { "rotation", -12.0 } }), EedDeviceProcessor::ParamSource::Assistant,
                                  &applied, &skipped);
         check (applied == 7 && skipped == 0, "7 params applied, 0 skipped");
         check (near (device->getParamValue ("width_low"), 40.0),      "width_low landed EXACTLY at 40");
@@ -3360,7 +3441,7 @@ int main()
         device->applyStructured (paramsMove ({ { "width_low", 999.0 },
                                                { "xover_low_hz", 5000.0 },
                                                { "xover_high_hz", 5.0 },
-                                               { "rotation", 400.0 } }));
+                                               { "rotation", 400.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("width_low"), 200.0),     "width_low clamped to 200");
         check (near (device->getParamValue ("xover_low_hz"), 800.0),  "xover_low clamped to 800");
         check (near (device->getParamValue ("xover_high_hz"), 1000.0),"xover_high clamped to 1000");
@@ -3381,17 +3462,17 @@ int main()
                "a fresh device is on haas, the shipped character");
 
         int applied = 0, skipped = 0;
-        device->applyStructured (paramsMove ({ { "mode", "comb" } }), &applied, &skipped);
+        device->applyStructured (paramsMove ({ { "mode", "comb" } }), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
         check (applied == 1 && skipped == 0, "mode = \"comb\" applied");
         check (sz->engine().getStereoizerMode() == echojay::StereoizerMode::Comb,
                "and the ENGINE is on the allpass chain now");
 
-        device->applyStructured (paramsMove ({ { "mode", 2.0 } }));
+        device->applyStructured (paramsMove ({ { "mode", 2.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (sz->engine().getStereoizerMode() == echojay::StereoizerMode::Dimension,
                "the index form reaches dimension");
 
         int a2 = 0, s2 = 0;
-        device->applyStructured (paramsMove ({ { "mode", "wider" } }), &a2, &s2);
+        device->applyStructured (paramsMove ({ { "mode", "wider" } }), EedDeviceProcessor::ParamSource::Assistant, &a2, &s2);
         check (s2 == 1, "an unknown mode is SKIPPED, not guessed at");
     }
 
@@ -3406,7 +3487,7 @@ int main()
         auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
         device->applyStructured (paramsMove ({ { "mode", mode }, { "width", 180.0 },
                                                { "haas_ms", 25.0 },
-                                               { "mono_maker_hz", 200.0 }, { "mix", 80.0 } }));
+                                               { "mono_maker_hz", 200.0 }, { "mix", 80.0 } }), EedDeviceProcessor::ParamSource::Assistant);
 
         proc->setPlayConfigDetails (2, 2, 48000.0, 512);
         proc->prepareToPlay (48000.0, 512);
@@ -3466,7 +3547,7 @@ int main()
             auto* sz = dynamic_cast<EedStereoizerProcessor*> (proc.get());
             auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
             device->applyStructured (paramsMove ({ { "mode", "comb" }, { "width", 150.0 },
-                                                  { "mono_maker_hz", 0.0 }, { "mix", 100.0 } }));
+                                                  { "mono_maker_hz", 0.0 }, { "mix", 100.0 } }), EedDeviceProcessor::ParamSource::Assistant);
             proc->setPlayConfigDetails (2, 2, 48000.0, 512);
             proc->prepareToPlay (48000.0, 512);
 
@@ -3497,7 +3578,7 @@ int main()
             auto* sw = dynamic_cast<EedStereoWidthProcessor*> (proc.get());
             auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
             device->applyStructured (paramsMove ({ { "mode", "multiband" },
-                                                  { "width_low", 0.0 } }));
+                                                  { "width_low", 0.0 } }), EedDeviceProcessor::ParamSource::Assistant);
             proc->setPlayConfigDetails (2, 2, 48000.0, 512);
             proc->prepareToPlay (48000.0, 512);
 
@@ -3534,7 +3615,7 @@ int main()
         int applied = 0, skipped = 0;
         device->applyStructured (paramsMove ({ { "mode", "mid_side" },
                                                { "mid_db", -3.0 },
-                                               { "side_db", 4.5 } }), &applied, &skipped);
+                                               { "side_db", 4.5 } }), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
         check (applied == 3 && skipped == 0, "3 params applied, 0 skipped");
         check (gain->engine().getMode() == echojay::GainMode::MidSide,
                "the ENGINE is in mid/side now");
@@ -3543,16 +3624,16 @@ int main()
 
         // "MS", "m/s" etc. are NOT advertised; the canonical name and the index
         // both are. And the switches take every spelling a model actually emits.
-        device->applyStructured (paramsMove ({ { "mode", 0.0 } }));
+        device->applyStructured (paramsMove ({ { "mode", 0.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (gain->engine().getMode() == echojay::GainMode::Stereo,
                "the index form reaches the same switch");
 
-        device->applyStructured (paramsMove ({ { "mono", true } }));
+        device->applyStructured (paramsMove ({ { "mono", true } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("mono"), 1.0), "JSON true -> mono on");
 
         device->applyStructured (paramsMove ({ { "mono", "off" },
                                                { "phase_left", "on" },
-                                               { "phase_right", "1" } }));
+                                               { "phase_right", "1" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("mono"), 0.0),        "the string \"off\" -> off");
         check (near (device->getParamValue ("phase_left"), 1.0),  "the string \"on\" -> on");
         check (near (device->getParamValue ("phase_right"), 1.0), "the string \"1\" -> on");
@@ -3560,7 +3641,7 @@ int main()
         // Clamps: cut to the level knob's -60 floor, boost only to +6 — the
         // trims compose with level_db, and two +24 stages would be a +48 dB
         // device.
-        device->applyStructured (paramsMove ({ { "mid_db", 999.0 }, { "side_db", -999.0 } }));
+        device->applyStructured (paramsMove ({ { "mid_db", 999.0 }, { "side_db", -999.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("mid_db"), 6.0),    "mid_db clamped to +6");
         check (near (device->getParamValue ("side_db"), -60.0), "side_db clamped to -60");
     }
@@ -3573,7 +3654,7 @@ int main()
         auto proc = makeByName ("EchoJay Gain");
         auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
         device->applyStructured (paramsMove ({ { "mode", "mid_side" },
-                                               { "side_db", -60.0 } }));
+                                               { "side_db", -60.0 } }), EedDeviceProcessor::ParamSource::Assistant);
 
         proc->setPlayConfigDetails (2, 2, 48000.0, 512);
         proc->prepareToPlay (48000.0, 512);
@@ -3608,7 +3689,7 @@ int main()
                                            { "width_high", 170.0 },
                                            { "xover_low_hz", 200.0 },
                                            { "xover_high_hz", 3000.0 },
-                                           { "rotation", 8.0 } }));
+                                           { "rotation", 8.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         juce::MemoryBlock blob;
         da->getStateInformation (blob);
 
@@ -3625,7 +3706,7 @@ int main()
 
         auto sz = makeByName ("EchoJay Stereoizer");
         auto* dsz = dynamic_cast<EedDeviceProcessor*> (sz.get());
-        dsz->applyStructured (paramsMove ({ { "mode", "dimension" }, { "width", 140.0 } }));
+        dsz->applyStructured (paramsMove ({ { "mode", "dimension" }, { "width", 140.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         juce::MemoryBlock szb;
         dsz->getStateInformation (szb);
 
@@ -3639,7 +3720,7 @@ int main()
         auto* dg = dynamic_cast<EedDeviceProcessor*> (g.get());
         dg->applyStructured (paramsMove ({ { "mode", "mid_side" }, { "mid_db", -2.0 },
                                            { "side_db", 3.0 }, { "mono", true },
-                                           { "phase_left", true } }));
+                                           { "phase_left", true } }), EedDeviceProcessor::ParamSource::Assistant);
         juce::MemoryBlock gb;
         dg->getStateInformation (gb);
 
@@ -3676,14 +3757,14 @@ int main()
                             { "width_low", 100.0 }, { "width_mid", 100.0 },
                             { "width_high", 100.0 },
                             { "xover_low_hz", 150.0 }, { "xover_high_hz", 2500.0 },
-                            { "rotation", 0.0 } }));
+                            { "rotation", 0.0 } }), EedDeviceProcessor::ParamSource::Assistant);
                     else if (n == "EchoJay Stereoizer")
-                        device->applyStructured (paramsMove ({ { "mode", "haas" } }));
+                        device->applyStructured (paramsMove ({ { "mode", "haas" } }), EedDeviceProcessor::ParamSource::Assistant);
                     else
                         device->applyStructured (paramsMove ({
                             { "mode", "stereo" }, { "mid_db", 0.0 }, { "side_db", 0.0 },
                             { "mono", false }, { "phase_left", false },
-                            { "phase_right", false } }));
+                            { "phase_right", false } }), EedDeviceProcessor::ParamSource::Assistant);
                 }
                 proc->setPlayConfigDetails (2, 2, 48000.0, 512);
                 proc->prepareToPlay (48000.0, 512);
@@ -3807,7 +3888,7 @@ int main()
         root->setProperty ("comp_bands", juce::var (bands));
 
         int applied = 0, skipped = 0;
-        const auto s = device->applyStructured (juce::var (root.get()), &applied, &skipped);
+        const auto s = device->applyStructured (juce::var (root.get()), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
         check (applied == 2, "comp_bands applied 2 params (got " + juce::String (applied) + ")");
         check (s.isNotEmpty(), "summary: " + s);
         check (near (device->getParamValue ("band4_threshold_db"), -24.0),
@@ -3815,7 +3896,7 @@ int main()
         check (near (device->getParamValue ("band4_ratio"), 5.0), "band 4 ratio landed exactly");
 
         // The flat form, on the same knob.
-        device->applyStructured (paramsMove ({ { "band4_threshold_db", -30.0 } }));
+        device->applyStructured (paramsMove ({ { "band4_threshold_db", -30.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("band4_threshold_db"), -30.0),
                "the flat id reaches the identical param");
     }
@@ -3826,7 +3907,7 @@ int main()
         auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
 
         device->applyStructured (paramsMove ({ { "band2_threshold_db", -22.0 },
-                                               { "band2_ratio", 6.0 } }));
+                                               { "band2_ratio", 6.0 } }), EedDeviceProcessor::ParamSource::Assistant);
 
         // A partial entry: a compressor band is a fixed slot, so this must not
         // reset the threshold the way a partial eq_bands entry replaces a band.
@@ -3836,7 +3917,7 @@ int main()
         juce::Array<juce::var> arr;
         arr.add (juce::var (e.get()));
 
-        device->applyStructured (juce::var (arr));      // bare array IS comp_bands
+        device->applyStructured (juce::var (arr), EedDeviceProcessor::ParamSource::Assistant);      // bare array IS comp_bands
 
         check (near (device->getParamValue ("band2_attack_ms"), 4.0), "attack_ms updated");
         check (near (device->getParamValue ("band2_threshold_db"), -22.0),
@@ -3856,7 +3937,7 @@ int main()
             e->setProperty ("threshold_db", -10.0 - i);     // -10, -11, -12, -13
             arr.add (juce::var (e.get()));
         }
-        device->applyStructured (juce::var (arr));
+        device->applyStructured (juce::var (arr), EedDeviceProcessor::ParamSource::Assistant);
 
         bool ok = true;
         for (int i = 0; i < 4; ++i)
@@ -3877,7 +3958,7 @@ int main()
         arr.add (juce::var (e.get()));
 
         int applied = 0, skipped = 0;
-        const auto s = device->applyStructured (juce::var (arr), &applied, &skipped);
+        const auto s = device->applyStructured (juce::var (arr), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
         check (applied == 0, "nothing applied");
         check (skipped == 1, "counted as skipped");
         check (s.contains ("9"), "and named in the summary: " + s);
@@ -3892,7 +3973,7 @@ int main()
         proc->prepareToPlay (48000.0, 512);
         device->applyStructured (paramsMove ({ { "crossover1_hz", 200.0 },
                                                { "crossover2_hz", 1200.0 },
-                                               { "crossover3_hz", 7000.0 } }));
+                                               { "crossover3_hz", 7000.0 } }), EedDeviceProcessor::ParamSource::Assistant);
 
         check (near (device->getParamValue ("crossover1_hz"), 200.0),  "crossover1 exact");
         check (near (device->getParamValue ("crossover3_hz"), 7000.0), "crossover3 exact");
@@ -3933,7 +4014,7 @@ int main()
                           { "tuning_hz", 452.5 }, { "auto_tuning", false },
                           { "low_hz", 60.0 }, { "high_hz", 8000.0 },
                           { "continuous", true }, { "hpss", false },
-                          { "hold", true } }), &applied, &skipped);
+                          { "hold", true } }), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
         check (applied == 9 && skipped == 0, "9 params applied, 0 skipped");
         check (near (device->getParamValue ("window_s"), 12.0),   "window_s EXACTLY 12");
         check (near (device->getParamValue ("sensitivity"), 80.0),"sensitivity EXACTLY 80");
@@ -3946,7 +4027,7 @@ int main()
         check (near (device->getParamValue ("hold"), 1.0),        "hold on");
 
         // Clamps.
-        device->applyStructured (paramsMove ({ { "window_s", 900.0 }, { "tuning_hz", 300.0 } }));
+        device->applyStructured (paramsMove ({ { "window_s", 900.0 }, { "tuning_hz", 300.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("window_s"), 30.0),  "900 s clamps to 30");
         check (near (device->getParamValue ("tuning_hz"), 415.0),"300 Hz clamps to 415");
     }
@@ -3958,18 +4039,18 @@ int main()
 
         check (near (device->getParamValue ("mode_lock"), 0.0), "a fresh detector is on auto");
 
-        const auto s = device->applyStructured (paramsMove ({ { "mode_lock", "minor" } }));
+        const auto s = device->applyStructured (paramsMove ({ { "mode_lock", "minor" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("mode_lock"), 2.0), "mode_lock = \"minor\" lands on index 2");
         check (s.contains ("minor"), "and reads back BY NAME: " + s);
 
-        device->applyStructured (paramsMove ({ { "mode_lock", "MAJOR" } }));
+        device->applyStructured (paramsMove ({ { "mode_lock", "MAJOR" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("mode_lock"), 1.0), "matching is case-insensitive");
 
-        device->applyStructured (paramsMove ({ { "mode_lock", 0 } }));
+        device->applyStructured (paramsMove ({ { "mode_lock", 0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("mode_lock"), 0.0), "a numeric index works too");
 
         int a2 = 0, s2 = 0;
-        device->applyStructured (paramsMove ({ { "mode_lock", "dorian" } }), &a2, &s2);
+        device->applyStructured (paramsMove ({ { "mode_lock", "dorian" } }), EedDeviceProcessor::ParamSource::Assistant, &a2, &s2);
         check (s2 == 1, "an unknown mode is SKIPPED, not guessed at");
 
         const auto* d = registry.findByName ("EchoJay Key Detector");
@@ -3989,12 +4070,12 @@ int main()
         check (near (device->getParamValue ("analyse"), 0.0), "idle before the trigger");
 
         int applied = 0, skipped = 0;
-        device->applyStructured (paramsMove ({ { "analyse", true } }), &applied, &skipped);
+        device->applyStructured (paramsMove ({ { "analyse", true } }), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
         check (applied == 1 && skipped == 0, "analyse:1 is an accepted move");
         check (kd->engine().isCollecting(), "and the engine is now COLLECTING");
         check (near (device->getParamValue ("analyse"), 1.0), "analyse reads 1 while listening");
 
-        device->applyStructured (paramsMove ({ { "reset", true } }));
+        device->applyStructured (paramsMove ({ { "reset", true } }), EedDeviceProcessor::ParamSource::Assistant);
         check (! kd->engine().isCollecting(), "reset cancels the pass");
         check (near (device->getParamValue ("reset"), 0.0),
                "and reset always reads 0 - a restored state cannot phantom-fire it");
@@ -4005,7 +4086,7 @@ int main()
         auto a = makeByName ("EchoJay Key Detector");
         auto* da = dynamic_cast<EedDeviceProcessor*> (a.get());
         da->applyStructured (paramsMove ({ { "window_s", 15.0 }, { "mode_lock", "major" },
-                                           { "hpss", false }, { "high_hz", 9000.0 } }));
+                                           { "hpss", false }, { "high_hz", 9000.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         juce::MemoryBlock blob;
         da->getStateInformation (blob);
 
@@ -4033,7 +4114,7 @@ int main()
                           { "window_s", 2.0 }, { "sensitivity", 90.0 },
                           { "mode_lock", "minor" }, { "tuning_hz", 452.0 },
                           { "auto_tuning", false }, { "hpss", false },
-                          { "low_hz", 40.0 }, { "high_hz", 10000.0 } }));
+                          { "low_hz", 40.0 }, { "high_hz", 10000.0 } }), EedDeviceProcessor::ParamSource::Assistant);
 
         proc->setPlayConfigDetails (2, 2, 48000.0, 512);
         proc->prepareToPlay (48000.0, 512);

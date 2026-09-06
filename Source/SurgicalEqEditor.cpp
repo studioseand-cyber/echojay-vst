@@ -204,7 +204,14 @@ void SurgicalEqEditor::buildControls()
         action->setProperty ("dynamic", huntDynBtn_.getToggleState());
         juce::DynamicObject::Ptr move = new juce::DynamicObject();
         move->setProperty ("eq_action", juce::var (action.get()));
-        proc_.applyStructured (juce::var (move.get()));
+        // USER: this is the hand on the EQ's own button, not EchoJay dialling.
+        // Today an eq_action payload carries no `params` and so never reaches
+        // the guard at all, but the source has to say what this IS rather than
+        // what it currently happens to route through: the day a preset or an
+        // action grows a `params` key, Assistant here would lock the user out
+        // of a hand control in the one mode built to hand controls back.
+        proc_.applyStructured (juce::var (move.get()),
+                               SurgicalEqProcessor::ParamSource::User);
         // the timer's model diff picks up whatever bands landed
     };
 
@@ -255,7 +262,9 @@ void SurgicalEqEditor::buildControls()
             // through the SAME funnel a model move takes
             juce::DynamicObject::Ptr move = new juce::DynamicObject();
             move->setProperty ("eq_preset", echojay::kEqPresets[result - 1].name);
-            proc_.applyStructured (juce::var (move.get()));
+            // USER: the hand picking a preset from the EQ's own menu.
+            proc_.applyStructured (juce::var (move.get()),
+                                   SurgicalEqProcessor::ParamSource::User);
         });
     };
 

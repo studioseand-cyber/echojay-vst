@@ -67,6 +67,7 @@ bool EedDeviceProcessor::numberFromVar (const juce::var& v, double& out)
 // apply
 // ---------------------------------------------------------------------------
 juce::String EedDeviceProcessor::applyStructured (const juce::var& structured,
+                                                  ParamSource src,
                                                   int* appliedOut, int* skippedOut)
 {
     if (appliedOut != nullptr) *appliedOut = 0;
@@ -78,10 +79,11 @@ juce::String EedDeviceProcessor::applyStructured (const juce::var& structured,
     if (! structured.hasProperty ("params")) return {};
 
     return applyParams (structured.getProperty ("params", juce::var()),
-                        appliedOut, skippedOut);
+                        src, appliedOut, skippedOut);
 }
 
 juce::String EedDeviceProcessor::applyParams (const juce::var& paramsObject,
+                                              ParamSource src,
                                               int* appliedOut, int* skippedOut)
 {
     if (appliedOut != nullptr) *appliedOut = 0;
@@ -99,7 +101,16 @@ juce::String EedDeviceProcessor::applyParams (const juce::var& paramsObject,
     // already treats as "the device placed nothing", so the settings still
     // reach the card by the normal route and nothing here has to know about
     // cards.
-    if (echojay::dialWritesBlocked()) return {};
+    //
+    // ASSISTANT ONLY (6 Sep 2026). This function is not the assistant's path,
+    // it is EVERY path: setStateInformation restores a saved session through
+    // it and a same-plugin replace migrates state through it. Guarding it
+    // without asking who was writing did not merely block a reload, it
+    // DESTROYED it, because setStateInformation resets every param to its
+    // schema default first and only the apply that puts the saved values back
+    // was refused. The device came back at defaults and the state blob that
+    // held the user's values had already been consumed. See ParamSource.
+    if (src == ParamSource::Assistant && echojay::dialWritesBlocked()) return {};
 
     auto* obj = paramsObject.getDynamicObject();
     if (obj == nullptr) return {};
@@ -241,5 +252,5 @@ void EedDeviceProcessor::setStateInformation (const void* data, int sizeInBytes)
     // written before a param existed must load as that param's DEFAULT rather
     // than inheriting whatever this instance was last set to.
     resetParamsToDefaults();
-    applyParams (parsed.getProperty ("params", juce::var()));
+    applyParams (parsed.getProperty ("params", juce::var()), ParamSource::Restore);
 }

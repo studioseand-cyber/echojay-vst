@@ -515,6 +515,7 @@ juce::String SurgicalEqProcessor::applyEqAction (const juce::var& action,
 
 // ---- the one funnel --------------------------------------------------------
 juce::String SurgicalEqProcessor::applyStructured (const juce::var& structured,
+                                                   ParamSource src,
                                                    int* appliedOut, int* skippedOut)
 {
     if (appliedOut != nullptr) *appliedOut = 0;
@@ -556,7 +557,7 @@ juce::String SurgicalEqProcessor::applyStructured (const juce::var& structured,
     // numeric schema cannot express, and every already-deployed move uses it.
     if (structured.hasProperty ("params"))
     {
-        const auto p = applyParams (structured.getProperty ("params", juce::var()));
+        const auto p = applyParams (structured.getProperty ("params", juce::var()), src);
         if (p.isNotEmpty()) parts.add (p);
     }
 

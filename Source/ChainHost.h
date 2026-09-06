@@ -991,7 +991,12 @@ public:
     // because that is the safe polarity: a call site added without thinking is
     // blocked in the mode rather than silently writing through it.
     enum class WetSource { Assistant, User, Restore };
-    void  setSlotWet(int i, float wet01, WetSource src = WetSource::Assistant);
+    // NO DEFAULT ARGUMENT. It defaulted to Assistant so that a call site added
+    // without thinking was refused rather than writing through, but a silent
+    // refusal is the worse failure: nothing announces it, and the merge that
+    // brings a two-argument call site in from another branch would compile and
+    // then quietly not work. A missing source is now a BUILD error.
+    void  setSlotWet(int i, float wet01, WetSource src);
     float getSlotWet(int i) const;
 
     // ---- Running level (LevelTally, 17 Aug 2026) --------------------------

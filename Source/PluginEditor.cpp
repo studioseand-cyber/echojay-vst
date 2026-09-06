@@ -31314,7 +31314,8 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
                             // absent leaves it at the default.
                             if (wetPct >= 0.0f)
                             {
-                                ch4.setSlotWet(ch4.getNumSlots() - 1, wetPct / 100.0f);
+                                ch4.setSlotWet(ch4.getNumSlots() - 1, wetPct / 100.0f,
+                                               ChainHost::WetSource::Assistant);
                                 EchoJay_NSLog(("EJChain: wet_pct " + juce::String(wetPct, 1)
                                                + " applied to \"" + name + "\"").toRawUTF8());
                             }

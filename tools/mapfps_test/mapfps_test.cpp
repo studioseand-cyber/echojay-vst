@@ -5259,7 +5259,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             std::ifstream fd ("Source/EedDeviceProcessor.cpp");
             std::stringstream sd; sd << fd.rdbuf();
             const auto ed = codeOnly (juce::String (sd.str()));
-            const int iG = ed.indexOf ("if (echojay::dialWritesBlocked()) return {};");
+            const int iG = ed.indexOf ("if (src == ParamSource::Assistant && echojay::dialWritesBlocked()) return {};");
             const int iW = ed.indexOf ("if (! setParamValue (canonicalId, v))");
             check (iG > 0 && iW > iG,
                    "dw PIN3: the built-in guard sits before setParamValue",
@@ -5395,6 +5395,64 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "dw PIN10: the summary says structure applied and values were not");
             check (ed5.contains ("if (echojay::dialWritesBlocked()) return;"),
                    "dw PIN10: and no dial miss is recorded for it");
+        }
+
+        // dw PIN11 -- THE GUARD ASKS WHO IS WRITING. applyParams is not the
+        // assistant's function, it is EVERY function: setStateInformation
+        // restores a saved session through it and a same-plugin replace
+        // migrates state through it. Guarding it unconditionally did not block
+        // a reload, it DESTROYED one, because setStateInformation resets every
+        // param to its schema default first and only the apply that puts the
+        // saved values back was refused. The behaviour is pinned in
+        // builtin_registry_test (values, not "not blocked"); this is the
+        // structural half.
+        {
+            std::ifstream fh2 ("Source/EedDeviceProcessor.h");
+            std::stringstream sh2; sh2 << fh2.rdbuf();
+            const auto dh = codeOnly (juce::String (sh2.str()));
+            check (dh.contains ("enum class ParamSource"),
+                   "dw PIN11: the intent behind a write is a type, not a guess");
+
+            std::ifstream fd3 ("Source/EedDeviceProcessor.cpp");
+            std::stringstream sd3; sd3 << fd3.rdbuf();
+            const auto dc = codeOnly (juce::String (sd3.str()));
+            const int iReset = dc.indexOf ("resetParamsToDefaults();\n    applyParams (parsed.getProperty");
+            check (iReset > 0,
+                   "dw PIN11: restore still resets to defaults and then applies, "
+                   "the pair that made the guard destructive");
+            check (dc.contains ("applyParams (parsed.getProperty (\"params\", juce::var()), ParamSource::Restore);"),
+                   "dw PIN11: and the apply in that pair is a RESTORE, so it lands");
+
+            std::ifstream fc6 ("Source/ChainHost.cpp");
+            std::stringstream sc6; sc6 << fc6.rdbuf();
+            check (codeOnly (juce::String (sc6.str()))
+                       .contains ("device->applyStructured(structured, EedDeviceProcessor::ParamSource::Assistant,"),
+                   "dw PIN11: while the one door EchoJay dials through says Assistant");
+        }
+
+        // dw PIN12 -- A CALL WITHOUT A SOURCE MUST NOT COMPILE. WetSource
+        // defaulted to Assistant so an un-updated call site was refused rather
+        // than writing through. That is the wrong failure: nothing announces a
+        // silent refusal, and a call site merged in from another branch would
+        // compile and then quietly not work. Both sources are now required
+        // arguments, which turns that into a build error. This pin exists
+        // because a default is one keystroke to put back.
+        {
+            std::ifstream fh3 ("Source/ChainHost.h");
+            std::stringstream sh3; sh3 << fh3.rdbuf();
+            const auto chh = codeOnly (juce::String (sh3.str()));
+            check (chh.contains ("void  setSlotWet(int i, float wet01, WetSource src);"),
+                   "dw PIN12: setSlotWet takes a source");
+            check (! chh.contains ("WetSource src ="),
+                   "dw PIN12: and does not default it");
+
+            std::ifstream fh4 ("Source/EedDeviceProcessor.h");
+            std::stringstream sh4; sh4 << fh4.rdbuf();
+            const auto dh2 = codeOnly (juce::String (sh4.str()));
+            check (dh2.contains ("ParamSource src,"),
+                   "dw PIN12: applyParams and applyStructured take a source");
+            check (! dh2.contains ("ParamSource src ="),
+                   "dw PIN12: and neither of them defaults it");
         }
 
         echojay::setDialWritesBlocked (restore);

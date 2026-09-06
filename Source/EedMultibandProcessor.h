@@ -73,11 +73,13 @@ public:
 
     // Adds the comp_bands array form on top of the base's flat `params`.
     juce::String applyStructured (const juce::var& structured,
+                                  ParamSource src,
                                   int* appliedOut = nullptr,
                                   int* skippedOut = nullptr) override;
 
     // The array form on its own, for a caller that already has just the array.
     juce::String applyCompBands (const juce::var& compBandsArray,
+                                 ParamSource src,
                                  int* appliedOut = nullptr,
                                  int* skippedOut = nullptr);
 

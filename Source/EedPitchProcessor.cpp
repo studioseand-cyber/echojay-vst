@@ -476,11 +476,12 @@ juce::String EedPitchProcessor::applyPitchScale (const juce::var& arr,
 }
 
 juce::String EedPitchProcessor::applyStructured (const juce::var& structured,
+                                                 ParamSource src,
                                                  int* appliedOut, int* skippedOut)
 {
     if (appliedOut != nullptr) *appliedOut = 0;
     if (skippedOut != nullptr) *skippedOut = 0;
-    if (! structured.isObject()) return EedDeviceProcessor::applyStructured (structured, appliedOut, skippedOut);
+    if (! structured.isObject()) return EedDeviceProcessor::applyStructured (structured, src, appliedOut, skippedOut);
 
     juce::StringArray parts;
     pendingModeSummary_ = {};
@@ -491,7 +492,7 @@ juce::String EedPitchProcessor::applyStructured (const juce::var& structured,
     if (structured.hasProperty ("params"))
     {
         const auto p = applyParams (structured.getProperty ("params", juce::var()),
-                                    appliedOut, skippedOut);
+                                    src, appliedOut, skippedOut);
         if (p.isNotEmpty()) parts.add (p);
 
         // Put back what a mode or a named scale actually DID. Six knobs moving
