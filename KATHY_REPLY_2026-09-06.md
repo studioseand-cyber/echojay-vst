@@ -76,7 +76,7 @@ produce the same result it produced when the commit landed:
       touched no API file (0 commits), so we cannot be the source - the
       merge still can.
   V7  7fe50fd, the reference laundering severed at the state layer
-      (onStateApplied). Named instrument: tools/pitch_mode_test, the checks
+      (onStateApplied). Named instrument: tools/pitch_mode_test, the "reference provenance:" block - the checks
       "laundered state (manual + value, no marker) reverts to AUTO on load",
       "marked manual 442 survives a save/load round-trip", "auto survives a
       save/load round-trip", and the SEAN'S SAVED STATE block. IF YOU MOVE

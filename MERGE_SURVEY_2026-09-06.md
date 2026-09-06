@@ -215,7 +215,7 @@ V7  7fe50fd, the reference laundering severed at the state layer
     (EedDeviceProcessor::setStateInformation -> onStateApplied;
     EedPitchProcessor::onStateApplied migrates a loaded MANUAL reference
     that carries no ref_manual_by_user marker back to AUTO). THE INSTRUMENT,
-    by name, in tools/pitch_mode_test/main.cpp, block "    std::printf ("== UI coverage: every schema param has a hand control, or is "":
+    by name, in tools/pitch_mode_test/main.cpp, the "reference provenance:" block (29 Aug 2026: "the laundering defect ... these four lock the repaired contract"):
       - "laundered state (manual + value, no marker) reverts to AUTO on load"   (line 1072)
       - "marked manual 442 survives a save/load round-trip"                     (line 1093)
       - "auto survives a save/load round-trip (the field saved is the manual 440, never a detected grid)"   (line 1101)
