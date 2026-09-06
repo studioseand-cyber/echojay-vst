@@ -184,3 +184,81 @@ Record: MERGE_2026-09-06.md.
    in neither format on the merged tree, 539 on the shoot build; the chain feed
    (2328, AU view 2129) is identical. Your resolver/feed changes are in this
    tree, so one name moved sides. Noted, not chased.
+
+
+---
+
+## Follow-up 4 (6 Sep 2026): your ParamSource fix is merged, gated and proven; four things back
+
+Merged 25861e6 into merge/kathy-2026-09-06 (stage 3, db4643d + 02dcd8a;
+branch pushed under that name - re-run your trial merge against it, never a
+hash). Exactly the predicted conflict #3, resolved to the merged shape with
+your Restore and our onStateApplied() after it. Build clean across eight
+targets, both formats of both plugins load and pass audio, pitch suite 196/0,
+pitch host test 18/0, your registry 1667/0, every derived value read back.
+
+1. V9 PAIR - the regression evidence for your fix, same harness, same inputs
+   (tools/merge_gate_tests/v9_dialwrites_restore_test.cpp):
+     BEFORE (9177b96, your guard, no ParamSource), do-not-dial ON at reload:
+       retune 200 -> 0, retune_speed_ms 150 -> 6, natural_vibrato 50 -> 0,
+       targeting_ignores_vibrato 0 -> 1, flex 30 -> 0        FAIL, data loss
+     AFTER (02dcd8a, your fix), same:
+       200 / 150 / 50 / 0 / 30 all back                       PASS
+     Positive control (setting OFF) passes both times. The pairing is the proof.
+
+2. THE VALUES WE CHOSE AT EVERY SITE WE TOUCHED, so you can disagree with any:
+   twelve sites in tools/pitch_mode_test/main.cpp that your 14 edits could not
+   see (our rounds added them after the base) - ALL Assistant:
+     :230 key_source auto (circularity-guard baseline), :306 correction_mode
+     hard, :337/:340/:348/:355/:358 key_source auto / scale chromatic (the
+     key-guard render lambdas), :411 reference_source manual (the dormant-field
+     switch after a setStateInformation load), :464 correction_mode natural
+     (the dial block, "the model's path" in its own words), :698 / :766 / :1136
+     key_source manual + root + scale (transport-reset, verification-render and
+     editor-snapshot setup).
+   Reason, one for all twelve: each is the harness writing through the
+   structured path, which for the pitch device the product reaches only via
+   ChainHost::applyStructuredToBuiltinSlot - your Assistant - and the pitch
+   editor never calls applyStructured. Reviewed by what each enclosing test
+   asserts: none has restore or migration as its subject; the suite's
+   restore-subject tests go through setStateInformation (13 calls), Restore by
+   construction. We added no other argument anywhere; the merge took yours.
+
+3. setChainSlotWet (LinkProcessor.cpp:2266, WetSource::Restore): it is also
+   what the Link editor's wet knob calls (LinkEditor.h:787), so a HAND MOVE is
+   labelled Restore there. Behaviour is identical (neither is refused), and
+   authorship is NOT taken from WetSource - stampLocalRackEdit() runs on every
+   setChainSlotWet and never in the restore callback, so a user's move is
+   still a local edit in the log. Vocabulary only, yours to relabel to User.
+   Also seen, not a loss: the Link restore callback re-dials structured
+   settings (Assistant, refused under the mode) before restoring the state
+   blob (Restore, lands) - the same final values as before your change.
+
+4. TWO OF YOUR SUITES ON OUR MACHINE:
+   - builtin registry: 1667 / 0 against your 1659 / 0. The eight are exactly
+     two assertions each ("advertised id is settable", "advertisement is
+     ASCII") for four pitch params our tree has and yours does not: retune,
+     depth, seam_attack_ms, ref_manual_by_user. Closed.
+   - mapfps: 678 ok, 8 FAIL against your 692 / 0 - and every failure is a
+     FIXTURE, none is code (the pinned files are byte-identical between your
+     tip and ours):
+       wa PIN3 / wa PIN5 x2: Abbey Road TG Mastering Chain IS installed on
+         this Mac (/Applications/Waves/Plug-Ins V15/), so it resolves here and
+         69 of 69 answer;
+       nl PIN11 x2: no Waves DeEsser here (the De-Essers in this scan cache are
+         Harrison and SPL), MEASURED 0 bindings removed;
+       nl PIN5: this Mac's installed set resolves a non-Waves name;
+       ef PIN5 x2: reads HANDOVER/commit-features-block.txt - HANDOVER/ is
+         never committed and is not on this machine.
+     Reported as A DEFECT IN THE TEST, yours to fix: a pin whose result depends
+     on which plugins are installed (or on an uncommitted file) can only pass
+     on your machine, so the suite cannot serve as a gate anywhere else. It
+     should SKIP with a reason when the fixture is absent (or present), not
+     fail. Also: its Link step is `cd build && make -j$(hw.ncpu) EchoJayLink` -
+     a full-core -j; this project caps at -j 4 after two swap-kills, and the
+     directory is named `build` which this Mac does not have. We ran the pins
+     against the fresh build-release archive with that step skipped; the Link
+     compiled in the gate build.
+
+Your V3 paint-cursor fix offer (follow-up 3) stands; it is on the merge
+branch as 9eb5f34, renders before/after filed.

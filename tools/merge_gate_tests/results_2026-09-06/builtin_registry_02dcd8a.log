@@ -1,0 +1,2091 @@
+== every registrar survived static init AND the linker ==
+  [PASS] EchoJay EQ registered
+  [PASS] EchoJay Gain registered
+  [PASS] EchoJay Phase Invert registered
+  [PASS] EchoJay Saturation registered
+  [PASS] EchoJay Tape registered
+  [PASS] EchoJay Exciter registered
+  [PASS] EchoJay Delay registered
+  [PASS] EchoJay Reverb registered
+  [PASS] EchoJay Tremolo registered
+  [PASS] EchoJay Auto Pan registered
+  [PASS] EchoJay Chorus registered
+  [PASS] EchoJay Phaser registered
+  [PASS] EchoJay Stereo Width registered
+  [PASS] EchoJay Stereoizer registered
+  [PASS] EchoJay Compressor registered
+  [PASS] EchoJay Gate registered
+  [PASS] EchoJay Expander registered
+  [PASS] EchoJay Limiter registered
+  [PASS] EchoJay De-Esser registered
+  [PASS] EchoJay 4-Band Compressor registered
+  [PASS] EchoJay Key Detector registered
+  [PASS] EchoJay Pitch registered
+  [PASS] exactly 22 devices registered (got 22)
+== ordering is deterministic, not static-init order ==
+  [PASS] EQ sorts first (category rank)
+  [PASS] Gain before Phase Invert (alphabetical within Utility)
+  [PASS] Exciter, Saturation, Tape (alphabetical within Harmonic)
+  [PASS] Delay before Reverb (alphabetical within Time)
+  [PASS] the whole Utility group precedes the whole Modulation group
+  [PASS] the whole Modulation group precedes the whole Harmonic group
+  [PASS] the whole Harmonic group precedes the whole Time group
+  [PASS] Dynamics sorts before Utility (category rank, not alphabetical)
+  [PASS] within Dynamics, alphabetical: 4-Band before Compressor
+  [PASS] categories in canonical order: EQ,Dynamics,Utility,Stereo,Modulation,Harmonic,Time,Pitch,Analysis
+  [PASS] the whole Time group precedes the Analysis group
+  [PASS] Modulation devices sort alphabetically among themselves
+  [PASS] Utility ranks before Modulation
+  [PASS] Stereo Width before Stereoizer (alphabetical within Stereo)
+  [PASS] the whole Utility group precedes the whole Stereo group
+  [PASS] the whole Stereo group precedes the whole Modulation group
+== name resolution is tolerant, and honours aliases ==
+  [PASS] case-insensitive
+  [PASS] alias without the space
+  [PASS] declared alias
+  [PASS] phase-invert alias
+  [PASS] a third-party name is NOT ours
+  [PASS] auto pan without the space
+  [PASS] bare "Tremolo" resolves
+  [PASS] phaser, case-insensitive
+== synthetic descriptions (what saved chain XML carries) ==
+  [PASS] one description per device
+  [PASS] EchoJay EQ carries the built-in format name
+  [PASS] EchoJay EQ is recognised as a built-in description
+  [PASS] EchoJay 4-Band Compressor carries the built-in format name
+  [PASS] EchoJay 4-Band Compressor is recognised as a built-in description
+  [PASS] EchoJay Compressor carries the built-in format name
+  [PASS] EchoJay Compressor is recognised as a built-in description
+  [PASS] EchoJay De-Esser carries the built-in format name
+  [PASS] EchoJay De-Esser is recognised as a built-in description
+  [PASS] EchoJay Expander carries the built-in format name
+  [PASS] EchoJay Expander is recognised as a built-in description
+  [PASS] EchoJay Gate carries the built-in format name
+  [PASS] EchoJay Gate is recognised as a built-in description
+  [PASS] EchoJay Limiter carries the built-in format name
+  [PASS] EchoJay Limiter is recognised as a built-in description
+  [PASS] EchoJay Gain carries the built-in format name
+  [PASS] EchoJay Gain is recognised as a built-in description
+  [PASS] EchoJay Phase Invert carries the built-in format name
+  [PASS] EchoJay Phase Invert is recognised as a built-in description
+  [PASS] EchoJay Stereo Width carries the built-in format name
+  [PASS] EchoJay Stereo Width is recognised as a built-in description
+  [PASS] EchoJay Stereoizer carries the built-in format name
+  [PASS] EchoJay Stereoizer is recognised as a built-in description
+  [PASS] EchoJay Auto Pan carries the built-in format name
+  [PASS] EchoJay Auto Pan is recognised as a built-in description
+  [PASS] EchoJay Chorus carries the built-in format name
+  [PASS] EchoJay Chorus is recognised as a built-in description
+  [PASS] EchoJay Phaser carries the built-in format name
+  [PASS] EchoJay Phaser is recognised as a built-in description
+  [PASS] EchoJay Tremolo carries the built-in format name
+  [PASS] EchoJay Tremolo is recognised as a built-in description
+  [PASS] EchoJay Exciter carries the built-in format name
+  [PASS] EchoJay Exciter is recognised as a built-in description
+  [PASS] EchoJay Saturation carries the built-in format name
+  [PASS] EchoJay Saturation is recognised as a built-in description
+  [PASS] EchoJay Tape carries the built-in format name
+  [PASS] EchoJay Tape is recognised as a built-in description
+  [PASS] EchoJay Delay carries the built-in format name
+  [PASS] EchoJay Delay is recognised as a built-in description
+  [PASS] EchoJay Reverb carries the built-in format name
+  [PASS] EchoJay Reverb is recognised as a built-in description
+  [PASS] EchoJay Pitch carries the built-in format name
+  [PASS] EchoJay Pitch is recognised as a built-in description
+  [PASS] EchoJay Key Detector carries the built-in format name
+  [PASS] EchoJay Key Detector is recognised as a built-in description
+  [PASS] EQ identifier unchanged
+  [PASS] EQ uid unchanged
+== restore resolves a PARTIAL description (identifier / uid) ==
+  [PASS] resolved by identifier alone
+  [PASS] resolved by uid alone
+== the factory builds a real, concrete processor ==
+  [PASS] EchoJay EQ constructs
+  [PASS] EchoJay EQ reports its own name ("EchoJay EQ")
+  [PASS] EchoJay 4-Band Compressor constructs
+  [PASS] EchoJay 4-Band Compressor reports its own name ("EchoJay 4-Band Compressor")
+  [PASS] EchoJay Compressor constructs
+  [PASS] EchoJay Compressor reports its own name ("EchoJay Compressor")
+  [PASS] EchoJay De-Esser constructs
+  [PASS] EchoJay De-Esser reports its own name ("EchoJay De-Esser")
+  [PASS] EchoJay Expander constructs
+  [PASS] EchoJay Expander reports its own name ("EchoJay Expander")
+  [PASS] EchoJay Gate constructs
+  [PASS] EchoJay Gate reports its own name ("EchoJay Gate")
+  [PASS] EchoJay Limiter constructs
+  [PASS] EchoJay Limiter reports its own name ("EchoJay Limiter")
+  [PASS] EchoJay Gain constructs
+  [PASS] EchoJay Gain reports its own name ("EchoJay Gain")
+  [PASS] EchoJay Phase Invert constructs
+  [PASS] EchoJay Phase Invert reports its own name ("EchoJay Phase Invert")
+  [PASS] EchoJay Stereo Width constructs
+  [PASS] EchoJay Stereo Width reports its own name ("EchoJay Stereo Width")
+  [PASS] EchoJay Stereoizer constructs
+  [PASS] EchoJay Stereoizer reports its own name ("EchoJay Stereoizer")
+  [PASS] EchoJay Auto Pan constructs
+  [PASS] EchoJay Auto Pan reports its own name ("EchoJay Auto Pan")
+  [PASS] EchoJay Chorus constructs
+  [PASS] EchoJay Chorus reports its own name ("EchoJay Chorus")
+  [PASS] EchoJay Phaser constructs
+  [PASS] EchoJay Phaser reports its own name ("EchoJay Phaser")
+  [PASS] EchoJay Tremolo constructs
+  [PASS] EchoJay Tremolo reports its own name ("EchoJay Tremolo")
+  [PASS] EchoJay Exciter constructs
+  [PASS] EchoJay Exciter reports its own name ("EchoJay Exciter")
+  [PASS] EchoJay Saturation constructs
+  [PASS] EchoJay Saturation reports its own name ("EchoJay Saturation")
+  [PASS] EchoJay Tape constructs
+  [PASS] EchoJay Tape reports its own name ("EchoJay Tape")
+  [PASS] EchoJay Delay constructs
+  [PASS] EchoJay Delay reports its own name ("EchoJay Delay")
+  [PASS] EchoJay Reverb constructs
+  [PASS] EchoJay Reverb reports its own name ("EchoJay Reverb")
+  [PASS] EchoJay Pitch constructs
+  [PASS] EchoJay Pitch reports its own name ("EchoJay Pitch")
+  [PASS] EchoJay Key Detector constructs
+  [PASS] EchoJay Key Detector reports its own name ("EchoJay Key Detector")
+== EchoJay Gain dials from settings_structured.params ==
+  [PASS] constructed as an EedGainProcessor
+  [PASS] IS an EedDeviceProcessor (so ChainHost can dispatch)
+  [PASS] 2 params applied, 0 skipped
+  [PASS] summary: level_db -6 dB, pan 0.5
+  [PASS] level_db landed EXACTLY at -6
+  [PASS] pan landed EXACTLY at 0.5
+== EchoJay Delay dials every shape of param exactly ==
+  [PASS] IS an EedDeviceProcessor (so ChainHost can dispatch)
+  [PASS] 6 params applied, 0 skipped
+  [PASS] summary: time_ms 375 ms, feedback 62 %, mix 45 %, ping_pong on, stereo_offset -25 %, filter_lp_hz 3200 Hz
+  [PASS] time_ms EXACTLY 375
+  [PASS] feedback EXACTLY 62
+  [PASS] mix EXACTLY 45
+  [PASS] ping_pong is on
+  [PASS] a NEGATIVE value lands
+  [PASS] filter_lp_hz EXACTLY 3200
+== the tempo-sync division is an exact index, not an approximation ==
+  [PASS] constructed as an EedDelayProcessor
+  [PASS] landed on index 9
+  [PASS] index 9 is a quarter note
+  [PASS] which at 120 BPM is exactly 500 ms
+  [PASS] an out-of-range index clamps to the longest note
+== EchoJay Reverb dials, and reports no latency ==
+  [PASS] IS an EedDeviceProcessor
+  [PASS] 6 params applied, 0 skipped
+  [PASS] size EXACTLY 85
+  [PASS] decay_s EXACTLY 4.5
+  [PASS] predelay_ms EXACTLY 60
+  [PASS] damping EXACTLY 30
+  [PASS] width EXACTLY 80
+  [PASS] mix EXACTLY 22
+  [PASS] reports ZERO latency, as advertised
+  [PASS] but DOES report a tail (4.73 s), so an offline render will not truncate it
+== both Time devices survive a real prepare + process ==
+  [PASS] EchoJay Delay renders finite audio through the chain's layout
+  [PASS] EchoJay Delay survives mono
+  [PASS] EchoJay Reverb renders finite audio through the chain's layout
+  [PASS] EchoJay Reverb survives mono
+== REVERB: the algorithm dials by NAME and by index ==
+  [PASS] reverb constructs
+  [PASS] a fresh reverb is on hall, the neutral algorithm
+  [PASS] algorithm = "plate" applied
+  [PASS] landed on plate (index 2)
+  [PASS] and reads back BY NAME: algorithm plate
+  [PASS] the ENGINE is on plate, not just the param
+  [PASS] matching is case-insensitive
+  [PASS] a numeric index works too
+  [PASS] index 4 is ambience
+  [PASS] an unknown algorithm is SKIPPED, not guessed at
+  [PASS] and leaves the algorithm where it was
+  [PASS] all five algorithms resolve by name and reach the engine
+== REVERB: diffusion and duck land exactly, and clamp ==
+  [PASS] diffusion defaults to its unity point
+  [PASS] and duck defaults to off
+  [PASS] 2 params applied, 0 skipped
+  [PASS] diffusion EXACTLY 35
+  [PASS] duck EXACTLY 60
+  [PASS] 900 clamps to 100
+  [PASS] a negative duck clamps to 0
+== DELAY: the mode dials by NAME and by index ==
+  [PASS] a fresh delay is digital
+  [PASS] mode = "tape" applied
+  [PASS] landed on tape (index 1)
+  [PASS] and reads back BY NAME: mode tape
+  [PASS] the ENGINE is on tape, not just the param
+  [PASS] matching is case-insensitive
+  [PASS] an unknown mode is SKIPPED, not guessed at
+  [PASS] and leaves the mode where it was
+  [PASS] all four modes resolve by name and reach the engine
+== DELAY: mode and ping_pong are BOTH honoured, independently ==
+  [PASS] mode = pingpong bounces on its own
+  [PASS] WITHOUT silently flipping the ping_pong param
+  [PASS] back to tape, the bounce is gone
+  [PASS] and the switch bounces a TAPE echo, leaving the mode on tape
+== DELAY: diffusion and duck land exactly, and clamp ==
+  [PASS] diffusion defaults to off
+  [PASS] and so does duck
+  [PASS] 2 params applied, 0 skipped
+  [PASS] diffusion EXACTLY 45
+  [PASS] duck EXACTLY 70
+  [PASS] 400 clamps to 100
+== the Time depth params round-trip through state ==
+  [PASS] algorithm restored (spring)
+  [PASS] diffusion restored
+  [PASS] duck restored
+  [PASS] mode restored (analog)
+  [PASS] diffusion restored
+  [PASS] duck restored
+  [PASS] and ping_pong restored ALONGSIDE the mode, not instead of it
+== DO NOT DIAL: a restore keeps the user's values, an assistant apply is still refused ==
+  [PASS] do-not-dial: the saving device exists
+  [PASS] do-not-dial: the saved values are nothing like the defaults, so a reset-to-defaults regression cannot pass this block by accident
+  [PASS] DO NOT DIAL + restore: algorithm is the saved one, not the default
+  [PASS] DO NOT DIAL + restore: diffusion is 22, the value the user saved
+  [PASS] DO NOT DIAL + restore: duck is 55, the value the user saved
+  [PASS] DO NOT DIAL: an assistant apply to a built-in places nothing
+  [PASS] DO NOT DIAL: and it did not move the knob either, so the restore fix did not quietly undo the mode
+  [PASS] DO NOT DIAL: a User move still lands, because the mode hands controls back rather than taking them away
+  [PASS] do-not-dial: the mode is off again for the rest of the run
+== the Time depth choices are ADVERTISED by name ==
+  [PASS] EchoJay Reverb algorithm: algorithm (room|hall|plate|spring|ambience, default hall) - the kind of space, which reshapes the reflection pattern, density, brightness and early/late balance: room is small and tight with audible walls, hall is big and smooth, plate is bright and very diffuse with NO distinct early reflections (the classic vocal reverb), spring is short and resonant with a boingy dispersed character, ambience is a very short subtle space that is mostly early reflections. decay_s still sets the length in all five, so switching changes character and not time
+  [PASS] EchoJay Delay mode: mode (digital|tape|analog|pingpong, default digital) - the character of the repeats, applied inside the feedback loop so it builds up over successive echoes: digital is clean and transparent, tape saturates and adds wow and flutter so each repeat is darker and drifts slightly, analog is a bucket-brigade line - darker still, band-limited and a little gritty, pingpong is the clean digital sound bounced hard left-right. To bounce a tape or analog echo, set mode and turn ping_pong on as well
+== a Time device at its DEFAULTS is unchanged by the depth pass ==
+  [PASS] EchoJay Reverb: its defaults ARE the neutral settings (worst delta 0.000000000)
+  [PASS] EchoJay Delay: its defaults ARE the neutral settings (worst delta 0.000000000)
+== CHORUS: the mode dials by NAME and by index ==
+  [PASS] chorus constructs
+  [PASS] a fresh chorus is classic
+  [PASS] mode = "ensemble" applied
+  [PASS] and reads back BY NAME: mode ensemble
+  [PASS] the ENGINE is on ensemble, not just the param
+  [PASS] matching is case-insensitive
+  [PASS] an unknown mode is SKIPPED, not guessed at
+  [PASS] and leaves the mode where it was
+  [PASS] all three modes resolve by name and reach the engine
+  [PASS] a numeric index works too
+== CHORUS: spread and tone land exactly, and clamp ==
+  [PASS] spread defaults to 50, the shipped quarter-cycle offset
+  [PASS] tone defaults to flat
+  [PASS] 2 params applied, 0 skipped
+  [PASS] spread EXACTLY 80
+  [PASS] tone EXACTLY -3.5
+  [PASS] 400 clamps to 100
+  [PASS] -20 clamps to -6
+== PHASER: the mode dials by NAME, and stereo_spread lands ==
+  [PASS] a fresh phaser is modern
+  [PASS] stereo_spread defaults to 90, the shipped offset
+  [PASS] mode = "vintage" reads back BY NAME: mode vintage
+  [PASS] the ENGINE is on vintage, not just the param
+  [PASS] and the default 6 dialled stages run as vintage's 4
+  [PASS] an unknown mode is SKIPPED, not guessed at
+  [PASS] all three modes resolve by name and reach the engine
+  [PASS] stereo_spread EXACTLY 135
+  [PASS] 720 clamps to 360
+== TREMOLO: mode and the new shapes dial by NAME ==
+  [PASS] a fresh tremolo is the sine circuit
+  [PASS] mode = "bias" reads back BY NAME: mode bias
+  [PASS] the ENGINE is on bias, not just the param
+  [PASS] all three circuits resolve by name and reach the engine
+  [PASS] shape = "random" lands on the sample-and-hold shape
+  [PASS] and the LFO is running it
+  [PASS] shape = "harmonic" lands too
+  [PASS] the numeric form still works: shape 2 is square
+  [PASS] smoothing_ms EXACTLY 120 - the random glide is dialable
+  [PASS] and clamps to the core's ceiling
+== AUTO PAN: mode, width and the new shapes dial by NAME ==
+  [PASS] a fresh auto pan is constant_power, the shipped law
+  [PASS] mode = "binaural" reads back BY NAME: mode binaural
+  [PASS] the ENGINE is on binaural, not just the param
+  [PASS] "Constant Power" matches constant_power (tolerant folding)
+  [PASS] all three laws resolve by name and reach the engine
+  [PASS] width EXACTLY 35
+  [PASS] 250 clamps to 100
+  [PASS] shape = "random" reaches the LFO here too
+== the Modulation depth params round-trip through state ==
+  [PASS] chorus mode restored (dimension)
+  [PASS] spread restored
+  [PASS] tone restored
+  [PASS] phaser mode restored (vintage)
+  [PASS] stereo_spread restored
+  [PASS] tremolo circuit restored (optical)
+  [PASS] the harmonic shape restored
+  [PASS] smoothing restored
+  [PASS] pan law restored (linear)
+  [PASS] width restored
+  [PASS] the random shape restored
+== the Modulation depth choices are ADVERTISED by name ==
+  [PASS] EchoJay Chorus mode: mode (classic|ensemble|dimension, default classic) - the chorus character: classic is the standard drifting chorus the device shipped with, ensemble stacks two extra staggered voices with per-voice detune for a lush string-machine thickness, dimension freezes the sweep entirely for a very wide stereo double with NO pitch wobble (rate, depth and sync do nothing there) - the classic subtle widener for sources that must stay in tune
+  [PASS] EchoJay Phaser mode: mode (modern|vintage|stereo, default modern) - the phaser's character: modern is the clean full cascade the device shipped with, vintage is warmer and thicker - the cascade capped at 4 stages like the classic pedals, a darker wet path and feedback pushed hotter than the dial, stereo lifts the right channel's sweep centre half an octave so the notches interleave across the field and the swirl crosses the image
+  [PASS] EchoJay Tremolo mode: mode (sine|optical|bias, default sine) - the tremolo circuit: sine is the clean level wobble the device shipped with, optical smooths the gain like an amp's photocell so even a square breathes with soft edges, bias is harmonic tremolo - lows and highs wobble in OPPOSITE phase so the tone swirls while the level barely moves, the classic Fender-style sound and much richer than plain level tremolo
+  [PASS] EchoJay Auto Pan mode: mode (linear|constant_power|binaural, default constant_power) - the pan law: constant_power holds loudness steady across the sweep (the default, and the device as it shipped), linear is a plain crossfade that dips slightly mid-sweep, binaural adds a subtle inter-aural delay with the pan so the image reads as genuinely PLACED in space rather than faded - the most convincing movement on headphones
+  [PASS] EchoJay Tremolo shape: shape (sine|triangle|square|saw|harmonic|random, default sine) - waveform of the wobble: sine is smooth, triangle linear, square chops, saw ramps, harmonic is a rounder sine that lingers at the extremes, random holds a new random level each cycle (sample-and-hold; see smoothing_ms to make it glide)
+  [PASS] EchoJay Auto Pan shape: shape (sine|triangle|square|saw|harmonic|random, default sine) - waveform of the sweep: sine is smooth, triangle linear, square jumps side to side, saw ramps, harmonic is a rounder sine that lingers at the sides, random jumps to a new random position each cycle (sample-and-hold; see smoothing_ms to make it glide)
+== a Modulation device at its DEFAULTS is unchanged by the depth pass ==
+  [PASS] EchoJay Chorus: its defaults ARE the neutral settings (worst delta 0.000000000)
+  [PASS] EchoJay Phaser: its defaults ARE the neutral settings (worst delta 0.000000000)
+  [PASS] EchoJay Tremolo: its defaults ARE the neutral settings (worst delta 0.000000000)
+  [PASS] EchoJay Auto Pan: its defaults ARE the neutral settings (worst delta 0.000000000)
+== the new shapes render finite audio through processBlock ==
+  [PASS] EchoJay Tremolo on random + glide renders finite audio
+  [PASS] EchoJay Auto Pan on random + glide renders finite audio
+== merge semantics: an absent param is left alone ==
+  [PASS] level_db updated
+  [PASS] pan SURVIVED the second move
+== the schema clamps, and reports honestly ==
+  [PASS] 999 dB clamped to the +24 max
+  [PASS] the in-schema param applied
+  [PASS] the unknown id was SKIPPED, not guessed at
+  [PASS] and named in the summary: level_db 24 dB; ignored wobble
+== value coercion: JSON shapes a model actually emits ==
+  [PASS] JSON true -> on
+  [PASS] the string "off" -> off
+  [PASS] the string "1" -> on
+  [PASS] a non-numeric string is rejected, NOT silently read as 0
+== a flat device declines a bare array (it is not eq_bands) ==
+  [PASS] bare array -> empty summary ("this wasn't for me")
+  [PASS] a flat semantic bag -> empty summary
+== the EQ still takes eq_bands, AND now takes params ==
+  [PASS] EQ is both itself and a device
+  [PASS] bare eq_bands array still applies (1 band)
+  [PASS] summary: EQ: applied 1 band(s) — bell 400Hz -3.5dB Q3.00
+  [PASS] band landed at 400 Hz exactly
+  [PASS] band landed at -3.5 dB exactly
+  [PASS] params summary: output_db -2 dB
+  [PASS] output_db dialled through params
+== EQ P2: per-band channel dials tolerantly, and echoes ==
+  [PASS] channel:"side" landed on the band
+  [PASS] and the summary says so: EQ: applied 1 band(s) — highshelf 10000Hz 3.0dB Q0.71 [side]
+  [PASS] single-letter "m" resolves to mid
+  [PASS] an unknown channel keeps the stereo default, never guesses
+  [PASS] side band echoes channel:"side"
+  [PASS] a stereo band omits the key entirely
+== EQ P5: a musical note lands a band on its pitch ==
+  [PASS] {note:"G5"} lands on 784 Hz (got 783.99)
+  [PASS] explicit freq_hz WINS over note when both are sent
+  [PASS] an unparseable note falls back to the default freq, never guesses
+== EQ P4: phase_mode dials via eq_settings AND params, latency follows ==
+  [PASS] a fresh EQ is zero-latency minimum phase, the neutral mode
+  [PASS] â¦and reports 0 samples
+  [PASS] eq_settings.phase_mode:"linear" landed
+  [PASS] and the latency was re-reported LIVE, no re-prepare (got 2560)
+  [PASS] summary names the mode and the cost: settings: phase linear (53.3 ms latency)
+  [PASS] getTailLengthSeconds is wired, not the 0.0 stub
+  [PASS] params phase_mode:"zero" flips back and re-reports 0
+  [PASS] a numeric index works too
+  [PASS] ms_mode dials through params
+  [PASS] advertised as names: phase_mode (zero|linear, default zero) - zero = minimum-phase, no latency (default, right for tracking); linear = linear-phase FIR for mastering/parallel/phase-critical work, adds ~53 ms latency the host compensates
+== EQ P5: a preset is a BASE that explicit bands refine ==
+  [PASS] preset loads by tolerant name: preset "vocal-clarity" (4 bands): HPF, mud dip, presence and air for a lead vocal
+  [PASS] band 1 is the preset's 80 Hz HPF
+  [PASS] all four preset bands landed
+  [PASS] "preset, then cut 300 harder" is one move: band 2 reads -4 dB
+  [PASS] the miss lists what DOES exist: preset "smiley-face" unknown (built-ins: vocal-clarity, warm-tape, de-harsh, sub-cleanup, air-lift, mud-cut)
+  [PASS] and nothing moved
+== EQ P3: the hunt finds a real resonance in real audio ==
+  [PASS] silence answers honestly: hunt: no signal to analyse - play audio through the EQ, then run it again
+  [PASS] the hunt placed band(s): hunt (medium, dynamic): tamed 1 resonance(s) - 3673 Hz (A#7 -26c) Q31.4 dyn -10.8 dB
+  [PASS] and reported as a hunt
+  [PASS] the hand-dialled band 1 survived untouched
+  [PASS] a dynamic bell sits on the 3.7 kHz resonance, range negative
+  [PASS] dynamic:false places a static notch instead
+  [PASS] unknown action names what IS available: action "make_it_pop" is not one this EQ knows (have: tame_resonances)
+== EQ: state v3 round-trips routing and phase ==
+  [PASS] the side routing restored
+  [PASS] linear phase restored
+  [PASS] M/S view restored
+  [PASS] a v2 state loads: band stereo, phase zero, nothing invented
+== EQ: its defaults are UNCHANGED by the whole depth pass ==
+  [PASS] EchoJay EQ: its defaults ARE the neutral settings (worst delta 0.000000000)
+== choice params dial BY NAME, and by index ==
+  [PASS] Saturation IS an EedDeviceProcessor
+  [PASS] type = "diode" applied
+  [PASS] landed on the diode curve (index 2)
+  [PASS] and reads back BY NAME: type diode
+  [PASS] matching is case-insensitive
+  [PASS] a numeric index still works
+  [PASS] an unknown choice is SKIPPED, not guessed at
+  [PASS] and leaves the curve where it was
+  [PASS] advertised as names: type (tube|tape|diode|soft, default tube) - the saturation curve: tube is asymmetric and warm (2nd harmonic), tape is soft and compressing, diode is the hardest and most aggressive, soft is a clean symmetric limit
+  [PASS] and its default is a name too
+== the Harmonic cluster dials, and reports its latency ==
+  [PASS] drive_db exact
+  [PASS] tone_db exact
+  [PASS] mix exact
+  [PASS] output_db exact
+  [PASS] Saturation reports 45 samples of oversampling latency (got 45)
+  [PASS] speed_ips exact
+  [PASS] flutter exact
+  [PASS] head_bump_db exact
+  [PASS] bias exact
+  [PASS] Tape reports 165 samples (transport + oversampling) (got 165)
+  [PASS] freq_hz exact
+  [PASS] amount exact
+  [PASS] mode = "tape" resolved
+  [PASS] Exciter reports 45 samples (got 45)
+== SATURATION: emphasis dials by NAME and by index ==
+  [PASS] a fresh saturation is on both, the neutral emphasis
+  [PASS] emphasis = "even" applied
+  [PASS] landed on even (index 0)
+  [PASS] and reads back BY NAME: emphasis even
+  [PASS] the CORE is on even, not just the param
+  [PASS] matching is case-insensitive
+  [PASS] an unknown emphasis is SKIPPED, not guessed at
+  [PASS] and leaves the emphasis where it was
+== SATURATION: oversample dials, and RETARGETS the latency ==
+  [PASS] a fresh saturation is on 4x, the neutral quality
+  [PASS] 4x reports 45 samples
+  [PASS] oversample = "8x" landed
+  [PASS] 8x republishes 48 samples WITHOUT a re-prepare (got 48)
+  [PASS] a numeric index works too: 2x is 30 samples
+  [PASS] an unadvertised quality is SKIPPED, not guessed at
+  [PASS] and leaves the setting where it was
+== SATURATION: bias and hpf_hz land exactly, and clamp ==
+  [PASS] bias defaults to 0 (off)
+  [PASS] hpf_hz defaults to 0 (full band)
+  [PASS] 2 params applied, 0 skipped
+  [PASS] bias EXACTLY -35
+  [PASS] hpf_hz EXACTLY 120
+  [PASS] bias 400 clamps to 100
+  [PASS] hpf_hz 9999 clamps to 500
+== TAPE: the machine dials by NAME and by index ==
+  [PASS] a fresh tape is the studio machine, the neutral mode
+  [PASS] mode = "cassette" applied
+  [PASS] landed on cassette (index 2)
+  [PASS] and reads back BY NAME: mode cassette
+  [PASS] the ENGINE is on cassette, not just the param
+  [PASS] matching is case-insensitive
+  [PASS] an unknown machine is SKIPPED, not guessed at
+  [PASS] and leaves the machine where it was
+  [PASS] all three machines resolve by name and reach the engine
+  [PASS] cassette or not, the latency stays 165 samples
+== TAPE: hiss and crosstalk land exactly, and clamp ==
+  [PASS] hiss defaults to 0 (off)
+  [PASS] and so does crosstalk
+  [PASS] 2 params applied, 0 skipped
+  [PASS] hiss EXACTLY 40
+  [PASS] crosstalk EXACTLY 25
+  [PASS] 900 clamps to 100
+  [PASS] a negative clamps to 0
+== EXCITER: all four characters dial, focus lands ==
+  [PASS] a fresh exciter is tube
+  [PASS] and focus defaults to 0, the split as shipped
+  [PASS] mode = "odd" reaches the engine (index 2)
+  [PASS] mode = "even" too, case-insensitively
+  [PASS] tube keeps index 0
+  [PASS] tape keeps index 1
+  [PASS] focus EXACTLY 65
+  [PASS] 300 clamps to 100
+== the Harmonic depth params round-trip through state ==
+  [PASS] emphasis restored (odd)
+  [PASS] bias restored
+  [PASS] hpf_hz restored
+  [PASS] oversample restored (8x)
+  [PASS] machine restored (cassette)
+  [PASS] hiss restored
+  [PASS] crosstalk restored
+  [PASS] exciter mode restored (even)
+  [PASS] focus restored
+== the Harmonic depth choices are ADVERTISED by name ==
+  [PASS] EchoJay Saturation emphasis: emphasis (even|odd|both, default both) - which harmonics dominate, on top of the selected curve: even is asymmetric and warm/tubey (strong 2nd), odd is symmetric and aggressive (3rd, console/transistor edge), both keeps the curve's own natural blend (the default - exactly the device as shipped)
+  [PASS] EchoJay Saturation oversample: oversample (2x|4x|8x, default 4x) - anti-aliasing quality against CPU: 8x is the cleanest on bright material, 2x the cheapest; 4x (the default) suits almost everything. Latency follows the setting (30, 45 or 48 samples) and is reported to the host
+  [PASS] EchoJay Tape mode: mode (studio|vintage|cassette, default studio) - the machine: studio is the clean bright 15-30 ips reference (the default - exactly the device as shipped), vintage is softer with more compression, deeper wow and a darker top, cassette is narrow at both ends with the most flutter and the most noise. Each scales what speed, drive, wow, flutter and head bump already do
+  [PASS] EchoJay Exciter mode: mode (tube|tape|odd|even, default tube) - the character of the generated highs: tube is asymmetric air and presence (2nd plus odd - the default), tape is a soft symmetric sheen without edge, odd is the edgiest and most aggressive (3rd only, a symmetric hard knee), even is the warmest (strongly asymmetric, 2nd dominant)
+== a Harmonic device at its DEFAULTS is unchanged by the depth pass ==
+  [PASS] EchoJay Saturation: its defaults ARE the neutral settings (worst delta 0.000000000)
+  [PASS] EchoJay Tape: its defaults ARE the neutral settings (worst delta 0.000000000)
+  [PASS] EchoJay Exciter: its defaults ARE the neutral settings (worst delta 0.000000000)
+== every device passes real audio without producing NaN ==
+  [PASS] EchoJay EQ: 32 blocks at every param's maximum stay finite
+  [PASS] EchoJay 4-Band Compressor: 32 blocks at every param's maximum stay finite
+  [PASS] EchoJay Compressor: 32 blocks at every param's maximum stay finite
+  [PASS] EchoJay De-Esser: 32 blocks at every param's maximum stay finite
+  [PASS] EchoJay Expander: 32 blocks at every param's maximum stay finite
+  [PASS] EchoJay Gate: 32 blocks at every param's maximum stay finite
+  [PASS] EchoJay Limiter: 32 blocks at every param's maximum stay finite
+  [PASS] EchoJay Gain: 32 blocks at every param's maximum stay finite
+  [PASS] EchoJay Phase Invert: 32 blocks at every param's maximum stay finite
+  [PASS] EchoJay Stereo Width: 32 blocks at every param's maximum stay finite
+  [PASS] EchoJay Stereoizer: 32 blocks at every param's maximum stay finite
+  [PASS] EchoJay Auto Pan: 32 blocks at every param's maximum stay finite
+  [PASS] EchoJay Chorus: 32 blocks at every param's maximum stay finite
+  [PASS] EchoJay Phaser: 32 blocks at every param's maximum stay finite
+  [PASS] EchoJay Tremolo: 32 blocks at every param's maximum stay finite
+  [PASS] EchoJay Exciter: 32 blocks at every param's maximum stay finite
+  [PASS] EchoJay Saturation: 32 blocks at every param's maximum stay finite
+  [PASS] EchoJay Tape: 32 blocks at every param's maximum stay finite
+  [PASS] EchoJay Delay: 32 blocks at every param's maximum stay finite
+  [PASS] EchoJay Reverb: 32 blocks at every param's maximum stay finite
+  [PASS] EchoJay Pitch: 32 blocks at every param's maximum stay finite
+  [PASS] EchoJay Key Detector: 32 blocks at every param's maximum stay finite
+== the Stereo cluster dials, and its defaults land ==
+  [PASS] Stereo Width is an EedDeviceProcessor
+  [PASS] width defaults to 100%
+  [PASS] bass mono defaults to off
+  [PASS] trim defaults to 0 dB
+  [PASS] 3 params applied, 0 skipped
+  [PASS] summary: width 140 %, bass_mono_hz 120 Hz, output_trim_db -1.5 dB
+  [PASS] width landed EXACTLY at 140
+  [PASS] bass_mono_hz landed EXACTLY at 120
+  [PASS] output_trim_db landed EXACTLY at -1.5
+  [PASS] width defaults to 120%
+  [PASS] haas defaults to 15 ms
+  [PASS] mono maker defaults to 150 Hz
+  [PASS] mix defaults to 100%
+  [PASS] a partial move applies both params
+  [PASS] haas_ms landed EXACTLY at 22
+  [PASS] width SURVIVED (merge semantics)
+== a near-miss param id still reaches the knob ==
+  [PASS] "Width" and "bassMonoHz" both applied
+  [PASS] capitalised id landed
+  [PASS] camelCase id landed
+== the Stereoizer's mono sum survives a real processBlock ==
+  [PASS] L+R is unchanged end to end (worst dev 0.000000358)
+== the Stereoizer's scope tap carries the WIDENED output ==
+  [PASS] constructed as an EedStereoizerProcessor
+  [PASS] mono in, DECORRELATED in the ring: the widening is visible (correlation -0.3554)
+  [PASS] widening off: the same mono input reads as mono (correlation 1.0000)
+== state round-trips through the schema ==
+  [PASS] level_db restored
+  [PASS] pan restored
+  [PASS] bypass restored
+== restore is a FULL REPLACE, not a merge ==
+  [PASS] level_db reset to default
+  [PASS] pan reset to default
+== identities are unique (a clash would make restore ambiguous) ==
+  [PASS] no two devices share a uid or an identifier
+== MODULATION: each device dials exactly from params ==
+  [PASS] Tremolo constructs as a device
+  [PASS] Tremolo: 4 params applied, 0 skipped
+  [PASS] rate_hz landed at 6.5
+  [PASS] depth landed at 80
+  [PASS] stereo_phase landed at 180
+  [PASS] mix landed at 75
+  [PASS] shape 1.6 rounds to 2 (square)
+  [PASS] sync on
+  [PASS] division landed at 1/8
+  [PASS] Auto Pan: depth landed at 100
+  [PASS] Auto Pan: an unpublished "mix" is refused, not swallowed
+  [PASS] Chorus: delay_ms landed at 25
+  [PASS] Chorus: the string "3" -> 3 voices
+  [PASS] Chorus: negative feedback landed
+  [PASS] Chorus: 99 voices clamped to 4
+  [PASS] Chorus: 0 ms clamped to the 1 ms floor
+  [PASS] Phaser: center_freq landed at 2 kHz
+  [PASS] Phaser: 12 stages landed
+  [PASS] Phaser: feedback landed at 80
+  [PASS] Phaser: "centerFreq" resolves to the same param
+== MODULATION: a device at its defaults is PASS-THROUGH ==
+  [PASS] EchoJay Tremolo: dry path is intact (worst delta 0.0000000)
+  [PASS] EchoJay Auto Pan: dry path is intact (worst delta 0.0000001)
+  [PASS] EchoJay Chorus: dry path is intact (worst delta 0.0000000)
+  [PASS] EchoJay Phaser: dry path is intact (worst delta 0.0000000)
+== every device publishes a dialable contract ==
+  [PASS] EchoJay EQ publishes a non-empty ParamSchema
+  [PASS] EchoJay EQ tells the model when to reach for it
+  [PASS] EchoJay EQ derives from EedDeviceProcessor
+  [PASS] EchoJay EQ: advertised id "output_db" is settable
+  [PASS] EchoJay EQ: advertised id "auto_gain" is settable
+  [PASS] EchoJay EQ: advertised id "phase_mode" is settable
+  [PASS] EchoJay EQ: advertised id "ms_mode" is settable
+  [PASS] EchoJay 4-Band Compressor publishes a non-empty ParamSchema
+  [PASS] EchoJay 4-Band Compressor tells the model when to reach for it
+  [PASS] EchoJay 4-Band Compressor derives from EedDeviceProcessor
+  [PASS] EchoJay 4-Band Compressor: advertised id "crossover1_hz" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "crossover2_hz" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "crossover3_hz" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "detector" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band1_threshold_db" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band1_ratio" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band1_attack_ms" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band1_release_ms" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band1_knee_db" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band1_makeup_db" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band1_bypass" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band1_mode" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band2_threshold_db" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band2_ratio" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band2_attack_ms" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band2_release_ms" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band2_knee_db" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band2_makeup_db" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band2_bypass" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band2_mode" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band3_threshold_db" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band3_ratio" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band3_attack_ms" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band3_release_ms" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band3_knee_db" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band3_makeup_db" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band3_bypass" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band3_mode" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band4_threshold_db" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band4_ratio" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band4_attack_ms" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band4_release_ms" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band4_knee_db" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band4_makeup_db" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band4_bypass" is settable
+  [PASS] EchoJay 4-Band Compressor: advertised id "band4_mode" is settable
+  [PASS] EchoJay Compressor publishes a non-empty ParamSchema
+  [PASS] EchoJay Compressor tells the model when to reach for it
+  [PASS] EchoJay Compressor derives from EedDeviceProcessor
+  [PASS] EchoJay Compressor: advertised id "threshold_db" is settable
+  [PASS] EchoJay Compressor: advertised id "ratio" is settable
+  [PASS] EchoJay Compressor: advertised id "attack_ms" is settable
+  [PASS] EchoJay Compressor: advertised id "release_ms" is settable
+  [PASS] EchoJay Compressor: advertised id "knee_db" is settable
+  [PASS] EchoJay Compressor: advertised id "makeup_db" is settable
+  [PASS] EchoJay Compressor: advertised id "mix" is settable
+  [PASS] EchoJay Compressor: advertised id "mode" is settable
+  [PASS] EchoJay Compressor: advertised id "detector" is settable
+  [PASS] EchoJay Compressor: advertised id "sc_hpf_hz" is settable
+  [PASS] EchoJay Compressor: advertised id "lookahead_ms" is settable
+  [PASS] EchoJay Compressor: advertised id "auto_release" is settable
+  [PASS] EchoJay Compressor: advertised id "stereo_link" is settable
+  [PASS] EchoJay Compressor: advertised id "range_db" is settable
+  [PASS] EchoJay De-Esser publishes a non-empty ParamSchema
+  [PASS] EchoJay De-Esser tells the model when to reach for it
+  [PASS] EchoJay De-Esser derives from EedDeviceProcessor
+  [PASS] EchoJay De-Esser: advertised id "freq_hz" is settable
+  [PASS] EchoJay De-Esser: advertised id "range_db" is settable
+  [PASS] EchoJay De-Esser: advertised id "threshold_db" is settable
+  [PASS] EchoJay De-Esser: advertised id "attack_ms" is settable
+  [PASS] EchoJay De-Esser: advertised id "release_ms" is settable
+  [PASS] EchoJay De-Esser: advertised id "mode" is settable
+  [PASS] EchoJay De-Esser: advertised id "listen" is settable
+  [PASS] EchoJay De-Esser: advertised id "auto_threshold" is settable
+  [PASS] EchoJay Expander publishes a non-empty ParamSchema
+  [PASS] EchoJay Expander tells the model when to reach for it
+  [PASS] EchoJay Expander derives from EedDeviceProcessor
+  [PASS] EchoJay Expander: advertised id "threshold_db" is settable
+  [PASS] EchoJay Expander: advertised id "ratio" is settable
+  [PASS] EchoJay Expander: advertised id "attack_ms" is settable
+  [PASS] EchoJay Expander: advertised id "release_ms" is settable
+  [PASS] EchoJay Expander: advertised id "range_db" is settable
+  [PASS] EchoJay Expander: advertised id "sc_hpf_hz" is settable
+  [PASS] EchoJay Expander: advertised id "lookahead_ms" is settable
+  [PASS] EchoJay Gate publishes a non-empty ParamSchema
+  [PASS] EchoJay Gate tells the model when to reach for it
+  [PASS] EchoJay Gate derives from EedDeviceProcessor
+  [PASS] EchoJay Gate: advertised id "threshold_db" is settable
+  [PASS] EchoJay Gate: advertised id "range_db" is settable
+  [PASS] EchoJay Gate: advertised id "attack_ms" is settable
+  [PASS] EchoJay Gate: advertised id "hold_ms" is settable
+  [PASS] EchoJay Gate: advertised id "release_ms" is settable
+  [PASS] EchoJay Gate: advertised id "hysteresis_db" is settable
+  [PASS] EchoJay Gate: advertised id "mode" is settable
+  [PASS] EchoJay Gate: advertised id "sc_hpf_hz" is settable
+  [PASS] EchoJay Gate: advertised id "sc_lpf_hz" is settable
+  [PASS] EchoJay Gate: advertised id "lookahead_ms" is settable
+  [PASS] EchoJay Limiter publishes a non-empty ParamSchema
+  [PASS] EchoJay Limiter tells the model when to reach for it
+  [PASS] EchoJay Limiter derives from EedDeviceProcessor
+  [PASS] EchoJay Limiter: advertised id "ceiling_db" is settable
+  [PASS] EchoJay Limiter: advertised id "release_ms" is settable
+  [PASS] EchoJay Limiter: advertised id "lookahead_ms" is settable
+  [PASS] EchoJay Limiter: advertised id "mode" is settable
+  [PASS] EchoJay Limiter: advertised id "true_peak" is settable
+  [PASS] EchoJay Limiter: advertised id "sc_hpf_hz" is settable
+  [PASS] EchoJay Gain publishes a non-empty ParamSchema
+  [PASS] EchoJay Gain tells the model when to reach for it
+  [PASS] EchoJay Gain derives from EedDeviceProcessor
+  [PASS] EchoJay Gain: advertised id "level_db" is settable
+  [PASS] EchoJay Gain: advertised id "pan" is settable
+  [PASS] EchoJay Gain: advertised id "mode" is settable
+  [PASS] EchoJay Gain: advertised id "mid_db" is settable
+  [PASS] EchoJay Gain: advertised id "side_db" is settable
+  [PASS] EchoJay Gain: advertised id "mono" is settable
+  [PASS] EchoJay Gain: advertised id "phase_left" is settable
+  [PASS] EchoJay Gain: advertised id "phase_right" is settable
+  [PASS] EchoJay Phase Invert publishes a non-empty ParamSchema
+  [PASS] EchoJay Phase Invert tells the model when to reach for it
+  [PASS] EchoJay Phase Invert derives from EedDeviceProcessor
+  [PASS] EchoJay Phase Invert: advertised id "invert_left" is settable
+  [PASS] EchoJay Phase Invert: advertised id "invert_right" is settable
+  [PASS] EchoJay Stereo Width publishes a non-empty ParamSchema
+  [PASS] EchoJay Stereo Width tells the model when to reach for it
+  [PASS] EchoJay Stereo Width derives from EedDeviceProcessor
+  [PASS] EchoJay Stereo Width: advertised id "width" is settable
+  [PASS] EchoJay Stereo Width: advertised id "bass_mono_hz" is settable
+  [PASS] EchoJay Stereo Width: advertised id "output_trim_db" is settable
+  [PASS] EchoJay Stereo Width: advertised id "mode" is settable
+  [PASS] EchoJay Stereo Width: advertised id "width_low" is settable
+  [PASS] EchoJay Stereo Width: advertised id "width_mid" is settable
+  [PASS] EchoJay Stereo Width: advertised id "width_high" is settable
+  [PASS] EchoJay Stereo Width: advertised id "xover_low_hz" is settable
+  [PASS] EchoJay Stereo Width: advertised id "xover_high_hz" is settable
+  [PASS] EchoJay Stereo Width: advertised id "rotation" is settable
+  [PASS] EchoJay Stereoizer publishes a non-empty ParamSchema
+  [PASS] EchoJay Stereoizer tells the model when to reach for it
+  [PASS] EchoJay Stereoizer derives from EedDeviceProcessor
+  [PASS] EchoJay Stereoizer: advertised id "width" is settable
+  [PASS] EchoJay Stereoizer: advertised id "haas_ms" is settable
+  [PASS] EchoJay Stereoizer: advertised id "mono_maker_hz" is settable
+  [PASS] EchoJay Stereoizer: advertised id "mix" is settable
+  [PASS] EchoJay Stereoizer: advertised id "mode" is settable
+  [PASS] EchoJay Auto Pan publishes a non-empty ParamSchema
+  [PASS] EchoJay Auto Pan tells the model when to reach for it
+  [PASS] EchoJay Auto Pan derives from EedDeviceProcessor
+  [PASS] EchoJay Auto Pan: advertised id "rate_hz" is settable
+  [PASS] EchoJay Auto Pan: advertised id "sync" is settable
+  [PASS] EchoJay Auto Pan: advertised id "sync_division" is settable
+  [PASS] EchoJay Auto Pan: advertised id "depth" is settable
+  [PASS] EchoJay Auto Pan: advertised id "shape" is settable
+  [PASS] EchoJay Auto Pan: advertised id "stereo_phase" is settable
+  [PASS] EchoJay Auto Pan: advertised id "mode" is settable
+  [PASS] EchoJay Auto Pan: advertised id "width" is settable
+  [PASS] EchoJay Auto Pan: advertised id "smoothing_ms" is settable
+  [PASS] EchoJay Chorus publishes a non-empty ParamSchema
+  [PASS] EchoJay Chorus tells the model when to reach for it
+  [PASS] EchoJay Chorus derives from EedDeviceProcessor
+  [PASS] EchoJay Chorus: advertised id "rate_hz" is settable
+  [PASS] EchoJay Chorus: advertised id "sync" is settable
+  [PASS] EchoJay Chorus: advertised id "sync_division" is settable
+  [PASS] EchoJay Chorus: advertised id "depth" is settable
+  [PASS] EchoJay Chorus: advertised id "delay_ms" is settable
+  [PASS] EchoJay Chorus: advertised id "voices" is settable
+  [PASS] EchoJay Chorus: advertised id "feedback" is settable
+  [PASS] EchoJay Chorus: advertised id "mix" is settable
+  [PASS] EchoJay Chorus: advertised id "mode" is settable
+  [PASS] EchoJay Chorus: advertised id "spread" is settable
+  [PASS] EchoJay Chorus: advertised id "tone" is settable
+  [PASS] EchoJay Phaser publishes a non-empty ParamSchema
+  [PASS] EchoJay Phaser tells the model when to reach for it
+  [PASS] EchoJay Phaser derives from EedDeviceProcessor
+  [PASS] EchoJay Phaser: advertised id "rate_hz" is settable
+  [PASS] EchoJay Phaser: advertised id "sync" is settable
+  [PASS] EchoJay Phaser: advertised id "sync_division" is settable
+  [PASS] EchoJay Phaser: advertised id "depth" is settable
+  [PASS] EchoJay Phaser: advertised id "stages" is settable
+  [PASS] EchoJay Phaser: advertised id "feedback" is settable
+  [PASS] EchoJay Phaser: advertised id "center_freq" is settable
+  [PASS] EchoJay Phaser: advertised id "mix" is settable
+  [PASS] EchoJay Phaser: advertised id "mode" is settable
+  [PASS] EchoJay Phaser: advertised id "stereo_spread" is settable
+  [PASS] EchoJay Tremolo publishes a non-empty ParamSchema
+  [PASS] EchoJay Tremolo tells the model when to reach for it
+  [PASS] EchoJay Tremolo derives from EedDeviceProcessor
+  [PASS] EchoJay Tremolo: advertised id "rate_hz" is settable
+  [PASS] EchoJay Tremolo: advertised id "sync" is settable
+  [PASS] EchoJay Tremolo: advertised id "sync_division" is settable
+  [PASS] EchoJay Tremolo: advertised id "depth" is settable
+  [PASS] EchoJay Tremolo: advertised id "shape" is settable
+  [PASS] EchoJay Tremolo: advertised id "stereo_phase" is settable
+  [PASS] EchoJay Tremolo: advertised id "mix" is settable
+  [PASS] EchoJay Tremolo: advertised id "mode" is settable
+  [PASS] EchoJay Tremolo: advertised id "smoothing_ms" is settable
+  [PASS] EchoJay Exciter publishes a non-empty ParamSchema
+  [PASS] EchoJay Exciter tells the model when to reach for it
+  [PASS] EchoJay Exciter derives from EedDeviceProcessor
+  [PASS] EchoJay Exciter: advertised id "freq_hz" is settable
+  [PASS] EchoJay Exciter: advertised id "amount" is settable
+  [PASS] EchoJay Exciter: advertised id "mode" is settable
+  [PASS] EchoJay Exciter: advertised id "focus" is settable
+  [PASS] EchoJay Exciter: advertised id "mix" is settable
+  [PASS] EchoJay Exciter: advertised id "output_db" is settable
+  [PASS] EchoJay Saturation publishes a non-empty ParamSchema
+  [PASS] EchoJay Saturation tells the model when to reach for it
+  [PASS] EchoJay Saturation derives from EedDeviceProcessor
+  [PASS] EchoJay Saturation: advertised id "drive_db" is settable
+  [PASS] EchoJay Saturation: advertised id "type" is settable
+  [PASS] EchoJay Saturation: advertised id "emphasis" is settable
+  [PASS] EchoJay Saturation: advertised id "bias" is settable
+  [PASS] EchoJay Saturation: advertised id "hpf_hz" is settable
+  [PASS] EchoJay Saturation: advertised id "oversample" is settable
+  [PASS] EchoJay Saturation: advertised id "tone_db" is settable
+  [PASS] EchoJay Saturation: advertised id "mix" is settable
+  [PASS] EchoJay Saturation: advertised id "output_db" is settable
+  [PASS] EchoJay Tape publishes a non-empty ParamSchema
+  [PASS] EchoJay Tape tells the model when to reach for it
+  [PASS] EchoJay Tape derives from EedDeviceProcessor
+  [PASS] EchoJay Tape: advertised id "speed_ips" is settable
+  [PASS] EchoJay Tape: advertised id "drive_db" is settable
+  [PASS] EchoJay Tape: advertised id "bias" is settable
+  [PASS] EchoJay Tape: advertised id "wow" is settable
+  [PASS] EchoJay Tape: advertised id "flutter" is settable
+  [PASS] EchoJay Tape: advertised id "head_bump_db" is settable
+  [PASS] EchoJay Tape: advertised id "mode" is settable
+  [PASS] EchoJay Tape: advertised id "hiss" is settable
+  [PASS] EchoJay Tape: advertised id "crosstalk" is settable
+  [PASS] EchoJay Tape: advertised id "mix" is settable
+  [PASS] EchoJay Tape: advertised id "output_db" is settable
+  [PASS] EchoJay Delay publishes a non-empty ParamSchema
+  [PASS] EchoJay Delay tells the model when to reach for it
+  [PASS] EchoJay Delay derives from EedDeviceProcessor
+  [PASS] EchoJay Delay: advertised id "time_ms" is settable
+  [PASS] EchoJay Delay: advertised id "sync" is settable
+  [PASS] EchoJay Delay: advertised id "sync_division" is settable
+  [PASS] EchoJay Delay: advertised id "feedback" is settable
+  [PASS] EchoJay Delay: advertised id "mix" is settable
+  [PASS] EchoJay Delay: advertised id "filter_hp_hz" is settable
+  [PASS] EchoJay Delay: advertised id "filter_lp_hz" is settable
+  [PASS] EchoJay Delay: advertised id "ping_pong" is settable
+  [PASS] EchoJay Delay: advertised id "stereo_offset" is settable
+  [PASS] EchoJay Delay: advertised id "mod_rate_hz" is settable
+  [PASS] EchoJay Delay: advertised id "mod_depth_ms" is settable
+  [PASS] EchoJay Delay: advertised id "mode" is settable
+  [PASS] EchoJay Delay: advertised id "diffusion" is settable
+  [PASS] EchoJay Delay: advertised id "duck" is settable
+  [PASS] EchoJay Reverb publishes a non-empty ParamSchema
+  [PASS] EchoJay Reverb tells the model when to reach for it
+  [PASS] EchoJay Reverb derives from EedDeviceProcessor
+  [PASS] EchoJay Reverb: advertised id "size" is settable
+  [PASS] EchoJay Reverb: advertised id "decay_s" is settable
+  [PASS] EchoJay Reverb: advertised id "predelay_ms" is settable
+  [PASS] EchoJay Reverb: advertised id "damping" is settable
+  [PASS] EchoJay Reverb: advertised id "low_cut_hz" is settable
+  [PASS] EchoJay Reverb: advertised id "width" is settable
+  [PASS] EchoJay Reverb: advertised id "early_late" is settable
+  [PASS] EchoJay Reverb: advertised id "mod_depth" is settable
+  [PASS] EchoJay Reverb: advertised id "mix" is settable
+  [PASS] EchoJay Reverb: advertised id "algorithm" is settable
+  [PASS] EchoJay Reverb: advertised id "diffusion" is settable
+  [PASS] EchoJay Reverb: advertised id "duck" is settable
+  [PASS] EchoJay Pitch publishes a non-empty ParamSchema
+  [PASS] EchoJay Pitch tells the model when to reach for it
+  [PASS] EchoJay Pitch derives from EedDeviceProcessor
+  [PASS] EchoJay Pitch: advertised id "correction_mode" is settable
+  [PASS] EchoJay Pitch: advertised id "correct" is settable
+  [PASS] EchoJay Pitch: advertised id "retune" is settable
+  [PASS] EchoJay Pitch: advertised id "retune_speed_ms" is settable
+  [PASS] EchoJay Pitch: advertised id "seam_attack_ms" is settable
+  [PASS] EchoJay Pitch: advertised id "flex" is settable
+  [PASS] EchoJay Pitch: advertised id "humanize" is settable
+  [PASS] EchoJay Pitch: advertised id "depth" is settable
+  [PASS] EchoJay Pitch: advertised id "targeting_ignores_vibrato" is settable
+  [PASS] EchoJay Pitch: advertised id "key_source" is settable
+  [PASS] EchoJay Pitch: advertised id "key_root" is settable
+  [PASS] EchoJay Pitch: advertised id "scale" is settable
+  [PASS] EchoJay Pitch: advertised id "reference_source" is settable
+  [PASS] EchoJay Pitch: advertised id "reference_hz" is settable
+  [PASS] EchoJay Pitch: advertised id "ref_manual_by_user" is settable
+  [PASS] EchoJay Pitch: advertised id "transpose" is settable
+  [PASS] EchoJay Pitch: advertised id "natural_vibrato" is settable
+  [PASS] EchoJay Pitch: advertised id "vib_depth_cents" is settable
+  [PASS] EchoJay Pitch: advertised id "vib_rate_hz" is settable
+  [PASS] EchoJay Pitch: advertised id "vib_shape" is settable
+  [PASS] EchoJay Pitch: advertised id "vib_onset_ms" is settable
+  [PASS] EchoJay Pitch: advertised id "voice_type" is settable
+  [PASS] EchoJay Pitch: advertised id "tracking" is settable
+  [PASS] EchoJay Pitch: advertised id "formant_mode" is settable
+  [PASS] EchoJay Pitch: advertised id "formant_shift" is settable
+  [PASS] EchoJay Pitch: advertised id "low_latency" is settable
+  [PASS] EchoJay Pitch: advertised id "mix" is settable
+  [PASS] EchoJay Pitch: advertised id "output_db" is settable
+  [PASS] EchoJay Pitch: advertised id "target_hz" is settable
+  [PASS] EchoJay Pitch: advertised id "reset_stats" is settable
+  [PASS] EchoJay Key Detector publishes a non-empty ParamSchema
+  [PASS] EchoJay Key Detector tells the model when to reach for it
+  [PASS] EchoJay Key Detector derives from EedDeviceProcessor
+  [PASS] EchoJay Key Detector: advertised id "analyse" is settable
+  [PASS] EchoJay Key Detector: advertised id "window_s" is settable
+  [PASS] EchoJay Key Detector: advertised id "continuous" is settable
+  [PASS] EchoJay Key Detector: advertised id "sensitivity" is settable
+  [PASS] EchoJay Key Detector: advertised id "tuning_hz" is settable
+  [PASS] EchoJay Key Detector: advertised id "auto_tuning" is settable
+  [PASS] EchoJay Key Detector: advertised id "mode_lock" is settable
+  [PASS] EchoJay Key Detector: advertised id "hold" is settable
+  [PASS] EchoJay Key Detector: advertised id "hpss" is settable
+  [PASS] EchoJay Key Detector: advertised id "low_hz" is settable
+  [PASS] EchoJay Key Detector: advertised id "high_hz" is settable
+  [PASS] EchoJay Key Detector: advertised id "reset" is settable
+== Gain's I/O meter taps read the real signal ==
+  [PASS] constructed as an EedGainProcessor
+  [PASS] input peak reads the input amplitude
+  [PASS] input RMS reads it too (DC)
+  [PASS] at 0 dB the output matches the input
+  [PASS] the INPUT tap is unchanged by the gain
+  [PASS] the OUTPUT tap halved: 0.2506
+  [PASS] silence reads as silence on both meters
+== Phase Invert's correlation dot reads the real phase ==
+  [PASS] constructed as an EedPhaseInvertProcessor
+  [PASS] an identical pair reads +1 (1.000)
+  [PASS] flipping ONE side swings it to -1 (-1.000)
+  [PASS] flipping BOTH is back to +1 (1.000)
+  [PASS] mono publishes the no-reading sentinel, not 0
+  [PASS] and that sentinel is OUTSIDE the valid range, so a drawer can spot it
+== every device's editor constructs, lays out and PAINTS ==
+  [PASS] EchoJay EQ claims an editor
+  [PASS] EchoJay EQ editor constructs
+  [PASS] EchoJay EQ declares a sane default size (820x448, allowed 240-1400 x 100-900)
+  [PASS] EchoJay EQ painted at its default size
+  [PASS] EchoJay EQ painted at one third of its default size
+  [PASS] EchoJay EQ painted at 1x1 without escaping its bounds
+  [PASS] EchoJay 4-Band Compressor claims an editor
+  [PASS] EchoJay 4-Band Compressor editor constructs
+  [PASS] EchoJay 4-Band Compressor declares a sane default size (560x427, allowed 240-1400 x 100-900)
+  [PASS] EchoJay 4-Band Compressor painted at its default size
+  [PASS] EchoJay 4-Band Compressor painted at one third of its default size
+  [PASS] EchoJay 4-Band Compressor painted at 1x1 without escaping its bounds
+  [PASS] EchoJay Compressor claims an editor
+  [PASS] EchoJay Compressor editor constructs
+  [PASS] EchoJay Compressor declares a sane default size (560x390, allowed 240-1400 x 100-900)
+  [PASS] EchoJay Compressor painted at its default size
+  [PASS] EchoJay Compressor painted at one third of its default size
+  [PASS] EchoJay Compressor painted at 1x1 without escaping its bounds
+  [PASS] EchoJay De-Esser claims an editor
+  [PASS] EchoJay De-Esser editor constructs
+  [PASS] EchoJay De-Esser declares a sane default size (560x328, allowed 240-1400 x 100-900)
+  [PASS] EchoJay De-Esser painted at its default size
+  [PASS] EchoJay De-Esser painted at one third of its default size
+  [PASS] EchoJay De-Esser painted at 1x1 without escaping its bounds
+  [PASS] EchoJay Expander claims an editor
+  [PASS] EchoJay Expander editor constructs
+  [PASS] EchoJay Expander declares a sane default size (520x328, allowed 240-1400 x 100-900)
+  [PASS] EchoJay Expander painted at its default size
+  [PASS] EchoJay Expander painted at one third of its default size
+  [PASS] EchoJay Expander painted at 1x1 without escaping its bounds
+  [PASS] EchoJay Gate claims an editor
+  [PASS] EchoJay Gate editor constructs
+  [PASS] EchoJay Gate declares a sane default size (540x390, allowed 240-1400 x 100-900)
+  [PASS] EchoJay Gate painted at its default size
+  [PASS] EchoJay Gate painted at one third of its default size
+  [PASS] EchoJay Gate painted at 1x1 without escaping its bounds
+  [PASS] EchoJay Limiter claims an editor
+  [PASS] EchoJay Limiter editor constructs
+  [PASS] EchoJay Limiter declares a sane default size (480x338, allowed 240-1400 x 100-900)
+  [PASS] EchoJay Limiter painted at its default size
+  [PASS] EchoJay Limiter painted at one third of its default size
+  [PASS] EchoJay Limiter painted at 1x1 without escaping its bounds
+  [PASS] EchoJay Gain claims an editor
+  [PASS] EchoJay Gain editor constructs
+  [PASS] EchoJay Gain declares a sane default size (420x260, allowed 240-1400 x 100-900)
+  [PASS] EchoJay Gain painted at its default size
+  [PASS] EchoJay Gain painted at one third of its default size
+  [PASS] EchoJay Gain painted at 1x1 without escaping its bounds
+  [PASS] EchoJay Phase Invert claims an editor
+  [PASS] EchoJay Phase Invert editor constructs
+  [PASS] EchoJay Phase Invert declares a sane default size (340x160, allowed 240-1400 x 100-900)
+  [PASS] EchoJay Phase Invert painted at its default size
+  [PASS] EchoJay Phase Invert painted at one third of its default size
+  [PASS] EchoJay Phase Invert painted at 1x1 without escaping its bounds
+  [PASS] EchoJay Stereo Width claims an editor
+  [PASS] EchoJay Stereo Width editor constructs
+  [PASS] EchoJay Stereo Width declares a sane default size (460x390, allowed 240-1400 x 100-900)
+  [PASS] EchoJay Stereo Width painted at its default size
+  [PASS] EchoJay Stereo Width painted at one third of its default size
+  [PASS] EchoJay Stereo Width painted at 1x1 without escaping its bounds
+  [PASS] EchoJay Stereoizer claims an editor
+  [PASS] EchoJay Stereoizer editor constructs
+  [PASS] EchoJay Stereoizer declares a sane default size (560x324, allowed 240-1400 x 100-900)
+  [PASS] EchoJay Stereoizer painted at its default size
+  [PASS] EchoJay Stereoizer painted at one third of its default size
+  [PASS] EchoJay Stereoizer painted at 1x1 without escaping its bounds
+  [PASS] EchoJay Auto Pan claims an editor
+  [PASS] EchoJay Auto Pan editor constructs
+  [PASS] EchoJay Auto Pan declares a sane default size (560x290, allowed 240-1400 x 100-900)
+  [PASS] EchoJay Auto Pan painted at its default size
+  [PASS] EchoJay Auto Pan painted at one third of its default size
+  [PASS] EchoJay Auto Pan painted at 1x1 without escaping its bounds
+  [PASS] EchoJay Chorus claims an editor
+  [PASS] EchoJay Chorus editor constructs
+  [PASS] EchoJay Chorus declares a sane default size (580x272, allowed 240-1400 x 100-900)
+  [PASS] EchoJay Chorus painted at its default size
+  [PASS] EchoJay Chorus painted at one third of its default size
+  [PASS] EchoJay Chorus painted at 1x1 without escaping its bounds
+  [PASS] EchoJay Phaser claims an editor
+  [PASS] EchoJay Phaser editor constructs
+  [PASS] EchoJay Phaser declares a sane default size (620x272, allowed 240-1400 x 100-900)
+  [PASS] EchoJay Phaser painted at its default size
+  [PASS] EchoJay Phaser painted at one third of its default size
+  [PASS] EchoJay Phaser painted at 1x1 without escaping its bounds
+  [PASS] EchoJay Tremolo claims an editor
+  [PASS] EchoJay Tremolo editor constructs
+  [PASS] EchoJay Tremolo declares a sane default size (540x264, allowed 240-1400 x 100-900)
+  [PASS] EchoJay Tremolo painted at its default size
+  [PASS] EchoJay Tremolo painted at one third of its default size
+  [PASS] EchoJay Tremolo painted at 1x1 without escaping its bounds
+  [PASS] EchoJay Exciter claims an editor
+  [PASS] EchoJay Exciter editor constructs
+  [PASS] EchoJay Exciter declares a sane default size (520x274, allowed 240-1400 x 100-900)
+  [PASS] EchoJay Exciter painted at its default size
+  [PASS] EchoJay Exciter painted at one third of its default size
+  [PASS] EchoJay Exciter painted at 1x1 without escaping its bounds
+  [PASS] EchoJay Saturation claims an editor
+  [PASS] EchoJay Saturation editor constructs
+  [PASS] EchoJay Saturation declares a sane default size (460x340, allowed 240-1400 x 100-900)
+  [PASS] EchoJay Saturation painted at its default size
+  [PASS] EchoJay Saturation painted at one third of its default size
+  [PASS] EchoJay Saturation painted at 1x1 without escaping its bounds
+  [PASS] EchoJay Tape claims an editor
+  [PASS] EchoJay Tape editor constructs
+  [PASS] EchoJay Tape declares a sane default size (560x362, allowed 240-1400 x 100-900)
+  [PASS] EchoJay Tape painted at its default size
+  [PASS] EchoJay Tape painted at one third of its default size
+  [PASS] EchoJay Tape painted at 1x1 without escaping its bounds
+  [PASS] EchoJay Delay claims an editor
+  [PASS] EchoJay Delay editor constructs
+  [PASS] EchoJay Delay declares a sane default size (460x378, allowed 240-1400 x 100-900)
+  [PASS] EchoJay Delay painted at its default size
+  [PASS] EchoJay Delay painted at one third of its default size
+  [PASS] EchoJay Delay painted at 1x1 without escaping its bounds
+  [PASS] EchoJay Reverb claims an editor
+  [PASS] EchoJay Reverb editor constructs
+  [PASS] EchoJay Reverb declares a sane default size (480x354, allowed 240-1400 x 100-900)
+  [PASS] EchoJay Reverb painted at its default size
+  [PASS] EchoJay Reverb painted at one third of its default size
+  [PASS] EchoJay Reverb painted at 1x1 without escaping its bounds
+  [PASS] EchoJay Pitch claims an editor
+  [PASS] EchoJay Pitch editor constructs
+  [PASS] EchoJay Pitch declares a sane default size (620x400, allowed 240-1400 x 100-900)
+  [PASS] EchoJay Pitch painted at its default size
+  [PASS] EchoJay Pitch painted at one third of its default size
+  [PASS] EchoJay Pitch painted at 1x1 without escaping its bounds
+  [PASS] EchoJay Key Detector claims an editor
+  [PASS] EchoJay Key Detector editor constructs
+  [PASS] EchoJay Key Detector declares a sane default size (470x320, allowed 240-1400 x 100-900)
+  [PASS] EchoJay Key Detector painted at its default size
+  [PASS] EchoJay Key Detector painted at one third of its default size
+  [PASS] EchoJay Key Detector painted at 1x1 without escaping its bounds
+== every device's editor survives the rack's inline open/close/reopen ==
+  [PASS] EchoJay EQ opens, closes and reopens inline under a parent
+  [PASS] EchoJay 4-Band Compressor opens, closes and reopens inline under a parent
+  [PASS] EchoJay Compressor opens, closes and reopens inline under a parent
+  [PASS] EchoJay De-Esser opens, closes and reopens inline under a parent
+  [PASS] EchoJay Expander opens, closes and reopens inline under a parent
+  [PASS] EchoJay Gate opens, closes and reopens inline under a parent
+  [PASS] EchoJay Limiter opens, closes and reopens inline under a parent
+  [PASS] EchoJay Gain opens, closes and reopens inline under a parent
+  [PASS] EchoJay Phase Invert opens, closes and reopens inline under a parent
+  [PASS] EchoJay Stereo Width opens, closes and reopens inline under a parent
+  [PASS] EchoJay Stereoizer opens, closes and reopens inline under a parent
+  [PASS] EchoJay Auto Pan opens, closes and reopens inline under a parent
+  [PASS] EchoJay Chorus opens, closes and reopens inline under a parent
+  [PASS] EchoJay Phaser opens, closes and reopens inline under a parent
+  [PASS] EchoJay Tremolo opens, closes and reopens inline under a parent
+  [PASS] EchoJay Exciter opens, closes and reopens inline under a parent
+  [PASS] EchoJay Saturation opens, closes and reopens inline under a parent
+  [PASS] EchoJay Tape opens, closes and reopens inline under a parent
+  [PASS] EchoJay Delay opens, closes and reopens inline under a parent
+  [PASS] EchoJay Reverb opens, closes and reopens inline under a parent
+  [PASS] EchoJay Pitch opens, closes and reopens inline under a parent
+  [PASS] EchoJay Key Detector opens, closes and reopens inline under a parent
+== a Dynamics face dials in real units, and clamps to its schema ==
+  [PASS] compressor IS an EedDeviceProcessor
+  [PASS] 4 params applied, 0 skipped
+  [PASS] summary: threshold_db -24 dB, ratio 6, attack_ms 3 ms, mix 50 %
+  [PASS] threshold_db exact
+  [PASS] ratio exact
+  [PASS] attack_ms exact
+  [PASS] mix exact (percent, not 0..1)
+  [PASS] release_ms untouched by a move that did not mention it
+  [PASS] ratio clamped to the advertised 20 max
+== the limiter REPORTS its lookahead latency ==
+  [PASS] 5 ms lookahead at 48k reports 240 samples (got 240)
+  [PASS] zero lookahead reports zero latency
+== the de-esser's switches dial as on/off, in every spelling ==
+  [PASS] JSON false -> wide
+  [PASS] the string "on" -> split
+  [PASS] 1 -> listen on
+== COMPRESSOR: the character mode dials by NAME and by index ==
+  [PASS] compressor constructs
+  [PASS] a fresh compressor is clean
+  [PASS] and detects RMS
+  [PASS] mode = "punch" applied
+  [PASS] landed on punch (index 2)
+  [PASS] and reads back BY NAME: mode punch
+  [PASS] matching is case-insensitive
+  [PASS] a numeric index still works
+  [PASS] an unknown character is SKIPPED, not guessed at
+  [PASS] and leaves the mode where it was
+  [PASS] clean runs the dialled 10 ms attack
+  [PASS] punch runs faster (2.50 ms)
+  [PASS] smooth runs slower (25.00 ms)
+  [PASS] and the DIALLED attack still round-trips as 10, whatever the mode
+== COMPRESSOR: every depth param lands exactly, and clamps ==
+  [PASS] 6 params applied, 0 skipped
+  [PASS] sc_hpf_hz EXACTLY 120
+  [PASS] lookahead_ms EXACTLY 4
+  [PASS] auto_release is on
+  [PASS] detector = "peak" resolved
+  [PASS] stereo_link EXACTLY 60 (percent)
+  [PASS] range_db EXACTLY 8
+  [PASS] detector = "rms" resolved
+  [PASS] 5 kHz clamped to the 500 max
+  [PASS] 250% clamped to 100
+  [PASS] a negative range clamped to 0
+== COMPRESSOR / GATE / EXPANDER report their lookahead latency ==
+  [PASS] EchoJay Compressor defaults to ZERO latency
+  [PASS] EchoJay Compressor: 5 ms at 48k reports 240 samples (got 240)
+  [PASS] EchoJay Compressor: back to zero lookahead, zero latency
+  [PASS] EchoJay Gate defaults to ZERO latency
+  [PASS] EchoJay Gate: 5 ms at 48k reports 240 samples (got 240)
+  [PASS] EchoJay Gate: back to zero lookahead, zero latency
+  [PASS] EchoJay Expander defaults to ZERO latency
+  [PASS] EchoJay Expander: 5 ms at 48k reports 240 samples (got 240)
+  [PASS] EchoJay Expander: back to zero lookahead, zero latency
+== a lookahead device with NO lookahead is a true pass-through ==
+  [PASS] the impulse comes straight back out (1.0000)
+== BYPASS still delays, so toggling it cannot shift the track ==
+  [PASS] the impulse did NOT come back early
+  [PASS] it emerged at sample 96, exactly the reported latency
+== LIMITER: three modes, and clip is a HARD ceiling ==
+  [PASS] defaults to transparent
+  [PASS] 3 params applied, 0 skipped
+  [PASS] mode = "clip" landed on index 2
+  [PASS] and reads back by name: mode clip, true_peak on, sc_hpf_hz 40 Hz
+  [PASS] true_peak is on
+  [PASS] sc_hpf_hz EXACTLY 40
+  [PASS] and punchy by name
+  [PASS] punchy honours the 5 ms lookahead
+  [PASS] clip reports ZERO latency despite the 5 ms
+  [PASS] while the dialled 5 ms is REMEMBERED, not destroyed
+  [PASS] and comes back when the mode does
+  [PASS] the dialled release survives a trip through clip
+== LIMITER: clip actually holds the ceiling, sample by sample ==
+  [PASS] nothing escaped the -6 dB ceiling (worst -6.000 dBFS)
+  [PASS] and it did reach it, so the test is not measuring silence
+== GATE: duck is the same device, the other way up ==
+  [PASS] defaults to gate
+  [PASS] and the DSP agrees it is gating
+  [PASS] mode = "duck" applied
+  [PASS] landed on index 1
+  [PASS] and reads back by name: mode duck
+  [PASS] the DSP is now in Duck mode, not merely the param
+  [PASS] and index 0 puts it back
+  [PASS] sc_hpf_hz EXACTLY 80
+  [PASS] sc_lpf_hz EXACTLY 250
+  [PASS] and 10 Hz clamps up to the advertised 200 floor
+== GATE: ducking a loud signal actually reduces it ==
+  [PASS] a loud signal passes the gate untouched (0.00 dB)
+  [PASS] and is ducked by the range (-12.00 dB)
+== EXPANDER: the two depth params land and clamp ==
+  [PASS] 2 params applied, 0 skipped
+  [PASS] sc_hpf_hz EXACTLY 90
+  [PASS] lookahead_ms EXACTLY 3
+  [PASS] 99 ms clamped to the buffer's maximum - never reallocated
+== DE-ESSER: auto_threshold tracks, and keeps the dialled one safe ==
+  [PASS] de-esser constructs
+  [PASS] defaults to off
+  [PASS] with auto off, the DSP compares against the dialled threshold
+  [PASS] the string "on" -> on
+  [PASS] and the DIALLED threshold is untouched while it is ignored
+  [PASS] the threshold tracked the band instead (-3.38 dB)
+  [PASS] and STILL round-trips as the -34 that was dialled
+  [PASS] switching it off restores the dialled threshold immediately
+== 4-BAND: per-band character, by name, flat AND via comp_bands ==
+  [PASS] band 1 defaults to glue
+  [PASS] band 4 defaults to punch
+  [PASS] and the mids to clean
+  [PASS] band3_mode = "smooth" applied
+  [PASS] landed on index 3
+  [PASS] and reads back by name: band3_mode smooth
+  [PASS] the band's CORE is in smooth, not just the param
+  [PASS] smooth widened band 3's knee to 15.0 dB
+  [PASS] comp_bands can set a band's mode too
+  [PASS] band 1 is now punch
+  [PASS] "character" is accepted as a spelling of the same knob
+== 4-BAND: the detector is GLOBAL, and reaches every band ==
+  [PASS] defaults to rms
+  [PASS] peak by name
+  [PASS] band1_detector is refused, not guessed at
+  [PASS] and named in the summary: ignored band1_detector
+== the depth params round-trip through state ==
+  [PASS] mode restored (smooth)
+  [PASS] detector restored (peak)
+  [PASS] sc_hpf_hz restored
+  [PASS] lookahead_ms restored
+  [PASS] auto_release restored
+  [PASS] stereo_link restored
+  [PASS] range_db restored
+  [PASS] limiter mode restored (clip)
+  [PASS] true_peak restored
+  [PASS] limiter sc_hpf_hz restored
+  [PASS] gate mode restored (duck)
+  [PASS] sc_lpf_hz restored
+  [PASS] gate lookahead restored
+  [PASS] auto_threshold restored
+  [PASS] and the dialled threshold under it survived the trip
+  [PASS] band2_mode restored (punch)
+  [PASS] the global detector restored
+== the depth pass's choices are ADVERTISED by name ==
+  [PASS] EchoJay Compressor mode: mode (clean|glue|punch|smooth, default clean) - compressor character, which reshapes attack, release and knee and adds gentle drive as it works: clean is a transparent VCA (the reference), glue is a slow soft bus compressor for making a mix cohere, punch is a fast aggressive FET for drums and bass, smooth is an opto with a programme-dependent release for vocals and anything delicate
+  [PASS] EchoJay Compressor detector: detector (peak|rms, default rms) - what the detector measures: rms follows loudness and sounds like a fader being ridden (right for most material), peak catches every transient and is tighter on drums and bass
+  [PASS] EchoJay Limiter mode: mode (transparent|punchy|clip, default transparent) - how it holds the ceiling: transparent is the clean lookahead limiter (use it on a master), punchy is faster with a touch of drive so a loud mix feels dense rather than just loud, clip is a hard ceiling - the loudest and most aggressive, and it ignores release and lookahead
+  [PASS] EchoJay Gate mode: mode (gate|duck, default gate) - which side of the threshold gets attenuated: gate pulls down what is QUIETER than the threshold (cleaning up bleed and noise), duck pulls down what is LOUDER than it by range_db (holding something back whenever it gets loud). Everything else means the same in both
+  [PASS] EchoJay 4-Band Compressor band1_mode: band1_mode (clean|glue|punch|smooth, default glue) - character for band 1 (below crossover1_hz), which reshapes its attack, release and knee and adds gentle drive as it works: clean is transparent, glue is slow and soft (right for a low band), punch is fast and aggressive (right for an air band), smooth has a programme-dependent release
+  [PASS] EchoJay 4-Band Compressor detector: detector (peak|rms, default rms) - what every band's detector measures: rms follows loudness (right for multiband work, and what keeps the four bands comparable), peak catches transients and is tighter
+  [PASS] EchoJay Stereo Width mode: mode (full|multiband, default full) - how width is applied: full is one width for the whole spectrum (the width knob), multiband splits the image at the two crossovers and applies width_low/width_mid/width_high independently - the classic mastering move is narrow lows, wide highs. In full mode the band widths are ignored; in multiband the single width is ignored. Mono fold-down stays exact in both
+  [PASS] EchoJay Stereoizer mode: mode (haas|comb|dimension, default haas) - the widening character: haas displaces the image in time (haas_ms sets how far - broad and natural, the shipped sound), comb pushes an allpass-filtered copy of the centre into the sides (denser and more present, no pre-delay smear; haas_ms is ignored), dimension adds a slow detuned copy in the sides (lush, chorus-like movement, no comb colour; haas_ms is ignored). width scales the effect in every mode and the mono fold-down stays exact in every mode
+  [PASS] EchoJay Gain mode: mode (stereo|mid_side, default stereo) - stereo is plain level + pan; mid_side adds independent gain on the mid (centre) and side (stereo difference) via mid_db/side_db - raise side_db to widen, lower it to narrow, lower mid_db to make room in the centre. level_db and pan still apply after it
+  [PASS] EchoJay Compressor auto_release is advertised on/off: auto_release (on/off, default off) - release follows the programme: quick after a short transient, slower after a sustained passage that pulled deep. Use it when one release time cannot suit both
+  [PASS] EchoJay Limiter true_peak is advertised on/off: true_peak (on/off, default off) - measure the peak BETWEEN samples, not just at them, so the ceiling still holds after a converter or a lossy encoder reconstructs the waveform. Turn it on for anything being mastered or exported; it costs a little loudness and no latency
+  [PASS] EchoJay De-Esser auto_threshold is advertised on/off: auto_threshold (on/off, default off) - the threshold tracks a slow average of the band instead of sitting at a fixed level, so it de-esses relative to how loud the voice actually is and keeps working across a quiet verse and a loud chorus. While it is on, threshold_db is ignored - set range_db to control the amount
+  [PASS] EchoJay Gain mono is advertised on/off: mono (on/off, default off) - sum the output to mono (both channels become the centre); the quick compatibility check, and a fade rather than a click
+  [PASS] EchoJay Gain phase_left is advertised on/off: phase_left (on/off, default off) - invert the LEFT channel's polarity; use it to fix a flipped cable/mic - with mono on, inverting one side of an identical pair cancels to silence
+  [PASS] EchoJay Gain phase_right is advertised on/off: phase_right (on/off, default off) - invert the RIGHT channel's polarity
+== STEREO WIDTH: the mode dials by NAME and by index ==
+  [PASS] constructed as an EedStereoWidthProcessor
+  [PASS] a fresh device is on full, the neutral mode
+  [PASS] mode = "multiband" applied
+  [PASS] and the ENGINE is actually split three ways now
+  [PASS] the index form reaches the same switch
+  [PASS] an unknown mode is SKIPPED, not guessed at
+== STEREO WIDTH: band widths, crossovers and rotation land exactly ==
+  [PASS] width_low defaults to 100
+  [PASS] width_mid defaults to 100
+  [PASS] width_high defaults to 100
+  [PASS] xover_low defaults to 150
+  [PASS] xover_high defaults to 2500
+  [PASS] rotation defaults to 0
+  [PASS] 7 params applied, 0 skipped
+  [PASS] width_low landed EXACTLY at 40
+  [PASS] width_mid landed EXACTLY at 110
+  [PASS] width_high landed EXACTLY at 160
+  [PASS] xover_low landed EXACTLY at 120
+  [PASS] xover_high landed EXACTLY at 4000
+  [PASS] rotation landed EXACTLY at -12
+  [PASS] width_low clamped to 200
+  [PASS] xover_low clamped to 800
+  [PASS] xover_high clamped to 1000
+  [PASS] rotation clamped to +45
+  [PASS] even dialled against each other, low stays below high
+== STEREOIZER: the mode dials by NAME and by index ==
+  [PASS] a fresh device is on haas, the shipped character
+  [PASS] mode = "comb" applied
+  [PASS] and the ENGINE is on the allpass chain now
+  [PASS] the index form reaches dimension
+  [PASS] an unknown mode is SKIPPED, not guessed at
+== STEREOIZER: every mode's mono sum survives processBlock ==
+  [PASS] haas: L+R unchanged end to end (worst dev 0.000000238)
+  [PASS] comb: L+R unchanged end to end (worst dev 0.000000298)
+  [PASS] dimension: L+R unchanged end to end (worst dev 0.000000358)
+== the scope taps still carry the output in the new modes ==
+  [PASS] comb mode: mono in, DECORRELATED in the ring (correlation 0.2031)
+  [PASS] multiband mode: the ring carries a real frame (correlation -0.0208)
+== GAIN: mid/side mode dials, and its switches land in every spelling ==
+  [PASS] a fresh device is on stereo, the shipped mode
+  [PASS] 3 params applied, 0 skipped
+  [PASS] the ENGINE is in mid/side now
+  [PASS] mid_db landed EXACTLY at -3
+  [PASS] side_db landed EXACTLY at 4.5
+  [PASS] the index form reaches the same switch
+  [PASS] JSON true -> mono on
+  [PASS] the string "off" -> off
+  [PASS] the string "on" -> on
+  [PASS] the string "1" -> on
+  [PASS] mid_db clamped to +6
+  [PASS] side_db clamped to -60
+== GAIN: side at the floor collapses a real block to mono ==
+  [PASS] L == R after the side is floored (worst diff 0.0000000)
+== the Stereo/Utility depth params round-trip through state ==
+  [PASS] width mode restored (multiband)
+  [PASS] width_low restored
+  [PASS] width_mid restored
+  [PASS] width_high restored
+  [PASS] xover_low restored
+  [PASS] xover_high restored
+  [PASS] rotation restored
+  [PASS] stereoizer mode restored (dimension)
+  [PASS] and the width under it survived
+  [PASS] gain mode restored (mid_side)
+  [PASS] mid_db restored
+  [PASS] side_db restored
+  [PASS] mono restored
+  [PASS] phase_left restored
+  [PASS] phase_right stayed off
+== a Stereo/Utility device at its DEFAULTS is unchanged by the depth pass ==
+  [PASS] EchoJay Stereo Width: its defaults ARE the neutral settings (worst delta 0.000000000)
+  [PASS] EchoJay Stereoizer: its defaults ARE the neutral settings (worst delta 0.000000000)
+  [PASS] EchoJay Gain: its defaults ARE the neutral settings (worst delta 0.000000000)
+== a Dynamics face at its defaults is still PASS-THROUGH ==
+  [PASS] EchoJay Compressor: untriggered, it is transparent (worst delta 0.0000000)
+  [PASS] EchoJay Gate: untriggered, it is transparent (worst delta 0.0000000)
+  [PASS] EchoJay Expander: untriggered, it is transparent (worst delta 0.0000000)
+  [PASS] EchoJay Limiter: untriggered, it is transparent (worst delta 0.0000000)
+== 4-Band: comp_bands and flat params reach the SAME knobs ==
+  [PASS] 4-Band is both itself and a device
+  [PASS] comp_bands applied 2 params (got 2)
+  [PASS] summary: band4_threshold_db -24 dB, band4_ratio 5
+  [PASS] band 4 threshold landed exactly
+  [PASS] band 4 ratio landed exactly
+  [PASS] the flat id reaches the identical param
+== 4-Band: comp_bands MERGES into a band, unlike eq_bands ==
+  [PASS] attack_ms updated
+  [PASS] threshold SURVIVED the partial entry
+  [PASS] ratio SURVIVED it too
+== 4-Band: array position IS the band when none is named ==
+  [PASS] four unnumbered entries landed on bands 1..4 in order
+== 4-Band: an out-of-range band is reported, not guessed at ==
+  [PASS] nothing applied
+  [PASS] counted as skipped
+  [PASS] and named in the summary: ignored band 9 (out of range 1..4)
+== 4-Band: crossovers are dialable and come back sorted ==
+  [PASS] crossover1 exact
+  [PASS] crossover3 exact
+  [PASS] before a block runs, the splitter still holds the prepared value
+  [PASS] after one block, the splitter has realised crossover2
+== KEY DETECTOR: every param dials exactly ==
+  [PASS] key detector constructs
+  [PASS] 9 params applied, 0 skipped
+  [PASS] window_s EXACTLY 12
+  [PASS] sensitivity EXACTLY 80
+  [PASS] tuning_hz EXACTLY 452.5
+  [PASS] auto_tuning off
+  [PASS] low_hz EXACTLY 60
+  [PASS] high_hz EXACTLY 8000
+  [PASS] continuous on
+  [PASS] hpss off
+  [PASS] hold on
+  [PASS] 900 s clamps to 30
+  [PASS] 300 Hz clamps to 415
+== KEY DETECTOR: mode_lock dials by NAME and by index ==
+  [PASS] a fresh detector is on auto
+  [PASS] mode_lock = "minor" lands on index 2
+  [PASS] and reads back BY NAME: mode_lock minor
+  [PASS] matching is case-insensitive
+  [PASS] a numeric index works too
+  [PASS] an unknown mode is SKIPPED, not guessed at
+  [PASS] mode_lock choices are ADVERTISED by name
+== KEY DETECTOR: analyse is the AI's trigger, reset clears ==
+  [PASS] idle before the trigger
+  [PASS] analyse:1 is an accepted move
+  [PASS] and the engine is now COLLECTING
+  [PASS] analyse reads 1 while listening
+  [PASS] reset cancels the pass
+  [PASS] and reset always reads 0 - a restored state cannot phantom-fire it
+== KEY DETECTOR: params round-trip through state ==
+  [PASS] window_s restored
+  [PASS] mode_lock restored (major)
+  [PASS] hpss restored
+  [PASS] high_hz restored
+== KEY DETECTOR: audio is BIT-IDENTICAL at every setting ==
+  [PASS] reports ZERO latency, as advertised
+  [PASS] and no tail - it only observes
+  [PASS] output == input, bit for bit, analysis armed and everything dialled (worst delta 0.000000000)
+  [PASS] mono passes through untouched
+== advertised text is pure ASCII (no mojibake in the AI feed) ==
+  [PASS] EchoJay EQ: name is ASCII
+  [PASS] EchoJay EQ: summary is ASCII
+  [PASS] EchoJay EQ: descriptiveName is ASCII
+  [PASS] EchoJay EQ: "output_db" advertisement is ASCII
+  [PASS] EchoJay EQ: "auto_gain" advertisement is ASCII
+  [PASS] EchoJay EQ: "phase_mode" advertisement is ASCII
+  [PASS] EchoJay EQ: "ms_mode" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: name is ASCII
+  [PASS] EchoJay 4-Band Compressor: summary is ASCII
+  [PASS] EchoJay 4-Band Compressor: descriptiveName is ASCII
+  [PASS] EchoJay 4-Band Compressor: "crossover1_hz" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "crossover2_hz" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "crossover3_hz" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "detector" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band1_threshold_db" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band1_ratio" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band1_attack_ms" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band1_release_ms" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band1_knee_db" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band1_makeup_db" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band1_bypass" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band1_mode" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band2_threshold_db" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band2_ratio" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band2_attack_ms" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band2_release_ms" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band2_knee_db" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band2_makeup_db" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band2_bypass" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band2_mode" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band3_threshold_db" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band3_ratio" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band3_attack_ms" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band3_release_ms" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band3_knee_db" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band3_makeup_db" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band3_bypass" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band3_mode" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band4_threshold_db" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band4_ratio" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band4_attack_ms" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band4_release_ms" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band4_knee_db" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band4_makeup_db" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band4_bypass" advertisement is ASCII
+  [PASS] EchoJay 4-Band Compressor: "band4_mode" advertisement is ASCII
+  [PASS] EchoJay Compressor: name is ASCII
+  [PASS] EchoJay Compressor: summary is ASCII
+  [PASS] EchoJay Compressor: descriptiveName is ASCII
+  [PASS] EchoJay Compressor: "threshold_db" advertisement is ASCII
+  [PASS] EchoJay Compressor: "ratio" advertisement is ASCII
+  [PASS] EchoJay Compressor: "attack_ms" advertisement is ASCII
+  [PASS] EchoJay Compressor: "release_ms" advertisement is ASCII
+  [PASS] EchoJay Compressor: "knee_db" advertisement is ASCII
+  [PASS] EchoJay Compressor: "makeup_db" advertisement is ASCII
+  [PASS] EchoJay Compressor: "mix" advertisement is ASCII
+  [PASS] EchoJay Compressor: "mode" advertisement is ASCII
+  [PASS] EchoJay Compressor: "detector" advertisement is ASCII
+  [PASS] EchoJay Compressor: "sc_hpf_hz" advertisement is ASCII
+  [PASS] EchoJay Compressor: "lookahead_ms" advertisement is ASCII
+  [PASS] EchoJay Compressor: "auto_release" advertisement is ASCII
+  [PASS] EchoJay Compressor: "stereo_link" advertisement is ASCII
+  [PASS] EchoJay Compressor: "range_db" advertisement is ASCII
+  [PASS] EchoJay De-Esser: name is ASCII
+  [PASS] EchoJay De-Esser: summary is ASCII
+  [PASS] EchoJay De-Esser: descriptiveName is ASCII
+  [PASS] EchoJay De-Esser: "freq_hz" advertisement is ASCII
+  [PASS] EchoJay De-Esser: "range_db" advertisement is ASCII
+  [PASS] EchoJay De-Esser: "threshold_db" advertisement is ASCII
+  [PASS] EchoJay De-Esser: "attack_ms" advertisement is ASCII
+  [PASS] EchoJay De-Esser: "release_ms" advertisement is ASCII
+  [PASS] EchoJay De-Esser: "mode" advertisement is ASCII
+  [PASS] EchoJay De-Esser: "listen" advertisement is ASCII
+  [PASS] EchoJay De-Esser: "auto_threshold" advertisement is ASCII
+  [PASS] EchoJay Expander: name is ASCII
+  [PASS] EchoJay Expander: summary is ASCII
+  [PASS] EchoJay Expander: descriptiveName is ASCII
+  [PASS] EchoJay Expander: "threshold_db" advertisement is ASCII
+  [PASS] EchoJay Expander: "ratio" advertisement is ASCII
+  [PASS] EchoJay Expander: "attack_ms" advertisement is ASCII
+  [PASS] EchoJay Expander: "release_ms" advertisement is ASCII
+  [PASS] EchoJay Expander: "range_db" advertisement is ASCII
+  [PASS] EchoJay Expander: "sc_hpf_hz" advertisement is ASCII
+  [PASS] EchoJay Expander: "lookahead_ms" advertisement is ASCII
+  [PASS] EchoJay Gate: name is ASCII
+  [PASS] EchoJay Gate: summary is ASCII
+  [PASS] EchoJay Gate: descriptiveName is ASCII
+  [PASS] EchoJay Gate: "threshold_db" advertisement is ASCII
+  [PASS] EchoJay Gate: "range_db" advertisement is ASCII
+  [PASS] EchoJay Gate: "attack_ms" advertisement is ASCII
+  [PASS] EchoJay Gate: "hold_ms" advertisement is ASCII
+  [PASS] EchoJay Gate: "release_ms" advertisement is ASCII
+  [PASS] EchoJay Gate: "hysteresis_db" advertisement is ASCII
+  [PASS] EchoJay Gate: "mode" advertisement is ASCII
+  [PASS] EchoJay Gate: "sc_hpf_hz" advertisement is ASCII
+  [PASS] EchoJay Gate: "sc_lpf_hz" advertisement is ASCII
+  [PASS] EchoJay Gate: "lookahead_ms" advertisement is ASCII
+  [PASS] EchoJay Limiter: name is ASCII
+  [PASS] EchoJay Limiter: summary is ASCII
+  [PASS] EchoJay Limiter: descriptiveName is ASCII
+  [PASS] EchoJay Limiter: "ceiling_db" advertisement is ASCII
+  [PASS] EchoJay Limiter: "release_ms" advertisement is ASCII
+  [PASS] EchoJay Limiter: "lookahead_ms" advertisement is ASCII
+  [PASS] EchoJay Limiter: "mode" advertisement is ASCII
+  [PASS] EchoJay Limiter: "true_peak" advertisement is ASCII
+  [PASS] EchoJay Limiter: "sc_hpf_hz" advertisement is ASCII
+  [PASS] EchoJay Gain: name is ASCII
+  [PASS] EchoJay Gain: summary is ASCII
+  [PASS] EchoJay Gain: descriptiveName is ASCII
+  [PASS] EchoJay Gain: "level_db" advertisement is ASCII
+  [PASS] EchoJay Gain: "pan" advertisement is ASCII
+  [PASS] EchoJay Gain: "mode" advertisement is ASCII
+  [PASS] EchoJay Gain: "mid_db" advertisement is ASCII
+  [PASS] EchoJay Gain: "side_db" advertisement is ASCII
+  [PASS] EchoJay Gain: "mono" advertisement is ASCII
+  [PASS] EchoJay Gain: "phase_left" advertisement is ASCII
+  [PASS] EchoJay Gain: "phase_right" advertisement is ASCII
+  [PASS] EchoJay Phase Invert: name is ASCII
+  [PASS] EchoJay Phase Invert: summary is ASCII
+  [PASS] EchoJay Phase Invert: descriptiveName is ASCII
+  [PASS] EchoJay Phase Invert: "invert_left" advertisement is ASCII
+  [PASS] EchoJay Phase Invert: "invert_right" advertisement is ASCII
+  [PASS] EchoJay Stereo Width: name is ASCII
+  [PASS] EchoJay Stereo Width: summary is ASCII
+  [PASS] EchoJay Stereo Width: descriptiveName is ASCII
+  [PASS] EchoJay Stereo Width: "width" advertisement is ASCII
+  [PASS] EchoJay Stereo Width: "bass_mono_hz" advertisement is ASCII
+  [PASS] EchoJay Stereo Width: "output_trim_db" advertisement is ASCII
+  [PASS] EchoJay Stereo Width: "mode" advertisement is ASCII
+  [PASS] EchoJay Stereo Width: "width_low" advertisement is ASCII
+  [PASS] EchoJay Stereo Width: "width_mid" advertisement is ASCII
+  [PASS] EchoJay Stereo Width: "width_high" advertisement is ASCII
+  [PASS] EchoJay Stereo Width: "xover_low_hz" advertisement is ASCII
+  [PASS] EchoJay Stereo Width: "xover_high_hz" advertisement is ASCII
+  [PASS] EchoJay Stereo Width: "rotation" advertisement is ASCII
+  [PASS] EchoJay Stereoizer: name is ASCII
+  [PASS] EchoJay Stereoizer: summary is ASCII
+  [PASS] EchoJay Stereoizer: descriptiveName is ASCII
+  [PASS] EchoJay Stereoizer: "width" advertisement is ASCII
+  [PASS] EchoJay Stereoizer: "haas_ms" advertisement is ASCII
+  [PASS] EchoJay Stereoizer: "mono_maker_hz" advertisement is ASCII
+  [PASS] EchoJay Stereoizer: "mix" advertisement is ASCII
+  [PASS] EchoJay Stereoizer: "mode" advertisement is ASCII
+  [PASS] EchoJay Auto Pan: name is ASCII
+  [PASS] EchoJay Auto Pan: summary is ASCII
+  [PASS] EchoJay Auto Pan: descriptiveName is ASCII
+  [PASS] EchoJay Auto Pan: "rate_hz" advertisement is ASCII
+  [PASS] EchoJay Auto Pan: "sync" advertisement is ASCII
+  [PASS] EchoJay Auto Pan: "sync_division" advertisement is ASCII
+  [PASS] EchoJay Auto Pan: "depth" advertisement is ASCII
+  [PASS] EchoJay Auto Pan: "shape" advertisement is ASCII
+  [PASS] EchoJay Auto Pan: "stereo_phase" advertisement is ASCII
+  [PASS] EchoJay Auto Pan: "mode" advertisement is ASCII
+  [PASS] EchoJay Auto Pan: "width" advertisement is ASCII
+  [PASS] EchoJay Auto Pan: "smoothing_ms" advertisement is ASCII
+  [PASS] EchoJay Chorus: name is ASCII
+  [PASS] EchoJay Chorus: summary is ASCII
+  [PASS] EchoJay Chorus: descriptiveName is ASCII
+  [PASS] EchoJay Chorus: "rate_hz" advertisement is ASCII
+  [PASS] EchoJay Chorus: "sync" advertisement is ASCII
+  [PASS] EchoJay Chorus: "sync_division" advertisement is ASCII
+  [PASS] EchoJay Chorus: "depth" advertisement is ASCII
+  [PASS] EchoJay Chorus: "delay_ms" advertisement is ASCII
+  [PASS] EchoJay Chorus: "voices" advertisement is ASCII
+  [PASS] EchoJay Chorus: "feedback" advertisement is ASCII
+  [PASS] EchoJay Chorus: "mix" advertisement is ASCII
+  [PASS] EchoJay Chorus: "mode" advertisement is ASCII
+  [PASS] EchoJay Chorus: "spread" advertisement is ASCII
+  [PASS] EchoJay Chorus: "tone" advertisement is ASCII
+  [PASS] EchoJay Phaser: name is ASCII
+  [PASS] EchoJay Phaser: summary is ASCII
+  [PASS] EchoJay Phaser: descriptiveName is ASCII
+  [PASS] EchoJay Phaser: "rate_hz" advertisement is ASCII
+  [PASS] EchoJay Phaser: "sync" advertisement is ASCII
+  [PASS] EchoJay Phaser: "sync_division" advertisement is ASCII
+  [PASS] EchoJay Phaser: "depth" advertisement is ASCII
+  [PASS] EchoJay Phaser: "stages" advertisement is ASCII
+  [PASS] EchoJay Phaser: "feedback" advertisement is ASCII
+  [PASS] EchoJay Phaser: "center_freq" advertisement is ASCII
+  [PASS] EchoJay Phaser: "mix" advertisement is ASCII
+  [PASS] EchoJay Phaser: "mode" advertisement is ASCII
+  [PASS] EchoJay Phaser: "stereo_spread" advertisement is ASCII
+  [PASS] EchoJay Tremolo: name is ASCII
+  [PASS] EchoJay Tremolo: summary is ASCII
+  [PASS] EchoJay Tremolo: descriptiveName is ASCII
+  [PASS] EchoJay Tremolo: "rate_hz" advertisement is ASCII
+  [PASS] EchoJay Tremolo: "sync" advertisement is ASCII
+  [PASS] EchoJay Tremolo: "sync_division" advertisement is ASCII
+  [PASS] EchoJay Tremolo: "depth" advertisement is ASCII
+  [PASS] EchoJay Tremolo: "shape" advertisement is ASCII
+  [PASS] EchoJay Tremolo: "stereo_phase" advertisement is ASCII
+  [PASS] EchoJay Tremolo: "mix" advertisement is ASCII
+  [PASS] EchoJay Tremolo: "mode" advertisement is ASCII
+  [PASS] EchoJay Tremolo: "smoothing_ms" advertisement is ASCII
+  [PASS] EchoJay Exciter: name is ASCII
+  [PASS] EchoJay Exciter: summary is ASCII
+  [PASS] EchoJay Exciter: descriptiveName is ASCII
+  [PASS] EchoJay Exciter: "freq_hz" advertisement is ASCII
+  [PASS] EchoJay Exciter: "amount" advertisement is ASCII
+  [PASS] EchoJay Exciter: "mode" advertisement is ASCII
+  [PASS] EchoJay Exciter: "focus" advertisement is ASCII
+  [PASS] EchoJay Exciter: "mix" advertisement is ASCII
+  [PASS] EchoJay Exciter: "output_db" advertisement is ASCII
+  [PASS] EchoJay Saturation: name is ASCII
+  [PASS] EchoJay Saturation: summary is ASCII
+  [PASS] EchoJay Saturation: descriptiveName is ASCII
+  [PASS] EchoJay Saturation: "drive_db" advertisement is ASCII
+  [PASS] EchoJay Saturation: "type" advertisement is ASCII
+  [PASS] EchoJay Saturation: "emphasis" advertisement is ASCII
+  [PASS] EchoJay Saturation: "bias" advertisement is ASCII
+  [PASS] EchoJay Saturation: "hpf_hz" advertisement is ASCII
+  [PASS] EchoJay Saturation: "oversample" advertisement is ASCII
+  [PASS] EchoJay Saturation: "tone_db" advertisement is ASCII
+  [PASS] EchoJay Saturation: "mix" advertisement is ASCII
+  [PASS] EchoJay Saturation: "output_db" advertisement is ASCII
+  [PASS] EchoJay Tape: name is ASCII
+  [PASS] EchoJay Tape: summary is ASCII
+  [PASS] EchoJay Tape: descriptiveName is ASCII
+  [PASS] EchoJay Tape: "speed_ips" advertisement is ASCII
+  [PASS] EchoJay Tape: "drive_db" advertisement is ASCII
+  [PASS] EchoJay Tape: "bias" advertisement is ASCII
+  [PASS] EchoJay Tape: "wow" advertisement is ASCII
+  [PASS] EchoJay Tape: "flutter" advertisement is ASCII
+  [PASS] EchoJay Tape: "head_bump_db" advertisement is ASCII
+  [PASS] EchoJay Tape: "mode" advertisement is ASCII
+  [PASS] EchoJay Tape: "hiss" advertisement is ASCII
+  [PASS] EchoJay Tape: "crosstalk" advertisement is ASCII
+  [PASS] EchoJay Tape: "mix" advertisement is ASCII
+  [PASS] EchoJay Tape: "output_db" advertisement is ASCII
+  [PASS] EchoJay Delay: name is ASCII
+  [PASS] EchoJay Delay: summary is ASCII
+  [PASS] EchoJay Delay: descriptiveName is ASCII
+  [PASS] EchoJay Delay: "time_ms" advertisement is ASCII
+  [PASS] EchoJay Delay: "sync" advertisement is ASCII
+  [PASS] EchoJay Delay: "sync_division" advertisement is ASCII
+  [PASS] EchoJay Delay: "feedback" advertisement is ASCII
+  [PASS] EchoJay Delay: "mix" advertisement is ASCII
+  [PASS] EchoJay Delay: "filter_hp_hz" advertisement is ASCII
+  [PASS] EchoJay Delay: "filter_lp_hz" advertisement is ASCII
+  [PASS] EchoJay Delay: "ping_pong" advertisement is ASCII
+  [PASS] EchoJay Delay: "stereo_offset" advertisement is ASCII
+  [PASS] EchoJay Delay: "mod_rate_hz" advertisement is ASCII
+  [PASS] EchoJay Delay: "mod_depth_ms" advertisement is ASCII
+  [PASS] EchoJay Delay: "mode" advertisement is ASCII
+  [PASS] EchoJay Delay: "diffusion" advertisement is ASCII
+  [PASS] EchoJay Delay: "duck" advertisement is ASCII
+  [PASS] EchoJay Reverb: name is ASCII
+  [PASS] EchoJay Reverb: summary is ASCII
+  [PASS] EchoJay Reverb: descriptiveName is ASCII
+  [PASS] EchoJay Reverb: "size" advertisement is ASCII
+  [PASS] EchoJay Reverb: "decay_s" advertisement is ASCII
+  [PASS] EchoJay Reverb: "predelay_ms" advertisement is ASCII
+  [PASS] EchoJay Reverb: "damping" advertisement is ASCII
+  [PASS] EchoJay Reverb: "low_cut_hz" advertisement is ASCII
+  [PASS] EchoJay Reverb: "width" advertisement is ASCII
+  [PASS] EchoJay Reverb: "early_late" advertisement is ASCII
+  [PASS] EchoJay Reverb: "mod_depth" advertisement is ASCII
+  [PASS] EchoJay Reverb: "mix" advertisement is ASCII
+  [PASS] EchoJay Reverb: "algorithm" advertisement is ASCII
+  [PASS] EchoJay Reverb: "diffusion" advertisement is ASCII
+  [PASS] EchoJay Reverb: "duck" advertisement is ASCII
+  [PASS] EchoJay Pitch: name is ASCII
+  [PASS] EchoJay Pitch: summary is ASCII
+  [PASS] EchoJay Pitch: descriptiveName is ASCII
+  [PASS] EchoJay Pitch: "correction_mode" advertisement is ASCII
+  [PASS] EchoJay Pitch: "correct" advertisement is ASCII
+  [PASS] EchoJay Pitch: "retune" advertisement is ASCII
+  [PASS] EchoJay Pitch: "retune_speed_ms" advertisement is ASCII
+  [PASS] EchoJay Pitch: "seam_attack_ms" advertisement is ASCII
+  [PASS] EchoJay Pitch: "flex" advertisement is ASCII
+  [PASS] EchoJay Pitch: "humanize" advertisement is ASCII
+  [PASS] EchoJay Pitch: "depth" advertisement is ASCII
+  [PASS] EchoJay Pitch: "targeting_ignores_vibrato" advertisement is ASCII
+  [PASS] EchoJay Pitch: "key_source" advertisement is ASCII
+  [PASS] EchoJay Pitch: "key_root" advertisement is ASCII
+  [PASS] EchoJay Pitch: "scale" advertisement is ASCII
+  [PASS] EchoJay Pitch: "reference_source" advertisement is ASCII
+  [PASS] EchoJay Pitch: "reference_hz" advertisement is ASCII
+  [PASS] EchoJay Pitch: "ref_manual_by_user" advertisement is ASCII
+  [PASS] EchoJay Pitch: "transpose" advertisement is ASCII
+  [PASS] EchoJay Pitch: "natural_vibrato" advertisement is ASCII
+  [PASS] EchoJay Pitch: "vib_depth_cents" advertisement is ASCII
+  [PASS] EchoJay Pitch: "vib_rate_hz" advertisement is ASCII
+  [PASS] EchoJay Pitch: "vib_shape" advertisement is ASCII
+  [PASS] EchoJay Pitch: "vib_onset_ms" advertisement is ASCII
+  [PASS] EchoJay Pitch: "voice_type" advertisement is ASCII
+  [PASS] EchoJay Pitch: "tracking" advertisement is ASCII
+  [PASS] EchoJay Pitch: "formant_mode" advertisement is ASCII
+  [PASS] EchoJay Pitch: "formant_shift" advertisement is ASCII
+  [PASS] EchoJay Pitch: "low_latency" advertisement is ASCII
+  [PASS] EchoJay Pitch: "mix" advertisement is ASCII
+  [PASS] EchoJay Pitch: "output_db" advertisement is ASCII
+  [PASS] EchoJay Pitch: "target_hz" advertisement is ASCII
+  [PASS] EchoJay Pitch: "reset_stats" advertisement is ASCII
+  [PASS] EchoJay Key Detector: name is ASCII
+  [PASS] EchoJay Key Detector: summary is ASCII
+  [PASS] EchoJay Key Detector: descriptiveName is ASCII
+  [PASS] EchoJay Key Detector: "analyse" advertisement is ASCII
+  [PASS] EchoJay Key Detector: "window_s" advertisement is ASCII
+  [PASS] EchoJay Key Detector: "continuous" advertisement is ASCII
+  [PASS] EchoJay Key Detector: "sensitivity" advertisement is ASCII
+  [PASS] EchoJay Key Detector: "tuning_hz" advertisement is ASCII
+  [PASS] EchoJay Key Detector: "auto_tuning" advertisement is ASCII
+  [PASS] EchoJay Key Detector: "mode_lock" advertisement is ASCII
+  [PASS] EchoJay Key Detector: "hold" advertisement is ASCII
+  [PASS] EchoJay Key Detector: "hpss" advertisement is ASCII
+  [PASS] EchoJay Key Detector: "low_hz" advertisement is ASCII
+  [PASS] EchoJay Key Detector: "high_hz" advertisement is ASCII
+  [PASS] EchoJay Key Detector: "reset" advertisement is ASCII
+
+---- the [AVAILABLE BUILTINS] advertisement, as the model sees it ----
+
+-- EQ --
+EchoJay EQ
+  EchoJay's own fully-parametric EQ, dialled to EXACT values rather than approximated. Prefer it for surgical moves: specific-frequency cuts and boosts, high-pass/low-pass cleanup, notching resonances, and dynamic de-essing. Bands take an optional channel (stereo|mid|side|left|right) for M/S or per-side moves, and a musical note ("G5") in place of freq_hz. eq_action tame_resonances hunts and tames resonant peaks from the live signal; eq_preset loads a named starting point.
+    output_db (dB, -24..24, default 0) - device output trim, applied after the bands
+    auto_gain (on/off, default off) - cancel the loudness change the bands cause, so a tonal move can be judged without a level change confounding it
+    phase_mode (zero|linear, default zero) - zero = minimum-phase, no latency (default, right for tracking); linear = linear-phase FIR for mastering/parallel/phase-critical work, adds ~53 ms latency the host compensates
+    ms_mode (on/off, default off) - analyzer view only: overlay separate mid and side spectrum traces; per-band ROUTING is the band's own channel field, not this
+
+-- Dynamics --
+EchoJay 4-Band Compressor
+  Four Linkwitz-Riley bands, each with its own stereo-linked compressor, makeup and character mode (clean/glue/punch/smooth), plus one global detector. Reach for it when one part of the spectrum needs controlling without touching the rest - a boomy low end, a harsh upper mid - or to give the lows a slow glue and the air a fast punch at once. Dial it with a comp_bands array or with flat bandN_ params.
+    crossover1_hz (Hz, 20..2000, default 120) - split between band 1 (lows) and band 2
+    crossover2_hz (Hz, 100..8000, default 800) - split between band 2 and band 3 (mids)
+    crossover3_hz (Hz, 1000..18000, default 5000) - split between band 3 and band 4 (highs)
+    detector (peak|rms, default rms) - what every band's detector measures: rms follows loudness (right for multiband work, and what keeps the four bands comparable), peak catches transients and is tighter
+    band1_threshold_db (dB, -60..0, default -18) - level where band 1 (below crossover1_hz) starts compressing
+    band1_ratio (1..20, default 3) - compression ratio for band 1 (below crossover1_hz)
+    band1_attack_ms (ms, 0.1..300, default 30) - attack for band 1 (below crossover1_hz)
+    band1_release_ms (ms, 5..2000, default 300) - release for band 1 (below crossover1_hz)
+    band1_knee_db (dB, 0..24, default 6) - knee width for band 1 (below crossover1_hz)
+    band1_makeup_db (dB, -24..24, default 0) - output gain for band 1 (below crossover1_hz); doubles as a band tilt - raise it to lean the balance that way
+    band1_bypass (on/off, default off) - on = band 1 (below crossover1_hz) passes through uncompressed
+    band1_mode (clean|glue|punch|smooth, default glue) - character for band 1 (below crossover1_hz), which reshapes its attack, release and knee and adds gentle drive as it works: clean is transparent, glue is slow and soft (right for a low band), punch is fast and aggressive (right for an air band), smooth has a programme-dependent release
+    band2_threshold_db (dB, -60..0, default -18) - level where band 2 (crossover1_hz to crossover2_hz) starts compressing
+    band2_ratio (1..20, default 3) - compression ratio for band 2 (crossover1_hz to crossover2_hz)
+    band2_attack_ms (ms, 0.1..300, default 20) - attack for band 2 (crossover1_hz to crossover2_hz)
+    band2_release_ms (ms, 5..2000, default 200) - release for band 2 (crossover1_hz to crossover2_hz)
+    band2_knee_db (dB, 0..24, default 6) - knee width for band 2 (crossover1_hz to crossover2_hz)
+    band2_makeup_db (dB, -24..24, default 0) - output gain for band 2 (crossover1_hz to crossover2_hz); doubles as a band tilt - raise it to lean the balance that way
+    band2_bypass (on/off, default off) - on = band 2 (crossover1_hz to crossover2_hz) passes through uncompressed
+    band2_mode (clean|glue|punch|smooth, default clean) - character for band 2 (crossover1_hz to crossover2_hz), which reshapes its attack, release and knee and adds gentle drive as it works: clean is transparent, glue is slow and soft (right for a low band), punch is fast and aggressive (right for an air band), smooth has a programme-dependent release
+    band3_threshold_db (dB, -60..0, default -18) - level where band 3 (crossover2_hz to crossover3_hz) starts compressing
+    band3_ratio (1..20, default 3) - compression ratio for band 3 (crossover2_hz to crossover3_hz)
+    band3_attack_ms (ms, 0.1..300, default 10) - attack for band 3 (crossover2_hz to crossover3_hz)
+    band3_release_ms (ms, 5..2000, default 150) - release for band 3 (crossover2_hz to crossover3_hz)
+    band3_knee_db (dB, 0..24, default 6) - knee width for band 3 (crossover2_hz to crossover3_hz)
+    band3_makeup_db (dB, -24..24, default 0) - output gain for band 3 (crossover2_hz to crossover3_hz); doubles as a band tilt - raise it to lean the balance that way
+    band3_bypass (on/off, default off) - on = band 3 (crossover2_hz to crossover3_hz) passes through uncompressed
+    band3_mode (clean|glue|punch|smooth, default clean) - character for band 3 (crossover2_hz to crossover3_hz), which reshapes its attack, release and knee and adds gentle drive as it works: clean is transparent, glue is slow and soft (right for a low band), punch is fast and aggressive (right for an air band), smooth has a programme-dependent release
+    band4_threshold_db (dB, -60..0, default -18) - level where band 4 (above crossover3_hz) starts compressing
+    band4_ratio (1..20, default 3) - compression ratio for band 4 (above crossover3_hz)
+    band4_attack_ms (ms, 0.1..300, default 5) - attack for band 4 (above crossover3_hz)
+    band4_release_ms (ms, 5..2000, default 100) - release for band 4 (above crossover3_hz)
+    band4_knee_db (dB, 0..24, default 6) - knee width for band 4 (above crossover3_hz)
+    band4_makeup_db (dB, -24..24, default 0) - output gain for band 4 (above crossover3_hz); doubles as a band tilt - raise it to lean the balance that way
+    band4_bypass (on/off, default off) - on = band 4 (above crossover3_hz) passes through uncompressed
+    band4_mode (clean|glue|punch|smooth, default punch) - character for band 4 (above crossover3_hz), which reshapes its attack, release and knee and adds gentle drive as it works: clean is transparent, glue is slow and soft (right for a low band), punch is fast and aggressive (right for an air band), smooth has a programme-dependent release
+EchoJay Compressor
+  Compressor with four character modes (clean VCA, glue bus, punch FET, smooth opto), a sidechain high-pass, lookahead, auto release, stereo link and a reduction range. Reach for it to control level, glue a bus or add density; set `mode` first, since it decides how the device feels, then the threshold and ratio. Every setting is dialled in real units rather than approximated.
+    threshold_db (dB, -60..0, default -18) - level where compression starts; lower means more of the signal is compressed
+    ratio (1..20, default 4) - how hard it compresses above the threshold; 2 is gentle glue, 4 is control, 10+ is limiting
+    attack_ms (ms, 0.1..200, default 10) - how fast it clamps down; short keeps transients in check, long lets them through and sounds punchier
+    release_ms (ms, 5..2000, default 120) - how fast it lets go; short is more audible pumping, long is smoother level riding
+    knee_db (dB, 0..24, default 6) - width of the soft transition around the threshold; 0 is a hard corner, wide is gradual and transparent
+    makeup_db (dB, -12..24, default 0) - output gain to put back what the compression took off
+    mix (%, 0..100, default 100) - blend of compressed against dry; below 100 is parallel compression, which adds density without losing transients
+    mode (clean|glue|punch|smooth, default clean) - compressor character, which reshapes attack, release and knee and adds gentle drive as it works: clean is a transparent VCA (the reference), glue is a slow soft bus compressor for making a mix cohere, punch is a fast aggressive FET for drums and bass, smooth is an opto with a programme-dependent release for vocals and anything delicate
+    detector (peak|rms, default rms) - what the detector measures: rms follows loudness and sounds like a fader being ridden (right for most material), peak catches every transient and is tighter on drums and bass
+    sc_hpf_hz (Hz, 0..500, default 0) - high-pass on the DETECTOR only, never on the audio: bass no longer drives the compression, so a loud kick stops pumping the whole mix. 80-150 on a full mix bus; 0 is off
+    lookahead_ms (ms, 0..10, default 0) - how far ahead it looks, so a transient is already under control when it arrives; this is added latency, reported to the host. 0 is zero-latency and the right choice while a chain is monitored live
+    auto_release (on/off, default off) - release follows the programme: quick after a short transient, slower after a sustained passage that pulled deep. Use it when one release time cannot suit both
+    stereo_link (%, 0..100, default 100) - 100 is fully linked - one gain for both channels, so the stereo image cannot wander. Lower it only for two unrelated mono sources sharing a stereo track; on a mix, less than 100 moves the image
+    range_db (dB, 0..40, default 0) - the most gain reduction it is allowed to apply; 0 is unlimited. Use it to cap how far a loud passage can be pulled down without softening the ratio
+EchoJay De-Esser
+  Band-triggered compressor for sibilance, in wide or split-band mode, with an auto threshold that tracks the voice and a listen solo for tuning the frequency. Reach for it when a vocal's 's' and 't' sounds are harsh; auto_threshold + range_db is the two-control setup.
+    freq_hz (Hz, 1000..16000, default 6500) - centre of the band it listens to; 5-8 kHz for most vocals, higher for a bright or close-miked one
+    range_db (dB, 0..24, default 8) - the deepest reduction allowed; this is the de-essing amount, and keeping it modest is what stops a lisp
+    threshold_db (dB, -60..0, default -28) - level in that band where it starts reducing; lower catches more sibilance
+    attack_ms (ms, 0.05..50, default 1) - how fast it clamps a sibilant; must be fast, an 's' is only a few tens of milliseconds long
+    release_ms (ms, 5..500, default 60) - how fast it recovers after one; too long and it holds the whole word down
+    mode (on/off, default on) - on = split (only the band above freq_hz is ducked, the body of the voice never moves); off = wide (the whole signal ducks)
+    listen (on/off, default off) - on = monitor the detector's band alone, to tune freq_hz onto the sibilance. A MONITORING aid - turn it off to hear the result
+    auto_threshold (on/off, default off) - the threshold tracks a slow average of the band instead of sitting at a fixed level, so it de-esses relative to how loud the voice actually is and keeps working across a quiet verse and a loud chorus. While it is on, threshold_db is ignored - set range_db to control the amount
+EchoJay Expander
+  Stereo-linked downward expander with a range limit, a detector high-pass and lookahead. Reach for it to push a noise floor or room tone down without the on/off character of a gate, or to restore dynamics to over-compressed material.
+    threshold_db (dB, -80..0, default -40) - level below which the signal is pushed further down; anything above it passes untouched
+    ratio (1..20, default 2) - how steeply quiet material is pushed down; 2 is a gentle tidy-up, 8+ approaches gating
+    attack_ms (ms, 0.05..100, default 2) - how fast it recovers to unity when the signal rises above the threshold
+    release_ms (ms, 5..3000, default 200) - how fast it pushes down again once the signal falls away; long is natural, short is abrupt
+    range_db (dB, 0..60, default 20) - the deepest reduction it is allowed to apply; this is what keeps an expander from fading quiet passages to nothing
+    sc_hpf_hz (Hz, 0..500, default 0) - high-pass on the DETECTOR only, never on the audio: low-frequency rumble stops holding the expander open through the pauses you are trying to clean up. 0 is off
+    lookahead_ms (ms, 0..10, default 0) - how far ahead it looks, so it is already back at unity when a note arrives instead of softening its front; this is added latency, reported to the host
+EchoJay Gate
+  Stereo-linked gate with hold, hysteresis, lookahead and a frequency-selective sidechain, attenuating by a set range rather than hard muting. Reach for it to clean up bleed between hits, tighten a drum or remove a noise floor between phrases - or switch mode to duck, and it holds something down whenever the signal gets loud instead.
+    threshold_db (dB, -80..0, default -40) - level the signal must reach for the gate to open; anything quieter is attenuated
+    range_db (dB, 0..80, default 40) - how far the gate pulls down when closed; 0 is no gating at all, 20 is ducking bleed, 60+ is effectively silence
+    attack_ms (ms, 0.05..100, default 1) - how fast it opens; too slow clips the front off every note
+    hold_ms (ms, 0..1000, default 20) - minimum time it stays open after the signal drops; keeps a decay or a tail intact instead of chopping it
+    release_ms (ms, 5..3000, default 150) - how fast it closes once the hold expires; short is abrupt, long fades the tail out naturally
+    hysteresis_db (dB, 0..24, default 6) - how far below the threshold the signal must fall before the gate closes; this is what stops it chattering on a signal sitting right at the threshold
+    mode (gate|duck, default gate) - which side of the threshold gets attenuated: gate pulls down what is QUIETER than the threshold (cleaning up bleed and noise), duck pulls down what is LOUDER than it by range_db (holding something back whenever it gets loud). Everything else means the same in both
+    sc_hpf_hz (Hz, 0..500, default 0) - high-pass on the DETECTOR only, never on the audio: with sc_lpf_hz it makes the trigger frequency-selective, so a tom mic can open on the tom and ignore the snare bleeding into it. 0 is off
+    sc_lpf_hz (Hz, 200..20000, default 20000) - low-pass on the detector only, the other half of a selective trigger; set it just above the source you want to open on. 20000 is wide open
+    lookahead_ms (ms, 0..10, default 0) - how far ahead it looks, so the gate is already opening when the transient arrives instead of clipping the front off it; this is added latency, reported to the host. 1-3 ms is enough for most sources
+EchoJay Limiter
+  Stereo-linked brick-wall limiter with lookahead, true-peak detection and three modes (transparent, punchy, clip), reporting its latency to the host. Reach for it last in a chain to hold a hard ceiling, or to raise loudness without clipping; transparent + true_peak is the mastering setting.
+    ceiling_db (dB, -24..0, default -0.3) - the level nothing is allowed above; -0.3 leaves headroom for the inter-sample peaks a lossy encoder will reconstruct
+    release_ms (ms, 1..1000, default 50) - how fast it lets go after a peak; short is louder and more audible, long is smoother and can duck sustained material
+    lookahead_ms (ms, 0..10, default 2) - how far ahead it looks so it can catch a transient cleanly; this is added latency, reported to the host. 0 is zero-latency and slightly grittier on sharp transients. Ignored in clip mode, which has nothing to look ahead for
+    mode (transparent|punchy|clip, default transparent) - how it holds the ceiling: transparent is the clean lookahead limiter (use it on a master), punchy is faster with a touch of drive so a loud mix feels dense rather than just loud, clip is a hard ceiling - the loudest and most aggressive, and it ignores release and lookahead
+    true_peak (on/off, default off) - measure the peak BETWEEN samples, not just at them, so the ceiling still holds after a converter or a lossy encoder reconstructs the waveform. Turn it on for anything being mastered or exported; it costs a little loudness and no latency
+    sc_hpf_hz (Hz, 0..500, default 0) - high-pass on the detector only, so sub-bass rumble stops driving the limiter. CAUTION: anything the detector cannot hear can exceed the ceiling, so leave this at 0 (off) on a master unless you mean it
+
+-- Utility --
+EchoJay Gain
+  Exact level trim and constant-power pan, plus the common utility jobs: mid/side gain (mid_side mode), mono sum and per-channel polarity flip. Reach for it to gain-stage a chain, place a source in the field, widen or narrow via side_db, or check mono compatibility; it is dialled to precise dB rather than approximated.
+    level_db (dB, -60..24, default 0) - output level; -60 is silence, 0 is unity
+    pan (-1..1, default 0) - stereo position: -1 hard left, 0 centre, +1 hard right (constant power, centre is unity)
+    mode (stereo|mid_side, default stereo) - stereo is plain level + pan; mid_side adds independent gain on the mid (centre) and side (stereo difference) via mid_db/side_db - raise side_db to widen, lower it to narrow, lower mid_db to make room in the centre. level_db and pan still apply after it
+    mid_db (dB, -60..6, default 0) - mid_side mode only: gain on the MID (centre) signal; -60 removes the centre entirely, leaving only the sides
+    side_db (dB, -60..6, default 0) - mid_side mode only: gain on the SIDE (stereo difference) signal; positive widens (+6 is double, as wide as Stereo Width's 200), negative narrows, -60 collapses to mono
+    mono (on/off, default off) - sum the output to mono (both channels become the centre); the quick compatibility check, and a fade rather than a click
+    phase_left (on/off, default off) - invert the LEFT channel's polarity; use it to fix a flipped cable/mic - with mono on, inverting one side of an identical pair cancels to silence
+    phase_right (on/off, default off) - invert the RIGHT channel's polarity
+EchoJay Phase Invert
+  Flips the polarity of either channel independently. Reach for it when two sources cancel each other - a mic pair fighting in the low end, or one side of a stereo pair wired backwards.
+    invert_left (on/off, default off) - invert the polarity of the left channel
+    invert_right (on/off, default off) - invert the polarity of the right channel
+
+-- Stereo --
+EchoJay Stereo Width
+  Corrective stereo control. Reach for it to widen or narrow an image by an exact percentage, to lock the low end to mono under a set frequency, or - in multiband mode - to set independent width for lows, mids and highs (narrow lows, wide highs). Can also rotate the whole image. The mono fold-down is preserved exactly at every width, so it is safe on a master bus.
+    width (%, 0..200, default 100) - stereo width: 0 is mono, 100 is unchanged, 200 is double-wide (the mono fold-down is identical at every setting)
+    bass_mono_hz (Hz, 0..500, default 0) - everything below this frequency is collapsed to mono; 0 is off. Typical 80-150 for a tight low end
+    output_trim_db (dB, -24..24, default 0) - output level trim, for matching loudness after a width change
+    mode (full|multiband, default full) - how width is applied: full is one width for the whole spectrum (the width knob), multiband splits the image at the two crossovers and applies width_low/width_mid/width_high independently - the classic mastering move is narrow lows, wide highs. In full mode the band widths are ignored; in multiband the single width is ignored. Mono fold-down stays exact in both
+    width_low (%, 0..200, default 100) - multiband only: width of everything below xover_low_hz. 0 is mono, 100 unchanged, 200 double-wide; keep lows narrow (0-80) for a tight, punchy bottom
+    width_mid (%, 0..200, default 100) - multiband only: width of the band between the two crossovers. 0 is mono, 100 unchanged, 200 double-wide
+    width_high (%, 0..200, default 100) - multiband only: width of everything above xover_high_hz. 0 is mono, 100 unchanged, 200 double-wide; 120-160 opens up airy highs without touching the low end
+    xover_low_hz (Hz, 40..800, default 150) - multiband only: the low/mid crossover (Linkwitz-Riley, sums flat). Everything below it is the low band
+    xover_high_hz (Hz, 1000..12000, default 2500) - multiband only: the mid/high crossover (Linkwitz-Riley, sums flat). Everything above it is the high band
+    rotation (deg, -45..45, default 0) - rotates the whole stereo image: positive tilts it right, negative left, without changing total power. Use small values (5-15) to recentre a lopsided recording. NOTE: unlike every other knob here, rotation does change the mono fold-down
+EchoJay Stereoizer
+  Creative widener. Reach for it to open up a narrow or mono source - a synth, a guitar double, a pad - with three characters: haas time displacement, comb allpass widening, or a lush dimension chorus in the sides. The mono fold-down is preserved exactly in every mode, so it does not comb when summed.
+    width (%, 0..200, default 120) - stereo width: 0 is mono, 100 is unchanged, 200 is double-wide
+    haas_ms (ms, 0..40, default 15) - Haas widening: how far the side image is displaced in time. 0 is off, 10-25 is a broad natural spread, beyond 30 starts to read as a slap. Applied so the mono sum is unaffected
+    mono_maker_hz (Hz, 0..500, default 150) - everything below this frequency is collapsed to mono, keeping the low end centred and tight; 0 is off
+    mix (%, 0..100, default 100) - dry/wet blend: 0 is the untouched input, 100 is fully widened
+    mode (haas|comb|dimension, default haas) - the widening character: haas displaces the image in time (haas_ms sets how far - broad and natural, the shipped sound), comb pushes an allpass-filtered copy of the centre into the sides (denser and more present, no pre-delay smear; haas_ms is ignored), dimension adds a slow detuned copy in the sides (lush, chorus-like movement, no comb colour; haas_ms is ignored). width scales the effect in every mode and the mono fold-down stays exact in every mode
+
+-- Modulation --
+EchoJay Auto Pan
+  Sweeps a source across the stereo field, in Hz or locked to the host tempo, at constant power so the level never dips in the middle. Reach for it to give a static part movement without changing its tone; set mode binaural for headphone-convincing placement, or shape random for a new position each cycle.
+    rate_hz (Hz, 0.01..20, default 0.5) - speed the image sweeps across the field; ignored while sync is on
+    sync (on/off, default off) - lock the rate to the host tempo and use sync_division instead
+    sync_division (0..12, default 6) - tempo division while sync is on: 0 = 4/1 slowest, 6 = 1/4, 12 = 1/32 fastest
+    depth (%, 0..100, default 70) - how far from centre the image travels; 100 reaches hard left and hard right, 0 leaves it centred
+    shape (sine|triangle|square|saw|harmonic|random, default sine) - waveform of the sweep: sine is smooth, triangle linear, square jumps side to side, saw ramps, harmonic is a rounder sine that lingers at the sides, random jumps to a new random position each cycle (sample-and-hold; see smoothing_ms to make it glide)
+    stereo_phase (deg, 0..360, default 0) - offset between the two channels' movement: 0 sweeps the whole image together, 90 rotates it, 180 turns it into a tremolo
+    mode (linear|constant_power|binaural, default constant_power) - the pan law: constant_power holds loudness steady across the sweep (the default, and the device as it shipped), linear is a plain crossfade that dips slightly mid-sweep, binaural adds a subtle inter-aural delay with the pan so the image reads as genuinely PLACED in space rather than faded - the most convincing movement on headphones
+    width (%, 0..100, default 100) - how far the stereo field extends: scales the whole sweep, so 50 confines the movement to the middle half of the field even at full depth; 100 is the full field
+    smoothing_ms (ms, 0..250, default 1.5) - rounds the waveform's corners: a few ms is what keeps square from clicking, and 50-200 makes the random shape drift between its positions instead of teleporting; 0 is hard edges
+EchoJay Chorus
+  Several detuned, drifting copies of the signal. Reach for it to thicken a thin part and widen it - guitars, synths, backing vocals - or, at short delay times with feedback, for a flanger-like sweep. Three characters via mode: classic, ensemble (lush stacked voices), dimension (very wide with zero pitch wobble - the safe widener).
+    rate_hz (Hz, 0.01..20, default 0.6) - how fast the voices drift; ignored while sync is on
+    sync (on/off, default off) - lock the rate to the host tempo and use sync_division instead
+    sync_division (0..12, default 6) - tempo division while sync is on: 0 = 4/1 slowest, 6 = 1/4, 12 = 1/32 fastest
+    depth (%, 0..100, default 40) - how far the delay time is swept, which is how much pitch wobble the voices get; the sweep scales with delay_ms
+    delay_ms (ms, 1..50, default 12) - the delay the voices sit at; under ~8 is flanger-like and metallic, 10-25 is classic chorus, above that reads as a doubling
+    voices (1..4, default 2) - how many delayed copies, spread evenly round the LFO cycle; more is thicker, at the same level
+    feedback (%, -95..95, default 0) - how much of the wet signal is fed back in; positive is resonant, negative inverts and hollows it out, 0 is a plain chorus
+    mix (%, 0..100, default 50) - how much of the chorused signal is heard; 0 is bypass, 50 is the classic half-and-half
+    mode (classic|ensemble|dimension, default classic) - the chorus character: classic is the standard drifting chorus the device shipped with, ensemble stacks two extra staggered voices with per-voice detune for a lush string-machine thickness, dimension freezes the sweep entirely for a very wide stereo double with NO pitch wobble (rate, depth and sync do nothing there) - the classic subtle widener for sources that must stay in tune
+    spread (%, 0..100, default 50) - stereo width of the voices: 0 keeps both channels in step (mono-safe and narrow), 50 is the classic quarter-cycle offset, 100 sweeps the channels fully counter-phase (widest, folds worst to mono)
+    tone (dB, -6..6, default 0) - tilt on the wet voices only: negative darkens them so they sit behind the dry signal, positive brightens them in front of it; 0 leaves them flat
+EchoJay Phaser
+  Sweeping notches from a chain of allpass filters. Reach for it to give a sustained part motion and a hollow, swirling character - keys, guitars, pads - where a chorus would thicken instead of animate. Three characters via mode: modern (clean), vintage (warm, 4-stage, hotter feedback), stereo (the swirl crosses the field).
+    rate_hz (Hz, 0.01..20, default 0.3) - how fast the notches sweep; ignored while sync is on
+    sync (on/off, default off) - lock the rate to the host tempo and use sync_division instead
+    sync_division (0..12, default 6) - tempo division while sync is on: 0 = 4/1 slowest, 6 = 1/4, 12 = 1/32 fastest
+    depth (%, 0..100, default 70) - how far the notches travel, up to two octaves either side of center_freq at 100
+    stages (2..12, default 6) - how many allpass stages, i.e. how many notches: 2-4 is a gentle sweep, 8-12 is thick and vocal
+    feedback (%, -95..95, default 30) - how much of the phased signal is fed back; higher makes the notches sharper and more resonant, negative shifts where they sit
+    center_freq (Hz, 100..8000, default 800) - the frequency the sweep is centred on; lower is a deeper, warmer phase, higher is thinner and more obvious
+    mix (%, 0..100, default 100) - how much of the phased signal is heard; the notches come from it meeting the dry signal, so 100 is the full effect and 0 is bypass
+    mode (modern|vintage|stereo, default modern) - the phaser's character: modern is the clean full cascade the device shipped with, vintage is warmer and thicker - the cascade capped at 4 stages like the classic pedals, a darker wet path and feedback pushed hotter than the dial, stereo lifts the right channel's sweep centre half an octave so the notches interleave across the field and the swirl crosses the image
+    stereo_spread (deg, 0..360, default 90) - how far the right channel's sweep lags the left, in degrees: 0 locks both channels together (mono), 90 is the classic wide sweep, 180 is fully counter-phase; works in every mode
+EchoJay Tremolo
+  Rhythmic level modulation, in Hz or locked to the host tempo. Reach for it to make a static part move - a held chord, a pad, a guitar - or, with a square shape at a note division, to chop a sustained sound into a pattern. Three circuits via mode: sine (clean), optical (soft-edged, amp-like), bias (harmonic tremolo - the tone swirls instead of the level chopping).
+    rate_hz (Hz, 0.01..20, default 4) - speed of the level wobble; ignored while sync is on
+    sync (on/off, default off) - lock the rate to the host tempo and use sync_division instead
+    sync_division (0..12, default 6) - tempo division while sync is on: 0 = 4/1 slowest, 6 = 1/4, 12 = 1/32 fastest
+    depth (%, 0..100, default 50) - how far the level drops at the trough; 100 reaches silence, the peak stays at unity
+    shape (sine|triangle|square|saw|harmonic|random, default sine) - waveform of the wobble: sine is smooth, triangle linear, square chops, saw ramps, harmonic is a rounder sine that lingers at the extremes, random holds a new random level each cycle (sample-and-hold; see smoothing_ms to make it glide)
+    stereo_phase (deg, 0..360, default 0) - how far the right channel's wobble lags the left; 0 is mono, 180 makes the channels alternate
+    mix (%, 0..100, default 100) - how much of the modulated signal is heard; 0 is bypass
+    mode (sine|optical|bias, default sine) - the tremolo circuit: sine is the clean level wobble the device shipped with, optical smooths the gain like an amp's photocell so even a square breathes with soft edges, bias is harmonic tremolo - lows and highs wobble in OPPOSITE phase so the tone swirls while the level barely moves, the classic Fender-style sound and much richer than plain level tremolo
+    smoothing_ms (ms, 0..250, default 1.5) - rounds the waveform's corners: a few ms is what keeps square from clicking, and 50-200 makes the random shape glide between its steps instead of jumping; 0 is hard edges
+
+-- Harmonic --
+EchoJay Exciter
+  Adds harmonics to the highs only, leaving everything below the split untouched. Reach for it when a source needs air, presence or bite and an EQ boost would only make it harsh - it generates the top end rather than amplifying what is already there. Four characters via `mode`: tube for presence, tape for sheen, odd for edge, even for warmth; raise `focus` to keep the lows surgically clean.
+    freq_hz (Hz, 500..12000, default 3000) - band split; only what is ABOVE this is shaped, so the low end stays clean
+    amount (%, 0..100, default 50) - how far the high band is driven into the curve; 0 passes the signal through untouched
+    mode (tube|tape|odd|even, default tube) - the character of the generated highs: tube is asymmetric air and presence (2nd plus odd - the default), tape is a soft symmetric sheen without edge, odd is the edgiest and most aggressive (3rd only, a symmetric hard knee), even is the warmest (strongly asymmetric, 2nd dominant)
+    focus (%, 0..100, default 0) - how tightly the excitement is confined to the band above the split: 0 is the split as shipped (the default), higher trims the bleed below the crossover so the lows stay surgically clean while the highs are excited
+    mix (%, 0..100, default 100) - dry/wet blend; the dry path is delay matched, so a partial mix does not comb filter
+    output_db (dB, -24..24, default 0) - final output trim
+EchoJay Saturation
+  Oversampled waveshaping with four curves plus pro depth: an even/odd harmonic emphasis, a bias offset, a keep-the-sub-clean high-pass and selectable 2x/4x/8x oversampling. Reach for it to add weight and harmonic density - to thicken a thin source, glue a bus, or push a part forward without raising its level. Tube for warmth, tape for glue, diode for grit, soft for a clean ceiling; then `emphasis` even for warmer, odd for more aggressive.
+    drive_db (dB, 0..36, default 6) - how hard the signal is pushed into the curve; output is level compensated, so this adds harmonics rather than volume
+    type (tube|tape|diode|soft, default tube) - the saturation curve: tube is asymmetric and warm (2nd harmonic), tape is soft and compressing, diode is the hardest and most aggressive, soft is a clean symmetric limit
+    emphasis (even|odd|both, default both) - which harmonics dominate, on top of the selected curve: even is asymmetric and warm/tubey (strong 2nd), odd is symmetric and aggressive (3rd, console/transistor edge), both keeps the curve's own natural blend (the default - exactly the device as shipped)
+    bias (%, -100..100, default 0) - DC offset INTO the curve: either direction pushes the signal onto a more asymmetric region and brings in even harmonics, without adding DC to the output; 0 is off
+    hpf_hz (Hz, 0..500, default 0) - keep the sub clean: what sits below this frequency bypasses the shaper and rejoins after it, so bass stays tight while the mids and highs get driven. 60-120 on a bass-heavy bus; 0 saturates the full band
+    oversample (2x|4x|8x, default 4x) - anti-aliasing quality against CPU: 8x is the cleanest on bright material, 2x the cheapest; 4x (the default) suits almost everything. Latency follows the setting (30, 45 or 48 samples) and is reported to the host
+    tone_db (dB, -12..12, default 0) - tone tilt around 700 Hz: positive brightens, negative darkens, 0 is exactly flat
+    mix (%, 0..100, default 100) - dry/wet blend; the dry path is delay matched, so a partial mix does not comb filter
+    output_db (dB, -24..24, default 0) - final output trim
+EchoJay Tape
+  Tape saturation with a real transport: wow, flutter, head bump, speed-dependent HF loss, three machines (studio, vintage, cassette), gated hiss and channel crosstalk. Reach for it to glue a mix, take the edge off something digital, or add movement to a static part; set `mode` first - it decides how the machine feels - then speed and drive. Reports about 3.4 ms of latency (the transport delay plus oversampling), which the host compensates.
+    speed_ips (ips, 3.75..30, default 15) - tape speed; faster is cleaner and brighter with a higher head bump, slower is darker with deeper wow and flutter
+    drive_db (dB, 0..24, default 6) - how hard the tape is hit; output is level compensated, so this adds compression and harmonics rather than volume
+    bias (%, -100..100, default 0) - bias offset; 0 is optimal, either direction pushes the signal onto a more asymmetric part of the curve and brings in even harmonics
+    wow (%, 0..100, default 20) - slow pitch drift, under 1 Hz - the sound of a tape that will not sit still
+    flutter (%, 0..100, default 20) - fast pitch jitter, around 7-12 Hz - the shimmer on a sustained note
+    head_bump_db (dB, 0..6, default 2) - low-frequency lift at the head bump, whose frequency follows tape speed (about 50 Hz at 15 ips)
+    mode (studio|vintage|cassette, default studio) - the machine: studio is the clean bright 15-30 ips reference (the default - exactly the device as shipped), vintage is softer with more compression, deeper wow and a darker top, cassette is narrow at both ends with the most flutter and the most noise. Each scales what speed, drive, wow, flutter and head bump already do
+    hiss (%, 0..100, default 0) - tape noise, gated to signal presence so it breathes with the material instead of humming through the silences; cassette mode is the noisiest. 0 is off
+    crosstalk (%, 0..100, default 0) - bleed between the channels at the heads - subtle stereo glue that narrows the image slightly; the mono sum is untouched. 0 is off
+    mix (%, 0..100, default 100) - dry/wet blend; the dry path is delay matched, so a partial mix does not comb filter
+    output_db (dB, -24..24, default 0) - final output trim
+
+-- Time --
+EchoJay Delay
+  Tempo-syncable stereo echo with four modes (digital, tape, analog, pingpong), a filtered feedback loop, diffusion and ducking from the dry signal. Reach for it to add depth or rhythmic space; set mode for the character of the repeats, time_ms directly (or sync on plus sync_division for a note length), and duck to keep the echoes off a lead vocal.
+    time_ms (ms, 1..4000, default 350) - echo time when sync is off; ignored while sync is on
+    sync (on/off, default off) - lock the echo time to the host tempo instead of using time_ms
+    sync_division (0..14, default 6) - note length when sync is on, shortest to longest: 0=1/32 1=1/16T 2=1/32D 3=1/16 4=1/8T 5=1/16D 6=1/8 7=1/4T 8=1/8D 9=1/4 10=1/2T 11=1/4D 12=1/2 13=1/2D 14=1/1
+    feedback (%, 0..100, default 35) - how much of each echo is fed back; 0 is a single repeat, 100 is a very long tail that still decays
+    mix (%, 0..100, default 30) - wet/dry balance; 0 is bypass-clean dry, 100 is echoes only
+    filter_hp_hz (Hz, 20..2000, default 120) - high-pass inside the feedback loop; raise it to stop repeats building up mud under the source
+    filter_lp_hz (Hz, 200..20000, default 6000) - low-pass inside the feedback loop; lower it to make each repeat darker than the last, the way a tape echo does
+    ping_pong (on/off, default off) - bounce the echoes left-right instead of keeping each side on its own channel. Works with ANY mode, so this is how to get a bouncing tape or analog echo; mode=pingpong is the clean digital bounce on its own
+    stereo_offset (%, -50..50, default 0) - offset the right channel's time as a percentage of the left's; small values widen the echoes, large ones make them stumble
+    mod_rate_hz (Hz, 0.01..10, default 0.4) - speed of the delay-time wobble
+    mod_depth_ms (ms, 0..20, default 0) - how far the delay time wobbles; a little detunes the repeats like tape, a lot is a chorus
+    mode (digital|tape|analog|pingpong, default digital) - the character of the repeats, applied inside the feedback loop so it builds up over successive echoes: digital is clean and transparent, tape saturates and adds wow and flutter so each repeat is darker and drifts slightly, analog is a bucket-brigade line - darker still, band-limited and a little gritty, pingpong is the clean digital sound bounced hard left-right. To bounce a tape or analog echo, set mode and turn ping_pong on as well
+    diffusion (%, 0..100, default 0) - smear the repeats toward a reverby wash instead of discrete echoes; 0 is a clean delay, high turns the tail into something closer to a reverb while keeping the rhythm of the delay time
+    duck (%, 0..100, default 0) - how much the repeats duck under the DRY signal, so the echoes stay out of the way while the source plays and come up in the gaps. The standard trick for a delay on a lead vocal; 0 is off, 40-70 is the usual range
+EchoJay Reverb
+  Feedback-delay-network reverb with five algorithms (room, hall, plate, spring, ambience), early reflections, predelay, damping, diffusion, width and ducking from the dry signal. Reach for it to put a source in a space; set algorithm first for the KIND of space, then decay_s for how long it rings and duck to keep it out of the way of a vocal. No latency.
+    size (%, 0..100, default 55) - how big the space is; changes the spacing of the reflections, so small is a room and large is a hall even at the same decay
+    decay_s (s, 0.1..20, default 2) - how long the tail takes to fall 60 dB; this is length, size is character
+    predelay_ms (ms, 0..200, default 20) - silence between the dry signal and the reverb; raise it to keep a vocal or snare in front of its own tail
+    damping (%, 0..100, default 45) - how fast the highs die inside the tail; 0 is a tiled room, 100 is a heavily furnished one
+    low_cut_hz (Hz, 20..1000, default 80) - high-pass inside the tail; raise it to keep the reverb out of the bass instead of turning the reverb down
+    width (%, 0..100, default 100) - stereo spread of the tail; 0 collapses it to mono, 100 is the network's natural stereo
+    early_late (%, 0..100, default 70) - balance between early reflections and the late tail; low reads as a nearby surface, high as a distant wash
+    mod_depth (%, 0..100, default 25) - movement inside the tail; a little breaks up the metallic ring of a static network, a lot is a chorused shimmer
+    mix (%, 0..100, default 30) - wet/dry balance; 0 is bypass-clean dry, 100 is tail only
+    algorithm (room|hall|plate|spring|ambience, default hall) - the kind of space, which reshapes the reflection pattern, density, brightness and early/late balance: room is small and tight with audible walls, hall is big and smooth, plate is bright and very diffuse with NO distinct early reflections (the classic vocal reverb), spring is short and resonant with a boingy dispersed character, ambience is a very short subtle space that is mostly early reflections. decay_s still sets the length in all five, so switching changes character and not time
+    diffusion (%, 0..100, default 75) - density of the tail: low leaves individual reflections audible (grainier, more like a real room), high smears them into a smooth wash. Raise it for vocals, lower it for drums where you want the reflections to be heard
+    duck (%, 0..100, default 0) - how much the tail ducks under the DRY signal, so the reverb ebbs while the source plays and swells in the gaps. This is how a big reverb stays out of the way of a vocal; 0 is off, 40-70 is the usual range
+
+-- Pitch --
+EchoJay Pitch
+  Real-time pitch correction for ONE monophonic voice or lead instrument - a vocal, or a single-note lead. Set correct:1 and pick correction_mode: natural when the brief is 'tune it but keep it natural', hard when it is 'make it obviously tuned' or 'autotuned'. A mode writes the individual knobs so you can see and adjust what it did. IT DOES NOT KNOW THE SONG'S KEY: leave scale on chromatic unless the user tells you the key, because correcting to a WRONG key measures worse than not correcting at all. Formants are preserved so a corrected voice still sounds like the same singer; unvoiced frames pass through untouched. Not for chords or polyphonic material. To allow or forbid individual notes, send a pitch_scale array of {semitone, enabled, bias_cents} - it MERGES on semitone, so a degree you omit KEEPS its current state and you only send the ones you are changing. (Note this differs from eq_bands, which REPLACES.) Editing any degree moves scale to custom.
+    correction_mode (natural|balanced|tuned|hard|custom, default custom) - PROVISIONAL DEFAULT = custom at retune 6 / flex 0 / humanize 0 / depth 100 (5 Sep 2026, UI_SIMPLIFICATION round 40): what measures best on the reference take (activity 4.49c, off-grid 2.33c, improve 79.6%) and what Sean's ear chose over retune 44 ('B is better on both'). Before it: retune 44 (round 36, chosen for where he worked, not what measured best) and natural 120/55/60 (which DETUNED the take: improve 44.6%). HESITATION ON FILE: this is the HARDEST setting and Antares ships at retune 20; the only material is one already-corrected, near-grid take that flatters hard correction. Re-derived on raw material with the explicit question: is the default too hard for raw material? the CHARACTER of the correction, and the fastest way to get one. natural is transparent - the tuning is tidied but the performance survives, and on a good take it is hard to hear; use it when the brief is 'tune it but keep it sounding natural'. balanced is audibly corrected but still human. tuned is the modern pop sound. hard is the unmistakable effect where every note snaps instantly - reach for hard when the brief is 'make it obviously tuned', 'autotuned', 'robotic' or 'T-Pain'. Selecting a mode WRITES the individual params below (retune_speed_ms, flex, humanize, targeting_ignores_vibrato) so you can see what it did and adjust from there; moving any of them by hand shows custom
+    correct (on/off, default on) - correction on/off. ON by default - adding this device to a chain corrects. Turn it OFF to A/B against the untouched signal without removing the device; bypass and mix 0 do the same thing with the same reported latency
+    retune (0..400, default 0) - RETUNE - the front-panel dial (5 Sep 2026, UI_SIMPLIFICATION round 46), 0-400, Antares-calibrated. Drives retune_speed_ms AND depth through the measured curve: 0 = (6 ms, depth 100 %) the hard end; 50 = (80 ms, 35 %); 100 = (150 ms, 25 %); 200 = (150 ms, 15 %); 400 = (150 ms, 10 %) the transparent end. Median activity falls monotonically along it (measured at 18 positions). Writing retune_speed_ms or depth directly takes the device OFF THE CURVE (the panel says so) until this dial is turned. Default 0 - the round-40 default, provisional (raw-material check owed)
+    retune_speed_ms (ms, 0..150, default 6) - INTERNAL since 5 Sep 2026 (round 46): driven by `retune`, the 0-400 dial; a direct write here takes the device off that curve. how fast pitch is pulled to the target - the time constant of an exponential glide, in honest milliseconds. 0 is the hard-tuned snap, 100+ is transparent and keeps the singer's own movement. THE RANGE ENDS AT 150 ms (2 Sep 2026): measured, useful correction ends there - roughness reaches its minimum near 40, frames-within-3-cents cliffs past ~150, and by 400 the glide never arrives on normal notes (all scoop). Comparable correctors expose none of that region. Saved sessions above 150 clamp on load and the readout says so. THE EFFECTIVE FLOOR IS 6 ms: values below it behave as 6, because the 0-6 zone was measured strictly dominated - same tuning, same lock speed (acquisition is floored by note-change detection), worse roughness from chasing per-hop detection jitter - and because other correctors' 'retune 0' carries equivalent internal smoothing, so 6 here IS what 0 means elsewhere. The UI readout shows the mapping. NOTE: retune 0 alone is NOT the full hard-tune - natural_vibrato re-adds the singer's own wobble and defaults to 100; for the complete snap set correction_mode hard
+    seam_attack_ms (ms, 0..150, default 60) - SEAM ATTACK (2 Sep 2026): at every word start the correction used to arrive as an instantaneous pitch STEP the moment the wet path resumed after the bit-exact-dry consonant (9 cents at the ear-confirmed exemplar - above the pitch JND). With attack > 0 the wet path resumes AT THE SUNG PITCH and ramps to full correction over this many ms - pitch continuity at the seam, the same move as GSnap's Attack and Waves Tune RT's Note Transition. Measured at 60ms: word-start glitch events fall to ZERO (ignore-vib off) with no paired tuning regression. 0 = off (pre-fix behaviour). DEFAULT 60 (3 Sep 2026, ear gate passed on the intro region - no audible damage): the geometric midpoint of the ~30ms pitch-integration floor and Waves' field-proven 120ms, and the measured event-elimination point. Validated on one already-corrected take + one falsifier only - broader material validation still owed before this default is called shipped
+    flex (%, 0..100, default 0) - how much expressive drift is left alone before correction engages; high keeps slides, scoops and deliberate blue notes, 0 corrects every deviation however small
+    humanize (%, 0..100, default 0) - relaxes correction on SUSTAINED notes while keeping onsets tight, so long notes do not sound frozen. Sustain is judged from how long the pitch has been steady, not from how loud it is
+    depth (%, 0..100, default 100) - INTERNAL since 5 Sep 2026 (round 46): driven by `retune`, the 0-400 dial; a direct write here takes the device off that curve (it stays a dial in ADVANCED as the override). DEPTH (5 Sep 2026): how much of the correction is APPLIED. 100 is full correction (today's sound, bit-identical); 0 is exact identity - the dry voice. Blended AFTER the retune envelope on the applied shift, so it is the control the slow end of the retune dial only pretends to be: Antares' slow end is transparent because it never commits, not because it is slow. Measured on the reference take: retune 150 at 25 -> 1.7c of movement (Antares max retune 0.6c) while still improving the grid at 58%; retune 44 at 50 -> 2.8c at 64%. Gentleness lives HERE, not in Flex (which is a threshold and tunes worse than dry above 25 on this material). Every mode writes 100 - a mode is a character, depth is how much of it you take
+    targeting_ignores_vibrato (on/off, default on) - stops a wide vibrato flipping the target between neighbouring notes. Target selection uses a slow-smoothed pitch while the correction still follows the fast one, so the vibrato survives and the note does not chatter
+    key_source (auto|manual, default auto) - where the key comes from. auto FOLLOWS THE DETECTED KEY of the music - EchoJay measures it on the mix or instrumental bus and this device tracks it, including a mid-song modulation, so you do not have to know or state the key. manual uses key_root and scale as set. In auto, a reading that is not confident enough falls back to CHROMATIC rather than to a guess or to a stale key, and the UI names which source the key came from
+    key_root (C|C#|D|D#|E|F|F#|G|G#|A|A#|B, default C) - the root the scale is built on. IGNORED while scale is chromatic, which is the default - so setting this alone changes nothing. Only meaningful once the user has told you the key and you have set a named scale to match
+    scale (major|minor|harmonic_minor|dorian|mixolydian|major_pentatonic|minor_pentatonic|blues|whole_tone|chromatic|custom, default chromatic) - which notes correction is allowed to choose. With key_source auto this FOLLOWS THE DETECTED KEY - leave it alone and it tracks the song. Setting it by hand switches key_source to manual, and then: NEVER GUESS A KEY. Forcing a scale the song is not actually in is measurably WORSE THAN NOT CORRECTING AT ALL - a take left 13 cents from the nearest note on average was pushed to 29 cents by correcting it to a wrong key, because partial correction toward foreign notes lands between semitones. If no key is detected and the user has not named one, chromatic is the answer: it still tunes every note and cannot force a wrong one
+    reference_source (auto|manual, default auto) - where concert pitch comes from. auto follows the TUNING EchoJay detected in the music, so a track cut at 441.3 Hz is corrected to 441.3 rather than dragged to 440 and left sitting subtly wrong against everything else - but NEVER from this channel itself: a grid derived from the signal being corrected is circular, so when the only measurable material is this channel (a solo instance), auto falls back to 440. manual uses reference_hz as set
+    reference_hz (Hz, 380..500, default 440) - concert pitch reference. Set it to the track's actual tuning - a vocal corrected to 440 against a band at 441.3 sits subtly wrong against everything
+    ref_manual_by_user (0..1, default 0) - internal provenance marker, not a control: 1 once a person has taken manual control of the reference (set reference_hz or chose reference_source manual live). Saved states from before this marker existed could carry a DETECTED reference laundered into the manual field; on load, a manual reference without this marker reverts to auto. Do not set this directly
+    transpose (st, -12..12, default 0) - shifts the corrected result in semitones, after correction
+    natural_vibrato (%, 0..200, default 0) - DEFAULT 0 = KEEP VIBRATO OFF (PROVISIONAL, round 50, 5 Sep 2026; was 100). MEASURED on the reference take, all-voiced off-grid vs D minor @ 440: the defaults with 100 render 8.71c / 30.1% within 5c - WORSE THAN THE SOURCE (6.72c / 39.8%) and worse at onsets too (10.41c vs 8.26c); with 0 they render 2.44c / 66.2%. Every ear-confirmed clip and every dial measurement of rounds 31-46 was made at 0; the schema default never went through the measurement. The mode table is unchanged (natural and balanced keep at 100). AS SHIPPED THIS IS A SWITCH, NOT A GAIN (measured 5 Sep 2026, UI_SIMPLIFICATION.md ruling 3): 100 keeps the singer's own vibrato exactly as sung; EVERY OTHER VALUE removes it entirely - 0, 40, 150 and 200 render bit-identically. The intended gain (0 dead-still, 200 exaggerated) reaches the audio only on the shift path, which is selected only at 100; making it a true gain at every value is DSP work with its own bar (the ring-aligned fast term). Presets: natural and balanced 100 (keep); tuned 40 and hard 0 (REMOVE). Applies at every retune speed
+    vib_depth_cents (c, 0..100, default 0) - depth of ADDED vibrato, in cents. 0 is off and is the default - this generates movement that was never sung, so reach for it only when asked for vibrato that is not there, not to fix a flat take
+    vib_rate_hz (Hz, 0.1..10, default 5.5) - rate of the ADDED vibrato. 5-7 Hz is a natural singing rate; slower reads as a swell, much faster as an effect
+    vib_shape (sine|triangle|ramp, default sine) - waveform of the added vibrato: sine is the natural one, triangle is more even and slightly mechanical, ramp is a repeated scoop
+    vib_onset_ms (ms, 0..3000, default 300) - how long a note is held before the ADDED vibrato fades in, so it starts the way a singer would rather than arriving fully formed on the attack. Measured from the start of each note
+    voice_type (soprano|alto_tenor|low_male|instrument|bass, default alto_tenor) - pitch search range of the detector; match it to the source - a wrong choice causes octave errors
+    tracking (relaxed|normal|tight, default normal) - how strict the detector is before it calls a frame pitched; relaxed keeps breathy and quiet frames at the cost of occasional wrong readings, tight only trusts clearly periodic frames and leaves more of the take untracked
+    formant_mode (off|preserve|shift, default preserve) - what happens to the vocal character when pitch moves. preserve is the default and the right answer for correction. off is a TRANSPOSE-TIME control, not a correction mode: at tuning-sized corrections it is measured IDENTICAL to preserve (and the build asserts that equivalence), and it only matters when transpose moves pitch by semitones - preserved formants keep the same singer, moving formants make a smaller or larger one. Setting off with transpose at 0 changes nothing. shift keeps formants independent of pitch AND moves them by formant_shift, on a heavier synthesis path with a MEASURED quality cost even at formant_shift 0 - about 1.6 dB of harmonicity and several times the roughness of preserve - so reach for it only when the character change IS the point
+    formant_shift (st, -12..12, default 0) - moves the vocal character independently of pitch - the throat-length control. Negative reads bigger and deeper, positive smaller and brighter; a couple of semitones is a subtle character change, the extremes are an effect. ONLY ACTIVE when formant_mode is shift, which carries a measured fidelity cost regardless of this value (see formant_mode) - the moved character rides on a rougher voice. An EFFECT control: never part of making correction sound transparent or natural
+    low_latency (on/off, default off) - turn ON when the singer is TRACKING through this plugin and needs to monitor themselves - it shortens the shifter's lookahead and cuts the reported latency by a third. Leave OFF when this is a MIX: the extra delay is compensated by the host and costs nothing, while the shorter lookahead trades a little transient accuracy on note onsets. Latency depends on voice_type - a bass setting is long enough that monitoring is not practical either way
+    mix (%, 0..100, default 100) - blend against the untouched signal. 100 is fully corrected; below that the original sits underneath, which thickens a lead and hides correction artefacts. 40-70 is the parallel-tuning trick for a take that only needs help in places
+    output_db (dB, -24..24, default 0) - final output trim, after everything else
+    target_hz (Hz, 0..1600, default 0) - DIAGNOSTIC, not a musical control: forces every voiced frame to one fixed pitch, ignoring key, scale and retune speed. Useful for checking the shifter in isolation or for a deliberate monotone effect. Leave at 0 for normal correction - to tune a vocal, use correction_mode with correct on, never this
+    reset_stats (on/off, default off) - set 1 to zero the octave-guard and frame counters before a detection measurement pass; always reads 0
+
+-- Analysis --
+EchoJay Key Detector
+  READER, not an effect: audio passes through bit-identically while it detects the musical key, confidence and reference tuning of whatever flows through the chain. Add it when a move depends on the key; set analyse:1 to run a listening pass, then read [DETECTED KEY].
+    analyse (on/off, default off) - set 1 to START a committed analysis pass: the device listens to the next window_s of playback, commits the key and holds it - the primary control; reads 1 while listening
+    window_s (s, 1..30, default 10) - how much audio a committed pass listens to before it commits
+    continuous (on/off, default off) - keep updating the reading instead of committing once
+    sensitivity (%, 0..100, default 50) - how readily the reading switches key: low = sticky, high = follows modulations quickly
+    tuning_hz (Hz, 415..465, default 440) - reference pitch HINT for the analysis; auto_tuning overrides it with the detected value
+    auto_tuning (on/off, default on) - detect the track's actual reference pitch instead of assuming the hint; the detected value is reported as detected_tuning
+    mode_lock (auto|major|minor, default auto) - constrain the search when the user already knows the mode
+    hold (on/off, default off) - freeze the current reading
+    hpss (on/off, default on) - harmonic/percussive separation - leave on for mixes; off saves CPU on solo tonal sources
+    low_hz (Hz, 20..500, default 80) - bottom of the analysis band
+    high_hz (Hz, 1000..12000, default 5000) - top of the analysis band
+    reset (on/off, default off) - set 1 to clear the accumulated audio and the held reading
+
+== advertised defaults match constructed values (all devices) ==
+  [PASS] every device constructs at its advertised defaults (0 mismatches)
+
+== no device differs L/R unless a parameter asked it to ==
+  [PASS] EchoJay EQ produces no channel difference at neutral settings (max 0.000000)
+  [PASS] EchoJay 4-Band Compressor produces no channel difference at neutral settings (max 0.000000)
+  [PASS] EchoJay Compressor produces no channel difference at neutral settings (max 0.000000)
+  [PASS] EchoJay De-Esser produces no channel difference at neutral settings (max 0.000000)
+  [PASS] EchoJay Expander produces no channel difference at neutral settings (max 0.000000)
+  [PASS] EchoJay Gate produces no channel difference at neutral settings (max 0.000000)
+  [PASS] EchoJay Limiter produces no channel difference at neutral settings (max 0.000000)
+  [PASS] EchoJay Gain produces no channel difference at neutral settings (max 0.000000)
+  [PASS] EchoJay Phase Invert produces no channel difference at neutral settings (max 0.000000)
+  [PASS] EchoJay Stereo Width produces no channel difference at neutral settings (max 0.000000)
+  EchoJay Stereoizer           differs by 0.001322 - EXEMPT: UNEXPLAINED, ~0.0013 (-57 dBFS) with width 100, haas_ms 0, mono_maker 0. Not diagnosed here - it is not this session's device - but it is well above the noise floor the other 21 sit at, so it is listed to be answered rather than tolerated
+  [PASS] EchoJay Auto Pan produces no channel difference at neutral settings (max 0.000004)
+  EchoJay Chorus               differs by 0.000002 - EXEMPT: NON-DETERMINISTIC, and that is the finding: identical input on both channels with spread 0 (documented as 'keeps both channels in step') gives 0.000002 on one run and 0.166664 on the next, same binary, same input. Run-to-run variation with fixed input means uninitialised state - an LFO phase or a delay line not cleared in prepare. Listed, not fixed: not this session's device
+  [PASS] EchoJay Phaser produces no channel difference at neutral settings (max 0.000000)
+  [PASS] EchoJay Tremolo produces no channel difference at neutral settings (max 0.000000)
+  [PASS] EchoJay Exciter produces no channel difference at neutral settings (max 0.000000)
+  [PASS] EchoJay Saturation produces no channel difference at neutral settings (max 0.000000)
+  [PASS] EchoJay Tape produces no channel difference at neutral settings (max 0.000000)
+  [PASS] EchoJay Delay produces no channel difference at neutral settings (max 0.000000)
+  EchoJay Reverb               differs by 0.158383 - EXEMPT: its network is intentionally decorrelated between channels; a mono-in/stereo-out tail is the point of it
+  [PASS] EchoJay Pitch produces no channel difference at neutral settings (max 0.000000)
+  [PASS] EchoJay Key Detector produces no channel difference at neutral settings (max 0.000000)
+
+== every device opens an editor DETACHED from any graph ==
+  [PASS] EchoJay EQ: createEditor detached
+  [PASS] EchoJay EQ: detached editor has a real size
+  [PASS] EchoJay EQ: getStateInformation returns bytes
+  [PASS] EchoJay EQ: setStateInformation accepts its own blob
+  [PASS] EchoJay 4-Band Compressor: createEditor detached
+  [PASS] EchoJay 4-Band Compressor: detached editor has a real size
+  [PASS] EchoJay 4-Band Compressor: getStateInformation returns bytes
+  [PASS] EchoJay 4-Band Compressor: setStateInformation accepts its own blob
+  [PASS] EchoJay Compressor: createEditor detached
+  [PASS] EchoJay Compressor: detached editor has a real size
+  [PASS] EchoJay Compressor: getStateInformation returns bytes
+  [PASS] EchoJay Compressor: setStateInformation accepts its own blob
+  [PASS] EchoJay De-Esser: createEditor detached
+  [PASS] EchoJay De-Esser: detached editor has a real size
+  [PASS] EchoJay De-Esser: getStateInformation returns bytes
+  [PASS] EchoJay De-Esser: setStateInformation accepts its own blob
+  [PASS] EchoJay Expander: createEditor detached
+  [PASS] EchoJay Expander: detached editor has a real size
+  [PASS] EchoJay Expander: getStateInformation returns bytes
+  [PASS] EchoJay Expander: setStateInformation accepts its own blob
+  [PASS] EchoJay Gate: createEditor detached
+  [PASS] EchoJay Gate: detached editor has a real size
+  [PASS] EchoJay Gate: getStateInformation returns bytes
+  [PASS] EchoJay Gate: setStateInformation accepts its own blob
+  [PASS] EchoJay Limiter: createEditor detached
+  [PASS] EchoJay Limiter: detached editor has a real size
+  [PASS] EchoJay Limiter: getStateInformation returns bytes
+  [PASS] EchoJay Limiter: setStateInformation accepts its own blob
+  [PASS] EchoJay Gain: createEditor detached
+  [PASS] EchoJay Gain: detached editor has a real size
+  [PASS] EchoJay Gain: getStateInformation returns bytes
+  [PASS] EchoJay Gain: setStateInformation accepts its own blob
+  [PASS] EchoJay Phase Invert: createEditor detached
+  [PASS] EchoJay Phase Invert: detached editor has a real size
+  [PASS] EchoJay Phase Invert: getStateInformation returns bytes
+  [PASS] EchoJay Phase Invert: setStateInformation accepts its own blob
+  [PASS] EchoJay Stereo Width: createEditor detached
+  [PASS] EchoJay Stereo Width: detached editor has a real size
+  [PASS] EchoJay Stereo Width: getStateInformation returns bytes
+  [PASS] EchoJay Stereo Width: setStateInformation accepts its own blob
+  [PASS] EchoJay Stereoizer: createEditor detached
+  [PASS] EchoJay Stereoizer: detached editor has a real size
+  [PASS] EchoJay Stereoizer: getStateInformation returns bytes
+  [PASS] EchoJay Stereoizer: setStateInformation accepts its own blob
+  [PASS] EchoJay Auto Pan: createEditor detached
+  [PASS] EchoJay Auto Pan: detached editor has a real size
+  [PASS] EchoJay Auto Pan: getStateInformation returns bytes
+  [PASS] EchoJay Auto Pan: setStateInformation accepts its own blob
+  [PASS] EchoJay Chorus: createEditor detached
+  [PASS] EchoJay Chorus: detached editor has a real size
+  [PASS] EchoJay Chorus: getStateInformation returns bytes
+  [PASS] EchoJay Chorus: setStateInformation accepts its own blob
+  [PASS] EchoJay Phaser: createEditor detached
+  [PASS] EchoJay Phaser: detached editor has a real size
+  [PASS] EchoJay Phaser: getStateInformation returns bytes
+  [PASS] EchoJay Phaser: setStateInformation accepts its own blob
+  [PASS] EchoJay Tremolo: createEditor detached
+  [PASS] EchoJay Tremolo: detached editor has a real size
+  [PASS] EchoJay Tremolo: getStateInformation returns bytes
+  [PASS] EchoJay Tremolo: setStateInformation accepts its own blob
+  [PASS] EchoJay Exciter: createEditor detached
+  [PASS] EchoJay Exciter: detached editor has a real size
+  [PASS] EchoJay Exciter: getStateInformation returns bytes
+  [PASS] EchoJay Exciter: setStateInformation accepts its own blob
+  [PASS] EchoJay Saturation: createEditor detached
+  [PASS] EchoJay Saturation: detached editor has a real size
+  [PASS] EchoJay Saturation: getStateInformation returns bytes
+  [PASS] EchoJay Saturation: setStateInformation accepts its own blob
+  [PASS] EchoJay Tape: createEditor detached
+  [PASS] EchoJay Tape: detached editor has a real size
+  [PASS] EchoJay Tape: getStateInformation returns bytes
+  [PASS] EchoJay Tape: setStateInformation accepts its own blob
+  [PASS] EchoJay Delay: createEditor detached
+  [PASS] EchoJay Delay: detached editor has a real size
+  [PASS] EchoJay Delay: getStateInformation returns bytes
+  [PASS] EchoJay Delay: setStateInformation accepts its own blob
+  [PASS] EchoJay Reverb: createEditor detached
+  [PASS] EchoJay Reverb: detached editor has a real size
+  [PASS] EchoJay Reverb: getStateInformation returns bytes
+  [PASS] EchoJay Reverb: setStateInformation accepts its own blob
+  [PASS] EchoJay Pitch: createEditor detached
+  [PASS] EchoJay Pitch: detached editor has a real size
+  [PASS] EchoJay Pitch: getStateInformation returns bytes
+  [PASS] EchoJay Pitch: setStateInformation accepts its own blob
+  [PASS] EchoJay Key Detector: createEditor detached
+  [PASS] EchoJay Key Detector: detached editor has a real size
+  [PASS] EchoJay Key Detector: getStateInformation returns bytes
+  [PASS] EchoJay Key Detector: setStateInformation accepts its own blob
+  [PASS] detached pass covered every device (made 22 of 22)
+
+ALL PASS (0 failures)
