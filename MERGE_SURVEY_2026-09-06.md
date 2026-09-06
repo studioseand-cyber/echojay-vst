@@ -208,3 +208,33 @@ EedDeviceProcessor::onStateApplied), which shares its FILE with Kathy's
 aa455ff guard but not its function; it auto-merges and its behaviour is
 covered by the pitch suite's saved-state checks. The V1-V6 legs cover the
 five; V6's read-back and the suite cover the sixth.
+
+
+## 8. V7 - a NAMED leg, and a conditional re-check (6 Sep 2026)
+V7  7fe50fd, the reference laundering severed at the state layer
+    (EedDeviceProcessor::setStateInformation -> onStateApplied;
+    EedPitchProcessor::onStateApplied migrates a loaded MANUAL reference
+    that carries no ref_manual_by_user marker back to AUTO). THE INSTRUMENT,
+    by name, in tools/pitch_mode_test/main.cpp, block "    std::printf ("== UI coverage: every schema param has a hand control, or is "":
+      - "laundered state (manual + value, no marker) reverts to AUTO on load"   (line 1072)
+      - "marked manual 442 survives a save/load round-trip"                     (line 1093)
+      - "auto survives a save/load round-trip (the field saved is the manual 440, never a detected grid)"   (line 1101)
+    plus the "SEAN'S SAVED STATE" block (his 3 Sep file: reference AUTO,
+    applied 440, the dormant 439.19 field, then manual applies it). These
+    run again after each merge stage and must pass as they pass today.
+    onStateApplied also carries the round-51 snap-to-curve; the round-46
+    block ("THE RETUNE DIAL") and "THE DEPTH TRAP CANNOT EXIST" cover that
+    half, and run with the suite.
+CONDITIONAL RE-CHECK, written down now so it does not surface in six
+months as "nobody knows why saved state stopped restoring": 7fe50fd
+shares EedDeviceProcessor.cpp with Kathy's do-not-dial guard but not its
+function, so it auto-merges cleanly TODAY. Her open question is whether
+that guard belongs in applyStructured rather than applyParams. IF KATHY
+MOVES THE GUARD, 7fe50fd IS RE-CHECKED AGAINST ITS NEW POSITION - the
+guard must not sit between setStateInformation's applyParams and the
+onStateApplied migration, and must not short-circuit the restore that
+the migration reads - AND V7 RUNS AGAIN. A clean auto-merge today is not
+a clean auto-merge after her fix.
+ON THE MOVING HEAD: Kathy is given the BRANCH NAME,
+backup/seand-mac-integration-2026-09-06, never a hash; it has moved four
+times today from committing survey records to the branch under survey.

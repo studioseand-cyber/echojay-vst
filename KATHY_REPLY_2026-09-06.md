@@ -3,10 +3,9 @@
 ## Answers
 (a) Both of this Mac's branches are pushed and hash-verified. Survey
 against these, not against origin/feat/pitch (96d87d6, 15 Aug, stale):
-    backup/seand-mac-integration-2026-09-06   fea141a   <- SURVEY AGAINST THIS
-                                             (= 56d7b0a you were told, plus two record commits:
-                                              the 18-21 Aug briefs, and DERIVED_VALUES_SINCE_BASE.md)
-    backup/seand-mac-feat-pitch-2026-09-06    39ace45   (materials only: rulers, traces, probes)
+    backup/seand-mac-integration-2026-09-06   <- SURVEY AGAINST THIS BRANCH, by NAME (its head moves
+                                                 as survey records are committed to it; any hash is stale by the next commit)
+    backup/seand-mac-feat-pitch-2026-09-06    (materials only: rulers, traces, probes)
 EedRetuneMap.h, kSeamAttackMs, kRetuneFloorMs, tools/latency_impulse_test
 and REFERENCE_SET.md are all on the integration backup, none on feat/pitch.
 
@@ -76,6 +75,13 @@ produce the same result it produced when the commit landed:
       tree, then confirm a real request returns non-empty history. We
       touched no API file (0 commits), so we cannot be the source - the
       merge still can.
+  V7  7fe50fd, the reference laundering severed at the state layer
+      (onStateApplied). Named instrument: tools/pitch_mode_test, the checks
+      "laundered state (manual + value, no marker) reverts to AUTO on load",
+      "marked manual 442 survives a save/load round-trip", "auto survives a
+      save/load round-trip", and the SEAN'S SAVED STATE block. IF YOU MOVE
+      the do-not-dial guard, 7fe50fd is re-checked against its new position
+      and V7 runs again - a clean auto-merge today is not one after that fix.
 Plus, after each stage: the build (-j 4, explicit targets), AU and VST3
 both load, the pitch suite 196-200 PASS / 0 FAIL, and every value in
 DERIVED_VALUES_SINCE_BASE.md read back and compared.
