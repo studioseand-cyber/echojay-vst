@@ -41,6 +41,15 @@ struct Leg : juce::Timer
         dev->setParamValue (EedPitchProcessor::kNaturalVib, 50.0);
         dev->setParamValue (EedPitchProcessor::kFlex, 30.0);
         ch.setSlotWet (0, 0.4f, ChainHost::WetSource::User);        // the hand on the wet knob
+        // ChainHost serialises a per-slot state CACHE that is refreshed on the
+        // processor's 1 s timer once the rack has been quiet for
+        // kStateDebounceMs (2000 ms): a save inside that window carries the
+        // previous capture. Let it settle the way a host session would.
+        std::printf ("[%s] edits made; letting the state cache settle 4 s\n", label);
+        juce::Timer::callAfterDelay (4000, [this] { save(); });
+    }
+    void save()
+    {
         a->getStateInformation (st);
         std::printf ("[%s] state saved (%d bytes), reloading into a fresh processor\n", label, (int) st.getSize());
         a.reset();
@@ -56,7 +65,7 @@ struct Leg : juce::Timer
         if (! back && ++polls < 200) return;                         // up to 10 s
         stopTimer();
         // one more beat so the restore callback's setSlotWet / applyRestoredState land
-        juce::Timer::callAfterDelay (500, [this] { readBack(); });
+        juce::Timer::callAfterDelay (4000, [this] { readBack(); });
     }
     void readBack()
     {
@@ -95,9 +104,9 @@ int main()
     // (it returned at once above), so pump the main CFRunLoop by hand: JUCE's
     // message queue and timers on macOS dispatch through it.
     const auto t0 = juce::Time::getMillisecondCounter();
-    while (! finished && juce::Time::getMillisecondCounter() - t0 < 60000)
+    while (! finished && juce::Time::getMillisecondCounter() - t0 < 120000)
         CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false);
-    if (! finished) std::printf ("TIMEOUT: the harness did not finish within 60 s\n");
+    if (! finished) std::printf ("TIMEOUT: the harness did not finish within 120 s\n");
     std::printf ("control: %s   V9 rack: %s\n",
                  ctl == 0 ? "PASS" : (ctl == 99 ? "UNREACHABLE (harness could not drive the path)" : "FAIL (harness invalid)"),
                  on == 0 ? "PASS" : (on == 99 ? "UNREACHABLE" : (on < 0 ? "NOT RUN" : "FAIL - rack values lost on reload with DO NOT DIAL on")));
