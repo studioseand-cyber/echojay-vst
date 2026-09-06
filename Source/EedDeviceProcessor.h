@@ -38,6 +38,28 @@
 class EedDeviceProcessor : public juce::AudioProcessor
 {
 public:
+    // ---- who is writing ---------------------------------------------------
+    // THE INTENT BEHIND A WRITE, carried explicitly because ONE function
+    // serves three of them. applyParams is the only place a built-in device's
+    // values change, so the do-not-dial guard has to live there; but session
+    // restore and state migration reach that same function through
+    // setStateInformation and are not EchoJay dialling. A guard that could not
+    // tell them apart reset every built-in to its schema defaults on reload,
+    // because setStateInformation resets to defaults BEFORE it applies and
+    // only the apply was blocked.
+    //
+    // NO DEFAULT ARGUMENT, deliberately. A call site added without thinking
+    // must fail to COMPILE rather than silently pick a meaning. That is the
+    // same lesson WetSource taught by defaulting to Assistant: a defaulted
+    // source does not announce itself, it just refuses at runtime.
+    enum class ParamSource
+    {
+        Assistant,   // EchoJay dialling a value. Blocked under do-not-dial.
+        User,        // the hand, from a device's own editor. Never blocked.
+        Restore,     // the user's own saved session coming back. Never blocked.
+        Migration    // state carried between processors. Never blocked.
+    };
+
     EedDeviceProcessor();
     ~EedDeviceProcessor() override = default;
 
@@ -57,12 +79,14 @@ public:
     // a caller distinguishes "applied nothing on purpose" from "this wasn't for
     // me". appliedOut/skippedOut report what actually landed.
     virtual juce::String applyStructured (const juce::var& structured,
+                                          ParamSource src,
                                           int* appliedOut = nullptr,
                                           int* skippedOut = nullptr);
 
     // The flat `params` map itself. Public so a structured device's override can
     // delegate to it after handling its own array form.
     juce::String applyParams (const juce::var& paramsObject,
+                              ParamSource src,
                               int* appliedOut = nullptr,
                               int* skippedOut = nullptr);
 

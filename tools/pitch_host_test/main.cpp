@@ -45,7 +45,7 @@ static void configure (EedPitchProcessor& p, double fs, int maxBlock)
     o->setProperty ("correction_mode", "natural");
     auto* outer = new juce::DynamicObject();
     outer->setProperty ("params", juce::var (o));
-    p.applyStructured (juce::var (outer));
+    p.applyStructured (juce::var (outer), EedDeviceProcessor::ParamSource::Assistant);
 }
 
 // Run the processor over the source with a block-size generator.
@@ -110,7 +110,7 @@ int main()
         o->setProperty ("correct", 0);
         auto* outer = new juce::DynamicObject();
         outer->setProperty ("params", juce::var (o));
-        p.applyStructured (juce::var (outer));
+        p.applyStructured (juce::var (outer), EedDeviceProcessor::ParamSource::Assistant);
 
         juce::AudioBuffer<float> buf (2, 512);
         juce::MidiBuffer midi;
@@ -265,7 +265,7 @@ int main()
             o->setProperty ("voice_type", ids[vt]);
             auto* outer = new juce::DynamicObject();
             outer->setProperty ("params", juce::var (o));
-            p.applyStructured (juce::var (outer));
+            p.applyStructured (juce::var (outer), EedDeviceProcessor::ParamSource::Assistant);
 
             juce::AudioBuffer<float> buf (2, 128);
             juce::MidiBuffer midi;

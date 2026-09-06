@@ -53,7 +53,7 @@ int main()
 
     std::printf ("== correction_mode WRITES the visible params ==\n");
     {
-        juce::String s = p.applyStructured (params ({ { "correction_mode", "hard" } }));
+        juce::String s = p.applyStructured (params ({ { "correction_mode", "hard" } }), EedDeviceProcessor::ParamSource::Assistant);
         std::printf ("    applied: %s\n", s.toRawUTF8());
         check (std::abs (p.getParamValue ("retune_speed_ms") - 6.0) < 1.0e-4, "hard wrote retune_speed_ms 6 (round 51: a mode is a dial position; hard = dial 0 = the curve's 6 ms floor, which is the effective floor anyway)");
         check (p.getParamValue ("flex") == 0.0, "hard wrote flex 0");
@@ -66,7 +66,7 @@ int main()
                "the summary NAMES what it changed, not just the mode");
     }
     {
-        juce::String s = p.applyStructured (params ({ { "correction_mode", "natural" } }));
+        juce::String s = p.applyStructured (params ({ { "correction_mode", "natural" } }), EedDeviceProcessor::ParamSource::Assistant);
         std::printf ("    applied: %s\n", s.toRawUTF8());
         check (p.getParamValue ("retune_speed_ms") == 120.0, "natural wrote retune 120");
         check (p.getParamValue ("flex") == 55.0, "natural wrote flex 55");
@@ -74,21 +74,21 @@ int main()
         check (p.getParamValue ("targeting_ignores_vibrato") == 1.0, "natural wrote ignore_vibrato on");
     }
     {
-        p.applyStructured (params ({ { "correction_mode", "balanced" } }));
+        p.applyStructured (params ({ { "correction_mode", "balanced" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (p.getParamValue ("retune_speed_ms") == 40.0 && p.getParamValue ("flex") == 25.0,
                "balanced matches the spec table (40 / 25 / 30)");
-        p.applyStructured (params ({ { "correction_mode", "tuned" } }));
+        p.applyStructured (params ({ { "correction_mode", "tuned" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (p.getParamValue ("retune_speed_ms") == 8.0 && p.getParamValue ("flex") == 0.0,
                "tuned matches the spec table (8 / 0 / 0)");
     }
 
     std::printf ("== a manual move knocks the display to custom ==\n");
     {
-        p.applyStructured (params ({ { "correction_mode", "natural" } }));
+        p.applyStructured (params ({ { "correction_mode", "natural" } }), EedDeviceProcessor::ParamSource::Assistant);
         const auto* spec = EedPitchProcessor::schema().find ("correction_mode");
         check (spec->choiceLabel (p.getParamValue ("correction_mode")) == "natural",
                "reads natural after selecting it");
-        p.applyStructured (params ({ { "flex", 20.0 } }));
+        p.applyStructured (params ({ { "flex", 20.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (spec->choiceLabel (p.getParamValue ("correction_mode")) == "custom",
                "moving flex by hand shows custom");
         check (p.getParamValue ("flex") == 20.0, "...and the hand-set value stuck");
@@ -96,7 +96,7 @@ int main()
 
     std::printf ("== pitch_scale: MERGE semantics keyed on semitone ==\n");
     {
-        p.applyStructured (params ({ { "scale", "major" } }));
+        p.applyStructured (params ({ { "scale", "major" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (p.corrector().degreeEnabled (0) && ! p.corrector().degreeEnabled (1),
                "major enabled C, disabled C#");
 
@@ -108,7 +108,7 @@ int main()
         outer->setProperty ("pitch_scale", juce::var (arr));
 
         int applied = 0, skipped = 0;
-        juce::String s = p.applyStructured (juce::var (outer), &applied, &skipped);
+        juce::String s = p.applyStructured (juce::var (outer), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
         std::printf ("    applied: %s\n", s.toRawUTF8());
         check (! p.corrector().degreeEnabled (11), "the 7th was removed");
         check (p.corrector().degreeEnabled (0) && p.corrector().degreeEnabled (4),
@@ -126,7 +126,7 @@ int main()
         juce::Array<juce::var> arr; arr.add (juce::var (d));
         auto* outer = new juce::DynamicObject();
         outer->setProperty ("pitch_scale", juce::var (arr));
-        p.applyStructured (juce::var (outer));
+        p.applyStructured (juce::var (outer), EedDeviceProcessor::ParamSource::Assistant);
         check (std::abs (p.corrector().degreeBias (4) + 14.0f) < 0.01f, "E biased -14 cents");
         check (p.corrector().degreeEnabled (4), "and `enabled` was untouched by an omitted field");
     }
@@ -139,7 +139,7 @@ int main()
         auto* outer = new juce::DynamicObject();
         outer->setProperty ("pitch_scale", juce::var (arr));
         int applied = 0, skipped = 0;
-        p.applyStructured (juce::var (outer), &applied, &skipped);
+        p.applyStructured (juce::var (outer), EedDeviceProcessor::ParamSource::Assistant, &applied, &skipped);
         check (skipped >= 1 && applied == 0, "keyless entry reported as skipped");
     }
 
@@ -160,7 +160,7 @@ int main()
         };
 
         p.applyStructured (params ({ { "key_source", "auto" },
-                                     { "reference_source", "auto" } }));
+                                     { "reference_source", "auto" } }), EedDeviceProcessor::ParamSource::Assistant);
 
         // F# minor, confidently, from a bus source.
         publish (6, true, 0.86f, 441.3f, "Music Bus");
@@ -843,8 +843,8 @@ int main()
 
     std::printf ("== setting key or scale BY HAND takes over from auto ==\n");
     {
-        p.applyStructured (params ({ { "key_source", "auto" } }));
-        p.applyStructured (params ({ { "scale", "dorian" } }));
+        p.applyStructured (params ({ { "key_source", "auto" } }), EedDeviceProcessor::ParamSource::Assistant);
+        p.applyStructured (params ({ { "scale", "dorian" } }), EedDeviceProcessor::ParamSource::Assistant);
         const auto* ks = EedPitchProcessor::schema().find ("key_source");
         check (ks->choiceLabel (p.getParamValue ("key_source")) == "manual",
                "a hand-set scale flips key_source to manual");
@@ -861,7 +861,7 @@ int main()
 
     std::printf ("== a live key change CROSS-FADES rather than switching on a sample ==\n");
     {
-        p.applyStructured (params ({ { "key_source", "auto" } }));
+        p.applyStructured (params ({ { "key_source", "auto" } }), EedDeviceProcessor::ParamSource::Assistant);
         echojay::DetectedKeyFact f;
         f.valid = true; f.root = 0; f.minor = false; f.confidence = 0.9f;
         echojay::KeyFeed::instance().publish (f);

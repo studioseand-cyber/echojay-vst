@@ -1953,7 +1953,7 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
             const auto why = targetRefusal(cur);
             if (why.isNotEmpty()) return failButContinue("set_wet refused: " + why);
         }
-        setSlotWet(cur, op.wetPct / 100.0f);
+        setSlotWet(cur, op.wetPct / 100.0f, WetSource::Assistant);
         EchoJay_NSLog(("EJEdit: set_wet slot=" + juce::String(cur + 1) + " \""
                        + slots_[(size_t)cur].desc.name + "\" wet=" + juce::String(op.wetPct, 1) + "%").toRawUTF8());
         finishOpAndContinue("set wet " + juce::String(juce::roundToInt(op.wetPct)) + "% on "
@@ -2131,7 +2131,7 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
                 // wet_pct riding an add/replace: EchoJay's own blend on the
                 // slot that just loaded; absent leaves the default (1.0).
                 if (theOp.wetPct >= 0.0f)
-                    setSlotWet(slotIdx, theOp.wetPct / 100.0f);
+                    setSlotWet(slotIdx, theOp.wetPct / 100.0f, WetSource::Assistant);
             };
 
             if (theOp.op == "add")
@@ -3403,7 +3403,15 @@ juce::String ChainHost::applyStructuredToBuiltinSlot(int slotIndex, const juce::
     // the DEVICE's schema. A structured device resolves its array form and the
     // flat `params` map; a flat device handles `params` alone. A semantic bag
     // meant for the anchor path carries neither and comes back empty.
-    return device->applyStructured(structured, appliedOut, skippedOut);
+    // ASSISTANT, and that is not a formality: both callers of this function
+    // are EchoJay writing values (applyStructuredIfReady is the dial path,
+    // devApplyEqJson is the dev command), so both are refused under
+    // do-not-dial exactly as they were before ParamSource existed. Session
+    // restore does NOT come through here, it goes to setStateInformation. If a
+    // restore path is ever routed through this function, it must carry its own
+    // source rather than inherit this one.
+    return device->applyStructured(structured, EedDeviceProcessor::ParamSource::Assistant,
+                                   appliedOut, skippedOut);
 }
 
 // The terminal per-slot verdict. Everything the per-call lines cannot say,

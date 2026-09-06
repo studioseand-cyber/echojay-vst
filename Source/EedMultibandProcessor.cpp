@@ -276,6 +276,7 @@ void EedMultibandProcessor::pushCrossovers()
 // the array form
 // ---------------------------------------------------------------------------
 juce::String EedMultibandProcessor::applyCompBands (const juce::var& compBandsArray,
+                                                    ParamSource src,
                                                     int* appliedOut, int* skippedOut)
 {
     if (appliedOut != nullptr) *appliedOut = 0;
@@ -335,7 +336,7 @@ juce::String EedMultibandProcessor::applyCompBands (const juce::var& compBandsAr
     }
 
     int applied = 0, skipped = 0;
-    juce::String summary = applyParams (juce::var (flat.get()), &applied, &skipped);
+    juce::String summary = applyParams (juce::var (flat.get()), src, &applied, &skipped);
 
     if (appliedOut != nullptr) *appliedOut = applied;
     if (skippedOut != nullptr) *skippedOut = skipped + unknown.size();
@@ -351,6 +352,7 @@ juce::String EedMultibandProcessor::applyCompBands (const juce::var& compBandsAr
 }
 
 juce::String EedMultibandProcessor::applyStructured (const juce::var& structured,
+                                                     ParamSource src,
                                                      int* appliedOut, int* skippedOut)
 {
     if (appliedOut != nullptr) *appliedOut = 0;
@@ -358,7 +360,7 @@ juce::String EedMultibandProcessor::applyStructured (const juce::var& structured
 
     // A bare array IS comp_bands, the same courtesy the EQ extends to eq_bands.
     if (structured.isArray())
-        return applyCompBands (structured, appliedOut, skippedOut);
+        return applyCompBands (structured, src, appliedOut, skippedOut);
 
     if (! structured.isObject()) return {};
 
@@ -371,7 +373,7 @@ juce::String EedMultibandProcessor::applyStructured (const juce::var& structured
     if (structured.hasProperty ("params"))
     {
         int a = 0, s = 0;
-        const auto p = applyParams (structured.getProperty ("params", juce::var()), &a, &s);
+        const auto p = applyParams (structured.getProperty ("params", juce::var()), src, &a, &s);
         if (p.isNotEmpty()) parts.add (p);
         applied += a; skipped += s;
     }
@@ -379,7 +381,7 @@ juce::String EedMultibandProcessor::applyStructured (const juce::var& structured
     if (structured.hasProperty ("comp_bands"))
     {
         int a = 0, s = 0;
-        const auto b = applyCompBands (structured.getProperty ("comp_bands", juce::var()), &a, &s);
+        const auto b = applyCompBands (structured.getProperty ("comp_bands", juce::var()), src, &a, &s);
         if (b.isNotEmpty()) parts.add (b);
         applied += a; skipped += s;
     }
