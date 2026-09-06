@@ -92,3 +92,24 @@ Stage 1: base -> f6ac073. Stage 2: f6ac073 -> aa455ff. Both conflicts
 BOTH and shown to Sean before committing. Kathy's work is not ours to
 simplify. Nothing runs until Kathy confirms her side is fully pushed AND
 Sean says the shoot is done.
+
+## Follow-up (after your reply, 6 Sep)
+- Confirmed: we added NO applyParams / applyStructured call sites since
+  d68da09. Ours are all pre-existing: EedDeviceProcessor.cpp 79 and 230,
+  EedMultibandProcessor.cpp 338 and 374, EedPitchProcessor.cpp 637 and 647,
+  ChainHost.cpp 3178 - plus three your list did not carry, also
+  pre-existing: SurgicalEqProcessor.cpp 559 and SurgicalEqEditor.cpp 207
+  and 258. Your no-default change has nothing un-updated coming from us.
+- Predicted conflict #3 is written down with its merged shape (survey
+  section 9): setStateInformation keeps applyingState_ = true /
+  resetParamsToDefaults / applyParams(..., <ParamSource>) / applyingState_
+  = false / onStateApplied(). Neither side wholesale.
+- Your defect is recorded as DATA LOSS (defaults written, nothing
+  restored), your find, and your fix shape (no default, inert on the
+  restore path by construction) as the right one.
+- feat/ejmap e727891 is a fast-forward of 131aa5e, fine. feat/bulk-ingest
+  b76df80 is NOT on the remote as of our fetch - please push it; the pair
+  lands together or not at all.
+- V8 (explicit ParamSource at every call site) and V9 (saved values survive
+  a reload with do-not-dial ON, with the pre-fix run as the positive
+  control) are added to the plan.

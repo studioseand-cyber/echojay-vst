@@ -238,3 +238,67 @@ a clean auto-merge after her fix.
 ON THE MOVING HEAD: Kathy is given the BRANCH NAME,
 backup/seand-mac-integration-2026-09-06, never a hash; it has moved four
 times today from committing survey records to the branch under survey.
+
+## 9. Kathy's reply (6 Sep 2026): predicted conflict #3, her defect recorded as data loss, two new branches, V8/V9
+
+### Predicted conflict #3 - Source/EedDeviceProcessor.cpp, the restore sequence (our lines 228-232; her line 244)
+Kathy is adding a ParamSource parameter to applyParams AND applyStructured
+with NO DEFAULT, so a missed call site is a build error. On her side that
+changes the applyParams line in setStateInformation - adjacent to our
+7fe50fd hunk (onStateApplied). THE MERGED SHAPE, all lines, verified
+against our tree today:
+    applyingState_ = true;
+    resetParamsToDefaults();
+    applyParams (parsed.getProperty ("params", juce::var()), <ParamSource>);
+    applyingState_ = false;
+    onStateApplied();
+DO NOT RESOLVE BY TAKING EITHER SIDE WHOLESALE: hers drops onStateApplied
+and the applyingState_ guard; ours drops the required argument.
+THE ASYMMETRY: taking HER side wholesale COMPILES CLEANLY with the
+migration silently gone; taking ours FAILS TO BUILD. The dangerous
+resolution is the one that looks fine - so V7 is not optional on this
+merge, it is the only thing that catches it. Filed beside conflicts (a)
+the ChainHost include block and (b) the settings movers list; all three
+have their resolution written before the merge, not invented at the
+keyboard.
+
+### Her defect, recorded properly: DATA LOSS, her find
+Our earlier description ("with the setting on, a reload restores
+nothing") was too mild. resetParamsToDefaults() runs on the line
+IMMEDIATELY BEFORE applyParams (our 229 / 230, confirmed). With the guard
+making applyParams a no-op, the sequence is: defaults written, nothing
+restored - the user's saved device values are DESTROYED, not merely
+unloaded. Same class as the adopt-on-engage data-loss defect this project
+hit earlier (DEFECT_GUARD_WITHOUT_MIGRATION.md). Kathy found and fixed it
+before it shipped. Her chosen fix - ParamSource with no default, so the
+guard is inert on the restore path BY CONSTRUCTION rather than by
+ordering - is the right shape and better than moving the guard. Nothing
+for us to do to it.
+
+### Confirmed back to her: we added NO applyParams / applyStructured call sites since the base
+Diffed d68da09..HEAD: 0 added. Every one in our tree is pre-existing:
+    EedDeviceProcessor.cpp 79, 230; EedMultibandProcessor.cpp 338, 374;
+    EedPitchProcessor.cpp 637, 647; ChainHost.cpp 3178;
+    AND THREE MORE her list did not carry, also pre-existing:
+    SurgicalEqProcessor.cpp 559 (applyParams); SurgicalEqEditor.cpp 207 and 258 (applyStructured).
+Her no-default change has no un-updated sites coming from our direction,
+same as loadPluginAsync and setSlotWet; her build will name the Surgical
+EQ three if her side misses them.
+
+### Two new branches from her side
+    origin/feat/ejmap        e727891 (30 Aug, Kathy)  - a FAST-FORWARD of 131aa5e (the tip surveyed on 6 Sep): +2 commits, "ejextract: gzip the contribute post ..." and an aucoverage_test change; tools only
+    feat/bulk-ingest         b76df80                  - NOT ON THE REMOTE as of this fetch (no origin/feat/bulk-ingest); it must be pushed before it can be staged
+These are the TWO HALVES of the gzipped-contribute change and must land
+TOGETHER: half of it is not a shippable state. Neither branch contains our
+base d68da09 (they fork from the older 0e48804 line), so they are a
+separate stage of their own, after the integration merge, taken as a pair.
+
+### Added to the verification plan
+  V8  Every applyParams and applyStructured call site in the MERGED tree
+      supplies an explicit ParamSource. Grep and list them (the ten above
+      plus whatever her side adds). Mirrors V5.
+  V9  Saved device values SURVIVE a reload with do-not-dial ON: the
+      regression test for the defect she found. It must FAIL on the pre-fix
+      code (defaults written, values gone) and PASS after - the positive
+      control is the pre-fix run. Instrument: a pitch-device state with
+      non-default values loaded under dialWritesBlocked() true, read back.
