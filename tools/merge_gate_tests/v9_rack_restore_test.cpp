@@ -9,6 +9,7 @@
     build has JUCE_MODAL_LOOPS_PERMITTED off, so there is no runDispatchLoopUntil,
     and constructing EchoJayProcessor from another thread under a
     MessageManagerLock deadlocks); main() just runs the dispatch loop.        */
+#include <CoreFoundation/CoreFoundation.h>
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "ChainHost.h"
@@ -86,10 +87,17 @@ int main()
     int ctl = -1, on = -1;
     Leg control (false, "POSITIVE CONTROL: setting OFF");
     Leg blockedLeg (true, "V9 RACK: setting ON");
-    blockedLeg.done = [&] (int r) { on = r; juce::MessageManager::getInstance()->stopDispatchLoop(); };
-    control.done   = [&] (int r) { ctl = r; if (r == 0) blockedLeg.start(); else juce::MessageManager::getInstance()->stopDispatchLoop(); };
+    bool finished = false;
+    blockedLeg.done = [&] (int r) { on = r; finished = true; };
+    control.done   = [&] (int r) { ctl = r; if (r == 0) blockedLeg.start(); else finished = true; };
     juce::MessageManager::callAsync ([&] { control.start(); });
-    juce::MessageManager::getInstance()->runDispatchLoop();
+    // A console process has no NSApplication run loop behind runDispatchLoop
+    // (it returned at once above), so pump the main CFRunLoop by hand: JUCE's
+    // message queue and timers on macOS dispatch through it.
+    const auto t0 = juce::Time::getMillisecondCounter();
+    while (! finished && juce::Time::getMillisecondCounter() - t0 < 60000)
+        CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false);
+    if (! finished) std::printf ("TIMEOUT: the harness did not finish within 60 s\n");
     std::printf ("control: %s   V9 rack: %s\n",
                  ctl == 0 ? "PASS" : (ctl == 99 ? "UNREACHABLE (harness could not drive the path)" : "FAIL (harness invalid)"),
                  on == 0 ? "PASS" : (on == 99 ? "UNREACHABLE" : (on < 0 ? "NOT RUN" : "FAIL - rack values lost on reload with DO NOT DIAL on")));
