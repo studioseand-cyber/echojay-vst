@@ -126,6 +126,69 @@ static int burstLeg()
     return bad;
 }
 
+// THE GHOST LEGS (6 Sep 2026, Pro Tools storm): a FROZEN slot exists in the
+// registry (a dead incarnation: inUse=1, heartbeat never climbs) carrying
+// uid U and name "Ghost". (a) a FRESH Link (no state) must mint its own uid
+// and take its own slot; (b) a Link RESTORING state that carries U must adopt
+// the frozen slot (the 25 Aug 2026 case: session reopen after an unclean
+// kill). The frozen slot is written by hand, borrowhost_test's pattern.
+static int ghostLegs()
+{
+    int err = 0; const auto dir = LinkShm::resolveDir (err);
+    int fd = -1, rerr = 0; void* reg = LinkShm::openRegistry (dir, fd, rerr);
+    if (reg == nullptr) { std::printf ("== GHOST LEGS: registry not mappable (%d)\n", rerr); return 99; }
+    auto* slots = LinkShm::regSlots (reg);
+    const char* U = "deadbeef01";
+    auto plantGhost = [&]() -> int
+    {
+        for (int i = kRegMaxSlots - 1; i >= 0; --i)
+            if (LinkShm::loadAcquire (&slots[i].inUse) == 0)
+            {
+                std::memset (&slots[i], 0, sizeof (RegistrySlot));
+                std::strncpy (slots[i].displayName, "Ghost", 39);
+                std::strncpy (slots[i].audioFile, "audio_Ghost.bin", 47);
+                std::strncpy (slots[i].instanceUid, U, 10);
+                slots[i].sampleRate = 48000.0f; slots[i].numChannels = 2;
+                LinkShm::storeRelease (&slots[i].heartbeat, 7u);   // frozen: never bumped again
+                LinkShm::storeRelease (&slots[i].inUse, 1u);
+                return i;
+            }
+        return -1;
+    };
+    int bad = 0;
+    {
+        std::printf ("== GHOST (a): a FRESH Link, no state, beside a frozen slot carrying uid %s ==\n", U);
+        const int g = plantGhost();
+        auto x = std::make_unique<LinkProcessor>(); x->prepareToPlay (48000.0, 512); x->updateShmState();
+        pump (100);   // ~2 s of its own timer (claim retries, if any)
+        const bool ghostStillThere = LinkShm::loadAcquire (&slots[g].inUse) != 0 && juce::String::fromUTF8 (slots[g].instanceUid) == U;
+        const juce::String mine = x->diag.slotIdx >= 0 ? juce::String::fromUTF8 (slots[x->diag.slotIdx].instanceUid) : juce::String ("(no slot)");
+        std::printf ("  fresh Link: slot %d uid %s   ghost slot %d still frozen-in-use: %s\n", x->diag.slotIdx, mine.toRawUTF8(), g, ghostStillThere ? "yes" : "NO (reaped/adopted)");
+        const bool ok = x->diag.slotIdx >= 0 && x->diag.slotIdx != g && mine != U && ghostStillThere;
+        std::printf ("  -> %s (a fresh instance must mint its OWN uid and leave the ghost alone)\n", ok ? "PASS" : "FAIL");
+        bad |= ! ok;
+        drain(); x.reset(); drain();
+        if (ghostStillThere) LinkShm::releaseSlot (reg, g);
+    }
+    {
+        std::printf ("== GHOST (b): a Link RESTORING state that carries uid %s must ADOPT the frozen slot ==\n", U);
+        const int g = plantGhost();
+        juce::String json = "{\"linkName\":\"\",\"linkOn\":true,\"instanceUid\":\"" + juce::String (U) + "\"}";
+        auto y = std::make_unique<LinkProcessor>(); y->prepareToPlay (48000.0, 512);
+        y->setStateInformation (json.toRawUTF8(), (int) json.getNumBytesAsUTF8());
+        pump (200);   // the gate needs 5 frozen observations on its ~1 s retry tick
+        const juce::String mine = y->diag.slotIdx >= 0 ? juce::String::fromUTF8 (slots[y->diag.slotIdx].instanceUid) : juce::String ("(no slot)");
+        int uSlots = 0; for (int i = 0; i < kRegMaxSlots; ++i) if (LinkShm::loadAcquire (&slots[i].inUse) && juce::String::fromUTF8 (slots[i].instanceUid) == U) ++uSlots;
+        std::printf ("  restoring Link: slot %d uid %s   slots carrying %s now: %d\n", y->diag.slotIdx, mine.toRawUTF8(), U, uSlots);
+        const bool ok = y->diag.slotIdx >= 0 && mine == U && uSlots == 1;
+        std::printf ("  -> %s (restore-of-own-uid adopts the ghost, exactly one slot carries the uid)\n", ok ? "PASS" : "FAIL");
+        bad |= (ok ? 0 : 2);
+        drain(); y.reset(); drain();
+        for (int i = 0; i < kRegMaxSlots; ++i) if (LinkShm::loadAcquire (&slots[i].inUse) && juce::String::fromUTF8 (slots[i].instanceUid) == U) LinkShm::releaseSlot (reg, i);
+    }
+    return bad;
+}
+
 int main()
 {
     std::setvbuf (stdout, nullptr, _IONBF, 0);
@@ -134,7 +197,9 @@ int main()
     const int same = leg ("THE DEFECT, the same typed name",      "Vox",  "Vox",  true);
     const int clone = cloneLeg();
     const int burst = burstLeg();
+    const int ghost = ghostLegs();
+    std::printf ("ghost legs: fresh-beside-ghost %s   restore-adopts %s\n", (ghost & 1) ? "FAIL" : "PASS", (ghost & 2) ? "FAIL" : "PASS");
     std::printf ("control: %s   same-name: %s   clone: %s   burst: %s\n", ctl == 0 ? "PASS" : "FAIL", same == 0 ? "PASS (two files)" : "FAIL (one file shared by two Links)",
                  clone == 0 ? "PASS" : (clone == 2 ? "FAIL (one ring file)" : "FAIL (one slot / one uid)"), burst == 0 ? "PASS" : "FAIL (one slot)");
-    return ctl != 0 ? 2 : (same | clone | burst);
+    return ctl != 0 ? 2 : (same | clone | burst | ghost);
 }
