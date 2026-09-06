@@ -1,0 +1,69 @@
+2026-09-06 20:56:34.512 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJChain: extracted block -- 0 ch, 0 slot(s), 0 with settings_structured
+2026-09-06 20:56:54.571 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJChain: extracted block -- 0 ch, 0 slot(s), 0 with settings_structured
+2026-09-06 20:57:18.169 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJChain: extracted block -- 1691 ch, 5 slot(s), 3 with settings_structured
+2026-09-06 20:57:18.276 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJChain: build button 0 now points at a 1691 ch block (was 0 ch)
+2026-09-06 20:57:24.427 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJChain: build target uid=(local rack)  path=loadChainFromJson  dialCapable=n/a (local)
+2026-09-06 20:57:24.430 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJChain: build-gate resolve "EchoJay EQ" -> built-in -> "EchoJay EQ"
+2026-09-06 20:57:24.540 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJChain: resolve "EchoJay EQ" -> built-in -> "EchoJay EQ"
+2026-09-06 20:57:24.541 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDial: slot 0 ("EchoJay EQ") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-09-06 20:57:24.541 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDial: attaching settings_structured to "EchoJay EQ", keys=[params, eq_bands]
+2026-09-06 20:57:25.505 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJStaleMap: slot=1 "Solid Bus Comp" indexed=(none) live=d8e076e41586 rung=first-index
+2026-09-06 20:57:25.505 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDial: slot 1 ("Solid Bus Comp") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-09-06 20:57:25.505 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDial: attaching settings_structured to "Solid Bus Comp", keys=[controls, threshold_db]
+2026-09-06 20:57:25.505 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDial: slot 1 ("Solid Bus Comp") NO MAP for fp=d8e076e41586  fetch_requested=n  in_flight=n  fetch_wired=y  cached_maps=16 -> noMap
+2026-09-06 20:57:25.505 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJFallback: asking for slot 2 ("Solid Bus Comp") fp d8e076e41586 -- no exact map
+2026-09-06 20:57:28.404 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJStaleMap: slot=2 "SSL Fusion Vintage Drive" indexed=(none) live=bef794345d0d rung=first-index
+2026-09-06 20:57:28.404 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDial: slot 2 ("SSL Fusion Vintage Drive") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-09-06 20:57:28.405 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDial: "SSL Fusion Vintage Drive" carried NO settings_structured in the chain block, so nothing was ever offered to the dial path. This is a SERVER/model-side gap, not a dial failure.
+2026-09-06 20:57:28.450 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJFallback: lookup 200, 1 result(s)
+2026-09-06 20:57:28.450 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJFallback: AudioUnit|2520b63|1.4.5 served from AudioUnit|2520b63|1.4.5 (tier exact, anchors_unverified=0)
+2026-09-06 20:57:28.487 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJFallback: 1 served, 0 refused
+2026-09-06 20:57:28.488 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDialable: slot 1 ("Solid Bus Comp") fp=d8e076e41586 dialable=ABSENT category=compressor fresh=y
+2026-09-06 20:57:28.488 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDial: slot 2 ("SSL Fusion Vintage Drive") no settings yet [map-arrived] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-09-06 20:57:28.488 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJParamMaps: stored/updated 0 map(s), retracted 0 from server
+2026-09-06 20:57:28.488 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDial: slot 2 ("SSL Fusion Vintage Drive") no settings yet [map-arrived] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-09-06 20:57:30.776 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJStaleMap: slot=3 "UAD Pultec EQP-1A" indexed=(none) live=1fccbbec6ccf rung=first-index
+2026-09-06 20:57:30.777 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDial: slot 3 ("UAD Pultec EQP-1A") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-09-06 20:57:30.777 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDial: "UAD Pultec EQP-1A" carried NO settings_structured in the chain block, so nothing was ever offered to the dial path. This is a SERVER/model-side gap, not a dial failure.
+2026-09-06 20:57:30.785 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDialSummary: WATCHDOG 6s after build start, 4 slot(s)
+2026-09-06 20:57:30.785 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDialSummary:   slot 0 ("EchoJay EQ") builtin  settings_structured=y  shape=wrapped  keys=[params{phase_mode, auto_gain}, eq_bands[2]]  requested=4  applied=2  manual=0  readbackMiss=0  status=applied  fp=(none)  map=n
+2026-09-06 20:57:30.785 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDialSummary:   slot 1 ("Solid Bus Comp")  settings_structured=y  shape=mixed  keys=[controls{Ratio, Attack}, threshold_db]  requested=3  applied=0  manual=3  readbackMiss=1  status=writesRejected  fp=d8e076e41586  map=y
+2026-09-06 20:57:30.785 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDialSummary:   slot 2 ("SSL Fusion Vintage Drive")  settings_structured=n  shape=none  keys=[]  requested=0  applied=0  manual=0  readbackMiss=0  status=none  fp=bef794345d0d  map=n
+2026-09-06 20:57:30.785 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDialSummary:   slot 3 ("UAD Pultec EQP-1A")  settings_structured=n  shape=none  keys=[]  requested=0  applied=0  manual=0  readbackMiss=0  status=none  fp=1fccbbec6ccf  map=n
+2026-09-06 20:57:30.785 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDialSummary: 1/4 slot(s) dialled something; 2 carried NO settings from the server
+2026-09-06 20:57:32.647 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJStaleMap: slot=4 "Newfangled Elevate" indexed=(none) live=53a612ab17c4 rung=first-index
+2026-09-06 20:57:32.647 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDial: slot 4 ("Newfangled Elevate") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-09-06 20:57:32.647 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDial: attaching settings_structured to "Newfangled Elevate", keys=[controls]
+2026-09-06 20:57:32.647 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDial: slot 4 ("Newfangled Elevate") NO MAP for fp=53a612ab17c4  fetch_requested=n  in_flight=n  fetch_wired=y  cached_maps=17 -> noMap
+2026-09-06 20:57:32.648 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJFallback: asking for slot 5 ("Newfangled Elevate") fp 53a612ab17c4 -- no exact map
+2026-09-06 20:57:32.654 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDialSummary: load loop complete, 5 slot(s) racked, 5 requested, cleanLoad=y -> finishChainBubbleWhenDialSettled
+2026-09-06 20:57:32.654 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDialSummary: settle[finish] entered, attemptsLeft=8 settled=n
+2026-09-06 20:57:32.913 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDialSummary: settle[finish] entered, attemptsLeft=7 settled=n
+2026-09-06 20:57:33.015 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJParamMaps: stored/updated 1 map(s), retracted 0 from server
+2026-09-06 20:57:33.015 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDial: slot 2 ("SSL Fusion Vintage Drive") no settings yet [map-arrived] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-09-06 20:57:33.015 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDial: slot 3 ("UAD Pultec EQP-1A") no settings yet [map-arrived] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-09-06 20:57:33.015 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDialable: slot 4 ("Newfangled Elevate") fp=53a612ab17c4 dialable=true category=limiter fresh=y
+2026-09-06 20:57:33.034 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJFallback: lookup 200, 1 result(s)
+2026-09-06 20:57:33.034 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJFallback: AudioUnit|4a7c6726|1.12.7 served from AudioUnit|4a7c6726|1.12.7 (tier exact, anchors_unverified=0)
+2026-09-06 20:57:33.077 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJFallback: 1 served, 0 refused
+2026-09-06 20:57:33.077 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDial: slot 2 ("SSL Fusion Vintage Drive") no settings yet [map-arrived] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-09-06 20:57:33.077 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDial: slot 3 ("UAD Pultec EQP-1A") no settings yet [map-arrived] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-09-06 20:57:33.169 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDialSummary: settle[finish] entered, attemptsLeft=6 settled=y
+2026-09-06 20:57:33.169 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDialSummary: dial settled, 5 slot(s)
+2026-09-06 20:57:33.169 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDialSummary:   slot 0 ("EchoJay EQ") builtin  settings_structured=y  shape=wrapped  keys=[params{phase_mode, auto_gain}, eq_bands[2]]  requested=4  applied=2  manual=0  readbackMiss=0  status=applied  fp=(none)  map=n
+2026-09-06 20:57:33.169 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDialSummary:   slot 1 ("Solid Bus Comp")  settings_structured=y  shape=mixed  keys=[controls{Ratio, Attack}, threshold_db]  requested=3  applied=0  manual=3  readbackMiss=1  status=writesRejected  fp=d8e076e41586  map=y
+2026-09-06 20:57:33.169 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDialSummary:   slot 2 ("SSL Fusion Vintage Drive")  settings_structured=n  shape=none  keys=[]  requested=0  applied=0  manual=0  readbackMiss=0  status=none  fp=bef794345d0d  map=n
+2026-09-06 20:57:33.169 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDialSummary:   slot 3 ("UAD Pultec EQP-1A")  settings_structured=n  shape=none  keys=[]  requested=0  applied=0  manual=0  readbackMiss=0  status=none  fp=1fccbbec6ccf  map=n
+2026-09-06 20:57:33.169 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDialSummary:   slot 4 ("Newfangled Elevate")  settings_structured=y  shape=wrapped  keys=[controls{Ceiling}]  requested=1  applied=1  manual=0  readbackMiss=0  status=applied  fp=53a612ab17c4  map=y
+2026-09-06 20:57:33.169 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDialSummary: 2/5 slot(s) dialled something; 2 carried NO settings from the server
+2026-09-06 20:57:38.444 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJParamMaps: prefetching 2 map(s)
+2026-09-06 20:57:38.925 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJParamMaps: stored/updated 2 map(s), retracted 0 from server
+2026-09-06 20:57:38.925 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDial: slot 2 ("SSL Fusion Vintage Drive") no settings yet [map-arrived] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-09-06 20:57:38.925 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDial: slot 3 ("UAD Pultec EQP-1A") no settings yet [map-arrived] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-09-06 21:38:44.574 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJChain: extracted block -- 0 ch, 0 slot(s), 0 with settings_structured
+2026-09-06 21:39:28.754 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJChain: extracted block -- 0 ch, 0 slot(s), 0 with settings_structured
+2026-09-06 21:39:32.871 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDialable: slot 2 ("SSL Fusion Vintage Drive") fp=bef794345d0d dialable=true category=saturation fresh=y
+2026-09-06 21:39:32.953 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJDialable: slot 3 ("UAD Pultec EQP-1A") fp=1fccbbec6ccf dialable=true category=eq fresh=y
+2026-09-06 21:41:47.467 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJChain: extracted block -- 0 ch, 0 slot(s), 0 with settings_structured
+2026-09-06 21:42:19.079 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJChain: extracted block -- 0 ch, 0 slot(s), 0 with settings_structured
+2026-09-06 21:43:39.000 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJChain: extracted block -- 0 ch, 0 slot(s), 0 with settings_structured

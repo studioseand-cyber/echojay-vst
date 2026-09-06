@@ -112,3 +112,50 @@ ask the SAME question the build will ask, or it is promising something it cannot
 ## Status
 Filed. Diagnosis tomorrow, after the signing question is settled. Owed first: the screenshot path; the quoted
 setting-application site (question 1); the two dialability sites (question 2).
+
+## DEFECT 2 - THE TWO MEASUREMENTS AND WHERE IT LIVES (22:30, 6 Sep; from the live log of Sean's build turn)
+Instrument: unified log, Pro Tools pid 83157, 20:56-21:44, every EJDial/EJParamMaps/EJFallback/EJStaleMap line
+(results_2026-09-06/protools_dial_log_20-57_build.log, 62 lines). Read before writing anything, as ruled.
+### The build turn, 20:57:18: "extracted block -- 5 slot(s), 3 with settings_structured"
+    slot 0 EchoJay EQ            structured=y  applied (built-in)
+    slot 1 Solid Bus Comp        structured=y  requested=3 applied=0 manual=3 readbackMiss=1 status=writesRejected map=y
+    slot 2 SSL Fusion Vintage Drive   "carried NO settings_structured in the chain block ... SERVER/model-side gap"
+    slot 3 UAD Pultec EQP-1A          "carried NO settings_structured in the chain block ... SERVER/model-side gap"
+    slot 4 Newfangled Elevate    structured=y  requested=1 applied=1  (its fallback map arrived inside the wait)
+So the three "hand-dial" plugins are TWO different mechanisms, and neither is "the build asked before the map
+landed and took no as final":
+  Drive and Pultec: the server sent NO structured settings for them at all. Nothing was offered to the dial
+    path, so no map question was ever asked. Their maps arrived 20 s later (prefetch, 481 ms) and at 21:39:32 both
+    read "dialable=true"; the follow-up turn's EDIT carried structured settings and dialled them. The setting's
+    promise was broken on the SERVER: a plugin passed the "only dialable" filter and came back without settings.
+  Solid Bus Comp: its map WAS there when the dial ran (map=y; the fallback answered in 2,983 ms, inside the
+    settle). The dial ran and the WRITES WERE REJECTED: 3 requested, 0 applied, readback mismatch 1. That is a
+    parameter-write failure on this host (Pro Tools, x86_64 slice under Rosetta) - question 3's territory, not
+    timing. "dialable=ABSENT" on its map line: the map carries no dialable flag.
+### Measurement 1 - how long a map fetch takes, request to usable (three samples, this session)
+    fallback lookup, Solid Bus Comp     20:57:25.505 -> 28.487    2,982 ms
+    fallback lookup, Newfangled Elevate 20:57:32.648 -> 33.077      429 ms
+    prefetch, 2 maps (Drive, Pultec)    20:57:38.444 -> 38.925      481 ms
+    The bubble's wait: finishChainBubbleWhenDialSettled(chainJson, 8) x 250 ms = 2,000 ms (PluginEditor.cpp:30555,
+    :22131). The slowest measured fetch is 1.5x the bound. A watchdog logs at 6 s.
+### Measurement 2 - is the map requested at build time, or only when the dial is attempted?
+    Prefetch (all scanned identities) runs at editor open / scan / login (PluginEditor.cpp:11307, :20016, :20292;
+    ChainHost.cpp:2723, :4248) - but ONLY for identities already in identityToFp_. All five slots here read
+    "rung=first-index": their fps were not indexed, so nothing was requested before the build. The exact-fp
+    request and the fallback lookup fire at settings-attach (ChainHost.cpp:2797-2836), i.e. when the dial is
+    attempted. The request is late, exactly as the ruling suspected; the wait then runs from that late start.
+### Where the "needs hand-dialing" wording comes from (client) - the C2 defect line
+    PluginEditor.cpp:22198   case ChainHost::DialStatus::pending: zeroParts.add(di.name);   -> "needs hand-dialing"
+    A slot still PENDING when the 2 s wait expires is worded exactly like a slot with no map. And a fetch that
+    fails (status != 200, PluginEditor.cpp:820) never clears pendingMapFps_, so that slot is pending forever.
+### Where the "only dialable" filter asks (C3)
+    Suggestion: ChainHost::getDialableRecommendableNames - local map by exact fp, OR the server's existence
+    index (/api/params/lookup mode=exists, mapped_versions non-empty, version-INSENSITIVE key). Build: the local
+    map by exact fp, then the version-tolerant fallback. Two sources; the fallback bridges the version gap, and
+    the log shows it bridged it here. What the filter cannot see is whether the SERVER will emit settings for
+    the plugin it let through - which is what failed for Drive and Pultec.
+### WHERE IT LIVES
+    C1 (bound) and C2 (honest pending wording, failed-fetch pending) are PLUGIN-SIDE: another AAX round trip.
+    The Drive/Pultec omission is SERVER-SIDE (settings_structured not emitted for plugins the existence index
+    calls dialable): a deploy, Kathy. Solid Bus Comp's writesRejected under Rosetta is a THIRD item, undiagnosed.
+NOT BUILT: the ruled mechanism does not match this log for two of the three plugins; reported back for the ruling.
