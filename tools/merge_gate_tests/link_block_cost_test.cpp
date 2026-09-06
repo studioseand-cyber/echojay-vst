@@ -5,6 +5,7 @@
     48 kHz on a 2-channel buffer; the mean per-block wall time is reported.
     Usage: link_block_cost_test <rows>                                        */
 #include <JuceHeader.h>
+#include "EJStateRoot.h"
 #include "PluginProcessor.h"
 #include "LinkShm.h"
 #include <cstdio>
@@ -12,6 +13,7 @@
 
 int main (int argc, char** argv)
 {
+    echojay::requireIsolationOrDie ("link_block_cost_test.cpp");
     std::setvbuf (stdout, nullptr, _IONBF, 0);
     juce::ScopedJuceInitialiser_GUI init;
     const int rows = argc > 1 ? atoi (argv[1]) : 0;

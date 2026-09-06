@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include <signal.h>
 #include <unistd.h>
 #include "EedLatencyLog.h"
@@ -240,7 +241,7 @@ static ChannelMeterData finalizeLinkChannel(EchoJayProcessor::LinkCaptureChannel
 void ejTeardownLog(const juce::String& msg)
 {
    #if ECHOJAY_TEARDOWN_LOGGING
-    auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
+    auto appData = echojay::userAppData();
    #if JUCE_MAC
     auto dir = appData.getChildFile("Application Support/EchoJay");
    #elif JUCE_WINDOWS
@@ -441,7 +442,7 @@ EchoJayProcessor::EchoJayProcessor()
 void ejDashLog(const juce::String& msg)
 {
    #if ECHOJAY_DEV_TRANSPORT
-    auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
+    auto appData = echojay::userAppData();
    #if JUCE_MAC
     auto dir = appData.getChildFile("Application Support/EchoJay");
    #elif JUCE_WINDOWS

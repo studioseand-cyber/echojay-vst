@@ -21,6 +21,7 @@
 #if JUCE_MAC || JUCE_LINUX
   #include <sys/mman.h>
 #include <signal.h>   // kill(pid, 0): publisher liveness (reaper)
+#include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
   #include <sys/stat.h>
   #include <fcntl.h>
   #include <unistd.h>
@@ -370,8 +371,7 @@ inline juce::String resolveDir(int& errno_out)
     // 1. Preferred: persistent across sessions
 #if JUCE_MAC
     {
-        juce::File appSupport = juce::File::getSpecialLocation(
-            juce::File::userApplicationDataDirectory)
+        juce::File appSupport = echojay::userAppData()
             .getChildFile("Application Support/EchoJay/link");
         if (tryDir(appSupport))
             return appSupport.getFullPathName() + "/";

@@ -1,4 +1,5 @@
 #include "EJDialWrites.h"
+#include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "EchoJayBridgedAU.h"   // FIRST: pulls CoreFoundation before JUCE (Point ambiguity)
 #include "ChainHost.h"
 #include "EedLatencyLog.h"
@@ -43,7 +44,7 @@ using echojay::trailingModelNumber;
 // ---------------------------------------------------------------------------
 static juce::File appSupportDir()
 {
-    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+    return echojay::userAppData()
            .getChildFile("EchoJay");
 }
 
@@ -4437,7 +4438,7 @@ int devForceWithholdSlot1()
 {
     static const int s = []
     {
-        auto f = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+        auto f = echojay::userStateHome()
                      .getChildFile(".echojay").getChildFile("dev.json");
         if (! f.existsAsFile()) return 0;
         auto v = juce::JSON::parse(f.loadFileAsString());

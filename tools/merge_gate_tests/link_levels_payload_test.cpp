@@ -1,6 +1,7 @@
 // MEASURE the per-Link payload of a capture turn: buildLinkLevelsContext bytes with N live rows
 #include <CoreFoundation/CoreFoundation.h>
 #include <JuceHeader.h>
+#include "EJStateRoot.h"
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "LinkShm.h"
@@ -8,6 +9,7 @@
 struct EchoJayTabStripTestAccess { static juce::String levels (EchoJayEditor& e) { return e.buildLinkLevelsContext(); } };
 int main (int argc, char** argv)
 {
+    echojay::requireIsolationOrDie ("link_levels_payload_test.cpp");
     std::setvbuf (stdout, nullptr, _IONBF, 0); juce::ScopedJuceInitialiser_GUI init;
     const int rows = argc > 1 ? atoi (argv[1]) : 1;
     int err = 0; const auto dir = LinkShm::resolveDir (err); int fd = -1, rerr = 0; void* reg = LinkShm::openRegistry (dir, fd, rerr);

@@ -310,3 +310,11 @@ Run it against the AU, the VST3 and the AAX. Last verified clean on 2.23.49.
 8. `./package-dmg.sh`
 9. Tag `v<VERSION>` and push for the Windows CI build
 10. Install from the DMG on a clean account; verify Settings shows the version
+
+### v7 AAX pair, built 6 Sep 2026 21:36-21:37 from merge/kathy-2026-09-06 (unsigned, on the Desktop for the signing trip)
+    EchoJay V2 2.26.4   arm64 0760FE10-E6F6-397B-B958-720D9B41235B   x86_64 7FBB47DE-2227-3B85-BC0C-E1B472111669
+    EchoJay Link 0.8.5  arm64 E66AEC93-2CE6-3CF5-9CF9-F811F1FB688A   x86_64 9E3A9B2A-BC2E-3570-8864-38D4CB59D997
+Carries: v7 own-chunk rule + sidecar-on-uid-move (the v6 regressions), capacity 256 / registry_v3, C1-C4, the ring
+fix, and the state root (EJStateRoot.h; unset env = the real locations). Installer: INSTALL_BOTH_AAX_v7_2026-09-06.command
+(refuses anything but these four UUIDs; --verify against the installed v4/v6 pair FAILS, as it must). The signed v6
+pair on the Desktop is renamed *_OLD_v6_* and must NOT be installed (it lacks the own-chunk fix).

@@ -1,4 +1,5 @@
 #include "EchoJayAPI.h"
+#include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "EJStreamFraming.h" // SSE byte-to-frame splitter (spec step 2)
 #include "EJReplyBlocks.h"   // the whole-reply block strip (moved verbatim, spec step 3)
 #include "ChainHost.h"    // buildCurrentChainInjection reads the live rack
@@ -54,7 +55,7 @@ namespace
         static DevTransport dt = []
         {
             DevTransport out;
-            auto f = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+            auto f = echojay::userStateHome()
                          .getChildFile(".echojay").getChildFile("dev.json");
             if (! f.existsAsFile()) return out;
             auto parsed = juce::JSON::parse(f.loadFileAsString());
@@ -871,7 +872,7 @@ static int simulatedCreditsOverride()
     if (now - lastCheck > 2000)
     {
         lastCheck = now;
-        auto dir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+        auto dir = echojay::userAppData()
                        .getChildFile("EchoJay");
         if (dir.getChildFile("simulate_no_credits").existsAsFile())
             value = 0;
@@ -2425,7 +2426,7 @@ void EchoJayAPI::fetchRemoteConfig()
                                + " (served version " + juce::String(version) + ")").toRawUTF8());
                 
                 // Cache to disk so it works offline next time
-                auto cacheFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                auto cacheFile = echojay::userAppData()
                                      .getChildFile("EchoJay").getChildFile("remote_config.json");
                 cacheFile.getParentDirectory().createDirectory();
                 cacheFile.replaceWithText(responseText);
@@ -2434,7 +2435,7 @@ void EchoJayAPI::fetchRemoteConfig()
         else if (!remoteConfigLoaded)
         {
             // Offline fallback — try loading cached config from disk
-            auto cacheFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+            auto cacheFile = echojay::userAppData()
                                  .getChildFile("EchoJay").getChildFile("remote_config.json");
             if (cacheFile.existsAsFile())
             {
@@ -3751,7 +3752,7 @@ juce::String EchoJayAPI::salvagePartialChain(const juce::String& partial)
 
 juce::File EchoJayAPI::getSettingsFile()
 {
-    auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
+    auto appData = echojay::userAppData();
 #if JUCE_MAC
     return appData.getChildFile("Application Support/EchoJay/auth.json");
 #elif JUCE_WINDOWS
@@ -3931,7 +3932,7 @@ void EchoJayAPI::lookupFallbackMaps(const juce::String& body,
 
 void EchoJayAPI::fetchWhatsNew(std::function<void(const juce::var&)> onComplete)
 {
-    auto cacheFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+    auto cacheFile = echojay::userAppData()
                          .getChildFile("EchoJay").getChildFile("whats_new.json");
     auto fallback = [onComplete, cacheFile]
     {

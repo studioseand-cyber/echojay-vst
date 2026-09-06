@@ -19,6 +19,12 @@
 #
 # Three runs per variant; take the spread across runs as the error bar. The
 # committed baseline lives in meterbench.cpp's header comment.
+# ISOLATION (6 Sep 2026 ruling): this harness runs against a PRIVATE state root,
+# never the user's live registry / auth.json / caches. Set ECHOJAY_STATE_HOME to
+# reuse a root; unset, a fresh temporary one is created and named.
+: "${ECHOJAY_STATE_HOME:=$(mktemp -d /tmp/echojay-harness-state.XXXXXX)}"; export ECHOJAY_STATE_HOME
+echo "isolated state root: $ECHOJAY_STATE_HOME"
+
 set -e
 cd "$(dirname "$0")/../.."
 SCRATCH=$(mktemp -d)

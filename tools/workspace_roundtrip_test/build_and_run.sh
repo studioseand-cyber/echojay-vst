@@ -10,6 +10,12 @@
 # It must NEVER appear in a header and must never gate anything that
 # changes struct layout, class size, or vtable shape — such a mismatch
 # fails as random runtime memory corruption, not a link error.
+# ISOLATION (6 Sep 2026 ruling): this harness runs against a PRIVATE state root,
+# never the user's live registry / auth.json / caches. Set ECHOJAY_STATE_HOME to
+# reuse a root; unset, a fresh temporary one is created and named.
+: "${ECHOJAY_STATE_HOME:=$(mktemp -d /tmp/echojay-harness-state.XXXXXX)}"; export ECHOJAY_STATE_HOME
+echo "isolated state root: $ECHOJAY_STATE_HOME"
+
 set -e
 cd "$(dirname "$0")/../.."
 SCRATCH=$(mktemp -d)

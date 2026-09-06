@@ -8,6 +8,7 @@
     fix (a required ParamSource making the guard inert on restore) lands.
     Values chosen ON the dial curve (round 51 snaps off-curve states). */
 #include <JuceHeader.h>
+#include "EJStateRoot.h"
 #include "EedPitchProcessor.h"
 #include "EJDialWrites.h"
 #include <cstdio>
@@ -43,6 +44,7 @@ static int roundTrip (bool blockedDuringLoad, const char* label)
 
 int main()
 {
+    echojay::requireIsolationOrDie ("v9_dialwrites_restore_test.cpp");
     std::setvbuf (stdout, nullptr, _IONBF, 0);
     juce::ScopedJuceInitialiser_GUI init;
     const int ctl = roundTrip (false, "POSITIVE CONTROL: setting OFF");

@@ -9,6 +9,7 @@
     two files today and must stay so. Rows are released on exit.            */
 #include <CoreFoundation/CoreFoundation.h>
 #include <JuceHeader.h>
+#include "EJStateRoot.h"
 #include "LinkProcessor.h"
 #include "LinkShm.h"
 #include <cstdio>
@@ -402,6 +403,7 @@ static int l5l6l7()
 
 int main (int argc, char** argv)
 {
+    echojay::requireIsolationOrDie ("link_two_same_name_test.cpp");
     std::setvbuf (stdout, nullptr, _IONBF, 0);
     juce::ScopedJuceInitialiser_GUI init;
     if (argc > 1 && juce::String (argv[1]) == "race20") return race20();

@@ -5,6 +5,12 @@
 # with, then link the Release SharedCode static lib for the JUCE symbols.
 # EchoJayParamMaps.h is header-only inline, so the test compiles the SHIPPED
 # fingerprint. Requires build/ to exist and ejextract to be built.
+# ISOLATION (6 Sep 2026 ruling): this harness runs against a PRIVATE state root,
+# never the user's live registry / auth.json / caches. Set ECHOJAY_STATE_HOME to
+# reuse a root; unset, a fresh temporary one is created and named.
+: "${ECHOJAY_STATE_HOME:=$(mktemp -d /tmp/echojay-harness-state.XXXXXX)}"; export ECHOJAY_STATE_HOME
+echo "isolated state root: $ECHOJAY_STATE_HOME"
+
 set -e
 cd "$(dirname "$0")/../.."
 EJ="build/ejextract_artefacts/Release/ejextract"

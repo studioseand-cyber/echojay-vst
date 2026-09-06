@@ -21,6 +21,7 @@
 
 #pragma once
 #include <juce_core/juce_core.h>
+#include "EJStateRoot.h"
 #if JUCE_MAC || JUCE_LINUX
  #include <sys/stat.h>   // ::chmod — machine_id is 0600, owner-only
 #endif
@@ -30,7 +31,7 @@ namespace echojay
 
 inline juce::File eventLogDir()
 {
-    return juce::File::getSpecialLocation (juce::File::userHomeDirectory)
+    return echojay::userStateHome()
         .getChildFile ("Library").getChildFile ("EchoJay");
 }
 

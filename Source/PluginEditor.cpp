@@ -1,4 +1,5 @@
 #include "EJDialWrites.h"
+#include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "PluginEditor.h"
 #include "DashboardWeb.h"        // stage 2: the lazy webview Dashboard surface
 #include "ChainPluginPicker.h"   // P13: the searchable "+" picker (shared with the Link)
@@ -211,7 +212,7 @@ static bool isVersionNewer(const juce::String& a, const juce::String& b)
 // row must never imply otherwise.
 static juce::File chainListCacheFile()
 {
-    auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
+    auto appData = echojay::userAppData();
    #if JUCE_MAC
     return appData.getChildFile("Application Support/EchoJay/chain_list_cache.json");
    #else
@@ -273,7 +274,7 @@ static juce::var readChainListCache(const juce::String& email, juce::int64& fetc
 // address itself.
 static juce::File dashboardCacheFile()
 {
-    auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
+    auto appData = echojay::userAppData();
    #if JUCE_MAC
     return appData.getChildFile("Application Support/EchoJay/dashboard_cache.json");
    #else
@@ -316,7 +317,7 @@ static juce::var readDashboardCache(const juce::String& email, juce::int64& fetc
 
 static juce::File updateDismissFile()
 {
-    auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
+    auto appData = echojay::userAppData();
    #if JUCE_MAC
     return appData.getChildFile("Application Support/EchoJay/update_dismissed.json");
    #else
@@ -11919,7 +11920,7 @@ void EchoJayEditor::saveSettingsToServer()
 
 juce::File EchoJayEditor::getUIScaleFile()
 {
-    auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
+    auto appData = echojay::userAppData();
 #if JUCE_MAC
     return appData.getChildFile("Application Support/EchoJay/ui_scale.txt");
 #else
@@ -13210,7 +13211,7 @@ void EchoJayEditor::adoptSessionAutoProjectName(const juce::String& realName)
 
 void EchoJayEditor::loadCollapsedState()
 {
-    auto f = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+    auto f = echojay::userAppData()
                  .getChildFile("EchoJay").getChildFile("sidebar_collapsed.json");
     if (!f.existsAsFile()) return;
     auto v = juce::JSON::parse(f.loadFileAsString());
@@ -13222,7 +13223,7 @@ void EchoJayEditor::saveCollapsedState() const
 {
     juce::Array<juce::var> arr;
     for (auto& k : collapsedAlbums) arr.add(k);
-    auto f = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+    auto f = echojay::userAppData()
                  .getChildFile("EchoJay").getChildFile("sidebar_collapsed.json");
     f.getParentDirectory().createDirectory();
     f.replaceWithText(juce::JSON::toString(juce::var(arr)));
@@ -13928,7 +13929,7 @@ juce::String EchoJayEditor::createReviewFromCapture(const CaptureSnapshot& snap,
 // ---------------------------------------------------------------------------
 static juce::File monthlyStatsFile()
 {
-    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+    return echojay::userAppData()
                .getChildFile("EchoJay").getChildFile("monthly_stats.json");
 }
 static juce::String currentMonthKey()
@@ -19525,7 +19526,7 @@ void EchoJayEditor::resized()
             settingsHelpBtn.setBounds(sx + rowW - 80 - 8 - 120, saveRowY, 120, 30);
             // Dump meters: DEV-ONLY (dev_mode file)
             {
-                bool devMode = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                bool devMode = echojay::userAppData()
                                    .getChildFile("EchoJay").getChildFile("dev_mode").existsAsFile();
                 dumpMetersBtn.setVisible(devMode);
                 if (devMode)
@@ -24166,7 +24167,7 @@ void EchoJayEditor::layoutChatBox(juce::Rectangle<int> box)
 
 juce::File EchoJayEditor::keyHintMarkerFile()
 {
-    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+    return echojay::userAppData()
                .getChildFile("Application Support/EchoJay/key_hint_reaper.json");
 }
 
@@ -27063,7 +27064,7 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
 // fallback, so the flag stays a dev lever until step 6 removes the gate.
 static bool streamChainBuildsEnabled()
 {
-    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+    return echojay::userAppData()
                .getChildFile("EchoJay").getChildFile("stream_chains").existsAsFile();
 }
 

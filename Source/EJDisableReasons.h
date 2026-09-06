@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 
 // WHY a uid is in plugin_disabled.json (29 Aug 2026).
 //
@@ -42,7 +43,7 @@ inline const char* kDisableWhyLoadFailure = "load-failure";  // "Don't suggest a
 
 inline juce::File disableReasonsFile()
 {
-    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+    return echojay::userAppData()
              .getChildFile ("EchoJay").getChildFile ("plugin_disabled_reasons.json");
 }
 

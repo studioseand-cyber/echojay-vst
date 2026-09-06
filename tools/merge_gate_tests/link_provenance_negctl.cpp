@@ -2,6 +2,7 @@
 // pre-provenance Link (58f36d1). Old API only.
 #include <CoreFoundation/CoreFoundation.h>
 #include <JuceHeader.h>
+#include "EJStateRoot.h"
 #include "LinkProcessor.h"
 #include "LinkShm.h"
 #include <cstdio>
@@ -11,6 +12,7 @@ static juce::String slotName (void* reg, int i) { return i >= 0 ? juce::String::
 static void nameFromHost (LinkProcessor& l, const char* n) { juce::AudioProcessor::TrackProperties tp; tp.name = std::make_optional (juce::String (n)); l.updateTrackProperties (tp); }
 int main()
 {
+    echojay::requireIsolationOrDie ("link_provenance_negctl.cpp");
     std::setvbuf (stdout, nullptr, _IONBF, 0); juce::ScopedJuceInitialiser_GUI init;
     int err = 0; const auto dir = LinkShm::resolveDir (err); int fd = -1, rerr = 0; void* reg = LinkShm::openRegistry (dir, fd, rerr);
     if (! reg) { std::printf ("registry not mappable\n"); return 99; }

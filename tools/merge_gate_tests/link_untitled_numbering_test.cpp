@@ -8,6 +8,7 @@
     (PluginProcessor.cpp, "Untitled N numbering ... stable by uid"). Rows are
     planted by hand (borrowhost_test's pattern) and released on exit.        */
 #include <JuceHeader.h>
+#include "EJStateRoot.h"
 #include "PluginProcessor.h"
 #include "LinkShm.h"
 #include <cstdio>
@@ -17,6 +18,7 @@
 
 int main (int argc, char** argv)
 {
+    echojay::requireIsolationOrDie ("link_untitled_numbering_test.cpp");
     const int ROWS = argc > 1 ? atoi (argv[1]) : 3;
     std::setvbuf (stdout, nullptr, _IONBF, 0);
     juce::ScopedJuceInitialiser_GUI init;

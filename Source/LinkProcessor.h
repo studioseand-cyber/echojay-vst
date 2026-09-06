@@ -483,6 +483,7 @@ private:
     // rack-<uid>.json. -1 so the first tick publishes even an empty rack
     // ("known empty" is a different fact from "rack unknown").
     int lastPublishedRackRev_ = -1;
+    juce::String lastPublishedUid_;   // 6 Sep 2026: the sidecar follows a re-minted uid
     bool lastPublishedMuteEngaged_ = false;   // §8 closed-loop republish gate
     // Last hosted-parameter epoch written. Separate from the revision because
     // the two publish on different terms: structure at once, knobs after they

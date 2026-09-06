@@ -3,6 +3,7 @@
 */
 
 #include "EedPitchEditor.h"
+#include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include <algorithm>
 
 using namespace echojay::device;
@@ -785,8 +786,7 @@ void EedPitchEditor::timerCallback()
         {
             if (! traceFile_.is_open())
             {
-                const auto path = juce::File::getSpecialLocation(
-                        juce::File::userApplicationDataDirectory)
+                const auto path = echojay::userAppData()
                     .getChildFile ("EchoJay").getChildFile ("pitch_trace.csv");
                 path.getParentDirectory().createDirectory();
                 const bool fresh = ! path.existsAsFile();

@@ -11,6 +11,7 @@
     MessageManagerLock deadlocks); main() just runs the dispatch loop.        */
 #include <CoreFoundation/CoreFoundation.h>
 #include <JuceHeader.h>
+#include "EJStateRoot.h"
 #include "PluginProcessor.h"
 #include "ChainHost.h"
 #include "EedPitchProcessor.h"
@@ -91,6 +92,7 @@ struct Leg : juce::Timer
 
 int main()
 {
+    echojay::requireIsolationOrDie ("v9_rack_restore_test.cpp");
     std::setvbuf (stdout, nullptr, _IONBF, 0);
     juce::ScopedJuceInitialiser_GUI init;
     int ctl = -1, on = -1;

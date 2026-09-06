@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "PluginScanner.h"
 #include "EedDeviceRegistry.h"
 #include "EchoJayLevelTally.h"
@@ -1166,7 +1167,7 @@ public:
     static bool devModeActive()
     {
         return juce::File("/Users/SeanD/.echojay_dev").existsAsFile()
-            || juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+            || echojay::userAppData()
                    .getChildFile("EchoJay").getChildFile("dev_mode").existsAsFile();
     }
 
@@ -1181,7 +1182,7 @@ public:
     static bool vst3InAuHostExperiment()
     {
         return devModeActive()
-            && juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+            && echojay::userAppData()
                    .getChildFile("EchoJay").getChildFile("vst3_in_au_host").existsAsFile();
     }
 

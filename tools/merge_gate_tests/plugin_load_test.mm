@@ -16,6 +16,7 @@
 #undef Point
 #undef Component
 #include <JuceHeader.h>
+#include "EJStateRoot.h"
 #include <cmath>
 #include <cstdio>
 
@@ -66,6 +67,7 @@ static int host (juce::AudioPluginFormatManager& fm, const juce::String& formatN
 
 int main (int argc, char** argv)
 {
+    echojay::requireIsolationOrDie ("plugin_load_test.mm");
     std::setvbuf (stdout, nullptr, _IONBF, 0);
     if (argc < 3) { std::printf ("usage: plugin_load_test <path.vst3> <path.component>\n"); return 2; }
     juce::ScopedJuceInitialiser_GUI init;

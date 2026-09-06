@@ -10,6 +10,7 @@
 #endif
 
 #include "PluginScanner.h"
+#include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "PluginCatalog.h"
 
 // Unified-log line (implemented in the ObjC side; see NativeClip.h).
@@ -986,7 +987,7 @@ void PluginScanner::addManualPlugin(const juce::String& name)
 
 juce::File PluginScanner::getEnabledStateFile()
 {
-    auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
+    auto appData = echojay::userAppData();
 #if JUCE_MAC
     return appData.getChildFile("Application Support/EchoJay/plugin_disabled.json");
 #elif JUCE_WINDOWS
@@ -1275,7 +1276,7 @@ juce::String PluginScanner::getPluginSummary() const
 
 juce::File PluginScanner::getCacheFile()
 {
-    auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
+    auto appData = echojay::userAppData();
     
 #if JUCE_MAC
     return appData.getChildFile("Application Support/EchoJay/plugin_cache.json");

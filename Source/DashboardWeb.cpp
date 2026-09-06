@@ -1,4 +1,5 @@
 #include "DashboardWeb.h"
+#include "EJStateRoot.h"
 #include "EchoJayAPI.h"   // EchoJayAPI::transportEndpoint — the SAME base the API uses
 #include "DashPoll.h"     // ejDashLog
 
@@ -217,7 +218,7 @@ DashboardWeb::DashboardWeb()
     // Preview-gate scaffolding, dev-transport builds only (compiled out of a
     // release binary). The token is read at runtime, never a literal, and its
     // value is never logged.
-    const auto tokFile = juce::File::getSpecialLocation (juce::File::userHomeDirectory)
+    const auto tokFile = echojay::userStateHome()
                              .getChildFile (".echojay/v2preview.token");
     if (tokFile.existsAsFile())
         flow_.token = tokFile.loadFileAsString().trim();

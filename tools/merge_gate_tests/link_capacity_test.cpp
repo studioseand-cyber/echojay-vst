@@ -6,6 +6,7 @@
       scan50 - the Link's own 30 Hz scan with 50 live rows: CPU per second      */
 #include <CoreFoundation/CoreFoundation.h>
 #include <JuceHeader.h>
+#include "EJStateRoot.h"
 #include "LinkProcessor.h"
 #include "LinkShm.h"
 #include <cstdio>
@@ -156,6 +157,58 @@ static int legs()
     return bad;
 }
 
+// THE CHURN LEGS (6 Sep 2026, v6 regressions). Pro Tools re-applies an
+// instance's OWN chunk repeatedly (212 setState lines for ~40 instances in one
+// live session). L8: after the host delivered the track name, the instance's
+// own chunk re-applied N times must change NOTHING - same uid, same published
+// name, no re-mint. L9: a soloed Link whose own chunk is re-applied must stay
+// visible as soloed to another Link's fabric scan (sidecar under the SAME uid).
+struct EchoJayLinkSyncTestAccess
+{
+    static void setSolo (LinkProcessor& p, bool s) { p.soloOn_.store (s, std::memory_order_relaxed); }
+    static bool soloMuteWant (LinkProcessor& p) { return p.soloMuteWant_.load (std::memory_order_relaxed); }
+    static void fabricScan (LinkProcessor& p) { p.soloFabricScan(); }
+    static void publish (LinkProcessor& p) { p.publishRackSidecar(); }
+};
+static int churnLegs()
+{
+    int err = 0; const auto dir = LinkShm::resolveDir (err);
+    int fd = -1, rerr = 0; void* reg = LinkShm::openRegistry (dir, fd, rerr);
+    if (reg == nullptr) { std::printf ("registry not mappable (%d)\n", rerr); return 99; }
+    int bad = 0;
+    std::printf ("== L8: the host delivered \"Kick\"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==\n");
+    {
+        auto a = std::make_unique<LinkProcessor>(); a->prepareToPlay (48000.0, 512); a->updateShmState(); pump (30);
+        nameFromHost (*a, "Kick"); pump (40);
+        const auto uid0 = a->getInstanceUidForTest(); const auto slot0 = a->diag.slotIdx; const auto name0 = slotName (reg, a->diag.slotIdx);
+        std::printf ("  after delivery: slot %d uid %s published \"%s\"\n", slot0, uid0.toRawUTF8(), name0.toRawUTF8());
+        for (int r = 0; r < 5; ++r) { juce::MemoryBlock own; a->getStateInformation (own); a->setStateInformation (own.getData(), (int) own.getSize()); pump (30); nameFromHost (*a, "Kick"); pump (30); }
+        const auto uid1 = a->getInstanceUidForTest(); const auto name1 = slotName (reg, a->diag.slotIdx);
+        std::printf ("  after 5 re-applies: slot %d uid %s published \"%s\"\n", a->diag.slotIdx, uid1.toRawUTF8(), name1.toRawUTF8());
+        const bool ok = name0 == "Kick" && uid1 == uid0 && name1 == "Kick" && a->diag.slotIdx >= 0;
+        std::printf ("  -> %s (uid unchanged, \"Kick\" still published)\n", ok ? "PASS" : "FAIL"); bad |= ok ? 0 : 1;
+        drain(); a.reset(); drain();
+    }
+    std::printf ("== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==\n");
+    {
+        auto a = std::make_unique<LinkProcessor>(); a->prepareToPlay (48000.0, 512); a->updateShmState(); pump (30);
+        auto b = std::make_unique<LinkProcessor>(); b->prepareToPlay (48000.0, 512); b->updateShmState(); pump (30);
+        EchoJayLinkSyncTestAccess::setSolo (*a, true); EchoJayLinkSyncTestAccess::publish (*a); pump (10);
+        for (int t = 0; t < 3; ++t) { pump (10); EchoJayLinkSyncTestAccess::fabricScan (*b); }
+        const bool seen0 = EchoJayLinkSyncTestAccess::soloMuteWant (*b);
+        const auto uidA0 = a->getInstanceUidForTest();
+        for (int r = 0; r < 3; ++r) { juce::MemoryBlock own; a->getStateInformation (own); a->setStateInformation (own.getData(), (int) own.getSize()); pump (40); EchoJayLinkSyncTestAccess::publish (*a); }
+        for (int t = 0; t < 6; ++t) { pump (10); EchoJayLinkSyncTestAccess::fabricScan (*b); }
+        const bool seen1 = EchoJayLinkSyncTestAccess::soloMuteWant (*b);
+        const bool sidecarUnderUid = juce::File (LinkShm::rackSidecarPath (dir, a->getInstanceUidForTest())).existsAsFile();
+        std::printf ("  before: B sees A's solo = %d (A uid %s)   after 3 re-applies: A uid %s, sidecar under A's uid: %s, B sees A's solo = %d\n", (int) seen0, uidA0.toRawUTF8(), a->getInstanceUidForTest().toRawUTF8(), sidecarUnderUid ? "yes" : "NO", (int) seen1);
+        const bool ok = seen0 && seen1 && a->getInstanceUidForTest() == uidA0 && sidecarUnderUid;
+        std::printf ("  -> %s\n", ok ? "PASS" : "FAIL"); bad |= ok ? 0 : 2;
+        EchoJayLinkSyncTestAccess::setSolo (*a, false); drain(); b.reset(); a.reset(); drain();
+    }
+    return bad;
+}
+
 static int scan50()
 {
     int err = 0; const auto dir = LinkShm::resolveDir (err);
@@ -178,10 +231,13 @@ static int scan50()
 
 int main (int argc, char** argv)
 {
+    echojay::requireIsolationOrDie ("link_capacity_test.cpp");
     std::setvbuf (stdout, nullptr, _IONBF, 0);
     juce::ScopedJuceInitialiser_GUI init;
     if (argc > 1 && juce::String (argv[1]) == "scan50") return scan50();
     if (argc > 1 && juce::String (argv[1]) == "p20")    return p20();
+    if (argc > 1 && juce::String (argv[1]) == "churn")  { const int r = churnLegs(); std::printf ("churn legs: L8 %s   L9 %s\n", (r & 1) ? "FAIL" : "PASS", (r & 2) ? "FAIL" : "PASS"); return r; }
+    if (argc > 1 && juce::String (argv[1]) == "churn20") { int p8 = 0, p9 = 0; for (int r = 0; r < 20; ++r) { const int x = churnLegs(); if (! (x & 1)) ++p8; if (! (x & 2)) ++p9; } std::printf ("CHURN20: L8 %d/20   L9 %d/20\n", p8, p9); return (p8 == 20 && p9 == 20) ? 0 : 1; }
     const int r = legs();
     std::printf ("capacity legs: P1 %s  P2 %s  R1 %s  R2 %s  V1 %s\n", (r & 1) ? "FAIL" : "PASS", (r & 2) ? "FAIL" : "PASS", (r & 4) ? "FAIL" : "PASS", (r & 8) ? "FAIL" : "PASS", (r & 16) ? "FAIL" : "PASS");
     return r;

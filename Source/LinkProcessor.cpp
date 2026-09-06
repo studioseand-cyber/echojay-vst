@@ -1,4 +1,5 @@
 #include "LinkProcessor.h"
+#include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include <signal.h>   // kill(pid, 0): publisher liveness (C4b)
 #include <unistd.h>
 #include "EedLatencyLog.h"
@@ -233,6 +234,7 @@ void LinkProcessor::publishRackSidecar()
     // it is correct for real hosted plugins and costs nothing here.
     const int  rev      = chainHost.getChainRevision();
     const int  epoch    = chainHost.getHostedChangeEpoch();
+    const bool uidMoved = (instanceUid_ != lastPublishedUid_);   // 6 Sep 2026: a re-minted identity moves its sidecar with it, or the solo fabric cannot find it
     const bool revMoved = (rev   != lastPublishedRackRev_);
     const bool epMoved  = (epoch != lastPublishedEpoch_);
     // §8 closed loop: a mute-state FLIP must republish promptly — the main
@@ -280,7 +282,7 @@ void LinkProcessor::publishRackSidecar()
                            || (pgUser  != lastPublishedPreGainUserSet_)
                            || (pgKnown != lastPublishedPreGainInputKnown_);
 
-    if (!revMoved && !epMoved && !curveMoved && !preGainMoved && !muteMoved)
+    if (!revMoved && !epMoved && !curveMoved && !preGainMoved && !muteMoved && !uidMoved)
         return;
     if (!revMoved && !preGainMoved)
     {
@@ -296,7 +298,7 @@ void LinkProcessor::publishRackSidecar()
         const bool stale   = (nowMs - lastRackPublishMs_) >= kRackMaxStaleMs;
         if (!settled && !stale) return;
     }
-    lastPublishedRackRev_ = rev;
+    lastPublishedUid_ = instanceUid_; lastPublishedRackRev_ = rev;
     lastPublishedMuteEngaged_ = muteNow;
     lastPublishedMuteUser_ = muteUserOn_.load(std::memory_order_relaxed);
     lastPublishedSoloOn_   = soloOn_.load(std::memory_order_relaxed);
@@ -1861,7 +1863,7 @@ juce::StringArray LinkProcessor::loadDisabledUids()
 {
     // plugin_disabled.json — a JSON array of scanner uids
     // (lowercase name + "_" + lowercase manufacturer, spaces -> underscores).
-    auto file = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+    auto file = echojay::userAppData()
                     .getChildFile("Application Support/EchoJay/plugin_disabled.json");
     juce::StringArray uids;
     if (file.existsAsFile())
@@ -2671,7 +2673,25 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
     auto v = juce::JSON::parse(json);
     if (auto* obj = v.getDynamicObject())
     {
-        if (obj->hasProperty("linkName")) { linkName = obj->getProperty("linkName").toString(); typedNameFromUser_ = false; }   // seeded: provisional
+        // OUR OWN CHUNK RE-APPLIED (6 Sep 2026, the v6 regression): Pro Tools
+        // calls SetChunk on a live instance repeatedly with that instance's own
+        // current chunk (212 setState lines for ~40 instances in one session).
+        // A chunk carrying the uid THIS instance already holds a registry slot
+        // for is not a seed and not a restore: it is us. Identity stays settled
+        // (no re-arm of chunkUid_/chunkAuthoredHere_ - the next re-claim would
+        // find no holder for our own uid and re-mint, which burned 89 identities
+        // in twenty minutes and dropped every host-delivered name), and name
+        // PROVENANCE is not downgraded: a host-delivered or user-typed name
+        // stays authoritative; the chunk's copy of a name fills in only where
+        // we have none.
+        const juce::String chunkUidIn = obj->getProperty("instanceUid").toString();
+        const bool ownChunk = chunkUidIn.isNotEmpty() && chunkUidIn == instanceUid_ && regSlotIdx >= 0;
+        if (obj->hasProperty("linkName"))
+        {
+            const auto n = obj->getProperty("linkName").toString();
+            if (! ownChunk) { linkName = n; typedNameFromUser_ = false; }   // seeded: provisional
+            else if (linkName.isEmpty()) linkName = n;                     // ours: fill only, keep provenance
+        }
         if (obj->hasProperty("linkOn"))   linkOn.store((bool)obj->getProperty("linkOn"));
         if (obj->hasProperty("gainDb"))
             gainDb_.store(juce::jlimit(kGainMinDb, kGainMaxDb,
@@ -2686,16 +2706,17 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
             projectName = obj->getProperty("projectName").toString();
         if (obj->hasProperty("genre"))
             genre = obj->getProperty("genre").toString();
-        if (obj->getProperty("instanceUid").toString().isNotEmpty())
-            instanceUid_ = obj->getProperty("instanceUid").toString();
-        chunkUid_ = instanceUid_;
+        if (! ownChunk)
         {
+            if (chunkUidIn.isNotEmpty()) instanceUid_ = chunkUidIn;
+            chunkUid_ = instanceUid_;
             const auto& h = ChainHost::getHostIdentity();
             chunkAuthoredHere_ = obj->hasProperty("authorPid")
                 && (int) obj->getProperty("authorPid") == (int) ::getpid()
                 && (juce::int64)(double) obj->getProperty("authorStartSec")  == h.startSec
                 && (juce::int64)(double) obj->getProperty("authorStartUsec") == h.startUsec;
         }
+        // ownChunk: identity untouched, nothing re-armed
         if (obj->hasProperty("muteUser"))
             muteUserOn_.store((bool) obj->getProperty("muteUser"),
                               std::memory_order_relaxed);
@@ -2707,8 +2728,8 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
             // so this takes the same stash path as the live callback.
             {
                 const juce::ScopedLock sl(hostNameLock_);
-                hostTrackName_ = obj->getProperty("hostTrackName").toString();
-                hostNameFromHost_ = false;   // seeded: PROVISIONAL until the host or the user says otherwise
+                if (! ownChunk) { hostTrackName_ = obj->getProperty("hostTrackName").toString(); hostNameFromHost_ = false; }   // seeded: PROVISIONAL
+                else if (hostTrackName_.isEmpty()) hostTrackName_ = obj->getProperty("hostTrackName").toString();           // ours: fill only, keep provenance
             }
             hostNameDirty_.store(true, std::memory_order_release);
         }
