@@ -1,0 +1,88 @@
+# Reply to Kathy's survey (6 Sep 2026) - and the merge verification plan
+
+## Answers
+(a) Both of this Mac's branches are pushed and hash-verified. Survey
+against these, not against origin/feat/pitch (96d87d6, 15 Aug, stale):
+    backup/seand-mac-integration-2026-09-06   fea141a   <- SURVEY AGAINST THIS
+                                             (= 56d7b0a you were told, plus two record commits:
+                                              the 18-21 Aug briefs, and DERIVED_VALUES_SINCE_BASE.md)
+    backup/seand-mac-feat-pitch-2026-09-06    39ace45   (materials only: rulers, traces, probes)
+EedRetuneMap.h, kSeamAttackMs, kRetuneFloorMs, tools/latency_impulse_test
+and REFERENCE_SET.md are all on the integration backup, none on feat/pitch.
+
+(b) loadPluginAsync and setSlotWet call sites in our tree (fea141a) - all
+PRE-EXISTING; diffed d68da09..fea141a we added NONE, so your signature
+change has no un-updated call sites coming from our side:
+    loadPluginAsync: ChainHost.cpp 1924, 5985, 6003, 6196; LinkProcessor.cpp 2105, 2186; PluginEditor.cpp 27389, 27455
+    setSlotWet:      ChainHost.cpp 1865, 1981, 6207; LinkProcessor.cpp 2129, 2263; PluginEditor.cpp 2095, 2097, 29928
+
+(c) There is no echojay-saas repo on this machine. The repos here are
+echojay-vst (and its worktrees), echojay-vst-pitch and JUCE; ~/echojay is
+extractor scripts and logs. No unpushed server work exists here.
+
+## A correction to your finding 1
+kNoteConfirmMs 25.0f and kMaxRetuneMs 400.0f are the BASE's values, not
+measured ones. Ours are kNoteConfirmMs 15 (b702412, re-derived with the
+co-timed clock) and the 0-400 dial with a 6 ms floor and a 150 ms cap
+(480b259, e7e2b63, dee5bcb). Your tree predates that work, so git takes
+ours automatically and the outcome is correct - but the authority on
+every one of these is DERIVED_VALUES_SINCE_BASE.md on the integration
+backup, not either of our lists. After each merge stage every value in it
+is read back and compared; any difference is a finding.
+
+## Two questions - yours to decide, we have changed nothing
+1. setSlotWet's WetSource defaults to Assistant, which do-not-dial blocks,
+   so an un-updated call site is SILENTLY REFUSED rather than failing to
+   compile. Would you rather remove the default so it fails loud, the way
+   loadPluginAsync does?
+2. The dialWritesBlocked() guard sits at the top of
+   EedDeviceProcessor::applyParams, which is also the path
+   setStateInformation takes to restore a saved session (~line 244 in your
+   tree). With the setting ON, a reload restores nothing for every
+   built-in device. Your EJDialWrites.h note exempts applyRestoredParams
+   for exactly this reason; the built-in restore path is not covered. Was
+   that intended, and would the guard belong in applyStructured instead?
+
+## THE MERGE VERIFICATION PLAN - re-running the acceptance test that originally proved each of our five commits
+Sean's worry is the UI, Link and chain work, not pitch. "It compiled" is
+not the proof. After the merge every one of these runs again and must
+produce the same result it produced when the commit landed:
+  V1  c75b222, the transport reset. Its positive control: a locate WITHOUT
+      clearing must still differ from a fresh instance by ~132.6% RMS in
+      the first 150 ms, and the fix must still render BIT-IDENTICAL to a
+      fresh instance (tools/pitch_mode_test "TRANSPORT RESET"). Kathy has
+      40 ChainHost commits and our reset threads a flag through
+      ChainHost::process - the leg most likely to break silently.
+  V2  2f02c65, the Link borrow budget. The full five-state impulse table
+      (tools/latency_impulse_test): pending 0/0 and 16384/16384, exactly
+      one notification per commit, plus the quiet-session zero-notification
+      check and the scoping decisions. Her LinkProcessor signature change
+      sits beside our sidecar block.
+  V3  da6939f, the Settings removal. tools/settings_snapshot at the full
+      size range: her do-not-dial toggle present and positioned, our block
+      gone, every control below it present, positioned and unclipped, the
+      chain-list count unchanged (2328 feed / 2129 AU view / 539 excluded).
+  V4  222b4fe + 1c5fb52, the UI changes. The pitch editor snapshots
+      (EJ_EDITOR_SNAP) still match their filed renders: the numbers box, the
+      status line's absence, the grid provenance line.
+  V5  Every setSlotWet call site in the MERGED tree has an EXPLICIT
+      WetSource. A default-argument call is the silent-refusal failure Kathy
+      named. Grep and list them.
+  V6  Kathy's named silent defect: EchoJayAPI keeps maxHistoryMessages = 12
+      and maxHistoryBytes = 24000 as TWO INDEPENDENT limits (today:
+      EchoJayAPI.cpp:1068 and :1082, two constants, both passed at :1115). If
+      a shared payload budget arrives in the merge, chat history goes empty
+      on every request with no error. Confirm the two limits in the merged
+      tree, then confirm a real request returns non-empty history. We
+      touched no API file (0 commits), so we cannot be the source - the
+      merge still can.
+Plus, after each stage: the build (-j 4, explicit targets), AU and VST3
+both load, the pitch suite 196-200 PASS / 0 FAIL, and every value in
+DERIVED_VALUES_SINCE_BASE.md read back and compared.
+
+## Staging, unchanged
+Stage 1: base -> f6ac073. Stage 2: f6ac073 -> aa455ff. Both conflicts
+(the ChainHost include block; the settings movers list) resolved KEEP-
+BOTH and shown to Sean before committing. Kathy's work is not ours to
+simplify. Nothing runs until Kathy confirms her side is fully pushed AND
+Sean says the shoot is done.
