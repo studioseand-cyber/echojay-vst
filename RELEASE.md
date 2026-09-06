@@ -106,6 +106,25 @@ Without the iLok present this step fails; VST3/AU packaging can proceed
 without it (deselect AAX in the installer or accept the unsigned-AAX build
 for non-Pro-Tools betas).
 
+### THIS MAC CANNOT SIGN AAX (finding, 6 Sep 2026 - it cost most of an afternoon)
+wraptool 6.0.1 is installed on the MacBook, but the Eden Tools licence on
+iLok_1AC756 and the SDK-5 wrap config (above) are Eden 5 generation, and 6.0.1
+demands a Fusion Tools licence for its operations: every wraptool call here
+(info, verify, and sign would be the same) fails with
+`WrapToolException::MissingFusionToolsLicense: No valid license found in an
+iLok USB or iLok cloud`. There is also NO Developer ID Application certificate
+in this Mac's keychains (`security find-identity -v -p codesigning`: 0), and
+full Xcode is not installed (command line tools only). Eden 5 is NOT offered
+on the current PACE download page (only "PACE Code Signing for AAX SDK Mac
+v6.0.1"). SIGNING HAPPENS ON THE OTHER MAC - the one with a working Eden, the
+licence and the certificate, where the July 2026 bundles were signed:
+wraptool signs an already-built bundle, so that machine needs no SDK, no
+JUCE and no repo; the unsigned bundles travel as ditto archives with
+`ditto -c -k --sequesterRsrc --keepParent` (see the handoff note pattern in
+MERGE_2026-09-06.md). OPEN QUESTIONS FOR PACE, for whoever raises them: renew
+or confirm the Eden Tools licence, and obtain either Eden 5.10.5 (the
+demonstrated-good tool for the SDK-5 config) or a Fusion Tools licence for 6.
+
 ## 3. Build the installer .pkg
 
 ```
