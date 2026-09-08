@@ -15,6 +15,9 @@
 #include "EJStateRoot.h"
 #include "PluginProcessor.h"
 #include "LinkShm.h"
+#if __has_include("legs_new_api.h")
+#include "legs_new_api.h"
+#endif
 #include <cstdio>
 
 static void pump (int ms) { const double end = juce::Time::getMillisecondCounterHiRes() + ms; while (juce::Time::getMillisecondCounterHiRes() < end) CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.005, false); }
@@ -58,11 +61,25 @@ struct Control
         const bool old = mode.startsWith ("oldpath");
         if (mode == "solo" || mode == "oldpath")
         {
-            stampFile ("solo_t0.txt"); if (old) oldPathSolo (A, true); else p->setLinkSolo (A, true);
-            for (int i = 0; i < 60; ++i) { pump (50); p->pollSoloAcks(); }
-            const auto st = linkState(); std::printf ("  3 s after the press: A/B/C muteWanted = %s (want 0 1 1); pending acks %d\n", st.joinIntoString ("/").toRawUTF8(), p->soloPendingCount());
-            stampFile ("solo_t1.txt"); if (old) oldPathSolo (A, false); else p->setLinkSolo (A, false);
-            for (int i = 0; i < 80; ++i) { pump (50); p->pollSoloAcks(); }
+            stampFile ("solo_t0.txt"); if (old) oldPathSolo (A, true);
+#ifdef EJ_LEGS_NEW_API
+            else p->setLinkSolo (A, true);
+#endif
+            for (int i = 0; i < 60; ++i) { pump (50);
+#ifdef EJ_LEGS_NEW_API
+                p->pollSoloAcks();
+#endif
+            }
+            const auto st = linkState(); std::printf ("  3 s after the press: A/B/C muteWanted = %s (want 0 1 1)\n", st.joinIntoString ("/").toRawUTF8());
+            stampFile ("solo_t1.txt"); if (old) oldPathSolo (A, false);
+#ifdef EJ_LEGS_NEW_API
+            else p->setLinkSolo (A, false);
+#endif
+            for (int i = 0; i < 80; ++i) { pump (50);
+#ifdef EJ_LEGS_NEW_API
+                p->pollSoloAcks();
+#endif
+            }
             const auto st2 = linkState(); std::printf ("  4 s after the release: A/B/C muteWanted = %s (want 0 0 0)\n", st2.joinIntoString ("/").toRawUTF8());
             result = (st.size() == 3 && st[0] == "0" && st[1] == "1" && st[2] == "1" && st2.size() == 3 && st2[1] == "0" && st2[2] == "0") ? 0 : 1;
             std::printf ("MAIN %s: %s (the 100 ms verdict is the Link side's)\n", mode.toRawUTF8(), result == 0 ? "end state PASS" : "end state FAIL");
@@ -75,9 +92,16 @@ struct Control
             const bool engaged = p->borrowActive();
             juce::File lease (dirOf() + "lease-" + A + ".json");
             std::printf ("  borrow on A engaged=%d lease file=%d\n", (int) engaged, (int) lease.existsAsFile());
-            stampFile ("solo_t0.txt"); if (old) oldPathSolo (B, true); else p->setLinkSolo (B, true);
+            stampFile ("solo_t0.txt"); if (old) oldPathSolo (B, true);
+#ifdef EJ_LEGS_NEW_API
+            else p->setLinkSolo (B, true);
+#endif
             const juce::int64 t0 = juce::Time::currentTimeMillis(); double tRel = -1;
-            for (int i = 0; i < 60; ++i) { pump (50); p->pollSoloAcks(); if (tRel < 0 && ! p->borrowActive()) tRel = (double) (juce::Time::currentTimeMillis() - t0); }
+            for (int i = 0; i < 60; ++i) { pump (50);
+#ifdef EJ_LEGS_NEW_API
+                p->pollSoloAcks();
+#endif
+                if (tRel < 0 && ! p->borrowActive()) tRel = (double) (juce::Time::currentTimeMillis() - t0); }
             const bool suppressed = p->borrowSoloSuppressInj_.load();
             const auto st = linkState();
             std::printf ("  3 s after solo B: borrowActive=%d (released after %.0f ms) lease=%d injectionSuppressed=%d A/B/C muteWanted=%s\n", (int) p->borrowActive(), tRel, (int) lease.existsAsFile(), (int) suppressed, st.joinIntoString ("/").toRawUTF8());
@@ -86,7 +110,10 @@ struct Control
             const bool editedSilentEverywhere = p->borrowActive() && suppressed;
             result = (engaged && bAudible && ! editedSilentEverywhere) ? 0 : 1;
             std::printf ("BORROW %s: B audible=%d editedSilentEverywhere=%d -> %s\n", mode.toRawUTF8(), (int) bAudible, (int) editedSilentEverywhere, result == 0 ? "PASS" : "FAIL");
-            stampFile ("solo_t1.txt"); if (old) oldPathSolo (B, false); else p->setLinkSolo (B, false);
+            stampFile ("solo_t1.txt"); if (old) oldPathSolo (B, false);
+#ifdef EJ_LEGS_NEW_API
+            else p->setLinkSolo (B, false);
+#endif
             pump (1500); if (p->borrowActive()) p->borrowRelease (false);
         }
         else if (mode == "buildb2")
@@ -109,6 +136,7 @@ struct Control
             stampFile ("solo_t0.txt"); pump (300); stampFile ("solo_t1.txt");
             p->borrowRelease (false); result = ok ? 0 : 1;
         }
+#ifdef EJ_LEGS_NEW_API
         else if (mode == "lamp" || mode == "oldpath_lamp")
         {
             stampFile ("solo_t0.txt");
@@ -119,11 +147,15 @@ struct Control
             double tSolid = -1; const juce::int64 t0 = juce::Time::currentTimeMillis();
             for (int i = 0; i < 100; ++i) { pump (10); p->pollSoloAcks(); p->refreshLinkRegistry(); if (old ? (p->muteSoloSnaps_.count (A) && p->muteSoloSnaps_[A].soloOn) : p->soloLampState (A) == EchoJayProcessor::SoloLamp::solid) { tSolid = (double) (juce::Time::currentTimeMillis() - t0); break; } }
             std::printf ("  at press: %s; solid after %.0f ms\n", immediate ? (atPress == EchoJayProcessor::SoloLamp::pending ? "PENDING" : "lit") : "NOTHING", tSolid);
-            stampFile ("solo_t1.txt"); if (old) oldPathSolo (A, false); else p->setLinkSolo (A, false);
+            stampFile ("solo_t1.txt"); if (old) oldPathSolo (A, false);
+#ifdef EJ_LEGS_NEW_API
+            else p->setLinkSolo (A, false);
+#endif
             pump (1500);
             result = (immediate && tSolid >= 0 && tSolid <= 1000) ? 0 : 1;
             std::printf ("LAMP %s: immediate=%d solid=%.0f ms -> %s\n", mode.toRawUTF8(), (int) immediate, tSolid, result == 0 ? "PASS" : "FAIL");
         }
+#endif
         for (int i = 0; i < 100 && ! juce::File (dirOf() + "solo_done.txt").existsAsFile(); ++i) pump (100);
     }
 };

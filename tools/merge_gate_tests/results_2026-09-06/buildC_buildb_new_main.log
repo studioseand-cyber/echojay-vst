@@ -1,0 +1,22 @@
+solo_legs_test.cpp: isolated state root /tmp/echojay-iso.8PDtFp
+2026-09-08 18:22:51.868 main_harness[93817:3554012] EJNet: base=www.echojay.ai devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-09-08 18:22:51.871 main_harness[93817:3553997] EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+  main link dir: '/tmp/echojay-iso.8PDtFp/Library/Application Support/EchoJay/link/'
+  waiting for /tmp/echojay-iso.8PDtFp/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=0 s
+2026-09-08 18:22:51.992 main_harness[93817:3554012] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+2026-09-08 18:22:52.882 main_harness[93817:3553997] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-08 18:22:53.894 main_harness[93817:3553997] EJCtx: borrow budget WANTED ON - listed 3 uid(s): a counted row exists; pending until prepareToPlay or a STOPPED block
+  waiting for /tmp/echojay-iso.8PDtFp/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=2 s
+2026-09-08 18:22:54.648 main_harness[93817:3553997] EJCtx: engage decision uid=856bf0fe76 capable=Y pad=Y budget=N -> in-context REFUSED, false term(s): budget
+2026-09-08 18:22:54.648 main_harness[93817:3553997] EJCtx(main): renew muteOut=N ok=N soloSup=N
+2026-09-08 18:22:54.648 main_harness[93817:3553997] EJBorrow: engaged uid=856bf0fe76 ringSlot=0
+2026-09-08 18:22:55.150 main_harness[93817:3553997] EJCtx: budget committed ON with a live session - re-evaluated: capable=Y pad=Y (chain latency 0) -> in-context RESTORED
+2026-09-08 18:22:55.150 main_harness[93817:3553997] EJCtx: alignment budget ON (capable Link present) - PDC re-runs once
+2026-09-08 18:22:55.658 main_harness[93817:3553997] EJAlign(main): ring age=1024 smp (target 1024) NO STAMPS - aligned by backlog, one-block accuracy; update this Link for exact
+2026-09-08 18:22:55.661 main_harness[93817:3553997] EJCtx(main): renew muteOut=Y ok=Y soloSup=N
+2026-09-08 18:22:55.973 main_harness[93817:3553997] EJBorrowPool: rack released, 0 instance(s) parked
+2026-09-08 18:22:55.973 main_harness[93817:3553997] EJBorrow: released uid=856bf0fe76 (lease deleted; Link restores its own bypasses)
+  main lists A, B, C
+  engaged=1; lease muteOut before the STOPPED-block commit: 0; after: Y (514 ms)
+BUILDB2: refused-on-budget then restored by the commit -> PASS
+exit=0
