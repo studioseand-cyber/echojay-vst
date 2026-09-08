@@ -137,6 +137,23 @@ struct Control
             p->borrowRelease (false); result = ok ? 0 : 1;
         }
 #ifdef EJ_LEGS_NEW_API
+        else if (mode == "diehard")
+        {
+            // ACCEPTED RISK, recorded as a leg (8 Sep 2026): the main dies (or the host saves and quits) mid-solo without
+            // releasing. The Links keep muteUser=true - nothing restores them until someone un-mutes by hand.
+            juce::File (dirOf() + "solo_mode.txt").replaceWithText ("borrow");   // Link side: state report only
+            stampFile ("solo_t0.txt"); p->setLinkSolo (A, true);
+            for (int i = 0; i < 40; ++i) { pump (50); p->pollSoloAcks(); }
+            const auto st = linkState();
+            p.reset();                                                          // THE MAIN DIES, no release
+            pump (3000);
+            const auto st2 = linkState();
+            std::printf ("  with the main alive: A/B/C muteWanted = %s; 3 s after the main died without releasing: %s\n", st.joinIntoString ("/").toRawUTF8(), st2.joinIntoString ("/").toRawUTF8());
+            const bool persisted = st2.size() == 3 && st2[1] == "1" && st2[2] == "1";
+            std::printf ("DIEHARD: the solo mutes persist after the main dies = %d -> %s (this is the ACCEPTED behaviour; the leg documents it)\n", (int) persisted, persisted ? "REPRODUCED" : "NOT REPRODUCED");
+            stampFile ("solo_t1.txt"); result = persisted ? 0 : 1;
+            return;
+        }
         else if (mode == "lamp" || mode == "oldpath_lamp")
         {
             stampFile ("solo_t0.txt");
