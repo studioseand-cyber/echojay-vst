@@ -2169,8 +2169,9 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
         EchoJay_NSLog(("EJCtx: engage decision uid=" + uid + " capable=" + (inContextCapable ? "Y" : "N")
                        + " pad=" + (padOk ? "Y" : "N") + " budget=" + (budget ? "Y" : "N")
                        + " -> in-context " + (ok ? "OK" : "REFUSED")
-                       + (ok ? juce::String() : juce::String(", false term: ")
-                                 + (! inContextCapable ? "capable" : ! padOk ? "pad" : "budget"))).toRawUTF8());
+                       + (ok ? juce::String() : juce::String(", false term(s): ")
+                                 + juce::StringArray { inContextCapable ? "" : "capable", padOk ? "" : "pad", budget ? "" : "budget" }
+                                       .joinIntoString(",").trimCharactersAtStart(",").replace(",,", ",").trimCharactersAtEnd(","))).toRawUTF8());
     }
 
     // Bind the ring, editBegin's idiom: seek to the cushion so the audition

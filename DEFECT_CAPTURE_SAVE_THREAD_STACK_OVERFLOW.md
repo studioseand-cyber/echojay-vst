@@ -1,4 +1,4 @@
-# DEFECT: Pro Tools crashes at the end of a capture - stack overflow on our "EchoJay WAV Save" thread (filed 8 Sep 2026, diagnosis only)
+# DEFECT (SEVERITY: DEFAULT PATH, every capture > 2 s on an untyped channel since 7 Aug): Pro Tools crashes at the end of a capture - stack overflow on our "EchoJay WAV Save" thread (filed 8 Sep 2026; FIXED in Build A)
 Crash report: ~/Library/Logs/DiagnosticReports/Pro Tools-2026-09-08-111901.ips (copy in results_2026-09-06/). Not fixed in this pass.
 ## 1. The report
     Pro Tools 25.12.1.133, x86_64 under Rosetta (cpuType X86-64, translated=true), launched 11:05:20, crashed 11:19:01
@@ -93,3 +93,11 @@ today's object, leaves a 2 MB local in place for the next caller, re-breaks sile
     registry holds 40 live rows; the two sets are identical (0 delivered-without-row, 0 row-without-delivery); zero lines
     matching STILL FULL / regFull / no free slot / claim failed. 80 constructions, 69 re-mints, 9 ghost adoptions, all
     converging on 40. The session has 40 Links, not 45. Not a capacity or claim-gate defect.
+
+## Severity, corrected (ruling 8 Sep 12:0x): this was the DEFAULT path, not a corner case
+FullMix is the default channel type and qualifies as a key source, so every capture longer than 2 s on an untyped
+channel has taken this path since 7 Aug. The harness negative control reproduces it on arm64 with no Link at all
+(harness-2026-09-08-115100.ips, thread "EchoJay WAV Save", KERN_PROTECTION_FAILURE). Earlier host reports re-examined:
+the two 6 Sep Pro Tools reports carry no EchoJay frame in any thread and no save thread - not this defect, correctly
+Avid's; no Logic / AUHostingService report exists since 7 Aug. FIXED in Build A (KeyEngine heap-allocated, scoped to
+run()); leg: build_a_legs_test crash (pre-fix Bus error 10, after: key pass completes).

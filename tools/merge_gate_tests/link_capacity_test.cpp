@@ -203,8 +203,12 @@ static int soloFabric()
     bool bUn = true; for (int t = 0; t < 80 && bUn; ++t) { pump (50); rmsOfBlock (*B, 1); bUn = B->linkMuteWanted(); }
     const float after = rmsOfBlock (*B, 40);
     std::printf ("  unsolo: B muteWanted=%d, B output rms %.3f\n", (int) bUn, after);
-    const bool ok = sideSolo && bMute && cMute && ! aMute && before > 0.3f && during < 0.01f && aDuring > 0.3f && ! bUn && after > 0.3f;
-    std::printf ("SOLO FABRIC: (i) %s  (ii) %s  (iii) %s  unsolo %s -> %s\n", sideSolo ? "PASS" : "FAIL", (bMute && cMute && ! aMute) ? "PASS" : "FAIL", (during < 0.01f && aDuring > 0.3f) ? "PASS" : "FAIL", (! bUn && after > 0.3f) ? "PASS" : "FAIL", ok ? "PASS" : "FAIL");
+    // THE BAR (8 Sep 2026 ruling, replacing "correct end state"): solo is a control a person operates in real
+    // time; it must be AUDIBLE within 100 ms of the command. The harness asserts the bound, not just the state.
+    constexpr double kSoloBoundMs = 100.0;
+    const bool inTime = tScan >= 0 && tScan <= kSoloBoundMs;
+    const bool ok = sideSolo && bMute && cMute && ! aMute && before > 0.3f && during < 0.01f && aDuring > 0.3f && ! bUn && after > 0.3f && inTime;
+    std::printf ("SOLO FABRIC: (i) %s  (ii) %s  (iii) %s  unsolo %s  TIME %.0f ms vs %.0f ms bound %s -> %s\n", sideSolo ? "PASS" : "FAIL", (bMute && cMute && ! aMute) ? "PASS" : "FAIL", (during < 0.01f && aDuring > 0.3f) ? "PASS" : "FAIL", (! bUn && after > 0.3f) ? "PASS" : "FAIL", tScan, kSoloBoundMs, inTime ? "PASS" : "FAIL", ok ? "PASS" : "FAIL");
     drain(); A.reset(); B.reset(); C.reset(); drain();
     return ok ? 0 : 1;
 }

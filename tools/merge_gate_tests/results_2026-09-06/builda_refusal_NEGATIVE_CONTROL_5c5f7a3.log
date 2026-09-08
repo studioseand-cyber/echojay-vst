@@ -1,0 +1,10 @@
+isolated state root: /tmp/echojay-iso.Dg4ZAz
+build_a_legs_test.cpp: isolated state root /tmp/echojay-iso.Dg4ZAz
+2026-09-08 12:26:17.483 harness[49290:2830793] EJNet: base=www.echojay.ai devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+  calling borrowEngageBegin(uid, lease, structureCapable=false, inContextCapable=false) - the refusal must be logged with its false term
+2026-09-08 12:26:17.487 harness[49290:2830776] EJCtx(main): renew muteOut=N ok=N soloSup=N
+2026-09-08 12:26:17.487 harness[49290:2830776] EJBorrow: engaged uid=refusetest01 ringSlot=-1
+2026-09-08 12:26:17.660 harness[49290:2830793] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+2026-09-08 12:26:17.799 harness[49290:2830776] EJBorrowPool: rack released, 0 instance(s) parked
+2026-09-08 12:26:17.799 harness[49290:2830776] EJBorrow: released uid=refusetest01 (lease deleted; Link restores its own bypasses)
+exit=0
