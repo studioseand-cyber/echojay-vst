@@ -710,6 +710,7 @@ public:
     // Link that announced structureEditCapable THEN — never re-read mid-
     // session, so an old Link keeps settings-only behaviour throughout.
     bool borrowStructureCapable_ = false;
+    bool borrowCtxCapable_ = false;   // the session's announced in-context capability, kept so a later budget commit can re-evaluate (8 Sep 2026 ruling)
     // Removed-withheld memory: names of removed slots whose settings never
     // arrived — the confirm gives these their own line (spec: deleting
     // settings the user never saw). Checked AT removal (the node's seeded

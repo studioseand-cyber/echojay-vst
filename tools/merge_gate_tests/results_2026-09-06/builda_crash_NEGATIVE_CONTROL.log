@@ -1,0 +1,7 @@
+isolated state root: /tmp/echojay-iso.EC5Bmm
+build_a_legs_test.cpp: isolated state root /tmp/echojay-iso.EC5Bmm
+2026-09-08 11:50:52.035 harness[41982:2783505] EJNet: base=www.echojay.ai devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-09-08 11:50:52.037 harness[41982:2783480] EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+  captured 4.0 s on a FullMix-typed channel; calling stopCapture() -> the WAV save thread runs the offline key pass
+tools/merge_gate_tests/build_and_run.sh: line 42: 41982 Bus error: 10           "$SCRATCH/harness" "$@"
+exit=138

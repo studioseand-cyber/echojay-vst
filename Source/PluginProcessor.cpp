@@ -589,7 +589,15 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     alignPost_.prepare(kBorrowAlignBudgetFrames + 1);
     // Round 53: prepare is the guaranteed re-decision point - the pending
     // budget becomes the committed one HERE, before the report below.
-    borrowBudgetActive_.store(borrowBudgetWanted_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    {
+        const bool wantedNow = borrowBudgetWanted_.load(std::memory_order_relaxed);
+        const bool wasActive = borrowBudgetActive_.exchange(wantedNow, std::memory_order_relaxed);
+        // 8 Sep 2026 ruling: the prepare-time store reaches the SYSTEM log (the
+        // latency log is compiled out of the release build). Every store, with
+        // the value, so a silent OFF can never again be inferred instead of read.
+        EchoJay_NSLog(("EJCtx: prepareToPlay stored borrow budget " + juce::String(wantedNow ? "ON" : "OFF")
+                       + " (was " + (wasActive ? "ON" : "OFF") + ")").toRawUTF8());
+    }
     if (! borrowBudgetActive_.load(std::memory_order_relaxed)) borrowInContextOk_.store(false, std::memory_order_relaxed);
     if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
         ejSetLatencyLogged (*this, lat + reportedBudgetFrames(), "PluginProcessor prepareToPlay");
@@ -2150,9 +2158,20 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
     borrowChainLat_.store(0, std::memory_order_relaxed);
     // Round 53 (C1): in-context needs the COMMITTED budget - a pending one is
     // inert here too; borrowing against an unreported budget is the defect.
-    borrowInContextOk_.store(inContextCapable && alignPad(0) >= 0
-                             && borrowBudgetActive_.load(std::memory_order_relaxed),
-                             std::memory_order_relaxed);
+    borrowCtxCapable_ = inContextCapable;
+    {
+        const bool padOk   = alignPad(0) >= 0;
+        const bool budget  = borrowBudgetActive_.load(std::memory_order_relaxed);
+        const bool ok      = inContextCapable && padOk && budget;
+        borrowInContextOk_.store(ok, std::memory_order_relaxed);
+        // 8 Sep 2026 ruling (standing rule): a decision that can refuse logs its
+        // refusal and the false term. Each term, then the verdict.
+        EchoJay_NSLog(("EJCtx: engage decision uid=" + uid + " capable=" + (inContextCapable ? "Y" : "N")
+                       + " pad=" + (padOk ? "Y" : "N") + " budget=" + (budget ? "Y" : "N")
+                       + " -> in-context " + (ok ? "OK" : "REFUSED")
+                       + (ok ? juce::String() : juce::String(", false term: ")
+                                 + (! inContextCapable ? "capable" : ! padOk ? "pad" : "budget"))).toRawUTF8());
+    }
 
     // Bind the ring, editBegin's idiom: seek to the cushion so the audition
     // starts near live rather than at the backlog.
@@ -2541,6 +2560,7 @@ void EchoJayProcessor::commitBorrowBudget(const char* where)
     // assumed that passthrough delay; it drops to the solo fallback.
     alignPost_.buf.clear(); alignPost_.w = 0;
     if (! wanted) borrowInContextOk_.store(false, std::memory_order_relaxed);
+    // Build B (8 Sep 2026 ruling, NOT in Build A): re-evaluate a refused session here when the budget commits ON.
     if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
         ejSetLatencyLogged (*this, lat + reportedBudgetFrames(), where);
     EJ_LAT_LOG ("top: borrow budget COMMITTED %s at %s (passthrough delay and report move together)", wanted ? "ON" : "OFF", where);
@@ -3124,9 +3144,15 @@ void EchoJayProcessor::stopCapture()
                 const int   n   = srcRec->getRecordedSampleCount();
                 if (buf != nullptr && n > (int) (2.0 * srcRec->getRecordedSampleRate()))
                 {
-                    echojay::KeyEngine eng;
-                    eng.prepare(srcRec->getRecordedSampleRate(), 512);
-                    const auto kr = eng.analyseBufferOffline(
+                    // 8 Sep 2026 (DEFECT_CAPTURE_SAVE_THREAD_STACK_OVERFLOW.md): the
+                    // KeyEngine is 2 MB (a 512 K-sample ring inline) and this thread has
+                    // the 512 KB default stack - as a local it hit the guard page in the
+                    // prologue and took Pro Tools down. Heap-allocated, scoped to run();
+                    // the thread is non-realtime, the allocation is free. NOT a bigger
+                    // stack: that is a number sized to today's object.
+                    auto eng = std::make_unique<echojay::KeyEngine>();
+                    eng->prepare(srcRec->getRecordedSampleRate(), 512);
+                    const auto kr = eng->analyseBufferOffline(
                         buf->getReadPointer(0),
                         buf->getNumChannels() > 1 ? buf->getReadPointer(1) : nullptr,
                         std::min(n, buf->getNumSamples()));
@@ -4770,6 +4796,7 @@ void EchoJayProcessor::refreshLinkRegistry()
         // with a new pid); still dead = not counted. The result is the WANTED
         // budget only - inert until prepareToPlay or a STOPPED block commits it.
         bool anyCapable = false;
+        int wantedNoSidecar = 0, wantedDead = 0, wantedIncapable = 0, wantedForeignHost = 0;   // reasons for the WANTED log
         {
             int err2 = 0;
             const juce::String dir2 = LinkShm::resolveDir(err2);
@@ -4788,20 +4815,35 @@ void EchoJayProcessor::refreshLinkRegistry()
                 if (itc == ctxCapCache_.end())
                 {
                     BudgetRow row;
-                    if (! readRow(u, row)) continue;
+                    if (! readRow(u, row)) { ++wantedNoSidecar; continue; }
                     itc = ctxCapCache_.emplace(u, row).first;
                 }
                 if (! alive(itc->second.publisherPid))
                 {
                     BudgetRow row;
-                    if (! readRow(u, row)) continue;
+                    if (! readRow(u, row)) { ++wantedNoSidecar; continue; }
                     itc->second = row;
                 }
                 if (budgetRowCounts(itc->second, me, alive(itc->second.publisherPid))) { anyCapable = true; break; }
+                if (! alive(itc->second.publisherPid)) ++wantedDead;
+                else if (! itc->second.inContextCapable) ++wantedIncapable;
+                else ++wantedForeignHost;
             }
         }
         if (borrowBudgetWanted_.exchange(anyCapable, std::memory_order_relaxed) != anyCapable)
+        {
             EJ_LAT_LOG ("top: borrow budget WANTED %s (pending: inert until prepareToPlay or a STOPPED block)", anyCapable ? "ON" : "OFF");
+            // 8 Sep 2026 ruling: every WANTED transition reaches the system log
+            // with the value and the reason (what the pass saw).
+            EchoJay_NSLog(("EJCtx: borrow budget WANTED " + juce::String(anyCapable ? "ON" : "OFF")
+                           + " - listed " + juce::String(listed.size()) + " uid(s)"
+                           + (anyCapable ? juce::String(": a counted row exists")
+                                         : juce::String(": none counted (no sidecar yet ") + juce::String(wantedNoSidecar)
+                                           + ", publisher dead " + juce::String(wantedDead)
+                                           + ", not capable " + juce::String(wantedIncapable)
+                                           + ", foreign host " + juce::String(wantedForeignHost) + ")")
+                           + "; pending until prepareToPlay or a STOPPED block").toRawUTF8());
+        }
     }
 
     // ---- Mute/solo snapshot (27 Aug 2026, MUTE_SOLO_SPEC §3/§5/§6.1) ----
@@ -4923,12 +4965,20 @@ EchoJayProcessor::getLinkDisplayList() const
     // given instance keeps ONE label everywhere. Named first (alphabetical),
     // then untitled (stable by uid). Numbering runs over the full set.
     auto sorted = linkSlotInfos;   // copy, message thread
+    // ORDER (8 Sep 2026 ruling): a precedence chain, evaluated here and only here -
+    //   explicit user order (none exists yet)  >  registry slot index (claim order)  >  name.
+    // Name is the last resort. A row with no slot index sorts LAST, visibly, never
+    // alphabetised into the middle. Was: named-first alphabetical, which put 45
+    // channels on camera in dictionary order instead of the order Sean placed them.
     std::stable_sort(sorted.begin(), sorted.end(),
         [](const LinkSlotInfo& a, const LinkSlotInfo& b)
         {
+            const bool ai = a.regIdx >= 0, bi = b.regIdx >= 0;
+            if (ai != bi) return ai;                             // indexed rows first; unindexed last
+            if (ai) return a.regIdx < b.regIdx;                  // insertion (claim) order
             const bool au = a.name.isEmpty(), bu = b.name.isEmpty();
-            if (au != bu) return bu;                    // named first
-            if (au) return a.uid < b.uid;               // untitled: stable by uid
+            if (au != bu) return bu;                             // last resort: named before untitled
+            if (au) return a.uid < b.uid;
             return a.name.compareIgnoreCase(b.name) < 0;
         });
 
