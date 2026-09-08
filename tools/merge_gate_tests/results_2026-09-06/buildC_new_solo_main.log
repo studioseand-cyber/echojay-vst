@@ -1,0 +1,21 @@
+solo_legs_test.cpp: isolated state root /tmp/echojay-iso.Isf5Qo
+2026-09-08 18:00:35.110 main_harness[90138:3503785] EJNet: base=www.echojay.ai devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-09-08 18:00:35.112 main_harness[90138:3503780] EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+  main link dir: '/tmp/echojay-iso.Isf5Qo/Library/Application Support/EchoJay/link/'
+  waiting for /tmp/echojay-iso.Isf5Qo/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=0 s
+2026-09-08 18:00:35.314 main_harness[90138:3503785] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+2026-09-08 18:00:36.117 main_harness[90138:3503780] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-08 18:00:37.122 main_harness[90138:3503780] EJCtx: borrow budget WANTED ON - listed 3 uid(s): a counted row exists; pending until prepareToPlay or a STOPPED block
+  waiting for /tmp/echojay-iso.Isf5Qo/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=2 s
+2026-09-08 18:00:38.267 main_harness[90138:3503780] EJSolo: broadcast muteUser=1 uid=bbfbe5a88a seq=1788886838
+2026-09-08 18:00:38.267 main_harness[90138:3503780] EJSolo: broadcast muteUser=1 uid=98cccac912 seq=1788886839
+2026-09-08 18:00:38.267 main_harness[90138:3503780] EJSolo: solo ON uid=af34dab994 set=1 muted 2 Link(s) in 1 ms; hand-muted kept: 0
+2026-09-08 18:00:41.480 main_harness[90138:3503780] EJSolo: broadcast muteUser=0 uid=bbfbe5a88a seq=1788886841
+2026-09-08 18:00:41.481 main_harness[90138:3503780] EJSolo: broadcast muteUser=0 uid=98cccac912 seq=1788886842
+2026-09-08 18:00:41.481 main_harness[90138:3503780] EJSolo: solo OFF uid=af34dab994 (set empty) -> restored 2 Link(s) in 1 ms
+2026-09-08 18:00:43.145 main_harness[90138:3503780] EJCtx: borrow budget WANTED OFF - listed 0 uid(s): none counted (no sidecar yet 0, publisher dead 0, not capable 0, foreign host 0); pending until prepareToPlay or a STOPPED block
+  main lists A, B, C
+  3 s after the press: A/B/C muteWanted = 0/1/1 (want 0 1 1); pending acks 0
+  4 s after the release: A/B/C muteWanted = 0/0/0 (want 0 0 0)
+MAIN solo: end state PASS (the 100 ms verdict is the Link side's)
+exit=0

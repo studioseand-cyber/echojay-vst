@@ -12,40 +12,67 @@ void WaveformRecorder::prepare(double sampleRate, int /*samplesPerBlock*/)
 
 void WaveformRecorder::startRecording()
 {
-    // Clear previous recording
     writePos = 0;
     totalSamplesRecorded.store(0);
+    overrunSamples_.store(0);
     thumbMinAccum = 0.0f;
     thumbMaxAccum = 0.0f;
     thumbSampleCount = 0;
-
-    {
-        std::lock_guard<std::mutex> lock(thumbnailMutex);
-        thumbnailData.clear();
-    }
+    thumbCount_.store(0);
+    if ((int) thumbnailData.size() < kMaxThumbPoints) thumbnailData.resize((size_t) kMaxThumbPoints);   // message thread, once
     {
         std::lock_guard<std::mutex> lock(pathMutex);
         lastSavedPath.clear();
     }
-
-    // Pre-allocate for ~30s of audio (will grow if needed)
-    int initialCapacity = (int)(currentSampleRate * 30.0);
-    if (audioBuffer.getNumSamples() < initialCapacity)
-    {
-        audioBuffer.setSize(2, initialCapacity, false, true, false);
-        bufferCapacity = initialCapacity;
-    }
-
+    { std::lock_guard<std::mutex> lock(finaliseMutex); finalised_ = false; audioBuffer.setSize(0, 0, false, false, false); }
+    freeChunks();
+    growAheadIfNeeded();                 // the first kChunksAhead chunks, on THIS (non-audio) thread
     recording.store(true);
+}
+
+void WaveformRecorder::growAheadIfNeeded()
+{
+    // Non-audio thread. Publish chunks with release; the audio thread reads readyChunks_ with acquire.
+    const int cur = totalSamplesRecorded.load() / kChunkSamples;
+    while (readyChunks_.load() - cur < kChunksAhead && readyChunks_.load() < kMaxChunks)
+    {
+        auto* b = new juce::AudioBuffer<float>(2, kChunkSamples);
+        b->clear();
+        const int idx = readyChunks_.load();
+        chunks_[(size_t) idx].store(b, std::memory_order_release);
+        readyChunks_.store(idx + 1, std::memory_order_release);
+    }
+}
+
+void WaveformRecorder::freeChunks()
+{
+    const int n = readyChunks_.load();
+    readyChunks_.store(0);
+    for (int i = 0; i < n; ++i) { delete chunks_[(size_t) i].exchange(nullptr); }
+}
+
+void WaveformRecorder::finalise() const
+{
+    std::lock_guard<std::mutex> lock(finaliseMutex);
+    if (finalised_) return;
+    const int total = totalSamplesRecorded.load();
+    audioBuffer.setSize(2, std::max(0, total), false, false, false);
+    int done = 0, idx = 0;
+    while (done < total)
+    {
+        auto* c = chunks_[(size_t) idx].load(std::memory_order_acquire);
+        if (c == nullptr) break;
+        const int take = std::min(kChunkSamples, total - done);
+        audioBuffer.copyFrom(0, done, *c, 0, 0, take);
+        audioBuffer.copyFrom(1, done, *c, 1, 0, take);
+        done += take; ++idx;
+    }
+    finalised_ = true;
 }
 
 void WaveformRecorder::stopRecording()
 {
-    recording.store(false);
-
-    // Flush any remaining thumbnail samples
-    if (thumbSampleCount > 0)
-        flushThumbnailPoint();
+    recording.store(false);      // atomic; the final partial thumbnail point is flushed by the first reader (non-audio)
 }
 
 void WaveformRecorder::reset()
@@ -53,69 +80,54 @@ void WaveformRecorder::reset()
     recording.store(false);
     writePos = 0;
     totalSamplesRecorded.store(0);
+    overrunSamples_.store(0);
     thumbMinAccum = 0.0f;
     thumbMaxAccum = 0.0f;
     thumbSampleCount = 0;
-
-    {
-        std::lock_guard<std::mutex> lock(thumbnailMutex);
-        thumbnailData.clear();
-    }
+    thumbCount_.store(0);
     {
         std::lock_guard<std::mutex> lock(pathMutex);
         lastSavedPath.clear();
     }
-
-    // Don't deallocate — keep the buffer for the next recording
+    { std::lock_guard<std::mutex> lock(finaliseMutex); finalised_ = false; audioBuffer.setSize(0, 0, false, false, false); }
+    freeChunks();
 }
 
 void WaveformRecorder::releaseAudioBuffer()
 {
-    // The audio thread writes the buffer only while recording — never free
-    // under it
     if (recording.load()) return;
-    audioBuffer.setSize(0, 0, false, false, false);
-    bufferCapacity = 0;
+    { std::lock_guard<std::mutex> lock(finaliseMutex); audioBuffer.setSize(0, 0, false, false, false); finalised_ = false; }
+    freeChunks();
     writePos = 0;
-}
-
-void WaveformRecorder::ensureCapacity(int requiredSamples)
-{
-    if (requiredSamples <= bufferCapacity) return;
-
-    int newCapacity = bufferCapacity + kGrowChunkSamples;
-    while (newCapacity < requiredSamples) newCapacity += kGrowChunkSamples;
-
-    audioBuffer.setSize(2, newCapacity, true, true, false);
-    bufferCapacity = newCapacity;
 }
 
 void WaveformRecorder::processBlock(const float* left, const float* right, int numSamples)
 {
     if (!recording.load()) return;
-
-    ensureCapacity(writePos + numSamples);
-
-    // Copy audio into buffer
-    auto* destL = audioBuffer.getWritePointer(0);
-    auto* destR = audioBuffer.getWritePointer(1);
-
-    for (int i = 0; i < numSamples; ++i)
+    // AUDIO THREAD: no allocation, no copy of the recording, no lock. Write into the
+    // ready chunks; if none is ready (the grow-ahead fell behind) drop and count.
+    int remaining = numSamples, src = 0;
+    const int ready = readyChunks_.load(std::memory_order_acquire);
+    while (remaining > 0)
     {
-        destL[writePos + i] = left[i];
-        destR[writePos + i] = right != nullptr ? right[i] : left[i];
+        const int idx = writePos / kChunkSamples;
+        if (idx >= ready) { overrunSamples_.fetch_add(remaining); break; }
+        auto* c = chunks_[(size_t) idx].load(std::memory_order_acquire);
+        if (c == nullptr) { overrunSamples_.fetch_add(remaining); break; }
+        const int off  = writePos % kChunkSamples;
+        const int take = std::min(remaining, kChunkSamples - off);
+        auto* destL = c->getWritePointer(0) + off;
+        auto* destR = c->getWritePointer(1) + off;
+        for (int i = 0; i < take; ++i)
+        {
+            destL[i] = left[src + i];
+            destR[i] = right != nullptr ? right[src + i] : left[src + i];
+        }
+        writePos += take; src += take; remaining -= take;
     }
-
-    // Update thumbnail
     pushThumbnailSamples(left, right, numSamples);
-
-    writePos += numSamples;
     totalSamplesRecorded.store(writePos);
 }
-
-// ============================================================================
-// Thumbnail
-// ============================================================================
 
 void WaveformRecorder::pushThumbnailSamples(const float* left, const float* right, int numSamples)
 {
@@ -143,10 +155,12 @@ void WaveformRecorder::pushThumbnailSamples(const float* left, const float* righ
 
 void WaveformRecorder::flushThumbnailPoint()
 {
-    ThumbnailPoint pt { thumbMinAccum, thumbMaxAccum };
+    // AUDIO THREAD: write into the preallocated array, publish the count with release.
+    const int n = thumbCount_.load(std::memory_order_relaxed);
+    if (n < (int) thumbnailData.size())
     {
-        std::lock_guard<std::mutex> lock(thumbnailMutex);
-        thumbnailData.push_back(pt);
+        thumbnailData[(size_t) n] = ThumbnailPoint { thumbMinAccum, thumbMaxAccum };
+        thumbCount_.store(n + 1, std::memory_order_release);
     }
     thumbMinAccum = 0.0f;
     thumbMaxAccum = 0.0f;
@@ -155,14 +169,13 @@ void WaveformRecorder::flushThumbnailPoint()
 
 int WaveformRecorder::getNumThumbnailPoints() const
 {
-    std::lock_guard<std::mutex> lock(thumbnailMutex);
-    return (int)thumbnailData.size();
+    return thumbCount_.load(std::memory_order_acquire);
 }
 
 std::vector<WaveformRecorder::ThumbnailPoint> WaveformRecorder::getThumbnail() const
 {
-    std::lock_guard<std::mutex> lock(thumbnailMutex);
-    return thumbnailData;
+    const int n = std::min(thumbCount_.load(std::memory_order_acquire), (int) thumbnailData.size());
+    return std::vector<ThumbnailPoint>(thumbnailData.begin(), thumbnailData.begin() + n);
 }
 
 float WaveformRecorder::getRecordedDuration() const
@@ -178,6 +191,7 @@ juce::String WaveformRecorder::saveToWAV(const juce::File& directory, const juce
 {
     int numSamples = totalSamplesRecorded.load();
     if (numSamples <= 0) return {};
+    finalise();   // builds the contiguous buffer once, on this (non-audio) thread
 
     // Sanitise filename
     juce::String safeName = passName.replaceCharacter(' ', '_')
@@ -239,5 +253,7 @@ juce::String WaveformRecorder::getLastSavedPath() const
 const juce::AudioBuffer<float>* WaveformRecorder::getRecordedBuffer() const
 {
     if (totalSamplesRecorded.load() <= 0) return nullptr;
+    if (recording.load()) return nullptr;    // contiguous view exists only after the recording stopped
+    finalise();
     return &audioBuffer;
 }

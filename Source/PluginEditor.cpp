@@ -9784,8 +9784,15 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                 ms != processorRef.muteSoloSnaps_.end())
             { msCap = ms->second.capable; mOn = ms->second.muteUser;
               sOn = ms->second.soloOn; }
+            // Solo is main-authored now (8 Sep 2026): the S lamp reads the main's
+            // solo set (pending until every muted Link has acked); a mute this main
+            // imposed for the solo does not light M - that lamp stays the hand mute.
+            const auto lamp = processorRef.soloLampState(sg.addr);
+            const bool sPending = lamp == EchoJayProcessor::SoloLamp::pending;
+            sOn = sOn || lamp != EchoJayProcessor::SoloLamp::off;
+            if (processorRef.soloMutedByUs(sg.addr)) mOn = false;
             drawMsLamp(g, sg.mute, false, mOn, msCap);
-            drawMsLamp(g, sg.solo, true,  sOn, msCap);
+            drawMsLamp(g, sg.solo, true,  sOn, msCap, sPending);
         }
     }
 
@@ -19836,6 +19843,8 @@ int EchoJayEditor::measureChatContentHeight()
 
 void EchoJayEditor::timerCallback()
 {
+    processorRef.serviceCaptureStop();   // the transport-stop capture end, off the audio thread (8 Sep 2026)
+    processorRef.pollSoloAcks();   // the S lamp goes solid when the muted Links have answered (8 Sep 2026)
     // Target pill appears/disappears with Link connectivity — relayout on
     // change (no height change; the composer row is fixed). The ACTIVE
     // chat's target flipping live<->offline is ALSO a relayout, not a
@@ -28710,16 +28719,23 @@ void EchoJayEditor::drawActiveTick(juce::Graphics& g, juce::Rectangle<int> boxI,
 }
 
 void EchoJayEditor::drawMsLamp(juce::Graphics& g, juce::Rectangle<int> r,
-                               bool isSolo, bool lit, bool capable)
+                               bool isSolo, bool lit, bool capable, bool pending)
 {
     const juce::Colour litCol (isSolo ? (juce::uint32) 0xffF2E14C
                                       : (juce::uint32) 0xffFFB020);
     const juce::Colour chrome = LinkConsole::caption;
     auto rf = r.toFloat().reduced(1.0f);
-    if (lit) { g.setColour(litCol); g.fillRoundedRectangle(rf, 3.0f); }
+    // PENDING (8 Sep 2026): the press is acknowledged at once by a lit RING; the
+    // lamp fills solid only when the Links have answered. Never clears on press.
+    // SHAPE SEPARATION (8 Sep 2026): S is a CIRCLE, M is a SQUARE - hue alone
+    // (yellow vs amber) does not survive an 18 px lamp on camera.
+    auto fillShape = [&]{ if (isSolo) g.fillEllipse(rf); else g.fillRoundedRectangle(rf, 2.0f); };
+    auto drawShape = [&](float w){ if (isSolo) g.drawEllipse(rf, w); else g.drawRoundedRectangle(rf, 2.0f, w); };
+    if (lit && ! pending) { g.setColour(litCol); fillShape(); }
     g.setColour(! capable ? chrome.withAlpha(0.35f)
-                : lit ? juce::Colours::black : chrome);
-    if (! lit) g.drawRoundedRectangle(rf, 3.0f, 1.0f);
+                : (lit && ! pending) ? juce::Colours::black
+                : pending ? litCol : chrome);
+    if (! lit || pending) drawShape(pending ? 2.0f : 1.0f);
     g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
     g.drawText(isSolo ? "S" : "M", r, juce::Justification::centred);
 }
@@ -28736,8 +28752,15 @@ void EchoJayEditor::stripMuteSoloClick(const juce::String& uid, bool isSolo)
         refreshChainPanelForView(true);
         return;
     }
-    sendLinkMuteSoloCommand(uid, isSolo,
-        isSolo ? ! ms->second.soloOn : ! ms->second.muteUser);
+    if (isSolo)
+    {
+        // SOLO AS A BROADCAST (8 Sep 2026): the main authors the solo set and mutes
+        // every other Link on the existing command path; nothing is sent as soloOn.
+        processorRef.setLinkSolo(uid, ! processorRef.linkSoloOn(uid));
+        refreshChainPanelForView(true);
+        return;
+    }
+    sendLinkMuteSoloCommand(uid, isSolo, ! ms->second.muteUser);
 }
 
 juce::String EchoJayEditor::muteSoloStripTip(const juce::String& uid,
@@ -28747,7 +28770,7 @@ juce::String EchoJayEditor::muteSoloStripTip(const juce::String& uid,
     if (ms == processorRef.muteSoloSnaps_.end() || ! ms->second.capable)
         return "This Link predates mute/solo - reinstall it.";
     if (isSolo)
-        return ms->second.soloOn
+        return (ms->second.soloOn || processorRef.linkSoloOn(uid))
             ? "Soloed (click to un-solo). Solo mutes Link channels only."
             : "Solo: mute every other Link channel. Monitoring only - "
               "never saved.";
@@ -33366,8 +33389,14 @@ void EchoJayEditor::startChatPlayback(const juce::String& wavPath, float offset)
     // Route playback through the plugin output (AB system) on all views
     {
         // If same file is paused and no seek offset, resume from where we paused
-        if (processorRef.abPaused.load() && processorRef.abFilePath == wavPath && offset < 0.1f)
+        // 8 Sep 2026: RESUME IS A RESUME. A paused file resumes from where it was paused
+        // (the position lives in the player); it is never re-read. The old condition
+        // required offset < 0.1 s, which the chat's own paused offset never satisfies,
+        // so every resume re-read the whole file - Sean's "identical delay on resume".
+        if (processorRef.abPaused.load() && processorRef.abFilePath == wavPath)
         {
+            if (std::abs((double) offset - processorRef.abPlaybackPos / std::max(1.0, processorRef.abSampleRate)) > 1.0)
+                processorRef.seekAB((double) offset);   // an explicit scrub, not a resume
             processorRef.resumeAB();
         }
         else

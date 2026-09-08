@@ -1,0 +1,7 @@
+capture_playback_legs_test.cpp: isolated state root /tmp/echojay-iso.CPxLu6
+2026-09-08 18:04:24.099 cpl_a2[91087:3513183] EJNet: base=www.echojay.ai devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-09-08 18:04:24.101 cpl_a2[91087:3513156] EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+2026-09-08 18:04:24.323 cpl_a2[91087:3513183] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+  blocks 4219: max 1839 us  median first10s 125.8 us  last10s 130.9 us (ratio 1.04)  max around 30 s 1235 us  STOP block 185 us  overrun -1
+CAPTURE: max FAIL  trend PASS  stop-block PASS  overrun PASS -> FAIL
+exit=1

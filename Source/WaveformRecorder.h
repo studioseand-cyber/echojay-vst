@@ -3,6 +3,7 @@
 #include <vector>
 #include <mutex>
 #include <atomic>
+#include <array>
 
 //==============================================================================
 // WaveformRecorder
@@ -39,7 +40,13 @@ public:
     void releaseAudioBuffer();
 
     // Currently allocated capture-buffer bytes (memdiag)
-    size_t getAllocatedBytes() const { return (size_t)bufferCapacity * 2 * sizeof(float); }
+    size_t getAllocatedBytes() const { return (size_t) readyChunks_.load() * (size_t) kChunkSamples * 2 * sizeof(float) + (size_t) audioBuffer.getNumSamples() * 2 * sizeof(float); }
+    /** NON-audio thread (the processor's timer): keeps kChunksAhead chunks allocated
+        beyond the write position. Cheap when nothing is needed. */
+    void growAheadIfNeeded();
+    /** Samples the audio thread had to drop because no chunk was ready. A leg asserts 0. */
+    int  getOverrunSamples() const { return overrunSamples_.load(); }
+    int  getReadyChunks() const { return readyChunks_.load(); }
 
     // Feed audio from processBlock (called on audio thread)
     void processBlock(const float* left, const float* right, int numSamples);
@@ -86,18 +93,36 @@ private:
     std::atomic<bool> recording { false };
     std::atomic<int> totalSamplesRecorded { 0 };
 
-    // Main audio buffer — grows in chunks
-    juce::AudioBuffer<float> audioBuffer;
-    int writePos = 0;
-    int bufferCapacity = 0;
-    static constexpr int kGrowChunkSamples = 441000; // ~10s at 44.1k
+    // ---- CHUNKED STORAGE (8 Sep 2026, AAE -9173 at ~30 s): the audio thread NEVER
+    // allocates, copies or locks. It writes into fixed 10 s chunks that a non-audio
+    // thread allocates AHEAD (growAheadIfNeeded, from the processor's timer). The
+    // contiguous buffer consumers expect is built once, off the audio thread, by
+    // finalise() after recording stops. The old design grew one contiguous buffer
+    // with a copying reallocation inside processBlock - 11.5 MB per recorder at
+    // the 30 s mark, 41 recorders at once in Sean's session.
+    static constexpr int kChunkSamples = 480000;    // 10 s at 48 kHz (the unit is samples, not seconds)
+    static constexpr int kMaxChunks    = 1440;      // 4 h at 48 kHz
+    static constexpr int kChunksAhead  = 2;         // always this many ready beyond the write position
+    std::array<std::atomic<juce::AudioBuffer<float>*>, kMaxChunks> chunks_ {};
+    std::atomic<int>  readyChunks_ { 0 };           // chunks allocated and published (release/acquire)
+    std::atomic<int>  overrunSamples_ { 0 };        // samples dropped because no chunk was ready (must stay 0)
+    int writePos = 0;                               // audio thread only
+    void freeChunks();
 
-    void ensureCapacity(int requiredSamples);
+    // The contiguous result: valid after finalise(); built by the first non-audio
+    // consumer (saveToWAV / getRecordedBuffer) after stopRecording.
+    mutable juce::AudioBuffer<float> audioBuffer;
+    mutable std::mutex finaliseMutex;               // non-audio threads only
+    mutable bool finalised_ = false;
+    void finalise() const;
 
-    // Thumbnail — one min/max point per ~1024 samples (adjustable)
+    // Thumbnail — one min/max point per kThumbnailResolution samples, written by
+    // the audio thread into a PREALLOCATED array (no push_back, no mutex); readers
+    // copy up to thumbCount_.
     static constexpr int kThumbnailResolution = 1024;
-    mutable std::mutex thumbnailMutex;
-    std::vector<ThumbnailPoint> thumbnailData;
+    static constexpr int kMaxThumbPoints = kMaxChunks * (kChunkSamples / kThumbnailResolution) + 2;
+    std::vector<ThumbnailPoint> thumbnailData;      // sized kMaxThumbPoints at prepare
+    std::atomic<int> thumbCount_ { 0 };
 
     // Accumulator for current thumbnail point
     float thumbMinAccum = 0.0f, thumbMaxAccum = 0.0f;

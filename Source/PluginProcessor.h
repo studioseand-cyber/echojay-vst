@@ -780,6 +780,44 @@ private:
 public:
     void startCapture();
     void stopCapture();
+    // 8 Sep 2026: the audio thread only SIGNALS the stop (transport stop); the message
+    // thread performs it (snapshot, save thread). Serviced by the editor timer (30 Hz)
+    // and the processor timer (1 Hz backstop).
+    void serviceCaptureStop();
+    std::atomic<bool> captureStopRequested_ { false };
+
+    // ---- SOLO AS A BROADCAST (8 Sep 2026 ruling; V2-only, no Link change) ----
+    // The main AUTHORS the solo set. On a press every non-soloed live Link is
+    // muted on the existing ctrl-cmd path ("muteUser", the field the installed
+    // Link v8 already applies in ~48 ms); on release exactly the Links this main
+    // muted are restored; a hand mute observed before the first press is never
+    // touched. Reconciled every registry pass (a Link that appears mid-solo is
+    // muted on the next pass). soloOn is NOT sent to the Link any more: its own
+    // fabric scan would keep the others muted for up to 2.4 s after an unsolo.
+    // SOLO DOMINATES BORROW: a solo on a Link that is not the edited rack
+    // releases the borrow (edits kept) so no path through solo can silence
+    // every channel.
+    struct SoloBroadcast
+    {
+        juce::StringArray soloSet;          // uids soloed by this main
+        juce::StringArray mutedByUs;        // uids this main muted for the solo
+        juce::StringArray userMutedBefore;  // hand mutes seen at the first press: never touched
+        std::map<juce::String, int> pendingSeq;   // addr -> seq awaiting the Link's ack
+        juce::int64 pressMs = 0;
+    };
+    enum class SoloLamp { off, pending, solid };
+    void     setLinkSolo(const juce::String& uid, bool on);      // the press (message thread)
+    bool     linkSoloOn(const juce::String& uid) const { return solo_.soloSet.contains(uid); }
+    bool     soloMutedByUs(const juce::String& uid) const { return solo_.mutedByUs.contains(uid); }
+    bool     soloBroadcastActive() const { return ! solo_.soloSet.isEmpty(); }
+    SoloLamp soloLampState(const juce::String& uid) const;
+    void     pollSoloAcks();                                     // consumes ctrl-ack files for pending sends
+    int      soloPendingCount() const { return (int) solo_.pendingSeq.size(); }
+    SoloBroadcast solo_;
+private:
+    int  sendLinkCtrlMute(const juce::String& uid, bool on);     // one ctrl-cmd file, returns its seq
+    void reconcileSoloBroadcast();                               // each registry pass
+public:
     void resetCapture();
     float getCaptureDuration() const;
 
@@ -1016,6 +1054,12 @@ public:
 
     // A/B playback — toggle between DAW audio and reference WAV
     void loadABFile(const juce::String& wavPath, double startOffsetSeconds = 0.0);
+    // 8 Sep 2026 (capture playback): the file is read AHEAD of the play position on a
+    // worker; playback starts after the first second is in. abLoadedSamples_ bounds
+    // what the audio thread may read. Press-to-first-sample no longer scales with length.
+    std::atomic<int> abLoadedSamples_ { 0 };
+    std::unique_ptr<juce::Thread> abLoader_;
+    void seekAB(double seconds);
     void stopAB();
     void pauseAB();
     void resumeAB();

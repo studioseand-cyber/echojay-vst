@@ -1,0 +1,7 @@
+capture_playback_legs_test.cpp: isolated state root /tmp/echojay-iso.DJNMe5
+2026-09-08 18:03:01.894 cpl_harness[90872:3510010] EJNet: base=www.echojay.ai devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-09-08 18:03:01.896 cpl_harness[90872:3510005] EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+2026-09-08 18:03:02.111 cpl_harness[90872:3510010] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+  cold: load 86 ms + 0 blocks -> first audible 86 ms total;  paused at 2.14 s;  resume: 0 ms + 0 blocks -> 0 ms total; first sample -0.452 vs file -0.452 -> continuous
+PLAYBACK: cold PASS (86 ms)  resume PASS (0 ms)  continuity PASS -> PASS
+exit=0

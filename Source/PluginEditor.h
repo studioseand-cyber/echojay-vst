@@ -4445,7 +4445,7 @@ private:
         else. Colour change on state, letter, capability dimming; no
         words. Two renderers is how the rack drifted. */
     static void drawMsLamp(juce::Graphics& g, juce::Rectangle<int> r,
-                           bool isSolo, bool lit, bool capable);
+                           bool isSolo, bool lit, bool capable, bool pending = false);
     /** THE ONE ACTIVE-TICK RENDERER (31 Aug 2026): the mixer strip and the
         rack row draw the tick through this — box, offline cross, green
         tick, amber pending — so the two cannot drift. */

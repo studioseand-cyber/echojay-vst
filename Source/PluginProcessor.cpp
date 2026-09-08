@@ -693,8 +693,11 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             }
             
             // Auto-stop capture when transport stops (spacebar)
+            // 8 Sep 2026 (AAE -9173): the audio thread must not run stopCapture - it
+            // built strings, moved vectors, allocated and CREATED A THREAD here. It
+            // now only raises a flag; serviceCaptureStop() runs it on the message thread.
             if (wasTransportPlaying && !playing && captureState.load() == CaptureState::Capturing)
-                stopCapture();
+                captureStopRequested_.store(true, std::memory_order_release);
 
             // Sync compare streams to DAW transport on state TRANSITIONS only.
             // Running every block was stomping user-initiated play/pause from the button.
@@ -758,7 +761,8 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     if (abActive.load() && abPlayingRef.load())
     {
         std::lock_guard<std::mutex> lock(abMutex);
-        if (abSampleCount > 0 && abPlaybackPos < abSampleCount)
+        const int abAvail = std::min(abSampleCount, abLoadedSamples_.load(std::memory_order_acquire));   // never past the loader
+        if (abAvail > 0 && abPlaybackPos < abAvail)
         {
             int numSamples = buffer.getNumSamples();
             int abChans = abBuffer.getNumChannels();
@@ -1533,6 +1537,7 @@ void EchoJayProcessor::applyHostTrackNameIfDirty()
 void EchoJayProcessor::timerCallback()
 {
     applyHostTrackNameIfDirty();
+    serviceCaptureStop();   // 1 Hz backstop; the editor timer services it at 30 Hz when open
     scheduleSelfKeyPass();
     // Round 53 (C5): THE EDITOR MUST NOT DECIDE AUDIO LATENCY. The Link
     // registry pass - whose output is the WANTED borrow budget - runs on this
@@ -2548,6 +2553,140 @@ juce::AudioProcessorEditor* EchoJayProcessor::createSlotEditorForView(
     return getChainHost().createEditorForSlot(slot);
 }
 
+
+// ============================================================================
+//  SOLO AS A BROADCAST (8 Sep 2026 ruling)
+// ============================================================================
+int EchoJayProcessor::sendLinkCtrlMute(const juce::String& uid, bool on)
+{
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty() || uid.isEmpty()) return 0;
+    int seq = LinkShm::nextCtrlSeq();
+    if (auto it = solo_.pendingSeq.find(uid); it != solo_.pendingSeq.end() && it->second >= seq)
+        seq = it->second + 1;                                // same-second re-send: keep seq advancing
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",        1);
+    cmd->setProperty("seq",      seq);
+    cmd->setProperty("muteUser", on);
+    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();   // stale ack
+    if (! juce::File(dir + "ctrl-cmd-" + uid + ".json")
+            .replaceWithText(juce::JSON::toString(juce::var(cmd), true)))
+    {
+        EchoJay_NSLog(("EJSolo: broadcast write FAILED uid=" + uid).toRawUTF8());
+        return 0;
+    }
+    solo_.pendingSeq[uid] = seq;
+    EchoJay_NSLog(("EJSolo: broadcast muteUser=" + juce::String((int) on) + " uid=" + uid
+                   + " seq=" + juce::String(seq)).toRawUTF8());
+    return seq;
+}
+
+void EchoJayProcessor::setLinkSolo(const juce::String& uid, bool on)
+{
+    if (uid.isEmpty()) return;
+    const juce::int64 t0 = juce::Time::currentTimeMillis();
+    if (on)
+    {
+        if (solo_.soloSet.contains(uid)) return;
+        if (solo_.soloSet.isEmpty())
+        {
+            // First press: remember every hand mute so release restores EXACTLY what we changed.
+            solo_.userMutedBefore.clear();
+            for (const auto& kv : muteSoloSnaps_)
+                if (kv.second.muteUser) solo_.userMutedBefore.addIfNotAlreadyThere(kv.first);
+        }
+        solo_.soloSet.add(uid);
+        solo_.pressMs = t0;
+        if (solo_.mutedByUs.contains(uid)) { sendLinkCtrlMute(uid, false); solo_.mutedByUs.removeString(uid); }
+        // SOLO DOMINATES BORROW: a foreign solo releases the edit session (edits kept).
+        if (borrowActive() && borrowSession_.uid != uid)
+        {
+            const juce::String edited = resolveLinkDisplayName(borrowSession_.uid);
+            EchoJay_NSLog(("EJSolo: foreign solo on " + uid + " while " + borrowSession_.uid
+                           + " is borrowed -> releasing the borrow (edits kept)").toRawUTF8());
+            borrowRelease(true);
+            borrowStickyBanner_ = resolveLinkDisplayName(uid) + " is soloed - your edit of " + edited
+                + " was kept and released so the solo can be heard.";
+        }
+        int sent = 0;
+        for (const auto& si : linkSlotInfos)
+        {
+            if (si.uid.isEmpty() || solo_.soloSet.contains(si.uid) || solo_.mutedByUs.contains(si.uid)
+                || solo_.userMutedBefore.contains(si.uid)) continue;
+            if (sendLinkCtrlMute(si.uid, true) > 0) { solo_.mutedByUs.add(si.uid); ++sent; }
+        }
+        EchoJay_NSLog(("EJSolo: solo ON uid=" + uid + " set=" + juce::String(solo_.soloSet.size())
+                       + " muted " + juce::String(sent) + " Link(s) in "
+                       + juce::String(juce::Time::currentTimeMillis() - t0) + " ms; hand-muted kept: "
+                       + juce::String(solo_.userMutedBefore.size())).toRawUTF8());
+    }
+    else
+    {
+        if (! solo_.soloSet.contains(uid)) return;
+        solo_.soloSet.removeString(uid);
+        if (solo_.soloSet.isEmpty())
+        {
+            int restored = 0;
+            for (const auto& u : solo_.mutedByUs) if (sendLinkCtrlMute(u, false) > 0) ++restored;
+            EchoJay_NSLog(("EJSolo: solo OFF uid=" + uid + " (set empty) -> restored " + juce::String(restored)
+                           + " Link(s) in " + juce::String(juce::Time::currentTimeMillis() - t0) + " ms").toRawUTF8());
+            solo_.mutedByUs.clear();
+            solo_.userMutedBefore.clear();
+        }
+        else if (! solo_.userMutedBefore.contains(uid))
+        {
+            // still a solo set: the un-soloed Link joins the muted side
+            if (sendLinkCtrlMute(uid, true) > 0) solo_.mutedByUs.add(uid);
+            EchoJay_NSLog(("EJSolo: solo OFF uid=" + uid + " (set still " + juce::String(solo_.soloSet.size())
+                           + ") -> muted it").toRawUTF8());
+        }
+    }
+}
+
+void EchoJayProcessor::reconcileSoloBroadcast()
+{
+    if (solo_.soloSet.isEmpty()) return;
+    juce::StringArray live;
+    for (const auto& si : linkSlotInfos) if (si.uid.isNotEmpty()) live.add(si.uid);
+    for (const auto& u : live)
+    {
+        if (solo_.soloSet.contains(u) || solo_.mutedByUs.contains(u) || solo_.userMutedBefore.contains(u)) continue;
+        if (sendLinkCtrlMute(u, true) > 0)
+        {
+            solo_.mutedByUs.add(u);
+            EchoJay_NSLog(("EJSolo: reconcile - Link " + u + " appeared mid-solo, muted").toRawUTF8());
+        }
+    }
+}
+
+void EchoJayProcessor::pollSoloAcks()
+{
+    if (solo_.pendingSeq.empty()) return;
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty()) return;
+    for (auto it = solo_.pendingSeq.begin(); it != solo_.pendingSeq.end();)
+    {
+        juce::File ack(dir + "ctrl-ack-" + it->first + ".json");
+        bool done = false;
+        if (ack.existsAsFile())
+        {
+            const auto v = juce::JSON::parse(ack);
+            if (auto* o = v.getDynamicObject())
+                done = (int) o->getProperty("seq") >= it->second;
+        }
+        if (! done && juce::Time::currentTimeMillis() - solo_.pressMs > 3000) done = true;   // 3 s: give up waiting, the lamp settles
+        it = done ? solo_.pendingSeq.erase(it) : std::next(it);
+    }
+}
+
+EchoJayProcessor::SoloLamp EchoJayProcessor::soloLampState(const juce::String& uid) const
+{
+    if (! solo_.soloSet.contains(uid)) return SoloLamp::off;
+    return solo_.pendingSeq.empty() ? SoloLamp::solid : SoloLamp::pending;
+}
+
 void EchoJayProcessor::commitBorrowBudget(const char* where)
 {
     // THE ONLY WRITER of borrowBudgetActive_. Called from prepareToPlay and
@@ -2561,7 +2700,24 @@ void EchoJayProcessor::commitBorrowBudget(const char* where)
     // assumed that passthrough delay; it drops to the solo fallback.
     alignPost_.buf.clear(); alignPost_.w = 0;
     if (! wanted) borrowInContextOk_.store(false, std::memory_order_relaxed);
-    // Build B (8 Sep 2026 ruling, NOT in Build A): re-evaluate a refused session here when the budget commits ON.
+    // BUILD B (8 Sep 2026 ruling): RE-EVALUATE on every commit, not only at engage.
+    // A session refused during an OFF window recovers when the budget commits ON.
+    // This does not undo round 53: round 53 governs WHEN the budget commits, and
+    // that commit already re-runs PDC once (below); no PDC event is added that
+    // round 53 did not sanction. The pad is re-checked against the live chain
+    // latency, as the chain watcher does. Live evidence for the race: 12:46:51
+    // "REFUSED, false term(s): budget", commit ON at 12:47:06, every later engage OK.
+    if (wanted && borrowActive() && ! borrowInContextOk_.load(std::memory_order_relaxed))
+    {
+        const int  lat   = borrowChainLat_.load(std::memory_order_relaxed);
+        const bool padOk = alignPad(lat) >= 0;
+        const bool ok    = borrowCtxCapable_ && padOk;
+        if (ok) borrowInContextOk_.store(true, std::memory_order_relaxed);
+        EchoJay_NSLog(((juce::String) "EJCtx: budget committed ON with a live session - re-evaluated: capable="
+                       + (borrowCtxCapable_ ? "Y" : "N") + " pad=" + (padOk ? "Y" : "N") + " (chain latency "
+                       + juce::String(lat) + ") -> in-context " + (ok ? "RESTORED" : "still REFUSED")
+                       + (ok ? juce::String() : juce::String(", false term(s): ") + (! borrowCtxCapable_ ? "capable" : "pad"))).toRawUTF8());
+    }
     if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
         ejSetLatencyLogged (*this, lat + reportedBudgetFrames(), where);
     EJ_LAT_LOG ("top: borrow budget COMMITTED %s at %s (passthrough delay and report move together)", wanted ? "ON" : "OFF", where);
@@ -2893,6 +3049,19 @@ void EchoJayProcessor::startCapture()
                 linkCaptureChannels.push_back(std::move(lcc));
             }
         }
+    }
+}
+
+void EchoJayProcessor::serviceCaptureStop()
+{
+    if (captureStopRequested_.exchange(false, std::memory_order_acq_rel)
+        && captureState.load() == CaptureState::Capturing)
+        stopCapture();
+    // grow-ahead for every live recorder (message thread; the vector is only mutated here)
+    if (captureState.load() == CaptureState::Capturing)
+    {
+        waveformRecorder.growAheadIfNeeded();
+        for (auto& c : linkCaptureChannels) if (c != nullptr) c->waveformRecorder.growAheadIfNeeded();
     }
 }
 
@@ -3862,22 +4031,27 @@ void EchoJayProcessor::loadABFile(const juce::String& wavPath, double startOffse
 {
     juce::File file(wavPath);
     if (!file.existsAsFile()) return;
-    
+
+    // Stop a previous loader before its buffer goes away.
+    if (abLoader_ != nullptr) { abLoader_->stopThread(2000); abLoader_.reset(); }
+
     juce::AudioFormatManager formatManager;
     formatManager.registerBasicFormats();
-    
     std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(file));
     if (!reader) return;
-    
-    // Read entire file into buffer
-    juce::AudioBuffer<float> newBuf((int)reader->numChannels, (int)reader->lengthInSamples);
-    reader->read(&newBuf, 0, (int)reader->lengthInSamples, 0, true, true);
-    
-    // Calculate start position from offset
+
+    const int total = (int) reader->lengthInSamples;
+    const int chans = (int) reader->numChannels;
+    juce::AudioBuffer<float> newBuf(chans, total);
+    newBuf.clear();                                       // unloaded tail reads as silence, never garbage
     int startPos = (int)(startOffsetSeconds * reader->sampleRate);
-    if (startPos >= (int)reader->lengthInSamples)
-        startPos = 0;
-    
+    if (startPos >= total) startPos = 0;
+    // The first second from the start position, synchronously (press-to-first-sample);
+    // everything else on the loader.
+    const int first = std::min(total - startPos, (int) reader->sampleRate);
+    if (first > 0) reader->read(&newBuf, startPos, first, startPos, true, true);
+    if (startPos > 0) { const int head = std::min(startPos, (int) reader->sampleRate); reader->read(&newBuf, 0, head, 0, true, true); }
+
     {
         std::lock_guard<std::mutex> lock(abMutex);
         abBuffer = std::move(newBuf);
@@ -3886,9 +4060,44 @@ void EchoJayProcessor::loadABFile(const juce::String& wavPath, double startOffse
         abPlaybackPos = startPos;
         abFilePath = wavPath;
     }
-    
+    abLoadedSamples_.store(startPos + first, std::memory_order_release);
     abActive.store(true);
     abPlayingRef.store(true);
+
+    // The loader: reads ahead of the play position in 1 s pieces into the SAME buffer's
+    // unread region (disjoint from what the audio thread may read), then publishes.
+    struct Loader : public juce::Thread
+    {
+        Loader(EchoJayProcessor& o, std::unique_ptr<juce::AudioFormatReader> r, int from, int tot, int sr)
+            : juce::Thread("EchoJay capture loader"), owner(o), reader(std::move(r)), pos(from), total(tot), rate(sr) {}
+        EchoJayProcessor& owner; std::unique_ptr<juce::AudioFormatReader> reader; int pos, total, rate;
+        void run() override
+        {
+            while (! threadShouldExit() && pos < total)
+            {
+                const int n = std::min(rate, total - pos);
+                {
+                    std::lock_guard<std::mutex> lock(owner.abMutex);   // the buffer object must not be swapped under us
+                    if (owner.abBuffer.getNumSamples() != total) return;
+                    reader->read(&owner.abBuffer, pos, n, pos, true, true);
+                }
+                pos += n;
+                owner.abLoadedSamples_.store(pos, std::memory_order_release);
+            }
+            // wrap-around region before the start position (if we started mid-file)
+        }
+    };
+    abLoader_ = std::make_unique<Loader>(*this, std::move(reader), startPos + first, total, (int) abSampleRate);
+    abLoader_->startThread();
+}
+
+void EchoJayProcessor::seekAB(double seconds)
+{
+    std::lock_guard<std::mutex> lock(abMutex);
+    int p = (int) (seconds * abSampleRate);
+    if (p < 0) p = 0;
+    if (p >= abSampleCount) p = 0;
+    abPlaybackPos = p;
 }
 
 void EchoJayProcessor::stopAB()
@@ -4778,6 +4987,7 @@ void EchoJayProcessor::refreshLinkRegistry()
 
     linkSlotInfos = std::move(newInfos);
     publishLiveSlotList();
+    reconcileSoloBroadcast();   // solo as a broadcast: mute any Link that appeared mid-solo (8 Sep 2026)
 
     // §8.3 refinement: the budget follows CAPABLE-LINK PRESENCE. The
     // capability lives in the sidecar, read once per uid and cached; the
@@ -4890,9 +5100,11 @@ void EchoJayProcessor::refreshLinkRegistry()
                                             : muteSoloSnaps_.erase(it);
         soloSetActive_     = anySolo;
         soloIncapableLive_ = incap;
+        anySolo = anySolo || soloBroadcastActive();          // the main-authored solo set counts (8 Sep 2026)
         const bool editedIn = borrowActive()
-            && muteSoloSnaps_.count(borrowSession_.uid)
-            && muteSoloSnaps_[borrowSession_.uid].soloOn;
+            && ((muteSoloSnaps_.count(borrowSession_.uid)
+                 && muteSoloSnaps_[borrowSession_.uid].soloOn)
+                || linkSoloOn(borrowSession_.uid));
         // THE HONORARY STRIP OBEYS EVERY SILENCE REASON (28 Aug 2026):
         // solo-awareness alone shipped half a strip — while a session is
         // live the Link's channel is session-muted and the audible copy

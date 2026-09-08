@@ -16,6 +16,10 @@
 
 static void pump (int iters) { for (int t = 0; t < iters; ++t) CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); }
 static void drain() { pump (5); }
+// MILLISECOND pump (8 Sep 2026): pump(n) above is n ITERATIONS of ~20-30 ms, not n ms - the solo legs
+// were first written as if it were milliseconds, so their "1,130 / 2,474 ms" were the harness's own step
+// size, not the product. Every timed leg uses pumpMs.
+static void pumpMs (int ms) { const double end = juce::Time::getMillisecondCounterHiRes() + ms; while (juce::Time::getMillisecondCounterHiRes() < end) CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.002, false); }
 static juce::String slotName (void* reg, int i) { return i >= 0 ? juce::String::fromUTF8 (LinkShm::regSlots (reg)[i].displayName) : juce::String ("(no slot)"); }
 static void nameFromHost (LinkProcessor& l, const char* n) { juce::AudioProcessor::TrackProperties tp; tp.name = std::make_optional (juce::String (n)); l.updateTrackProperties (tp); }
 
@@ -180,7 +184,7 @@ static int soloFabric()
     auto mk = [&](const char* nm) { auto l = std::make_unique<LinkProcessor>(); l->linkName = nm; l->markTypedNameAuthoritative(); l->prepareToPlay (48000.0, 512); l->updateShmState(); return l; };
     auto A = mk ("A"), B = mk ("B"), C = mk ("C");
     // heartbeats climb once per second; the fabric scan needs one climb since first seen (RegLiveness) and freshness
-    for (int t = 0; t < 30; ++t) { pump (100); rmsOfBlock (*A, 2); rmsOfBlock (*B, 2); rmsOfBlock (*C, 2); }
+    for (int t = 0; t < 4; ++t) { pumpMs (1000); rmsOfBlock (*A, 2); rmsOfBlock (*B, 2); rmsOfBlock (*C, 2); }
     std::printf ("  claimed: A slot %d uid %s, B slot %d, C slot %d\n", A->diag.slotIdx, A->getInstanceUidForTest().toRawUTF8(), B->diag.slotIdx, C->diag.slotIdx);
     const float before = rmsOfBlock (*B, 8);
     // the main's command, byte for byte the same shape (sendLinkMuteSoloCommand)
@@ -189,18 +193,18 @@ static int soloFabric()
     sendSolo (true, 1);
     // (i) sidecar
     bool sideSolo = false; double tSide = -1; const double t0 = juce::Time::getMillisecondCounterHiRes();
-    for (int t = 0; t < 40 && ! sideSolo; ++t) { pump (50); const auto rc = LinkShm::readRackSidecar (dir, A->getInstanceUidForTest()); sideSolo = (rc.uid == A->getInstanceUidForTest()) && rc.soloOn; if (sideSolo) tSide = juce::Time::getMillisecondCounterHiRes() - t0; }
+    for (int t = 0; t < 3000 && ! sideSolo; ++t) { pumpMs (2); const auto rc = LinkShm::readRackSidecar (dir, A->getInstanceUidForTest()); sideSolo = (rc.uid == A->getInstanceUidForTest()) && rc.soloOn; if (sideSolo) tSide = juce::Time::getMillisecondCounterHiRes() - t0; }
     std::printf ("  (i)   A's sidecar carries soloOn=true: %s (%.0f ms after the command; A soloIsOn=%d)\n", sideSolo ? "YES" : "NO", tSide, (int) A->soloIsOn());
     // (ii) the others' scans
     bool bMute = false, cMute = false, aMute = false; double tScan = -1;
-    for (int t = 0; t < 80 && ! (bMute && cMute); ++t) { pump (50); rmsOfBlock (*A, 1); rmsOfBlock (*B, 1); rmsOfBlock (*C, 1); bMute = B->linkMuteWanted(); cMute = C->linkMuteWanted(); aMute = A->linkMuteWanted(); if (bMute && cMute) tScan = juce::Time::getMillisecondCounterHiRes() - t0; }
+    for (int t = 0; t < 3000 && ! (bMute && cMute); ++t) { pumpMs (2); rmsOfBlock (*A, 1); rmsOfBlock (*B, 1); rmsOfBlock (*C, 1); bMute = B->linkMuteWanted(); cMute = C->linkMuteWanted(); aMute = A->linkMuteWanted(); if (bMute && cMute) tScan = juce::Time::getMillisecondCounterHiRes() - t0; }
     std::printf ("  (ii)  B muteWanted=%d C muteWanted=%d A muteWanted=%d (%.0f ms after the command)\n", (int) bMute, (int) cMute, (int) aMute, tScan);
     // (iii) audio
     const float during = rmsOfBlock (*B, 40);
     const float aDuring = rmsOfBlock (*A, 40);
     std::printf ("  (iii) B output rms before %.3f, while A is soloed %.4f; A's own output while soloed %.3f\n", before, during, aDuring);
     sendSolo (false, 2);
-    bool bUn = true; for (int t = 0; t < 80 && bUn; ++t) { pump (50); rmsOfBlock (*B, 1); bUn = B->linkMuteWanted(); }
+    bool bUn = true; for (int t = 0; t < 3000 && bUn; ++t) { pumpMs (2); rmsOfBlock (*B, 1); bUn = B->linkMuteWanted(); }
     const float after = rmsOfBlock (*B, 40);
     std::printf ("  unsolo: B muteWanted=%d, B output rms %.3f\n", (int) bUn, after);
     // THE BAR (8 Sep 2026 ruling, replacing "correct end state"): solo is a control a person operates in real
@@ -211,6 +215,82 @@ static int soloFabric()
     std::printf ("SOLO FABRIC: (i) %s  (ii) %s  (iii) %s  unsolo %s  TIME %.0f ms vs %.0f ms bound %s -> %s\n", sideSolo ? "PASS" : "FAIL", (bMute && cMute && ! aMute) ? "PASS" : "FAIL", (during < 0.01f && aDuring > 0.3f) ? "PASS" : "FAIL", (! bUn && after > 0.3f) ? "PASS" : "FAIL", tScan, kSoloBoundMs, inTime ? "PASS" : "FAIL", ok ? "PASS" : "FAIL");
     drain(); A.reset(); B.reset(); C.reset(); drain();
     return ok ? 0 : 1;
+}
+
+
+// ---- TWO-PROCESS SOLO LEGS, LINK SIDE (8 Sep 2026 ruling): this process holds A, B, C in the private root
+// and MEASURES; the main-plugin harness (solo_legs_test) presses. Handshake by files in the link dir:
+//   solo_ready.txt   <- us: the three uids, once claimed and heartbeat-proven
+//   solo_t0.txt      <- main: wall-clock ms just before the press (solo A)
+//   solo_t1.txt      <- main: wall-clock ms just before the release
+//   solo_state.txt   -> us, every 20 ms: A/B/C muteWanted + rms, for the borrow leg's assertions
+// Verdict here: B (a non-soloed Link) must be MUTED within 100 ms of t0 and AUDIBLE again within 100 ms of t1.
+static int soloFabric2()
+{
+    int err = 0; const auto dir = LinkShm::resolveDir (err);
+    int fd = -1, rerr = 0; void* reg = LinkShm::openRegistry (dir, fd, rerr);
+    if (reg == nullptr) { std::printf ("registry not mappable (%d)\n", rerr); return 99; }
+    auto mk = [&](const char* nm) { auto l = std::make_unique<LinkProcessor>(); l->linkName = nm; l->markTypedNameAuthoritative(); l->prepareToPlay (48000.0, 512); l->updateShmState(); return l; };
+    auto A = mk ("A"), B = mk ("B"), C = mk ("C");
+    for (int t = 0; t < 4; ++t)
+    {
+        const double a = juce::Time::getMillisecondCounterHiRes(); pumpMs (1000);
+        const double b = juce::Time::getMillisecondCounterHiRes(); rmsOfBlock (*A, 2); rmsOfBlock (*B, 2); rmsOfBlock (*C, 2);
+        std::printf ("  warm-up %d: pump(1000) took %.0f ms, 6 blocks took %.0f ms\n", t, b - a, juce::Time::getMillisecondCounterHiRes() - b); std::fflush (stdout);
+    }
+    juce::File (dir + "solo_ready.txt").replaceWithText (A->getInstanceUidForTest() + "\n" + B->getInstanceUidForTest() + "\n" + C->getInstanceUidForTest() + "\n");
+    std::printf ("  ready: A %s B %s C %s\n", A->getInstanceUidForTest().toRawUTF8(), B->getInstanceUidForTest().toRawUTF8(), C->getInstanceUidForTest().toRawUTF8());
+    auto stamp = [&]{ juce::File (dir + "solo_state.txt").replaceWithText (juce::String ((int) A->linkMuteWanted()) + " " + juce::String ((int) B->linkMuteWanted()) + " " + juce::String ((int) C->linkMuteWanted())); };
+    auto waitFile = [&](const char* name, juce::int64& tOut, int maxMs) { const double end = juce::Time::getMillisecondCounterHiRes() + maxMs; while (juce::Time::getMillisecondCounterHiRes() < end) { juce::File f (dir + name); if (f.existsAsFile()) { tOut = f.loadFileAsString().trim().getLargeIntValue(); return true; } pumpMs (2); rmsOfBlock (*A, 1); rmsOfBlock (*B, 1); rmsOfBlock (*C, 1); stamp(); } return false; };
+    juce::int64 t0 = 0, t1 = 0;
+    if (! waitFile ("solo_t0.txt", t0, 90000)) { std::printf ("SOLO2: no press arrived\n"); return 2; }
+    // measure: time from t0 until B wants mute and its output is silent
+    double tMute = -1, tSilent = -1; float bRms = 1;
+    for (int i = 0; i < 3000; ++i) { pumpMs (2); rmsOfBlock (*A, 1); rmsOfBlock (*C, 1); bRms = rmsOfBlock (*B, 1); stamp();
+        if (tMute < 0 && B->linkMuteWanted()) tMute = (double) (juce::Time::currentTimeMillis() - t0);
+        if (tSilent < 0 && bRms < 0.01f) tSilent = (double) (juce::Time::currentTimeMillis() - t0);
+        if (tMute >= 0 && tSilent >= 0) break; }
+    std::printf ("  B muteWanted %.0f ms after the press; B silent (rms<0.01) %.0f ms after; A muteWanted=%d C muteWanted=%d\n", tMute, tSilent, (int) A->linkMuteWanted(), (int) C->linkMuteWanted());
+    if (! waitFile ("solo_t1.txt", t1, 90000)) { std::printf ("SOLO2: no release arrived\n"); return 2; }
+    double tUn = -1, tAud = -1;
+    for (int i = 0; i < 3000; ++i) { pumpMs (2); rmsOfBlock (*A, 1); rmsOfBlock (*C, 1); bRms = rmsOfBlock (*B, 1); stamp();
+        if (tUn < 0 && ! B->linkMuteWanted()) tUn = (double) (juce::Time::currentTimeMillis() - t1);
+        if (tAud < 0 && bRms > 0.3f) tAud = (double) (juce::Time::currentTimeMillis() - t1);
+        if (tUn >= 0 && tAud >= 0) break; }
+    std::printf ("  B unmuted %.0f ms after the release; audible again %.0f ms after\n", tUn, tAud);
+    const bool ok = tMute >= 0 && tMute <= 100 && tSilent >= 0 && tSilent <= 150 && tUn >= 0 && tUn <= 100 && tAud >= 0;
+    const bool borrowMode = juce::File (dir + "solo_mode.txt").existsAsFile();
+    if (borrowMode)
+    {   // solo-dominates-borrow: B is the SOLOED Link here; the assertion is that it stays AUDIBLE (at least one channel audible)
+        const bool bAud = ! B->linkMuteWanted() && bRms > 0.3f;
+        std::printf ("SOLO2 (borrow mode): B audible while soloed = %d (rms %.3f) -> %s\n", (int) bAud, bRms, bAud ? "PASS" : "FAIL");
+        juce::File (dir + "solo_done.txt").replaceWithText ("1"); pumpMs (500); drain(); A.reset(); B.reset(); C.reset(); drain();
+        return bAud ? 0 : 1;
+    }
+    std::printf ("SOLO2: mute %s (%.0f ms vs 100)  unmute %s (%.0f ms vs 100) -> %s\n", (tMute >= 0 && tMute <= 100) ? "PASS" : "FAIL", tMute, (tUn >= 0 && tUn <= 100) ? "PASS" : "FAIL", tUn, ok ? "PASS" : "FAIL");
+    juce::File (dir + "solo_done.txt").replaceWithText ("1");
+    pumpMs (500); drain(); A.reset(); B.reset(); C.reset(); drain();
+    return ok ? 0 : 1;
+}
+
+
+static int pumpTest()
+{
+    int err = 0; const auto dir = LinkShm::resolveDir (err); int fd = -1, rerr = 0; void* reg = LinkShm::openRegistry (dir, fd, rerr);
+    if (reg == nullptr) return 99;
+    auto t = [](const char* what, std::function<void()> f) { const double a = juce::Time::getMillisecondCounterHiRes(); f(); std::printf ("  %-44s %.0f ms\n", what, juce::Time::getMillisecondCounterHiRes() - a); std::fflush (stdout); };
+    t ("pump(1000) with NO Link", [&]{ pump (1000); });
+    auto A = std::make_unique<LinkProcessor>(); A->linkName = "A"; A->markTypedNameAuthoritative(); A->prepareToPlay (48000.0, 512); A->updateShmState();
+    t ("pump(1000) with 1 Link", [&]{ pump (1000); });
+    auto B = std::make_unique<LinkProcessor>(); B->linkName = "B"; B->markTypedNameAuthoritative(); B->prepareToPlay (48000.0, 512); B->updateShmState();
+    auto C = std::make_unique<LinkProcessor>(); C->linkName = "C"; C->markTypedNameAuthoritative(); C->prepareToPlay (48000.0, 512); C->updateShmState();
+    t ("pump(1000) with 3 Links", [&]{ pump (1000); });
+    t ("pump(1000) with 3 Links, no rms", [&]{ pump (1000); });
+    t ("CFRunLoopRunInMode x100 (0.01 s) direct", [&]{ for (int i = 0; i < 100; ++i) CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.01, false); });
+    t ("sleep 1000 (no pump)", [&]{ juce::Thread::sleep (1000); });
+    t ("pump(1000) with 3 Links, 2nd time", [&]{ pump (1000); });
+    drain(); A.reset(); B.reset(); C.reset(); drain();
+    return 0;
 }
 
 static int legs()
@@ -363,6 +443,8 @@ int main (int argc, char** argv)
     if (argc > 1 && juce::String (argv[1]) == "p20")    return p20();
     if (argc > 1 && juce::String (argv[1]) == "foreign")   return foreign (1);
     if (argc > 1 && juce::String (argv[1]) == "solofabric") return soloFabric();
+    if (argc > 1 && juce::String (argv[1]) == "solofabric2") return soloFabric2();
+    if (argc > 1 && juce::String (argv[1]) == "pumptest") return pumpTest();
     if (argc > 1 && juce::String (argv[1]) == "foreign20") return foreign (20);
     if (argc > 1 && juce::String (argv[1]) == "churn")  { const int r = churnLegs(); std::printf ("churn legs: L8 %s   L9 %s\n", (r & 1) ? "FAIL" : "PASS", (r & 2) ? "FAIL" : "PASS"); return r; }
     if (argc > 1 && juce::String (argv[1]) == "churn20") { int p8 = 0, p9 = 0; for (int r = 0; r < 20; ++r) { const int x = churnLegs(); if (! (x & 1)) ++p8; if (! (x & 2)) ++p9; } std::printf ("CHURN20: L8 %d/20   L9 %d/20\n", p8, p9); return (p8 == 20 && p9 == 20) ? 0 : 1; }
