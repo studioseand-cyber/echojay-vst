@@ -153,6 +153,62 @@ static int foreign (int runs)
     return (f1 == runs && f2 == runs && f3 == runs && p1 == runs && p2 == runs) ? 0 : 1;
 }
 
+
+// ---- THE SOLO FABRIC LEG (8 Sep 2026 ruling, item 4): three synthetic Links in a private root.
+// Solo A by the exact file the main writes (ctrl-cmd-<uid>.json {v,seq,soloOn}); assert the three
+// steps that were dark in the live log, individually:
+//   (i)   A republishes its sidecar with soloOn=true
+//   (ii)  B's and C's fabric scan read it: linkMuteWanted() becomes true on B and C, stays false on A
+//   (iii) B's processBlock actually silences its output (sine in, ~0 out after the ramp)
+// then soloOn=false: B and C unmute.
+static float rmsOfBlock (LinkProcessor& l, int blocks)
+{
+    juce::AudioBuffer<float> buf (2, 512); juce::MidiBuffer midi; double ph = 0; float acc = 0; int cnt = 0;
+    for (int b = 0; b < blocks; ++b)
+    {
+        for (int i = 0; i < 512; ++i) { const float v = std::sin ((float) ph) * 0.5f; ph += 2.0 * juce::MathConstants<double>::pi * 440.0 / 48000.0; buf.setSample (0, i, v); buf.setSample (1, i, v); }
+        l.processBlock (buf, midi);
+        if (b >= blocks - 4) { for (int i = 0; i < 512; ++i) { acc += buf.getSample (0, i) * buf.getSample (0, i); ++cnt; } }
+    }
+    return cnt > 0 ? std::sqrt (acc / (float) cnt) : 0.0f;
+}
+static int soloFabric()
+{
+    int err = 0; const auto dir = LinkShm::resolveDir (err);
+    int fd = -1, rerr = 0; void* reg = LinkShm::openRegistry (dir, fd, rerr);
+    if (reg == nullptr) { std::printf ("registry not mappable (%d)\n", rerr); return 99; }
+    auto mk = [&](const char* nm) { auto l = std::make_unique<LinkProcessor>(); l->linkName = nm; l->markTypedNameAuthoritative(); l->prepareToPlay (48000.0, 512); l->updateShmState(); return l; };
+    auto A = mk ("A"), B = mk ("B"), C = mk ("C");
+    // heartbeats climb once per second; the fabric scan needs one climb since first seen (RegLiveness) and freshness
+    for (int t = 0; t < 30; ++t) { pump (100); rmsOfBlock (*A, 2); rmsOfBlock (*B, 2); rmsOfBlock (*C, 2); }
+    std::printf ("  claimed: A slot %d uid %s, B slot %d, C slot %d\n", A->diag.slotIdx, A->getInstanceUidForTest().toRawUTF8(), B->diag.slotIdx, C->diag.slotIdx);
+    const float before = rmsOfBlock (*B, 8);
+    // the main's command, byte for byte the same shape (sendLinkMuteSoloCommand)
+    auto sendSolo = [&](bool on, int seq) { auto* cmd = new juce::DynamicObject(); cmd->setProperty ("v", 1); cmd->setProperty ("seq", seq); cmd->setProperty ("soloOn", on);
+        juce::File (dir + "ctrl-cmd-" + A->getInstanceUidForTest() + ".json").replaceWithText (juce::JSON::toString (juce::var (cmd), true)); };
+    sendSolo (true, 1);
+    // (i) sidecar
+    bool sideSolo = false; double tSide = -1; const double t0 = juce::Time::getMillisecondCounterHiRes();
+    for (int t = 0; t < 40 && ! sideSolo; ++t) { pump (50); const auto rc = LinkShm::readRackSidecar (dir, A->getInstanceUidForTest()); sideSolo = (rc.uid == A->getInstanceUidForTest()) && rc.soloOn; if (sideSolo) tSide = juce::Time::getMillisecondCounterHiRes() - t0; }
+    std::printf ("  (i)   A's sidecar carries soloOn=true: %s (%.0f ms after the command; A soloIsOn=%d)\n", sideSolo ? "YES" : "NO", tSide, (int) A->soloIsOn());
+    // (ii) the others' scans
+    bool bMute = false, cMute = false, aMute = false; double tScan = -1;
+    for (int t = 0; t < 80 && ! (bMute && cMute); ++t) { pump (50); rmsOfBlock (*A, 1); rmsOfBlock (*B, 1); rmsOfBlock (*C, 1); bMute = B->linkMuteWanted(); cMute = C->linkMuteWanted(); aMute = A->linkMuteWanted(); if (bMute && cMute) tScan = juce::Time::getMillisecondCounterHiRes() - t0; }
+    std::printf ("  (ii)  B muteWanted=%d C muteWanted=%d A muteWanted=%d (%.0f ms after the command)\n", (int) bMute, (int) cMute, (int) aMute, tScan);
+    // (iii) audio
+    const float during = rmsOfBlock (*B, 40);
+    const float aDuring = rmsOfBlock (*A, 40);
+    std::printf ("  (iii) B output rms before %.3f, while A is soloed %.4f; A's own output while soloed %.3f\n", before, during, aDuring);
+    sendSolo (false, 2);
+    bool bUn = true; for (int t = 0; t < 80 && bUn; ++t) { pump (50); rmsOfBlock (*B, 1); bUn = B->linkMuteWanted(); }
+    const float after = rmsOfBlock (*B, 40);
+    std::printf ("  unsolo: B muteWanted=%d, B output rms %.3f\n", (int) bUn, after);
+    const bool ok = sideSolo && bMute && cMute && ! aMute && before > 0.3f && during < 0.01f && aDuring > 0.3f && ! bUn && after > 0.3f;
+    std::printf ("SOLO FABRIC: (i) %s  (ii) %s  (iii) %s  unsolo %s -> %s\n", sideSolo ? "PASS" : "FAIL", (bMute && cMute && ! aMute) ? "PASS" : "FAIL", (during < 0.01f && aDuring > 0.3f) ? "PASS" : "FAIL", (! bUn && after > 0.3f) ? "PASS" : "FAIL", ok ? "PASS" : "FAIL");
+    drain(); A.reset(); B.reset(); C.reset(); drain();
+    return ok ? 0 : 1;
+}
+
 static int legs()
 {
     int err = 0; const auto dir = LinkShm::resolveDir (err);
@@ -302,6 +358,7 @@ int main (int argc, char** argv)
     if (argc > 1 && juce::String (argv[1]) == "scan50") return scan50();
     if (argc > 1 && juce::String (argv[1]) == "p20")    return p20();
     if (argc > 1 && juce::String (argv[1]) == "foreign")   return foreign (1);
+    if (argc > 1 && juce::String (argv[1]) == "solofabric") return soloFabric();
     if (argc > 1 && juce::String (argv[1]) == "foreign20") return foreign (20);
     if (argc > 1 && juce::String (argv[1]) == "churn")  { const int r = churnLegs(); std::printf ("churn legs: L8 %s   L9 %s\n", (r & 1) ? "FAIL" : "PASS", (r & 2) ? "FAIL" : "PASS"); return r; }
     if (argc > 1 && juce::String (argv[1]) == "churn20") { int p8 = 0, p9 = 0; for (int r = 0; r < 20; ++r) { const int x = churnLegs(); if (! (x & 1)) ++p8; if (! (x & 2)) ++p9; } std::printf ("CHURN20: L8 %d/20   L9 %d/20\n", p8, p9); return (p8 == 20 && p9 == 20) ? 0 : 1; }

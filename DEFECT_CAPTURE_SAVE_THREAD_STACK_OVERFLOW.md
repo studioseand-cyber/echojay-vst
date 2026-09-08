@@ -65,3 +65,31 @@ Crash report: ~/Library/Logs/DiagnosticReports/Pro Tools-2026-09-08-111901.ips (
     mintDashboardHandoff; the no-deadline read moved to the stream send.)
 ## Fix shape, for the ruling (NOT built): heap-allocate the KeyEngine in run() (std::make_unique) or give the save thread
 an explicit 8 MB stack; either is one line, main-plugin (V2) only. Findings 4(a)/4(b) are separate items.
+
+## RULING (8 Sep, 11:4x) and Build A
+Fix = heap-allocate the KeyEngine, scoped to run() (std::make_unique). The 8 MB stack is REJECTED: a magic number sized to
+today's object, leaves a 2 MB local in place for the next caller, re-breaks silently if the object grows or the call nests.
+## Item 2 - why only now: the condition is UNCHANGED since 7 Aug, and it was never exercised
+    git log -L on both halves of the key-source rule (PluginProcessor.cpp:3098 placement == 1; :3087-3090 the four
+    channel types) returns exactly one commit: 28743f4, 7 Aug 2026, Sean's "captures carry their key". Kathy's merge did
+    not touch it. Nothing widened; not a regression. Note what the rule means in practice: the DEFAULT channel type is
+    FullMix (PluginProcessor.h:1104), which QUALIFIES - so any capture longer than 2 s on an untyped channel has walked
+    into this since 7 Aug. The harness negative control below crashes the same way on arm64 with NO Link at all.
+## Item 6 - FILED, NOT FIXED: audio-thread work in the capture path (do not touch today)
+    (a) stopCapture() from processBlock on transport stop (PluginProcessor.cpp:688-689): CaptureSnapshot with juce::Strings,
+        std::make_unique<SaveThread>, startThread() - heap + pthread create on the audio thread.
+    (b) WaveformRecorder::ensureCapacity -> audioBuffer.setSize(..., keepExisting) every kGrowChunkSamples = 441,000
+        samples (~10 s): a copying reallocation of the whole recording on the audio thread, one per recorder; at 45 Links,
+        46 of them (accumulateLinkChannel :110 feeds each Link's recorder from processBlock).
+    PREDICTION for Sean to confirm or refute by ear during the shoot: an audible click or dropout at roughly ten-second
+    intervals during long captures, worse with more Links; and a possible click at the instant a capture ends on
+    transport stop.
+## Item 7 - filed against the existing no-read-deadline defect, not a new one
+    The capture-analysis turn rides the chat stream send: connect timeout 60 s only, readIntoMemoryBlock with no read
+    deadline (EchoJayAPI.cpp ~1829-1875). Same habit, same bug, same fix as the dashboard wedge already recorded in
+    MERGE_2026-09-06.md ("has NO deadline - it ends on EOF, on error, or when the USER cancels"). One entry.
+## Item 8 - the count: FIVE WERE NEVER PLACED, none failed to claim
+    v8 session log (pid 32225): Pro Tools delivered exactly 40 distinct track names ("host DELIVERED track name"); the
+    registry holds 40 live rows; the two sets are identical (0 delivered-without-row, 0 row-without-delivery); zero lines
+    matching STILL FULL / regFull / no free slot / claim failed. 80 constructions, 69 re-mints, 9 ghost adoptions, all
+    converging on 40. The session has 40 Links, not 45. Not a capacity or claim-gate defect.
