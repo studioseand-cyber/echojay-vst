@@ -686,6 +686,21 @@ public:
     // of autoDialMode on purpose, and the two are easy to confuse: autoDial
     // governs WHICH PLUGINS are offered, this governs WHETHER VALUES ARE
     // WRITTEN. Either can be on without the other.
+    // ONLY ECHOJAY PLUGINS (8 Sep 2026): chains are built from EchoJay's own
+    // built-in devices and nothing else. Same axis as autoDialMode (WHICH
+    // PLUGINS ARE OFFERED), not the same axis as dialWritesBlocked (whether
+    // values are written), and it is the narrower end of that axis: EchoJay
+    // only is a subset of dialable only, which is a subset of everything.
+    //
+    // UNLIKE autoDialMode THIS ONE ACTUALLY NARROWS THE LIST. autoDialMode
+    // sets a wire flag the server treats as report-only, so it withholds
+    // nothing; this replaces the fed names outright at the ONE point the feed
+    // is assembled. Stated here because the two toggles sit together in
+    // Settings and a reader would otherwise assume they work alike.
+    //
+    // Local settings file, like the other two: it describes this machine.
+    bool getEchoJayOnly() const { return echoJayOnly; }
+    void setEchoJayOnly(bool on) { echoJayOnly = on; saveSettings(); }
     bool getDialWritesBlocked() const { return dialWritesBlocked; }
     void setDialWritesBlocked(bool on)
     {
@@ -751,6 +766,10 @@ public:
     // the chain as a <<<ECHOJAY_CHAIN>>>...<<<END_CHAIN>>> JSON block at the end
     // of the reply (in addition to the normal human-readable explanation).
     static juce::String buildChainInjection(const juce::StringArray& availablePlugins);
+    // The built-ins-only feed. Carries the SAME chain block rule as
+    // buildChainInjection (one shared text, so the two cannot drift) and the
+    // built-ins block, and no third-party name list at all.
+    static juce::String buildBuiltinOnlyChainInjection();
 
     // [CURRENT CHAIN] injection (CHAIN_AI_BUILD_SPEC Phase 1a): a numbered
     // snapshot of the live rack (name, format, bypassed, wet, settings) so
@@ -1182,6 +1201,7 @@ private:
     UserSettings userSettings;
     bool autoDialMode = false;   // see get/setAutoDialMode()
     bool dialWritesBlocked = false;  // see get/setDialWritesBlocked()
+    bool echoJayOnly = false;    // see get/setEchoJayOnly()
     
     // Shared flag: set to false in destructor so in-flight callbacks
     // know the object is gone and skip any member access.

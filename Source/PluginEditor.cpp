@@ -1321,6 +1321,12 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     dialWritesToggle.onClick = [this] { api.setDialWritesBlocked(dialWritesToggle.getToggleState()); };
     addAndMakeVisible(dialWritesToggle);
 
+    echoJayOnlyToggle.setColour(juce::ToggleButton::textColourId, C::text2);
+    echoJayOnlyToggle.setColour(juce::ToggleButton::tickColourId, C::blue);
+    echoJayOnlyToggle.setVisible(false);
+    echoJayOnlyToggle.onClick = [this] { api.setEchoJayOnly(echoJayOnlyToggle.getToggleState()); };
+    addAndMakeVisible(echoJayOnlyToggle);
+
     // Load and apply persisted scale before first paint
     loadUIScale();
     applyUIScale(uiScale_);
@@ -2674,7 +2680,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         juce::Component* settingsMovers[] = {
             &settingsName, &settingsMonitors, &settingsHeadphones, &settingsGenres,
             &settingsExpLevel, &settingsLanguage, &uiScaleCombo, &autoDialToggle,
-                                     &dialWritesToggle,
+            &echoJayOnlyToggle, &dialWritesToggle,
             &settingsScanBtn, &viewAllPluginsBtn, &settingsWithheldToggleBtn_,
             &saveSettingsBtn, &settingsManualBtn, &settingsSavedLabel,
             &settingsHelpBtn, &dumpMetersBtn, &logoutBtn, &settingsOrbCard_ };
@@ -11029,6 +11035,8 @@ void EchoJayEditor::showSettingsView()
     autoDialToggle.setVisible(true);
     dialWritesToggle.setToggleState(api.getDialWritesBlocked(), juce::dontSendNotification);
     dialWritesToggle.setVisible(true);
+    echoJayOnlyToggle.setToggleState(api.getEchoJayOnly(), juce::dontSendNotification);
+    echoJayOnlyToggle.setVisible(true);
 
     // Plugins row: scan button + View all + Help & Support. No inline list.
     settingsScanBtn.setVisible(true);
@@ -11134,6 +11142,7 @@ void EchoJayEditor::hideSettingsView()
     uiScaleCombo.setVisible(false);
     autoDialToggle.setVisible(false);
     dialWritesToggle.setVisible(false);
+    echoJayOnlyToggle.setVisible(false);
     for (auto& b : dawButtons) b.setVisible(false);
     viewAllPluginsBtn.setVisible(false);
     settingsScanBtn.setVisible(false);
@@ -14579,7 +14588,16 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
     label("HEADPHONES");
     label("GENRES YOU WORK WITH");
     label("UI SCALE");
+    // CHAIN SUGGESTIONS IS THREE ROWS AND label() ADVANCES PAST ONE.
+    // resized() places auto-dial, do-not-dial and EchoJay-only in this
+    // section; this walk has to cover the same distance or every label below
+    // drifts upward. It already did: aa455ff added the do-not-dial row to
+    // resized() and not here, so "YOUR PLUGINS" and the whole withheld
+    // section have been painting one row (38px) above their own controls in
+    // the shipped build. Adding a third row without this line would have
+    // doubled it rather than introduced it.
     label("CHAIN SUGGESTIONS");
+    y += 2 * (fh + 8);   // the two rows beyond the one label() already covered
 
     g.setColour(C::text3);
     g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
@@ -20086,6 +20104,11 @@ void EchoJayEditor::resized()
             // ... and do-not-dial directly beneath it, same width, no gap of
             // its own: they are two halves of one question about suggestions.
             dialWritesToggle.setBounds(sx, sy, sw, fh); sy += fh + 8;
+            // ... and EchoJay-only beneath both, same width. It belongs with
+            // auto-dial (both govern WHICH PLUGINS are offered) rather than
+            // with do-not-dial, but a stacked column does not have to assert
+            // that and a three-across row would have asserted the opposite.
+            echoJayOnlyToggle.setBounds(sx, sy, sw, fh); sy += fh + 8;
 
             // PLUGINS: scan button + "View all" beside it
             sy += labelGap;
@@ -25242,7 +25265,17 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
     // once per scan (async, signature-gated, never blocking this turn) and
     // build the feed from the DIALABLE subset once the index has answered.
     juce::StringArray recommendable;
-    if (! chainHost.feedSplitEnabled())
+    // ONLY ECHOJAY PLUGINS (8 Sep 2026). FIRST, and deliberately ahead of the
+    // feed split: it is the narrower answer to the same question, so a machine
+    // with the split on must still get built-ins only rather than the
+    // intersection of two filters. It needs no scan, no map, no network and no
+    // session, which is the whole reason it can be trusted on a stage.
+    const bool echoJayOnlyFeed = api.getEchoJayOnly();
+    if (echoJayOnlyFeed)
+    {
+        recommendable = ChainHost::builtinDeviceNames();
+    }
+    else if (! chainHost.feedSplitEnabled())
     {
         recommendable = chainHost.getRecommendableNames();
     }
@@ -25298,7 +25331,14 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
         // category tag, which discriminates where the dial signal did not:
         // 467 of 859 feed names against 1,183 of 1,185 products. See the note
         // where the constant was, in EchoJayParamApply.h.
-        out += EchoJayAPI::buildChainInjection(recommendable);
+        // The built-ins-only feed authors its own block: no third-party name
+        // list, the same chain block rule, and [AVAILABLE BUILTINS] carrying
+        // the names once with their dialing contracts. hadFeed is set on BOTH
+        // arms because it is what stages turnType chain_generate further down
+        // (see the send path); a built-ins chain is still a chain turn, and
+        // leaving it false would classify the video's whole demo as plain chat.
+        out += echoJayOnlyFeed ? EchoJayAPI::buildBuiltinOnlyChainInjection()
+                               : EchoJayAPI::buildChainInjection(recommendable);
         hadFeed = true;
         EchoJay_NSLog(("EJChat: chain injection attached -- "
                        + juce::String(recommendable.size())

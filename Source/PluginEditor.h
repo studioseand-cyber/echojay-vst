@@ -1082,6 +1082,11 @@ private:
     // that one governs which plugins are offered, this one governs whether
     // values are written at all.
     juce::ToggleButton dialWritesToggle { "Suggest settings but never dial them (you set the values by hand)" };
+    // Stacked, not beside the other two. Three across leaves 227px per pill at
+    // a 1100px window (the account cards take a third of the width there), and
+    // the LookAndFeel centres the label with drawText, which TRUNCATES rather
+    // than shrinks. The label is worth more than the row.
+    juce::ToggleButton echoJayOnlyToggle { "Only use EchoJay's own devices (no third-party plugins)" };
     float uiScale_ = 1.0f;          // current scale factor
     void applyUIScale(float scale);
     void saveUIScale() const;

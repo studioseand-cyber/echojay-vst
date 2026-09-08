@@ -3120,20 +3120,14 @@ juce::String EchoJayAPI::buildPluginInjection(const juce::String& fullList)
     return block;
 }
 
-juce::String EchoJayAPI::buildChainInjection(const juce::StringArray& availablePlugins)
+// The chain block rule, authored ONCE. Both feeds carry it verbatim: the
+// ordinary one with a third-party name list above it, and the built-ins-only
+// one with no list at all. It was copied into a second function first and
+// that is exactly how two prompt texts start to drift, so it is a function.
+static juce::String chainBlockRuleText()
 {
-    if (availablePlugins.isEmpty()) return {};
-
-    juce::String list;
-    for (int i = 0; i < availablePlugins.size(); ++i)
-    {
-        if (i > 0) list += ", ";
-        list += "\"" + availablePlugins[i] + "\"";
-    }
-
-    juce::String block;
-    block << "\n\n[AVAILABLE PLUGINS - the ONLY plugins that can be loaded into a chain "
-          << "on this machine right now: " << list << "]\n\n"
+    juce::String r;
+    r
           << "[CHAIN BLOCK RULE - read carefully and follow exactly]\n"
           << "WHENEVER your reply names two or more plugins to use in order "
           << "(i.e. you are recommending or describing a processing chain), "
@@ -3167,8 +3161,62 @@ juce::String EchoJayAPI::buildChainInjection(const juce::StringArray& availableP
           << "- Keep the ENTIRE block compact - short names, 2-4 word roles, 3-6 value settings. "
           << "  This is machine data written after the prose; it must fit in the remaining response budget.\n"
           << "- Write prose first (full technical detail), then append the compact block as the final output.";
+    return r;
+}
+
+juce::String EchoJayAPI::buildChainInjection(const juce::StringArray& availablePlugins)
+{
+    if (availablePlugins.isEmpty()) return {};
+
+    juce::String list;
+    for (int i = 0; i < availablePlugins.size(); ++i)
+    {
+        if (i > 0) list += ", ";
+        list += "\"" + availablePlugins[i] + "\"";
+    }
+
+    juce::String block;
+    block << "\n\n[AVAILABLE PLUGINS - the ONLY plugins that can be loaded into a chain "
+          << "on this machine right now: " << list << "]\n\n"
+          << chainBlockRuleText();
 
     // Built-ins ride the chain feed too - see echojayBuiltinsBlock().
+    block << echojayBuiltinsBlock();
+
+    return block;
+}
+
+// ---------------------------------------------------------------------------
+// ONLY ECHOJAY PLUGINS: the feed with no third-party names in it at all.
+//
+// NOT buildChainInjection WITH A BUILT-IN LIST. That would print all 22 names
+// in [AVAILABLE PLUGINS] and then print them AGAIN, with their schemas, in
+// [AVAILABLE BUILTINS] two hundred lines later. One list, once, and the block
+// that already exists is the better of the two because it carries the dialing
+// contract with the name.
+//
+// THE MARKER IS STILL "[AVAILABLE PLUGINS". It is what historyStripMarkers
+// keys on, what the server cuts the feed at, and what tells the model a chain
+// is on the table. A new marker would have to join that list at three sites
+// and buys nothing: the sentence after it is what changed, not the kind of
+// thing it is.
+//
+// THE RULE TEXT IS THE SAME TEXT, from chainBlockRuleText(). It says "use only
+// exact names from the AVAILABLE PLUGINS list above", and above it now sits a
+// sentence pointing at the built-ins block, so the instruction still resolves
+// to exactly one set of legal names.
+juce::String EchoJayAPI::buildBuiltinOnlyChainInjection()
+{
+    juce::String block;
+    block << "\n\n[AVAILABLE PLUGINS - the user has switched Settings to EchoJay's "
+          << "own devices only, so the ONLY plugins that can be loaded into a chain "
+          << "on this machine right now are the EchoJay built-in devices listed under "
+          << "AVAILABLE BUILTINS below. There are no third-party plugins available on "
+          << "this turn. Do not name one, do not suggest installing one, and do not "
+          << "apologise for the absence: build the best chain you can from the devices "
+          << "that are here.]\n\n"
+          << chainBlockRuleText();
+
     block << echojayBuiltinsBlock();
 
     return block;
@@ -3332,15 +3380,21 @@ juce::String EchoJayAPI::buildEchoJayFeaturesInjection()
          " controls in the Chain tab that they operate, not things you set.\n"
          "SETTINGS holds their name, DAW, experience level, chat language, monitors,"
          " headphones, genres, UI scale, a plugin scan with a View all list, a list of"
-         " plugins withheld from the chain list, and TWO toggles, both OFF by default"
-         " and both applying the moment they are ticked with nothing to save."
+         " plugins withheld from the chain list, and THREE toggles, all OFF by default"
+         " and all applying the moment they are ticked with nothing to save."
+         " \"Only use EchoJay's own devices (no third-party plugins)\" means the only"
+         " plugins you may offer are the EchoJay built-in devices: while it is on the"
+         " AVAILABLE PLUGINS list names none and says so, and you build the chain from"
+         " AVAILABLE BUILTINS alone."
          " \"Only suggest plugins EchoJay can auto-dial (fewer options)\" narrows which"
-         " plugins you may offer. \"Suggest settings but never dial them (you set the"
+         " plugins you may offer to the ones whose settings can be dialled for them."
+         " \"Suggest settings but never dial them (you set the"
          " values by hand)\" means you still put every value on the card and none of"
          " them is written: say so plainly if they ask why nothing moved, and never"
-         " claim to have applied anything while it is on. The two are independent and"
-         " easy to confuse: the first is about WHICH PLUGINS, the second about WHETHER"
-         " VALUES ARE WRITTEN.]";
+         " claim to have applied anything while it is on. The three are independent and"
+         " easy to confuse: the first is about WHICH PLUGINS ARE OFFERED, the second"
+         " about WHETHER THEY MUST BE DIALABLE, the third about WHETHER VALUES ARE"
+         " WRITTEN.]";
     return b;
 }
 
@@ -3804,6 +3858,9 @@ void EchoJayAPI::loadSettings()
         // member false: dialling works as it always has until asked not to.
         dialWritesBlocked = (bool) obj->getProperty("dialWritesBlocked");
         echojay::setDialWritesBlocked(dialWritesBlocked);   // mirror at startup
+        // Absent -> false: a settings file written before this existed keeps
+        // offering third-party plugins, which is what it was already doing.
+        echoJayOnly = (bool) obj->getProperty("echoJayOnly");
         
         // Check if the saved usage is from this period — reset if we've
         // rolled into a new month. Period is monthly across all tiers in
@@ -3838,6 +3895,7 @@ void EchoJayAPI::saveSettings() const
     obj->setProperty("usageDate", juce::Time::getCurrentTime().formatted("%Y-%m-%d"));
     obj->setProperty("autoDialMode", autoDialMode);
     obj->setProperty("dialWritesBlocked", dialWritesBlocked);
+    obj->setProperty("echoJayOnly", echoJayOnly);
     
     file.replaceWithText(juce::JSON::toString(juce::var(obj)));
 }

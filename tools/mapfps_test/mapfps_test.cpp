@@ -5613,6 +5613,80 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         }
     }
 
+    // ===== ONLY ECHOJAY PLUGINS (8 Sep 2026) ===============================
+    // The toggle replaces the fed names at the ONE point the feed is
+    // assembled. These pins are on the real functions, not on source text,
+    // except PIN3 where the branch order is the thing being asserted.
+    {
+        std::cout << "only EchoJay plugins:\n";
+
+        const auto inj  = EchoJayAPI::buildBuiltinOnlyChainInjection();
+        const auto ours = ChainHost::builtinDeviceNames();
+
+        // ej PIN1 -- ON: every offered name is one of ours, and there is no
+        // third-party name list at all. The marker sentence in the ordinary
+        // feed reads `right now: "A", "B"`; the built-ins-only one names no
+        // plugins in that sentence and points at AVAILABLE BUILTINS instead,
+        // so the absence of that shape IS the absence of a third-party list.
+        check (! ours.isEmpty(), "ej PIN1: the built-in registry is not empty",
+               juce::String (ours.size()) + " devices");
+        bool allPresent = true;
+        for (const auto& n : ours) if (! inj.contains (n)) allPresent = false;
+        check (allPresent, "ej PIN1: every built-in device name is offered");
+        check (! inj.contains ("right now: \""),
+               "ej PIN1: and no third-party name list is emitted");
+        // A plugin this machine really has. None of them can reach a function
+        // that takes no arguments, and the pin says so out loud.
+        const char* thirdParty[] = { "Pro-C 2", "Pro-Q 3", "Ozone 12", "FabFilter",
+                                     "Waves", "Valhalla", "Serum" };
+        bool noneLeaked = true;
+        for (const auto* t : thirdParty) if (inj.contains (t)) noneLeaked = false;
+        check (noneLeaked, "ej PIN1: and no third-party name appears anywhere in it");
+        check (inj.contains ("[AVAILABLE BUILTINS"),
+               "ej PIN1: the built-ins block is what carries the names");
+        check (inj.contains ("[CHAIN BLOCK RULE"),
+               "ej PIN1: and the chain block rule survives, so a chain is still emitted");
+
+        // ej PIN2 -- OFF: the ordinary feed is untouched. Same three names in,
+        // same sentence out, and the rule is the SAME TEXT in both feeds
+        // because one function authors it.
+        juce::StringArray sample; sample.add ("Pro-C 2"); sample.add ("Pro-Q 3");
+        const auto inj2 = EchoJayAPI::buildChainInjection (sample);
+        check (inj2.contains ("right now: \"Pro-C 2\", \"Pro-Q 3\"]"),
+               "ej PIN2: the ordinary feed still lists the names it is given");
+        auto ruleOf = [] (const juce::String& s) -> juce::String
+        {
+            const int a = s.indexOf ("[CHAIN BLOCK RULE");
+            const int b = s.indexOf ("[AVAILABLE BUILTINS");
+            return (a >= 0 && b > a) ? s.substring (a, b) : juce::String();
+        };
+        const auto r1 = ruleOf (inj), r2 = ruleOf (inj2);
+        check (r1.isNotEmpty() && r1 == r2,
+               "ej PIN2: and both feeds carry the identical rule text, one author",
+               juce::String (r1.length()) + " vs " + juce::String (r2.length()) + " chars");
+
+        // ej PIN3 -- THE BRANCH IS FIRST, and the turn is still a chain turn.
+        // EchoJay-only is the narrower answer to the same question the feed
+        // split asks, so it has to win; and hadFeed staged false here would
+        // classify a built-ins chain as plain chat at the turnType arm.
+        {
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se; se << fe.rdbuf();
+            const auto ed = codeOnly (juce::String (se.str()));
+            const int iOnly  = ed.indexOf ("if (echoJayOnlyFeed)");
+            const int iSplit = ed.indexOf ("else if (! chainHost.feedSplitEnabled())");
+            check (iOnly > 0 && iSplit > iOnly,
+                   "ej PIN3: the EchoJay-only branch is tested before the feed split",
+                   "only@" + juce::String (iOnly) + " split@" + juce::String (iSplit));
+            check (ed.contains ("out += echoJayOnlyFeed ? EchoJayAPI::buildBuiltinOnlyChainInjection()"),
+                   "ej PIN3: and it swaps the injection rather than the name list");
+            check (ed.contains ("echoJayOnlyToggle.setBounds(sx, sy, sw, fh)"),
+                   "ej PIN3: the toggle is a full-width row, stacked not beside");
+            check (ed.contains ("y += 2 * (fh + 8);"),
+                   "ej PIN3: and the settings paint walk covers all three rows");
+        }
+    }
+
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";
     return failN == 0 ? 0 : 1;
 }
