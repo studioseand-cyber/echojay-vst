@@ -1983,12 +1983,18 @@ private:
             }
             void paint(juce::Graphics& g) override
             {
-                bool cap = false, m = false, s = false;
+                bool cap = false, m = false, s = false, sPending = false;
                 if (proc != nullptr)
+                {
                     if (auto it = proc->muteSoloSnaps_.find(uid);
                         it != proc->muteSoloSnaps_.end())
-                    { cap = it->second.capable; m = it->second.muteUser;
-                      s = it->second.soloOn; }
+                    { cap = it->second.capable; m = it->second.muteUser; }
+                    // Build D: the SAME author as the Link tab's lamp - the sidecar flag OR the
+                    // main's own solo set (never the sidecar alone: the broadcast never sets it).
+                    s = proc->soloIndicatorOn(uid);
+                    sPending = proc->soloLampState(uid) == EchoJayProcessor::SoloLamp::pending;
+                    if (proc->soloMutedByUs(uid)) m = false;
+                }
                 if (tickFor != nullptr && uid.isNotEmpty())
                 {
                     const auto tv = tickFor(uid);
@@ -1997,7 +2003,7 @@ private:
                         tv.target);
                 }
                 EchoJayEditor::drawMsLamp(g, mR, false, m, cap);
-                EchoJayEditor::drawMsLamp(g, sR, true,  s, cap);
+                EchoJayEditor::drawMsLamp(g, sR, true,  s, cap, sPending);
             }
             void mouseDown(const juce::MouseEvent& e) override
             {

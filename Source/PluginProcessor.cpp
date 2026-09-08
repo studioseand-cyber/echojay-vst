@@ -2681,6 +2681,20 @@ void EchoJayProcessor::pollSoloAcks()
     }
 }
 
+bool EchoJayProcessor::soloIndicatorOn(const juce::String& uid) const
+{
+    if (solo_.soloSet.contains(uid)) return true;
+    if (auto it = muteSoloSnaps_.find(uid); it != muteSoloSnaps_.end()) return it->second.soloOn;
+    return false;
+}
+
+juce::String EchoJayProcessor::firstSoloName() const
+{
+    for (const auto& u : solo_.soloSet) return resolveLinkDisplayName(u);
+    for (const auto& kv : muteSoloSnaps_) if (kv.second.soloOn) return resolveLinkDisplayName(kv.first);
+    return {};
+}
+
 EchoJayProcessor::SoloLamp EchoJayProcessor::soloLampState(const juce::String& uid) const
 {
     if (! solo_.soloSet.contains(uid)) return SoloLamp::off;
@@ -5090,7 +5104,7 @@ void EchoJayProcessor::refreshLinkRegistry()
                     }
                 }
             }
-            if (snap.soloOn && firstSoloName.isEmpty())
+            if ((snap.soloOn || linkSoloOn(si.uid)) && firstSoloName.isEmpty())   // Build D: the local solo set names the banner too
                 firstSoloName = resolveLinkDisplayName(si.uid);
             anySolo = anySolo || snap.soloOn;
             if (! snap.capable) ++incap;

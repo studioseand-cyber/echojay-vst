@@ -9787,9 +9787,8 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             // Solo is main-authored now (8 Sep 2026): the S lamp reads the main's
             // solo set (pending until every muted Link has acked); a mute this main
             // imposed for the solo does not light M - that lamp stays the hand mute.
-            const auto lamp = processorRef.soloLampState(sg.addr);
-            const bool sPending = lamp == EchoJayProcessor::SoloLamp::pending;
-            sOn = sOn || lamp != EchoJayProcessor::SoloLamp::off;
+            const bool sPending = processorRef.soloLampState(sg.addr) == EchoJayProcessor::SoloLamp::pending;
+            sOn = processorRef.soloIndicatorOn(sg.addr);        // Build D: one author for every solo indicator
             if (processorRef.soloMutedByUs(sg.addr)) mOn = false;
             drawMsLamp(g, sg.mute, false, mOn, msCap);
             drawMsLamp(g, sg.solo, true,  sOn, msCap, sPending);
@@ -28770,7 +28769,7 @@ juce::String EchoJayEditor::muteSoloStripTip(const juce::String& uid,
     if (ms == processorRef.muteSoloSnaps_.end() || ! ms->second.capable)
         return "This Link predates mute/solo - reinstall it.";
     if (isSolo)
-        return (ms->second.soloOn || processorRef.linkSoloOn(uid))
+        return processorRef.soloIndicatorOn(uid)
             ? "Soloed (click to un-solo). Solo mutes Link channels only."
             : "Solo: mute every other Link channel. Monitoring only - "
               "never saved.";

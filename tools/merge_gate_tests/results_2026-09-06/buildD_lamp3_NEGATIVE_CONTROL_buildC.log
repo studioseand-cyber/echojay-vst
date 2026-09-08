@@ -1,0 +1,19 @@
+solo_legs_test.cpp: isolated state root /tmp/echojay-iso.fx65Jh
+2026-09-08 18:53:24.360 main_c[98495:3620364] EJNet: base=www.echojay.ai devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-09-08 18:53:24.362 main_c[98495:3620344] EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+  main link dir: '/tmp/echojay-iso.fx65Jh/Library/Application Support/EchoJay/link/'
+  waiting for /tmp/echojay-iso.fx65Jh/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=0 s
+2026-09-08 18:53:24.518 main_c[98495:3620364] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+2026-09-08 18:53:25.375 main_c[98495:3620344] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-08 18:53:26.382 main_c[98495:3620344] EJCtx: borrow budget WANTED ON - listed 3 uid(s): a counted row exists; pending until prepareToPlay or a STOPPED block
+  waiting for /tmp/echojay-iso.fx65Jh/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=2 s
+2026-09-08 18:53:27.160 main_c[98495:3620344] EJSolo: broadcast muteUser=1 uid=1572a40c65 seq=1788890007
+2026-09-08 18:53:27.161 main_c[98495:3620344] EJSolo: broadcast muteUser=1 uid=a537d7232a seq=1788890008
+2026-09-08 18:53:27.161 main_c[98495:3620344] EJSolo: solo ON uid=8307000467 set=1 muted 2 Link(s) in 2 ms; hand-muted kept: 0
+2026-09-08 18:53:27.489 main_c[98495:3620344] EJSolo: broadcast muteUser=0 uid=1572a40c65 seq=1788890009
+2026-09-08 18:53:27.489 main_c[98495:3620344] EJSolo: broadcast muteUser=0 uid=a537d7232a seq=1788890010
+2026-09-08 18:53:27.489 main_c[98495:3620344] EJSolo: solo OFF uid=8307000467 (set empty) -> restored 2 Link(s) in 1 ms
+  main lists A, B, C
+  after the press: Link-tab lamp=1  rack-panel lamp=0  banner name=""
+LAMP3: all three surfaces agree = 0 -> FAIL
+exit=1

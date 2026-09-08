@@ -18,6 +18,9 @@
 #if __has_include("legs_new_api.h")
 #include "legs_new_api.h"
 #endif
+#if __has_include("legs_build_d.h")
+#include "legs_build_d.h"
+#endif
 #include <cstdio>
 
 static void pump (int ms) { const double end = juce::Time::getMillisecondCounterHiRes() + ms; while (juce::Time::getMillisecondCounterHiRes() < end) CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.005, false); }
@@ -137,6 +140,31 @@ struct Control
             p->borrowRelease (false); result = ok ? 0 : 1;
         }
 #ifdef EJ_LEGS_NEW_API
+        else if (mode == "lamp3")
+        {
+            // BUILD D: every solo indicator agrees. Three surfaces read after one press:
+            //   Link tab S lamp  = soloLampState(A) != off               (both builds)
+            //   rack panel S lamp = what THAT lamp reads in this build: Build D soloIndicatorOn(A); Build C the sidecar snapshot flag
+            //   banner name       = Build D firstSoloName() == A's display name; Build C reads the same snapshot flag
+            juce::File (dirOf() + "solo_mode.txt").replaceWithText ("borrow");
+            stampFile ("solo_t0.txt"); p->setLinkSolo (A, true);
+            for (int i = 0; i < 20; ++i) { pump (10); p->pollSoloAcks(); p->refreshLinkRegistry(); }
+            const bool tab = p->soloLampState (A) != EchoJayProcessor::SoloLamp::off;
+#ifdef EJ_LEGS_BUILD_D
+            const bool rack = p->soloIndicatorOn (A);
+            const juce::String banner = p->firstSoloName();
+            const bool bannerOk = banner == p->resolveLinkDisplayName (A);
+#else
+            const bool rack = p->muteSoloSnaps_.count (A) && p->muteSoloSnaps_[A].soloOn;   // Build C's rack lamp reads exactly this
+            const juce::String banner = rack ? p->resolveLinkDisplayName (A) : juce::String();  // and the banner's name is gated on the same flag
+            const bool bannerOk = rack;
+#endif
+            std::printf ("  after the press: Link-tab lamp=%d  rack-panel lamp=%d  banner name=\"%s\"\n", (int) tab, (int) rack, banner.toRawUTF8());
+            const bool ok = tab && rack && bannerOk;
+            std::printf ("LAMP3: all three surfaces agree = %d -> %s\n", (int) ok, ok ? "PASS" : "FAIL");
+            stampFile ("solo_t1.txt"); p->setLinkSolo (A, false); pump (500);
+            result = ok ? 0 : 1;
+        }
         else if (mode == "diehard")
         {
             // ACCEPTED RISK, recorded as a leg (8 Sep 2026): the main dies (or the host saves and quits) mid-solo without

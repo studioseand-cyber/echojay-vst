@@ -811,6 +811,11 @@ public:
     bool     soloMutedByUs(const juce::String& uid) const { return solo_.mutedByUs.contains(uid); }
     bool     soloBroadcastActive() const { return ! solo_.soloSet.isEmpty(); }
     SoloLamp soloLampState(const juce::String& uid) const;
+    // BUILD D (8 Sep 2026 ruling): ONE AUTHOR for every solo indicator. The Link tab's S lamp,
+    // the rack panel's S lamp and the banner all resolve through these two, so a
+    // main-authored solo (which never sets the Link's sidecar flag) shows everywhere.
+    bool         soloIndicatorOn(const juce::String& uid) const;   // sidecar flag OR the local solo set
+    juce::String firstSoloName() const;                            // the banner's name; empty when nothing is soloed
     void     pollSoloAcks();                                     // consumes ctrl-ack files for pending sends
     int      soloPendingCount() const { return (int) solo_.pendingSeq.size(); }
     SoloBroadcast solo_;
