@@ -1,0 +1,123 @@
+2026-09-08 12:45:52.707 Df Pro Tools[51017:2b7522] (EchoJay V2) EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+2026-09-08 12:46:01.135 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 533c40071e
+2026-09-08 12:46:01.136 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated b63813e103
+2026-09-08 12:46:01.137 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated a63ed1bbeb
+2026-09-08 12:46:01.138 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 99ec50542f
+2026-09-08 12:46:01.138 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 8dfa5fbd15
+2026-09-08 12:46:01.139 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated b5717ed951
+2026-09-08 12:46:01.139 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 1b71f5a62d
+2026-09-08 12:46:01.140 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 78cddce987
+2026-09-08 12:46:01.141 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 815ae6038c
+2026-09-08 12:46:01.516 Df Pro Tools[51017:2b7522] (EchoJay V2) EJCtx: borrow budget WANTED ON - listed 2 uid(s): a counted row exists; pending until prepareToPlay or a STOPPED block
+2026-09-08 12:46:01.518 Df Pro Tools[51017:2b8de7] (EchoJay V2) EJCtx: alignment budget ON (capable Link present) - PDC re-runs once
+2026-09-08 12:46:22.642 Df Pro Tools[51017:2b7522] (EchoJay V2) EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+2026-09-08 12:46:24.644 Df Pro Tools[51017:2b7522] (EchoJay V2) EJCtx: borrow budget WANTED ON - listed 11 uid(s): a counted row exists; pending until prepareToPlay or a STOPPED block
+2026-09-08 12:46:27.094 Df Pro Tools[51017:2b7522] (EchoJay V2) EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+2026-09-08 12:46:28.175 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated bd680214ff
+2026-09-08 12:46:28.175 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid 815ae6038c came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated fda16088d4
+2026-09-08 12:46:28.176 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid 78cddce987 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated d6c5f87298
+2026-09-08 12:46:28.176 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid 1b71f5a62d came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated fca55ffecd
+2026-09-08 12:46:28.177 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid b5717ed951 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 3407936b25
+2026-09-08 12:46:28.177 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid 8dfa5fbd15 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated e04c92dc06
+2026-09-08 12:46:28.177 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid 99ec50542f came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 4bfa7d5720
+2026-09-08 12:46:28.178 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid a63ed1bbeb came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated a99d86962f
+2026-09-08 12:46:28.178 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid b63813e103 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated b688383ef4
+2026-09-08 12:46:28.179 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid 533c40071e came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 1e180b5f24
+2026-09-08 12:46:28.179 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated b830ecee7b
+2026-09-08 12:46:28.180 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated b5260b4c43
+2026-09-08 12:46:28.181 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated ccc5c7a2e4
+2026-09-08 12:46:28.181 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated b9eb3f6078
+2026-09-08 12:46:28.181 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 173308a797
+2026-09-08 12:46:28.513 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 9af8ebbcd2
+2026-09-08 12:46:28.514 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 3a826e3bf4
+2026-09-08 12:46:28.514 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 4021e76c9f
+2026-09-08 12:46:28.514 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated abad3a670d
+2026-09-08 12:46:29.543 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated a01d19b721
+2026-09-08 12:46:29.543 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated d0fd357161
+2026-09-08 12:46:29.544 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated ad7b639cfd
+2026-09-08 12:46:29.544 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 79ba03ce9a
+2026-09-08 12:46:29.544 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 649772bb56
+2026-09-08 12:46:29.545 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated dac3355865
+2026-09-08 12:46:29.545 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 6e1e86504d
+2026-09-08 12:46:29.546 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 4991dd8ab3
+2026-09-08 12:46:29.546 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 81d4fac3cd
+2026-09-08 12:46:29.546 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 703a20cceb
+2026-09-08 12:46:29.547 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 48f39c7436
+2026-09-08 12:46:29.547 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated b46ca71f6a
+2026-09-08 12:46:29.547 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated eedc3e4e93
+2026-09-08 12:46:29.548 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 46e1a87644
+2026-09-08 12:46:29.549 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated fa86190e39
+2026-09-08 12:46:29.966 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 87e627cd75
+2026-09-08 12:46:29.966 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f3b5c0dc52 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 9e3834353e
+2026-09-08 12:46:29.966 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f3b5c0dc52 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 4b53c6162c
+2026-09-08 12:46:29.967 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f3b5c0dc52 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 47e2c12443
+2026-09-08 12:46:29.967 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f3b5c0dc52 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 8af64b43ad
+2026-09-08 12:46:29.967 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: uid f3b5c0dc52 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated c57a26e171
+2026-09-08 12:46:31.880 Df Pro Tools[51017:2b7522] (EchoJay V2) EJCtx: borrow budget WANTED ON - listed 40 uid(s): a counted row exists; pending until prepareToPlay or a STOPPED block
+2026-09-08 12:46:51.204 Df Pro Tools[51017:2b7522] (EchoJay V2) EJCtx: engage decision uid=bd680214ff capable=Y pad=Y budget=N -> in-context REFUSED, false term(s): budget
+2026-09-08 12:46:51.205 Df Pro Tools[51017:2b7522] (EchoJay V2) EJBorrow: engaged uid=bd680214ff ringSlot=40
+2026-09-08 12:46:55.179 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=1 uid=bd680214ff seq=1788868015
+2026-09-08 12:46:55.208 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=1 (seq 1788868015)
+2026-09-08 12:46:56.136 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=0 uid=bd680214ff seq=1788868016
+2026-09-08 12:46:56.174 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=0 (seq 1788868016)
+2026-09-08 12:46:57.262 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=1 uid=bd680214ff seq=1788868017
+2026-09-08 12:46:57.367 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=1 (seq 1788868017)
+2026-09-08 12:46:59.003 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=0 uid=bd680214ff seq=1788868019
+2026-09-08 12:46:59.100 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=0 (seq 1788868019)
+2026-09-08 12:47:06.391 Df Pro Tools[51017:2b8de9] (EchoJay V2) EJCtx: alignment budget ON (capable Link present) - PDC re-runs once
+2026-09-08 13:33:50.839 Df Pro Tools[51017:2b7522] (EchoJay V2) EJBorrow: released uid=bd680214ff (lease deleted; Link restores its own bypasses)
+2026-09-08 15:18:45.873 Df Pro Tools[51017:2b7522] (EchoJay V2) EJCtx: engage decision uid=fda16088d4 capable=Y pad=Y budget=Y -> in-context OK
+2026-09-08 15:18:45.874 Df Pro Tools[51017:2b7522] (EchoJay V2) EJBorrow: engaged uid=fda16088d4 ringSlot=41
+2026-09-08 15:18:48.462 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=1 uid=fda16088d4 seq=1788877128
+2026-09-08 15:18:48.521 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=1 (seq 1788877128)
+2026-09-08 15:18:55.819 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=0 uid=fda16088d4 seq=1788877135
+2026-09-08 15:18:55.920 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=0 (seq 1788877135)
+2026-09-08 15:19:02.196 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=1 uid=fda16088d4 seq=1788877142
+2026-09-08 15:19:02.275 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=1 (seq 1788877142)
+2026-09-08 15:19:07.858 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=0 uid=fda16088d4 seq=1788877147
+2026-09-08 15:19:07.927 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=0 (seq 1788877147)
+2026-09-08 15:19:13.475 Df Pro Tools[51017:2b7522] (EchoJay V2) EJBorrow: released uid=fda16088d4 (lease deleted; Link restores its own bypasses)
+2026-09-08 15:19:13.667 Df Pro Tools[51017:2b7522] (EchoJay V2) EJCtx: engage decision uid=1e180b5f24 capable=Y pad=Y budget=Y -> in-context OK
+2026-09-08 15:19:13.668 Df Pro Tools[51017:2b7522] (EchoJay V2) EJBorrow: engaged uid=1e180b5f24 ringSlot=49
+2026-09-08 15:19:20.175 Df Pro Tools[51017:2b7522] (EchoJay V2) EJBorrow: released uid=1e180b5f24 (lease deleted; Link restores its own bypasses)
+2026-09-08 15:19:20.901 Df Pro Tools[51017:2b7522] (EchoJay V2) EJCtx: engage decision uid=47e2c12443 capable=Y pad=Y budget=Y -> in-context OK
+2026-09-08 15:19:20.901 Df Pro Tools[51017:2b7522] (EchoJay V2) EJBorrow: engaged uid=47e2c12443 ringSlot=77
+2026-09-08 15:19:25.734 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=1 uid=47e2c12443 seq=1788877165
+2026-09-08 15:19:25.787 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=1 (seq 1788877165)
+2026-09-08 15:19:32.459 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=0 uid=47e2c12443 seq=1788877172
+2026-09-08 15:19:32.470 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=0 (seq 1788877172)
+2026-09-08 16:39:37.466 Df Pro Tools[51017:2b7522] (EchoJay V2) EJBorrow: released uid=47e2c12443 (lease deleted; Link restores its own bypasses)
+2026-09-08 16:39:38.307 Df Pro Tools[51017:2b7522] (EchoJay V2) EJCtx: engage decision uid=bd680214ff capable=Y pad=Y budget=Y -> in-context OK
+2026-09-08 16:39:38.307 Df Pro Tools[51017:2b7522] (EchoJay V2) EJBorrow: engaged uid=bd680214ff ringSlot=40
+2026-09-08 16:39:39.464 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=1 uid=bd680214ff seq=1788881979
+2026-09-08 16:39:39.567 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=1 (seq 1788881979)
+2026-09-08 16:39:44.109 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=0 uid=bd680214ff seq=1788881984
+2026-09-08 16:39:44.113 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=0 (seq 1788881984)
+2026-09-08 16:39:51.564 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=1 uid=4bfa7d5720 seq=1788881991
+2026-09-08 16:39:51.643 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=1 (seq 1788881991)
+2026-09-08 16:39:56.779 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=0 uid=4bfa7d5720 seq=1788881996
+2026-09-08 16:39:56.849 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=0 (seq 1788881996)
+2026-09-08 16:39:58.800 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=1 uid=e04c92dc06 seq=1788881998
+2026-09-08 16:39:58.888 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=1 (seq 1788881998)
+2026-09-08 16:40:01.817 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=0 uid=e04c92dc06 seq=1788882001
+2026-09-08 16:40:01.934 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=0 (seq 1788882001)
+2026-09-08 16:40:04.050 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=1 uid=b688383ef4 seq=1788882004
+2026-09-08 16:40:04.112 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=1 (seq 1788882004)
+2026-09-08 16:40:06.689 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=0 uid=b688383ef4 seq=1788882006
+2026-09-08 16:40:06.785 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=0 (seq 1788882006)
+2026-09-08 16:40:09.974 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=1 uid=fda16088d4 seq=1788882009
+2026-09-08 16:40:10.023 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=1 (seq 1788882009)
+2026-09-08 16:40:11.003 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=0 uid=fda16088d4 seq=1788882011
+2026-09-08 16:40:11.099 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=0 (seq 1788882011)
+2026-09-08 16:40:12.645 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=1 uid=e04c92dc06 seq=1788882012
+2026-09-08 16:40:12.716 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=1 (seq 1788882012)
+2026-09-08 16:40:13.734 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=0 uid=e04c92dc06 seq=1788882013
+2026-09-08 16:40:13.788 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=0 (seq 1788882013)
+2026-09-08 16:40:14.920 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=1 uid=fca55ffecd seq=1788882014
+2026-09-08 16:40:14.958 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=1 (seq 1788882014)
+2026-09-08 16:40:17.917 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=0 uid=fca55ffecd seq=1788882017
+2026-09-08 16:40:17.995 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=0 (seq 1788882017)
+2026-09-08 16:40:19.802 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=1 uid=a99d86962f seq=1788882019
+2026-09-08 16:40:19.820 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=1 (seq 1788882019)
+2026-09-08 16:40:22.475 Df Pro Tools[51017:2b7522] (EchoJay V2) EJMuteSolo: sent soloOn=0 uid=a99d86962f seq=1788882022
+2026-09-08 16:40:22.541 Df Pro Tools[51017:2b7522] (EchoJay Link) EJLinkState: remote set soloOn=0 (seq 1788882022)
