@@ -318,3 +318,10 @@ Carries: v7 own-chunk rule + sidecar-on-uid-move (the v6 regressions), capacity 
 fix, and the state root (EJStateRoot.h; unset env = the real locations). Installer: INSTALL_BOTH_AAX_v7_2026-09-06.command
 (refuses anything but these four UUIDs; --verify against the installed v4/v6 pair FAILS, as it must). The signed v6
 pair on the Desktop is renamed *_OLD_v6_* and must NOT be installed (it lacks the own-chunk fix).
+
+### v8 AAX pair, built 8 Sep 2026 10:20-10:21 from merge/kathy-2026-09-06 (unsigned, on the Desktop for the signing trip)
+    EchoJay V2 2.26.4   arm64 DF827752-6143-3641-A969-72F8E8DEF730   x86_64 4980F76F-1484-3F8D-A5B8-498AB89CD199
+    EchoJay Link 0.8.5  arm64 677CB825-8B60-38FE-BFD6-A1C774897916   x86_64 1000546C-F8E6-33AD-B752-35439E8A3970
+Carries everything in v7 plus: the Link name fix (a foreign chunk never overwrites a delivered or typed name;
+FOREIGN x20 20/20) and the dialability items C2/C2b/C1' (honest "waiting for its map" wording with close-out,
+failed fetches terminal, 6 s derived settle bound). The v7 pair is superseded (*_OLD_v7_*), do not sign or install it.

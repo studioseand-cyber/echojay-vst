@@ -262,3 +262,31 @@ pitch host test 18/0, your registry 1667/0, every derived value read back.
 
 Your V3 paint-cursor fix offer (follow-up 3) stands; it is on the merge
 branch as 9eb5f34, renders before/after filed.
+
+## FOR KATHY, 7 Sep 2026 - SERVER: the "only suggest dialable" filter and the settings generator disagree
+Not ours to fix client-side; this is a deploy. Evidence is the live log of Sean's build turn in Pro Tools
+(tools/merge_gate_tests/results_2026-09-06/protools_dial_log_20-57_build.log, pid 83157, 20:57:18).
+### What happened
+With "Only suggest plugins EchoJay can auto-dial (fewer options)" ON (the request carried "autoDial":true), the
+chain block arrived as: "extracted block -- 5 slot(s), 3 with settings_structured".
+    EchoJay EQ, Solid Bus Comp, Newfangled Elevate   settings_structured present
+    SSL Fusion Vintage Drive, UAD Pultec EQP-1A      "carried NO settings_structured in the chain block, so nothing
+                                                      was ever offered to the dial path. This is a SERVER/model-side gap"
+Both plugins had passed the dialable filter (the client's existence query, /api/params/lookup mode=exists, returned
+mapped_versions for them; twenty seconds later the client read "dialable=true" for both once their maps arrived,
+and the next turn's EDIT op carried structured settings for both and dialled them). So the server said "dialable"
+when asked to filter, and then emitted no settings for the same plugins when asked to build.
+### The question for the server side
+Where does the chain generator decide to emit settings_structured for a slot, and what does it consult? If it
+consults the map corpus by exact fingerprint (or by a version the client had not yet reported) while the filter
+consults the version-insensitive existence index, the two will disagree exactly like this: filter says yes,
+generator says nothing. Whatever the source, the setting's promise has to be kept by ONE question asked the same
+way in both places - or the generator must say, in the block, WHY a slot carries no settings, so the client can
+word it honestly instead of leaving the card prose-only.
+### Same family as the silent chain substitution (DEFECT_SILENT_CHAIN_SUBSTITUTION.md)
+Plan from one source, build against another. Both filed there; the dialability half now has the log.
+### What the client is doing meanwhile (in the v8 build, rides with the Link name fix)
+A slot still waiting for its map when the bubble's wait expires is worded "waiting for its map - settings will
+apply when it arrives" (never "needs hand-dialing"), a failed fetch is terminal, the wait is 6 s (derived from the
+2,982 ms fallback measured), and the outcome is reported when it lands. None of that supplies settings the server
+did not send.

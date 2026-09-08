@@ -814,13 +814,15 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         {
             if (safeThis == nullptr || fps.isEmpty()) return;
             safeThis->api.getJSON("/api/params/maps?fps=" + fps.joinIntoString(","),
-                [safeThis](const juce::var& json, int statusCode)
+                [safeThis, fps](const juce::var& json, int statusCode)
                 {
                     if (safeThis == nullptr) return;
                     if (statusCode != 200)
                     {
                         EchoJay_NSLog(("EJParamMaps: fetch failed, status "
-                                       + juce::String(statusCode)).toRawUTF8());
+                                       + juce::String(statusCode) + " -> terminal for "
+                                       + juce::String(fps.size()) + " fp(s) (C2b)").toRawUTF8());
+                        safeThis->processorRef.getChainHost().failMapFetch(fps);   // C2b: never pending forever
                         return;
                     }
                     safeThis->processorRef.getChainHost()
@@ -839,7 +841,12 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             safeThis->api.lookupFallbackMaps(body,
                 [safeThis](const juce::var& results)
                 {
-                    if (safeThis == nullptr || results.isVoid()) return;
+                    if (safeThis == nullptr) return;
+                    if (results.isVoid())   // C2b: a failed lookup is terminal for every slot waiting on it
+                    {
+                        safeThis->processorRef.getChainHost().failFallbackLookup();
+                        return;
+                    }
                     safeThis->processorRef.getChainHost().storeFallbackMaps(results);
                 });
         };
@@ -853,6 +860,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             // (This also stops deselecting the slot on every capture, which
             // the old direct rebuild(-1) here did.)
             safeThis->refreshChainPanelForView(true);
+            safeThis->reportPendingDialOutcomes();   // C2: "will apply when it arrives" is closed out when it does
         };
     }
 
@@ -22118,6 +22126,42 @@ void EchoJayEditor::appendLocalResultBubble(const juce::String& text,
 }
 
 // ---- Apply-time honesty (26 Jul 2026) --------------------------------------
+// C1' (7 Sep 2026 ruling, DERIVED): the bubble waits for the dial to settle in
+// 250 ms steps. It was 8 steps = 2,000 ms; the longest fetch measured in Sean's
+// Pro Tools build turn was a 2,982 ms fallback lookup (results_2026-09-06/
+// protools_dial_log_20-57_build.log), so a real case ran out the bound. 24 steps
+// = 6,000 ms: twice the longest measured fetch, and the existing 6 s dial
+// watchdog's horizon. See DERIVED_VALUES_SINCE_BASE.md.
+static constexpr int kDialSettleAttempts = 24;
+
+void EchoJayEditor::reportPendingDialOutcomes()
+{
+    if (dialPendingReported_.isEmpty()) return;
+    auto& ch = processorRef.getChainHost();
+    juce::StringArray applied, failed;
+    for (const auto& di : ch.getDialInfos())
+    {
+        if (! dialPendingReported_.contains(di.name)) continue;
+        switch (di.status)
+        {
+            case ChainHost::DialStatus::applied:
+            case ChainHost::DialStatus::partial:   applied.add(di.name); break;
+            case ChainHost::DialStatus::pending:
+            case ChainHost::DialStatus::none:      break;                 // still waiting / nothing expected
+            default:                               failed.add(di.name);  break;   // terminal without a dial
+        }
+    }
+    for (const auto& n : applied) dialPendingReported_.removeString(n);
+    for (const auto& n : failed)  dialPendingReported_.removeString(n);
+    if (! applied.isEmpty())
+        appendLocalResultBubble("Settings applied to " + applied.joinIntoString(" and ")
+                                + (applied.size() == 1 ? " - its map arrived." : " - their maps arrived."));
+    if (! failed.isEmpty())
+        appendLocalResultBubble(failed.joinIntoString(" and ")
+                                + (failed.size() == 1 ? " did not get its map - use the values on its card."
+                                                       : " did not get their maps - use the values on their cards."));
+}
+
 void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJson,
                                                      int attemptsLeft)
 {
@@ -22144,7 +22188,7 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
     // Partial slots state the POSITIVE first: with richer maps partial is
     // the common case, and "X (ratio by hand) needs hand-dialing" read as a
     // failure when threshold, attack, release, freq and gain all landed.
-    juce::StringArray appliedNames, zeroParts, staleParts;
+    juce::StringArray appliedNames, zeroParts, staleParts, pendingParts;
     struct PartialPart { juce::String name; juce::StringArray manual, oor; };
     std::vector<PartialPart> partialParts, zeroOorParts;
     for (const auto& di : ch.getDialInfos())
@@ -22196,10 +22240,11 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                 zeroParts.add(di.name);
                 break;
             case ChainHost::DialStatus::pending:
-                // Fetch never answered inside the cap: NEVER fall through to
-                // the model's success line - conservative wording, and the
-                // late apply (if it lands) updates the slot card anyway.
-                zeroParts.add(di.name);
+                // C2 (7 Sep 2026 ruling): a slot still WAITING for its map when the cap
+                // expires is not a slot with no map. It used to be worded "needs
+                // hand-dialing" - false, the software dialled it itself a minute later.
+                // Say it is waiting; reportPendingDialOutcomes() closes the promise.
+                pendingParts.add(di.name);
                 break;
             case ChainHost::DialStatus::none:
                 break;
@@ -22209,7 +22254,7 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
     const int n = ch.getNumSlots();
     juce::String bubble;
     if (partialParts.empty() && zeroParts.isEmpty() && staleParts.isEmpty()
-        && zeroOorParts.empty())
+        && zeroOorParts.empty() && pendingParts.isEmpty())
     {
         // Clean full build+dial: the FACTUAL line, never the model's result
         // (9 Aug 2026, same rule as the edit composer - a filter the model
@@ -22252,6 +22297,14 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
             bubble += " " + zeroParts.joinIntoString(" and ")
                     + (one ? " needs hand-dialing - use the values on its card."
                            : " need hand-dialing - use the values on their cards.");
+        }
+        if (!pendingParts.isEmpty())
+        {
+            const bool onePending = pendingParts.size() == 1;
+            bubble += " " + pendingParts.joinIntoString(" and ")
+                    + (onePending ? " is still waiting for its map - its settings will apply when it arrives."
+                                  : " are still waiting for their maps - their settings will apply when they arrive.");
+            for (const auto& n : pendingParts) dialPendingReported_.addIfNotAlreadyThere(n);
         }
         for (const auto& z : zeroOorParts)
             bubble += " " + z.name + " asked values outside their mapped ranges ("
@@ -22426,7 +22479,7 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
             }
         }
 
-    juce::StringArray appliedNames, zeroParts, staleParts;
+    juce::StringArray appliedNames, zeroParts, staleParts, pendingParts;
     struct PartialPart { juce::String name; juce::StringArray manual, oor; };
     std::vector<PartialPart> partialParts, zeroOorParts;
     for (const auto& di : ch.getDialInfos())
@@ -22480,10 +22533,11 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 blockedParts.add(di.name);
                 break;
             case ChainHost::DialStatus::pending:
-                // Fetch never answered inside the cap: NEVER fall through
-                // to the model's success line - conservative wording, and a
-                // late apply (if it lands) updates the slot card anyway.
-                zeroParts.add(di.name);
+                // C2 (7 Sep 2026 ruling): a slot still WAITING for its map when the cap
+                // expires is not a slot with no map. It used to be worded "needs
+                // hand-dialing" - false, the software dialled it itself a minute later.
+                // Say it is waiting; reportPendingDialOutcomes() closes the promise.
+                pendingParts.add(di.name);
                 break;
             case ChainHost::DialStatus::none:
                 // Touched and carried settings, yet nothing structured
@@ -22497,7 +22551,7 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
     juce::String bubble;
     if (partialParts.empty() && zeroParts.isEmpty() && staleParts.isEmpty()
         && zeroOorParts.empty() && proseOnlySetNames.isEmpty()
-        && blockedParts.isEmpty())
+        && blockedParts.isEmpty() && pendingParts.isEmpty())
     {
         // Clean dial: SILENCE (9 Aug 2026, Sean's rule). The model's result
         // line is NEVER relayed any more - a filter the model can evade by
@@ -22554,6 +22608,14 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
             bubble += zeroParts.joinIntoString(" and ")
                     + (one ? " needs hand-dialing - use the values on its card."
                            : " need hand-dialing - use the values on their cards.");
+        }
+        if (!pendingParts.isEmpty())
+        {
+            const bool onePending = pendingParts.size() == 1;
+            bubble += " " + pendingParts.joinIntoString(" and ")
+                    + (onePending ? " is still waiting for its map - its settings will apply when it arrives."
+                                  : " are still waiting for their maps - their settings will apply when they arrive.");
+            for (const auto& n : pendingParts) dialPendingReported_.addIfNotAlreadyThere(n);
         }
         for (const auto& z : zeroOorParts)
         {
@@ -23371,7 +23433,7 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
             // Failures/partials/aborts of the OPS themselves: card summary
             // only, no bubble, unchanged.
             if (!aborted && applied == total)
-                safeThis->finishEditBubbleWhenDialSettled(cm2.editData, 8);
+                safeThis->finishEditBubbleWhenDialSettled(cm2.editData, kDialSettleAttempts);
             safeThis->repaint();
         },
         [safeThis](const juce::String& label)
@@ -30552,7 +30614,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
                         // map fetch): real work, real label, replaced by
                         // the result bubble in finishChainBubbleWhenDialSettled.
                         safeThis->setStageStatus(juce::String::fromUTF8("Working on your chain\xe2\x80\xa6"));
-                        safeThis->finishChainBubbleWhenDialSettled(chainJson, 8);
+                        safeThis->finishChainBubbleWhenDialSettled(chainJson, kDialSettleAttempts);
                     }
                     else
                     {

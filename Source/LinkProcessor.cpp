@@ -1355,9 +1355,17 @@ void LinkProcessor::claimRegistrySlot()
     // reads effectiveDisplayName(), so the row publishes what is true.
     if (chunkUid_.isNotEmpty() && instanceUid_ != chunkUid_)
     {
-        // PROVENANCE (6 Sep 2026 ruling): only a PROVISIONAL (seeded) name is
-        // dropped. A name the host delivered or the user typed is authoritative
-        // and survives, whether it arrived before or after this point.
+        // PROVENANCE (6 Sep 2026 ruling; corrected 7 Sep): only a PROVISIONAL
+        // (seeded) name is dropped here. A name the host delivered or the user
+        // typed is authoritative and survives - but ONLY because the seeding
+        // branches above no longer overwrite an authoritative name when a
+        // FOREIGN chunk arrives AFTER the delivery. The earlier text claimed
+        // survival "whether it arrived before or after this point" while the
+        // seeding branch reset the flag on every foreign chunk; the ordering it
+        // was blind to is Pro Tools' actual one - deliver the name to the fresh
+        // instance, THEN apply a gone sibling's chunk, THEN re-mint - and the
+        // P20 legs never modelled it (they applied the seed before the delivery
+        // or after the re-mint). Leg: link_capacity_test foreign / foreign20.
         juce::String droppedTyped, droppedHost, keptHost;
         {
             const juce::ScopedLock sl(hostNameLock_);
@@ -2689,8 +2697,13 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
         if (obj->hasProperty("linkName"))
         {
             const auto n = obj->getProperty("linkName").toString();
-            if (! ownChunk) { linkName = n; typedNameFromUser_ = false; }   // seeded: provisional
-            else if (linkName.isEmpty()) linkName = n;                     // ours: fill only, keep provenance
+            // C2 (7 Sep 2026): a FOREIGN chunk fills the typed name ONLY WHEN WE HAVE
+            // NONE, exactly as the own-chunk arm does. It never overwrites, and never
+            // downgrades the provenance of, a name the user typed. Pro Tools applies a
+            // gone sibling's chunk AFTER the user (or the host) has already spoken.
+            if (typedNameFromUser_)          { /* authoritative: keep name and provenance */ }
+            else if (! ownChunk)             { linkName = n; typedNameFromUser_ = false; }   // seeded: provisional
+            else if (linkName.isEmpty())     linkName = n;                                  // ours: fill only
         }
         if (obj->hasProperty("linkOn"))   linkOn.store((bool)obj->getProperty("linkOn"));
         if (obj->hasProperty("gainDb"))
@@ -2728,8 +2741,15 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
             // so this takes the same stash path as the live callback.
             {
                 const juce::ScopedLock sl(hostNameLock_);
-                if (! ownChunk) { hostTrackName_ = obj->getProperty("hostTrackName").toString(); hostNameFromHost_ = false; }   // seeded: PROVISIONAL
-                else if (hostTrackName_.isEmpty()) hostTrackName_ = obj->getProperty("hostTrackName").toString();           // ours: fill only, keep provenance
+                // C1 (7 Sep 2026, from the v7 Pro Tools log): a FOREIGN chunk fills the host
+                // name ONLY WHEN WE HAVE NONE. Pro Tools DELIVERS the track name to the fresh
+                // instance first and applies a foreign chunk (the seed / a gone sibling's,
+                // carrying ITS track name) ~85 ms later; this line used to overwrite the
+                // delivered name and downgrade its provenance, and the invariant below then
+                // dropped it as seeded. 81 deliveries, 72 empty rows, in one session.
+                if (hostNameFromHost_)                  { /* authoritative: keep name and provenance */ }
+                else if (! ownChunk)                    { hostTrackName_ = obj->getProperty("hostTrackName").toString(); hostNameFromHost_ = false; }   // seeded: PROVISIONAL
+                else if (hostTrackName_.isEmpty())      hostTrackName_ = obj->getProperty("hostTrackName").toString();                               // ours: fill only
             }
             hostNameDirty_.store(true, std::memory_order_release);
         }

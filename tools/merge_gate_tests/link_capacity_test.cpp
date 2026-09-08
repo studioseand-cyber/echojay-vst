@@ -88,6 +88,71 @@ static int p20()
     return (p1 == 20 && p2 == 20) ? 0 : 1;
 }
 
+
+// ---- THE FOREIGN-CHUNK LEG (6 Sep 2026, from the v7 Pro Tools log): the host DELIVERS
+// the track name to the fresh instance (ctor uid), and ~85 ms LATER Pro Tools applies a
+// FOREIGN chunk (the seed / a gone sibling's) carrying a DIFFERENT name; the re-mint
+// follows. The delivered name must survive. P20 never modelled this ordering: it
+// applied the seed BEFORE the delivery (P1) or after the re-mint (P2), never a foreign
+// chunk with its own name AFTER the delivery - which is exactly why P20 went green on v7.
+//   F1  host delivered "Kick"  -> foreign chunk (host "Track A", typed "Vox") -> re-mint : host "Kick", row "Kick"
+//   F2  user typed "MyBus"     -> foreign chunk (typed "Vox")                 -> re-mint : typed "MyBus", row "MyBus"
+//   F3  nothing delivered      -> foreign chunk fills the name (provisional) and the re-mint drops it (P2 unchanged)
+static int foreignLegs (void* reg, const juce::MemoryBlock& chunkA, bool verbose)
+{
+    int bad = 0;
+    {   // F1
+        auto b = std::make_unique<LinkProcessor>(); b->prepareToPlay (48000.0, 512);
+        nameFromHost (*b, "Kick"); pump (30);                                     // the host delivers FIRST (ctor uid)
+        b->setStateInformation (chunkA.getData(), (int) chunkA.getSize());      // THEN a foreign chunk with its own name
+        pump (150);                                                                // re-mint (no holder) + claim
+        const auto row = b->diag.slotIdx >= 0 ? slotName (reg, b->diag.slotIdx) : juce::String ("(no slot)");
+        const bool ok = b->diag.slotIdx >= 0 && b->getHostTrackName() == "Kick" && row == "Kick";
+        if (verbose) std::printf ("  F1: host \"%s\" typed \"%s\" published \"%s\" -> %s\n", b->getHostTrackName().toRawUTF8(), b->linkName.toRawUTF8(), row.toRawUTF8(), ok ? "PASS" : "FAIL");
+        bad |= ok ? 0 : 1; drain(); b.reset(); drain();
+    }
+    {   // F2
+        auto c = std::make_unique<LinkProcessor>(); c->prepareToPlay (48000.0, 512);
+        c->linkName = "MyBus"; c->markTypedNameAuthoritative(); pump (30);        // the user typed FIRST
+        c->setStateInformation (chunkA.getData(), (int) chunkA.getSize());      // THEN a foreign chunk (typed "Vox")
+        pump (150);
+        const auto row = c->diag.slotIdx >= 0 ? slotName (reg, c->diag.slotIdx) : juce::String ("(no slot)");
+        const bool ok = c->diag.slotIdx >= 0 && c->linkName == "MyBus" && row == "MyBus";
+        if (verbose) std::printf ("  F2: typed \"%s\" host \"%s\" published \"%s\" -> %s\n", c->linkName.toRawUTF8(), c->getHostTrackName().toRawUTF8(), row.toRawUTF8(), ok ? "PASS" : "FAIL");
+        bad |= ok ? 0 : 2; drain(); c.reset(); drain();
+    }
+    {   // F3
+        auto d = std::make_unique<LinkProcessor>(); d->prepareToPlay (48000.0, 512);
+        d->setStateInformation (chunkA.getData(), (int) chunkA.getSize());      // nothing delivered: the chunk FILLS
+        const bool filled = d->getHostTrackName() == "Track A" && d->linkName == "Vox";
+        pump (150);                                                                // the re-mint then drops the seeded names (P2)
+        const auto row = d->diag.slotIdx >= 0 ? slotName (reg, d->diag.slotIdx) : juce::String ("(no slot)");
+        const bool ok = filled && d->diag.slotIdx >= 0 && row.isEmpty() && d->getHostTrackName().isEmpty() && d->linkName.isEmpty();
+        if (verbose) std::printf ("  F3: filled-before-claim=%d; after the re-mint host \"%s\" typed \"%s\" published \"%s\" -> %s\n", (int) filled, d->getHostTrackName().toRawUTF8(), d->linkName.toRawUTF8(), row.toRawUTF8(), ok ? "PASS" : "FAIL");
+        bad |= ok ? 0 : 4; drain(); d.reset(); drain();
+    }
+    return bad;
+}
+
+static int foreign (int runs)
+{
+    int err = 0; const auto dir = LinkShm::resolveDir (err);
+    int fd = -1, rerr = 0; void* reg = LinkShm::openRegistry (dir, fd, rerr);
+    if (reg == nullptr) { std::printf ("registry not mappable (%d)\n", rerr); return 99; }
+    auto a = std::make_unique<LinkProcessor>(); a->linkName = "Vox"; a->prepareToPlay (48000.0, 512); nameFromHost (*a, "Track A"); a->updateShmState(); pump (150);
+    juce::MemoryBlock chunkA; a->getStateInformation (chunkA);
+    drain(); a.reset(); drain();   // A is GONE: its chunk is a seed from a gone instance (Pro Tools' case), so the newcomer re-mints
+    int f1 = 0, f2 = 0, f3 = 0, p1 = 0, p2 = 0;
+    for (int r = 0; r < runs; ++r)
+    {
+        const int b = foreignLegs (reg, chunkA, r == 0); if (! (b & 1)) ++f1; if (! (b & 2)) ++f2; if (! (b & 4)) ++f3;
+        const int q = provenancePair (reg, chunkA, false); if (! (q & 1)) ++p1; if (! (q & 2)) ++p2;
+    }
+    std::printf ("FOREIGN x%d: F1 delivered-then-foreign kept %d/%d   F2 typed-then-foreign kept %d/%d   F3 fill-when-none %d/%d   (P20 arms alongside: P1 %d/%d  P2 %d/%d)\n",
+                 runs, f1, runs, f2, runs, f3, runs, p1, runs, p2, runs);
+    return (f1 == runs && f2 == runs && f3 == runs && p1 == runs && p2 == runs) ? 0 : 1;
+}
+
 static int legs()
 {
     int err = 0; const auto dir = LinkShm::resolveDir (err);
@@ -236,6 +301,8 @@ int main (int argc, char** argv)
     juce::ScopedJuceInitialiser_GUI init;
     if (argc > 1 && juce::String (argv[1]) == "scan50") return scan50();
     if (argc > 1 && juce::String (argv[1]) == "p20")    return p20();
+    if (argc > 1 && juce::String (argv[1]) == "foreign")   return foreign (1);
+    if (argc > 1 && juce::String (argv[1]) == "foreign20") return foreign (20);
     if (argc > 1 && juce::String (argv[1]) == "churn")  { const int r = churnLegs(); std::printf ("churn legs: L8 %s   L9 %s\n", (r & 1) ? "FAIL" : "PASS", (r & 2) ? "FAIL" : "PASS"); return r; }
     if (argc > 1 && juce::String (argv[1]) == "churn20") { int p8 = 0, p9 = 0; for (int r = 0; r < 20; ++r) { const int x = churnLegs(); if (! (x & 1)) ++p8; if (! (x & 2)) ++p9; } std::printf ("CHURN20: L8 %d/20   L9 %d/20\n", p8, p9); return (p8 == 20 && p9 == 20) ? 0 : 1; }
     const int r = legs();

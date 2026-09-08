@@ -1118,6 +1118,13 @@ public:
     // Store maps fetched from GET /api/params/maps ({fp: map|null} object),
     // persist them, and apply any slots that were waiting on them.
     void storeParamMaps (const juce::var& mapsObj);
+    // C2b (7 Sep 2026 ruling): a FAILED fetch is a terminal outcome, never a slot
+    // pending forever. The exact-map fetch names its fps; the fallback lookup
+    // does not, so its failure settles every slot that was waiting on a fallback.
+    // Either path re-evaluates the slots (noMap while the map is absent); a later
+    // answer from the other request still dials through the mapArrived sweep.
+    void failMapFetch (const juce::StringArray& fps);
+    void failFallbackLookup();
 
     // Batch-prefetch (via onNeedParamMaps) maps for every fingerprint the
     // persistent identity index knows but has no cached map for, <=500 per

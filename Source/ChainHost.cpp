@@ -3245,6 +3245,48 @@ void ChainHost::mergeBootstrapMaps()
     }
 }
 
+static const char* dialStatusShortName(ChainHost::DialStatus st)
+{
+    switch (st)
+    {
+        case ChainHost::DialStatus::none:        return "none";
+        case ChainHost::DialStatus::pending:     return "pending";
+        case ChainHost::DialStatus::applied:     return "applied";
+        case ChainHost::DialStatus::partial:     return "partial";
+        case ChainHost::DialStatus::noMap:       return "noMap";
+        default:                                 return "other-terminal";
+    }
+}
+
+void ChainHost::failMapFetch(const juce::StringArray& fps)
+{
+    if (fps.isEmpty()) return;
+    for (const auto& fp : fps) pendingMapFps_.removeString(fp);
+    bool changed = false;
+    for (int i = 0; i < (int)slots_.size(); ++i)
+    {
+        auto& s = slots_[(size_t)i];
+        if (! fps.contains(s.fp) || s.structuredApplied
+            || s.structuredSettings.getDynamicObject() == nullptr) continue;
+        const bool wasPending = s.dialStatus == DialStatus::pending;
+        applyStructuredIfReady(i, DialTrigger::mapArrived);   // re-evaluates: noMap while the map is absent
+        if (wasPending && s.dialStatus != DialStatus::pending) changed = true;
+        EchoJay_NSLog(("EJParamMaps: fetch FAILED for slot " + juce::String(i) + " (\"" + s.desc.name
+                       + "\") fp=" + s.fp.substring(0, 12) + " -> terminal "
+                       + dialStatusShortName(s.dialStatus)).toRawUTF8());
+    }
+    if (changed && onSlotSettingsChanged) onSlotSettingsChanged();
+}
+
+void ChainHost::failFallbackLookup()
+{
+    juce::StringArray fps;
+    for (const auto& s : slots_)
+        if (s.fp.isNotEmpty() && fallbackRequested_.contains(s.fp) && pendingMapFps_.contains(s.fp))
+            fps.addIfNotAlreadyThere(s.fp);
+    failMapFetch(fps);
+}
+
 void ChainHost::requestMapPrefetch()
 {
     mergeBootstrapMaps();

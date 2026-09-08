@@ -1284,6 +1284,10 @@ private:
     // FULL dial relays the model's "result" line; anything else composes
     // factual wording naming the hand-dial slots and controls. On timeout
     // the conservative wording is used, never the model line.
+    // C2 (7 Sep 2026): slots the bubble reported as WAITING for a map; their terminal
+    // outcome (applied / no map) is reported when it lands. Names, in-memory only.
+    juce::StringArray dialPendingReported_;
+    void reportPendingDialOutcomes();
     void finishChainBubbleWhenDialSettled(const juce::String& chainJson, int attemptsLeft);
     // The edit twin (item 3, 9 Aug 2026): same settle-then-compose contract,
     // scoped to the slots the edit's ops actually touched.
