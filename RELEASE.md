@@ -325,3 +325,11 @@ pair on the Desktop is renamed *_OLD_v6_* and must NOT be installed (it lacks th
 Carries everything in v7 plus: the Link name fix (a foreign chunk never overwrites a delivered or typed name;
 FOREIGN x20 20/20) and the dialability items C2/C2b/C1' (honest "waiting for its map" wording with close-out,
 failed fetches terminal, 6 s derived settle bound). The v7 pair is superseded (*_OLD_v7_*), do not sign or install it.
+
+### BUILD A - V2 only, built 8 Sep 2026 12:02 from merge/kathy-2026-09-06 @ f8d64bb (unsigned, on the Desktop for the signing trip)
+    EchoJay V2 2.26.4   arm64 B2C4CDE8-9B3A-3585-9D6D-CE07AC7569F4   x86_64 C35F1772-36E0-313A-9034-EB28047A2D60
+    Link stays v8 (arm64 677CB825 / x86_64 1000546C). Installer INSTALL_V2_AAX_BUILD_A_2026-09-08.command installs the V2
+    only and verifies the Link is unchanged; --verify against the installed pair FAILS today on the V2, as it must.
+Carries: the capture crash fix (KeyEngine heap-allocated on the WAV save thread), Link list in insertion order, and the
+three system-log lines (engage decision, prepareToPlay budget store, WANTED transitions). No re-evaluate-on-commit.
+~/Library AU/VST3 of Build A: AU arm64 458D603D-79BF-36D3-91C8-297B0332112C, VST3 arm64 4E72C2F9-3D33-3EF4-9381-AE920CD88096.
