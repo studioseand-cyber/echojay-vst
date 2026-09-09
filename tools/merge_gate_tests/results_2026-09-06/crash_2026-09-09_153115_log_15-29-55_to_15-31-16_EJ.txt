@@ -1,0 +1,104 @@
+Timestamp               Ty Process[PID:TID]
+2026-09-09 15:29:55.025 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #18900 mom=-39.8 rms=-42.4/-43.5 blocks=33830 tp=-30.1 tpCur=-30.1 corr=-0.32 rel=[-6.3 -40.3]
+2026-09-09 15:29:55.250 Df Pro Tools[85903:426ad4] (EchoJay V2) EJPanel: rebuild slots=5 sel=3
+2026-09-09 15:29:55.373 Df Pro Tools[85903:426ad4] (EchoJay Link) EJCtx(link): leased muteWant=Y
+2026-09-09 15:29:55.376 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkKey: passive pass armed (8 s window)
+2026-09-09 15:29:55.412 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" audio stale (blocks frozen at 24936) -> momentary group absent
+2026-09-09 15:29:55.414 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" audio stale (blocks frozen at 10558) -> momentary group absent
+2026-09-09 15:29:55.415 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" audio stale (blocks frozen at 25508) -> momentary group absent
+2026-09-09 15:29:55.415 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" audio stale (blocks frozen at 10558) -> momentary group absent
+2026-09-09 15:29:55.415 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" audio stale (blocks frozen at 10355) -> momentary group absent
+2026-09-09 15:29:55.515 Df Pro Tools[85903:426ad4] (EchoJay V2) EJAlign(main): ring age=1024 smp (target 1024)
+2026-09-09 15:29:55.515 Df Pro Tools[85903:426ad4] (EchoJay V2) EJCtx(main): renew muteOut=Y ok=Y soloSup=N
+2026-09-09 15:29:55.662 Df Pro Tools[85903:4270f3] (EchoJay V2) EJCtx(inj): ctxNow=1 injPad=14608 padKey=14608 muteReady=1 soloSup=0 have=1 mix=1.000 injPeak=0.515 ringAge=1024
+2026-09-09 15:29:55.666 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #18800 mom=-51.1 rms=-51.7/-51.7 blocks=33662 tp=-25.3 tpCur=-25.3 corr=0.94 rel=[0.0 0.0]
+2026-09-09 15:29:55.914 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #18800 mom=-26.1 rms=-32.5/-33.0 blocks=33664 tp=-6.9 tpCur=-6.9 corr=0.40 rel=[-27.6 7.1]
+2026-09-09 15:29:56.283 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #13600 mom=-155.7 rms=-200.0/-200.0 blocks=22457 tp=-12.7 tpCur=-12.7 corr=0.69 rel=[0.0 0.0]
+2026-09-09 15:29:56.284 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" audio stale (blocks frozen at 30130) -> momentary group absent
+2026-09-09 15:29:56.324 Df Pro Tools[85903:42febc] (EchoJay V2) EJStream: /api/v2/community/poll status=404 body={"error":"not_enabled"}
+2026-09-09 15:29:56.331 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #14600 mom=-23.0 rms=-23.9/-23.9 blocks=21149 tp=-5.0 tpCur=-5.0 corr=1.00 rel=[-3.4 -14.2]
+2026-09-09 15:29:56.379 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" audio resumed (blocks 30131)
+2026-09-09 15:29:56.451 Df Pro Tools[85903:426ad4] (EchoJay Link) EJCtx(link): leased muteWant=Y
+2026-09-09 15:29:56.489 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #18900 mom=-45.4 rms=-49.6/-49.6 blocks=33889 tp=-22.1 tpCur=-22.1 corr=1.00 rel=[-5.1 -9.9]
+2026-09-09 15:29:56.506 Df Pro Tools[85903:426ad4] (EchoJay V2) EJKey: self passive pass armed (music-bus role)
+2026-09-09 15:29:56.508 Df Pro Tools[85903:426ad4] (EchoJay V2) EJAlign(main): ring age=1024 smp (target 1024)
+2026-09-09 15:29:56.508 Df Pro Tools[85903:426ad4] (EchoJay V2) EJCtx(main): renew muteOut=Y ok=Y soloSup=N
+2026-09-09 15:29:56.537 Df Pro Tools[85903:4270ef] (EchoJay V2) EJCtx(ring): consumed 1024/1024 peak-in=0.243 peak-after-rack=0.433
+2026-09-09 15:29:56.648 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #20200 mom=-53.4 rms=-52.6/-52.2 blocks=36412 tp=-16.0 tpCur=-16.0 corr=0.30 rel=[0.0 -23.1]
+2026-09-09 15:29:56.666 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #16400 mom=-100.0 rms=-105.8/-105.8 blocks=28600 tp=-38.0 tpCur=-38.0 corr=1.00 rel=[0.0 0.0]
+2026-09-09 15:29:56.666 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #16300 mom=-100.0 rms=-78.6/-78.5 blocks=28607 tp=-11.1 tpCur=-11.1 corr=0.89 rel=[0.0 0.0]
+2026-09-09 15:29:56.916 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #13600 mom=-16.9 rms=-16.9/-16.9 blocks=19944 tp=-5.2 tpCur=-5.2 corr=1.00 rel=[28.9 -43.5]
+2026-09-09 15:29:56.916 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #14300 mom=-49.7 rms=-47.7/-47.7 blocks=20426 tp=-13.4 tpCur=-13.4 corr=0.46 rel=[0.0 0.0]
+2026-09-09 15:29:57.062 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #20300 mom=-52.7 rms=-49.0/-49.0 blocks=35205 tp=-4.4 tpCur=-4.4 corr=0.46 rel=[0.0 0.0]
+2026-09-09 15:29:57.298 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" audio stale (blocks frozen at 22457) -> momentary group absent
+2026-09-09 15:29:57.508 Df Pro Tools[85903:426ad4] (EchoJay V2) EJAlign(main): ring age=1024 smp (target 1024)
+2026-09-09 15:29:57.508 Df Pro Tools[85903:426ad4] (EchoJay V2) EJCtx(main): renew muteOut=Y ok=Y soloSup=N
+2026-09-09 15:29:57.511 Df Pro Tools[85903:426ad4] (EchoJay Link) EJCtx(link): leased muteWant=Y
+2026-09-09 15:29:57.667 Df Pro Tools[85903:4270f6] (EchoJay V2) EJCtx(inj): ctxNow=1 injPad=14608 padKey=14608 muteReady=1 soloSup=0 have=1 mix=1.000 injPeak=0.505 ringAge=1024
+2026-09-09 15:29:57.812 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #24100 mom=-100.0 rms=-105.7/-105.7 blocks=14502 tp=-16.8 tpCur=-16.8 corr=1.00 rel=[0.0 0.0]
+2026-09-09 15:29:57.813 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #24100 mom=-100.0 rms=-114.7/-114.7 blocks=18567 tp=-20.1 tpCur=-20.1 corr=1.00 rel=[0.0 0.0]
+2026-09-09 15:29:57.813 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #24100 mom=-100.0 rms=-113.8/-113.8 blocks=10355 tp=-30.3 tpCur=-30.3 corr=0.99 rel=[0.0 0.0]
+2026-09-09 15:29:57.813 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #24100 mom=-54.8 rms=-52.9/-52.9 blocks=30198 tp=-25.9 tpCur=-25.9 corr=1.00 rel=[0.0 0.0]
+2026-09-09 15:29:57.813 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #20900 mom=-24.2 rms=-28.3/-26.6 blocks=36467 tp=-10.8 tpCur=-10.8 corr=0.73 rel=[-30.8 -31.2]
+2026-09-09 15:29:57.849 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #24100 mom=-100.0 rms=-174.2/-174.2 blocks=24936 tp=-9.5 tpCur=-9.5 corr=1.00 rel=[0.0 0.0]
+2026-09-09 15:29:57.849 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #24100 mom=-100.0 rms=-99.9/-99.8 blocks=10558 tp=-14.7 tpCur=-14.7 corr=0.07 rel=[0.0 0.0]
+2026-09-09 15:29:57.849 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #24100 mom=-37.0 rms=-40.4/-40.8 blocks=34406 tp=-4.5 tpCur=-4.5 corr=0.91 rel=[-2.5 -4.8]
+2026-09-09 15:29:57.849 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #24100 mom=-20.6 rms=-20.3/-20.3 blocks=34029 tp=-5.2 tpCur=-5.2 corr=1.00 rel=[26.5 -21.4]
+2026-09-09 15:29:57.869 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #24100 mom=-100.0 rms=-100.9/-104.3 blocks=19008 tp=-14.4 tpCur=-14.4 corr=0.70 rel=[0.0 0.0]
+2026-09-09 15:29:58.483 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #19200 mom=-30.6 rms=-32.3/-33.6 blocks=34361 tp=-13.1 tpCur=-13.1 corr=0.42 rel=[-24.0 -32.9]
+2026-09-09 15:29:58.511 Df Pro Tools[85903:426ad4] (EchoJay V2) EJAlign(main): ring age=1024 smp (target 1024)
+2026-09-09 15:29:58.511 Df Pro Tools[85903:426ad4] (EchoJay V2) EJCtx(main): renew muteOut=Y ok=Y soloSup=N
+2026-09-09 15:29:58.541 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #19000 mom=-38.2 rms=-33.4/-33.4 blocks=33995 tp=-13.1 tpCur=-13.1 corr=1.00 rel=[-31.6 -20.5]
+2026-09-09 15:29:58.541 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #19000 mom=-39.4 rms=-36.6/-33.4 blocks=33995 tp=-13.1 tpCur=-13.1 corr=0.29 rel=[-30.0 -20.1]
+2026-09-09 15:29:58.542 Df Pro Tools[85903:4270f6] (EchoJay V2) EJCtx(ring): consumed 1024/1024 peak-in=0.096 peak-after-rack=0.123
+2026-09-09 15:29:58.559 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" audio stale (blocks frozen at 18845) -> momentary group absent
+2026-09-09 15:29:58.593 Df Pro Tools[85903:426ad4] (EchoJay Link) EJCtx(link): leased muteWant=Y
+2026-09-09 15:29:58.696 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #19000 mom=-50.9 rms=-54.0/-54.5 blocks=34002 tp=-30.1 tpCur=-30.1 corr=-0.18 rel=[-16.2 -33.3]
+2026-09-09 15:29:59.469 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #18900 mom=-43.1 rms=-48.8/-48.8 blocks=33840 tp=-25.3 tpCur=-25.3 corr=0.93 rel=[-30.8 10.6]
+2026-09-09 15:29:59.532 Df Pro Tools[85903:426ad4] (EchoJay V2) EJAlign(main): ring age=1024 smp (target 1024)
+2026-09-09 15:29:59.532 Df Pro Tools[85903:426ad4] (EchoJay V2) EJCtx(main): renew muteOut=Y ok=Y soloSup=N
+2026-09-09 15:29:59.625 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkKey: passive pass armed (8 s window)
+2026-09-09 15:29:59.662 Df Pro Tools[85903:426ad4] (EchoJay Link) EJCtx(link): leased muteWant=Y
+2026-09-09 15:29:59.666 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkKey: passive pass armed (8 s window)
+2026-09-09 15:29:59.672 Df Pro Tools[85903:4270f2] (EchoJay V2) EJCtx(inj): ctxNow=1 injPad=14608 padKey=14608 muteReady=1 soloSup=0 have=1 mix=1.000 injPeak=0.070 ringAge=1024
+2026-09-09 15:29:59.741 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #18900 mom=-26.1 rms=-33.9/-34.5 blocks=33844 tp=-6.9 tpCur=-6.9 corr=0.40 rel=[-17.9 2.8]
+2026-09-09 15:29:59.772 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #14200 mom=-100.0 rms=-114.7/-114.7 blocks=20358 tp=-21.3 tpCur=-21.3 corr=1.00 rel=[0.0 0.0]
+2026-09-09 15:30:00.054 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" audio resumed (blocks 10357)
+2026-09-09 15:30:00.054 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" #14700 mom=-24.1 rms=-25.8/-25.8 blocks=21324 tp=-5.0 tpCur=-5.0 corr=1.00 rel=[-8.8 -18.1]
+2026-09-09 15:30:00.133 Df Pro Tools[85903:426ad4] (EchoJay V2) EJRackSel: row=37 resolved=7f3595d7d6 current=549ad7d3b0 -> switching
+2026-09-09 15:30:00.133 Df Pro Tools[85903:426ad4] (EchoJay V2) EJApply: slot 0 "EchoJay EQ" CREATED here - no pulled state, never withheld, edited by definition -> CREATE
+2026-09-09 15:30:00.133 Df Pro Tools[85903:426ad4] (EchoJay V2) EJApply: slot 1 "Eiosis E2Deesser" CREATED here - no pulled state, never withheld, edited by definition -> CREATE
+2026-09-09 15:30:00.133 Df Pro Tools[85903:426ad4] (EchoJay V2) EJApply: slot 2 "Purple Audio MC 77" CREATED here - no pulled state, never withheld, edited by definition -> CREATE
+2026-09-09 15:30:00.133 Df Pro Tools[85903:426ad4] (EchoJay V2) EJApply: slot 3 "Millennia TCL-2" CREATED here - no pulled state, never withheld, edited by definition -> CREATE
+2026-09-09 15:30:00.133 Df Pro Tools[85903:426ad4] (EchoJay V2) EJApply: slot 4 "UAD SPL TwinTube" CREATED here - no pulled state, never withheld, edited by definition -> CREATE
+2026-09-09 15:30:00.138 Df Pro Tools[85903:426ad4] (EchoJay V2) EJStruct: send uid=549ad7d3b0 ops=5 seq=1788964200
+2026-09-09 15:30:00.142 Df Pro Tools[85903:426ad4] (EchoJay V2) EJStores: chatRoles.clear() in openChannelByUid, had 4 entries
+2026-09-09 15:30:00.142 Df Pro Tools[85903:426ad4] (EchoJay V2) EJPanel: rebuild slots=0 sel=-1
+2026-09-09 15:30:00.193 Df Pro Tools[85903:426ad4] (EchoJay Link) EJPlan[1788964200] link: plan received
+2026-09-09 15:30:00.248 Df Pro Tools[85903:426ad4] (EchoJay Link) EJPlan: stage lookup "Eiosis E2Deesser" uid.dec=0 depUid.dec=0 uid.hex=0 catalogue known=1 entries=2425 nameMatches=2 uidMatches=0 hexMatches=0 -> resolved Eiosis E2Deesser/AudioUnit/uid.dec=1630424408/uid.hex=612e4d58
+2026-09-09 15:30:00.323 Df Pro Tools[85903:426ad4] (EchoJay Link) EJPlan: stage lookup "Purple Audio MC 77" uid.dec=0 depUid.dec=0 uid.hex=0 catalogue known=1 entries=2425 nameMatches=2 uidMatches=0 hexMatches=0 -> resolved Purple Audio MC 77/AudioUnit/uid.dec=1933978921/uid.hex=73462d29
+2026-09-09 15:30:00.547 Df Pro Tools[85903:4270f4] (EchoJay V2) EJCtx(ring): consumed 1024/1024 peak-in=0.552 peak-after-rack=0.541
+2026-09-09 15:30:01.548 Df Pro Tools[85903:426ad4] (EchoJay Link) EJPlan: stage lookup "Millennia TCL-2" uid.dec=0 depUid.dec=0 uid.hex=0 catalogue known=1 entries=2425 nameMatches=2 uidMatches=0 hexMatches=0 -> resolved Millennia TCL-2/AudioUnit/uid.dec=1852723762/uid.hex=6e6e5232
+2026-09-09 15:30:01.678 Df Pro Tools[85903:4270f1] (EchoJay V2) EJCtx(inj): ctxNow=1 injPad=14608 padKey=14608 muteReady=1 soloSup=0 have=1 mix=1.000 injPeak=0.016 ringAge=1024
+2026-09-09 15:30:02.552 Df Pro Tools[85903:4270f1] (EchoJay V2) EJCtx(ring): consumed 1024/1024 peak-in=0.089 peak-after-rack=0.132
+2026-09-09 15:30:02.803 Df Pro Tools[85903:426ad4] (EchoJay Link) EJPlan: stage lookup "UAD SPL TwinTube" uid.dec=0 depUid.dec=0 uid.hex=0 catalogue known=1 entries=2425 nameMatches=2 uidMatches=0 hexMatches=0 -> resolved UAD SPL TwinTube/AudioUnit/uid.dec=672220745/uid.hex=28114649
+2026-09-09 15:30:02.845 Df Pro Tools[85903:426ad4] (EchoJay Link) EJPlace: stored "EchoJay EQ" mfr="EchoJay" (plan attach)
+2026-09-09 15:30:02.847 Df Pro Tools[85903:426ad4] (EchoJay Link) EJPlace: stored "Eiosis E2Deesser" mfr="Eiosis" (plan attach)
+2026-09-09 15:30:02.858 Df Pro Tools[85903:426ad4] (EchoJay Link) EJPlace: stored "Purple Audio MC 77" mfr="Plugin Alliance" (plan attach)
+2026-09-09 15:30:02.864 Df Pro Tools[85903:426ad4] (EchoJay Link) EJPlace: stored "Millennia TCL-2" mfr="Plugin Alliance" (plan attach)
+2026-09-09 15:30:02.872 Df Pro Tools[85903:426ad4] (EchoJay Link) EJPlace: stored "UAD SPL TwinTube" mfr="Universal Audio" (plan attach)
+2026-09-09 15:30:02.895 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLease: priors remapped through the plan (5 slots), dry rack re-asserted
+2026-09-09 15:30:02.897 Df Pro Tools[85903:426ad4] (EchoJay Link) EJPlan[1788964200] link: applied=Y restored=N
+2026-09-09 15:30:02.900 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" audio resumed (blocks 22533)
+2026-09-09 15:30:02.900 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" audio resumed (blocks 10658)
+2026-09-09 15:30:02.900 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" audio resumed (blocks 18921)
+2026-09-09 15:30:02.900 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" audio resumed (blocks 25612)
+2026-09-09 15:30:02.900 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" audio stale (blocks frozen at 28764) -> momentary group absent
+2026-09-09 15:30:02.901 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" audio resumed (blocks 10658)
+2026-09-09 15:30:02.901 Df Pro Tools[85903:426ad4] (EchoJay Link) EJLinkMeter: "(untitled)" audio resumed (blocks 25013)
+2026-09-09 15:30:02.915 Df Pro Tools[85903:426ad4] (EchoJay V2) EJStruct: ack applied uid=549ad7d3b0 seq=1788964200
+2026-09-09 15:30:02.916 Df Pro Tools[85903:426ad4] (EchoJay V2) EJBorrowPool: rack released, 5 instance(s) parked
+2026-09-09 15:30:02.916 Df Pro Tools[85903:426ad4] (EchoJay V2) EJBorrow: released uid=549ad7d3b0 (lease deleted; Link restores its own bypasses)
+2026-09-09 15:30:02.918 Df Pro Tools[85903:426ad4] (EchoJay V2) EJRackLock: released uid=549ad7d3b0
+2026-09-09 15:30:02.919 Df Pro Tools[85903:426ad4] (EchoJay V2) EJRackLock: acquired uid=7f3595d7d6
+2026-09-09 15:30:02.919 Df Pro Tools[85903:426ad4] (EchoJay V2) EJPanel: rebuild slots=0 sel=-1
