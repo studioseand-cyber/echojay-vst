@@ -42,6 +42,7 @@
 #include "EchoJayAPI.h"          // history-resend pin runs the REAL buildChatRequestBody
 #include "EJDialWrites.h"      // do-not-dial: the shipped predicate
 #include "EJCaptureChannels.h" // multi-channel capture: the shipped tally and text
+#include "EJMisdialReport.h"   // misdial report: the shipped record assembly
 #include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
@@ -5811,6 +5812,204 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (after < before / 2,
                    "mc PIN5: the silent-channel text is less than half what it was",
                    juce::String (before) + " B -> " + juce::String (after) + " B");
+        }
+    }
+
+    // ===== MISDIAL REPORT v1, client half (9 Sep 2026) =====================
+    // Behavioural, against the SHIPPED builder. The contract is
+    // HANDOVER/misdial-report-v1.md, rewritten from the deployed route; every
+    // rule asserted here is the route's own rule (api/_misdials.js:109, :122+).
+    {
+        std::cout << "misdial report, the record the route will accept:\n";
+
+        const juce::String kFp ("a1b2c3d4e5f60718293a4b5c6d7e8f90"
+                                "a1b2c3d4e5f60718293a4b5c6d7e8f90");  // 64 hex
+        auto goodRow = [&] ()
+        {
+            echojay::MisdialRow r;
+            r.fp = kFp; r.mapKey = "threshold_db"; r.index = 3;
+            r.valueDialled = -18.0; r.hasValue = true;
+            r.landedText = "-4.0 dB";
+            r.reportId = "fixed-id-for-the-pin";
+            return r;
+        };
+        echojay::MisdialSlotFacts facts;
+        facts.pluginName = "Pro-C 2"; facts.format = "AudioUnit";
+        facts.vendor = "FabFilter"; facts.pluginVersion = "2.1.0";
+        facts.appVersion = "2.26.4"; facts.mapVersion = "rev7";
+
+        // md PIN1 -- THE FIVE REQUIRED FIELDS, present and correctly typed by
+        // the route's own tests. Parsed back out of the BODY, so a key that is
+        // named right but typed wrong cannot pass.
+        {
+            const auto body = echojay::buildMisdialBody (goodRow(), facts, "card");
+            check (body.isNotEmpty(), "md PIN1: a complete row produces a body");
+            auto v = juce::JSON::parse (body);
+            auto* o = v.getDynamicObject();
+            check (o != nullptr, "md PIN1: and the body is valid JSON");
+            if (o != nullptr)
+            {
+                const auto fp = o->getProperty ("fp").toString();
+                check (fp.length() == 64 && fp == fp.toLowerCase(),
+                       "md PIN1: fp is 64 chars and lowercased", fp.substring (0, 12));
+                check (o->getProperty ("parameterName").toString() == "threshold_db",
+                       "md PIN1: parameterName is the RAW MAP KEY, not a label");
+                check (o->getProperty ("parameterIndex").isInt(),
+                       "md PIN1: parameterIndex is an int");
+                check ((int) o->getProperty ("parameterIndex") == 3,
+                       "md PIN1: and carries the index");
+                check (o->getProperty ("valueDialled").isDouble()
+                       || o->getProperty ("valueDialled").isInt(),
+                       "md PIN1: valueDialled is numeric");
+                check (o->hasProperty ("observedResult"),
+                       "md PIN1: observedResult is present");
+            }
+        }
+
+        // md PIN2 -- INDEX 0 IS ACCEPTED AND -1 IS REFUSED. Zero is an ordinary
+        // first control; writing a truthiness test anywhere on this field would
+        // reject every report against it. -1 is our no-index sentinel and must
+        // never reach the route, which would refuse it as negative.
+        {
+            auto zero = goodRow(); zero.index = 0;
+            check (echojay::misdialRowIsReportable (zero),
+                   "md PIN2: index 0 is reportable");
+            auto b0 = echojay::buildMisdialBody (zero, facts, "card");
+            auto v0 = juce::JSON::parse (b0);
+            check (v0.getDynamicObject() != nullptr
+                   && (int) v0.getDynamicObject()->getProperty ("parameterIndex") == 0,
+                   "md PIN2: and index 0 survives into the body");
+            auto none = goodRow(); none.index = -1;
+            check (! echojay::misdialRowIsReportable (none),
+                   "md PIN2: index -1 is NOT reportable");
+            check (echojay::buildMisdialBody (none, facts, "card").isEmpty(),
+                   "md PIN2: and produces no body at all, so it cannot be sent");
+            // Same trap on the value: 0 dB is a real thing to dial.
+            auto zv = goodRow(); zv.valueDialled = 0.0;
+            check (echojay::misdialRowIsReportable (zv),
+                   "md PIN2: valueDialled 0 is reportable");
+        }
+
+        // md PIN3 -- observedResult TAKES THE NUMBER SHAPE WHEN THERE IS A
+        // READBACK AND THE STRING SHAPE WHEN THERE IS NOT. The server stamps
+        // observedKind from this, so the shape IS the meaning.
+        {
+            auto withRb = goodRow();                       // landedText "-4.0 dB"
+            auto vr = juce::JSON::parse (echojay::buildMisdialBody (withRb, facts, "card"));
+            auto* ro = vr.getDynamicObject();
+            check (ro != nullptr && (ro->getProperty ("observedResult").isDouble()
+                                     || ro->getProperty ("observedResult").isInt()),
+                   "md PIN3: a readback goes as a NUMBER");
+            check (ro != nullptr
+                   && std::abs ((double) ro->getProperty ("observedResult") + 4.0) < 1e-9,
+                   "md PIN3: and carries the landed value, units stripped");
+
+            auto noRb = goodRow(); noRb.landedText = {};
+            noRb.outcome = "readback unavailable, bridged plugin";
+            auto vs = juce::JSON::parse (echojay::buildMisdialBody (noRb, facts, "card"));
+            auto* so = vs.getDynamicObject();
+            check (so != nullptr && so->getProperty ("observedResult").isString(),
+                   "md PIN3: no readback goes as a STRING, the apply outcome");
+            check (so != nullptr && so->getProperty ("observedResult").toString()
+                                       .contains ("bridged"),
+                   "md PIN3: and carries the outcome text");
+
+            // A ratio keeps its shape. "2:1" as a number would become 2 and the
+            // meaning would be gone, so it stays text.
+            auto ratio = goodRow(); ratio.landedText = "2:1";
+            auto vq = juce::JSON::parse (echojay::buildMisdialBody (ratio, facts, "card"));
+            check (vq.getDynamicObject() != nullptr
+                   && vq.getDynamicObject()->getProperty ("observedResult").isString(),
+                   "md PIN3: a ratio reading stays a string rather than losing its shape");
+
+            // Neither a readback nor an outcome is the one case the route calls
+            // missing, so the row must not be offered.
+            auto neither = goodRow(); neither.landedText = {}; neither.outcome = {};
+            check (! echojay::misdialRowIsReportable (neither),
+                   "md PIN3: no readback and no outcome is not reportable");
+        }
+
+        // md PIN4 -- NO KEY OUTSIDE THE ACCEPTED SET. Measured on the deployed
+        // route: an unknown key would not 400, it would be silently dropped, so
+        // this defends bytes and honesty rather than a rejection.
+        {
+            const auto body = echojay::buildMisdialBody (goodRow(), facts, "card");
+            auto v = juce::JSON::parse (body);
+            auto* o = v.getDynamicObject();
+            juce::StringArray stray;
+            if (o != nullptr)
+                for (auto& prop : o->getProperties())
+                    if (! echojay::misdialAcceptedKeys().contains (prop.name.toString()))
+                        stray.add (prop.name.toString());
+            check (stray.isEmpty(), "md PIN4: every key sent is one the route reads",
+                   stray.joinIntoString (", "));
+            // The two the client genuinely does not have are never invented.
+            check (o != nullptr && ! o->hasProperty ("extractorVersion")
+                   && ! o->hasProperty ("humanVerified"),
+                   "md PIN4: and the two server-only fields are never fabricated");
+            // Best effort means ABSENT, not null: a null costs bytes and reads
+            // as a claim that the client looked and found nothing.
+            echojay::MisdialSlotFacts bare;
+            auto vb = juce::JSON::parse (echojay::buildMisdialBody (goodRow(), bare, "card"));
+            auto* bo = vb.getDynamicObject();
+            check (bo != nullptr && ! bo->hasProperty ("pluginName")
+                   && ! bo->hasProperty ("mapRangeMin"),
+                   "md PIN4: an unknown best-effort field is omitted, not null");
+            // md PIN4b -- THE MAP'S BELIEF IS PER CONTROL, off the ROW. Sending
+            // a slot-level unit under a per-control key would be a wrong belief
+            // in front of the person fixing the map.
+            auto withMap = goodRow();
+            withMap.mapKind = "float"; withMap.mapUnit = "dB";
+            withMap.mapRangeMin = -60.0; withMap.mapRangeMax = 0.0; withMap.hasRange = true;
+            auto vm = juce::JSON::parse (echojay::buildMisdialBody (withMap, bare, "card"));
+            auto* mo = vm.getDynamicObject();
+            check (mo != nullptr && mo->getProperty ("mapUnit").toString() == "dB"
+                   && std::abs ((double) mo->getProperty ("mapRangeMin") + 60.0) < 1e-9,
+                   "md PIN4: the map's kind, unit and range come off the CONTROL row");
+            check (bo != nullptr && bo->hasProperty ("fp")
+                   && bo->hasProperty ("observedResult"),
+                   "md PIN4: while the required five are still all there");
+        }
+
+        // md PIN5 -- fp IS VALIDATED HERE, not left to the 400. The route's own
+        // shape test, applied at the boundary, because a user must never be
+        // able to press a report that will be refused.
+        {
+            auto empty = goodRow(); empty.fp = {};
+            auto shortFp = goodRow(); shortFp.fp = "abc123";
+            auto nonHex = goodRow(); nonHex.fp = juce::String::repeatedString ("z", 64);
+            check (! echojay::misdialRowIsReportable (empty),   "md PIN5: no fp is not reportable");
+            check (! echojay::misdialRowIsReportable (shortFp), "md PIN5: a short fp is not reportable");
+            check (! echojay::misdialRowIsReportable (nonHex),  "md PIN5: a non-hex fp is not reportable");
+            auto upper = goodRow(); upper.fp = kFp.toUpperCase();
+            check (echojay::misdialRowIsReportable (upper),
+                   "md PIN5: an uppercase fp IS reportable, and is lowercased on the wire");
+        }
+
+        // md PIN6 -- THE REPORT ID IS STABLE ACROSS A RETRY. The row keeps it,
+        // so the same row builds the same id twice and the server dedupes
+        // instead of filing a second report.
+        {
+            auto r = goodRow();
+            const auto a = echojay::buildMisdialBody (r, facts, "card");
+            const auto b = echojay::buildMisdialBody (r, facts, "card");
+            check (a == b, "md PIN6: the same row builds a byte-identical body twice");
+            check (juce::JSON::parse (a).getDynamicObject()->getProperty ("reportId")
+                       .toString() == "fixed-id-for-the-pin",
+                   "md PIN6: and the reportId is the row's, not a fresh one per build");
+            check (echojay::newMisdialReportId() != echojay::newMisdialReportId(),
+                   "md PIN6: while a NEW id is actually new");
+        }
+
+        // md PIN7 -- THE POPUP LINE AND THE RECORD HAVE ONE AUTHOR, so the line
+        // the user chooses from cannot describe a different control from the one
+        // that gets sent.
+        {
+            const auto label = echojay::misdialRowLabel (goodRow());
+            check (label.contains ("threshold_db") && label.contains ("[3]"),
+                   "md PIN7: the popup line names the map key and the index", label);
+            check (label.contains ("-18") && label.contains ("-4.0 dB"),
+                   "md PIN7: and shows both the value asked for and what landed", label);
         }
     }
 
