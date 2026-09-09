@@ -1,4 +1,5 @@
 #include "EJDialWrites.h"
+#include "EJCaptureChannels.h"
 #include "PluginEditor.h"
 #include "DashboardWeb.h"        // stage 2: the lazy webview Dashboard surface
 #include "ChainPluginPicker.h"   // P13: the searchable "+" picker (shared with the Link)
@@ -32133,14 +32134,14 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
     if (!channelScoped && !snap.channels.empty())
     {
         auto ff2 = [](float v) -> juce::String { return v > -99 ? juce::String(v, 1) : "N/A"; };
-        juce::String mcCtx = "\n\n[MULTI-CHANNEL CAPTURE - " + juce::String((int)snap.channels.size()) + " channels]\n";
-        mcCtx += "Channels captured: ";
-        for (size_t ci = 0; ci < snap.channels.size(); ++ci)
-        {
-            if (ci > 0) mcCtx += ", ";
-            mcCtx += snap.channels[ci].name;
-        }
-        mcCtx += "\n\n";
+        // THE BODY IS BUILT FIRST AND THE HEADER COMPOSED AFTER IT, so the
+        // counts can lead the block. The outcome for each channel is decided
+        // ONCE, into outcomes[], and both the tally and the per-channel marker
+        // read that same value: computing the predicates twice is how a header
+        // that says nine comes to sit above ten markers.
+        std::vector<echojay::CaptureChannelOutcome> outcomes;
+        outcomes.reserve (snap.channels.size());
+        juce::String chNamesLine, chBody;
         for (size_t ci = 0; ci < snap.channels.size(); ++ci)
         {
             auto& sch = snap.channels[ci];
@@ -32156,48 +32157,39 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
                 auto live = processorRef.resolveLinkDisplayName(sch.uid);
                 if (live.isNotEmpty()) chName = live;
             }
-            juce::String header = (ci == 0)
-                ? ("[HOST - " + chName + "]\n")
-                : ("[LINK - " + chName + "]\n");
-            mcCtx += header;
+            if (ci > 0) chNamesLine += ", ";
+            chNamesLine += chName;
+            chBody += (ci == 0) ? ("[HOST - " + chName + "]\n")
+                                : ("[LINK - " + chName + "]\n");
             // Capture honesty via the FRAMES SENTINEL (framesReceived): the
             // two facts the injection could not tell apart are now
             // distinct. 0 = no frames arrived (cause unknown, NEVER a claim
             // about sound); >0 with all values at/below the silence floor =
             // the channel was genuinely silent (a statable fact). Host
             // channels carry -1 (n/a) and fall through to the numbers.
-            const bool noFrames    = ci > 0 && sch.framesReceived == 0;
-            const bool gotFrames   = sch.framesReceived > 0;
-            const bool silentFloor = md.integrated <= -99.0f
-                                  && md.peakMaxL   <= -99.0f
-                                  && md.peakMaxR   <= -99.0f;
-            if (noFrames)
+            echojay::CaptureChannelOutcome oc;
+            oc.isHost         = (ci == 0);
+            oc.framesReceived = sch.framesReceived;
+            oc.silentFloor    = md.integrated <= -99.0f
+                             && md.peakMaxL   <= -99.0f
+                             && md.peakMaxR   <= -99.0f;
+            outcomes.push_back (oc);
+
+            // A MARKER, NOT A PARAGRAPH. What SILENT and NO FRAMES mean is
+            // said once, above the list, by multiChannelGuidance. Saying it
+            // per channel is what produced a dozen separate notices about
+            // ordinary material.
+            if (const char* marker = echojay::captureChannelMarker (oc))
             {
-                mcCtx += "NO CAPTURE FRAMES were received from this Link during "
-                         "the capture window - the reason is UNKNOWN. Do NOT state "
-                         "or imply that this channel was silent or not outputting "
-                         "signal; you have no data either way. Possible causes "
-                         "include the Link having just been enabled (its audio "
-                         "feed warms up a moment after activation) or a transient "
-                         "capture-timing gap. Tell the user plainly that no data "
-                         "came through for this channel and to try the capture "
-                         "again; say nothing about how it sounds.\n";
-            }
-            else if (gotFrames && silentFloor)
-            {
-                mcCtx += "This channel WAS receiving audio during the capture, and "
-                         "its level stayed at or below the silence floor the whole "
-                         "window - it was genuinely silent (muted, or not playing). "
-                         "You may say the channel was silent; that is a real "
-                         "measurement, not a guess.\n";
+                chBody += marker;
             }
             else
             {
-            mcCtx += "(Internal - do not show raw numbers) ";
-            mcCtx += "Integrated: " + ff2(md.integrated) + " LUFS | LRA: " + ff2(md.loudnessRange) + " LU\n";
-            mcCtx += "Peak: L " + ff2(md.peakMaxL) + " / R " + ff2(md.peakMaxR) + " dBFS\n";
-            mcCtx += "RMS: L " + ff2(md.rmsL) + " / R " + ff2(md.rmsR) + " dB\n";
-            mcCtx += "Crest: " + ff2(md.crestFactor) + " dB | Width: " + ff2(md.width) + "% | Corr: " + ff2(md.correlation) + "\n";
+            chBody += "(Internal - do not show raw numbers) ";
+            chBody += "Integrated: " + ff2(md.integrated) + " LUFS | LRA: " + ff2(md.loudnessRange) + " LU\n";
+            chBody += "Peak: L " + ff2(md.peakMaxL) + " / R " + ff2(md.peakMaxR) + " dBFS\n";
+            chBody += "RMS: L " + ff2(md.rmsL) + " / R " + ff2(md.rmsR) + " dB\n";
+            chBody += "Crest: " + ff2(md.crestFactor) + " dB | Width: " + ff2(md.width) + "% | Corr: " + ff2(md.correlation) + "\n";
             }
             // Link gain stage (AI hook): current built-in gain for this Link,
             // looked up by name from the registry. The integrated above is
@@ -32215,15 +32207,26 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
                         const char* pl = li.placement == 1 ? "Bus"
                                        : li.placement == 2 ? "Channel"
                                        : li.placement == 3 ? "Send" : "unset";
-                        mcCtx += juce::String("Placement: ") + pl + "\n";
-                        mcCtx += "Link gain: " + (li.gainDb >= 0 ? juce::String("+") : juce::String())
+                        chBody += juce::String("Placement: ") + pl + "\n";
+                        chBody += "Link gain: " + (li.gainDb >= 0 ? juce::String("+") : juce::String())
                                + ff2(li.gainDb) + " dB (built-in; user can level-match via the "
                                  "LINK monitor's gain control)\n";
                         break;
                     }
             }
-            mcCtx += "\n";
+            chBody += "\n";
         }
+
+        // COMPOSE. Counts in the header, the meaning of the markers once
+        // beneath it, then the channels. multiChannelGuidance emits a half
+        // only when that outcome actually occurred, so an ordinary capture
+        // with nothing silent and nothing missing pays for neither.
+        const auto tally = echojay::tallyCaptureChannels (outcomes);
+        juce::String mcCtx = echojay::multiChannelHeader (tally);
+        mcCtx += "Channels captured: " + chNamesLine + "\n\n";
+        mcCtx += echojay::multiChannelGuidance (tally);
+        if (tally.silent > 0 || tally.noFrames > 0) mcCtx += "\n";
+        mcCtx += chBody;
         mcCtx += "[Read the whole session: note any per-channel issues and how they relate. "
                  "If the host mix looks fine, check whether the individual channels suggest a balance or "
                  "dynamics issue that might not be obvious from the full mix alone. "

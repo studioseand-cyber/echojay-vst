@@ -41,6 +41,7 @@
 #include "EchoJayChannelChats.h"
 #include "EchoJayAPI.h"          // history-resend pin runs the REAL buildChatRequestBody
 #include "EJDialWrites.h"      // do-not-dial: the shipped predicate
+#include "EJCaptureChannels.h" // multi-channel capture: the shipped tally and text
 #include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
@@ -5684,6 +5685,132 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "ej PIN3: the toggle is a full-width row, stacked not beside");
             check (ed.contains ("y += 2 * (fh + 8);"),
                    "ej PIN3: and the settings paint walk covers all three rows");
+        }
+    }
+
+    // ===== MULTI-CHANNEL CAPTURE (9 Sep 2026) ==============================
+    // A forty-channel session is built here and the SHIPPED composers are
+    // called on it, so these are assertions about the payload rather than
+    // about the source that writes it.
+    {
+        std::cout << "multi-channel capture, silence and no-frames:\n";
+
+        auto session = [] (int total, int silent, int noFrames)
+        {
+            std::vector<echojay::CaptureChannelOutcome> v;
+            echojay::CaptureChannelOutcome host;
+            host.isHost = true; host.framesReceived = -1;
+            v.push_back (host);
+            for (int i = 1; i < total; ++i)
+            {
+                echojay::CaptureChannelOutcome c;
+                if (noFrames-- > 0)   { c.framesReceived = 0; }
+                else if (silent-- > 0){ c.framesReceived = 48000; c.silentFloor = true; }
+                else                  { c.framesReceived = 48000; }
+                v.push_back (c);
+            }
+            return v;
+        };
+        auto countOf = [] (const juce::String& hay, const juce::String& needle)
+        {
+            int n = 0, at = 0;
+            for (;;) { at = hay.indexOf (at, needle); if (at < 0) break; ++n; at += needle.length(); }
+            return n;
+        };
+
+        // mc PIN1 -- FORTY CHANNELS, TWELVE SILENT. The counts lead, the
+        // per-channel paragraph is gone, and silence is explained ONCE.
+        {
+            const auto t = echojay::tallyCaptureChannels (session (40, 12, 0));
+            const auto head = echojay::multiChannelHeader (t);
+            const auto guide = echojay::multiChannelGuidance (t);
+            check (t.total == 40 && t.silent == 12 && t.noFrames == 0,
+                   "mc PIN1: the tally counts 40 channels and 12 silent",
+                   juce::String (t.total) + "/" + juce::String (t.silent)
+                   + "/" + juce::String (t.noFrames));
+            check (head.contains ("40 channels, 12 silent, 0 with no frames"),
+                   "mc PIN1: and the header carries all three counts", head.trim());
+            check (! guide.contains ("You may say the channel was silent"),
+                   "mc PIN1: the per-channel silent paragraph is gone");
+            check (countOf (guide, "SILENT marks a channel") == 1,
+                   "mc PIN1: silence is explained exactly once",
+                   juce::String (countOf (guide, "SILENT marks a channel")) + " times");
+            check (guide.contains ("Report them by COUNT")
+                   && guide.contains ("12 of 40"),
+                   "mc PIN1: and the instruction asks for a count, and names it");
+            check (! guide.contains ("NO FRAMES marks"),
+                   "mc PIN1: with nothing said about no-frames when there are none");
+        }
+
+        // mc PIN2 -- THE MARKER IS THE LINE. One short token per affected
+        // channel, and the two outcomes stay distinguishable.
+        {
+            echojay::CaptureChannelOutcome sil; sil.framesReceived = 48000; sil.silentFloor = true;
+            echojay::CaptureChannelOutcome nof; nof.framesReceived = 0;
+            echojay::CaptureChannelOutcome ok;  ok.framesReceived = 48000;
+            echojay::CaptureChannelOutcome hst; hst.isHost = true; hst.framesReceived = -1;
+            check (juce::String (echojay::captureChannelMarker (sil)) == "SILENT\n",
+                   "mc PIN2: a silent channel gets a marker, not a paragraph");
+            check (juce::String (echojay::captureChannelMarker (nof)) == "NO FRAMES\n",
+                   "mc PIN2: and a no-frames channel a different one");
+            check (echojay::captureChannelMarker (ok) == nullptr,
+                   "mc PIN2: an audible channel still gets its numbers");
+            check (echojay::captureChannelMarker (hst) == nullptr,
+                   "mc PIN2: and the host is never marked no-frames");
+        }
+
+        // mc PIN3 -- THE NO-FRAMES ADVICE SCALES. A few is a note; most of
+        // them is a failed capture, and only then is capturing again asked
+        // for. Explained once either way.
+        {
+            const auto few  = echojay::multiChannelGuidance (echojay::tallyCaptureChannels (session (40, 0, 3)));
+            const auto most = echojay::multiChannelGuidance (echojay::tallyCaptureChannels (session (40, 0, 30)));
+            check (countOf (few, "NO FRAMES marks a channel") == 1,
+                   "mc PIN3: no-frames is explained exactly once");
+            check (few.contains ("3 of 39 Links") && few.contains ("small part"),
+                   "mc PIN3: three of thirty-nine reads as a note");
+            check (! few.contains ("capture again") && ! few.contains ("FAILED capture"),
+                   "mc PIN3: and does NOT ask them to capture again");
+            check (most.contains ("30 of 39 Links") && most.contains ("FAILED capture")
+                   && most.contains ("capture again"),
+                   "mc PIN3: thirty of thirty-nine is a failed capture and says so");
+            check (countOf (most, "NO FRAMES marks a channel") == 1,
+                   "mc PIN3: still explained exactly once");
+        }
+
+        // mc PIN4 -- AN ORDINARY CAPTURE PAYS FOR NEITHER. Nothing silent and
+        // nothing missing emits no guidance at all.
+        {
+            const auto t = echojay::tallyCaptureChannels (session (40, 0, 0));
+            check (echojay::multiChannelGuidance (t).isEmpty(),
+                   "mc PIN4: a clean capture carries no silence or no-frames text");
+            check (echojay::multiChannelHeader (t).contains ("0 silent, 0 with no frames"),
+                   "mc PIN4: and its header still states both counts");
+        }
+
+        // mc PIN5 -- THE PAYLOAD SHRANK, measured on the shape that caused
+        // this: forty channels, twelve silent.
+        {
+            const juce::String oldPara =
+                "This channel WAS receiving audio during the capture, and "
+                "its level stayed at or below the silence floor the whole "
+                "window - it was genuinely silent (muted, or not playing). "
+                "You may say the channel was silent; that is a real "
+                "measurement, not a guess.\n";
+            const auto t = echojay::tallyCaptureChannels (session (40, 12, 0));
+            const int before = 12 * oldPara.length();
+            // The SHIPPED marker, not a literal copy of it. Written as a copy
+            // first, and mutation B (restoring the paragraph as the marker)
+            // left this pin green while PIN2 went red, which is a pin
+            // measuring its own constant rather than the code.
+            echojay::CaptureChannelOutcome probe;
+            probe.framesReceived = 48000; probe.silentFloor = true;
+            const int markerLen = (int) juce::String (echojay::captureChannelMarker (probe)).length();
+            const int after  = 12 * markerLen
+                             + echojay::multiChannelGuidance (t).length();
+            check (after < before / 2,
+                   "mc PIN5: the silent-channel text is less than half what it was",
+                   juce::String (before) + " B -> " + juce::String (after) + " B");
         }
     }
 
