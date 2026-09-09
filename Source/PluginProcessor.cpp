@@ -1093,11 +1093,18 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                         for (int ch = 0; ch < 2; ++ch)
                             if ((int) n < want)
                                 borrowBuf_.clear(ch, (int) n, want - (int) n);
+                        borrowConsumePeakIn_ = borrowBuf_.getMagnitude(0, 0, want);   // BUILD E diagnostic
                         juce::MidiBuffer noMidi;
                         // The whole borrowed chain, in order, on the dry stream.
                         juce::AudioBuffer<float> view(borrowBuf_.getArrayOfWritePointers(),
                                                       2, 0, want);
                         borrowHost_->process(view, noMidi);
+                        if (++borrowConsumeDiagDivider_ >= 94)   // BUILD E diagnostic, 1 Hz: what the ring gave and what the rack returned
+                        {
+                            borrowConsumeDiagDivider_ = 0;
+                            EchoJay_NSLog(("EJCtx(ring): consumed " + juce::String((int) n) + "/" + juce::String(want)
+                                           + " peak-in=" + juce::String(borrowConsumePeakIn_, 3) + " peak-after-rack=" + juce::String(borrowBuf_.getMagnitude(0, 0, want), 3)).toRawUTF8());
+                        }
                     }
                     ls.lock.exit();
                     continue;
@@ -1274,6 +1281,19 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             juce::AudioBuffer<float> inj(borrowBuf_.getArrayOfWritePointers(),
                                          2, 0, nS);
             if (have) alignPre_.process(inj, std::max(0, padKey));
+            // BUILD E diagnostic (1 Hz, system log): the injection path's terms, so a silent
+            // injection is read, not inferred. Rate-limited on the audio thread (a counter).
+            if (++borrowInjDiagDivider_ >= 94)
+            {
+                borrowInjDiagDivider_ = 0;
+                const float injPeak = have ? inj.getMagnitude(0, 0, nS) : -1.0f;
+                EchoJay_NSLog(("EJCtx(inj): ctxNow=" + juce::String((int) ctxNow) + " injPad=" + juce::String(injPad)
+                               + " padKey=" + juce::String(padKey) + " muteReady=" + juce::String((int) muteReady)
+                               + " soloSup=" + juce::String((int) soloSup) + " have=" + juce::String((int) have)
+                               + " mix=" + juce::String(borrowCtxMix_.getCurrentValue(), 3)
+                               + " injPeak=" + juce::String(injPeak, 3)
+                               + " ringAge=" + juce::String(borrowRingAgeMeasured_.load(std::memory_order_relaxed))).toRawUTF8());
+            }
             for (int i = 0; i < nS; ++i)
             {
                 const float g = borrowCtxMix_.getNextValue();
@@ -1289,7 +1309,14 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             borrowCtxMix_.skip(buffer.getNumSamples());
     }
     if (borrowThrough)
-        applyBorrowSoloMixOn(buffer, fallbackSolo);
+        // BUILD E (9 Sep 2026 ruling): NO SILENT SOLO ON RACK SELECTION. The crossfade of
+        // the main's whole output to the borrowed ring (applyBorrowSoloMixOn) is kept for a
+        // FUTURE EXPLICIT AUDITION CONTROL and is reachable only from an explicit user act
+        // that does not exist yet. It is never the quiet default: a refused in-context now
+        // leaves the passthrough untouched and shows a held state instead. fallbackSolo is
+        // still computed (the lease and banners read it) but drives no audio.
+        applyBorrowSoloMixOn(buffer, false);
+        (void) fallbackSolo;
 
     // CHAIN: pass audio through hosted plugin (graph handles passthrough if none loaded)
     {
@@ -2169,6 +2196,19 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
         const bool budget  = borrowBudgetActive_.load(std::memory_order_relaxed);
         const bool ok      = inContextCapable && padOk && budget;
         borrowInContextOk_.store(ok, std::memory_order_relaxed);
+        // BUILD E: the held states are STATUS, not error. The budget term clears itself at
+        // the next STOPPED block (Build B re-evaluates); the others are real limitations.
+        if (! ok)
+        {
+            const juce::String nm = resolveLinkDisplayName(uid);
+            if (inContextCapable && padOk && ! budget)
+            { borrowBannerIsStatus_ = true;  borrowStickyBanner_ = "Waiting for the mix budget - " + nm + " blends at the next stop."; }
+            else if (! inContextCapable)
+            { borrowBannerIsStatus_ = false; borrowStickyBanner_ = "Cannot blend " + nm + " in context - its EchoJay Link predates in-context. Solo this rack to hear the edit."; }
+            else
+            { borrowBannerIsStatus_ = false; borrowStickyBanner_ = "Cannot blend " + nm + " in context - its rack needs more look-ahead than the mix budget. Solo this rack to hear the edit."; }
+        }
+        else { borrowBannerIsStatus_ = false; }
         // 8 Sep 2026 ruling (standing rule): a decision that can refuse logs its
         // refusal and the false term. Each term, then the verdict.
         EchoJay_NSLog(("EJCtx: engage decision uid=" + uid + " capable=" + (inContextCapable ? "Y" : "N")
@@ -2577,6 +2617,7 @@ int EchoJayProcessor::sendLinkCtrlMute(const juce::String& uid, bool on)
         return 0;
     }
     solo_.pendingSeq[uid] = seq;
+    solo_.cmdRecord[uid] = SoloBroadcast::LastCmd { on, seq, juce::Time::currentTimeMillis() };   // the record, at the moment of sending
     EchoJay_NSLog(("EJSolo: broadcast muteUser=" + juce::String((int) on) + " uid=" + uid
                    + " seq=" + juce::String(seq)).toRawUTF8());
     return seq;
@@ -2591,14 +2632,22 @@ void EchoJayProcessor::setLinkSolo(const juce::String& uid, bool on)
         if (solo_.soloSet.contains(uid)) return;
         if (solo_.soloSet.isEmpty())
         {
-            // First press: remember every hand mute so release restores EXACTLY what we changed.
+            // First press: a hand mute is a sidecar mute on a Link THIS MAIN HAS NEVER COMMANDED.
+            // For every Link it has commanded, its own record is the truth (BUILD E, E2): the
+            // sidecar pass lags our own sends by up to a second and must not classify them.
             solo_.userMutedBefore.clear();
             for (const auto& kv : muteSoloSnaps_)
-                if (kv.second.muteUser) solo_.userMutedBefore.addIfNotAlreadyThere(kv.first);
+                if (kv.second.muteUser && solo_.cmdRecord.find(kv.first) == solo_.cmdRecord.end())
+                    solo_.userMutedBefore.addIfNotAlreadyThere(kv.first);
         }
         solo_.soloSet.add(uid);
         solo_.pressMs = t0;
-        if (solo_.mutedByUs.contains(uid)) { sendLinkCtrlMute(uid, false); solo_.mutedByUs.removeString(uid); }
+        // CLAUSE 3 (BUILD E, E1): X is EXPLICITLY un-muted on every press, whatever muted it - a
+        // previous main, a session mute, a stale snapshot. Omitting X from the mute set is not
+        // un-muting X.
+        sendLinkCtrlMute(uid, false);
+        solo_.mutedByUs.removeString(uid);
+        solo_.userMutedBefore.removeString(uid);
         // SOLO DOMINATES BORROW: a foreign solo releases the edit session (edits kept).
         if (borrowActive() && borrowSession_.uid != uid)
         {
@@ -2726,7 +2775,7 @@ void EchoJayProcessor::commitBorrowBudget(const char* where)
         const int  lat   = borrowChainLat_.load(std::memory_order_relaxed);
         const bool padOk = alignPad(lat) >= 0;
         const bool ok    = borrowCtxCapable_ && padOk;
-        if (ok) borrowInContextOk_.store(true, std::memory_order_relaxed);
+        if (ok) { borrowInContextOk_.store(true, std::memory_order_relaxed); borrowBannerIsStatus_ = true; borrowStickyBanner_ = "Blending " + resolveLinkDisplayName(borrowSession_.uid) + " in context."; }
         EchoJay_NSLog(((juce::String) "EJCtx: budget committed ON with a live session - re-evaluated: capable="
                        + (borrowCtxCapable_ ? "Y" : "N") + " pad=" + (padOk ? "Y" : "N") + " (chain latency "
                        + juce::String(lat) + ") -> in-context " + (ok ? "RESTORED" : "still REFUSED")

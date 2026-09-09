@@ -1,0 +1,81 @@
+link_capacity_test.cpp: isolated state root /tmp/echojay-iso.0wBO8M
+2026-09-09 11:35:26.722 cap_link3[13782:3864079] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-09 11:35:26.725 cap_link3[13782:3864079] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-09 11:35:26.729 cap_link3[13782:3864079] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-09 11:35:26.762 cap_link3[13782:3864079] EJLinkState: post-init linkOn=1 name="A" uid=df4c3196c1
+2026-09-09 11:35:26.762 cap_link3[13782:3864079] EJLinkMeter: "A" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-09 11:35:26.762 cap_link3[13782:3864079] EJLinkMeter: "A" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-09 11:35:26.762 cap_link3[13782:3864079] EJLinkState: post-init linkOn=1 name="B" uid=3838a5c023
+2026-09-09 11:35:26.762 cap_link3[13782:3864079] EJLinkMeter: "B" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-09 11:35:26.762 cap_link3[13782:3864079] EJLinkMeter: "B" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-09 11:35:26.762 cap_link3[13782:3864079] EJLinkState: post-init linkOn=1 name="C" uid=f5810aeb52
+2026-09-09 11:35:26.762 cap_link3[13782:3864079] EJLinkMeter: "C" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-09 11:35:26.762 cap_link3[13782:3864079] EJLinkMeter: "C" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-09 11:35:26.800 cap_link3[13782:3864079] EJLinkMeter: "C" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-09 11:35:26.801 cap_link3[13782:3864079] EJLinkMeter: "B" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-09 11:35:26.801 cap_link3[13782:3864079] EJLinkMeter: "A" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-09 11:35:26.843 cap_link3[13782:3864079] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-09 11:35:26.843 cap_link3[13782:3864079] EJLinkMeter: "A" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-09 11:35:26.843 cap_link3[13782:3864079] EJLinkMeter: "B" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-09 11:35:26.844 cap_link3[13782:3864079] EJLinkMeter: "C" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  warm-up 0: pump(1000) took 1002 ms, 6 blocks took 0 ms
+2026-09-09 11:35:27.733 cap_link3[13782:3864079] EJLinkMeter: "C" audio resumed (blocks 2)
+2026-09-09 11:35:27.733 cap_link3[13782:3864079] EJLinkRing: position stamps armed
+2026-09-09 11:35:27.733 cap_link3[13782:3864079] EJLinkMeter: "B" audio resumed (blocks 2)
+2026-09-09 11:35:27.733 cap_link3[13782:3864079] EJLinkRing: position stamps armed
+2026-09-09 11:35:27.733 cap_link3[13782:3864079] EJLinkMeter: "A" audio resumed (blocks 2)
+2026-09-09 11:35:27.733 cap_link3[13782:3864079] EJLinkRing: position stamps armed
+2026-09-09 11:35:27.888 cap_link3[13782:3864079] EJLinkKey: passive pass armed (8 s window)
+2026-09-09 11:35:27.888 cap_link3[13782:3864079] EJLinkKey: passive pass armed (8 s window)
+2026-09-09 11:35:27.888 cap_link3[13782:3864079] EJLinkKey: passive pass armed (8 s window)
+  warm-up 1: pump(1000) took 1000 ms, 6 blocks took 0 ms
+  warm-up 2: pump(1000) took 1000 ms, 6 blocks took 0 ms
+2026-09-09 11:35:30.616 cap_link3[13782:3864079] EJLinkMeter: "C" #100 mom=-6.7 rms=-18.2/-18.2 blocks=6 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -15.2]
+2026-09-09 11:35:30.616 cap_link3[13782:3864079] EJLinkMeter: "B" #100 mom=-6.7 rms=-18.2/-18.2 blocks=6 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -15.2]
+2026-09-09 11:35:30.616 cap_link3[13782:3864079] EJLinkMeter: "A" #100 mom=-6.7 rms=-18.2/-18.2 blocks=6 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -15.2]
+  warm-up 3: pump(1000) took 1001 ms, 6 blocks took 0 ms
+  ready: A df4c3196c1 B 3838a5c023 C f5810aeb52
+2026-09-09 11:35:30.920 cap_link3[13782:3864079] EJLinkState: remote set muteUser=1 (seq 1788950132)
+2026-09-09 11:35:30.921 cap_link3[13782:3864079] EJLinkState: remote set muteUser=1 (seq 1788950131)
+2026-09-09 11:35:30.921 cap_link3[13782:3864079] EJLinkState: remote set muteUser=0 (seq 1788950130)
+2026-09-09 11:35:34.526 cap_link3[13782:3864079] EJLinkMeter: "C" #200 mom=-6.8 rms=-9.1/-9.1 blocks=1239 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:35:34.527 cap_link3[13782:3864079] EJLinkMeter: "B" #200 mom=-6.8 rms=-9.1/-9.1 blocks=1239 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:35:34.527 cap_link3[13782:3864079] EJLinkMeter: "A" #200 mom=-6.8 rms=-9.1/-9.1 blocks=1239 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:35:36.078 cap_link3[13782:3864079] EJLinkState: remote set muteUser=1 (seq 1788950137)
+2026-09-09 11:35:36.079 cap_link3[13782:3864079] EJLinkState: remote set muteUser=0 (seq 1788950135)
+2026-09-09 11:35:36.080 cap_link3[13782:3864079] EJLinkState: remote set muteUser=1 (seq 1788950136)
+2026-09-09 11:35:36.546 cap_link3[13782:3864079] EJLinkState: remote set muteUser=0 (seq 1788950139)
+2026-09-09 11:35:36.547 cap_link3[13782:3864079] EJLinkState: remote set muteUser=0 (seq 1788950138)
+2026-09-09 11:35:38.447 cap_link3[13782:3864079] EJLinkMeter: "C" #300 mom=-6.8 rms=-9.1/-9.1 blocks=2507 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:35:38.448 cap_link3[13782:3864079] EJLinkMeter: "B" #300 mom=-6.8 rms=-9.1/-9.1 blocks=2507 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:35:38.448 cap_link3[13782:3864079] EJLinkMeter: "A" #300 mom=-6.8 rms=-9.1/-9.1 blocks=2507 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:35:42.415 cap_link3[13782:3864079] EJLinkMeter: "C" #400 mom=-6.8 rms=-9.1/-9.1 blocks=3752 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:35:42.415 cap_link3[13782:3864079] EJLinkMeter: "B" #400 mom=-6.8 rms=-9.1/-9.1 blocks=3752 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:35:42.416 cap_link3[13782:3864079] EJLinkMeter: "A" #400 mom=-6.8 rms=-9.1/-9.1 blocks=3752 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:35:46.337 cap_link3[13782:3864079] EJLinkMeter: "C" #500 mom=-6.8 rms=-9.1/-9.1 blocks=4958 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:35:46.337 cap_link3[13782:3864079] EJLinkMeter: "B" #500 mom=-6.8 rms=-9.1/-9.1 blocks=4958 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:35:46.337 cap_link3[13782:3864079] EJLinkMeter: "A" #500 mom=-6.8 rms=-9.1/-9.1 blocks=4958 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:35:50.291 cap_link3[13782:3864079] EJLinkMeter: "C" #600 mom=-6.8 rms=-9.1/-9.1 blocks=6206 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:35:50.291 cap_link3[13782:3864079] EJLinkMeter: "B" #600 mom=-6.8 rms=-9.1/-9.1 blocks=6206 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:35:50.291 cap_link3[13782:3864079] EJLinkMeter: "A" #600 mom=-6.8 rms=-9.1/-9.1 blocks=6206 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:35:54.235 cap_link3[13782:3864079] EJLinkMeter: "C" #700 mom=-6.8 rms=-9.1/-9.1 blocks=7456 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:35:54.235 cap_link3[13782:3864079] EJLinkMeter: "B" #700 mom=-6.8 rms=-9.1/-9.1 blocks=7456 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:35:54.235 cap_link3[13782:3864079] EJLinkMeter: "A" #700 mom=-6.8 rms=-9.1/-9.1 blocks=7456 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:35:58.168 cap_link3[13782:3864079] EJLinkMeter: "C" #800 mom=-6.8 rms=-9.1/-9.1 blocks=8699 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:35:58.168 cap_link3[13782:3864079] EJLinkMeter: "B" #800 mom=-6.8 rms=-9.1/-9.1 blocks=8699 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:35:58.168 cap_link3[13782:3864079] EJLinkMeter: "A" #800 mom=-6.8 rms=-9.1/-9.1 blocks=8699 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:35:58.564 cap_link3[13782:3864079] EJLinkKey: passive pass armed (8 s window)
+2026-09-09 11:35:58.564 cap_link3[13782:3864079] EJLinkKey: passive pass armed (8 s window)
+2026-09-09 11:35:58.564 cap_link3[13782:3864079] EJLinkKey: passive pass armed (8 s window)
+2026-09-09 11:36:02.129 cap_link3[13782:3864079] EJLinkMeter: "C" #900 mom=-6.8 rms=-9.1/-9.1 blocks=9935 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:36:02.129 cap_link3[13782:3864079] EJLinkMeter: "B" #900 mom=-6.8 rms=-9.1/-9.1 blocks=9935 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:36:02.129 cap_link3[13782:3864079] EJLinkMeter: "A" #900 mom=-6.8 rms=-9.1/-9.1 blocks=9935 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:36:06.111 cap_link3[13782:3864079] EJLinkMeter: "C" #1000 mom=-6.8 rms=-9.1/-9.1 blocks=11181 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:36:06.112 cap_link3[13782:3864079] EJLinkMeter: "B" #1000 mom=-6.8 rms=-9.1/-9.1 blocks=11181 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:36:06.112 cap_link3[13782:3864079] EJLinkMeter: "A" #1000 mom=-6.8 rms=-9.1/-9.1 blocks=11181 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:36:09.841 cap_link3[13782:3864079] EJLinkMeter: "C" #1100 mom=-6.8 rms=-9.1/-9.1 blocks=12379 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:36:09.841 cap_link3[13782:3864079] EJLinkMeter: "B" #1100 mom=-6.8 rms=-9.1/-9.1 blocks=12379 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:36:09.841 cap_link3[13782:3864079] EJLinkMeter: "A" #1100 mom=-6.8 rms=-9.1/-9.1 blocks=12379 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:36:13.488 cap_link3[13782:3864079] EJLinkMeter: "C" #1200 mom=-6.8 rms=-9.1/-9.1 blocks=13537 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:36:13.488 cap_link3[13782:3864079] EJLinkMeter: "B" #1200 mom=-6.8 rms=-9.1/-9.1 blocks=13537 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-09 11:36:13.488 cap_link3[13782:3864079] EJLinkMeter: "A" #1200 mom=-6.8 rms=-9.1/-9.1 blocks=13537 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]

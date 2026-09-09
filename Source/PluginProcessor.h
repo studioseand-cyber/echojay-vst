@@ -581,6 +581,10 @@ public:
     // Session-scoped surfaces, rendered by the panel until superseded —
     // banners must not be losable by navigating away (§5a-R honesty rule).
     juce::String borrowStickyBanner_;
+    bool borrowBannerIsStatus_ = false;
+    int  borrowInjDiagDivider_ = 0;
+    int   borrowConsumeDiagDivider_ = 0;   // 1 Hz diagnostic of the ring consume (audio thread counter)
+    float borrowConsumePeakIn_ = 0.0f;         // 1 Hz diagnostic of the injection terms (audio thread counter)   // BUILD E: a held/waiting state is STATUS (calm styling), not an error
     std::map<juce::String, juce::String> unwrittenEditNote_;  // uid -> note
     // A deselect-apply FAILED and ruling 3 kept the session engaged: the
     // hold is now a pending edit, not a selection. Rides the lease
@@ -803,6 +807,13 @@ public:
         juce::StringArray mutedByUs;        // uids this main muted for the solo
         juce::StringArray userMutedBefore;  // hand mutes seen at the first press: never touched
         std::map<juce::String, int> pendingSeq;   // addr -> seq awaiting the Link's ack
+        // BUILD E (9 Sep 2026): THE AUTHORITATIVE RECORD. Every command this main sent, per uid,
+        // written at the moment of sending. The main consults THIS, never the sidecar pass,
+        // for anything it has ever commanded - the fourth instance today of "authoritative
+        // state inferred from a laggy secondary source" was this main rediscovering its own
+        // 39 mutes 0.7 s later as hand mutes.
+        struct LastCmd { bool mute = false; int seq = 0; juce::int64 ms = 0; };
+        std::map<juce::String, LastCmd> cmdRecord;
         juce::int64 pressMs = 0;
     };
     enum class SoloLamp { off, pending, solid };

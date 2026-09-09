@@ -1,0 +1,24 @@
+solo_legs_test.cpp: isolated state root /tmp/echojay-iso.2i7MKW
+2026-09-09 11:35:14.633 main_d5[13730:3863568] EJNet: base=www.echojay.ai devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-09-09 11:35:14.634 main_d5[13730:3863562] EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+  main link dir: '/tmp/echojay-iso.2i7MKW/Library/Application Support/EchoJay/link/'
+  waiting for /tmp/echojay-iso.2i7MKW/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=0 s
+2026-09-09 11:35:14.774 main_d5[13730:3863568] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+2026-09-09 11:35:15.643 main_d5[13730:3863562] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-09 11:35:16.652 main_d5[13730:3863562] EJCtx: borrow budget WANTED ON - listed 3 uid(s): a counted row exists; pending until prepareToPlay or a STOPPED block
+  waiting for /tmp/echojay-iso.2i7MKW/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=2 s
+2026-09-09 11:35:17.749 main_d5[13730:3863562] EJSolo: broadcast muteUser=1 uid=662cff7398 seq=1788950117
+2026-09-09 11:35:17.749 main_d5[13730:3863562] EJSolo: broadcast muteUser=1 uid=29f0c8e57a seq=1788950118
+2026-09-09 11:35:17.749 main_d5[13730:3863562] EJSolo: solo ON uid=3538ed2430 set=1 muted 2 Link(s) in 0 ms; hand-muted kept: 0
+2026-09-09 11:35:18.678 main_d5[13730:3863562] EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+2026-09-09 11:35:19.622 main_d5[13730:3863562] EJCtx: borrow budget WANTED ON - listed 3 uid(s): a counted row exists; pending until prepareToPlay or a STOPPED block
+2026-09-09 11:35:22.847 main_d5[13730:3863562] EJSolo: broadcast muteUser=1 uid=3538ed2430 seq=1788950122
+2026-09-09 11:35:22.848 main_d5[13730:3863562] EJSolo: broadcast muteUser=1 uid=29f0c8e57a seq=1788950123
+2026-09-09 11:35:22.848 main_d5[13730:3863562] EJSolo: solo ON uid=662cff7398 set=1 muted 2 Link(s) in 1 ms; hand-muted kept: 0
+2026-09-09 11:35:23.356 main_d5[13730:3863562] EJSolo: broadcast muteUser=0 uid=3538ed2430 seq=1788950124
+2026-09-09 11:35:23.357 main_d5[13730:3863562] EJSolo: broadcast muteUser=0 uid=29f0c8e57a seq=1788950125
+2026-09-09 11:35:23.357 main_d5[13730:3863562] EJSolo: solo OFF uid=662cff7398 (set empty) -> restored 2 Link(s) in 1 ms
+  main lists A, B, C
+  B silent under the dead main's mute: rms 0.000; after main #2 solos B: B 0.000 (STILL SILENT) A 0.000 C 0.000
+CLAUSE3: B explicitly un-muted -> FAIL
+exit=1

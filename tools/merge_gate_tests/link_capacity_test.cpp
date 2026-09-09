@@ -225,6 +225,14 @@ static int soloFabric()
 //   solo_t1.txt      <- main: wall-clock ms just before the release
 //   solo_state.txt   -> us, every 20 ms: A/B/C muteWanted + rms, for the borrow leg's assertions
 // Verdict here: B (a non-soloed Link) must be MUTED within 100 ms of t0 and AUDIBLE again within 100 ms of t1.
+// A wall-clock playhead on an epoch shared through the state root: both processes report the same host position
+// for the same instant, so the Link's ring stamps line up with the main's position the way one host callback does.
+struct EpochPlayHead : public juce::AudioPlayHead
+{
+    double epochMs = 0; bool playing = true;
+    juce::Optional<PositionInfo> getPosition() const override
+    { PositionInfo q; q.setIsPlaying (playing); const double s = (juce::Time::getMillisecondCounterHiRes() - epochMs) * 48.0; q.setTimeInSamples ((juce::int64) s); q.setTimeInSeconds (s / 48000.0); return q; }
+};
 static int soloFabric2()
 {
     int err = 0; const auto dir = LinkShm::resolveDir (err);
@@ -232,6 +240,9 @@ static int soloFabric2()
     if (reg == nullptr) { std::printf ("registry not mappable (%d)\n", rerr); return 99; }
     auto mk = [&](const char* nm) { auto l = std::make_unique<LinkProcessor>(); l->linkName = nm; l->markTypedNameAuthoritative(); l->prepareToPlay (48000.0, 512); l->updateShmState(); return l; };
     auto A = mk ("A"), B = mk ("B"), C = mk ("C");
+    EpochPlayHead eph; eph.epochMs = juce::Time::getMillisecondCounterHiRes();
+    juce::File (dir + "solo_epoch.txt").replaceWithText (juce::String (eph.epochMs, 3));   // the main reads the same epoch
+    A->setPlayHead (&eph); B->setPlayHead (&eph); C->setPlayHead (&eph);
     for (int t = 0; t < 4; ++t)
     {
         const double a = juce::Time::getMillisecondCounterHiRes(); pumpMs (1000);
@@ -240,20 +251,22 @@ static int soloFabric2()
     }
     juce::File (dir + "solo_ready.txt").replaceWithText (A->getInstanceUidForTest() + "\n" + B->getInstanceUidForTest() + "\n" + C->getInstanceUidForTest() + "\n");
     std::printf ("  ready: A %s B %s C %s\n", A->getInstanceUidForTest().toRawUTF8(), B->getInstanceUidForTest().toRawUTF8(), C->getInstanceUidForTest().toRawUTF8());
-    auto stamp = [&]{ juce::File (dir + "solo_state.txt").replaceWithText (juce::String ((int) A->linkMuteWanted()) + " " + juce::String ((int) B->linkMuteWanted()) + " " + juce::String ((int) C->linkMuteWanted())); };
-    auto waitFile = [&](const char* name, juce::int64& tOut, int maxMs) { const double end = juce::Time::getMillisecondCounterHiRes() + maxMs; while (juce::Time::getMillisecondCounterHiRes() < end) { juce::File f (dir + name); if (f.existsAsFile()) { tOut = f.loadFileAsString().trim().getLargeIntValue(); return true; } pumpMs (2); rmsOfBlock (*A, 1); rmsOfBlock (*B, 1); rmsOfBlock (*C, 1); stamp(); } return false; };
+    float rmsA = 0, rmsB = 0, rmsC = 0;
+    auto stamp = [&]{ juce::File (dir + "solo_state.txt").replaceWithText (juce::String ((int) A->linkMuteWanted()) + " " + juce::String ((int) B->linkMuteWanted()) + " " + juce::String ((int) C->linkMuteWanted())
+                                                                              + " " + juce::String (rmsA, 3) + " " + juce::String (rmsB, 3) + " " + juce::String (rmsC, 3)); };
+    auto waitFile = [&](const char* name, juce::int64& tOut, int maxMs) { const double end = juce::Time::getMillisecondCounterHiRes() + maxMs; while (juce::Time::getMillisecondCounterHiRes() < end) { juce::File f (dir + name); if (f.existsAsFile()) { tOut = f.loadFileAsString().trim().getLargeIntValue(); return true; } pumpMs (2); rmsA = rmsOfBlock (*A, 1); rmsB = rmsOfBlock (*B, 1); rmsC = rmsOfBlock (*C, 1); stamp(); } return false; };
     juce::int64 t0 = 0, t1 = 0;
     if (! waitFile ("solo_t0.txt", t0, 90000)) { std::printf ("SOLO2: no press arrived\n"); return 2; }
     // measure: time from t0 until B wants mute and its output is silent
     double tMute = -1, tSilent = -1; float bRms = 1;
-    for (int i = 0; i < 3000; ++i) { pumpMs (2); rmsOfBlock (*A, 1); rmsOfBlock (*C, 1); bRms = rmsOfBlock (*B, 1); stamp();
+    for (int i = 0; i < 3000; ++i) { pumpMs (2); rmsA = rmsOfBlock (*A, 1); rmsC = rmsOfBlock (*C, 1); bRms = rmsB = rmsOfBlock (*B, 1); stamp();
         if (tMute < 0 && B->linkMuteWanted()) tMute = (double) (juce::Time::currentTimeMillis() - t0);
         if (tSilent < 0 && bRms < 0.01f) tSilent = (double) (juce::Time::currentTimeMillis() - t0);
         if (tMute >= 0 && tSilent >= 0) break; }
     std::printf ("  B muteWanted %.0f ms after the press; B silent (rms<0.01) %.0f ms after; A muteWanted=%d C muteWanted=%d\n", tMute, tSilent, (int) A->linkMuteWanted(), (int) C->linkMuteWanted());
     if (! waitFile ("solo_t1.txt", t1, 90000)) { std::printf ("SOLO2: no release arrived\n"); return 2; }
     double tUn = -1, tAud = -1;
-    for (int i = 0; i < 3000; ++i) { pumpMs (2); rmsOfBlock (*A, 1); rmsOfBlock (*C, 1); bRms = rmsOfBlock (*B, 1); stamp();
+    for (int i = 0; i < 3000; ++i) { pumpMs (2); rmsA = rmsOfBlock (*A, 1); rmsC = rmsOfBlock (*C, 1); bRms = rmsB = rmsOfBlock (*B, 1); stamp();
         if (tUn < 0 && ! B->linkMuteWanted()) tUn = (double) (juce::Time::currentTimeMillis() - t1);
         if (tAud < 0 && bRms > 0.3f) tAud = (double) (juce::Time::currentTimeMillis() - t1);
         if (tUn >= 0 && tAud >= 0) break; }
@@ -261,7 +274,16 @@ static int soloFabric2()
     const bool ok = tMute >= 0 && tMute <= 100 && tSilent >= 0 && tSilent <= 150 && tUn >= 0 && tUn <= 100 && tAud >= 0;
     const bool borrowMode = juce::File (dir + "solo_mode.txt").existsAsFile();
     if (borrowMode)
-    {   // solo-dominates-borrow: B is the SOLOED Link here; the assertion is that it stays AUDIBLE (at least one channel audible)
+    {   // keep rendering and stamping until the main says it is done (rendered-audio legs read the state file throughout)
+        // REAL-TIME PACED (9 Sep 2026): the host calls each Link once per 512 samples of wall time; a harness that renders
+        // faster starves or floods the ring the main injects from. One block per Link every 10.667 ms.
+        double nextMs = juce::Time::getMillisecondCounterHiRes();
+        for (int i = 0; i < 30000 && ! juce::File (dir + "solo_done.txt").existsAsFile(); ++i)
+        {
+            pumpMs (1);
+            const double now = juce::Time::getMillisecondCounterHiRes();
+            if (now >= nextMs) { rmsA = rmsOfBlock (*A, 1); rmsB = rmsOfBlock (*B, 1); rmsC = rmsOfBlock (*C, 1); stamp(); nextMs += 512000.0 / 48000.0; if (now - nextMs > 200) nextMs = now; }
+        }   // solo-dominates-borrow: B is the SOLOED Link here; the assertion is that it stays AUDIBLE (at least one channel audible)
         const bool bAud = ! B->linkMuteWanted() && bRms > 0.3f;
         std::printf ("SOLO2 (borrow mode): B audible while soloed = %d (rms %.3f) -> %s\n", (int) bAud, bRms, bAud ? "PASS" : "FAIL");
         juce::File (dir + "solo_done.txt").replaceWithText ("1"); pumpMs (500); drain(); A.reset(); B.reset(); C.reset(); drain();
