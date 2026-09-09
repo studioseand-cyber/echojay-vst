@@ -790,49 +790,39 @@ public:
     void serviceCaptureStop();
     std::atomic<bool> captureStopRequested_ { false };
 
-    // ---- SOLO AS A BROADCAST (8 Sep 2026 ruling; V2-only, no Link change) ----
-    // The main AUTHORS the solo set. On a press every non-soloed live Link is
-    // muted on the existing ctrl-cmd path ("muteUser", the field the installed
-    // Link v8 already applies in ~48 ms); on release exactly the Links this main
-    // muted are restored; a hand mute observed before the first press is never
-    // touched. Reconciled every registry pass (a Link that appears mid-solo is
-    // muted on the next pass). soloOn is NOT sent to the Link any more: its own
-    // fabric scan would keep the others muted for up to 2.4 s after an unsolo.
-    // SOLO DOMINATES BORROW: a solo on a Link that is not the edited rack
-    // releases the borrow (edits kept) so no path through solo can silence
-    // every channel.
-    struct SoloBroadcast
-    {
-        juce::StringArray soloSet;          // uids soloed by this main
-        juce::StringArray mutedByUs;        // uids this main muted for the solo
-        juce::StringArray userMutedBefore;  // hand mutes seen at the first press: never touched
-        std::map<juce::String, int> pendingSeq;   // addr -> seq awaiting the Link's ack
-        // BUILD E (9 Sep 2026): THE AUTHORITATIVE RECORD. Every command this main sent, per uid,
-        // written at the moment of sending. The main consults THIS, never the sidecar pass,
-        // for anything it has ever commanded - the fourth instance today of "authoritative
-        // state inferred from a laggy secondary source" was this main rediscovering its own
-        // 39 mutes 0.7 s later as hand mutes.
-        struct LastCmd { bool mute = false; int seq = 0; juce::int64 ms = 0; };
-        std::map<juce::String, LastCmd> cmdRecord;
-        juce::int64 pressMs = 0;
-    };
-    enum class SoloLamp { off, pending, solid };
-    void     setLinkSolo(const juce::String& uid, bool on);      // the press (message thread)
-    bool     linkSoloOn(const juce::String& uid) const { return solo_.soloSet.contains(uid); }
-    bool     soloMutedByUs(const juce::String& uid) const { return solo_.mutedByUs.contains(uid); }
-    bool     soloBroadcastActive() const { return ! solo_.soloSet.isEmpty(); }
-    SoloLamp soloLampState(const juce::String& uid) const;
-    // BUILD D (8 Sep 2026 ruling): ONE AUTHOR for every solo indicator. The Link tab's S lamp,
-    // the rack panel's S lamp and the banner all resolve through these two, so a
-    // main-authored solo (which never sets the Link's sidecar flag) shows everywhere.
-    bool         soloIndicatorOn(const juce::String& uid) const;   // sidecar flag OR the local solo set
-    juce::String firstSoloName() const;                            // the banner's name; empty when nothing is soloed
-    void     pollSoloAcks();                                     // consumes ctrl-ack files for pending sends
-    int      soloPendingCount() const { return (int) solo_.pendingSeq.size(); }
-    SoloBroadcast solo_;
-private:
-    int  sendLinkCtrlMute(const juce::String& uid, bool on);     // one ctrl-cmd file, returns its seq
-    void reconcileSoloBroadcast();                               // each registry pass
+    // ---- ADDITIVE SOLO (9 Sep 2026 ruling; V2-only) ----
+    // On solo of Link X the main crossfades ITS OWN OUTPUT to X's ring. No Link is muted,
+    // no lease is taken (the ring is written whenever the Link is on, and the main
+    // already drains every ring every block), no alignment (nothing is blended: the
+    // output is replaced), no PDC event. Single solo, last press wins (a set spanning a
+    // feed relation would double-count and the main cannot detect one - a deliberate
+    // amendment to spec 6.1's multi-solo allowance; sibling multi-solo waits for topology).
+    // The crossfade sits BEFORE the main's own chain - intentional: the soloed Link is
+    // heard through the mix-bus processing. This is PRE-FADER LISTEN: X's ring is its
+    // insert-point signal, so fader and pan moves do not change what is heard - and the
+    // panel says so. THE GUARANTEE, exactly: the main's output is X. Complete only when
+    // the main is the last thing before the monitors; direct outs, hardware inserts and
+    // parallel monitor paths are outside it and not detectable from inside AAX.
+    // When X is the borrowed rack the crossfade uses the PROCESSED ring (borrowBuf_):
+    // spec 6.1 unchanged.
+    // This replaced the mute broadcast, its target enumeration, the reconcile pass, the
+    // authoritative mute record, the hand-mute snapshot and restore, the dead-main
+    // contract, the liveness dependency for targets, the poll floor, the pending lamp
+    // acks and solo-dominates-borrow: most of two days' work, deleted because the
+    // measurements that produced it showed the model was wrong. The deletion is the payoff.
+    void     setLinkSolo(const juce::String& uid, bool on);      // the press (message thread); on=true moves the solo to uid
+    bool     linkSoloOn(const juce::String& uid) const { return uid.isNotEmpty() && uid == soloUid_; }
+    bool     soloActive() const { return soloUid_.isNotEmpty(); }
+    juce::String soloUid() const { return soloUid_; }
+    bool     soloIndicatorOn(const juce::String& uid) const;   // ONE author for every solo indicator (sidecar flag OR the local solo)
+    juce::String firstSoloName() const;
+    bool     soloSourceIsBorrowedRack() const { return soloActive() && borrowActive() && soloUid_ == borrowSession_.uid; }
+    juce::String soloUid_;                                       // message thread writes, audio thread reads the atomics below
+    std::atomic<int>  soloRingSlot_ { -1 };                      // activeLinkSlots index of X's ring, -1 = none
+    std::atomic<bool> soloSeekPending_ { true };                 // seek X's ring to the cushion once at engage
+    juce::AudioBuffer<float> soloBuf_;                           // X's ring for this block (audio thread only)
+    juce::AudioBuffer<float> borrowProcessed_;                   // the borrowed rack's processed ring, copied before the injection alignment touches borrowBuf_
+    std::atomic<float> soloBufPeak_ { 0.0f };                    // diagnostic / leg: peak of what was consumed this block
 public:
     void resetCapture();
     float getCaptureDuration() const;

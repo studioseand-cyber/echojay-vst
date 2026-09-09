@@ -1,0 +1,44 @@
+solo_legs_test.cpp: isolated state root /tmp/echojay-iso.Q228ZH
+2026-09-09 14:57:25.602 main_e[83489:4331144] EJNet: base=www.echojay.ai devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-09-09 14:57:25.604 main_e[83489:4331116] EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+  main link dir: '/tmp/echojay-iso.Q228ZH/Library/Application Support/EchoJay/link/'
+  waiting for /tmp/echojay-iso.Q228ZH/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=0 s
+2026-09-09 14:57:25.768 main_e[83489:4331144] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+2026-09-09 14:57:26.610 main_e[83489:4331116] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-09 14:57:27.615 main_e[83489:4331116] EJCtx: borrow budget WANTED ON - listed 3 uid(s): a counted row exists; pending until prepareToPlay or a STOPPED block
+  waiting for /tmp/echojay-iso.Q228ZH/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=2 s
+2026-09-09 14:57:32.632 main_e[83489:4331116] EJKey: self passive pass armed (music-bus role)
+2026-09-09 14:57:32.694 main_e[83489:4331116] EJSolo: broadcast muteUser=0 uid=63831498c0 seq=1788962252
+2026-09-09 14:57:32.697 main_e[83489:4331116] EJSolo: broadcast muteUser=1 uid=69eb9f0d61 seq=1788962253
+2026-09-09 14:57:32.702 main_e[83489:4331116] EJSolo: broadcast muteUser=1 uid=eb539e7724 seq=1788962254
+2026-09-09 14:57:32.702 main_e[83489:4331116] EJSolo: solo ON uid=63831498c0 set=1 muted 2 Link(s) in 11 ms; hand-muted kept: 0
+2026-09-09 14:57:33.542 main_e[83489:4331116] EJSolo: broadcast muteUser=0 uid=eb539e7724 seq=1788962255
+2026-09-09 14:57:33.542 main_e[83489:4331116] EJSolo: solo ON uid=eb539e7724 set=2 muted 0 Link(s) in 1 ms; hand-muted kept: 0
+2026-09-09 14:57:34.397 main_e[83489:4331116] EJSolo: broadcast muteUser=1 uid=eb539e7724 seq=1788962256
+2026-09-09 14:57:34.397 main_e[83489:4331116] EJSolo: solo OFF uid=eb539e7724 (set still 1) -> muted it
+2026-09-09 14:57:35.251 main_e[83489:4331116] EJCtx: alignment budget ON (capable Link present) - PDC re-runs once
+2026-09-09 14:57:35.569 main_e[83489:4331116] EJCtx: engage decision uid=63831498c0 capable=Y pad=Y budget=Y -> in-context OK
+2026-09-09 14:57:35.570 main_e[83489:4331116] EJCtx(main): renew muteOut=Y ok=Y soloSup=N
+2026-09-09 14:57:35.571 main_e[83489:4331116] EJBorrow: engaged uid=63831498c0 ringSlot=0
+2026-09-09 14:57:36.571 main_e[83489:4331116] EJCtx(ring): consumed 512/512 peak-in=0.500 peak-after-rack=0.500
+2026-09-09 14:57:36.572 main_e[83489:4331116] EJCtx(inj): ctxNow=1 injPad=15225 padKey=15225 muteReady=0 soloSup=0 have=1 mix=0.000 injPeak=0.000 ringAge=1159
+2026-09-09 14:57:36.574 main_e[83489:4331116] EJAlign(main): ring age=1159 smp (target 1024)
+2026-09-09 14:57:36.575 main_e[83489:4331116] EJCtx(main): renew muteOut=Y ok=Y soloSup=N
+2026-09-09 14:57:37.571 main_e[83489:4331116] EJCtx(ring): consumed 512/512 peak-in=0.500 peak-after-rack=0.500
+2026-09-09 14:57:37.571 main_e[83489:4331116] EJCtx(inj): ctxNow=1 injPad=15332 padKey=15332 muteReady=0 soloSup=0 have=1 mix=0.000 injPeak=0.000 ringAge=1052
+2026-09-09 14:57:37.578 main_e[83489:4331116] EJAlign(main): ring age=1052 smp (target 1024)
+2026-09-09 14:57:37.578 main_e[83489:4331116] EJCtx(main): renew muteOut=Y ok=Y soloSup=N
+2026-09-09 14:57:37.916 main_e[83489:4331116] EJSolo: broadcast muteUser=0 uid=69eb9f0d61 seq=1788962257
+2026-09-09 14:57:37.917 main_e[83489:4331116] EJSolo: broadcast muteUser=0 uid=eb539e7724 seq=1788962258
+2026-09-09 14:57:37.917 main_e[83489:4331116] EJSolo: solo OFF uid=63831498c0 (set empty) -> restored 2 Link(s) in 2 ms
+2026-09-09 14:57:37.918 main_e[83489:4331116] EJBorrowPool: rack released, 0 instance(s) parked
+2026-09-09 14:57:37.918 main_e[83489:4331116] EJBorrow: released uid=63831498c0 (lease deleted; Link restores its own bypasses)
+  main lists A, B, C
+  no solo (the mix = the 1 kHz un-Linked channel) 220:0.001 330:0.001 1k:0.250  Links muted: 0
+  solo A                                     220:0.001 330:0.001 1k:0.250  Links muted: 2
+  solo Bus (last press wins: moved from A)   220:0.001 330:0.000 1k:0.250  Links muted: 1
+  solo off                                   220:0.001 330:0.001 1k:0.250  Links muted: 2
+  solo A while A is the borrowed rack        220:0.001 330:0.001 1k:0.250  Links muted: 3
+  source is the borrowed (processed) rack: 0
+ADDITIVE: baseline PASS  solo-A FAIL  solo-Bus FAIL  off FAIL  spec6.1 FAIL -> FAIL
+exit=1

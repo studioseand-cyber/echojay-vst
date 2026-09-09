@@ -1,0 +1,38 @@
+solo_legs_test.cpp: isolated state root /tmp/echojay-iso.9vFkJb
+2026-09-09 14:58:13.857 main_f[83698:4332422] EJNet: base=www.echojay.ai devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-09-09 14:58:13.859 main_f[83698:4332415] EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+  main link dir: '/tmp/echojay-iso.9vFkJb/Library/Application Support/EchoJay/link/'
+  waiting for /tmp/echojay-iso.9vFkJb/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=0 s
+2026-09-09 14:58:13.979 main_f[83698:4332422] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+2026-09-09 14:58:14.862 main_f[83698:4332415] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-09 14:58:15.871 main_f[83698:4332415] EJCtx: borrow budget WANTED ON - listed 40 uid(s): a counted row exists; pending until prepareToPlay or a STOPPED block
+  waiting for /tmp/echojay-iso.9vFkJb/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=2 s
+2026-09-09 14:58:20.841 main_f[83698:4332415] EJSolo: solo ON 6ddc52d276 -> output is 6ddc52d276 ring slot 0
+2026-09-09 14:58:20.876 main_f[83698:4332415] EJKey: self passive pass armed (music-bus role)
+2026-09-09 14:58:21.695 main_f[83698:4332415] EJSolo: solo ON bccf186c07 (moved from 6ddc52d276) -> output is bccf186c07 ring slot 2
+2026-09-09 14:58:22.547 main_f[83698:4332415] EJSolo: solo OFF bccf186c07 -> output is the mix
+2026-09-09 14:58:23.400 main_f[83698:4332415] EJCtx: alignment budget ON (capable Link present) - PDC re-runs once
+2026-09-09 14:58:23.723 main_f[83698:4332415] EJCtx: engage decision uid=6ddc52d276 capable=Y pad=Y budget=Y -> in-context OK
+2026-09-09 14:58:23.724 main_f[83698:4332415] EJCtx(main): renew muteOut=Y ok=Y soloSup=N
+2026-09-09 14:58:23.724 main_f[83698:4332415] EJBorrow: engaged uid=6ddc52d276 ringSlot=0
+2026-09-09 14:58:24.721 main_f[83698:4332415] EJCtx(ring): consumed 512/512 peak-in=0.500 peak-after-rack=0.500
+2026-09-09 14:58:24.721 main_f[83698:4332415] EJCtx(inj): ctxNow=1 injPad=14366 padKey=14366 muteReady=0 soloSup=0 have=1 mix=0.000 injPeak=0.000 ringAge=2018
+2026-09-09 14:58:24.725 main_f[83698:4332415] EJAlign(main): ring age=2018 smp (target 1024)
+2026-09-09 14:58:24.726 main_f[83698:4332415] EJCtx(main): renew muteOut=Y ok=Y soloSup=N
+2026-09-09 14:58:25.211 main_f[83698:4332415] EJSolo: solo ON 6ddc52d276 -> output is 6ddc52d276 ring slot 0 (the borrowed rack: processed ring, spec 6.1)
+2026-09-09 14:58:25.732 main_f[83698:4332415] EJCtx(ring): consumed 512/512 peak-in=0.500 peak-after-rack=0.500
+2026-09-09 14:58:25.732 main_f[83698:4332415] EJCtx(inj): ctxNow=1 injPad=15360 padKey=15360 muteReady=0 soloSup=0 have=1 mix=0.000 injPeak=0.000 ringAge=1024
+2026-09-09 14:58:25.747 main_f[83698:4332415] EJAlign(main): ring age=1024 smp (target 1024)
+2026-09-09 14:58:25.748 main_f[83698:4332415] EJCtx(main): renew muteOut=Y ok=Y soloSup=N
+2026-09-09 14:58:26.066 main_f[83698:4332415] EJSolo: solo OFF 6ddc52d276 -> output is the mix
+2026-09-09 14:58:26.066 main_f[83698:4332415] EJBorrowPool: rack released, 0 instance(s) parked
+2026-09-09 14:58:26.066 main_f[83698:4332415] EJBorrow: released uid=6ddc52d276 (lease deleted; Link restores its own bypasses)
+  main lists A, B, C
+  no solo (the mix = the 1 kHz un-Linked channel) 220:0.001 330:0.001 1k:0.250  Links muted: 0
+  solo A                                     220:0.498 330:0.016 1k:0.003  Links muted: 0
+  solo Bus (last press wins: moved from A)   220:0.499 330:0.497 1k:0.004  Links muted: 0
+  solo off                                   220:0.001 330:0.001 1k:0.250  Links muted: 0
+  solo A while A is the borrowed rack        220:0.292 330:0.011 1k:0.001  Links muted: 1
+  source is the borrowed (processed) rack: 1
+ADDITIVE: baseline PASS  solo-A PASS  solo-Bus PASS  off PASS  spec6.1 PASS -> PASS
+exit=0

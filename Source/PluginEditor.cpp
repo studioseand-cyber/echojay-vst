@@ -9787,11 +9787,9 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
             // Solo is main-authored now (8 Sep 2026): the S lamp reads the main's
             // solo set (pending until every muted Link has acked); a mute this main
             // imposed for the solo does not light M - that lamp stays the hand mute.
-            const bool sPending = processorRef.soloLampState(sg.addr) == EchoJayProcessor::SoloLamp::pending;
-            sOn = processorRef.soloIndicatorOn(sg.addr);        // Build D: one author for every solo indicator
-            if (processorRef.soloMutedByUs(sg.addr)) mOn = false;
+            sOn = processorRef.soloIndicatorOn(sg.addr);        // one author for every solo indicator; additive solo is local and immediate
             drawMsLamp(g, sg.mute, false, mOn, msCap);
-            drawMsLamp(g, sg.solo, true,  sOn, msCap, sPending);
+            drawMsLamp(g, sg.solo, true,  sOn, msCap, false);
         }
     }
 
@@ -19843,7 +19841,6 @@ int EchoJayEditor::measureChatContentHeight()
 void EchoJayEditor::timerCallback()
 {
     processorRef.serviceCaptureStop();   // the transport-stop capture end, off the audio thread (8 Sep 2026)
-    processorRef.pollSoloAcks();   // the S lamp goes solid when the muted Links have answered (8 Sep 2026)
     // Target pill appears/disappears with Link connectivity — relayout on
     // change (no height change; the composer row is fixed). The ACTIVE
     // chat's target flipping live<->offline is ALSO a relayout, not a
@@ -28755,7 +28752,7 @@ void EchoJayEditor::stripMuteSoloClick(const juce::String& uid, bool isSolo)
     {
         // SOLO AS A BROADCAST (8 Sep 2026): the main authors the solo set and mutes
         // every other Link on the existing command path; nothing is sent as soloOn.
-        processorRef.setLinkSolo(uid, ! processorRef.linkSoloOn(uid));
+        processorRef.setLinkSolo(uid, ! processorRef.linkSoloOn(uid));   // additive solo: the main's output becomes this Link (last press wins)
         refreshChainPanelForView(true);
         return;
     }
@@ -28770,9 +28767,8 @@ juce::String EchoJayEditor::muteSoloStripTip(const juce::String& uid,
         return "This Link predates mute/solo - reinstall it.";
     if (isSolo)
         return processorRef.soloIndicatorOn(uid)
-            ? "Soloed (click to un-solo). Solo mutes Link channels only."
-            : "Solo: mute every other Link channel. Monitoring only - "
-              "never saved.";
+            ? "Soloed - pre-fader listen (click to un-solo). EchoJay's output is this Link's signal at its Link; fader and pan moves do not change what you hear."
+            : "Solo: hear only this Link, pre-fader, through the mix-bus processing. Another S moves the solo. Monitoring only - never saved.";
     return ms->second.muteUser
         ? "Muted (click to un-mute). EchoJay's own mute - Logic's is "
           "untouched."

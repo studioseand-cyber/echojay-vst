@@ -1992,8 +1992,7 @@ private:
                     // Build D: the SAME author as the Link tab's lamp - the sidecar flag OR the
                     // main's own solo set (never the sidecar alone: the broadcast never sets it).
                     s = proc->soloIndicatorOn(uid);
-                    sPending = proc->soloLampState(uid) == EchoJayProcessor::SoloLamp::pending;
-                    if (proc->soloMutedByUs(uid)) m = false;
+                    sPending = false;   // additive solo is local and immediate: no acks to wait for
                 }
                 if (tickFor != nullptr && uid.isNotEmpty())
                 {

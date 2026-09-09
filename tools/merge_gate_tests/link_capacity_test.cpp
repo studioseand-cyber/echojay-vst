@@ -296,6 +296,47 @@ static int soloFabric2()
 }
 
 
+
+// ---- TOPOLOGY MODE (9 Sep 2026 ruling): Links IN SERIES, the shape of Sean's session. Track A (220 Hz) and track B (330 Hz)
+// feed a BUS Link whose input is the SUM of A's and B's OUTPUTS; N-3 extra tracks (440 Hz) exist so the scale is real.
+// Every Link renders one block per 10.667 ms of wall time on the shared-epoch playhead; the state file carries, for every
+// Link, muteWanted and rms, so the main-side leg can assert NO Link was muted. Runs until solo_done.txt.
+static int topology (int n)
+{
+    int err = 0; const auto dir = LinkShm::resolveDir (err); int fd = -1, rerr = 0; void* reg = LinkShm::openRegistry (dir, fd, rerr);
+    if (reg == nullptr) { std::printf ("registry not mappable\n"); return 99; }
+    auto mk = [&](const juce::String& nm) { auto l = std::make_unique<LinkProcessor>(); l->linkName = nm; l->markTypedNameAuthoritative(); l->prepareToPlay (48000.0, 512); l->updateShmState(); return l; };
+    std::vector<std::unique_ptr<LinkProcessor>> links; links.push_back (mk ("A")); links.push_back (mk ("B")); links.push_back (mk ("Bus"));
+    for (int i = 3; i < n; ++i) links.push_back (mk ("T" + juce::String (i)));
+    EpochPlayHead eph; eph.epochMs = juce::Time::getMillisecondCounterHiRes();
+    juce::File (dir + "solo_epoch.txt").replaceWithText (juce::String (eph.epochMs, 3));
+    for (auto& l : links) l->setPlayHead (&eph);
+    for (int t = 0; t < 4; ++t) pumpMs (1000);
+    juce::String ready; for (auto& l : links) ready += l->getInstanceUidForTest() + "\n";
+    juce::File (dir + "solo_ready.txt").replaceWithText (ready);
+    std::printf ("  topology %d: A %s  B %s  Bus %s (+%d tracks)\n", n, links[0]->getInstanceUidForTest().toRawUTF8(), links[1]->getInstanceUidForTest().toRawUTF8(), links[2]->getInstanceUidForTest().toRawUTF8(), n - 3);
+    std::vector<double> ph ((size_t) n, 0.0); std::vector<float> rms ((size_t) n, 0.0f);
+    juce::AudioBuffer<float> bufA (2, 512), bufB (2, 512), bufBus (2, 512), bufT (2, 512); juce::MidiBuffer midi;
+    auto tone = [&](juce::AudioBuffer<float>& b, double& phase, double hz, float amp) { for (int i = 0; i < 512; ++i) { const float v = std::sin ((float) phase) * amp; phase += 2.0 * juce::MathConstants<double>::pi * hz / 48000.0; b.setSample (0, i, v); b.setSample (1, i, v); } };
+    auto stamp = [&]{ juce::String st; for (size_t i = 0; i < links.size(); ++i) st += juce::String ((int) links[i]->linkMuteWanted()) + " "; st += "| "; for (float r : rms) st += juce::String (r, 3) + " "; juce::File (dir + "solo_state.txt").replaceWithText (st); };
+    double nextMs = juce::Time::getMillisecondCounterHiRes();
+    for (int i = 0; i < 60000 && ! juce::File (dir + "solo_done.txt").existsAsFile(); ++i)
+    {
+        pumpMs (1);
+        const double now = juce::Time::getMillisecondCounterHiRes();
+        if (now < nextMs) continue;
+        nextMs += 512000.0 / 48000.0; if (now - nextMs > 200) nextMs = now;
+        tone (bufA, ph[0], 220.0, 0.5f); links[0]->processBlock (bufA, midi); rms[0] = bufA.getRMSLevel (0, 0, 512);
+        tone (bufB, ph[1], 330.0, 0.5f); links[1]->processBlock (bufB, midi); rms[1] = bufB.getRMSLevel (0, 0, 512);
+        for (int c = 0; c < 2; ++c) for (int k = 0; k < 512; ++k) bufBus.setSample (c, k, bufA.getSample (c, k) + bufB.getSample (c, k));   // IN SERIES: the bus receives A's and B's OUTPUTS
+        links[2]->processBlock (bufBus, midi); rms[2] = bufBus.getRMSLevel (0, 0, 512);
+        for (size_t t = 3; t < links.size(); ++t) { tone (bufT, ph[t], 440.0, 0.5f); links[t]->processBlock (bufT, midi); rms[t] = bufT.getRMSLevel (0, 0, 512); }
+        if (i % 4 == 0) stamp();
+    }
+    pumpMs (300); drain(); for (auto& l : links) l.reset(); drain();
+    return 0;
+}
+
 static int pumpTest()
 {
     int err = 0; const auto dir = LinkShm::resolveDir (err); int fd = -1, rerr = 0; void* reg = LinkShm::openRegistry (dir, fd, rerr);
@@ -467,6 +508,7 @@ int main (int argc, char** argv)
     if (argc > 1 && juce::String (argv[1]) == "solofabric") return soloFabric();
     if (argc > 1 && juce::String (argv[1]) == "solofabric2") return soloFabric2();
     if (argc > 1 && juce::String (argv[1]) == "pumptest") return pumpTest();
+    if (argc > 1 && juce::String (argv[1]) == "topology") return topology (argc > 2 ? juce::String (argv[2]).getIntValue() : 3);
     if (argc > 1 && juce::String (argv[1]) == "foreign20") return foreign (20);
     if (argc > 1 && juce::String (argv[1]) == "churn")  { const int r = churnLegs(); std::printf ("churn legs: L8 %s   L9 %s\n", (r & 1) ? "FAIL" : "PASS", (r & 2) ? "FAIL" : "PASS"); return r; }
     if (argc > 1 && juce::String (argv[1]) == "churn20") { int p8 = 0, p9 = 0; for (int r = 0; r < 20; ++r) { const int x = churnLegs(); if (! (x & 1)) ++p8; if (! (x & 2)) ++p9; } std::printf ("CHURN20: L8 %d/20   L9 %d/20\n", p8, p9); return (p8 == 20 && p9 == 20) ? 0 : 1; }

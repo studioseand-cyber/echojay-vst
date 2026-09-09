@@ -587,6 +587,8 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     // (pre-sum alignment vs final pad) varies; the total never does.
     alignPre_.prepare(kBorrowAlignBudgetFrames + 1);
     alignPost_.prepare(kBorrowAlignBudgetFrames + 1);
+    soloBuf_.setSize(2, std::max(8192, samplesPerBlock), false, true, false);   // additive solo: X's ring per block, allocated here, never on audio
+    borrowProcessed_.setSize(2, std::max(8192, samplesPerBlock), false, true, false);   // the borrowed rack's processed ring, pre-alignment, for the solo crossfade
     // Round 53: prepare is the guaranteed re-decision point - the pending
     // budget becomes the committed one HERE, before the report below.
     {
@@ -1099,6 +1101,11 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                         juce::AudioBuffer<float> view(borrowBuf_.getArrayOfWritePointers(),
                                                       2, 0, want);
                         borrowHost_->process(view, noMidi);
+                        // ADDITIVE SOLO of the borrowed rack (spec 6.1) reads the PROCESSED ring from THIS copy: the
+                        // injection block below runs its alignment delay on borrowBuf_ in place, which must not
+                        // reach the solo crossfade (solo is not aligned - it replaces).
+                        if (borrowProcessed_.getNumSamples() >= want)
+                            for (int ch = 0; ch < 2; ++ch) borrowProcessed_.copyFrom(ch, 0, borrowBuf_, ch, 0, want);
                         if (++borrowConsumeDiagDivider_ >= 94)   // BUILD E diagnostic, 1 Hz: what the ring gave and what the rack returned
                         {
                             borrowConsumeDiagDivider_ = 0;
@@ -1145,6 +1152,23 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                         }
                         editLock_.exit();
                     }
+                    ls.lock.exit();
+                    continue;
+                }
+                // ADDITIVE SOLO: X's ring is consumed into soloBuf_ (it was being drained anyway).
+                // Seek to the cushion once at engage; re-seek if the backlog trips the threshold.
+                if (li == soloRingSlot_.load(std::memory_order_acquire))
+                {
+                    auto* shdr = LinkShm::ringHeader(ls.map);
+                    const int nS = buffer.getNumSamples();
+                    if (soloBuf_.getNumSamples() < nS) { ls.lock.exit(); continue; }   // allocated at prepare; never here
+                    if (soloSeekPending_.exchange(false, std::memory_order_acq_rel)
+                        || LinkShm::loadAcquire(&shdr->writeIdx) - LinkShm::loadRelaxed(&shdr->readIdx) > kEditReseekTrip)
+                        LinkShm::ringSeekForward(ls.map, kEditCushionFrames);
+                    const uint32_t n = LinkShm::ringConsume(ls.map, soloBuf_.getWritePointer(0), soloBuf_.getWritePointer(1), nS);
+                    ls.framesRead.fetch_add((int64_t) n, std::memory_order_relaxed);
+                    for (int ch = 0; ch < 2; ++ch) if ((int) n < nS) soloBuf_.clear(ch, (int) n, nS - (int) n);
+                    soloBufPeak_.store(soloBuf_.getMagnitude(0, 0, nS), std::memory_order_relaxed);
                     ls.lock.exit();
                     continue;
                 }
@@ -1309,13 +1333,14 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             borrowCtxMix_.skip(buffer.getNumSamples());
     }
     if (borrowThrough)
-        // BUILD E (9 Sep 2026 ruling): NO SILENT SOLO ON RACK SELECTION. The crossfade of
-        // the main's whole output to the borrowed ring (applyBorrowSoloMixOn) is kept for a
-        // FUTURE EXPLICIT AUDITION CONTROL and is reachable only from an explicit user act
-        // that does not exist yet. It is never the quiet default: a refused in-context now
-        // leaves the passthrough untouched and shows a held state instead. fallbackSolo is
-        // still computed (the lease and banners read it) but drives no audio.
-        applyBorrowSoloMixOn(buffer, false);
+        // BUILD E (9 Sep 2026 ruling): NO SILENT SOLO ON RACK SELECTION - a refused in-context
+        // leaves the passthrough untouched (fallbackSolo drives no audio). The crossfade below
+        // runs ONLY behind the explicit user act it was reserved for: the solo press.
+        // ADDITIVE SOLO (9 Sep 2026 ruling): solo IS the explicit user act this crossfade was
+        // reserved for. Source: the PROCESSED ring when X is the borrowed rack (spec 6.1),
+        // otherwise X's own ring consumed above. Intentional: this runs BEFORE the main's
+        // own chain, so the soloed Link is heard through the mix-bus processing.
+        applyBorrowSoloMixOn(buffer, soloActive() && (soloSourceIsBorrowedRack() || soloRingSlot_.load(std::memory_order_acquire) >= 0));
         (void) fallbackSolo;
 
     // CHAIN: pass audio through hosted plugin (graph handles passthrough if none loaded)
@@ -2074,15 +2099,16 @@ void EchoJayProcessor::applyBorrowSoloMixOn(juce::AudioBuffer<float>& buffer,
     if (on || borrowSoloMix_.getCurrentValue() > 0.0001f)
     {
         const int nS = buffer.getNumSamples();
-        const bool have = borrowHost_ != nullptr
-                       && borrowBuf_.getNumSamples() >= nS;
+        const bool fromRack = soloSourceIsBorrowedRack() && borrowHost_ != nullptr && borrowProcessed_.getNumSamples() >= nS;
+        const bool have = fromRack || soloBuf_.getNumSamples() >= nS;
+        const juce::AudioBuffer<float>& src = fromRack ? borrowProcessed_ : soloBuf_;
         for (int i = 0; i < nS; ++i)
         {
             const float g = borrowSoloMix_.getNextValue();
             for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
             {
                 const float solo = have
-                    ? borrowBuf_.getSample(std::min(ch, 1), i) : 0.0f;
+                    ? src.getSample(std::min(ch, 1), i) : 0.0f;
                 float* out = buffer.getWritePointer(ch);
                 out[i] = out[i] * (1.0f - g) + solo * g;
             }
@@ -2597,157 +2623,48 @@ juce::AudioProcessorEditor* EchoJayProcessor::createSlotEditorForView(
 // ============================================================================
 //  SOLO AS A BROADCAST (8 Sep 2026 ruling)
 // ============================================================================
-int EchoJayProcessor::sendLinkCtrlMute(const juce::String& uid, bool on)
-{
-    int err = 0;
-    const juce::String dir = LinkShm::resolveDir(err);
-    if (dir.isEmpty() || uid.isEmpty()) return 0;
-    int seq = LinkShm::nextCtrlSeq();
-    if (auto it = solo_.pendingSeq.find(uid); it != solo_.pendingSeq.end() && it->second >= seq)
-        seq = it->second + 1;                                // same-second re-send: keep seq advancing
-    auto* cmd = new juce::DynamicObject();
-    cmd->setProperty("v",        1);
-    cmd->setProperty("seq",      seq);
-    cmd->setProperty("muteUser", on);
-    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();   // stale ack
-    if (! juce::File(dir + "ctrl-cmd-" + uid + ".json")
-            .replaceWithText(juce::JSON::toString(juce::var(cmd), true)))
-    {
-        EchoJay_NSLog(("EJSolo: broadcast write FAILED uid=" + uid).toRawUTF8());
-        return 0;
-    }
-    solo_.pendingSeq[uid] = seq;
-    solo_.cmdRecord[uid] = SoloBroadcast::LastCmd { on, seq, juce::Time::currentTimeMillis() };   // the record, at the moment of sending
-    EchoJay_NSLog(("EJSolo: broadcast muteUser=" + juce::String((int) on) + " uid=" + uid
-                   + " seq=" + juce::String(seq)).toRawUTF8());
-    return seq;
-}
-
 void EchoJayProcessor::setLinkSolo(const juce::String& uid, bool on)
 {
+    // ADDITIVE SOLO: nothing is sent to any Link. The press only chooses which ring the
+    // main's output becomes. Last press wins; pressing the soloed Link again clears.
     if (uid.isEmpty()) return;
-    const juce::int64 t0 = juce::Time::currentTimeMillis();
-    if (on)
+    const juce::String prev = soloUid_;
+    if (! on) { if (soloUid_ != uid) return; soloUid_.clear(); }
+    else soloUid_ = uid;
+    int slot = -1;
+    if (soloUid_.isNotEmpty())
+        for (int i = 0; i < kMaxLinkSlots; ++i)
+            if (activeLinkSlots[i].map != nullptr && activeLinkSlots[i].uid == soloUid_) { slot = i; break; }
+    if (soloUid_.isNotEmpty() && slot < 0)
+        EchoJay_NSLog(("EJSolo: " + soloUid_ + " has no connected ring yet - the solo engages when its ring connects").toRawUTF8());
+    soloSeekPending_.store(true, std::memory_order_release);
+    soloRingSlot_.store(slot, std::memory_order_release);
+    if (soloUid_.isNotEmpty())
     {
-        if (solo_.soloSet.contains(uid)) return;
-        if (solo_.soloSet.isEmpty())
-        {
-            // First press: a hand mute is a sidecar mute on a Link THIS MAIN HAS NEVER COMMANDED.
-            // For every Link it has commanded, its own record is the truth (BUILD E, E2): the
-            // sidecar pass lags our own sends by up to a second and must not classify them.
-            solo_.userMutedBefore.clear();
-            for (const auto& kv : muteSoloSnaps_)
-                if (kv.second.muteUser && solo_.cmdRecord.find(kv.first) == solo_.cmdRecord.end())
-                    solo_.userMutedBefore.addIfNotAlreadyThere(kv.first);
-        }
-        solo_.soloSet.add(uid);
-        solo_.pressMs = t0;
-        // CLAUSE 3 (BUILD E, E1): X is EXPLICITLY un-muted on every press, whatever muted it - a
-        // previous main, a session mute, a stale snapshot. Omitting X from the mute set is not
-        // un-muting X.
-        sendLinkCtrlMute(uid, false);
-        solo_.mutedByUs.removeString(uid);
-        solo_.userMutedBefore.removeString(uid);
-        // SOLO DOMINATES BORROW: a foreign solo releases the edit session (edits kept).
-        if (borrowActive() && borrowSession_.uid != uid)
-        {
-            const juce::String edited = resolveLinkDisplayName(borrowSession_.uid);
-            EchoJay_NSLog(("EJSolo: foreign solo on " + uid + " while " + borrowSession_.uid
-                           + " is borrowed -> releasing the borrow (edits kept)").toRawUTF8());
-            borrowRelease(true);
-            borrowStickyBanner_ = resolveLinkDisplayName(uid) + " is soloed - your edit of " + edited
-                + " was kept and released so the solo can be heard.";
-        }
-        int sent = 0;
-        for (const auto& si : linkSlotInfos)
-        {
-            if (si.uid.isEmpty() || solo_.soloSet.contains(si.uid) || solo_.mutedByUs.contains(si.uid)
-                || solo_.userMutedBefore.contains(si.uid)) continue;
-            if (sendLinkCtrlMute(si.uid, true) > 0) { solo_.mutedByUs.add(si.uid); ++sent; }
-        }
-        EchoJay_NSLog(("EJSolo: solo ON uid=" + uid + " set=" + juce::String(solo_.soloSet.size())
-                       + " muted " + juce::String(sent) + " Link(s) in "
-                       + juce::String(juce::Time::currentTimeMillis() - t0) + " ms; hand-muted kept: "
-                       + juce::String(solo_.userMutedBefore.size())).toRawUTF8());
+        borrowBannerIsStatus_ = true;
+        borrowStickyBanner_ = "Solo (pre-fader listen): hearing " + resolveLinkDisplayName(soloUid_)
+            + " at its Link - fader and pan moves do not change what you hear.";
     }
-    else
-    {
-        if (! solo_.soloSet.contains(uid)) return;
-        solo_.soloSet.removeString(uid);
-        if (solo_.soloSet.isEmpty())
-        {
-            int restored = 0;
-            for (const auto& u : solo_.mutedByUs) if (sendLinkCtrlMute(u, false) > 0) ++restored;
-            EchoJay_NSLog(("EJSolo: solo OFF uid=" + uid + " (set empty) -> restored " + juce::String(restored)
-                           + " Link(s) in " + juce::String(juce::Time::currentTimeMillis() - t0) + " ms").toRawUTF8());
-            solo_.mutedByUs.clear();
-            solo_.userMutedBefore.clear();
-        }
-        else if (! solo_.userMutedBefore.contains(uid))
-        {
-            // still a solo set: the un-soloed Link joins the muted side
-            if (sendLinkCtrlMute(uid, true) > 0) solo_.mutedByUs.add(uid);
-            EchoJay_NSLog(("EJSolo: solo OFF uid=" + uid + " (set still " + juce::String(solo_.soloSet.size())
-                           + ") -> muted it").toRawUTF8());
-        }
-    }
-}
-
-void EchoJayProcessor::reconcileSoloBroadcast()
-{
-    if (solo_.soloSet.isEmpty()) return;
-    juce::StringArray live;
-    for (const auto& si : linkSlotInfos) if (si.uid.isNotEmpty()) live.add(si.uid);
-    for (const auto& u : live)
-    {
-        if (solo_.soloSet.contains(u) || solo_.mutedByUs.contains(u) || solo_.userMutedBefore.contains(u)) continue;
-        if (sendLinkCtrlMute(u, true) > 0)
-        {
-            solo_.mutedByUs.add(u);
-            EchoJay_NSLog(("EJSolo: reconcile - Link " + u + " appeared mid-solo, muted").toRawUTF8());
-        }
-    }
-}
-
-void EchoJayProcessor::pollSoloAcks()
-{
-    if (solo_.pendingSeq.empty()) return;
-    int err = 0;
-    const juce::String dir = LinkShm::resolveDir(err);
-    if (dir.isEmpty()) return;
-    for (auto it = solo_.pendingSeq.begin(); it != solo_.pendingSeq.end();)
-    {
-        juce::File ack(dir + "ctrl-ack-" + it->first + ".json");
-        bool done = false;
-        if (ack.existsAsFile())
-        {
-            const auto v = juce::JSON::parse(ack);
-            if (auto* o = v.getDynamicObject())
-                done = (int) o->getProperty("seq") >= it->second;
-        }
-        if (! done && juce::Time::currentTimeMillis() - solo_.pressMs > 3000) done = true;   // 3 s: give up waiting, the lamp settles
-        it = done ? solo_.pendingSeq.erase(it) : std::next(it);
-    }
+    else if (borrowStickyBanner_.startsWith("Solo (pre-fader listen)"))
+        borrowStickyBanner_.clear();
+    EchoJay_NSLog(("EJSolo: " + juce::String(on ? "solo ON " : "solo OFF ") + uid
+                   + (prev.isNotEmpty() && on && prev != uid ? " (moved from " + prev + ")" : juce::String())
+                   + " -> output is " + (soloUid_.isEmpty() ? juce::String("the mix") : soloUid_ + " ring slot " + juce::String(slot))
+                   + (soloSourceIsBorrowedRack() ? " (the borrowed rack: processed ring, spec 6.1)" : "")).toRawUTF8());
 }
 
 bool EchoJayProcessor::soloIndicatorOn(const juce::String& uid) const
 {
-    if (solo_.soloSet.contains(uid)) return true;
+    if (linkSoloOn(uid)) return true;
     if (auto it = muteSoloSnaps_.find(uid); it != muteSoloSnaps_.end()) return it->second.soloOn;
     return false;
 }
 
 juce::String EchoJayProcessor::firstSoloName() const
 {
-    for (const auto& u : solo_.soloSet) return resolveLinkDisplayName(u);
+    if (soloActive()) return resolveLinkDisplayName(soloUid_);
     for (const auto& kv : muteSoloSnaps_) if (kv.second.soloOn) return resolveLinkDisplayName(kv.first);
     return {};
-}
-
-EchoJayProcessor::SoloLamp EchoJayProcessor::soloLampState(const juce::String& uid) const
-{
-    if (! solo_.soloSet.contains(uid)) return SoloLamp::off;
-    return solo_.pendingSeq.empty() ? SoloLamp::solid : SoloLamp::pending;
 }
 
 void EchoJayProcessor::commitBorrowBudget(const char* where)
@@ -5050,7 +4967,10 @@ void EchoJayProcessor::refreshLinkRegistry()
 
     linkSlotInfos = std::move(newInfos);
     publishLiveSlotList();
-    reconcileSoloBroadcast();   // solo as a broadcast: mute any Link that appeared mid-solo (8 Sep 2026)
+    if (soloActive() && soloRingSlot_.load(std::memory_order_acquire) < 0)     // additive solo: X's ring connected after the press
+        for (int i = 0; i < kMaxLinkSlots; ++i)
+            if (activeLinkSlots[i].map != nullptr && activeLinkSlots[i].uid == soloUid_)
+            { soloSeekPending_.store(true, std::memory_order_release); soloRingSlot_.store(i, std::memory_order_release); break; }
 
     // §8.3 refinement: the budget follows CAPABLE-LINK PRESENCE. The
     // capability lives in the sidecar, read once per uid and cached; the
@@ -5163,7 +5083,7 @@ void EchoJayProcessor::refreshLinkRegistry()
                                             : muteSoloSnaps_.erase(it);
         soloSetActive_     = anySolo;
         soloIncapableLive_ = incap;
-        anySolo = anySolo || soloBroadcastActive();          // the main-authored solo set counts (8 Sep 2026)
+        anySolo = anySolo || soloActive();                   // the main's own solo counts
         const bool editedIn = borrowActive()
             && ((muteSoloSnaps_.count(borrowSession_.uid)
                  && muteSoloSnaps_[borrowSession_.uid].soloOn)

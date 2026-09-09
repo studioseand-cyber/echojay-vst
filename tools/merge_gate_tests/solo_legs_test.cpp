@@ -24,6 +24,9 @@
 #if __has_include("legs_build_e.h")
 #include "legs_build_e.h"
 #endif
+#if __has_include("legs_build_f.h")
+#include "legs_build_f.h"
+#endif
 #include <cstdio>
 
 static void pump (int ms) { const double end = juce::Time::getMillisecondCounterHiRes() + ms; while (juce::Time::getMillisecondCounterHiRes() < end) CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.005, false); }
@@ -74,7 +77,7 @@ struct Control
             else p->setLinkSolo (A, true);
 #endif
             for (int i = 0; i < 60; ++i) { pump (50);
-#ifdef EJ_LEGS_NEW_API
+#if defined(EJ_LEGS_NEW_API) && !defined(EJ_LEGS_BUILD_F)
                 p->pollSoloAcks();
 #endif
             }
@@ -84,7 +87,7 @@ struct Control
             else p->setLinkSolo (A, false);
 #endif
             for (int i = 0; i < 80; ++i) { pump (50);
-#ifdef EJ_LEGS_NEW_API
+#if defined(EJ_LEGS_NEW_API) && !defined(EJ_LEGS_BUILD_F)
                 p->pollSoloAcks();
 #endif
             }
@@ -106,7 +109,7 @@ struct Control
 #endif
             const juce::int64 t0 = juce::Time::currentTimeMillis(); double tRel = -1;
             for (int i = 0; i < 60; ++i) { pump (50);
-#ifdef EJ_LEGS_NEW_API
+#if defined(EJ_LEGS_NEW_API) && !defined(EJ_LEGS_BUILD_F)
                 p->pollSoloAcks();
 #endif
                 if (tRel < 0 && ! p->borrowActive()) tRel = (double) (juce::Time::currentTimeMillis() - t0); }
@@ -145,181 +148,56 @@ struct Control
             p->borrowRelease (false); result = ok ? 0 : 1;
         }
 #ifdef EJ_LEGS_NEW_API
-        else if (mode == "render" || mode == "select" || mode == "clause3")
+        else if (mode == "additive")
         {
-            // ============ RENDERED-AUDIO LEGS (9 Sep 2026 ruling): flags certified a broken build once; audio does not.
-            // The main renders its own output (silent input) with A's ring injected in-context; the Link side renders A, B, C
-            // and stamps their rms. Assertions are on those numbers.
+            // ============ ADDITIVE SOLO, RENDERED, WITH TOPOLOGY (9 Sep 2026 ruling). The Link side holds A (220 Hz) and B
+            // (330 Hz) feeding a Bus Link (A+B), plus extra tracks (440 Hz) at scale. The main's INPUT is an un-Linked
+            // channel at 1 kHz. Goertzel on the main's output decides what is heard. Assertions: solo A -> 220 only; solo Bus
+            // -> 220+330, not 1 k; solo off -> 1 k back; NO Link muted at any point; spec 6.1: with A borrowed in-context,
+            // solo A takes the processed ring (source = borrowed rack) and 220 is heard.
             juce::File (dirOf() + "solo_mode.txt").replaceWithText ("borrow");
             TestPlayHead ph; ph.epochMs = juce::File (dirOf() + "solo_epoch.txt").loadFileAsString().trim().getDoubleValue(); p->setPlayHead (&ph);
-            juce::AudioBuffer<float> buf (2, 512); juce::MidiBuffer midi;
-            auto feedCache = [&]{ const auto rc = LinkShm::readRackSidecar (dirOf(), A); auto& ce = p->linkRackCache[A]; ce.rack = rc; ce.valid = rc.uid == A; ce.readMs = juce::Time::getMillisecondCounter(); };
-            // REAL-TIME PACED: one block every 512/48000 s of wall time, like the host (the ring the main injects from is
-            // produced by another process at the same cadence).
+            juce::StringArray uids; uids.addLines (juce::File (dirOf() + "solo_ready.txt").loadFileAsString()); uids.removeEmptyStrings();
+            const juce::String Bus = uids.size() > 2 ? uids[2].trim() : juce::String();
+            juce::AudioBuffer<float> buf (2, 512); juce::MidiBuffer midi; double phIn = 0;
+            auto goertzel = [](const float* x, int n, double hz) { const double w = 2.0 * juce::MathConstants<double>::pi * hz / 48000.0, c = 2.0 * std::cos (w); double s0 = 0, s1 = 0, s2 = 0; for (int i = 0; i < n; ++i) { s0 = x[i] + c * s1 - s2; s2 = s1; s1 = s0; } return std::sqrt (std::max (0.0, s1 * s1 + s2 * s2 - c * s1 * s2)) / (n * 0.5); };
             double nextMs = juce::Time::getMillisecondCounterHiRes();
-            auto oneBlock = [&]{ while (juce::Time::getMillisecondCounterHiRes() < nextMs) pump (1); buf.clear(); p->processBlock (buf, midi); ph.samples += 512; nextMs += 512000.0 / 48000.0; if (juce::Time::getMillisecondCounterHiRes() - nextMs > 200) nextMs = juce::Time::getMillisecondCounterHiRes(); return buf.getRMSLevel (0, 0, 512); };
-            auto renderMain = [&](int blocks) -> float { float acc = 0; int n = 0; for (int b = 0; b < blocks; ++b) { const float r = oneBlock(); if (b >= blocks - 8) { acc += r; ++n; } } return n ? acc / n : 0; };
-            auto linkRms = [&](int idx) -> float { const auto st = linkState(); return st.size() >= 6 ? st[3 + idx].getFloatValue() : -1.0f; };
-            auto settle = [&](int ms) { const double end = juce::Time::getMillisecondCounterHiRes() + ms; while (juce::Time::getMillisecondCounterHiRes() < end) { p->pollSoloAcks(); feedCache(); oneBlock(); } };
-            if (mode == "select")
-            {
-                // E3: the budget has NOT committed (no STOPPED block yet in this main). Selecting A must leave the passthrough
-                // untouched and A's raw channel audible, and show the waiting state; a STOPPED block then blends.
-                ph.playing = true;
-                p->borrowEngageBegin (A, A + "-rack-sel", false, true);
-                settle (800);
-                // passthrough check: feed a 1 kHz tone at 0.25 into the main; the output must still be that tone, not A's ring
-                double phz = 0; float inRms = 0, outRms = 0, corr = 0;
-                for (int b = 0; b < 40; ++b) { while (juce::Time::getMillisecondCounterHiRes() < nextMs) pump (1); nextMs += 512000.0 / 48000.0;
-                    for (int i = 0; i < 512; ++i) { const float v = std::sin ((float) phz) * 0.25f; phz += 2 * juce::MathConstants<double>::pi * 1000 / 48000; buf.setSample (0, i, v); buf.setSample (1, i, v); }
-                    juce::AudioBuffer<float> in; in.makeCopyOf (buf); p->processBlock (buf, midi); ph.samples += 512;
-                    if (b >= 32) { inRms += in.getRMSLevel (0, 0, 512); outRms += buf.getRMSLevel (0, 0, 512); float c = 0; for (int i = 0; i < 512; ++i) c += in.getSample (0, i) * buf.getSample (0, i); corr += c; } }
-                const bool passthroughIntact = std::abs (outRms - inRms) < 0.05f * 8 && corr > 0;
-                const float aRms = linkRms (0);
-                const bool waiting = p->borrowStickyBanner_.contains ("Waiting for the mix budget");
-#ifdef EJ_LEGS_BUILD_E
-                const int bannerStatus = (int) p->borrowBannerIsStatus_;
+            struct Tones { double a = 0, b = 0, in = 0; };
+            juce::AudioBuffer<float> win (1, 4096);
+            auto render = [&](int blocks) -> Tones { Tones t; int n = 0; for (int k = 0; k < blocks; ++k) { while (juce::Time::getMillisecondCounterHiRes() < nextMs) pump (1); nextMs += 512000.0 / 48000.0; if (juce::Time::getMillisecondCounterHiRes() - nextMs > 200) nextMs = juce::Time::getMillisecondCounterHiRes();
+                for (int i = 0; i < 512; ++i) { const float v = std::sin ((float) phIn) * 0.25f; phIn += 2.0 * juce::MathConstants<double>::pi * 1000.0 / 48000.0; buf.setSample (0, i, v); buf.setSample (1, i, v); }
+                p->processBlock (buf, midi);
+                if (k >= blocks - 8) { win.copyFrom (0, (k - (blocks - 8)) * 512, buf, 0, 0, 512); ++n; } }
+                // one 4096-sample window (bins 11.7 Hz apart): a 512-sample window leaks a 0.5 tone at 220 Hz into the 330 Hz bin at ~0.07
+                if (n == 8) { const float* x = win.getReadPointer (0); t.a = goertzel (x, 4096, 220); t.b = goertzel (x, 4096, 330); t.in = goertzel (x, 4096, 1000); } return t; };
+            auto muted = [&]{ const auto st = linkState(); int m = 0; for (const auto& tok : st) { if (tok == "|") break; if (tok == "1") ++m; } return m; };
+            auto say = [&](const char* label, const Tones& t) { std::printf ("  %-42s 220:%.3f 330:%.3f 1k:%.3f  Links muted: %d\n", label, t.a, t.b, t.in, muted()); };
+            for (int i = 0; i < 30; ++i) { p->refreshLinkRegistry(); pump (100); }   // rings connect
+            const auto t0 = render (60); say ("no solo (the mix = the 1 kHz un-Linked channel)", t0);
+            p->setLinkSolo (A, true); const auto tA = render (80); say ("solo A", tA);
+            const bool okA = tA.a > 0.15 && tA.b < 0.03 && tA.in < 0.03 && muted() == 0;
+            p->setLinkSolo (Bus, true); const auto tBus = render (80); say ("solo Bus (last press wins: moved from A)", tBus);
+            const bool okBus = tBus.a > 0.15 && tBus.b > 0.15 && tBus.in < 0.03 && muted() == 0;
+            p->setLinkSolo (Bus, false); const auto tOff = render (80); say ("solo off", tOff);
+            const bool okOff = tOff.in > 0.15 && tOff.a < 0.03 && muted() == 0;
+            // spec 6.1: A borrowed in-context (a STOPPED block commits the budget), then solo A -> the processed ring is the source
+            ph.playing = false; buf.clear(); p->processBlock (buf, midi); ph.playing = true; render (30);
+            p->borrowEngageBegin (A, A + "-rack-add", false, true); render (140);
+            p->setLinkSolo (A, true); const auto tA2 = render (80);
+#ifdef EJ_LEGS_BUILD_F
+            const bool srcRack = p->soloSourceIsBorrowedRack();
 #else
-                const int bannerStatus = -1;   // Build D has no status flag
+            const bool srcRack = false;
 #endif
-                std::printf ("  select A (budget uncommitted): in-context ok=%d; main out rms %.3f vs in %.3f (correlated=%d) -> passthrough %s; A raw channel rms %.3f (%s); banner: \"%s\" (status=%d)\n",
-                             (int) p->borrowSoloSuppressInj_.load() == 0 && false, outRms / 8, inRms / 8, (int) (corr > 0), passthroughIntact ? "INTACT" : "REPLACED", aRms, aRms > 0.3f ? "audible" : "SILENT", p->borrowStickyBanner_.toRawUTF8(), (int) bannerStatus);
-                // now the STOPPED block: the budget commits, Build B re-evaluates, the blend starts (A's ring in the main's output with silent input)
-                ph.playing = false; buf.clear(); p->processBlock (buf, midi); ph.playing = true;
-                settle (1500);
-                renderMain (20);
-#ifdef EJ_LEGS_BUILD_E
-                const float inj = p->borrowConsumePeakIn_;      // A's audio entering the injection path (the harness cannot render the injected audio itself - stated in the record)
-#else
-                const float inj = 0.0f;
-#endif
-                const float aRms2 = linkRms (0);
-                const bool blending = aRms2 < 0.01f && inj > 0.1f && p->borrowStickyBanner_.contains ("Blending");
-                std::printf ("  after the STOPPED block: A raw channel rms %.3f (%s); audio into the injection path peak %.3f; banner: \"%s\" -> %s\n", aRms2, aRms2 < 0.01f ? "session-muted" : "audible", inj, p->borrowStickyBanner_.toRawUTF8(), blending ? "blending" : "NOT blending");
-                const bool ok = passthroughIntact && aRms > 0.3f && waiting && blending;
-                std::printf ("SELECT: passthrough-intact %s  A-audible %s  waiting-state %s  blends-after-commit %s -> %s\n", passthroughIntact ? "PASS" : "FAIL", aRms > 0.3f ? "PASS" : "FAIL", waiting ? "PASS" : "FAIL", blending ? "PASS" : "FAIL", ok ? "PASS" : "FAIL");
-                p->borrowRelease (false); result = ok ? 0 : 1;
-            }
-            else if (mode == "render")
-            {
-                // commit the budget first (a STOPPED block after the pass counted A), then engage A in-context and prove the injection
-                ph.playing = false; buf.clear(); p->processBlock (buf, midi); ph.playing = true; settle (300);
-                p->borrowEngageBegin (A, A + "-rack-rnd", false, true);
-                settle (1500);
-                renderMain (20);
-                // HARNESS LIMIT, stated: two independently paced processes cannot hold the ring age constant the way one host
-                // callback does; the main's alignment pad key follows the age and resets its delay line and mix on every
-                // change, so the injected audio itself does not reach the harness output. What CAN be proven on this side:
-                // the injection path was consuming A's ring WITH AUDIO (the product's own consume peak) while in-context was OK.
-#ifdef EJ_LEGS_BUILD_E
-                const float injBefore = p->borrowConsumePeakIn_;
-#else
-                const float injBefore = 0.0f;
-#endif
-                { const auto ce = p->linkRackCache.find (A); const bool cached = ce != p->linkRackCache.end();
-                  std::printf ("  gates: ringSlot=%d muteConfirmedOnce=%d cache(valid=%d muteEngaged=%d ageMs=%u) inContextOk=%d\n", (int) p->borrowSession_.ringSlot.load(), (int) p->borrowMuteConfirmedOnce_.load(),
-                               cached ? (int) ce->second.valid : -1, cached ? (int) ce->second.rack.muteEngaged : -1, cached ? juce::Time::getMillisecondCounter() - ce->second.readMs : 0u, (int) p->borrowSoloSuppressInj_.load() * 0 + (int) (p->borrowActive())); }
-                std::printf ("  in-context on A: ring consumed into the injection path, peak %.3f (%s)\n", injBefore, injBefore > 0.1f ? "A's audio present" : "NONE");
-                auto press = [&](const char* label) { stampFile ("solo_t0.txt"); p->setLinkSolo (B, true); settle (400);
-                    const float inj = renderMain (20); const float a = linkRms (0), b = linkRms (1), c = linkRms (2);
-                    const bool ok = b > 0.3f && inj < 0.02f && c < 0.01f;
-                    std::printf ("  %s: B rms %.3f (%s)  injection rms %.3f (%s)  C rms %.3f (%s)  A rms %.3f -> %s\n", label, b, b > 0.3f ? "audible" : "SILENT", inj, inj < 0.02f ? "silent" : "STILL PLAYING", c, c < 0.01f ? "silent" : "AUDIBLE", a, ok ? "PASS" : "FAIL"); return ok; };
-                const bool cold = press ("COLD press on B");
-                // release, then re-press 20 ms later: the sidecar snapshot is certainly stale (its pass is 1 Hz) - the mechanism
-                // behind Sean's 10:29:16 press; then release and re-press at his own 0.7 s cadence.
-                p->setLinkSolo (B, false); settle (20);
-                p->borrowEngageBegin (A, A + "-rack-rnd2", false, true); settle (300);
-                const bool rapid20 = press ("RAPID re-press on B (20 ms after the release)");
-                p->setLinkSolo (B, false); settle (700);
-                p->borrowEngageBegin (A, A + "-rack-rnd3", false, true); settle (300);
-                const bool rapid700 = press ("RAPID re-press on B (0.7 s after the release)");
-                p->setLinkSolo (B, false); settle (300);
-#ifdef EJ_LEGS_BUILD_E
-                const bool pre = injBefore > 0.1f; const char* preTxt = pre ? "PASS" : "FAIL";
-#else
-                const bool pre = true; const char* preTxt = "n/a (not exposed on this build)";
-#endif
-                const bool ok = pre && cold && rapid20 && rapid700;
-                std::printf ("RENDER: injection-path-carried-audio %s  cold %s  rapid-20ms %s  rapid-700ms %s -> %s\n", preTxt, cold ? "PASS" : "FAIL", rapid20 ? "PASS" : "FAIL", rapid700 ? "PASS" : "FAIL", ok ? "PASS" : "FAIL");
-                if (p->borrowActive()) p->borrowRelease (false); result = ok ? 0 : 1;
-            }
-            else   // clause3: a mute left by a PREVIOUS main must not silence the Link the user solos
-            {
-                p->setLinkSolo (A, true); settle (500);                           // main #1 mutes B and C
-                p.reset(); pump (300);                                          // main #1 dies without releasing
-                p = std::make_unique<EchoJayProcessor>(); p->prepareToPlay (48000.0, 512); p->setPlayHead (&ph);
-                for (int i = 0; i < 40; ++i) { p->refreshLinkRegistry(); pump (100); }
-                const float bBefore = linkRms (1);
-                p->setLinkSolo (B, true); settle (500);                           // main #2 solos B: B must be EXPLICITLY un-muted
-                const float b = linkRms (1), a = linkRms (0), c = linkRms (2);
-                const bool ok = bBefore < 0.01f && b > 0.3f && a < 0.01f && c < 0.01f;
-                std::printf ("  B silent under the dead main's mute: rms %.3f; after main #2 solos B: B %.3f (%s) A %.3f C %.3f\n", bBefore, b, b > 0.3f ? "audible" : "STILL SILENT", a, c);
-                std::printf ("CLAUSE3: B explicitly un-muted -> %s\n", ok ? "PASS" : "FAIL");
-                p->setLinkSolo (B, false); settle (300); result = ok ? 0 : 1;
-            }
-            juce::File (dirOf() + "solo_done.txt").replaceWithText ("1");
-            stampFile ("solo_t1.txt");
+            say ("solo A while A is the borrowed rack", tA2); std::printf ("  source is the borrowed (processed) rack: %d\n", (int) srcRack);
+            const bool ok61 = tA2.a > 0.15 && tA2.in < 0.03 && srcRack && muted() <= 1;   // the borrowed rack's raw channel is session-muted by spec 6.1; nothing else may be
+            p->setLinkSolo (A, false); if (p->borrowActive()) p->borrowRelease (false);
+            const bool ok = okA && okBus && okOff && ok61 && t0.in > 0.15;
+            std::printf ("ADDITIVE: baseline %s  solo-A %s  solo-Bus %s  off %s  spec6.1 %s -> %s\n", t0.in > 0.15 ? "PASS" : "FAIL", okA ? "PASS" : "FAIL", okBus ? "PASS" : "FAIL", okOff ? "PASS" : "FAIL", ok61 ? "PASS" : "FAIL", ok ? "PASS" : "FAIL");
+            juce::File (dirOf() + "solo_done.txt").replaceWithText ("1"); result = ok ? 0 : 1;
         }
-        else if (mode == "lamp3")
-        {
-            // BUILD D: every solo indicator agrees. Three surfaces read after one press:
-            //   Link tab S lamp  = soloLampState(A) != off               (both builds)
-            //   rack panel S lamp = what THAT lamp reads in this build: Build D soloIndicatorOn(A); Build C the sidecar snapshot flag
-            //   banner name       = Build D firstSoloName() == A's display name; Build C reads the same snapshot flag
-            juce::File (dirOf() + "solo_mode.txt").replaceWithText ("borrow");
-            stampFile ("solo_t0.txt"); p->setLinkSolo (A, true);
-            for (int i = 0; i < 20; ++i) { pump (10); p->pollSoloAcks(); p->refreshLinkRegistry(); }
-            const bool tab = p->soloLampState (A) != EchoJayProcessor::SoloLamp::off;
-#ifdef EJ_LEGS_BUILD_D
-            const bool rack = p->soloIndicatorOn (A);
-            const juce::String banner = p->firstSoloName();
-            const bool bannerOk = banner == p->resolveLinkDisplayName (A);
-#else
-            const bool rack = p->muteSoloSnaps_.count (A) && p->muteSoloSnaps_[A].soloOn;   // Build C's rack lamp reads exactly this
-            const juce::String banner = rack ? p->resolveLinkDisplayName (A) : juce::String();  // and the banner's name is gated on the same flag
-            const bool bannerOk = rack;
-#endif
-            std::printf ("  after the press: Link-tab lamp=%d  rack-panel lamp=%d  banner name=\"%s\"\n", (int) tab, (int) rack, banner.toRawUTF8());
-            const bool ok = tab && rack && bannerOk;
-            std::printf ("LAMP3: all three surfaces agree = %d -> %s\n", (int) ok, ok ? "PASS" : "FAIL");
-            stampFile ("solo_t1.txt"); p->setLinkSolo (A, false); pump (500);
-            result = ok ? 0 : 1;
-        }
-        else if (mode == "diehard")
-        {
-            // ACCEPTED RISK, recorded as a leg (8 Sep 2026): the main dies (or the host saves and quits) mid-solo without
-            // releasing. The Links keep muteUser=true - nothing restores them until someone un-mutes by hand.
-            juce::File (dirOf() + "solo_mode.txt").replaceWithText ("borrow");   // Link side: state report only
-            stampFile ("solo_t0.txt"); p->setLinkSolo (A, true);
-            for (int i = 0; i < 40; ++i) { pump (50); p->pollSoloAcks(); }
-            const auto st = linkState();
-            p.reset();                                                          // THE MAIN DIES, no release
-            pump (3000);
-            const auto st2 = linkState();
-            std::printf ("  with the main alive: A/B/C muteWanted = %s; 3 s after the main died without releasing: %s\n", st.joinIntoString ("/").toRawUTF8(), st2.joinIntoString ("/").toRawUTF8());
-            const bool persisted = st2.size() == 3 && st2[1] == "1" && st2[2] == "1";
-            std::printf ("DIEHARD: the solo mutes persist after the main dies = %d -> %s (this is the ACCEPTED behaviour; the leg documents it)\n", (int) persisted, persisted ? "REPRODUCED" : "NOT REPRODUCED");
-            stampFile ("solo_t1.txt"); result = persisted ? 0 : 1;
-            return;
-        }
-        else if (mode == "lamp" || mode == "oldpath_lamp")
-        {
-            stampFile ("solo_t0.txt");
-            EchoJayProcessor::SoloLamp atPress;
-            if (old) { oldPathSolo (A, true); atPress = EchoJayProcessor::SoloLamp::off; }
-            else { p->setLinkSolo (A, true); atPress = p->soloLampState (A); }
-            const bool immediate = old ? (p->muteSoloSnaps_.count (A) && p->muteSoloSnaps_[A].soloOn) : atPress != EchoJayProcessor::SoloLamp::off;
-            double tSolid = -1; const juce::int64 t0 = juce::Time::currentTimeMillis();
-            for (int i = 0; i < 100; ++i) { pump (10); p->pollSoloAcks(); p->refreshLinkRegistry(); if (old ? (p->muteSoloSnaps_.count (A) && p->muteSoloSnaps_[A].soloOn) : p->soloLampState (A) == EchoJayProcessor::SoloLamp::solid) { tSolid = (double) (juce::Time::currentTimeMillis() - t0); break; } }
-            std::printf ("  at press: %s; solid after %.0f ms\n", immediate ? (atPress == EchoJayProcessor::SoloLamp::pending ? "PENDING" : "lit") : "NOTHING", tSolid);
-            stampFile ("solo_t1.txt"); if (old) oldPathSolo (A, false);
-#ifdef EJ_LEGS_NEW_API
-            else p->setLinkSolo (A, false);
-#endif
-            pump (1500);
-            result = (immediate && tSolid >= 0 && tSolid <= 1000) ? 0 : 1;
-            std::printf ("LAMP %s: immediate=%d solid=%.0f ms -> %s\n", mode.toRawUTF8(), (int) immediate, tSolid, result == 0 ? "PASS" : "FAIL");
-        }
+        // The subtractive-solo legs (render, select, clause3, lamp, lamp3, diehard) were retired with the broadcast on
+        // 9 Sep 2026; they live in git history (commit 1a2bd93 and earlier) and in results_2026-09-06/buildE_*.
 #endif
         for (int i = 0; i < 100 && ! juce::File (dirOf() + "solo_done.txt").existsAsFile(); ++i) pump (100);
     }
