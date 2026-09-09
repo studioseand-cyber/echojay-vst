@@ -38,6 +38,15 @@ The one slot your response DID carry settings for was EchoJay EQ, and it dialled
    per slot why it does not (a "settings_omitted": "<reason>" field would let the plugin print it instead of counting).
 3. Confirmation that "autoDial": true is the flag your side keys on, and what the server does with mapFps.
 
+## Two more blocks from the same afternoon (same plugin, same flag)
+- 16:20:38 extracted block -- 2144 ch, 6 slot(s), 4 with settings_structured (chain: EchoJay EQ, Lindell 902 De-esser,
+  UAD Tube-Tech CL 1B, Acme Opticom XLA-3, UAD SPL TwinTube, Maag EQ4) - two omitted, unnamed in the log.
+- 16:22:42 extracted block -- 2097 ch, 7 slot(s), 2 with settings_structured (Auto-Tune Pro, EchoJay EQ, SSL DeEss,
+  Purple Audio MC 77, AVOX WARM, UAD Maag EQ4, ValhallaVintageVerb) - the Link's own summary for this build names them:
+  EchoJay EQ and ValhallaVintageVerb carried settings; Auto-Tune Pro, SSL DeEss, MC 77, AVOX WARM, UAD Maag EQ4 did not.
+The rack-read failure Sean also saw today ("no answer from the Link") is a different request on the plugin side and is
+not related to these omissions.
+
 ## Plugins affected today
 Eiosis E2Deesser, Purple Audio MC 77, Millennia TCL-2, UAD SPL TwinTube - the four third-party slots, none delivered
 with settings. Separately, and not yours: none of those four could have dialled on this build path even with settings,
