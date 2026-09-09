@@ -50,6 +50,7 @@ public:
     struct SlotInfo {
         juce::String name;
         bool bypassed;
+        bool intendedBypassed = false;   // v9: the state a NON-lease caller asked for (the lease overlays `bypassed`)
         juce::String settings;  // suggested dial-in guidance from AI (display only)
         juce::String format;    // "AudioUnit" / "VST3" — popout-only is per-format
         float wet = 1.0f;       // per-slot wet/dry (0..1, 1 = fully wet)
@@ -732,6 +733,11 @@ public:
     void removeSlot(int i);
     void moveSlot(int i, int direction);    // direction: -1 = left, +1 = right
     void setSlotBypassed(int i, bool bypassed);
+    // v9: the LEASE's write - effective state only, intended untouched. The
+    // lease engages with setLeaseBypass(i, true) and releases with
+    // setLeaseBypass(i, slot.intendedBypassed), so a plan slot that arrived
+    // bypassed under the lease comes back LIVE at release unless the plan said otherwise.
+    void setLeaseBypass(int i, bool bypassed);
     void setSlotSettings(int i, const juce::String& settings);  // store AI guidance text
 
     // ---- Structural edit operations (CHAIN_AI_BUILD_SPEC Phase 1c) --------
@@ -1459,6 +1465,11 @@ public:
     // behaviour unchanged) ------------------------------------------------
     juce::PluginDescription getSlotDescription(int i) const;
     juce::AudioProcessor*   getSlotProcessor(int i) const;
+    // Link v9 change A/B surface (see attachBypassed_ / graphLock_ below).
+    void setAttachBypassed(bool b) noexcept { attachBypassed_.store(b, std::memory_order_release); }
+    bool attachBypassed() const noexcept    { return attachBypassed_.load(std::memory_order_acquire); }
+    int  processDuringRebuildCount() const noexcept { return processDuringRebuild_.load(std::memory_order_acquire); }
+    int  rebuildInFlightNow() const noexcept        { return rebuildInFlight_.load(std::memory_order_acquire); }
 
     // Sum of the non-bypassed hosted plugins' reported latencies (message
     // thread). Link mirrors this into setLatencySamples on every change.
@@ -1676,6 +1687,7 @@ private:
         juce::AudioProcessorGraph::Node::Ptr node;
         juce::PluginDescription              desc;
         bool                                 bypassed = false;
+        bool                                 intendedBypassed = false;   // v9: what the user/plan asked; `bypassed` is the effective state (lease overlays it)
         juce::String                         settings;   // AI-suggested dial-in guidance
         // The model's tiered copy, held STRUCTURED rather than composed.
         //
@@ -1954,6 +1966,28 @@ private:
 
     bool   prepared_  = false;
     std::atomic<bool> hasActiveSlots_ { false };  // true when ≥1 non-bypassed slot exists
+    // Link v9 (9 Sep 2026), change A. The lease's TARGET bypass state for any
+    // slot that arrives while a rack lease is active: completeLoad writes
+    // slot.bypassed from this once. Before v9 a slot arrived un-bypassed and
+    // the lease corrected it after the whole plan was in - a live render of a
+    // freshly instantiated plugin for a few blocks (the 15:31 crash's window).
+    std::atomic<bool> attachBypassed_ { false };
+    // Link v9, change B. The implied mutex JUCE documents between
+    // prepareToPlay/releaseResources and processBlock (AudioProcessorGraph,
+    // NodeStates::applySettings) - the CALLER provides it, and nothing did.
+    // Every graph mutation holds graphLock_ (message thread, recursive so a
+    // mutation may call another); process() try-locks and passes the buffer
+    // through DRY when it loses. The audio thread never blocks.
+    juce::CriticalSection graphLock_;
+    std::atomic<int> rebuildInFlight_ { 0 };        // > 0 for a mutation's duration (instrument)
+    std::atomic<int> processDuringRebuild_ { 0 };   // process() entries that found a mutation in flight
+    struct GraphMutation
+    {
+        explicit GraphMutation(ChainHost& h) : host(h), lock(h.graphLock_) { host.rebuildInFlight_.fetch_add(1, std::memory_order_acq_rel); }
+        ~GraphMutation() { host.rebuildInFlight_.fetch_sub(1, std::memory_order_acq_rel); }
+        ChainHost& host;
+        juce::CriticalSection::ScopedLockType lock;
+    };
     std::atomic<int>  chainRevision_ { 0 };       // see getChainRevision()
     // Every chain mutation is also a settings-cache trigger: this is the
     // "after a chain edit settles" refresh point, reached through the same

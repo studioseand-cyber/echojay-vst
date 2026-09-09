@@ -2330,6 +2330,9 @@ void EchoJayProcessor::borrowRelease(bool keepEdits)
     if (borrowHost_) borrowHost_->releaseBorrowToPool();
     EchoJay_NSLog(("EJBorrow: released uid=" + uid
                    + " (lease deleted; Link restores its own bypasses)").toRawUTF8());
+    // 9 Sep 2026: the lock belongs to the session; the session is over. Unless a switch has
+    // already pended the next engage (whose click requested its own lock), release it.
+    if (pendingAutoEngage_.isEmpty() || pendingAutoEngage_ == uid) setRackLockWant({});
 }
 
 // ============================================================================
@@ -2867,6 +2870,7 @@ void EchoJayProcessor::editBegin(const juce::String& uid, int slot0,
                         hostSamplesPerBlock_ > 0 ? hostSamplesPerBlock_ : 512);
     editBuf_.setSize(2, 8192);          // audio-thread capacity, allocated HERE
     editSession_.uid        = uid;
+    setRackLockWant(uid);   // 9 Sep: the lock belongs to the edit session
     editSession_.slot0      = slot0;
     editSession_.leaseId    = leaseId;
     editSession_.pluginName = name;
@@ -2953,6 +2957,7 @@ void EchoJayProcessor::editEnd(bool keepState)
     // audio path under the lock; destruction happens after the ramp is over.
     editSession_.audioOn.store(false, std::memory_order_release);
     editSession_.uid.clear();
+    if (! borrowActive() && pendingAutoEngage_.isEmpty()) setRackLockWant({});   // 9 Sep: edit session over, no lock
     editSession_.slot0 = -1;
     editSession_.ringSlot.store(-1, std::memory_order_relaxed);
 

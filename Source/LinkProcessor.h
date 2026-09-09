@@ -630,6 +630,7 @@ private:
     // this processor — the command goes through the same path as the local
     // toggle (linkOn + updateShmState + dirty-mark).
     int  lastAppliedCtrlSeq_ = 0;
+    juce::String lastPerSeqAckFile_;   // v9: the previous ctrl-ack-<id>-<seq>.json, removed on the next answer
     void pollControlCommand();
 
     // Session project/genre follow (see projectName/genre above)

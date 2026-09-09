@@ -833,6 +833,7 @@ ChainHost::~ChainHost()
 // ---------------------------------------------------------------------------
 void ChainHost::prepare(double sampleRate, int blockSize)
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     EJ_LAT_LOG ("chain: prepare fs %.0f block %d", sampleRate, blockSize);
     sampleRate_ = sampleRate;
     blockSize_  = blockSize;
@@ -863,6 +864,7 @@ void ChainHost::prepare(double sampleRate, int blockSize)
 
 void ChainHost::release()
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     if (graph_) graph_->releaseResources();
     prepared_ = false;
 }
@@ -874,6 +876,24 @@ void ChainHost::process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi
     // certain prepare/rebuild orderings; bypassing it avoids that entirely.
     // (Also means master wet/dry costs nothing on an empty chain.)
     if (!prepared_ || !graph_) return;
+    // Link v9 change B: the implied mutex. A mutation in flight on the message
+    // thread owns graphLock_; this block passes through dry rather than render
+    // into a graph being rebuilt. Never blocks (try-lock), so no inversion.
+    const juce::CriticalSection::ScopedTryLockType graphTry (graphLock_);
+    if (! graphTry.isLocked())
+    {
+        processDuringRebuild_.fetch_add(1, std::memory_order_acq_rel);
+        if (buffer.getNumChannels() >= 1)
+        {
+            chainInTally_.push(buffer.getReadPointer(0),
+                               buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : nullptr,
+                               buffer.getNumSamples());
+            chainOutTally_.push(buffer.getReadPointer(0),
+                                buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : nullptr,
+                                buffer.getNumSamples());
+        }
+        return;   // dry: the buffer passes through untouched for this block
+    }
     if (resetPending_.exchange(false, std::memory_order_acq_rel))
     {
         EJ_LAT_LOG ("chain: transport reset applied to the graph");
@@ -1412,6 +1432,7 @@ ChainHost::SlotInfo ChainHost::getSlotInfo(int i) const
     const auto& s = slots_[(size_t)i];
     info.name             = s.desc.name;
     info.bypassed         = s.bypassed;
+    info.intendedBypassed = s.intendedBypassed;
     info.settings         = s.settings;
     info.format           = s.desc.pluginFormatName;
     info.wet              = s.wet;
@@ -2499,6 +2520,7 @@ ChainHost::applyStructuredSettings (int slotIndex,
 
 void ChainHost::removeSlot(int i)
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     if (i < 0 || i >= (int)slots_.size()) return;
     // MOVE LOG: what left. Recorded before the slot goes, while its name is
     // still in hand.
@@ -2533,8 +2555,24 @@ void ChainHost::removeSlot(int i)
     }
 }
 
+void ChainHost::setLeaseBypass(int i, bool bypassed)
+{
+    GraphMutation graphMutation(*this);   // v9 change B
+    if (i < 0 || i >= (int)slots_.size()) return;
+    if (slots_[i].bypassed == bypassed) return;   // already the effective state: no rebuild
+    slots_[i].bypassed = bypassed;
+    bumpChainRevision();
+    rebuildGraph();
+    if (prepared_)
+    {
+        graph_->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+        graph_->prepareToPlay(sampleRate_, blockSize_);
+    }
+}
+
 void ChainHost::moveSlot(int i, int direction)
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     int j = i + direction;
     if (i < 0 || i >= (int)slots_.size()) return;
     if (j < 0 || j >= (int)slots_.size()) return;
@@ -2550,8 +2588,13 @@ void ChainHost::moveSlot(int i, int direction)
 
 void ChainHost::setSlotBypassed(int i, bool bypassed)
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     if (i < 0 || i >= (int)slots_.size()) return;
-    slots_[i].bypassed = bypassed;
+    // v9: this is the USER's / plan's request. While a rack lease holds the
+    // rack dry (attachBypassed_), the effective state stays bypassed and only
+    // the intent is recorded; the lease's release applies the intent.
+    slots_[i].intendedBypassed = bypassed;
+    slots_[i].bypassed = attachBypassed_.load(std::memory_order_acquire) ? true : bypassed;
     bumpChainRevision();
     rebuildGraph();
     if (prepared_)
@@ -2600,6 +2643,7 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
                               const juce::PluginDescription& desc,
                               LoadOrigin origin)
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     // Any successful load clears a stale session load-failure mark
     sessionLoadFailed_.removeString(sessionLoadKey(desc.name, desc.pluginFormatName));
 
@@ -2617,8 +2661,16 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
     // Discriminator log (2 Sep): one side of the write; the projection's
     // EJPane line is the other. The timestamps say which candidate holds.
     EchoJay_NSLog(("EJPlace: stored \"" + slot.desc.name + "\" mfr=\""
-                   + slot.desc.manufacturerName + "\" (async load)").toRawUTF8());
-    slot.bypassed = false;
+                   + slot.desc.manufacturerName + "\" (async load"
+                   + juce::String(attachBypassed_.load(std::memory_order_acquire)
+                                      ? ", attached BYPASSED under the lease" : "")
+                   + ")").toRawUTF8());
+    // v9 change A: the slot arrives in the lease's TARGET state - one write,
+    // never un-bypassed-then-corrected. attachBypassed_ is set by the Link's
+    // rack lease before it bypasses the existing slots and cleared after it
+    // restores them, so a plan attached under a lease is never rendered live.
+    slot.bypassed = attachBypassed_.load(std::memory_order_acquire);
+    slot.intendedBypassed = false;   // v9: what it would be without the lease
     const auto arrivedName = slot.desc.name;
     slots_.push_back(std::move(slot));
     // MOVE LOG: a slot arriving, and ONLY where the origin licenses a claim.
@@ -4436,6 +4488,7 @@ void ChainHost::markBorrowPoolIneligible(const juce::PluginDescription& d,
 
 void ChainHost::releaseBorrowToPool()
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     if (mode_ != Mode::Borrowed || !graph_) return;
     for (int i = 0; i < (int) slots_.size(); ++i)
     {
@@ -4537,6 +4590,7 @@ LinkShm::StructureEdit::PreImages ChainHost::planCapturePreImages() const
 
 void ChainHost::parkSlotReattachable(int i)
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     if (i < 0 || i >= (int) slots_.size() || !graph_) return;
     auto& s = slots_[(size_t) i];
     detachHostedListener(i);
@@ -4561,6 +4615,7 @@ void ChainHost::parkSlotReattachable(int i)
 
 bool ChainHost::tryReattachParked(const juce::PluginDescription& d, int insertAt)
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     const auto key = planKeyOf({ d.name,
                                  descUid(d) != 0 ? juce::String(descUid(d))
                                                  : juce::String(), {} });
@@ -4998,6 +5053,7 @@ void ChainHost::captureBorrowDefaultState(int slotIdx)
 
 bool ChainHost::borrowTryReuseInto(const juce::PluginDescription& canonicalDesc)
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     if (mode_ != Mode::Borrowed) return false;
     const auto key = borrowPoolKey(canonicalDesc);
     if (borrowPoolIneligible_.contains(key)) return false;   // fresh, by verdict
@@ -5085,6 +5141,7 @@ bool ChainHost::borrowTryReuseInto(const juce::PluginDescription& canonicalDesc)
 
 juce::String ChainHost::loadBuiltinNow(const juce::PluginDescription& desc)
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     if (!graph_) return "chain graph not ready";
 
     // Resolved from whatever the description carries — identifier, then uid, then
@@ -7690,6 +7747,7 @@ bool ChainHost::latencyRebuildPending() const noexcept
 
 void ChainHost::rebuildForLatencyIfChanged()
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     // Message thread, after the debounce. Rebuild ONLY if some slot's
     // reported latency differs from what the graph was built with: a
     // notification that changes nothing costs nothing, and a burst for one

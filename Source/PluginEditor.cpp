@@ -7950,7 +7950,36 @@ void EchoJayEditor::handleBorrowSelectionChange(const juce::String& newUid,
             break;
     }
     p.pendingAutoEngage_ = newUid;
+    p.setRackLockWant(newUid);   // the lock belongs to the session being started, not to the view
     borrowSelectionTick();
+}
+
+void EchoJayEditor::withRackLock(const juce::String& uid, std::function<void()> action, bool retried)
+{
+    // Request the lock for THIS command, run the command once held (one poll period), then
+    // release unless a session, a pending engage or an edit session owns the uid.
+    auto& p = processorRef;
+    if (! oneShotLockUid_.contains(uid)) oneShotLockUid_.add(uid);
+    p.setRackLockWant(uid);
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    const int waitMs = (int) LinkShm::kRackLockRenewMs + 60;
+    juce::Timer::callAfterDelay(waitMs, [safeThis, uid, action, retried]
+    {
+        if (safeThis == nullptr) return;
+        auto& pr = safeThis->processorRef;
+        auto done = [&]
+        {
+            safeThis->oneShotLockUid_.removeString(uid);
+            if (pr.borrowUid() != uid && pr.pendingAutoEngage_ != uid && pr.editSession_.uid != uid)
+                pr.setRackLockWant(pr.borrowActive() ? pr.borrowUid() : pr.pendingAutoEngage_);
+        };
+        if (pr.rackLockHeldFor(uid)) { action(); done(); return; }
+        if (! retried) { safeThis->oneShotLockUid_.removeString(uid); safeThis->withRackLock(uid, action, true); return; }
+        EchoJay_NSLog(("EJRackLock: one-shot command for " + uid + " refused - lock not held after two waits").toRawUTF8());
+        safeThis->chainListPanel.statusText = "Cannot edit " + pr.resolveLinkDisplayName(uid) + ": its lock is held elsewhere.";
+        safeThis->chainListPanel.repaint();
+        done();
+    });
 }
 
 void EchoJayEditor::borrowSelectionTick()
@@ -7962,6 +7991,7 @@ void EchoJayEditor::borrowSelectionTick()
         return;
     }
     if (p.borrowApplyInFlight_) return;
+    if (borrowReadInFlightUid_.isNotEmpty()) return;   // Defect R: one read at a time
     const juce::String want = p.pendingAutoEngage_;
     if (want.isEmpty() || want != chainViewUid()) return;
     bool capable = false;
@@ -8106,6 +8136,12 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
     { chainListPanel.statusText = t; chainListPanel.repaint(); };
 
     if (uid.isEmpty() || processorRef.borrowActive()) return;
+    if (borrowReadInFlightUid_.isNotEmpty())
+    {
+        EchoJay_NSLog(("EJBorrow: read already in flight for " + borrowReadInFlightUid_
+                       + " - not starting another for " + uid).toRawUTF8());
+        return;
+    }
     // The offer gate, re-checked at the entry (the button's visibility is
     // the same author's, but a guard beats a convention): lock held,
     // sidecar valid, and the Link ANNOUNCES borrowCapable — an old binary
@@ -8131,6 +8167,9 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
         juce::StringArray failures;        // named list for the §5e refusal
         bool structCapable = false;        // snapshot: offered only if announced
         bool ctxCapable = false;           // §8: in-context offered only if announced
+        bool perSeq = false;               // v9 Link: poll ctrl-ack-<uid>-<seq>.json, never the shared file
+        bool retried = false;              // one re-request per slot before "no answer"
+        juce::int64 t0 = 0;                // wall clock at the first request of the current slot
     };
     auto st = std::make_shared<PullState>();
     st->uid       = uid;
@@ -8138,6 +8177,10 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
     st->masterWet = it->second.rack.masterWet;
     st->structCapable = structCapable;
     st->ctxCapable    = it->second.rack.inContextCapable;
+    st->perSeq        = it->second.rack.ackPerSeq;
+    borrowReadInFlightUid_ = uid;
+    EchoJay_NSLog(("EJBorrow: read START uid=" + uid + " slots=" + juce::String((int) st->slots.size())
+                   + (st->perSeq ? " channel=per-seq" : " channel=legacy")).toRawUTF8());
     say("Reading " + juce::String((int) st->slots.size()) + " plugin(s) from "
         + processorRef.resolveLinkDisplayName(uid) + "...");
 
@@ -8148,6 +8191,18 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
     *finish = [safeThis, st]()
     {
         if (safeThis == nullptr) return;
+        safeThis->borrowReadInFlightUid_.clear();
+        {
+            auto& pr = safeThis->processorRef;
+            if (pr.pendingAutoEngage_ != st->uid)
+            {
+                EchoJay_NSLog(("EJBorrow: read for " + st->uid + " ABANDONED at finish - the selection is now "
+                               + (pr.pendingAutoEngage_.isEmpty() ? juce::String("(none)") : pr.pendingAutoEngage_)
+                               + "; nothing engaged, nothing seeded").toRawUTF8());
+                if (! pr.borrowActive()) pr.setRackLockWant(pr.pendingAutoEngage_);
+                return;
+            }
+        }
         auto say2 = [&](const juce::String& t)
         { safeThis->chainListPanel.statusText = t; safeThis->chainListPanel.repaint(); };
         // §5e, decided: refuse with a named list — no partial borrow. A rack
@@ -8156,7 +8211,10 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
         { say2("Cannot edit this rack - " + juce::String(st->failures.size())
                + " plugin(s) could not come across: "
                + st->failures.joinIntoString("; ")
-               + ". Nothing was engaged."); return; }
+               + ". Nothing was engaged."); 
+          EchoJay_NSLog(("EJBorrow: read for " + st->uid + " REFUSED - " + st->failures.joinIntoString("; ")).toRawUTF8());
+          if (! safeThis->processorRef.borrowActive()) safeThis->processorRef.setRackLockWant({});   // no session, no lock
+          return; }
         if (st->totalBytes > (juce::int64) LinkShm::kLinkTransferMaxTotalBytes)
         { say2("Cannot edit this rack - its settings total "
                + juce::File::descriptionOfSizeInBytes(st->totalBytes)
@@ -8169,6 +8227,14 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
             st->uid + "-rack-" + juce::String(juce::Time::currentTimeMillis());
         proc.borrowEngageBegin(st->uid, leaseId, st->structCapable,
                                st->ctxCapable);
+        if (proc.borrowUid() != st->uid)
+        {
+            // The silent no-op that proceeded anyway (9 Sep 2026): borrowEngageBegin returns when a
+            // session is active. This read did not read for THAT session, so it seeds nothing.
+            EchoJay_NSLog(("EJBorrow: STALE read for " + st->uid + " discarded - the active session is "
+                           + (proc.borrowUid().isEmpty() ? juce::String("(none)") : proc.borrowUid())).toRawUTF8());
+            return;
+        }
         auto* bh = proc.borrowHost();
         // SESSION VECTORS AT ENGAGE, not at load settlement (26 Aug 2026):
         // the session is live from this line, so origins, base identity and
@@ -8347,6 +8413,17 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
     {
         if (safeThis == nullptr) return;
         if (st->idx >= (int) st->slots.size()) { (*finish)(); return; }
+        if (safeThis->processorRef.pendingAutoEngage_ != st->uid)
+        {
+            auto& pr = safeThis->processorRef;
+            EchoJay_NSLog(("EJBorrow: read for " + st->uid + " ABANDONED after " + juce::String(st->idx) + " of "
+                           + juce::String((int) st->slots.size()) + " slots - the selection is now "
+                           + (pr.pendingAutoEngage_.isEmpty() ? juce::String("(none)") : pr.pendingAutoEngage_)).toRawUTF8());
+            safeThis->borrowReadInFlightUid_.clear();
+            if (! pr.borrowActive()) pr.setRackLockWant(pr.pendingAutoEngage_);
+            return;
+        }
+        if (! st->retried) st->t0 = juce::Time::currentTimeMillis();
         int err = 0;
         const juce::String dir = LinkShm::resolveDir(err);
         if (dir.isEmpty())
@@ -8356,7 +8433,8 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
         cmd->setProperty("v",             1);
         cmd->setProperty("seq",           seq);
         cmd->setProperty("pullSlotState", st->idx + 1);
-        juce::File(dir + "ctrl-ack-" + st->uid + ".json").deleteFile();
+        if (! st->perSeq)   // legacy channel only: the shared ack file is cleared before the request
+            juce::File(dir + "ctrl-ack-" + st->uid + ".json").deleteFile();
         juce::File(dir + "ctrl-cmd-" + st->uid + ".json")
             .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
 
@@ -8369,7 +8447,8 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
                 const juce::String slotName =
                     st->idx < (int) st->slots.size()
                         ? st->slots[(size_t) st->idx].name : juce::String("?");
-                juce::File ack(dir + "ctrl-ack-" + st->uid + ".json");
+                juce::File ack(dir + "ctrl-ack-" + st->uid
+                               + (st->perSeq ? "-" + juce::String(seq) : juce::String()) + ".json");
                 if (ack.existsAsFile())
                 {
                     auto v = juce::JSON::parse(ack.loadFileAsString());
@@ -8392,6 +8471,7 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
                             st->states.set(st->idx, b64);
                             st->totalBytes += (juce::int64) b64.length() * 3 / 4;
                         }
+                        st->retried = false;
                         ++st->idx;
                         (*step)();
                         return;
@@ -8399,12 +8479,25 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
                 }
                 if (attemptsLeft <= 1)
                 {
-                    st->failures.add(slotName + " (no answer from the Link)");
+                    const double elapsedS = (double) (juce::Time::currentTimeMillis() - st->t0) / 1000.0;
+                    if (! st->retried)
+                    {
+                        // ONE re-request with a fresh seq before refusing (9 Sep 2026)
+                        st->retried = true;
+                        EchoJay_NSLog(("EJBorrow: slot " + juce::String(st->idx + 1) + " (\"" + slotName + "\") of " + st->uid
+                                       + " unanswered after " + juce::String(elapsedS, 1) + " s (seq " + juce::String(seq)
+                                       + ") - re-requesting once").toRawUTF8());
+                        (*step)();
+                        return;
+                    }
+                    st->retried = false;
+                    st->failures.add(slotName + " (no answer from the Link in " + juce::String(elapsedS, 1)
+                                     + " s, two requests, last seq " + juce::String(seq) + ")");
                     ++st->idx;
                     (*step)();
                     return;
                 }
-                (*poll)(attemptsLeft - 1);
+                                (*poll)(attemptsLeft - 1);
             });
         };
         (*poll)(20);
@@ -8442,6 +8535,11 @@ void EchoJayEditor::sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemov
 
 void EchoJayEditor::sendRackEdit(const juce::String& uid, int slotIdx, bool isRemove)
 {
+    if (uid.isNotEmpty() && ! processorRef.rackLockHeldFor(uid) && ! oneShotLockUid_.contains(uid))
+    {   // the lock belongs to this command for its duration (9 Sep ruling)
+        withRackLock(uid, [this, uid, slotIdx, isRemove]{ sendRackEdit(uid, slotIdx, isRemove); });
+        return;
+    }
     // IDENTITY, NOT INDEX: the op carries the slot number PLUS baseSlots,
     // the full name list of the rack THE USER IS LOOKING AT (the cache).
     // The Link verifies that list against its live rack before touching
@@ -8979,6 +9077,11 @@ void EchoJayEditor::pollOpenSlotAck(const juce::String& uid, int seq,
 
 void EchoJayEditor::sendRackAdd(const juce::String& uid, const juce::String& pluginName)
 {
+    if (uid.isNotEmpty() && ! processorRef.rackLockHeldFor(uid) && ! oneShotLockUid_.contains(uid))
+    {
+        withRackLock(uid, [this, uid, pluginName]{ sendRackAdd(uid, pluginName); });
+        return;
+    }
     // ADD BY NAME, which is the op's own contract, and the reason this can
     // fail in a way remove and bypass cannot: the Link resolves the name
     // against ITS loadable plugin list, which is a different machine-scan
@@ -20923,10 +21026,22 @@ void EchoJayEditor::timerCallback()
     // A live borrow PINS the lock to its own uid (spec §4): switching tabs
     // or racks mid-borrow must not drop the lock while the lease holds, or
     // the Link's UI would unlock under an engaged borrow.
-    processorRef.setRackLockWant(
-        processorRef.borrowActive() ? processorRef.borrowUid()
-        : currentTab == Tab::Chain && chainListPanel.isVisible()
-            ? chainViewUid() : juce::String());
+    // 9 Sep 2026 ruling: the lock belongs to a session, and no session means no lock. The want
+    // is set on transitions (row click -> pending engage, session begin/end, edit session
+    // begin/end, one-shot Link-tab commands). This is the INSTRUMENT only: a lock held for a uid
+    // that is neither the session, the pending engage nor an edit session is a defect, said and
+    // corrected here - on a correct binary this line never prints.
+    {
+        auto& pr = processorRef;
+        const juce::String held = pr.rackLockHeldUidForInstrument();
+        if (held.isNotEmpty() && held != pr.borrowUid() && held != pr.pendingAutoEngage_
+            && held != pr.editSession_.uid && ! oneShotLockUid_.contains(held))
+        {
+            EchoJay_NSLog(("EJRackLock: INVARIANT BROKEN - held for " + held
+                           + " with no session, no pending engage, no edit session; releasing").toRawUTF8());
+            pr.setRackLockWant({});
+        }
+    }
 
     // A borrow that released ITSELF says so in words, wherever the user is
     // looking — a self-release must never be silent (finding #3).

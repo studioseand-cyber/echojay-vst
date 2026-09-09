@@ -1141,6 +1141,7 @@ struct RackSidecarSlot {
 struct RackSidecar {
     bool  valid = false;
     juce::String uid, name;
+    bool  ackPerSeq = false;   // v9 Link: answers also written to ctrl-ack-<uid>-<seq>.json
     int   revision = -1;
     float masterWet = 1.0f;
     // Pre-chain gain (18 Aug 2026): mirrored so the mixer can show and drive
@@ -1821,6 +1822,7 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
     if (rc.borrowCapable) obj->setProperty("borrowCapable", true);
     if (rc.structureEditCapable) obj->setProperty("structureEditCapable", true);
     if (rc.inContextCapable) obj->setProperty("inContextCapable", true);
+    if (rc.ackPerSeq) obj->setProperty("ackPerSeq", true);
     if (rc.publisherPid > 0)
     {
         obj->setProperty("publisherPid", rc.publisherPid);
@@ -1895,6 +1897,7 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
     rc.borrowCapable     = obj->hasProperty("borrowCapable") && (bool)obj->getProperty("borrowCapable");
     rc.structureEditCapable = obj->hasProperty("structureEditCapable") && (bool)obj->getProperty("structureEditCapable");
     rc.inContextCapable = obj->hasProperty("inContextCapable") && (bool)obj->getProperty("inContextCapable");
+    rc.ackPerSeq = obj->hasProperty("ackPerSeq") && (bool)obj->getProperty("ackPerSeq");
     rc.publisherPid  = obj->hasProperty("publisherPid")  ? (int) obj->getProperty("publisherPid") : 0;
     rc.hostPid       = obj->hasProperty("hostPid")       ? (int) obj->getProperty("hostPid") : 0;
     rc.hostStartSec  = obj->hasProperty("hostStartSec")  ? (juce::int64) obj->getProperty("hostStartSec") : 0;

@@ -315,6 +315,7 @@ void LinkProcessor::publishRackSidecar()
     rc.borrowCapable = true;   // this binary honors the rack-scoped lease
     rc.structureEditCapable = true;   // and can journal/apply a structure plan
     rc.inContextCapable     = true;   // §8: mutes on lease muteOut
+    rc.ackPerSeq            = true;   // v9: answers also land in ctrl-ack-<uid>-<seq>.json
     {
         // Round 53 (C4): who we are, so a main counts us only from its own host.
         const auto& h = ChainHost::getHostIdentity();
@@ -660,7 +661,7 @@ void LinkProcessor::pollEditLease()
             // audio ALREADY processed by this instance and process it again
             // in series. setSlotBypassed bumps chainRevision, so the sidecar
             // republishes with the controlled flag riding along.
-            chainHost.setSlotBypassed(slot0, true);
+            chainHost.setLeaseBypass(slot0, true);   // v9: the lease's write
             leaseActive_.store(true, std::memory_order_relaxed);
             notifyChainModel();   // the open editor dims + disables the slot
             EchoJay_NSLog(("EJLease: engaged slot "
@@ -683,7 +684,7 @@ void LinkProcessor::pollEditLease()
             }
             else if (leaseSlot0_ >= 0 && leaseSlot0_ < chainHost.getNumSlots())
             {
-                chainHost.setSlotBypassed(leaseSlot0_, leasePriorBypass_);
+                chainHost.setLeaseBypass(leaseSlot0_, chainHost.getSlotInfo(leaseSlot0_).intendedBypassed);   // v9
                 EchoJay_NSLog("EJLease: released/expired - slot restored");
             }
             leaseSlot0_ = -1;
@@ -1058,7 +1059,21 @@ void LinkProcessor::pollControlCommand()
     }
     {
         juce::File af(resolvedDir + "ctrl-ack-" + id + ".json");
-        af.replaceWithText(juce::JSON::toString(juce::var(ack), true));
+        const juce::String ackText = juce::JSON::toString(juce::var(ack), true);
+        af.replaceWithText(ackText);
+        // v9: PER-REQUEST identity on the channel. The legacy single ack file
+        // stays for older mains; a v9-aware main polls ctrl-ack-<id>-<seq>.json,
+        // which no other reader deletes or overwrites (9 Sep 2026: two read
+        // loops sharing one ack file threw the Link's answers away). The
+        // previous per-seq file this Link wrote is removed, so an abandoned
+        // request leaves at most one stale file behind per Link.
+        {
+            juce::File perSeq(resolvedDir + "ctrl-ack-" + id + "-" + juce::String(seq) + ".json");
+            if (lastPerSeqAckFile_.isNotEmpty() && lastPerSeqAckFile_ != perSeq.getFullPathName())
+                juce::File(lastPerSeqAckFile_).deleteFile();
+            perSeq.replaceWithText(ackText);
+            lastPerSeqAckFile_ = perSeq.getFullPathName();
+        }
         if (pullAttempted)
             EchoJay_NSLog(("EJPull[" + juce::String(seq) + "] link: ack file "
                            + juce::String((juce::int64) af.getSize())
@@ -1950,6 +1965,7 @@ void LinkProcessor::resyncChainModelFromHost()
 
 void LinkProcessor::rackLeaseEngage()
 {
+    chainHost.setAttachBypassed(true);    // v9 change A: BEFORE the existing slots are bypassed
     // WHOLE-RACK ENGAGE: save every slot's bypass, bypass all once, stream
     // dry. setSlotBypassed bumps the revision, so the sidecar republishes
     // with every slot controlled. Extracted so linksync_test drives the
@@ -1957,8 +1973,8 @@ void LinkProcessor::rackLeaseEngage()
     rackLeasePrior_.clear();
     for (int i = 0; i < chainHost.getNumSlots(); ++i)
     {
-        rackLeasePrior_.push_back(chainHost.getSlotInfo(i).bypassed);
-        chainHost.setSlotBypassed(i, true);
+        rackLeasePrior_.push_back(chainHost.getSlotInfo(i).intendedBypassed);   // v9: the INTENT, not the effective state
+        chainHost.setLeaseBypass(i, true);
     }
     rackLeaseActive_ = true;
     leaseSlot0_      = -1;
@@ -1971,9 +1987,12 @@ void LinkProcessor::rackLeaseEngage()
 
 void LinkProcessor::rackLeaseRelease()
 {
-    for (int i = 0; i < chainHost.getNumSlots()
-                    && i < (int) rackLeasePrior_.size(); ++i)
-        chainHost.setSlotBypassed(i, rackLeasePrior_[(size_t) i]);
+    // v9: EVERY slot returns to its intended state - including slots that arrived under the
+    // lease (attached bypassed, intended live) which the prior list, captured at engage, never
+    // held. The leg "attach" measures exactly this: bypassed while leased, live after release.
+    for (int i = 0; i < chainHost.getNumSlots(); ++i)
+        chainHost.setLeaseBypass(i, chainHost.getSlotInfo(i).intendedBypassed);
+    chainHost.setAttachBypassed(false);   // v9 change A: AFTER the priors are restored
     EchoJay_NSLog(("EJLease: RACK released/expired - "
                    + juce::String((int) rackLeasePrior_.size())
                    + " slot bypass state(s) restored").toRawUTF8());
@@ -2016,11 +2035,19 @@ ChainHost::PlanResult LinkProcessor::applyStructurePlanAndSync(
             const int o = res.finalOrigin[(size_t) i];
             np.push_back(o >= 0 && o < (int) rackLeasePrior_.size()
                              ? (bool) rackLeasePrior_[(size_t) o]
-                             : chainHost.getSlotInfo(i).bypassed);
+                             : chainHost.getSlotInfo(i).intendedBypassed);   // v9: a new slot's INTENT (false unless the plan said bypass)
         }
         rackLeasePrior_ = std::move(np);
+        // v9: this loop is now the INSTRUMENT. Every slot arrived bypassed
+        // (change A); a live one here is the invariant broken, said loudly.
         for (int i = 0; i < chainHost.getNumSlots(); ++i)
-            chainHost.setSlotBypassed(i, true);
+        {
+            if (! chainHost.getSlotInfo(i).bypassed)
+                EchoJay_NSLog(("EJLease: INVARIANT BROKEN - slot " + juce::String(i)
+                               + " (\"" + chainHost.getSlotInfo(i).name
+                               + "\") attached LIVE under the lease; bypassing it now").toRawUTF8());
+            chainHost.setLeaseBypass(i, true);
+        }
         EchoJay_NSLog(("EJLease: priors remapped through the plan ("
                        + juce::String((int) rackLeasePrior_.size())
                        + " slots), dry rack re-asserted").toRawUTF8());

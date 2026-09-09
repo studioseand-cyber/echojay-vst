@@ -592,6 +592,7 @@ public:
     // instead of instructing a deselect the user already performed.
     bool borrowEditPendingHeld_ = false;
     juce::String pendingAutoEngage_;   // engage this uid once released
+    juce::String rackLockHeldUidForInstrument() const { return rackLockHeldUid_; }   // 9 Sep: the editor's lock instrument reads this
     // §8 in-context state (public: the editor banners from it, the gates
     // assert it): OK = announced AND fits the budget, decided at engage,
     // re-checked live on every borrowed-chain change.

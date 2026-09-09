@@ -1288,6 +1288,16 @@ private:
     // outcome (applied / no map) is reported when it lands. Names, in-memory only.
     juce::StringArray dialPendingReported_;
     void reportPendingDialOutcomes();
+    // 9 Sep 2026 (Defect R): ONE rack read in flight per editor. Set by startBorrow, cleared on
+    // every terminal path (engaged, refused, abandoned). borrowSelectionTick will not start a
+    // second loop while it is set; the log names the loop it refused to start.
+    juce::String borrowReadInFlightUid_;
+    // Lock on transitions (9 Sep ruling): the lock belongs to a session. Requested at the row
+    // click that pends an engage, at an edit session's start, and by the one-shot Link-tab
+    // commands for their own duration; released when the read refuses/abandons, when the
+    // session ends, and when a one-shot command completes. Never re-derived from the view.
+    juce::StringArray oneShotLockUid_;
+    void withRackLock(const juce::String& uid, std::function<void()> action, bool retried = false);
     void finishChainBubbleWhenDialSettled(const juce::String& chainJson, int attemptsLeft);
     // The edit twin (item 3, 9 Aug 2026): same settle-then-compose contract,
     // scoped to the slots the edit's ops actually touched.
