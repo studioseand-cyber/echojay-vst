@@ -46,6 +46,7 @@
 
 #include <JuceHeader.h>
 #include <cmath>
+#include <vector>
 
 namespace echojay
 {
@@ -220,6 +221,89 @@ inline juce::String buildMisdialBody (const MisdialRow& row,
     put ("source",   source);
 
     return juce::JSON::toString (juce::var (o.get()), true);
+}
+
+// ---------------------------------------------------------------------------
+// PERSISTENCE. The rows live on the CHAT MESSAGE, so they survive a rack change
+// and a reload. Serialised here rather than in the editor so the round-trip is
+// exercised by the gate: WsMessage carries the string, workspace_roundtrip_test
+// asserts it survives, and the `reported` flag rides with it exactly as
+// WsMessage::gainJson carries its applied state.
+//
+// reportId IS PERSISTED. A retry after a reload must reuse the id or the server
+// files a second report for the same defect, which is the one thing dedupe
+// exists to stop.
+// ---------------------------------------------------------------------------
+
+inline juce::String misdialRowsToJson (const std::vector<MisdialRow>& rows)
+{
+    if (rows.empty()) return {};
+    juce::Array<juce::var> arr;
+    for (const auto& r : rows)
+    {
+        juce::DynamicObject::Ptr o = new juce::DynamicObject();
+        o->setProperty ("fp",   r.fp);
+        o->setProperty ("k",    r.mapKey);
+        o->setProperty ("i",    r.index);
+        o->setProperty ("v",    r.valueDialled);
+        o->setProperty ("hv",   r.hasValue);
+        if (r.landedText.isNotEmpty()) o->setProperty ("l",  r.landedText);
+        if (r.outcome.isNotEmpty())    o->setProperty ("o",  r.outcome);
+        if (r.mapKind.isNotEmpty())    o->setProperty ("mk", r.mapKind);
+        if (r.mapUnit.isNotEmpty())    o->setProperty ("mu", r.mapUnit);
+        if (r.hasRange)
+        {
+            o->setProperty ("rmin", r.mapRangeMin);
+            o->setProperty ("rmax", r.mapRangeMax);
+        }
+        if (r.reported)                o->setProperty ("rep", true);
+        if (r.reportId.isNotEmpty())   o->setProperty ("rid", r.reportId);
+        arr.add (juce::var (o.get()));
+    }
+    return juce::JSON::toString (juce::var (arr), true);
+}
+
+inline std::vector<MisdialRow> misdialRowsFromJson (const juce::String& json)
+{
+    std::vector<MisdialRow> out;
+    if (json.trim().isEmpty()) return out;
+    auto v = juce::JSON::parse (json);
+    if (auto* a = v.getArray())
+        for (auto& e : *a)
+        {
+            if (auto* o = e.getDynamicObject())
+            {
+                MisdialRow r;
+                r.fp           = o->getProperty ("fp").toString();
+                r.mapKey       = o->getProperty ("k").toString();
+                r.index        = (int) o->getProperty ("i");
+                r.valueDialled = (double) o->getProperty ("v");
+                r.hasValue     = (bool) o->getProperty ("hv");
+                r.landedText   = o->getProperty ("l").toString();
+                r.outcome      = o->getProperty ("o").toString();
+                r.mapKind      = o->getProperty ("mk").toString();
+                r.mapUnit      = o->getProperty ("mu").toString();
+                if (o->hasProperty ("rmin") && o->hasProperty ("rmax"))
+                {
+                    r.mapRangeMin = (double) o->getProperty ("rmin");
+                    r.mapRangeMax = (double) o->getProperty ("rmax");
+                    r.hasRange = true;
+                }
+                r.reported = (bool) o->getProperty ("rep");
+                r.reportId = o->getProperty ("rid").toString();
+                out.push_back (r);
+            }
+        }
+    return out;
+}
+
+/** True when this message has at least one row worth offering. THE BUTTON'S
+    OWN CONDITION: never a dead button, so it appears only when this is true. */
+inline bool misdialAnyReportable (const std::vector<MisdialRow>& rows)
+{
+    for (const auto& r : rows)
+        if (misdialRowIsReportable (r)) return true;
+    return false;
 }
 
 /** What the popup row shows: the map key, the value asked for, and what

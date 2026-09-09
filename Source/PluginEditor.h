@@ -1169,6 +1169,10 @@ private:
         // built client-side at compose time (buildCompareFiguresJson). Rendered
         // as the figure card; persisted on the message so a reloaded chat
         // redraws it identically (the prose no longer restates the numbers).
+        // MISDIAL REPORT v1: the per-control rows of this reply's dial, with
+        // their reported flags and report ids. Persisted as _misdial, so a
+        // reloaded card cannot invite a second press and a retry reuses its id.
+        juce::String misdialData;
         juce::String figuresData;
         // Split call: non-zero on the PROVISIONAL bubble rendered from the
         // classifier's preamble. A rendering artefact, never history.
@@ -3032,6 +3036,13 @@ private:
     // block; the op list is painted above it in plain language. NEVER
     // mutates silently: ops run only on Apply, through
     // ChainHost::applyChainEdits (staleness-guarded, stop-at-failure).
+    // MISDIAL REPORT v1: one "Report a wrong setting" button per APPLIED card
+    // that has at least one reportable row. Pooled and viewport-culled exactly
+    // as editAltBtns is, because an uncalled button left at its last bounds
+    // floats over other bubbles as the list scrolls.
+    std::array<juce::TextButton, kMaxChainBuildBtns> misdialBtns;
+    std::array<int, kMaxChainBuildBtns> misdialMsgIdx { };
+    int activeMisdialBtns = 0;
     std::array<juce::TextButton, kMaxChainBuildBtns> editApplyBtns;
     std::array<int, kMaxChainBuildBtns> editApplyMsgIdx { };
     int activeEditApplyBtns = 0;
@@ -3065,6 +3076,10 @@ private:
     // second guess (fixes the sidebar "can't scroll up to a long reply" bug).
     int  measureChatContentHeight();
     int  editCardHeight(const ChatMsg& msg) const;
+    // MISDIAL REPORT v1
+    bool misdialCardHasReportable(const ChatMsg& msg) const;
+    void openMisdialPopup(int msgIdx);
+    void sendMisdialReport(int msgIdx, int rowIdx);
     // Build card (1d follow-up): structured slot lines + Build button —
     // the ops card's visual language applied to CHAIN blocks
     // Caption line height under a slot row. ONE constant, consumed by the

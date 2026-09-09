@@ -4,6 +4,7 @@
 #include "EedDeviceRegistry.h"
 #include "EchoJayLevelTally.h"
 #include "EchoJayParamMaps.h"   // echojay::IdentityRef for recommendableIdentityRefs
+#include "EJMisdialReport.h"    // echojay::MisdialRow, retained per slot after a dial
 #include <atomic>
 #include <map>
 #include <set>
@@ -626,6 +627,12 @@ public:
         // slot. APPENDED last (stale-lib ABI: test TUs pair this header with
         // the previous build's lib until the next full build).
         bool              builtin = false;
+        // MISDIAL REPORT v1: this slot's per-control rows from the last dial,
+        // unstripped and with fp already copied in. Carried on the dial info
+        // because that is what the editor already reads per slot after a
+        // settle; the alternative was handing the editor a slot index, which
+        // goes stale the moment the rack changes.
+        std::vector<echojay::MisdialRow> misdialRows;
     };
     std::vector<SlotDialInfo> getDialInfos() const;
     // One line per slot, at the END of a build, saying what actually dialled.
@@ -648,6 +655,13 @@ public:
     // feed-split branch and the settle walker. The dark "(dial)" markers and
     // dialFlags were the third and were deleted on 25 Aug 2026.
     juce::StringArray getDialableRecommendableNames() const;
+    /** The last dial's per-control rows for a slot, for the misdial report.
+        Empty for an out-of-range index or a slot that never dialled. */
+    std::vector<echojay::MisdialRow> getMisdialRows (int slotIndex) const
+    {
+        if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return {};
+        return slots_[(size_t) slotIndex].misdialRows;
+    }
     // Feed split (P16). The model's list becomes the DIALABLE subset, but a
     // fresh machine has no local fp, so dialability also consults the server's
     // existence index (version-insensitive, one call per scan, cached here).
@@ -1714,6 +1728,16 @@ private:
         juce::String                         staleIndexedFp;
         bool                                 staleSettled = false;
         juce::StringArray                    dialOutOfRange;   // asked outside the live map's range, refused per value
+        // MISDIAL REPORT v1: the per-control rows of the LAST dial on this
+        // slot, captured unstripped. The five StringArrays above hold
+        // semanticLabel()-stripped labels, and that transform is lossy
+        // ("threshold_db" -> "threshold"), so they cannot be turned back into a
+        // map key and cannot serve a report. fp is copied INTO each row so the
+        // harvested record stays truthful after the slot is replaced.
+        //
+        // These are the SOURCE. The durable copy lives on the chat message; the
+        // editor harvests from here once the dial settles.
+        std::vector<echojay::MisdialRow>     misdialRows;
         // Hosted settings cache (see setStateCacheEnabled). The blob and its
         // bookkeeping are read under stateCacheMutex_; everything else on
         // this struct follows the existing message-thread-only rule.

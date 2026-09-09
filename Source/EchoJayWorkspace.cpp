@@ -1,4 +1,5 @@
 #include "EchoJayWorkspace.h"
+#include "EJMisdialReport.h"   // the shipped row serialisers, pinned below
 #include <algorithm>
 
 extern void ejTeardownLog(const juce::String& msg);
@@ -290,6 +291,24 @@ void EchoJayWorkspace::markEditApplied(const juce::String& chatId,
                 m.editResult    = resultSummary;
                 m.editAltPrompt = altPrompt;
                 m.editAltLabel  = altLabel;
+            }
+        c.updatedAt = isoUtcNow();
+        return;
+    }
+}
+
+void EchoJayWorkspace::setMessageMisdial(const juce::String& chatId,
+                                         const juce::String& matchContent,
+                                         const juce::String& rowsJson)
+{
+    for (auto& c : chats)
+    {
+        if (c.id != chatId) continue;
+        for (auto& m : c.messages)
+            if (m.role == "assistant" && m.content == matchContent)
+            {
+                m.misdialJson = rowsJson;
+                break;
             }
         c.updatedAt = isoUtcNow();
         return;
@@ -813,6 +832,7 @@ WsChat EchoJayWorkspace::parseChat(const juce::var& v)
                     msg.meterCtx  = mObj->getProperty("_meterCtx").toString();
                     msg.chainJson = mObj->getProperty("_chain").toString();
                     msg.figuresJson = mObj->getProperty("_figures").toString();
+                    msg.misdialJson = mObj->getProperty("_misdial").toString();
                     msg.gainJson  = mObj->getProperty("_gain").toString();
                     msg.askJson   = mObj->getProperty("_ask").toString();
                     msg.askAnswered = (bool)mObj->getProperty("_askDone");
@@ -1088,20 +1108,67 @@ bool EchoJayWorkspace::runRoundTripSelfTest()
                            && ser(rtf) == sf;
     const bool figNoKey = !s1.contains("_figures");   // plain pre-C chat carries none
 
+    // MISDIAL REPORT v1 round-trip. The per-control rows AND their reported
+    // flag and reportId must survive, because the flag is what stops a reloaded
+    // card inviting a second press and the id is what makes a retry dedupe
+    // rather than file twice. Same contract as _gain, which carries its applied
+    // state for the same reason. A message that dialled nothing must carry NO
+    // _misdial key (absent parses as absent, silent migration).
+    WsChat mdChat = pre; mdChat.id = "t5";
+    WsMessage mdm; mdm.role = "assistant"; mdm.content = "dialled it";
+    {
+        std::vector<echojay::MisdialRow> rows;
+        echojay::MisdialRow a;
+        a.fp = juce::String::repeatedString ("ab", 32);   // 64 chars
+        a.mapKey = "threshold_db"; a.index = 0; a.valueDialled = 0.0; a.hasValue = true;
+        a.landedText = "-4.0 dB";
+        echojay::MisdialRow b = a;
+        b.mapKey = "ratio"; b.index = 7; b.valueDialled = 4.0;
+        b.landedText = {}; b.outcome = "refused: outside the map's range";
+        b.reported = true; b.reportId = "kept-across-a-reload";
+        rows.push_back (a); rows.push_back (b);
+        mdm.misdialJson = echojay::misdialRowsToJson (rows);
+    }
+    mdChat.messages.push_back(mdm);
+    const auto smd  = ser(mdChat);
+    const auto rtmd = parseChat(juce::JSON::parse(smd));
+    bool mdRoundTrip = rtmd.messages.size() == 2
+                    && rtmd.messages[1].misdialJson == mdm.misdialJson
+                    && ser(rtmd) == smd;
+    bool mdFlagKept = false, mdIdKept = false, mdZeroKept = false;
+    {
+        const auto back = echojay::misdialRowsFromJson (rtmd.messages[1].misdialJson);
+        mdRoundTrip = mdRoundTrip && back.size() == 2;
+        if (back.size() == 2)
+        {
+            // Index 0 and value 0 are the two truthiness traps in this feature.
+            mdZeroKept  = back[0].index == 0 && back[0].hasValue
+                       && std::abs (back[0].valueDialled) < 1e-12
+                       && back[0].mapKey == "threshold_db";
+            mdFlagKept  = back[0].reported == false && back[1].reported == true;
+            mdIdKept    = back[1].reportId == "kept-across-a-reload"
+                       && back[1].outcome.contains ("outside the map's range");
+        }
+    }
+    const bool mdNoKey = !s1.contains("_misdial");   // a chat that dialled nothing
+
     lastResult = preStable && preNoKeys && chanStable && chanFields
               && revMainStable && revMainNoKey && revChanStable && revChanField && revMainNoSnap
               && updNoKey && updPreserved && updFormat
-              && figRoundTrip && figNoKey;
+              && figRoundTrip && figNoKey
+              && mdRoundTrip && mdFlagKept && mdIdKept && mdZeroKept && mdNoKey;
     std::fprintf(stderr,
         "EJWorkspace selftest: %s (preStable=%d preNoKeys=%d chanStable=%d chanFields=%d "
         "revMainStable=%d revMainNoKey=%d revChanStable=%d revChanField=%d revMainNoSnap=%d "
-        "updNoKey=%d updPreserved=%d updFormat=%d figRoundTrip=%d figNoKey=%d)\n",
+        "updNoKey=%d updPreserved=%d updFormat=%d figRoundTrip=%d figNoKey=%d "
+        "mdRoundTrip=%d mdFlagKept=%d mdIdKept=%d mdZeroKept=%d mdNoKey=%d)\n",
         lastResult ? "PASS" : "FAIL",
         (int)preStable, (int)preNoKeys, (int)chanStable, (int)chanFields,
         (int)revMainStable, (int)revMainNoKey, (int)revChanStable, (int)revChanField,
         (int)revMainNoSnap,
         (int)updNoKey, (int)updPreserved, (int)updFormat,
-        (int)figRoundTrip, (int)figNoKey);
+        (int)figRoundTrip, (int)figNoKey,
+        (int)mdRoundTrip, (int)mdFlagKept, (int)mdIdKept, (int)mdZeroKept, (int)mdNoKey);
     return lastResult;
 #endif
 }
@@ -1143,6 +1210,11 @@ juce::var EchoJayWorkspace::chatToVar(const WsChat& c)
             mObj->setProperty("_chain",     m.chainJson);
         if (m.figuresJson.isNotEmpty())
             mObj->setProperty("_figures",   m.figuresJson);
+        // Its OWN guard. Written under the _figures guard first, which made a
+        // misdial record depend on a compare card existing: the dangling-if
+        // this file's brace-per-guard style exists to prevent.
+        if (m.misdialJson.isNotEmpty())
+            mObj->setProperty("_misdial",   m.misdialJson);
         if (m.gainJson.isNotEmpty())
             mObj->setProperty("_gain",      m.gainJson);
         if (m.askJson.isNotEmpty())

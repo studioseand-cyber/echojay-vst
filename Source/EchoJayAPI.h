@@ -699,6 +699,17 @@ public:
     // Settings and a reader would otherwise assume they work alike.
     //
     // Local settings file, like the other two: it describes this machine.
+    /** MISDIAL REPORT v1: POST one assembled record to /api/report-misdial.
+        The body comes from echojay::buildMisdialBody; this layer owns the path
+        and the transport and nothing else. maxAttempts is 1 ON PURPOSE: the
+        button retries, not the transport, because a silent retry would fire a
+        second POST while the user still sees a live button and the reportId is
+        what makes a DELIBERATE retry safe. */
+    void reportMisdial(const juce::String& body,
+                       std::function<void(const juce::var&, int)> onComplete)
+    {
+        postJSON("/api/report-misdial", body, std::move(onComplete), 1);
+    }
     bool getEchoJayOnly() const { return echoJayOnly; }
     void setEchoJayOnly(bool on) { echoJayOnly = on; saveSettings(); }
     bool getDialWritesBlocked() const { return dialWritesBlocked; }

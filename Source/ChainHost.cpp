@@ -3838,6 +3838,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
     s.dialApproximate.clear();
     s.dialServedFrom = it->second.getProperty("served_from", juce::var()).toString();
     s.dialOutOfRange.clear();
+    s.misdialRows.clear();
     // dial-3 denominator (A3): the count of settings the model asked for,
     // stored HERE because appliedCount + manual.size() is not a substitute
     // (both dedupe through semanticLabel).
@@ -3849,6 +3850,38 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
                        + juce::String(r.normalized, 3) + "  (" + r.note + ")"
                        + (r.landedText.isNotEmpty() ? "  landed \"" + r.landedText.trim() + "\""
                                                     : juce::String())).toRawUTF8());
+        // MISDIAL REPORT v1: capture the row BEFORE the branch, so a refused
+        // control is reportable too. A value that would not go in is exactly
+        // the kind of map defect this feature exists to collect, and gating the
+        // capture on r.applied would have thrown those away.
+        //
+        // requestedValue is a juce::var and may be a string on a choice
+        // control; hasValue records whether it is a finite number, and the
+        // completeness rule refuses the row rather than sending a NaN.
+        {
+            echojay::MisdialRow mr;
+            mr.fp         = s.fp;                 // COPIED: a snapshot, not a live read
+            mr.mapKey     = r.semantic;           // the RAW key, never semanticLabel()
+            mr.index      = r.index;
+            mr.landedText = r.landedText.trim();
+            if (r.requestedValue.isDouble() || r.requestedValue.isInt()
+                || r.requestedValue.isInt64())
+            {
+                const double rv = (double) r.requestedValue;
+                if (std::isfinite (rv)) { mr.valueDialled = rv; mr.hasValue = true; }
+            }
+            // The outcome, used when there is no readback to send instead. The
+            // specific refusal first, because "outside the range" tells Kathy
+            // more than "not applied".
+            mr.outcome = r.outOfRange        ? "refused: outside the map's range"
+                       : r.readbackMismatch  ? "written then reverted: the display disagreed"
+                       : r.staleDisplayKept  ? "written, display could not confirm it"
+                       : r.anchorsUnverified ? "written from another version's anchors"
+                       : r.applied           ? "applied"
+                                             : (r.note.isNotEmpty() ? r.note
+                                                                    : juce::String ("not applied"));
+            s.misdialRows.push_back (mr);
+        }
         if (r.applied)
         {
             // The value comes off the RESULT, not a flat lookup on the
@@ -6895,6 +6928,10 @@ std::vector<ChainHost::SlotDialInfo> ChainHost::getDialInfos() const
         di.appliedCount = s.dialAppliedCount;
         di.staleIndexedFp = s.staleIndexedFp;
         di.outOfRange   = s.dialOutOfRange;
+        // MISDIAL REPORT v1: the unstripped per-control rows, fp already
+        // copied in. The four StringArrays above are semanticLabel()-stripped
+        // and cannot serve a report; these can.
+        di.misdialRows  = s.misdialRows;
         // dial-3 key halves + denominator (A2/A3/A7.2). uid rendered
         // exactly as getSlotIdentity renders it, so the two surfaces
         // cannot disagree about the same slot.

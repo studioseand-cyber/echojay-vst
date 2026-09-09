@@ -5900,9 +5900,14 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (ro != nullptr && (ro->getProperty ("observedResult").isDouble()
                                      || ro->getProperty ("observedResult").isInt()),
                    "md PIN3: a readback goes as a NUMBER");
+            // The type test rides WITH the value test. Written as a value test
+            // alone first, and mutation B (never taking the number shape) left
+            // it green because a juce::var holding "-4.0 dB" casts to -4.0.
             check (ro != nullptr
+                   && (ro->getProperty ("observedResult").isDouble()
+                       || ro->getProperty ("observedResult").isInt())
                    && std::abs ((double) ro->getProperty ("observedResult") + 4.0) < 1e-9,
-                   "md PIN3: and carries the landed value, units stripped");
+                   "md PIN3: and carries the landed value as a number, units stripped");
 
             auto noRb = goodRow(); noRb.landedText = {};
             noRb.outcome = "readback unavailable, bridged plugin";
@@ -5999,6 +6004,53 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "md PIN6: and the reportId is the row's, not a fresh one per build");
             check (echojay::newMisdialReportId() != echojay::newMisdialReportId(),
                    "md PIN6: while a NEW id is actually new");
+        }
+
+        // md PIN8 -- THE ROWS SURVIVE A ROUND TRIP WITH THEIR STATE. The
+        // reported flag and the reportId are the two that matter: the flag is
+        // what stops a reloaded card inviting a second press, the id is what
+        // makes a retry dedupe rather than file twice. Index 0 and value 0 ride
+        // along, because they are this feature's two truthiness traps.
+        {
+            std::vector<echojay::MisdialRow> rows;
+            auto a = goodRow(); a.index = 0; a.valueDialled = 0.0; a.reported = false;
+            auto b = goodRow(); b.index = 9; b.landedText = {};
+            b.outcome = "refused: outside the map's range";
+            b.reported = true; b.reportId = "kept";
+            rows.push_back (a); rows.push_back (b);
+            const auto back = echojay::misdialRowsFromJson (echojay::misdialRowsToJson (rows));
+            check (back.size() == 2, "md PIN8: both rows survive");
+            if (back.size() == 2)
+            {
+                check (back[0].index == 0 && back[0].hasValue
+                       && std::abs (back[0].valueDialled) < 1e-12,
+                       "md PIN8: index 0 and value 0 survive as themselves");
+                check (back[0].mapKey == "threshold_db" && back[0].fp == a.fp,
+                       "md PIN8: the map key and the snapshotted fp survive");
+                check (back[0].reported == false && back[1].reported == true,
+                       "md PIN8: the reported flag survives per row");
+                check (back[1].reportId == "kept"
+                       && back[1].outcome.contains ("outside the map's range"),
+                       "md PIN8: and so do the report id and the outcome text");
+            }
+            check (echojay::misdialRowsFromJson ({}).empty(),
+                   "md PIN8: an absent record parses as no rows, not a crash");
+        }
+
+        // md PIN9 -- NEVER A DEAD BUTTON. The card's condition is one
+        // predicate, shared by the height and the placement, so a card with
+        // nothing reportable reserves no height and shows no button.
+        {
+            std::vector<echojay::MisdialRow> none;
+            auto bad = goodRow(); bad.index = -1;      // not reportable
+            none.push_back (bad);
+            check (! echojay::misdialAnyReportable (none),
+                   "md PIN9: a card whose only row is unreportable offers nothing");
+            none.push_back (goodRow());
+            check (echojay::misdialAnyReportable (none),
+                   "md PIN9: one reportable row is enough to offer the button");
+            check (! echojay::misdialAnyReportable ({}),
+                   "md PIN9: and no rows at all offers nothing");
         }
 
         // md PIN7 -- THE POPUP LINE AND THE RECORD HAVE ONE AUTHOR, so the line
