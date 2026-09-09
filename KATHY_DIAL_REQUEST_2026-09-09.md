@@ -1,7 +1,13 @@
 # For Kathy: the chain block that omitted settings_structured for four of five plugins (9 Sep 2026, 15:26)
 
-This is the server-side item from Sean's session today. Nothing on the plugin side is asked of you here; the plugin
-side has its own two defects filed in MERGE_2026-09-06.md (the borrowed host cannot dial; the path has no summary line).
+This is the server-side item from Sean's session today. READ THIS FIRST: the four plugins that did not dial would not
+have dialled even if your response had carried their settings - on the build path Sean used (a borrowed host), the
+plugin side has no parameter maps and no map fetch, a defect of ours filed and being fixed (MERGE_2026-09-06.md).
+Two defects produce this one symptom. You are asked about YOUR half only: why the settings were omitted. Nothing on
+the plugin side is asked of you.
+
+The one slot your response DID carry settings for was EchoJay EQ, and it dialled (15:27:00.622 EJParamApply: slot 0
+("EchoJay EQ") EXACT built-in apply, 2 band(s)). So the response shape was right for one of five.
 
 ## What was sent (the request)
 - Endpoint: the chat turn (EchoJayAPI.cpp, postJSON to the chat route), turnType = chain_generate, appVersion 2.26.4.
@@ -19,9 +25,10 @@ side has its own two defects filed in MERGE_2026-09-06.md (the borrowed host can
 - 15:26:54.146 EJChat: chain block feed check -- 4/5 names in recommendable feed  (EchoJay EQ is out of the feed by
   design: it is the built-in)
 - The five slots, in chain order: EchoJay EQ, Eiosis E2Deesser, Purple Audio MC 77, Millennia TCL-2, UAD SPL TwinTube.
-- Exactly ONE of the five carried settings_structured. The plugin does not log which one and does not persist the
-  block (that is the plugin-side observability defect, filed). If you need the block itself, the server's own record
-  of the assistant turn for chat 1788963956081 at 15:26:54 is the copy to read.
+- Exactly ONE of the five carried settings_structured: EchoJay EQ (established from its apply line; the plugin does
+  not log the presence per slot and does not persist the block - the plugin-side observability defect, filed). If you
+  need the block itself, the server's own record of the assistant turn for chat 1788963956081 at 15:26:54 is the copy
+  to read.
 
 ## What is asked
 1. For that turn, which slot carried settings_structured and why the other four did not. The plugin-side hypothesis on
@@ -32,6 +39,6 @@ side has its own two defects filed in MERGE_2026-09-06.md (the borrowed host can
 3. Confirmation that "autoDial": true is the flag your side keys on, and what the server does with mapFps.
 
 ## Plugins affected today
-Eiosis E2Deesser, Purple Audio MC 77, Millennia TCL-2, UAD SPL TwinTube - four third-party slots, at most one of
-which was delivered with settings (the log cannot say which). Separately, and not yours: none of the five could have
-dialled on this build path even with settings, because a borrowed host has no parameter maps (plugin defect, filed).
+Eiosis E2Deesser, Purple Audio MC 77, Millennia TCL-2, UAD SPL TwinTube - the four third-party slots, none delivered
+with settings. Separately, and not yours: none of those four could have dialled on this build path even with settings,
+because a borrowed host has no parameter maps (plugin defect, filed, being fixed in the same trip as the reporting).
