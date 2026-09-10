@@ -12,6 +12,7 @@
 #include "LinkShm.h"
 #include "EedKeyEngine.h"   // self-detection on music-bus roles (§6.1)
 #include "EedKeyWorker.h"
+#include "EJCaptureGuard.h"  // output substitution: the shipped predicate + record field
 
 // Temporary diagnostic: append a timestamped line to the EchoJay teardown log
 // file (Release-safe; DBG is compiled out of Release). Used to trace the
@@ -107,6 +108,19 @@ struct CaptureSnapshot {
     std::array<float, 64> peakSpectrum = {};
     std::array<float, 64> avgSpectrum  = {};
     bool hasDualSpectrum = false; // false on snapshots restored from older save files
+
+    // WHAT WAS REPLACING THE OUTPUT WHEN THIS WAS CAPTURED. "" = nothing, and
+    // that is every capture today: startCapture REFUSES while A/B playback, a
+    // compare stream or codec preview is running, because such a capture
+    // measures a file and reports it as the mix.
+    //
+    // WRITTEN FOR A FUTURE THE GUARD CURRENTLY FORBIDS. Section 4 of the
+    // compare plan wants captures taken THROUGH a playback simulation on
+    // purpose; when that relaxes the guard, this field is what keeps the
+    // result honest, and every figure derived from the capture can carry it.
+    // Adding it then instead of now is how the same defect arrives twice.
+    // Tokens are echojay::outputSubstitutionKey (see EJCaptureGuard.h).
+    juce::String outputSubstitution;
 
     // Detected key (KEY_PRECONDITION_SPEC.md §5.2): an OFFLINE pass run by the
     // save thread when the capture is made — longer window, HPSS + Viterbi
@@ -400,6 +414,9 @@ public:
     juce::String computePassName() const;
 
     CaptureState getCaptureState() const { return captureState.load(); }
+    // Which feature, if any, is replacing the output buffer right now.
+    // startCapture refuses on it; the editor uses it to state the reason.
+    echojay::OutputSubstitution activeOutputSubstitution() const;
 
     // =====================================================================
     // Stage 1 remote editing: the SOLO session.
@@ -1039,6 +1056,11 @@ public:
     std::atomic<int> cmpAudible { -1 };      // which stream is audible (-1 = none)
     std::atomic<bool> cmpSyncToTransport { true }; // sync capture playback to DAW transport
     std::atomic<bool> cmpBothCaptures { false };   // true when both slots are captures (set by editor)
+    // Codec preview mirror (set by the editor's enterCodecMode/exitCodecMode).
+    // The processor cannot otherwise tell a codec render from any other file
+    // in a compare slot, and the capture refusal has to NAME which feature is
+    // running or it sends the user to stop the wrong thing.
+    std::atomic<bool> cmpCodecPreview { false };
     // Temp buffers for muted-stream analysis (pre-allocated, avoids alloc on audio thread)
     juce::AudioBuffer<float> cmpTmpBuf;
     juce::AudioBuffer<float> cmpMixBuf;        // crossfade accumulation
@@ -1131,6 +1153,10 @@ private:
     int captureVersion = 1;      // incremented after each capture when project is set; resets when name changes
     juce::String nextCaptureName_;      // item 1: press-time override (single source)
     juce::String nextCaptureScopeUid_;  // item 1: press-time channel scope
+    // Stamped at startCapture (after the guard, so "" today) and copied onto
+    // the snapshot at stopCapture, because a substitution can stop mid-capture
+    // and what matters is what the capture BEGAN under.
+    juce::String captureSubstitution_;
 
     // Auto-feedback
     mutable std::atomic<bool> autoFeedbackReady { false };

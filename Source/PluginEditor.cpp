@@ -993,6 +993,16 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 chainListPanel.repaint();
                 return;
             }
+            // Output substitution, editor side: the processor refuses too
+            // (startCapture returns to Idle), but the reason has to NAME the
+            // feature that is running or the user cannot act on it.
+            if (auto sub = processorRef.activeOutputSubstitution();
+                sub != echojay::OutputSubstitution::None)
+            {
+                chainListPanel.statusText = echojay::captureRefusalReason(sub);
+                chainListPanel.repaint();
+                return;
+            }
             processorRef.setNextCapture(computeNextCaptureName(), effectiveChannelUid());
             processorRef.startCapture();
         }
@@ -2785,6 +2795,11 @@ EchoJayEditor::~EchoJayEditor() {
     {
         processorRef.cmpAudible.store(-1);
         processorRef.fadeOutCompareStreams();
+        // This path fades the streams WITHOUT calling exitCodecMode (the editor
+        // is going away, there is nothing to restore into), so the mirror has
+        // to be cleared here or it outlives the preview it describes and
+        // refuses every later capture naming a panel that no longer exists.
+        processorRef.cmpCodecPreview.store(false);
     }
 
     ejTeardownLog("~EchoJayEditor enter");
@@ -5773,6 +5788,9 @@ void EchoJayEditor::enterCodecMode(int presetIdx, bool normalised,
         codecSavedBot_ = compareBot_;
         codecModeActive_ = true;
     }
+    // Mirror to the processor: it cannot tell a codec render from any other
+    // file in a compare slot, and the capture refusal must name this one.
+    processorRef.cmpCodecPreview.store(true);
 
     processorRef.stopCompareStream(0);
     processorRef.stopCompareStream(1);
@@ -5827,6 +5845,7 @@ void EchoJayEditor::exitCodecMode()
 {
     if (!codecModeActive_) return;
     codecModeActive_ = false;
+    processorRef.cmpCodecPreview.store(false);
 
     // Fade the lossy monitor out FIRST (8ms crossfade back to the clean DAW
     // signal in processBlock), then restore the saved slots once the ramp is

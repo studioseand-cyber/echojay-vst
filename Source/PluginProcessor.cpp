@@ -2747,6 +2747,25 @@ void EchoJayProcessor::editEnd(bool keepState)
         });
 }
 
+// Fill the flat state EJCaptureGuard's predicate reads. Every field is an
+// atomic; nothing here touches the audio thread's own monGain (see the header
+// for the ~8ms fade window this deliberately does not cover).
+echojay::OutputSubstitution EchoJayProcessor::activeOutputSubstitution() const
+{
+    echojay::OutputSubstitutionState st;
+    st.abActive     = abActive.load();
+    st.abPlayingRef = abPlayingRef.load();
+    st.codecPreview = cmpCodecPreview.load();
+    st.cmpAudible   = cmpAudible.load();
+    for (int i = 0; i < 2; ++i)
+    {
+        st.cmpLoaded[(size_t) i]     = cmpStream[i].loaded.load();
+        st.cmpPlaying[(size_t) i]    = cmpStream[i].playing.load();
+        st.cmpStopAtZero[(size_t) i] = cmpStream[i].stopAtZero.load();
+    }
+    return echojay::activeOutputSubstitution(st);
+}
+
 void EchoJayProcessor::startCapture()
 {
     captureEngine.reset();
@@ -2782,6 +2801,24 @@ void EchoJayProcessor::startCapture()
         captureState.store(CaptureState::Idle);
         return;
     }
+
+    // CAPTURE EXCLUSION (stage 2, 10 Sep 2026): A/B playback, a compare stream
+    // and codec preview all replace the output buffer UPSTREAM of the meter and
+    // capture taps, so a capture taken through any of them measures a file and
+    // records it as the user's mix, indistinguishably. One condition covers all
+    // three; the editor names which one is running.
+    const auto sub = activeOutputSubstitution();
+    if (sub != echojay::OutputSubstitution::None)
+    {
+        captureState.store(CaptureState::Idle);
+        return;
+    }
+
+    // "" while the guard stands. Stamped here rather than at stopCapture
+    // because a substitution can end mid-capture, and what the capture BEGAN
+    // under is the honest answer. See CaptureSnapshot::outputSubstitution.
+    captureSubstitution_ = echojay::outputSubstitutionKey(sub);
+
     captureState.store(CaptureState::Capturing);
 
     // Snapshot active Link slots for multi-channel capture
@@ -2823,6 +2860,7 @@ void EchoJayProcessor::stopCapture()
     // diverge. computePassName() (captureVersion) is the fallback only.
     snap.name = nextCaptureName_.isNotEmpty() ? nextCaptureName_ : computePassName();
     snap.channelScopeUid = nextCaptureScopeUid_;   // item 1: robust scope stamp
+    snap.outputSubstitution = captureSubstitution_;   // "" unless a future relaxes the guard
     nextCaptureName_.clear(); nextCaptureScopeUid_.clear();
     if (projectName.trim().isEmpty())
         passCounter++;               // "Pass N" used → next will be "Pass N+1"
@@ -3987,6 +4025,7 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
             obj->setProperty("timestamp", s.timestamp);
             obj->setProperty("durationSeconds", s.durationSeconds);
             obj->setProperty("wavFilePath", s.wavFilePath);
+            echojay::writeCaptureSubstitution(*obj, s.outputSubstitution);   // absent when none
             
             // Meter data
             auto m = std::make_unique<juce::DynamicObject>();
@@ -4248,6 +4287,7 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
                     s.timestamp = (juce::int64)(double)so->getProperty("timestamp");
                     s.durationSeconds = (float)(double)so->getProperty("durationSeconds");
                     s.wavFilePath = so->getProperty("wavFilePath").toString();
+                    s.outputSubstitution = echojay::readCaptureSubstitution(*so);
                     
                     // Meters
                     if (auto* mo = so->getProperty("meters").getDynamicObject())

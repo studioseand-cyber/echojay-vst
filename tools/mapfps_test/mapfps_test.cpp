@@ -43,6 +43,7 @@
 #include "EJDialWrites.h"      // do-not-dial: the shipped predicate
 #include "EJCaptureChannels.h" // multi-channel capture: the shipped tally and text
 #include "EJMisdialReport.h"   // misdial report: the shipped record assembly
+#include "EJCaptureGuard.h"    // capture guard: the shipped substitution predicate
 #include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
@@ -6316,6 +6317,213 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "md PIN7: the popup line names the map key and the index", label);
             check (label.contains ("-18") && label.contains ("-4.0 dB"),
                    "md PIN7: and shows both the value asked for and what landed", label);
+        }
+    }
+
+
+    // =====================================================================
+    // CAPTURE GUARD -- OUTPUT SUBSTITUTION
+    //
+    // A/B playback, a compare stream and codec preview all replace the output
+    // buffer upstream of the meter and capture taps. A capture taken through
+    // one measures a file and reports it as the user's mix, and until now
+    // nothing refused it and nothing recorded it.
+    // =====================================================================
+    {
+        using namespace echojay;
+        auto none = [] { return OutputSubstitutionState{}; };
+        auto ab = [&] { auto s = none(); s.abActive = true; s.abPlayingRef = true; return s; };
+        auto cmp = [&] {
+            auto s = none();
+            s.cmpAudible = 1; s.cmpLoaded[1] = true; s.cmpPlaying[1] = true;
+            return s;
+        };
+
+        // cg PIN1 -- THE FOUR OUTCOMES. A silent quiet state is the whole
+        // defect, so "nothing running" must be distinguishable from each of
+        // the three things that can be running.
+        check (activeOutputSubstitution (none()) == OutputSubstitution::None,
+               "cg PIN1: a quiet plugin substitutes nothing");
+        check (activeOutputSubstitution (ab()) == OutputSubstitution::ABPlayback,
+               "cg PIN1: A/B playback is a substitution");
+        check (activeOutputSubstitution (cmp()) == OutputSubstitution::ComparePlayback,
+               "cg PIN1: an audible compare stream is a substitution");
+        {
+            auto s = cmp(); s.codecPreview = true;
+            check (activeOutputSubstitution (s) == OutputSubstitution::CodecPreview,
+                   "cg PIN1: and codec preview is named as itself, not as Compare");
+        }
+
+        // cg PIN2 -- THE FOUR WAYS A COMPARE STREAM IS NOT SUBSTITUTING. Each
+        // is a live state the UI can be in, and treating any of them as active
+        // would refuse a capture the user is entitled to take.
+        {
+            auto s = cmp(); s.cmpAudible = -1;
+            check (activeOutputSubstitution (s) == OutputSubstitution::None,
+                   "cg PIN2: a playing but INAUDIBLE stream reaches its meter, not the output");
+            s = cmp(); s.cmpPlaying[1] = false;
+            check (activeOutputSubstitution (s) == OutputSubstitution::None,
+                   "cg PIN2: a loaded but parked stream contributes nothing");
+            s = cmp(); s.cmpLoaded[1] = false;
+            check (activeOutputSubstitution (s) == OutputSubstitution::None,
+                   "cg PIN2: a selected slot with no buffer behind it substitutes nothing");
+            s = cmp(); s.cmpStopAtZero[1] = true;
+            check (activeOutputSubstitution (s) == OutputSubstitution::None,
+                   "cg PIN2: a stream mid-disengage is on its way out");
+        }
+        // The audible index must be READ, not assumed: slot 0 playing while
+        // slot 1 is the audible one is silence from the user's point of view.
+        {
+            auto s = none();
+            s.cmpAudible = 1;
+            s.cmpLoaded[0] = true; s.cmpPlaying[0] = true;
+            check (activeOutputSubstitution (s) == OutputSubstitution::None,
+                   "cg PIN2: the OTHER slot playing is not the audible one");
+        }
+
+        // cg PIN3 -- PRECEDENCE FOLLOWS THE AUDIO PATH. A/B assigns into the
+        // buffer and the compare crossfade writes over it, so with both running
+        // the user must be sent to stop Compare. Naming A/B would send them to
+        // stop the thing that is no longer audible.
+        {
+            auto s = cmp(); s.abActive = true; s.abPlayingRef = true;
+            check (activeOutputSubstitution (s) == OutputSubstitution::ComparePlayback,
+                   "cg PIN3: compare overwrites A/B, so compare is what gets named");
+            s.codecPreview = true;
+            check (activeOutputSubstitution (s) == OutputSubstitution::CodecPreview,
+                   "cg PIN3: and codec preview is the most specific of the three");
+        }
+        // Codec preview WITHOUT a rolling stream replaces nothing. The flag is
+        // a mirror of editor state; it is not itself evidence of audio.
+        {
+            auto s = none(); s.codecPreview = true;
+            check (activeOutputSubstitution (s) == OutputSubstitution::None,
+                   "cg PIN3: the codec flag alone, streams parked, substitutes nothing");
+        }
+        // A/B armed but passing the DAW through is not a substitution.
+        {
+            auto s = none(); s.abActive = true;
+            check (activeOutputSubstitution (s) == OutputSubstitution::None,
+                   "cg PIN3: A/B loaded but passing through is not a substitution");
+        }
+
+        // cg PIN4 -- THE REFUSAL NAMES THE FEATURE AND SAYS WHAT TO DO. A
+        // refusal that says only "unavailable" sends someone hunting, which is
+        // the affordance-that-appears-broken failure in a new place.
+        {
+            const auto rAb  = captureRefusalReason (OutputSubstitution::ABPlayback);
+            const auto rCmp = captureRefusalReason (OutputSubstitution::ComparePlayback);
+            const auto rCod = captureRefusalReason (OutputSubstitution::CodecPreview);
+            check (rAb.isNotEmpty() && rCmp.isNotEmpty() && rCod.isNotEmpty(),
+                   "cg PIN4: every substitution has a reason");
+            check (captureRefusalReason (OutputSubstitution::None).isEmpty(),
+                   "cg PIN4: and None has none -- a refusal with no cause is not a refusal");
+            check (rAb != rCmp && rCmp != rCod && rAb != rCod,
+                   "cg PIN4: the three reasons are distinct");
+            check (rCod.containsIgnoreCase ("codec")
+                   && rCmp.containsIgnoreCase ("compare")
+                   && rAb.containsIgnoreCase ("playback"),
+                   "cg PIN4: each names the feature that is running");
+            check (rAb.containsIgnoreCase ("then capture")
+                   && rCmp.containsIgnoreCase ("then capture")
+                   && rCod.containsIgnoreCase ("then capture"),
+                   "cg PIN4: and each says what to do about it");
+        }
+
+        // cg PIN5 -- THE FIELD SURVIVES THE CAPTURE RECORD'S ROUND TRIP,
+        // through the REAL serialisation format the state blob uses, not
+        // through a DynamicObject held in memory. The field is unreachable
+        // today because the guard forbids it; section 4 relaxes that guard,
+        // and a field that silently drops on reload would be the same defect
+        // wearing a label.
+        auto roundTrip = [] (const juce::String& token)
+        {
+            auto o = std::make_unique<juce::DynamicObject>();
+            o->setProperty ("id", "cap-1");            // a realistic neighbour
+            writeCaptureSubstitution (*o, token);
+            const auto json = juce::JSON::toString (juce::var (o.release()));
+            const auto back = juce::JSON::parse (json);
+            auto* ro = back.getDynamicObject();
+            return ro != nullptr ? readCaptureSubstitution (*ro) : juce::String ("<no object>");
+        };
+        check (roundTrip ("ab") == "ab",       "cg PIN5: an A/B capture reloads as A/B");
+        check (roundTrip ("compare") == "compare", "cg PIN5: a compare capture reloads as compare");
+        check (roundTrip ("codec") == "codec", "cg PIN5: a codec capture reloads as codec");
+        check (roundTrip ("") == "",           "cg PIN5: no substitution reloads as none");
+        // Absent key, which is every capture written before today. It must read
+        // as "none", not as an empty-but-present label.
+        {
+            // DRIVE THE REAL WRITER with the empty value a clean capture
+            // carries. An object this pin never wrote to would have no key
+            // whatever writeCaptureSubstitution did, which tests the fixture
+            // and not the property -- found by mutation C, which changed the
+            // writer to emit unconditionally and reddened nothing.
+            auto o = std::make_unique<juce::DynamicObject>();
+            o->setProperty ("id", "clean-capture");
+            writeCaptureSubstitution (*o, {});
+            const auto json = juce::JSON::toString (juce::var (o.release()));
+            check (! json.contains (kCaptureSubstitutionKey),
+                   "cg PIN5: a clean capture writes NO key -- absent means none", json);
+            // And an older capture, written before the field existed at all.
+            auto old = std::make_unique<juce::DynamicObject>();
+            old->setProperty ("id", "pre-field-capture");
+            auto back = juce::JSON::parse (juce::JSON::toString (juce::var (old.release())));
+            check (readCaptureSubstitution (*back.getDynamicObject()) == "",
+                   "cg PIN5: and a capture written before the field reads back as none");
+        }
+        // A token this build has never heard of comes back verbatim. Blanking
+        // it would turn a labelled capture into an unlabelled one, which is
+        // precisely what the field exists to prevent.
+        check (roundTrip ("phone_speaker_v2") == "phone_speaker_v2",
+               "cg PIN5: an unknown token survives rather than being blanked");
+        // The three keys are distinct and none is empty, or two substitutions
+        // would be indistinguishable on the record.
+        {
+            const juce::String kAb  (outputSubstitutionKey (OutputSubstitution::ABPlayback));
+            const juce::String kCmp (outputSubstitutionKey (OutputSubstitution::ComparePlayback));
+            const juce::String kCod (outputSubstitutionKey (OutputSubstitution::CodecPreview));
+            check (kAb.isNotEmpty() && kCmp.isNotEmpty() && kCod.isNotEmpty()
+                   && kAb != kCmp && kCmp != kCod && kAb != kCod,
+                   "cg PIN5: the three record tokens are distinct and non-empty");
+            check (juce::String (outputSubstitutionKey (OutputSubstitution::None)).isEmpty(),
+                   "cg PIN5: and None writes no token");
+        }
+
+        // cg PIN6 -- THE CALL SITES. The predicate being right is worth
+        // nothing if startCapture never asks it, and the guard being right is
+        // worth nothing if the button says nothing when it fires.
+        {
+            std::ifstream fp ("Source/PluginProcessor.cpp");
+            std::stringstream sp; sp << fp.rdbuf();
+            const auto pc = codeOnly (juce::String (sp.str()));
+            check (pc.contains ("const auto sub = activeOutputSubstitution();")
+                   && pc.contains ("if (sub != echojay::OutputSubstitution::None)"),
+                   "cg PIN6: startCapture asks the predicate");
+            check (pc.contains ("captureSubstitution_ = echojay::outputSubstitutionKey(sub);"),
+                   "cg PIN6: and stamps what it began under");
+            check (pc.contains ("snap.outputSubstitution = captureSubstitution_;"),
+                   "cg PIN6: the stamp reaches the snapshot");
+            check (pc.contains ("echojay::writeCaptureSubstitution(*obj, s.outputSubstitution);")
+                   && pc.contains ("s.outputSubstitution = echojay::readCaptureSubstitution(*so);"),
+                   "cg PIN6: and both ends of the state blob carry it");
+
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se; se << fe.rdbuf();
+            const auto ec = codeOnly (juce::String (se.str()));
+            check (ec.contains ("chainListPanel.statusText = echojay::captureRefusalReason(sub);"),
+                   "cg PIN6: the button states the reason rather than failing silently");
+            // The processor cannot see codec mode by itself. Three sites keep
+            // the mirror true: enter, exit, and the destructor's fade path,
+            // which does NOT call exitCodecMode.
+            check (ec.contains ("processorRef.cmpCodecPreview.store(true);"),
+                   "cg PIN6: entering codec preview tells the processor");
+            const juce::String clearLine ("processorRef.cmpCodecPreview.store(false);");
+            int clears = 0;
+            for (int at = ec.indexOf (clearLine); at >= 0; at = ec.indexOf (at + 1, clearLine))
+                ++clears;
+            check (clears >= 2,
+                   "cg PIN6: and BOTH exit paths clear it, including the destructor's fade",
+                   "clears=" + juce::String (clears));
         }
     }
 
