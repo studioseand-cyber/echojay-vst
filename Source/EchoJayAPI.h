@@ -708,7 +708,20 @@ public:
     void reportMisdial(const juce::String& body,
                        std::function<void(const juce::var&, int)> onComplete)
     {
-        postJSON("/api/report-misdial", body, std::move(onComplete), 1);
+        // TWELVE SECONDS, NOT THE SIXTY postJSON DEFAULTS TO. The report popup
+        // now stays open across this call and shows "Sending..." until the
+        // completion arrives, so the connect timeout IS the worst case a user
+        // sits in front of a modal dialog. Sixty seconds of that on a dead
+        // network is broken behaviour, and Cancel staying live is a mitigation
+        // rather than a fix: it lets someone escape, it does not stop them
+        // waiting in the first place.
+        //
+        // Twelve is chosen against the request rather than the UI: this is a
+        // small POST to a route that answers fast, so a working connection is
+        // well inside it and anything slower is a connection that is not going
+        // to complete usefully. maxAttempts stays 1 for the reason above it:
+        // the button retries, not the transport.
+        postJSON("/api/report-misdial", body, std::move(onComplete), 1, 12000);
     }
     bool getEchoJayOnly() const { return echoJayOnly; }
     void setEchoJayOnly(bool on) { echoJayOnly = on; saveSettings(); }

@@ -6214,6 +6214,99 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "md PIN15: while category is");
         }
 
+        // md PIN16 -- A MISDIAL BODY ALWAYS CARRIES A reportId. It never did:
+        // buildMisdialBody reads it off the ROW, and rows arriving from
+        // ChainHost had the field at its default, so every misdial went out
+        // without one and the server's dedupe could not fire on that path. The
+        // id is now minted at capture, which is what this asserts through the
+        // shipped builder rather than through the capture site.
+        {
+            auto r = goodRow();                       // carries a fixed id
+            auto v = juce::JSON::parse (echojay::buildMisdialBody (r, facts, "plugin-panel"));
+            auto* o = v.getDynamicObject();
+            check (o != nullptr && o->getProperty ("reportId").toString().isNotEmpty(),
+                   "md PIN16: a misdial body carries a reportId");
+            check (o != nullptr && o->getProperty ("reportId").toString() == r.reportId,
+                   "md PIN16: and it is the ROW's id, not one minted per press");
+
+            // STABLE ACROSS TWO READS OF THE SAME ROW. Minting per press would
+            // pass the first check and fail this one, and would dedupe a double
+            // tap while filing twice across two windows.
+            const auto a = echojay::buildMisdialBody (r, facts, "plugin-panel");
+            const auto b = echojay::buildMisdialBody (r, facts, "plugin-panel");
+            check (a == b, "md PIN16: two reads of one row build the same body");
+
+            // AND DIFFERENT BETWEEN ROWS, or one press would suppress another
+            // control's report at the server.
+            auto r2 = goodRow();
+            r2.mapKey = "ratio"; r2.index = 4;
+            r2.reportId = echojay::newMisdialReportId();
+            check (r2.reportId != r.reportId,
+                   "md PIN16: two rows carry different ids");
+            auto v2 = juce::JSON::parse (echojay::buildMisdialBody (r2, facts, "plugin-panel"));
+            check (v2.getDynamicObject() != nullptr
+                   && v2.getDynamicObject()->getProperty ("reportId").toString() == r2.reportId,
+                   "md PIN16: and each body carries its own row's id");
+
+            // A row with no id still builds: the route stores a report without
+            // one rather than refusing it, so an id is a dedupe affordance and
+            // never a fifth required field.
+            auto bare = goodRow(); bare.reportId = {};
+            const auto bb = echojay::buildMisdialBody (bare, facts, "plugin-panel");
+            check (bb.isNotEmpty()
+                   && ! juce::JSON::parse (bb).getDynamicObject()->hasProperty ("reportId"),
+                   "md PIN16: a row with no id still files, simply without one");
+
+            // AND THE CAPTURE SITE ACTUALLY MINTS ONE. Structural, because the
+            // gate cannot run a dial. Written after a mutation that removed the
+            // minting reddened NOTHING: every check above hands the builder a
+            // row that already has an id, so they prove the builder passes one
+            // through and say nothing about rows arriving with one. That was
+            // the whole property being claimed.
+            std::ifstream fch ("Source/ChainHost.cpp");
+            std::stringstream sch; sch << fch.rdbuf();
+            const auto chs = codeOnly (juce::String (sch.str()));
+            check (chs.contains ("mr.reportId   = echojay::newMisdialReportId();"),
+                   "md PIN16: the capture site mints an id for every row");
+            // The writer is header-inline, so it is read from ChainHost.h.
+            // Written against the .cpp first, which failed for the right
+            // reason on the wrong file.
+            std::ifstream fhh ("Source/ChainHost.h");
+            std::stringstream shh; shh << fhh.rdbuf();
+            const auto chh = codeOnly (juce::String (shh.str()));
+            check (chh.contains ("void markMisdialRowReported (int slotIndex, const juce::String& reportId)"),
+                   "md PIN16: and there is a writer to mark one reported");
+            check (chh.contains ("if (r.reportId == reportId) { r.reported = true; return; }"),
+                   "md PIN16: keyed on the id, which survives the copy the popup holds");
+        }
+
+        // md PIN17 -- THE WINDOW'S STATUS BRANCHES ARE THE ROUTE'S CONTRACT.
+        // Structural: which codes settle and which stay pressable is a
+        // property of the editor, and no pin here can open a window. This
+        // asserts the code that decides, so a later edit cannot quietly make a
+        // 5xx settle or a 400 invite a retry.
+        {
+            std::ifstream fh ("Source/PluginEditor.h");
+            std::stringstream sh; sh << fh.rdbuf();
+            const auto ed = codeOnly (juce::String (sh.str()));
+            check (ed.contains ("const bool clientFault = statusCode == 400 || statusCode == 405 || statusCode == 413;"),
+                   "md PIN17: 400, 405 and 413 are the client faults that repeat");
+            check (ed.contains ("sendBtn.setEnabled(! clientFault && signedIn);"),
+                   "md PIN17: everything else re-enables Send");
+            check (ed.contains ("cancelBtn.setButtonText(\"Close\");"),
+                   "md PIN17: a settled report turns Cancel into Close");
+            check (ed.contains ("Already reported. Nothing sent twice."),
+                   "md PIN17: and a duplicate says so rather than claiming to be first");
+            std::ifstream fc ("Source/PluginEditor.cpp");
+            std::stringstream sc; sc << fc.rdbuf();
+            const auto ec = codeOnly (juce::String (sc.str()));
+            check (ec.contains ("if (ok && self != nullptr)")
+                   && ec.contains ("markMisdialRowReported(slotIndex, reportId)"),
+                   "md PIN17: the row is marked only on a real success");
+            check (ec.contains ("auto self = juce::Component::SafePointer<EchoJayEditor>(this);"),
+                   "md PIN17: and the completion cannot touch a dead editor");
+        }
+
         // md PIN7 -- THE POPUP LINE AND THE RECORD HAVE ONE AUTHOR, so the line
         // the user chooses from cannot describe a different control from the one
         // that gets sent.

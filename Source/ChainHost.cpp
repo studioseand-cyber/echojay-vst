@@ -3865,6 +3865,12 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         {
             echojay::MisdialRow mr;
             mr.fp         = s.fp;                 // COPIED: a snapshot, not a live read
+            // THE REPORT ID IS MINTED HERE, ONCE PER ROW, not once per press.
+            // Per press would dedupe a double tap and nothing else: reopening
+            // the popup would mint a new id and file the same defect twice.
+            // Minted at capture, the id is the row's for as long as the row
+            // lives, so a second press dedupes across windows as well.
+            mr.reportId   = echojay::newMisdialReportId();
             mr.mapKey     = r.semantic;           // the RAW key, never semanticLabel()
             mr.index      = r.index;
             mr.landedText = r.landedText.trim();

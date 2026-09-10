@@ -667,6 +667,29 @@ public:
     // feed-split branch and the settle walker. The dark "(dial)" markers and
     // dialFlags were the third and were deleted on 25 Aug 2026.
     juce::StringArray getDialableRecommendableNames() const;
+    /** Mark one captured row as reported, keyed by its reportId.
+
+        KEYED ON THE ID AND NOT THE MAP KEY because the popup holds a COPY:
+        getSlotInfo returns by value and the popup filters that into its own
+        vector, so a row's position there says nothing about its position here.
+        The id is unique where a map key is not (two slots can dial the same
+        control) and it is minted at capture, so it survives the copy.
+
+        THE SCOPE OF THIS FLAG IS ONE SESSION, ONE SLOT, UNTIL THE NEXT DIAL.
+        misdialRows is cleared at the top of every apply (ChainHost.cpp, the
+        clear beside dialOutOfRange) and dies when the slot is replaced. So it
+        stops a SECOND PRESS on a row the user just reported, and it is NOT
+        persistence: nothing writes it to disk and a reload forgets it. Do not
+        read it as a durable record that a defect was filed. The durable record
+        is on the server. */
+    void markMisdialRowReported (int slotIndex, const juce::String& reportId)
+    {
+        if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return;
+        if (reportId.isEmpty()) return;
+        for (auto& r : slots_[(size_t) slotIndex].misdialRows)
+            if (r.reportId == reportId) { r.reported = true; return; }
+    }
+
     /** The last dial's per-control rows for a slot, for the misdial report.
         Empty for an out-of-range index or a slot that never dialled. */
     std::vector<echojay::MisdialRow> getMisdialRows (int slotIndex) const

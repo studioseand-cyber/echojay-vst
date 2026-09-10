@@ -23928,7 +23928,7 @@ void EchoJayEditor::openSlotReport(int slotIndex)
 
     // ONE window, built here rather than a menu, because the free text box is
     // always present and a PopupMenu cannot hold one.
-    auto* content = new SlotReportWindow(rows, facts, signedIn,
+    auto* content = new SlotReportWindow(rows, facts, signedIn, slotIndex,
                                          juce::Component::SafePointer<EchoJayEditor>(this));
     juce::DialogWindow::LaunchOptions o;
     o.content.setOwned(content);
@@ -23940,20 +23940,49 @@ void EchoJayEditor::openSlotReport(int slotIndex)
     o.launchAsync();
 }
 
-void EchoJayEditor::sendSlotReport(const juce::String& body, const juce::String& reportId)
+void EchoJayEditor::sendSlotReport(const juce::String& body, const juce::String& reportId,
+                                   int slotIndex,
+                                   juce::Component::SafePointer<SlotReportWindow> win)
 {
     if (body.isEmpty()) return;
-    api.reportMisdial(body, [reportId](const juce::var& json, int statusCode)
+    // TWO SAFE POINTERS, AND BOTH ARE LOAD-BEARING.
+    //
+    // `win` because the user may dismiss the dialog while the POST is in
+    // flight, and on a dead network that flight is up to sixty seconds.
+    //
+    // `self` because this completion now TOUCHES THE EDITOR: it marks the row
+    // reported through the ChainHost the processor owns but reaches through
+    // this editor, and the editor can be destroyed with the plugin window at
+    // any point in those sixty seconds. Every other async completion in this
+    // file carries one; this was the only one that did not, and it got away
+    // with it purely because it did nothing but log.
+    auto self = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.reportMisdial(body, [self, win, reportId, slotIndex](const juce::var& json, int statusCode)
     {
         // ONLY 200 ok:true SETTLES IT. 0 for offline, 401, 429 and every 5xx
-        // leave it pressable, which is what makes reusing the reportId worth
-        // having. A 200 with duplicate:true settles: the report IS filed, once.
+        // leave it pressable, which is what makes the row-minted reportId worth
+        // having. A 200 with duplicate:true settles too: the report IS filed,
+        // once, and the window says so in those words rather than claiming to
+        // have been the first.
         const bool ok = statusCode == 200
                      && json.isObject()
                      && (bool) json.getProperty("ok", false);
+        const bool duplicate = ok && (bool) json.getProperty("duplicate", false);
+
         EchoJay_NSLog(("EJMisdial: status " + juce::String(statusCode)
-                       + (ok ? " SETTLED" : " NOT settled, still reportable")
+                       + (ok ? (duplicate ? " SETTLED (duplicate)" : " SETTLED")
+                             : " NOT settled, still reportable")
                        + " id=" + reportId).toRawUTF8());
+
+        // Mark the row BEFORE telling the window, so a user who reopens the
+        // popup immediately after seeing "Reported" finds it already marked.
+        // Only on a real success: a refused report has not been filed and the
+        // row must stay offerable.
+        if (ok && self != nullptr)
+            self->processorRef.getChainHost().markMisdialRowReported(slotIndex, reportId);
+
+        if (auto* w = win.getComponent())
+            w->onSendResult(statusCode, ok, duplicate);
     });
 }
 

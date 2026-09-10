@@ -3125,9 +3125,10 @@ private:
         SlotReportWindow(std::vector<echojay::MisdialRow> rowsIn,
                          echojay::MisdialSlotFacts factsIn,
                          bool signedInIn,
+                         int slotIndexIn,
                          juce::Component::SafePointer<EchoJayEditor> ownerIn)
             : rows(std::move(rowsIn)), facts(std::move(factsIn)),
-              signedIn(signedInIn), owner(ownerIn)
+              signedIn(signedInIn), slotIndex(slotIndexIn), owner(ownerIn)
         {
             // ONE id for the life of this window, so a retry after a failure
             // dedupes at the server instead of filing the same thing twice.
@@ -3176,7 +3177,19 @@ private:
             {
                 picker.addItem("Not sure which one", 1);
                 for (size_t i = 0; i < rows.size(); ++i)
-                    picker.addItem(echojay::misdialRowLabel(rows[i]), (int) i + 2);
+                {
+                    // A ROW ALREADY REPORTED IS SHOWN AND DISABLED, not hidden.
+                    // Hiding it would leave the user hunting for a control they
+                    // remember reporting and wondering whether it took. The
+                    // server dedupes on the reportId as a backstop; this is the
+                    // mechanism, and without it the flag written on success
+                    // would change nothing a user could see.
+                    const bool done = rows[i].reported;
+                    picker.addItem(echojay::misdialRowLabel(rows[i])
+                                       + (done ? juce::String("   (reported)") : juce::String()),
+                                   (int) i + 2);
+                    if (done) picker.setItemEnabled((int) i + 2, false);
+                }
                 picker.setSelectedId(1, juce::dontSendNotification);
                 addAndMakeVisible(picker);
                 addAndMakeVisible(pickerLabel);
@@ -3200,6 +3213,11 @@ private:
             sendBtn.onClick = [this] { send(); };
             addAndMakeVisible(sendBtn);
             cancelBtn.setButtonText("Cancel");
+            // Stays live throughout, INCLUDING while sending: the request can
+            // take up to a minute on a dead network and trapping someone in
+            // front of it is worse than losing the result of a report they
+            // chose to abandon. Dismissing does not cancel the POST; it stops
+            // the user waiting on it, and the completion finds a null window.
             cancelBtn.onClick = [this] { close(); };
             addAndMakeVisible(cancelBtn);
 
@@ -3292,8 +3310,69 @@ private:
                 status.setText("Could not assemble that report.", juce::dontSendNotification);
                 return;
             }
-            if (auto* o = owner.getComponent()) o->sendSlotReport(body, reportId);
-            close();
+            // THE WINDOW STAYS OPEN. It used to close here, which made the
+            // whole status table inert: a 401, a 429, a 5xx and a 200 were
+            // indistinguishable to the user because there was nothing left to
+            // tell. The completion now reports back into this window.
+            //
+            // SENDING STATE. Send goes disabled so a slow POST cannot be
+            // pressed twice, and Cancel stays live so nobody is trapped
+            // watching a request that will not answer. That matters more than
+            // usual here: reportMisdial leaves postJSON's connect timeout at
+            // its 60 second default, so a dead network holds this dialog for a
+            // full minute before the completion arrives.
+            sentReportId = wantsMisdial ? rows[(size_t)(picker.getSelectedId() - 2)].reportId
+                                        : reportId;
+            sending = true;
+            sendBtn.setEnabled(false);
+            status.setColour(juce::Label::textColourId, juce::Colour(0xff9aa3b2));
+            status.setText("Sending...", juce::dontSendNotification);
+            if (auto* o = owner.getComponent())
+                o->sendSlotReport(body, sentReportId, slotIndex,
+                                  juce::Component::SafePointer<SlotReportWindow>(this));
+        }
+
+        /** The completion, delivered on the message thread by sendSlotReport.
+            Three outcomes, and which one a code falls into is the route's own
+            contract rather than a guess made here. */
+        void onSendResult (int statusCode, bool ok, bool duplicate)
+        {
+            sending = false;
+            if (ok)
+            {
+                // SETTLED. Send stays disabled and Cancel becomes Close: there
+                // is nothing left to do in this window and a live Send would
+                // invite a second identical report.
+                //
+                // A DUPLICATE SAYS SO IN ITS OWN WORDS. Claiming it was the
+                // first would be a small lie the user cannot check, and the
+                // honest version is also the more useful one: it tells them the
+                // earlier press worked.
+                status.setColour(juce::Label::textColourId, juce::Colour(0xff22c55e));
+                status.setText(duplicate ? "Already reported. Nothing sent twice."
+                                         : "Reported. Thank you.",
+                               juce::dontSendNotification);
+                sendBtn.setEnabled(false);
+                cancelBtn.setButtonText("Close");
+                return;
+            }
+
+            status.setColour(juce::Label::textColourId, juce::Colour(0xfff59e0b));
+            // A CLIENT FAULT REPEATS IDENTICALLY, so Send stays disabled: the
+            // same body will be refused the same way, and inviting a retry
+            // invites the same refusal. Everything else is transient or
+            // fixable, and the reportId makes retrying safe.
+            const bool clientFault = statusCode == 400 || statusCode == 405 || statusCode == 413;
+            status.setText (statusCode == 0   ? "No connection. Nothing was sent."
+                          : statusCode == 401 ? "Not signed in. Sign in and try again."
+                          : statusCode == 429 ? "Too many reports just now. Try again shortly."
+                          : statusCode == 400 ? "This report was refused as incomplete."
+                          : statusCode == 405 || statusCode == 413
+                                              ? "This report was refused by the server."
+                          : statusCode >= 500 ? "The server could not store it. Try again."
+                                              : "Could not send. Try again.",
+                            juce::dontSendNotification);
+            sendBtn.setEnabled(! clientFault && signedIn);
         }
 
         void close()
@@ -3305,7 +3384,13 @@ private:
         std::vector<echojay::MisdialRow> rows;
         echojay::MisdialSlotFacts        facts;
         bool                             signedIn = false;
+        bool                             sending = false;
+        int                              slotIndex = -1;
         juce::Component::SafePointer<EchoJayEditor> owner;
+        // The id actually put on the wire: the ROW's for a misdial, this
+        // window's own for a bug. The writer that marks the row reported is
+        // keyed on it, so it has to be the one that was sent.
+        juce::String                     sentReportId;
         juce::String                     reportId;
         juce::TextEditor                 noteBox;
         juce::ComboBox                   picker, catBox;
@@ -3316,7 +3401,9 @@ private:
     // MISDIAL REPORT v1: the panel's report affordance. openSlotReport builds
     // the popup for ONE slot; sendSlotReport posts one assembled body.
     void openSlotReport(int slotIndex);
-    void sendSlotReport(const juce::String& body, const juce::String& reportId);
+    void sendSlotReport(const juce::String& body, const juce::String& reportId,
+                        int slotIndex,
+                        juce::Component::SafePointer<SlotReportWindow> win);
     // Build card (1d follow-up): structured slot lines + Build button —
     // the ops card's visual language applied to CHAIN blocks
     // Caption line height under a slot row. ONE constant, consumed by the
