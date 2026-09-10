@@ -3,7 +3,7 @@
 This is the server-side item from Sean's session today. READ THIS FIRST: the four plugins that did not dial would not
 have dialled even if your response had carried their settings - on the build path Sean used (a borrowed host), the
 plugin side has no parameter maps and no map fetch, a defect of ours filed and being fixed (MERGE_2026-09-06.md).
-Two defects produce this one symptom. You are asked about YOUR half only: why the settings were omitted. Nothing on
+Two defects produce this one symptom. (Plugin side FIXED 10 Sep: a borrowed host now loads maps and fetches its own; a third-party slot can dial on the path Sean uses. Your half - the omission - is still open and still yours.) You are asked about YOUR half only: why the settings were omitted. Nothing on
 the plugin side is asked of you.
 
 The one slot your response DID carry settings for was EchoJay EQ, and it dialled (15:27:00.622 EJParamApply: slot 0

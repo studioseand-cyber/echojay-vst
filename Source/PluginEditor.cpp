@@ -807,62 +807,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // back via storeParamMaps, which also dials any slot that was waiting.
     // SafePointer guards: ChainHost outlives the editor, so a fetch firing
     // after close must be a silent no-op (cleared again in the destructor).
-    {
-        auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-        auto& chainHostRef = processorRef.getChainHost();
-        chainHostRef.onNeedParamMaps = [safeThis](const juce::StringArray& fps)
-        {
-            if (safeThis == nullptr || fps.isEmpty()) return;
-            safeThis->api.getJSON("/api/params/maps?fps=" + fps.joinIntoString(","),
-                [safeThis, fps](const juce::var& json, int statusCode)
-                {
-                    if (safeThis == nullptr) return;
-                    if (statusCode != 200)
-                    {
-                        EchoJay_NSLog(("EJParamMaps: fetch failed, status "
-                                       + juce::String(statusCode) + " -> terminal for "
-                                       + juce::String(fps.size()) + " fp(s) (C2b)").toRawUTF8());
-                        safeThis->processorRef.getChainHost().failMapFetch(fps);   // C2b: never pending forever
-                        return;
-                    }
-                    safeThis->processorRef.getChainHost()
-                        .storeParamMaps(json.getProperty("maps", juce::var()));
-                });
-        };
-        // PRODUCT FALLBACK, on its OWN trigger (27 Aug 2026). It used to hang
-        // off the fetch completion above, which fires when a fingerprint is
-        // first asked about -- before the plugin is racked, so the body was
-        // empty -- and mapsRequested_ then suppressed any later fetch, so it
-        // never ran on the dial that needed it. ChainHost now calls this from
-        // the mapless-dial path with the body already composed.
-        chainHostRef.onNeedFallbackMaps = [safeThis](const juce::String& body)
-        {
-            if (safeThis == nullptr || body.isEmpty()) return;
-            safeThis->api.lookupFallbackMaps(body,
-                [safeThis](const juce::var& results)
-                {
-                    if (safeThis == nullptr) return;
-                    if (results.isVoid())   // C2b: a failed lookup is terminal for every slot waiting on it
-                    {
-                        safeThis->processorRef.getChainHost().failFallbackLookup();
-                        return;
-                    }
-                    safeThis->processorRef.getChainHost().storeFallbackMaps(results);
-                });
-        };
-        chainHostRef.onSlotSettingsChanged = [safeThis]()
-        {
-            if (safeThis == nullptr) return;
-            // force = true, NAMED: this callback IS the change detector.
-            // Map arrivals and capture settles change the rendered settings
-            // text and dial status without moving the chain revision (or any
-            // counter the signature reads), so the signature cannot see them.
-            // (This also stops deselecting the slot on every capture, which
-            // the old direct rebuild(-1) here did.)
-            safeThis->refreshChainPanelForView(true);
-            safeThis->reportPendingDialOutcomes();   // C2: "will apply when it arrives" is closed out when it does
-        };
-    }
+    wireChainHostFetch(processorRef.getChainHost(), /*isBorrow=*/false);
 
     // Settings-restore notes live on the PROCESSOR (ChainHost), not here:
     // Logic recreates this editor every time the user switches between the
@@ -8130,6 +8075,61 @@ void EchoJayEditor::runBorrowApply()
     (*step)();
 }
 
+// 10 Sep 2026: ONE wiring path for the map-fetch callbacks, used for the MAIN host
+// and for the BORROWED host. A borrowed host must fetch its own maps or a third-party
+// slot built on the borrowed path can never dial (only the mapless builtin did). Fetched
+// maps store into the live target (dials the session) AND the main host (the one disk
+// writer, so the map persists). A completion firing after the session ends is a no-op.
+void EchoJayEditor::wireChainHostFetch(ChainHost& host, bool isBorrow)
+{
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    host.onNeedParamMaps = [safeThis, isBorrow](const juce::StringArray& fps)
+    {
+        if (safeThis == nullptr || fps.isEmpty()) return;
+        safeThis->api.getJSON("/api/params/maps?fps=" + fps.joinIntoString(","),
+            [safeThis, fps, isBorrow](const juce::var& json, int statusCode)
+            {
+                if (safeThis == nullptr) return;
+                auto& proc = safeThis->processorRef;
+                if (statusCode != 200)
+                {
+                    EchoJay_NSLog(("EJParamMaps: fetch failed, status " + juce::String(statusCode)
+                                   + " -> terminal for " + juce::String(fps.size()) + " fp(s) (C2b)").toRawUTF8());
+                    proc.getChainHost().failMapFetch(fps);
+                    if (isBorrow && proc.borrowActive()) proc.borrowHost()->failMapFetch(fps);
+                    return;
+                }
+                const auto maps = json.getProperty("maps", juce::var());
+                proc.getChainHost().storeParamMaps(maps);                       // persist (main is the one disk writer)
+                if (isBorrow && proc.borrowActive()) proc.borrowHost()->storeParamMaps(maps);   // dial the live session
+            });
+    };
+    host.onNeedFallbackMaps = [safeThis, isBorrow](const juce::String& body)
+    {
+        if (safeThis == nullptr || body.isEmpty()) return;
+        safeThis->api.lookupFallbackMaps(body,
+            [safeThis, isBorrow](const juce::var& results)
+            {
+                if (safeThis == nullptr) return;
+                auto& proc = safeThis->processorRef;
+                if (results.isVoid())
+                {
+                    proc.getChainHost().failFallbackLookup();
+                    if (isBorrow && proc.borrowActive()) proc.borrowHost()->failFallbackLookup();
+                    return;
+                }
+                proc.getChainHost().storeFallbackMaps(results);
+                if (isBorrow && proc.borrowActive()) proc.borrowHost()->storeFallbackMaps(results);
+            });
+    };
+    host.onSlotSettingsChanged = [safeThis]()
+    {
+        if (safeThis == nullptr) return;
+        safeThis->refreshChainPanelForView(true);
+        safeThis->reportPendingDialOutcomes();
+    };
+}
+
 void EchoJayEditor::startBorrow(const juce::String& uid)
 {
     auto say = [this](const juce::String& t)
@@ -8225,6 +8225,7 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
         auto& proc = safeThis->processorRef;
         const juce::String leaseId =
             st->uid + "-rack-" + juce::String(juce::Time::currentTimeMillis());
+        safeThis->wireChainHostFetch(*proc.borrowHost(), /*isBorrow=*/true);   // 10 Sep: the borrowed host fetches its own maps
         proc.borrowEngageBegin(st->uid, leaseId, st->structCapable,
                                st->ctxCapable);
         if (proc.borrowUid() != st->uid)
@@ -8317,6 +8318,21 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
             // settings card would otherwise read empty on a borrowed slot).
             for (int i = 0; i < want && i < (int) st->slots.size(); ++i)
                 bh2->setSlotSettings(i, st->slots[(size_t) i].settings);
+            // 10 Sep 2026: the AI SUGGESTIONS survive a rack switch. If this
+            // rack was left with unwritten suggestions (kept per uid), restore
+            // the prose AND the dialable structured settings now, over the
+            // sidecar's older text, so switching away and back does not lose
+            // them. Name-checked per index like the state restore below.
+            if (p2.borrowKept_.uid == st->uid)
+                for (int i = 0; i < want && i < p2.borrowKept_.settings.size(); ++i)
+                    if (p2.borrowKept_.names[i].trim() == bh2->getSlotInfo(i).name.trim())
+                    {
+                        if (p2.borrowKept_.settings[i].isNotEmpty())
+                            bh2->setSlotSettings(i, p2.borrowKept_.settings[i]);
+                        if (i < p2.borrowKept_.structured.size()
+                            && p2.borrowKept_.structured[i].getDynamicObject() != nullptr)
+                            bh2->setSlotStructuredSettings(i, p2.borrowKept_.structured[i]);   // re-dials via applyStructuredIfReady
+                    }
             // STEP 3 BOOKKEEPING: the saved identity triplet (Apply re-runs
             // the same stateFitsPlugin verdict that withheld the pull) and
             // the post-seed BASELINE — captured NOW, before any kept-edit
@@ -24605,7 +24621,19 @@ LinkShm::RackSidecar EchoJayEditor::readLinkRackSidecar(const juce::String& uid)
     int err = 0;
     auto dir = LinkShm::resolveDir(err);
     if (dir.isEmpty() || uid.isEmpty()) return {};
-    return LinkShm::readRackSidecar(dir, uid);
+    auto rack = LinkShm::readRackSidecar(dir, uid);
+    // 10 Sep 2026 SINGLE SOURCE OF TRUTH: the AI/chat path reads through here, and the
+    // strip/rack view read the 1 s cache. Writing this read THROUGH the cache means the
+    // two can never describe different racks: a fresh read the prompt needs also updates
+    // what the picture shows. The 1 Hz feeder is unchanged (it fills the bulk); this just
+    // keeps the on-demand reads and the cache the same fact. (linkRackCache is on the
+    // processor, so a const editor method may update it.)
+    if (rack.valid)
+    {
+        auto& ce = processorRef.linkRackCache[uid];
+        ce.rack = rack; ce.valid = true; ce.readMs = juce::Time::getMillisecondCounter();
+    }
+    return rack;
 }
 
 // ---- Conversation-conduct declarations (see PluginEditor.h for the wording
@@ -28430,6 +28458,18 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
                 cr.name = bh2->getSlotInfo(i).name;
                 p4.borrowSlotRecords_.push_back(std::move(cr));
             }
+            // 10 Sep 2026 OBSERVABILITY: this path used to attach settings, dial
+            // nothing (borrowed host had no maps) and emit NO summary - a silent
+            // skip. Now the borrowed host CAN dial; say what it did, including
+            // "nothing", and arm the watchdog so a totally silent build is still
+            // reported. bh2->logDialSummary names requested/applied/omitted per slot.
+            bh2->logDialSummary("SESSION build (borrowed host) complete");
+            juce::Timer::callAfterDelay(6000, [safeThis, linkUid]
+            {
+                if (safeThis == nullptr) return;
+                if (auto* bhW = safeThis->processorRef.borrowHostIfActiveFor(linkUid))
+                    bhW->logDialSummary("WATCHDOG 6s after SESSION build start");
+            });
             safeThis->chainSelectedSlot_ = bh2->getNumSlots() > 0 ? 0 : -1;
             safeThis->chainListPanel.statusText =
                 (aborted ? juce::String("Build stopped early - ")

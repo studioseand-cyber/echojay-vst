@@ -1120,6 +1120,7 @@ public:
     // available (immediately when cached, else on fetch completion). No map
     // or no structured settings -> silent skip, prose display stays as-is.
     void setSlotStructuredSettings (int i, const juce::var& structured);
+    juce::var getSlotStructured (int i) const;   // 10 Sep: read the slot's structured settings (for keep-across-switch)
 
     // Store maps fetched from GET /api/params/maps ({fp: map|null} object),
     // persist them, and apply any slots that were waiting on them.

@@ -767,6 +767,15 @@ ChainHost::ChainHost(Mode mode) : mode_(mode)
     {
         loadFromDisk();
         reloadBlacklistFromDisk();
+        // 10 Sep 2026: a Borrowed host now LOADS the param maps the primary
+        // wrote (pure reads; the one save in mergeBootstrapMaps is a no-op in
+        // Borrowed - saveParamMapsToDisk returns). Without this a third-party
+        // slot built on the borrowed path found no map and could never dial;
+        // only the builtin EchoJay EQ (no map needed) dialled. Death-mark
+        // CONSUMPTION stays the primary's job (it writes); we only read.
+        loadParamMapsFromDisk();
+        mergeBootstrapMaps();
+        loadHelperCatalogue();
         return;
     }
 
@@ -2829,6 +2838,12 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
 // ---------------------------------------------------------------------------
 // Auto-parameter-mapping pipeline (the ONE apply path)
 // ---------------------------------------------------------------------------
+juce::var ChainHost::getSlotStructured(int i) const
+{
+    if (i < 0 || i >= (int) slots_.size()) return {};
+    return slots_[(size_t) i].structuredSettings;
+}
+
 void ChainHost::setSlotStructuredSettings(int i, const juce::var& structured)
 {
     if (i < 0 || i >= (int)slots_.size()) return;

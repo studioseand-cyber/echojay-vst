@@ -1292,6 +1292,8 @@ private:
     // every terminal path (engaged, refused, abandoned). borrowSelectionTick will not start a
     // second loop while it is set; the log names the loop it refused to start.
     juce::String borrowReadInFlightUid_;
+    // 10 Sep 2026: one wiring path for the map-fetch callbacks (main + borrowed host).
+    void wireChainHostFetch(ChainHost& host, bool isBorrow);
     // Lock on transitions (9 Sep ruling): the lock belongs to a session. Requested at the row
     // click that pends an engage, at an edit session's start, and by the one-shot Link-tab
     // commands for their own duration; released when the read refuses/abandons, when the

@@ -2292,6 +2292,8 @@ void EchoJayProcessor::captureBorrowKept()
         }
         borrowKept_.names.add(borrowHost_->getSlotInfo(i).name);
         borrowKept_.states.add(b64);
+        borrowKept_.settings.add(borrowHost_->getSlotInfo(i).settings);   // the AI prose suggestion
+        borrowKept_.structured.add(borrowHost_->getSlotStructured(i));    // and the dialable structured settings
     }
     EchoJay_NSLog(("EJBorrow: kept " + juce::String(borrowKept_.states.size())
                    + " slot state(s) for uid=" + borrowKept_.uid).toRawUTF8());
@@ -2327,7 +2329,13 @@ void EchoJayProcessor::borrowRelease(bool keepEdits)
     borrowAlignReset_.store(true, std::memory_order_relaxed);
     borrowRingAgeMeasured_.store(-1, std::memory_order_relaxed);
     borrowMuteConfirmedOnce_.store(false, std::memory_order_relaxed);
-    if (borrowHost_) borrowHost_->releaseBorrowToPool();
+    if (borrowHost_)
+    {
+        borrowHost_->onNeedParamMaps    = nullptr;   // 10 Sep: a fetch firing after release is a no-op
+        borrowHost_->onNeedFallbackMaps = nullptr;
+        borrowHost_->onSlotSettingsChanged = nullptr;
+        borrowHost_->releaseBorrowToPool();
+    }
     EchoJay_NSLog(("EJBorrow: released uid=" + uid
                    + " (lease deleted; Link restores its own bypasses)").toRawUTF8());
     // 9 Sep 2026: the lock belongs to the session; the session is over. Unless a switch has

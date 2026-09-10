@@ -696,7 +696,10 @@ public:
     // Uncommitted edits captured at a keep-release; re-borrowing the same
     // uid restores them (and says so). Cleared by Apply, Discard, or the
     // restore itself.
-    struct BorrowKept { juce::String uid; juce::StringArray names, states; };
+    // 10 Sep 2026: kept ALSO carries the AI suggestions (prose + structured),
+    // so switching racks and back does not lose the last suggestions - they are
+    // kept per Link uid and restored on re-borrow, parallel to the plugin state.
+    struct BorrowKept { juce::String uid; juce::StringArray names, states, settings; juce::Array<juce::var> structured; };
     BorrowKept borrowKept_;
     void captureBorrowKept();
     void clearBorrowKept() { borrowKept_ = {}; }
