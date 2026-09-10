@@ -2213,8 +2213,19 @@ private:
             addChildComponent(cardRemoveBtn);
 
             reportBtn.setButtonText("Report");
-            reportBtn.setTooltip("Tell Kathy something here is wrong: a setting "
-                                 "dialled to the wrong place, or anything else");
+            // NO PERSON'S NAME IN A USER-FACING STRING. It read "Tell Kathy
+            // something here is wrong", which named someone the user has never
+            // heard of. "Tell EchoJay" was rejected too: that reads as talking
+            // TO the assistant, which is what the chat box is for, and this
+            // button files a record a person reads later.
+            reportBtn.setTooltip("Report a problem: a setting dialled to the "
+                                 "wrong place, or anything else");
+            // THE PANEL'S OWN STYLE, copied from popBtn above, so this sits
+            // with popBtn, cardBypassBtn and cardRemoveBtn as one family.
+            // Deliberately NOT AskChipLnF: that is the chat affordance pill,
+            // and a chat chip on the rack panel looks like it wandered in.
+            reportBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xcc0E1020));
+            reportBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
             reportBtn.setVisible(false);
             reportBtn.onClick = [this] { if (onReport && hasSelection()) onReport(selectedIdx); };
             addChildComponent(reportBtn);
@@ -2959,16 +2970,24 @@ private:
 
             // Settings text sits inside its card, below the tiny caps label
             auto sb = settingsBoxRect();
-            // The report button takes the right end of the settings card's top
-            // line, beside the SUGGESTED SETTINGS caps label (drawn at
+            // The report button takes the right end of the settings card's
+            // LABEL ROW, beside the SUGGESTED SETTINGS caps label (drawn at
             // sb.getX()+10, sb.getY()+5 in a 200-wide box, so they cannot
-            // collide at any sane width). The TEXT BOX GIVES UP THAT WIDTH
-            // rather than being covered by it.
-            reportBtn.setBounds(sb.getRight() - kReportBtnW - 8, sb.getY() + 2,
-                                kReportBtnW, 18);
+            // collide: the narrowest panel still leaves several hundred px
+            // between them).
+            //
+            // y+3 TO y+17, WHICH CLEARS THE TEXT EDITOR AT y+18 ENTIRELY. It
+            // was y+2 height 18, so it ended at y+20 and crossed two pixels
+            // into the editor. Two pixels was enough to read as "the button is
+            // inside the box", which it then was.
+            //
+            // AND THE EDITOR GETS ITS FULL WIDTH BACK. It surrendered
+            // kReportBtnW + 4 to avoid being overlaid; with the button
+            // entirely above it there is nothing to avoid.
+            reportBtn.setBounds(sb.getRight() - kReportBtnW - 8, sb.getY() + 3,
+                                kReportBtnW, 14);
             settingsBox.setBounds(sb.getX() + 8, sb.getY() + 18,
-                                  sb.getWidth() - 16 - kReportBtnW - 4,
-                                  sb.getHeight() - 24);
+                                  sb.getWidth() - 16, sb.getHeight() - 24);
 
             // The selector takes the left end of the rack strip and the strip
             // gives up exactly that width, so the two cannot overlap however
