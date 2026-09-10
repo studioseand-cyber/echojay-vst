@@ -1,3 +1,15 @@
+# WITHDRAWN 10 Sep 2026 — do not action
+
+This escalation is withdrawn. On Build H, the client request from Sean's Mac was found to be CORRECT: the param maps for
+the affected plugins (SSL DeEss, Purple Audio MC 77, Acme Opticom XLA-3, ValhallaVintageVerb) are cached and dialable,
+and the request's mapFps carried their exact fingerprints. The "server omitted settings for N of M" count was a symptom
+with several possible causes, and Sean's observation that the SAME chains dial on his OTHER Mac (same account, same
+server) refutes a blanket server omission. The open question is now a difference BETWEEN the two Macs (appVersion /
+request shape), not a server bug — nothing for you to chase until that comparison is done. The original text is kept
+below for history only.
+
+---
+
 # For Kathy: the chain block that omitted settings_structured for four of five plugins (9 Sep 2026, 15:26)
 
 This is the server-side item from Sean's session today. READ THIS FIRST: the four plugins that did not dial would not
