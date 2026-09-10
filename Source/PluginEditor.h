@@ -3133,6 +3133,38 @@ private:
             // dedupes at the server instead of filing the same thing twice.
             reportId = echojay::newMisdialReportId();
 
+            // THE CATEGORY LEADS, because it decides what the rest of the
+            // popup offers and which kind the report files.
+            //
+            // "A setting went to the wrong place" IS NOT OFFERED WHEN NO ROWS
+            // SURVIVED the press-time fp comparison, which is every built-in
+            // and any slot whose fingerprint has moved. It files a misdial and
+            // a misdial needs a picked control, so offering it there would let
+            // the user write a paragraph and then be refused by the server for
+            // a reason they could not have known. needsControl on the choice is
+            // what carries that, so the rule lives with the vocabulary rather
+            // than being retyped here.
+            catLabel.setText("What went wrong?", juce::dontSendNotification);
+            catLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
+            catLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9aa3b2));
+            addAndMakeVisible(catLabel);
+            {
+                int id = 1;
+                for (const auto& c : echojay::misdialCategories())
+                {
+                    if (c.needsControl && rows.empty()) { ++id; continue; }
+                    catBox.addItem(c.label, id);
+                    ++id;
+                }
+                // DEFAULT: the first offered option. With rows that is
+                // wrong_control; without them it is "A problem with this
+                // plugin". Never an empty selection: an unset dropdown makes
+                // the user answer a question before they can start typing.
+                catBox.setSelectedId(rows.empty() ? 2 : 1, juce::dontSendNotification);
+            }
+            catBox.onChange = [this] { syncToCategory(); };
+            addAndMakeVisible(catBox);
+
             noteBox.setMultiLine(true, true);
             noteBox.setReturnKeyStartsNewLine(true);
             noteBox.setTextToShowWhenEmpty("What went wrong, in your words",
@@ -3142,7 +3174,7 @@ private:
 
             if (! rows.empty())
             {
-                picker.addItem("Nothing specific, just the note above", 1);
+                picker.addItem("Not sure which one", 1);
                 for (size_t i = 0; i < rows.size(); ++i)
                     picker.addItem(echojay::misdialRowLabel(rows[i]), (int) i + 2);
                 picker.setSelectedId(1, juce::dontSendNotification);
@@ -3171,13 +3203,43 @@ private:
             cancelBtn.onClick = [this] { close(); };
             addAndMakeVisible(cancelBtn);
 
-            setSize(420, rows.empty() ? 190 : 240);
+            setSize(420, rows.empty() ? 226 : 276);
+            syncToCategory();
+        }
+
+        /** The category decides what else is live. Only wrong_control uses the
+            control picker, so it is shown for that and hidden otherwise rather
+            than sitting there inert and inviting a pick that changes nothing. */
+        void syncToCategory()
+        {
+            const bool wc = selectedCategory() == echojay::kMisdialCatWrongControl();
+            picker.setVisible(wc && ! rows.empty());
+            pickerLabel.setVisible(wc && ! rows.empty());
+            status.setText(signedIn ? juce::String()
+                                    : juce::String("Sign in to send this report."),
+                           juce::dontSendNotification);
+            resized();
+        }
+
+        /** The wire value for the current selection. The dropdown is built by
+            skipping choices, so the id is an index into the FULL list and the
+            lookup has to go back through it rather than counting items. */
+        juce::String selectedCategory() const
+        {
+            const int id = catBox.getSelectedId();
+            const auto& all = echojay::misdialCategories();
+            if (id >= 1 && id <= (int) all.size()) return all[(size_t) id - 1].value;
+            return echojay::kMisdialCatOther();
         }
 
         void resized() override
         {
             auto b = getLocalBounds().reduced(12);
-            if (! rows.empty())
+            // The category first: it decides what the rest offers.
+            catLabel.setBounds(b.removeFromTop(16));
+            catBox.setBounds(b.removeFromTop(24));
+            b.removeFromTop(8);
+            if (picker.isVisible())
             {
                 pickerLabel.setBounds(b.removeFromTop(16));
                 picker.setBounds(b.removeFromTop(24));
@@ -3196,25 +3258,34 @@ private:
         {
             if (! signedIn) return;
             const auto note = noteBox.getText().trim();
-            const int sel = rows.empty() ? 1 : picker.getSelectedId();
+            const auto cat  = selectedCategory();
+            // THE KIND FOLLOWS THE CATEGORY, never the other way round, and the
+            // builders refuse a pair that disagrees. Deriving it here means the
+            // popup cannot construct the clash the route would refuse.
+            const bool wantsMisdial =
+                echojay::misdialKindForCategory(cat) == echojay::kMisdialKindMisdial();
             juce::String body;
-            if (sel >= 2 && (size_t)(sel - 2) < rows.size())
+            if (wantsMisdial)
             {
-                // A control was picked: the misdial kind, with the note as
-                // optional colour on top of the five required fields.
+                const int sel = picker.getSelectedId();
+                if (sel < 2 || (size_t)(sel - 2) >= rows.size())
+                {
+                    status.setText("Pick the setting that went wrong.",
+                                   juce::dontSendNotification);
+                    return;
+                }
                 body = echojay::buildMisdialBody(rows[(size_t)(sel - 2)], facts,
-                                                 "plugin-panel", note);
+                                                 "plugin-panel", note, cat);
             }
             else
             {
-                // No control picked: the bug kind, which needs the note and
-                // nothing else, and must not carry an fp.
+                // The bug kinds need the note and nothing else, and carry no fp.
                 if (note.isEmpty())
                 {
                     status.setText("Type what went wrong first.", juce::dontSendNotification);
                     return;
                 }
-                body = echojay::buildBugBody(note, facts, "plugin-panel", reportId);
+                body = echojay::buildBugBody(note, facts, "plugin-panel", reportId, cat);
             }
             if (body.isEmpty())
             {
@@ -3237,8 +3308,8 @@ private:
         juce::Component::SafePointer<EchoJayEditor> owner;
         juce::String                     reportId;
         juce::TextEditor                 noteBox;
-        juce::ComboBox                   picker;
-        juce::Label                      pickerLabel, status;
+        juce::ComboBox                   picker, catBox;
+        juce::Label                      pickerLabel, catLabel, status;
         juce::TextButton                 sendBtn, cancelBtn;
     };
 

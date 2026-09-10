@@ -6138,6 +6138,82 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "md PIN12: with kind and note now in the set");
         }
 
+        // md PIN13 -- THE FOUR CATEGORY LITERALS ARE THE SERVER'S, EXACTLY.
+        // The route refuses an unknown category BY NAME rather than coercing it
+        // to `other`, and folding happens server side, so a near miss fails at
+        // the one moment the user has already written their sentence. These are
+        // asserted as literals, not as whatever the header happens to say.
+        {
+            const auto& all = echojay::misdialCategories();
+            check (all.size() == 4, "md PIN13: four categories",
+                   juce::String ((int) all.size()));
+            check (juce::String (all[0].value) == "wrong_control"
+                   && juce::String (all[1].value) == "plugin_problem"
+                   && juce::String (all[2].value) == "chain_problem"
+                   && juce::String (all[3].value) == "other",
+                   "md PIN13: and their wire values match the route verbatim");
+            check (all[0].needsControl
+                   && ! all[1].needsControl && ! all[2].needsControl && ! all[3].needsControl,
+                   "md PIN13: only wrong_control needs a picked control");
+            check (echojay::misdialKindForCategory ("wrong_control")  == "misdial"
+                   && echojay::misdialKindForCategory ("plugin_problem") == "bug"
+                   && echojay::misdialKindForCategory ("chain_problem")  == "bug"
+                   && echojay::misdialKindForCategory ("other")          == "bug",
+                   "md PIN13: each maps to the kind the route implies");
+            check (echojay::misdialKindForCategory ("WRONG_CONTROL") == "misdial"
+                   && echojay::misdialKindForCategory ("  other  ") == "bug",
+                   "md PIN13: folded and trimmed before the lookup");
+            check (echojay::misdialKindForCategory ("wrong-control").isEmpty()
+                   && echojay::misdialKindForCategory ("nonsense").isEmpty(),
+                   "md PIN13: and an unknown one maps to nothing, never to other");
+        }
+
+        // md PIN14 -- A CLASH CANNOT REACH THE WIRE. The route refuses a
+        // category whose implied kind disagrees with the kind sent, and names
+        // both. The client makes it impossible rather than unlikely.
+        {
+            check (echojay::buildMisdialBody (goodRow(), facts, "p", "n", "plugin_problem").isEmpty(),
+                   "md PIN14: a bug category on a misdial body produces nothing");
+            check (echojay::buildMisdialBody (goodRow(), facts, "p", "n", "nonsense").isEmpty(),
+                   "md PIN14: and so does an unknown category");
+            check (echojay::buildBugBody ("n", facts, "p", "id", "wrong_control").isEmpty(),
+                   "md PIN14: wrong_control on a bug body produces nothing");
+            check (echojay::buildBugBody ("n", facts, "p", "id", "nonsense").isEmpty(),
+                   "md PIN14: and so does an unknown category");
+            // The matching pairs still build, and carry the category.
+            auto vm = juce::JSON::parse (echojay::buildMisdialBody (goodRow(), facts, "p", "n",
+                                                                    "wrong_control"));
+            auto vb = juce::JSON::parse (echojay::buildBugBody ("n", facts, "p", "id",
+                                                                "chain_problem"));
+            check (vm.getDynamicObject() != nullptr
+                   && vm.getDynamicObject()->getProperty ("category").toString() == "wrong_control"
+                   && vm.getDynamicObject()->getProperty ("kind").toString() == "misdial",
+                   "md PIN14: a matching misdial pair carries both");
+            check (vb.getDynamicObject() != nullptr
+                   && vb.getDynamicObject()->getProperty ("category").toString() == "chain_problem"
+                   && vb.getDynamicObject()->getProperty ("kind").toString() == "bug",
+                   "md PIN14: and so does a matching bug pair");
+            // Absent is still legal: 22708dc ships without it.
+            check (! juce::JSON::parse (echojay::buildMisdialBody (goodRow(), facts, "p"))
+                        .getDynamicObject()->hasProperty ("category"),
+                   "md PIN14: and no category key at all when none was chosen");
+        }
+
+        // md PIN15 -- NO uid IS EVER SENT. The server resolves it from the
+        // session and overwrites anything the body carries, because a client
+        // that could set it could file under somebody else's account.
+        {
+            const auto a = echojay::buildMisdialBody (goodRow(), facts, "p", "n", "wrong_control");
+            const auto b = echojay::buildBugBody ("n", facts, "p", "id", "other");
+            check (! juce::JSON::parse (a).getDynamicObject()->hasProperty ("uid")
+                   && ! juce::JSON::parse (b).getDynamicObject()->hasProperty ("uid"),
+                   "md PIN15: neither body carries a uid");
+            check (! echojay::misdialAcceptedKeys().contains ("uid"),
+                   "md PIN15: and uid is not even in the accepted set");
+            check (echojay::misdialAcceptedKeys().contains ("category"),
+                   "md PIN15: while category is");
+        }
+
         // md PIN7 -- THE POPUP LINE AND THE RECORD HAVE ONE AUTHOR, so the line
         // the user chooses from cannot describe a different control from the one
         // that gets sent.

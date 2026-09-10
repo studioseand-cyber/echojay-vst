@@ -66,8 +66,9 @@ inline const juce::StringArray& misdialAcceptedKeys()
         "mapVersion", "extractorVersion", "humanVerified",
         // intent
         "rid", "userAsk",
-        // the user's own words, and which kind of report this is
-        "note", "kind",
+        // the user's own words, which kind of report this is, and which of the
+        // four things the user said went wrong
+        "note", "kind", "category",
         // provenance of the report itself
         "reportId", "source"
     };
@@ -131,6 +132,68 @@ inline const char* kMisdialKindBug()     { return "bug"; }
 // truncated HERE as well as there, so what the user sees sent is what lands.
 inline constexpr int kMisdialNoteMax = 1000;
 
+// ---------------------------------------------------------------------------
+// THE CATEGORY, AND THE KIND IT DECIDES.
+//
+// THE LITERALS ARE THE SERVER'S, COPIED EXACTLY from CATEGORIES at
+// api/_misdials.js:137-142. An unknown category is REFUSED BY NAME rather than
+// coerced to `other` (:256-260), and folding and trimming happen server side,
+// so a near miss does not degrade: it fails outright, at the only moment when
+// the user has already written their sentence. That is why these are constants
+// here and never spelled inline at a call site.
+//
+// CATEGORY AND KIND MUST AGREE WHEN BOTH ARRIVE (:289-293). The route refuses a
+// clash in both directions and names both in the refusal. The client makes a
+// clash IMPOSSIBLE rather than merely unlikely: the body builders check the
+// category against their own kind and return empty if it disagrees, so a
+// mismatched pair cannot reach the wire at all.
+// ---------------------------------------------------------------------------
+inline const char* kMisdialCatWrongControl() { return "wrong_control"; }
+inline const char* kMisdialCatPluginProblem() { return "plugin_problem"; }
+inline const char* kMisdialCatChainProblem()  { return "chain_problem"; }
+inline const char* kMisdialCatOther()         { return "other"; }
+
+/** One row of the popup's category dropdown: the wire value, the words the user
+    reads, the kind it files, and whether it requires a picked control. */
+struct MisdialCategoryChoice
+{
+    const char* value;
+    const char* label;
+    const char* kind;           // the kind this category files
+    bool        needsControl;   // true only for wrong_control
+};
+
+/** THE ONE TABLE. The four, in the order the popup lists them: wrong_control
+    leads because it is the specific one, `other` is last because it is the
+    fallback.
+
+    THE KIND LIVES HERE RATHER THAN IN A SECOND LOOKUP, and that is not tidiness.
+    It was written as a table plus an independent if-chain, and a mutation that
+    changed one literal in the table left the if-chain answering correctly for a
+    value the table no longer contained: the two disagreed and only one pin
+    noticed. One row, one truth. */
+inline const std::vector<MisdialCategoryChoice>& misdialCategories()
+{
+    static const std::vector<MisdialCategoryChoice> all {
+        { "wrong_control",  "A setting went to the wrong place",      "misdial", true  },
+        { "plugin_problem", "A problem with this plugin",             "bug",     false },
+        { "chain_problem",  "A problem with the chain or suggestion", "bug",     false },
+        { "other",          "Something else",                         "bug",     false },
+    };
+    return all;
+}
+
+/** The kind a category files, read off the ONE table above. Empty for an
+    unknown category, which the caller must treat as "do not send": the route
+    refuses it by name rather than coercing it to `other`. */
+inline juce::String misdialKindForCategory (const juce::String& category)
+{
+    const auto c = category.trim().toLowerCase();
+    for (const auto& e : misdialCategories())
+        if (c == e.value) return e.kind;
+    return {};
+}
+
 /** A fresh report id. Called ONCE per record; the row keeps it. */
 inline juce::String newMisdialReportId()
 {
@@ -188,9 +251,17 @@ inline bool misdialRowIsReportable (const MisdialRow& r)
 inline juce::String buildMisdialBody (const MisdialRow& row,
                                      const MisdialSlotFacts& facts,
                                      const juce::String& source,
-                                     const juce::String& note = {})
+                                     const juce::String& note = {},
+                                     const juce::String& category = {})
 {
     if (! misdialRowIsReportable (row)) return {};
+    // A CLASH CANNOT REACH THE WIRE. The route refuses a category whose implied
+    // kind disagrees with the kind sent, and names both. Rather than trust the
+    // caller to pair them, refuse here: an unknown category, or one that files
+    // a bug, is not a misdial body.
+    if (category.trim().isNotEmpty()
+        && misdialKindForCategory (category) != kMisdialKindMisdial())
+        return {};
 
     juce::DynamicObject::Ptr o = new juce::DynamicObject();
 
@@ -236,6 +307,8 @@ inline juce::String buildMisdialBody (const MisdialRow& row,
     if (note.trim().isNotEmpty())
         o->setProperty ("note", note.trim().substring (0, kMisdialNoteMax));
     o->setProperty ("kind", kMisdialKindMisdial());
+    if (category.trim().isNotEmpty())
+        o->setProperty ("category", category.trim().toLowerCase());
     put ("reportId", row.reportId);
     put ("source",   source);
 
@@ -259,14 +332,22 @@ inline juce::String buildMisdialBody (const MisdialRow& row,
 inline juce::String buildBugBody (const juce::String& note,
                                  const MisdialSlotFacts& facts,
                                  const juce::String& source,
-                                 const juce::String& reportId)
+                                 const juce::String& reportId,
+                                 const juce::String& category = {})
 {
     const auto n = note.trim();
     if (n.isEmpty()) return {};
+    // Same clash guard, the other way: wrong_control files a misdial and is
+    // never a bug body, and an unknown category is never sent at all.
+    if (category.trim().isNotEmpty()
+        && misdialKindForCategory (category) != kMisdialKindBug())
+        return {};
 
     juce::DynamicObject::Ptr o = new juce::DynamicObject();
     o->setProperty ("kind", kMisdialKindBug());
     o->setProperty ("note", n.substring (0, kMisdialNoteMax));
+    if (category.trim().isNotEmpty())
+        o->setProperty ("category", category.trim().toLowerCase());
 
     auto put = [&o] (const char* key, const juce::String& v)
     {
@@ -282,6 +363,11 @@ inline juce::String buildBugBody (const juce::String& note,
     put ("source",        source);
     // No fp, no parameterName, no parameterIndex, no valueDialled, no
     // observedResult. Deliberate, and asserted by the gate.
+    //
+    // AND NO uid. The server resolves it from the session and overwrites
+    // anything the body carries (api/_misdials.js:247-249), because a client
+    // that could set it could file under somebody else's account. Sending one
+    // would be a client asserting a fact it does not own.
     return juce::JSON::toString (juce::var (o.get()), true);
 }
 
