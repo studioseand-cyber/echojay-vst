@@ -66,6 +66,8 @@ inline const juce::StringArray& misdialAcceptedKeys()
         "mapVersion", "extractorVersion", "humanVerified",
         // intent
         "rid", "userAsk",
+        // the user's own words, and which kind of report this is
+        "note", "kind",
         // provenance of the report itself
         "reportId", "source"
     };
@@ -117,6 +119,17 @@ struct MisdialSlotFacts
     juce::String pluginName, vendor, format, pluginVersion, appVersion;
     juce::String mapVersion;   // the map's rev, one per map
 };
+
+// The two kinds the deployed route accepts (api/_misdials.js:112-114). An ABSENT
+// kind is read as misdial for back compat with the build already shipping, but
+// both are sent explicitly here: relying on a default means a reader of the
+// stored record cannot tell an old client from a deliberate misdial.
+inline const char* kMisdialKindMisdial() { return "misdial"; }
+inline const char* kMisdialKindBug()     { return "bug"; }
+
+// The route's cap on the user's own words (api/_misdials.js:106). Trimmed and
+// truncated HERE as well as there, so what the user sees sent is what lands.
+inline constexpr int kMisdialNoteMax = 1000;
 
 /** A fresh report id. Called ONCE per record; the row keeps it. */
 inline juce::String newMisdialReportId()
@@ -174,7 +187,8 @@ inline bool misdialRowIsReportable (const MisdialRow& r)
     skips the completeness check cannot put a refusable body on the wire. */
 inline juce::String buildMisdialBody (const MisdialRow& row,
                                      const MisdialSlotFacts& facts,
-                                     const juce::String& source)
+                                     const juce::String& source,
+                                     const juce::String& note = {})
 {
     if (! misdialRowIsReportable (row)) return {};
 
@@ -217,9 +231,57 @@ inline juce::String buildMisdialBody (const MisdialRow& row,
     // server and are NOT available in the client. Deliberately never sent:
     // inventing them would put a wrong belief in front of the person fixing
     // the map, which is worse than a null.
+    // note is OPTIONAL on a misdial and welcome: the five fields say what
+    // happened, the user's words say why it looked wrong.
+    if (note.trim().isNotEmpty())
+        o->setProperty ("note", note.trim().substring (0, kMisdialNoteMax));
+    o->setProperty ("kind", kMisdialKindMisdial());
     put ("reportId", row.reportId);
     put ("source",   source);
 
+    return juce::JSON::toString (juce::var (o.get()), true);
+}
+
+/** THE BUG KIND. The user's words and whatever context happens to be true, and
+    NOTHING ELSE REQUIRED (api/_misdials.js:179, REQUIRED_BUG = ['note']).
+
+    IT MUST NOT CARRY fp, and that is not merely allowed to be absent. The route
+    forces fp to null on this kind, and bug records live in their own family
+    grouped by plugin name rather than in the by-fingerprint work list. A bug
+    body carrying an fp would be a client asserting a key the record does not
+    have, and the one thing worth protecting is that the fingerprint queue only
+    ever holds defects with a map at the end of them.
+
+    This is the ONLY report a built-in device can produce: a built-in has no
+    fingerprint and no parameter map by construction, so there is no map defect
+    to describe and no map to open. Returns empty when the note is empty, which
+    is the route's one requirement for this kind. */
+inline juce::String buildBugBody (const juce::String& note,
+                                 const MisdialSlotFacts& facts,
+                                 const juce::String& source,
+                                 const juce::String& reportId)
+{
+    const auto n = note.trim();
+    if (n.isEmpty()) return {};
+
+    juce::DynamicObject::Ptr o = new juce::DynamicObject();
+    o->setProperty ("kind", kMisdialKindBug());
+    o->setProperty ("note", n.substring (0, kMisdialNoteMax));
+
+    auto put = [&o] (const char* key, const juce::String& v)
+    {
+        if (v.trim().isNotEmpty()) o->setProperty (key, v.trim());
+    };
+    put ("pluginName",    facts.pluginName);
+    put ("format",        facts.format);
+    put ("vendor",        facts.vendor);
+    put ("pluginVersion", facts.pluginVersion);
+    put ("appVersion",    facts.appVersion);
+    put ("mapVersion",    facts.mapVersion);
+    put ("reportId",      reportId);
+    put ("source",        source);
+    // No fp, no parameterName, no parameterIndex, no valueDialled, no
+    // observedResult. Deliberate, and asserted by the gate.
     return juce::JSON::toString (juce::var (o.get()), true);
 }
 
@@ -235,6 +297,12 @@ inline juce::String buildMisdialBody (const MisdialRow& row,
 // exists to stop.
 // ---------------------------------------------------------------------------
 
+// CURRENTLY UNUSED, and left in deliberately. These were the message-level
+// persistence for the rows, which is gone: the rows are owned by the slot now
+// (ChainSlot::misdialRows) and the button reads them live, so nothing
+// serialises them. They stay because they are the natural shape if rows ever
+// need to survive a reload, and because they are known good. Do not go hunting
+// for a caller: there is none.
 inline juce::String misdialRowsToJson (const std::vector<MisdialRow>& rows)
 {
     if (rows.empty()) return {};

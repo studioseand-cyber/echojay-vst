@@ -37,14 +37,6 @@ struct WsMessage {
                                  // persisted so a reloaded card can never mis-route
                                  // to the local rack; serialised as _editTgtUid
     juce::String editTargetName; // display label at propose time; _editTgtName
-    juce::String misdialJson;    // MISDIAL REPORT v1: the per-control rows of
-                                 // this reply's dial, serialised as _misdial.
-                                 // Carries the rows AND their reported flag and
-                                 // reportId (mutated on a successful report),
-                                 // the same way gainJson carries applied state,
-                                 // so a reloaded card cannot invite a second
-                                 // press and a retry reuses its id. Absent on
-                                 // every message that dialled nothing.
     juce::String figuresJson;    // AI Compare figure card data (both sources'
                                  // figures + labels + cross flag); serialised as
                                  // _figures. Absent on every non-compare message
@@ -281,13 +273,6 @@ public:
     // message (edit cards and plain result bubbles alike) - one-shot pill.
     void clearEditAltPrompt(const juce::String& chatId,
                             const juce::String& matchContent);
-    /** MISDIAL REPORT v1: set (or update) a message's misdial rows. Called
-        once when the dial settles, and again after each successful report so
-        the reported flag and its report id survive a reload. Same
-        match-by-content discipline as markEditApplied. */
-    void setMessageMisdial(const juce::String& chatId,
-                           const juce::String& matchContent,
-                           const juce::String& rowsJson);
     void markEditApplied(const juce::String& chatId,
                          const juce::String& matchContent,
                          const juce::String& resultSummary,

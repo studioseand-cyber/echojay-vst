@@ -5,6 +5,7 @@
 #include <map>
 #include "PluginProcessor.h"
 #include "ChainHost.h"
+#include "EJMisdialReport.h"
 #include "ChainWetKnob.h"
 #include "NativeClip.h"
 #include "EchoJayAPI.h"
@@ -1169,10 +1170,6 @@ private:
         // built client-side at compose time (buildCompareFiguresJson). Rendered
         // as the figure card; persisted on the message so a reloaded chat
         // redraws it identically (the prose no longer restates the numbers).
-        // MISDIAL REPORT v1: the per-control rows of this reply's dial, with
-        // their reported flags and report ids. Persisted as _misdial, so a
-        // reloaded card cannot invite a second press and a retry reuses its id.
-        juce::String misdialData;
         juce::String figuresData;
         // Split call: non-zero on the PROVISIONAL bubble rendered from the
         // classifier's preamble. A rendering artefact, never history.
@@ -2041,6 +2038,20 @@ private:
 
         // SUGGESTED SETTINGS box content — wraps, scrolls when it overflows
         juce::TextEditor settingsBox;
+        // MISDIAL REPORT v1. UNCONDITIONAL: always present whenever a slot is
+        // selected, never hidden by a judgement about whether there is anything
+        // worth reporting. Every condition that would hide it is the code
+        // deciding what is worth saying before the user has said it, and the
+        // cases it would hide are the ones nobody anticipated.
+        //
+        // Right aligned and INSET OUT OF settingsBoxRect(), so the TextEditor
+        // narrows rather than being overlaid: an overlay would sit on top of
+        // text still being laid out underneath and a long settings string would
+        // paint under it and read as corruption. kSettingsH is untouched, so
+        // the button costs no height and nothing above or below moves.
+        juce::TextButton reportBtn;
+        static constexpr int kReportBtnW = 92;
+        std::function<void(int)> onReport;   // slot index; the editor owns the popup
         juce::TooltipWindow tooltipWindow { this, 600 };
 
         juce::String statusText;
@@ -2201,6 +2212,12 @@ private:
             addChildComponent(cardBypassBtn);
             addChildComponent(cardRemoveBtn);
 
+            reportBtn.setButtonText("Report");
+            reportBtn.setTooltip("Tell Kathy something here is wrong: a setting "
+                                 "dialled to the wrong place, or anything else");
+            reportBtn.setVisible(false);
+            reportBtn.onClick = [this] { if (onReport && hasSelection()) onReport(selectedIdx); };
+            addChildComponent(reportBtn);
             settingsBox.setMultiLine(true, true);
             settingsBox.setReadOnly(true);
             settingsBox.setScrollbarsShown(true);
@@ -2524,6 +2541,10 @@ private:
             cardRemoveBtn.setVisible(sel);
             popBtn.setVisible(sel);
             settingsBox.setVisible(sel);
+            // Visible with the card, and that is the ONLY condition on it: a
+            // slot is selected. Not on having dialled, not on having a map, not
+            // on having an fp, not on being signed in.
+            reportBtn.setVisible(sel);
             if (sel)
             {
                 const auto& s = slotInfos[(size_t)selectedIdx];
@@ -2938,8 +2959,16 @@ private:
 
             // Settings text sits inside its card, below the tiny caps label
             auto sb = settingsBoxRect();
+            // The report button takes the right end of the settings card's top
+            // line, beside the SUGGESTED SETTINGS caps label (drawn at
+            // sb.getX()+10, sb.getY()+5 in a 200-wide box, so they cannot
+            // collide at any sane width). The TEXT BOX GIVES UP THAT WIDTH
+            // rather than being covered by it.
+            reportBtn.setBounds(sb.getRight() - kReportBtnW - 8, sb.getY() + 2,
+                                kReportBtnW, 18);
             settingsBox.setBounds(sb.getX() + 8, sb.getY() + 18,
-                                  sb.getWidth() - 16, sb.getHeight() - 24);
+                                  sb.getWidth() - 16 - kReportBtnW - 4,
+                                  sb.getHeight() - 24);
 
             // The selector takes the left end of the rack strip and the strip
             // gives up exactly that width, so the two cannot overlap however
@@ -3036,13 +3065,6 @@ private:
     // block; the op list is painted above it in plain language. NEVER
     // mutates silently: ops run only on Apply, through
     // ChainHost::applyChainEdits (staleness-guarded, stop-at-failure).
-    // MISDIAL REPORT v1: one "Report a wrong setting" button per APPLIED card
-    // that has at least one reportable row. Pooled and viewport-culled exactly
-    // as editAltBtns is, because an uncalled button left at its last bounds
-    // floats over other bubbles as the list scrolls.
-    std::array<juce::TextButton, kMaxChainBuildBtns> misdialBtns;
-    std::array<int, kMaxChainBuildBtns> misdialMsgIdx { };
-    int activeMisdialBtns = 0;
     std::array<juce::TextButton, kMaxChainBuildBtns> editApplyBtns;
     std::array<int, kMaxChainBuildBtns> editApplyMsgIdx { };
     int activeEditApplyBtns = 0;
@@ -3076,10 +3098,135 @@ private:
     // second guess (fixes the sidebar "can't scroll up to a long reply" bug).
     int  measureChatContentHeight();
     int  editCardHeight(const ChatMsg& msg) const;
-    // MISDIAL REPORT v1
-    bool misdialCardHasReportable(const ChatMsg& msg) const;
-    void openMisdialPopup(int msgIdx);
-    void sendMisdialReport(int msgIdx, int rowIdx);
+    // MISDIAL REPORT v1: the popup. A free text box ALWAYS, and a control
+    // picker only when rows survived the fp comparison. Picking a control files
+    // a misdial; typing without picking files a bug.
+    struct SlotReportWindow : juce::Component
+    {
+        SlotReportWindow(std::vector<echojay::MisdialRow> rowsIn,
+                         echojay::MisdialSlotFacts factsIn,
+                         bool signedInIn,
+                         juce::Component::SafePointer<EchoJayEditor> ownerIn)
+            : rows(std::move(rowsIn)), facts(std::move(factsIn)),
+              signedIn(signedInIn), owner(ownerIn)
+        {
+            // ONE id for the life of this window, so a retry after a failure
+            // dedupes at the server instead of filing the same thing twice.
+            reportId = echojay::newMisdialReportId();
+
+            noteBox.setMultiLine(true, true);
+            noteBox.setReturnKeyStartsNewLine(true);
+            noteBox.setTextToShowWhenEmpty("What went wrong, in your words",
+                                           juce::Colour(0xff606078));
+            noteBox.setInputRestrictions(echojay::kMisdialNoteMax);
+            addAndMakeVisible(noteBox);
+
+            if (! rows.empty())
+            {
+                picker.addItem("Nothing specific, just the note above", 1);
+                for (size_t i = 0; i < rows.size(); ++i)
+                    picker.addItem(echojay::misdialRowLabel(rows[i]), (int) i + 2);
+                picker.setSelectedId(1, juce::dontSendNotification);
+                addAndMakeVisible(picker);
+                addAndMakeVisible(pickerLabel);
+                pickerLabel.setText("Which setting went to the wrong place?",
+                                    juce::dontSendNotification);
+                pickerLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
+                pickerLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9aa3b2));
+            }
+
+            status.setFont(juce::Font(juce::FontOptions(11.0f)));
+            status.setColour(juce::Label::textColourId, juce::Colour(0xfff59e0b));
+            // Signed out is a real and long lived state. The button says so and
+            // fires nothing: the plugin omits the Authorization header entirely
+            // when the token is empty, so the POST would 401 every time.
+            if (! signedIn)
+                status.setText("Sign in to send this report.", juce::dontSendNotification);
+            addAndMakeVisible(status);
+
+            sendBtn.setButtonText("Send");
+            sendBtn.setEnabled(signedIn);
+            sendBtn.onClick = [this] { send(); };
+            addAndMakeVisible(sendBtn);
+            cancelBtn.setButtonText("Cancel");
+            cancelBtn.onClick = [this] { close(); };
+            addAndMakeVisible(cancelBtn);
+
+            setSize(420, rows.empty() ? 190 : 240);
+        }
+
+        void resized() override
+        {
+            auto b = getLocalBounds().reduced(12);
+            if (! rows.empty())
+            {
+                pickerLabel.setBounds(b.removeFromTop(16));
+                picker.setBounds(b.removeFromTop(24));
+                b.removeFromTop(8);
+            }
+            auto row = b.removeFromBottom(28);
+            cancelBtn.setBounds(row.removeFromRight(80));
+            row.removeFromRight(6);
+            sendBtn.setBounds(row.removeFromRight(80));
+            status.setBounds(row);
+            b.removeFromBottom(6);
+            noteBox.setBounds(b);
+        }
+
+        void send()
+        {
+            if (! signedIn) return;
+            const auto note = noteBox.getText().trim();
+            const int sel = rows.empty() ? 1 : picker.getSelectedId();
+            juce::String body;
+            if (sel >= 2 && (size_t)(sel - 2) < rows.size())
+            {
+                // A control was picked: the misdial kind, with the note as
+                // optional colour on top of the five required fields.
+                body = echojay::buildMisdialBody(rows[(size_t)(sel - 2)], facts,
+                                                 "plugin-panel", note);
+            }
+            else
+            {
+                // No control picked: the bug kind, which needs the note and
+                // nothing else, and must not carry an fp.
+                if (note.isEmpty())
+                {
+                    status.setText("Type what went wrong first.", juce::dontSendNotification);
+                    return;
+                }
+                body = echojay::buildBugBody(note, facts, "plugin-panel", reportId);
+            }
+            if (body.isEmpty())
+            {
+                status.setText("Could not assemble that report.", juce::dontSendNotification);
+                return;
+            }
+            if (auto* o = owner.getComponent()) o->sendSlotReport(body, reportId);
+            close();
+        }
+
+        void close()
+        {
+            if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
+                dw->exitModalState(0);
+        }
+
+        std::vector<echojay::MisdialRow> rows;
+        echojay::MisdialSlotFacts        facts;
+        bool                             signedIn = false;
+        juce::Component::SafePointer<EchoJayEditor> owner;
+        juce::String                     reportId;
+        juce::TextEditor                 noteBox;
+        juce::ComboBox                   picker;
+        juce::Label                      pickerLabel, status;
+        juce::TextButton                 sendBtn, cancelBtn;
+    };
+
+    // MISDIAL REPORT v1: the panel's report affordance. openSlotReport builds
+    // the popup for ONE slot; sendSlotReport posts one assembled body.
+    void openSlotReport(int slotIndex);
+    void sendSlotReport(const juce::String& body, const juce::String& reportId);
     // Build card (1d follow-up): structured slot lines + Build button —
     // the ops card's visual language applied to CHAIN blocks
     // Caption line height under a slot row. ONE constant, consumed by the

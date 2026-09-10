@@ -6053,6 +6053,91 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "md PIN9: and no rows at all offers nothing");
         }
 
+        // md PIN10 -- THE MISDIAL BODY DECLARES ITS KIND AND TAKES AN OPTIONAL
+        // NOTE. The route defaults an absent kind to misdial for back compat,
+        // so an absent kind is not wrong; it is just unreadable afterwards.
+        {
+            auto v = juce::JSON::parse (echojay::buildMisdialBody (goodRow(), facts, "plugin-panel"));
+            auto* o = v.getDynamicObject();
+            check (o != nullptr && o->getProperty ("kind").toString() == "misdial",
+                   "md PIN10: a misdial says so explicitly");
+            check (o != nullptr && ! o->hasProperty ("note"),
+                   "md PIN10: with no note key when the user typed nothing");
+            auto v2 = juce::JSON::parse (echojay::buildMisdialBody (goodRow(), facts,
+                                                                    "plugin-panel", "  it went to Q  "));
+            auto* o2 = v2.getDynamicObject();
+            check (o2 != nullptr && o2->getProperty ("note").toString() == "it went to Q",
+                   "md PIN10: and a trimmed note when they did");
+            const auto longNote = juce::String::repeatedString ("x", echojay::kMisdialNoteMax + 500);
+            auto v3 = juce::JSON::parse (echojay::buildMisdialBody (goodRow(), facts, "s", longNote));
+            check (v3.getDynamicObject() != nullptr
+                   && v3.getDynamicObject()->getProperty ("note").toString().length()
+                          == echojay::kMisdialNoteMax,
+                   "md PIN10: capped at the route's 1000, so what is shown is what lands");
+        }
+
+        // md PIN11 -- THE BUG KIND NEEDS THE NOTE AND MUST NOT CARRY fp. Not
+        // "may omit": the route forces fp null on this kind and bug records
+        // live in their own family, so a client asserting an fp here would put
+        // a record with no map behind it into the by-map work list.
+        {
+            const auto body = echojay::buildBugBody ("the EQ went silent", facts,
+                                                     "plugin-panel", "bug-id-1");
+            auto v = juce::JSON::parse (body);
+            auto* o = v.getDynamicObject();
+            check (o != nullptr && o->getProperty ("kind").toString() == "bug",
+                   "md PIN11: a bug says so");
+            check (o != nullptr && o->getProperty ("note").toString() == "the EQ went silent",
+                   "md PIN11: and carries the user's words");
+            check (o != nullptr && ! o->hasProperty ("fp"),
+                   "md PIN11: and NO fp, which is the whole point of the kind");
+            check (o != nullptr && ! o->hasProperty ("parameterName")
+                   && ! o->hasProperty ("parameterIndex")
+                   && ! o->hasProperty ("valueDialled")
+                   && ! o->hasProperty ("observedResult"),
+                   "md PIN11: nor any of the four other misdial-only fields");
+            check (o != nullptr && o->getProperty ("pluginName").toString() == "Pro-C 2"
+                   && o->getProperty ("appVersion").toString() == "2.26.4",
+                   "md PIN11: while the context that DOES exist still rides");
+            check (echojay::buildBugBody ("   ", facts, "s", "id").isEmpty(),
+                   "md PIN11: an empty note produces no body, the route's one requirement");
+            // A built-in has no fp and no map, so this is the only kind it can
+            // file. Nothing about the bug builder can refuse it for that.
+            echojay::MisdialSlotFacts builtin;
+            builtin.pluginName = "EchoJay EQ"; builtin.appVersion = "2.26.4";
+            auto vb = juce::JSON::parse (echojay::buildBugBody ("band 3 did nothing",
+                                                                builtin, "plugin-panel", "id2"));
+            check (vb.getDynamicObject() != nullptr
+                   && ! vb.getDynamicObject()->hasProperty ("fp")
+                   && vb.getDynamicObject()->getProperty ("pluginName").toString() == "EchoJay EQ",
+                   "md PIN11: a built-in with no fingerprint files a bug cleanly");
+        }
+
+        // md PIN12 -- BOTH BODIES STAY INSIDE THE ACCEPTED KEY SET, including
+        // the two new keys. Same reason as PIN4: an unknown key cannot reach
+        // the store and still costs bytes against the 16 KB cap.
+        {
+            auto stray = [] (const juce::String& body)
+            {
+                juce::StringArray out;
+                auto v = juce::JSON::parse (body);
+                if (auto* o = v.getDynamicObject())
+                    for (auto& prop : o->getProperties())
+                        if (! echojay::misdialAcceptedKeys().contains (prop.name.toString()))
+                            out.add (prop.name.toString());
+                return out;
+            };
+            const auto s1 = stray (echojay::buildMisdialBody (goodRow(), facts, "plugin-panel", "note"));
+            const auto s2 = stray (echojay::buildBugBody ("note", facts, "plugin-panel", "id"));
+            check (s1.isEmpty(), "md PIN12: the misdial body sends only accepted keys",
+                   s1.joinIntoString (", "));
+            check (s2.isEmpty(), "md PIN12: and so does the bug body",
+                   s2.joinIntoString (", "));
+            check (echojay::misdialAcceptedKeys().contains ("kind")
+                   && echojay::misdialAcceptedKeys().contains ("note"),
+                   "md PIN12: with kind and note now in the set");
+        }
+
         // md PIN7 -- THE POPUP LINE AND THE RECORD HAVE ONE AUTHOR, so the line
         // the user chooses from cannot describe a different control from the one
         // that gets sent.

@@ -88,6 +88,18 @@ public:
         // empty?". A slot with a reading composes from the tiers alone; a slot
         // without one still falls back, because there the card is all we have.
         bool hasLiveReads = false;
+        // MISDIAL REPORT v1. The panel is the button's home and it holds only
+        // what is in this struct, so both of these had to come across: it could
+        // not make the fp comparison from name, format and prose.
+        //
+        // fp IS THE LIVE SLOT'S fingerprint, and misdialRows carry the fp they
+        // were CAPTURED under. Comparing the two at press time is what stops a
+        // stale row being filed: a slot can be replaced and ChainSlot reused
+        // with a new desc and a new fp, leaving the previous occupant's rows in
+        // place with nothing to expire them. EMPTY for a built-in, which never
+        // gets a fingerprint, and that is why a built-in can only file a bug.
+        juce::String fp;
+        std::vector<echojay::MisdialRow> misdialRows;
     };
 
     // ---- Mode (RACK_BORROW_IMPLEMENTATION_SPEC §2, 21 Aug 2026) -----------

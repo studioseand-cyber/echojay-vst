@@ -1983,6 +1983,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         return processorRef.createSlotEditorForView(chainViewUid(), i);
     };
     chainListPanel.onSelectSlot = [this](int i) { chainSelectedSlot_ = i; };
+    // MISDIAL REPORT v1: the panel owns the button, the editor owns the popup.
+    // The panel holds no API and no knowledge of the record; it reports which
+    // slot was asked about and nothing more.
+    chainListPanel.onReport = [this](int i) { openSlotReport(i); };
     chainListPanel.onRemoveSlot = [this](int i) {
         // Same fork, same reason. The local body keeps its 80ms deferred
         // destroy (the AMEK EQ 250 segfault); a remote remove needs none of
@@ -2564,11 +2568,6 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // colour) so the two conversational controls read as one family
     for (int i = 0; i < kMaxChainBuildBtns; ++i)
     {
-        misdialBtns[(size_t)i].setLookAndFeel(&askChipLnF_);
-        misdialBtns[(size_t)i].setColour(juce::TextButton::textColourOffId, juce::Colour(0xfff59e0b));
-        misdialBtns[(size_t)i].setVisible(false);
-        misdialBtns[(size_t)i].onClick = [this, i]() { openMisdialPopup(misdialMsgIdx[(size_t)i]); };
-        addAndMakeVisible(misdialBtns[(size_t)i]);
         editApplyBtns[(size_t)i].setLookAndFeel(&askChipLnF_);
         editApplyBtns[(size_t)i].setColour(juce::TextButton::textColourOffId, juce::Colour(0xff7FE3F2));
         editApplyBtns[(size_t)i].setVisible(false);
@@ -12953,7 +12952,6 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
             cm.reviewId  = msg.reviewId;
             cm.chainData = msg.chainJson;  // restore persisted chain block → rebuilds Build button
             cm.figuresData = msg.figuresJson; // restore compare figure card → redraws identically
-            cm.misdialData = msg.misdialJson; // rows AND their reported state
             cm.gainData  = msg.gainJson;   // restore gain proposals + their applied/undone state
             cm.askData   = msg.askJson;    // restore ask chips + answered state
             cm.askAnswered = msg.askAnswered;
@@ -18050,10 +18048,6 @@ void EchoJayEditor::paint(juce::Graphics& g)
     activeChainBuildBtns = 0;
     activeEditApplyBtns = 0;
     activeEditAltBtns = 0;
-    // Reset with the others: the pool index is per paint pass, and a stale
-    // count would leave last frame's buttons live at last frame's bounds.
-    for (int i = activeMisdialBtns; i-- > 0; ) misdialBtns[(size_t)i].setVisible(false);
-    activeMisdialBtns = 0;
     activeResultChips = 0;
     chatWavePositions.clear();
     gainCardZones_.clear();
@@ -18787,62 +18781,6 @@ void EchoJayEditor::paint(juce::Graphics& g)
                                 editAltBtns[(size_t)abi].setBounds(-100, -100, 1, 1);
                                 editAltBtns[(size_t)abi].setVisible(false);
                             }
-                        }
-                        // MISDIAL REPORT v1. Same predicate as editCardHeight,
-                        // so the reserved height and the drawn button cannot
-                        // disagree. Sits below the alt pill when there is one.
-                        if (misdialCardHasReportable(msg)
-                            && activeMisdialBtns < kMaxChainBuildBtns)
-                        {
-                            int mbi = activeMisdialBtns++;
-                            misdialMsgIdx[(size_t)mbi] = msgLoopIndex;
-                            // Logged out is a REAL and long-lived state, so the
-                            // button is present and says why rather than firing
-                            // a POST that is certain to 401.
-                            const bool canSend = api.isLoggedIn();
-                            misdialBtns[(size_t)mbi].setButtonText(
-                                canSend ? "Report a wrong setting"
-                                        : "Report a wrong setting (sign in first)");
-                            misdialBtns[(size_t)mbi].setEnabled(canSend);
-                            const int mby = ey + 20 + (msg.editAltPrompt.isNotEmpty() ? 32 : 0);
-                            juce::Rectangle<int> mb(ex, mby,
-                                                    juce::jmin(230, bubbleW - 20), 26);
-                            auto sb5 = chatScroll.getBounds();
-                            bool inV3 = mb.getY() >= sb5.getY()
-                                     && mb.getBottom() <= sb5.getBottom();
-                            if (inV3)
-                            {
-                                misdialBtns[(size_t)mbi].setBounds(mb);
-                                misdialBtns[(size_t)mbi].setVisible(true);
-                                misdialBtns[(size_t)mbi].toFront(false);
-                            }
-                            else
-                            {
-                                misdialBtns[(size_t)mbi].setBounds(-100, -100, 1, 1);
-                                misdialBtns[(size_t)mbi].setVisible(false);
-                            }
-                        }
-                    }
-                    else if (activeEditApplyBtns < kMaxChainBuildBtns)
-                    {
-                        int bi = activeEditApplyBtns++;
-                        editApplyMsgIdx[(size_t)bi] = msgLoopIndex;
-                        editApplyBtns[(size_t)bi].setButtonText("Apply changes");
-                        juce::Rectangle<int> ar(ex, ey + 2,
-                                                juce::jmin(160, bubbleW - 20), kChainBtnH);
-                        auto sb3 = chatScroll.getBounds();
-                        bool inV = ar.getY() >= sb3.getY()
-                                && ar.getBottom() <= sb3.getBottom();
-                        if (inV)
-                        {
-                            editApplyBtns[(size_t)bi].setBounds(ar);
-                            editApplyBtns[(size_t)bi].setVisible(true);
-                            editApplyBtns[(size_t)bi].toFront(false);
-                        }
-                        else
-                        {
-                            editApplyBtns[(size_t)bi].setBounds(-100, -100, 1, 1);
-                            editApplyBtns[(size_t)bi].setVisible(false);
                         }
                     }
                 }
@@ -23133,15 +23071,9 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
     juce::StringArray appliedNames, zeroParts, staleParts;
     struct PartialPart { juce::String name; juce::StringArray manual, oor; };
     std::vector<PartialPart> partialParts, zeroOorParts;
-    // MISDIAL REPORT v1: harvested HERE, once the dial has settled, because
-    // before that the rows are half-written and a report assembled from them
-    // would describe a state that never existed.
-    std::vector<echojay::MisdialRow> harvested;
     for (const auto& di : ch.getDialInfos())
     {
         if (!touchedNames.contains(di.name)) continue;
-        for (const auto& mr : di.misdialRows)
-            harvested.push_back(mr);
         // dial-4 A8: population for the touched slots, beside their rows.
         noteDialTallyFromInfo(di);
         // A9 step 1: rows here (one author), bubble below. This walker used
@@ -23201,30 +23133,6 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 // ride the model's success line.
                 zeroParts.add(di.name);
                 break;
-        }
-    }
-
-    // Attach the harvested rows to THIS reply's message. Located by editData
-    // content, not by index: the display list can shift between the apply and
-    // the settle, and retireLinkEditCard locates the same way for the same
-    // reason. Only rows that could actually be reported are kept, so the
-    // button's own condition ("never a dead button") is decided here rather
-    // than recomputed at paint time.
-    if (! harvested.empty())
-    {
-        std::vector<echojay::MisdialRow> keep;
-        for (auto& r : harvested)
-            if (echojay::misdialRowIsReportable(r)) keep.push_back(r);
-        if (! keep.empty())
-        {
-            const auto rowsJson = echojay::misdialRowsToJson(keep);
-            for (auto& cm : chatMessages)
-                if (cm.editData == editJson)
-                {
-                    cm.misdialData = rowsJson;
-                    workspace.setMessageMisdial(currentChatId, cm.content, rowsJson);
-                    break;
-                }
         }
     }
 
@@ -23969,145 +23877,83 @@ int EchoJayEditor::editCardHeight(const ChatMsg& msg) const
     if (msg.role != "assistant" || msg.editData.isEmpty()) return 0;
     auto ops = ChainHost::parseChainEditOps(msg.editData);
     if (ops.empty()) return 0;
-    // MISDIAL REPORT v1: the report button's height, in the APPLIED branch
-    // only and only when the card has something reportable. This is the ONE
-    // helper the measure pass and the paint pass both consume, so a height
-    // added anywhere else drifts the chat list exactly as the Settings paint
-    // walk drifted in aa455ff.
-    //
-    // NEVER A DEAD BUTTON: the same predicate decides the height and the
-    // placement, so a card with no reportable row reserves nothing and shows
-    // nothing.
-    const int misdialH = (msg.editApplied && misdialCardHasReportable(msg)) ? 32 : 0;
     return (int)ops.size() * 16 + 6
-         + (msg.editApplied ? (18 + (msg.editAltPrompt.isNotEmpty() ? 32 : 0) + misdialH)
+         + (msg.editApplied ? (18 + (msg.editAltPrompt.isNotEmpty() ? 32 : 0))
                             : 26 + 8);
 }
 
-// The card's own condition, in one place so the height, the placement and the
-// popup cannot disagree about whether this card has anything to report.
-bool EchoJayEditor::misdialCardHasReportable(const ChatMsg& msg) const
-{
-    if (msg.misdialData.isEmpty()) return false;
-    return echojay::misdialAnyReportable(echojay::misdialRowsFromJson(msg.misdialData));
-}
-
 // ============================================================================
-// MISDIAL REPORT v1: the popup and the send.
+// MISDIAL REPORT v1: the popup and the send, from the SUGGESTED SETTINGS panel.
 //
-// The popup lists the reportable rows, each line showing the map key, the value
-// asked for and what landed, so the user can recognise the wrong one without
-// reading the plugin's own UI at the same time. misdialRowLabel authors that
-// line, and the record sent is built from the SAME row, so the line the user
-// chose from and the record filed cannot describe different controls.
+// TWO KINDS THROUGH ONE BUTTON, and the user never picks a mode. Picking a
+// control files a misdial (the five required fields, the record that lets Kathy
+// open one map and fix one control). Typing without picking files a bug (the
+// note and whatever context is true). The route decides nothing for us here: it
+// validates each kind on its own terms and defaults an absent kind to misdial
+// for back compat, so both are sent explicitly.
 //
-// A row already reported is shown and disabled. Server dedupe is the backstop,
-// not the mechanism: the UI must not offer a second press.
+// THE fp COMPARISON IS MADE AT PRESS TIME, and it is the only thing standing
+// between a stale row and a wrong map edit. A slot can be replaced and
+// ChainSlot reused with a new desc and a new fp, leaving the previous
+// occupant's rows in place; nothing expires them and the gap between a dial and
+// a press is however long the user takes. On mismatch, or when either fp is
+// empty, the popup offers TEXT ONLY.
 // ============================================================================
-void EchoJayEditor::openMisdialPopup(int msgIdx)
+void EchoJayEditor::openSlotReport(int slotIndex)
 {
-    if (msgIdx < 0 || msgIdx >= (int)chatMessages.size()) return;
-    const auto rows = echojay::misdialRowsFromJson(chatMessages[(size_t)msgIdx].misdialData);
-    if (rows.empty()) return;
+    auto& ch = processorRef.getChainHost();
+    if (slotIndex < 0 || slotIndex >= ch.getNumSlots()) return;
+    const auto info = ch.getSlotInfo(slotIndex);
 
-    juce::PopupMenu menu;
-    menu.addSectionHeader("Which setting went to the wrong place?");
-    for (size_t i = 0; i < rows.size(); ++i)
-    {
-        if (! echojay::misdialRowIsReportable(rows[i])) continue;
-        const bool done = rows[i].reported;
-        menu.addItem((int)i + 1,
-                     echojay::misdialRowLabel(rows[i]) + (done ? "   (reported)" : juce::String()),
-                     ! done,      // a reported row cannot be sent again from here
-                     done);       // and shows as ticked
-    }
-    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    menu.showMenuAsync(juce::PopupMenu::Options(),
-                       [safeThis, msgIdx](int result)
-    {
-        if (safeThis != nullptr && result > 0)
-            safeThis->sendMisdialReport(msgIdx, result - 1);
-    });
-}
+    // The rows are offered ONLY when their captured fp still matches the live
+    // slot's fp. Both empty (a built-in) fails this too, which is correct: a
+    // built-in has no map and can only file a bug.
+    std::vector<echojay::MisdialRow> rows;
+    if (info.fp.isNotEmpty())
+        for (const auto& r : info.misdialRows)
+            if (r.fp == info.fp && echojay::misdialRowIsReportable(r))
+                rows.push_back(r);
 
-void EchoJayEditor::sendMisdialReport(int msgIdx, int rowIdx)
-{
-    if (msgIdx < 0 || msgIdx >= (int)chatMessages.size()) return;
-    auto& cm = chatMessages[(size_t)msgIdx];
-    auto rows = echojay::misdialRowsFromJson(cm.misdialData);
-    if (rowIdx < 0 || rowIdx >= (int)rows.size()) return;
-    if (rows[(size_t)rowIdx].reported) return;
-
-    // THE REPORT ID IS GENERATED ONCE AND KEPT. A retry after a failure, or
-    // after a reload, reuses it so the server dedupes rather than filing the
-    // same defect twice.
-    if (rows[(size_t)rowIdx].reportId.isEmpty())
-    {
-        rows[(size_t)rowIdx].reportId = echojay::newMisdialReportId();
-        cm.misdialData = echojay::misdialRowsToJson(rows);
-        workspace.setMessageMisdial(currentChatId, cm.content, cm.misdialData);
-    }
-
-    // Best effort identity, from what the client actually holds. rid, userAsk,
-    // extractorVersion and humanVerified are NOT sent: the first two are not
-    // associated with a dialled slot here and the last two live only in
-    // plugin:<fp>:meta on the server. Guessing any of them would put a wrong
-    // belief in front of the person fixing the map.
     echojay::MisdialSlotFacts facts;
-    facts.appVersion = JucePlugin_VersionString;
+    facts.appVersion    = JucePlugin_VersionString;
+    facts.pluginName    = info.name;
+    facts.format        = info.format;
+    facts.vendor        = info.manufacturer;
     {
-        auto& ch = processorRef.getChainHost();
-        for (const auto& di : ch.getDialInfos())
-            if (di.fp == rows[(size_t)rowIdx].fp)
-            {
-                facts.pluginName = di.name;
-                facts.format     = di.format;
-                break;
-            }
-        for (int i = 0; i < ch.getNumSlots(); ++i)
-        {
-            const auto d = ch.getSlotDescription(i);
-            if (d.name == facts.pluginName)
-            {
-                facts.vendor        = d.manufacturerName;
-                facts.pluginVersion = d.version;
-                break;
-            }
-        }
+        const auto d = ch.getSlotDescription(slotIndex);
+        facts.pluginVersion = d.version;
     }
 
-    const auto body = echojay::buildMisdialBody(rows[(size_t)rowIdx], facts, "plugin-card");
-    if (body.isEmpty()) return;   // the completeness rule already refused it
+    const bool signedIn = api.isLoggedIn();
 
-    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    const auto rowKey = rows[(size_t)rowIdx].reportId;
-    api.reportMisdial(body,
-                 [safeThis, msgIdx, rowKey](const juce::var& json, int statusCode)
+    // ONE window, built here rather than a menu, because the free text box is
+    // always present and a PopupMenu cannot hold one.
+    auto* content = new SlotReportWindow(rows, facts, signedIn,
+                                         juce::Component::SafePointer<EchoJayEditor>(this));
+    juce::DialogWindow::LaunchOptions o;
+    o.content.setOwned(content);
+    o.dialogTitle = "Report a problem with " + info.name;
+    o.dialogBackgroundColour = juce::Colour(0xff11131a);
+    o.escapeKeyTriggersCloseButton = true;
+    o.useNativeTitleBar = false;
+    o.resizable = false;
+    o.launchAsync();
+}
+
+void EchoJayEditor::sendSlotReport(const juce::String& body, const juce::String& reportId)
+{
+    if (body.isEmpty()) return;
+    api.reportMisdial(body, [reportId](const juce::var& json, int statusCode)
     {
-        if (safeThis == nullptr) return;
-        // ONLY 200 ok:true SETTLES IT. 0 (offline), 401, 429 and every 5xx
-        // leave the row pressable, which is what makes the reportId reuse
-        // above worth having. A 200 with duplicate:true settles too: the
-        // report IS filed, once.
+        // ONLY 200 ok:true SETTLES IT. 0 for offline, 401, 429 and every 5xx
+        // leave it pressable, which is what makes reusing the reportId worth
+        // having. A 200 with duplicate:true settles: the report IS filed, once.
         const bool ok = statusCode == 200
                      && json.isObject()
                      && (bool) json.getProperty("ok", false);
-        if (! ok)
-        {
-            EchoJay_NSLog(("EJMisdial: NOT settled, status " + juce::String(statusCode)
-                           + " -- the row stays reportable").toRawUTF8());
-            return;
-        }
-        if (msgIdx < 0 || msgIdx >= (int)safeThis->chatMessages.size()) return;
-        auto& cm2 = safeThis->chatMessages[(size_t)msgIdx];
-        auto rows2 = echojay::misdialRowsFromJson(cm2.misdialData);
-        for (auto& r : rows2)
-            if (r.reportId == rowKey) { r.reported = true; break; }
-        cm2.misdialData = echojay::misdialRowsToJson(rows2);
-        safeThis->workspace.setMessageMisdial(safeThis->currentChatId, cm2.content,
-                                              cm2.misdialData);
-        safeThis->workspace.requestMutationSync();
-        EchoJay_NSLog("EJMisdial: reported, row settled");
+        EchoJay_NSLog(("EJMisdial: status " + juce::String(statusCode)
+                       + (ok ? " SETTLED" : " NOT settled, still reportable")
+                       + " id=" + reportId).toRawUTF8());
     });
 }
 

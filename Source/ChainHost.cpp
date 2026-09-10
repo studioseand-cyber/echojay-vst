@@ -1409,6 +1409,10 @@ ChainHost::SlotInfo ChainHost::getSlotInfo(int i) const
     info.manufacturer     = s.desc.manufacturerName;   // remote, 27 Aug
     info.settingsForModel = modelSettingsForSlot(i);   // local, 24 Aug
     info.hasLiveReads     = slotHasLiveReads(i);       // local, 24 Aug
+    // MISDIAL REPORT v1: the live fp and the captured rows, both, so the panel
+    // can compare them at press time. Empty fp on a built-in.
+    info.fp               = s.fp;
+    info.misdialRows      = s.misdialRows;
     return info;
 }
 
