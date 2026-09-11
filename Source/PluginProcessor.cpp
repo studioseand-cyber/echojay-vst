@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "EJSpectralEvidence.h"   // spectral provenance + the moved band reduction
 #include "PluginEditor.h"
 #include "FaderTaper.h"   // shared mixer-fader mute taper (P17)
 #include "NativeClip.h"   // EchoJay_NSLog (memdiag)
@@ -3341,112 +3342,16 @@ namespace {
         return f;
     }
 
-    // Aggregate 64 log-spaced spectrum bins (20Hz–20kHz) into 6 musical bands.
-    // Bins are already in dB. We average in the linear (power) domain to avoid
-    // log-domain skew, then convert back to dB.
-    // Band boundaries (bin indices, inclusive):
-    //   Sub      20–60 Hz   bins  0–9
-    //   Low      60–200 Hz  bins 10–20
-    //   Low-mid  200–600 Hz bins 21–30
-    //   Mid      600–2k Hz  bins 31–41
-    //   High-mid 2k–6k Hz   bins 42–52
-    //   High     6k–20k Hz  bins 53–63
-    struct BandLevels { float sub, low, lowMid, mid, highMid, high; };
-    
-    inline float avgDb(const std::array<float, 64>& s, int lo, int hi)
-    {
-        double sumLin = 0.0;
-        int n = 0;
-        for (int i = lo; i <= hi; ++i) {
-            double db = (double)s[(size_t)i];
-            if (db < -100.0) db = -100.0; // clamp floor
-            sumLin += std::pow(10.0, db / 10.0);
-            ++n;
-        }
-        if (n == 0 || sumLin <= 1e-20) return -100.0f;
-        return (float)(10.0 * std::log10(sumLin / (double)n));
-    }
-    
-    BandLevels computeBands(const std::array<float, 64>& s)
-    {
-        return {
-            avgDb(s,  0,  9),
-            avgDb(s, 10, 20),
-            avgDb(s, 21, 30),
-            avgDb(s, 31, 41),
-            avgDb(s, 42, 52),
-            avgDb(s, 53, 63)
-        };
-    }
-    
-    // Append plain-language tonal diff lines. Only flags bands where the
-    // difference exceeds 2 dB — below that is noise. "Your mix has more/less X"
-    // is phrased from the user's perspective relative to the reference.
-    void appendTonalDiff(juce::String& ctx,
-                         const std::array<float, 64>& mixSpec,
-                         const std::array<float, 64>& refSpec,
-                         const juce::String& mixLabel,
-                         const juce::String& refLabel)
-    {
-        auto mb = computeBands(mixSpec);
-        auto rb = computeBands(refSpec);
-        
-        struct BandDiff { const char* name; float mix; float ref; };
-        BandDiff diffs[6] = {
-            { "sub (below 60Hz)",         mb.sub,     rb.sub     },
-            { "lows (60-200Hz)",          mb.low,     rb.low     },
-            { "low-mids (200-600Hz)",     mb.lowMid,  rb.lowMid  },
-            { "mids (600Hz-2kHz)",        mb.mid,     rb.mid     },
-            { "high-mids (2-6kHz)",       mb.highMid, rb.highMid },
-            { "highs (above 6kHz)",       mb.high,    rb.high    }
-        };
-        
-        // Check if mix has any signal at all — if floor everywhere, skip
-        bool mixHasSignal = false, refHasSignal = false;
-        for (auto& d : diffs) {
-            if (d.mix > -80.0f) mixHasSignal = true;
-            if (d.ref > -80.0f) refHasSignal = true;
-        }
-        if (!mixHasSignal || !refHasSignal) {
-            ctx += "TONAL BALANCE: Not enough signal to compare frequency content.\n";
-            return;
-        }
-        
-        // Normalise both spectra by their loudest band so overall-level
-        // differences (already covered by LUFS) don't dominate the tonal diff.
-        float mixMax = -200.0f, refMax = -200.0f;
-        for (auto& d : diffs) {
-            if (d.mix > mixMax) mixMax = d.mix;
-            if (d.ref > refMax) refMax = d.ref;
-        }
-        
-        juce::String tonalLines;
-        int flagged = 0;
-        for (auto& d : diffs) {
-            float mixRel = d.mix - mixMax;
-            float refRel = d.ref - refMax;
-            float delta = mixRel - refRel; // positive = mix has more in this band
-            if (std::abs(delta) >= 2.0f) {
-                juce::String line = "- ";
-                if (delta > 0)
-                    line += mixLabel + " has more " + d.name + " than " + refLabel
-                          + " (+" + juce::String(delta, 1) + " dB relative)";
-                else
-                    line += mixLabel + " has less " + d.name + " than " + refLabel
-                          + " (" + juce::String(delta, 1) + " dB relative)";
-                line += "\n";
-                tonalLines += line;
-                ++flagged;
-            }
-        }
-        
-        if (flagged == 0) {
-            ctx += "TONAL BALANCE: Very similar across the frequency range - no notable band differences.\n";
-        } else {
-            ctx += "TONAL BALANCE DIFFERENCES (relative, already normalised for overall level):\n";
-            ctx += tonalLines;
-        }
-    }
+    // THE BAND REDUCTION AND THE TONAL DIFF NOW LIVE IN EJSpectralEvidence.h
+    // (11 Sep 2026). They sat here, in an anonymous namespace, where neither
+    // tools/mapfps_test nor an offline measurement could link them, so the
+    // before/after numbers section 1.6 asks for could only ever have been a
+    // re-implementation of the thing being measured. One definition, three
+    // consumers. These using-declarations keep every call site below unchanged.
+    using echojay::BandLevels;
+    using echojay::avgDb;
+    using echojay::computeBands;
+    using echojay::appendTonalDiff;
 }
 
 juce::String EchoJayProcessor::buildCompareContext(const CaptureSnapshot& capture, const ReferenceResult& reference) const
@@ -3577,7 +3482,9 @@ juce::String EchoJayProcessor::buildCompareContext(const CaptureSnapshot& a, con
 
 juce::String EchoJayProcessor::buildCompareContext(const MeterData& da, const MeterData& db,
                                                    const juce::String& la, const juce::String& lb,
-                                                   float durA, float durB, bool numbersOnly) const
+                                                   float durA, float durB, bool numbersOnly,
+                                                   const echojay::SpectralEvidence& sa,
+                                                   const echojay::SpectralEvidence& sb) const
 {
     juce::String ctx;
     ctx += "[BEGIN COMPARE CONTEXT - this block is a one-off comparison, NOT an ongoing mix discussion]\n";
@@ -3667,7 +3574,26 @@ juce::String EchoJayProcessor::buildCompareContext(const MeterData& da, const Me
         ctx += "- Width: " + juce::String(widthDiff, 1) + "% difference\n";
 
     ctx += "\n";
-    appendTonalDiff(ctx, da.spectrum, db.spectrum, la, lb);
+    // SPECTRAL PROVENANCE, section 1.5 items 3 and 4. The tonal diff below used
+    // to subtract da.spectrum from db.spectrum, which for a reference slot was
+    // the meter's reading after the final block of the file: a 150 ms fade out
+    // against a whole capture. Each side now arrives as evidence that states
+    // what it is, so the diff compares like with like where it can and SAYS so
+    // where it cannot.
+    ctx += "SPECTRAL BASIS (what the tonal comparison below is made of):\n";
+    ctx += echojay::spectralProvenanceLine(la, sa);
+    ctx += echojay::spectralProvenanceLine(lb, sb);
+    {
+        const auto caveat = echojay::tonalDiffCaveat(sa, sb, la, lb);
+        if (caveat.isNotEmpty()) ctx += caveat;
+    }
+    ctx += "\n";
+    // A side with no measurement contributes the unset sentinel, which
+    // appendTonalDiff reports as absent rather than averaging into agreement.
+    appendTonalDiff(ctx,
+                    sa.valid ? sa.bins : echojay::unsetSpectrum(),
+                    sb.valid ? sb.bins : echojay::unsetSpectrum(),
+                    la, lb);
 
     ctx += "\nINSTRUCTIONS: The figures above are ALREADY shown to the user in a figure card, "
            "so do NOT restate them - no tables, no lists of numbers. Interpret only: what the "

@@ -5415,6 +5415,125 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
         });
 }
 
+// WHAT EACH COMPARE SLOT'S SPECTRUM ACTUALLY IS (11 Sep 2026, plan section 1.5).
+//
+// getSlotMeterData returns a MeterData, and MeterData::spectrum is whatever the
+// source last selected for DISPLAY. For a reference that is data.spectrum, the
+// meter's reading after the final block of the file: a fade out. Feeding that to
+// the tonal diff compared 150 ms of one thing against a whole performance of
+// another. This resolves the RIGHT array per slot kind and stamps what it is, so
+// the context can say so and a mismatch is qualified rather than averaged over.
+//
+// Four sources, three answers. Only a bounded-window average is a fair subject
+// for a band delta; the rest are named and caveated.
+echojay::SpectralEvidence EchoJayEditor::getSlotSpectralEvidence(const CompareSlotState& slot) const
+{
+    using R = echojay::SpectralReduction;
+    echojay::SpectralEvidence ev;   // unset sentinel + valid=false by default
+
+    // A live slot, and any slot whose compare stream is rolling, is the meter's
+    // own ballistic reading. Honest and unbounded; named, never silently used as
+    // if it were a window.
+    if (slot.kind == CompareSlotState::Kind::Live)
+    {
+        ev.bins      = processorRef.getMeterEngine().getMeterData().spectrum;
+        ev.reduction = R::LiveInstant;
+        ev.valid     = true;
+        return ev;
+    }
+    const int slotIdx = (&slot == &compareTop_) ? 0 : 1;
+    if (processorRef.cmpStream[slotIdx].playing.load())
+    {
+        ev.bins      = processorRef.getCompareMeter(slotIdx).getMeterData().spectrum;
+        ev.reduction = R::LiveInstant;
+        ev.valid     = true;
+        return ev;
+    }
+
+    switch (slot.kind)
+    {
+        case CompareSlotState::Kind::Reference:
+        {
+            // THE FIX. eqCurve is the arithmetic mean of every analysis block of
+            // the file (ReferenceAnalyser), computed on every reference since the
+            // feature shipped and read by nothing that runs. data.spectrum, which
+            // the live path used, is the ballistic tail.
+            auto refs = processorRef.getReferenceAnalyser().getReferences();
+            if (slot.index >= 0 && slot.index < (int) refs.size())
+            {
+                ev.bins          = refs[(size_t) slot.index].eqCurve;
+                ev.reduction     = R::WholeFileAverage;
+                ev.windowSeconds = refs[(size_t) slot.index].durationSeconds;
+                ev.valid         = true;
+            }
+            break;
+        }
+
+        case CompareSlotState::Kind::Snapshot:
+        {
+            auto snaps = processorRef.getSnapshots();
+            if (slot.index >= 0 && slot.index < (int) snaps.size())
+            {
+                const auto& sn   = snaps[(size_t) slot.index];
+                ev.windowSeconds = sn.durationSeconds;
+                ev.valid         = true;
+                if (sn.hasDualSpectrum)
+                {
+                    // A capture made THIS SESSION holds both whole-window
+                    // reductions. Take the average: it is the one comparable to
+                    // a reference's whole-file average, and no caveat is needed.
+                    ev.bins      = sn.avgSpectrum;
+                    ev.reduction = R::WholeWindowAverage;
+                }
+                else
+                {
+                    // Restored from the session blob: only the SELECTED
+                    // reduction survives (averagedData.spectrum is persisted,
+                    // avgSpectrum and peakSpectrum are not). channelType is
+                    // persisted too, so which reduction it was is derivable
+                    // rather than guessed.
+                    ev.bins      = sn.averagedData.spectrum;
+                    ev.reduction = EchoJayProcessor::spectrumUsesAverage(sn.channelType)
+                                     ? R::WholeWindowAverage : R::WholeWindowPeakHold;
+                }
+            }
+            break;
+        }
+
+        case CompareSlotState::Kind::WsCapture:
+        {
+            for (auto& r : workspace.getReviews())
+                if (r.id == slot.wsReviewId)
+                {
+                    // spectrumBands is populated from the source capture's
+                    // avgSpectrum, so when it is present it IS a whole-window
+                    // average. It is in-memory only, hence the flag: a review
+                    // from a previous session has none, and that reads as
+                    // absent rather than as a floor.
+                    if (r.hasSpectrum)
+                    {
+                        ev.bins      = r.spectrumBands;
+                        ev.reduction = R::WholeWindowAverage;
+                        ev.valid     = true;
+                    }
+                    break;
+                }
+            break;
+        }
+
+        case CompareSlotState::Kind::CodecFile:
+        {
+            // A parked codec render has no stored spectrum of its own; its
+            // meter only reads while the stream rolls, which the branch above
+            // already handles. Absent, not floored.
+            break;
+        }
+
+        default: break;
+    }
+    return ev;
+}
+
 MeterData EchoJayEditor::getSlotMeterData(const CompareSlotState& slot) const
 {
     // Live slot always feeds from meterEngine (live input, never AB audio)
@@ -6206,9 +6325,15 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
     const juce::String labelB = slotDisplayName(slotB);
     const MeterData    da     = getSlotMeterData(slotA);
     const MeterData    db     = getSlotMeterData(slotB);
+    // The spectra travel separately from the MeterData, because MeterData
+    // carries whichever spectrum the source selected for display and that is
+    // the wrong array for a reference. See getSlotSpectralEvidence.
+    const echojay::SpectralEvidence sa = getSlotSpectralEvidence(slotA);
+    const echojay::SpectralEvidence sb = getSlotSpectralEvidence(slotB);
     juce::String compareCtx = processorRef.buildCompareContext(
         da, db, labelA, labelB,
-        slotDurationSeconds(slotA), slotDurationSeconds(slotB), numbersOnly);
+        slotDurationSeconds(slotA), slotDurationSeconds(slotB), numbersOnly,
+        sa, sb);
 
     // The figure CARD is built here, client-side, from the SAME two MeterData
     // structs the context was built from - never from the model's reply. A

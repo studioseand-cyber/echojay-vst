@@ -44,6 +44,7 @@
 #include "EJCaptureChannels.h" // multi-channel capture: the shipped tally and text
 #include "EJMisdialReport.h"   // misdial report: the shipped record assembly
 #include "EJCaptureGuard.h"    // capture guard: the shipped substitution predicate
+#include "EJSpectralEvidence.h" // spectral provenance + the shipped band reduction
 #include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
@@ -6524,6 +6525,248 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (clears >= 2,
                    "cg PIN6: and BOTH exit paths clear it, including the destructor's fade",
                    "clears=" + juce::String (clears));
+        }
+    }
+
+
+    // =====================================================================
+    // SPECTRAL EVIDENCE -- COMPARE_REFERENCE_PLAN section 1
+    //
+    // Compare's tonal advice subtracted a whole-capture spectrum from the
+    // reference's last 150 ms, because the live path took MeterData::spectrum
+    // and for a reference that is the meter's reading after the final block of
+    // the file. Measured on Kathy's own library: six of eight references have a
+    // FULLY SILENT tail, so the old comparison emitted no tonal advice at all;
+    // of the two with a live tail, one claimed the capture had 40.7 dB more
+    // highs and 34.2 dB more sub than the reference, and two bands pointed the
+    // wrong way.
+    // =====================================================================
+    {
+        using namespace echojay;
+
+        // se PIN1 -- ONLY A BOUNDED-WINDOW AVERAGE IS COMPARABLE. The whole
+        // point of the struct is that a peak hold and a ballistic tail are not
+        // the same kind of number as an average, and saying so is the fix.
+        check (reductionIsAverage (SpectralReduction::WholeFileAverage),
+               "se PIN1: a whole-file average is an average");
+        check (reductionIsAverage (SpectralReduction::WholeWindowAverage),
+               "se PIN1: a whole-capture average is an average");
+        check (! reductionIsAverage (SpectralReduction::WholeWindowPeakHold),
+               "se PIN1: a peak hold is NOT");
+        check (! reductionIsAverage (SpectralReduction::BallisticTail),
+               "se PIN1: a ballistic tail is NOT -- this is the shipped defect");
+        check (! reductionIsAverage (SpectralReduction::LiveInstant),
+               "se PIN1: a live reading is NOT");
+        check (! reductionIsAverage (SpectralReduction::Unknown),
+               "se PIN1: and an unrecorded reduction is not assumed to be one");
+
+        // se PIN2 -- THE UNSET SENTINEL READS AS IMPOSSIBLE, NOT AS AGREEMENT.
+        // This is the property the whole sentinel exists for. A zero-filled
+        // array (the old default) is FLAT, and because each side is normalised
+        // by its own loudest band, any flat spectrum yields a delta of exactly
+        // 0.0 in all six bands: the uninitialised state rendered as "these two
+        // mixes are practically identical". The pin proves BOTH halves, because
+        // the sentinel is only worth having if the old default really did lie.
+        {
+            std::array<float, 64> zeroFilled {};      // the OLD default
+            std::array<float, 64> real {};
+            for (int i = 0; i < 64; ++i) real[(size_t) i] = -30.0f - (float) i * 0.5f;
+
+            // TWO FAILURE SHAPES, and the first pin written here asserted the
+            // wrong one. A zero-filled REFERENCE does not read as agreement: its
+            // own bands are all 0 dB so refMax is 0 and every (ref - refMax) term
+            // vanishes, leaving delta[i] = mix[i] - mixMax, which is the MIX's own
+            // tilt. The diff then confidently reports a deficit in every band but
+            // the capture's loudest, invented entirely from an uninitialised
+            // array. Caught by this pin failing, which is the argument for
+            // asserting the arithmetic rather than describing it.
+            const auto oneSided = bandDeltas (real, zeroFilled);
+            bool anyBig = false; float worst = 0.0f;
+            for (int i = 0; i < 6; ++i)
+            {
+                const float d = oneSided.delta[(size_t) i];
+                if (std::abs (d) > 2.0f) anyBig = true;
+                if (d < worst) worst = d;
+            }
+            check (oneSided.valid && anyBig && worst < -10.0f,
+                   "se PIN2: a zero-filled REFERENCE fabricates a large deficit, not agreement",
+                   "worst band " + juce::String (worst, 2) + " dB");
+
+            // And when BOTH sides are zero-filled, which is what two unguarded
+            // reads produce, it does read as agreement: all six exactly 0.0.
+            const auto twoSided = bandDeltas (zeroFilled, zeroFilled);
+            bool allZero = twoSided.valid;
+            for (int i = 0; i < 6 && allZero; ++i)
+                if (std::abs (twoSided.delta[(size_t) i]) > 0.001f) allZero = false;
+            check (twoSided.valid && allZero,
+                   "se PIN2: and two zero-filled sides read as perfect agreement");
+
+            const auto honest = bandDeltas (real, unsetSpectrum());
+            check (! honest.valid && honest.refUnset,
+                   "se PIN2: the unset sentinel yields INVALID instead, and says which side");
+            const auto honest2 = bandDeltas (unsetSpectrum(), real);
+            check (! honest2.valid && honest2.mixUnset,
+                   "se PIN2: and it works on the mix side too");
+        }
+        // The sentinel must survive avgDb's floor clamp. A clamped sentinel
+        // would come back as -100 in every band, which is flat, which lies.
+        {
+            const auto b = computeBands (unsetSpectrum());
+            check (binIsUnset (b.sub) && binIsUnset (b.high),
+                   "se PIN2: avgDb does not clamp the sentinel into a level");
+        }
+        // se PIN2 -- A PARTIALLY UNSET SPECTRUM MUST REFUSE TOO, and this is the
+        // fixture that makes the unset guard load-bearing. Found by mutation:
+        // deleting the unset early-return from bandDeltas reddened NOTHING,
+        // because every fixture here was FULLY unset and a fully unset spectrum
+        // has no signal either, so the next guard caught it. Both guards looked
+        // necessary while only one was being tested.
+        //
+        // Partially unset is the case only the unset guard catches: some bands
+        // carry the sentinel and some carry real signal, so mixHasSignal is TRUE
+        // and the signal guard waves it through. Without the unset guard the
+        // comparison proceeds with a band still holding -1000 dB and returns a
+        // delta near -970 dB marked valid, which is the confident absurd number
+        // this whole change exists to prevent.
+        {
+            std::array<float, 64> partial = unsetSpectrum();
+            for (int i = 32; i < 64; ++i) partial[(size_t) i] = -25.0f;   // top half real
+            std::array<float, 64> real {};
+            for (int i = 0; i < 64; ++i) real[(size_t) i] = -30.0f - (float) i * 0.5f;
+
+            const auto pd = bandDeltas (partial, real);
+            check (! pd.valid && pd.mixUnset && pd.mixHasSignal,
+                   "se PIN2: a PARTIALLY unset spectrum refuses, though it has signal");
+            bool absurd = false;
+            for (int i = 0; i < 6; ++i)
+                if (pd.delta[(size_t) i] < -500.0f) absurd = true;
+            check (! absurd,
+                   "se PIN2: and it emits no delta at all rather than a -970 dB one");
+            const auto pd2 = bandDeltas (real, partial);
+            check (! pd2.valid && pd2.refUnset && pd2.refHasSignal,
+                   "se PIN2: same on the reference side");
+        }
+
+        // A genuinely quiet spectrum is NOT unset: the floor still compares.
+        {
+            std::array<float, 64> quiet; quiet.fill (-115.0f);
+            const auto b = computeBands (quiet);
+            check (! binIsUnset (b.sub) && b.sub <= -99.0f,
+                   "se PIN2: a real -115 dB floor is a measurement, not a sentinel");
+        }
+
+        // se PIN3 -- THE CAVEAT FIRES ON A MISMATCH AND STAYS SILENT ON A MATCH,
+        // and it forbids quantifying. Section 1.5 item 2, decided: the diff runs
+        // WITH the caveat rather than being suppressed, because suppressing
+        // removes the feature's only actionable output to avoid imprecision.
+        {
+            SpectralEvidence avgA; avgA.reduction = SpectralReduction::WholeWindowAverage; avgA.valid = true;
+            SpectralEvidence avgB; avgB.reduction = SpectralReduction::WholeFileAverage;   avgB.valid = true;
+            SpectralEvidence pk;   pk.reduction   = SpectralReduction::WholeWindowPeakHold; pk.valid = true;
+            SpectralEvidence dead; // valid=false
+
+            check (tonalDiffCaveat (avgA, avgB, "mix", "ref").isEmpty(),
+                   "se PIN3: two averages need no caveat");
+            const auto c = tonalDiffCaveat (pk, avgB, "your capture", "the reference");
+            check (c.isNotEmpty() && c.contains ("your capture") && c.contains ("peak hold"),
+                   "se PIN3: a peak hold is caveated BY NAME and names the side", c);
+            check (c.contains ("DIRECTION") && c.containsIgnoreCase ("do not quote"),
+                   "se PIN3: the caveat keeps direction and forbids quantifying", c);
+            const auto c2 = tonalDiffCaveat (avgA, pk, "your capture", "the reference");
+            check (c2.contains ("the reference"),
+                   "se PIN3: and it names whichever side is the odd one", c2);
+            const auto cd = tonalDiffCaveat (avgA, dead, "mix", "ref");
+            check (cd.contains ("no spectral measurement")
+                   && cd.containsIgnoreCase ("do not describe tonal balance"),
+                   "se PIN3: a missing side forbids tonal talk entirely", cd);
+        }
+
+        // se PIN4 -- THE PROSE CARRIES THE WINDOW AND THE REDUCTION (item 4),
+        // so a reader can tell a whole-file average from a 150 ms tail without
+        // opening the source. That is what made this defect survive.
+        {
+            SpectralEvidence ev; ev.reduction = SpectralReduction::WholeFileAverage;
+            ev.windowSeconds = 168.5f; ev.valid = true;
+            const auto line = spectralProvenanceLine ("the reference", ev);
+            check (line.contains ("the reference") && line.contains ("whole file")
+                   && line.contains ("168.5"),
+                   "se PIN4: the line names the side, the reduction and the window", line);
+            SpectralEvidence tail; tail.reduction = SpectralReduction::BallisticTail; tail.valid = true;
+            check (spectralProvenanceLine ("ref", tail).contains ("150 ms"),
+                   "se PIN4: a tail is described as a tail, not as a window");
+            SpectralEvidence none;
+            check (spectralProvenanceLine ("ref", none).contains ("NO SPECTRAL DATA"),
+                   "se PIN4: and an absent measurement says so");
+        }
+
+        // se PIN5 -- THE DELTA ARITHMETIC IS LEVEL-INVARIANT. Each side is
+        // normalised by its own loudest band, which is what makes a tilted
+        // spectrum usable for a delta (section 1.4) and what makes a flat one
+        // indistinguishable from agreement (se PIN2).
+        {
+            std::array<float, 64> a {}, b {};
+            for (int i = 0; i < 64; ++i) { a[(size_t) i] = -20.0f - (float) i * 0.4f;
+                                          b[(size_t) i] = a[(size_t) i] - 12.0f; }
+            const auto d = bandDeltas (a, b);
+            bool flat = d.valid;
+            for (int i = 0; i < 6 && flat; ++i)
+                if (std::abs (d.delta[(size_t) i]) > 0.001f) flat = false;
+            check (flat, "se PIN5: a pure 12 dB level offset produces no band delta");
+        }
+
+        // se PIN6 -- THE WIRING. The predicate being right is worth nothing if
+        // the live path still reads MeterData::spectrum.
+        {
+            std::ifstream fp ("Source/PluginProcessor.cpp");
+            std::stringstream sp; sp << fp.rdbuf();
+            const auto pc = codeOnly (juce::String (sp.str()));
+            check (! pc.contains ("appendTonalDiff(ctx, da.spectrum, db.spectrum, la, lb)"),
+                   "se PIN6: the LIVE overload no longer diffs MeterData::spectrum");
+            check (pc.contains ("sa.valid ? sa.bins : echojay::unsetSpectrum()"),
+                   "se PIN6: it diffs the evidence, and an invalid side goes in unset");
+            check (pc.contains ("echojay::spectralProvenanceLine(la, sa)")
+                   && pc.contains ("echojay::spectralProvenanceLine(lb, sb)"),
+                   "se PIN6: both sides' provenance reaches the prose");
+            check (pc.contains ("echojay::tonalDiffCaveat(sa, sb, la, lb)"),
+                   "se PIN6: and the caveat is emitted, not just available");
+            // The band reduction must NOT have been left behind in the
+            // anonymous namespace: two copies is how this class of defect
+            // reproduces, and the measurement can only link the header one.
+            check (! pc.contains ("BandLevels computeBands (const std::array<float, 64>& s)")
+                   && ! pc.contains ("BandLevels computeBands(const std::array<float, 64>& s)"),
+                   "se PIN6: computeBands is no longer defined in the .cpp");
+
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se2; se2 << fe.rdbuf();
+            const auto ec = codeOnly (juce::String (se2.str()));
+            check (ec.contains ("ev.bins          = refs[(size_t) slot.index].eqCurve;"),
+                   "se PIN7: the REFERENCE side uses eqCurve, the whole-file average");
+            check (ec.contains ("ev.reduction     = R::WholeFileAverage;"),
+                   "se PIN7: and stamps it as one");
+            check (ec.contains ("ev.bins      = sn.avgSpectrum;"),
+                   "se PIN7: a fresh capture uses avgSpectrum");
+            check (ec.contains ("EchoJayProcessor::spectrumUsesAverage(sn.channelType)"),
+                   "se PIN7: and a restored one derives its reduction from the persisted channel type");
+            check (ec.contains ("const echojay::SpectralEvidence sa = getSlotSpectralEvidence(slotA);")
+                   && ec.contains ("sa, sb);"),
+                   "se PIN7: the call site actually passes the evidence");
+        }
+
+        // se PIN8 -- THE SNAPSHOT DEFAULTS ARE THE SENTINEL, NOT {}. The header
+        // comment was also wrong about when the flag is false, which is a
+        // materially more serious claim than the one it made.
+        {
+            std::ifstream fh ("Source/PluginProcessor.h");
+            std::stringstream sh; sh << fh.rdbuf();
+            const juce::String hraw (sh.str());
+            const auto hc = codeOnly (hraw);
+            check (hc.contains ("std::array<float, 64> peakSpectrum = echojay::unsetSpectrum();")
+                   && hc.contains ("std::array<float, 64> avgSpectrum  = echojay::unsetSpectrum();"),
+                   "se PIN8: both snapshot spectra default to the sentinel");
+            check (! hraw.contains ("false on snapshots restored from older save files"),
+                   "se PIN8: the 'older save files' claim is gone");
+            check (hraw.contains ("FALSE ON EVERY RESTORED SNAPSHOT"),
+                   "se PIN8: and replaced by what is actually true");
         }
     }
 

@@ -889,6 +889,10 @@ private:
     juce::String compareEntryDate(const juce::String& iso) const;
     void updateCompareSlotBtn(bool isTop);
     MeterData getSlotMeterData(const CompareSlotState& slot) const;
+    /** What that slot's spectrum IS and over what window (plan section 1.5).
+        Separate from getSlotMeterData because MeterData::spectrum is the
+        display selection, which for a reference is the ballistic tail. */
+    echojay::SpectralEvidence getSlotSpectralEvidence(const CompareSlotState& slot) const;
     // Item 6: a slot's DATA scope. channelDataScoped only for a WsCapture
     // review carrying the marker; everything else (snapshot, reference, live,
     // pre-fix review) is full-scope. The cross-scope guard keys off THIS,

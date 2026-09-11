@@ -13,6 +13,7 @@
 #include "EedKeyEngine.h"   // self-detection on music-bus roles (§6.1)
 #include "EedKeyWorker.h"
 #include "EJCaptureGuard.h"  // output substitution: the shipped predicate + record field
+#include "EJSpectralEvidence.h" // spectral provenance: reduction, window, the band reduction
 
 // Temporary diagnostic: append a timestamped line to the EchoJay teardown log
 // file (Release-safe; DBG is compiled out of Release). Used to trace the
@@ -105,9 +106,26 @@ struct CaptureSnapshot {
     // Per-band crest = peak - avg, used to distinguish transient vs sustained content.
     // Note: existing eqCurve / averagedData.spectrum may be either peak or avg
     // depending on channel type — those are kept for display/compatibility.
-    std::array<float, 64> peakSpectrum = {};
-    std::array<float, 64> avgSpectrum  = {};
-    bool hasDualSpectrum = false; // false on snapshots restored from older save files
+    //
+    // DEFAULTED TO THE UNSET SENTINEL, NOT TO {} (11 Sep 2026). Zero-filled,
+    // these read as 0 dB in every bin: not a quiet spectrum but an impossibly
+    // loud flat one. Read without the gate they produce a confident wrong
+    // answer in two shapes. With ONE side zero-filled, that side's own maximum
+    // is 0 so its contribution cancels and the delta becomes the OTHER side's
+    // tilt, reported as a large deficit in every band but its loudest. With
+    // both zero-filled it reads as perfect agreement. Neither is
+    // distinguishable from a measurement. hasDualSpectrum is still the gate and
+    // all three readers honour it; the sentinel catches the day one does not.
+    std::array<float, 64> peakSpectrum = echojay::unsetSpectrum();
+    std::array<float, 64> avgSpectrum  = echojay::unsetSpectrum();
+
+    // FALSE ON EVERY RESTORED SNAPSHOT, not merely on old save files. Neither
+    // spectrum is persisted (getStateInformation writes eqCurve only) and the
+    // restore path never sets this flag, so a capture reloaded with the session
+    // has lost both reductions permanently and can only be compared with the
+    // reduction caveat. Persisting the pair is a state-blob change and is filed
+    // on COMPARE_REFERENCE_PLAN's open items rather than done here.
+    bool hasDualSpectrum = false;
 
     // WHAT WAS REPLACING THE OUTPUT WHEN THIS WAS CAPTURED. "" = nothing, and
     // that is every capture today: startCapture REFUSES while A/B playback, a
@@ -363,7 +381,9 @@ public:
     // choice - meter figures only, DIFFERENT-SOURCES statement, no chain.
     juce::String buildCompareContext(const MeterData& a, const MeterData& b,
                                      const juce::String& labelA, const juce::String& labelB,
-                                     float durA, float durB, bool numbersOnly) const;
+                                     float durA, float durB, bool numbersOnly,
+                                     const echojay::SpectralEvidence& sa,
+                                     const echojay::SpectralEvidence& sb) const;
     // Figure-CARD data (client-rendered at compose time): both sources' figures
     // + labels + a cross-scope flag, enough to redraw the card identically on
     // reload. Only-present keys; absent = N/A. Shares computeCompareFig with the
