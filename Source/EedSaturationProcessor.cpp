@@ -3,6 +3,7 @@
 */
 
 #include "EedSaturationProcessor.h"
+#include "EedLatencyLog.h"
 #include "EedSaturationEditor.h"
 #include "EedDeviceRegistry.h"
 
@@ -125,7 +126,7 @@ bool EedSaturationProcessor::setParamValue (const juce::String& id, double value
         // The number the DAW needs to keep this track in time with every other
         // one. Pushed here as well as from prepareToPlay, because an AI move
         // can change the quality while the graph is running.
-        setLatencySamples (core_.latencySamples());
+        ejSetLatencyLogged (*this, core_.latencySamples(), "EedSaturationProcessor #1");
         return true;
     }
     return false;
@@ -158,7 +159,7 @@ void EedSaturationProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
     // `oversample` setting. Publishing it is what lets the host slide the track
     // back into place; a saturator that quietly runs 1 ms early is a phase
     // problem nobody thinks to look for.
-    setLatencySamples (core_.latencySamples());
+    ejSetLatencyLogged (*this, core_.latencySamples(), "EedSaturationProcessor #2");
 }
 
 void EedSaturationProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)

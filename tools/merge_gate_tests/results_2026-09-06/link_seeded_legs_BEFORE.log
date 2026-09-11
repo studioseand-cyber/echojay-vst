@@ -1,0 +1,97 @@
+== POSITIVE CONTROL, two different names: Link A "VoxA", Link B "VoxB" ==
+  rows named as ours in the registry: 2
+    row uid 6cd7c71e6a   file audio_6cd7c71e6a.bin         exists yes
+    row uid f3633f73f3   file audio_f3633f73f3.bin         exists yes
+  ring files: DISTINCT (different inodes)
+  -> PASS
+2026-09-06 17:12:58.206 link2_before_name[64011:1745656] EJLinkState: post-init linkOn=1 name="VoxA" uid=6cd7c71e6a
+2026-09-06 17:12:58.212 link2_before_name[64011:1745656] EJLinkState: post-init linkOn=1 name="VoxB" uid=f3633f73f3
+2026-09-06 17:12:58.249 link2_before_name[64011:1745656] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-06 17:12:58.249 link2_before_name[64011:1745656] EJPrompt: session project "Nafe smallz Aitch Luxury" from previous host, ignoring, will prompt (file "Pro Tools" pid=55105 start=1788706358 vs current "Terminal" pid=496 start=1788433286.527607)
+2026-09-06 17:12:58.250 link2_before_name[64011:1745656] EJPrompt: session genre "Hip-Hop" from previous host, ignoring, will prompt (file "Pro Tools" pid=55105 start=1788706358 vs current "Terminal" pid=496 start=1788433286.527607)
+== THE DEFECT, the same typed name: Link A "Vox", Link B "Vox" ==
+  rows named as ours in the registry: 2
+    row uid fa706f2392   file audio_fa706f2392.bin         exists yes
+    row uid c720bf9f5e   file audio_c720bf9f5e.bin         exists yes
+  ring files: DISTINCT (different inodes)
+  -> PASS
+2026-09-06 17:12:58.505 link2_before_name[64011:1745656] EJLinkState: post-init linkOn=1 name="Vox" uid=fa706f2392
+2026-09-06 17:12:58.531 link2_before_name[64011:1745656] EJLinkState: post-init linkOn=1 name="Vox" uid=c720bf9f5e
+== THE CLONE: two Links restored from one saved state (same name, same uid) ==
+2026-09-06 17:12:58.797 link2_before_name[64011:1745656] EJLinkState: getState linkOn=1 name="Vox"
+2026-09-06 17:12:58.851 link2_before_name[64011:1745656] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 17:12:58.851 link2_before_name[64011:1745656] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 17:12:58.851 link2_before_name[64011:1745656] EJLinkState: post-init linkOn=1 name="Vox" uid=c3db54a01f
+2026-09-06 17:12:58.878 link2_before_name[64011:1745656] EJLinkState: post-init linkOn=1 name="Vox" uid=c3db54a01f
+2026-09-06 17:12:59.934 link2_before_name[64011:1745656] EJLinkState: uid c3db54a01f held by a PROVEN-LIVE instance (duplicate) -> regenerated b4fcff6544
+  registry rows named Vox: 2   A slot 3   B slot 4
+    row uid c3db54a01f   file audio_c3db54a01f.bin        
+    row uid b4fcff6544   file audio_b4fcff6544.bin        
+  -> PASS
+== THE BURST: clone, second instance publishes 6x before the first's timer ticks ==
+2026-09-06 17:13:04.010 link2_before_name[64011:1745656] EJLinkState: getState linkOn=1 name="Vox"
+2026-09-06 17:13:04.064 link2_before_name[64011:1745656] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 17:13:04.064 link2_before_name[64011:1745656] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+  after the burst: rows named Vox: 1   A slot -1   B slot 3
+    row uid 429f1b8ad4   file audio_429f1b8ad4.bin        
+2026-09-06 17:13:04.064 link2_before_name[64011:1745656] EJLinkState: post-init linkOn=1 name="Vox" uid=429f1b8ad4
+2026-09-06 17:13:04.086 link2_before_name[64011:1745656] EJLinkState: post-init linkOn=1 name="Vox" uid=429f1b8ad4
+2026-09-06 17:13:06.191 link2_before_name[64011:1745656] EJLinkState: uid 429f1b8ad4 held by a PROVEN-LIVE instance (duplicate) -> regenerated 86459c8ebd
+  2 s later:       rows named Vox: 2   A slot 5   B slot 3
+    row uid 429f1b8ad4   file audio_429f1b8ad4.bin        
+    row uid 86459c8ebd   file audio_86459c8ebd.bin        
+  -> PASS
+== GHOST (a): a FRESH Link, no state, beside a frozen slot carrying uid deadbeef01 ==
+2026-09-06 17:13:06.801 link2_before_name[64011:1745656] EJLinkState: post-init linkOn=1 name="" uid=f82172cc2f
+  fresh Link: slot 3 uid f82172cc2f   ghost slot 15 still frozen-in-use: yes
+  -> PASS (a fresh instance must mint its OWN uid and leave the ghost alone)
+== GHOST (b): a Link RESTORING state that carries uid deadbeef01 must ADOPT the frozen slot ==
+2026-09-06 17:13:09.525 link2_before_name[64011:1745656] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 17:13:09.533 link2_before_name[64011:1745656] EJLinkState: post-init linkOn=1 name="" uid=deadbeef01
+2026-09-06 17:13:11.691 link2_before_name[64011:1745656] EJLinkState: uid deadbeef01 held by a FROZEN ghost slot 15 -> ghost reaped, uid adopted
+  restoring Link: slot 3 uid deadbeef01   slots carrying deadbeef01 now: 1
+  -> PASS (restore-of-own-uid adopts the ghost, exactly one slot carries the uid)
+2026-09-06 17:13:14.721 link2_before_name[64011:1745656] EJLinkState: post-init linkOn=1 name="Vox" uid=ede01ed790
+2026-09-06 17:13:14.721 link2_before_name[64011:1745656] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 17:13:16.179 link2_before_name[64011:1745656] EJLinkState: getState linkOn=1 name="Vox"
+== L1: a chunk from PROVEN-LIVE Link A (typed "Vox", host "Track A", uid ede01ed790) seeded into fresh Link B ==
+2026-09-06 17:13:16.213 link2_before_name[64011:1745656] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 17:13:16.222 link2_before_name[64011:1745656] EJLinkState: post-init linkOn=1 name="Vox" uid=ede01ed790
+2026-09-06 17:13:16.222 link2_before_name[64011:1745656] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 17:13:17.269 link2_before_name[64011:1745656] EJLinkState: uid ede01ed790 held by a PROVEN-LIVE instance (duplicate) -> regenerated 5c313ebb34
+  B: slot 5 uid 5c313ebb34  typed "Vox"  host "Track A"  published "Vox"
+  -> FAIL (B must publish NEITHER "Vox" NOR "Track A")
+== L4: THREE fresh inserts beside live Link A, each seeded with A's chunk -> three DISTINCT identities and names ==
+2026-09-06 17:13:20.160 link2_before_name[64011:1745656] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 17:13:20.171 link2_before_name[64011:1745656] EJLinkState: post-init linkOn=1 name="Vox" uid=ede01ed790
+2026-09-06 17:13:20.171 link2_before_name[64011:1745656] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 17:13:20.171 link2_before_name[64011:1745656] EJLinkState: uid ede01ed790 held by a PROVEN-LIVE instance (duplicate) -> regenerated 3145bcad2b
+2026-09-06 17:13:21.661 link2_before_name[64011:1745656] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 17:13:21.664 link2_before_name[64011:1745656] EJLinkState: post-init linkOn=1 name="Vox" uid=ede01ed790
+2026-09-06 17:13:21.664 link2_before_name[64011:1745656] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 17:13:22.718 link2_before_name[64011:1745656] EJLinkState: uid ede01ed790 held by a PROVEN-LIVE instance (duplicate) -> regenerated 169debbf24
+2026-09-06 17:13:23.160 link2_before_name[64011:1745656] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 17:13:23.161 link2_before_name[64011:1745656] EJLinkState: post-init linkOn=1 name="Vox" uid=ede01ed790
+2026-09-06 17:13:23.161 link2_before_name[64011:1745656] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 17:13:24.220 link2_before_name[64011:1745656] EJLinkState: uid ede01ed790 held by a PROVEN-LIVE instance (duplicate) -> regenerated 66e75bc26e
+  insert: slot 5 uid 3145bcad2b published "Vox"
+  insert: slot 6 uid 169debbf24 published "Vox"
+  insert: slot 7 uid 66e75bc26e published "Vox"
+  -> FAIL (three uids/slots, none A's; every published name EMPTY so the main plugin numbers them Untitled 1..3)
+== L2: AdoptGhost (a frozen slot carries the chunk's uid) still KEEPS the seeded names ==
+2026-09-06 17:13:28.836 link2_before_name[64011:1745656] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 17:13:28.839 link2_before_name[64011:1745656] EJLinkState: post-init linkOn=1 name="Vox" uid=deadbeef02
+2026-09-06 17:13:28.839 link2_before_name[64011:1745656] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 17:13:29.934 link2_before_name[64011:1745656] EJLinkState: uid deadbeef02 held by a FROZEN ghost slot 15 -> ghost reaped, uid adopted
+  C: slot 3 (ghost was 15) uid deadbeef02 typed "Vox" host "Track A" published "Vox"
+  -> PASS
+== L3: a plain restore (no holder anywhere) keeps both names ==
+2026-09-06 17:13:34.021 link2_before_name[64011:1745656] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 17:13:34.021 link2_before_name[64011:1745656] EJLinkState: post-init linkOn=1 name="Vox" uid=deadbeef02
+2026-09-06 17:13:34.021 link2_before_name[64011:1745656] EJLinkState: host track name "Track A" (user name "Vox")
+  D: slot 3 uid deadbeef02 typed "Vox" host "Track A" published "Vox"
+  -> PASS
+seeded legs: L1 FAIL   L2 PASS   L3 PASS   L4 FAIL
+ghost legs: fresh-beside-ghost PASS   restore-adopts PASS
+control: PASS   same-name: PASS (two files)   clone: PASS   burst: PASS
+exit=16

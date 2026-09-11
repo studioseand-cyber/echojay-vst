@@ -1,0 +1,15 @@
+solo_legs_test.cpp: isolated state root /tmp/echojay-iso.ilMmMi
+2026-09-08 18:00:23.339 main_harness[90059:3503203] EJNet: base=www.echojay.ai devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-09-08 18:00:23.342 main_harness[90059:3503181] EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+  main link dir: '/tmp/echojay-iso.ilMmMi/Library/Application Support/EchoJay/link/'
+  waiting for /tmp/echojay-iso.ilMmMi/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=0 s
+2026-09-08 18:00:23.470 main_harness[90059:3503203] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+2026-09-08 18:00:24.345 main_harness[90059:3503181] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-08 18:00:25.348 main_harness[90059:3503181] EJCtx: borrow budget WANTED ON - listed 3 uid(s): a counted row exists; pending until prepareToPlay or a STOPPED block
+  waiting for /tmp/echojay-iso.ilMmMi/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=2 s
+2026-09-08 18:00:30.365 main_harness[90059:3503181] EJCtx: borrow budget WANTED OFF - listed 0 uid(s): none counted (no sidecar yet 0, publisher dead 0, not capable 0, foreign host 0); pending until prepareToPlay or a STOPPED block
+  main lists A, B, C
+  3 s after the press: A/B/C muteWanted = 0/1/1 (want 0 1 1); pending acks 0
+  4 s after the release: A/B/C muteWanted = 0/0/0 (want 0 0 0)
+MAIN oldpath: end state PASS (the 100 ms verdict is the Link side's)
+exit=0

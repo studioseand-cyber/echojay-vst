@@ -1,0 +1,7 @@
+Timestamp               Ty Process[PID:TID]
+2026-09-06 16:53:10.909 Df Pro Tools[55105:18e178] (EchoJay Link) EJLinkState: editor open, toggle set to 1
+2026-09-06 16:59:50.243 Df Pro Tools[55105:18ed55] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 16:59:50.326 Df Pro Tools[55105:18e178] (EchoJay Link) EJLinkState: editor open, toggle set to 1
+2026-09-06 16:59:50.413 Df Pro Tools[55105:18e178] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 16:59:50.413 Df Pro Tools[55105:18e178] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 16:59:50.413 Df Pro Tools[55105:18e178] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated f3b5c0dc52

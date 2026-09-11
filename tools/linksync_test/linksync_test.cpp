@@ -12,6 +12,7 @@
 
 #include <CoreFoundation/CoreFoundation.h>   // before JUCE: MacTypes' Point vs juce::Point
 #include <JuceHeader.h>
+#include <cstddef>
 #include "LinkProcessor.h"
 #include "EedDeviceRegistry.h"
 #include "LinkShm.h"
@@ -186,21 +187,32 @@ int main()
         int err0 = 0;
         const juce::String ldir = LinkShm::resolveDir(err0);
         check (ldir.isNotEmpty(), "link dir resolves in the sandbox");
-        auto slotCount = [&ldir]
+        auto slotCount = [&ldir, &proc]
         {
             juce::MemoryBlock mb;
-            juce::File(ldir + "registry_v2.bin").loadFileAsData(mb);
+            juce::File(ldir + juce::String (LinkShm::kRegistryFilename)).loadFileAsData(mb);
             const auto* d = static_cast<const uint8_t*>(mb.getData());
             int n = 0;
-            for (int i = 0; i < 16
+            // 6 Sep 2026: the layout is kRegMaxSlots (256) and the registry on
+            // this Mac is shared with live hosts, so count ONLY rows this test
+            // owns (our uid, or the "Foreign"/"Ghost" rows it plants) - never
+            // assume the registry is empty.
+            const auto mine = proc.getInstanceUidForTest();
+            for (int i = 0; i < kRegMaxSlots
                             && mb.getSize() >= (size_t)(64 + (i+1)*128); ++i)
-            { uint32_t v; std::memcpy(&v, d + 64 + i*128, 4); if (v) ++n; }
+            {
+                uint32_t v; std::memcpy(&v, d + 64 + i*128, 4); if (! v) continue;
+                const juce::String nm  = juce::String::fromUTF8 ((const char*) d + 64 + i*128 + 4);
+                const juce::String uid = juce::String::fromUTF8 ((const char*) d + 64 + i*128 + offsetof (RegistrySlot, instanceUid));
+                if (uid == mine || nm == "Foreign" || nm == "Ghost") ++n;
+            }
             return n;
         };
-        for (int t = 0; t < 3 && slotCount() == 0; ++t)
+        const int before0 = slotCount();
+        for (int t = 0; t < 3 && slotCount() == before0; ++t)
             proc.updateShmState();
         check (slotCount() == 1,
-               "a Link against an EMPTY registry registers within a poll cycle",
+               "a Link registers within a poll cycle (its own row; the registry is shared, not assumed empty)",
                juce::String (slotCount()));
 
         // A DIFFERENT-uid holder is not a collision at all: it must never
@@ -236,13 +248,22 @@ int main()
         std::strncpy(slots[ghost].instanceUid, myUid.toRawUTF8(), 11);
         LinkShm::storeRelease(&slots[ghost].heartbeat, 99u);     // frozen
         LinkShm::storeRelease(&slots[ghost].inUse, 1u);
+        // C4 (6 Sep 2026): a frozen holder whose publisher is ALIVE is adopted
+        // only after kUidGateFloorMs (a liveness decision made in time, not
+        // counts) - six quick calls must still WAIT. A holder whose publisher
+        // pid is DEAD (the unclean-kill case the gate was built for) is adopted
+        // at once: plant its sidecar naming a dead pid.
         EchoJayLinkSyncTestAccess::releaseAndReclaim (proc, 1);
         check (! EchoJayLinkSyncTestAccess::registered (proc),
                "our-uid frozen holder: first sight WAITS, not adopts");
         EchoJayLinkSyncTestAccess::releaseAndReclaim (proc, 6);
+        check (! EchoJayLinkSyncTestAccess::registered (proc),
+               "six quick observations of a frozen holder with a LIVE publisher still WAIT (C4: time, not counts)");
+        { LinkShm::RackSidecar dead; dead.valid = true; dead.uid = myUid; dead.name = "Ghost"; dead.revision = 1; dead.publisherPid = 999999; dead.hostPid = 999999; LinkShm::writeRackSidecar (ldir, dead); }
+        EchoJayLinkSyncTestAccess::releaseAndReclaim (proc, 1);
         check (EchoJayLinkSyncTestAccess::registered (proc)
                  && EchoJayLinkSyncTestAccess::uid (proc) == myUid,
-               "through the threshold the ghost is adopted, uid KEPT",
+               "a frozen holder whose publisher pid is DEAD is adopted at once, uid KEPT (C4b)",
                EchoJayLinkSyncTestAccess::uid (proc));
         check (LinkShm::loadAcquire(&slots[ghost].inUse) == 0
                  || EchoJayLinkSyncTestAccess::uid (proc) == myUid,

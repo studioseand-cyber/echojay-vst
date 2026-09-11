@@ -1290,6 +1290,22 @@ private:
     // FULL dial relays the model's "result" line; anything else composes
     // factual wording naming the hand-dial slots and controls. On timeout
     // the conservative wording is used, never the model line.
+    // C2 (7 Sep 2026): slots the bubble reported as WAITING for a map; their terminal
+    // outcome (applied / no map) is reported when it lands. Names, in-memory only.
+    juce::StringArray dialPendingReported_;
+    void reportPendingDialOutcomes();
+    // 9 Sep 2026 (Defect R): ONE rack read in flight per editor. Set by startBorrow, cleared on
+    // every terminal path (engaged, refused, abandoned). borrowSelectionTick will not start a
+    // second loop while it is set; the log names the loop it refused to start.
+    juce::String borrowReadInFlightUid_;
+    // 10 Sep 2026: one wiring path for the map-fetch callbacks (main + borrowed host).
+    void wireChainHostFetch(ChainHost& host, bool isBorrow);
+    // Lock on transitions (9 Sep ruling): the lock belongs to a session. Requested at the row
+    // click that pends an engage, at an edit session's start, and by the one-shot Link-tab
+    // commands for their own duration; released when the read refuses/abandons, when the
+    // session ends, and when a one-shot command completes. Never re-derived from the view.
+    juce::StringArray oneShotLockUid_;
+    void withRackLock(const juce::String& uid, std::function<void()> action, bool retried = false);
     void finishChainBubbleWhenDialSettled(const juce::String& chainJson, int attemptsLeft);
     // The edit twin (item 3, 9 Aug 2026): same settle-then-compose contract,
     // scoped to the slots the edit's ops actually touched.
@@ -1985,12 +2001,17 @@ private:
             }
             void paint(juce::Graphics& g) override
             {
-                bool cap = false, m = false, s = false;
+                bool cap = false, m = false, s = false, sPending = false;
                 if (proc != nullptr)
+                {
                     if (auto it = proc->muteSoloSnaps_.find(uid);
                         it != proc->muteSoloSnaps_.end())
-                    { cap = it->second.capable; m = it->second.muteUser;
-                      s = it->second.soloOn; }
+                    { cap = it->second.capable; m = it->second.muteUser; }
+                    // Build D: the SAME author as the Link tab's lamp - the sidecar flag OR the
+                    // main's own solo set (never the sidecar alone: the broadcast never sets it).
+                    s = proc->soloIndicatorOn(uid);
+                    sPending = false;   // additive solo is local and immediate: no acks to wait for
+                }
                 if (tickFor != nullptr && uid.isNotEmpty())
                 {
                     const auto tv = tickFor(uid);
@@ -1999,7 +2020,7 @@ private:
                         tv.target);
                 }
                 EchoJayEditor::drawMsLamp(g, mR, false, m, cap);
-                EchoJayEditor::drawMsLamp(g, sR, true,  s, cap);
+                EchoJayEditor::drawMsLamp(g, sR, true,  s, cap, sPending);
             }
             void mouseDown(const juce::MouseEvent& e) override
             {
@@ -4785,7 +4806,7 @@ private:
         else. Colour change on state, letter, capability dimming; no
         words. Two renderers is how the rack drifted. */
     static void drawMsLamp(juce::Graphics& g, juce::Rectangle<int> r,
-                           bool isSolo, bool lit, bool capable);
+                           bool isSolo, bool lit, bool capable, bool pending = false);
     /** THE ONE ACTIVE-TICK RENDERER (31 Aug 2026): the mixer strip and the
         rack row draw the tick through this — box, offline cross, green
         tick, amber pending — so the two cannot drift. */
@@ -4980,84 +5001,9 @@ private:
     // row (left cluster), same quiet link style as Help & Support
     juce::TextButton settingsManualBtn { "Manual" };
 
-    // ---- Settings: WITHHELD FROM THE CHAIN LIST (16 Aug 2026, redefined 17 Aug) ----
-    // A plugin is WITHHELD when the user has ticked it in Settings and no
-    // route in THIS host reaches the chain feed. Not when one of its rows
-    // was dropped: a plugin whose Intel-only VST3 is withheld but whose AU
-    // loads is available and must not appear here. The denominator is the
-    // ticked Settings rows counted by plugin name (the collapse the feed
-    // uses), and it is stated on screen. One verdict per name, first that
-    // applies, from the SHIPPING resolver (ChainHost::resolveByName asked
-    // for AudioUnit and for VST3; the predicate is never reimplemented):
-    //   available     this host's format resolves               -> absent
-    //   FormatOnly    only the OTHER format resolves             -> host-dependent, its own group
-    //   Crash         a route is crash-blacklisted               -> Re-enable control
-    //   IntelOnly     a route is architecture-withheld            -> the one group with a remedy
-    //   Vst2          only VST2 rows exist                        -> EchoJay hosts no VST2 anywhere
-    //   NotScanned    a .vst3 of that name sits in a vendor       -> a scan defect (P2), named as such
-    //                 subfolder the chain scan does not enter
-    //   Unreadable    nothing resolves and nothing explains it    -> "could not be read as a plugin"
-    // The 17 Aug census on Sean's Mac under Logic: 807 enabled names, 165
-    // Intel-only, 88 VST2, 21 not scanned, 14 format-only, 519 in the feed.
-    // The previous section applied the host's format filter before counting
-    // and therefore read "nothing is withheld" under Logic while 331 VST3
-    // rows were withheld: it said the opposite of the truth.
-    struct WithheldItem
-    {
-        juce::String name, vendor, path;
-        juce::String date;          // crash rows: from the blacklist line's ISO stamp, may be empty
-        juce::String detail;        // too-large rows: "1.1 MB at its defaults, limit 4 MB"
-        bool reenabled = false;     // crash / too-large rows: line deleted this session
-    };
-    struct WithheldGroup
-    {
-        // Crash and TooLarge rows carry a Re-enable control (each deletes the
-        // row's line from its own file: chain_blacklist.txt, chain_state_oversize.txt)
-        enum Kind { Crash, TooLarge, IntelOnly, Vst2, NotScanned, Unreadable, FormatOnly,
-                    HelperNote, Superseded } kind = Unreadable;
-        static bool hasReenable(Kind k) noexcept { return k == Crash || k == TooLarge; }
-        juce::String title;         // "Intel only, no Apple Silicon build installed"
-        juce::String remedy;        // one line, only where a remedy exists
-        juce::String vendorsLine;   // "IK Multimedia 46, iZotope 36, ..." (IntelOnly)
-        std::vector<WithheldItem> items;
-    };
-    std::vector<WithheldGroup> settingsWithheldGroups_;   // only non-empty groups, in the order above
-    int  settingsWithheldEnabledNames_ = 0;   // the denominator: ticked plugins counted by name
-    int  settingsWithheldCannot_ = 0;         // sum of the groups that cannot be used in THIS host
-    bool settingsWithheldExpanded_ = false;
-    juce::TextButton settingsWithheldToggleBtn_ { "Show names" };
-    std::vector<std::unique_ptr<juce::TextButton>> settingsReenableBtns_;
-    static constexpr int kWithheldRowH = 18;
-    static constexpr int kWithheldGroupH = 20;
-    // ONE geometry for resized() and paintSettingsView (the two must agree,
-    // as every other Settings section's paint mirrors its layout).
-    struct WithheldLayout
-    {
-        int labelY = 0;                     // section label (14px)
-        juce::Rectangle<int> headline;      // "N of your M enabled plugins cannot be used in this host"
-        juce::Rectangle<int> denominator;   // how N and M were counted
-        juce::Rectangle<int> toggle;        // Show/Hide names, empty when nothing is withheld
-        struct Group { int titleY = 0, remedyY = -1, vendorsY = -1, itemsY = 0; };
-        std::vector<Group> groups;          // parallel to settingsWithheldGroups_
-        int endY  = 0;                      // next section starts here
-    };
-    WithheldLayout withheldSectionLayout(int sx, int sy, int sw) const;
-    void rebuildSettingsWithheld();
-    // The verdict, as a pure function of its inputs so a harness can run the
-    // SHIPPING classification against real caches (no copy of the rules).
-    // hostFmt = "AudioUnit" | "VST3" | ""; crashByFold = crash rows from the
-    // entries cache keyed by folded name; nestedVst3 = folded names of the
-    // .vst3 bundles in vendor subfolders. Returns only non-empty groups.
-    static std::vector<WithheldGroup> classifyWithheld(const std::vector<ScannedPlugin>& plugins,
-                                                       const ChainHost& ch,
-                                                       const juce::String& hostFmt,
-                                                       const std::map<juce::String, WithheldItem>& crashByFold,
-                                                       const std::map<juce::String, WithheldItem>& tooLargeByFold,
-                                                       const std::set<juce::String>& nestedVst3,
-                                                       int* enabledNamesOut, int* cannotOut);
-    static juce::String foldPluginName(const juce::String& s);
-    void reenableWithheldItem(int groupIdx, int itemIdx);
-    static juce::File chainBlacklistFile();
+    // (Round 60, 6 Sep 2026: the WITHHELD FROM THE CHAIN LIST section was removed
+    // from Settings. It only REPORTED what ChainHost's withhold filter decides;
+    // the filter (ChainHost::withholdReason / isWithheld) is untouched.)
     // Section 5 (17 Aug 2026): the sandbox claim, measured not assumed.
     // dev_mode "/vst3test <name>" instantiates a resolved VST3 through
     // ChainHost::asyncCreatePlugin regardless of the host format filter and

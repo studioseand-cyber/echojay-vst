@@ -1,0 +1,29 @@
+solo_legs_test.cpp: isolated state root /tmp/echojay-iso.RFkazO
+2026-09-09 11:35:04.544 main_e5[13691:3863185] EJNet: base=www.echojay.ai devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-09-09 11:35:04.546 main_e5[13691:3863179] EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+  main link dir: '/tmp/echojay-iso.RFkazO/Library/Application Support/EchoJay/link/'
+  waiting for /tmp/echojay-iso.RFkazO/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=0 s
+2026-09-09 11:35:04.665 main_e5[13691:3863185] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+2026-09-09 11:35:05.555 main_e5[13691:3863179] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-09 11:35:06.565 main_e5[13691:3863179] EJCtx: borrow budget WANTED ON - listed 3 uid(s): a counted row exists; pending until prepareToPlay or a STOPPED block
+  waiting for /tmp/echojay-iso.RFkazO/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=2 s
+2026-09-09 11:35:07.646 main_e5[13691:3863179] EJCtx: engage decision uid=f9facbc932 capable=Y pad=Y budget=N -> in-context REFUSED, false term(s): budget
+2026-09-09 11:35:07.646 main_e5[13691:3863179] EJCtx(main): renew muteOut=N ok=N soloSup=N
+2026-09-09 11:35:07.647 main_e5[13691:3863179] EJBorrow: engaged uid=f9facbc932 ringSlot=0
+2026-09-09 11:35:08.578 main_e5[13691:3863179] EJKey: self passive pass armed (music-bus role)
+2026-09-09 11:35:08.642 main_e5[13691:3863179] EJCtx(ring): consumed 512/512 peak-in=0.500 peak-after-rack=0.500
+2026-09-09 11:35:08.653 main_e5[13691:3863179] EJAlign(main): ring age=1024 smp (target 1024)
+2026-09-09 11:35:08.653 main_e5[13691:3863179] EJCtx(main): renew muteOut=N ok=N soloSup=N
+2026-09-09 11:35:08.873 main_e5[13691:3863179] EJCtx: budget committed ON with a live session - re-evaluated: capable=Y pad=Y (chain latency 0) -> in-context RESTORED
+2026-09-09 11:35:08.873 main_e5[13691:3863179] EJCtx: alignment budget ON (capable Link present) - PDC re-runs once
+2026-09-09 11:35:09.633 main_e5[13691:3863179] EJCtx(ring): consumed 512/512 peak-in=0.500 peak-after-rack=0.500
+2026-09-09 11:35:09.662 main_e5[13691:3863179] EJAlign(main): ring age=1024 smp (target 1024)
+2026-09-09 11:35:09.662 main_e5[13691:3863179] EJCtx(main): renew muteOut=Y ok=Y soloSup=N
+2026-09-09 11:35:09.872 main_e5[13691:3863179] EJCtx(inj): ctxNow=1 injPad=15360 padKey=15360 muteReady=0 soloSup=0 have=1 mix=0.000 injPeak=0.500 ringAge=1024
+2026-09-09 11:35:10.594 main_e5[13691:3863179] EJBorrowPool: rack released, 0 instance(s) parked
+2026-09-09 11:35:10.594 main_e5[13691:3863179] EJBorrow: released uid=f9facbc932 (lease deleted; Link restores its own bypasses)
+  main lists A, B, C
+  select A (budget uncommitted): in-context ok=0; main out rms 0.177 vs in 0.177 (correlated=1) -> passthrough INTACT; A raw channel rms 0.351 (audible); banner: "Waiting for the mix budget - A blends at the next stop." (status=1)
+  after the STOPPED block: A raw channel rms 0.000 (session-muted); audio into the injection path peak 0.500; banner: "Blending A in context." -> blending
+SELECT: passthrough-intact PASS  A-audible PASS  waiting-state PASS  blends-after-commit PASS -> PASS
+exit=0

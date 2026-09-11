@@ -1,0 +1,16 @@
+solo_legs_test.cpp: isolated state root /tmp/echojay-iso.Aa1cAG
+2026-09-08 18:32:48.937 main_harness[95172:3576384] EJNet: base=www.echojay.ai devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-09-08 18:32:48.938 main_harness[95172:3576365] EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+  main link dir: '/tmp/echojay-iso.Aa1cAG/Library/Application Support/EchoJay/link/'
+  waiting for /tmp/echojay-iso.Aa1cAG/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=0 s
+2026-09-08 18:32:49.044 main_harness[95172:3576384] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+2026-09-08 18:32:49.943 main_harness[95172:3576365] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-08 18:32:50.948 main_harness[95172:3576365] EJCtx: borrow budget WANTED ON - listed 3 uid(s): a counted row exists; pending until prepareToPlay or a STOPPED block
+  waiting for /tmp/echojay-iso.Aa1cAG/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=2 s
+2026-09-08 18:32:51.717 main_harness[95172:3576365] EJSolo: broadcast muteUser=1 uid=7bdff40336 seq=1788888771
+2026-09-08 18:32:51.720 main_harness[95172:3576365] EJSolo: broadcast muteUser=1 uid=7a876ed379 seq=1788888772
+2026-09-08 18:32:51.721 main_harness[95172:3576365] EJSolo: solo ON uid=a1667e3710 set=1 muted 2 Link(s) in 6 ms; hand-muted kept: 0
+  main lists A, B, C
+  with the main alive: A/B/C muteWanted = 0/1/1; 3 s after the main died without releasing: 0/1/1
+DIEHARD: the solo mutes persist after the main dies = 1 -> REPRODUCED (this is the ACCEPTED behaviour; the leg documents it)
+exit=0

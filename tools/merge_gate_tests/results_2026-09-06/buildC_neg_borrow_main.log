@@ -1,0 +1,24 @@
+solo_legs_test.cpp: isolated state root /tmp/echojay-iso.2cf4FN
+2026-09-08 18:09:15.598 main_harness[91866:3524178] EJNet: base=www.echojay.ai devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-09-08 18:09:15.599 main_harness[91866:3524159] EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+  main link dir: '/tmp/echojay-iso.2cf4FN/Library/Application Support/EchoJay/link/'
+  waiting for /tmp/echojay-iso.2cf4FN/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=0 s
+2026-09-08 18:09:15.697 main_harness[91866:3524178] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+2026-09-08 18:09:16.607 main_harness[91866:3524159] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-08 18:09:17.611 main_harness[91866:3524159] EJCtx: borrow budget WANTED ON - listed 3 uid(s): a counted row exists; pending until prepareToPlay or a STOPPED block
+  waiting for /tmp/echojay-iso.2cf4FN/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=2 s
+2026-09-08 18:09:18.835 main_harness[91866:3524159] EJCtx: engage decision uid=1bf7c4347e capable=Y pad=Y budget=N -> in-context REFUSED, false term(s): budget
+2026-09-08 18:09:18.836 main_harness[91866:3524159] EJCtx(main): renew muteOut=N ok=N soloSup=N
+2026-09-08 18:09:18.837 main_harness[91866:3524159] EJBorrow: engaged uid=1bf7c4347e ringSlot=0
+2026-09-08 18:09:19.836 main_harness[91866:3524159] EJCtx(main): renew muteOut=N ok=N soloSup=Y
+2026-09-08 18:09:20.846 main_harness[91866:3524159] EJCtx(main): renew muteOut=N ok=N soloSup=Y
+2026-09-08 18:09:21.849 main_harness[91866:3524159] EJCtx(main): renew muteOut=N ok=N soloSup=Y
+2026-09-08 18:09:22.850 main_harness[91866:3524159] EJCtx(main): renew muteOut=N ok=N soloSup=Y
+2026-09-08 18:09:23.860 main_harness[91866:3524159] EJCtx(main): renew muteOut=N ok=N soloSup=N
+2026-09-08 18:09:24.176 main_harness[91866:3524159] EJBorrowPool: rack released, 0 instance(s) parked
+2026-09-08 18:09:24.176 main_harness[91866:3524159] EJBorrow: released uid=1bf7c4347e (lease deleted; Link restores its own bypasses)
+  main lists A, B, C
+  borrow on A engaged=1 lease file=1
+  3 s after solo B: borrowActive=1 (released after -1 ms) lease=1 injectionSuppressed=1 A/B/C muteWanted=1/0/1
+BORROW oldpath_borrow: B audible=1 editedSilentEverywhere=1 -> FAIL
+exit=1

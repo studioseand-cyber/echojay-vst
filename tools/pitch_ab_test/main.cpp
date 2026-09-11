@@ -157,7 +157,8 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
                                          int fmodeArg = -1, float fshiftArg = 0.0f,
                                          bool disableSplice = false)
 {
-    constexpr int vt = PitchEngine::kLowMale;
+    int vt = PitchEngine::kLowMale;
+    if (const char* v = getenv ("AB_VOICE")) vt = std::atoi (v);   // 31 Aug: voice-type sweep
 
     PitchEngine det;
     det.prepare (fs, 256);
@@ -174,6 +175,56 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
     corr.setHumanize (0.0f);
     corr.setIgnoreVibrato (true);
     corr.setNaturalVibrato (0.0f);
+    // Acceptance-render overrides (3 Sep 2026, the D-minor rotation):
+    // AB_ROOT=<0..11 C-frame>, AB_SCALE=major|minor, AB_PRESET=natural|
+    // balanced|tuned|hard. With AB_DUMP this renders an acceptance wav
+    // through the exact shipped pipeline; the hard-match gates are skipped
+    // when any override is set (their expectations assume chromatic).
+    if (const char* sc = getenv ("AB_SCALE"))
+        if (*sc != 0 && std::string (sc) != "chromatic")
+        {
+            static const int kMajor[7] = { 0,2,4,5,7,9,11 };
+            static const int kMinor[7] = { 0,2,3,5,7,8,10 };
+            const int* set = std::string (sc) == "minor" ? kMinor : kMajor;
+            for (int s = 0; s < 12; ++s) corr.setDegree (s, false, 0.0f);
+            for (int k = 0; k < 7; ++k) corr.setDegree (set[k], true, 0.0f);
+        }
+    if (const char* r = getenv ("AB_ROOT")) corr.setKeyRoot (std::atoi (r));
+    if (const char* p = getenv ("AB_PRESET"))
+    {
+        const std::string ps (p);
+        struct P { float retune, flex, hum, nv; };
+        const P v = ps == "natural"  ? P { 120.0f, 55.0f, 60.0f, 100.0f }
+                  : ps == "balanced" ? P {  40.0f, 25.0f, 30.0f, 100.0f }
+                  : ps == "tuned"    ? P {   8.0f,  0.0f,  0.0f,  40.0f }
+                  :                    P {   0.0f,  0.0f,  0.0f,   0.0f };
+        corr.setRetuneMs (v.retune); corr.setFlex (v.flex);
+        corr.setHumanize (v.hum);    corr.setNaturalVibrato (v.nv);
+    }
+    if (const char* iv = getenv ("AB_IGNVIB"))
+        corr.setIgnoreVibrato (std::atoi (iv) != 0);
+    // AB_RETUNE=<ms>: retune-speed override AFTER the preset (30 Aug 2026,
+    // the calibration curve - which EchoJay retune matches Antares's 0).
+    if (const char* rt = getenv ("AB_RETUNE"))
+        corr.setRetuneMs ((float) std::atof (rt));
+    // AB_SEED=1|2|3: the 30 Aug 2026 seed experiments (a/b/c).
+    if (const char* se = getenv ("AB_SEED"))
+        corr.debugSeedExperiment (std::atoi (se));
+    if (const char* ee = getenv ("AB_ENV"))
+        corr.debugEnvExperiment (std::atoi (ee));   // 31 Aug 2026 boundary arms
+    if (const char* ms = getenv ("AB_MEDSEED")) corr.debugMedianSeed (std::atoi (ms));
+    if (getenv ("AB_FORGET")) corr.debugPendForget (true);
+    if (getenv ("AB_FORCESHIFT")) corr.debugForceShiftPath (true);   // Q1 reproduction
+    // AB_FASTRING: the ring-aligned fast-term experiment - shift path
+    // forced at any k, fast component engine-side per-sample.
+    const bool fastRing = getenv ("AB_FASTRING") != nullptr;
+    if (fastRing) { corr.debugForceShiftPath (true); corr.debugFastRing (true); }
+    // AB_REF=<Hz>: pin the tuning reference (29 Aug 2026, the hard-mode
+    // flat-bias attribution: the PLUGIN defaults reference_source=auto and
+    // follows KeyFeed's detected tuning; this mirror otherwise sits at
+    // manual 440 and cannot reproduce an auto-referenced bounce).
+    if (const char* rf = getenv ("AB_REF"))
+        corr.setReferenceHz ((float) std::atof (rf));
     corr.reset();
 
     F0JumpGate f0Gate;    // mirrors EedPitchProcessor::processBlock
@@ -209,6 +260,16 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
     sh.setFormantShift (fshift);
     sh.debugDisableSplice (disableSplice);
     sh.setPitchLagSamples (det2.pitchLagFor (vt));
+    // AB_NOBLEED=1 disables the drift-bleed (29 Aug 2026, the hard-mode
+    // flat-bias investigation); default mirrors the processor (bleed on).
+    sh.setDriftBleed (getenv ("AB_NOBLEED") == nullptr);
+    if (fastRing) sh.setFastRing (true, corr.getNaturalVibrato() * 0.01f);
+    if (getenv ("AB_UNGATE")) sh.debugBleedUngated (true);   // tau-sweep diagnostic
+    // AB_BRIDGE=<thresh>: audio-verified bridging (100 ms cap) for the
+    // field evaluation renders (29 Aug 2026 ruling). Not shipped; the
+    // switch flips only after the field number AND Sean's ear agree.
+    if (const char* b = getenv ("AB_BRIDGE"))
+        if (std::atof (b) > 0.0) sh.setF0Bridge (100.0f, (float) std::atof (b));
     const int latency = sh.latencySamples();
 
     // THE BLOCK IS SLICED AT HOP BOUNDARIES, exactly as
@@ -220,6 +281,7 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
     std::vector<float> out (in.size(), 0.0f);
     PitchEngine::HopEvent ev[64];
     float target = 0.0f, sliceF0 = 0.0f;
+    float shift  = echojay::PsolaEngine::kNoShift;   // mirrors the processor
     bool  sliceVoiced = false;
     for (size_t p = 0; p + 256 <= in.size(); p += 256)
     {
@@ -240,7 +302,7 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
             {
                 sh.process (in.data() + p + (size_t) cursor,
                             out.data() + p + (size_t) cursor,
-                            sliceEnd - cursor, sliceF0, sliceVoiced, target);
+                            sliceEnd - cursor, sliceF0, sliceVoiced, target, shift);
                 cursor = sliceEnd;
             }
             if (h < nHops)
@@ -261,13 +323,17 @@ static std::vector<float> renderEchoJay (const std::vector<float>& in, double fs
                                                      rOldT, rNewT);
                 sliceF0 = gatedF0; sliceVoiced = ev[h].voiced;
                 const float t = corr.process (gatedF0, ev[h].voiced, hopMs);
-                if (t > 0.0f) target = t;              // hold through gaps
+                if (fastRing) sh.setFastRingSlowHz (corr.slowHzNow());
+                if (t > 0.0f) { target = t;            // hold through gaps
+                                shift  = corr.shiftPreferred()
+                                             ? corr.lastShiftCents()
+                                             : echojay::PsolaEngine::kNoShift; }
             }
         }
         if (cursor < 256)
             sh.process (in.data() + p + (size_t) cursor,
                         out.data() + p + (size_t) cursor,
-                        256 - cursor, sliceF0, sliceVoiced, target);
+                        256 - cursor, sliceF0, sliceVoiced, target, shift);
     }
 
     std::vector<float> aligned (in.size(), 0.0f);
@@ -622,7 +688,9 @@ int main (int argc, char* argv[])
 
     std::vector<float> dry, bounce, antares;
     double fs = 0.0, fs2 = 0.0, fs3 = 0.0;
-    if (! readWavMono ((dir + "/dry.wav").c_str(), dry, fs)
+    const char* srcOverride = getenv ("AB_SRC");   // acceptance renders
+    if (! readWavMono ((srcOverride != nullptr ? std::string (srcOverride)
+                                               : dir + "/dry.wav").c_str(), dry, fs)
         || ! readWavMono ((dir + "/antares.wav").c_str(), antares, fs3))
     { std::printf ("cannot read dry.wav/antares.wav in %s\n", dir.c_str()); return 1; }
     const bool haveBounce = readWavMono ((dir + "/echojay.wav").c_str(), bounce, fs2);
@@ -631,6 +699,9 @@ int main (int argc, char* argv[])
 
     // The gated column: rendered HERE from the current engine.
     const std::vector<float> ours = renderEchoJay (dry, fs);
+    const bool overridden = getenv ("AB_SCALE") != nullptr
+                         || getenv ("AB_ROOT") != nullptr
+                         || getenv ("AB_PRESET") != nullptr;
 
     // Forensics hook: AB_DUMP=<path> writes the gated render as float32 WAV,
     // so external instruments inspect EXACTLY what the assertions measured.
@@ -650,6 +721,12 @@ int main (int argc, char* argv[])
             std::fclose (f);
             std::printf ("render dumped to %s\n", dump);
         }
+    }
+    if (overridden)
+    {
+        std::printf ("overrides active (AB_SCALE/AB_ROOT/AB_PRESET): render "
+                     "dumped, hard-match gates SKIPPED.\n");
+        return 0;
     }
 
     const Track td = trackFile (dry, fs);

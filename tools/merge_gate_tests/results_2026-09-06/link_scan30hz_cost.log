@@ -1,0 +1,50 @@
+== the Link's own 30 Hz timer (solo scan over the registry) ==
+2026-09-06 19:34:23.304 cap_new[80637:1993489] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:34:23.304 cap_new[80637:1993489] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:34:23.306 cap_new[80637:1993489] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:34:23.316 cap_new[80637:1993489] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:34:23.320 cap_new[80637:1993489] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:34:23.332 cap_new[80637:1993489] EJLinkState: post-init linkOn=1 name="" uid=4e17d14323
+2026-09-06 19:34:23.333 cap_new[80637:1993489] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:34:23.333 cap_new[80637:1993489] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:34:23.376 cap_new[80637:1993489] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:34:23.411 cap_new[80637:1993489] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-06 19:34:23.411 cap_new[80637:1993489] EJPrompt: session project "Nafe smallz Aitch Luxury" from previous host, ignoring, will prompt (file "Pro Tools" pid=55105 start=1788706358 vs current "Terminal" pid=496 start=1788433286.527607)
+2026-09-06 19:34:23.411 cap_new[80637:1993489] EJPrompt: session genre "Hip-Hop" from previous host, ignoring, will prompt (file "Pro Tools" pid=55105 start=1788706358 vs current "Terminal" pid=496 start=1788433286.527607)
+2026-09-06 19:34:23.445 cap_new[80637:1993489] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  one Link,   0 other live rows: 46.8 ms CPU over 4176 ms wall = 1.12% of one core
+2026-09-06 19:34:28.530 cap_new[80637:1993489] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:34:28.530 cap_new[80637:1993489] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:34:28.532 cap_new[80637:1993489] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:34:28.545 cap_new[80637:1993489] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:34:28.549 cap_new[80637:1993489] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:34:28.550 cap_new[80637:1993489] EJLinkState: post-init linkOn=1 name="" uid=c5b569da1f
+2026-09-06 19:34:28.550 cap_new[80637:1993489] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:34:28.550 cap_new[80637:1993489] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:34:28.586 cap_new[80637:1993489] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:34:28.657 cap_new[80637:1993489] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  one Link,  16 other live rows: 51.3 ms CPU over 4221 ms wall = 1.22% of one core
+2026-09-06 19:34:33.832 cap_new[80637:1993489] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:34:33.832 cap_new[80637:1993489] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:34:33.835 cap_new[80637:1993489] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:34:33.846 cap_new[80637:1993489] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:34:33.851 cap_new[80637:1993489] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:34:33.852 cap_new[80637:1993489] EJLinkState: post-init linkOn=1 name="" uid=c80f35efbd
+2026-09-06 19:34:33.852 cap_new[80637:1993489] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:34:33.852 cap_new[80637:1993489] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:34:33.885 cap_new[80637:1993489] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:34:33.919 cap_new[80637:1993489] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:34:37.900 cap_new[80637:1993489] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  one Link,  50 other live rows: 59.8 ms CPU over 4182 ms wall = 1.43% of one core
+2026-09-06 19:34:39.114 cap_new[80637:1993489] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:34:39.114 cap_new[80637:1993489] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:34:39.115 cap_new[80637:1993489] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:34:39.122 cap_new[80637:1993489] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:34:39.126 cap_new[80637:1993489] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:34:39.145 cap_new[80637:1993489] EJLinkState: post-init linkOn=1 name="" uid=a8ce53ae2a
+2026-09-06 19:34:39.145 cap_new[80637:1993489] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:34:39.145 cap_new[80637:1993489] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:34:39.188 cap_new[80637:1993489] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:34:39.273 cap_new[80637:1993489] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  one Link, 200 other live rows: 95.6 ms CPU over 4195 ms wall = 2.28% of one core
+exit=0

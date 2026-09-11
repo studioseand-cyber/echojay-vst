@@ -1,0 +1,16 @@
+--- shipped
+tau 44:  median  5.04c  p75 11.56c  p90 23.14c  >25c  8.8%  mean  9.88c	  | word-start  9.88c (n 972)   mid  9.89c (n 1914)
+tau 6:  median  3.95c  p75  8.19c  p90 14.50c  >25c  3.8%  mean  6.93c	  | word-start  6.55c (n 966)   mid  7.11c (n 1927)
+tau 150:  median  6.25c  p75 15.98c  p90 37.56c  >25c 16.0%  mean 13.90c	  | word-start 13.03c (n 956)   mid 14.34c (n 1888)
+--- C alone
+tau 44:  median  5.29c  p75 12.55c  p90 26.07c  >25c 10.5%  mean 10.68c	  | word-start  9.47c (n 988)   mid 11.30c (n 1895)
+tau 6:  median  3.93c  p75  8.19c  p90 14.73c  >25c  4.1%  mean  6.94c	  | word-start  6.55c (n 981)   mid  7.14c (n 1910)
+tau 150:  median  7.29c  p75 18.93c  p90 42.22c  >25c 20.0%  mean 15.44c	  | word-start 12.85c (n 972)   mid 16.79c (n 1862)
+--- A+B+E7
+tau 44:  median  6.47c  p75 15.21c  p90 30.95c  >25c 13.5%  mean 12.51c	  | word-start 13.39c (n 959)   mid 12.07c (n 1884)
+tau 6:  median  4.05c  p75  7.52c  p90 14.87c  >25c  2.4%  mean  6.50c	  | word-start  6.26c (n 967)   mid  6.63c (n 1944)
+tau 150:  median  7.69c  p75 20.14c  p90 42.68c  >25c 19.5%  mean 16.24c	  | word-start 16.70c (n 941)   mid 16.01c (n 1875)
+--- A+B+E7+C
+tau 44:  median  6.65c  p75 16.68c  p90 35.24c  >25c 15.5%  mean 13.62c	  | word-start 13.74c (n 979)   mid 13.57c (n 1879)
+tau 6:  median  4.11c  p75  7.59c  p90 14.91c  >25c  2.4%  mean  6.45c	  | word-start  5.66c (n 984)   mid  6.84c (n 1934)
+tau 150:  median  8.81c  p75 23.66c  p90 45.59c  >25c 23.3%  mean 17.77c	  | word-start 17.53c (n 971)   mid 17.90c (n 1874)

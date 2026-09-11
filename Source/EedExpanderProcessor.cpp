@@ -3,6 +3,7 @@
 */
 
 #include "EedExpanderProcessor.h"
+#include "EedLatencyLog.h"
 #include "EedExpanderEditor.h"
 #include "EedDeviceRegistry.h"
 
@@ -78,7 +79,7 @@ bool EedExpanderProcessor::setParamValue (const juce::String& id, double value)
     {
         lookaheadMs_ = value;
         core_.setLookaheadMs (value);
-        setLatencySamples (core_.lookaheadSamples());
+        ejSetLatencyLogged (*this, core_.lookaheadSamples(), "EedExpanderProcessor #1");
         return true;
     }
     return false;
@@ -106,7 +107,7 @@ void EedExpanderProcessor::prepareToPlay (double sampleRate, int)
 
     // The ring was just resized for this rate, so the sample count the host needs
     // has changed even though the millisecond value has not.
-    setLatencySamples (core_.lookaheadSamples());
+    ejSetLatencyLogged (*this, core_.lookaheadSamples(), "EedExpanderProcessor #2");
 }
 
 void EedExpanderProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)

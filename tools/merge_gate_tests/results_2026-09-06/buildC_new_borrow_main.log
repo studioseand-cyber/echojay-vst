@@ -1,0 +1,27 @@
+solo_legs_test.cpp: isolated state root /tmp/echojay-iso.LrlFMU
+2026-09-08 18:09:35.563 main_harness[91941:3524968] EJNet: base=www.echojay.ai devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-09-08 18:09:35.564 main_harness[91941:3524963] EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+  main link dir: '/tmp/echojay-iso.LrlFMU/Library/Application Support/EchoJay/link/'
+  waiting for /tmp/echojay-iso.LrlFMU/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=0 s
+2026-09-08 18:09:35.756 main_harness[91941:3524968] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+2026-09-08 18:09:36.572 main_harness[91941:3524963] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-08 18:09:37.573 main_harness[91941:3524963] EJCtx: borrow budget WANTED ON - listed 3 uid(s): a counted row exists; pending until prepareToPlay or a STOPPED block
+  waiting for /tmp/echojay-iso.LrlFMU/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=2 s
+2026-09-08 18:09:38.713 main_harness[91941:3524963] EJCtx: engage decision uid=6525589dbc capable=Y pad=Y budget=N -> in-context REFUSED, false term(s): budget
+2026-09-08 18:09:38.715 main_harness[91941:3524963] EJCtx(main): renew muteOut=N ok=N soloSup=N
+2026-09-08 18:09:38.716 main_harness[91941:3524963] EJBorrow: engaged uid=6525589dbc ringSlot=0
+2026-09-08 18:09:39.325 main_harness[91941:3524963] EJSolo: foreign solo on b41313ba4e while 6525589dbc is borrowed -> releasing the borrow (edits kept)
+2026-09-08 18:09:39.325 main_harness[91941:3524963] EJBorrow: kept 0 slot state(s) for uid=6525589dbc
+2026-09-08 18:09:39.327 main_harness[91941:3524963] EJBorrowPool: rack released, 0 instance(s) parked
+2026-09-08 18:09:39.327 main_harness[91941:3524963] EJBorrow: released uid=6525589dbc (lease deleted; Link restores its own bypasses)
+2026-09-08 18:09:39.328 main_harness[91941:3524963] EJSolo: broadcast muteUser=1 uid=6525589dbc seq=1788887379
+2026-09-08 18:09:39.339 main_harness[91941:3524963] EJSolo: broadcast muteUser=1 uid=cead1c7894 seq=1788887380
+2026-09-08 18:09:39.339 main_harness[91941:3524963] EJSolo: solo ON uid=b41313ba4e set=1 muted 2 Link(s) in 14 ms; hand-muted kept: 0
+2026-09-08 18:09:42.563 main_harness[91941:3524963] EJSolo: broadcast muteUser=0 uid=6525589dbc seq=1788887382
+2026-09-08 18:09:42.564 main_harness[91941:3524963] EJSolo: broadcast muteUser=0 uid=cead1c7894 seq=1788887383
+2026-09-08 18:09:42.564 main_harness[91941:3524963] EJSolo: solo OFF uid=b41313ba4e (set empty) -> restored 2 Link(s) in 3 ms
+  main lists A, B, C
+  borrow on A engaged=1 lease file=1
+  3 s after solo B: borrowActive=0 (released after 58 ms) lease=0 injectionSuppressed=0 A/B/C muteWanted=1/0/1
+BORROW borrow: B audible=1 editedSilentEverywhere=0 -> PASS
+exit=0

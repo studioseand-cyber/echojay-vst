@@ -1772,3 +1772,265 @@ chromatic, which acquits the key entirely. The reported magnitudes
 ran the pre-§16.13 grain path (the defect above), whose roughness made
 the external tracker exaggerate — the same instrument hazard the reporter
 flagged themselves.
+
+## §17 The shift-gated bleed, and natural's character — read these together (29 Aug 2026 ruling)
+
+### §17.1 The gate, and the ACCEPTED natural delta
+
+The drift-bleed is gated on |ratio−1| against its own cap (taper 0.7–1.3 of
+cap, 100 ms pole; EedPsolaEngine spliceSample). Below the cap the bleed can
+bound drift — an equilibrium exists; above it, accumulation outruns the cap,
+splices do the bounding, and a running bleed is pure convergence tax:
+measured on a noiseless steady tone at hard, 3.38 c note-centre undershoot
+with the ungated bleed against 0.42 c without. The gate removes the tax
+(hard reads 0.42 c / 99.7 % within-3 c with the gated bleed ON).
+
+**The natural-mode delta is a KNOWN, ACCEPTED consequence, not a
+regression.** Field figures on the standing NEW set, gated vs ungated:
+vib-off 52 vs 51 rough spans (0.19 s both), vib-on 59 vs 56 (+0.01 s),
+worst deficits −0.39 vs −0.34 and −0.62 vs −0.54, inversions 0 in all.
+Natural's older, slightly lower numbers were partly BOUGHT BY THE TAX —
+the ungated bleed was detuning sustained corrections by up to 3 cents
+everywhere, including natural. Removing the tax and keeping its side
+effect is not available. Ruled and accepted 29 Aug 2026; do not widen or
+soften the taper to buy these spans back — that fits to a subsidised
+number — and do not reverse the gate on the strength of this delta.
+(SETTLED 30 Aug 2026: the vib-on fix (d) repaid this cost — natural
+vib-on spans 59 → 56, back at the pre-gate number. The price is paid,
+not outstanding; see DEFECT_VIBRATO_ON_TUNING_COST.md.)
+
+### §17.2 Natural leaves most of a sustained offset standing — BY DESIGN
+
+A steady tone 20 c off-grid through the natural preset comes out 17 c
+off-grid. That is flex 55 / humanize 60 doing exactly what their schema
+text promises — expressive deviation is left alone, sustained notes are
+not frozen — and it is why every absolute tuning column measured at
+natural reads "loose" against Antares-at-hard or EchoJay-at-hard.
+It is the preset's CHARACTER, not a convergence defect. Before chasing
+any natural-mode tuning number, re-read this section and the hard-mode
+history that produced it (the settings audit: an entire investigation
+optimised natural while the complaint lived at hard).
+
+### §17.3 The retune floor: 6 ms, and why the zone below it is dominated (30 Aug 2026 ruling)
+
+`retune_speed_ms` is the honest time constant of the per-hop one-pole
+toward the aim (63 % in τ, ~95 % in 3τ). The dial still reads 0; the
+EFFECTIVE τ never goes below `PitchCorrect::kRetuneFloorMs` = 6 ms, and
+the knob readout shows the mapping ("0 (6 ms)").
+
+The 0–6 ms zone is STRICTLY DOMINATED — three measurements, all
+post-gate (before §17.1 the 3.38 c convergence tax flattened this whole
+scale and none of this was measurable):
+1. **Converged accuracy identical**: synthetic stepped-note rig centres
+   1.92 / 1.98 / 1.98 / 2.03 / 2.05 c at retune 0/1/2/4/6.
+2. **Acquisition identical**: settle-to-3c after a note change is
+   ~107 ms median, FLAT from 0 through 20 ms — floored by note-change
+   detection/confirm, not by the pole. The fast zone buys no speed.
+3. **Roughness WORSE at 0**: τ 0 chases hop-level detection jitter
+   verbatim. Real voice, rough spans vs Antares: sourceNEW 84 → 74
+   (retune 0 → 6); the hard-match take 29 → 26 with worst deficit
+   −0.97 → −0.71. Tuning cost of the floor: none measurable on either
+   take.
+
+**Antares's zero is not zero**: its fastest setting carries internal
+smoothing equivalent to ~4–6 ms of this τ — Sean's blind match
+("EchoJay 4–6 sounds like Antares 0") and the roughness curves agree —
+so the floor also makes 0 mean what a user arriving from any other
+corrector expects. 6 was chosen over 4 BY MEASUREMENT on both takes,
+not from the middle of the reported range. Re-baselined hard-match gate
+columns are recorded in the commit that landed the floor.
+
+### §17.4 The dial's usable range: useful correction ends ~40 ms (30 Aug 2026)
+
+Full-dial sweep, sourceNEW at hard / vib off / reference 440, gated vs
+ungated bleed (AB_UNGATE), rough spans vs Antares / note-centre / within-3c:
+
+    tau    gated spans   ungated spans   centre   within-3c
+     0(6)   74 / 0.32s    73 / 0.30s     2.55c    40.4%
+     10     77 / 0.31     75 / 0.29      2.37     41.5
+     20     71 / 0.28     68 / 0.26      3.23     44.2
+     40     64 / 0.27     61 / 0.25      3.55     40.5   <- minimum
+     100    80 / 0.33     71 / 0.31      3.74     30.8
+     200    87 / 0.37     83 / 0.34      4.57     25.8
+     400   100 / 0.41     93 / 0.39      5.54     22.6
+
+**Useful correction ends around 40 ms** — the roughness minimum and the
+last stop before the within-3-cents cliff. 40→400 is transparency
+CHARACTER (natural lives at 120 with flex/humanize shaping it); 400 is
+essentially all scoop — τ never arrives on normal-length notes, and the
+larger sustained shifts its glides hold also buy seam charge under the
+boundary-scales-with-shift law. Sean's "400 sounds worse" is expected
+behaviour on both counts, not a defect. The τ-climb survives REMOVING
+the bleed gate entirely (+36 spans gated, +32 ungated from 40→400), so
+it is not the gate; the gate's own cost is ~+4 spans, flat in τ, and at
+low τ it buys convergence (2.55 vs 3.15 c at dial 0).
+
+**Regime caveat added 1 Sep 2026, per ruling:** this table was measured
+at voice_type = low_male. At alto_tenor (the schema default, and Sean's
+session), the tau-400 row is now KNOWN to contain the GAP-RESUME FERRY
+defect this table never measured - a stale envelope limbo resumed across
+sub-200ms gaps, producing off-grid holds (-123c at 5.20s). Do not quote
+the tau-400 row as characterising clean behaviour until the resume
+re-anchor lands; the SHAPE conclusions (useful zone ~40ms, the tau
+climb) survive at both voice types (alto re-measure: 83/77/89 spans at
+tau 0/40/400).
+
+**Caveat that must travel with this table (the exp4b lesson):** part of
+the long-τ climb is the RULER charging genuine glide motion — cycle
+similarity taxes real pitch movement — so the rows above 40 ms are an
+UPPER BOUND on actual waveform damage: measurement artefact plus real
+seam cost, not damage alone. Do not read the 400 ms row as breakage.
+
+### §17.5 The regime-dependent-constant register (31 Aug 2026 ruling)
+
+Constants whose correctness was VALIDATED IN A REGIME, with that regime
+stated - a dial-range, path, or preset change outside it invalidates the
+constant, and this list is where to look first:
+
+1. **"restart AT the note" (the confirm snap, curCents_ := inCents)** -
+   correct for small tau where the envelope arrives pre-confirm; became a
+   173c onset discontinuity when the dial's range grew. Fixed by the
+   applied-shift-gated release (envExp 5 default).
+2. **The 0-6 ms retune floor (§17.3)** - the dominated zone measured on
+   this detector's ~107ms note-change acquisition floor; a faster
+   detector re-opens the question.
+3. **The 3c drift-bleed cap** - bounds drift only where |r-1| < cap;
+   validated for correction-scale shifts with the shift-gated taper.
+4. **The 30c applied-shift gate (envExp 5)** - derived as the geometric
+   midpoint of [shielded-path ceiling 8.3c, smallest interval 100c].
+   VALIDATED IN: this singer, sourceNEW (cross-checked source4 for the
+   pending stats), tau in {6, 120, 400}, both vibrato modes, the two
+   shift paths as currently routed (shiftPreferred vs legacy). A new
+   path, a different fMin voice type, or a shifted kNoteChangeCents
+   moves both bracket ends - re-derive, don't re-fit.
+
+5. **voice_type in every measurement (added retroactively, 1 Sep 2026)**:
+   entries 1-4 above were ALL validated at voice_type = low_male - the
+   instrument stack pinned it, and Sean's session sat on the alto_tenor
+   DEFAULT, where a gap-resume-ferried envelope limbo at long tau produced
+   a -123c off-grid hold invisible to every panel (the tau-400 5.20s
+   defect). §17.4's SHAPE survives at alto_tenor (re-measured: tau 0/40/
+   400 -> 83/77/89 spans, centres 2.15/3.45/6.06c - same U-curve, same
+   useful-zone conclusion, uniformly slightly worse, worst deficits
+   deeper at 400 where the resume defect lives). EVERY measurement from
+   now on records its voice_type.
+
+The general hazard, named after five instances: a constant proven in one
+regime reads as universal until the regime silently widens. When a dial
+range, preset table, path-routing, or VOICE TYPE changes, walk this list.
+
+### §17.6 THE RE-ANCHOR RULE (1 Sep 2026 ruling - a design rule, not a hazard note)
+
+**No state computed before a discontinuity may be applied after it
+unless it is consistent with post-discontinuity evidence. Where it is
+not, re-anchor; where it is, keep it.**
+
+Operational test (the CORRIDOR): carried envelope position between the
+resuming audio and the aim is a partial correction - KEEP it; outside
+that corridor it is unexplainable by the new audio - RE-ANCHOR (the
+median-of-first-hops primitive).
+
+**The rule's own first draft violated the rule** - preserved here as
+the register's most instructive entry: the unconditional form
+("always re-anchor") was built and measured 1 Sep 2026, healed the
+tau-400 ferry exactly, and REGRESSED every panel row (hard
+same-semitone 94.8 -> 85.7, natural 98.4 -> 92.2, spans 56 -> 79,
+both voices) by re-anchoring at every 11ms blink the 200ms resume
+rule exists to protect - a prescription without a diagnosis, i.e.
+instance seven, committed by the rule itself.
+
+Six violations of this one sentence cost, in total, weeks of
+measurement (each looked like a different defect):
+1. The pre-confirm envelope chase (the note-boundary snap, §17.5 item 1).
+2. Seed-from-old-note (experiment (c) of the vib-on rounds: seeding the
+   slow track at the old decision's tone reinforced the old vote).
+3. Previous-note voting (the vib-on selection lag fixed by (d)).
+4. The vibrato-depth estimator ingesting the note-interval excursion as
+   "depth" (caught twice in one build).
+5. The popout/menu ordering class (the rack-borrow work's inert-mark).
+6. The GAP-RESUME FERRY: an unconverged envelope position resumed across
+   a sub-200ms gap and applied to the new syllable (-123c off-grid holds
+   at long tau, voice-mismatch dependent).
+
+**The fullest worked example (1 Sep 2026, four rounds, terminal):** the
+gap-resume ferry - see DEFECT_RESUME_FERRY.md for the chain. The two
+transferable lessons, ahead of any fix: (1) the rule's first draft
+violated the rule - "always re-anchor" is a prescription without a
+diagnosis, and it regressed every panel row; (2) corridor v1 judged
+carried state against the SINGLE least trustworthy sample in the signal
+- the judgment step must use the same robust evidence as the anchor.
+The threshold search that closed it found natural's legitimate carried
+offsets (73-215c) fully interleaved with the ferry's (49-1092c): when
+no measurable quantity separates the healthy from the defective
+population, the honest end is a documented limitation, not another
+mechanism.
+
+**COROLLARY (1 Sep 2026 ruling - three for three):** any fix that must
+CHOOSE A VALUE at a discontinuity is itself subject to this rule. The
+unconditional re-anchor, corridor v1, and envExp 5's release destination
+were each written to ENFORCE the rule and each VIOLATED it. Every such
+site - note-start seed, gap resume, corridor endpoint, release
+destination - takes its value from the one shared robust anchor
+(median-of-first-hops), never from a single sample.
+
+**OVERTURN APPENDED TO THE WORKED EXAMPLE (1 Sep 2026):** the ferry
+mechanism attribution was WRONG. The pre-gap envelope was healthy
+(172.2Hz, converged); the 161.9 was made in ONE HOP by envExp 5's
+release easing toward the single sample that raised a (reverting)
+pending - a regression in the then-shipped default. The transferable
+lessons above survive; the mechanism does not. The methodological
+failure, stated plainly: THE FERRY INVESTIGATION'S BASELINE CONTAINED
+THE VERY CHANGE UNDER TEST - envExp 5 was the default in every "off"
+row of four rounds of panels, so the measurements compared a regression
+against itself. Standing instruction, beside "record the voice_type":
+STATE THE BASELINE'S FLAG CONFIGURATION IN EVERY PANEL.
+
+**THE MISSED-EVIDENCE REGISTER (2 Sep 2026 ruling - hypotheses about
+configurations nobody was in):** (1) every probe silently pinned
+low_male while Sean ran alto_tenor; (2) the ferry investigation's
+baseline contained envExp 5, the very change under test; (3) the
+follower attribution reasoned about shiftPreferred()'s path from
+architecture notes without checking which path the measured rows ran -
+natVib~=100 gates it, every measured row was natVib 0 (recorded at the
+relayer's own request; ONSET_PASS_RECORD round 6). Standing
+instruction, beside the other two: CHECK WHICH PATH AND WHICH
+CONFIGURATION A HYPOTHESIS APPLIES TO before proposing work on it.
+
+Review test for any change touching a seam, gap, resume, onset or
+confirm: name the state that crosses it, and name where it re-anchors.
+If it has no re-anchor site, it is instance seven. The shared primitive
+(PitchCorrect's median-of-first-hops anchor, used at note starts AND gap
+resumes) is the standing implementation of this rule for the envelope.
+
+### §17.7 The retune cap: the dial ends at 150 ms (2 Sep 2026 ruling)
+
+kMaxRetuneMs is 150. Derived, not picked: the bracket is [120 (the
+natural preset - constraint one), 200 (where §17.4's within-3-cents has
+already cliffed to 25.8% and roughness climbs)]; 150 taken with §17.4's
+curve attached. Saved sessions above the cap CLAMP ON LOAD with the
+readout showing "150 (was 400)" - never a silent change to a saved sound.
+
+**Recorded honestly, per the ruling: the cap retires the CHARACTER
+region** - the all-scoop zone and the literal tau-400 complaint point -
+**not the boundary-snap class.** The applied-shift discontinuity on the
+legacy path is 42c at tau-20, 94c at 40, and 146c at the
+natural-preserving minimum of 120 (the full curve is in the 2 Sep
+ruling's report); the snap class lives on the PATH, not in the capped
+region, and remains handled by the env5 candidate's four-gate acceptance.
+The class-retiring question - routing everything through the shift path,
+which measures 3.7-8.3c at every tau and voice - is opened separately as
+a decision document (PATH_UNIFICATION_DECISION.md).
+
+**Addendum (3 Sep 2026 ruling, SLOW_END_RECORD.md): THE CAP IS A GIVEN-UP
+CAPABILITY, NOT A SAFETY LIMIT.** Antares' maximum retune and ours are
+different KINDS of setting. Theirs is INERT - measured on Sean's max-retune
+bounces, output-minus-source activity median 0.57c with 1.0% of hops over
+25c: a transparent end of the dial. Ours at 150 still corrects hard
+(commanded shift +18.5c mean over the first phrase; activity median
+6.25c, 16% of hops over 25c). We chose 150 ourselves, as a mitigation for
+the boundary snap exploding beyond it. So the cap HID a defect at the price
+of the transparent end of the dial - a setting Antares has and we do not.
+If the snap is ever fixed (the env5 candidate's four-gate acceptance, or
+path unification), this cap must be revisited and a genuinely inert slow
+end offered; until then "150 max" is to be read as "we gave up the
+transparent region", never as "the dial ends where it should".

@@ -19,13 +19,21 @@
 #include "EedPitchEngine.h"
 #include "EedPsolaEngine.h"
 #include "EedPitchCorrect.h"
+#include "EedRetuneMap.h"
 #include "EedKeyFeed.h"
 #include "viz/PitchRibbonView.h"
 
-class EedPitchProcessor : public EedDeviceProcessor
+class EedPitchProcessor : public EedDeviceProcessor,
+                          public echojay::KeyFeedConsumer
 {
 public:
-    EedPitchProcessor() = default;
+    EedPitchProcessor();   // consults the schema for every default (one source of truth)
+
+    // KeyFeedConsumer: which instance hosts this device. Used by the auto
+    // reference to recognise - and refuse - a tuning grid derived from the
+    // very channel being corrected (see refreshAutoKey).
+    void setKeyFeedSelfId (uint64_t id) override
+    { keyFeedSelfId_.store (id, std::memory_order_relaxed); }
 
     const juce::String getName() const override { return "EchoJay Pitch"; }
 
@@ -50,14 +58,21 @@ public:
     static constexpr const char* kLowLatency  = "low_latency";
     // P2: the musical layer.
     static constexpr const char* kCorrect      = "correct";
+    static constexpr const char* kRetune       = "retune";           // the 0-400 dial (round 46); drives retune_speed_ms + depth
     static constexpr const char* kRetuneMs     = "retune_speed_ms";
     static constexpr const char* kFlex         = "flex";
     static constexpr const char* kHumanize     = "humanize";
+    static constexpr const char* kDepth        = "depth";
     static constexpr const char* kKeyRoot      = "key_root";
     static constexpr const char* kScale        = "scale";
     static constexpr const char* kReferenceHz  = "reference_hz";
     static constexpr const char* kTranspose    = "transpose";
     static constexpr const char* kIgnoreVib    = "targeting_ignores_vibrato";
+    static constexpr const char* kSeamAttackMs = "seam_attack_ms";
+    // Provenance marker (29 Aug 2026): 1 once a PERSON has taken manual
+    // control of the reference. Saved states lacking it revert a manual
+    // reference to auto on load - see onStateApplied.
+    static constexpr const char* kRefManualByUser = "ref_manual_by_user";
     static constexpr const char* kMode         = "correction_mode";
     static constexpr const char* kMix          = "mix";
     static constexpr const char* kOutputDb     = "output_db";
@@ -83,8 +98,58 @@ public:
         float        conf     = 0.0f;
         float        tuningHz = 440.0f;
         juce::String sourceName;
+        // The reference line (29 Aug 2026): what grid the corrector is on
+        // and WHY - the state whose invisibility cost days.
+        bool  refAuto        = false;
+        float refApplied     = 440.0f;
+        bool  refSelfIgnored = false;   // auto saw only this channel: using 440
+        // KEY-SIDE CIRCULARITY (3 Sep 2026, DEFECT_AUTOKEY_PROVENANCE.md §2):
+        // a usable fact was ignored for KEY ROOT/MODE because it was derived
+        // from this instance's own channel - chromatic applied, shown as such.
+        bool  keySelfIgnored = false;
     };
     AutoKeyState autoKeyState() const;
+
+    // THE KEY-SIDE CIRCULARITY GUARD, BEHIND A FLAG (3 Sep 2026, round-21
+    // ruling: build behind the flag, measure, report; default flips only by
+    // ruling). The reference guard (29 Aug) covers tuning only; key root and
+    // mode from the same self-derived fact were applied unguarded - a vocal
+    // channel declared a music bus keys the corrector off the singer's own
+    // melody. With the flag on, such a fact is UNMEASURED for key too: fall
+    // back to chromatic, never to the last key (the asymmetry: a wrong key
+    // moves notes a semitone, chromatic declines to snap). DEFAULT ON since
+    // 5 Sep 2026 (round-23 ruling); the setter remains for the A/B harness.
+    void debugKeySelfGuard (bool on) noexcept { keySelfGuard_.store (on); }
+    bool keySelfGuardOn() const noexcept   { return keySelfGuard_.load(); }
+
+    // The retune floor's effective value, for the knob readout (30 Aug
+    // 2026: a mapping that lives only in schema text is a mapping the
+    // next person doesn't know about).
+    float retuneEffectiveMs() const noexcept { return correct_.retuneEffectiveMs(); }
+    // Load-clamp memory (2 Sep 2026 cap): when a saved session carries a
+    // retune above the new 150ms cap, the value is clamped ON LOAD and the
+    // readout says so - "150 (was 400)". Never a silent change to a saved
+    // sound. Cleared by any live write.
+    float retuneWasMs() const noexcept { return retuneWasMs_; }
+    // THE RETUNE DIAL (UI_SIMPLIFICATION round 46; round 51 withdrew the
+    // off-curve state). retune_speed_ms and depth are internal, driven through
+    // EedRetuneMap. A direct write to either (DEPTH in ADVANCED, the model, a
+    // chain) is a LIVE override for as long as the plugin is open; it is never
+    // a loaded state - a saved state off the curve SNAPS to the nearest dial
+    // position on load and uses the curve's values. The dial always means
+    // what it says.
+    float retuneDial() const noexcept { return retuneDial_.load(); }
+    void  curveAtDial (float& retuneMs, float& depth) const noexcept
+    { echojay::RetuneMap::dialTo (retuneDial_.load(), retuneMs, depth); }
+
+protected:
+    void onStateApplied() override;
+    // Round 48 (DEFECT_PRESS_PLAY_PHASING): the host's transport reset
+    // (AudioUnitReset -> JUCE reset()). Flag only - the clearing runs at the
+    // top of the next processBlock, on the audio thread, so a reset arriving
+    // from any thread never races the block in flight. See applyReset().
+    void reset() override { resetPending_.store (true, std::memory_order_release); }
+public:
 
     // Writing the schema defaults must not be mistaken for the user reaching
     // for key_root or scale, which would leave key_source on manual and
@@ -94,6 +159,26 @@ public:
     // The ribbon's frame store. Written on the audio thread once per block and
     // read by paint; a torn column is one pixel and not worth a lock.
     echojay::viz::PitchRibbonView& ribbon() noexcept { return ribbon_; }
+
+    // ---- Retune trace (3 Sep 2026 investigation) --------------------------
+    // Per-HOP records of the whole decision: what the corrector saw (in,
+    // slow, osc), what it aimed at, what the envelope emitted, and the f0
+    // the shifter divides by. Lock-free SPSC ring written at each hop on
+    // the audio thread; the pitch editor's timer drains to CSV while open.
+    // The 30Hz ribbon cannot answer phase questions at 6Hz; this can.
+    struct TraceRec { double tSec; float f0Hz, inC, slowC, oscC, aimC, envC; };
+    static constexpr int kTraceCap = 8192;
+    std::array<TraceRec, kTraceCap> trace_ {};
+    std::atomic<uint32_t> traceW_ { 0 };
+    uint32_t traceR_ = 0;   // drained by the editor timer (message thread)
+    int drainTrace (TraceRec* out, int maxN) noexcept
+    {
+        int n = 0;
+        const uint32_t w = traceW_.load (std::memory_order_acquire);
+        while (traceR_ != w && n < maxN)
+        { out[n++] = trace_[traceR_ % (uint32_t) kTraceCap]; ++traceR_; }
+        return n;
+    }
 
     // correction_mode indices. `custom` is LAST and is what the display falls
     // to the moment any of the params a mode writes is moved by hand.
@@ -176,12 +261,31 @@ private:
 
     std::atomic<bool> keyAuto_ { true };
     std::atomic<bool> refAuto_ { true };
+    std::atomic<uint64_t> keyFeedSelfId_ { 0 };
+    std::atomic<bool>     keySelfGuard_ { true };    // ON by ruling (round 23, 5 Sep 2026): Sean's key is MANUAL, the flip is a measured no-op for him; see debugKeySelfGuard
+    // The MANUAL reference field: only ever what a person entered (or its
+    // 440 default). NEVER written from detection - the corrector's live
+    // reference under auto lives in correct_ alone, so a state save cannot
+    // launder a detected grid into a user setting (29 Aug 2026 defect).
+    float retuneWasMs_ = 0.0f;   // pre-cap value from a clamped load; 0 = none
+    std::atomic<float> retuneDial_ { 0.0f };   // the dial position; 0 = (6 ms, depth 1.0)
+    // True when the corrector's (retune_ms, depth) equal the curve at the dial.
+    bool onCurve() const noexcept
+    {
+        float ms = 0.0f, dp = 1.0f; echojay::RetuneMap::dialTo (retuneDial_.load(), ms, dp);
+        return std::abs (correct_.getRetuneMs() - ms) <= 0.05f && std::abs (correct_.getDepth() - dp) <= 0.005f;
+    }
+    std::atomic<float> manualRefHz_ { 440.0f };
+    std::atomic<bool>  refManualByUser_ { false };
     // Carried ACROSS blocks. The slice before the first hop of a block
     // continues whatever the last hop of the previous block decided - resetting
     // these per block would make the first slice of every block use a stale or
     // zero target, which is a block-rate artefact of exactly the kind the
     // slicing exists to remove.
+    std::atomic<bool> resetPending_ { false };
+    void applyReset() noexcept;   // audio thread; the enumerated clears
     float lastTarget_  = 0.0f;
+    float lastShift_ = echojay::PsolaEngine::kNoShift;   // held with the target
     float lastHopF0_   = 0.0f;
     bool  lastHopVoiced_ = false;
     bool  lastCorrecting_ = false;

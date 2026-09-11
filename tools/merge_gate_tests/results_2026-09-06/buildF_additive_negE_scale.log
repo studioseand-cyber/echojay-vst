@@ -1,0 +1,118 @@
+solo_legs_test.cpp: isolated state root /tmp/echojay-iso.OOcKiW
+2026-09-09 14:57:57.692 main_e[83630:4332001] EJNet: base=www.echojay.ai devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-09-09 14:57:57.694 main_e[83630:4331996] EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+  main link dir: '/tmp/echojay-iso.OOcKiW/Library/Application Support/EchoJay/link/'
+  waiting for /tmp/echojay-iso.OOcKiW/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=0 s
+2026-09-09 14:57:57.809 main_e[83630:4332001] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+2026-09-09 14:57:58.697 main_e[83630:4331996] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-09 14:57:59.705 main_e[83630:4331996] EJCtx: borrow budget WANTED ON - listed 40 uid(s): a counted row exists; pending until prepareToPlay or a STOPPED block
+  waiting for /tmp/echojay-iso.OOcKiW/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=2 s
+2026-09-09 14:58:04.690 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=d7f09de919 seq=1788962284
+2026-09-09 14:58:04.691 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=6a73b21e8e seq=1788962285
+2026-09-09 14:58:04.692 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=9864871de3 seq=1788962286
+2026-09-09 14:58:04.692 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=c631a29172 seq=1788962287
+2026-09-09 14:58:04.693 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=2dc994ce93 seq=1788962288
+2026-09-09 14:58:04.694 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=442b359f9f seq=1788962289
+2026-09-09 14:58:04.694 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=cd1fa99038 seq=1788962290
+2026-09-09 14:58:04.695 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=6578a240f8 seq=1788962291
+2026-09-09 14:58:04.695 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=d8a7a39ea7 seq=1788962292
+2026-09-09 14:58:04.696 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=342e1d5a5c seq=1788962293
+2026-09-09 14:58:04.696 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=d038dd42cf seq=1788962294
+2026-09-09 14:58:04.697 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=236d9c8be8 seq=1788962295
+2026-09-09 14:58:04.697 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=4410bd0da1 seq=1788962296
+2026-09-09 14:58:04.698 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=f761f17150 seq=1788962297
+2026-09-09 14:58:04.698 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=f4933f2ae6 seq=1788962298
+2026-09-09 14:58:04.699 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=39f501e54d seq=1788962299
+2026-09-09 14:58:04.700 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=87c0d73734 seq=1788962300
+2026-09-09 14:58:04.700 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=fae07d2538 seq=1788962301
+2026-09-09 14:58:04.701 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=d6e1ce59a6 seq=1788962302
+2026-09-09 14:58:04.701 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=f83b2ee422 seq=1788962303
+2026-09-09 14:58:04.702 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=91cee391d0 seq=1788962304
+2026-09-09 14:58:04.702 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=6123c8b3df seq=1788962305
+2026-09-09 14:58:04.702 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=dfa38481fc seq=1788962306
+2026-09-09 14:58:04.703 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=fe34f742ca seq=1788962307
+2026-09-09 14:58:04.703 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=1cd0031258 seq=1788962308
+2026-09-09 14:58:04.704 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=8293ac6eea seq=1788962309
+2026-09-09 14:58:04.705 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=f6f5c8c701 seq=1788962310
+2026-09-09 14:58:04.706 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=98470014a9 seq=1788962311
+2026-09-09 14:58:04.706 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=7098429eb5 seq=1788962312
+2026-09-09 14:58:04.707 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=de45b91dc8 seq=1788962313
+2026-09-09 14:58:04.708 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=a9c228cada seq=1788962314
+2026-09-09 14:58:04.708 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=20bec549f7 seq=1788962315
+2026-09-09 14:58:04.709 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=b7d66bb3ce seq=1788962316
+2026-09-09 14:58:04.709 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=fa37197025 seq=1788962317
+2026-09-09 14:58:04.710 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=887883f427 seq=1788962318
+2026-09-09 14:58:04.710 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=4f916666e1 seq=1788962319
+2026-09-09 14:58:04.711 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=4212b55737 seq=1788962320
+2026-09-09 14:58:04.712 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=9c2a119e3d seq=1788962321
+2026-09-09 14:58:04.712 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=a47f15004a seq=1788962322
+2026-09-09 14:58:04.713 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=6d59968131 seq=1788962323
+2026-09-09 14:58:04.713 main_e[83630:4331996] EJSolo: solo ON uid=d7f09de919 set=1 muted 39 Link(s) in 23 ms; hand-muted kept: 0
+2026-09-09 14:58:04.713 main_e[83630:4331996] EJKey: self passive pass armed (music-bus role)
+2026-09-09 14:58:05.541 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=9864871de3 seq=1788962324
+2026-09-09 14:58:05.541 main_e[83630:4331996] EJSolo: solo ON uid=9864871de3 set=2 muted 0 Link(s) in 1 ms; hand-muted kept: 0
+2026-09-09 14:58:06.395 main_e[83630:4331996] EJSolo: broadcast muteUser=1 uid=9864871de3 seq=1788962325
+2026-09-09 14:58:06.396 main_e[83630:4331996] EJSolo: solo OFF uid=9864871de3 (set still 1) -> muted it
+2026-09-09 14:58:07.251 main_e[83630:4331996] EJCtx: alignment budget ON (capable Link present) - PDC re-runs once
+2026-09-09 14:58:07.567 main_e[83630:4331996] EJCtx: engage decision uid=d7f09de919 capable=Y pad=Y budget=Y -> in-context OK
+2026-09-09 14:58:07.568 main_e[83630:4331996] EJCtx(main): renew muteOut=Y ok=Y soloSup=N
+2026-09-09 14:58:07.568 main_e[83630:4331996] EJBorrow: engaged uid=d7f09de919 ringSlot=0
+2026-09-09 14:58:08.570 main_e[83630:4331996] EJCtx(ring): consumed 512/512 peak-in=0.500 peak-after-rack=0.500
+2026-09-09 14:58:08.570 main_e[83630:4331996] EJCtx(inj): ctxNow=1 injPad=15606 padKey=15606 muteReady=0 soloSup=0 have=1 mix=0.000 injPeak=0.000 ringAge=778
+2026-09-09 14:58:08.571 main_e[83630:4331996] EJAlign(main): ring age=778 smp (target 1024)
+2026-09-09 14:58:08.572 main_e[83630:4331996] EJCtx(main): renew muteOut=Y ok=Y soloSup=N
+2026-09-09 14:58:09.573 main_e[83630:4331996] EJCtx(ring): consumed 0/512 peak-in=0.000 peak-after-rack=0.000
+2026-09-09 14:58:09.574 main_e[83630:4331996] EJCtx(inj): ctxNow=1 injPad=15415 padKey=15415 muteReady=0 soloSup=0 have=1 mix=0.000 injPeak=0.000 ringAge=969
+2026-09-09 14:58:09.574 main_e[83630:4331996] EJAlign(main): ring age=969 smp (target 1024)
+2026-09-09 14:58:09.575 main_e[83630:4331996] EJCtx(main): renew muteOut=Y ok=Y soloSup=N
+2026-09-09 14:58:09.916 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=6a73b21e8e seq=1788962326
+2026-09-09 14:58:09.917 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=c631a29172 seq=1788962327
+2026-09-09 14:58:09.918 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=2dc994ce93 seq=1788962328
+2026-09-09 14:58:09.918 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=442b359f9f seq=1788962329
+2026-09-09 14:58:09.918 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=cd1fa99038 seq=1788962330
+2026-09-09 14:58:09.919 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=6578a240f8 seq=1788962331
+2026-09-09 14:58:09.919 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=d8a7a39ea7 seq=1788962332
+2026-09-09 14:58:09.920 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=342e1d5a5c seq=1788962333
+2026-09-09 14:58:09.920 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=d038dd42cf seq=1788962334
+2026-09-09 14:58:09.920 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=236d9c8be8 seq=1788962335
+2026-09-09 14:58:09.921 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=4410bd0da1 seq=1788962336
+2026-09-09 14:58:09.921 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=f761f17150 seq=1788962337
+2026-09-09 14:58:09.922 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=f4933f2ae6 seq=1788962338
+2026-09-09 14:58:09.922 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=39f501e54d seq=1788962339
+2026-09-09 14:58:09.923 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=87c0d73734 seq=1788962340
+2026-09-09 14:58:09.923 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=fae07d2538 seq=1788962341
+2026-09-09 14:58:09.924 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=d6e1ce59a6 seq=1788962342
+2026-09-09 14:58:09.924 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=f83b2ee422 seq=1788962343
+2026-09-09 14:58:09.924 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=91cee391d0 seq=1788962344
+2026-09-09 14:58:09.925 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=6123c8b3df seq=1788962345
+2026-09-09 14:58:09.926 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=dfa38481fc seq=1788962346
+2026-09-09 14:58:09.926 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=fe34f742ca seq=1788962347
+2026-09-09 14:58:09.927 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=1cd0031258 seq=1788962348
+2026-09-09 14:58:09.927 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=8293ac6eea seq=1788962349
+2026-09-09 14:58:09.928 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=f6f5c8c701 seq=1788962350
+2026-09-09 14:58:09.929 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=98470014a9 seq=1788962351
+2026-09-09 14:58:09.930 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=7098429eb5 seq=1788962352
+2026-09-09 14:58:09.930 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=de45b91dc8 seq=1788962353
+2026-09-09 14:58:09.931 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=a9c228cada seq=1788962354
+2026-09-09 14:58:09.931 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=20bec549f7 seq=1788962355
+2026-09-09 14:58:09.932 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=b7d66bb3ce seq=1788962356
+2026-09-09 14:58:09.932 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=fa37197025 seq=1788962357
+2026-09-09 14:58:09.933 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=887883f427 seq=1788962358
+2026-09-09 14:58:09.933 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=4f916666e1 seq=1788962359
+2026-09-09 14:58:09.934 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=4212b55737 seq=1788962360
+2026-09-09 14:58:09.934 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=9c2a119e3d seq=1788962361
+2026-09-09 14:58:09.935 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=a47f15004a seq=1788962362
+2026-09-09 14:58:09.935 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=6d59968131 seq=1788962363
+2026-09-09 14:58:09.936 main_e[83630:4331996] EJSolo: broadcast muteUser=0 uid=9864871de3 seq=1788962364
+2026-09-09 14:58:09.936 main_e[83630:4331996] EJSolo: solo OFF uid=d7f09de919 (set empty) -> restored 39 Link(s) in 21 ms
+2026-09-09 14:58:09.936 main_e[83630:4331996] EJBorrowPool: rack released, 0 instance(s) parked
+2026-09-09 14:58:09.936 main_e[83630:4331996] EJBorrow: released uid=d7f09de919 (lease deleted; Link restores its own bypasses)
+  main lists A, B, C
+  no solo (the mix = the 1 kHz un-Linked channel) 220:0.001 330:0.001 1k:0.250  Links muted: 0
+  solo A                                     220:0.001 330:0.001 1k:0.250  Links muted: 39
+  solo Bus (last press wins: moved from A)   220:0.001 330:0.000 1k:0.250  Links muted: 38
+  solo off                                   220:0.001 330:0.001 1k:0.250  Links muted: 39
+  solo A while A is the borrowed rack        220:0.001 330:0.001 1k:0.250  Links muted: 40
+  source is the borrowed (processed) rack: 0
+ADDITIVE: baseline PASS  solo-A FAIL  solo-Bus FAIL  off FAIL  spec6.1 FAIL -> FAIL
+exit=1

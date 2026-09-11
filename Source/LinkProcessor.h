@@ -20,6 +20,7 @@ public:
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
     void releaseResources() override;
+    void reset() override { chainHost.requestReset(); }   // round 48: AudioUnitReset reaches every hosted slot (DEFECT_PRESS_PLAY_PHASING)
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
     // Editor
@@ -70,6 +71,7 @@ public:
     void updateTrackProperties(const TrackProperties& props) override;
     juce::String getHostTrackName() const;      // any thread
     juce::String effectiveDisplayName() const;  // the precedence chain
+    juce::String getInstanceUidForTest() const { return instanceUid_; }   // harness read-back only (6 Sep 2026)
 
     // ---- Built-in gain stage (v0.5.7) ------------------------------------
     // A single wideband gain on the signal path, applied POST-chain and
@@ -270,6 +272,7 @@ public:
         bool         ringOpened = false;
         int          ringErrno  = 0;
         uint32_t     heartbeat  = 0;
+        bool         regFull    = false;   // 6 Sep 2026: the registry had no slot for us - REPORTED, never silent
     };
     Diag diag;
 
@@ -448,6 +451,27 @@ private:
     // by the holder's heartbeat across claim-retry ticks. Reset when the
     // holder slot changes or the question resolves.
     LinkShm::UidClaimGate uidGate_;
+    // THE CHUNK'S IDENTITY (6 Sep 2026, the invariant): what setStateInformation
+    // restored - its uid, and whether THIS host process run authored it. Seeded
+    // names survive ONLY when this instance genuinely continues the chunk's
+    // identity (instanceUid_ == chunkUid_ after the claim). A chunk authored by
+    // this very process run whose uid no slot holds is a host SEED from an
+    // instance that has since gone (Pro Tools re-applies the plugin's last
+    // chunk to a fresh insert), never a from-disk reopen after a quit: it
+    // re-mints. Residual, recorded: a session closed and reopened INSIDE one
+    // host run re-mints too and drops typed names (the identity was destroyed
+    // in this process and the reopen is indistinguishable from a seed).
+    juce::String chunkUid_;
+    bool         chunkAuthoredHere_ = false;
+    // NAME PROVENANCE (6 Sep 2026 ruling): a seeded name is PROVISIONAL, a
+    // host-delivered or user-typed name is AUTHORITATIVE. The invariant's clear
+    // discards only a provisional name, whatever order the host's
+    // TrackNameChanged and the gate's clear arrive in.
+    bool hostNameFromHost_   = false;   // true once updateTrackProperties delivered it
+    bool typedNameFromUser_  = false;   // true once the user typed it (markTypedNameAuthoritative)
+public:
+    void markTypedNameAuthoritative() { typedNameFromUser_ = true; }
+private:
     int uidGateHolder_ = -1;
     // Host track name stash (see the Phase N block above). appliedHostName_
     // is message-thread-only change detection for the timer's apply pass.
@@ -459,6 +483,7 @@ private:
     // rack-<uid>.json. -1 so the first tick publishes even an empty rack
     // ("known empty" is a different fact from "rack unknown").
     int lastPublishedRackRev_ = -1;
+    juce::String lastPublishedUid_;   // 6 Sep 2026: the sidecar follows a re-minted uid
     bool lastPublishedMuteEngaged_ = false;   // §8 closed-loop republish gate
     // Last hosted-parameter epoch written. Separate from the revision because
     // the two publish on different terms: structure at once, knobs after they
@@ -605,6 +630,7 @@ private:
     // this processor — the command goes through the same path as the local
     // toggle (linkOn + updateShmState + dirty-mark).
     int  lastAppliedCtrlSeq_ = 0;
+    juce::String lastPerSeqAckFile_;   // v9: the previous ctrl-ack-<id>-<seq>.json, removed on the next answer
     void pollControlCommand();
 
     // Session project/genre follow (see projectName/genre above)

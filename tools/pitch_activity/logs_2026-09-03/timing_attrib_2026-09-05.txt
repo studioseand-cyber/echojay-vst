@@ -1,0 +1,80 @@
+##### B only #####
+SELF tau 44  seam 60ms  ign-vib OFF  flex 0 hum 0 natvib 0 depth 1.00(aim)  [ 2854 hops; 189 src-voiced hops unvoiced in output; 0 ]
+    median  6.15c  p75 15.16c  p90 31.08c  >25c 12.9%  mean 12.74c
+    DETECT                   1.6%  n    18 ( 0.6%)  mean  32.52c  cmd  32.88c  >25c 9
+    UNINTENDED |d - commanded|: median  1.48c  p90 11.00c  (n 2811)   snap windows 28  seam re-entries 55   [ruler lag 27.9ms applied]
+    SNAP WINDOWS: peak |d| median  25.1c p90 169.0c   peak |commanded| median  24.7c p90  60.5c
+SELF tau 6  seam 60ms  ign-vib OFF  flex 0 hum 0 natvib 0 depth 1.00(aim)  [ 2917 hops; 125 src-voiced hops unvoiced in output; 1 ]
+    median  4.13c  p75  7.70c  p90 13.75c  >25c  1.7%  mean  6.27c
+    DETECT                   1.0%  n    18 ( 0.6%)  mean  10.41c  cmd  18.72c  >25c 2
+    UNINTENDED |d - commanded|: median  1.21c  p90  6.90c  (n 2866)   snap windows 51  seam re-entries 55   [ruler lag 27.9ms applied]
+    SNAP WINDOWS: peak |d| median   8.2c p90 273.1c   peak |commanded| median  14.3c p90  43.1c
+SELF tau 150  seam 60ms  ign-vib OFF  flex 0 hum 0 natvib 0 depth 1.00(aim)  [ 2826 hops; 216 src-voiced hops unvoiced in output; 1 ]
+    median  7.56c  p75 19.69c  p90 46.28c  >25c 20.0%  mean 17.00c
+    DETECT                   1.1%  n    17 ( 0.6%)  mean  30.96c  cmd  37.01c  >25c 11
+    UNINTENDED |d - commanded|: median  1.63c  p90 13.20c  (n 2785)   snap windows 32  seam re-entries 55   [ruler lag 27.9ms applied]
+    SNAP WINDOWS: peak |d| median  38.8c p90 124.0c   peak |commanded| median  32.9c p90  76.8c
+##### A+B #####
+SELF tau 44  seam 60ms  ign-vib OFF  flex 0 hum 0 natvib 0 depth 1.00(aim)  [ 2835 hops; 208 src-voiced hops unvoiced in output; 0 ]
+    median  7.24c  p75 19.02c  p90 39.60c  >25c 18.2%  mean 15.79c
+    DETECT                   1.1%  n    18 ( 0.6%)  mean  27.02c  cmd  31.18c  >25c 9
+    UNINTENDED |d - commanded|: median  1.65c  p90 12.41c  (n 2792)   snap windows 29  seam re-entries 54   [ruler lag 27.9ms applied]
+    SNAP WINDOWS: peak |d| median  32.6c p90 167.1c   peak |commanded| median  40.8c p90  75.2c
+SELF tau 6  seam 60ms  ign-vib OFF  flex 0 hum 0 natvib 0 depth 1.00(aim)  [ 2909 hops; 134 src-voiced hops unvoiced in output; 0 ]
+    median  4.54c  p75  8.21c  p90 15.86c  >25c  4.0%  mean  7.35c
+    DETECT                   0.3%  n     9 ( 0.3%)  mean   7.52c  cmd  15.80c  >25c 0
+    UNINTENDED |d - commanded|: median  1.26c  p90  6.97c  (n 2861)   snap windows 46  seam re-entries 54   [ruler lag 27.9ms applied]
+    SNAP WINDOWS: peak |d| median  27.9c p90 271.3c   peak |commanded| median  26.0c p90  61.9c
+SELF tau 150  seam 60ms  ign-vib OFF  flex 0 hum 0 natvib 0 depth 1.00(aim)  [ 2794 hops; 242 src-voiced hops unvoiced in output; 7 ]
+    median  8.21c  p75 23.88c  p90 53.33c  >25c 23.9%  mean 19.91c
+    DETECT                   0.8%  n    12 ( 0.4%)  mean  36.71c  cmd  36.96c  >25c 6
+    UNINTENDED |d - commanded|: median  1.73c  p90 14.05c  (n 2752)   snap windows 32  seam re-entries 54   [ruler lag 27.9ms applied]
+    SNAP WINDOWS: peak |d| median  50.5c p90 165.3c   peak |commanded| median  39.1c p90 104.0c
+##### env5 only #####
+SELF tau 44  seam 60ms  ign-vib OFF  flex 0 hum 0 natvib 0 depth 1.00(aim)  [ 2914 hops; 128 src-voiced hops unvoiced in output; 1 ]
+    median  4.08c  p75  9.51c  p90 18.94c  >25c  4.5%  mean  7.65c
+    DETECT                  20.1%  n   256 ( 8.8%)  mean  17.54c  cmd  17.44c  >25c 49
+    UNINTENDED |d - commanded|: median  1.30c  p90  6.53c  (n 2753)   snap windows 28  seam re-entries 54   [ruler lag 27.9ms applied]
+    SNAP WINDOWS: peak |d| median   7.6c p90 105.6c   peak |commanded| median   9.3c p90  31.1c
+SELF tau 6  seam 60ms  ign-vib OFF  flex 0 hum 0 natvib 0 depth 1.00(aim)  [ 2897 hops; 145 src-voiced hops unvoiced in output; 1 ]
+    median  4.03c  p75  7.89c  p90 14.39c  >25c  3.7%  mean  6.70c
+    DETECT                  18.3%  n   207 ( 7.1%)  mean  17.20c  cmd  22.48c  >25c 52
+    UNINTENDED |d - commanded|: median  1.26c  p90  7.54c  (n 2738)   snap windows 39  seam re-entries 54   [ruler lag 27.9ms applied]
+    SNAP WINDOWS: peak |d| median  11.6c p90  70.6c   peak |commanded| median  15.9c p90  58.8c
+SELF tau 150  seam 60ms  ign-vib OFF  flex 0 hum 0 natvib 0 depth 1.00(aim)  [ 2885 hops; 157 src-voiced hops unvoiced in output; 1 ]
+    median  5.12c  p75 13.75c  p90 31.33c  >25c 13.5%  mean 11.26c
+    DETECT                  17.1%  n   238 ( 8.2%)  mean  23.28c  cmd  24.35c  >25c 82
+    UNINTENDED |d - commanded|: median  1.34c  p90  7.03c  (n 2732)   snap windows 32  seam re-entries 54   [ruler lag 27.9ms applied]
+    SNAP WINDOWS: peak |d| median  15.4c p90 102.8c   peak |commanded| median  10.3c p90  60.0c
+##### A+B+env5 #####
+SELF tau 44  seam 60ms  ign-vib OFF  flex 0 hum 0 natvib 0 depth 1.00(aim)  [ 2857 hops; 184 src-voiced hops unvoiced in output; 2 ]
+    median  6.60c  p75 16.38c  p90 35.93c  >25c 16.5%  mean 13.57c
+    DETECT                   2.5%  n    26 ( 0.9%)  mean  37.78c  cmd  44.62c  >25c 18
+    UNINTENDED |d - commanded|: median  1.54c  p90  8.91c  (n 2814)   snap windows 19  seam re-entries 54   [ruler lag 27.9ms applied]
+    SNAP WINDOWS: peak |d| median   0.0c p90  99.0c   peak |commanded| median   0.0c p90  64.8c
+SELF tau 6  seam 60ms  ign-vib OFF  flex 0 hum 0 natvib 0 depth 1.00(aim)  [ 2874 hops; 166 src-voiced hops unvoiced in output; 3 ]
+    median  5.00c  p75  9.52c  p90 17.98c  >25c  5.7%  mean  9.08c
+    DETECT                   0.8%  n     7 ( 0.2%)  mean  30.66c  cmd  37.58c  >25c 1
+    UNINTENDED |d - commanded|: median  1.39c  p90  8.25c  (n 2829)   snap windows 21  seam re-entries 54   [ruler lag 27.9ms applied]
+    SNAP WINDOWS: peak |d| median  20.5c p90  82.5c   peak |commanded| median  31.0c p90  35.0c
+SELF tau 150  seam 60ms  ign-vib OFF  flex 0 hum 0 natvib 0 depth 1.00(aim)  [ 2834 hops; 207 src-voiced hops unvoiced in output; 2 ]
+    median  7.94c  p75 20.76c  p90 46.65c  >25c 21.7%  mean 16.86c
+    DETECT                   1.5%  n    20 ( 0.7%)  mean  35.75c  cmd  40.65c  >25c 10
+    UNINTENDED |d - commanded|: median  1.59c  p90  9.59c  (n 2795)   snap windows 21  seam re-entries 54   [ruler lag 27.9ms applied]
+    SNAP WINDOWS: peak |d| median  16.6c p90  98.5c   peak |commanded| median  11.2c p90  42.0c
+##### B+env5 #####
+SELF tau 44  seam 60ms  ign-vib OFF  flex 0 hum 0 natvib 0 depth 1.00(aim)  [ 2884 hops; 159 src-voiced hops unvoiced in output; 0 ]
+    median  5.34c  p75 12.92c  p90 26.20c  >25c 10.9%  mean 10.40c
+    DETECT                   2.8%  n    32 ( 1.1%)  mean  26.23c  cmd  29.33c  >25c 14
+    UNINTENDED |d - commanded|: median  1.39c  p90  7.89c  (n 2840)   snap windows 18  seam re-entries 55   [ruler lag 27.9ms applied]
+    SNAP WINDOWS: peak |d| median   0.0c p90 261.1c   peak |commanded| median   0.0c p90  49.5c
+SELF tau 6  seam 60ms  ign-vib OFF  flex 0 hum 0 natvib 0 depth 1.00(aim)  [ 2896 hops; 146 src-voiced hops unvoiced in output; 1 ]
+    median  4.72c  p75  8.33c  p90 15.58c  >25c  3.9%  mean  7.54c
+    DETECT                   0.8%  n    16 ( 0.6%)  mean  10.56c  cmd  21.12c  >25c 2
+    UNINTENDED |d - commanded|: median  1.30c  p90  7.85c  (n 2846)   snap windows 29  seam re-entries 55   [ruler lag 27.9ms applied]
+    SNAP WINDOWS: peak |d| median   6.5c p90  42.8c   peak |commanded| median  11.9c p90  31.0c
+SELF tau 150  seam 60ms  ign-vib OFF  flex 0 hum 0 natvib 0 depth 1.00(aim)  [ 2860 hops; 183 src-voiced hops unvoiced in output; 0 ]
+    median  6.58c  p75 17.55c  p90 39.16c  >25c 18.5%  mean 14.04c
+    DETECT                   1.4%  n    21 ( 0.7%)  mean  26.37c  cmd  24.35c  >25c 8
+    UNINTENDED |d - commanded|: median  1.44c  p90  8.59c  (n 2816)   snap windows 20  seam re-entries 55   [ruler lag 27.9ms applied]
+    SNAP WINDOWS: peak |d| median  19.2c p90 260.6c   peak |commanded| median   7.6c p90  65.6c

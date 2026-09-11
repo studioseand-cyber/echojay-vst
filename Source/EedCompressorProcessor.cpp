@@ -3,6 +3,7 @@
 */
 
 #include "EedCompressorProcessor.h"
+#include "EedLatencyLog.h"
 #include "EedCompressorEditor.h"
 #include "EedDeviceRegistry.h"
 
@@ -139,7 +140,7 @@ bool EedCompressorProcessor::setParamValue (const juce::String& id, double value
         // The number the DAW needs to keep this track in time with every other
         // one. Pushed here as well as from prepareToPlay, because an AI move can
         // change it while the graph is running.
-        setLatencySamples (core_.lookaheadSamples());
+        ejSetLatencyLogged (*this, core_.lookaheadSamples(), "EedCompressorProcessor #1");
         return true;
     }
     return false;
@@ -176,7 +177,7 @@ void EedCompressorProcessor::prepareToPlay (double sampleRate, int)
 
     // The ring was just resized for this sample rate, so the sample count the
     // host needs has changed even though the millisecond value has not.
-    setLatencySamples (core_.lookaheadSamples());
+    ejSetLatencyLogged (*this, core_.lookaheadSamples(), "EedCompressorProcessor #2");
 }
 
 void EedCompressorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)

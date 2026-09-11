@@ -3,6 +3,7 @@
 #include <thread>
 #include <atomic>
 #include "MeterEngine.h"
+#include "EedLatencyLog.h"
 #include "PluginScanner.h"
 #include "ReferenceAnalyser.h"
 #include "WaveformRecorder.h"
@@ -161,6 +162,7 @@ public:
 
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
+    void reset() override { EJ_LAT_LOG ("top: reset() from the host"); chainHost.requestReset(); }   // round 48: AudioUnitReset reaches every hosted slot (DEFECT_PRESS_PLAY_PHASING)
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
     // The host's name for this track (Logic's context name, VST3 channel
     // context). Read for the running level tally's source guard: a name
@@ -596,6 +598,10 @@ public:
     // Session-scoped surfaces, rendered by the panel until superseded —
     // banners must not be losable by navigating away (§5a-R honesty rule).
     juce::String borrowStickyBanner_;
+    bool borrowBannerIsStatus_ = false;
+    int  borrowInjDiagDivider_ = 0;
+    int   borrowConsumeDiagDivider_ = 0;   // 1 Hz diagnostic of the ring consume (audio thread counter)
+    float borrowConsumePeakIn_ = 0.0f;         // 1 Hz diagnostic of the injection terms (audio thread counter)   // BUILD E: a held/waiting state is STATUS (calm styling), not an error
     std::map<juce::String, juce::String> unwrittenEditNote_;  // uid -> note
     // A deselect-apply FAILED and ruling 3 kept the session engaged: the
     // hold is now a pending edit, not a selection. Rides the lease
@@ -603,6 +609,7 @@ public:
     // instead of instructing a deselect the user already performed.
     bool borrowEditPendingHeld_ = false;
     juce::String pendingAutoEngage_;   // engage this uid once released
+    juce::String rackLockHeldUidForInstrument() const { return rackLockHeldUid_; }   // 9 Sep: the editor's lock instrument reads this
     // §8 in-context state (public: the editor banners from it, the gates
     // assert it): OK = announced AND fits the budget, decided at engage,
     // re-checked live on every borrowed-chain change.
@@ -615,11 +622,32 @@ public:
     // added latency. The transition re-runs PDC once, on the deliberate and
     // rare act of adding/removing a Link — never on rack browsing. ONE
     // writer: the registry pass, via setBorrowBudgetActive.
-    std::atomic<bool> borrowBudgetActive_ { false };
-    void setBorrowBudgetActive(bool active);
+    // ROUND 53 (the borrow-budget ruling, DEFECT_PRESS_PLAY_PHASING §10):
+    // ONE COMMITTED BUDGET. borrowBudgetActive_ is the delay actually
+    // applied (alignPost_), the value reported (reportedBudgetFrames), and
+    // the value the borrow path reads (in-context engage). It changes in
+    // EXACTLY TWO PLACES, both through commitBorrowBudget(): prepareToPlay,
+    // and a block observed with the transport STOPPED. The registry pass
+    // writes only borrowBudgetWanted_, which is INERT: not applied, not
+    // reported, not read by the borrow path. A transport whose state is
+    // unknown (no play head, no position) counts as PLAYING: no commit.
+    std::atomic<bool> borrowBudgetActive_ { false };   // COMMITTED - the one value
+    std::atomic<bool> borrowBudgetWanted_ { false };   // PENDING - inert
+    void setBorrowBudgetWanted(bool wanted) noexcept
+    { borrowBudgetWanted_.store(wanted, std::memory_order_relaxed); }
+    void commitBorrowBudget(const char* where);        // the only writer of borrowBudgetActive_
     int  reportedBudgetFrames() const noexcept
     { return borrowBudgetActive_.load(std::memory_order_relaxed)
                  ? kBorrowAlignBudgetFrames : 0; }
+    // C4, the scoping decision as a pure function (the suite drives it):
+    // a rack counts only if it announces in-context capability, its host
+    // identity is OURS (pid + process start), and its publisher is alive.
+    struct BudgetRow { bool inContextCapable = false; int publisherPid = 0; int hostPid = 0; juce::int64 hostStartSec = 0, hostStartUsec = 0; };
+    static bool budgetRowCounts(const BudgetRow& r, const ChainHost::HostIdentity& me, bool publisherAlive) noexcept
+    {
+        return r.inContextCapable && r.publisherPid > 0 && publisherAlive
+            && r.hostPid == me.pid && r.hostStartSec == me.startSec && r.hostStartUsec == me.startUsec;
+    }
     bool borrowApplyInFlight_ = false;
 
     // ---- Mute/solo layer (27 Aug 2026, MUTE_SOLO_SPEC) -------------------
@@ -685,7 +713,10 @@ public:
     // Uncommitted edits captured at a keep-release; re-borrowing the same
     // uid restores them (and says so). Cleared by Apply, Discard, or the
     // restore itself.
-    struct BorrowKept { juce::String uid; juce::StringArray names, states; };
+    // 10 Sep 2026: kept ALSO carries the AI suggestions (prose + structured),
+    // so switching racks and back does not lose the last suggestions - they are
+    // kept per Link uid and restored on re-borrow, parallel to the plugin state.
+    struct BorrowKept { juce::String uid; juce::StringArray names, states, settings; juce::Array<juce::var> structured; };
     BorrowKept borrowKept_;
     void captureBorrowKept();
     void clearBorrowKept() { borrowKept_ = {}; }
@@ -704,6 +735,7 @@ public:
     // Link that announced structureEditCapable THEN — never re-read mid-
     // session, so an old Link keeps settings-only behaviour throughout.
     bool borrowStructureCapable_ = false;
+    bool borrowCtxCapable_ = false;   // the session's announced in-context capability, kept so a later budget commit can re-evaluate (8 Sep 2026 ruling)
     // Removed-withheld memory: names of removed slots whose settings never
     // arrived — the confirm gives these their own line (spec: deleting
     // settings the user never saw). Checked AT removal (the node's seeded
@@ -773,6 +805,46 @@ private:
 public:
     void startCapture();
     void stopCapture();
+    // 8 Sep 2026: the audio thread only SIGNALS the stop (transport stop); the message
+    // thread performs it (snapshot, save thread). Serviced by the editor timer (30 Hz)
+    // and the processor timer (1 Hz backstop).
+    void serviceCaptureStop();
+    std::atomic<bool> captureStopRequested_ { false };
+
+    // ---- ADDITIVE SOLO (9 Sep 2026 ruling; V2-only) ----
+    // On solo of Link X the main crossfades ITS OWN OUTPUT to X's ring. No Link is muted,
+    // no lease is taken (the ring is written whenever the Link is on, and the main
+    // already drains every ring every block), no alignment (nothing is blended: the
+    // output is replaced), no PDC event. Single solo, last press wins (a set spanning a
+    // feed relation would double-count and the main cannot detect one - a deliberate
+    // amendment to spec 6.1's multi-solo allowance; sibling multi-solo waits for topology).
+    // The crossfade sits BEFORE the main's own chain - intentional: the soloed Link is
+    // heard through the mix-bus processing. This is PRE-FADER LISTEN: X's ring is its
+    // insert-point signal, so fader and pan moves do not change what is heard - and the
+    // panel says so. THE GUARANTEE, exactly: the main's output is X. Complete only when
+    // the main is the last thing before the monitors; direct outs, hardware inserts and
+    // parallel monitor paths are outside it and not detectable from inside AAX.
+    // When X is the borrowed rack the crossfade uses the PROCESSED ring (borrowBuf_):
+    // spec 6.1 unchanged.
+    // This replaced the mute broadcast, its target enumeration, the reconcile pass, the
+    // authoritative mute record, the hand-mute snapshot and restore, the dead-main
+    // contract, the liveness dependency for targets, the poll floor, the pending lamp
+    // acks and solo-dominates-borrow: most of two days' work, deleted because the
+    // measurements that produced it showed the model was wrong. The deletion is the payoff.
+    void     setLinkSolo(const juce::String& uid, bool on);      // the press (message thread); on=true moves the solo to uid
+    bool     linkSoloOn(const juce::String& uid) const { return uid.isNotEmpty() && uid == soloUid_; }
+    bool     soloActive() const { return soloUid_.isNotEmpty(); }
+    juce::String soloUid() const { return soloUid_; }
+    bool     soloIndicatorOn(const juce::String& uid) const;   // ONE author for every solo indicator (sidecar flag OR the local solo)
+    juce::String firstSoloName() const;
+    bool     soloSourceIsBorrowedRack() const { return soloActive() && borrowActive() && soloUid_ == borrowSession_.uid; }
+    juce::String soloUid_;                                       // message thread writes, audio thread reads the atomics below
+    std::atomic<int>  soloRingSlot_ { -1 };                      // activeLinkSlots index of X's ring, -1 = none
+    std::atomic<bool> soloSeekPending_ { true };                 // seek X's ring to the cushion once at engage
+    juce::AudioBuffer<float> soloBuf_;                           // X's ring for this block (audio thread only)
+    juce::AudioBuffer<float> borrowProcessed_;                   // the borrowed rack's processed ring, copied before the injection alignment touches borrowBuf_
+    std::atomic<float> soloBufPeak_ { 0.0f };                    // diagnostic / leg: peak of what was consumed this block
+public:
     void resetCapture();
     float getCaptureDuration() const;
 
@@ -1009,6 +1081,12 @@ public:
 
     // A/B playback — toggle between DAW audio and reference WAV
     void loadABFile(const juce::String& wavPath, double startOffsetSeconds = 0.0);
+    // 8 Sep 2026 (capture playback): the file is read AHEAD of the play position on a
+    // worker; playback starts after the first second is in. abLoadedSamples_ bounds
+    // what the audio thread may read. Press-to-first-sample no longer scales with length.
+    std::atomic<int> abLoadedSamples_ { 0 };
+    std::unique_ptr<juce::Thread> abLoader_;
+    void seekAB(double seconds);
     void stopAB();
     void pauseAB();
     void resumeAB();
@@ -1164,6 +1242,7 @@ private:
     // Silence detection (triggers auto-stop when DAW stops)
     std::atomic<bool> audioSilent { true };
     std::atomic<bool> transportPlaying { false };
+    int latLogBlocks_ = 0;   // round 49: blocks still to log after a play start (EJ_LATENCY_LOG builds only)
     bool wasTransportPlaying = false;
     int silenceCounter = 0;
     bool wasReceivingAudio = false;
@@ -1294,13 +1373,19 @@ public:
     struct LinkCaptureChannel; // defined in PluginProcessor.cpp
 
 private:
-    static constexpr int kMaxLinkSlots = 16;
+    static constexpr int kMaxLinkSlots = kRegMaxSlots;   // the registry ceiling (256 since 6 Sep 2026) - NEVER walked per block, see liveSlotIdx_
+    // THE LIVE LIST (6 Sep 2026 ruling): the audio thread walks only the slots
+    // the message-thread walk connected. Written by refreshLinkRegistry /
+    // disconnectAllLinkSlotsNow (indices first, then the count with release);
+    // a slot disconnected between walks still has map == nullptr under its lock.
+    std::array<int, kRegMaxSlots> liveSlotIdx_ {};
+    std::atomic<int>              liveSlotCount_ { 0 };
+    void publishLiveSlotList();
 
     // Resolved shared directory (message thread, set once in ensureLinkRegistryOpen)
     juce::String linkResolvedDir;
     juce::int64  lastFileReapMs_ = 0;   // dead-uid file sweep throttle (~5 min)
-    juce::String ctxCapSetKey_;          // §8.3: listed-uid set fingerprint
-    std::map<juce::String, bool> ctxCapCache_;   // uid -> inContextCapable
+    std::map<juce::String, BudgetRow> ctxCapCache_;   // uid -> what its sidecar said (round 53: with publisher + host)
 
     // Registry mapping (message thread)
     void*  linkRegMap = nullptr;

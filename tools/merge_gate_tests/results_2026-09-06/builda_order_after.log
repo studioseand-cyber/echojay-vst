@@ -1,0 +1,9 @@
+isolated state root: /tmp/echojay-iso.vhbfeH
+build_a_legs_test.cpp: isolated state root /tmp/echojay-iso.vhbfeH
+2026-09-08 11:56:53.223 harness[42994:2789946] EJNet: base=www.echojay.ai devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-09-08 11:56:53.226 harness[42994:2789922] EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+2026-09-08 11:56:53.227 harness[42994:2789922] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-08 11:56:53.381 harness[42994:2789946] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+  claimed Z (slot 0), A (slot 1), M (slot 2) -> display order: Z(slot 0), A(slot 1), M(slot 2)
+ORDER: Z,A,M -> PASS (insertion order)
+exit=0

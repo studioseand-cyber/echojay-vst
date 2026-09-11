@@ -1,0 +1,16 @@
+sourceNEW.wav  voiced 8.1s  sustained 5.1s
+  GRID OFFSET (median signed cents from A440 semitones): -1.28c  => reference 439.68 Hz
+  OFF-GRID vs D minor @ 440           (440.00 Hz): onset(150ms) med  8.26 p75 16.62 p90 30.96 | all-voiced med  6.72 <5c 39.8% | improve-rate vs source  0.0%  (n onset 1015, all 3043)
+  OFF-GRID vs D minor @ RECOVERED ref (439.68 Hz): onset(150ms) med  8.15 p75 15.72 p90 30.48 | all-voiced med  6.63 <5c 39.8% | improve-rate vs source  0.0%  (n onset 1015, all 3043)
+echojayignoreoffNEW.wav  voiced 7.3s  sustained 5.0s
+  GRID OFFSET (median signed cents from A440 semitones): -3.40c  => reference 439.14 Hz
+  OFF-GRID vs D minor @ 440           (440.00 Hz): onset(150ms) med  6.50 p75 10.25 p90 16.88 | all-voiced med  5.11 <5c 48.9% | improve-rate vs source 60.3%  (n onset 875, all 2754)
+  OFF-GRID vs D minor @ RECOVERED ref (439.14 Hz): onset(150ms) med  4.79 p75  9.08 p90 16.96 | all-voiced med  3.76 <5c 59.2% | improve-rate vs source 66.3%  (n onset 875, all 2754)
+echojayignoreonNEW.wav  voiced 7.0s  sustained 4.1s
+  GRID OFFSET (median signed cents from A440 semitones): -3.98c  => reference 438.99 Hz
+  OFF-GRID vs D minor @ 440           (440.00 Hz): onset(150ms) med  5.63 p75 10.83 p90 23.54 | all-voiced med  5.45 <5c 45.0% | improve-rate vs source 57.1%  (n onset 826, all 2634)
+  OFF-GRID vs D minor @ RECOVERED ref (438.99 Hz): onset(150ms) med  4.62 p75 10.74 p90 24.04 | all-voiced med  3.84 <5c 58.2% | improve-rate vs source 64.7%  (n onset 826, all 2634)
+antaresNEW.wav  voiced 8.1s  sustained 5.1s
+  GRID OFFSET (median signed cents from A440 semitones): -1.50c  => reference 439.62 Hz
+  OFF-GRID vs D minor @ 440           (440.00 Hz): onset(150ms) med  6.34 p75 13.30 p90 27.24 | all-voiced med  5.41 <5c 46.9% | improve-rate vs source 61.6%  (n onset 1004, all 3037)
+  OFF-GRID vs D minor @ RECOVERED ref (439.62 Hz): onset(150ms) med  6.41 p75 12.82 p90 27.24 | all-voiced med  5.39 <5c 47.6% | improve-rate vs source 62.9%  (n onset 1004, all 3037)

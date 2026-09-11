@@ -1,0 +1,86 @@
+== layout: 256 slots, v2 ==
+2026-09-06 19:07:14.492 cap_new[77371:1946905] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:07:14.492 cap_new[77371:1946905] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:07:14.494 cap_new[77371:1946905] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:07:14.503 cap_new[77371:1946905] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:07:14.508 cap_new[77371:1946905] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:07:14.508 cap_new[77371:1946905] EJLinkState: host DELIVERED track name "Track A" (uid 6735af92e9)
+2026-09-06 19:07:14.519 cap_new[77371:1946905] EJLinkState: post-init linkOn=1 name="Vox" uid=6735af92e9
+2026-09-06 19:07:14.519 cap_new[77371:1946905] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:07:14.519 cap_new[77371:1946905] EJLinkMeter: "Vox" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:07:14.519 cap_new[77371:1946905] EJLinkMeter: "Vox" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:14.558 cap_new[77371:1946905] EJLinkMeter: "Vox" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:14.595 cap_new[77371:1946905] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-06 19:07:14.595 cap_new[77371:1946905] EJPrompt: session project "Nafe smallz Aitch Luxury" from previous host, ignoring, will prompt (file "Pro Tools" pid=55105 start=1788706358 vs current "Terminal" pid=496 start=1788433286.527607)
+2026-09-06 19:07:14.596 cap_new[77371:1946905] EJPrompt: session genre "Hip-Hop" from previous host, ignoring, will prompt (file "Pro Tools" pid=55105 start=1788706358 vs current "Terminal" pid=496 start=1788433286.527607)
+2026-09-06 19:07:14.630 cap_new[77371:1946905] EJLinkMeter: "Vox" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:15.490 cap_new[77371:1946905] EJLinkState: getState linkOn=1 name="Vox"
+== P1: host name arrives BEFORE the gate's clear (seeded chunk, then the host delivers, then the claim) ==
+2026-09-06 19:07:15.500 cap_new[77371:1946905] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:07:15.500 cap_new[77371:1946905] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:07:15.501 cap_new[77371:1946905] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:07:15.509 cap_new[77371:1946905] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:07:15.513 cap_new[77371:1946905] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:07:15.514 cap_new[77371:1946905] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:07:15.514 cap_new[77371:1946905] EJLinkState: host DELIVERED track name "Track B" (uid 6735af92e9)
+2026-09-06 19:07:15.526 cap_new[77371:1946905] EJLinkState: post-init linkOn=1 name="Vox" uid=6735af92e9
+2026-09-06 19:07:15.526 cap_new[77371:1946905] EJLinkState: host track name "Track B" (user name "Vox")
+2026-09-06 19:07:16.566 cap_new[77371:1946905] EJLinkState: uid 6735af92e9 held by a PROVEN-LIVE instance (duplicate) -> regenerated 14011d58f8
+2026-09-06 19:07:16.566 cap_new[77371:1946905] EJLinkState: chunk uid 6735af92e9 != this instance 14011d58f8: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-06 19:07:16.566 cap_new[77371:1946905] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:07:16.566 cap_new[77371:1946905] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:16.861 cap_new[77371:1946905] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:16.970 cap_new[77371:1946905] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  B: slot 1 host "Track B" typed "" published "Track B"
+  -> PASS
+== P2: host name arrives AFTER the gate's clear ==
+2026-09-06 19:07:19.404 cap_new[77371:1946905] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:07:19.404 cap_new[77371:1946905] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:07:19.406 cap_new[77371:1946905] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:07:19.414 cap_new[77371:1946905] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:07:19.417 cap_new[77371:1946905] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:07:19.418 cap_new[77371:1946905] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:07:19.431 cap_new[77371:1946905] EJLinkState: post-init linkOn=1 name="Vox" uid=6735af92e9
+2026-09-06 19:07:19.431 cap_new[77371:1946905] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:07:20.503 cap_new[77371:1946905] EJLinkState: uid 6735af92e9 held by a PROVEN-LIVE instance (duplicate) -> regenerated a2a6101e2d
+2026-09-06 19:07:20.503 cap_new[77371:1946905] EJLinkState: chunk uid 6735af92e9 != this instance a2a6101e2d: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-06 19:07:20.503 cap_new[77371:1946905] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:07:20.503 cap_new[77371:1946905] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:20.650 cap_new[77371:1946905] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:20.688 cap_new[77371:1946905] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:23.065 cap_new[77371:1946905] EJLinkState: host DELIVERED track name "Track C" (uid a2a6101e2d)
+2026-09-06 19:07:23.091 cap_new[77371:1946905] EJLinkState: host track name "Track C" (user name "")
+  C: after the clear published ""; after the host delivered: host "Track C" published "Track C"
+  -> PASS
+== R1: every free slot filled with rows whose publisher pid is DEAD; a fresh Link must reclaim one ==
+  planted 256 dead-publisher rows (registry now full)
+2026-09-06 19:07:24.592 cap_new[77371:1946905] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:07:24.592 cap_new[77371:1946905] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:07:24.594 cap_new[77371:1946905] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:07:24.601 cap_new[77371:1946905] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:07:24.605 cap_new[77371:1946905] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:07:24.613 cap_new[77371:1946905] EJLinkState: registry had no free slot; reaped 256 dead-publisher row(s); claimed slot 0
+2026-09-06 19:07:24.620 cap_new[77371:1946905] EJLinkState: post-init linkOn=1 name="" uid=461c146323
+2026-09-06 19:07:24.620 cap_new[77371:1946905] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:07:24.620 cap_new[77371:1946905] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:24.658 cap_new[77371:1946905] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:24.696 cap_new[77371:1946905] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  fresh Link: slot 0 regFull=0; dead rows left 0 of 256
+  -> PASS
+== R2: every free slot filled with rows whose publisher is ALIVE (this process); a fresh Link must REPORT full ==
+  planted 256 live-publisher rows (registry now full)
+2026-09-06 19:07:25.420 cap_new[77371:1946905] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:07:25.420 cap_new[77371:1946905] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:07:25.421 cap_new[77371:1946905] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:07:25.429 cap_new[77371:1946905] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:07:25.432 cap_new[77371:1946905] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:07:25.439 cap_new[77371:1946905] EJLinkState: registry had no free slot; reaped 0 dead-publisher row(s); STILL FULL - 256 slots all held by live publishers; this Link is NOT registered
+2026-09-06 19:07:25.444 cap_new[77371:1946905] EJLinkState: registry had no free slot; reaped 0 dead-publisher row(s); STILL FULL - 256 slots all held by live publishers; this Link is NOT registered
+2026-09-06 19:07:25.446 cap_new[77371:1946905] EJLinkState: post-init linkOn=1 name="" uid=6579b852bd
+  fresh Link: slot -1 regFull=1
+  -> PASS (reported, not silent)
+== V1: a region of the OLD layout (v1, 16 slots) must be refused with a clear message ==
+  openRegistry -> refused, errno 100, message: registry layout mismatch: file /Users/SeanD/Library/Caches/cap_new/ej_layout_test/registry_v3.bin is layout v1 with 16 slots; this build needs v2 with 256 - REFUSING to use it
+  -> PASS
+capacity legs: P1 PASS  P2 PASS  R1 PASS  R2 PASS  V1 PASS
+exit=0

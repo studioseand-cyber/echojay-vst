@@ -1,0 +1,1000 @@
+== gate step 1/2: the Link's SharedCode archive must compile ==
+== gate step 2/2: mapfps_test ==
+2026-09-06 14:10:40.188 mapfps_test[37382:1446636] EJScan: disabled set changed via setter, unlatch dispatched
+2026-09-06 14:10:40.188 mapfps_test[37382:1446636] EJScan: disabled set changed via setter, unlatch dispatched
+2026-09-06 14:10:40.188 mapfps_test[37382:1446636] EJScan: enabledState mtime moved, 0 -> 1 uid(s), changed=y (scanner 0x16ef644f0)
+2026-09-06 14:10:40.188 mapfps_test[37382:1446636] EJScan: disabled set changed via file, unlatch dispatched
+2026-09-06 14:10:40.188 mapfps_test[37382:1446636] EJScan: enabledState mtime moved, 1 -> 1 uid(s), changed=n (scanner 0x16ef644f0)
+fpForIdentity join + wiring self-test
+  ok    triple-version desc falls back to the single fp under its uid
+  ok    matching version key resolves exact, not fallback
+  ok    unknown uid is a miss
+  ok    same uid under another format is a miss, not a fallback
+  ok    one uid under two version keys with two fps refuses (ambiguous)
+  ok    exact version key still resolves inside an ambiguous pair
+  ok    two version keys agreeing on one fp keep the fallback
+  ok    zero uid refuses even an exact-shaped key against a poisoned index
+  ok    zero uid refuses the prefix fallback that would serve the poison
+  ok    load matching the index is no divergence and writes nothing
+  ok    first index corrects the index without fetch or mark
+  ok    divergence with the live map held defers the verdict and marks
+  ok    divergence without the live map corrects, fetches and marks
+  ok    apply ran and wrote: dialled
+  ok    the dial verdict stands whatever the fetch bookkeeping says
+  ok    apply ran against a present map and wrote nothing: undialled, not dialled
+  ok    map present but apply not yet run keeps the verdict deferred
+  ok    unanswered fetch keeps the slot held
+  ok    answered without the map resolves to unmapped (card speaks)
+  ok    the defect: 100 against [1 .. 7] refuses
+  ok    an exact upper-bound ask is in range
+  ok    a documented max against its float32-rendered bound is in range
+  ok    3% over the top refuses (outside the 0.1%-of-span band)
+  ok    below the bottom refuses
+  ok    negative-range in-range value passes (threshold-style table)
+  ok    empty disabled set stamps everything enabled
+  ok    adding a uid to the set and restamping moves enabled
+  ok    removing it and restamping moves it back
+  ok    enabled equals rows minus disabled-matching rows, duplicates counted per row
+  ok    the seam that shipped: Plugin Alliance and Brainworx inputs make one uid
+  ok    and it is the canonical (load-era) spelling
+  ok    channel-variant names collapse to one uid
+  ok    legacy-only entry is rewritten; the exclusion survives under canonical
+  ok    both spellings collapse to canonical, dropping neither exclusion
+  ok    an entry matching no known legacy spelling is left untouched
+  ok    setter trigger: an actual untick fires the notify
+  ok    setter trigger: a no-op untick does not re-fire
+  ok    setter trigger: re-ticking fires again
+  ok    file trigger: a changed reloaded set fires the notify
+  ok    file trigger: the writer seeing its own save (changed=n) does not fire
+  ok    Source/ChainHost.cpp readable from repo root
+  ok    buildMapFpsJson body found
+  ok    getDialableRecommendableNames body found
+  ok    buildMapFpsJson has no direct identityToFp_.find
+  ok    getDialableRecommendableNames has no direct identityToFp_.find
+  ok    buildMapFpsJson goes through fpForIdentity
+  ok    getDialableRecommendableNames goes through fpForIdentity
+  ok    buildRecommendable collapses duplicate names into the duplicates counter
+  ok    buildRecommendable keys the feed map through the c3ad9be model-number predicate
+  ok    completeLoad body found
+  ok    settleStaleRung body found
+  ok    completeLoad decides the load rung through staleLadderAtLoad
+  ok    settleStaleRung decides the outcome through staleLadderAtResolution
+  ok    no p.enabled assignment anywhere in PluginScanner.cpp
+  ok    exactly one p.enabled assignment in the header (inside stampEnabled)
+  ok    getPlugins stamps from the authority set
+  ok    the processor wires the notify to the resolver unlatch
+  ok    addPlugin merges cross-format rows by makeUid equality
+  ok    loadCache dedupes cached rows by uid so old caches converge
+  ok    every uid field assignment in PluginScanner.cpp goes through makeUid
+  ok    applyOne body found
+  ok    applyOne refuses out-of-range values through valueWithinMappedRange
+  ok    newest larger than the whole budget still admits history
+  ok    history byte budget drops the oldest message first
+  ok    message-count cap still bounds history at 11 + newest
+  ok    leading assistant turn is skipped, newest stil2026-09-06 14:10:40.328 mapfps_test[37382:1446677] EJNet: base=www.echojay.ai devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-09-06 14:10:40.328 mapfps_test[37382:1446636] EJChat: history trim -- kept 2/2 history msgs (dropped: countCap 0, byteBudget 0, roleAlign 0 -- nothing dropped)
+2026-09-06 14:10:40.328 mapfps_test[37382:1446636] EJChat: body breakdown -- system=3b history=1593b(2 msgs) newest=3b messagesTotal=1737b
+2026-09-06 14:10:40.328 mapfps_test[37382:1446636] EJChat: send turnType=chat autoDial=on dialWrites=on payload=NO msg=3b
+2026-09-06 14:10:40.370 mapfps_test[37382:1446636] EJChat: dev_mode body dump -> /Users/SeanD/Documents/EchoJay/chat-body-debug.json (1824b total) source=gate-fixture (mapfps_test history-resend pin) turnType=chat classifyIntent=none
+2026-09-06 14:10:40.370 mapfps_test[37382:1446636] EJChat: history trim -- kept 2/2 history msgs (dropped: countCap 0, byteBudget 0, roleAlign 0 -- nothing dropped)
+2026-09-06 14:10:40.371 mapfps_test[37382:1446636] EJChat: body breakdown -- system=3b history=1593b(2 msgs) newest=3b messagesTotal=1737b
+2026-09-06 14:10:40.371 mapfps_test[37382:1446636] EJChat: send turnType=chat autoDial=on dialWrites=on payload=NO msg=3b
+2026-09-06 14:10:40.372 mapfps_test[37382:1446636] EJChat: dev_mode body dump -> /Users/SeanD/Documents/EchoJay/chat-body-debug.json (1824b total) source=gate-fixture (mapfps_test history-resend pin) turnType=chat classifyIntent=none
+2026-09-06 14:10:40.372 mapfps_test[37382:1446636] EJChat: history trim -- kept 2/2 history msgs (dropped: countCap 0, byteBudget 0, roleAlign 0 -- nothing dropped)
+2026-09-06 14:10:40.372 mapfps_test[37382:1446636] EJChat: body breakdown -- system=3b history=1593b(2 msgs) newest=3b messagesTotal=1737b
+2026-09-06 14:10:40.372 mapfps_test[37382:1446636] EJChat: send turnType=chat autoDial=on dialWrites=on payload=NO msg=3b
+2026-09-06 14:10:40.373 mapfps_test[37382:1446636] EJChat: dev_mode body dump -> /Users/SeanD/Documents/EchoJay/chat-body-debug.json (1824b total) source=gate-fixture (mapfps_test history-resend pin) turnType=chat classifyIntent=none
+2026-09-06 14:10:40.373 mapfps_test[37382:1446636] EJChat: history trim -- kept 2/2 history msgs (dropped: countCap 0, byteBudget 0, roleAlign 0 -- nothing dropped)
+2026-09-06 14:10:40.373 mapfps_test[37382:1446636] EJChat: body breakdown -- system=3b history=1639b(2 msgs) newest=3b messagesTotal=1783b
+2026-09-06 14:10:40.373 mapfps_test[37382:1446636] EJChat: send turnType=chat autoDial=on dialWrites=on payload=NO msg=3b
+2026-09-06 14:10:40.374 mapfps_test[37382:1446636] EJChat: dev_mode body dump -> /Users/SeanD/Documents/EchoJay/chat-body-debug.json (1870b total) source=gate-fixture (mapfps_test history-resend pin) turnType=chat classifyIntent=none
+l sent
+  ok    null trim reports kept == total with zero drops
+  ok    single-message conversation trims to nothing safely
+  ok    buildChatRequestBody decides through trimChatHistory
+  ok    the shared payload budget (newest charged against history) is gone
+  ok    the artefact is intact: 1,575 chars as stored
+  ok    history assistant turn resends byte-identical at full length
+  ok    history strip cuts exactly at the marker, prose before it byte-identical
+  ok    assistant turns are marker-stripped too (current behaviour, pinned)
+  ok    a bracket phrase without the newline prefix is not a marker and survives
+  ok    chat body builder never composes priorAssistant
+  ok    the classify carrier composes priorAssistant at its own site
+  ok    no (linkUid, trackName) match returns index -1, matches 0
+  ok    single match wins
+  ok    newest by updatedAt beats newest by created
+  ok    empty updatedAt falls back to created for that chat
+  ok    latestChannelChatId decides through latestChatForLink
+  ok    the first-match lookup name is gone from PluginEditor.cpp
+  ok    chainListPanel.rebuild( has exactly ONE author in PluginEditor.cpp (found 1)
+dial-4 A8 attempt tally:
+  ok    A8.1a both-sites slot-turn: applies incremented exactly once
+  ok    A8.1a both-sites slot-turn: requested carries both sites' counts (3+2)
+  ok    A8.1a refine contribution is requested-only, under the empty identity
+  ok    A8.1a receipt-consumed op: the refine site bumps, once
+  ok    A8.1b built-in slot-turn contributes nothing to the tally
+  ok    A8.1b admission rule: third-party in, built-in out
+  ok    A8.1b row admission: same rule, rows side
+  ok    entry count: flat keys count one each
+  ok    entry count: a controls object with five entries is FIVE, not one
+  ok    entry count: flat + controls entries + bands elements (1+2+2)
+  ok    entry count: non-object counts zero
+  ok    tally round-trips through its wire/persist shape
+  ok    subtract-on-success keeps slot-turns accumulated between stage and reply
+  ok    fully shipped tally drops to no entries
+  ok    apply-path refine site passes opReachesApply=true (requested-only)
+  ok    receipt-consumed refine site passes opReachesApply=false (its only site)
+  ok    the settle walkers accumulate the population beside the rows
+  ok    A8.1b: logDialMiss refuses built-in rows via dialRowAdmits
+  ok    A8.1b: slot walkers pass di.builtin into the row emitter
+  ok    A8.1b: no walker row call left without the builtin flag
+  ok    A8.8: no bare unusable_map row call remains (requested now rides)
+  ok    A8.8: receipt-path refine row ships requested=dc->size(), source keys
+  ok    A8.1a: getDialInfos' keys fallback uses the shared entry count
+  ok    A8.8: the ex-unusableMap statuses are keys-sourced by designation
+A9 step 1 dial-miss row set:
+  ok    A9: readbackMiss + outOfRange together STILL emits the readback row
+  ok    A9: the range refusal rides its own row and the verdict claims neither
+  ok    A9: two controls, two rows, neither suppressing the other
+  ok    A9: the outOfRange-empty case is one row for the one control
+  ok    A9: stale_display_kept is in the shared set (walker 3 omitted it)
+  ok    A9: out_of_range is in the shared set (walker 3 omitted it)
+  ok    A9: a stale-ladder noMap is stale_unmapped (walker 3 said no_map)
+  ok    A9: pending maps to map_fetch_timeout
+  ok    A9: a clean or untouched slot emits nothing
+  ok    A9: no readback row under a verdict whose apply never ran this turn
+  ok    A9: found walker finishChainBubbleWhenDialSettled
+  ok    A9: finishChainBubbleWhenDialSettled emits through the shared author
+  ok    A9: finishChainBubbleWhenDialSettled builds NO slot row by hand
+  ok    A9: found walker finishEditBubbleWhenDialSettled
+  ok    A9: finishEditBubbleWhenDialSettled emits through the shared author
+  ok    A9: finishEditBubbleWhenDialSettled builds NO slot row by hand
+  ok    A9: found walker logDialMissesWhenSettled
+  ok    A9: logDialMissesWhenSettled emits through the shared author
+  ok    A9: logDialMissesWhenSettled builds NO slot row by hand
+  ok2026-09-06 14:10:40.527 mapfps_test[37382:1446697] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+2026-09-06 14:10:40.530 mapfps_test[37382:1446677] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+2026-09-06 14:10:40.530 mapfps_test[37382:1446695] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+2026-09-06 14:10:40.527 mapfps_test[37382:1446700] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+2026-09-06 14:10:40.623 mapfps_test[37382:1446698] EJStream: /api/me?appVersion=2.26.4 status=404 body={"error":"User not found"}
+2026-09-06 14:10:40.624 mapfps_test[37382:1446678] EJStream: /api/me?appVersion=2.26.4 status=404 body={"error":"User not found"}
+2026-09-06 14:10:40.625 mapfps_test[37382:1446696] EJStream: /api/me?appVersion=2.26.4 status=404 body={"error":"User not found"}
+2026-09-06 14:10:40.737 mapfps_test[37382:1446701] EJStream: /api/me?appVersion=2.26.4 status=404 body={"error":"User not found"}
+    A9: the emitter derives its reasons from the shared author
+A9 step 2 partition:
+  ok    A9.2 PIN1 Solid EQ: one row, readback_mismatch, also writes_rejected
+  ok    A9.2 PIN1 Solid EQ: exactly one row for the one control
+  ok    A9.2 PIN2 partial: manual + readbackMiss yields one row
+  ok    A9.2 PIN3 two causes on one label yield TWO rows
+  ok    A9.2 PIN3 both causes survive under one name
+  ok    A9.2 PIN4: a single-reason row carries no also_reasons
+  ok    A9.2 PIN4: alsoReasons is empty, so logDialMiss writes no key
+  ok    A9.2: the emitter passes each row's alsoReasons
+  ok    A9.2: logDialMiss writes also_reasons only when non-empty
+  ok    A9.2: the batch builder carries also_reasons onto the wire row
+A9 step 3 unusable_map split:
+  ok    A9.3 PIN1: the 3603 case reaches map_no_coverage
+  ok    A9.3 PIN2: the 3609 case reaches writes_rejected
+  ok    A9.3 PIN3: the 3494 case reaches map_identity_mismatch
+  ok    A9.3 PIN4: writes_rejected DOES pair with readback_mismatch
+  ok    A9.3 PIN4: map_no_coverage never pairs with readback_mismatch
+  ok    A9.3 PIN4: map_identity_mismatch never pairs with readback_mismatch
+  ok    A9.3 PIN5: builtinPayloadUnmatched yields ZERO rows from the emitter
+  ok    A9.3 PIN5: a real built-in slot (all arrays empty) yields zero rows
+  ok    A9.3 PIN6: the emitter emits no unusable_map reason
+  ok    A9.3 PIN6: no walker emits an unusable_map reason
+  ok    A9.3 PIN6: DialStatus no longer carries the retired value
+  ok    A9.3 PIN6: no site assigns or reads the retired status
+  ok    A9.3 PIN6: the retired name survives in PROSE (so the pin above has a subject)
+  ok    A9.3 PIN7: 3603 assigns mapNoCoverage
+  ok    A9.3 PIN7: 3609 assigns writesRejected
+  ok    A9.3 PIN7: 3494 assigns mapIdentityMismatch
+  ok    A9.3 PIN7: 3416 assigns builtinPayloadUnmatched
+6a card/model settings split:
+  ok    6a PIN1: the tier lines are composed exactly once
+  ok    6a PIN1: exactly ONE site names the asked tier
+  ok    6a PIN1: tierLines has exactly its five known uses
+  ok    6a PIN1: both consumers take the SAME tier lines
+  ok    6a PIN1: the card keeps the prose and the model does not
+  ok    6a PIN2: the card writer is unchanged
+  ok    6a PIN2: the card still echoes the REQUESTED value (9 Aug rule)
+  ok    6a PIN3: appliedSummary has exactly one add site
+  ok    6a PIN3: dialAppliedCount still counts appliedSummary
+  ok    6a PIN4: the formatter takes the model settings array
+  ok    6a PIN4: the model's line actually SELECTS the model field
+  ok    6a PIN4: the local adapter fills it index-parallel
+  ok    6a PIN4: RackSidecarSlot is still built from the same five fields
+  ok    6a PIN4: the Link wire struct did not grow a field
+  ok    6a PIN5: all five non-tiered settings writers clear the model copy
+  ok    6a PIN5: SlotInfo carries the field to its readers
+  ok    6a PIN6: a string AT the cap is returned untouched
+  ok    6a PIN6: an unclipped string carries NO marker
+  ok    6a PIN6: a string OVER the cap says it was clipped
+  ok    6a PIN6: the kept prefix is exactly the cap, then the marker
+  ok    6a PIN6: the cap is 500, sized from the 12-control bound
+dev_mode body dump gate:
+  ok    dump: the gate is the SHARED dev predicate, not a second copy
+  ok    dump: devModeActive still checks the absolute sandbox-proof path
+  ok    dump: found buildChatRequestBody
+  ok    dump: the gate is not cached for the process lifetime
+  ok    dump: the write result is actually checked
+  ok    dump: what is written is the wire body plus exactly one provenance field
+  ok    dump: a refused write logs a FAILED line, not a success line
+  ok    dump: a successful write still names the resolved path
+6c current values on the wire:
+  ok    6c PIN1: a read control carries its display text
+  ok    6c PIN1: a control read but UNREADABLE is the empty string
+  ok    6c PIN1: an absent control has no key at all
+  ok    6c PIN1: both flags ride every entry, false when nothing happened
+  ok    6c PIN1: 8a's key names exactly -- slot, name, reads
+  ok    6c PIN2: a cut slot says truncated
+  ok    6c PIN2: everything up to the cap is still carried
+  ok    6c PIN2: the cap is 1024, above 126 of the 128 cached maps
+  ok    6c PIN2b: a non-responding slot says readFailed
+  ok    6c PIN2b: readFailed carries an EMPTY reads object
+  ok    6c PIN2b: readFailed is not also reported as a cut
+  ok    6c PIN2b: the slot still appears, so the server knows it exists
+  ok    6c PIN2b: a NULL processor reads as readFailed with nothing
+  ok    6c PIN3: the sweep goes through the ONE shared read
+  ok    6c PIN3: ChainHost serialises through the one shared helper
+  ok    6c PIN3: found the reads builder
+  ok    6c PIN3: no slot is dropped for having no instance
+  ok    6c PIN3: and the client LOGS it, so a silent rack is visible
+  ok    6c PIN3: no copy of the server's exposure rule lives here
+  ok    6c PIN3: the body carries the field, named slotParamReads
+  ok    6c PIN3: consumed per send, like mapFps
+  ok    6c PIN3: found the injection builder
+  ok    6c PIN3: the reads never enter [CURRENT CHAIN]
+  ok    6c PIN4 turn-D: the hand move actually changed the display
+  ok    6c PIN4 turn-D: the hand-set value RIDES slotParamReads
+  ok    6c PIN4 turn-D: that control no longer reports its pre-move value
+6c suppression (one control, one number):
+  ok    6cS PIN A: no index means no join, so the echo is KEPT
+  ok    6cS PIN A: a readFailed slot KEEPS its echo (only source we have)
+  ok    6cS PIN A: an index the sweep never reached KEEPS its echo
+  ok    6cS PIN A: an EMPTY read is not a live value, so the echo is kept
+  ok    6cS PIN B: found the composer
+  ok    6cS PIN B: Landed and Asked are filtered
+  ok    6cS PIN B: Refused is NEVER filtered
+  ok    6cS PIN B: Refused rides untouched, with its number
+  ok    6cS PIN C: the sweep is taken at the injection site
+  ok    6cS PIN C: the wire serialises the SAME cache the suppression read
+  ok    6cS PIN C: ChainHost.cpp takes no read of its own
+  ok    6cS PIN D: the card's tiered writer is byte-identical
+  ok    6cS PIN D: the card's applied writer is byte-identical
+  ok    6cS PIN D: the card still echoes the REQUESTED value (9 Aug rule)
+  ok    6cS PIN E: the partition is authored at apply time, as before
+  ok    6cS PIN E: the composer decides nothing about VALUES, only what to drop
+6c fallback (empty tiers + a live read):
+  ok    6cF PIN A: the reader asks whether the slot was READ
+  ok    6cF PIN A: a slot that WAS read emits nothing rather than the card string
+  ok    6cF PIN A: the emptiness-keyed fallback is gone
+  ok    6cF PIN B: a readFailed slot reports NO live reads, so it still falls back
+  ok    6cF PIN B: and its per-control echo is still kept
+  ok    6cF PIN C: the ONE projection builder assigns the live-reads flag
+  ok    6cF PIN C: and the list reader delegates rather than re-listing the fields
+  ok    6cF PIN C: the adapter fills it and passes it index-parallel
+  ok    6cF PIN D: setSlotSettings still clears the tiers (prose is not tiering)
+  ok    6cF PIN D: so a read slot gets neither the card's value NOR its prose
+card separator (formatSemanticSetting):
+  ok    sep PIN1: ratio
+  ok    sep PIN1: _db
+  ok    sep PIN1: _ms
+  ok    sep PIN1: _hz
+  ok    sep PIN1: _pct
+  ok    sep PIN1: _s
+  ok    sep PIN1: bare numeric
+  ok    sep PIN1: bare int
+  ok    sep PIN1: numeric-as-STRING keeps the space
+  ok    sep PIN1: signed numeric-as-string too
+  ok    sep PIN2: a name ENDING in its label (Pro-Q 3, 442 such pairs)
+  ok    sep PIN2: a name EQUAL to its label (API-2500, 6 such)
+  ok    sep PIN2: a label UNRELATED to the name
+  ok    sep PIN2: the other state of the same control stays distinct
+  ok    sep PIN3: the tiered Landed form is untouched
+  ok    sep PIN3: the tier does not start using the card's composer
+  ok    sep PIN4: semanticLabel's suffix stripping still matches the composer's
+  ok    sep PIN4: and it still returns a bare label, never a separator
+product fallback (anchors_unverified):
+  ok    fb PIN1: the tag is read once, in applySettings
+  ok    fb PIN1: exactly ONE site reads the tag
+  ok    fb PIN1: every applyOne result carries it, set before any return
+  ok    fb PIN2: an approximate dial is collected, not silent
+  ok    fb PIN2: the CARD names it approximate and says where from
+  ok    fb PIN2: the MODEL's line is annotated too
+  ok    fb PIN2: the verified card path is byte-identical
+  ok    fb PIN3: the parameter defaults false
+  ok    fb PIN3: the result field defaults false
+  ok    fb PIN3: the report field defaults false
+  ok    fb PIN4: the exemption is keyed on the tag
+  ok    fb PIN4: an UNtagged fp mismatch still refuses the apply
+  ok    fb PIN5: the map-returning mode, not exists
+  ok    fb PIN5: param_count rides, or every candidate is refused
+  ok    fb PIN5: param_names rides, for the name guard
+  ok    fb PIN5: found the single fallback composer
+  ok    fb PIN5: only MAPLESS fps are asked about
+  ok    fb PIN5: stored under the fp that ASKED, which the apply looks up by
+fallback name assertion:
+  ok    na PIN A: found applyOne
+  ok    na PIN A: the assertion is behind the tag
+  ok    na PIN A: exactly one comparison, on that one path
+  ok    na PIN A: the live name is read only inside the tagged branch
+  ok    na PIN B: mismatch is the refusal condition
+  ok    na PIN B: the miss says it was not written and names the remedy
+  ok    na PIN B: FAILS CLOSED -- an unreadable live name is a mismatch
+  ok    na PIN C: the server's rule exists as its own function
+  ok    na PIN C: the server's source line is quoted beside it
+  ok    na PIN C: it does NOT use normalizeControlName, which omits the lowercasing
+  ok    na PIN D: one definition of the name length
+  ok    na PIN D: the assertion reads at that length
+  ok    na PIN D: param_names is composed at the same length
+fallback delivery leg:
+  ok    fd PIN1: found setSlotStructuredSettings
+  ok    fd PIN1: the mapless dial composes the fallback ask
+  ok    fd PIN1: and issues it
+  ok    fd PIN1: only when the fp has no exact map
+  ok    fd PIN2: the fallback has its own requested set
+  ok    fd PIN2: the fallback is gated on ITS set, not mapsRequested_
+  ok    fd PIN2: the leg no longer hangs off the exact-map fetch completion
+  ok    fd PIN3: found storeFallbackMaps
+  ok    fd PIN3: an arriving fallback map re-runs the apply
+  ok    fd PIN3: and clears the in-flight marker it set
+  ok    fd PIN3: and repaints when something actually dialled
+  ok    fd PIN4: a slot that cannot be asked about says why
+  ok    fd PIN4: an empty rack-wide body says why
+  ok    fd PIN4: the ask itself is logged before it goes
+  ok    fd PIN4: a SUCCESSFUL lookup logs too, not only a failure
+refusal remedy clause:
+  ok    refusal PIN1: the ownership line is the server's sentence and stops there
+  ok    refusal PIN1: and carries NO Settings remedy
+  ok    refusal PIN2: the no-map line keeps the Settings remedy
+  ok    refusal PIN3: a spelling refusal keeps the remedy
+  ok    refusal PIN4: an absent case still gets the remedy
+  ok    refusal PIN5: mixed turn names each reason and keeps the remedy once
+  ok    refusal PIN6: two unowned plugins, one sentence, no remedy
+  ok    refusal PIN7: found the composer header
+  ok    refusal PIN7: the client holds no copy of the server's sentences
+  ok    refusal PIN8: no refusals, no bubble
+  ok    refusal PIN8: a nameless op is not a sentence
+  ok    refusal PIN9: announceRefusedOps reads the case off the wire
+  ok    refusal PIN9: and renders through the pinned composer
+  ok    refusal PIN9: the unconditional append is gone
+waves channel-variant preference:
+  ok    var PIN1: unsuffixed is best
+  ok    var PIN1: (s) next
+  ok    var PIN1: (m) after (s)
+  ok    var PIN1: (m->s) after (m)
+  ok    var PIN1: surround last
+  ok    var PIN1: suffix match is case-insensitive
+  ok    var PIN1: (s) beats (m)
+  ok    var PIN1: and not the reverse
+  ok    var PIN1: STRICTLY better only, so equal rank keeps the incumbent
+  ok    var PIN4: with no (s), (m) beats (m->s) because (m->s) DISCARDS the right input
+  ok    var PIN2: read the real registration list
+  ok    var PIN2: CLA-76 really is registered (m) and (s), with no bare name
+  ok    var PIN2: and there is no unsuffixed CLA-76 to shortcut the choice2026-09-06 14:12:04.251 mapfps_test[37382:1446636] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 14:12:04.251 mapfps_test[37382:1446636] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 14:12:04.252 mapfps_test[37382:1446636] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 14:12:04.258 mapfps_test[37382:1446636] EJParamMaps: cache loaded, 14 identities, 13 map(s), 0 fp skip marker(s)
+2026-09-06 14:12:04.269 mapfps_test[37382:1446636] EJScan: 158 VST3 row(s) withheld by architecture (process arm64), 2 unreadable, kept
+2026-09-06 14:12:04.278 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "CLA-2A" -> entry "CLA-2A (s)" [AudioUnit]
+2026-09-06 14:12:04.278 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "CLA-3A" -> entry "CLA-3A (s)" [AudioUnit]
+2026-09-06 14:12:04.278 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "CLA-76" -> entry "CLA-76 (s)" [AudioUnit]
+2026-09-06 14:12:04.278 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "API 2500" -> entry "API-2500 (s)" [AudioUnit]
+2026-09-06 14:12:04.278 mapfps_test[37382:1446636] EJScan: [waves-alias] "SSL G-Master Buss Compressor" -> "SSLComp (s)"
+2026-09-06 14:12:04.278 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "SSL G-Master Buss Compressor" -> entry "SSLComp (s)" [AudioUnit]
+2026-09-06 14:12:04.279 mapfps_test[37382:1446636] EJScan: [waves-alias] "H-Comp Hybrid Compressor" -> "H-Comp (s)"
+2026-09-06 14:12:04.279 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "H-Comp Hybrid Compressor" -> entry "H-Comp (s)" [AudioUnit]
+2026-09-06 14:12:04.279 mapfps_test[37382:1446636] EJScan: [waves-alias] "Renaissance Compressor" -> "RCompressor (s)"
+2026-09-06 14:12:04.279 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Renaissance Compressor" -> entry "RCompressor (s)" [AudioUnit]
+2026-09-06 14:12:04.280 mapfps_test[37382:1446636] EJScan: [waves-alias] "Renaissance Vox" -> "RVox (s)"
+2026-09-06 14:12:04.280 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Renaissance Vox" -> entry "RVox (s)" [AudioUnit]
+2026-09-06 14:12:04.280 mapfps_test[37382:1446636] EJScan: [waves-alias] "C1 Compressor" -> "C1 comp (s)"
+2026-09-06 14:12:04.280 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "C1 Compressor" -> entry "C1 comp (s)" [AudioUnit]
+2026-09-06 14:12:04.281 mapfps_test[37382:1446636] EJScan: [waves-alias] "C4 Multiband Compressor" -> "C4 (s)"
+2026-09-06 14:12:04.281 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "C4 Multiband Compressor" -> entry "C4 (s)" [AudioUnit]
+2026-09-06 14:12:04.281 mapfps_test[37382:1446636] EJScan: [waves-alias] "C6 Multiband Compressor" -> "C6 (s)"
+2026-09-06 14:12:04.281 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "C6 Multiband Compressor" -> entry "C6 (s)" [AudioUnit]
+2026-09-06 14:12:04.281 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "MV2" -> entry "MV2 (s)" [AudioUnit]
+2026-09-06 14:12:04.281 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Smack Attack" -> entry "Smack Attack (s)" [AudioUnit]
+2026-09-06 14:12:04.282 mapfps_test[37382:1446636] EJScan: [waves-alias] "Trans-X" -> "TransX Multi (s)"
+2026-09-06 14:12:04.282 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Trans-X" -> entry "TransX Multi (s)" [AudioUnit]
+2026-09-06 14:12:04.282 mapfps_test[37382:1446636] EJScan: [waves-alias] "L1 Ultramaximizer" -> "L1+ Ultramaximizer (s)"
+2026-09-06 14:12:04.282 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "L1 Ultramaximizer" -> entry "L1+ Ultramaximizer (s)" [AudioUnit]
+2026-09-06 14:12:04.283 mapfps_test[37382:1446636] EJScan: [waves-alias] "L2 Ultramaximizer" -> "L2 (s)"
+2026-09-06 14:12:04.283 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "L2 Ultramaximizer" -> entry "L2 (s)" [AudioUnit]
+2026-09-06 14:12:04.283 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "L3 Multimaximizer" -> entry "L3 MultiMaximizer (s)" [AudioUnit]
+2026-09-06 14:12:04.283 mapfps_test[37382:1446636] EJScan: [waves-alias] "L3-LL Multimaximizer" -> "L3-LL Multi (s)"
+2026-09-06 14:12:04.283 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "L3-LL Multimaximizer" -> entry "L3-LL Multi (s)" [AudioUnit]
+2026-09-06 14:12:04.284 mapfps_test[37382:1446636] EJScan: [waves-alias] "L3-16 Multimaximizer" -> "L316 (s)"
+2026-09-06 14:12:04.284 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "L3-16 Multimaximizer" -> entry "L316 (s)" [AudioUnit]
+2026-09-06 14:12:04.284 mapfps_test[37382:1446636] EJScan: [waves-alias] "SSL E-Channel" -> "SSLChannel (s)"
+2026-09-06 14:12:04.284 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "SSL E-Channel" -> entry "SSLChannel (s)" [AudioUnit]
+2026-09-06 14:12:04.284 mapfps_test[37382:1446636] EJScan: [waves-alias] "SSL G-Channel" -> "SSLGChannel (s)"
+2026-09-06 14:12:04.284 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "SSL G-Channel" -> entry "SSLGChannel (s)" [AudioUnit]
+2026-09-06 14:12:04.284 mapfps_test[37382:1446636] EJScan: [waves-alias] "SSL G-Equalizer" -> "SSLEQ (s)"
+2026-09-06 14:12:04.284 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "SSL G-Equalizer" -> entry "SSLEQ (s)" [AudioUnit]
+2026-09-06 14:12:04.284 mapfps_test[37382:1446636] EJScan: [waves-alias] "API 550" -> "API-550B (s)"
+2026-09-06 14:12:04.284 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "API 550" -> entry "API-550B (s)" [AudioUnit]
+2026-09-06 14:12:04.284 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "API 560" -> entry "API-560 (s)" [AudioUnit]
+2026-09-06 14:12:04.285 mapfps_test[37382:1446636] EJScan: [waves-alias] "PuigTec EQP-1A" -> "PuigTec EQP1A (s)"
+2026-09-06 14:12:04.285 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "PuigTec EQP-1A" -> entry "PuigTec EQP1A (s)" [AudioUnit]
+2026-09-06 14:12:04.285 mapfps_test[37382:1446636] EJScan: [waves-alias] "PuigTec MEQ-5" -> "PuigTec MEQ5 (s)"
+2026-09-06 14:12:04.285 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "PuigTec MEQ-5" -> entry "PuigTec MEQ5 (s)" [AudioUnit]
+2026-09-06 14:12:04.285 mapfps_test[37382:1446636] EJScan: [waves-alias] "Renaissance Equalizer" -> "REQ 6 (s)"
+2026-09-06 14:12:04.285 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Renaissance Equalizer" -> entry "REQ 6 (s)" [AudioUnit]
+2026-09-06 14:12:04.286 mapfps_test[37382:1446636] EJScan: [waves-alias] "Q10 Equalizer" -> "Q10 (s)"
+2026-09-06 14:12:04.286 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Q10 Equalizer" -> entry "Q10 (s)" [AudioUnit]
+2026-09-06 14:12:04.286 mapfps_test[37382:1446636] EJScan: [waves-alias] "H-EQ Hybrid Equalizer" -> "H-EQ (s)"
+2026-09-06 14:12:04.286 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "H-EQ Hybrid Equalizer" -> entry "H-EQ (s)" [AudioUnit]
+2026-09-06 14:12:04.287 mapfps_test[37382:1446636] EJScan: [waves-alias] "F6 Floating-Band Dynamic EQ" -> "F6 (s)"
+2026-09-06 14:12:04.287 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "F6 Floating-Band Dynamic EQ" -> entry "F6 (s)" [AudioUnit]
+2026-09-06 14:12:04.287 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Scheps 73" -> entry "Scheps 73 (s)" [AudioUnit]
+2026-09-06 14:12:04.287 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Scheps Omni Channel" -> entry "Scheps Omni Channel (s)" [AudioUnit]
+2026-09-06 14:12:04.287 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "CLA MixHub" -> entry "CLA MixHub (s)" [AudioUnit]
+2026-09-06 14:12:04.287 mapfps_test[37382:1446636] EJScan: [waves-alias] "J37 Tape" -> "J37 (s)"
+2026-09-06 14:12:04.287 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "J37 Tape" -> entry "J37 (s)" [AudioUnit]
+2026-09-06 14:12:04.287 mapfps_test[37382:1446636] EJScan: [waves-alias] "Kramer Master Tape" -> "Kramer Tape (s)"
+2026-09-06 14:12:04.287 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Kramer Master Tape" -> entry "Kramer Tape (s)" [AudioUnit]
+2026-09-06 14:12:04.287 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Abbey Road Saturator" -> entry "Abbey Road Saturator (s)" [AudioUnit]
+2026-09-06 14:12:04.288 mapfps_test[37382:1446636] EJScan: [waves-alias] "NLS Non-Linear Summer" -> "NLS Channel (s)"
+2026-09-06 14:12:04.288 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "NLS Non-Linear Summer" -> entry "NLS Channel (s)" [AudioUnit]
+2026-09-06 14:12:04.288 mapfps_test[37382:1446636] EJScan: [waves-alias] "Aphex Vintage Aural Exciter" -> "Aphex Vintage Exciter (s)"
+2026-09-06 14:12:04.288 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Aphex Vintage Aural Exciter" -> entry "Aphex Vintage Exciter (s)" [AudioUnit]
+2026-09-06 14:12:04.288 mapfps_test[37382:1446636] EJScan: [waves-alias] "H-Reverb Hybrid Reverb" -> "H-Reverb (s)"
+2026-09-06 14:12:04.288 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "H-Reverb Hybrid Reverb" -> entry "H-Reverb (s)" [AudioUnit]
+2026-09-06 14:12:04.289 mapfps_test[37382:1446636] EJScan: [waves-alias] "H-Delay Hybrid Delay" -> "H-Delay (s)"
+2026-09-06 14:12:04.289 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "H-Delay Hybrid Delay" -> entry "H-Delay (s)" [AudioUnit]
+2026-09-06 14:12:04.289 mapfps_test[37382:1446636] EJScan: [waves-alias] "Renaissance Reverb" -> "RVerb (s)"
+2026-09-06 14:12:04.289 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Renaissance Reverb" -> entry "RVerb (s)" [AudioUnit]
+2026-09-06 14:12:04.289 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "TrueVerb" -> entry "TrueVerb (s)" [AudioUnit]
+2026-09-06 14:12:04.290 mapfps_test[37382:1446636] EJScan: [waves-alias] "IR-L Convolution Reverb" -> "IR-L (m)"
+2026-09-06 14:12:04.290 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "IR-L Convolution Reverb" -> entry "IR-L (m)" [AudioUnit]
+2026-09-06 14:12:04.290 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Abbey Road Chambers" -> entry "Abbey Road Chambers (s)" [AudioUnit]
+2026-09-06 14:12:04.290 mapfps_test[37382:1446636] EJScan: [waves-alias] "SuperTap" -> "SuperTap 6-Taps (s)"
+2026-09-06 14:12:04.290 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "SuperTap" -> entry "SuperTap 6-Taps (s)" [AudioUnit]
+2026-09-06 14:12:04.290 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "MetaFlanger" -> entry "MetaFlanger (s)" [AudioUnit]
+2026-09-06 14:12:04.290 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Waves Tune Real-Time" -> entry "Waves Tune Real-Time (s)" [AudioUnit]
+2026-09-06 14:12:04.290 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Waves Tune" -> entry "Waves Tune (s)" [AudioUnit]
+2026-09-06 14:12:04.290 mapfps_test[37382:1446636] EJScan: [waves-alias] "Doubler" -> "Doubler4 (s)"
+2026-09-06 14:12:04.290 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Doubler" -> entry "Doubler4 (s)" [AudioUnit]
+2026-09-06 14:12:04.290 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Vocal Rider" -> entry "Vocal Rider (s)" [AudioUnit]
+2026-09-06 14:12:04.290 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "DeEsser" -> entry "DeEsser (s)" [AudioUnit]
+2026-09-06 14:12:04.290 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Sibilance" -> entry "Sibilance (s)" [AudioUnit]
+2026-09-06 14:12:04.291 mapfps_test[37382:1446636] EJScan: [waves-alias] "WLM Plus Loudness Meter" -> "WLM Plus (s)"
+2026-09-06 14:12:04.291 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "WLM Plus Loudness Meter" -> entry "WLM Plus (s)" [AudioUnit]
+2026-09-06 14:12:04.291 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "PAZ Analyzer" -> entry "PAZ- Analyzer (s)" [AudioUnit]
+2026-09-06 14:12:04.291 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "X-Noise" -> entry "X-Noise (s)" [AudioUnit]
+2026-09-06 14:12:04.291 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "X-Hum" -> entry "X-Hum (s)" [AudioUnit]
+2026-09-06 14:12:04.291 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Z-Noise" -> entry "Z-Noise (s)" [AudioUnit]
+2026-09-06 14:12:04.291 mapfps_test[37382:1446636] EJScan: [waves-alias] "S1 Stereo Imager" -> "S1 Imager (s)"
+2026-09-06 14:12:04.291 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "S1 Stereo Imager" -> entry "S1 Imager (s)" [AudioUnit]
+2026-09-06 14:12:04.291 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Center" -> entry "Center (s)" [AudioUnit]
+2026-09-06 14:12:04.291 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Brauer Motion" -> entry "Brauer Motion (s)" [AudioUnit]
+2026-09-06 14:12:04.291 mapfps_test[37382:1446636] EJScan: [waves-alias] "Abbey Road TG Mastering Chain" -> "Abbey Road TG Mastering (s)"
+2026-09-06 14:12:04.291 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Abbey Road TG Mastering Chain" -> entry "Abbey Road TG Mastering (s)" [AudioUnit]
+2026-09-06 14:12:04.291 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Waves Tune LT" -> entry "Waves Tune LT (s)" [AudioUnit]
+2026-09-06 14:12:04.291 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "StudioRack" -> entry "StudioRack (s)" [AudioUnit]
+2026-09-06 14:12:04.291 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "CLA Vocals" -> entry "CLA Vocals (s)" [AudioUnit]
+2026-09-06 14:12:04.291 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "CLA Bass" -> entry "CLA Bass (s)" [AudioUnit]
+2026-09-06 14:12:04.291 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "CLA Drums" -> entry "CLA Drums (s)" [AudioUnit]
+2026-09-06 14:12:04.291 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "CLA Guitars" -> entry "CLA Guitars (s)" [AudioUnit]
+2026-09-06 14:12:04.291 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "CLA Effects" -> entry "CLA Effects (s)" [AudioUnit]
+2026-09-06 14:12:04.291 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "CLA Unplugged" -> entry "CLA Unplugged (s)" [AudioUnit]
+2026-09-06 14:12:04.293 mapfps_test[37382:1446636] EJScan: 262 Waves product(s) added from the registry, of 331 registered (69 already offered under another name, 0 name(s) held by a different plugin, 0 unticked in Settings)
+2026-09-06 14:12:04.293 mapfps_test[37382:1446636] EJScan: resolver rebuilt, 69 resolved (input=69, enabled=69, excluded=0 from 0 uid(s), duplicates=0, unmatched=0, wavesFromRegistry=262, feed=331)
+2026-09-06 14:12:04.293 mapfps_test[37382:1446636] EJFeed: split MODE=OFF (full list), 331 recommendable
+2026-09-06 14:12:04.295 mapfps_test[37382:1446636] EJChain: [offered-name] "API 550" -> "API-550B (s)" (feed displayName; registry missed)
+2026-09-06 14:12:04.297 mapfps_test[37382:1446636] EJChain: [offered-name] "Renaissance Equalizer" -> "REQ 6 (s)" (feed displayName; registry missed)
+2026-09-06 14:12:04.299 mapfps_test[37382:1446636] EJChain: [offered-name] "Renaissance Vox" -> "RVox (s)" (feed displayName; registry missed)
+
+  ok    var PIN2: CLA-76 collapses to the STEREO registration
+  ok    var PIN3: GTR Tuner is registered mono-only
+  ok    var PIN3: a mono-only base name still resolves, to its mono build
+  ok    var PIN4: {m, m->s} with no (s) resolves to (m), on real data
+  ok    var PIN5: the base-name key goes through the preferring insert
+  ok    var PIN5: both the model key and the stem consult the shipped rank
+  ok    var PIN5: the EXACT-name key stays first-wins, untouched
+  ok    var PIN5: and it includes the header it is pinned against
+waves marketing-name alias:
+  ok    wa PIN1: Renaissance Vox -> RVox
+  ok    wa PIN1: Renaissance Compressor -> RCompressor
+  ok    wa PIN1: Renaissance Reverb -> RVerb
+  ok    wa PIN1: Renaissance Equalizer -> REQ 6 (fullest of REQ 2/4/6)
+  ok    wa PIN2: a name that already resolves is never re-pointed elsewhere
+  ok    wa PIN2: an unknown name yields no alias
+  ok    wa PIN3: API 550 -> API-550B (fullest of A/B)
+  ok    wa PIN3: SuperTap -> SuperTap 6-Taps (fullest of 2/6)
+  ok    wa PIN3: Doubler -> Doubler4 (fullest of 2/4)
+  ok    wa PIN3: Trans-X -> TransX Multi
+  ok    wa PIN3: NLS Non-Linear Summer -> NLS Channel
+  FAIL  wa PIN3: Abbey Road TG still refuses -- absent, not ambiguous
+  ok    wa PIN3b: two registrations with one alnum key refuse rather than guess
+  ok    wa PIN3b: and a single such registration still resolves
+  ok    wa PIN4: Q10 Equalizer -> Q10, not the Q1 that also prefixes it
+  ok    wa PIN4: the shell name is a leading run of the marketing name
+  ok    wa PIN4: punctuation-only drift resolves
+  FAIL  wa PIN5: 68 of the 69 curated names get an answer
+  FAIL  wa PIN5: and exactly 1 refuses, Abbey Road TG, which is not installed
+  ok    wa PIN5: no two scanner rows alias onto one entry
+  ok    wa PIN5: found catalog names that already match a registration
+  ok    wa PIN5: a name that already matches is never re-pointed by the alias
+  ok    wa PIN6: the variant rank still decides, alias or not
+  ok    wa PIN6: an alias yields a BASE name, never a variant
+  ok    wa PIN7: the alias runs ONLY on a miss, and only for Waves rows
+  ok    wa PIN7: its answer goes back through the SAME lookup
+  ok    wa PIN7: through the pinned header
+offered-name resolution (chain-edit seam):
+  ok    of PIN A: "API 550" resolves for the validator -> API-550B
+  ok    of PIN A: "Renaissance Equalizer" -> REQ 6
+  ok    of PIN A: "Renaissance Vox" -> RVox
+  ok    of PIN A: the registry alone still cannot see "API 550" (so the bridge, not a re-scan, is what fixed it)
+  ok    of PIN B: the additive sweep had rows to check
+  ok    of PIN B: no name that resolves today resolves anywhere else
+  ok    of PIN C: "RVox" is a shell name, not an offered name
+  ok    of PIN C: a name outside the feed still resolves as today
+  ok    of PIN C: an unknown name is still a miss
+  ok    of PIN D: the chain-edit ops resolve through the bridge, asking for the candidates
+  ok    of PIN D: all THREE op sites (add, replace, apply) use it
+  ok    of PIN D: applyStructurePlan found in source
+  ok    of PIN D: the exempt calls are the built-in probe and the desc it GUARDS
+  ok    of PIN D: and NO op-name resolve exists outside that probe
+  ok    of PIN D premise: LinkShm.h read
+  ok    of PIN D premise: op.name has exactly FOUR writers, all in computePlan
+  ok    of PIN D premise: and computePlan is where they live
+  ok    of PIN D premise: every one of the four names comes off an identity
+  ok    of PIN D premise: a created identity has exactly TWO authors
+  ok    of PIN D premise: and they are the PICKED description and a LOADED slot's own name
+  ok    of PIN D premise: the base identity has ONE author, the Link's own sidecar
+  ok    of PIN D premise: and nothing constructs one in place, past those authors
+  ok    of PIN D: resolveOfferedName found in source
+  ok    of PIN D: the registry is consulted BEFORE the feed table
+  ok    of PIN D: restore still resolves saved SHELL names directly
+  ok    of PIN D: and what it restores is desc.name, which is why
+  ok    of PIN D: the bridge only READS the feed table
+waves from t2026-09-06 14:12:21.815 mapfps_test[37382:1446636] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 14:12:21.815 mapfps_test[37382:1446636] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 14:12:21.817 mapfps_test[37382:1446636] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 14:12:21.823 mapfps_test[37382:1446636] EJParamMaps: cache loaded, 14 identities, 13 map(s), 0 fp skip marker(s)
+2026-09-06 14:12:38.392 mapfps_test[37382:1446636] EJScan: 158 VST3 row(s) withheld by architecture (process arm64), 2 unreadable, kept
+2026-09-06 14:12:38.401 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "ADPTR Streamliner" -> entry "ADPTR StreamLiner" [AudioUnit]
+2026-09-06 14:12:38.401 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "bx_digital V2" -> entry "bx_digital V3" [AudioUnit]
+2026-09-06 14:12:38.401 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "bx_XL" -> entry "bx_XL V2" [AudioUnit]
+2026-09-06 14:12:38.402 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Devil-Loc_Deluxe" -> entry "Devil-Loc Deluxe" [AudioUnit]
+2026-09-06 14:12:38.402 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "FabFilter Pro-C" -> entry "FabFilter Pro-C 3" [VST3]
+2026-09-06 14:12:38.402 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "FabFilter Pro-L" -> entry "FabFilter Pro-L 2" [VST3]
+2026-09-06 14:12:38.402 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "FabFilter Pro-Q" -> entry "FabFilter Pro-Q 3" [VST3]
+2026-09-06 14:12:38.402 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "FabFilter Pro-R" -> entry "FabFilter Pro-R 2" [VST3]
+2026-09-06 14:12:38.402 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "FabFilter Saturn" -> entry "FabFilter Saturn 2" [VST3]
+2026-09-06 14:12:38.402 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Harrison_De-Esser" -> entry "Harrison De-Esser" [AudioUnit]
+2026-09-06 14:12:38.402 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Invisible_Limiter" -> entry "Invisible Limiter" [AudioUnit]
+2026-09-06 14:12:38.402 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Invisible_Limiter_G2" -> entry "Invisible Limiter G2" [AudioUnit]
+2026-09-06 14:12:38.402 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Invisible_Limiter_G3" -> entry "Invisible Limiter G3" [AudioUnit]
+2026-09-06 14:12:38.402 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Invisible_Limiter_LL" -> entry "Invisible Limiter LL" [AudioUnit]
+2026-09-06 14:12:38.402 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Listento-Receiver" -> entry "Listento Receiver" [AudioUnit]
+2026-09-06 14:12:38.402 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "MINIBUS-Receiver" -> entry "MINIBUS Receiver" [AudioUnit]
+2026-09-06 14:12:38.402 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "MINIBUS-Transmitter" -> entry "MINIBUS Transmitter" [AudioUnit]
+2026-09-06 14:12:38.402 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "MINIBUS-Transmitter-Lite" -> entry "MINIBUS Transmitter Lite" [AudioUnit]
+2026-09-06 14:12:38.402 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Phoscyon" -> entry "Phoscyon 2" [AudioUnit]
+2026-09-06 14:12:38.403 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "smartdeess" -> entry "smartDeess" [AudioUnit]
+2026-09-06 14:12:38.403 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "SSL Native Drumstrip v6" -> entry "SSL Native Drumstrip" [AudioUnit]
+2026-09-06 14:12:38.403 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "TAL-BassLine-101" -> entry "TAL BassLine 101" [AudioUnit]
+2026-09-06 14:12:38.403 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "UAD bx_digital V3" -> entry "UAD bx_digital V2" [AudioUnit]
+2026-09-06 14:12:38.404 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Unfiltered Audio BYOME" -> entry "Unfiltered Audio Byome" [AudioUnit]
+2026-09-06 14:12:38.404 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Unfiltered Audio TRIAD" -> entry "Unfiltered Audio Triad" [AudioUnit]
+2026-09-06 14:12:38.406 mapfps_test[37382:1446636] EJScan: 331 Waves product(s) added from the registry, of 331 registered (0 already offered under another name, 0 name(s) held by a different plugin, 0 unticked in Settings)
+2026-09-06 14:12:38.406 mapfps_test[37382:1446636] EJScan: resolver rebuilt, 805 resolved (input=1683, enabled=1683, excluded=0 from 0 uid(s), duplicates=312, unmatched=566, wavesFromRegistry=331, feed=1136)
+2026-09-06 14:12:38.406 mapfps_test[37382:1446636] EJFeed: split MODE=OFF (full list), 1136 recommendable
+he registry (feed source swap):
+  ok    wr PIN1: the AU manufacturer code selects rows at all
+  ok    wr PIN1: 'ksWV' and manufacturer=="Waves" select the SAME set
+  ok    wr PIN1: a 'Wavesfactory' row is NOT a WaveShell registration
+  ok    wr PIN1: and an AU identifier ending ksWV IS one
+  ok    wr PIN1: another vendor's AudioUnit is not claimed
+  ok    wr PIN2: one product per distinct base name
+  ok    wr PIN2: and that is FEWER than the registrations
+  ok    wr PIN2: no offered name carries a channel suffix
+  ok    wr PIN2: rows + refusals accounts for every product
+  ok    wr PIN3: a product with (m) and (s) is offered as the STEREO build
+  ok    wr PIN3: a mono-only product still reaches the feed, as (m)
+  ok    wr PIN3: {m, m->s} resolves to (m), which keeps the right channel
+  ok    wr PIN3: every offered row is the best variant of its product
+  ok    wr PIN4: products the catalog never named now reach the model
+  ok    wr PIN4: Puigchild 670 is installed, uncatalogued, and offered
+  ok    wr PIN5: every appended row IS a WaveShell registration
+  ok    wr PIN5: one row per name and one row per registration
+  ok    wr PIN6: with no registry the header adds nothing
+  ok    wr PIN6: the curated catalog is still 69 names
+  ok    wr PIN6: and the scanner still injects it (Settings, profile, prompt)
+  ok    wr PIN6: the no-feed fallback still injects the scanner's full list
+  ok    wr PIN7: buildRecommendable includes the header it is pinned against
+  ok    wr PIN7: it calls the header with the gated entries, the feed so far, AND the unticked set
+  ok    wr PIN7: and the unticked list is filled from the disabled branch
+  ok    wr PIN7: and APPENDS the rows
+  ok    wr PIN7: no second copy of the decision at the call site
+  ok    wr PIN7: appended AFTER the scanner rows and BEFORE the cache is filled
+  ok    wr PIN7: the coverage line reports the feed total it now differs from
+  ok    wr PIN8: every offered product is a name today's feed does NOT carry
+  ok    wr PIN8: nor a PRODUCT today's feed already carries under another name
+  MEASURED  live re-offer set: 0 row(s) of 331 product(s)
+  ok    wr PIN8: a WaveShell product absent from the feed IS offered, collapsed to its base name
+  ok    wr PIN8: and the same product already in the feed is NOT re-offered
+  ok    wr PIN9: an UNTICKED product is not offered by the registry path
+  ok    wr PIN9: and re-ticking restores it
+  ok    wr PIN9: a TICKED product still appears when a different one is unticked
+  ok    wr PIN9: a non-WaveShell registration in the unticked list is IGNORED
+  ok    wr PIN9: a product still offered by an enabled row counts as alreadyOffered, not unticked
+  SKIP  wr PIN10 (no ticked Waves row in this machine's feed)
+  ok    wr PIN8: the composed feed carries no duplicate name
+  ok    wr PIN8: today's feed survives byte-for-byte as the head of the new one
+  MEASURED  curated name absent from the feed: "API 2500"
+  MEASURED  curated name absent from the feed: "SSL G-Master Buss Compressor"
+  MEASURED  curated name absent from the feed: "H-Comp Hybrid Compressor"
+  MEASURED  curated name absent from the feed: "Renaissance Compressor"
+  MEASURED  curated name absent from the feed: "Renaissance Vox"
+  MEASURED  curated name absent from the feed: "C1 Compressor"
+  MEASURED  curated name absent from the feed: "C4 Multiband Compressor"
+  MEASURED  curated name absent from the feed: "C6 Multiband Compressor"
+  MEASURED  curated name absent from the feed: "Trans-X"
+  MEASURED  curated name absent from the feed: "L1 Ultramaximizer"
+  MEASURED  curated name absent from the feed: "L2 Ultramaximizer"
+  MEASURED  curated name absent from the feed: "L3 Multimaximizer"
+  MEASURED  curated name absent from the feed: "L3-LL Multimaximizer"
+  MEASURED  curated name absent from the feed: "L3-16 Multimaximizer"
+  MEASURED  curated name absent from the feed: "SSL E-Channel"
+  MEASURED  curated name absent from the feed: "SSL G-Channel"
+  MEASURED  curated name absent from the feed: "SSL G-Equalizer"
+  MEASURED  curated name absent from the feed: "API 550"
+  MEASURED  curated2026-09-06 14:12:38.535 mapfps_test[37382:1446636] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 14:12:38.535 mapfps_test[37382:1446636] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 14:12:38.537 mapfps_test[37382:1446636] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 14:12:38.546 mapfps_test[37382:1446636] EJParamMaps: cache loaded, 14 identities, 13 map(s), 0 fp skip marker(s)
+2026-09-06 14:12:38.582 mapfps_test[37382:1446636] EJScan: 158 VST3 row(s) withheld by architecture (process arm64), 2 unreadable, kept
+2026-09-06 14:12:38.591 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "ADPTR Streamliner" -> entry "ADPTR StreamLiner" [AudioUnit]
+2026-09-06 14:12:38.591 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "bx_digital V2" -> entry "bx_digital V3" [AudioUnit]
+2026-09-06 14:12:38.592 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "bx_XL" -> entry "bx_XL V2" [AudioUnit]
+2026-09-06 14:12:38.592 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Devil-Loc_Deluxe" -> entry "Devil-Loc Deluxe" [AudioUnit]
+2026-09-06 14:12:38.592 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "FabFilter Pro-C" -> entry "FabFilter Pro-C 3" [VST3]
+2026-09-06 14:12:38.592 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "FabFilter Pro-L" -> entry "FabFilter Pro-L 2" [VST3]
+2026-09-06 14:12:38.592 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "FabFilter Pro-Q" -> entry "FabFilter Pro-Q 3" [VST3]
+2026-09-06 14:12:38.592 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "FabFilter Pro-R" -> entry "FabFilter Pro-R 2" [VST3]
+2026-09-06 14:12:38.592 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "FabFilter Saturn" -> entry "FabFilter Saturn 2" [VST3]
+2026-09-06 14:12:38.592 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Harrison_De-Esser" -> entry "Harrison De-Esser" [AudioUnit]
+2026-09-06 14:12:38.592 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Invisible_Limiter" -> entry "Invisible Limiter" [AudioUnit]
+2026-09-06 14:12:38.592 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Invisible_Limiter_G2" -> entry "Invisible Limiter G2" [AudioUnit]
+2026-09-06 14:12:38.592 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Invisible_Limiter_G3" -> entry "Invisible Limiter G3" [AudioUnit]
+2026-09-06 14:12:38.592 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Invisible_Limiter_LL" -> entry "Invisible Limiter LL" [AudioUnit]
+2026-09-06 14:12:38.592 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Listento-Receiver" -> entry "Listento Receiver" [AudioUnit]
+2026-09-06 14:12:38.592 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "MINIBUS-Receiver" -> entry "MINIBUS Receiver" [AudioUnit]
+2026-09-06 14:12:38.592 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "MINIBUS-Transmitter" -> entry "MINIBUS Transmitter" [AudioUnit]
+2026-09-06 14:12:38.592 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "MINIBUS-Transmitter-Lite" -> entry "MINIBUS Transmitter Lite" [AudioUnit]
+2026-09-06 14:12:38.593 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Phoscyon" -> entry "Phoscyon 2" [AudioUnit]
+2026-09-06 14:12:38.593 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "smartdeess" -> entry "smartDeess" [AudioUnit]
+2026-09-06 14:12:38.593 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "SSL Native Drumstrip v6" -> entry "SSL Native Drumstrip" [AudioUnit]
+2026-09-06 14:12:38.593 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "TAL-BassLine-101" -> entry "TAL BassLine 101" [AudioUnit]
+2026-09-06 14:12:38.593 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "UAD bx_digital V3" -> entry "UAD bx_digital V2" [AudioUnit]
+2026-09-06 14:12:38.594 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Unfiltered Audio BYOME" -> entry "Unfiltered Audio Byome" [AudioUnit]
+2026-09-06 14:12:38.594 mapfps_test[37382:1446636] EJScan: [feed-rename] scanner "Unfiltered Audio TRIAD" -> entry "Unfiltered Audio Triad" [AudioUnit]
+2026-09-06 14:12:38.596 mapfps_test[37382:1446636] EJScan: 331 Waves product(s) added from the registry, of 331 registered (0 already offered under another name, 0 name(s) held by a different plugin, 0 unticked in Settings)
+2026-09-06 14:12:38.596 mapfps_test[37382:1446636] EJScan: resolver rebuilt, 805 resolved (input=1683, enabled=1683, excluded=0 from 0 uid(s), duplicates=312, unmatched=566, wavesFromRegistry=331, feed=1136)
+2026-09-06 14:12:38.596 mapfps_test[37382:1446636] EJFeed: split MODE=OFF (full list), 1136 recommendable
+ name absent from the feed: "API 560"
+  MEASURED  curated name absent from the feed: "PuigTec EQP-1A"
+  MEASURED  curated name absent from the feed: "PuigTec MEQ-5"
+  MEASURED  curated name absent from the feed: "Renaissance Equalizer"
+  MEASURED  curated name absent from the feed: "Q10 Equalizer"
+  MEASURED  curated name absent from the feed: "H-EQ Hybrid Equalizer"
+  MEASURED  curated name absent from the feed: "F6 Floating-Band Dynamic EQ"
+  MEASURED  curated name absent from the feed: "J37 Tape"
+  MEASURED  curated name absent from the feed: "Kramer Master Tape"
+  MEASURED  curated name absent from the feed: "NLS Non-Linear Summer"
+  MEASURED  curated name absent from the feed: "Aphex Vintage Aural Exciter"
+  MEASURED  curated name absent from the feed: "H-Reverb Hybrid Reverb"
+  MEASURED  curated name absent from the feed: "H-Delay Hybrid Delay"
+  MEASURED  curated name absent from the feed: "Renaissance Reverb"
+  MEASURED  curated name absent from the feed: "IR-L Convolution Reverb"
+  MEASURED  curated name absent from the feed: "SuperTap"
+  MEASURED  curated name absent from the feed: "Doubler"
+  MEASURED  curated name absent from the feed: "WLM Plus Loudness Meter"
+  MEASURED  curated name absent from the feed: "PAZ Analyzer"
+  MEASURED  curated name absent from the feed: "S1 Stereo Imager"
+  MEASURED  curated name absent from the feed: "Abbey Road TG Mastering Chain"
+  ok    wr PIN9: no curated Waves name points at another vendor's plugin
+  MEASURED  of the 69 curated names, 30 are in the feed (30 on WaveShell rows, 0 elsewhere), 39 absent
+  MEASURED  Waves rows in the feed before: 331 (catalog marketing names), covering 331 products; after: 331 of 331 registered
+  MEASURED  feed 1136 -> 1136 names (+0), 331 Waves products registered, 0 added, 331 already offered, 0 name held elsewhere
+  MEASURED  [AVAILABLE PLUGINS] block 27836 -> 27836 bytes (+0)
+name ladder (channel variant in the collapsing rungs):
+  MEASURED  add op "CLA-76": CLA-76 (s) -> CLA-76 (s)
+  ok    nl PIN1: an add op naming "CLA-76" resolves to the STEREO registration
+  ok    nl PIN1: and the shipped resolver returns STEREO too (was MONO before 29 Aug)
+  ok    nl PIN1: shipped resolver and ladder no longer diverge on this name
+  ok    nl PIN2: "CLA-76 (m)" asked for by exact name still resolves to MONO
+  ok    nl PIN2: every registration asked for by its OWN name resolves unchanged
+  ok    nl PIN3: a mono-only product still resolves, to its mono build
+  ok    nl PIN3: {m, m->s} still resolves to (m), which keeps the right channel
+  ok    nl PIN3: ranking never turns a resolution into a miss
+  MEASURED  names newly refused as ambiguous on this machine: 0
+  ok    nl PIN11: a v-prefixed version is NOT a model number, so its key IS the stem
+  ok    nl PIN11: a BARE trailing number splits the model key from the stem
+  ok    nl PIN11: the un-numbered base still binds, to the stereo variant
+  ok    nl PIN11: request carries a number the entry lacks -> REFUSED (direction A)
+  ok    nl PIN11: entry carries a number the request lacks -> still binds (direction B)
+  ok    nl PIN11: two DIFFERENT numbers stay refused by the c3ad9be guard
+  ok    nl PIN11: bx_digital V2 binds V3 on TIER 1, out of the guard's reach
+  ok    nl PIN11: and bx_XL binds bx_XL V2 the same way
+  ok    nl PIN11: a numbered request WITH its own entry resolves on tier 1, unrefused
+  ok    nl PIN11: the shipped feed path carries the direction-A refusal
+  ok    nl PIN11: and LOGS every refusal, name and candidate both
+  MEASURED  direction-A bindings the guard removes: 0 ()
+  FAIL  nl PIN11: the guard removes exactly ONE binding on this machine
+        0: 
+  FAIL  nl PIN11: and it is the cross-vendor DeEsser binding, named
+  ok    nl PIN10: a tie between DIFFERENT products refuses, it does not pick
+  ok    nl PIN10: and it names EVERY candidate, with no cap at three
+  ok    nl PIN10: including the fourth, which a cap of 3 would have dropped
+  ok    nl PIN10: and the user-facing clause carries all four
+  ok    nl PIN10: and an EXACT name is untouched by the refusal
+  ok    nl PIN10: a tie be2026-09-06 14:12:45.381 mapfps_test[37382:1446636] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 14:12:45.381 mapfps_test[37382:1446636] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 14:12:45.382 mapfps_test[37382:1446636] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 14:12:45.388 mapfps_test[37382:1446636] EJParamMaps: cache loaded, 14 identities, 13 map(s), 0 fp skip marker(s)
+2026-09-06 14:12:48.654 mapfps_test[37382:1446636] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 14:12:48.654 mapfps_test[37382:1446636] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 14:12:48.655 mapfps_test[37382:1446636] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 14:12:48.661 mapfps_test[37382:1446636] EJParamMaps: cache loaded, 14 identities, 13 map(s), 0 fp skip marker(s)
+2026-09-06 14:12:52.378 mapfps_test[37382:1446636] EJChain: [offered-name] "Scheps Omni Channel" -> "Scheps Omni Channel (s)" (feed displayName; registry missed)
+2026-09-06 14:12:52.392 mapfps_test[37382:1446636] EJChain: [offered-name] "Scheps Omni Channel 2" -> "Scheps Omni Channel 2 (s)" (feed displayName; registry missed)
+tween CHANNEL BUILDS of one product still resolves, to (s)
+  ok    nl PIN10: a tie that is only a CASE difference is one product, and resolves
+  ok    nl PIN10: the edit-op sites ask resolveOfferedName for the candidates
+  ok    nl PIN10: and put them in the message the user reads
+  ok    nl PIN10: and the clause has exactly one author
+  ok    nl PIN4: a Link-shaped host has an EMPTY feed table
+  ok    nl PIN4: a Link edit op naming "CLA-76" resolves to STEREO
+  ok    nl PIN4: and LinkProcessor still never builds one, so the ladder is all it has
+  ok    nl PIN4: the Link's chain build resolves through the same ladder
+  FAIL  nl PIN5: no non-Waves name resolves anywhere else
+        1 moved; first: Key Detector: EchoJay Key Detector -> Key Detector (s)
+  ok    nl PIN5: and no name moves to a DIFFERENT product, only a better variant
+  MEASURED  1 of 1929 names in the corpus resolve somewhere new, all of them WaveShell variants of the same product
+  ok    nl PIN6: under an AudioUnit filter the ladder answers with AudioUnits only
+  ok    nl PIN6: and a VST3 filter still resolves no Waves product at all
+  ok    nl PIN7: ChainHost includes the ladder it is pinned against
+  ok    nl PIN7: resolveByName searches BOTH pools through the shared ladder
+  ok    nl PIN7: and keeps no second copy of the rungs
+  ok    nl PIN7: the request preamble is still raw / base / manufacturer hint
+  ok    nl PIN7: the pool is still filtered and collapsed BEFORE the ladder sees it
+  ok    nl PIN7: the ladder ranks through the SHIPPED 9c4f629 rule, not a copy
+  MEASURED  per path, over 331 Waves products: mono/(m->s) lib | header, then WORSE-THAN-BEST, then unresolved
+  MEASURED    A  build, exact branch      mono 15 | 15 | wrong 0 | 0 | miss 0 | 0
+  MEASURED    A' build, fallback          mono 15 | 15 | wrong 0 | 0 | miss 2 | 2
+  MEASURED    B  add / replace            mono 15 | 15 | wrong 0 | 0 | miss 0 | 0
+  MEASURED    D  recall, bare name        mono 15 | 15 | wrong 0 | 0 | miss 2 | 2
+  MEASURED    H  Link edit ops            mono 15 | 15 | wrong 0 | 0 | miss 2 | 2
+  MEASURED    I  Link chain build         mono 15 | 15 | wrong 0 | 0 | miss 2 | 2
+  ok    nl PIN8: NO path loads a worse build than the product offers
+  ok    nl PIN8: every ladder path agrees on the same products
+  ok    nl PIN8: and the two compilations resolve the same products
+  ok    nl PIN8: the linked lib and the compiled header agree -- if this reddens, REBUILD
+  MEASURED  feed/ladder disagreements: 0 ()
+  ok    nl PIN9: no feed/ladder disagreement outside the known set (which is now empty)
+  ok    nl PIN9: and every known disagreement is still there -- if this reddens it was FIXED, retire the exception
+  ok    nl PIN9: the feed and the ladder agree on every product they both name
+  ok    nl PIN9: and insertPreferredBase STAYS -- A never consults the ladder
+  ok    nl PIN9: which is the reason -- A reads the feed table BEFORE the resolver
+disable provenance + fail modal:
+  ok    dp PIN1: a Settings untick records why
+  ok    dp PIN1: a load-failure exclusion records why
+  ok    dp PIN1: a row predating the field reads UNKNOWN, not a default reason
+  ok    dp PIN1: re-enabling clears the reason
+  ok    dp PIN1: and clearing one leaves the others alone
+  SKIP  dp PIN1 array-shape (no plugin_disabled.json here)
+  ok    dp PIN2: the load-failure door stamps load-failure
+  ok    dp PIN2: the Settings door stamps settings
+  ok    dp PIN2: and Settings clears the reason on re-enable
+  ok    dp PIN3: showNextFailPrompt found
+  ok    dp PIN3: it is a THREE-button box, not the old two-button one
+  ok    dp PIN3: the three buttons, in order
+  ok    dp PIN3: outcome 1 persists (disablePluginByName)
+  ok    dp PIN3: outcome 2 is session-only (excludeFromFeedThisSession)
+  ok    dp PIN3: outcome 3 only stops the asking (chainFailSessionSeen_)
+  ok    dp PIN3: no two outcomes are the same call
+  ok    dp PIN3: the body discloses that it unticks in Settings
+  ok    dp PIN3: and says where to undo it
+  ok    dp PIN3: "Not now" writes nothing - no save, no untick
+  ok    dp PIN4: the batch chip handler no longer excludes anything
+  ok    dp PIN4: and its loop over excludeNames is deleted
+  ok    dp PIN5: the spec forbids automatic and batch exclusion
+  ok    dp PIN5: and records that it was amended, with the reasoning
+  ok    dp PIN5: the old rule the product violated is gone, not left contradicting it
+planStageOne name tier (the seventh resolver):
+  ok    sp PIN0: planStageOne found in source
+  ok    sp PIN1: the byName tier delegates to the shipped rule
+  ok    sp PIN1: and assigns byName exactly once, so no unguarded path remains
+  ok    sp PIN1: the seed case is the rule's too, not a separate first-wins branch
+  ok    sp PIN2 A: for "CLA-76", the stereo build replaces the mono one
+  ok    sp PIN2 B: asked for "CLA-76 (m)" exactly, the stereo build does NOT replace it
+  ok    sp PIN2 B: and an exact name wins even over a better-ranked inexact one
+  ok    sp PIN2 C: between two inexact names the rank still decides ((m) over (m->s))
+  ok    sp PIN2 C: and never the other way
+  ok    sp PIN2 C: a worse variant never displaces a better one
+  ok    sp PIN2: an empty held slot is always taken, so the first candidate seeds
+  ok    sp PIN2: a mono-only product still resolves, to its mono build
+  ok    sp PIN3: byBoth and byUid keep their first-wins assignments, byte for byte
+  ok    sp PIN3: and no rank is consulted before the name tier is reached
+  ok    sp PIN3: the tier ORDER is unchanged - uid still outranks name
+  ok    sp PIN4: the rank comes from the header already included for the other six paths
+move log + chat size warning:
+  ok    ml PIN1: applyStructuredIfReady found
+  ok    ml PIN1: the REFUSAL arm records the move as NOT landed
+  ok    ml PIN1: and carries the refusal note, not a value it did not write
+  ok    ml PIN1: the LANDED arm records the move as landed
+  ok    ml PIN1: and carries what the control actually read back
+  ok    ml PIN1: exactly two recorders, one per fact
+  ok    ml PIN2: every line declares which fact it is
+  ok    ml PIN2: and only a dial can be refused
+  ok    ml PIN2: and the block says so to the model in words
+  ok    ml PIN2: the marker matches none of the five capture patterns
+  ok    ml PIN2: and it is registered in historyStripMarkers
+  ok    ml PIN3: nothing clears the move log
+  ok    ml PIN3: it is bounded from the FRONT, so the newest moves survive
+  ok    ml PIN3: and the bound is the named constant, not a literal
+  ok    tr PIN1: the notice latches when taken, so it fires once per session
+  ok    tr PIN1: and the trigger is the trim's three drop counts, measured
+  ok    tr PIN1: the prompt gets a count ONLY on the turn it fires
+  ok    tr PIN2: the notice forbids shortening, deferring, refusing, a new chat, cost talk and re-raising
+  ok    tr PIN2: the cost warning is GONE, not disabled
+  ok    tr PIN2: and it names the block that survives the trim
+  ok    tr PIN2: the compaction half is NOT in scope and is not present
+  ok    ml PIN4: ApplyResult carries the pre-write reading
+  ok    ml PIN4: read from the parameter itself
+  ok    ml PIN4: and captured BEFORE the first write path
+  ok    ml PIN4: and the stale-sweep disclaimer is gone from the block
+  ok    ml PIN4: replaced by what is now true
+  ok    ml PIN5: a slot arriving is recorded, as its origin licenses
+  ok    ml PIN5: a slot leaving is recorded
+  ok    ml PIN5: and a replace collapses to ONE swap entry
+  ok    ml PIN5: the two arms that bypass completeLoad record for themselves
+  ok    ml PIN5: and the async arm records where the slot lands
+  ok    ml PIN5: and the block renders each kind under its own word
+  ok    ml PIN6: the annotation goes through the clip, not straight in
+  ok    ml PIN6: and the clip is the named bound, not a literal
+  ok    ot PIN1: both ops parse
+  ok    ot PIN1: replace carries the plugin being REMOVED
+  ok    ot PIN1: and `name` still means the plugin arriving
+  ok    ot PIN1: add carries its anchor by name
+  ok    ot PIN2: a name that matches its slot proceeds
+  ok    ot PIN2: a name that does not match is refused
+  ok    ot PIN2: and the refusal names the claim, the rack and the slot
+  ok    ot PIN2: loose matching, same comparator as the baseSlots guard
+  ok    ot PIN3: name and index agree
+  ok    ot PIN3: a unique name beats a disagreeing index (failure B)
+  ok    ot PIN3: an absent anchor is refused
+  ok    ot PIN3: a duplicated anchor the index cannot resolve is refused
+  ok    ot PIN3: and the index disambiguates when it points at one of them
+  ok    ot PIN4: the card prints the name the OP carried
+  ok    ot PIN4: and not the rack's occupant of that number
+  ok    ot PIN4: an add prints its anchor by name
+  ok    ot PIN4: and keeps the number beside it, to look at the rack with
+  ok    ot PIN5: no claim, nothing to check
+  ok    ot PIN5: the anchor arithmetic is unchanged without a name
+  ok    ot PIN5: and an unresolvable index still appends, never aborts
+  ok    ot PIN5: and the card falls back to the rack lookup
+  ok    ot PIN6: every arm that can refuse a target does
+  ok    ot PIN6: and a refusal never aborts the batch
+  ok    ot PIN6: the target is settled before the plugin loads
+psr / plr / oversCount, gated on having heard anything:
+  ok    ps PIN1: psr is not published when nothing has been heard
+  ok    ps PIN1: and the inputs DID clear the old floor, so it is the new gate that held
+  ok    ps PIN2: plr and oversCount move with it
+  ok    ps PIN3: once something has been heard the field publishes again
+  ok    ps PIN3: and so do the other two
+  ok    ps PIN4: a heard channel whose window has emptied still omits psr
+  ok    ps PIN5: heardFrames IS specFrameCount, not a second count
+  ok    ps PIN5: and it is the same condition the spectrum windows use
+  ok    ps PIN5: all three derived fields sit behind it
+stepped controls, exact rung or nothing:
+  ok    sv PIN1: the table is a step ladder
+  ok    sv PIN1: and the rungs are its own values
+  ok    sv PIN2: an exact request finds its rung
+  ok    sv PIN2: including one the map stores with float drift
+  ok    sv PIN2: and one at the top of the ladder
+  ok    sv PIN3: a value between rungs is a MISS, never snapped
+  ok    sv PIN3: and being close to a rung does not make it one
+  ok    sv PIN3: the tolerance is drift, not a snap radius
+  ok    sv PIN4: a 21-point sweep is not a ladder
+  ok    sv PIN4: a two-position switch is a ladder
+  ok    sv PIN4: an evenly spaced ladder is still a ladder
+  ok    sv PIN5: an exact request is accepted at the STORED rung value
+  ok    sv PIN5: and carries no refusal
+  ok    sv PIN5: 2 ms is refused
+  ok    sv PIN5: and the refusal names what was asked AND what is reachable
+  ok    sv PIN5: a continuous control is not judged at all
+  ok    sv PIN6: the refusal branch is the verdict, unmodified
+  ok    sv PIN6: and an accepted request writes the stored rung
+  ok    sv PIN6: and it is decided BEFORE the interpolation
+the features block, and the boundary that matters more:
+  ok    ef PIN1: the block is built
+  ok    ef PIN1: and opens with the registered marker
+  ok    ef PIN1: and closes its bracket
+  ok    ef PIN2: the block states its own boundary
+  ok    ef PIN2: and forbids describing, guessing and inferring
+  ok    ef PIN2: and names the correct answer for anything absent
+  ok    ef PIN2: and says why, so the rule is not read as mere caution
+  ok    ef PIN3: the block matches none of the five capture patterns
+  ok    ef PIN4: the marker is registered in historyStripMarkers
+  FAIL  ef PIN5: the commit message is present to cite from
+  FAIL  ef PIN5: every feature sentence carries a file:line citation
+        uncited: TABS, CAPTURE, NOTHING REACHES, CHAINS SAVE, EACH SLOT, SETTINGS
+  ok    ef PIN6: attached in the ONE injection helper
+  ok    ef PIN6: and the attach carries no condition of its own
+  ok    ef PIN7: the block stays under 3 KB
+do not dial: suggest every value, write none:
+  ok    dw PIN1: the flag is sent only when the mode is on
+  ok    dw PIN1: and never as a false
+  ok    dw PIN1: it persists like the toggle beside it
+  ok    dw PIN1: and is read back at startup
+  ok    dw PIN2: the mode reads back on
+  ok    dw PIN2: the third-party guard sits BEFORE the write
+  ok    dw PIN2: and before the first branch, not inside one
+  ok    dw PIN2: and the refusal says where the value went
+  ok    dw PIN3: the built-in guard sits before setParamValue
+  ok    dw PIN4: wet is blocked for the assistant only
+  ok    dw PIN4: and the knob under the user's hand says so
+  ok    dw PIN5: two separate members, two separate defaults
+  ok    dw PIN5: and the write guard never consults auto-dial
+  ok    dw PIN6: a values-only card retires Apply
+  ok    dw PIN6: a card that ADDS keeps its Apply button
+  ok    dw PIN6: and an empty block is not values-only
+  ok    dw PIN7: the op's success no longer follows payload presence alone
+  ok    dw PIN7: and the op line names the mode
+  ok    dw PIN7: the values still reach the card
+  ok    dw PIN7: the mixed-card summary says what happened
+  ok    dw PIN7: and is not painted as a full success
+  ok    dw PIN8: the mode is its own DialStatus
+  ok    dw PIN8: and its own bucket, not zeroParts
+  ok    dw PIN8: with its own sentence, pointing at Settings
+  ok    dw PIN9: the ONE emitter returns before it logs anything
+  ok    dw PIN9: and the edit path's own row is suppressed too
+  ok    dw PIN10: a mixed card keeps its Apply button
+  ok    dw PIN10: with the mode on
+  ok    dw PIN10: the summary says structure applied and values were not
+  ok    dw PIN10: and no dial miss is recorded for it
+  ok    dw PIN11: the intent behind a write is a type, not a guess
+  ok    dw PIN11: restore still resets to defaults and then applies, the pair that made the guard destructive
+  ok    dw PIN11: and the apply in that pair is a RESTORE, so it lands
+  ok    dw PIN11: while the one door EchoJay dials through says Assistant
+  ok    dw PIN12: setSlotWet takes a source
+  ok    dw PIN12: and does not default it
+  ok    dw PIN12: applyParams and applyStructured take a source
+  ok    dw PIN12: and neither of them defaults it
+load origin, and what each one licenses:
+  ok    og PIN1: a five-slot restore records nothing
+  ok    og PIN2: a user add IS recorded
+  ok    og PIN2: as its own kind
+  ok    og PIN2: and never as a Load/BUILT
+  ok    og PIN3: an assistant load still records BUILT
+  ok    og PIN4: ADDED renders under its own word
+  ok    og PIN4: and the header says whose act it was
+  ok    og PIN4: and forbids claiming it
+  ok    og PIN5: restoreNextSlot loads as a RESTORE
+  ok    og PIN5: the edit-op arm loads as an ASSISTANT
+  ok    og PIN5: and the verdict is consumed in exactly one place
+move log persistence, turn continuity and the boundary:
+  ok    mp PIN1: a restore continues from the saved turn
+  ok    mp PIN1: and a fresh session still starts at 0
+  ok    mp PIN1: and it never moves backwards
+  ok    mp PIN2: restored + boundary + live
+  ok    mp PIN2: and the boundary sits between them
+  ok    mp PIN2: exactly one boundary
+  ok    mp PIN2: an empty restore adds no boundary
+  ok    mp PIN3: the merge is capped at kMoveLogMax
+  ok    mp PIN3: and the NEWEST survive, the oldest go
+  ok    mp PIN4: the log is written into the state blob
+  ok    mp PIN4: and read back guarded, with no else
+  ok    mp PIN4: boundaries are never serialised
+  ok    mp PIN4: and the turn counter is restored through the shared rule
+  ok    mp PIN5: the boundary renders
+  ok    mp PIN5: and forbids presenting an old move as a recent one
+FAIL  (678 ok, 8 failed)

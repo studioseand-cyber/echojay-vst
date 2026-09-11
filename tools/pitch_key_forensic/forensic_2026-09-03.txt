@@ -1,0 +1,91 @@
+
+sourceNEW.wav  voiced 8.1s  sustained 5.1s
+  GRID OFFSET (median signed cents from A440 semitones): -1.28c  => reference 439.68 Hz
+  TIGHTNESS |offset| after grid removal: median 4.65c  p75 8.41c  (hard-tuned ~1-2c, dry 10-20c)
+  OCCUPANCY (s): C 0.00 C# 0.00 D 0.00 Eb 0.00 E 1.59 F 2.88 F# 0.00 G 0.62 G# 0.00 A 0.00 Bb 0.00 B 0.00
+  IN D NATURAL MINOR: 100.0%   OUTSIDE: -0.0%  ( )
+  BEST-FIT KEYS:  F maj 100.0%  A min 100.0%  D min 100.0%  C maj 100.0%
+
+echojayignoreoffNEW.wav  voiced 7.3s  sustained 5.0s
+  GRID OFFSET (median signed cents from A440 semitones): -3.40c  => reference 439.14 Hz
+  TIGHTNESS |offset| after grid removal: median 2.82c  p75 5.13c  (hard-tuned ~1-2c, dry 10-20c)
+  OCCUPANCY (s): C 0.00 C# 0.00 D 0.00 Eb 0.00 E 1.65 F 2.78 F# 0.00 G 0.58 G# 0.00 A 0.00 Bb 0.00 B 0.00
+  IN D NATURAL MINOR: 100.0%   OUTSIDE: -0.0%  ( )
+  BEST-FIT KEYS:  A min 100.0%  D min 100.0%  C maj 100.0%  F maj 100.0%
+
+echojayignoreonNEW.wav  voiced 7.0s  sustained 4.1s
+  GRID OFFSET (median signed cents from A440 semitones): -3.98c  => reference 438.99 Hz
+  TIGHTNESS |offset| after grid removal: median 2.65c  p75 4.70c  (hard-tuned ~1-2c, dry 10-20c)
+  OCCUPANCY (s): C 0.00 C# 0.00 D 0.00 Eb 0.00 E 1.29 F 2.47 F# 0.00 G 0.31 G# 0.00 A 0.00 Bb 0.00 B 0.00
+  IN D NATURAL MINOR: 100.0%   OUTSIDE: 0.0%  ( )
+  BEST-FIT KEYS:  F maj 100.0%  A min 100.0%  D min 100.0%  C maj 100.0%
+
+echojaymaxretune.wav  voiced 7.7s  sustained 4.4s
+  GRID OFFSET (median signed cents from A440 semitones): -1.05c  => reference 439.73 Hz
+  TIGHTNESS |offset| after grid removal: median 3.34c  p75 6.87c  (hard-tuned ~1-2c, dry 10-20c)
+  OCCUPANCY (s): C 0.00 C# 0.00 D 0.00 Eb 0.00 E 1.28 F 2.74 F# 0.00 G 0.41 G# 0.00 A 0.00 Bb 0.00 B 0.00
+  IN D NATURAL MINOR: 100.0%   OUTSIDE: 0.0%  ( )
+  BEST-FIT KEYS:  F maj 100.0%  A min 100.0%  D min 100.0%  C maj 100.0%
+
+antaresNEW.wav  voiced 8.1s  sustained 5.1s
+  GRID OFFSET (median signed cents from A440 semitones): -1.50c  => reference 439.62 Hz
+  TIGHTNESS |offset| after grid removal: median 3.90c  p75 6.99c  (hard-tuned ~1-2c, dry 10-20c)
+  OCCUPANCY (s): C 0.00 C# 0.00 D 0.00 Eb 0.00 E 1.53 F 2.91 F# 0.00 G 0.66 G# 0.00 A 0.00 Bb 0.00 B 0.00
+  IN D NATURAL MINOR: 100.0%   OUTSIDE: -0.0%  ( )
+  BEST-FIT KEYS:  F maj 100.0%  A min 100.0%  D min 100.0%  C maj 100.0%
+
+antaresmaxretune.wav  voiced 8.1s  sustained 4.9s
+  GRID OFFSET (median signed cents from A440 semitones): -1.13c  => reference 439.71 Hz
+  TIGHTNESS |offset| after grid removal: median 4.54c  p75 8.15c  (hard-tuned ~1-2c, dry 10-20c)
+  OCCUPANCY (s): C 0.00 C# 0.00 D 0.00 Eb 0.00 E 1.43 F 2.90 F# 0.00 G 0.55 G# 0.00 A 0.00 Bb 0.00 B 0.00
+  IN D NATURAL MINOR: 100.0%   OUTSIDE: -0.0%  ( )
+  BEST-FIT KEYS:  F maj 100.0%  A min 100.0%  D min 100.0%  C maj 100.0%
+
+antares3.wav  voiced 6.0s  sustained 2.9s
+  GRID OFFSET (median signed cents from A440 semitones): -0.34c  => reference 439.91 Hz
+  TIGHTNESS |offset| after grid removal: median 1.36c  p75 2.99c  (hard-tuned ~1-2c, dry 10-20c)
+  OCCUPANCY (s): C 0.00 C# 0.00 D 0.00 Eb 0.00 E 1.22 F 1.21 F# 0.00 G 0.48 G# 0.00 A 0.00 Bb 0.00 B 0.00
+  IN D NATURAL MINOR: 100.0%   OUTSIDE: 0.0%  ( )
+  BEST-FIT KEYS:  F maj 100.0%  A min 100.0%  D min 100.0%  C maj 100.0%
+
+dry.wav  voiced 5.5s  sustained 1.5s
+  GRID OFFSET (median signed cents from A440 semitones): +1.08c  => reference 440.28 Hz
+  TIGHTNESS |offset| after grid removal: median 33.06c  p75 40.34c  (hard-tuned ~1-2c, dry 10-20c)
+  OCCUPANCY (s): C 0.13 C# 0.00 D 0.00 Eb 0.07 E 0.48 F 0.29 F# 0.42 G 0.14 G# 0.00 A 0.00 Bb 0.00 B 0.00
+  IN D NATURAL MINOR: 68.0%   OUTSIDE: 32.0%  ( Eb 0.07s F# 0.42s )
+  BEST-FIT KEYS:  G maj 76.3%  E min 76.3%  F maj 68.0%  A min 68.0%
+
+echojay.wav  voiced 4.5s  sustained 0.7s
+  GRID OFFSET (median signed cents from A440 semitones): +7.03c  => reference 441.79 Hz
+  TIGHTNESS |offset| after grid removal: median 12.34c  p75 15.16c  (hard-tuned ~1-2c, dry 10-20c)
+  OCCUPANCY (s): C 0.11 C# 0.00 D 0.00 Eb 0.00 E 0.23 F 0.20 F# 0.06 G 0.13 G# 0.00 A 0.00 Bb 0.00 B 0.00
+  IN D NATURAL MINOR: 91.6%   OUTSIDE: 8.4%  ( F# 0.06s )
+  BEST-FIT KEYS:  A min 91.6%  D min 91.6%  C maj 91.6%  F maj 91.6%
+
+echojay2.wav  voiced 5.6s  sustained 2.0s
+  GRID OFFSET (median signed cents from A440 semitones): -5.37c  => reference 438.64 Hz
+  TIGHTNESS |offset| after grid removal: median 14.83c  p75 25.58c  (hard-tuned ~1-2c, dry 10-20c)
+  OCCUPANCY (s): C 0.00 C# 0.00 D 0.00 Eb 0.00 E 0.54 F 0.54 F# 0.78 G 0.11 G# 0.00 A 0.00 Bb 0.00 B 0.00
+  IN D NATURAL MINOR: 60.2%   OUTSIDE: 39.8%  ( F# 0.78s )
+  BEST-FIT KEYS:  D maj 72.6%  G maj 72.6%  E min 72.6%  B min 72.6%
+
+echojay3.wav  voiced 4.7s  sustained 0.5s
+  GRID OFFSET (median signed cents from A440 semitones): -21.87c  => reference 434.48 Hz
+  TIGHTNESS |offset| after grid removal: median 15.20c  p75 24.46c  (hard-tuned ~1-2c, dry 10-20c)
+  OCCUPANCY (s): C 0.00 C# 0.00 D 0.00 Eb 0.00 E 0.10 F 0.10 F# 0.22 G 0.09 G# 0.00 A 0.00 Bb 0.00 B 0.00
+  IN D NATURAL MINOR: 57.3%   OUTSIDE: 42.7%  ( F# 0.22s )
+  BEST-FIT KEYS:  D maj 79.7%  G maj 79.7%  E min 79.7%  B min 79.7%
+
+antares.wav  voiced 5.5s  sustained 1.3s
+  GRID OFFSET (median signed cents from A440 semitones): -0.01c  => reference 440.00 Hz
+  TIGHTNESS |offset| after grid removal: median 1.19c  p75 3.22c  (hard-tuned ~1-2c, dry 10-20c)
+  OCCUPANCY (s): C 0.18 C# 0.00 D 0.00 Eb 0.13 E 0.43 F 0.00 F# 0.42 G 0.12 G# 0.00 A 0.00 Bb 0.00 B 0.00
+  IN D NATURAL MINOR: 57.5%   OUTSIDE: 42.5%  ( Eb 0.13s F# 0.42s )
+  BEST-FIT KEYS:  E min 90.2%  G maj 90.2%  E maj 76.6%  B maj 76.6%
+
+antares2.wav  voiced 5.9s  sustained 1.2s
+  GRID OFFSET (median signed cents from A440 semitones): -0.43c  => reference 439.89 Hz
+  TIGHTNESS |offset| after grid removal: median 1.56c  p75 3.25c  (hard-tuned ~1-2c, dry 10-20c)
+  OCCUPANCY (s): C 0.00 C# 0.00 D 0.00 Eb 0.00 E 0.37 F 0.16 F# 0.57 G 0.06 G# 0.00 A 0.00 Bb 0.00 B 0.00
+  IN D NATURAL MINOR: 51.2%   OUTSIDE: 48.8%  ( F# 0.57s )
+  BEST-FIT KEYS:  D maj 86.4%  E min 86.4%  B min 86.4%  G maj 86.4%

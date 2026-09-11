@@ -1,0 +1,56 @@
+solo_legs_test.cpp: isolated state root /tmp/echojay-iso.I38Lyj
+2026-09-09 11:34:30.605 main_d5[13536:3861618] EJNet: base=www.echojay.ai devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-09-09 11:34:30.606 main_d5[13536:3861604] EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+  main link dir: '/tmp/echojay-iso.I38Lyj/Library/Application Support/EchoJay/link/'
+  waiting for /tmp/echojay-iso.I38Lyj/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=0 s
+2026-09-09 11:34:30.779 main_d5[13536:3861618] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+2026-09-09 11:34:31.610 main_d5[13536:3861604] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-09 11:34:32.612 main_d5[13536:3861604] EJCtx: borrow budget WANTED ON - listed 3 uid(s): a counted row exists; pending until prepareToPlay or a STOPPED block
+  waiting for /tmp/echojay-iso.I38Lyj/Library/Application Support/EchoJay/link/solo_ready.txt (exists=0) t=2 s
+2026-09-09 11:34:33.401 main_d5[13536:3861604] EJCtx: alignment budget ON (capable Link present) - PDC re-runs once
+2026-09-09 11:34:33.703 main_d5[13536:3861604] EJCtx: engage decision uid=ed8635a480 capable=Y pad=Y budget=Y -> in-context OK
+2026-09-09 11:34:33.703 main_d5[13536:3861604] EJCtx(main): renew muteOut=Y ok=Y soloSup=N
+2026-09-09 11:34:33.703 main_d5[13536:3861604] EJBorrow: engaged uid=ed8635a480 ringSlot=0
+2026-09-09 11:34:34.707 main_d5[13536:3861604] EJAlign(main): ring age=1024 smp (target 1024)
+2026-09-09 11:34:34.708 main_d5[13536:3861604] EJCtx(main): renew muteOut=Y ok=Y soloSup=N
+2026-09-09 11:34:35.418 main_d5[13536:3861604] EJSolo: foreign solo on cff39af56f while ed8635a480 is borrowed -> releasing the borrow (edits kept)
+2026-09-09 11:34:35.418 main_d5[13536:3861604] EJBorrow: kept 0 slot state(s) for uid=ed8635a480
+2026-09-09 11:34:35.418 main_d5[13536:3861604] EJBorrowPool: rack released, 0 instance(s) parked
+2026-09-09 11:34:35.418 main_d5[13536:3861604] EJBorrow: released uid=ed8635a480 (lease deleted; Link restores its own bypasses)
+2026-09-09 11:34:35.419 main_d5[13536:3861604] EJSolo: broadcast muteUser=1 uid=ed8635a480 seq=1788950075
+2026-09-09 11:34:35.419 main_d5[13536:3861604] EJSolo: broadcast muteUser=1 uid=9c6e00306b seq=1788950076
+2026-09-09 11:34:35.419 main_d5[13536:3861604] EJSolo: solo ON uid=cff39af56f set=1 muted 2 Link(s) in 1 ms; hand-muted kept: 0
+2026-09-09 11:34:35.624 main_d5[13536:3861604] EJKey: self passive pass armed (music-bus role)
+2026-09-09 11:34:36.038 main_d5[13536:3861604] EJSolo: broadcast muteUser=0 uid=ed8635a480 seq=1788950077
+2026-09-09 11:34:36.039 main_d5[13536:3861604] EJSolo: broadcast muteUser=0 uid=9c6e00306b seq=1788950078
+2026-09-09 11:34:36.039 main_d5[13536:3861604] EJSolo: solo OFF uid=cff39af56f (set empty) -> restored 2 Link(s) in 1 ms
+2026-09-09 11:34:36.070 main_d5[13536:3861604] EJCtx: engage decision uid=ed8635a480 capable=Y pad=Y budget=Y -> in-context OK
+2026-09-09 11:34:36.070 main_d5[13536:3861604] EJCtx(main): renew muteOut=Y ok=Y soloSup=N
+2026-09-09 11:34:36.071 main_d5[13536:3861604] EJBorrow: engaged uid=ed8635a480 ringSlot=0
+2026-09-09 11:34:36.381 main_d5[13536:3861604] EJSolo: foreign solo on cff39af56f while ed8635a480 is borrowed -> releasing the borrow (edits kept)
+2026-09-09 11:34:36.381 main_d5[13536:3861604] EJBorrow: kept 0 slot state(s) for uid=ed8635a480
+2026-09-09 11:34:36.381 main_d5[13536:3861604] EJBorrowPool: rack released, 0 instance(s) parked
+2026-09-09 11:34:36.381 main_d5[13536:3861604] EJBorrow: released uid=ed8635a480 (lease deleted; Link restores its own bypasses)
+2026-09-09 11:34:36.381 main_d5[13536:3861604] EJSolo: solo ON uid=cff39af56f set=1 muted 0 Link(s) in 0 ms; hand-muted kept: 2
+2026-09-09 11:34:37.000 main_d5[13536:3861604] EJSolo: solo OFF uid=cff39af56f (set empty) -> restored 0 Link(s) in 0 ms
+2026-09-09 11:34:37.703 main_d5[13536:3861604] EJCtx: engage decision uid=ed8635a480 capable=Y pad=Y budget=Y -> in-context OK
+2026-09-09 11:34:37.704 main_d5[13536:3861604] EJCtx(main): renew muteOut=Y ok=Y soloSup=N
+2026-09-09 11:34:37.704 main_d5[13536:3861604] EJBorrow: engaged uid=ed8635a480 ringSlot=0
+2026-09-09 11:34:38.013 main_d5[13536:3861604] EJSolo: foreign solo on cff39af56f while ed8635a480 is borrowed -> releasing the borrow (edits kept)
+2026-09-09 11:34:38.013 main_d5[13536:3861604] EJBorrow: kept 0 slot state(s) for uid=ed8635a480
+2026-09-09 11:34:38.013 main_d5[13536:3861604] EJBorrowPool: rack released, 0 instance(s) parked
+2026-09-09 11:34:38.013 main_d5[13536:3861604] EJBorrow: released uid=ed8635a480 (lease deleted; Link restores its own bypasses)
+2026-09-09 11:34:38.013 main_d5[13536:3861604] EJSolo: broadcast muteUser=1 uid=ed8635a480 seq=1788950079
+2026-09-09 11:34:38.014 main_d5[13536:3861604] EJSolo: broadcast muteUser=1 uid=9c6e00306b seq=1788950080
+2026-09-09 11:34:38.014 main_d5[13536:3861604] EJSolo: solo ON uid=cff39af56f set=1 muted 2 Link(s) in 1 ms; hand-muted kept: 0
+2026-09-09 11:34:38.633 main_d5[13536:3861604] EJSolo: broadcast muteUser=0 uid=ed8635a480 seq=1788950081
+2026-09-09 11:34:38.634 main_d5[13536:3861604] EJSolo: broadcast muteUser=0 uid=9c6e00306b seq=1788950082
+2026-09-09 11:34:38.634 main_d5[13536:3861604] EJSolo: solo OFF uid=cff39af56f (set empty) -> restored 2 Link(s) in 1 ms
+  main lists A, B, C
+  gates: ringSlot=0 muteConfirmedOnce=1 cache(valid=1 muteEngaged=1 ageMs=223) inContextOk=1
+  in-context on A: ring consumed into the injection path, peak 0.000 (NONE)
+  COLD press on B: B rms 0.351 (audible)  injection rms 0.000 (silent)  C rms 0.000 (silent)  A rms 0.000 -> PASS
+  RAPID re-press on B (20 ms after the release): B rms 0.351 (audible)  injection rms 0.000 (silent)  C rms 0.351 (AUDIBLE)  A rms 0.351 -> FAIL
+  RAPID re-press on B (0.7 s after the release): B rms 0.351 (audible)  injection rms 0.000 (silent)  C rms 0.000 (silent)  A rms 0.000 -> PASS
+RENDER: injection-path-carried-audio n/a (not exposed on this build)  cold PASS  rapid-20ms FAIL  rapid-700ms PASS -> FAIL
+exit=1

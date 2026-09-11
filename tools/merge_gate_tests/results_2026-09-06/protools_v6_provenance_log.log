@@ -1,0 +1,737 @@
+Timestamp               Ty Process[PID:TID]
+2026-09-06 19:39:39.591 Df Pro Tools[80967:1e85c2] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:39.591 Df Pro Tools[80967:1e85c2] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name="bass 2"
+2026-09-06 19:39:39.631 Df Pro Tools[80967:1e85c3] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:39.631 Df Pro Tools[80967:1e85c3] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name="bass 2"
+2026-09-06 19:39:39.645 Df Pro Tools[80967:1e85c4] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:39.645 Df Pro Tools[80967:1e85c4] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name="bass 2"
+2026-09-06 19:39:39.702 Df Pro Tools[80967:1e85c1] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:39.703 Df Pro Tools[80967:1e85c1] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name="bass 2"
+2026-09-06 19:39:39.732 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="bass 2" uid=f798ba2774
+2026-09-06 19:39:39.732 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "bass 2")
+2026-09-06 19:39:39.743 Df Pro Tools[80967:1e85c2] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:39.744 Df Pro Tools[80967:1e85c2] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name="bass 2"
+2026-09-06 19:39:39.835 Df Pro Tools[80967:1e85c3] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:39.835 Df Pro Tools[80967:1e85c3] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name="bass 2"
+2026-09-06 19:39:39.848 Df Pro Tools[80967:1e85c4] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:39.848 Df Pro Tools[80967:1e85c4] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name="bass 2"
+2026-09-06 19:39:39.906 Df Pro Tools[80967:1e85c1] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:39.906 Df Pro Tools[80967:1e85c1] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name="omnisphere"
+2026-09-06 19:39:39.948 Df Pro Tools[80967:1e85c2] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:39.948 Df Pro Tools[80967:1e85c2] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:39.988 Df Pro Tools[80967:1e85c3] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:39.989 Df Pro Tools[80967:1e85c3] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.052 Df Pro Tools[80967:1e85c4] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.052 Df Pro Tools[80967:1e85c4] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.108 Df Pro Tools[80967:1e85c1] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.108 Df Pro Tools[80967:1e85c1] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.151 Df Pro Tools[80967:1e85c2] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.152 Df Pro Tools[80967:1e85c2] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.191 Df Pro Tools[80967:1e85c3] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.191 Df Pro Tools[80967:1e85c3] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.255 Df Pro Tools[80967:1e85c4] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.255 Df Pro Tools[80967:1e85c4] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.312 Df Pro Tools[80967:1e85c1] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.312 Df Pro Tools[80967:1e85c1] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.356 Df Pro Tools[80967:1e85c2] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.356 Df Pro Tools[80967:1e85c2] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.395 Df Pro Tools[80967:1e85c3] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.395 Df Pro Tools[80967:1e85c3] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.457 Df Pro Tools[80967:1e85c4] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.457 Df Pro Tools[80967:1e85c4] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.465 Df Pro Tools[80967:1e85c1] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.516 Df Pro Tools[80967:1e85c1] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.559 Df Pro Tools[80967:1e85c2] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.560 Df Pro Tools[80967:1e85c2] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.597 Df Pro Tools[80967:1e85c3] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.597 Df Pro Tools[80967:1e85c3] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.660 Df Pro Tools[80967:1e85c4] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.660 Df Pro Tools[80967:1e85c4] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.720 Df Pro Tools[80967:1e85c1] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.720 Df Pro Tools[80967:1e85c1] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.764 Df Pro Tools[80967:1e85c2] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.764 Df Pro Tools[80967:1e85c2] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.801 Df Pro Tools[80967:1e85c3] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.801 Df Pro Tools[80967:1e85c3] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.863 Df Pro Tools[80967:1e85c4] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.863 Df Pro Tools[80967:1e85c4] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.873 Df Pro Tools[80967:1e85c1] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:40.924 Df Pro Tools[80967:1e85c1] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.018 Df Pro Tools[80967:1e85c2] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.018 Df Pro Tools[80967:1e85c2] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.056 Df Pro Tools[80967:1e85c3] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.056 Df Pro Tools[80967:1e85c3] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.118 Df Pro Tools[80967:1e85c4] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.118 Df Pro Tools[80967:1e85c4] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.128 Df Pro Tools[80967:1e85c1] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.128 Df Pro Tools[80967:1e85c1] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.170 Df Pro Tools[80967:1e85c2] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.170 Df Pro Tools[80967:1e85c2] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.209 Df Pro Tools[80967:1e85c3] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.209 Df Pro Tools[80967:1e85c3] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.270 Df Pro Tools[80967:1e85c4] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.270 Df Pro Tools[80967:1e85c4] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.332 Df Pro Tools[80967:1e85c1] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.332 Df Pro Tools[80967:1e85c1] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.373 Df Pro Tools[80967:1e85c2] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.373 Df Pro Tools[80967:1e85c2] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.413 Df Pro Tools[80967:1e85c3] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.413 Df Pro Tools[80967:1e85c3] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.473 Df Pro Tools[80967:1e85c4] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.473 Df Pro Tools[80967:1e85c4] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.484 Df Pro Tools[80967:1e85c1] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.484 Df Pro Tools[80967:1e85c1] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:39:41.685 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="bass 2" uid=f798ba2774
+2026-09-06 19:39:41.685 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "bass 2")
+2026-09-06 19:39:41.685 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="bass 2" uid=f798ba2774
+2026-09-06 19:39:41.685 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "bass 2")
+2026-09-06 19:39:41.685 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="bass 2" uid=f798ba2774
+2026-09-06 19:39:41.685 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "bass 2")
+2026-09-06 19:39:41.685 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="bass 2" uid=f798ba2774
+2026-09-06 19:39:41.685 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "bass 2")
+2026-09-06 19:39:41.685 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="bass 2" uid=f798ba2774
+2026-09-06 19:39:41.685 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "bass 2")
+2026-09-06 19:39:41.685 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="bass 2" uid=f798ba2774
+2026-09-06 19:39:41.685 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "bass 2")
+2026-09-06 19:39:41.686 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="omnisphere" uid=f798ba2774
+2026-09-06 19:39:41.686 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "omnisphere")
+2026-09-06 19:39:41.686 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.686 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.686 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.686 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.687 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.687 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.687 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.687 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.687 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.687 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.688 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.688 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.688 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.688 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.688 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.688 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.688 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.688 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.689 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.689 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.689 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.689 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.689 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.689 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.689 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.689 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.690 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.690 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.690 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.690 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.690 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.690 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.690 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.690 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.691 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.691 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.691 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.691 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.691 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.691 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.691 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.691 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.692 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.692 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.692 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.692 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.692 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.692 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.692 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.692 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.692 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.692 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.693 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:39:41.693 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.693 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f3b5c0dc52
+2026-09-06 19:39:41.693 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.693 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f3b5c0dc52
+2026-09-06 19:39:41.693 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.694 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f3b5c0dc52
+2026-09-06 19:39:41.694 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.694 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f3b5c0dc52
+2026-09-06 19:39:41.694 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:41.694 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f3b5c0dc52
+2026-09-06 19:39:41.694 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:39:45.238 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.241 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.242 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.243 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.243 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.243 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.243 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.523 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.612 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.613 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.613 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.616 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.616 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.616 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.618 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.618 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.618 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.619 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.619 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.620 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.620 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.620 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.620 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.621 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.621 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.621 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a FROZEN ghost slot 0 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.621 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f3b5c0dc52 held by a FROZEN ghost slot 1 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.623 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f3b5c0dc52 held by a FROZEN ghost slot 1 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.623 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f3b5c0dc52 held by a FROZEN ghost slot 1 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:45.624 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f3b5c0dc52 held by a FROZEN ghost slot 1 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:39:46.519 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated da3a880a22; seeded names dropped (typed "", host "bass 2")
+2026-09-06 19:39:46.519 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 6bab4d38ec; seeded names dropped (typed "omnisphere", host "bass 2")
+2026-09-06 19:39:46.519 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated da4e5c4e46; seeded names dropped (typed "bass 2", host "bass 2")
+2026-09-06 19:39:46.519 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated f066e234ea; seeded names dropped (typed "bass 2", host "bass 2")
+2026-09-06 19:39:46.519 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 4a24fb496e; seeded names dropped (typed "bass 2", host "bass 2")
+2026-09-06 19:39:46.520 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 7bd139f80e; seeded names dropped (typed "bass 2", host "bass 2")
+2026-09-06 19:39:46.520 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated a2348de918; seeded names dropped (typed "bass 2", host "bass 2")
+2026-09-06 19:39:46.520 Df Pro Tools[80967:1e788e] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 8069ed8e6a; seeded names dropped (typed "bass 2", host "bass 2")
+2026-09-06 19:58:20.712 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Kick" (uid 289f361d50)
+2026-09-06 19:58:20.769 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Bass" (uid 3037d22383)
+2026-09-06 19:58:20.773 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:20.773 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name="bass 2"
+2026-09-06 19:58:20.805 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:20.805 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name="bass 2"
+2026-09-06 19:58:20.813 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Drums" (uid 5d2a6fff96)
+2026-09-06 19:58:20.839 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:20.890 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name="bass 2"
+2026-09-06 19:58:20.924 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Music" (uid 505cdd806c)
+2026-09-06 19:58:20.937 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:20.937 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name="bass 2"
+2026-09-06 19:58:20.968 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "FX" (uid b2a5cc5d94)
+2026-09-06 19:58:20.970 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="bass 2" uid=f798ba2774
+2026-09-06 19:58:20.970 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "bass 2")
+2026-09-06 19:58:20.977 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:20.977 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name="bass 2"
+2026-09-06 19:58:21.014 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "All Vocals" (uid 3112b3d710)
+2026-09-06 19:58:21.058 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "bass 2" (uid 35517d5e7b)
+2026-09-06 19:58:21.060 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.060 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name="bass 2"
+2026-09-06 19:58:21.094 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.094 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name="bass 2"
+2026-09-06 19:58:21.103 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_Omnisphere" (uid 358bea1b36)
+2026-09-06 19:58:21.141 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.141 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name="omnisphere"
+2026-09-06 19:58:21.149 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_7even Kick_2" (uid 8408feb233)
+2026-09-06 19:58:21.180 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.180 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.195 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_[Perc] Dance" (uid 8210eb8830)
+2026-09-06 19:58:21.212 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.212 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.239 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_(@eight8beats) Shaker" (uid da9e01c894)
+2026-09-06 19:58:21.247 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.247 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.284 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "OH 3" (uid b21f17a442)
+2026-09-06 19:58:21.294 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.294 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.327 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "REV CLAP" (uid 18196b8d39)
+2026-09-06 19:58:21.332 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.332 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.372 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "TAMBORINE" (uid 46cb0247d6)
+2026-09-06 19:58:21.415 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_- scratch 2" (uid b2be1f8118)
+2026-09-06 19:58:21.416 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.416 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.451 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.451 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.460 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_@PRODBY.XERO + DRUM LOOP (49)" (uid 4d9fca449f)
+2026-09-06 19:58:21.496 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.496 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.504 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_Bounce drum Tommy Richman" (uid 3b8126b7c8)
+2026-09-06 19:58:21.535 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.535 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.548 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_B©, TM Clap Church" (uid 16fcaa89b2)
+2026-09-06 19:58:21.568 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.568 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.591 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_B©, TM Clap Classic" (uid 71bf809d95)
+2026-09-06 19:58:21.603 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.603 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.638 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_Chants 4" (uid 54c727e515)
+2026-09-06 19:58:21.648 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.648 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.681 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_Clap 16" (uid 51149beda3)
+2026-09-06 19:58:21.689 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.689 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.726 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_DT - MakeMe (OH)_2" (uid ddc7828bda)
+2026-09-06 19:58:21.769 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_FL_THV_KIT03_80_SHAKER" (uid 7812797cbd)
+2026-09-06 19:58:21.771 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.771 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.806 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.806 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.814 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_NM - Belt OH" (uid c6e38c35fc)
+2026-09-06 19:58:21.852 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.852 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.857 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_TS_DD_VOL2_100_drum_loop_shaker" (uid ad7b649385)
+2026-09-06 19:58:21.892 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.892 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.902 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_WAVE_RACER_fx_rattle_shake" (uid 633348caea)
+2026-09-06 19:58:21.923 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.923 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.946 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_come feeling_1" (uid 88d97fb464)
+2026-09-06 19:58:21.959 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.959 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:21.992 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_extra keys_1" (uid e61da77d6f)
+2026-09-06 19:58:22.005 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.005 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.036 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_extra keys_1.R" (uid 77b955f6bc)
+2026-09-06 19:58:22.094 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_Inst 4_1" (uid e7330a321e)
+2026-09-06 19:58:22.094 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.094 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.126 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.126 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.137 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_mike dean lead" (uid 57273a79ba)
+2026-09-06 19:58:22.161 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.161 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.182 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_mike dean lead_2" (uid 6f00676af1)
+2026-09-06 19:58:22.208 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.208 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.225 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_Untitled_2" (uid 939e3f4101)
+2026-09-06 19:58:22.246 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.246 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.270 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_Untitled_3" (uid 16efb39cf8)
+2026-09-06 19:58:22.279 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.279 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.314 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_- transition 1" (uid a48bb9d0ee)
+2026-09-06 19:58:22.314 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.359 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Nafe Chorus backings" (uid be4781161d)
+2026-09-06 19:58:22.362 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.362 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.365 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.402 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Nafe Adlibs" (uid a23c4f1232)
+2026-09-06 19:58:22.448 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Nafe Lead Vocal" (uid c683f9c361)
+2026-09-06 19:58:22.448 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.448 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.483 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.483 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.492 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Aitch Lead Vocal" (uid 1d40f891c7)
+2026-09-06 19:58:22.517 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.517 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.537 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Aitch Adlibs" (uid e09a5e957d)
+2026-09-06 19:58:22.565 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:22.565 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:23.240 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="bass 2" uid=f798ba2774
+2026-09-06 19:58:23.240 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "bass 2")
+2026-09-06 19:58:23.241 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="bass 2" uid=f798ba2774
+2026-09-06 19:58:23.241 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "bass 2")
+2026-09-06 19:58:23.241 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="bass 2" uid=f798ba2774
+2026-09-06 19:58:23.241 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "bass 2")
+2026-09-06 19:58:23.241 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="bass 2" uid=f798ba2774
+2026-09-06 19:58:23.241 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "bass 2")
+2026-09-06 19:58:23.241 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="bass 2" uid=f798ba2774
+2026-09-06 19:58:23.241 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "bass 2")
+2026-09-06 19:58:23.241 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="bass 2" uid=f798ba2774
+2026-09-06 19:58:23.241 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "bass 2")
+2026-09-06 19:58:23.241 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="omnisphere" uid=f798ba2774
+2026-09-06 19:58:23.241 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "omnisphere")
+2026-09-06 19:58:23.242 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.242 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.242 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.242 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.242 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.242 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.242 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.242 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.243 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.243 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.244 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.244 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.244 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.244 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.245 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.245 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.245 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.245 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.245 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.245 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.246 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.246 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.246 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.246 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.246 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.246 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.246 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.246 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.247 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.247 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.247 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.247 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.247 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.247 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.248 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.248 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.248 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.248 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.248 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.248 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.249 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.249 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.249 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.249 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.249 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.249 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.249 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.249 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.250 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.250 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.250 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.250 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.250 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f798ba2774
+2026-09-06 19:58:23.250 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.251 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f3b5c0dc52
+2026-09-06 19:58:23.251 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.251 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f3b5c0dc52
+2026-09-06 19:58:23.251 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.251 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f3b5c0dc52
+2026-09-06 19:58:23.251 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.252 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f3b5c0dc52
+2026-09-06 19:58:23.252 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:23.252 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f3b5c0dc52
+2026-09-06 19:58:23.252 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:27.580 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f3b5c0dc52 held by a FROZEN ghost slot 12 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:58:27.580 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f3b5c0dc52 held by a FROZEN ghost slot 12 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:58:27.580 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f3b5c0dc52 held by a FROZEN ghost slot 12 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:58:27.581 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f3b5c0dc52 held by a FROZEN ghost slot 12 (publisher alive, floor elapsed) -> ghost reaped, uid adopted
+2026-09-06 19:58:27.581 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated d06759acc1
+2026-09-06 19:58:27.581 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance d06759acc1: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.581 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 506437b445
+2026-09-06 19:58:27.581 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 506437b445: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.581 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 9d24a791ff
+2026-09-06 19:58:27.581 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 9d24a791ff: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.581 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 424ef3a4da
+2026-09-06 19:58:27.581 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 424ef3a4da: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.581 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 41654db9ee
+2026-09-06 19:58:27.581 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 41654db9ee: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.581 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated a6ef98171c
+2026-09-06 19:58:27.581 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance a6ef98171c: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.581 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated eb554f82ef
+2026-09-06 19:58:27.582 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance eb554f82ef: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.582 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 319eb5607d
+2026-09-06 19:58:27.582 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 319eb5607d: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.582 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated d2f0916a17
+2026-09-06 19:58:27.582 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance d2f0916a17: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.582 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated d3db748b22
+2026-09-06 19:58:27.582 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance d3db748b22: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.582 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 6ad6e2d571
+2026-09-06 19:58:27.582 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 6ad6e2d571: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.582 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 862540c2d5
+2026-09-06 19:58:27.582 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 862540c2d5: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.582 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 17b0600e19
+2026-09-06 19:58:27.582 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 17b0600e19: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.582 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated fd7c22f152
+2026-09-06 19:58:27.582 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance fd7c22f152: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.583 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 52e7708b7d
+2026-09-06 19:58:27.583 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 52e7708b7d: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.583 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 5718b3ad63
+2026-09-06 19:58:27.583 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 5718b3ad63: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.583 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 4e0de57462
+2026-09-06 19:58:27.583 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 4e0de57462: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.583 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 5196c7516e
+2026-09-06 19:58:27.583 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 5196c7516e: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.583 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated ed96fc664c
+2026-09-06 19:58:27.583 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance ed96fc664c: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.583 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 40dc386afd
+2026-09-06 19:58:27.583 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 40dc386afd: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.583 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated be84a73592
+2026-09-06 19:58:27.583 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance be84a73592: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.583 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 2ab7745438
+2026-09-06 19:58:27.583 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 2ab7745438: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.584 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 755fd36d77
+2026-09-06 19:58:27.584 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 755fd36d77: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.584 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated ebc7ae24e2
+2026-09-06 19:58:27.584 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance ebc7ae24e2: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.584 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 830dd16494
+2026-09-06 19:58:27.584 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 830dd16494: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.584 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 90fadbc836
+2026-09-06 19:58:27.584 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 90fadbc836: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.584 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated f8c4f06cd1
+2026-09-06 19:58:27.584 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance f8c4f06cd1: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:27.584 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 480be16d61
+2026-09-06 19:58:27.584 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 480be16d61: seeded names dropped (typed "omnisphere", host "bass 2"); authoritative kept (host "", type
+2026-09-06 19:58:27.584 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 2c0c02a3a9
+2026-09-06 19:58:27.584 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 2c0c02a3a9: seeded names dropped (typed "bass 2", host "bass 2"); authoritative kept (host "", typed no
+2026-09-06 19:58:27.584 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 1b2d8f2015
+2026-09-06 19:58:27.584 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 1b2d8f2015: seeded names dropped (typed "bass 2", host "bass 2"); authoritative kept (host "", typed no
+2026-09-06 19:58:27.585 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 18a8707189
+2026-09-06 19:58:27.585 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 18a8707189: seeded names dropped (typed "bass 2", host "bass 2"); authoritative kept (host "", typed no
+2026-09-06 19:58:27.585 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated afb554b7a4
+2026-09-06 19:58:27.585 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance afb554b7a4: seeded names dropped (typed "bass 2", host "bass 2"); authoritative kept (host "", typed no
+2026-09-06 19:58:27.585 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 528e911aa7
+2026-09-06 19:58:27.585 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 528e911aa7: seeded names dropped (typed "bass 2", host "bass 2"); authoritative kept (host "", typed no
+2026-09-06 19:58:27.585 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 held by a PROVEN-LIVE instance (duplicate) -> regenerated 2f62cff2dd
+2026-09-06 19:58:27.585 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 2f62cff2dd: seeded names dropped (typed "bass 2", host "bass 2"); authoritative kept (host "", typed no
+2026-09-06 19:58:29.065 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJScan: 331 Waves product(s) added from the registry, of 331 registered (0 already offered under another name, 0 name(s) held by a different plugin, 0 untic
+2026-09-06 19:58:35.172 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Bass" (uid 46499bf82a)
+2026-09-06 19:58:35.221 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:35.221 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:35.377 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 2f62cff2dd came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated b3dd47a333
+2026-09-06 19:58:35.377 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 2f62cff2dd != this instance b3dd47a333: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:35.378 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=b3dd47a333
+2026-09-06 19:58:36.441 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Bass" (uid f80802f4b3)
+2026-09-06 19:58:36.479 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:36.479 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:36.634 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid b3dd47a333 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated bac8066940
+2026-09-06 19:58:36.634 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid b3dd47a333 != this instance bac8066940: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:36.719 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=bac8066940
+2026-09-06 19:58:38.162 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Kick" (uid 1738be3952)
+2026-09-06 19:58:38.206 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:38.207 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name="bass 2"
+2026-09-06 19:58:38.343 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f798ba2774 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 7a7cdcd4ff
+2026-09-06 19:58:38.343 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f798ba2774 != this instance 7a7cdcd4ff: seeded names dropped (typed "bass 2", host "bass 2"); authoritative kept (host "", typed no
+2026-09-06 19:58:38.349 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=7a7cdcd4ff
+2026-09-06 19:58:40.163 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Kick" (uid 7cc15dd3d4)
+2026-09-06 19:58:40.211 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:40.211 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:40.346 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 7a7cdcd4ff came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated b61539f6bb
+2026-09-06 19:58:40.346 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 7a7cdcd4ff != this instance b61539f6bb: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:40.367 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=b61539f6bb
+2026-09-06 19:58:41.183 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: editor open, toggle set to 1
+2026-09-06 19:58:51.919 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Kick" (uid b4eb8c9911)
+2026-09-06 19:58:51.964 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:52.018 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Bass" (uid 7c7d429e31)
+2026-09-06 19:58:52.020 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:52.073 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Drums" (uid a5b8e2e973)
+2026-09-06 19:58:52.094 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:52.139 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Music" (uid 827b64c8c7)
+2026-09-06 19:58:52.182 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:52.237 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "FX" (uid c9baa4bce9)
+2026-09-06 19:58:52.268 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:52.323 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "All Vocals" (uid f3acfc16ef)
+2026-09-06 19:58:52.374 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:52.420 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "bass 2" (uid c452a0d227)
+2026-09-06 19:58:52.451 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:52.496 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_Omnisphere" (uid 3363754ffd)
+2026-09-06 19:58:52.536 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:52.583 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_7even Kick_2" (uid f5728620ed)
+2026-09-06 19:58:52.625 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:52.669 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_[Perc] Dance" (uid 774296c9e5)
+2026-09-06 19:58:52.678 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:52.724 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_(@eight8beats) Shaker" (uid 4b2f8cae5d)
+2026-09-06 19:58:52.755 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:52.800 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "OH 3" (uid b2343f7a1a)
+2026-09-06 19:58:52.839 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:52.887 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=b61539f6bb
+2026-09-06 19:58:52.887 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=bac8066940
+2026-09-06 19:58:52.887 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=528e911aa7
+2026-09-06 19:58:52.887 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=afb554b7a4
+2026-09-06 19:58:52.887 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=18a8707189
+2026-09-06 19:58:52.887 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=1b2d8f2015
+2026-09-06 19:58:52.887 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=2c0c02a3a9
+2026-09-06 19:58:52.887 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=480be16d61
+2026-09-06 19:58:52.887 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f8c4f06cd1
+2026-09-06 19:58:52.887 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=90fadbc836
+2026-09-06 19:58:52.887 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=830dd16494
+2026-09-06 19:58:52.887 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=ebc7ae24e2
+2026-09-06 19:58:52.887 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid b61539f6bb came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 58f76258e5
+2026-09-06 19:58:52.887 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid b61539f6bb != this instance 58f76258e5: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:52.931 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid bac8066940 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 42c00c3eb1
+2026-09-06 19:58:52.931 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid bac8066940 != this instance 42c00c3eb1: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:52.932 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 528e911aa7 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated f5338a004c
+2026-09-06 19:58:52.932 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 528e911aa7 != this instance f5338a004c: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:52.932 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid afb554b7a4 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated efeadeb11c
+2026-09-06 19:58:52.932 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid afb554b7a4 != this instance efeadeb11c: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:52.933 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 18a8707189 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 5d3342e270
+2026-09-06 19:58:52.933 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 18a8707189 != this instance 5d3342e270: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:52.933 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 1b2d8f2015 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated a2bdae702a
+2026-09-06 19:58:52.933 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 1b2d8f2015 != this instance a2bdae702a: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:52.977 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "REV CLAP" (uid 694e5229bd)
+2026-09-06 19:58:52.980 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:52.992 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 2c0c02a3a9 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 344ac05c12
+2026-09-06 19:58:52.992 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 2c0c02a3a9 != this instance 344ac05c12: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:52.993 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 480be16d61 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 2c9d9fac01
+2026-09-06 19:58:52.993 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 480be16d61 != this instance 2c9d9fac01: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:53.039 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "TAMBORINE" (uid 864e5dea83)
+2026-09-06 19:58:53.084 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:53.102 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=755fd36d77
+2026-09-06 19:58:53.102 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=2ab7745438
+2026-09-06 19:58:53.146 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_- scratch 2" (uid a714372b19)
+2026-09-06 19:58:53.161 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:53.216 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_@PRODBY.XERO + DRUM LOOP (49)" (uid 8cfaa1d077)
+2026-09-06 19:58:53.247 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:53.252 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f8c4f06cd1 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated cf9dd80957
+2026-09-06 19:58:53.252 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f8c4f06cd1 != this instance cf9dd80957: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:53.298 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_Bounce drum Tommy Richman" (uid de76a031e3)
+2026-09-06 19:58:53.336 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:53.344 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 90fadbc836 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated c5f652921b
+2026-09-06 19:58:53.344 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 90fadbc836 != this instance c5f652921b: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:53.389 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_B©, TM Clap Church" (uid af02f4bf8b)
+2026-09-06 19:58:53.440 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:53.491 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_B©, TM Clap Classic" (uid fc6bfbff72)
+2026-09-06 19:58:53.516 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:53.526 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 830dd16494 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 84423fb302
+2026-09-06 19:58:53.526 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 830dd16494 != this instance 84423fb302: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:53.527 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid ebc7ae24e2 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 2a9e52dd04
+2026-09-06 19:58:53.527 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid ebc7ae24e2 != this instance 2a9e52dd04: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:53.527 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=be84a73592
+2026-09-06 19:58:53.527 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=40dc386afd
+2026-09-06 19:58:53.527 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=ed96fc664c
+2026-09-06 19:58:53.527 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=5196c7516e
+2026-09-06 19:58:53.574 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_Chants 4" (uid a316742a4b)
+2026-09-06 19:58:53.604 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:53.611 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=4e0de57462
+2026-09-06 19:58:53.656 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_Clap 16" (uid dd482aec15)
+2026-09-06 19:58:53.693 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:53.747 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_DT - MakeMe (OH)_2" (uid cbd47f3d62)
+2026-09-06 19:58:53.795 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:53.850 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_FL_THV_KIT03_80_SHAKER" (uid d4b736da23)
+2026-09-06 19:58:53.871 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:53.875 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=5718b3ad63
+2026-09-06 19:58:53.875 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 755fd36d77 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated b96dea7704
+2026-09-06 19:58:53.875 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 755fd36d77 != this instance b96dea7704: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:53.919 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_NM - Belt OH" (uid e2d6b5cda2)
+2026-09-06 19:58:53.959 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:54.011 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_TS_DD_VOL2_100_drum_loop_shaker" (uid c222002984)
+2026-09-06 19:58:54.047 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:54.101 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_WAVE_RACER_fx_rattle_shake" (uid 8c3cbd1fcb)
+2026-09-06 19:58:54.151 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:54.158 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 2ab7745438 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated b177816d4b
+2026-09-06 19:58:54.158 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 2ab7745438 != this instance b177816d4b: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:54.206 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_come feeling_1" (uid 6b6d2fd2e8)
+2026-09-06 19:58:54.225 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:54.275 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_extra keys_1" (uid f7fc34effd)
+2026-09-06 19:58:54.316 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:54.366 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_extra keys_1.R" (uid 81d2c7d198)
+2026-09-06 19:58:54.403 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:54.458 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_Inst 4_1" (uid 2ed70120d0)
+2026-09-06 19:58:54.506 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:54.563 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_mike dean lead" (uid 597bf1048e)
+2026-09-06 19:58:54.582 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:54.632 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_mike dean lead_2" (uid e39ebc3a93)
+2026-09-06 19:58:54.671 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:54.681 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=52e7708b7d
+2026-09-06 19:58:54.681 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=fd7c22f152
+2026-09-06 19:58:54.681 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=17b0600e19
+2026-09-06 19:58:54.681 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=862540c2d5
+2026-09-06 19:58:54.681 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=6ad6e2d571
+2026-09-06 19:58:54.681 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=d3db748b22
+2026-09-06 19:58:54.681 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=d2f0916a17
+2026-09-06 19:58:54.681 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=319eb5607d
+2026-09-06 19:58:54.681 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=eb554f82ef
+2026-09-06 19:58:54.681 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=a6ef98171c
+2026-09-06 19:58:54.683 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=41654db9ee
+2026-09-06 19:58:54.683 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=424ef3a4da
+2026-09-06 19:58:54.683 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid be84a73592 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated f310a91409
+2026-09-06 19:58:54.683 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid be84a73592 != this instance f310a91409: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:54.727 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_Untitled_2" (uid 67fbac5ede)
+2026-09-06 19:58:54.759 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:54.818 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_Untitled_3" (uid f2fbe5664b)
+2026-09-06 19:58:54.861 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:54.864 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 40dc386afd came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 88be005d9e
+2026-09-06 19:58:54.864 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 40dc386afd != this instance 88be005d9e: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:54.909 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_- transition 1" (uid 547bf365c3)
+2026-09-06 19:58:54.937 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:54.990 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Nafe Chorus backings" (uid 5b1bf68be1)
+2026-09-06 19:58:55.027 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:55.083 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Nafe Adlibs" (uid 664feefd9e)
+2026-09-06 19:58:55.115 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:55.173 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Nafe Lead Vocal" (uid 68c4a9f229)
+2026-09-06 19:58:55.216 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:55.229 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid ed96fc664c came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated db49dddad5
+2026-09-06 19:58:55.229 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid ed96fc664c != this instance db49dddad5: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.276 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Aitch Lead Vocal" (uid 4222accabf)
+2026-09-06 19:58:55.292 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:55.342 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Aitch Adlibs" (uid 495f614e00)
+2026-09-06 19:58:55.382 Df Pro Tools[83157:1f0312] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 19:58:55.536 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 5196c7516e came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 48a7e6fa99
+2026-09-06 19:58:55.536 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 5196c7516e != this instance 48a7e6fa99: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.543 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=9d24a791ff
+2026-09-06 19:58:55.543 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=506437b445
+2026-09-06 19:58:55.543 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=d06759acc1
+2026-09-06 19:58:55.543 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f3b5c0dc52
+2026-09-06 19:58:55.543 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:55.543 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f3b5c0dc52 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated ccb9ceacca
+2026-09-06 19:58:55.544 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f3b5c0dc52 != this instance ccb9ceacca: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.544 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f3b5c0dc52
+2026-09-06 19:58:55.544 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:55.544 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f3b5c0dc52 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated f79401e46c
+2026-09-06 19:58:55.544 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f3b5c0dc52 != this instance f79401e46c: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.544 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f3b5c0dc52
+2026-09-06 19:58:55.544 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:55.544 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f3b5c0dc52 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated fe322a6664
+2026-09-06 19:58:55.544 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f3b5c0dc52 != this instance fe322a6664: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.544 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f3b5c0dc52
+2026-09-06 19:58:55.544 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:55.545 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f3b5c0dc52 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated f2159ffd0b
+2026-09-06 19:58:55.545 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f3b5c0dc52 != this instance f2159ffd0b: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.546 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=f3b5c0dc52
+2026-09-06 19:58:55.547 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "bass 2" (user name "")
+2026-09-06 19:58:55.547 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid f3b5c0dc52 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated c74683976a
+2026-09-06 19:58:55.547 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid f3b5c0dc52 != this instance c74683976a: seeded names dropped (typed "", host "bass 2"); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.547 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 4e0de57462 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated b446b894f5
+2026-09-06 19:58:55.547 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 4e0de57462 != this instance b446b894f5: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.547 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 5718b3ad63 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated f49ee37905
+2026-09-06 19:58:55.547 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 5718b3ad63 != this instance f49ee37905: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.547 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 52e7708b7d came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 63619a563a
+2026-09-06 19:58:55.547 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 52e7708b7d != this instance 63619a563a: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.547 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid fd7c22f152 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 9299d14b43
+2026-09-06 19:58:55.547 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid fd7c22f152 != this instance 9299d14b43: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.547 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 17b0600e19 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated f8eba0d73c
+2026-09-06 19:58:55.547 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 17b0600e19 != this instance f8eba0d73c: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.548 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 862540c2d5 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 65aa3688da
+2026-09-06 19:58:55.548 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 862540c2d5 != this instance 65aa3688da: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.548 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 6ad6e2d571 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 4f3e8065de
+2026-09-06 19:58:55.548 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 6ad6e2d571 != this instance 4f3e8065de: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.548 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid d3db748b22 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 2fe1964b6c
+2026-09-06 19:58:55.548 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid d3db748b22 != this instance 2fe1964b6c: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.552 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid d2f0916a17 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 87fb9eccef
+2026-09-06 19:58:55.552 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid d2f0916a17 != this instance 87fb9eccef: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.552 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 319eb5607d came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 70ac3c4a24
+2026-09-06 19:58:55.552 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 319eb5607d != this instance 70ac3c4a24: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.614 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid eb554f82ef came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 8c8e906622
+2026-09-06 19:58:55.614 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid eb554f82ef != this instance 8c8e906622: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.614 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid a6ef98171c came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 73ace7035c
+2026-09-06 19:58:55.614 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid a6ef98171c != this instance 73ace7035c: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.621 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 41654db9ee came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated ae6e9e0ffe
+2026-09-06 19:58:55.621 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 41654db9ee != this instance ae6e9e0ffe: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.621 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 424ef3a4da came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated db609a95b5
+2026-09-06 19:58:55.621 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 424ef3a4da != this instance db609a95b5: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.621 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 9d24a791ff came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 218bc4d328
+2026-09-06 19:58:55.621 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 9d24a791ff != this instance 218bc4d328: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.621 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 506437b445 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 87010f27da
+2026-09-06 19:58:55.621 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 506437b445 != this instance 87010f27da: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:55.621 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid d06759acc1 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 7352413c90
+2026-09-06 19:58:55.621 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid d06759acc1 != this instance 7352413c90: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 19:58:56.345 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJScan: 331 Waves product(s) added from the registry, of 331 registered (0 already offered under another name, 0 name(s) held by a different plugin, 0 untic
+2026-09-06 19:59:29.712 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: remote set soloOn=1 (seq 1788721169)
+2026-09-06 19:59:38.151 Df Pro Tools[83157:1ef02c] (EchoJay V2) EJScan: 331 Waves product(s) added from the registry, of 331 registered (0 already offered under another name, 0 name(s) held by a different plugin, 0 untic
+2026-09-06 19:59:42.718 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: remote set soloOn=0 (seq 1788721182)
+2026-09-06 19:59:45.660 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: remote set soloOn=1 (seq 1788721185)
+2026-09-06 19:59:47.262 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: remote set soloOn=0 (seq 1788721187)
+2026-09-06 19:59:54.472 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: remote set soloOn=1 (seq 1788721194)
+2026-09-06 19:59:57.736 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: remote set soloOn=0 (seq 1788721197)
+2026-09-06 20:00:01.307 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: remote set soloOn=1 (seq 1788721201)
+2026-09-06 20:00:03.152 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: remote set soloOn=0 (seq 1788721203)
+2026-09-06 20:00:13.660 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: remote set muteUser=1 (seq 1788721213)
+2026-09-06 20:00:19.491 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: remote set muteUser=0 (seq 1788721219)
+2026-09-06 20:00:20.898 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: remote set soloOn=1 (seq 1788721220)
+2026-09-06 20:00:23.273 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: remote set soloOn=0 (seq 1788721223)
+2026-09-06 20:00:43.688 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "88_7even Kick_2" (uid 680f63df75)
+2026-09-06 20:00:43.701 Df Pro Tools[83157:1f0313] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:00:43.778 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: editor open, toggle set to 1
+2026-09-06 20:00:43.933 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=289f361d50
+2026-09-06 20:00:43.933 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "Kick" (user name "")
+2026-09-06 20:00:43.933 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 289f361d50 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 40ab7155b2
+2026-09-06 20:00:43.933 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 289f361d50 != this instance 40ab7155b2: seeded names dropped (typed "", host "Kick"); authoritative kept (host "", typed none)
+2026-09-06 20:01:28.353 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: editor open, toggle set to 1
+2026-09-06 20:02:33.613 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Aitch_3" (uid 1fdce7f35e)
+2026-09-06 20:02:33.619 Df Pro Tools[83157:1f0310] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:02:33.715 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: editor open, toggle set to 1
+2026-09-06 20:02:33.782 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=289f361d50
+2026-09-06 20:02:33.782 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host track name "Kick" (user name "")
+2026-09-06 20:02:33.783 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 289f361d50 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 9607c620e0
+2026-09-06 20:02:33.783 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 289f361d50 != this instance 9607c620e0: seeded names dropped (typed "", host "Kick"); authoritative kept (host "", typed none)
+2026-09-06 20:02:58.448 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: host DELIVERED track name "Aitch Lead Vocal" (uid e2c974e583)
+2026-09-06 20:02:58.450 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:02:58.451 Df Pro Tools[83157:1f0311] (EchoJay Link) EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:02:58.581 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: uid 9607c620e0 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 3421eb10b9
+2026-09-06 20:02:58.581 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: chunk uid 9607c620e0 != this instance 3421eb10b9: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 20:02:58.583 Df Pro Tools[83157:1ef02c] (EchoJay Link) EJLinkState: post-init linkOn=1 name="" uid=3421eb10b9

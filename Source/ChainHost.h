@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "PluginScanner.h"
 #include "EedDeviceRegistry.h"
 #include "EchoJayLevelTally.h"
@@ -50,6 +51,7 @@ public:
     struct SlotInfo {
         juce::String name;
         bool bypassed;
+        bool intendedBypassed = false;   // v9: the state a NON-lease caller asked for (the lease overlays `bypassed`)
         juce::String settings;  // suggested dial-in guidance from AI (display only)
         juce::String format;    // "AudioUnit" / "VST3" — popout-only is per-format
         float wet = 1.0f;       // per-slot wet/dry (0..1, 1 = fully wet)
@@ -202,6 +204,15 @@ public:
     void prepare(double sampleRate, int blockSize);
     void release();
     void process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi);
+    // Round 48 (DEFECT_PRESS_PLAY_PHASING): the host's transport reset, for
+    // every hosted slot. Flag from any thread; applied at the top of the next
+    // process() on the audio thread via the graph's reset(), which calls
+    // reset() on each node's processor (third-party plugins get the host
+    // semantics they expect; the built-in pitch device clears its rings).
+    // Same synchronisation contract the chain already relies on for its
+    // topology (processors are suspended across structural ops).
+    void requestReset() noexcept { resetPending_.store(true, std::memory_order_release); }
+    bool latencyRebuildPending() const noexcept;   // round 49: debounce armed or async pending (the log reads it)
 
     // ---- List refresh (message thread) -----------------------------------
     void startScan();
@@ -718,6 +729,11 @@ private:
     bool existenceOk_ = false;
 public:
 
+    // The owning instance's KeyFeed identity - set once by the owner right
+    // after construction, applied to every builtin created afterwards (see
+    // keyFeedOwnerId_ below).
+    void setKeyFeedOwnerId (uint64_t id) noexcept { keyFeedOwnerId_ = id; }
+
     // Count stats from the last buildRecommendable() call.
     int getRecommendableCount()   const noexcept { return (int)recommendable_.size(); }
     int getEnabledInputCount()    const noexcept { return recommendableEnabledIn_; }
@@ -766,6 +782,11 @@ public:
     void removeSlot(int i);
     void moveSlot(int i, int direction);    // direction: -1 = left, +1 = right
     void setSlotBypassed(int i, bool bypassed);
+    // v9: the LEASE's write - effective state only, intended untouched. The
+    // lease engages with setLeaseBypass(i, true) and releases with
+    // setLeaseBypass(i, slot.intendedBypassed), so a plan slot that arrived
+    // bypassed under the lease comes back LIVE at release unless the plan said otherwise.
+    void setLeaseBypass(int i, bool bypassed);
     void setSlotSettings(int i, const juce::String& settings);  // store AI guidance text
 
     // ---- Structural edit operations (CHAIN_AI_BUILD_SPEC Phase 1c) --------
@@ -1148,10 +1169,18 @@ public:
     // available (immediately when cached, else on fetch completion). No map
     // or no structured settings -> silent skip, prose display stays as-is.
     void setSlotStructuredSettings (int i, const juce::var& structured);
+    juce::var getSlotStructured (int i) const;   // 10 Sep: read the slot's structured settings (for keep-across-switch)
 
     // Store maps fetched from GET /api/params/maps ({fp: map|null} object),
     // persist them, and apply any slots that were waiting on them.
     void storeParamMaps (const juce::var& mapsObj);
+    // C2b (7 Sep 2026 ruling): a FAILED fetch is a terminal outcome, never a slot
+    // pending forever. The exact-map fetch names its fps; the fallback lookup
+    // does not, so its failure settles every slot that was waiting on a fallback.
+    // Either path re-evaluates the slots (noMap while the map is absent); a later
+    // answer from the other request still dials through the mapArrived sweep.
+    void failMapFetch (const juce::StringArray& fps);
+    void failFallbackLookup();
 
     // Batch-prefetch (via onNeedParamMaps) maps for every fingerprint the
     // persistent identity index knows but has no cached map for, <=500 per
@@ -1201,7 +1230,7 @@ public:
     static bool devModeActive()
     {
         return juce::File("/Users/SeanD/.echojay_dev").existsAsFile()
-            || juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+            || echojay::userAppData()
                    .getChildFile("EchoJay").getChildFile("dev_mode").existsAsFile();
     }
 
@@ -1216,7 +1245,7 @@ public:
     static bool vst3InAuHostExperiment()
     {
         return devModeActive()
-            && juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+            && echojay::userAppData()
                    .getChildFile("EchoJay").getChildFile("vst3_in_au_host").existsAsFile();
     }
 
@@ -1486,6 +1515,11 @@ public:
     // behaviour unchanged) ------------------------------------------------
     juce::PluginDescription getSlotDescription(int i) const;
     juce::AudioProcessor*   getSlotProcessor(int i) const;
+    // Link v9 change A/B surface (see attachBypassed_ / graphLock_ below).
+    void setAttachBypassed(bool b) noexcept { attachBypassed_.store(b, std::memory_order_release); }
+    bool attachBypassed() const noexcept    { return attachBypassed_.load(std::memory_order_acquire); }
+    int  processDuringRebuildCount() const noexcept { return processDuringRebuild_.load(std::memory_order_acquire); }
+    int  rebuildInFlightNow() const noexcept        { return rebuildInFlight_.load(std::memory_order_acquire); }
 
     // Sum of the non-bypassed hosted plugins' reported latencies (message
     // thread). Link mirrors this into setLatencySamples on every change.
@@ -1703,6 +1737,7 @@ private:
         juce::AudioProcessorGraph::Node::Ptr node;
         juce::PluginDescription              desc;
         bool                                 bypassed = false;
+        bool                                 intendedBypassed = false;   // v9: what the user/plan asked; `bypassed` is the effective state (lease overlays it)
         juce::String                         settings;   // AI-suggested dial-in guidance
         // The model's tiered copy, held STRUCTURED rather than composed.
         //
@@ -1922,6 +1957,7 @@ private:
 
     // AudioProcessorGraph: input → [active slots in order] → output
     std::unique_ptr<juce::AudioProcessorGraph> graph_;
+    std::atomic<bool> resetPending_ { false };   // see requestReset()
     juce::AudioProcessorGraph::Node::Ptr inputNode_, outputNode_;
 
     std::vector<ChainSlot> slots_;
@@ -1934,6 +1970,12 @@ private:
 
     // ---- Borrow mode internals (spec §1/§2) -------------------------------
     const Mode mode_ = Mode::Primary;
+    // The owning instance's KeyFeed identity (see EedKeyFeed.h,
+    // KeyFeedConsumer): handed to every builtin created here so a
+    // feed-consuming device can recognise a fact derived from its own
+    // channel. 0 until the owner sets it (Links never publish, so their
+    // builtins simply never match a publisher).
+    uint64_t keyFeedOwnerId_ = 0;
     struct BorrowPoolEntry {
         juce::AudioProcessorGraph::Node::Ptr node;
         juce::PluginDescription desc;
@@ -1984,6 +2026,28 @@ private:
 
     bool   prepared_  = false;
     std::atomic<bool> hasActiveSlots_ { false };  // true when ≥1 non-bypassed slot exists
+    // Link v9 (9 Sep 2026), change A. The lease's TARGET bypass state for any
+    // slot that arrives while a rack lease is active: completeLoad writes
+    // slot.bypassed from this once. Before v9 a slot arrived un-bypassed and
+    // the lease corrected it after the whole plan was in - a live render of a
+    // freshly instantiated plugin for a few blocks (the 15:31 crash's window).
+    std::atomic<bool> attachBypassed_ { false };
+    // Link v9, change B. The implied mutex JUCE documents between
+    // prepareToPlay/releaseResources and processBlock (AudioProcessorGraph,
+    // NodeStates::applySettings) - the CALLER provides it, and nothing did.
+    // Every graph mutation holds graphLock_ (message thread, recursive so a
+    // mutation may call another); process() try-locks and passes the buffer
+    // through DRY when it loses. The audio thread never blocks.
+    juce::CriticalSection graphLock_;
+    std::atomic<int> rebuildInFlight_ { 0 };        // > 0 for a mutation's duration (instrument)
+    std::atomic<int> processDuringRebuild_ { 0 };   // process() entries that found a mutation in flight
+    struct GraphMutation
+    {
+        explicit GraphMutation(ChainHost& h) : host(h), lock(h.graphLock_) { host.rebuildInFlight_.fetch_add(1, std::memory_order_acq_rel); }
+        ~GraphMutation() { host.rebuildInFlight_.fetch_sub(1, std::memory_order_acq_rel); }
+        ChainHost& host;
+        juce::CriticalSection::ScopedLockType lock;
+    };
     std::atomic<int>  chainRevision_ { 0 };       // see getChainRevision()
     // Every chain mutation is also a settings-cache trigger: this is the
     // "after a chain edit settles" refresh point, reached through the same

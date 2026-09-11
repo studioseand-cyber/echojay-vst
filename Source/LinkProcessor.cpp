@@ -1,4 +1,8 @@
 #include "LinkProcessor.h"
+#include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
+#include <signal.h>   // kill(pid, 0): publisher liveness (C4b)
+#include <unistd.h>
+#include "EedLatencyLog.h"
 #include "LinkEditor.h"
 #include "LinkShm.h"
 #include "FaderTaper.h"   // shared mixer-fader mute taper (P17)
@@ -230,6 +234,7 @@ void LinkProcessor::publishRackSidecar()
     // it is correct for real hosted plugins and costs nothing here.
     const int  rev      = chainHost.getChainRevision();
     const int  epoch    = chainHost.getHostedChangeEpoch();
+    const bool uidMoved = (instanceUid_ != lastPublishedUid_);   // 6 Sep 2026: a re-minted identity moves its sidecar with it, or the solo fabric cannot find it
     const bool revMoved = (rev   != lastPublishedRackRev_);
     const bool epMoved  = (epoch != lastPublishedEpoch_);
     // §8 closed loop: a mute-state FLIP must republish promptly — the main
@@ -277,7 +282,7 @@ void LinkProcessor::publishRackSidecar()
                            || (pgUser  != lastPublishedPreGainUserSet_)
                            || (pgKnown != lastPublishedPreGainInputKnown_);
 
-    if (!revMoved && !epMoved && !curveMoved && !preGainMoved && !muteMoved)
+    if (!revMoved && !epMoved && !curveMoved && !preGainMoved && !muteMoved && !uidMoved)
         return;
     if (!revMoved && !preGainMoved)
     {
@@ -293,7 +298,7 @@ void LinkProcessor::publishRackSidecar()
         const bool stale   = (nowMs - lastRackPublishMs_) >= kRackMaxStaleMs;
         if (!settled && !stale) return;
     }
-    lastPublishedRackRev_ = rev;
+    lastPublishedUid_ = instanceUid_; lastPublishedRackRev_ = rev;
     lastPublishedMuteEngaged_ = muteNow;
     lastPublishedMuteUser_ = muteUserOn_.load(std::memory_order_relaxed);
     lastPublishedSoloOn_   = soloOn_.load(std::memory_order_relaxed);
@@ -310,6 +315,15 @@ void LinkProcessor::publishRackSidecar()
     rc.borrowCapable = true;   // this binary honors the rack-scoped lease
     rc.structureEditCapable = true;   // and can journal/apply a structure plan
     rc.inContextCapable     = true;   // §8: mutes on lease muteOut
+    rc.ackPerSeq            = true;   // v9: answers also land in ctrl-ack-<uid>-<seq>.json
+    {
+        // Round 53 (C4): who we are, so a main counts us only from its own host.
+        const auto& h = ChainHost::getHostIdentity();
+        rc.publisherPid  = (int) ::getpid();
+        rc.hostPid       = h.pid;
+        rc.hostStartSec  = h.startSec;
+        rc.hostStartUsec = h.startUsec;
+    }
     rc.muteEngaged = linkMuteWanted();   // ACTUAL silence, any reason
     rc.muteUser = muteUserOn_.load(std::memory_order_relaxed);
     rc.soloOn   = soloOn_.load(std::memory_order_relaxed);
@@ -647,7 +661,7 @@ void LinkProcessor::pollEditLease()
             // audio ALREADY processed by this instance and process it again
             // in series. setSlotBypassed bumps chainRevision, so the sidecar
             // republishes with the controlled flag riding along.
-            chainHost.setSlotBypassed(slot0, true);
+            chainHost.setLeaseBypass(slot0, true);   // v9: the lease's write
             leaseActive_.store(true, std::memory_order_relaxed);
             notifyChainModel();   // the open editor dims + disables the slot
             EchoJay_NSLog(("EJLease: engaged slot "
@@ -670,7 +684,7 @@ void LinkProcessor::pollEditLease()
             }
             else if (leaseSlot0_ >= 0 && leaseSlot0_ < chainHost.getNumSlots())
             {
-                chainHost.setSlotBypassed(leaseSlot0_, leasePriorBypass_);
+                chainHost.setLeaseBypass(leaseSlot0_, chainHost.getSlotInfo(leaseSlot0_).intendedBypassed);   // v9
                 EchoJay_NSLog("EJLease: released/expired - slot restored");
             }
             leaseSlot0_ = -1;
@@ -1045,7 +1059,21 @@ void LinkProcessor::pollControlCommand()
     }
     {
         juce::File af(resolvedDir + "ctrl-ack-" + id + ".json");
-        af.replaceWithText(juce::JSON::toString(juce::var(ack), true));
+        const juce::String ackText = juce::JSON::toString(juce::var(ack), true);
+        af.replaceWithText(ackText);
+        // v9: PER-REQUEST identity on the channel. The legacy single ack file
+        // stays for older mains; a v9-aware main polls ctrl-ack-<id>-<seq>.json,
+        // which no other reader deletes or overwrites (9 Sep 2026: two read
+        // loops sharing one ack file threw the Link's answers away). The
+        // previous per-seq file this Link wrote is removed, so an abandoned
+        // request leaves at most one stale file behind per Link.
+        {
+            juce::File perSeq(resolvedDir + "ctrl-ack-" + id + "-" + juce::String(seq) + ".json");
+            if (lastPerSeqAckFile_.isNotEmpty() && lastPerSeqAckFile_ != perSeq.getFullPathName())
+                juce::File(lastPerSeqAckFile_).deleteFile();
+            perSeq.replaceWithText(ackText);
+            lastPerSeqAckFile_ = perSeq.getFullPathName();
+        }
         if (pullAttempted)
             EchoJay_NSLog(("EJPull[" + juce::String(seq) + "] link: ack file "
                            + juce::String((juce::int64) af.getSize())
@@ -1184,15 +1212,25 @@ void LinkProcessor::ensureRegistryOpen()
     regMap = LinkShm::openRegistry(resolvedDir, regFd, err);
     diag.regOpened = (regMap != nullptr);
     diag.regErrno  = err;
+    if (regMap == nullptr && err == EPROTO)
+        EchoJay_NSLog(("EJLinkState: " + lastRegistryLayoutError()).toRawUTF8());
 }
 
 juce::String LinkProcessor::effectiveFilePart() const
 {
-    // Deliberately linkName-only (NOT effectiveDisplayName): a host track
-    // name arriving or changing must never rename the audio ring file —
-    // display is cosmetic, file identity stays stable.
-    auto safe = LinkShm::makeSafeFilePart(linkName.trim());
-    return safe.isNotEmpty() ? safe : "untitled_" + instanceUid_;
+    // UID-KEYED (6 Sep 2026, shoot-day defect): the ring file used to be
+    // named from the user-typed linkName, so two Links carrying the same
+    // typed name (a duplicated track or a pasted insert restores the same
+    // name into both) opened the SAME ring file - openRingProducer zeroes the
+    // header on open, so the second instance wiped the first's ring and both
+    // rows in the main plugin read one file. Rows were already uid-keyed and
+    // distinct (the uid claim gate re-mints a duplicate); only the FILE was
+    // keyed on the name. instanceUid_ is unique per instance, saved and
+    // restored with the state, re-minted for a proven-live duplicate before
+    // this is consulted (claimRegistrySlot), and never changes on a host or
+    // user rename - so the ring never renames either. The name stays purely
+    // cosmetic: displayName in the registry slot.
+    return instanceUid_;
 }
 
 void LinkProcessor::updateTrackProperties(const TrackProperties& props)
@@ -1206,10 +1244,14 @@ void LinkProcessor::updateTrackProperties(const TrackProperties& props)
     const juce::String n = juce::String(*props.name).trim();
     {
         const juce::ScopedLock sl(hostNameLock_);
+        hostNameFromHost_ = true;   // AUTHORITATIVE from here on, even if equal to a seeded value
         if (hostTrackName_ == n) return;
         hostTrackName_ = n;
     }
     hostNameDirty_.store(true, std::memory_order_release);
+    // PROVENANCE LOG (6 Sep 2026): the only line that proves the HOST delivered
+    // a name; the timer's "host track name" line also fires for a seeded one.
+    EchoJay_NSLog(("EJLinkState: host DELIVERED track name \"" + n + "\" (uid " + instanceUid_ + ")").toRawUTF8());
 }
 
 juce::String LinkProcessor::getHostTrackName() const
@@ -1250,7 +1292,17 @@ void LinkProcessor::claimRegistrySlot()
         if (holder >= 0)
         {
             if (uidGateHolder_ != holder) { uidGate_ = {}; uidGateHolder_ = holder; }
-            switch (uidGate_.observe(holderHb))
+            // C4b (6 Sep 2026): the holder's sidecar names the process that
+            // published it (round 53). A dead publisher is adopted at once;
+            // an unpublished or unreadable sidecar fails CLOSED (treated as
+            // alive, so the time floor applies).
+            bool publisherAlive = true;
+            {
+                const auto rc = LinkShm::readRackSidecar(resolvedDir, instanceUid_);
+                if (rc.valid && rc.uid == instanceUid_ && rc.publisherPid > 0)
+                    publisherAlive = (::kill((pid_t) rc.publisherPid, 0) == 0);
+            }
+            switch (uidGate_.observe(holderHb, publisherAlive, juce::Time::currentTimeMillis()))
             {
                 case LinkShm::UidClaimGate::Decision::Wait:
                     return;   // undecided: stay unregistered, retry next tick
@@ -1259,6 +1311,24 @@ void LinkProcessor::claimRegistrySlot()
                     auto old = instanceUid_;
                     instanceUid_ = juce::String::toHexString(
                         juce::Random::getSystemRandom().nextInt64()).removeCharacters("-").substring(0, 10);
+                    // THE CHUNK WAS NOT OURS (6 Sep 2026 ruling, C1 + C2). A
+                    // PROVEN-LIVE holder means the state this instance restored
+                    // belongs to ANOTHER LIVE instance: Pro Tools seeds a fresh
+                    // insert with the plugin's last chunk (observed 16:59:50,
+                    // "setState ... post-init uid=<the first Link's> ... host
+                    // track name 'bass 2'"). No field in that chunk that answers
+                    // "which Link is this" is ours: the uid (re-minted above),
+                    // the host track name (C1) and the typed name (C2). Cleared
+                    // here, BEFORE claimSlot reads effectiveDisplayName(), so
+                    // the row publishes empty and the main plugin numbers it
+                    // "Untitled N" (unique by construction: getLinkDisplayList
+                    // numbers untitled rows in uid order) until the host's own
+                    // TrackNameChanged or the user's typing names this track.
+                    // The AdoptGhost arm and a plain restore keep the seeded
+                    // names: those are the cases the seeding was built for (a
+                    // replacement incarnation on the same track; a session
+                    // reopen in a host that never re-sends the name).
+                    // the seeded names are dropped by the invariant below (uid changed)
                     EchoJay_NSLog(("EJLinkState: uid " + old + " held by a "
                         "PROVEN-LIVE instance (duplicate) -> regenerated "
                         + instanceUid_).toRawUTF8());
@@ -1268,13 +1338,67 @@ void LinkProcessor::claimRegistrySlot()
                     LinkShm::reapSlot(regMap, holder);
                     EchoJay_NSLog(("EJLinkState: uid " + instanceUid_
                         + " held by a FROZEN ghost slot " + juce::String(holder)
+                        + (publisherAlive ? " (publisher alive, floor elapsed)" : " (publisher pid DEAD)")
                         + " -> ghost reaped, uid adopted").toRawUTF8());
                     break;
             }
             uidGateHolder_ = -1;
         }
-        else uidGateHolder_ = -1;
+        else
+        {
+            uidGateHolder_ = -1;
+            // NO HOLDER (6 Sep 2026, L5): a chunk this host process run authored,
+            // whose uid no slot holds, is a seed from an instance that has since
+            // gone - not a reopen from disk. Re-mint; the invariant below drops
+            // its names.
+            if (chunkAuthoredHere_ && chunkUid_.isNotEmpty() && instanceUid_ == chunkUid_)
+            {
+                instanceUid_ = juce::String::toHexString(
+                    juce::Random::getSystemRandom().nextInt64()).removeCharacters("-").substring(0, 10);
+                EchoJay_NSLog(("EJLinkState: uid " + chunkUid_ + " came from a chunk authored in THIS host run "
+                    "and no slot holds it (a seed from a gone instance) -> regenerated " + instanceUid_).toRawUTF8());
+            }
+        }
     }
+    // THE INVARIANT (6 Sep 2026 ruling): the seeded names survive only when this
+    // instance continues the chunk's identity. Whatever arm ran above - re-mint
+    // against a live holder, re-mint with no holder, or any arm nobody has
+    // thought of - if the uid this instance ends up with is NOT the uid that
+    // arrived in the chunk, no field from that chunk answers "which Link is
+    // this": drop the host track name and the typed name. AdoptGhost and a plain
+    // restore keep the uid, so they keep the names. Checked BEFORE claimSlot
+    // reads effectiveDisplayName(), so the row publishes what is true.
+    if (chunkUid_.isNotEmpty() && instanceUid_ != chunkUid_)
+    {
+        // PROVENANCE (6 Sep 2026 ruling; corrected 7 Sep): only a PROVISIONAL
+        // (seeded) name is dropped here. A name the host delivered or the user
+        // typed is authoritative and survives - but ONLY because the seeding
+        // branches above no longer overwrite an authoritative name when a
+        // FOREIGN chunk arrives AFTER the delivery. The earlier text claimed
+        // survival "whether it arrived before or after this point" while the
+        // seeding branch reset the flag on every foreign chunk; the ordering it
+        // was blind to is Pro Tools' actual one - deliver the name to the fresh
+        // instance, THEN apply a gone sibling's chunk, THEN re-mint - and the
+        // P20 legs never modelled it (they applied the seed before the delivery
+        // or after the re-mint). Leg: link_capacity_test foreign / foreign20.
+        juce::String droppedTyped, droppedHost, keptHost;
+        {
+            const juce::ScopedLock sl(hostNameLock_);
+            if (hostNameFromHost_) keptHost = hostTrackName_;
+            else { droppedHost = hostTrackName_; hostTrackName_.clear(); appliedHostName_.clear(); }
+        }
+        if (typedNameFromUser_) { /* keep */ } else { droppedTyped = linkName; linkName.clear(); }
+        EchoJay_NSLog(("EJLinkState: chunk uid " + chunkUid_ + " != this instance " + instanceUid_
+            + ": seeded names dropped (typed \"" + droppedTyped + "\", host \"" + droppedHost
+            + "\"); authoritative kept (host \"" + keptHost + "\", typed " + (typedNameFromUser_ ? "\"" + linkName + "\"" : juce::String("none")) + ")").toRawUTF8());
+    }
+    // From here on this instance IS its identity: no chunk is pending. Both
+    // fields are cleared, because updateShmState releases and re-claims the
+    // slot on every publish (a rename, a host-name arrival) and a re-claim
+    // that still saw "authored here, uid == chunk uid" would re-mint AGAIN -
+    // seen as three re-mints in a row in the first run of L5.
+    chunkUid_.clear();
+    chunkAuthoredHere_ = false;
     const juce::String audioFilename = "audio_" + effectiveFilePart() + ".bin";
 
     regSlotIdx = LinkShm::claimSlot(regMap,
@@ -1283,6 +1407,20 @@ void LinkProcessor::claimRegistrySlot()
                                      instanceUid_,
                                      (float)hostSampleRate,
                                      (uint32_t)hostNumChannels);
+    if (regSlotIdx < 0)
+    {
+        // FULL (6 Sep 2026 ruling): reclaim rows whose publisher process is
+        // gone, retry once, and if still full SAY SO - to the log and to the
+        // user (diag.regFull, shown by the Link editor). Never silent.
+        const int reaped = LinkShm::reapDeadPublisherSlots(regMap, resolvedDir);
+        if (reaped > 0)
+            regSlotIdx = LinkShm::claimSlot(regMap, effectiveDisplayName(), audioFilename, instanceUid_,
+                                            (float)hostSampleRate, (uint32_t)hostNumChannels);
+        EchoJay_NSLog(("EJLinkState: registry had no free slot; reaped " + juce::String(reaped)
+            + " dead-publisher row(s); " + (regSlotIdx >= 0 ? "claimed slot " + juce::String(regSlotIdx)
+            : juce::String("STILL FULL - ") + juce::String(kRegMaxSlots) + " slots all held by live publishers; this Link is NOT registered")).toRawUTF8());
+    }
+    diag.regFull = (regSlotIdx < 0);
     diag.slotIdx = regSlotIdx;
 }
 
@@ -1748,7 +1886,7 @@ juce::StringArray LinkProcessor::loadDisabledUids()
 {
     // plugin_disabled.json — a JSON array of scanner uids
     // (lowercase name + "_" + lowercase manufacturer, spaces -> underscores).
-    auto file = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+    auto file = echojay::userAppData()
                     .getChildFile("Application Support/EchoJay/plugin_disabled.json");
     juce::StringArray uids;
     if (file.existsAsFile())
@@ -1787,7 +1925,7 @@ void LinkProcessor::clearChainInternal()
 
 void LinkProcessor::updateChainLatency()
 {
-    setLatencySamples(chainHost.getTotalLatencySamples());
+    ejSetLatencyLogged (*this, chainHost.getTotalLatencySamples(), "LinkProcessor #1");
 }
 
 void LinkProcessor::resyncChainModelFromHost()
@@ -1827,6 +1965,7 @@ void LinkProcessor::resyncChainModelFromHost()
 
 void LinkProcessor::rackLeaseEngage()
 {
+    chainHost.setAttachBypassed(true);    // v9 change A: BEFORE the existing slots are bypassed
     // WHOLE-RACK ENGAGE: save every slot's bypass, bypass all once, stream
     // dry. setSlotBypassed bumps the revision, so the sidecar republishes
     // with every slot controlled. Extracted so linksync_test drives the
@@ -1834,8 +1973,8 @@ void LinkProcessor::rackLeaseEngage()
     rackLeasePrior_.clear();
     for (int i = 0; i < chainHost.getNumSlots(); ++i)
     {
-        rackLeasePrior_.push_back(chainHost.getSlotInfo(i).bypassed);
-        chainHost.setSlotBypassed(i, true);
+        rackLeasePrior_.push_back(chainHost.getSlotInfo(i).intendedBypassed);   // v9: the INTENT, not the effective state
+        chainHost.setLeaseBypass(i, true);
     }
     rackLeaseActive_ = true;
     leaseSlot0_      = -1;
@@ -1848,9 +1987,12 @@ void LinkProcessor::rackLeaseEngage()
 
 void LinkProcessor::rackLeaseRelease()
 {
-    for (int i = 0; i < chainHost.getNumSlots()
-                    && i < (int) rackLeasePrior_.size(); ++i)
-        chainHost.setSlotBypassed(i, rackLeasePrior_[(size_t) i]);
+    // v9: EVERY slot returns to its intended state - including slots that arrived under the
+    // lease (attached bypassed, intended live) which the prior list, captured at engage, never
+    // held. The leg "attach" measures exactly this: bypassed while leased, live after release.
+    for (int i = 0; i < chainHost.getNumSlots(); ++i)
+        chainHost.setLeaseBypass(i, chainHost.getSlotInfo(i).intendedBypassed);
+    chainHost.setAttachBypassed(false);   // v9 change A: AFTER the priors are restored
     EchoJay_NSLog(("EJLease: RACK released/expired - "
                    + juce::String((int) rackLeasePrior_.size())
                    + " slot bypass state(s) restored").toRawUTF8());
@@ -1893,11 +2035,19 @@ ChainHost::PlanResult LinkProcessor::applyStructurePlanAndSync(
             const int o = res.finalOrigin[(size_t) i];
             np.push_back(o >= 0 && o < (int) rackLeasePrior_.size()
                              ? (bool) rackLeasePrior_[(size_t) o]
-                             : chainHost.getSlotInfo(i).bypassed);
+                             : chainHost.getSlotInfo(i).intendedBypassed);   // v9: a new slot's INTENT (false unless the plan said bypass)
         }
         rackLeasePrior_ = std::move(np);
+        // v9: this loop is now the INSTRUMENT. Every slot arrived bypassed
+        // (change A); a live one here is the invariant broken, said loudly.
         for (int i = 0; i < chainHost.getNumSlots(); ++i)
-            chainHost.setSlotBypassed(i, true);
+        {
+            if (! chainHost.getSlotInfo(i).bypassed)
+                EchoJay_NSLog(("EJLease: INVARIANT BROKEN - slot " + juce::String(i)
+                               + " (\"" + chainHost.getSlotInfo(i).name
+                               + "\") attached LIVE under the lease; bypassing it now").toRawUTF8());
+            chainHost.setLeaseBypass(i, true);
+        }
         EchoJay_NSLog(("EJLease: priors remapped through the plan ("
                        + juce::String((int) rackLeasePrior_.size())
                        + " slots), dry rack re-asserted").toRawUTF8());
@@ -2532,6 +2682,13 @@ void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
     obj->setProperty("editorW",  editorW);
     obj->setProperty("editorH",  editorH);
     obj->setProperty("instanceUid", instanceUid_);
+    {   // the author: this host process run (pid + start time), so a restore can
+        // tell a from-disk reopen from a chunk the host re-applied in this run
+        const auto& h = ChainHost::getHostIdentity();
+        obj->setProperty("authorPid",       (int) ::getpid());
+        obj->setProperty("authorStartSec",  (double) h.startSec);
+        obj->setProperty("authorStartUsec", (double) h.startUsec);
+    }
     // muteUser is channel mix identity and persists. soloOn is DELIBERATELY
     // ABSENT and must stay absent: a saved solo is how a project opens
     // silent and nobody knows why (MUTE_SOLO_SPEC §4; the gate pins this).
@@ -2551,7 +2708,30 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
     auto v = juce::JSON::parse(json);
     if (auto* obj = v.getDynamicObject())
     {
-        if (obj->hasProperty("linkName")) linkName = obj->getProperty("linkName").toString();
+        // OUR OWN CHUNK RE-APPLIED (6 Sep 2026, the v6 regression): Pro Tools
+        // calls SetChunk on a live instance repeatedly with that instance's own
+        // current chunk (212 setState lines for ~40 instances in one session).
+        // A chunk carrying the uid THIS instance already holds a registry slot
+        // for is not a seed and not a restore: it is us. Identity stays settled
+        // (no re-arm of chunkUid_/chunkAuthoredHere_ - the next re-claim would
+        // find no holder for our own uid and re-mint, which burned 89 identities
+        // in twenty minutes and dropped every host-delivered name), and name
+        // PROVENANCE is not downgraded: a host-delivered or user-typed name
+        // stays authoritative; the chunk's copy of a name fills in only where
+        // we have none.
+        const juce::String chunkUidIn = obj->getProperty("instanceUid").toString();
+        const bool ownChunk = chunkUidIn.isNotEmpty() && chunkUidIn == instanceUid_ && regSlotIdx >= 0;
+        if (obj->hasProperty("linkName"))
+        {
+            const auto n = obj->getProperty("linkName").toString();
+            // C2 (7 Sep 2026): a FOREIGN chunk fills the typed name ONLY WHEN WE HAVE
+            // NONE, exactly as the own-chunk arm does. It never overwrites, and never
+            // downgrades the provenance of, a name the user typed. Pro Tools applies a
+            // gone sibling's chunk AFTER the user (or the host) has already spoken.
+            if (typedNameFromUser_)          { /* authoritative: keep name and provenance */ }
+            else if (! ownChunk)             { linkName = n; typedNameFromUser_ = false; }   // seeded: provisional
+            else if (linkName.isEmpty())     linkName = n;                                  // ours: fill only
+        }
         if (obj->hasProperty("linkOn"))   linkOn.store((bool)obj->getProperty("linkOn"));
         if (obj->hasProperty("gainDb"))
             gainDb_.store(juce::jlimit(kGainMinDb, kGainMaxDb,
@@ -2566,8 +2746,17 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
             projectName = obj->getProperty("projectName").toString();
         if (obj->hasProperty("genre"))
             genre = obj->getProperty("genre").toString();
-        if (obj->getProperty("instanceUid").toString().isNotEmpty())
-            instanceUid_ = obj->getProperty("instanceUid").toString();
+        if (! ownChunk)
+        {
+            if (chunkUidIn.isNotEmpty()) instanceUid_ = chunkUidIn;
+            chunkUid_ = instanceUid_;
+            const auto& h = ChainHost::getHostIdentity();
+            chunkAuthoredHere_ = obj->hasProperty("authorPid")
+                && (int) obj->getProperty("authorPid") == (int) ::getpid()
+                && (juce::int64)(double) obj->getProperty("authorStartSec")  == h.startSec
+                && (juce::int64)(double) obj->getProperty("authorStartUsec") == h.startUsec;
+        }
+        // ownChunk: identity untouched, nothing re-armed
         if (obj->hasProperty("muteUser"))
             muteUserOn_.store((bool) obj->getProperty("muteUser"),
                               std::memory_order_relaxed);
@@ -2579,7 +2768,15 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
             // so this takes the same stash path as the live callback.
             {
                 const juce::ScopedLock sl(hostNameLock_);
-                hostTrackName_ = obj->getProperty("hostTrackName").toString();
+                // C1 (7 Sep 2026, from the v7 Pro Tools log): a FOREIGN chunk fills the host
+                // name ONLY WHEN WE HAVE NONE. Pro Tools DELIVERS the track name to the fresh
+                // instance first and applies a foreign chunk (the seed / a gone sibling's,
+                // carrying ITS track name) ~85 ms later; this line used to overwrite the
+                // delivered name and downgrade its provenance, and the invariant below then
+                // dropped it as seeded. 81 deliveries, 72 empty rows, in one session.
+                if (hostNameFromHost_)                  { /* authoritative: keep name and provenance */ }
+                else if (! ownChunk)                    { hostTrackName_ = obj->getProperty("hostTrackName").toString(); hostNameFromHost_ = false; }   // seeded: PROVISIONAL
+                else if (hostTrackName_.isEmpty())      hostTrackName_ = obj->getProperty("hostTrackName").toString();                               // ours: fill only
             }
             hostNameDirty_.store(true, std::memory_order_release);
         }

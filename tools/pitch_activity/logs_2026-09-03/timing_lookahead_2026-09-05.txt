@@ -1,0 +1,24 @@
+--- lookahead 0 ms
+tau 44:  median  7.24c  p75 19.02c  p90 39.60c  >25c 18.2%  mean 15.79c
+tau 6:  median  4.54c  p75  8.21c  p90 15.86c  >25c  4.0%  mean  7.35c
+tau 150:  median  8.21c  p75 23.88c  p90 53.33c  >25c 23.9%  mean 19.91c
+--- lookahead 2 ms
+tau 44:  median  7.03c  p75 17.83c  p90 37.01c  >25c 16.8%  mean 14.86c
+tau 6:  median  4.33c  p75  7.75c  p90 13.94c  >25c  2.6%  mean  6.76c
+tau 150:  median  7.99c  p75 22.53c  p90 50.43c  >25c 22.8%  mean 19.04c
+--- lookahead 4 ms
+tau 44:  median  6.69c  p75 16.52c  p90 34.07c  >25c 15.3%  mean 13.89c
+tau 6:  median  4.11c  p75  7.56c  p90 13.10c  >25c  1.7%  mean  6.29c
+tau 150:  median  7.83c  p75 21.32c  p90 48.41c  >25c 21.7%  mean 18.22c
+--- lookahead 6 ms
+tau 44:  median  6.45c  p75 15.61c  p90 31.45c  >25c 13.2%  mean 13.44c
+tau 6:  median  4.11c  p75  7.64c  p90 13.40c  >25c  1.9%  mean  6.29c
+tau 150:  median  7.98c  p75 21.98c  p90 49.91c  >25c 22.4%  mean 19.33c
+--- lookahead 7.5 ms
+tau 44:  median 16.47c  p75 37.31c  p90 67.79c  >25c 36.3%  mean 27.73c
+tau 6:  median  9.60c  p75 25.41c  p90 52.05c  >25c 25.4%  mean 20.10c
+tau 150:  median 19.25c  p75 41.82c  p90 70.42c  >25c 42.7%  mean 30.69c
+--- lookahead 9 ms
+tau 44:  median 18.30c  p75 60.76c  p90 120.62c  >25c 41.7%  mean 42.83c
+tau 6:  median 12.36c  p75 63.64c  p90 106.65c  >25c 37.9%  mean 40.58c
+tau 150:  median 24.09c  p75 65.62c  p90 117.44c  >25c 48.6%  mean 46.33c

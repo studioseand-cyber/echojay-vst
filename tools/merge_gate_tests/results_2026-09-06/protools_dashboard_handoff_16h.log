@@ -1,0 +1,30 @@
+2026-09-06 15:47:44.992 Df Pro Tools[53120:1840eb] (EchoJay V2) EJDash: [dash-handoff] begin entry=tab
+2026-09-06 15:47:45.199 Df Pro Tools[53120:18b7b1] (EchoJay V2) EJStream: /api/v2/handoff status=404 body={"error":"not_enabled"}
+2026-09-06 15:47:45.200 Df Pro Tools[53120:1840eb] (EchoJay V2) EJDash: [dash-handoff] entry=tab mint=404 remint=0 landing=not_enabled
+2026-09-06 16:07:15.941 Df Pro Tools[55105:18e178] (EchoJay V2) EJDash: [dash-handoff] begin entry=recreate
+2026-09-06 16:07:16.144 Df Pro Tools[55105:1943b5] (EchoJay V2) EJStream: /api/v2/handoff status=404 body={"error":"not_enabled"}
+2026-09-06 16:07:16.146 Df Pro Tools[55105:18e178] (EchoJay V2) EJDash: [dash-handoff] entry=recreate mint=404 remint=0 landing=not_enabled
+2026-09-06 16:07:19.728 Df Pro Tools[55105:18e178] (EchoJay V2) EJDash: [dash-handoff] begin entry=tab
+2026-09-06 16:07:19.861 Df Pro Tools[55105:194440] (EchoJay V2) EJStream: /api/v2/handoff status=404 body={"error":"not_enabled"}
+2026-09-06 16:07:19.861 Df Pro Tools[55105:18e178] (EchoJay V2) EJDash: [dash-handoff] entry=tab mint=404 remint=0 landing=not_enabled
+2026-09-06 16:07:37.938 Df Pro Tools[55105:18e178] (EchoJay V2) EJDash: [dash-handoff] begin entry=recreate
+2026-09-06 16:07:38.183 Df Pro Tools[55105:19453c] (EchoJay V2) EJStream: /api/v2/handoff status=404 body={"error":"not_enabled"}
+2026-09-06 16:07:38.183 Df Pro Tools[55105:18e178] (EchoJay V2) EJDash: [dash-handoff] entry=recreate mint=404 remint=0 landing=not_enabled
+2026-09-06 16:14:42.343 Df Pro Tools[55105:18e178] (EchoJay V2) EJDash: [dash-handoff] begin entry=tab
+2026-09-06 16:14:42.767 Df Pro Tools[55105:1969a6] (EchoJay V2) EJStream: /api/v2/handoff status=401 body={"error":"unauthenticated"}
+2026-09-06 16:14:42.767 Df Pro Tools[55105:18e178] (EchoJay V2) EJDash: [dash-handoff] entry=tab mint=401 remint=0 landing=login_required
+2026-09-06 16:14:55.511 Df Pro Tools[55105:18e178] (EchoJay V2) EJDash: [dash-handoff] begin entry=recreate
+2026-09-06 16:14:55.874 Df Pro Tools[55105:196a95] (EchoJay V2) EJStream: /api/v2/handoff status=401 body={"error":"unauthenticated"}
+2026-09-06 16:14:55.874 Df Pro Tools[55105:18e178] (EchoJay V2) EJDash: [dash-handoff] entry=recreate mint=401 remint=0 landing=login_required
+2026-09-06 16:14:58.771 Df Pro Tools[55105:18e178] (EchoJay V2) EJDash: [dash-handoff] begin entry=recreate
+2026-09-06 16:14:59.055 Df Pro Tools[55105:196ae7] (EchoJay V2) EJStream: /api/v2/handoff status=401 body={"error":"unauthenticated"}
+2026-09-06 16:14:59.056 Df Pro Tools[55105:18e178] (EchoJay V2) EJDash: [dash-handoff] entry=recreate mint=401 remint=0 landing=login_required
+2026-09-06 16:16:06.899 Df Pro Tools[55105:18e178] (EchoJay V2) EJDash: [dash-handoff] begin entry=recreate
+2026-09-06 16:16:07.281 Df Pro Tools[55105:19729e] (EchoJay V2) EJStream: /api/v2/handoff status=401 body={"error":"unauthenticated"}
+2026-09-06 16:16:07.282 Df Pro Tools[55105:18e178] (EchoJay V2) EJDash: [dash-handoff] entry=recreate mint=401 remint=0 landing=login_required
+2026-09-06 16:17:59.502 Df Pro Tools[55105:18e178] (EchoJay V2) EJDash: [dash-handoff] begin entry=tab
+2026-09-06 16:18:01.332 Df Pro Tools[55105:18e178] (EchoJay V2) EJDash: [dash-handoff] entry=tab mint=200 remint=0 landing=dashboard
+2026-09-06 16:19:03.181 Df Pro Tools[55105:18e178] (EchoJay V2) EJDash: [dash-handoff] begin entry=tab
+2026-09-06 16:19:05.661 Df Pro Tools[55105:18e178] (EchoJay V2) EJDash: [dash-handoff] entry=tab mint=200 remint=0 landing=dashboard
+2026-09-06 16:26:39.741 Df Pro Tools[55105:18e178] (EchoJay V2) EJDash: [dash-handoff] begin entry=recreate
+2026-09-06 16:26:41.040 Df Pro Tools[55105:18e178] (EchoJay V2) EJDash: [dash-handoff] entry=recreate mint=200 remint=0 landing=dashboard

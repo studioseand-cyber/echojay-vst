@@ -1,0 +1,8 @@
+=== BORROWED-HOST DIAL LEG (main archive; third-party probe + map on disk; probe's own param is the assertion) ===
+-- DIAL binary, scale 40:
+borrowed-dial: probe Gain norm = 0.375 (default 0.500, target 0.375) -> PASS (third-party dialled in the borrowed host)
+   EJParamApply: gain_db APPLIED 0.375; map loaded (cache loaded 1 map, dialable=y fresh=y)
+-- CONTROL, pre-dial Build G (e48b1d4) archive:
+borrowed-dial: probe Gain norm = 0.500 (unchanged) -> FAIL
+   EJDial: NO MAP for fp=8335c023302a  fetch_wired=n  cached_maps=0 -> noMap  (Borrowed mode did not load the map)
+Builtin-only success cannot move this third-party probe, so a builtin-only pass fails the leg.

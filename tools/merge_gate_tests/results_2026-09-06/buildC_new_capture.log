@@ -1,0 +1,9 @@
+capture_playback_legs_test.cpp: isolated state root /tmp/echojay-iso.6E5k7u
+2026-09-08 18:06:13.035 cpl_harness[91420:3517440] EJNet: base=www.echojay.ai devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-09-08 18:06:13.036 cpl_harness[91420:3517420] EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+2026-09-08 18:06:13.165 cpl_harness[91420:3517440] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+2026-09-08 18:06:14.041 cpl_harness[91420:3517420] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+  max block at index 55 (0.6 s), first block 196 us
+  blocks 4219: max 652 us  median first10s 121.3 us  last10s 130.8 us (ratio 1.08)  max around 30 s 344 us  STOP block 118 us  overrun 0
+CAPTURE: max PASS  trend PASS  stop-block PASS  overrun PASS -> PASS
+exit=0

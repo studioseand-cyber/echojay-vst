@@ -3,6 +3,7 @@
 */
 
 #include "EedPitchProcessor.h"
+#include "EedLatencyLog.h"
 #include "EedPitchEditor.h"
 #include "EedDeviceRegistry.h"
 
@@ -21,7 +22,8 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
 {
     static const echojay::ParamSchema s ({
         { EedPitchProcessor::kMode, "",
-          0.0, (double) (EedPitchProcessor::kNumModes - 1), (double) EedPitchProcessor::kNatural,
+          0.0, (double) (EedPitchProcessor::kNumModes - 1), (double) EedPitchProcessor::kCustom,
+          "PROVISIONAL DEFAULT = custom at retune 6 / flex 0 / humanize 0 / depth 100 (5 Sep 2026, UI_SIMPLIFICATION round 40): what measures best on the reference take (activity 4.49c, off-grid 2.33c, improve 79.6%) and what Sean's ear chose over retune 44 ('B is better on both'). Before it: retune 44 (round 36, chosen for where he worked, not what measured best) and natural 120/55/60 (which DETUNED the take: improve 44.6%). HESITATION ON FILE: this is the HARDEST setting and Antares ships at retune 20; the only material is one already-corrected, near-grid take that flatters hard correction. Re-derived on raw material with the explicit question: is the default too hard for raw material? "
           "the CHARACTER of the correction, and the fastest way to get one. "
           "natural is transparent - the tuning is tidied but the performance "
           "survives, and on a good take it is hard to hear; use it when the "
@@ -44,30 +46,84 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "same reported latency",
           true },
 
+        { EedPitchProcessor::kRetune, "", 0.0, 400.0, 0.0,
+          "RETUNE - the front-panel dial (5 Sep 2026, UI_SIMPLIFICATION round 46), "
+          "0-400, Antares-calibrated. Drives retune_speed_ms AND depth through the "
+          "measured curve: 0 = (6 ms, depth 100 %) the hard end; 50 = (80 ms, 35 %); "
+          "100 = (150 ms, 25 %); 200 = (150 ms, 15 %); 400 = (150 ms, 10 %) the "
+          "transparent end. Median activity falls monotonically along it (measured "
+          "at 18 positions). Writing retune_speed_ms or depth directly takes the "
+          "device OFF THE CURVE (the panel says so) until this dial is turned. "
+          "Default 0 - the round-40 default, provisional (raw-material check owed)" },
+
         { EedPitchProcessor::kRetuneMs, "ms",
           (double) PitchCorrect::kMinRetuneMs, (double) PitchCorrect::kMaxRetuneMs,
           (double) PitchCorrect::kDefRetuneMs,
-          "how fast pitch is pulled to the target; 0 is the hard tuned effect "
-          "where every note snaps instantly, 100+ is transparent and keeps the "
-          "singer's own movement between notes. NOTE: retune 0 alone is NOT "
-          "the full hard-tune - natural_vibrato re-adds the singer's own "
-          "wobble on top of the snapped note and defaults to 100. For the "
-          "complete snap set correction_mode hard, which also writes "
-          "natural_vibrato 0; measured, retune 0 with natural_vibrato left at "
-          "100 sits 22 cents from the nearest note where hard mode sits 9",
+          "INTERNAL since 5 Sep 2026 (round 46): driven by `retune`, the 0-400 dial; a direct write here takes the device off that curve. "
+          "how fast pitch is pulled to the target - the time constant of an "
+          "exponential glide, in honest milliseconds. 0 is the hard-tuned "
+          "snap, 100+ is transparent and keeps the singer's own movement. "
+          "THE RANGE ENDS AT 150 ms (2 Sep 2026): measured, useful "
+          "correction ends there - roughness reaches its minimum near 40, "
+          "frames-within-3-cents cliffs past ~150, and by 400 the glide "
+          "never arrives on normal notes (all scoop). Comparable correctors "
+          "expose none of that region. Saved sessions above 150 clamp on "
+          "load and the readout says so. "
+          "THE EFFECTIVE FLOOR IS 6 ms: values below it behave as 6, because "
+          "the 0-6 zone was measured strictly dominated - same tuning, same "
+          "lock speed (acquisition is floored by note-change detection), "
+          "worse roughness from chasing per-hop detection jitter - and "
+          "because other correctors' 'retune 0' carries equivalent internal "
+          "smoothing, so 6 here IS what 0 means elsewhere. The UI readout "
+          "shows the mapping. NOTE: retune 0 alone is NOT the full "
+          "hard-tune - natural_vibrato re-adds the singer's own wobble and "
+          "defaults to 100; for the complete snap set correction_mode hard",
           false },
 
-        { EedPitchProcessor::kFlex, "%", 0.0, 100.0, 55.0,
+        { EedPitchProcessor::kSeamAttackMs, "ms",
+          0.0, 150.0, 60.0,
+          "SEAM ATTACK (2 Sep 2026): at every word start the correction "
+          "used to arrive as an instantaneous pitch STEP the moment the wet "
+          "path resumed after the bit-exact-dry consonant (9 cents at the "
+          "ear-confirmed exemplar - above the pitch JND). With attack > 0 "
+          "the wet path resumes AT THE SUNG PITCH and ramps to full "
+          "correction over this many ms - pitch continuity at the seam, the "
+          "same move as GSnap's Attack and Waves Tune RT's Note Transition. "
+          "Measured at 60ms: word-start glitch events fall to ZERO "
+          "(ignore-vib off) with no paired tuning regression. 0 = off "
+          "(pre-fix behaviour). DEFAULT 60 (3 Sep 2026, ear gate passed on "
+          "the intro region - no audible damage): the geometric midpoint of "
+          "the ~30ms pitch-integration floor and Waves' field-proven 120ms, "
+          "and the measured event-elimination point. Validated on one "
+          "already-corrected take + one falsifier only - broader material "
+          "validation still owed before this default is called shipped",
+          false },   // was `true` in the boolean slot: a continuous knob advertised as an on/off switch (5 Sep 2026 verification)
+
+        { EedPitchProcessor::kFlex, "%", 0.0, 100.0, 0.0,      // PROVISIONAL DEFAULT 0 (was 55): measured to detune on the reference take
           "how much expressive drift is left alone before correction engages; "
           "high keeps slides, scoops and deliberate blue notes, 0 corrects "
           "every deviation however small",
           false },
 
-        { EedPitchProcessor::kHumanize, "%", 0.0, 100.0, 60.0,
+        { EedPitchProcessor::kHumanize, "%", 0.0, 100.0, 0.0,   // PROVISIONAL DEFAULT 0 (was 60), with the flex change
           "relaxes correction on SUSTAINED notes while keeping onsets tight, so "
           "long notes do not sound frozen. Sustain is judged from how long the "
           "pitch has been steady, not from how loud it is",
           false },
+        { EedPitchProcessor::kDepth, "%", 0.0, 100.0, 100.0,
+          "INTERNAL since 5 Sep 2026 (round 46): driven by `retune`, the 0-400 dial; a direct write here takes the device off that curve (it stays a dial in ADVANCED as the override). "
+          "DEPTH (5 Sep 2026): how much of the correction is APPLIED. 100 is "
+          "full correction (today's sound, bit-identical); 0 is exact identity "
+          "- the dry voice. Blended AFTER the retune envelope on the applied "
+          "shift, so it is the control the slow end of the retune dial only "
+          "pretends to be: Antares' slow end is transparent because it never "
+          "commits, not because it is slow. Measured on the reference take: "
+          "retune 150 at 25 -> 1.7c of movement (Antares max retune 0.6c) "
+          "while still improving the grid at 58%; retune 44 at 50 -> 2.8c at "
+          "64%. Gentleness lives HERE, not in Flex (which is a threshold and "
+          "tunes worse than dry above 25 on this material). Every mode writes "
+          "100 - a mode is a character, depth is how much of it you take",
+          false },   // was `true` in the boolean slot: a continuous knob advertised as an on/off switch (5 Sep 2026 verification)
 
         { EedPitchProcessor::kIgnoreVib, "", 0.0, 1.0, 1.0,
           "stops a wide vibrato flipping the target between neighbouring notes. "
@@ -114,7 +170,10 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "where concert pitch comes from. auto follows the TUNING EchoJay "
           "detected in the music, so a track cut at 441.3 Hz is corrected to "
           "441.3 rather than dragged to 440 and left sitting subtly wrong "
-          "against everything else. manual uses reference_hz as set",
+          "against everything else - but NEVER from this channel itself: a "
+          "grid derived from the signal being corrected is circular, so when "
+          "the only measurable material is this channel (a solo instance), "
+          "auto falls back to 440. manual uses reference_hz as set",
           false, { "auto", "manual" } },
 
         { EedPitchProcessor::kReferenceHz, "Hz",
@@ -125,21 +184,39 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "against everything",
           false },
 
+        { EedPitchProcessor::kRefManualByUser, "", 0.0, 1.0, 0.0,
+          "internal provenance marker, not a control: 1 once a person has "
+          "taken manual control of the reference (set reference_hz or chose "
+          "reference_source manual live). Saved states from before this "
+          "marker existed could carry a DETECTED reference laundered into "
+          "the manual field; on load, a manual reference without this marker "
+          "reverts to auto. Do not set this directly",
+          false },
+
         { EedPitchProcessor::kTranspose, "st",
           (double) PitchCorrect::kMinTranspose, (double) PitchCorrect::kMaxTranspose, 0.0,
           "shifts the corrected result in semitones, after correction",
           false },
 
-        { EedPitchProcessor::kNaturalVib, "%", 0.0, 200.0, 100.0,
-          "how much of the SINGER'S OWN vibrato survives correction. 100 keeps "
-          "it exactly as sung, 0 flattens it out for a dead-still note, above "
-          "100 exaggerates what is already there. This is not a generator - it "
-          "only scales movement the singer actually made, so it does nothing "
-          "on a note held straight. It applies at EVERY retune speed: at "
-          "retune 0 the note snaps but the wobble still rides on top, so a "
-          "brief of 'hard tuned' or 'match Auto-Tune retune 0' needs this at "
-          "0 (correction_mode hard writes exactly that)",
-          false },
+        { EedPitchProcessor::kNaturalVib, "%", 0.0, 200.0, 0.0,
+          "DEFAULT 0 = KEEP VIBRATO OFF (PROVISIONAL, round 50, 5 Sep 2026; was 100). "
+          "MEASURED on the reference take, all-voiced off-grid vs D minor @ 440: "
+          "the defaults with 100 render 8.71c / 30.1% within 5c - WORSE THAN THE "
+          "SOURCE (6.72c / 39.8%) and worse at onsets too (10.41c vs 8.26c); with 0 "
+          "they render 2.44c / 66.2%. Every ear-confirmed clip and every dial "
+          "measurement of rounds 31-46 was made at 0; the schema default never "
+          "went through the measurement. The mode table is unchanged (natural "
+          "and balanced keep at 100). "
+          "AS SHIPPED THIS IS A SWITCH, NOT A GAIN (measured 5 Sep 2026, "
+          "UI_SIMPLIFICATION.md ruling 3): 100 keeps the singer's own vibrato "
+          "exactly as sung; EVERY OTHER VALUE removes it entirely - 0, 40, 150 "
+          "and 200 render bit-identically. The intended gain (0 dead-still, "
+          "200 exaggerated) reaches the audio only on the shift path, which is "
+          "selected only at 100; making it a true gain at every value is DSP "
+          "work with its own bar (the ring-aligned fast term). Presets: "
+          "natural and balanced 100 (keep); tuned 40 and hard 0 (REMOVE). "
+          "Applies at every retune speed",
+          false },   // was `true` in the boolean slot: a continuous knob advertised as an on/off switch (5 Sep 2026 verification)
 
         { EedPitchProcessor::kVibDepth, "c", 0.0, 100.0, 0.0,
           "depth of ADDED vibrato, in cents. 0 is off and is the default - "
@@ -293,7 +370,31 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
         lastAutoRoot_ = -1; lastAutoFellBack_ = false;
         return true;
     }
-    if (id == kRefSource)   { refAuto_.store (value < 0.5); lastAutoTuning_ = 0.0f; return true; }
+    if (id == kRefSource)
+    {
+        const bool manual = value >= 0.5;
+        refAuto_.store (! manual); lastAutoTuning_ = 0.0f;
+        // Manual mode applies the MANUAL field - never whatever detection
+        // last left in the corrector (the laundering path, 29 Aug 2026).
+        if (manual) correct_.setReferenceHz (manualRefHz_.load());
+        if (manual && ! writingDefaults_ && ! applyingState())
+            refManualByUser_.store (true);
+        return true;
+    }
+    if (id == kRefManualByUser) { refManualByUser_.store (value >= 0.5); return true; }
+    if (id == kRetune)
+    {
+        // The dial writes BOTH internals from the curve; by construction the
+        // device is on it afterwards.
+        const float d = (float) juce::jlimit (0.0, (double) echojay::RetuneMap::kMaxDial, value);
+        float ms = 0.0f, dp = 1.0f; echojay::RetuneMap::dialTo (d, ms, dp);
+        retuneDial_.store (d);
+        correct_.setRetuneMs (ms);
+        correct_.setDepth (dp);
+        if (! applyingState()) retuneWasMs_ = 0.0f;
+        toCustomMode(); return true;
+    }
+    if (id == kDepth)       { correct_.setDepth ((float) value * 0.01f); return true; }   // a LIVE override (round 51); never a loaded state
     if (id == kMode)        { applyMode ((int) std::lround (value)); return true; }
     if (id == kNaturalVib)  { correct_.setNaturalVibrato ((float) value); toCustomMode(); return true; }
     if (id == kVibDepth)    { correct_.setVibDepthCents ((float) value);  return true; }
@@ -305,21 +406,48 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
     if (id == kCorrect)     { correctOn_.store (value >= 0.5); return true; }
     // These four are what a mode writes, so moving one by hand means the
     // display no longer honestly names the state.
-    if (id == kRetuneMs)    { correct_.setRetuneMs ((float) value); toCustomMode(); return true; }
+    if (id == kRetuneMs)
+    {
+        // The 150ms cap (2 Sep 2026): clamp ON LOAD with memory for the
+        // readout; live writes cannot exceed the schema max anyway.
+        if (value > (double) PitchCorrect::kMaxRetuneMs && applyingState())
+            retuneWasMs_ = (float) value;
+        else if (! applyingState())
+            retuneWasMs_ = 0.0f;
+        correct_.setRetuneMs ((float) value);
+        toCustomMode(); return true;
+    }
     if (id == kFlex)        { correct_.setFlex ((float) value);     toCustomMode(); return true; }
+    if (id == kSeamAttackMs){ forEachShifter ([&] (auto& e) { e.setSeamRampMs ((float) value); }); return true; }
     if (id == kHumanize)    { correct_.setHumanize ((float) value); toCustomMode(); return true; }
     if (id == kKeyRoot)
     {
         // Setting the key by hand IS choosing manual - otherwise the next
         // block silently overwrites it and the control looks broken.
         correct_.setKeyRoot ((int) std::lround (value));
-        if (! writingDefaults_) keyAuto_.store (false);
+        // Round 50: a STATE LOAD replays the field and decides the mode via
+        // key_source (which the schema applies first); only a LIVE write is a
+        // hand on the control. Without this, every session saved in AUTO
+        // loaded as MANUAL - the reference path had the guard, the key path
+        // did not (the same "applied differently on load" class as the trap).
+        if (! writingDefaults_ && ! applyingState()) keyAuto_.store (false);
         return true;
     }
     if (id == kScale)       { applyScale ((int) std::lround (value));
-                              if (! writingDefaults_) keyAuto_.store (false); return true; }
-    if (id == kReferenceHz) { correct_.setReferenceHz ((float) value);
-                              if (! writingDefaults_) refAuto_.store (false); return true; }
+                              if (! writingDefaults_ && ! applyingState()) keyAuto_.store (false); return true; }
+    if (id == kReferenceHz)
+    {
+        // The value lands in the MANUAL FIELD. Only a LIVE write - a person
+        // at the knob, or their agent in chat - takes manual control; a
+        // state load merely replays the field and decides the mode via
+        // reference_source (plus the onStateApplied migration).
+        manualRefHz_.store (juce::jlimit (PitchCorrect::kMinReferenceHz,
+                                          PitchCorrect::kMaxReferenceHz, (float) value));
+        if (! writingDefaults_ && ! applyingState())
+        { refAuto_.store (false); refManualByUser_.store (true); }
+        if (! refAuto_.load()) correct_.setReferenceHz (manualRefHz_.load());
+        return true;
+    }
     if (id == kTranspose)   { correct_.setTranspose ((float) value);   return true; }
     if (id == kIgnoreVib)   { correct_.setIgnoreVibrato (value >= 0.5); toCustomMode(); return true; }
     if (id == kResetStats)
@@ -343,6 +471,8 @@ double EedPitchProcessor::getParamValue (const juce::String& id) const
     if (id == kLowLatency)  return shifter().getLookaheadPeriods() <= kLookaheadTracking + 0.01f
                                  ? 1.0 : 0.0;
     if (id == kKeySource)   return keyAuto_.load() ? 0.0 : 1.0;
+    if (id == kRetune)      return (double) retuneDial_.load();
+    if (id == kDepth)       return (double) correct_.getDepth() * 100.0;
     if (id == kRefSource)   return refAuto_.load() ? 0.0 : 1.0;
     if (id == kMode)        return (double) modeIndex_.load();
     if (id == kNaturalVib)  return (double) correct_.getNaturalVibrato();
@@ -354,11 +484,13 @@ double EedPitchProcessor::getParamValue (const juce::String& id) const
     if (id == kOutputDb)    return (double) shifter().getOutputDb();
     if (id == kCorrect)     return correctOn_.load() ? 1.0 : 0.0;
     if (id == kRetuneMs)    return (double) correct_.getRetuneMs();
+    if (id == kSeamAttackMs) return (double) psola_[0].getSeamRampMs();
     if (id == kFlex)        return (double) correct_.getFlex();
     if (id == kHumanize)    return (double) correct_.getHumanize();
     if (id == kKeyRoot)     return (double) correct_.getKeyRoot();
     if (id == kScale)       return (double) scaleIndex_.load();
-    if (id == kReferenceHz) return (double) correct_.getReferenceHz();
+    if (id == kReferenceHz) return (double) manualRefHz_.load();   // the manual FIELD, never the live/detected grid
+    if (id == kRefManualByUser) return refManualByUser_.load() ? 1.0 : 0.0;
     if (id == kTranspose)   return (double) correct_.getTranspose();
     if (id == kIgnoreVib)   return correct_.getIgnoreVibrato() ? 1.0 : 0.0;
     if (id == kResetStats) return 0.0;
@@ -386,6 +518,13 @@ juce::String EedPitchProcessor::applyMode (int mode)
     // missing: hard tune came out at 15.7 cents mean deviation against 13.0 for
     // the untouched signal - i.e. WORSE than not correcting.
     struct Preset { float retune, flex, humanize, naturalVib; bool ignoreVib; };
+    // seam_attack_ms is WRITTEN BY EVERY MODE (3 Sep 2026 ruling), at the
+    // schema's default - one source of truth, consulted here rather than
+    // copied: it is a fix constant (the word-start pitch-continuity ramp),
+    // not a mode choice, but a character-bearing param that a mode does not
+    // write is exactly how natural_vibrato shipped WORSE than dry (§12).
+    const float seamAttack = [&]
+    { const auto* sp = schema().find (kSeamAttackMs); return sp != nullptr ? (float) sp->def : 0.0f; }();
     // targeting_ignores_vibrato is ON in ALL FOUR modes. The spec's first §4
     // table set it off for tuned/hard, and that was a spec error (its author's
     // words), corrected in both places 2026-08-14: target selection without
@@ -402,11 +541,24 @@ juce::String EedPitchProcessor::applyMode (int mode)
     const Preset& p = kPresets[m];
 
     const juce::ScopedValueSetter<bool> guard (applyingMode_, true);
-    correct_.setRetuneMs (p.retune);
+    // Round 51 (the off-curve state withdrawn): a mode is a DIAL POSITION - the
+    // one whose retune-ms branch matches the table's retune - and takes the
+    // curve's retune AND depth there, so the dial always means what it says
+    // and a session saved in a mode reloads as that mode. (Until round 51 a
+    // mode wrote the table's retune with depth 100, off the curve.)
+    {
+        const float d = echojay::RetuneMap::dialForRetuneMs (p.retune);
+        float ms = 0.0f, dp = 1.0f; echojay::RetuneMap::dialTo (d, ms, dp);
+        retuneDial_.store (d);
+        correct_.setRetuneMs (ms);
+        correct_.setDepth (dp);
+    }
     correct_.setFlex (p.flex);
     correct_.setHumanize (p.humanize);
     correct_.setIgnoreVibrato (p.ignoreVib);
     correct_.setNaturalVibrato (p.naturalVib);
+    forEachShifter ([&] (auto& e) { e.setSeamRampMs (seamAttack); });
+    // DEPTH follows the dial (round 51): written above from the curve.
 
     // Every mode preserves formants: the character is retune speed and how much
     // deviation survives, never whether it still sounds like the singer.
@@ -415,11 +567,13 @@ juce::String EedPitchProcessor::applyMode (int mode)
     const auto* spec = schema().find (kMode);
     juce::String name = spec != nullptr ? juce::String (spec->choiceLabel (m)) : juce::String (m);
 
-    pendingModeSummary_ = "which set retune_speed_ms " + juce::String (p.retune, 0)
+    pendingModeSummary_ = "which set retune " + juce::String (retuneDial_.load(), 0)
+         + " (retune_speed_ms " + juce::String (correct_.getRetuneMs(), 0) + ", depth " + juce::String (correct_.getDepth() * 100.0f, 0) + " from the curve)"
          + ", flex " + juce::String (p.flex, 0)
          + ", humanize " + juce::String (p.humanize, 0)
          + ", natural_vibrato " + juce::String (p.naturalVib, 0)
          + ", targeting_ignores_vibrato " + juce::String (p.ignoreVib ? "on" : "off")
+         + ", seam_attack_ms " + juce::String (seamAttack, 0)
          + ", formant_mode preserve";
 
     return "correction_mode " + name
@@ -527,7 +681,10 @@ void EedPitchProcessor::refreshAutoKey()
     if (! keyAuto && ! refAuto)
     {
         const juce::ScopedLock sl (autoLock_);
-        autoState_.active = false;
+        autoState_.active         = false;
+        autoState_.refAuto        = false;
+        autoState_.refApplied     = correct_.getReferenceHz();
+        autoState_.refSelfIgnored = false;
         return;
     }
 
@@ -540,12 +697,23 @@ void EedPitchProcessor::refreshAutoKey()
     // 13 cents off the nearest note to 29, i.e. worse than not correcting.
     const bool usable = f.usable();
 
+    // A fact whose primary came from THIS instance's own channel: the
+    // reference guard below has always treated it as unmeasured for tuning.
+    // Behind keySelfGuard_ it is unmeasured for KEY ROOT/MODE as well (see
+    // debugKeySelfGuard): the corrector must not take its scale from the
+    // melody it is correcting. Chromatic, actively applied - never the last
+    // key - exactly as the confidence gate does.
+    const bool selfFact    = f.selfDerived && f.publisherId != 0
+                          && f.publisherId == keyFeedSelfId_.load (std::memory_order_relaxed);
+    const bool keyCircular = keySelfGuard_.load() && selfFact;
+    const bool keyUsable   = usable && ! keyCircular;
+
     if (keyAuto)
     {
-        const int  root  = usable ? f.root  : 0;
-        const bool minor = usable ? f.minor : false;
+        const int  root  = keyUsable ? f.root  : 0;
+        const bool minor = keyUsable ? f.minor : false;
 
-        if (! usable)
+        if (! keyUsable)
         {
             if (! lastAutoFellBack_)
             {
@@ -566,22 +734,88 @@ void EedPitchProcessor::refreshAutoKey()
         }
     }
 
-    if (refAuto && usable && f.tuningHz > 0.0f
-        && std::abs (f.tuningHz - lastAutoTuning_) > 0.05f)
+    // THE CIRCULARITY GUARD (29 Aug 2026 ruling): auto must never derive
+    // the grid from the signal being corrected. A fact whose primary came
+    // from THIS instance's own channel (selfDerived, same publisher) is a
+    // loop closing on its own output - a flat singer defines a flat grid
+    // and correction becomes a no-op in the mean. Measured on the standing
+    // reference: the installed default corrected Sean's take to its own
+    // 439.1 Hz, -3.4c flat of the Antares grid ("never arrives at the
+    // note"). Such a fact is treated as UNMEASURED: fall back to 440,
+    // never to the channel itself. The fallback is applied actively, not
+    // by omission - on a solo instance auto now IS manual-440.
+    bool refCircular = false;
+    if (refAuto)
     {
-        correct_.setReferenceHz (f.tuningHz);
-        lastAutoTuning_ = f.tuningHz;
+        refCircular = selfFact;
+        const float wantRef = (usable && ! refCircular && f.tuningHz > 0.0f)
+                                ? f.tuningHz : 440.0f;
+        if (std::abs (wantRef - lastAutoTuning_) > 0.05f)
+        {
+            correct_.setReferenceHz (wantRef);
+            lastAutoTuning_ = wantRef;
+        }
     }
 
     const juce::ScopedLock sl (autoLock_);
     autoState_.active     = keyAuto;
-    autoState_.applied    = keyAuto && usable;
-    autoState_.fellBack   = keyAuto && ! usable;
-    autoState_.root       = usable ? f.root : 0;
-    autoState_.minor      = usable && f.minor;
+    autoState_.applied    = keyAuto && keyUsable;
+    autoState_.fellBack   = keyAuto && ! keyUsable;
+    autoState_.root       = keyUsable ? f.root : 0;
+    autoState_.minor      = keyUsable && f.minor;
+    autoState_.keySelfIgnored = keyAuto && usable && keyCircular;
     autoState_.conf       = f.confidence;
     autoState_.tuningHz   = f.tuningHz;
     autoState_.sourceName = juce::String (juce::CharPointer_ASCII (f.sourceName));
+    autoState_.refAuto        = refAuto;
+    autoState_.refApplied     = correct_.getReferenceHz();
+    autoState_.refSelfIgnored = refAuto && refCircular;
+}
+
+// The laundered-reference migration (29 Aug 2026): before manualRefHz_
+// existed, a state save exported the corrector's LIVE reference - under
+// auto, the detected value - and the load's reference_hz write flipped the
+// mode to manual. Anyone who saved a session with auto reference got a
+// detected grid promoted to a "manual" setting with no control to change
+// it. A genuine pre-fix manual reference (chat-set) is indistinguishable
+// from a laundered one in saved state - both are just {manual, value} - so
+// per the ruling both revert to auto; the readout shows it and the new REF
+// control restores a wanted manual value in one gesture.
+void EedPitchProcessor::onStateApplied()
+{
+    // Round 51 (the round-46 leg-1 guarantee WITHDRAWN): a loaded state that is
+    // not on the curve SNAPS to the nearest dial position and uses the curve's
+    // values. There is no literal-values state for a session to be stuck in,
+    // so "correction off until you touch RETUNE" cannot exist. This changes
+    // the sound of pre-re-map sessions by the distance from their saved values
+    // to the nearest curve point (Sean's 3 Sep file: retune 44 / depth 100 ->
+    // dial 0 = 6 ms / 100 %, the setting he chose by ear in round 40).
+    if (! onCurve())
+    {
+        const float d = echojay::RetuneMap::nearestDial (correct_.getRetuneMs(), correct_.getDepth());
+        float ms = 0.0f, dp = 1.0f; echojay::RetuneMap::dialTo (d, ms, dp);
+        retuneDial_.store (d);
+        correct_.setRetuneMs (ms);
+        correct_.setDepth (dp);
+    }
+    if (! refAuto_.load() && ! refManualByUser_.load())
+    {
+        refAuto_.store (true);
+        lastAutoTuning_ = 0.0f;   // force the next refresh to re-apply
+    }
+}
+
+// ONE DEFAULT PER PARAMETER (3 Sep 2026 ruling): a bare-constructed device
+// consults the schema for every default, the same call the registry and
+// state restore make. seam_attack_ms constructed at the engine's 0 against
+// the advertised 60 - both live paths happened to write the schema value
+// first, which is luck, not design, and a third path (a preset loader, a
+// harness, a refactor) would have run a fix that was not switched on and
+// reported it as measured. Any construction path that does not consult
+// the schema default is a bug, not an exemption.
+EedPitchProcessor::EedPitchProcessor()
+{
+    resetParamsToDefaults();
 }
 
 void EedPitchProcessor::resetParamsToDefaults()
@@ -623,11 +857,15 @@ void EedPitchProcessor::applyScale (int index)
 
     juce::StringArray on;
     static const char* kNames[12] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
+    const int root = correct_.getKeyRoot();
     for (int s = 0; s < 12; ++s)
     {
         const bool en = (kMasks[i] >> s) & 1;
         correct_.setDegree (s, en, correct_.degreeBias (s));
-        if (en) on.add (kNames[s]);
+        // The NAME is a pitch class (root + degree), not a degree index —
+        // this summary used to print C-rooted names for every root
+        // (3 Sep 2026, found in the frame sweep).
+        if (en) on.add (kNames[(root + s) % 12]);
     }
 
     const auto* spec = schema().find (kScale);
@@ -651,12 +889,24 @@ void EedPitchProcessor::refreshLatency()
     // on - a stale estimate makes note-change detection fire late, which P2's
     // envelope would then act on from the wrong place.
     forEachShifter ([&] (auto& e) { e.setPitchLagSamples (engine_.pitchLagFor (vt)); });
+    // TIMING FOUNDATION (5 Sep 2026, TIMING_ALIGNMENT_RECORD): the shifter's
+    // per-hop back-dating needs the detector's window geometry for this voice.
+    { int W = 0, tauMax = 0, hop = 128; engine_.lagModelFor (vt, W, tauMax, hop);
+      forEachShifter ([&] (auto& e) { e.setPerHopLag (true, W, tauMax, hop); }); }
 
-    setLatencySamples (shifter().latencySamples());
+    // Drift bleed ON in the shipped path (5 Sep 2026 ruling): the per-span
+    // drift discharge at v/uv boundaries was measured as the field's
+    // near-zero-shift period inversions; bleeding it continuously (<=3
+    // cents momentary detune, tau 100 ms) cut the constant-shift breaks
+    // 36->15 at +5c on source4 and beat the old contract's own ideal floor.
+    forEachShifter ([&] (auto& e) { e.setDriftBleed (true); });
+
+    ejSetLatencyLogged (*this, shifter().latencySamples(), "EedPitchProcessor refreshLatency");
 }
 
 void EedPitchProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
+    EJ_LAT_LOG ("pitch: prepareToPlay fs %.0f block %d (reported latency before: %d)", sampleRate, samplesPerBlock, getLatencySamples());
     sampleRate_ = sampleRate;
     engine_.prepare (sampleRate, samplesPerBlock);
 
@@ -681,9 +931,64 @@ void EedPitchProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     refreshLatency();
 }
 
+// THE TRANSPORT RESET (round 48, DEFECT_PRESS_PLAY_PHASING). What a host's
+// Reset means: the next block is the first block after a discontinuity, and
+// nothing synthesised from here may come from audio before it. CLEARED, and
+// why each qualifies:
+//   engine_.reset()      the detector's input ring, scratch, decimation/hop
+//                        phase, sweep state, f0 history and continuity
+//                        memory, anti-alias filter states, published reading
+//                        - all derived from the previous position's audio;
+//   shifter.reset()      the co-timed rings (input, f0, target, shift,
+//                        decision, slow reference), the write/emit/place
+//                        heads, the splice and seam state machines (drift,
+//                        fade, ramp, bridge, method mix), the LPC coefficient
+//                        ring and synthesis state, the drift-bleed gate, the
+//                        last shift - the grains were being built from them;
+//   correct_.reset()     curCents_, slowCents_, noteRefCents_, the pending
+//                        note and its median buffer, the resume/seed medians,
+//                        the applied-shift pole and its snap latch, the
+//                        measured vibrato depth, the last-hop readbacks - the
+//                        envelope state the next block would glide FROM;
+//   f0Gate_.reset()      the jump gate's last-good f0 (a continuity memory);
+//   the block-to-block hold (lastTarget_/lastShift_/lastHopF0_/
+//                        lastHopVoiced_/lastCorrecting_) - the "hold the last
+//                        target through a gap" state, which would hold the
+//                        previous position's target into the new one;
+//   ribbonAccum_         the ribbon's decimation phase (display only; reset
+//                        so the first column lands where the audio does).
+// DELIBERATELY NOT CLEARED: every parameter; the KEY state (keyAuto_, the
+// auto-key memos lastAutoRoot_/lastAutoMinor_/lastAutoFellBack_/
+// lastAutoTuning_, the corrector's key/scale/degrees and scale cross-fade)
+// - round 20's stale-key question has its own ruling and its own hysteresis
+// design and is NOT bundled here; the latency memo (configuration); the
+// retune trace ring (an editor readout); the octave-guard statistics
+// (reset_stats' domain). Every clearing function here is the one prepare()
+// calls, so "reset == fresh instance" holds by construction (proved by the
+// suite's LOCATE-RESET leg, bit-identical to FRESH).
+void EedPitchProcessor::applyReset() noexcept
+{
+    EJ_LAT_LOG ("pitch: transport reset applied (rings cleared)");
+    engine_.reset();
+    forEachShifter ([] (auto& e) { e.reset(); });
+    correct_.reset();
+    f0Gate_.reset();
+    lastTarget_ = 0.0f;
+    lastShift_ = echojay::PsolaEngine::kNoShift;
+    lastHopF0_ = 0.0f;
+    lastHopVoiced_ = false;
+    lastCorrecting_ = false;
+    ribbonAccum_ = 0;
+}
+
 void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
+
+    // Before anything, including the bypass path: a reset that arrived since
+    // the last block is applied here, on the audio thread.
+    if (resetPending_.exchange (false, std::memory_order_acq_rel))
+        applyReset();
 
     // Clear any output channel with no input behind it — the one write this
     // device is allowed, and it never touches a channel that carries signal.
@@ -730,6 +1035,7 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     const uint64_t blockStart = engine_.inputPosition() - (uint64_t) n;
 
     float target     = lastTarget_;
+    float shift      = lastShift_;
     float sliceF0    = lastHopF0_;
     bool  sliceVoiced = lastHopVoiced_;
     bool  correcting = lastCorrecting_;
@@ -751,7 +1057,7 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
             for (int ch = 0; ch < numCh; ++ch)
                 shifter (ch).process (buffer.getReadPointer (ch) + cursor,
                                       buffer.getWritePointer (ch) + cursor, len,
-                                      sliceF0, sliceVoiced, target);
+                                      sliceF0, sliceVoiced, target, shift);
             cursor = sliceEnd;
         }
 
@@ -813,14 +1119,42 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
                 // emits those samples as bit-exact dry THROUGH the seam fade,
                 // which exists for exactly this join. Same audible content,
                 // faded instead of stepped - and unvoiced stays sacred.
-                if (t > 0.0f)           target = t;
+                if (t > 0.0f)         { target = t;
+                                          shift = correct_.shiftPreferred()
+                                              ? correct_.lastShiftCents()
+                                              : echojay::PsolaEngine::kNoShift; }
                 else if (target <= 0.0f) correcting = false;   // nothing to hold yet
-                // else: hold the last target through the gap.
+                // else: hold the last target AND SHIFT through the gap —
+                // holding a shift is gentler than holding an absolute
+                // target across a gap the voice moved through.
+
+                // Retune trace: one record per hop while correcting (the
+                // editor drains; unread records are simply overwritten).
+                if (hops[h].voiced && gatedF0 > 0.0f)
+                {
+                    const uint32_t w = traceW_.load (std::memory_order_relaxed);
+                    auto& r = trace_[w % (uint32_t) kTraceCap];
+                    r.tSec  = (double) hops[h].inputPos / sampleRate_;
+                    r.f0Hz  = gatedF0;
+                    r.inC   = correct_.lastInCents();
+                    r.slowC = correct_.lastSlowCents();
+                    r.oscC  = correct_.lastOscCents();
+                    r.aimC  = correct_.lastAimCents();
+                    // The APPLIED shift, in cents, on EITHER path (round 50):
+                    // the shift path applies lastShiftCents(); the legacy path
+                    // applies the target, so its shift is target vs the hop's f0.
+                    r.envC  = t <= 0.0f ? 0.0f
+                            : correct_.shiftPreferred() ? correct_.lastShiftCents()
+                                                        : 1200.0f * std::log2 (t / gatedF0);
+                    traceW_.store (w + 1, std::memory_order_release);
+                }
             }
             else
             {
-                // Not correcting: the fixed-target diagnostic still applies.
+                // Not correcting: the fixed-target diagnostic still applies
+                // (legacy target/f0 semantics — no shift).
                 target = shifter().getTargetHz();
+                shift  = echojay::PsolaEngine::kNoShift;
                 correcting = false;
             }
         }
@@ -831,9 +1165,9 @@ void EedPitchProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         for (int ch = 0; ch < numCh; ++ch)
             shifter (ch).process (buffer.getReadPointer (ch) + cursor,
                                   buffer.getWritePointer (ch) + cursor, n - cursor,
-                                  sliceF0, sliceVoiced, target);
+                                  sliceF0, sliceVoiced, target, shift);
 
-    lastTarget_ = target; lastHopF0_ = sliceF0;
+    lastTarget_ = target; lastShift_ = shift; lastHopF0_ = sliceF0;
     lastHopVoiced_ = sliceVoiced; lastCorrecting_ = correcting;
 
     // Feed the ribbon here rather than from the editor's timer, so the trace

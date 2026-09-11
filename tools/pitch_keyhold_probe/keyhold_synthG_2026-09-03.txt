@@ -1,0 +1,7 @@
+E4 DAMAGE: sourceNEW through the production chain (hard, ign OFF, tau 6, seam 60) under G major until 4.01s then cross-fade to D minor, vs clean D minor
+   0.0- 2.5s: off-grid-to-Dminor median  stale  8.66c  clean  2.87c  source  6.19c | hops where stale and clean differ by >60c: 240 of 504 (47.6%)
+   2.5- 5.0s: off-grid-to-Dminor median  stale  4.77c  clean  4.12c  source  7.30c | hops where stale and clean differ by >60c: 80 of 711 (11.3%)
+   5.0-13.5s: off-grid-to-Dminor median  stale  4.09c  clean  4.09c  source  6.74c | hops where stale and clean differ by >60c: 0 of 1566 (0.0%)
+  semitone-moved runs (t, source Hz, stale vs clean cents from A440): [0.26-0.33s E->F] [0.62-0.72s E->F] [0.74-0.79s F#->F] [0.81-0.86s E->F] [1.57-1.76s F#->F] [2.94-2.99s F#->F] [3.26-3.33s E->F]
+
+E5 WHOLE TAKE, CHROMATIC (below-gate auto key on a solo vocal) vs D MINOR: 2 of 2896 voiced hops (0.1%, 0.01 s) land a semitone apart

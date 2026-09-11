@@ -1,0 +1,262 @@
+== a FRESHLY CONSTRUCTED device matches its advertised defaults ==
+  [PASS] every param constructs at its advertised default
+== correction_mode WRITES the visible params ==
+    applied: correction_mode hard; which set retune 0 (retune_speed_ms 6, depth 100 from the curve), flex 0, humanize 0, natural_vibrato 0, targeting_ignores_vibrato on, seam_attack_ms 60, formant_mode preserve
+  [PASS] hard wrote retune_speed_ms 6 (round 51: a mode is a dial position; hard = dial 0 = the curve's 6 ms floor, which is the effective floor anyway)
+  [PASS] hard wrote flex 0
+  [PASS] hard wrote humanize 0
+  [PASS] hard wrote ignore_vibrato on
+  [PASS] the summary NAMES what it changed, not just the mode
+    applied: correction_mode natural; which set retune 78.5714 (retune_speed_ms 120, depth 29.2857 from the curve), flex 55, humanize 60, natural_vibrato 100, targeting_ignores_vibrato on, seam_attack_ms 60, formant_mode preserve
+  [PASS] natural wrote retune 120
+  [PASS] natural wrote flex 55
+  [PASS] natural wrote humanize 60
+  [PASS] natural wrote ignore_vibrato on
+  [PASS] balanced matches the spec table (40 / 25 / 30)
+  [PASS] tuned matches the spec table (8 / 0 / 0)
+== a manual move knocks the display to custom ==
+  [PASS] reads natural after selecting it
+  [PASS] moving flex by hand shows custom
+  [PASS] ...and the hand-set value stuck
+== pitch_scale: MERGE semantics keyed on semitone ==
+  [PASS] major enabled C, disabled C#
+    applied: pitch_scale B off (scale custom)
+  [PASS] the 7th was removed
+  [PASS] every OMITTED degree kept its state - merge, not replace
+  [PASS] editing a degree moves scale to custom
+== pitch_scale: bias_cents merges independently of enabled ==
+  [PASS] E biased -14 cents
+  [PASS] and `enabled` was untouched by an omitted field
+== an entry with no semitone is SKIPPED, not guessed ==
+  [PASS] keyless entry reported as skipped
+== P4: key_source auto FOLLOWS the detected key ==
+  [PASS] key_root followed to F#
+  [PASS] scale followed to minor
+  [PASS] the LIVE grid followed the detected tuning
+  [PASS] the manual FIELD stayed 440 - a detected value never enters it
+  [PASS] a self-derived fact from THIS instance is not followed - grid falls back to 440
+  [PASS] ...and the state says so (refSelfIgnored), for the readout
+  [PASS] the state names its source for the UI: Music Bus
+== KEY-SIDE CIRCULARITY GUARD (behind debugKeySelfGuard): a self-derived fact is not followed for key root/mode - chromatic, never the last key ==
+  [PASS] baseline: an external fact is followed (F# minor)
+  [PASS] flag OFF (today's build): the self-derived key IS followed - the defect
+  [PASS] ...while the reference guard already ignores it (440)
+  [PASS] flag ON: the self-derived key is NOT applied
+  [PASS] ...keySelfIgnored is set for the readout
+  [PASS] ...the scale reads chromatic
+  [PASS] ...reference stays 440
+  [PASS] ...the PREVIOUS key (F# minor) did not survive - chromatic, not the last key
+  [PASS] a self-derived fact from ANOTHER instance is followed (A major)
+  [PASS] an external fact restores key (F# minor) and reference (441.3)
+== KEY-SIDE GUARD, RENDER BIT-IDENTITY on the standing take (bar item 2) ==
+  [PASS] guard ON + self-derived self fact renders BIT-IDENTICAL to manual chromatic (0 samples differ)
+  [PASS] POSITIVE CONTROL: guard OFF applies the self-derived G major and differs from chromatic (377385 samples differ)
+  [PASS] guard ON vs OFF under an EXTERNAL fact: bit-identical (0 samples differ)
+== SEAN'S SAVED STATE (3 Sep 2026): what is DISPLAYED vs what is APPLIED ==
+    loaded: key_source manual, reference_source auto, reference_hz FIELD 439.19, APPLIED 440.00, seam_attack_ms 60, retune 6.00
+  [PASS] key is MANUAL (not on the auto path)
+  [PASS] reference is AUTO
+  [PASS] APPLIED reference under auto with no source is 440.0
+  [PASS] ...while the reference_hz FIELD (the REF knob) still reads the persisted 439.19 - DORMANT contamination
+  [PASS] seam_attack_ms absent from the state -> schema default 60 applied
+  [PASS] a self-derived 439.19 fact from his own channel is refused: applied stays 440 (refSelfIgnored)
+  [PASS] ...and his MANUAL key is untouched by the key guard (not on the auto path)
+    after reference_source -> manual: APPLIED 439.19
+  [PASS] switching reference_source to manual APPLIES the persisted 439.19 - the guard never fires on a loaded value
+== THE RETUNE DIAL (round 46): the curve, the default, off-curve, saved-state semantics ==
+  [PASS] fresh instance: retune dial 0
+  [PASS] fresh instance: retune_speed_ms 6 / depth 100 (the round-40 default)
+    dial   0 -> retune   6.000 ms  depth 1.0000   (tf4 row   6.0 / 1.000) 
+    dial   2 -> retune   6.118 ms  depth 0.9317   (tf4 row   6.1 / 0.932) 
+    dial   5 -> retune   6.740 ms  depth 0.8703   (tf4 row   6.7 / 0.870) 
+    dial  10 -> retune   8.960 ms  depth 0.7893   (tf4 row   9.0 / 0.789) 
+    dial  15 -> retune  12.660 ms  depth 0.7202   (tf4 row  12.7 / 0.720) 
+    dial  20 -> retune  17.840 ms  depth 0.6577   (tf4 row  17.8 / 0.658) 
+    dial  25 -> retune  24.500 ms  depth 0.5999   (tf4 row  24.5 / 0.600) 
+    dial  30 -> retune  32.640 ms  depth 0.5454   (tf4 row  32.6 / 0.545) 
+    dial  35 -> retune  42.260 ms  depth 0.4936   (tf4 row  42.3 / 0.494) 
+    dial  40 -> retune  53.360 ms  depth 0.4440   (tf4 row  53.4 / 0.444) 
+    dial  45 -> retune  65.940 ms  depth 0.3962   (tf4 row  65.9 / 0.396) 
+    dial  50 -> retune  80.000 ms  depth 0.3500   (tf4 row  80.0 / 0.350) 
+    dial  75 -> retune 115.000 ms  depth 0.3000   (tf4 row 115.0 / 0.300) 
+    dial 100 -> retune 150.000 ms  depth 0.2500   (tf4 row 150.0 / 0.250) 
+    dial 150 -> retune 150.000 ms  depth 0.2000   (tf4 row 150.0 / 0.200) 
+    dial 200 -> retune 150.000 ms  depth 0.1500   (tf4 row 150.0 / 0.150) 
+    dial 300 -> retune 150.000 ms  depth 0.1250   (tf4 row 150.0 / 0.125) 
+    dial 400 -> retune 150.000 ms  depth 0.1000   (tf4 row 150.0 / 0.100) 
+  [PASS] the shipped mapping reproduces the 18 round-40 (retune, depth) pairs within the rows' printed precision, on-curve at every one
+  [PASS] dial 100 -> 150 ms / depth 25
+  [PASS] DEPTH turned by hand to 50: applied live, the dial still reads 100 (no suffix, no state)
+  [PASS] turning RETUNE puts depth back on the curve (25)
+  [PASS] a direct retune_speed_ms write (the model's path) is honoured live
+  [PASS] mode natural is the DIAL POSITION of its 120 ms (78.6): 120 ms / depth 29 from the curve - the dial means what it says
+  [PASS] turning the dial from a mode: custom
+    Sean's 3 Sep file (retune 44.21 / depth 100) loads as dial 0.00 = 6.00 ms / depth 100 %  (distance snapped: 38.2 ms in retune, 0 points in depth)
+  [PASS] Sean's 3 Sep file SNAPS to dial 0 = 6 ms / depth 100 (the nearest curve point, and the setting he chose by ear in round 40)
+  [PASS] his session at retune 6 / depth 100: dial 0, unchanged
+  [PASS] save/load at dial 200: retune 200, 150 ms / depth 15
+    dial 200 with DEPTH overridden to 60 saved -> reloads as dial 92.25 = 139.1 ms / depth 26.6 %
+  [PASS] ...the override is NOT a loaded state: reloading returns to the curve (the nearest dial position to 150 ms / 60 %)
+  [PASS] schema order: `retune` precedes retune_speed_ms and depth
+== THE DEPTH TRAP CANNOT EXIST (round 51): a saved low depth SNAPS to the curve on load ==
+    the round-45 file (6 ms / depth 10) loads as dial 36.50 = 45.4 ms / depth 48 %
+  [PASS] the file's depth 10 is NOT applied: the state snaps to the nearest curve point, and the dial means what it says
+    deviation from the latency-aligned SOURCE (RMS % of source): dial 0 69.5%   the round-45 low-depth file as it now loads 65.8%   (the trap rendered 11.4% in round 50)
+  [PASS] the loaded file corrects at the curve's depth - no longer nearly uncorrected
+== KEY_SOURCE SURVIVES A STATE LOAD (round 50: the key setters flipped auto to manual on load) ==
+  [PASS] a session saved with key_source AUTO loads as AUTO (key_root/scale replayed from the file do not take manual)
+  [PASS] ...while a LIVE key_root write still takes manual
+== LAYOUT AUDIT (round 50, the standing rule extended): every view, several sizes, no carry-over, everything inside its frame ==
+  [PASS] 620x400 front: layout clean (0 violations)
+  [PASS] 620x400 advanced: layout clean (0 violations)
+  [PASS] 620x400 front after advanced: layout clean (0 violations)
+  [PASS] 620x340 front: layout clean (0 violations)
+  [PASS] 620x340 advanced: layout clean (0 violations)
+  [PASS] 620x340 front after advanced: layout clean (0 violations)
+  [PASS] 760x480 front: layout clean (0 violations)
+  [PASS] 760x480 advanced: layout clean (0 violations)
+  [PASS] 760x480 front after advanced: layout clean (0 violations)
+  [PASS] 560x300 front: layout clean (0 violations)
+  [PASS] 560x300 advanced: layout clean (0 violations)
+  [PASS] 560x300 front after advanced: layout clean (0 violations)
+== TRANSPORT RESET (round 48, DEFECT_PRESS_PLAY_PHASING): positive control, then the fix ==
+    P1 4.00 s -> locate -> P2 5.79 s, render 0.99 s (sourceNEW.wav)
+    LOCATE-STALE  vs FRESH: first 150 ms   5712/7200 samples differ, diff RMS 0.07903 (signal RMS 0.07406, 106.7%); after 150 ms diff RMS 0.00018 (0.4%); last differing sample at 991.9 ms; 18417 differ in all
+    LOCATE-RESET  vs FRESH: first 150 ms      0/7200 samples differ, diff RMS 0.00000 (signal RMS 0.07406, 0.0%); after 150 ms diff RMS 0.00000 (0.0%); last differing sample at 0.0 ms; 0 differ in all
+  [PASS] POSITIVE CONTROL: a locate WITHOUT clearing synthesises the first 150 ms from stale content (differs from FRESH by 106.7% RMS)
+  [PASS] THE FIX: a locate WITH reset() renders BIT-IDENTICAL to a fresh instance from the same position (0 samples differ)
+== below the gate it falls to CHROMATIC, not to the last key ==
+  [PASS] a 0.31-confidence key falls back to chromatic
+  [PASS] the state reports the fallback so the UI can show it
+== no source at all is also chromatic, not a guess ==
+  [PASS] no key detected -> chromatic
+== setting key or scale BY HAND takes over from auto ==
+  [PASS] a hand-set scale flips key_source to manual
+  [PASS] the hand-set scale survives the next detected key
+== a live key change CROSS-FADES rather than switching on a sample ==
+  [PASS] settled after the first key
+  [PASS] a modulation starts a cross-fade instead of stepping
+  [PASS] ...and it is genuinely gradual
+== the P3-P4 safety rule is stated where the model reads it ==
+  [PASS] scale DEFAULTS to chromatic
+  [PASS] text forbids guessing a key outright
+  [PASS] text carries the measured cost of guessing (13 -> 29 cents)
+  [PASS] text names chromatic as the answer when the key is unknown
+== the two acceptance briefs are discriminable from the text ==
+  [PASS] spec 10.5's exact brief appears, attached to hard
+  [PASS] spec 10.6's brief appears, attached to natural
+  [PASS] 'obviously tuned' sits next to the word hard, not floating
+  [PASS] natural is described by what it SOUNDS like, not by its numbers
+== pitch_scale MERGE semantics are stated, since eq_bands replaces ==
+  [PASS] the advertisement mentions the pitch_scale move at all
+  [PASS] ...and states its MERGE semantics
+== the correction_mode table is COMPLETE: every param is either written by every mode, or exempted here with a reason ==
+  [PASS] exempt id still exists in the schema: correct
+  [PASS] exempt id still exists in the schema: correction_mode
+  [PASS] exempt id still exists in the schema: key_source
+  [PASS] exempt id still exists in the schema: key_root
+  [PASS] exempt id still exists in the schema: scale
+  [PASS] exempt id still exists in the schema: reference_source
+  [PASS] exempt id still exists in the schema: reference_hz
+  [PASS] exempt id still exists in the schema: ref_manual_by_user
+  [PASS] exempt id still exists in the schema: transpose
+  [PASS] exempt id still exists in the schema: voice_type
+  [PASS] exempt id still exists in the schema: tracking
+  [PASS] exempt id still exists in the schema: target_hz
+  [PASS] exempt id still exists in the schema: low_latency
+  [PASS] exempt id still exists in the schema: formant_shift
+  [PASS] exempt id still exists in the schema: mix
+  [PASS] exempt id still exists in the schema: output_db
+  [PASS] exempt id still exists in the schema: vib_depth_cents
+  [PASS] exempt id still exists in the schema: vib_rate_hz
+  [PASS] exempt id still exists in the schema: vib_shape
+  [PASS] exempt id still exists in the schema: vib_onset_ms
+  [PASS] exempt id still exists in the schema: reset_stats
+  [PASS] retune is character-bearing (not exempted), so every mode must WRITE it - if it was just added, either give it a column in applyMode's table or exempt it HERE with the reason
+  [PASS] retune_speed_ms is character-bearing (not exempted), so every mode must WRITE it - if it was just added, either give it a column in applyMode's table or exempt it HERE with the reason
+  [PASS] seam_attack_ms is character-bearing (not exempted), so every mode must WRITE it - if it was just added, either give it a column in applyMode's table or exempt it HERE with the reason
+  [PASS] flex is character-bearing (not exempted), so every mode must WRITE it - if it was just added, either give it a column in applyMode's table or exempt it HERE with the reason
+  [PASS] humanize is character-bearing (not exempted), so every mode must WRITE it - if it was just added, either give it a column in applyMode's table or exempt it HERE with the reason
+  [PASS] depth is character-bearing (not exempted), so every mode must WRITE it - if it was just added, either give it a column in applyMode's table or exempt it HERE with the reason
+  [PASS] targeting_ignores_vibrato is character-bearing (not exempted), so every mode must WRITE it - if it was just added, either give it a column in applyMode's table or exempt it HERE with the reason
+  [PASS] natural_vibrato is character-bearing (not exempted), so every mode must WRITE it - if it was just added, either give it a column in applyMode's table or exempt it HERE with the reason
+  [PASS] formant_mode is character-bearing (not exempted), so every mode must WRITE it - if it was just added, either give it a column in applyMode's table or exempt it HERE with the reason
+== UI coverage: every schema param has a hand control, or is exempted here with the reason ==
+  [PASS] UI-exempt id still exists in the schema: ref_manual_by_user
+  [PASS] UI-exempt id still exists in the schema: transpose
+  [PASS] UI-exempt id still exists in the schema: target_hz
+  [PASS] UI-exempt id still exists in the schema: retune_speed_ms
+  [PASS] UI-exempt id still exists in the schema: reset_stats
+  [PASS] hand-controlled id still exists in the schema: voice_type
+  [PASS] hand-controlled id still exists in the schema: key_root
+  [PASS] hand-controlled id still exists in the schema: scale
+  [PASS] hand-controlled id still exists in the schema: key_source
+  [PASS] hand-controlled id still exists in the schema: retune
+  [PASS] hand-controlled id still exists in the schema: flex
+  [PASS] hand-controlled id still exists in the schema: humanize
+  [PASS] hand-controlled id still exists in the schema: depth
+  [PASS] hand-controlled id still exists in the schema: natural_vibrato
+  [PASS] hand-controlled id still exists in the schema: targeting_ignores_vibrato
+  [PASS] hand-controlled id still exists in the schema: reference_hz
+  [PASS] hand-controlled id still exists in the schema: reference_source
+  [PASS] hand-controlled id still exists in the schema: correction_mode
+  [PASS] hand-controlled id still exists in the schema: tracking
+  [PASS] hand-controlled id still exists in the schema: low_latency
+  [PASS] hand-controlled id still exists in the schema: correct
+  [PASS] hand-controlled id still exists in the schema: seam_attack_ms
+  [PASS] hand-controlled id still exists in the schema: mix
+  [PASS] hand-controlled id still exists in the schema: output_db
+  [PASS] hand-controlled id still exists in the schema: formant_shift
+  [PASS] hand-controlled id still exists in the schema: formant_mode
+  [PASS] hand-controlled id still exists in the schema: vib_depth_cents
+  [PASS] hand-controlled id still exists in the schema: vib_rate_hz
+  [PASS] hand-controlled id still exists in the schema: vib_onset_ms
+  [PASS] hand-controlled id still exists in the schema: vib_shape
+  [PASS] correction_mode has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] correct has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] retune has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] retune_speed_ms has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] seam_attack_ms has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] flex has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] humanize has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] depth has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] targeting_ignores_vibrato has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] key_source has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] key_root has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] scale has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] reference_source has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] reference_hz has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] ref_manual_by_user has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] transpose has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] natural_vibrato has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] vib_depth_cents has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] vib_rate_hz has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] vib_shape has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] vib_onset_ms has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] voice_type has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] tracking has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] formant_mode has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] formant_shift has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] low_latency has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] mix has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] output_db has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] target_hz has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] reset_stats has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+
+reference provenance:
+  [PASS] laundered state (manual + value, no marker) reverts to AUTO on load
+  [PASS] marked manual state stays MANUAL on load
+  [PASS] manual field holds the entered 441
+  [PASS] a LIVE reference write takes manual control
+  [PASS] marked manual 442 survives a save/load round-trip
+  [PASS] auto survives a save/load round-trip (the field saved is the manual 440, never a detected grid)
+== EDITOR SNAPSHOTS -> /private/tmp/claude-502/-Users-SeanD-echojay-vst/8b86da2a-378d-4ecf-97c0-0e33f4993ece/scratchpad/snap3 ==
+  wrote front.png (1240x800)
+  wrote front_offcurve.png (1240x800)
+  wrote advanced.png (1240x800)
+  wrote front_manualkey.png (1240x800)
+  wrote front_after_advanced.png (1240x800)
+  wrote front_depth_override.png (1240x800)
+  wrote advanced_340.png (1240x680)
+
+ALL PASS (0 failures)

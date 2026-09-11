@@ -1,0 +1,42 @@
+link_capacity_test.cpp: isolated state root /tmp/echojay-iso.Isf5Qo
+2026-09-08 18:00:34.092 cap_link[90135:3503740] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 18:00:34.096 cap_link[90135:3503740] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 18:00:34.100 cap_link[90135:3503740] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 18:00:34.126 cap_link[90135:3503740] EJLinkState: post-init linkOn=1 name="A" uid=af34dab994
+2026-09-08 18:00:34.126 cap_link[90135:3503740] EJLinkMeter: "A" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 18:00:34.126 cap_link[90135:3503740] EJLinkMeter: "A" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 18:00:34.126 cap_link[90135:3503740] EJLinkState: post-init linkOn=1 name="B" uid=bbfbe5a88a
+2026-09-08 18:00:34.126 cap_link[90135:3503740] EJLinkMeter: "B" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 18:00:34.126 cap_link[90135:3503740] EJLinkMeter: "B" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 18:00:34.131 cap_link[90135:3503740] EJLinkState: post-init linkOn=1 name="C" uid=98cccac912
+2026-09-08 18:00:34.131 cap_link[90135:3503740] EJLinkMeter: "C" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 18:00:34.131 cap_link[90135:3503740] EJLinkMeter: "C" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 18:00:34.201 cap_link[90135:3503740] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-08 18:00:34.237 cap_link[90135:3503740] EJLinkMeter: "C" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 18:00:34.237 cap_link[90135:3503740] EJLinkMeter: "B" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 18:00:34.237 cap_link[90135:3503740] EJLinkMeter: "A" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 18:00:34.272 cap_link[90135:3503740] EJLinkMeter: "A" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 18:00:34.272 cap_link[90135:3503740] EJLinkMeter: "B" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 18:00:34.272 cap_link[90135:3503740] EJLinkMeter: "C" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  warm-up 0: pump(1000) took 1002 ms, 6 blocks took 1 ms
+2026-09-08 18:00:35.108 cap_link[90135:3503740] EJLinkMeter: "C" audio resumed (blocks 2)
+2026-09-08 18:00:35.108 cap_link[90135:3503740] EJLinkMeter: "B" audio resumed (blocks 2)
+2026-09-08 18:00:35.108 cap_link[90135:3503740] EJLinkMeter: "A" audio resumed (blocks 2)
+  warm-up 1: pump(1000) took 1001 ms, 6 blocks took 1 ms
+  warm-up 2: pump(1000) took 1000 ms, 6 blocks took 0 ms
+2026-09-08 18:00:37.831 cap_link[90135:3503740] EJLinkMeter: "C" #100 mom=-6.7 rms=-18.2/-18.2 blocks=6 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -15.2]
+2026-09-08 18:00:37.831 cap_link[90135:3503740] EJLinkMeter: "B" #100 mom=-6.7 rms=-18.2/-18.2 blocks=6 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -15.2]
+2026-09-08 18:00:37.831 cap_link[90135:3503740] EJLinkMeter: "A" #100 mom=-6.7 rms=-18.2/-18.2 blocks=6 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -15.2]
+  warm-up 3: pump(1000) took 1001 ms, 6 blocks took 1 ms
+  ready: A af34dab994 B bbfbe5a88a C 98cccac912
+2026-09-08 18:00:38.274 cap_link[90135:3503740] EJLinkState: remote set muteUser=1 (seq 1788886839)
+2026-09-08 18:00:38.275 cap_link[90135:3503740] EJLinkState: remote set muteUser=1 (seq 1788886838)
+  B muteWanted 9 ms after the press; B silent (rms<0.01) 18 ms after; A muteWanted=0 C muteWanted=1
+2026-09-08 18:00:41.489 cap_link[90135:3503740] EJLinkMeter: "C" #200 mom=-6.8 rms=-9.1/-9.1 blocks=1157 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-08 18:00:41.489 cap_link[90135:3503740] EJLinkMeter: "B" #200 mom=-6.8 rms=-9.1/-9.1 blocks=1157 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-08 18:00:41.489 cap_link[90135:3503740] EJLinkMeter: "A" #200 mom=-6.8 rms=-9.1/-9.1 blocks=1157 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-9.6 -11.2]
+2026-09-08 18:00:41.565 cap_link[90135:3503740] EJLinkState: remote set muteUser=0 (seq 1788886842)
+2026-09-08 18:00:41.566 cap_link[90135:3503740] EJLinkState: remote set muteUser=0 (seq 1788886841)
+  B unmuted 88 ms after the release; audible again 94 ms after
+SOLO2: mute PASS (9 ms vs 100)  unmute PASS (88 ms vs 100) -> PASS
+exit=0

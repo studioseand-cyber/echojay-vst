@@ -1,0 +1,163 @@
+# The standing reference set (declared 2026-08, reviewer ruling)
+
+Every field investigation starts from THIS material, so numbers stay
+comparable across rounds. Do not substitute a new take without a ruling.
+
+## The files
+
+`/Users/SeanD/Music/Logic/test/Bounces/`:
+
+| file | what it is |
+|---|---|
+| `sourceNEW.wav` | the dry take — 13.25 s, low male, D minor, 48 kHz |
+| `antaresNEW.wav` | Antares Auto-Tune Pro on that take, sample-aligned |
+| `echojayignoreonNEW.wav` | EchoJay **at HARD**, ignore-vibrato ON |
+| `echojayignoreoffNEW.wav` | EchoJay **at HARD**, ignore-vibrato OFF |
+
+SETTINGS AUDIT (2026-08-29): the two EchoJay bounces are HARD-preset
+bounces - their tuning AND rough-span columns match a current-engine hard
+render (84/0.34s, 63.5%, 4.1c vs their 81/0.35s, 61.7%, 4.4c), not a
+natural one (51/0.19s, 49.4%). An earlier revision of this file called
+them pre-drift-bleed "was" columns and credited the bleed with a ~40%
+field improvement; that comparison was CONFOUNDED - it compared natural
+renders against hard bounces. At hard, the bleed's field effect is ~nil
+(the 3c cap is a sliver of hard's sustained shifts). Always compare at
+matched settings.
+
+The older 8.2 s trio (dry/echojay/antares.wav, same folder) belongs to the
+`pitch_ab_test` hard-match gate only.
+
+## The ruler
+
+`tools/pitch_field_compare` — one tool for both sides of any change:
+rough spans vs Antares (>0.10 cycle-similarity deficit at the same instant,
+merged; count + duration), inversions (must be 0), and tuning (in-scale,
+same-semitone vs Antares, improve-rate vs source, median off-grid).
+READ ITS CALIBRATION HEADER before quoting absolute tuning numbers:
+absolute bars belong to plugin-rendered bounces; offline env-preset renders
+are for matched-pair deltas only.
+
+## The bars against this set (as ruled)
+
+- **Rough spans vs Antares**: the binding waveform-continuity number,
+  BY OPERATING POINT (current engine, this ruler, same take):
+    natural: 51 / 0.19 s (vib off), 56 / 0.21 s (vib on), 0 inversions
+    hard:    84 / 0.34 s (vib off), 94 / 0.44 s (vib on), 3 inversions
+      at vib-on, worst deficit -0.95
+  Sean's complaint lives at HARD (his bounces measure 81/0.35 and
+  98/0.48). The natural-point residual is a ruled design property
+  (`DESIGN_SEAM_RESIDUAL.md`); the hard point is under investigation.
+- **Tuning held** means: in-scale ≥95%, same-semitone ≥95%, improve-rate
+  ≥58% — judged on plugin-rendered bounces. Antares on this ruler:
+  improve 62.4%, off-grid 5.1 c; Sean's vib-off bounce: 61.7%.
+- **Inversions**: zero, always.
+- The vib-on tuning gap (same-semitone 90.4% vs 97–98% everywhere else) is
+  the largest measured open defect: `DEFECT_VIBRATO_ON_TUNING_COST.md`.
+
+## Standing instruction (1 Sep 2026 ruling)
+
+**Ear renders are made at Sean's ACTUAL session settings, read from his
+session, never assumed** — including voice_type. The alto_tenor-default
+round was lost because every offline instrument pinned low_male while his
+session sat on the default; the defect only existed at his settings.
+Every measurement records its voice_type (see PITCH_P0_VALIDATION.md
+§17.5 item 5).
+
+## The matched-settings block (1 Sep 2026 — VERIFIED FROM BOTH UIs, not assumed)
+
+The first controlled comparison of the investigation. τ400 renders
+(antaresnew1 / echojaynew1) were made at:
+
+    EchoJay:  voice ALTO/TENOR (amber mismatch warning shown), formant
+              preserve, retune 400ms, flex 0, humanize 0, natural_vibrato
+              0 (custom), key D minor by hand, reference 440.0 (auto,
+              self-not-followed), mixing latency 38ms full lookahead.
+              Octave guard: 71 fires on the take.
+    Antares:  Input Type Alto-Tenor, Key D minor, Retune 400, Flex 0,
+              Humanize 0, Natural Vibrato 0.0, Tracking 50, Detune 440.0,
+              Transpose 0, Formant on, Mix 100.
+
+Same voice type, same retune, same key/scale/reference, all shaping at
+zero. The 5.2s event (EchoJay 161.5Hz off-grid vs Antares 173.5 faithful)
+has NO settings difference left to explain it.
+
+**Standing instruction, second half (added after this round): read the
+REFERENCE plugin's settings too.** The rule's first half was written
+after assuming EchoJay's voice type; the identical assumption was then
+made about Antares for a month.
+
+## antares_retune0_NEW.wav (Desktop, 2 Sep 2026 16:31) — settings confirmation
+
+Retune Speed 0, confirmed by Sean BY HAND on 2 Sep 2026 — no screenshot
+exists for this bounce. Audio evidence concordant: chromatic-tone occupancy
+0.6% (= the source's own rate, so no chromatic targeting; key D minor
+consistent), and the onset off-grid collapse (med 1.94c) is only reachable
+at a very fast retune. Comparison against EchoJay tau6 is FAIR per the
+§17.3 floor calibration (Antares 0 ≈ our 4–6 ms). All other settings per
+the 1 Sep matched block.
+
+## PROVENANCE AMENDMENT (3 Sep 2026, round-18 ruling C; DEFECT_AUTOKEY_PROVENANCE.md)
+
+The two standing EchoJay bounces (echojayignoreonNEW / echojayignoreoffNEW,
+29 Aug 16:42) were made 46 minutes BEFORE the circular-reference guard
+(1c5fb52, 17:28) and are tuned to 438.99 / 439.14 Hz - 3.4 / 4.0c flat of
+the 440 grid their off-grid columns were measured against, 2.1 / 2.7c flat
+of the source's own centre (439.68). Every absolute tuning number quoting
+them - including this file's "Sean's vib-off bounce: 61.7%" - carries that
+bias. Their applied KEY is recoverable only to an equivalence class
+(D minor / F major / C major / A minor / chromatic: identical on this
+phrase's E-F-G sustained content; every damaging wrong key is excluded).
+In-process renders (440 by construction, key fixed) remain the matched-
+pair instrument; the old 8.2 s trio's members were made under DIFFERENT
+keys and references (dry.wav is not in D minor; echojay3 at 434.5 Hz) and
+are for the hard-match gate ONLY, never for tuning. Until a bounce
+protocol records the [DETECTED KEY] readout at bounce time, every new
+bounce carries this risk.
+
+## THE ECHOJAY HALF, RE-MADE (3 Sep 2026, round-19 item 2) - key and reference EXPLICIT
+
+Rendered in-process by tools/pitch_activity (PA_WRITE) from sourceNEW on the
+working tree at commit 7667bee (engine headers; the plugin UUID is not the
+renderer - the commit is the identity), voice alto_tenor, KEY D MINOR SET
+MANUALLY (kMinor intervals + root 2), REFERENCE 440.0 SET MANUALLY, hard
+base (flex 0, humanize 0, natural-vib 0), seam_attack 60, envExp 0. Files
+at `/Users/SeanD/Music/Logic/test/Bounces/ref_2026-09-03/` (float32 mono
+48 kHz, 2,544,428 bytes each, peak 0.415):
+
+| file | md5 | settings | recovered ref | onset off-grid med/p75/p90 | all-voiced med / <5c / improve |
+|---|---|---|---|---|---|
+| ej_hard_ignOFF_tau6_seam60_Dminor_440.wav | ec8d3a53eb7cfc962bb7b2148d684df5 | tau 6, ign OFF | 439.81 Hz | 4.92 / 10.25 / 22.74 | 3.85c / 59.3% / 72.0% |
+| ej_hard_ignON_tau6_seam60_Dminor_440.wav | 5457ec5036d7b6def27ff2a6ed2d949f | tau 6, ign ON | 439.74 Hz | 5.04 / 10.70 / 25.67 | 3.85c / 59.1% / 70.1% |
+| ej_hard_ignOFF_tau150_seam60_Dminor_440.wav | ed7c6ab3b9f85785f7656d7c251eb589 | tau 150, ign OFF | 439.53 Hz | 8.66 / 28.16 / 40.08 | 6.87c / 40.9% / 50.4% |
+
+(off-grid to D natural minor at 440, tools/pitch_key_forensic; "recovered
+ref" is the forensic's read-back - hard correction at tau 6 leaves ~1c of
+the source's own 439.68 centre, which is the correction residual, not a
+reference defect; the 29 Aug bounces read 439.0-439.1.) These rows REPLACE
+echojayignoreonNEW / echojayignoreoffNEW for every tuning purpose; the old
+files stay on disk for the event-level and rough-span rows only, where the
+reference does not enter. Antares rows are LEFT AS THEY ARE: antaresNEW
+439.62 Hz, antares3 439.91 Hz - within 1.5c of 440, noted, not corrected.
+
+## STANDING RULE (round-19 ruling)
+
+**A REFERENCE SET MUST RECORD THE BUILD UUID (or the renderer's commit) AND
+THE APPLIED KEY AND REFERENCE, AND MUST BE RE-MADE AFTER ANY FIX THAT
+TOUCHES WHAT IT MEASURES.** Ours predated its own fix by 46 minutes and
+nobody noticed for a week. For a Logic bounce: read the [DETECTED KEY]
+line at bounce time (source, key, confidence, reference) and dwarfdump
+--uuid the installed bundle; write both beside the file name here BEFORE
+the first number is quoted from it. For an in-process render: the commit,
+the tool, and the settings string. A row without provenance is not a
+reference row.
+
+## SEAN'S SESSION SETTINGS, READ FROM STATE (5 Sep 2026; DEFECT_AUTOKEY_PROVENANCE.md §15)
+
+Not assumed, not asked - decoded from test.logicx ProjectData (3 Sep 10:33):
+key MANUAL D minor; reference AUTO (resolves to 440 under the guard on his
+one-instance topology; the saved field carries the pre-guard 439.19);
+voice alto_tenor; custom mode: retune 44.2 ms (was 0/floor on 29-30 Aug),
+flex 0, humanize 0, ignore-vibrato OFF, natural-vibrato 0, formant
+preserve; seam_attack_ms at the schema default 60. The matched in-process
+configuration for his current session is therefore self:44:60:0:0:0:0 -
+NOT tau 6 - and ear renders for him are made there until he moves it.

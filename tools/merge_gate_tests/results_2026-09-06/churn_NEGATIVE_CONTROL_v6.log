@@ -1,0 +1,83 @@
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-06 20:10:32.954 cap_v6[84805:2061331] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:10:32.958 cap_v6[84805:2061331] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:10:32.973 cap_v6[84805:2061331] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:10:32.979 cap_v6[84805:2061331] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:10:32.981 cap_v6[84805:2061331] EJLinkState: post-init linkOn=1 name="" uid=dd007f3588
+2026-09-06 20:10:32.981 cap_v6[84805:2061331] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:10:32.981 cap_v6[84805:2061331] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:10:33.016 cap_v6[84805:2061331] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:10:33.059 cap_v6[84805:2061331] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-06 20:10:33.059 cap_v6[84805:2061331] EJPrompt: session project "Nafe smallz Aitch Luxury" from previous host, ignoring, will prompt (file "Pro Tools" pid=55105 start=1788706358 vs current "Terminal" pid=496 start=1788433286.527607)
+2026-09-06 20:10:33.059 cap_v6[84805:2061331] EJPrompt: session genre "Hip-Hop" from previous host, ignoring, will prompt (file "Pro Tools" pid=55105 start=1788706358 vs current "Terminal" pid=496 start=1788433286.527607)
+2026-09-06 20:10:33.096 cap_v6[84805:2061331] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:10:33.829 cap_v6[84805:2061331] EJLinkState: host DELIVERED track name "Kick" (uid dd007f3588)
+2026-09-06 20:10:33.852 cap_v6[84805:2061331] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 6 uid dd007f3588 published "Kick"
+2026-09-06 20:10:35.012 cap_v6[84805:2061331] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:10:35.012 cap_v6[84805:2061331] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:10:35.012 cap_v6[84805:2061331] EJLinkState: uid dd007f3588 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 6464713f8e
+2026-09-06 20:10:35.013 cap_v6[84805:2061331] EJLinkState: chunk uid dd007f3588 != this instance 6464713f8e: seeded names dropped (typed "", host "Kick"); authoritative kept (host "", typed none)
+2026-09-06 20:10:35.829 cap_v6[84805:2061331] EJLinkState: host DELIVERED track name "Kick" (uid 6464713f8e)
+2026-09-06 20:10:35.829 cap_v6[84805:2061331] EJLinkState: host track name "Kick" (user name "")
+2026-09-06 20:10:36.649 cap_v6[84805:2061331] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:10:36.649 cap_v6[84805:2061331] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:10:36.649 cap_v6[84805:2061331] EJLinkState: uid 6464713f8e came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 266278eec9
+2026-09-06 20:10:36.649 cap_v6[84805:2061331] EJLinkState: chunk uid 6464713f8e != this instance 266278eec9: seeded names dropped (typed "", host "Kick"); authoritative kept (host "", typed none)
+2026-09-06 20:10:37.510 cap_v6[84805:2061331] EJLinkState: host DELIVERED track name "Kick" (uid 266278eec9)
+2026-09-06 20:10:37.522 cap_v6[84805:2061331] EJLinkState: host track name "Kick" (user name "")
+2026-09-06 20:10:38.361 cap_v6[84805:2061331] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:10:38.361 cap_v6[84805:2061331] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:10:38.361 cap_v6[84805:2061331] EJLinkState: uid 266278eec9 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated d8f982f03d
+2026-09-06 20:10:38.361 cap_v6[84805:2061331] EJLinkState: chunk uid 266278eec9 != this instance d8f982f03d: seeded names dropped (typed "", host "Kick"); authoritative kept (host "", typed none)
+2026-09-06 20:10:39.201 cap_v6[84805:2061331] EJLinkState: host DELIVERED track name "Kick" (uid d8f982f03d)
+2026-09-06 20:10:39.228 cap_v6[84805:2061331] EJLinkState: host track name "Kick" (user name "")
+2026-09-06 20:10:40.042 cap_v6[84805:2061331] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:10:40.042 cap_v6[84805:2061331] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:10:40.042 cap_v6[84805:2061331] EJLinkState: uid d8f982f03d came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated b47d5d31c2
+2026-09-06 20:10:40.042 cap_v6[84805:2061331] EJLinkState: chunk uid d8f982f03d != this instance b47d5d31c2: seeded names dropped (typed "", host "Kick"); authoritative kept (host "", typed none)
+2026-09-06 20:10:40.877 cap_v6[84805:2061331] EJLinkState: host DELIVERED track name "Kick" (uid b47d5d31c2)
+2026-09-06 20:10:40.894 cap_v6[84805:2061331] EJLinkState: host track name "Kick" (user name "")
+2026-09-06 20:10:41.718 cap_v6[84805:2061331] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:10:41.719 cap_v6[84805:2061331] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:10:41.719 cap_v6[84805:2061331] EJLinkState: uid b47d5d31c2 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 561e622a6d
+2026-09-06 20:10:41.719 cap_v6[84805:2061331] EJLinkState: chunk uid b47d5d31c2 != this instance 561e622a6d: seeded names dropped (typed "", host "Kick"); authoritative kept (host "", typed none)
+2026-09-06 20:10:42.552 cap_v6[84805:2061331] EJLinkState: host DELIVERED track name "Kick" (uid 561e622a6d)
+2026-09-06 20:10:42.552 cap_v6[84805:2061331] EJLinkState: host track name "Kick" (user name "")
+  after 5 re-applies: slot 6 uid 561e622a6d published "Kick"
+  -> FAIL (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-06 20:10:43.725 cap_v6[84805:2061331] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:10:43.727 cap_v6[84805:2061331] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:10:43.740 cap_v6[84805:2061331] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:10:43.746 cap_v6[84805:2061331] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:10:43.747 cap_v6[84805:2061331] EJLinkState: post-init linkOn=1 name="" uid=6c3e051665
+2026-09-06 20:10:43.747 cap_v6[84805:2061331] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:10:43.747 cap_v6[84805:2061331] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:10:43.788 cap_v6[84805:2061331] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:10:43.869 cap_v6[84805:2061331] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:10:44.590 cap_v6[84805:2061331] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:10:44.594 cap_v6[84805:2061331] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:10:44.607 cap_v6[84805:2061331] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:10:44.612 cap_v6[84805:2061331] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:10:44.613 cap_v6[84805:2061331] EJLinkState: post-init linkOn=1 name="" uid=52bea48697
+2026-09-06 20:10:44.613 cap_v6[84805:2061331] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:10:44.613 cap_v6[84805:2061331] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:10:44.655 cap_v6[84805:2061331] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:10:44.737 cap_v6[84805:2061331] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:10:46.577 cap_v6[84805:2061331] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:10:46.577 cap_v6[84805:2061331] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:10:46.577 cap_v6[84805:2061331] EJLinkState: uid 6c3e051665 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated b28faa3886
+2026-09-06 20:10:46.577 cap_v6[84805:2061331] EJLinkState: chunk uid 6c3e051665 != this instance b28faa3886: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 20:10:47.692 cap_v6[84805:2061331] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:10:47.692 cap_v6[84805:2061331] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:10:47.692 cap_v6[84805:2061331] EJLinkState: uid b28faa3886 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated abf79b937e
+2026-09-06 20:10:47.692 cap_v6[84805:2061331] EJLinkState: chunk uid b28faa3886 != this instance abf79b937e: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+2026-09-06 20:10:48.801 cap_v6[84805:2061331] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:10:48.801 cap_v6[84805:2061331] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:10:48.802 cap_v6[84805:2061331] EJLinkState: uid abf79b937e came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated ba35a96931
+2026-09-06 20:10:48.802 cap_v6[84805:2061331] EJLinkState: chunk uid abf79b937e != this instance ba35a96931: seeded names dropped (typed "", host ""); authoritative kept (host "", typed none)
+  before: B sees A's solo = 1 (A uid 6c3e051665)   after 3 re-applies: A uid ba35a96931, sidecar under A's uid: yes, B sees A's solo = 1
+  -> FAIL
+churn legs: L8 FAIL   L9 FAIL
+exit=3

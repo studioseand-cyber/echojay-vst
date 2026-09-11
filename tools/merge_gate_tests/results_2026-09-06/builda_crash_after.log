@@ -1,0 +1,10 @@
+isolated state root: /tmp/echojay-iso.9cPhp9
+build_a_legs_test.cpp: isolated state root /tmp/echojay-iso.9cPhp9
+2026-09-08 12:00:13.622 harness[43709:2794014] EJNet: base=www.echojay.ai devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-09-08 12:00:13.624 harness[43709:2794000] EJCtx: prepareToPlay stored borrow budget OFF (was OFF)
+  captured 4.0 s on a FullMix-typed channel; calling stopCapture() -> the WAV save thread runs the offline key pass
+2026-09-08 12:00:13.716 harness[43709:2794026] EJCapture: offline key pass -> A major conf 0.51 from "Mix Bus"
+2026-09-08 12:00:13.754 harness[43709:2794014] EJNet: config fetch ok, prompt in force = REMOTE v19 (served version 19)
+2026-09-08 12:00:14.630 harness[43709:2794000] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+  save thread finished; process alive 6 s after stopCapture
+exit=0

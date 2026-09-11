@@ -1,0 +1,944 @@
+link_capacity_test.cpp: isolated state root /tmp/echojay-iso.IuuLLC
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-08 10:30:32.374 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:30:32.406 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=b58418d1b7
+2026-09-08 10:30:32.406 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:30:32.406 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:30:32.482 cap_v8[25246:2663706] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-08 10:30:32.520 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:30:32.558 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:30:33.077 cap_v8[25246:2663706] EJLinkState: host DELIVERED track name "Kick" (uid b58418d1b7)
+2026-09-08 10:30:33.094 cap_v8[25246:2663706] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 0 uid b58418d1b7 published "Kick"
+2026-09-08 10:30:33.986 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:30:33.987 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:30:35.365 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:30:35.366 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:30:36.300 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:30:36.731 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:30:36.732 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:30:38.108 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:30:38.109 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:30:39.473 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:30:39.473 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:30:39.991 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  after 5 re-applies: slot 0 uid b58418d1b7 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-08 10:30:41.121 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:30:41.151 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=a63ebef6a0
+2026-09-08 10:30:41.151 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:30:41.151 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:30:41.185 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:30:41.226 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:30:41.815 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:30:41.844 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=40af29cbaf
+2026-09-08 10:30:41.844 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:30:41.844 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:30:41.877 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:30:41.912 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:30:43.453 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:30:43.453 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:30:44.371 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:30:44.371 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:30:44.753 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:30:45.292 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:30:45.292 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:30:45.449 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  before: B sees A's solo = 1 (A uid a63ebef6a0)   after 3 re-applies: A uid a63ebef6a0, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-08 10:30:47.822 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:30:47.846 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=92c1093e02
+2026-09-08 10:30:47.846 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:30:47.846 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:30:47.883 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:30:47.923 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:30:48.520 cap_v8[25246:2663706] EJLinkState: host DELIVERED track name "Kick" (uid 92c1093e02)
+2026-09-08 10:30:48.541 cap_v8[25246:2663706] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 0 uid 92c1093e02 published "Kick"
+2026-09-08 10:30:49.444 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:30:49.444 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:30:50.806 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:30:50.807 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:30:51.660 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:30:52.183 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:30:52.184 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:30:53.564 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:30:53.564 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:30:54.959 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:30:54.959 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:30:55.284 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  after 5 re-applies: slot 0 uid 92c1093e02 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-08 10:30:56.576 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:30:56.608 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=2bb57b0c48
+2026-09-08 10:30:56.608 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:30:56.608 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:30:56.646 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:30:56.681 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:30:57.266 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:30:57.296 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=a056ec042a
+2026-09-08 10:30:57.296 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:30:57.296 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:30:57.331 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:30:57.372 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:30:58.897 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:30:58.898 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:30:59.816 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:30:59.816 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:00.230 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:00.735 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:00.735 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:00.957 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  before: B sees A's solo = 1 (A uid 2bb57b0c48)   after 3 re-applies: A uid 2bb57b0c48, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-08 10:31:03.292 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:31:03.323 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=e94af4d8f6
+2026-09-08 10:31:03.323 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:31:03.324 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:03.363 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:03.403 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:03.978 cap_v8[25246:2663706] EJLinkState: host DELIVERED track name "Kick" (uid e94af4d8f6)
+2026-09-08 10:31:04.004 cap_v8[25246:2663706] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 0 uid e94af4d8f6 published "Kick"
+2026-09-08 10:31:04.911 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:04.911 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:06.306 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:06.306 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:07.116 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:07.672 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:07.673 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:09.070 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:09.070 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:10.462 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:10.462 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:10.816 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  after 5 re-applies: slot 0 uid e94af4d8f6 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-08 10:31:12.098 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:31:12.123 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=4432ee0751
+2026-09-08 10:31:12.123 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:31:12.123 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:12.161 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:12.198 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:12.818 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:31:12.845 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=c687d5a36c
+2026-09-08 10:31:12.845 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:31:12.845 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:12.879 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:12.918 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:14.437 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:14.438 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:15.374 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:15.374 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:15.702 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:16.291 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:16.291 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:16.440 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  before: B sees A's solo = 1 (A uid 4432ee0751)   after 3 re-applies: A uid 4432ee0751, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-08 10:31:18.842 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:31:18.873 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=7ed97c31a3
+2026-09-08 10:31:18.873 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:31:18.873 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:18.910 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:18.951 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:19.533 cap_v8[25246:2663706] EJLinkState: host DELIVERED track name "Kick" (uid 7ed97c31a3)
+2026-09-08 10:31:19.537 cap_v8[25246:2663706] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 0 uid 7ed97c31a3 published "Kick"
+2026-09-08 10:31:20.460 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:20.461 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:21.844 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:21.844 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:22.722 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:23.243 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:23.243 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:24.592 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:24.592 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:25.982 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:25.983 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:26.360 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  after 5 re-applies: slot 0 uid 7ed97c31a3 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-08 10:31:27.608 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:31:27.638 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=ef5921082a
+2026-09-08 10:31:27.638 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:31:27.638 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:27.673 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:27.713 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:28.326 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:31:28.355 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=6bfa3a677b
+2026-09-08 10:31:28.355 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:31:28.355 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:28.393 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:28.434 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:29.919 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:29.919 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:30.835 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:30.835 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:31.249 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:31.737 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:31.738 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:31.974 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  before: B sees A's solo = 1 (A uid ef5921082a)   after 3 re-applies: A uid ef5921082a, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-08 10:31:34.325 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:31:34.353 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=2d329ef422
+2026-09-08 10:31:34.353 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:31:34.353 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:34.465 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:34.503 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:35.005 cap_v8[25246:2663706] EJLinkState: host DELIVERED track name "Kick" (uid 2d329ef422)
+2026-09-08 10:31:35.018 cap_v8[25246:2663706] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 0 uid 2d329ef422 published "Kick"
+2026-09-08 10:31:35.947 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:35.947 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:37.309 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:37.309 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:38.264 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:38.708 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:38.708 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:40.089 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:40.090 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:41.455 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:41.455 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:41.903 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  after 5 re-applies: slot 0 uid 2d329ef422 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-08 10:31:43.073 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:31:43.102 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=6a7eb6ba58
+2026-09-08 10:31:43.103 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:31:43.103 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:43.139 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:43.179 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:43.778 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:31:43.801 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=dc0393030d
+2026-09-08 10:31:43.801 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:31:43.801 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:43.839 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:43.879 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:45.375 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:45.375 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:46.292 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:46.293 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:46.710 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:47.222 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:47.222 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:47.441 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  before: B sees A's solo = 1 (A uid 6a7eb6ba58)   after 3 re-applies: A uid 6a7eb6ba58, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-08 10:31:49.765 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:31:49.794 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=9e493f3348
+2026-09-08 10:31:49.794 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:31:49.794 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:49.832 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:49.869 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:50.474 cap_v8[25246:2663706] EJLinkState: host DELIVERED track name "Kick" (uid 9e493f3348)
+2026-09-08 10:31:50.486 cap_v8[25246:2663706] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 0 uid 9e493f3348 published "Kick"
+2026-09-08 10:31:51.400 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:51.400 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:52.772 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:52.772 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:53.416 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:54.169 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:54.170 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:55.536 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:55.536 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:56.919 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:31:56.919 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:31:57.064 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  after 5 re-applies: slot 0 uid 9e493f3348 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-08 10:31:58.548 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:31:58.573 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=192f5edcc7
+2026-09-08 10:31:58.573 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:31:58.573 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:58.611 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:58.645 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:59.254 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:31:59.280 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=2bc7c13c16
+2026-09-08 10:31:59.280 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:31:59.280 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:59.317 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:31:59.354 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:00.899 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:00.899 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:01.828 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:01.828 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:02.204 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:02.744 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:02.744 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:02.892 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  before: B sees A's solo = 1 (A uid 192f5edcc7)   after 3 re-applies: A uid 192f5edcc7, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-08 10:32:05.326 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:32:05.357 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=b2e057bbd2
+2026-09-08 10:32:05.357 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:32:05.357 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:05.395 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:05.435 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:06.021 cap_v8[25246:2663706] EJLinkState: host DELIVERED track name "Kick" (uid b2e057bbd2)
+2026-09-08 10:32:06.021 cap_v8[25246:2663706] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 0 uid b2e057bbd2 published "Kick"
+2026-09-08 10:32:06.937 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:06.937 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:08.330 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:08.331 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:08.976 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:09.707 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:09.708 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:11.130 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:11.130 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:12.545 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:12.546 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:12.663 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  after 5 re-applies: slot 0 uid b2e057bbd2 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-08 10:32:14.163 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:32:14.191 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=aa0a3f2361
+2026-09-08 10:32:14.191 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:32:14.191 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:14.226 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:14.260 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:14.872 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:32:14.905 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=ddc642aac1
+2026-09-08 10:32:14.905 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:32:14.905 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:14.942 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:14.978 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:16.490 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:16.490 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:17.397 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:17.398 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:17.848 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:18.346 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:18.346 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:18.569 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  before: B sees A's solo = 1 (A uid aa0a3f2361)   after 3 re-applies: A uid aa0a3f2361, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-08 10:32:20.913 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:32:20.944 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=7e8cb53c7a
+2026-09-08 10:32:20.944 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:32:20.944 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:20.979 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:21.020 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:21.613 cap_v8[25246:2663706] EJLinkState: host DELIVERED track name "Kick" (uid 7e8cb53c7a)
+2026-09-08 10:32:21.621 cap_v8[25246:2663706] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 0 uid 7e8cb53c7a published "Kick"
+2026-09-08 10:32:22.548 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:22.548 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:23.946 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:23.946 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:24.781 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:25.344 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:25.345 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:26.709 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:26.710 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:28.096 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:28.097 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:28.448 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  after 5 re-applies: slot 0 uid 7e8cb53c7a published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-08 10:32:29.740 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:32:29.771 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=dbf8746451
+2026-09-08 10:32:29.771 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:32:29.771 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:29.810 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:29.854 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:30.448 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:32:30.479 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=bda4bf610b
+2026-09-08 10:32:30.479 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:32:30.479 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:30.514 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:30.551 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:32.060 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:32.060 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:32.987 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:32.987 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:33.394 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:33.912 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:33.913 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:34.079 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  before: B sees A's solo = 1 (A uid dbf8746451)   after 3 re-applies: A uid dbf8746451, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-08 10:32:36.469 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:32:36.497 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=db03ad8f0e
+2026-09-08 10:32:36.497 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:32:36.497 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:36.534 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:36.572 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:37.158 cap_v8[25246:2663706] EJLinkState: host DELIVERED track name "Kick" (uid db03ad8f0e)
+2026-09-08 10:32:37.158 cap_v8[25246:2663706] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 0 uid db03ad8f0e published "Kick"
+2026-09-08 10:32:38.091 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:38.091 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:39.468 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:39.469 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:40.103 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:40.829 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:40.830 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:42.220 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:42.221 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:43.635 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:43.635 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:43.784 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  after 5 re-applies: slot 0 uid db03ad8f0e published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-08 10:32:45.273 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:32:45.301 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=b83577089b
+2026-09-08 10:32:45.301 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:32:45.301 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:45.340 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:45.375 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:45.971 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:32:46.000 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=13ea664d86
+2026-09-08 10:32:46.000 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:32:46.000 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:46.036 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:46.074 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:47.587 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:47.587 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:48.517 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:48.517 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:48.879 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:49.448 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:49.448 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:49.620 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  before: B sees A's solo = 1 (A uid b83577089b)   after 3 re-applies: A uid b83577089b, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-08 10:32:52.015 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:32:52.046 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=1478f36e93
+2026-09-08 10:32:52.046 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:32:52.046 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:52.085 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:52.123 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:52.708 cap_v8[25246:2663706] EJLinkState: host DELIVERED track name "Kick" (uid 1478f36e93)
+2026-09-08 10:32:52.708 cap_v8[25246:2663706] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 0 uid 1478f36e93 published "Kick"
+2026-09-08 10:32:53.645 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:53.645 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:55.047 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:55.047 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:55.904 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:32:56.429 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:56.429 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:57.806 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:57.806 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:59.187 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:32:59.187 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:32:59.588 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  after 5 re-applies: slot 0 uid 1478f36e93 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-08 10:33:00.833 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:33:00.867 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=d348d0a614
+2026-09-08 10:33:00.867 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:33:00.867 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:00.905 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:00.945 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:01.537 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:33:01.881 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=65889310d4
+2026-09-08 10:33:01.881 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:33:01.881 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:01.905 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:02.254 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:03.810 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:03.811 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:04.762 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:04.763 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:05.091 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:05.720 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:05.720 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:05.792 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  before: B sees A's solo = 1 (A uid d348d0a614)   after 3 re-applies: A uid d348d0a614, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-08 10:33:08.274 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:33:08.307 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=f2eddef771
+2026-09-08 10:33:08.307 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:33:08.307 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:08.342 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:08.381 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:08.969 cap_v8[25246:2663706] EJLinkState: host DELIVERED track name "Kick" (uid f2eddef771)
+2026-09-08 10:33:08.999 cap_v8[25246:2663706] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 0 uid f2eddef771 published "Kick"
+2026-09-08 10:33:09.892 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:09.892 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:11.241 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:11.241 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:11.940 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:12.629 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:12.629 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:13.990 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:13.990 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:15.383 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:15.383 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:15.608 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  after 5 re-applies: slot 0 uid f2eddef771 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-08 10:33:17.007 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:33:17.036 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=538b2e3ee5
+2026-09-08 10:33:17.037 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:33:17.037 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:17.075 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:17.114 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:17.708 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:33:17.740 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=af2893a7de
+2026-09-08 10:33:17.740 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:33:17.740 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:17.775 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:17.810 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:19.346 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:19.346 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:20.266 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:20.266 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:20.671 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:21.183 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:21.184 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:21.362 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  before: B sees A's solo = 1 (A uid 538b2e3ee5)   after 3 re-applies: A uid 538b2e3ee5, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-08 10:33:23.747 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:33:23.775 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=8b4564bfaf
+2026-09-08 10:33:23.775 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:33:23.775 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:23.810 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:23.848 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:24.447 cap_v8[25246:2663706] EJLinkState: host DELIVERED track name "Kick" (uid 8b4564bfaf)
+2026-09-08 10:33:24.468 cap_v8[25246:2663706] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 0 uid 8b4564bfaf published "Kick"
+2026-09-08 10:33:25.362 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:25.362 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:26.746 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:26.746 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:27.416 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:28.120 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:28.120 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:29.492 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:29.492 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:30.869 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:30.870 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:31.071 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  after 5 re-applies: slot 0 uid 8b4564bfaf published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-08 10:33:32.489 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:33:32.517 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=8bc0bcb451
+2026-09-08 10:33:32.517 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:33:32.517 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:32.555 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:32.595 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:33.195 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:33:33.224 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=b674d6d251
+2026-09-08 10:33:33.224 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:33:33.225 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:33.262 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:33.302 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:34.835 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:34.835 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:35.762 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:35.763 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:36.215 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:36.689 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:36.689 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:36.887 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  before: B sees A's solo = 1 (A uid 8bc0bcb451)   after 3 re-applies: A uid 8bc0bcb451, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-08 10:33:39.242 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:33:39.274 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=fd9ec0100d
+2026-09-08 10:33:39.274 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:33:39.274 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:39.313 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:39.352 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:39.935 cap_v8[25246:2663706] EJLinkState: host DELIVERED track name "Kick" (uid fd9ec0100d)
+2026-09-08 10:33:39.948 cap_v8[25246:2663706] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 0 uid fd9ec0100d published "Kick"
+2026-09-08 10:33:40.859 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:40.860 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:42.268 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:42.268 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:43.133 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:43.655 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:43.655 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:45.024 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:45.024 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:46.388 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:46.388 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:46.767 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  after 5 re-applies: slot 0 uid fd9ec0100d published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-08 10:33:48.027 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:33:48.054 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=c87ec75196
+2026-09-08 10:33:48.054 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:33:48.054 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:48.092 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:48.131 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:48.733 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:33:48.762 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=ced5969317
+2026-09-08 10:33:48.762 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:33:48.762 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:48.797 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:48.831 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:50.380 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:50.380 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:51.305 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:51.306 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:51.672 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:52.224 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:52.225 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:52.377 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  before: B sees A's solo = 1 (A uid c87ec75196)   after 3 re-applies: A uid c87ec75196, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-08 10:33:54.792 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:33:54.819 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=e8e585efdd
+2026-09-08 10:33:54.819 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:33:54.819 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:54.857 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:54.898 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:55.472 cap_v8[25246:2663706] EJLinkState: host DELIVERED track name "Kick" (uid e8e585efdd)
+2026-09-08 10:33:55.475 cap_v8[25246:2663706] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 0 uid e8e585efdd published "Kick"
+2026-09-08 10:33:56.395 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:56.395 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:57.790 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:57.790 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:33:58.417 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:33:59.171 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:33:59.171 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:00.528 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:00.528 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:01.904 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:01.905 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:02.087 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  after 5 re-applies: slot 0 uid e8e585efdd published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-08 10:34:03.568 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:34:03.596 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=36e266412a
+2026-09-08 10:34:03.596 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:34:03.596 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:03.634 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:03.674 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:04.275 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:34:04.304 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=af7612b410
+2026-09-08 10:34:04.304 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:34:04.304 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:04.339 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:04.374 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:05.911 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:05.912 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:06.810 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:06.810 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:07.231 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:07.739 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:07.739 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:07.932 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  before: B sees A's solo = 1 (A uid 36e266412a)   after 3 re-applies: A uid 36e266412a, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-08 10:34:10.321 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:34:10.351 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=c9fc2716e0
+2026-09-08 10:34:10.351 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:34:10.351 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:10.386 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:10.422 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:11.006 cap_v8[25246:2663706] EJLinkState: host DELIVERED track name "Kick" (uid c9fc2716e0)
+2026-09-08 10:34:11.006 cap_v8[25246:2663706] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 0 uid c9fc2716e0 published "Kick"
+2026-09-08 10:34:11.917 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:11.917 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:13.302 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:13.302 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:13.939 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:14.689 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:14.689 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:16.079 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:16.080 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:17.460 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:17.460 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:17.643 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  after 5 re-applies: slot 0 uid c9fc2716e0 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-08 10:34:19.268 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:34:19.295 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=23d163612b
+2026-09-08 10:34:19.295 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:34:19.295 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:19.338 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:19.382 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:20.048 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:34:20.084 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=2aac5b3e1c
+2026-09-08 10:34:20.084 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:34:20.084 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:20.128 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:20.169 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:21.867 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:21.867 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:22.856 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:22.857 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:23.290 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:23.908 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:23.908 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:24.061 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  before: B sees A's solo = 1 (A uid 23d163612b)   after 3 re-applies: A uid 23d163612b, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-08 10:34:26.859 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:34:26.885 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=b52efb911a
+2026-09-08 10:34:26.885 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:34:26.885 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:26.926 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:26.969 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:27.660 cap_v8[25246:2663706] EJLinkState: host DELIVERED track name "Kick" (uid b52efb911a)
+2026-09-08 10:34:27.688 cap_v8[25246:2663706] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 0 uid b52efb911a published "Kick"
+2026-09-08 10:34:28.702 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:28.702 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:30.239 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:30.239 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:30.888 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:31.772 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:31.772 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:33.318 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:33.319 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:34.877 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:34.877 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:34.969 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  after 5 re-applies: slot 0 uid b52efb911a published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-08 10:34:36.668 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:34:36.699 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=704945d733
+2026-09-08 10:34:36.699 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:34:36.699 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:36.733 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:36.770 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:37.488 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:34:37.523 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=20a6ef651d
+2026-09-08 10:34:37.523 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:34:37.523 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:37.566 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:37.601 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:39.269 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:39.269 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:40.268 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:40.268 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:40.694 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:41.304 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:41.304 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:41.532 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  before: B sees A's solo = 1 (A uid 704945d733)   after 3 re-applies: A uid 704945d733, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-08 10:34:44.200 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:34:44.229 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=120132b345
+2026-09-08 10:34:44.229 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:34:44.229 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:44.271 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:44.315 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:44.985 cap_v8[25246:2663706] EJLinkState: host DELIVERED track name "Kick" (uid 120132b345)
+2026-09-08 10:34:45.011 cap_v8[25246:2663706] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 0 uid 120132b345 published "Kick"
+2026-09-08 10:34:46.029 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:46.030 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:47.576 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:47.577 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:48.206 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:49.117 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:49.118 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:50.706 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:50.706 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:52.209 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:52.248 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:52.248 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  after 5 re-applies: slot 0 uid 120132b345 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-08 10:34:54.059 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:34:54.090 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=feba175f04
+2026-09-08 10:34:54.090 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:34:54.090 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:54.134 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:54.179 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:54.859 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:34:54.893 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=a05160fbd5
+2026-09-08 10:34:54.893 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:34:54.893 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:54.936 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:54.979 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:56.661 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:56.661 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:57.664 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:57.664 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:58.025 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:34:58.715 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:34:58.715 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:34:58.873 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  before: B sees A's solo = 1 (A uid feba175f04)   after 3 re-applies: A uid feba175f04, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-08 10:35:01.630 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:35:01.659 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=3007c06f98
+2026-09-08 10:35:01.659 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:35:01.660 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:01.696 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:01.740 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:02.414 cap_v8[25246:2663706] EJLinkState: host DELIVERED track name "Kick" (uid 3007c06f98)
+2026-09-08 10:35:02.425 cap_v8[25246:2663706] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 0 uid 3007c06f98 published "Kick"
+2026-09-08 10:35:03.460 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:03.460 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:05.027 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:05.028 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:05.628 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:06.576 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:06.576 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:08.176 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:08.176 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:09.655 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:09.699 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:09.699 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  after 5 re-applies: slot 0 uid 3007c06f98 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-08 10:35:11.538 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:35:11.574 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=427be6a8b8
+2026-09-08 10:35:11.575 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:35:11.575 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:11.618 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:11.664 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:12.320 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:35:12.357 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=dbdea9dd6e
+2026-09-08 10:35:12.358 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:35:12.358 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:12.400 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:12.446 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:14.116 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:14.116 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:15.132 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:15.132 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:15.547 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:16.150 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:16.151 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:16.397 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  before: B sees A's solo = 1 (A uid 427be6a8b8)   after 3 re-applies: A uid 427be6a8b8, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-08 10:35:19.065 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:35:19.097 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=52542eb7d9
+2026-09-08 10:35:19.097 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:35:19.097 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:19.140 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:19.182 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:19.864 cap_v8[25246:2663706] EJLinkState: host DELIVERED track name "Kick" (uid 52542eb7d9)
+2026-09-08 10:35:19.891 cap_v8[25246:2663706] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 0 uid 52542eb7d9 published "Kick"
+2026-09-08 10:35:20.903 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:20.903 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:22.443 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:22.443 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:23.033 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:23.981 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:23.981 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:25.514 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:25.514 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:26.996 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:26.997 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:27.016 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  after 5 re-applies: slot 0 uid 52542eb7d9 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-08 10:35:28.639 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:35:28.669 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=8f6ebfc26a
+2026-09-08 10:35:28.669 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:35:28.669 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:28.705 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:28.746 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:29.342 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:35:29.367 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=dc30ceae04
+2026-09-08 10:35:29.367 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:35:29.367 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:29.400 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:29.436 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:30.981 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:30.981 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:31.910 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:31.910 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:32.221 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:32.819 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:32.819 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:32.921 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  before: B sees A's solo = 1 (A uid 8f6ebfc26a)   after 3 re-applies: A uid 8f6ebfc26a, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-08 10:35:35.400 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:35:35.427 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=8b301ad9b4
+2026-09-08 10:35:35.427 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:35:35.427 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:35.465 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:35.504 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:36.086 cap_v8[25246:2663706] EJLinkState: host DELIVERED track name "Kick" (uid 8b301ad9b4)
+2026-09-08 10:35:36.117 cap_v8[25246:2663706] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 0 uid 8b301ad9b4 published "Kick"
+2026-09-08 10:35:37.017 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:37.017 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:38.410 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:38.411 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:39.038 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:39.796 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:39.796 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:41.190 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:41.190 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:42.598 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:42.598 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:42.692 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  after 5 re-applies: slot 0 uid 8b301ad9b4 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-08 10:35:44.232 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:35:44.260 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=ce2faf5a6e
+2026-09-08 10:35:44.260 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:35:44.260 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:44.365 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:44.400 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:44.934 cap_v8[25246:2663706] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:35:44.962 cap_v8[25246:2663706] EJLinkState: post-init linkOn=1 name="" uid=bf35700935
+2026-09-08 10:35:44.962 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:35:44.962 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:44.996 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:45.031 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:46.562 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:46.563 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:47.475 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:47.475 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:47.931 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:35:48.398 cap_v8[25246:2663706] EJLinkState: getState linkOn=1 name=""
+2026-09-08 10:35:48.399 cap_v8[25246:2663706] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-08 10:35:48.556 cap_v8[25246:2663706] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  before: B sees A's solo = 1 (A uid ce2faf5a6e)   after 3 re-applies: A uid ce2faf5a6e, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+CHURN20: L8 20/20   L9 20/20
+exit=0

@@ -1,6 +1,8 @@
 #include "EJDialWrites.h"
+#include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "EchoJayBridgedAU.h"   // FIRST: pulls CoreFoundation before JUCE (Point ambiguity)
 #include "ChainHost.h"
+#include "EedLatencyLog.h"
 #include "EJVariantPreference.h"
 #include "EJWavesAlias.h"
 #include "EJWavesRegistryFeed.h"   // Waves candidates come from the scan, not the catalog
@@ -10,6 +12,7 @@
 #include "EchoJayParamMaps.h"
 #include "EJDialTally.h"          // dial-4 A8: requestedEntryCount, the A7.2 keys semantic
 #include "SurgicalEqProcessor.h"   // built-in EQ device (see kBuiltinFormat)
+#include "EedKeyFeed.h"            // KeyFeedConsumer: builtins learn their owner
 #include "LinkShm.h"               // the EQ curve's grid, clamp and point count
 #include "AUEnumerator.h"
 #include "NativeClip.h"   // EchoJay_NSLog
@@ -41,7 +44,7 @@ using echojay::trailingModelNumber;
 // ---------------------------------------------------------------------------
 static juce::File appSupportDir()
 {
-    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+    return echojay::userAppData()
            .getChildFile("EchoJay");
 }
 
@@ -734,8 +737,8 @@ struct ChainHost::LatencyRebuilder : juce::AsyncUpdater, juce::Timer
 {
     explicit LatencyRebuilder(ChainHost& o) : owner(o) {}
     ~LatencyRebuilder() override { cancelPendingUpdate(); stopTimer(); }
-    void handleAsyncUpdate() override { startTimer(kDebounceMs); }
-    void timerCallback() override { stopTimer(); owner.rebuildForLatencyIfChanged(); }
+    void handleAsyncUpdate() override { EJ_LAT_LOG ("chain: latency debounce ARMED (%d ms)%s", kDebounceMs, isTimerRunning() ? " - re-armed, timer was running" : ""); startTimer(kDebounceMs); }
+    void timerCallback() override { stopTimer(); EJ_LAT_LOG ("chain: latency debounce FIRED -> rebuildForLatencyIfChanged"); owner.rebuildForLatencyIfChanged(); }
     static constexpr int kDebounceMs = 80;
     ChainHost& owner;
 };
@@ -764,6 +767,15 @@ ChainHost::ChainHost(Mode mode) : mode_(mode)
     {
         loadFromDisk();
         reloadBlacklistFromDisk();
+        // 10 Sep 2026: a Borrowed host now LOADS the param maps the primary
+        // wrote (pure reads; the one save in mergeBootstrapMaps is a no-op in
+        // Borrowed - saveParamMapsToDisk returns). Without this a third-party
+        // slot built on the borrowed path found no map and could never dial;
+        // only the builtin EchoJay EQ (no map needed) dialled. Death-mark
+        // CONSUMPTION stays the primary's job (it writes); we only read.
+        loadParamMapsFromDisk();
+        mergeBootstrapMaps();
+        loadHelperCatalogue();
         return;
     }
 
@@ -830,6 +842,8 @@ ChainHost::~ChainHost()
 // ---------------------------------------------------------------------------
 void ChainHost::prepare(double sampleRate, int blockSize)
 {
+    GraphMutation graphMutation(*this);   // v9 change B
+    EJ_LAT_LOG ("chain: prepare fs %.0f block %d", sampleRate, blockSize);
     sampleRate_ = sampleRate;
     blockSize_  = blockSize;
     prepared_   = true;
@@ -859,6 +873,7 @@ void ChainHost::prepare(double sampleRate, int blockSize)
 
 void ChainHost::release()
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     if (graph_) graph_->releaseResources();
     prepared_ = false;
 }
@@ -870,6 +885,29 @@ void ChainHost::process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi
     // certain prepare/rebuild orderings; bypassing it avoids that entirely.
     // (Also means master wet/dry costs nothing on an empty chain.)
     if (!prepared_ || !graph_) return;
+    // Link v9 change B: the implied mutex. A mutation in flight on the message
+    // thread owns graphLock_; this block passes through dry rather than render
+    // into a graph being rebuilt. Never blocks (try-lock), so no inversion.
+    const juce::CriticalSection::ScopedTryLockType graphTry (graphLock_);
+    if (! graphTry.isLocked())
+    {
+        processDuringRebuild_.fetch_add(1, std::memory_order_acq_rel);
+        if (buffer.getNumChannels() >= 1)
+        {
+            chainInTally_.push(buffer.getReadPointer(0),
+                               buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : nullptr,
+                               buffer.getNumSamples());
+            chainOutTally_.push(buffer.getReadPointer(0),
+                                buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : nullptr,
+                                buffer.getNumSamples());
+        }
+        return;   // dry: the buffer passes through untouched for this block
+    }
+    if (resetPending_.exchange(false, std::memory_order_acq_rel))
+    {
+        EJ_LAT_LOG ("chain: transport reset applied to the graph");
+        graph_->reset();   // round 48: the transport reset, fanned out to every slot on the audio thread
+    }
     // Running level at the chain INPUT, before anything, including on an
     // empty rack: a build on an empty rack still needs to know the level.
     if (buffer.getNumChannels() >= 1)
@@ -1403,6 +1441,7 @@ ChainHost::SlotInfo ChainHost::getSlotInfo(int i) const
     const auto& s = slots_[(size_t)i];
     info.name             = s.desc.name;
     info.bypassed         = s.bypassed;
+    info.intendedBypassed = s.intendedBypassed;
     info.settings         = s.settings;
     info.format           = s.desc.pluginFormatName;
     info.wet              = s.wet;
@@ -2494,6 +2533,7 @@ ChainHost::applyStructuredSettings (int slotIndex,
 
 void ChainHost::removeSlot(int i)
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     if (i < 0 || i >= (int)slots_.size()) return;
     // MOVE LOG: what left. Recorded before the slot goes, while its name is
     // still in hand.
@@ -2528,8 +2568,24 @@ void ChainHost::removeSlot(int i)
     }
 }
 
+void ChainHost::setLeaseBypass(int i, bool bypassed)
+{
+    GraphMutation graphMutation(*this);   // v9 change B
+    if (i < 0 || i >= (int)slots_.size()) return;
+    if (slots_[i].bypassed == bypassed) return;   // already the effective state: no rebuild
+    slots_[i].bypassed = bypassed;
+    bumpChainRevision();
+    rebuildGraph();
+    if (prepared_)
+    {
+        graph_->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+        graph_->prepareToPlay(sampleRate_, blockSize_);
+    }
+}
+
 void ChainHost::moveSlot(int i, int direction)
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     int j = i + direction;
     if (i < 0 || i >= (int)slots_.size()) return;
     if (j < 0 || j >= (int)slots_.size()) return;
@@ -2545,8 +2601,13 @@ void ChainHost::moveSlot(int i, int direction)
 
 void ChainHost::setSlotBypassed(int i, bool bypassed)
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     if (i < 0 || i >= (int)slots_.size()) return;
-    slots_[i].bypassed = bypassed;
+    // v9: this is the USER's / plan's request. While a rack lease holds the
+    // rack dry (attachBypassed_), the effective state stays bypassed and only
+    // the intent is recorded; the lease's release applies the intent.
+    slots_[i].intendedBypassed = bypassed;
+    slots_[i].bypassed = attachBypassed_.load(std::memory_order_acquire) ? true : bypassed;
     bumpChainRevision();
     rebuildGraph();
     if (prepared_)
@@ -2595,6 +2656,7 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
                               const juce::PluginDescription& desc,
                               LoadOrigin origin)
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     // Any successful load clears a stale session load-failure mark
     sessionLoadFailed_.removeString(sessionLoadKey(desc.name, desc.pluginFormatName));
 
@@ -2612,8 +2674,16 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
     // Discriminator log (2 Sep): one side of the write; the projection's
     // EJPane line is the other. The timestamps say which candidate holds.
     EchoJay_NSLog(("EJPlace: stored \"" + slot.desc.name + "\" mfr=\""
-                   + slot.desc.manufacturerName + "\" (async load)").toRawUTF8());
-    slot.bypassed = false;
+                   + slot.desc.manufacturerName + "\" (async load"
+                   + juce::String(attachBypassed_.load(std::memory_order_acquire)
+                                      ? ", attached BYPASSED under the lease" : "")
+                   + ")").toRawUTF8());
+    // v9 change A: the slot arrives in the lease's TARGET state - one write,
+    // never un-bypassed-then-corrected. attachBypassed_ is set by the Link's
+    // rack lease before it bypasses the existing slots and cleared after it
+    // restores them, so a plan attached under a lease is never rendered live.
+    slot.bypassed = attachBypassed_.load(std::memory_order_acquire);
+    slot.intendedBypassed = false;   // v9: what it would be without the lease
     const auto arrivedName = slot.desc.name;
     slots_.push_back(std::move(slot));
     // MOVE LOG: a slot arriving, and ONLY where the origin licenses a claim.
@@ -2772,6 +2842,12 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
 // ---------------------------------------------------------------------------
 // Auto-parameter-mapping pipeline (the ONE apply path)
 // ---------------------------------------------------------------------------
+juce::var ChainHost::getSlotStructured(int i) const
+{
+    if (i < 0 || i >= (int) slots_.size()) return {};
+    return slots_[(size_t) i].structuredSettings;
+}
+
 void ChainHost::setSlotStructuredSettings(int i, const juce::var& structured)
 {
     if (i < 0 || i >= (int)slots_.size()) return;
@@ -3238,6 +3314,48 @@ void ChainHost::mergeBootstrapMaps()
         }
         if (changed && onSlotSettingsChanged) onSlotSettingsChanged();
     }
+}
+
+static const char* dialStatusShortName(ChainHost::DialStatus st)
+{
+    switch (st)
+    {
+        case ChainHost::DialStatus::none:        return "none";
+        case ChainHost::DialStatus::pending:     return "pending";
+        case ChainHost::DialStatus::applied:     return "applied";
+        case ChainHost::DialStatus::partial:     return "partial";
+        case ChainHost::DialStatus::noMap:       return "noMap";
+        default:                                 return "other-terminal";
+    }
+}
+
+void ChainHost::failMapFetch(const juce::StringArray& fps)
+{
+    if (fps.isEmpty()) return;
+    for (const auto& fp : fps) pendingMapFps_.removeString(fp);
+    bool changed = false;
+    for (int i = 0; i < (int)slots_.size(); ++i)
+    {
+        auto& s = slots_[(size_t)i];
+        if (! fps.contains(s.fp) || s.structuredApplied
+            || s.structuredSettings.getDynamicObject() == nullptr) continue;
+        const bool wasPending = s.dialStatus == DialStatus::pending;
+        applyStructuredIfReady(i, DialTrigger::mapArrived);   // re-evaluates: noMap while the map is absent
+        if (wasPending && s.dialStatus != DialStatus::pending) changed = true;
+        EchoJay_NSLog(("EJParamMaps: fetch FAILED for slot " + juce::String(i) + " (\"" + s.desc.name
+                       + "\") fp=" + s.fp.substring(0, 12) + " -> terminal "
+                       + dialStatusShortName(s.dialStatus)).toRawUTF8());
+    }
+    if (changed && onSlotSettingsChanged) onSlotSettingsChanged();
+}
+
+void ChainHost::failFallbackLookup()
+{
+    juce::StringArray fps;
+    for (const auto& s : slots_)
+        if (s.fp.isNotEmpty() && fallbackRequested_.contains(s.fp) && pendingMapFps_.contains(s.fp))
+            fps.addIfNotAlreadyThere(s.fp);
+    failMapFetch(fps);
 }
 
 void ChainHost::requestMapPrefetch()
@@ -4428,6 +4546,7 @@ void ChainHost::markBorrowPoolIneligible(const juce::PluginDescription& d,
 
 void ChainHost::releaseBorrowToPool()
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     if (mode_ != Mode::Borrowed || !graph_) return;
     for (int i = 0; i < (int) slots_.size(); ++i)
     {
@@ -4472,7 +4591,7 @@ int devForceWithholdSlot1()
 {
     static const int s = []
     {
-        auto f = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+        auto f = echojay::userStateHome()
                      .getChildFile(".echojay").getChildFile("dev.json");
         if (! f.existsAsFile()) return 0;
         auto v = juce::JSON::parse(f.loadFileAsString());
@@ -4529,6 +4648,7 @@ LinkShm::StructureEdit::PreImages ChainHost::planCapturePreImages() const
 
 void ChainHost::parkSlotReattachable(int i)
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     if (i < 0 || i >= (int) slots_.size() || !graph_) return;
     auto& s = slots_[(size_t) i];
     detachHostedListener(i);
@@ -4553,6 +4673,7 @@ void ChainHost::parkSlotReattachable(int i)
 
 bool ChainHost::tryReattachParked(const juce::PluginDescription& d, int insertAt)
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     const auto key = planKeyOf({ d.name,
                                  descUid(d) != 0 ? juce::String(descUid(d))
                                                  : juce::String(), {} });
@@ -4625,6 +4746,8 @@ bool ChainHost::planStageOne(const juce::PluginDescription& d, juce::String& why
             proc = dev->create();
         if (proc == nullptr)
         { whyNot = d.name + " is a built-in this build does not carry"; return false; }
+        if (auto* kc = dynamic_cast<echojay::KeyFeedConsumer*>(proc.get()))
+            kc->setKeyFeedSelfId(keyFeedOwnerId_);
     }
     else
     {
@@ -4988,6 +5111,7 @@ void ChainHost::captureBorrowDefaultState(int slotIdx)
 
 bool ChainHost::borrowTryReuseInto(const juce::PluginDescription& canonicalDesc)
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     if (mode_ != Mode::Borrowed) return false;
     const auto key = borrowPoolKey(canonicalDesc);
     if (borrowPoolIneligible_.contains(key)) return false;   // fresh, by verdict
@@ -5075,6 +5199,7 @@ bool ChainHost::borrowTryReuseInto(const juce::PluginDescription& canonicalDesc)
 
 juce::String ChainHost::loadBuiltinNow(const juce::PluginDescription& desc)
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     if (!graph_) return "chain graph not ready";
 
     // Resolved from whatever the description carries — identifier, then uid, then
@@ -5093,6 +5218,8 @@ juce::String ChainHost::loadBuiltinNow(const juce::PluginDescription& desc)
     std::unique_ptr<juce::AudioProcessor> proc = device->create();
     if (!proc)
         return "built-in device \"" + desc.name + "\" failed to construct";
+    if (auto* kc = dynamic_cast<echojay::KeyFeedConsumer*>(proc.get()))
+        kc->setKeyFeedSelfId(keyFeedOwnerId_);
     if (mode_ == Mode::Borrowed) ++borrowFresh_;
 
     proc->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
@@ -5257,6 +5384,7 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
 void ChainHost::rebuildGraph()
 {
     if (!graph_) return;
+    EJ_LAT_LOG ("chain: rebuildGraph (slots %d, prepared %d)", (int) slots_.size(), prepared_ ? 1 : 0);
     // Remove all existing connections
     for (auto& c : graph_->getConnections())
         graph_->removeConnection(c);
@@ -7669,11 +7797,19 @@ void ChainHost::onHostedLatencyChanged() noexcept
 {
     // Any thread (a plugin may report a latency change from its own UI or
     // from the audio thread): nothing but a thread-safe trigger.
+    EJ_LAT_LOG ("chain: onHostedLatencyChanged (a slot reported a latency change) -> trigger");
     if (latencyRebuilder_) latencyRebuilder_->triggerAsyncUpdate();
+}
+
+bool ChainHost::latencyRebuildPending() const noexcept
+{
+    return latencyRebuilder_ != nullptr
+        && (latencyRebuilder_->isTimerRunning() || latencyRebuilder_->isUpdatePending());
 }
 
 void ChainHost::rebuildForLatencyIfChanged()
 {
+    GraphMutation graphMutation(*this);   // v9 change B
     // Message thread, after the debounce. Rebuild ONLY if some slot's
     // reported latency differs from what the graph was built with: a
     // notification that changes nothing costs nothing, and a burst for one
@@ -7692,6 +7828,7 @@ void ChainHost::rebuildForLatencyIfChanged()
             detail << (detail.isEmpty() ? "" : ", ") << slots_[si].desc.name << " " << was << "->" << now;
         }
     }
+    EJ_LAT_LOG ("chain: rebuildForLatencyIfChanged: %s%s", changed ? "CHANGED " : "no change", changed ? detail.toRawUTF8() : "");
     if (!changed) return;
     EchoJay_NSLog(("EJChain: hosted latency changed at runtime (" + detail
                    + "); rebuilding the graph so the wet/dry dry legs and the host "

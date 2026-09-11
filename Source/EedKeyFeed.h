@@ -56,6 +56,16 @@ struct DetectedKeyFact
     char     sourceName[48] = {};
     bool     fromBus    = false;   // a bus-grade source (bus Link / self on bus)
 
+    // CIRCULARITY GUARD (29 Aug 2026 ruling): a corrector must never derive
+    // its tuning grid from the signal it is correcting - a flat singer would
+    // define a flat grid and correction becomes a no-op in the mean. The
+    // publisher stamps WHO it is and whether the primary source was its own
+    // channel's audio (self analysis, a capture of this channel, the local
+    // chain); a reader hosted by the SAME instance must then treat the
+    // tuning as unmeasured and fall back to 440, never to the channel.
+    uint64_t publisherId = 0;      // the publishing instance (0 = unknown)
+    bool     selfDerived = false;  // primary came from the publisher's own channel
+
     // The confidence gate of spec §6. Below it the key is NOT applied and the
     // device falls back to chromatic - never to the last known key, because a
     // stale key is applied with total confidence and can force a note that is
@@ -65,6 +75,16 @@ struct DetectedKeyFact
     static constexpr float kConfidenceGate = 0.50f;
 
     bool usable() const noexcept { return valid && confidence >= kConfidenceGate; }
+};
+
+// Implemented by chain-hosted devices that consume the feed and need to know
+// which instance HOSTS them, so they can recognise a fact derived from their
+// own channel (see publisherId/selfDerived above). ChainHost calls this on
+// every builtin it creates; devices that don't care don't implement it.
+struct KeyFeedConsumer
+{
+    virtual ~KeyFeedConsumer() = default;
+    virtual void setKeyFeedSelfId (uint64_t id) = 0;
 };
 
 class KeyFeed

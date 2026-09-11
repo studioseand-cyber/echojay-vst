@@ -1,0 +1,1054 @@
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-06 20:15:55.679 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:15:55.681 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:15:55.692 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:15:55.697 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:15:55.705 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=793637cb61
+2026-09-06 20:15:55.705 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:15:55.705 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:15:55.742 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:15:55.780 cap_v7[85937:2074163] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-06 20:15:55.780 cap_v7[85937:2074163] EJPrompt: session project "Nafe smallz Aitch Luxury" from previous host, ignoring, will prompt (file "Pro Tools" pid=55105 start=1788706358 vs current "Terminal" pid=496 start=1788433286.527607)
+2026-09-06 20:15:55.780 cap_v7[85937:2074163] EJPrompt: session genre "Hip-Hop" from previous host, ignoring, will prompt (file "Pro Tools" pid=55105 start=1788706358 vs current "Terminal" pid=496 start=1788433286.527607)
+2026-09-06 20:15:55.818 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:15:56.423 cap_v7[85937:2074163] EJLinkState: host DELIVERED track name "Kick" (uid 793637cb61)
+2026-09-06 20:15:56.436 cap_v7[85937:2074163] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 6 uid 793637cb61 published "Kick"
+2026-09-06 20:15:57.390 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:15:57.390 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:15:58.860 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:15:58.860 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:00.323 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:00.323 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:01.777 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:01.777 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:03.239 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:03.239 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  after 5 re-applies: slot 6 uid 793637cb61 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-06 20:16:04.973 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:16:04.975 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:16:04.983 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:16:04.988 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:16:04.993 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=f068e63a3f
+2026-09-06 20:16:04.994 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:16:04.994 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:05.029 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:05.100 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:05.745 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:16:05.746 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:16:05.754 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:16:05.757 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:16:05.770 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=1d8c57cb5b
+2026-09-06 20:16:05.770 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:16:05.770 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:05.805 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:05.873 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:07.577 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:07.577 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:08.535 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:08.535 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:09.496 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:09.496 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  before: B sees A's solo = 1 (A uid f068e63a3f)   after 3 re-applies: A uid f068e63a3f, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-06 20:16:12.185 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:16:12.187 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:16:12.195 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:16:12.199 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:16:12.209 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=876a78f304
+2026-09-06 20:16:12.209 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:16:12.209 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:12.244 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:12.316 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:12.928 cap_v7[85937:2074163] EJLinkState: host DELIVERED track name "Kick" (uid 876a78f304)
+2026-09-06 20:16:12.933 cap_v7[85937:2074163] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 6 uid 876a78f304 published "Kick"
+2026-09-06 20:16:13.903 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:13.903 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:15.384 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:15.384 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:16.830 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:16.830 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:18.296 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:18.296 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:19.764 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:19.764 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  after 5 re-applies: slot 6 uid 876a78f304 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-06 20:16:21.568 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:16:21.569 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:16:21.581 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:16:21.586 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:16:21.587 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=1a07057749
+2026-09-06 20:16:21.587 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:16:21.587 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:21.623 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:21.695 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:22.327 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:16:22.329 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:16:22.339 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:16:22.344 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:16:22.348 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=409316b59f
+2026-09-06 20:16:22.348 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:16:22.348 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:22.382 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:22.420 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:24.036 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:24.036 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:24.997 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:24.997 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:25.921 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:25.969 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:25.970 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  before: B sees A's solo = 1 (A uid 1a07057749)   after 3 re-applies: A uid 1a07057749, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-06 20:16:28.684 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:16:28.686 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:16:28.695 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:16:28.699 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:16:28.701 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=b447f73162
+2026-09-06 20:16:28.701 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:16:28.701 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:28.739 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:28.810 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:29.428 cap_v7[85937:2074163] EJLinkState: host DELIVERED track name "Kick" (uid b447f73162)
+2026-09-06 20:16:29.429 cap_v7[85937:2074163] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 6 uid b447f73162 published "Kick"
+2026-09-06 20:16:30.406 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:30.406 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:31.864 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:31.864 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:33.332 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:33.332 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:34.785 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:34.785 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:36.235 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:36.236 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  after 5 re-applies: slot 6 uid b447f73162 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-06 20:16:37.948 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:16:37.950 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:16:37.962 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:16:37.968 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:16:37.969 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=aab512fabb
+2026-09-06 20:16:37.969 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:16:37.969 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:38.006 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:38.077 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:38.709 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:16:38.711 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:16:38.724 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:16:38.729 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:16:38.760 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=efbfad5791
+2026-09-06 20:16:38.760 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:16:38.760 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:38.794 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:38.864 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:40.441 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:40.441 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:41.413 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:41.414 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:42.393 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:42.393 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  before: B sees A's solo = 1 (A uid aab512fabb)   after 3 re-applies: A uid aab512fabb, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-06 20:16:45.106 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:16:45.109 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:16:45.119 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:16:45.124 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:16:45.125 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=7ce4e51c8a
+2026-09-06 20:16:45.125 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:16:45.125 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:45.163 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:45.237 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:45.847 cap_v7[85937:2074163] EJLinkState: host DELIVERED track name "Kick" (uid 7ce4e51c8a)
+2026-09-06 20:16:45.847 cap_v7[85937:2074163] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 6 uid 7ce4e51c8a published "Kick"
+2026-09-06 20:16:46.814 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:46.815 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:48.286 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:48.287 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:49.742 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:49.742 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:51.220 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:51.220 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:52.696 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:52.696 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  after 5 re-applies: slot 6 uid 7ce4e51c8a published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-06 20:16:54.428 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:16:54.430 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:16:54.442 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:16:54.447 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:16:54.448 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=9e2206f969
+2026-09-06 20:16:54.448 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:16:54.448 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:54.484 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:54.559 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:55.189 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:16:55.190 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:16:55.201 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:16:55.206 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:16:55.209 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=429af8492f
+2026-09-06 20:16:55.209 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:16:55.209 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:55.247 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:55.321 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:16:56.927 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:56.927 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:57.906 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:57.908 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:16:58.871 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:16:58.872 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  before: B sees A's solo = 1 (A uid 9e2206f969)   after 3 re-applies: A uid 9e2206f969, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-06 20:17:01.550 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:17:01.552 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:17:01.560 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:17:01.563 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:17:01.575 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=a6316d2e7e
+2026-09-06 20:17:01.575 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:17:01.575 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:01.610 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:01.684 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:02.299 cap_v7[85937:2074163] EJLinkState: host DELIVERED track name "Kick" (uid a6316d2e7e)
+2026-09-06 20:17:02.301 cap_v7[85937:2074163] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 6 uid a6316d2e7e published "Kick"
+2026-09-06 20:17:03.275 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:03.275 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:17:04.739 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:04.739 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:17:06.210 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:06.211 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:17:07.668 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:07.668 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:17:09.110 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:09.110 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  after 5 re-applies: slot 6 uid a6316d2e7e published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-06 20:17:10.837 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:17:10.838 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:17:10.847 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:17:10.851 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:17:10.858 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=3fddbd98c8
+2026-09-06 20:17:10.858 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:17:10.858 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:10.894 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:10.970 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:11.585 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:17:11.587 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:17:11.600 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:17:11.605 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:17:11.611 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=865fa06b69
+2026-09-06 20:17:11.611 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:17:11.611 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:11.649 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:11.688 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:13.327 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:13.327 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:17:14.294 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:14.295 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:17:15.211 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:15.274 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:15.274 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  before: B sees A's solo = 1 (A uid 3fddbd98c8)   after 3 re-applies: A uid 3fddbd98c8, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-06 20:17:17.984 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:17:17.986 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:17:17.998 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:17:18.002 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:17:18.003 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=98816dd1dd
+2026-09-06 20:17:18.003 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:17:18.003 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:18.038 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:18.112 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:18.738 cap_v7[85937:2074163] EJLinkState: host DELIVERED track name "Kick" (uid 98816dd1dd)
+2026-09-06 20:17:18.759 cap_v7[85937:2074163] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 6 uid 98816dd1dd published "Kick"
+2026-09-06 20:17:19.701 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:19.701 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:17:21.173 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:21.174 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:17:22.634 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:22.634 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:17:24.090 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:24.091 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:17:25.551 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:25.551 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  after 5 re-applies: slot 6 uid 98816dd1dd published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-06 20:17:27.291 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:17:27.293 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:17:27.306 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:17:27.311 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:17:27.312 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=901681e009
+2026-09-06 20:17:27.312 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:17:27.312 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:27.349 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:27.423 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:28.056 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:17:28.058 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:17:28.068 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:17:28.074 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:17:28.075 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=a5c4d4a624
+2026-09-06 20:17:28.075 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:17:28.075 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:28.113 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:28.187 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:29.781 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:29.781 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:17:30.763 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:30.763 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:17:31.741 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:31.741 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  before: B sees A's solo = 1 (A uid 901681e009)   after 3 re-applies: A uid 901681e009, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-06 20:17:34.467 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:17:34.469 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:17:34.479 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:17:34.484 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:17:34.489 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=b7b55dab2f
+2026-09-06 20:17:34.489 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:17:34.489 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:34.524 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:34.599 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:35.225 cap_v7[85937:2074163] EJLinkState: host DELIVERED track name "Kick" (uid b7b55dab2f)
+2026-09-06 20:17:35.226 cap_v7[85937:2074163] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 6 uid b7b55dab2f published "Kick"
+2026-09-06 20:17:36.196 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:36.196 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:17:37.655 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:37.655 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:17:39.098 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:39.098 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:17:40.563 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:40.563 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:17:42.014 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:42.015 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  after 5 re-applies: slot 6 uid b7b55dab2f published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-06 20:17:43.753 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:17:43.755 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:17:43.766 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:17:43.771 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:17:43.772 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=1df6aa216a
+2026-09-06 20:17:43.772 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:17:43.772 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:43.807 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:43.882 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:44.514 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:17:44.516 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:17:44.526 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:17:44.530 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:17:44.562 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=61a5810b0b
+2026-09-06 20:17:44.562 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:17:44.562 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:44.597 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:44.637 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:46.248 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:46.248 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:17:47.226 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:47.227 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:17:48.159 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:48.182 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:48.182 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  before: B sees A's solo = 1 (A uid 1df6aa216a)   after 3 re-applies: A uid 1df6aa216a, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-06 20:17:50.897 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:17:50.899 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:17:50.907 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:17:50.911 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:17:50.919 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=711652107d
+2026-09-06 20:17:50.919 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:17:50.919 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:50.956 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:51.028 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:17:51.644 cap_v7[85937:2074163] EJLinkState: host DELIVERED track name "Kick" (uid 711652107d)
+2026-09-06 20:17:51.654 cap_v7[85937:2074163] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 6 uid 711652107d published "Kick"
+2026-09-06 20:17:52.615 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:52.615 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:17:54.065 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:54.065 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:17:55.532 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:55.532 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:17:56.999 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:57.000 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:17:58.467 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:17:58.467 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  after 5 re-applies: slot 6 uid 711652107d published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-06 20:18:00.188 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:18:00.190 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:18:00.200 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:18:00.205 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:18:00.207 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=426eed60b5
+2026-09-06 20:18:00.207 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:18:00.207 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:00.244 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:00.315 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:00.949 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:18:00.950 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:18:00.962 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:18:00.967 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:18:00.968 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=4a33abf61d
+2026-09-06 20:18:00.968 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:18:00.968 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:01.006 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:01.044 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:02.677 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:02.677 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:18:03.636 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:03.636 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:18:04.557 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:04.600 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:04.601 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  before: B sees A's solo = 1 (A uid 426eed60b5)   after 3 re-applies: A uid 426eed60b5, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-06 20:18:07.293 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:18:07.294 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:18:07.302 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:18:07.305 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:18:07.321 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=40cd061567
+2026-09-06 20:18:07.321 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:18:07.321 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:07.359 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:07.430 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:08.033 cap_v7[85937:2074163] EJLinkState: host DELIVERED track name "Kick" (uid 40cd061567)
+2026-09-06 20:18:08.059 cap_v7[85937:2074163] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 6 uid 40cd061567 published "Kick"
+2026-09-06 20:18:09.004 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:09.004 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:18:10.461 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:10.461 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:18:11.911 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:11.911 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:18:13.361 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:13.362 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:18:14.828 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:14.828 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  after 5 re-applies: slot 6 uid 40cd061567 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-06 20:18:16.558 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:18:16.560 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:18:16.573 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:18:16.578 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:18:16.579 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=f1bfd697d8
+2026-09-06 20:18:16.579 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:18:16.579 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:16.614 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:16.689 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:17.322 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:18:17.323 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:18:17.334 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:18:17.338 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:18:17.371 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=32708f13c6
+2026-09-06 20:18:17.371 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:18:17.371 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:17.406 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:17.477 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:19.039 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:19.040 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:18:20.024 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:20.024 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:18:20.994 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:20.995 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  before: B sees A's solo = 1 (A uid f1bfd697d8)   after 3 re-applies: A uid f1bfd697d8, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-06 20:18:23.695 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:18:23.698 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:18:23.709 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:18:23.713 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:18:23.715 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=528c25f832
+2026-09-06 20:18:23.715 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:18:23.715 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:23.751 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:23.824 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:24.441 cap_v7[85937:2074163] EJLinkState: host DELIVERED track name "Kick" (uid 528c25f832)
+2026-09-06 20:18:24.442 cap_v7[85937:2074163] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 6 uid 528c25f832 published "Kick"
+2026-09-06 20:18:25.423 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:25.423 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:18:26.899 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:26.899 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:18:28.593 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:28.594 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:18:30.288 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:30.290 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:18:31.965 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:31.965 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  after 5 re-applies: slot 6 uid 528c25f832 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-06 20:18:33.957 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:18:33.959 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:18:33.966 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:18:33.970 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:18:33.984 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=704ca06727
+2026-09-06 20:18:33.984 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:18:33.984 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:34.023 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:34.104 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:34.795 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:18:34.796 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:18:34.806 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:18:34.810 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:18:34.817 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=fb6656bbfa
+2026-09-06 20:18:34.817 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:18:34.817 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:34.857 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:34.941 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:36.795 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:36.795 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:18:37.908 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:37.908 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:18:39.039 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:39.039 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  before: B sees A's solo = 1 (A uid 704ca06727)   after 3 re-applies: A uid 704ca06727, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-06 20:18:42.256 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:18:42.258 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:18:42.270 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:18:42.274 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:18:42.276 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=ca1f48fb30
+2026-09-06 20:18:42.276 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:18:42.276 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:42.316 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:42.401 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:43.101 cap_v7[85937:2074163] EJLinkState: host DELIVERED track name "Kick" (uid ca1f48fb30)
+2026-09-06 20:18:43.101 cap_v7[85937:2074163] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 6 uid ca1f48fb30 published "Kick"
+2026-09-06 20:18:44.221 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:44.221 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:18:45.883 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:45.884 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:18:47.573 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:47.574 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:18:49.259 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:49.259 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:18:50.920 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:50.920 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  after 5 re-applies: slot 6 uid ca1f48fb30 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-06 20:18:52.938 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:18:52.940 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:18:52.947 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:18:52.951 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:18:52.960 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=275310e07f
+2026-09-06 20:18:52.960 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:18:52.960 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:52.995 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:53.072 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:53.799 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:18:53.800 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:18:53.809 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:18:53.813 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:18:53.831 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=c1ccd79ab5
+2026-09-06 20:18:53.831 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:18:53.831 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:53.874 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:53.951 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:18:55.752 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:55.753 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:18:56.870 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:56.870 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:18:57.980 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:18:57.980 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  before: B sees A's solo = 1 (A uid 275310e07f)   after 3 re-applies: A uid 275310e07f, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-06 20:19:01.194 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:19:01.196 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:19:01.205 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:19:01.211 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:19:01.215 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=f44e606b30
+2026-09-06 20:19:01.215 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:19:01.215 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:01.255 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:01.340 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:02.058 cap_v7[85937:2074163] EJLinkState: host DELIVERED track name "Kick" (uid f44e606b30)
+2026-09-06 20:19:02.058 cap_v7[85937:2074163] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 6 uid f44e606b30 published "Kick"
+2026-09-06 20:19:03.174 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:03.174 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:19:04.857 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:04.857 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:19:06.563 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:06.563 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:19:08.244 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:08.244 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:19:09.930 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:09.930 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  after 5 re-applies: slot 6 uid f44e606b30 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-06 20:19:11.934 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:19:11.937 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:19:11.949 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:19:11.954 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:19:11.955 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=2ef2ea8d64
+2026-09-06 20:19:11.955 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:19:11.955 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:11.994 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:12.072 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:12.793 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:19:12.794 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:19:12.804 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:19:12.808 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:19:12.834 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=ce56999164
+2026-09-06 20:19:12.834 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:19:12.834 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:12.875 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:12.950 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:14.752 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:14.752 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:19:15.863 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:15.863 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:19:16.984 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:16.985 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  before: B sees A's solo = 1 (A uid 2ef2ea8d64)   after 3 re-applies: A uid 2ef2ea8d64, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-06 20:19:20.215 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:19:20.217 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:19:20.226 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:19:20.229 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:19:20.235 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=557edbb489
+2026-09-06 20:19:20.236 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:19:20.236 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:20.277 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:20.358 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:21.095 cap_v7[85937:2074163] EJLinkState: host DELIVERED track name "Kick" (uid 557edbb489)
+2026-09-06 20:19:21.109 cap_v7[85937:2074163] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 6 uid 557edbb489 published "Kick"
+2026-09-06 20:19:22.222 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:22.222 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:19:23.891 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:23.892 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:19:25.572 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:25.573 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:19:27.250 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:27.250 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:19:28.929 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:28.930 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  after 5 re-applies: slot 6 uid 557edbb489 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-06 20:19:30.930 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:19:30.932 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:19:30.944 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:19:30.949 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:19:30.950 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=d90226e1ea
+2026-09-06 20:19:30.950 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:19:30.950 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:30.988 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:31.067 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:31.805 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:19:31.807 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:19:31.819 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:19:31.824 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:19:31.825 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=b3500ef5b6
+2026-09-06 20:19:31.825 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:19:31.825 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:31.867 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:31.910 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:33.744 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:33.745 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:19:34.863 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:34.863 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:19:35.796 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:35.968 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:35.968 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  before: B sees A's solo = 1 (A uid d90226e1ea)   after 3 re-applies: A uid d90226e1ea, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-06 20:19:39.078 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:19:39.080 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:19:39.087 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:19:39.091 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:19:39.101 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=14932f6678
+2026-09-06 20:19:39.101 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:19:39.101 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:39.144 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:39.219 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:39.946 cap_v7[85937:2074163] EJLinkState: host DELIVERED track name "Kick" (uid 14932f6678)
+2026-09-06 20:19:39.946 cap_v7[85937:2074163] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 6 uid 14932f6678 published "Kick"
+2026-09-06 20:19:41.068 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:41.068 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:19:42.737 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:42.737 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:19:44.407 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:44.408 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:19:46.098 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:46.098 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:19:47.789 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:47.789 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  after 5 re-applies: slot 6 uid 14932f6678 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-06 20:19:49.813 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:19:49.815 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:19:49.828 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:19:49.833 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:19:49.834 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=1eaac4a004
+2026-09-06 20:19:49.834 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:19:49.834 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:49.872 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:49.955 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:50.683 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:19:50.685 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:19:50.692 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:19:50.695 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:19:50.712 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=a3451eca2e
+2026-09-06 20:19:50.712 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:19:50.712 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:50.752 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:50.836 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:52.658 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:52.659 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:19:53.765 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:53.765 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:19:54.864 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:54.864 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  before: B sees A's solo = 1 (A uid 1eaac4a004)   after 3 re-applies: A uid 1eaac4a004, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-06 20:19:57.933 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:19:57.935 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:19:57.943 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:19:57.947 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:19:57.959 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=2cd093fea6
+2026-09-06 20:19:57.959 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:19:57.959 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:58.001 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:58.040 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:19:58.790 cap_v7[85937:2074163] EJLinkState: host DELIVERED track name "Kick" (uid 2cd093fea6)
+2026-09-06 20:19:58.790 cap_v7[85937:2074163] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 6 uid 2cd093fea6 published "Kick"
+2026-09-06 20:19:59.910 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:19:59.911 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:20:01.561 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:01.562 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:20:01.933 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:03.272 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:03.272 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:20:04.959 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:04.959 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:20:05.925 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:06.619 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:06.619 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  after 5 re-applies: slot 6 uid 2cd093fea6 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-06 20:20:08.612 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:20:08.615 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:20:08.628 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:20:08.633 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:20:08.634 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=6292f65355
+2026-09-06 20:20:08.634 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:20:08.634 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:08.676 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:08.757 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:09.490 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:20:09.492 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:20:09.505 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:20:09.510 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:20:09.511 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=9328c19350
+2026-09-06 20:20:09.511 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:20:09.511 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:09.554 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:09.634 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:11.494 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:11.494 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:20:12.616 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:12.616 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:20:13.727 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:13.727 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  before: B sees A's solo = 1 (A uid 6292f65355)   after 3 re-applies: A uid 6292f65355, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-06 20:20:16.862 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:20:16.863 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:20:16.871 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:20:16.874 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:20:16.888 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=17a077c47d
+2026-09-06 20:20:16.888 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:20:16.888 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:16.927 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:17.008 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:17.705 cap_v7[85937:2074163] EJLinkState: host DELIVERED track name "Kick" (uid 17a077c47d)
+2026-09-06 20:20:17.725 cap_v7[85937:2074163] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 6 uid 17a077c47d published "Kick"
+2026-09-06 20:20:18.799 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:18.799 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:20:20.462 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:20.462 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:20:22.157 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:22.157 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:20:23.828 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:23.829 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:20:25.504 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:25.504 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  after 5 re-applies: slot 6 uid 17a077c47d published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-06 20:20:27.508 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:20:27.510 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:20:27.523 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:20:27.528 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:20:27.529 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=77a62de031
+2026-09-06 20:20:27.529 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:20:27.529 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:27.571 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:27.652 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:28.364 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:20:28.366 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:20:28.379 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:20:28.384 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:20:28.406 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=f3d6e08285
+2026-09-06 20:20:28.406 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:20:28.406 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:28.446 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:28.525 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:30.306 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:30.306 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:20:31.432 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:31.432 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:20:32.538 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:32.538 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  before: B sees A's solo = 1 (A uid 77a62de031)   after 3 re-applies: A uid 77a62de031, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-06 20:20:35.696 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:20:35.697 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:20:35.706 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:20:35.709 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:20:35.724 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=4a3b3670e3
+2026-09-06 20:20:35.724 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:20:35.724 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:35.767 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:35.853 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:36.569 cap_v7[85937:2074163] EJLinkState: host DELIVERED track name "Kick" (uid 4a3b3670e3)
+2026-09-06 20:20:36.584 cap_v7[85937:2074163] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 6 uid 4a3b3670e3 published "Kick"
+2026-09-06 20:20:37.701 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:37.701 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:20:39.396 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:39.396 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:20:41.086 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:41.086 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:20:42.766 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:42.766 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:20:44.451 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:44.451 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  after 5 re-applies: slot 6 uid 4a3b3670e3 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-06 20:20:46.469 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:20:46.471 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:20:46.483 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:20:46.488 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:20:46.489 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=23bb142347
+2026-09-06 20:20:46.489 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:20:46.489 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:46.527 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:46.610 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:47.358 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:20:47.360 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:20:47.372 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:20:47.377 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:20:47.378 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=6eb3959a70
+2026-09-06 20:20:47.378 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:20:47.378 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:47.417 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:47.501 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:49.324 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:49.324 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:20:50.433 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:50.433 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:20:51.552 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:51.553 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  before: B sees A's solo = 1 (A uid 23bb142347)   after 3 re-applies: A uid 23bb142347, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-06 20:20:54.639 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:20:54.640 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:20:54.648 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:20:54.651 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:20:54.665 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=cf3eb4473b
+2026-09-06 20:20:54.665 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:20:54.665 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:54.708 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:54.792 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:20:55.489 cap_v7[85937:2074163] EJLinkState: host DELIVERED track name "Kick" (uid cf3eb4473b)
+2026-09-06 20:20:55.505 cap_v7[85937:2074163] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 6 uid cf3eb4473b published "Kick"
+2026-09-06 20:20:56.630 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:56.630 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:20:58.284 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:58.286 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:20:59.978 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:20:59.978 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:21:01.662 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:21:01.663 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:21:03.333 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:21:03.333 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  after 5 re-applies: slot 6 uid cf3eb4473b published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-06 20:21:05.314 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:21:05.316 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:21:05.330 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:21:05.334 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:21:05.335 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=3bc63b3616
+2026-09-06 20:21:05.335 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:21:05.335 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:05.378 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:05.419 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:06.220 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:21:06.223 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:21:06.236 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:21:06.240 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:21:06.258 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=27a39a1ebb
+2026-09-06 20:21:06.258 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:21:06.258 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:06.300 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:06.382 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:08.199 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:21:08.199 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:21:09.258 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:09.336 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:21:09.336 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:21:10.440 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:21:10.440 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:21:13.189 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  before: B sees A's solo = 1 (A uid 3bc63b3616)   after 3 re-applies: A uid 3bc63b3616, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-06 20:21:13.550 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:21:13.551 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:21:13.561 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:21:13.565 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:21:13.570 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=8ab863d15b
+2026-09-06 20:21:13.570 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:21:13.570 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:13.606 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:13.686 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:14.444 cap_v7[85937:2074163] EJLinkState: host DELIVERED track name "Kick" (uid 8ab863d15b)
+2026-09-06 20:21:14.457 cap_v7[85937:2074163] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 6 uid 8ab863d15b published "Kick"
+2026-09-06 20:21:15.560 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:21:15.560 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:21:17.230 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:21:17.230 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:21:18.943 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:21:18.943 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:21:20.596 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:21:20.596 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:21:22.285 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:21:22.286 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  after 5 re-applies: slot 6 uid 8ab863d15b published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-06 20:21:24.294 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:21:24.295 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:21:24.307 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:21:24.312 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:21:24.319 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=45d4d030c8
+2026-09-06 20:21:24.319 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:21:24.319 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:24.360 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:24.442 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:25.178 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:21:25.180 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:21:25.192 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:21:25.197 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:21:25.236 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=d4358c80d3
+2026-09-06 20:21:25.236 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:21:25.236 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:25.272 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:25.349 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:27.173 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:21:27.173 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:21:28.292 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:21:28.292 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:21:29.404 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:21:29.405 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  before: B sees A's solo = 1 (A uid 45d4d030c8)   after 3 re-applies: A uid 45d4d030c8, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+== L8: the host delivered "Kick"; then the instance's OWN chunk is re-applied 5x (as Pro Tools does) ==
+2026-09-06 20:21:32.487 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:21:32.488 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:21:32.498 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:21:32.502 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:21:32.509 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=4fafae08e1
+2026-09-06 20:21:32.509 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:21:32.509 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:32.552 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:32.631 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:33.356 cap_v7[85937:2074163] EJLinkState: host DELIVERED track name "Kick" (uid 4fafae08e1)
+2026-09-06 20:21:33.356 cap_v7[85937:2074163] EJLinkState: host track name "Kick" (user name "")
+  after delivery: slot 6 uid 4fafae08e1 published "Kick"
+2026-09-06 20:21:34.465 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:21:34.466 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:21:36.159 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:21:36.159 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:21:37.831 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:21:37.831 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:21:39.499 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:21:39.499 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:21:41.188 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:21:41.189 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  after 5 re-applies: slot 6 uid 4fafae08e1 published "Kick"
+  -> PASS (uid unchanged, "Kick" still published)
+== L9: Link A soloed; Link B's fabric scan sees it; A's OWN chunk re-applied 3x; B must STILL see it ==
+2026-09-06 20:21:43.167 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:21:43.169 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:21:43.179 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:21:43.184 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:21:43.190 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=566e574ca3
+2026-09-06 20:21:43.190 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:21:43.190 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:43.233 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:43.306 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:44.064 cap_v7[85937:2074163] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 20:21:44.067 cap_v7[85937:2074163] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 20:21:44.079 cap_v7[85937:2074163] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 20:21:44.084 cap_v7[85937:2074163] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 20:21:44.107 cap_v7[85937:2074163] EJLinkState: post-init linkOn=1 name="" uid=8244e427af
+2026-09-06 20:21:44.107 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 20:21:44.107 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:44.142 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:44.221 cap_v7[85937:2074163] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 20:21:46.036 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:21:46.036 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:21:47.151 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:21:47.151 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+2026-09-06 20:21:48.275 cap_v7[85937:2074163] EJLinkState: getState linkOn=1 name=""
+2026-09-06 20:21:48.275 cap_v7[85937:2074163] EJLinkState: setState linkOn=1 (hadProp=1) name=""
+  before: B sees A's solo = 1 (A uid 566e574ca3)   after 3 re-applies: A uid 566e574ca3, sidecar under A's uid: yes, B sees A's solo = 1
+  -> PASS
+CHURN20: L8 20/20   L9 20/20
+exit=0

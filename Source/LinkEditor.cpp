@@ -78,6 +78,7 @@ LinkEditor::LinkEditor(LinkProcessor& p)
     nameField.onTextChange = [this]
     {
         proc.linkName = nameField.getText();
+        proc.markTypedNameAuthoritative();   // 6 Sep 2026: the user typed it - never treated as a seed
         proc.updateShmState();
         repaint();
     };
@@ -149,6 +150,10 @@ LinkEditor::LinkEditor(LinkProcessor& p)
         if (safe == nullptr) return;
         safe->toggleBtn.setToggleState(safe->proc.linkOn.load(), juce::dontSendNotification);
         safe->nameField.setText(safe->proc.linkName, juce::dontSendNotification);
+        // FULL MUST REPORT TO THE USER (6 Sep 2026 ruling): the name field turns red
+        // with a tooltip when this Link found no registry slot.
+        safe->nameField.setColour(juce::TextEditor::outlineColourId, safe->proc.diag.regFull ? juce::Colours::red : juce::Colour());
+        safe->nameField.setTooltip(safe->proc.diag.regFull ? "EchoJay Link registry is FULL: this Link is not visible to EchoJay" : juce::String());
         safe->gainSlider.setValue(safe->proc.getGainDb(), juce::dontSendNotification);
         safe->updatePlacementBtn();   // remote/restore placement change
         safe->repaint();

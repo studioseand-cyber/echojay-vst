@@ -1,0 +1,39 @@
+=== LINK v9 LEGS (Link archive; isolated root) ===
+-- attach (v9): PASS  (control v8: FAIL, renders under lease)
+attach v9: attached bypassed=1 renders-under-lease=0 | released=1 bypassed-after=0 renders-after=3  PASS
+attach v8 control: attached bypassed=0 renders-under-lease=3 ...  FAIL
+-- churn x20 (v9): 20/20 PASS (rendered-inside-rebuild=0)
+churn run 1: mutations=351 blocks=940 probe-renders=5489 rendered-inside-rebuild=0 (must be 0) rendered-while-call-pending=94 (benign) product:dry-passes=506 -> PASS
+churn run 2: mutations=474 blocks=942 probe-renders=4601 rendered-inside-rebuild=0 (must be 0) rendered-while-call-pending=68 (benign) product:dry-passes=352 -> PASS
+churn run 3: mutations=489 blocks=939 probe-renders=4193 rendered-inside-rebuild=0 (must be 0) rendered-while-call-pending=17 (benign) product:dry-passes=341 -> PASS
+churn run 4: mutations=583 blocks=938 probe-renders=5202 rendered-inside-rebuild=0 (must be 0) rendered-while-call-pending=61 (benign) product:dry-passes=253 -> PASS
+churn run 5: mutations=555 blocks=938 probe-renders=5924 rendered-inside-rebuild=0 (must be 0) rendered-while-call-pending=90 (benign) product:dry-passes=256 -> PASS
+churn run 6: mutations=573 blocks=940 probe-renders=5641 rendered-inside-rebuild=0 (must be 0) rendered-while-call-pending=50 (benign) product:dry-passes=257 -> PASS
+churn run 7: mutations=536 blocks=939 probe-renders=5810 rendered-inside-rebuild=0 (must be 0) rendered-while-call-pending=33 (benign) product:dry-passes=277 -> PASS
+churn run 8: mutations=308 blocks=939 probe-renders=6236 rendered-inside-rebuild=0 (must be 0) rendered-while-call-pending=109 (benign) product:dry-passes=566 -> PASS
+churn run 9: mutations=550 blocks=941 probe-renders=4643 rendered-inside-rebuild=0 (must be 0) rendered-while-call-pending=57 (benign) product:dry-passes=295 -> PASS
+churn run 10: mutations=499 blocks=941 probe-renders=5696 rendered-inside-rebuild=0 (must be 0) rendered-while-call-pending=94 (benign) product:dry-passes=328 -> PASS
+churn run 11: mutations=306 blocks=938 probe-renders=4955 rendered-inside-rebuild=0 (must be 0) rendered-while-call-pending=89 (benign) product:dry-passes=564 -> PASS
+churn run 12: mutations=635 blocks=939 probe-renders=5220 rendered-inside-rebuild=0 (must be 0) rendered-while-call-pending=53 (benign) product:dry-passes=173 -> PASS
+churn run 13: mutations=471 blocks=940 probe-renders=6386 rendered-inside-rebuild=0 (must be 0) rendered-while-call-pending=126 (benign) product:dry-passes=372 -> PASS
+churn run 14: mutations=509 blocks=940 probe-renders=5798 rendered-inside-rebuild=0 (must be 0) rendered-while-call-pending=113 (benign) product:dry-passes=302 -> PASS
+churn run 15: mutations=523 blocks=938 probe-renders=6332 rendered-inside-rebuild=0 (must be 0) rendered-while-call-pending=119 (benign) product:dry-passes=305 -> PASS
+churn run 16: mutations=568 blocks=939 probe-renders=5068 rendered-inside-rebuild=0 (must be 0) rendered-while-call-pending=80 (benign) product:dry-passes=265 -> PASS
+churn run 17: mutations=604 blocks=938 probe-renders=4284 rendered-inside-rebuild=0 (must be 0) rendered-while-call-pending=47 (benign) product:dry-passes=221 -> PASS
+churn run 18: mutations=553 blocks=939 probe-renders=5938 rendered-inside-rebuild=0 (must be 0) rendered-while-call-pending=73 (benign) product:dry-passes=267 -> PASS
+churn run 19: mutations=428 blocks=939 probe-renders=5586 rendered-inside-rebuild=0 (must be 0) rendered-while-call-pending=120 (benign) product:dry-passes=424 -> PASS
+churn run 20: mutations=579 blocks=940 probe-renders=5215 rendered-inside-rebuild=0 (must be 0) rendered-while-call-pending=114 (benign) product:dry-passes=226 -> PASS
+-- churn x20 (v8 control): 0/20 PASS (rendered-during-mutation in the thousands)
+churn run 1: mutations=393 blocks=939 probe-renders=15621 rendered-during-mutation=10174 -> FAIL
+churn run 20: mutations=543 blocks=940 probe-renders=6790 rendered-during-mutation=2905 -> FAIL
+churn: 0/20 runs PASS
+
+=== V2 READ-AND-LOCK LEGS (main archive; fake Link responder at 200 ms; 40 Links) ===
+-- Build G (must pass):
+seed:  first session after the switch uid=B slots=2 (B has 2; A had 6) -> PASS
+loops: engaged=1 slots=6, pull requests for A=6 -> PASS
+lock:  view holds no lock; click+session hold it; end releases -> PASS
+-- Build F control (must fail, each by the defect):
+seed:  uid=A slots=6 -> FAIL (A's read seeded B's session)
+loops: engaged=0, pull requests for A=319 -> FAIL (1 Hz feeder clobbers the channel)
+lock:  viewing A holds lock file=1 -> FAIL (lock derived from the view)

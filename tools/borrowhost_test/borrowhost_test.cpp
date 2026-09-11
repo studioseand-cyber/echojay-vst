@@ -1560,23 +1560,32 @@ int main()
         // never adopted).
         using UCG = LinkShm::UidClaimGate;
         UCG dup;
-        check (dup.observe (10) == UCG::Decision::Wait
-                 && dup.observe (11) == UCG::Decision::Remint,
+        check (dup.observe (10, true, 1000000) == UCG::Decision::Wait
+                 && dup.observe (11, true, 1000000) == UCG::Decision::Remint,
                "a proven-live holder forces a re-mint (real duplicate)");
         UCG ghost;
         bool earlyAdopt = false;
+        // C4 (6 Sep 2026): the gate decides in TIME, not in counts. Five
+        // observations inside the floor are still Wait; the floor
+        // (LinkShm::kUidGateFloorMs) AND five observations adopt; a dead publisher pid
+        // adopts at once; a climb at any point re-mints.
+        const juce::int64 t0 = 1000000;
         UCG::Decision d = UCG::Decision::Wait;
         for (int t = 0; t < 5; ++t)
         {
-            d = ghost.observe (7);
-            if (t < 4 && d != UCG::Decision::Wait) earlyAdopt = true;
+            d = ghost.observe (7, /*publisherAlive*/ true, t0 + t * 100);   // five calls in 400 ms: a burst
+            if (d != UCG::Decision::Wait) earlyAdopt = true;
         }
-        check (! earlyAdopt, "an unproven holder is NEVER adopted early");
+        check (! earlyAdopt, "five observations inside the floor are NOT adoption (a burst is not time)");
+        d = ghost.observe (7, true, t0 + LinkShm::kUidGateFloorMs);
         check (d == UCG::Decision::AdoptGhost,
-               "a holder frozen through the threshold is a ghost - adopted");
+               "a holder frozen through the floor AND the observations is a ghost - adopted");
+        UCG deadPid;
+        check (deadPid.observe (7, /*publisherAlive*/ false, t0) == UCG::Decision::AdoptGhost,
+               "a holder whose publisher pid is dead is adopted at once, no floor");
         UCG lateLife;
-        lateLife.observe (3); lateLife.observe (3); lateLife.observe (3);
-        check (lateLife.observe (4) == UCG::Decision::Remint,
+        lateLife.observe (3, true, t0); lateLife.observe (3, true, t0 + 1000); lateLife.observe (3, true, t0 + 2000);
+        check (lateLife.observe (4, true, t0 + 3000) == UCG::Decision::Remint,
                "a holder that wakes mid-probe is live - re-mint, not adopt");
 
         // Pins: the listing gates on the pure helper; the Link's destructor
@@ -1603,9 +1612,11 @@ int main()
                "the reaper's pattern list carries neither structplan nor sidecars");
         // The claim guard decides by heartbeat through the gate, and the
         // strip renders the gone state distinctly from silence.
-        check (lpR.contains ("uidGate_.observe(holderHb)")
+        // C4 (6 Sep 2026): the gate observes the heartbeat WITH the publisher's
+        // liveness and the clock - a liveness decision made in time, not counts.
+        check (lpR.contains ("uidGate_.observe(holderHb, publisherAlive")
                  && lpR.contains ("uid adopted"),
-               "the claim guard routes through UidClaimGate, ghost-adopting");
+               "the claim guard routes through UidClaimGate (with publisher liveness and time), ghost-adopting");
         const auto edR = slurpR ("Source/PluginEditor.cpp");
         check (edR.contains ("heartbeatFresh")
                  && edR.contains ("\"not responding\""),
@@ -1711,7 +1722,7 @@ int main()
                "no capable Link: no alignment budget is carried",
                juce::String (latBare));
         // The 0->1 capable-Link transition is THE one PDC event.
-        mainProc.setBorrowBudgetActive (true);
+        mainProc.setBorrowBudgetWanted (true); mainProc.commitBorrowBudget ("borrowhost_test");   // round 53: wanted + committed
         const int lat0 = mainProc.getLatencySamples();
         check (lat0 == latBare + EchoJayProcessor::kBorrowAlignBudgetFrames,
                "a capable Link present: the budget is carried",
@@ -1724,7 +1735,7 @@ int main()
         mainProc.borrowRelease (false);
         check (mainProc.getLatencySamples() == lat0,
                "RELEASE does not touch the report");
-        mainProc.setBorrowBudgetActive (false);
+        mainProc.setBorrowBudgetWanted (false); mainProc.commitBorrowBudget ("borrowhost_test");   // round 53: wanted + committed
         check (mainProc.getLatencySamples() == latBare,
                "the last capable Link leaving withdraws the budget");
 
@@ -1732,7 +1743,7 @@ int main()
         // ---- in-context path injected an UNINITIALISED buffer — peak 746,
         // ---- pinned meters. A DSP path with no level assertion is how it
         // ---- reached a user; every §8 mode now proves bounded output).
-        mainProc.setBorrowBudgetActive (true);
+        mainProc.setBorrowBudgetWanted (true);   // round 53: committed by the prepare below (L6: "with the budget committed at prepare")
         mainProc.prepareToPlay (48000.0, 512);
         mainProc.borrowEngageBegin ("uid-lvl", "lease-lvl", true, true);
         // The rig plays the Link's confirmation (the injection ramps in
@@ -2184,7 +2195,7 @@ int main()
                         mainProc.processBlock (blk, midi);
                     }
                 };
-                mainProc.setBorrowBudgetActive (true);
+                mainProc.setBorrowBudgetWanted (true); mainProc.commitBorrowBudget ("borrowhost_test");   // round 53: wanted + committed
                 sidecarMute (false, false);          // clean slate
                 mainProc.borrowEngageBegin (ruid, "lease-ms2", true, true);
                 mainProc.borrowMuteConfirmedOnce_.store (true, std::memory_order_relaxed);
@@ -2235,7 +2246,7 @@ int main()
                        "muted AND soloed: mute wins the strip OR",
                        juce::String (mainProc.borrowCtxMixNow(), 3));
                 mainProc.borrowRelease (false);
-                mainProc.setBorrowBudgetActive (false);
+                mainProc.setBorrowBudgetWanted (false); mainProc.commitBorrowBudget ("borrowhost_test");   // round 53: wanted + committed
                 LinkShm::storeRelease (&rslots[fi2].inUse, 0u);
                 juce::File (LinkShm::rackSidecarPath (rdir, fuid2)).deleteFile();
             }
@@ -2406,7 +2417,7 @@ int main()
         {
             int errA = 0;
             const juce::String adir = LinkShm::resolveDir (errA);
-            mainProc.setBorrowBudgetActive (true);
+            mainProc.setBorrowBudgetWanted (true);   // round 53: committed by the prepare below (L6: "with the budget committed at prepare")
             mainProc.prepareToPlay (48000.0, bs);
             mainProc.setPlayHead (&alignPH);
             alignPH.pos = 0;
@@ -2498,7 +2509,7 @@ int main()
             const juce::int64 skew = mainProc.borrowAlignSkew_.load();
             mainProc.borrowRelease (false);
             EchoJayAlignTestAccess::disconnect (mainProc, 2);
-            mainProc.setBorrowBudgetActive (false);
+            mainProc.setBorrowBudgetWanted (false); mainProc.commitBorrowBudget ("borrowhost_test");   // round 53: wanted + committed
             mainProc.setPlayHead (nullptr);
             juce::File (adir + "audio_align.bin").deleteFile();
             return { (iPass >= 0 && iInj >= 0) ? iInj - iPass : 99999, skew };
@@ -2564,7 +2575,7 @@ int main()
             const int bs = 512;
             int errA = 0;
             const juce::String adir = LinkShm::resolveDir (errA);
-            mainProc.setBorrowBudgetActive (true);
+            mainProc.setBorrowBudgetWanted (true);   // round 53: committed by the prepare below (L6: "with the budget committed at prepare")
             mainProc.prepareToPlay (48000.0, bs);
             mainProc.setPlayHead (&alignPH);
             alignPH.pos = 0; alignPH.playing = true;
@@ -2668,11 +2679,11 @@ int main()
                    juce::String (peak, 3));
             mainProc.borrowRelease (false);
             EchoJayAlignTestAccess::disconnect (mainProc, 2);
-            mainProc.setBorrowBudgetActive (false);
+            mainProc.setBorrowBudgetWanted (false); mainProc.commitBorrowBudget ("borrowhost_test");   // round 53: wanted + committed
             mainProc.setPlayHead (nullptr);
             juce::File (adir + "audio_align.bin").deleteFile();
         }
-        mainProc.setBorrowBudgetActive (false);
+        mainProc.setBorrowBudgetWanted (false); mainProc.commitBorrowBudget ("borrowhost_test");   // round 53: wanted + committed
         // The level arm alone can false-pass on a fresh process (OS pages
         // arrive zeroed; Sean's garbage came from recycled heap), so the
         // two causes are ALSO pinned: the drain runs for every live

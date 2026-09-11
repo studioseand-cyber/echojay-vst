@@ -20,6 +20,8 @@
 
 #if JUCE_MAC || JUCE_LINUX
   #include <sys/mman.h>
+#include <signal.h>   // kill(pid, 0): publisher liveness (reaper)
+#include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
   #include <sys/stat.h>
   #include <fcntl.h>
   #include <unistd.h>
@@ -119,7 +121,19 @@ static constexpr uint32_t kRegMagic      = 0xEC4A2002u;
 /// predicate, consumed by both plugins, so no "is it bus, otherwise
 /// channel" branch can quietly mis-sort a value added later.
 inline bool placementIsPostFader(int p) { return p == 1 || p == 3; }
-static constexpr int      kRegMaxSlots   = 16;
+// 256 SLOTS (6 Sep 2026 ruling): the requirement is 45 Links with real
+// headroom; 16 filled up in one afternoon of Pro Tools inserts (16/16 live).
+// Region = 64 + 256*128 + 256*128 = 65,600 bytes of shared file. The cost
+// that matters is not the region but anything sized by this on the AUDIO
+// path - see EchoJayProcessor::processBlock, which walks a compact LIVE list,
+// never this ceiling.
+static constexpr int      kRegMaxSlots   = 256;
+// LAYOUT VERSION, checked on open: a region whose header carries a different
+// version or slot count is REJECTED (errno EPROTO, lastRegistryLayoutError
+// says why). Builds of the 16-slot layout keep using registry_v2.bin; this
+// layout lives in registry_v3.bin, so old and new never share a file.
+static constexpr uint32_t kRegLayoutVersion = 2;
+inline juce::String& lastRegistryLayoutError() { static juce::String e; return e; }
 static constexpr int      kRegStaleCycles = 60;   // ~30 s at 2 Hz probing
 
 // 128 bytes per slot (2 cache lines)
@@ -357,8 +371,7 @@ inline juce::String resolveDir(int& errno_out)
     // 1. Preferred: persistent across sessions
 #if JUCE_MAC
     {
-        juce::File appSupport = juce::File::getSpecialLocation(
-            juce::File::userApplicationDataDirectory)
+        juce::File appSupport = echojay::userAppData()
             .getChildFile("Application Support/EchoJay/link");
         if (tryDir(appSupport))
             return appSupport.getFullPathName() + "/";
@@ -405,7 +418,7 @@ inline juce::String makeAudioFilename(const juce::String& linkName)
 /// bumped because openFileMapped ftruncates to the opener's size — an old
 /// build opening a v2 file would shrink it under a live v2 mapping (SIGBUS).
 /// Separate files mean old and new builds simply don't see each other.
-static inline const char* kRegistryFilename = "registry_v2.bin";
+static inline const char* kRegistryFilename = "registry_v3.bin";   // v2 = the 16-slot layout, left to old builds
 
 // =============================================================================
 //  Registry liveness (25 Aug 2026): a slot is LISTED only after its heartbeat
@@ -445,16 +458,42 @@ struct RegLiveness
 //  Pure so all three arms gate functionally; the caller re-observes on its
 //  claim-retry tick (~1s; producers bump ~1Hz, so live proves in 1-2 ticks).
 // =============================================================================
+// THE FLOOR IS TIME, NOT COUNTS (6 Sep 2026 ruling, C4a). The five-observation
+// rule assumed ~1 s claim retries against ~1 Hz bumps; in fact the holder
+// bumps on every 30 Hz tick, the claim retry runs on every 30 Hz tick, and a
+// seeded fresh insert observes several times inside one message-loop turn
+// (setState sync + queued updateShmState calls). Five observations could land
+// between two bumps of a LIVE holder - measured 2 of 4 harness runs adopting
+// a live sibling's uid. Liveness is a property of time: AdoptGhost now also
+// needs kUidGateFloorMs since this holder was first observed. The floor is
+// DERIVED, not picked: it is the product's own freshness window - a row whose
+// heartbeat has not moved for 3500 ms is already "not fresh" to the Link's
+// solo scan (LinkProcessor.cpp, `fresh = (nowMs - lastHbMoveMs) < 3500.0`)
+// and stale to the main plugin (~3 s) - so a holder frozen through the floor
+// is dead by the same rule everywhere. Measured against the Pro Tools storm
+// (incarnations 0.7-1.2 s, two of 25 gaps at 3.5-3.8 s): an incarnation that
+// dies inside the floor never adopts and never re-mints - no identity burned,
+// no orphan; the slot simply stays unclaimed until an incarnation outlives it.
+// C4b: a holder whose PUBLISHER PID IS DEAD (round 53's sidecar field, kill(pid,0))
+// is adopted at once - a dead process is not ambiguous, and the unclean-kill
+// case the gate was built for stays fast. The floor applies only while the
+// pid is alive: the one case (dead incarnation vs live sibling in one process)
+// that heartbeat time alone can resolve.
+static constexpr juce::int64 kUidGateFloorMs = 3500;
 struct UidClaimGate
 {
     enum class Decision { Wait, Remint, AdoptGhost };
     RegLiveness live;
     int ticks = 0;
-    Decision observe (uint32_t holderHb, int frozenTicksNeeded = 5)
+    juce::int64 firstMs = 0;
+    Decision observe (uint32_t holderHb, bool publisherAlive, juce::int64 nowMs,
+                      int frozenTicksNeeded = 5, juce::int64 floorMs = kUidGateFloorMs)
     {
+        if (ticks == 0) firstMs = nowMs;
         ++ticks;
-        if (live.observe (holderHb)) return Decision::Remint;
-        if (ticks >= frozenTicksNeeded) return Decision::AdoptGhost;
+        if (live.observe (holderHb)) return Decision::Remint;        // a climb proves live, at any cadence
+        if (! publisherAlive) return Decision::AdoptGhost;           // C4b: dead process, no floor
+        if (ticks >= frozenTicksNeeded && nowMs - firstMs >= floorMs) return Decision::AdoptGhost;   // C4a
         return Decision::Wait;
     }
 };
@@ -811,8 +850,24 @@ inline void* openRegistry(const juce::String& dir, int& fd_out, int& errno_out)
     if (casStrong(&regHeader(map)->magic, 0u, kRegMagic))
     {
         std::memset(regSlots(map), 0, (size_t)kRegMaxSlots * sizeof(RegistrySlot));
-        regHeader(map)->version  = 1;
+        regHeader(map)->version  = kRegLayoutVersion;
         regHeader(map)->maxSlots = (uint32_t)kRegMaxSlots;
+    }
+    else if (regHeader(map)->version != kRegLayoutVersion
+          || regHeader(map)->maxSlots != (uint32_t)kRegMaxSlots)
+    {
+        // THE LAYOUT CHECK (6 Sep 2026 ruling): a region written by a build
+        // with a different layout is rejected cleanly, never read through the
+        // wrong struct. The caller logs lastRegistryLayoutError().
+        lastRegistryLayoutError() = "registry layout mismatch: file " + path
+            + " is layout v" + juce::String((int) regHeader(map)->version)
+            + " with " + juce::String((int) regHeader(map)->maxSlots)
+            + " slots; this build needs v" + juce::String((int) kRegLayoutVersion)
+            + " with " + juce::String(kRegMaxSlots) + " - REFUSING to use it";
+        closeMapped(map, kRegSize, fd_out, {}, /*doUnlink=*/false);
+        fd_out = -1;
+        errno_out = EPROTO;
+        return nullptr;
     }
     errno_out = 0;
     return map;
@@ -1086,6 +1141,7 @@ struct RackSidecarSlot {
 struct RackSidecar {
     bool  valid = false;
     juce::String uid, name;
+    bool  ackPerSeq = false;   // v9 Link: answers also written to ctrl-ack-<uid>-<seq>.json
     int   revision = -1;
     float masterWet = 1.0f;
     // Pre-chain gain (18 Aug 2026): mirrored so the mixer can show and drive
@@ -1107,6 +1163,15 @@ struct RackSidecar {
     // never sends a plan — the never-half-see pattern, again.
     bool  structureEditCapable = false;
     bool  inContextCapable = false;
+    // Round 53 (C4, the borrow-budget ruling): WHO published this sidecar.
+    // publisherPid is the writing process; host* is ChainHost::getHostIdentity()
+    // of the writer (the DAW process, or the helper it resolved to). A main
+    // counts a rack towards its alignment budget ONLY when the host identity
+    // is its own AND the publisher is still alive. Absent (an older Link)
+    // reads 0 and never counts - fail closed, never half-engage.
+    int   publisherPid = 0;
+    int   hostPid = 0;
+    juce::int64 hostStartSec = 0, hostStartUsec = 0;
     // Mute/solo layer (27 Aug 2026). Additive at v:1, written only when
     // true, absent reads false — the carved-bit convention throughout.
     // muteUser is the user's own mix mute (persists in the Link's saved
@@ -1757,6 +1822,14 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
     if (rc.borrowCapable) obj->setProperty("borrowCapable", true);
     if (rc.structureEditCapable) obj->setProperty("structureEditCapable", true);
     if (rc.inContextCapable) obj->setProperty("inContextCapable", true);
+    if (rc.ackPerSeq) obj->setProperty("ackPerSeq", true);
+    if (rc.publisherPid > 0)
+    {
+        obj->setProperty("publisherPid", rc.publisherPid);
+        obj->setProperty("hostPid",      rc.hostPid);
+        obj->setProperty("hostStartSec", rc.hostStartSec);
+        obj->setProperty("hostStartUsec", rc.hostStartUsec);
+    }
     if (rc.muteEngaged) obj->setProperty("muteEngaged", true);
     if (rc.muteUser) obj->setProperty("muteUser", true);
     if (rc.soloOn) obj->setProperty("soloOn", true);
@@ -1824,6 +1897,11 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
     rc.borrowCapable     = obj->hasProperty("borrowCapable") && (bool)obj->getProperty("borrowCapable");
     rc.structureEditCapable = obj->hasProperty("structureEditCapable") && (bool)obj->getProperty("structureEditCapable");
     rc.inContextCapable = obj->hasProperty("inContextCapable") && (bool)obj->getProperty("inContextCapable");
+    rc.ackPerSeq = obj->hasProperty("ackPerSeq") && (bool)obj->getProperty("ackPerSeq");
+    rc.publisherPid  = obj->hasProperty("publisherPid")  ? (int) obj->getProperty("publisherPid") : 0;
+    rc.hostPid       = obj->hasProperty("hostPid")       ? (int) obj->getProperty("hostPid") : 0;
+    rc.hostStartSec  = obj->hasProperty("hostStartSec")  ? (juce::int64) obj->getProperty("hostStartSec") : 0;
+    rc.hostStartUsec = obj->hasProperty("hostStartUsec") ? (juce::int64) obj->getProperty("hostStartUsec") : 0;
     rc.muteEngaged = obj->hasProperty("muteEngaged") && (bool)obj->getProperty("muteEngaged");
     rc.muteUser = obj->hasProperty("muteUser") && (bool)obj->getProperty("muteUser");
     rc.soloOn = obj->hasProperty("soloOn") && (bool)obj->getProperty("soloOn");
@@ -1904,4 +1982,28 @@ inline bool readMeterFrame(void* regMap, int slotIdx, LinkMeterFrame& out)
     return false;
 }
 
+
+// DEAD-PUBLISHER ROW REAPER (6 Sep 2026 ruling): a row whose sidecar names a
+// process that no longer exists is reclaimed, so 45 Links still fit after a
+// day's churn. Called by a claimant that found the registry full. Rows with no
+// sidecar or an unreadable pid are left alone (fail closed).
+inline int reapDeadPublisherSlots(void* regMap, const juce::String& dir)
+{
+    if (!regMap) return 0;
+    int reaped = 0;
+    RegistrySlot* slots = regSlots(regMap);
+    for (int i = 0; i < kRegMaxSlots; ++i)
+    {
+        if (loadAcquire(&slots[i].inUse) == 0) continue;
+        char ub[13] = {}; std::memcpy(ub, slots[i].instanceUid, 12);
+        const juce::String uid = juce::String::fromUTF8(ub);
+        if (uid.isEmpty()) continue;
+        const auto rc = readRackSidecar(dir, uid);
+        if (!rc.valid || rc.uid != uid || rc.publisherPid <= 0) continue;
+        if (::kill((pid_t) rc.publisherPid, 0) == 0 || errno != ESRCH) continue;   // alive, or unknowable
+        reapSlot(regMap, i);
+        ++reaped;
+    }
+    return reaped;
+}
 } // namespace LinkShm

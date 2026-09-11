@@ -194,6 +194,33 @@ public:
         publishUnvoiced (-120.0f);
     }
 
+    // Round 48 (DEFECT_PRESS_PLAY_PHASING): the transport-reset counterpart of
+    // prepare() - the same state a fresh instance has, without reallocating.
+    // Clears: the input ring and the frame/difference scratch (position
+    // content), the decimation and hop phase, the sweep state, the f0 history
+    // and continuity memory (hist_, lastF0_, hopsSinceVoiced_), the
+    // anti-alias filter states (they hold the last samples), the hop-event
+    // list, and the published reading. curType_ = -1 re-applies the config
+    // on the next block exactly as prepare() does. LEAVES: the requested
+    // voice type and tracking (parameters), and the octave-guard statistics
+    // (reset_stats' domain, not position content).
+    void reset() noexcept
+    {
+        std::fill (ring_.begin(), ring_.end(), 0.0f);
+        std::fill (frame_.begin(), frame_.end(), 0.0f);
+        std::fill (pending_.begin(), pending_.end(), 0.0f);
+        std::fill (diff_.begin(), diff_.end(), 0.0f);
+        std::fill (cmndf_.begin(), cmndf_.end(), 1.0f);
+        wr_ = 0; decimPhase_ = 0; sinceHop_ = 0;
+        diffTau_ = 1 << 20; haveSweep_ = false;
+        for (auto& h : hist_) h = 0.0f;
+        histCount_ = 0; lastF0_ = 0.0f; hopsSinceVoiced_ = 1 << 24;
+        aa1_.resetState(); aa2_.resetState();
+        curType_ = -1;
+        hopCount_ = 0; inputPos_ = 0;
+        publishUnvoiced (-120.0f);
+    }
+
     // ---- parameters (message thread) --------------------------------------
     void setVoiceType (int t) noexcept
     {
@@ -347,6 +374,14 @@ public:
         return (c.frameLen / 2 + c.hopA) * c.decim;
     }
     int pitchLagSamples() const noexcept { return pitchLagFor (getVoiceType()); }
+    /** The window geometry behind pitchLagFor, for the shifter's per-hop
+        back-dating (TIMING_ALIGNMENT_RECORD.md flag B): W, tauMax and the
+        hop, all in INPUT samples. */
+    void lagModelFor (int voiceType, int& W, int& tauMax, int& hop) const noexcept
+    {
+        const Config c = deriveConfig (voiceType);
+        W = c.W * c.decim; tauMax = c.tauMax * c.decim; hop = c.hopA * c.decim;
+    }
 
     // The INPUT-domain hop for a voice type at the prepared sample rate, so
     // an offline driver can feed exactly one analysis hop per call and attach

@@ -1,0 +1,1109 @@
+link_capacity_test.cpp: isolated state root /tmp/echojay-iso.TtOl94
+2026-09-08 10:19:47.735 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:19:47.735 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track A" (uid 2baca74240)
+2026-09-08 10:19:47.770 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="Vox" uid=2baca74240
+2026-09-08 10:19:47.770 cap_v8[23004:2649667] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-08 10:19:47.770 cap_v8[23004:2649667] EJLinkMeter: "Vox" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:19:47.770 cap_v8[23004:2649667] EJLinkMeter: "Vox" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:19:47.804 cap_v8[23004:2649667] EJLinkMeter: "Vox" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:19:47.839 cap_v8[23004:2649667] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-08 10:19:47.839 cap_v8[23004:2649667] EJLinkMeter: "Vox" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:19:51.172 cap_v8[23004:2649667] EJLinkState: getState linkOn=1 name="Vox"
+2026-09-08 10:19:51.407 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:19:51.407 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Kick" (uid 7f222a7470)
+2026-09-08 10:19:51.438 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=7f222a7470
+2026-09-08 10:19:51.438 cap_v8[23004:2649667] EJLinkState: host track name "Kick" (user name "")
+2026-09-08 10:19:51.438 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:19:51.438 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:19:51.476 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:19:51.514 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:19:52.098 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:19:52.098 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 545763944f
+2026-09-08 10:19:52.098 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 545763944f: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Kick", typed none)
+2026-09-08 10:19:55.186 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  F1: host "Kick" typed "" published "Kick" -> PASS
+2026-09-08 10:19:55.760 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:19:55.793 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="MyBus" uid=24f6269e31
+2026-09-08 10:19:55.793 cap_v8[23004:2649667] EJLinkMeter: "MyBus" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:19:55.793 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:19:55.829 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:19:55.864 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:19:56.448 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="MyBus"
+2026-09-08 10:19:56.448 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 3adf2d6a17
+2026-09-08 10:19:56.448 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 3adf2d6a17: seeded names dropped (typed "", host "Track A"); authoritative kept (host "", typed "MyBus")
+2026-09-08 10:19:59.487 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  F2: typed "MyBus" host "" published "MyBus" -> PASS
+2026-09-08 10:20:00.123 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:20:00.123 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:20:00.124 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 42172ebcac
+2026-09-08 10:20:00.124 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 42172ebcac: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:20:00.159 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=42172ebcac
+2026-09-08 10:20:00.159 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:20:00.159 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:00.197 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:00.235 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  F3: filled-before-claim=1; after the re-mint host "" typed "" published "" -> PASS
+2026-09-08 10:20:03.772 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:20:03.773 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:20:03.773 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track B" (uid 2baca74240)
+2026-09-08 10:20:03.773 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated e7ce573c21
+2026-09-08 10:20:03.773 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance e7ce573c21: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-08 10:20:03.804 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=e7ce573c21
+2026-09-08 10:20:03.804 cap_v8[23004:2649667] EJLinkState: host track name "Track B" (user name "")
+2026-09-08 10:20:03.804 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:20:03.804 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:03.913 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:03.947 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:07.418 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:20:07.418 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:20:07.419 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 4f1462a2ff
+2026-09-08 10:20:07.419 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 4f1462a2ff: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:20:07.450 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=4f1462a2ff
+2026-09-08 10:20:07.450 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:20:07.450 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:07.560 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:07.598 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:10.861 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track C" (uid 4f1462a2ff)
+2026-09-08 10:20:10.863 cap_v8[23004:2649667] EJLinkState: host track name "Track C" (user name "")
+2026-09-08 10:20:11.339 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:12.008 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:20:12.008 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Kick" (uid b3672a96d3)
+2026-09-08 10:20:12.040 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=b3672a96d3
+2026-09-08 10:20:12.040 cap_v8[23004:2649667] EJLinkState: host track name "Kick" (user name "")
+2026-09-08 10:20:12.040 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:20:12.040 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:12.073 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:12.108 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:12.691 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:20:12.691 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 22c9a8856a
+2026-09-08 10:20:12.691 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 22c9a8856a: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Kick", typed none)
+2026-09-08 10:20:15.695 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:16.370 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:20:16.406 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="MyBus" uid=349158b8f3
+2026-09-08 10:20:16.406 cap_v8[23004:2649667] EJLinkMeter: "MyBus" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:20:16.406 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:16.443 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:16.482 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:17.068 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="MyBus"
+2026-09-08 10:20:17.068 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 3bd440b60f
+2026-09-08 10:20:17.068 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 3bd440b60f: seeded names dropped (typed "", host "Track A"); authoritative kept (host "", typed "MyBus")
+2026-09-08 10:20:20.102 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:20.767 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:20:20.767 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:20:20.768 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 931834e6c0
+2026-09-08 10:20:20.768 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 931834e6c0: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:20:20.801 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=931834e6c0
+2026-09-08 10:20:20.801 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:20:20.801 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:20.839 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:20.874 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:24.434 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:20:24.434 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:20:24.434 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track B" (uid 2baca74240)
+2026-09-08 10:20:24.435 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated e2d31f0c96
+2026-09-08 10:20:24.435 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance e2d31f0c96: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-08 10:20:24.470 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=e2d31f0c96
+2026-09-08 10:20:24.470 cap_v8[23004:2649667] EJLinkState: host track name "Track B" (user name "")
+2026-09-08 10:20:24.470 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:20:24.470 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:24.580 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:24.618 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:28.117 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:20:28.118 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:20:28.118 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 472a1c79f6
+2026-09-08 10:20:28.118 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 472a1c79f6: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:20:28.149 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=472a1c79f6
+2026-09-08 10:20:28.149 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:20:28.149 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:28.259 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:28.297 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:31.828 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track C" (uid 472a1c79f6)
+2026-09-08 10:20:31.851 cap_v8[23004:2649667] EJLinkState: host track name "Track C" (user name "")
+2026-09-08 10:20:32.372 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:33.138 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:20:33.138 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Kick" (uid a0563d4326)
+2026-09-08 10:20:33.172 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=a0563d4326
+2026-09-08 10:20:33.172 cap_v8[23004:2649667] EJLinkState: host track name "Kick" (user name "")
+2026-09-08 10:20:33.172 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:20:33.172 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:33.205 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:33.241 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:33.907 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:20:33.907 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 1997f6bc5b
+2026-09-08 10:20:33.907 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 1997f6bc5b: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Kick", typed none)
+2026-09-08 10:20:37.090 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:37.984 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:20:38.024 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="MyBus" uid=63367b4dcb
+2026-09-08 10:20:38.024 cap_v8[23004:2649667] EJLinkMeter: "MyBus" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:20:38.024 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:38.067 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:38.111 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:38.753 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="MyBus"
+2026-09-08 10:20:38.754 cap_v8[23004:2649667] EJLinkState: host track name "Track A" (user name "MyBus")
+2026-09-08 10:20:38.754 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 7b5fb9c092
+2026-09-08 10:20:38.754 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 7b5fb9c092: seeded names dropped (typed "", host "Track A"); authoritative kept (host "", typed "MyBus")
+2026-09-08 10:20:41.945 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:42.851 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:20:42.851 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:20:42.852 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 102c2df84c
+2026-09-08 10:20:42.852 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 102c2df84c: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:20:42.889 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=102c2df84c
+2026-09-08 10:20:42.889 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:20:42.889 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:42.932 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:42.975 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:46.892 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:20:46.893 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:20:46.893 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track B" (uid 2baca74240)
+2026-09-08 10:20:46.893 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 39efa728ea
+2026-09-08 10:20:46.893 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 39efa728ea: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-08 10:20:46.932 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=39efa728ea
+2026-09-08 10:20:46.933 cap_v8[23004:2649667] EJLinkState: host track name "Track B" (user name "")
+2026-09-08 10:20:46.933 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:20:46.933 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:47.046 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:47.086 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:50.967 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:20:50.967 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:20:50.968 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 41cd7e0b3b
+2026-09-08 10:20:50.968 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 41cd7e0b3b: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:20:50.999 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=41cd7e0b3b
+2026-09-08 10:20:50.999 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:20:50.999 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:51.119 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:51.162 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:54.781 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track C" (uid 41cd7e0b3b)
+2026-09-08 10:20:54.818 cap_v8[23004:2649667] EJLinkState: host track name "Track C" (user name "")
+2026-09-08 10:20:55.087 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:56.041 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:20:56.041 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Kick" (uid 2dd0c4da21)
+2026-09-08 10:20:56.072 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=2dd0c4da21
+2026-09-08 10:20:56.072 cap_v8[23004:2649667] EJLinkState: host track name "Kick" (user name "")
+2026-09-08 10:20:56.072 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:20:56.072 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:56.108 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:56.152 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:20:56.798 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:20:56.798 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated f5c12cc30c
+2026-09-08 10:20:56.798 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance f5c12cc30c: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Kick", typed none)
+2026-09-08 10:20:59.985 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:00.900 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:21:00.931 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="MyBus" uid=2ffc9e8da3
+2026-09-08 10:21:00.931 cap_v8[23004:2649667] EJLinkMeter: "MyBus" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:21:00.931 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:00.967 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:01.006 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:01.671 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="MyBus"
+2026-09-08 10:21:01.671 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated def7df8374
+2026-09-08 10:21:01.671 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance def7df8374: seeded names dropped (typed "", host "Track A"); authoritative kept (host "", typed "MyBus")
+2026-09-08 10:21:04.868 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:05.770 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:21:05.771 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:21:05.771 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 90bca55504
+2026-09-08 10:21:05.771 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 90bca55504: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:21:05.806 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=90bca55504
+2026-09-08 10:21:05.806 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:21:05.806 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:05.848 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:05.888 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:09.826 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:21:09.826 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:21:09.826 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track B" (uid 2baca74240)
+2026-09-08 10:21:09.827 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 4c69e1c79b
+2026-09-08 10:21:09.827 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 4c69e1c79b: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-08 10:21:09.860 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=4c69e1c79b
+2026-09-08 10:21:09.860 cap_v8[23004:2649667] EJLinkState: host track name "Track B" (user name "")
+2026-09-08 10:21:09.860 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:21:09.860 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:09.972 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:10.015 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:13.941 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:21:13.941 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:21:13.942 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated a512c51a1e
+2026-09-08 10:21:13.942 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance a512c51a1e: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:21:13.973 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=a512c51a1e
+2026-09-08 10:21:13.973 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:21:13.973 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:14.084 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:14.127 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:17.774 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track C" (uid a512c51a1e)
+2026-09-08 10:21:17.781 cap_v8[23004:2649667] EJLinkState: host track name "Track C" (user name "")
+2026-09-08 10:21:18.224 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:19.073 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:21:19.074 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Kick" (uid 85ece327fd)
+2026-09-08 10:21:19.104 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=85ece327fd
+2026-09-08 10:21:19.104 cap_v8[23004:2649667] EJLinkState: host track name "Kick" (user name "")
+2026-09-08 10:21:19.104 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:21:19.104 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:19.139 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:19.183 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:19.852 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:21:19.852 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 63a73d7918
+2026-09-08 10:21:19.852 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 63a73d7918: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Kick", typed none)
+2026-09-08 10:21:22.996 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:23.867 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:21:23.901 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="MyBus" uid=86203d9eb9
+2026-09-08 10:21:23.901 cap_v8[23004:2649667] EJLinkMeter: "MyBus" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:21:23.901 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:23.944 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:23.980 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:24.635 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="MyBus"
+2026-09-08 10:21:24.635 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 91306387eb
+2026-09-08 10:21:24.635 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 91306387eb: seeded names dropped (typed "", host "Track A"); authoritative kept (host "", typed "MyBus")
+2026-09-08 10:21:27.896 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:28.706 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:21:28.706 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:21:28.707 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 7243969372
+2026-09-08 10:21:28.707 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 7243969372: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:21:28.739 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=7243969372
+2026-09-08 10:21:28.739 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:21:28.739 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:28.773 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:28.815 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:32.641 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:32.811 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:21:32.811 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:21:32.811 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track B" (uid 2baca74240)
+2026-09-08 10:21:32.812 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 55d429b2cb
+2026-09-08 10:21:32.812 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 55d429b2cb: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-08 10:21:32.851 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=55d429b2cb
+2026-09-08 10:21:32.851 cap_v8[23004:2649667] EJLinkState: host track name "Track B" (user name "")
+2026-09-08 10:21:32.851 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:21:32.851 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:32.953 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:32.994 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:36.896 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:21:36.897 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:21:36.897 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 86109b9fc6
+2026-09-08 10:21:36.897 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 86109b9fc6: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:21:36.927 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=86109b9fc6
+2026-09-08 10:21:36.927 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:21:36.927 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:37.053 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:37.096 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:40.778 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track C" (uid 86109b9fc6)
+2026-09-08 10:21:40.778 cap_v8[23004:2649667] EJLinkState: host track name "Track C" (user name "")
+2026-09-08 10:21:41.291 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:42.076 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:21:42.076 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Kick" (uid ae40481cf1)
+2026-09-08 10:21:42.116 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=ae40481cf1
+2026-09-08 10:21:42.116 cap_v8[23004:2649667] EJLinkState: host track name "Kick" (user name "")
+2026-09-08 10:21:42.117 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:21:42.117 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:42.158 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:42.201 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:42.865 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:21:42.866 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated c7e6727890
+2026-09-08 10:21:42.866 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance c7e6727890: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Kick", typed none)
+2026-09-08 10:21:46.077 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:46.922 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:21:46.955 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="MyBus" uid=be0924af39
+2026-09-08 10:21:46.955 cap_v8[23004:2649667] EJLinkMeter: "MyBus" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:21:46.955 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:46.998 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:47.033 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:47.671 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="MyBus"
+2026-09-08 10:21:47.672 cap_v8[23004:2649667] EJLinkState: host track name "Track A" (user name "MyBus")
+2026-09-08 10:21:47.672 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 6ddceecc21
+2026-09-08 10:21:47.672 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 6ddceecc21: seeded names dropped (typed "", host "Track A"); authoritative kept (host "", typed "MyBus")
+2026-09-08 10:21:50.943 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:51.851 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:21:51.852 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:21:51.853 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 914913d914
+2026-09-08 10:21:51.853 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 914913d914: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:21:51.893 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=914913d914
+2026-09-08 10:21:51.893 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:21:51.893 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:51.928 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:51.972 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:55.890 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:56.104 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:21:56.105 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:21:56.105 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track B" (uid 2baca74240)
+2026-09-08 10:21:56.105 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated d1e5460f87
+2026-09-08 10:21:56.105 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance d1e5460f87: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-08 10:21:56.142 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=d1e5460f87
+2026-09-08 10:21:56.142 cap_v8[23004:2649667] EJLinkState: host track name "Track B" (user name "")
+2026-09-08 10:21:56.142 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:21:56.142 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:56.256 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:21:56.299 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:00.267 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:22:00.267 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:22:00.268 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated e70e93f2d6
+2026-09-08 10:22:00.268 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance e70e93f2d6: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:22:00.297 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=e70e93f2d6
+2026-09-08 10:22:00.297 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:22:00.297 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:00.416 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:00.456 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:04.148 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track C" (uid e70e93f2d6)
+2026-09-08 10:22:04.156 cap_v8[23004:2649667] EJLinkState: host track name "Track C" (user name "")
+2026-09-08 10:22:04.426 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:05.463 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:22:05.464 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Kick" (uid df424a05f5)
+2026-09-08 10:22:05.498 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=df424a05f5
+2026-09-08 10:22:05.498 cap_v8[23004:2649667] EJLinkState: host track name "Kick" (user name "")
+2026-09-08 10:22:05.498 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:22:05.498 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:05.539 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:05.580 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:06.227 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:22:06.227 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated f854c4b9dd
+2026-09-08 10:22:06.227 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance f854c4b9dd: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Kick", typed none)
+2026-09-08 10:22:09.553 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:10.353 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:22:10.386 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="MyBus" uid=fd58f3fae6
+2026-09-08 10:22:10.386 cap_v8[23004:2649667] EJLinkMeter: "MyBus" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:22:10.386 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:10.426 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:10.470 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:11.114 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="MyBus"
+2026-09-08 10:22:11.114 cap_v8[23004:2649667] EJLinkState: host track name "Track A" (user name "MyBus")
+2026-09-08 10:22:11.114 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 27b0ae0603
+2026-09-08 10:22:11.114 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 27b0ae0603: seeded names dropped (typed "", host "Track A"); authoritative kept (host "", typed "MyBus")
+2026-09-08 10:22:14.404 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:15.294 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:22:15.295 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:22:15.295 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated b2ee11ef3f
+2026-09-08 10:22:15.295 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance b2ee11ef3f: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:22:15.334 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=b2ee11ef3f
+2026-09-08 10:22:15.334 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:22:15.334 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:15.374 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:15.419 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:19.459 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:22:19.460 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:22:19.460 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track B" (uid 2baca74240)
+2026-09-08 10:22:19.461 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated bf2f62019c
+2026-09-08 10:22:19.461 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance bf2f62019c: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-08 10:22:19.494 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=bf2f62019c
+2026-09-08 10:22:19.499 cap_v8[23004:2649667] EJLinkState: host track name "Track B" (user name "")
+2026-09-08 10:22:19.499 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:22:19.499 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:19.622 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:19.662 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:23.613 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:22:23.614 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:22:23.616 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 2c8d915bbb
+2026-09-08 10:22:23.616 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 2c8d915bbb: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:22:23.648 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=2c8d915bbb
+2026-09-08 10:22:23.648 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:22:23.648 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:23.767 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:23.810 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:27.467 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track C" (uid 2c8d915bbb)
+2026-09-08 10:22:27.472 cap_v8[23004:2649667] EJLinkState: host track name "Track C" (user name "")
+2026-09-08 10:22:27.830 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:28.787 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:22:28.788 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Kick" (uid 59ad51d719)
+2026-09-08 10:22:28.815 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=59ad51d719
+2026-09-08 10:22:28.815 cap_v8[23004:2649667] EJLinkState: host track name "Kick" (user name "")
+2026-09-08 10:22:28.815 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:22:28.815 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:28.850 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:28.895 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:29.566 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:22:29.567 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated a9f3537c9c
+2026-09-08 10:22:29.567 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance a9f3537c9c: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Kick", typed none)
+2026-09-08 10:22:32.778 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:33.773 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:22:33.812 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="MyBus" uid=e202f226a1
+2026-09-08 10:22:33.812 cap_v8[23004:2649667] EJLinkMeter: "MyBus" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:22:33.812 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:33.848 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:33.893 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:34.535 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="MyBus"
+2026-09-08 10:22:34.536 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 40eecd3fb3
+2026-09-08 10:22:34.536 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 40eecd3fb3: seeded names dropped (typed "", host "Track A"); authoritative kept (host "", typed "MyBus")
+2026-09-08 10:22:37.846 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:38.691 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:22:38.692 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:22:38.693 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated e874482c7a
+2026-09-08 10:22:38.693 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance e874482c7a: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:22:38.721 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=e874482c7a
+2026-09-08 10:22:38.721 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:22:38.721 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:38.764 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:38.807 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:42.776 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:22:42.777 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:22:42.777 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track B" (uid 2baca74240)
+2026-09-08 10:22:42.778 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 9e47aa53a4
+2026-09-08 10:22:42.778 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 9e47aa53a4: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-08 10:22:42.812 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=9e47aa53a4
+2026-09-08 10:22:42.812 cap_v8[23004:2649667] EJLinkState: host track name "Track B" (user name "")
+2026-09-08 10:22:42.812 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:22:42.812 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:42.940 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:42.983 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:46.889 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:22:46.890 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:22:46.891 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 8bd5a6c73a
+2026-09-08 10:22:46.891 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 8bd5a6c73a: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:22:46.929 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=8bd5a6c73a
+2026-09-08 10:22:46.929 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:22:46.929 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:46.972 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:47.015 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:50.737 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track C" (uid 8bd5a6c73a)
+2026-09-08 10:22:50.738 cap_v8[23004:2649667] EJLinkState: host track name "Track C" (user name "")
+2026-09-08 10:22:50.988 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:52.037 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:22:52.038 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Kick" (uid d495153c78)
+2026-09-08 10:22:52.078 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=d495153c78
+2026-09-08 10:22:52.078 cap_v8[23004:2649667] EJLinkState: host track name "Kick" (user name "")
+2026-09-08 10:22:52.078 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:22:52.078 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:52.119 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:52.161 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:52.814 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:22:52.814 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 6ca2affa21
+2026-09-08 10:22:52.814 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 6ca2affa21: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Kick", typed none)
+2026-09-08 10:22:56.030 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:56.908 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:22:56.948 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="MyBus" uid=b1829cfe74
+2026-09-08 10:22:56.948 cap_v8[23004:2649667] EJLinkMeter: "MyBus" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:22:56.948 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:56.989 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:57.035 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:22:57.681 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="MyBus"
+2026-09-08 10:22:57.681 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated a1b357c93f
+2026-09-08 10:22:57.681 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance a1b357c93f: seeded names dropped (typed "", host "Track A"); authoritative kept (host "", typed "MyBus")
+2026-09-08 10:23:01.073 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:01.860 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:23:01.860 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:23:01.861 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 3cdcc9d333
+2026-09-08 10:23:01.861 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 3cdcc9d333: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:23:01.893 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=3cdcc9d333
+2026-09-08 10:23:01.893 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:23:01.893 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:01.928 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:01.973 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:05.866 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:06.040 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:23:06.041 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:23:06.041 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track B" (uid 2baca74240)
+2026-09-08 10:23:06.042 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated c32e42be0e
+2026-09-08 10:23:06.042 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance c32e42be0e: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-08 10:23:06.075 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=c32e42be0e
+2026-09-08 10:23:06.075 cap_v8[23004:2649667] EJLinkState: host track name "Track B" (user name "")
+2026-09-08 10:23:06.075 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:23:06.075 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:06.193 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:06.231 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:10.179 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:23:10.180 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:23:10.181 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 4f8550c360
+2026-09-08 10:23:10.181 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 4f8550c360: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:23:10.216 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=4f8550c360
+2026-09-08 10:23:10.216 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:23:10.217 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:10.343 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:10.379 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:14.031 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track C" (uid 4f8550c360)
+2026-09-08 10:23:14.058 cap_v8[23004:2649667] EJLinkState: host track name "Track C" (user name "")
+2026-09-08 10:23:14.340 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:15.340 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:23:15.340 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Kick" (uid 1626b3573c)
+2026-09-08 10:23:15.368 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=1626b3573c
+2026-09-08 10:23:15.368 cap_v8[23004:2649667] EJLinkState: host track name "Kick" (user name "")
+2026-09-08 10:23:15.368 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:23:15.368 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:15.408 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:15.452 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:16.108 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:23:16.108 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 5e91955020
+2026-09-08 10:23:16.108 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 5e91955020: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Kick", typed none)
+2026-09-08 10:23:19.351 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:20.207 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:23:20.244 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="MyBus" uid=adffe4965e
+2026-09-08 10:23:20.245 cap_v8[23004:2649667] EJLinkMeter: "MyBus" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:23:20.245 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:20.283 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:20.324 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:20.968 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="MyBus"
+2026-09-08 10:23:20.968 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 11bc2183c1
+2026-09-08 10:23:20.968 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 11bc2183c1: seeded names dropped (typed "", host "Track A"); authoritative kept (host "", typed "MyBus")
+2026-09-08 10:23:24.343 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:25.092 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:23:25.092 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:23:25.093 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 2062ba5fe2
+2026-09-08 10:23:25.093 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 2062ba5fe2: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:23:25.126 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=2062ba5fe2
+2026-09-08 10:23:25.126 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:23:25.126 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:25.165 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:25.209 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:29.240 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:23:29.240 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:23:29.240 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track B" (uid 2baca74240)
+2026-09-08 10:23:29.242 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 402e713209
+2026-09-08 10:23:29.242 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 402e713209: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-08 10:23:29.267 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=402e713209
+2026-09-08 10:23:29.267 cap_v8[23004:2649667] EJLinkState: host track name "Track B" (user name "")
+2026-09-08 10:23:29.267 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:23:29.267 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:29.384 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:29.428 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:33.305 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:23:33.306 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:23:33.307 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 18ea506750
+2026-09-08 10:23:33.307 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 18ea506750: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:23:33.333 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=18ea506750
+2026-09-08 10:23:33.333 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:23:33.333 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:33.443 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:33.479 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:37.221 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track C" (uid 18ea506750)
+2026-09-08 10:23:37.227 cap_v8[23004:2649667] EJLinkState: host track name "Track C" (user name "")
+2026-09-08 10:23:37.661 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:38.516 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:23:38.517 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Kick" (uid d29c2571ee)
+2026-09-08 10:23:38.554 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=d29c2571ee
+2026-09-08 10:23:38.554 cap_v8[23004:2649667] EJLinkState: host track name "Kick" (user name "")
+2026-09-08 10:23:38.554 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:23:38.554 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:38.598 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:38.634 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:39.270 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:23:39.270 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 19accabb51
+2026-09-08 10:23:39.270 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 19accabb51: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Kick", typed none)
+2026-09-08 10:23:42.606 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:43.353 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:23:43.388 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="MyBus" uid=411ee41578
+2026-09-08 10:23:43.388 cap_v8[23004:2649667] EJLinkMeter: "MyBus" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:23:43.388 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:43.428 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:43.471 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:44.139 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="MyBus"
+2026-09-08 10:23:44.139 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 2f1c817e80
+2026-09-08 10:23:44.139 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 2f1c817e80: seeded names dropped (typed "", host "Track A"); authoritative kept (host "", typed "MyBus")
+2026-09-08 10:23:47.468 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:48.253 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:23:48.253 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:23:48.254 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated eeed811f93
+2026-09-08 10:23:48.254 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance eeed811f93: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:23:48.290 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=eeed811f93
+2026-09-08 10:23:48.290 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:23:48.290 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:48.333 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:48.373 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:52.250 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:52.478 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:23:52.479 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:23:52.479 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track B" (uid 2baca74240)
+2026-09-08 10:23:52.480 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 6b2a223576
+2026-09-08 10:23:52.480 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 6b2a223576: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-08 10:23:52.518 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=6b2a223576
+2026-09-08 10:23:52.518 cap_v8[23004:2649667] EJLinkState: host track name "Track B" (user name "")
+2026-09-08 10:23:52.518 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:23:52.518 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:52.558 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:52.601 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:56.617 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:23:56.617 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:23:56.618 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 2c4fe76db7
+2026-09-08 10:23:56.618 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 2c4fe76db7: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:23:56.640 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=2c4fe76db7
+2026-09-08 10:23:56.640 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:23:56.640 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:56.766 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:23:56.810 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:00.498 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track C" (uid 2c4fe76db7)
+2026-09-08 10:24:00.502 cap_v8[23004:2649667] EJLinkState: host track name "Track C" (user name "")
+2026-09-08 10:24:00.764 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:01.807 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:24:01.807 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Kick" (uid 5cde8c3905)
+2026-09-08 10:24:01.836 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=5cde8c3905
+2026-09-08 10:24:01.836 cap_v8[23004:2649667] EJLinkState: host track name "Kick" (user name "")
+2026-09-08 10:24:01.836 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:24:01.836 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:01.886 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:01.919 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:02.578 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:24:02.578 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 49877daaf5
+2026-09-08 10:24:02.578 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 49877daaf5: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Kick", typed none)
+2026-09-08 10:24:05.856 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:06.774 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:24:06.810 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="MyBus" uid=59f73a62d5
+2026-09-08 10:24:06.810 cap_v8[23004:2649667] EJLinkMeter: "MyBus" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:24:06.810 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:06.852 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:06.892 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:07.570 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="MyBus"
+2026-09-08 10:24:07.570 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 6c01cbffea
+2026-09-08 10:24:07.570 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 6c01cbffea: seeded names dropped (typed "", host "Track A"); authoritative kept (host "", typed "MyBus")
+2026-09-08 10:24:10.803 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:11.695 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:24:11.696 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:24:11.697 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 8ffd7c4316
+2026-09-08 10:24:11.697 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 8ffd7c4316: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:24:11.732 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=8ffd7c4316
+2026-09-08 10:24:11.732 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:24:11.732 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:11.773 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:11.811 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:15.781 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:24:15.782 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:24:15.782 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track B" (uid 2baca74240)
+2026-09-08 10:24:15.783 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated e2c743798c
+2026-09-08 10:24:15.783 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance e2c743798c: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-08 10:24:15.815 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=e2c743798c
+2026-09-08 10:24:15.815 cap_v8[23004:2649667] EJLinkState: host track name "Track B" (user name "")
+2026-09-08 10:24:15.815 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:24:15.815 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:15.858 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:15.901 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:19.892 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:24:19.893 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:24:19.894 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 2b42738b24
+2026-09-08 10:24:19.894 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 2b42738b24: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:24:19.920 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=2b42738b24
+2026-09-08 10:24:19.920 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:24:19.920 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:20.035 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:20.075 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:23.790 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track C" (uid 2b42738b24)
+2026-09-08 10:24:23.801 cap_v8[23004:2649667] EJLinkState: host track name "Track C" (user name "")
+2026-09-08 10:24:24.236 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:25.119 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:24:25.120 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Kick" (uid a62514b094)
+2026-09-08 10:24:25.146 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=a62514b094
+2026-09-08 10:24:25.146 cap_v8[23004:2649667] EJLinkState: host track name "Kick" (user name "")
+2026-09-08 10:24:25.146 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:24:25.146 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:25.181 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:25.225 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:25.919 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:24:25.920 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 8d5b3431a3
+2026-09-08 10:24:25.920 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 8d5b3431a3: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Kick", typed none)
+2026-09-08 10:24:29.142 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:30.095 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:24:30.128 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="MyBus" uid=e02fe37444
+2026-09-08 10:24:30.128 cap_v8[23004:2649667] EJLinkMeter: "MyBus" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:24:30.129 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:30.167 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:30.203 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:30.885 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="MyBus"
+2026-09-08 10:24:30.885 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 8ad6a04791
+2026-09-08 10:24:30.885 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 8ad6a04791: seeded names dropped (typed "", host "Track A"); authoritative kept (host "", typed "MyBus")
+2026-09-08 10:24:34.139 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:35.023 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:24:35.024 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:24:35.025 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 710193ac03
+2026-09-08 10:24:35.025 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 710193ac03: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:24:35.053 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=710193ac03
+2026-09-08 10:24:35.053 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:24:35.053 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:35.087 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:35.132 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:39.168 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:24:39.168 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:24:39.168 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track B" (uid 2baca74240)
+2026-09-08 10:24:39.169 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 7eeafd9464
+2026-09-08 10:24:39.169 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 7eeafd9464: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-08 10:24:39.204 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=7eeafd9464
+2026-09-08 10:24:39.204 cap_v8[23004:2649667] EJLinkState: host track name "Track B" (user name "")
+2026-09-08 10:24:39.204 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:24:39.204 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:39.320 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:39.363 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:43.348 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:24:43.349 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:24:43.350 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 6795eb4f72
+2026-09-08 10:24:43.350 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 6795eb4f72: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:24:43.384 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=6795eb4f72
+2026-09-08 10:24:43.384 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:24:43.384 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:43.424 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:43.468 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:47.235 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track C" (uid 6795eb4f72)
+2026-09-08 10:24:47.255 cap_v8[23004:2649667] EJLinkState: host track name "Track C" (user name "")
+2026-09-08 10:24:47.298 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:48.577 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:24:48.577 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Kick" (uid 83a5879fbe)
+2026-09-08 10:24:48.606 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=83a5879fbe
+2026-09-08 10:24:48.606 cap_v8[23004:2649667] EJLinkState: host track name "Kick" (user name "")
+2026-09-08 10:24:48.606 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:24:48.606 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:48.648 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:48.686 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:49.310 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:24:49.310 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 40eca5004a
+2026-09-08 10:24:49.310 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 40eca5004a: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Kick", typed none)
+2026-09-08 10:24:52.591 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:53.441 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:24:53.471 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="MyBus" uid=a300b124ad
+2026-09-08 10:24:53.471 cap_v8[23004:2649667] EJLinkMeter: "MyBus" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:24:53.471 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:53.514 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:53.557 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:54.217 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="MyBus"
+2026-09-08 10:24:54.217 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated a0cd310b93
+2026-09-08 10:24:54.217 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance a0cd310b93: seeded names dropped (typed "", host "Track A"); authoritative kept (host "", typed "MyBus")
+2026-09-08 10:24:57.469 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:58.313 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:24:58.314 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:24:58.315 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated b1c2aab2d6
+2026-09-08 10:24:58.315 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance b1c2aab2d6: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:24:58.350 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=b1c2aab2d6
+2026-09-08 10:24:58.350 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:24:58.350 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:58.384 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:24:58.420 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:02.469 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:25:02.470 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:25:02.470 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track B" (uid 2baca74240)
+2026-09-08 10:25:02.471 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated a7ee7f9f24
+2026-09-08 10:25:02.471 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance a7ee7f9f24: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-08 10:25:02.497 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=a7ee7f9f24
+2026-09-08 10:25:02.498 cap_v8[23004:2649667] EJLinkState: host track name "Track B" (user name "")
+2026-09-08 10:25:02.498 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:25:02.498 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:02.618 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:02.662 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:06.616 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:25:06.616 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:25:06.617 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated e00ca1f1a3
+2026-09-08 10:25:06.617 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance e00ca1f1a3: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:25:06.652 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=e00ca1f1a3
+2026-09-08 10:25:06.652 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:25:06.652 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:06.775 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:06.816 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:10.471 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track C" (uid e00ca1f1a3)
+2026-09-08 10:25:10.488 cap_v8[23004:2649667] EJLinkState: host track name "Track C" (user name "")
+2026-09-08 10:25:11.015 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:11.743 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:25:11.743 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Kick" (uid 42c212d9fe)
+2026-09-08 10:25:11.769 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=42c212d9fe
+2026-09-08 10:25:11.770 cap_v8[23004:2649667] EJLinkState: host track name "Kick" (user name "")
+2026-09-08 10:25:11.770 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:25:11.770 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:11.813 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:11.855 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:12.519 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:25:12.519 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 7f59688a56
+2026-09-08 10:25:12.519 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 7f59688a56: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Kick", typed none)
+2026-09-08 10:25:15.728 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:16.682 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:25:16.714 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="MyBus" uid=c8c5a76dba
+2026-09-08 10:25:16.714 cap_v8[23004:2649667] EJLinkMeter: "MyBus" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:25:16.714 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:16.757 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:16.800 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:17.468 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="MyBus"
+2026-09-08 10:25:17.468 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 486eb6c6fc
+2026-09-08 10:25:17.468 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 486eb6c6fc: seeded names dropped (typed "", host "Track A"); authoritative kept (host "", typed "MyBus")
+2026-09-08 10:25:20.674 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:21.591 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:25:21.592 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:25:21.592 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 65d870b6a6
+2026-09-08 10:25:21.592 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 65d870b6a6: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:25:21.628 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=65d870b6a6
+2026-09-08 10:25:21.629 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:25:21.629 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:21.671 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:21.712 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:25.553 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:25.706 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:25:25.706 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:25:25.706 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track B" (uid 2baca74240)
+2026-09-08 10:25:25.707 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 88e85d0397
+2026-09-08 10:25:25.707 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 88e85d0397: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-08 10:25:25.731 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=88e85d0397
+2026-09-08 10:25:25.731 cap_v8[23004:2649667] EJLinkState: host track name "Track B" (user name "")
+2026-09-08 10:25:25.731 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:25:25.731 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:25.769 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:25.813 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:29.876 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:25:29.877 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:25:29.878 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated c0647d7b03
+2026-09-08 10:25:29.878 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance c0647d7b03: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:25:29.910 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=c0647d7b03
+2026-09-08 10:25:29.911 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:25:29.911 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:30.025 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:30.061 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:33.757 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track C" (uid c0647d7b03)
+2026-09-08 10:25:33.758 cap_v8[23004:2649667] EJLinkState: host track name "Track C" (user name "")
+2026-09-08 10:25:34.294 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:35.073 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:25:35.073 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Kick" (uid af704d26ee)
+2026-09-08 10:25:35.116 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=af704d26ee
+2026-09-08 10:25:35.116 cap_v8[23004:2649667] EJLinkState: host track name "Kick" (user name "")
+2026-09-08 10:25:35.116 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:25:35.116 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:35.155 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:35.197 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:35.837 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:25:35.838 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated c2994d6329
+2026-09-08 10:25:35.838 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance c2994d6329: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Kick", typed none)
+2026-09-08 10:25:39.124 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:39.995 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:25:40.028 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="MyBus" uid=1558acaf7a
+2026-09-08 10:25:40.028 cap_v8[23004:2649667] EJLinkMeter: "MyBus" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:25:40.028 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:40.071 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:40.105 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:40.787 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="MyBus"
+2026-09-08 10:25:40.787 cap_v8[23004:2649667] EJLinkState: host track name "Track A" (user name "MyBus")
+2026-09-08 10:25:40.787 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 1d4bf77236
+2026-09-08 10:25:40.788 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 1d4bf77236: seeded names dropped (typed "", host "Track A"); authoritative kept (host "", typed "MyBus")
+2026-09-08 10:25:44.022 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:44.978 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:25:44.978 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:25:44.979 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 950ba07dc2
+2026-09-08 10:25:44.979 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 950ba07dc2: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:25:45.015 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=950ba07dc2
+2026-09-08 10:25:45.015 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:25:45.015 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:45.056 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:45.101 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:49.125 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:25:49.126 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:25:49.126 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track B" (uid 2baca74240)
+2026-09-08 10:25:49.127 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 630c7e798c
+2026-09-08 10:25:49.127 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 630c7e798c: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-08 10:25:49.160 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=630c7e798c
+2026-09-08 10:25:49.161 cap_v8[23004:2649667] EJLinkState: host track name "Track B" (user name "")
+2026-09-08 10:25:49.161 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:25:49.161 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:49.280 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:49.323 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:53.287 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:25:53.288 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:25:53.289 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 9adc6fb4a6
+2026-09-08 10:25:53.289 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 9adc6fb4a6: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:25:53.321 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=9adc6fb4a6
+2026-09-08 10:25:53.321 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:25:53.321 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:53.445 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:53.480 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:57.114 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track C" (uid 9adc6fb4a6)
+2026-09-08 10:25:57.116 cap_v8[23004:2649667] EJLinkState: host track name "Track C" (user name "")
+2026-09-08 10:25:57.475 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:58.423 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:25:58.424 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Kick" (uid 4b93e06185)
+2026-09-08 10:25:58.454 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=4b93e06185
+2026-09-08 10:25:58.454 cap_v8[23004:2649667] EJLinkState: host track name "Kick" (user name "")
+2026-09-08 10:25:58.454 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:25:58.454 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:58.490 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:58.532 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:25:59.181 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:25:59.181 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 814be4afb7
+2026-09-08 10:25:59.181 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 814be4afb7: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Kick", typed none)
+2026-09-08 10:26:02.486 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:03.330 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:26:03.356 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="MyBus" uid=315656e84f
+2026-09-08 10:26:03.356 cap_v8[23004:2649667] EJLinkMeter: "MyBus" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:26:03.356 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:03.400 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:03.445 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:04.080 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="MyBus"
+2026-09-08 10:26:04.081 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 3fb1a60cb8
+2026-09-08 10:26:04.081 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 3fb1a60cb8: seeded names dropped (typed "", host "Track A"); authoritative kept (host "", typed "MyBus")
+2026-09-08 10:26:07.438 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:08.254 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:26:08.255 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:26:08.255 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 1bbb975429
+2026-09-08 10:26:08.255 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 1bbb975429: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:26:08.289 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=1bbb975429
+2026-09-08 10:26:08.289 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:26:08.290 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:08.333 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:08.376 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:12.384 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:26:12.384 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:26:12.384 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track B" (uid 2baca74240)
+2026-09-08 10:26:12.386 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated f947ccede3
+2026-09-08 10:26:12.386 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance f947ccede3: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-08 10:26:12.420 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=f947ccede3
+2026-09-08 10:26:12.420 cap_v8[23004:2649667] EJLinkState: host track name "Track B" (user name "")
+2026-09-08 10:26:12.420 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:26:12.420 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:12.538 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:12.581 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:16.554 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:26:16.555 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:26:16.556 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 3b1656476c
+2026-09-08 10:26:16.556 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 3b1656476c: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:26:16.588 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=3b1656476c
+2026-09-08 10:26:16.588 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:26:16.588 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:16.631 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:16.675 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:20.455 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track C" (uid 3b1656476c)
+2026-09-08 10:26:20.485 cap_v8[23004:2649667] EJLinkState: host track name "Track C" (user name "")
+2026-09-08 10:26:20.588 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:21.790 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:26:21.791 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Kick" (uid edf4aa455b)
+2026-09-08 10:26:21.826 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=edf4aa455b
+2026-09-08 10:26:21.826 cap_v8[23004:2649667] EJLinkState: host track name "Kick" (user name "")
+2026-09-08 10:26:21.826 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:26:21.826 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:21.866 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:21.908 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:22.572 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:26:22.573 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 7dc5eadc6d
+2026-09-08 10:26:22.573 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 7dc5eadc6d: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Kick", typed none)
+2026-09-08 10:26:25.883 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:26.747 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:26:26.783 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="MyBus" uid=888f69b032
+2026-09-08 10:26:26.783 cap_v8[23004:2649667] EJLinkMeter: "MyBus" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:26:26.784 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:26.825 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:26.869 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:27.535 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="MyBus"
+2026-09-08 10:26:27.535 cap_v8[23004:2649667] EJLinkState: host track name "Track A" (user name "MyBus")
+2026-09-08 10:26:27.535 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 66dfa6b9df
+2026-09-08 10:26:27.535 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 66dfa6b9df: seeded names dropped (typed "", host "Track A"); authoritative kept (host "", typed "MyBus")
+2026-09-08 10:26:30.790 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:31.672 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:26:31.673 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:26:31.674 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 85198fbe50
+2026-09-08 10:26:31.674 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 85198fbe50: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:26:31.702 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=85198fbe50
+2026-09-08 10:26:31.702 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:26:31.702 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:31.741 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:31.786 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:35.857 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:26:35.858 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:26:35.858 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track B" (uid 2baca74240)
+2026-09-08 10:26:35.859 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 3d1e02846c
+2026-09-08 10:26:35.859 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 3d1e02846c: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-08 10:26:35.893 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=3d1e02846c
+2026-09-08 10:26:35.893 cap_v8[23004:2649667] EJLinkState: host track name "Track B" (user name "")
+2026-09-08 10:26:35.893 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:26:35.893 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:36.011 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:36.045 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:40.020 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:26:40.021 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:26:40.022 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated bb32f9f350
+2026-09-08 10:26:40.022 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance bb32f9f350: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:26:40.052 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=bb32f9f350
+2026-09-08 10:26:40.052 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:26:40.052 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:40.175 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:40.218 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:43.947 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track C" (uid bb32f9f350)
+2026-09-08 10:26:43.968 cap_v8[23004:2649667] EJLinkState: host track name "Track C" (user name "")
+2026-09-08 10:26:44.473 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:45.258 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:26:45.258 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Kick" (uid 15fabe6838)
+2026-09-08 10:26:45.289 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=15fabe6838
+2026-09-08 10:26:45.289 cap_v8[23004:2649667] EJLinkState: host track name "Kick" (user name "")
+2026-09-08 10:26:45.289 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:26:45.290 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:45.331 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:45.368 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:46.036 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:26:46.036 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated fbcfdec7fe
+2026-09-08 10:26:46.037 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance fbcfdec7fe: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Kick", typed none)
+2026-09-08 10:26:49.296 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:50.217 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:26:50.247 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="MyBus" uid=db44fd73bc
+2026-09-08 10:26:50.247 cap_v8[23004:2649667] EJLinkMeter: "MyBus" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:26:50.247 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:50.290 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:50.335 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:50.988 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="MyBus"
+2026-09-08 10:26:50.988 cap_v8[23004:2649667] EJLinkState: host track name "Track A" (user name "MyBus")
+2026-09-08 10:26:50.988 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 2addab7a63
+2026-09-08 10:26:50.988 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 2addab7a63: seeded names dropped (typed "", host "Track A"); authoritative kept (host "", typed "MyBus")
+2026-09-08 10:26:54.288 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:55.208 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:26:55.209 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:26:55.210 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 4326d0cf5e
+2026-09-08 10:26:55.210 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 4326d0cf5e: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:26:55.242 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=4326d0cf5e
+2026-09-08 10:26:55.242 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:26:55.242 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:55.280 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:55.318 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:59.206 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:59.368 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:26:59.369 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:26:59.369 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track B" (uid 2baca74240)
+2026-09-08 10:26:59.370 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated dc423e7064
+2026-09-08 10:26:59.370 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance dc423e7064: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-08 10:26:59.409 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=dc423e7064
+2026-09-08 10:26:59.409 cap_v8[23004:2649667] EJLinkState: host track name "Track B" (user name "")
+2026-09-08 10:26:59.410 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:26:59.410 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:59.542 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:26:59.580 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:03.553 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:27:03.554 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:27:03.555 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 5bfe2b62f1
+2026-09-08 10:27:03.555 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 5bfe2b62f1: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:27:03.589 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=5bfe2b62f1
+2026-09-08 10:27:03.589 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:27:03.589 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:03.708 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:03.750 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:07.379 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track C" (uid 5bfe2b62f1)
+2026-09-08 10:27:07.400 cap_v8[23004:2649667] EJLinkState: host track name "Track C" (user name "")
+2026-09-08 10:27:07.755 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:08.657 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:27:08.657 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Kick" (uid 166a573cc8)
+2026-09-08 10:27:08.694 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=166a573cc8
+2026-09-08 10:27:08.694 cap_v8[23004:2649667] EJLinkState: host track name "Kick" (user name "")
+2026-09-08 10:27:08.694 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:27:08.694 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:08.734 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:08.778 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:09.442 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:27:09.442 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 206db12ae9
+2026-09-08 10:27:09.442 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 206db12ae9: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Kick", typed none)
+2026-09-08 10:27:12.738 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:13.576 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:27:13.612 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="MyBus" uid=a4c749b25b
+2026-09-08 10:27:13.612 cap_v8[23004:2649667] EJLinkMeter: "MyBus" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:27:13.612 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:13.655 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:13.701 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:14.361 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="MyBus"
+2026-09-08 10:27:14.361 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 18b959d4e8
+2026-09-08 10:27:14.361 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 18b959d4e8: seeded names dropped (typed "", host "Track A"); authoritative kept (host "", typed "MyBus")
+2026-09-08 10:27:17.638 cap_v8[23004:2649667] EJLinkMeter: "MyBus" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:18.502 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:27:18.503 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:27:18.503 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 8fb96a175a
+2026-09-08 10:27:18.503 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 8fb96a175a: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:27:18.539 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=8fb96a175a
+2026-09-08 10:27:18.539 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:27:18.540 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:18.579 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:18.619 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:22.515 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:22.691 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:27:22.692 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:27:22.692 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track B" (uid 2baca74240)
+2026-09-08 10:27:22.693 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated 9ae24af132
+2026-09-08 10:27:22.693 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance 9ae24af132: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-08 10:27:22.729 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=9ae24af132
+2026-09-08 10:27:22.729 cap_v8[23004:2649667] EJLinkState: host track name "Track B" (user name "")
+2026-09-08 10:27:22.729 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:27:22.729 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:22.851 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:22.886 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:26.866 cap_v8[23004:2649667] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 10:27:26.866 cap_v8[23004:2649667] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-08 10:27:26.867 cap_v8[23004:2649667] EJLinkState: uid 2baca74240 came from a chunk authored in THIS host run and no slot holds it (a seed from a gone instance) -> regenerated d957a7f3a5
+2026-09-08 10:27:26.867 cap_v8[23004:2649667] EJLinkState: chunk uid 2baca74240 != this instance d957a7f3a5: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-08 10:27:26.902 cap_v8[23004:2649667] EJLinkState: post-init linkOn=1 name="" uid=d957a7f3a5
+2026-09-08 10:27:26.902 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 10:27:26.902 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:27.032 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:27.066 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 10:27:30.735 cap_v8[23004:2649667] EJLinkState: host DELIVERED track name "Track C" (uid d957a7f3a5)
+2026-09-08 10:27:30.754 cap_v8[23004:2649667] EJLinkState: host track name "Track C" (user name "")
+2026-09-08 10:27:31.282 cap_v8[23004:2649667] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+FOREIGN x20: F1 delivered-then-foreign kept 20/20   F2 typed-then-foreign kept 20/20   F3 fill-when-none 20/20   (P20 arms alongside: P1 20/20  P2 20/20)
+exit=0

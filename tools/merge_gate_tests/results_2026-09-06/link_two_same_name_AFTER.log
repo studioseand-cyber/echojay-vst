@@ -1,0 +1,124 @@
+== POSITIVE CONTROL, two different names: Link A "VoxA", Link B "VoxB" ==
+2026-09-06 16:33:32.131 link2_after[59604:1690398] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 16:33:32.131 link2_after[59604:1690398] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 16:33:32.133 link2_after[59604:1690398] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 16:33:32.143 link2_after[59604:1690398] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 16:33:32.148 link2_after[59604:1690398] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 16:33:32.159 link2_after[59604:1690398] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 16:33:32.159 link2_after[59604:1690398] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 16:33:32.161 link2_after[59604:1690398] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 16:33:32.169 link2_after[59604:1690398] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 16:33:32.173 link2_after[59604:1690398] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+  rows named as ours in the registry: 2
+    row uid 8dde251e79   file audio_8dde251e79.bin         exists yes
+    row uid 2ac64a8082   file audio_2ac64a8082.bin         exists yes
+  ring files: DISTINCT (different inodes)
+  -> PASS
+2026-09-06 16:33:32.175 link2_after[59604:1690398] EJLinkState: post-init linkOn=1 name="VoxA" uid=8dde251e79
+2026-09-06 16:33:32.175 link2_after[59604:1690398] EJLinkMeter: "VoxA" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 16:33:32.175 link2_after[59604:1690398] EJLinkMeter: "VoxA" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 16:33:32.191 link2_after[59604:1690398] EJLinkMeter: "VoxA" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 16:33:32.191 link2_after[59604:1690398] EJLinkState: post-init linkOn=1 name="VoxB" uid=2ac64a8082
+2026-09-06 16:33:32.191 link2_after[59604:1690398] EJLinkMeter: "VoxB" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 16:33:32.191 link2_after[59604:1690398] EJLinkMeter: "VoxB" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 16:33:32.227 link2_after[59604:1690398] EJLinkMeter: "VoxB" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 16:33:32.227 link2_after[59604:1690398] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-06 16:33:32.227 link2_after[59604:1690398] EJPrompt: session project "Nafe smallz Aitch Luxury" from previous host, ignoring, will prompt (file "Pro Tools" pid=55105 start=1788706358 vs current "Terminal" pid=496 start=1788433286.527607)
+2026-09-06 16:33:32.228 link2_after[59604:1690398] EJPrompt: session genre "Hip-Hop" from previous host, ignoring, will prompt (file "Pro Tools" pid=55105 start=1788706358 vs current "Terminal" pid=496 start=1788433286.527607)
+2026-09-06 16:33:32.260 link2_after[59604:1690398] EJLinkMeter: "VoxA" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+== THE DEFECT, the same typed name: Link A "Vox", Link B "Vox" ==
+2026-09-06 16:33:32.438 link2_after[59604:1690398] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 16:33:32.438 link2_after[59604:1690398] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 16:33:32.439 link2_after[59604:1690398] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 16:33:32.446 link2_after[59604:1690398] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 16:33:32.450 link2_after[59604:1690398] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 16:33:32.459 link2_after[59604:1690398] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 16:33:32.459 link2_after[59604:1690398] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 16:33:32.460 link2_after[59604:1690398] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 16:33:32.468 link2_after[59604:1690398] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 16:33:32.472 link2_after[59604:1690398] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+  rows named as ours in the registry: 2
+    row uid 210a2b0a16   file audio_210a2b0a16.bin         exists yes
+    row uid 902ad36169   file audio_902ad36169.bin         exists yes
+  ring files: DISTINCT (different inodes)
+  -> PASS
+2026-09-06 16:33:32.473 link2_after[59604:1690398] EJLinkState: post-init linkOn=1 name="Vox" uid=210a2b0a16
+2026-09-06 16:33:32.473 link2_after[59604:1690398] EJLinkMeter: "Vox" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 16:33:32.473 link2_after[59604:1690398] EJLinkMeter: "Vox" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 16:33:32.501 link2_after[59604:1690398] EJLinkMeter: "Vox" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 16:33:32.501 link2_after[59604:1690398] EJLinkState: post-init linkOn=1 name="Vox" uid=902ad36169
+2026-09-06 16:33:32.501 link2_after[59604:1690398] EJLinkMeter: "Vox" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 16:33:32.501 link2_after[59604:1690398] EJLinkMeter: "Vox" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 16:33:32.538 link2_after[59604:1690398] EJLinkMeter: "Vox" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 16:33:32.571 link2_after[59604:1690398] EJLinkMeter: "Vox" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+== THE CLONE: two Links restored from one saved state (same name, same uid) ==
+2026-09-06 16:33:32.718 link2_after[59604:1690398] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 16:33:32.718 link2_after[59604:1690398] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 16:33:32.720 link2_after[59604:1690398] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 16:33:32.728 link2_after[59604:1690398] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 16:33:32.733 link2_after[59604:1690398] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 16:33:32.733 link2_after[59604:1690398] EJLinkState: getState linkOn=1 name="Vox"
+2026-09-06 16:33:32.748 link2_after[59604:1690398] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 16:33:32.748 link2_after[59604:1690398] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 16:33:32.750 link2_after[59604:1690398] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 16:33:32.758 link2_after[59604:1690398] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 16:33:32.762 link2_after[59604:1690398] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 16:33:32.771 link2_after[59604:1690398] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 16:33:32.771 link2_after[59604:1690398] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 16:33:32.773 link2_after[59604:1690398] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 16:33:32.781 link2_after[59604:1690398] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 16:33:32.785 link2_after[59604:1690398] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 16:33:32.785 link2_after[59604:1690398] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 16:33:32.785 link2_after[59604:1690398] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 16:33:32.786 link2_after[59604:1690398] EJLinkState: post-init linkOn=1 name="Vox" uid=44e480d89b
+2026-09-06 16:33:32.810 link2_after[59604:1690398] EJLinkMeter: "Vox" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 16:33:32.810 link2_after[59604:1690398] EJLinkMeter: "Vox" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 16:33:32.810 link2_after[59604:1690398] EJLinkState: post-init linkOn=1 name="Vox" uid=44e480d89b
+2026-09-06 16:33:32.883 link2_after[59604:1690398] EJLinkMeter: "Vox" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 16:33:32.922 link2_after[59604:1690398] EJLinkMeter: "Vox" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 16:33:33.859 link2_after[59604:1690398] EJLinkState: uid 44e480d89b held by a PROVEN-LIVE instance (duplicate) -> regenerated 1a74625a77
+2026-09-06 16:33:33.859 link2_after[59604:1690398] EJLinkMeter: "Vox" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 16:33:33.859 link2_after[59604:1690398] EJLinkMeter: "Vox" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 16:33:33.896 link2_after[59604:1690398] EJLinkMeter: "Vox" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 16:33:33.933 link2_after[59604:1690398] EJLinkMeter: "Vox" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  registry rows named Vox: 2   A slot 2   B slot 3
+    row uid 44e480d89b   file audio_44e480d89b.bin        
+    row uid 1a74625a77   file audio_1a74625a77.bin        
+  -> PASS
+2026-09-06 16:33:37.447 link2_after[59604:1690398] EJLinkMeter: "Vox" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+== THE BURST: clone, second instance publishes 6x before the first's timer ticks ==
+2026-09-06 16:33:37.699 link2_after[59604:1690398] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 16:33:37.699 link2_after[59604:1690398] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 16:33:37.701 link2_after[59604:1690398] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 16:33:37.711 link2_after[59604:1690398] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 16:33:37.714 link2_after[59604:1690398] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 16:33:37.715 link2_after[59604:1690398] EJLinkState: getState linkOn=1 name="Vox"
+2026-09-06 16:33:37.731 link2_after[59604:1690398] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 16:33:37.731 link2_after[59604:1690398] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 16:33:37.732 link2_after[59604:1690398] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 16:33:37.741 link2_after[59604:1690398] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 16:33:37.745 link2_after[59604:1690398] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 16:33:37.755 link2_after[59604:1690398] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 16:33:37.755 link2_after[59604:1690398] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 16:33:37.756 link2_after[59604:1690398] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 16:33:37.764 link2_after[59604:1690398] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 16:33:37.768 link2_after[59604:1690398] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 16:33:37.768 link2_after[59604:1690398] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 16:33:37.768 link2_after[59604:1690398] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+  after the burst: rows named Vox: 1   A slot -1   B slot 2
+    row uid 4b86809280   file audio_4b86809280.bin        
+2026-09-06 16:33:37.769 link2_after[59604:1690398] EJLinkState: post-init linkOn=1 name="Vox" uid=4b86809280
+2026-09-06 16:33:37.792 link2_after[59604:1690398] EJLinkState: post-init linkOn=1 name="Vox" uid=4b86809280
+2026-09-06 16:33:37.792 link2_after[59604:1690398] EJLinkMeter: "Vox" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 16:33:37.793 link2_after[59604:1690398] EJLinkMeter: "Vox" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 16:33:37.830 link2_after[59604:1690398] EJLinkMeter: "Vox" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 16:33:37.904 link2_after[59604:1690398] EJLinkMeter: "Vox" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 16:33:39.905 link2_after[59604:1690398] EJLinkState: uid 4b86809280 held by a PROVEN-LIVE instance (duplicate) -> regenerated f8d556ff8b
+2026-09-06 16:33:39.905 link2_after[59604:1690398] EJLinkMeter: "Vox" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 16:33:39.905 link2_after[59604:1690398] EJLinkMeter: "Vox" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  2 s later:       rows named Vox: 2   A slot 4   B slot 2
+    row uid 4b86809280   file audio_4b86809280.bin        
+    row uid f8d556ff8b   file audio_f8d556ff8b.bin        
+  -> PASS
+control: PASS   same-name: PASS (two files)   clone: PASS   burst: PASS
+exit=0

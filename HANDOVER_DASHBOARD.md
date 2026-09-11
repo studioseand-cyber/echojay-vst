@@ -189,6 +189,13 @@ release builds, which talk to production:
 **Flag:** `V2_PREVIEW_TOKEN` should be **rotated** — it transited a chat upload
 on 18 Aug 2026.
 
+**Flag (6 Sep 2026):** the plugin SESSION TOKEN for the test account
+`wonderwithsienna@gmail.com` (tier pro, tierLevel 1) was pasted into a chat on
+6 Sep 2026 — same class as the line above. **Rotate or invalidate that session
+after the shoot** (sign out in the plugin, or invalidate server-side). It
+expires on or about **24 Sep 2026**; do not let the expiry be the only thing
+that ends it. No token value is recorded anywhere in this repo.
+
 ---
 
 ## 6. Standing corrections to tribal knowledge

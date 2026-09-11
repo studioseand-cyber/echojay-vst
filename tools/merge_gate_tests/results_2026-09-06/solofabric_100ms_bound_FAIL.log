@@ -1,0 +1,279 @@
+link_capacity_test.cpp: isolated state root /tmp/echojay-iso.TOmTbQ
+2026-09-08 12:13:33.701 cap_solo[45769:2810607] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 12:13:33.705 cap_solo[45769:2810607] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 12:13:33.708 cap_solo[45769:2810607] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-08 12:13:33.736 cap_solo[45769:2810607] EJLinkState: post-init linkOn=1 name="A" uid=891e48fbbb
+2026-09-08 12:13:33.736 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 12:13:33.736 cap_solo[45769:2810607] EJLinkMeter: "A" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 12:13:33.736 cap_solo[45769:2810607] EJLinkState: post-init linkOn=1 name="B" uid=42367a64e5
+2026-09-08 12:13:33.736 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 12:13:33.736 cap_solo[45769:2810607] EJLinkMeter: "B" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 12:13:33.740 cap_solo[45769:2810607] EJLinkState: post-init linkOn=1 name="C" uid=bee0c5dcbc
+2026-09-08 12:13:33.740 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-08 12:13:33.740 cap_solo[45769:2810607] EJLinkMeter: "C" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 12:13:33.809 cap_solo[45769:2810607] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-08 12:13:33.842 cap_solo[45769:2810607] EJLinkMeter: "C" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 12:13:33.842 cap_solo[45769:2810607] EJLinkMeter: "B" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 12:13:33.842 cap_solo[45769:2810607] EJLinkMeter: "A" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 12:13:33.880 cap_solo[45769:2810607] EJLinkMeter: "A" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 12:13:33.880 cap_solo[45769:2810607] EJLinkMeter: "B" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 12:13:33.880 cap_solo[45769:2810607] EJLinkMeter: "C" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-08 12:13:36.146 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 2)
+2026-09-08 12:13:36.146 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 2)
+2026-09-08 12:13:36.146 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 2)
+2026-09-08 12:13:37.168 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 2) -> momentary group absent
+2026-09-08 12:13:37.168 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 2) -> momentary group absent
+2026-09-08 12:13:37.169 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 2) -> momentary group absent
+2026-09-08 12:13:37.376 cap_solo[45769:2810607] EJLinkMeter: "C" #100 mom=-100.0 rms=-22.8/-22.8 blocks=2 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[0.3 -24.9]
+2026-09-08 12:13:37.376 cap_solo[45769:2810607] EJLinkMeter: "B" #100 mom=-100.0 rms=-22.8/-22.8 blocks=2 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[0.3 -24.9]
+2026-09-08 12:13:37.376 cap_solo[45769:2810607] EJLinkMeter: "A" #100 mom=-100.0 rms=-22.8/-22.8 blocks=2 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[0.3 -24.9]
+2026-09-08 12:13:38.579 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 4)
+2026-09-08 12:13:38.579 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 4)
+2026-09-08 12:13:38.580 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 4)
+2026-09-08 12:13:39.595 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 4) -> momentary group absent
+2026-09-08 12:13:39.595 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 4) -> momentary group absent
+2026-09-08 12:13:39.595 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 4) -> momentary group absent
+2026-09-08 12:13:41.008 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 6)
+2026-09-08 12:13:41.008 cap_solo[45769:2810607] EJLinkMeter: "C" #200 mom=-6.7 rms=-18.2/-18.2 blocks=6 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -15.2]
+2026-09-08 12:13:41.008 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 6)
+2026-09-08 12:13:41.008 cap_solo[45769:2810607] EJLinkMeter: "B" #200 mom=-6.7 rms=-18.2/-18.2 blocks=6 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -15.2]
+2026-09-08 12:13:41.008 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 6)
+2026-09-08 12:13:41.008 cap_solo[45769:2810607] EJLinkMeter: "A" #200 mom=-6.7 rms=-18.2/-18.2 blocks=6 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -15.2]
+2026-09-08 12:13:42.020 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 6) -> momentary group absent
+2026-09-08 12:13:42.020 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 6) -> momentary group absent
+2026-09-08 12:13:42.020 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 6) -> momentary group absent
+2026-09-08 12:13:43.426 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 8)
+2026-09-08 12:13:43.426 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 8)
+2026-09-08 12:13:43.426 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 8)
+2026-09-08 12:13:44.436 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 8) -> momentary group absent
+2026-09-08 12:13:44.436 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 8) -> momentary group absent
+2026-09-08 12:13:44.436 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 8) -> momentary group absent
+2026-09-08 12:13:44.610 cap_solo[45769:2810607] EJLinkMeter: "C" #300 mom=-100.0 rms=-17.0/-17.0 blocks=8 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -15.0]
+2026-09-08 12:13:44.610 cap_solo[45769:2810607] EJLinkMeter: "B" #300 mom=-100.0 rms=-17.0/-17.0 blocks=8 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -15.0]
+2026-09-08 12:13:44.611 cap_solo[45769:2810607] EJLinkMeter: "A" #300 mom=-100.0 rms=-17.0/-17.0 blocks=8 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -15.0]
+2026-09-08 12:13:45.880 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 10)
+2026-09-08 12:13:45.880 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 10)
+2026-09-08 12:13:45.880 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 10)
+2026-09-08 12:13:46.887 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 10) -> momentary group absent
+2026-09-08 12:13:46.887 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 10) -> momentary group absent
+2026-09-08 12:13:46.887 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 10) -> momentary group absent
+2026-09-08 12:13:48.235 cap_solo[45769:2810607] EJLinkMeter: "C" #400 mom=-100.0 rms=-16.2/-16.2 blocks=10 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:13:48.235 cap_solo[45769:2810607] EJLinkMeter: "B" #400 mom=-100.0 rms=-16.2/-16.2 blocks=10 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:13:48.235 cap_solo[45769:2810607] EJLinkMeter: "A" #400 mom=-100.0 rms=-16.2/-16.2 blocks=10 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:13:48.311 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 12)
+2026-09-08 12:13:48.311 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 12)
+2026-09-08 12:13:48.311 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 12)
+2026-09-08 12:13:49.314 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 12) -> momentary group absent
+2026-09-08 12:13:49.314 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 12) -> momentary group absent
+2026-09-08 12:13:49.315 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 12) -> momentary group absent
+2026-09-08 12:13:50.725 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 14)
+2026-09-08 12:13:50.726 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 14)
+2026-09-08 12:13:50.726 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 14)
+2026-09-08 12:13:51.731 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 14) -> momentary group absent
+2026-09-08 12:13:51.731 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 14) -> momentary group absent
+2026-09-08 12:13:51.731 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 14) -> momentary group absent
+2026-09-08 12:13:51.840 cap_solo[45769:2810607] EJLinkMeter: "C" #500 mom=-100.0 rms=-14.9/-14.9 blocks=14 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:13:51.840 cap_solo[45769:2810607] EJLinkMeter: "B" #500 mom=-100.0 rms=-14.9/-14.9 blocks=14 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:13:51.840 cap_solo[45769:2810607] EJLinkMeter: "A" #500 mom=-100.0 rms=-14.9/-14.9 blocks=14 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:13:53.144 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 16)
+2026-09-08 12:13:53.144 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 16)
+2026-09-08 12:13:53.144 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 16)
+2026-09-08 12:13:54.159 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 16) -> momentary group absent
+2026-09-08 12:13:54.159 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 16) -> momentary group absent
+2026-09-08 12:13:54.159 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 16) -> momentary group absent
+2026-09-08 12:13:55.457 cap_solo[45769:2810607] EJLinkMeter: "C" #600 mom=-100.0 rms=-14.4/-14.4 blocks=16 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:13:55.457 cap_solo[45769:2810607] EJLinkMeter: "B" #600 mom=-100.0 rms=-14.4/-14.4 blocks=16 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:13:55.457 cap_solo[45769:2810607] EJLinkMeter: "A" #600 mom=-100.0 rms=-14.4/-14.4 blocks=16 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:13:55.565 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 18)
+2026-09-08 12:13:55.565 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 18)
+2026-09-08 12:13:55.565 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 18)
+2026-09-08 12:13:56.587 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 18) -> momentary group absent
+2026-09-08 12:13:56.587 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 18) -> momentary group absent
+2026-09-08 12:13:56.587 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 18) -> momentary group absent
+2026-09-08 12:13:58.012 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 20)
+2026-09-08 12:13:58.012 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 20)
+2026-09-08 12:13:58.013 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 20)
+2026-09-08 12:13:59.045 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 20) -> momentary group absent
+2026-09-08 12:13:59.045 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 20) -> momentary group absent
+2026-09-08 12:13:59.045 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 20) -> momentary group absent
+2026-09-08 12:13:59.082 cap_solo[45769:2810607] EJLinkMeter: "C" #700 mom=-100.0 rms=-13.6/-13.6 blocks=20 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:13:59.082 cap_solo[45769:2810607] EJLinkMeter: "B" #700 mom=-100.0 rms=-13.6/-13.6 blocks=20 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:13:59.082 cap_solo[45769:2810607] EJLinkMeter: "A" #700 mom=-100.0 rms=-13.6/-13.6 blocks=20 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:00.395 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 22)
+2026-09-08 12:14:00.395 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 22)
+2026-09-08 12:14:00.396 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 22)
+2026-09-08 12:14:01.400 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 22) -> momentary group absent
+2026-09-08 12:14:01.400 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 22) -> momentary group absent
+2026-09-08 12:14:01.400 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 22) -> momentary group absent
+2026-09-08 12:14:02.702 cap_solo[45769:2810607] EJLinkMeter: "C" #800 mom=-100.0 rms=-13.3/-13.3 blocks=22 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:02.702 cap_solo[45769:2810607] EJLinkMeter: "B" #800 mom=-100.0 rms=-13.3/-13.3 blocks=22 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:02.702 cap_solo[45769:2810607] EJLinkMeter: "A" #800 mom=-100.0 rms=-13.3/-13.3 blocks=22 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:02.813 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 24)
+2026-09-08 12:14:02.813 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 24)
+2026-09-08 12:14:02.813 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 24)
+2026-09-08 12:14:03.814 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 24) -> momentary group absent
+2026-09-08 12:14:03.814 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 24) -> momentary group absent
+2026-09-08 12:14:03.814 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 24) -> momentary group absent
+2026-09-08 12:14:05.228 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 26)
+2026-09-08 12:14:05.228 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 26)
+2026-09-08 12:14:05.229 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 26)
+2026-09-08 12:14:06.232 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 26) -> momentary group absent
+2026-09-08 12:14:06.232 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 26) -> momentary group absent
+2026-09-08 12:14:06.232 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 26) -> momentary group absent
+2026-09-08 12:14:06.303 cap_solo[45769:2810607] EJLinkMeter: "C" #900 mom=-100.0 rms=-12.7/-12.7 blocks=26 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:06.303 cap_solo[45769:2810607] EJLinkMeter: "B" #900 mom=-100.0 rms=-12.7/-12.7 blocks=26 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:06.303 cap_solo[45769:2810607] EJLinkMeter: "A" #900 mom=-100.0 rms=-12.7/-12.7 blocks=26 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:07.653 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 28)
+2026-09-08 12:14:07.653 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 28)
+2026-09-08 12:14:07.653 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 28)
+2026-09-08 12:14:08.657 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 28) -> momentary group absent
+2026-09-08 12:14:08.657 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 28) -> momentary group absent
+2026-09-08 12:14:08.657 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 28) -> momentary group absent
+2026-09-08 12:14:09.920 cap_solo[45769:2810607] EJLinkMeter: "C" #1000 mom=-100.0 rms=-12.5/-12.5 blocks=28 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:09.920 cap_solo[45769:2810607] EJLinkMeter: "B" #1000 mom=-100.0 rms=-12.5/-12.5 blocks=28 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:09.920 cap_solo[45769:2810607] EJLinkMeter: "A" #1000 mom=-100.0 rms=-12.5/-12.5 blocks=28 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:10.098 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 30)
+2026-09-08 12:14:10.098 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 30)
+2026-09-08 12:14:10.098 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 30)
+2026-09-08 12:14:11.108 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 30) -> momentary group absent
+2026-09-08 12:14:11.108 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 30) -> momentary group absent
+2026-09-08 12:14:11.108 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 30) -> momentary group absent
+2026-09-08 12:14:12.536 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 32)
+2026-09-08 12:14:12.536 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 32)
+2026-09-08 12:14:12.536 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 32)
+2026-09-08 12:14:13.562 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 32) -> momentary group absent
+2026-09-08 12:14:13.562 cap_solo[45769:2810607] EJLinkMeter: "C" #1100 mom=-100.0 rms=-12.1/-12.1 blocks=32 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:13.562 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 32) -> momentary group absent
+2026-09-08 12:14:13.562 cap_solo[45769:2810607] EJLinkMeter: "B" #1100 mom=-100.0 rms=-12.1/-12.1 blocks=32 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:13.562 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 32) -> momentary group absent
+2026-09-08 12:14:13.562 cap_solo[45769:2810607] EJLinkMeter: "A" #1100 mom=-100.0 rms=-12.1/-12.1 blocks=32 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:14.975 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 34)
+2026-09-08 12:14:14.975 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 34)
+2026-09-08 12:14:14.975 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 34)
+2026-09-08 12:14:15.984 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 34) -> momentary group absent
+2026-09-08 12:14:15.984 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 34) -> momentary group absent
+2026-09-08 12:14:15.984 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 34) -> momentary group absent
+2026-09-08 12:14:17.179 cap_solo[45769:2810607] EJLinkMeter: "C" #1200 mom=-100.0 rms=-11.9/-11.9 blocks=34 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:17.179 cap_solo[45769:2810607] EJLinkMeter: "B" #1200 mom=-100.0 rms=-11.9/-11.9 blocks=34 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:17.179 cap_solo[45769:2810607] EJLinkMeter: "A" #1200 mom=-100.0 rms=-11.9/-11.9 blocks=34 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:17.394 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 36)
+2026-09-08 12:14:17.395 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 36)
+2026-09-08 12:14:17.395 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 36)
+2026-09-08 12:14:18.414 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 36) -> momentary group absent
+2026-09-08 12:14:18.414 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 36) -> momentary group absent
+2026-09-08 12:14:18.414 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 36) -> momentary group absent
+2026-09-08 12:14:19.826 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 38)
+2026-09-08 12:14:19.827 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 38)
+2026-09-08 12:14:19.827 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 38)
+2026-09-08 12:14:20.831 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 38) -> momentary group absent
+2026-09-08 12:14:20.831 cap_solo[45769:2810607] EJLinkMeter: "C" #1300 mom=-100.0 rms=-11.5/-11.5 blocks=38 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:20.831 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 38) -> momentary group absent
+2026-09-08 12:14:20.831 cap_solo[45769:2810607] EJLinkMeter: "B" #1300 mom=-100.0 rms=-11.5/-11.5 blocks=38 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:20.831 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 38) -> momentary group absent
+2026-09-08 12:14:20.831 cap_solo[45769:2810607] EJLinkMeter: "A" #1300 mom=-100.0 rms=-11.5/-11.5 blocks=38 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:22.289 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 40)
+2026-09-08 12:14:22.289 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 40)
+2026-09-08 12:14:22.289 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 40)
+2026-09-08 12:14:23.298 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 40) -> momentary group absent
+2026-09-08 12:14:23.298 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 40) -> momentary group absent
+2026-09-08 12:14:23.298 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 40) -> momentary group absent
+2026-09-08 12:14:24.471 cap_solo[45769:2810607] EJLinkMeter: "C" #1400 mom=-100.0 rms=-11.4/-11.4 blocks=40 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:24.471 cap_solo[45769:2810607] EJLinkMeter: "B" #1400 mom=-100.0 rms=-11.4/-11.4 blocks=40 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:24.471 cap_solo[45769:2810607] EJLinkMeter: "A" #1400 mom=-100.0 rms=-11.4/-11.4 blocks=40 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:24.723 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 42)
+2026-09-08 12:14:24.723 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 42)
+2026-09-08 12:14:24.723 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 42)
+2026-09-08 12:14:25.734 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 42) -> momentary group absent
+2026-09-08 12:14:25.734 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 42) -> momentary group absent
+2026-09-08 12:14:25.734 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 42) -> momentary group absent
+2026-09-08 12:14:27.153 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 44)
+2026-09-08 12:14:27.153 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 44)
+2026-09-08 12:14:27.153 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 44)
+2026-09-08 12:14:28.105 cap_solo[45769:2810607] EJLinkMeter: "C" #1500 mom=-6.7 rms=-11.2/-11.2 blocks=44 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:28.105 cap_solo[45769:2810607] EJLinkMeter: "B" #1500 mom=-6.7 rms=-11.2/-11.2 blocks=44 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:28.105 cap_solo[45769:2810607] EJLinkMeter: "A" #1500 mom=-6.7 rms=-11.2/-11.2 blocks=44 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:28.177 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 44) -> momentary group absent
+2026-09-08 12:14:28.177 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 44) -> momentary group absent
+2026-09-08 12:14:28.177 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 44) -> momentary group absent
+2026-09-08 12:14:29.570 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 46)
+2026-09-08 12:14:29.571 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 46)
+2026-09-08 12:14:29.571 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 46)
+2026-09-08 12:14:30.591 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 46) -> momentary group absent
+2026-09-08 12:14:30.591 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 46) -> momentary group absent
+2026-09-08 12:14:30.591 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 46) -> momentary group absent
+2026-09-08 12:14:31.749 cap_solo[45769:2810607] EJLinkMeter: "C" #1600 mom=-100.0 rms=-11.0/-11.0 blocks=46 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:31.749 cap_solo[45769:2810607] EJLinkMeter: "B" #1600 mom=-100.0 rms=-11.0/-11.0 blocks=46 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:31.749 cap_solo[45769:2810607] EJLinkMeter: "A" #1600 mom=-100.0 rms=-11.0/-11.0 blocks=46 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:32.005 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 48)
+2026-09-08 12:14:32.005 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 48)
+2026-09-08 12:14:32.005 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 48)
+2026-09-08 12:14:33.021 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 48) -> momentary group absent
+2026-09-08 12:14:33.021 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 48) -> momentary group absent
+2026-09-08 12:14:33.021 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 48) -> momentary group absent
+2026-09-08 12:14:34.430 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 50)
+2026-09-08 12:14:34.430 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 50)
+2026-09-08 12:14:34.430 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 50)
+2026-09-08 12:14:35.375 cap_solo[45769:2810607] EJLinkMeter: "C" #1700 mom=-6.7 rms=-10.8/-10.8 blocks=50 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:35.375 cap_solo[45769:2810607] EJLinkMeter: "B" #1700 mom=-6.7 rms=-10.8/-10.8 blocks=50 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:35.375 cap_solo[45769:2810607] EJLinkMeter: "A" #1700 mom=-6.7 rms=-10.8/-10.8 blocks=50 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:35.450 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 50) -> momentary group absent
+2026-09-08 12:14:35.450 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 50) -> momentary group absent
+2026-09-08 12:14:35.451 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 50) -> momentary group absent
+2026-09-08 12:14:36.855 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 52)
+2026-09-08 12:14:36.855 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 52)
+2026-09-08 12:14:36.855 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 52)
+2026-09-08 12:14:37.862 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 52) -> momentary group absent
+2026-09-08 12:14:37.862 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 52) -> momentary group absent
+2026-09-08 12:14:37.862 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 52) -> momentary group absent
+2026-09-08 12:14:38.989 cap_solo[45769:2810607] EJLinkMeter: "C" #1800 mom=-100.0 rms=-10.7/-10.7 blocks=52 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:38.989 cap_solo[45769:2810607] EJLinkMeter: "B" #1800 mom=-100.0 rms=-10.7/-10.7 blocks=52 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:38.989 cap_solo[45769:2810607] EJLinkMeter: "A" #1800 mom=-100.0 rms=-10.7/-10.7 blocks=52 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:39.276 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 54)
+2026-09-08 12:14:39.276 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 54)
+2026-09-08 12:14:39.276 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 54)
+2026-09-08 12:14:40.284 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 54) -> momentary group absent
+2026-09-08 12:14:40.284 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 54) -> momentary group absent
+2026-09-08 12:14:40.285 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 54) -> momentary group absent
+2026-09-08 12:14:41.743 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 56)
+2026-09-08 12:14:41.743 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 56)
+2026-09-08 12:14:41.743 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 56)
+2026-09-08 12:14:42.623 cap_solo[45769:2810607] EJLinkMeter: "C" #1900 mom=-6.7 rms=-10.6/-10.6 blocks=56 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:42.623 cap_solo[45769:2810607] EJLinkMeter: "B" #1900 mom=-6.7 rms=-10.6/-10.6 blocks=56 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:42.623 cap_solo[45769:2810607] EJLinkMeter: "A" #1900 mom=-6.7 rms=-10.6/-10.6 blocks=56 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:42.767 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 56) -> momentary group absent
+2026-09-08 12:14:42.767 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 56) -> momentary group absent
+2026-09-08 12:14:42.767 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 56) -> momentary group absent
+2026-09-08 12:14:44.173 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 58)
+2026-09-08 12:14:44.173 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 58)
+2026-09-08 12:14:44.174 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 58)
+2026-09-08 12:14:45.181 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 58) -> momentary group absent
+2026-09-08 12:14:45.181 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 58) -> momentary group absent
+2026-09-08 12:14:45.182 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 58) -> momentary group absent
+2026-09-08 12:14:46.238 cap_solo[45769:2810607] EJLinkMeter: "C" #2000 mom=-100.0 rms=-10.5/-10.5 blocks=58 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:46.239 cap_solo[45769:2810607] EJLinkMeter: "B" #2000 mom=-100.0 rms=-10.5/-10.5 blocks=58 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:46.239 cap_solo[45769:2810607] EJLinkMeter: "A" #2000 mom=-100.0 rms=-10.5/-10.5 blocks=58 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+  claimed: A slot 0 uid 891e48fbbb, B slot 1, C slot 2
+2026-09-08 12:14:46.609 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 60)
+2026-09-08 12:14:46.609 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 68)
+2026-09-08 12:14:46.609 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 60)
+2026-09-08 12:14:46.647 cap_solo[45769:2810607] EJLinkState: remote set soloOn=1 (seq 1)
+2026-09-08 12:14:47.638 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 60) -> momentary group absent
+2026-09-08 12:14:47.639 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 68) -> momentary group absent
+2026-09-08 12:14:47.639 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 60) -> momentary group absent
+  (i)   A's sidecar carries soloOn=true: YES (1229 ms after the command; A soloIsOn=1)
+  (ii)  B muteWanted=1 C muteWanted=1 A muteWanted=0 (2474 ms after the command)
+  (iii) B output rms before 0.353, while A is soloed 0.0000; A's own output while soloed 0.353
+2026-09-08 12:14:49.061 cap_solo[45769:2810607] EJLinkMeter: "C" audio resumed (blocks 61)
+2026-09-08 12:14:49.062 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 109)
+2026-09-08 12:14:49.062 cap_solo[45769:2810607] EJLinkMeter: "A" audio resumed (blocks 101)
+2026-09-08 12:14:49.093 cap_solo[45769:2810607] EJLinkState: remote set soloOn=0 (seq 2)
+2026-09-08 12:14:49.950 cap_solo[45769:2810607] EJLinkMeter: "C" #2100 mom=-6.7 rms=-10.4/-10.4 blocks=61 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-4.3 -14.9]
+2026-09-08 12:14:49.951 cap_solo[45769:2810607] EJLinkMeter: "B" #2100 mom=-6.7 rms=-9.5/-9.5 blocks=109 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-18.8 -27.0]
+2026-09-08 12:14:49.951 cap_solo[45769:2810607] EJLinkMeter: "A" #2100 mom=-6.7 rms=-9.6/-9.6 blocks=101 tp=-6.0 tpCur=-6.0 corr=1.00 rel=[-18.7 -27.0]
+2026-09-08 12:14:50.091 cap_solo[45769:2810607] EJLinkMeter: "C" audio stale (blocks frozen at 61) -> momentary group absent
+2026-09-08 12:14:50.091 cap_solo[45769:2810607] EJLinkMeter: "B" audio stale (blocks frozen at 109) -> momentary group absent
+2026-09-08 12:14:50.091 cap_solo[45769:2810607] EJLinkMeter: "A" audio stale (blocks frozen at 101) -> momentary group absent
+  unsolo: B muteWanted=0, B output rms 0.353
+SOLO FABRIC: (i) PASS  (ii) PASS  (iii) PASS  unsolo PASS  TIME 2474 ms vs 100 ms bound FAIL -> FAIL
+2026-09-08 12:14:50.317 cap_solo[45769:2810607] EJLinkMeter: "B" audio resumed (blocks 150)
+exit=1

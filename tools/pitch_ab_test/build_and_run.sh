@@ -12,6 +12,12 @@
 # hard-matched). The path lives in the UNCOMMITTED sibling file:
 #     tools/pitch_ab_test/material.local     (git-ignored)
 # When absent, the gate explains itself and exits 0 - visible, never silent.
+# ISOLATION (6 Sep 2026 ruling): this harness runs against a PRIVATE state root,
+# never the user's live registry / auth.json / caches. Set ECHOJAY_STATE_HOME to
+# reuse a root; unset, a fresh temporary one is created and named.
+: "${ECHOJAY_STATE_HOME:=$(mktemp -d /tmp/echojay-harness-state.XXXXXX)}"; export ECHOJAY_STATE_HOME
+echo "isolated state root: $ECHOJAY_STATE_HOME"
+
 set -e
 cd "$(dirname "$0")/../.."
 

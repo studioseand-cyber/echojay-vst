@@ -1,0 +1,24 @@
+[POSITIVE CONTROL: setting OFF] start (dialWritesBlocked=false during setStateInformation)
+[POSITIVE CONTROL: setting OFF] processor built, loading the builtin slot
+2026-09-06 15:17:22.139 v9rack_bin[49703:1551864] ChainHost: built-in "" added as slot 0
+[POSITIVE CONTROL: setting OFF] edits made; letting the state cache settle 4 s
+[POSITIVE CONTROL: setting OFF] state saved (2802 bytes), reloading into a fresh processor
+2026-09-06 15:17:26.324 v9rack_bin[49703:1551864] ChainHost: built-in "" added as slot 0
+  slot 0 wet                   saved    0.40  reloaded    0.40  ok
+  retune                       saved  200.00  reloaded  200.00  ok
+  retune_speed_ms              saved  150.00  reloaded  150.00  ok
+  natural_vibrato              saved   50.00  reloaded   50.00  ok
+  flex                         saved   30.00  reloaded   30.00  ok
+[V9 RACK: setting ON] start (dialWritesBlocked=TRUE during setStateInformation)
+[V9 RACK: setting ON] processor built, loading the builtin slot
+2026-09-06 15:17:30.500 v9rack_bin[49703:1551864] ChainHost: built-in "" added as slot 0
+[V9 RACK: setting ON] edits made; letting the state cache settle 4 s
+[V9 RACK: setting ON] state saved (2802 bytes), reloading into a fresh processor
+2026-09-06 15:17:34.679 v9rack_bin[49703:1551864] ChainHost: built-in "" added as slot 0
+  slot 0 wet                   saved    0.40  reloaded    0.40  ok
+  retune                       saved  200.00  reloaded  200.00  ok
+  retune_speed_ms              saved  150.00  reloaded  150.00  ok
+  natural_vibrato              saved   50.00  reloaded   50.00  ok
+  flex                         saved   30.00  reloaded   30.00  ok
+control: PASS   V9 rack: PASS
+exit=0

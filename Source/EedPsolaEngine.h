@@ -167,6 +167,10 @@ public:
                   float lowestF0Hz, float worstCaseLowestF0Hz)
     {
         fs_ = sampleRate > 0.0 ? sampleRate : 48000.0;
+        bleedTau_ = 0.1 * fs_;
+        ringSlowK_ = 1.0 / (0.14 * fs_);
+        bleedGateK_ = 1.0 / (0.1 * fs_);
+        carryLimit_ = (double) carryMs_ * 0.001 * fs_;
 
         const double worstPeriod = fs_ / std::max (10.0f, worstCaseLowestF0Hz);
         maxPeriod_ = (int) std::ceil (worstPeriod);
@@ -186,6 +190,10 @@ public:
 
         in_.assign  (sz, 0.0f);
         f0_.assign  (sz, 0.0f);      // <= 0 means UNVOICED at that sample
+        tgt_.assign (sz, 0.0f);      // co-timed target ring (TIMING_ALIGNMENT_RECORD flag A)
+        sh_.assign  (sz, kNoShift);  // co-timed shift ring
+        dec_.assign (sz, 0.0f);      // decision ring: correction in cents vs the hop's own f0 (flag E)
+        slowRing_.assign (sz, 0.0f);
         acc_.assign (sz, 0.0f);
         win_.assign (sz, 0.0f);
 
@@ -210,6 +218,7 @@ public:
         synState_.assign ((size_t) kMaxLpcOrder, 0.0);
 
         seamFade_ = std::max (1, (int) std::lround (fs_ * (double) kSeamFadeMs * 0.001));
+        decLookahead_ = 0;   // SHIPPED 0 (5 Sep 2026): 6 ms measured a word-start event at the seam ramp on the NEW take (SLOW_END_RECORD round 31, leg 4); the mechanism stays (setDecisionLookahead) for the re-evaluation
 
         reset();
     }
@@ -218,6 +227,9 @@ public:
     {
         std::fill (in_.begin(),  in_.end(),  0.0f);
         std::fill (f0_.begin(),  f0_.end(),  0.0f);
+        std::fill (tgt_.begin(), tgt_.end(), 0.0f);
+        std::fill (sh_.begin(),  sh_.end(),  kNoShift);
+        std::fill (dec_.begin(), dec_.end(), 0.0f);
         std::fill (acc_.begin(), acc_.end(), 0.0f);
         std::fill (win_.begin(), win_.end(), 0.0f);
         write_ = 0; emitted_ = 0; placedTo_ = 0;
@@ -228,8 +240,22 @@ public:
         synIdx_ = 0;
         curTarget_ = 0.0f;
         spliceDrift_ = 0.0; spliceOldDrift_ = 0.0; spliceR_ = 0.0; spliceTf_ = 0.0;
+        seamRampW_ = 1.0;
+        lastRingAt_ = -1;
         spliceFadeLen_ = 0; spliceFadePos_ = 0; spliceT_ = 0;
         methodMix_ = 0.0f;
+        uvRun_ = 0;
+        bridgeSeedT_ = 0.0; bridgeLen_ = 0.0;
+        // Round 48 (DEFECT_PRESS_PLAY_PHASING): the three items below carried
+        // position content across a transport reposition because reset() had
+        // been written for prepare() only. slowRing_ is a co-timed ring like
+        // f0_/tgt_/sh_/dec_ (the lag-compensated slow reference the fast term
+        // reads); bleedGate_ is the drift-bleed's smoothed gate (a 100 ms pole
+        // over the recent shift - history); curShift_ is the last call's shift.
+        // prepare() calls this, so a prepared instance is unchanged.
+        std::fill (slowRing_.begin(), slowRing_.end(), 0.0f);
+        bleedGate_ = 1.0;
+        curShift_ = kNoShift;
     }
 
     // The active voice_type's floor. Changes the reported latency, which the
@@ -359,8 +385,73 @@ public:
     struct DebugEmit { float seamG, winSum; };
     const std::vector<DebugEmit>& debugEmits() const noexcept { return dbgEmit_; }
 
+    // Per-sample splice-band author record (4 Sep 2026, the constant-shift
+    // mid-voiced breaks): which branch wrote `wet`, with the state that
+    // decided it. One push per emitted sample in BOTH emit paths, so the
+    // index is the emitted position exactly like dbgEmit_. mix<0 marks a
+    // sample emitted by emitDry (no splice state in play).
+    struct DebugSpl { float g, mix, r; float drift; int T; };
+    const std::vector<DebugSpl>& debugSpliceTrace() const noexcept { return dbgSpl_; }
+
     void setPitchLagSamples (int lag) noexcept { pitchLag_ = std::max (0, lag); }
+    /** SEAM RAMP (2 Sep 2026): ms over which the wet leg ramps from the
+        dry leg's pitch to full correction at every dry->wet seam. 0 = off
+        (the pre-fix behaviour). See the re-entry site for the mechanism. */
+    void setSeamRampMs (float ms) noexcept { seamRampMs_ = std::max (0.0f, ms); }
+    float getSeamRampMs() const noexcept   { return seamRampMs_; }
     int  getPitchLagSamples() const noexcept   { return pitchLag_; }
+
+    // Drift bleed (see spliceSample): off by default; the A/B lives in
+    // tools/pitch_constshift_probe until a ruling ships it.
+    void setDriftBleed (bool on) noexcept { driftBleed_ = on; }
+    bool getDriftBleed() const noexcept   { return driftBleed_; }
+
+    // Audio-verified bridging (see process()): while a tracked-unvoiced
+    // slice's ring audio stays measurably periodic, the MEASURED f0 is
+    // written instead of 0, up to maxMs per run. maxMs 0 disables (the
+    // default). thresh is the periodicity bar (the census classifier's
+    // kStillPeriodic-family test).
+    // Diagnostic only (30 Aug 2026 tau sweep): force the pre-gate bleed
+    // behaviour so gated-vs-ungated can be measured at every retune tau.
+    void debugBleedUngated (bool on) noexcept { dbgBleedUngated_ = on; }
+
+    void setF0Bridge (float maxMs, float thresh) noexcept
+    { bridgeMaxMs_ = std::max (0.0f, maxMs); bridgeThresh_ = thresh; }
+    float getF0BridgeMaxMs() const noexcept { return bridgeMaxMs_; }
+
+    struct DbgBridge { uint64_t pos; int len; float f0, r; };
+    const std::vector<DbgBridge>& debugBridges() const noexcept { return dbgBridge_; }
+
+    /** RING TAP (2 Sep 2026 ruling, round 8): records, at the splice
+        read site, the (input position, f0Here, target) triple the ratio
+        was actually computed from - change-triggered, so one entry per
+        value change. Debug family of dbgBridge_: off by default, and
+        PROVEN AUDIO-NEUTRAL BY BIT-IDENTITY (tools/pitch_residual_closure
+        renders with the tap off and on and byte-compares) before any
+        tapped data is read. Offline instrumentation only. */
+    struct DbgRingTap { uint64_t inPos; float f0Here, target; };
+    void debugRingTap (bool on) noexcept { dbgTapOn_ = on; }
+    const std::vector<DbgRingTap>& debugRingTapData() const noexcept { return dbgTap_; }
+
+    /** EFFECTIVE-RATIO TAP (round-9 ruling): the rate the read pointer
+        actually advances at - the slewed ratio minus the bleed decrement,
+        d(readPos)/dp = r - b - sampled on a 64-sample grid inside
+        spliceSample. Splice jumps move by whole fractional periods and
+        are phase-neutral, so this IS the emitted pitch factor. Same
+        binding conditions as the ring tap: dbgTapOn_-gated, off by
+        default, bit-identity re-verified with this field before any
+        tapped data is read. */
+    struct DbgEffR { uint64_t inPos; float effR; };
+    const std::vector<DbgEffR>& debugEffRData() const noexcept { return dbgTapR_; }
+
+    // Drift carry (see emitMixed): gaps shorter than this keep the read
+    // trajectory across the gap instead of re-anchoring. 0 = old behaviour.
+    void setDriftCarryMs (float ms) noexcept
+    {
+        carryMs_ = std::max (0.0f, ms);
+        carryLimit_ = (double) carryMs_ * 0.001 * fs_;
+    }
+    float getDriftCarryMs() const noexcept { return carryMs_; }
 
     // Normalised autocorrelation of the INPUT ring at one lag, over a window
     // of two periods ending at `inputPos`. This is the F0JumpGate's audio
@@ -396,9 +487,21 @@ public:
     // caller can slice a block at hop boundaries and give each slice the target
     // that hop actually decided. Passing 0 means passthrough. The atomic setter
     // remains for the fixed-target diagnostic path.
+    // Shift-mode sentinel: kNoShift = "no shift given, use target/f0" (the
+    // fixed-target diagnostic and bypass paths). A real shift replaces the
+    // RATIO at both synthesis sites with 2^(shift/1200): the fast component
+    // cancels ALGEBRAICALLY at the engine's own time-aligned f0 index —
+    // never a delay-line's belief about latency (3 Sep 2026 ruling).
+    static constexpr float kNoShift = -100000.0f;
+
     void process (const float* in, float* out, int n, float f0Hz, bool voiced,
                   float targetHz) noexcept
+    { process (in, out, n, f0Hz, voiced, targetHz, kNoShift); }
+
+    void process (const float* in, float* out, int n, float f0Hz, bool voiced,
+                  float targetHz, float shiftCents) noexcept
     {
+        curShift_ = shiftCents;
         // UNPREPARED GUARD. mask_ is 0 and the ring is empty until prepare()
         // runs, and in_[0] on an empty vector is undefined behaviour. JUCE
         // orders prepareToPlay before processBlock so this is latent rather
@@ -410,7 +513,7 @@ public:
             return;
         }
 
-        const float track = (voiced && f0Hz > 0.0f) ? f0Hz : 0.0f;
+        float track = (voiced && f0Hz > 0.0f) ? f0Hz : 0.0f;
 
         for (int i = 0; i < n; ++i)
         {
@@ -422,13 +525,105 @@ public:
         // so it can never reach behind what has already been emitted - if the
         // lag exceeds the lookahead the compensation is simply reduced rather
         // than corrupting the past.
-        const int lag = std::min (pitchLag_, std::max (0, latency_ - 1));
-        for (int i = 0; i < n; ++i)
+        int lagWanted = pitchLag_;
+        if (perHopLag_ && track > 0.0f && lagW_ > 0)
         {
-            const int64_t at = (int64_t) write_ - (int64_t) n + i - (int64_t) lag;
+            const double tauH = fs_ / (double) track;
+            lagWanted = (int) std::lround (0.5 * lagW_ + lagTauMax_ + 2.0 - 0.5 * tauH + 2.0 * lagHop_);
+        }
+        const int lag = std::min (lagWanted, std::max (0, latency_ - 1));
+
+        // AUDIO-VERIFIED BRIDGING (29 Aug 2026 ruling). A tracker blink
+        // inside a continuous note writes f0=0 into the ring, and every
+        // such zero-run is a seam the shifter executes - measured at ~7
+        // breaks/s of voiced, half of all span boundaries being blinks
+        // (tools/pitch_span_census: audio periodic straight through the
+        // gap, flanks within cents). Bridge CAUSALLY, per hop, on the
+        // audio's own testimony: the ring write runs pitchLag_ behind the
+        // hop, so the audio around the position being written - including
+        // ~lag samples ahead of it - is already in the ring. While a
+        // zero slice's ring audio stays periodic at the seeded period
+        // (best-lag search, threshold bridgeThresh_), write the MEASURED
+        // f0 (fs/bestLag - from the audio, never interpolated from the
+        // flanks) instead of 0; the seed follows the audio hop by hop. The
+        // moment periodicity dies - a real consonant - the test fails,
+        // that hop writes 0, the seam lands exactly at loss of
+        // periodicity, and everything from there stays bit-exact dry. A
+        // failed test DISARMS until true voicing returns (no flutter);
+        // bridgeMaxMs_ caps a run so sustained periodic-but-untracked
+        // material cannot out-vote the tracker forever. The CORRECTOR
+        // never sees bridged values - this rewrites only the shifter's
+        // ring, so tuning decisions are untouched.
+        if (bridgeMaxMs_ > 0.0f)
+        {
+            if (track > 0.0f)
+            { bridgeSeedT_ = fs_ / (double) track; bridgeLen_ = 0.0; }
+            else if (bridgeSeedT_ > 8.0
+                     && bridgeLen_ + n <= (double) bridgeMaxMs_ * 0.001 * fs_)
+            {
+                const int64_t q = (int64_t) write_ - (int64_t) n / 2 - (int64_t) lag;
+                const int T0 = (int) std::lround (bridgeSeedT_);
+                int bestLag = 0; float bestR = -1.0f;
+                const int step = std::max (1, T0 / 16);
+                for (int L = (int) (0.85 * T0); L <= (int) (1.15 * T0); L += step)
+                {
+                    const float r = q > L ? inputPeriodicity ((uint64_t) (q + L), L) : 0.0f;
+                    if (r > bestR) { bestR = r; bestLag = L; }
+                }
+                for (int L = std::max (8, bestLag - step + 1); L < bestLag + step; ++L)
+                {
+                    if (L == bestLag) continue;
+                    const float r = q > L ? inputPeriodicity ((uint64_t) (q + L), L) : 0.0f;
+                    if (r > bestR) { bestR = r; bestLag = L; }
+                }
+                if (bestR >= bridgeThresh_ && bestLag >= 8)
+                {
+                    track = (float) (fs_ / (double) bestLag);
+                    bridgeSeedT_ = (double) bestLag;
+                    bridgeLen_ += (double) n;
+                    if (debugOn_)
+                        dbgBridge_.push_back ({ (uint64_t) std::max<int64_t> (0,
+                            (int64_t) write_ - (int64_t) n - (int64_t) lag),
+                            n, track, bestR });
+                }
+                else bridgeSeedT_ = 0.0;   // real consonant: disarm until voiced
+            }
+            else bridgeSeedT_ = 0.0;       // cap reached or no seed
+        }
+        // CONTIGUITY under a per-hop lag (flag B): the back-dating changes with
+        // the hop's period, so consecutive calls would leave gaps (unwritten
+        // ring = unvoiced = a spurious seam) or overlaps. Start this call's
+        // writes at the sample after the last one written.
+        const int64_t atFirst = (int64_t) write_ - (int64_t) n - (int64_t) lag;
+        const int64_t atStart = (perHopLag_ && lastRingAt_ >= 0 && lastRingAt_ + 1 < atFirst) ? lastRingAt_ + 1 : atFirst;
+        for (int64_t at = atStart; at < atFirst + (int64_t) n; ++at)
+        {
             if (at < 0 || at < emitted_) continue;
             f0_[(size_t) ((uint32_t) (uint64_t) at & mask_)] = track;
+            // Flag D (investigation): TARGET LOOKAHEAD - the decision stamped
+            // `lookahead_` samples EARLIER than the audio it describes, bounded
+            // by the latency budget (positions already emitted are skipped).
+            const int64_t atT = at - (int64_t) tgtLookahead_;
+            if (atT >= 0 && atT >= emitted_)
+            {
+                tgt_[(size_t) ((uint32_t) (uint64_t) atT & mask_)] = targetHz;
+                sh_ [(size_t) ((uint32_t) (uint64_t) atT & mask_)] = shiftCents;
+            }
+            if (decMode_)
+            {
+                const int64_t atD = at - (int64_t) decLookahead_;
+                if (atD >= 0 && atD >= emitted_)
+                    dec_[(size_t) ((uint32_t) (uint64_t) atD & mask_)] =
+                        (track > 0.0f && targetHz > 0.0f) ? 1200.0f * std::log2 (targetHz / track) : 0.0f;
+            }
+            // The fast-ring slow reference rides the SAME lag compensation
+            // as the f0 it will divide - time-aligned by the proven
+            // mechanism, not a new timing belief (2 Sep, fourth cut: the
+            // feed-time reference led the audio by ~latency, costing ~5c).
+            if (fastRingOn_ && ! slowRing_.empty())
+                slowRing_[(size_t) ((uint32_t) (uint64_t) at & mask_)] = fastSlowHz_;
         }
+        lastRingAt_ = atFirst + (int64_t) n - 1;
 
         const float target = targetHz;
 
@@ -453,6 +648,7 @@ public:
         advanceSynthesis (base + (int64_t) n + (int64_t) curPeriod_ * kGrainPeriods, base,
                           target);
         curTarget_ = target;
+        // curShift_ already stored at entry; emitMixed's splice arm reads it.
         emitMixed (out, n, base);
     }
 
@@ -464,7 +660,7 @@ private:
         for (int i = 0; i < n; ++i)
         {
             const int64_t p = base + (int64_t) i;
-            if (p < 0) { out[i] = 0.0f; if (debugOn_) dbgEmit_.push_back ({ -1.0f, 0.0f }); continue; }
+            if (p < 0) { out[i] = 0.0f; if (debugOn_) { dbgEmit_.push_back ({ -1.0f, 0.0f }); dbgSpl_.push_back ({ -1.0f, -1.0f, 0.0f, 0.0f, 0 }); } continue; }
             const uint32_t idx = (uint32_t) (uint64_t) p & mask_;
             const float og = outGain_.load (std::memory_order_relaxed);
             out[i] = og == 1.0f ? in_[(size_t) idx] : in_[(size_t) idx] * og;
@@ -476,7 +672,7 @@ private:
             // shifting does not read stale grain content.
             acc_[(size_t) idx] = 0.0f;
             win_[(size_t) idx] = 0.0f;
-            if (debugOn_) dbgEmit_.push_back ({ -1.0f, 0.0f });
+            if (debugOn_) { dbgEmit_.push_back ({ -1.0f, 0.0f }); dbgSpl_.push_back ({ -1.0f, -1.0f, 0.0f, 0.0f, 0 }); }
         }
         emitted_ = base + (int64_t) n;
     }
@@ -488,7 +684,7 @@ private:
         for (int i = 0; i < n; ++i)
         {
             const int64_t p = base + (int64_t) i;
-            if (p < 0) { out[i] = 0.0f; if (debugOn_) dbgEmit_.push_back ({ -1.0f, 0.0f }); continue; }
+            if (p < 0) { out[i] = 0.0f; if (debugOn_) { dbgEmit_.push_back ({ -1.0f, 0.0f }); dbgSpl_.push_back ({ -1.0f, -1.0f, 0.0f, 0.0f, 0 }); } continue; }
             const uint32_t idx = (uint32_t) (uint64_t) p & mask_;
 
             const float dry = in_[(size_t) idx];
@@ -569,14 +765,88 @@ private:
             // splices - its envelope warp needs the LPC grain path.
             if (g > 0.0f && fm != kFormantShift && ! dbgNoSplice_)
             {
+                // DRIFT CARRY (5 Sep 2026 ruling): a re-entry after a SHORT
+                // gap keeps the accumulated drift instead of re-anchoring.
+                // The census (tools/pitch_span_census) measured half of all
+                // span boundaries as tracking blinks inside continuous
+                // notes - audio periodic straight through, flanks within
+                // cents - and every re-anchor there was a content jump the
+                // field hears (~7 breaks/s of voiced, one per boundary).
+                // Carrying is the conservative action on "cannot measure":
+                // the gap itself stays bit-exact dry either way; only the
+                // re-anchor is removed, the wet resuming its pre-gap read
+                // trajectory (the entry fade's join handles the offset -
+                // its r0 term never assumed zero drift). Decided CAUSALLY
+                // at re-entry from the gap's length: real pauses (> the
+                // threshold) still re-anchor. carryLimit_ = 0 is exactly
+                // the old behaviour.
+                if (uvRun_ > 0)
+                {
+                    const double gapSamples = (double) uvRun_;
+                    if (gapSamples > carryLimit_) spliceDrift_ = 0.0;
+                    uvRun_ = 0;
+                    // SEAM RAMP (2 Sep 2026 ruling, the word-start fix):
+                    // every dry->wet seam carries an instantaneous TARGET
+                    // step (9c at the ear-confirmed 6.16s exemplar) - above
+                    // the ~8.6c pitch JND, tau-independent, the measured
+                    // mechanism of the word-start complaint. The wet leg
+                    // therefore resumes AT THE DRY LEG'S PITCH - zero
+                    // correction at the seam - and ramps to full correction
+                    // over seamRampMs_. This is PITCH continuity;
+                    // kSeamFadeMs (waveform continuity) is deliberately
+                    // untouched - crossfading two signals 9c apart is
+                    // beating followed by the same step. 0 = off.
+                    //
+                    // GAP-GATED at the word-start convention (60ms, the
+                    // same threshold every instrument in the investigation
+                    // used to define a word start): a BLINK re-entry
+                    // (shorter gap, mid-note - half of all span boundaries
+                    // per the census) resumes where the pre-gap correction
+                    // was already valid; re-zeroing there is the 17.6
+                    // class of error, and it was MEASURED - ungated, the
+                    // ramp retriggered on in-note flickers and dragged
+                    // ign-vib-ON sustain tuning 1.9c -> 2.8c, a bar miss.
+                    // WORD START vs BLINK, by the audio's own testimony
+                    // (the audio-verified-bridging discriminator, reused
+                    // read-only): a blink is periodic straight through the
+                    // gap (census: half of all span boundaries); a word
+                    // start crosses a consonant. GAP LENGTH CANNOT separate
+                    // them - measured: a 60ms gate excluded the 22ms
+                    // ear-confirmed exemplar; a 15ms gate re-admitted the
+                    // ign-vib-ON blink class (15-25ms mid-note gaps) and
+                    // dragged its sustains 1.9c -> 2.8c again. Periodicity
+                    // mid-gap at the resume period decides instead; the
+                    // 15ms floor stays as the fast path (shorter gaps
+                    // cannot fit a period test and are blinks in practice;
+                    // the 0.5 threshold is the census/bridge convention).
+                    if (seamRampMs_ > 0.0f && gapSamples >= 0.015 * fs_)
+                    {
+                        const int T0 = std::clamp ((int) std::lround (fs_ / (double) g),
+                                                   8, maxPeriod_);
+                        const uint64_t mid = (uint64_t) std::max<int64_t> (T0 + 1,
+                            (int64_t) p - (int64_t) (gapSamples * 0.5));
+                        if (inputPeriodicity (mid, T0) < 0.5f)
+                            seamRampW_ = 0.0;
+                    }
+                }
                 // The ratio is what the READ point's audio must be scaled by,
                 // so evaluate f0 where the read pointer actually is - up to
                 // ~3/4 of a period away from p, which on a vibrato is a
                 // few cents of systematic error if ignored.
                 const int64_t rp = (int64_t) p + (int64_t) std::lround (spliceDrift_);
                 const float f0Here = f0At ((uint64_t) std::max<int64_t> (0, rp));
-                const float tgt    = curTarget_;
+                const float tgtCo  = coTimed_ ? tgtAt ((uint64_t) std::max<int64_t> (0, rp)) : 0.0f;
+                const float tgtDec = (decMode_ && f0Here > 0.0f) ? f0Here * std::exp2 (decAt ((uint64_t) std::max<int64_t> (0, rp)) / 1200.0f) : 0.0f;
+                const float tgt    = decMode_ ? (tgtDec > 0.0f ? tgtDec : curTarget_) : ((coTimed_ && tgtCo > 0.0f) ? tgtCo : curTarget_);
+                const float shHere = coTimed_ ? shAt ((uint64_t) std::max<int64_t> (0, rp)) : curShift_;
                 const bool  ok     = f0Here > 0.0f && tgt > 0.0f;
+                if (dbgTapOn_ && ok
+                    && (f0Here != dbgTapF0_ || tgt != dbgTapTgt_))
+                {
+                    dbgTap_.push_back ({ (uint64_t) std::max<int64_t> (0, p),
+                                         f0Here, tgt });
+                    dbgTapF0_ = f0Here; dbgTapTgt_ = tgt;
+                }
 
                 // `ok` gates STATE UPDATES only, never emission: the read
                 // position is displaced from p, so it can land on an
@@ -588,7 +858,31 @@ private:
                 // flicker the splice keeps emitting on frozen state.
                 if (ok)
                 {
-                    const double r = (double) tgt / (double) f0Here;
+                    // RING-ALIGNED FAST TERM (2 Sep 2026, flag): the slow
+                    // shift arrives via curShift_; the fast component is
+                    // computed HERE, per sample, as (f0Here/ringSlow)^(k-1)
+                    // - the audio's own wobble read at the audio's own
+                    // time, the k=100 cancellation generalised. ringSlow is
+                    // this engine's one-pole (~140ms) of f0Here, seeded at
+                    // re-entry (never a single stale sample - §17.6).
+                    double fastFactor = 1.0;
+                    const float slowHere = fastRingOn_
+                        ? slowRing_[(size_t) ((uint32_t) (uint64_t) std::max<int64_t> (0, rp) & mask_)]
+                        : 0.0f;
+                    if (fastRingOn_ && slowHere > 0.0f)
+                    {
+                        // Numerator ring-aligned (phase-critical); the
+                        // denominator is the CORRECTOR's slow track, per
+                        // hop - one slow reference for both terms (the
+                        // engine-side slow track was the third cut's
+                        // measured mistake).
+                        const double dev = (double) f0Here / (double) slowHere;
+                        fastFactor = std::pow (std::clamp (dev, 0.84, 1.19),
+                                               (double) fastK_ - 1.0);
+                    }
+                    const double r = (shHere > kNoShift + 1.0f
+                        ? std::exp2 ((double) shHere / 1200.0)
+                        : (double) tgt / (double) f0Here) * fastFactor;
                     const double absSt = std::fabs (std::log2 (r) * 12.0);
                     const float want = absSt <= kSpliceBandSt ? 0.0f : 1.0f;
                     const float step = 1.0f / (float) std::max (16, (int) (0.004 * fs_));
@@ -613,19 +907,66 @@ private:
 
                 if (methodMix_ < 1.0f && spliceR_ > 0.0 && spliceT_ > 0)
                 {
-                    const float ys = spliceSample ((uint64_t) p, spliceT_, spliceTf_, spliceR_);
+                    // Seam ramp: exponent on the ratio, linear in cents -
+                    // w=0 is the dry leg's pitch exactly (r^0 = 1), w=1 is
+                    // full correction. Advanced per emitted wet sample.
+                    double rUse = spliceR_;
+                    if (seamRampMs_ > 0.0f && seamRampW_ < 1.0)
+                    {
+                        rUse = std::pow (spliceR_, seamRampW_);
+                        seamRampW_ = std::min (1.0, seamRampW_
+                                     + 1.0 / ((double) seamRampMs_ * 0.001 * fs_));
+                    }
+                    const float ys = spliceSample ((uint64_t) p, spliceT_, spliceTf_, rUse);
                     wet = ys + methodMix_ * (wet - ys);
                 }
             }
             else if (g <= 0.0f)
             {
-                // A seam or unvoiced sample: the next voiced entry starts
-                // phase-aligned with the dry by construction.
-                spliceDrift_ = 0.0; spliceFadeLen_ = 0; methodMix_ = 0.0f;
+                // A seam or unvoiced sample. With drift carry off the next
+                // voiced entry starts phase-aligned with the dry by
+                // construction; with it on, the drift survives until the
+                // re-entry decision above judges the gap's length.
+                ++uvRun_;
+                if (carryLimit_ <= 0.0) spliceDrift_ = 0.0;
+                spliceFadeLen_ = 0; methodMix_ = 0.0f;
                 spliceR_ = 0.0; spliceT_ = 0; spliceTf_ = 0.0;
+                // ringSlowHz_ deliberately SURVIVES blinks: it is an
+                // input-derived slow track (the corrector's 200ms-rule
+                // lesson); resetting it at every 11ms dropout left the
+                // fast factor at ~1 for 140ms after each of ~8 blinks/s -
+                // measured as 25.5c under-correction on the first cut.
             }
 
-            float y = g <= 0.0f ? dry : (g >= 1.0f ? wet : dry + g * (wet - dry));
+            // PHASE-MATCHED JOIN (28 Aug 2026 ruling, the exit seam): the
+            // splice-resampler's wet reads at p + drift, and drift mod Tf
+            // is INVARIANT under period-aligned splices — so at a seam the
+            // wet meets the dry with a random sub-period offset, and the
+            // crossfade joined two misaligned periodic signals: measured
+            // 7.1 rough spans/s at 80c, ALL at the voiced->unvoiced exit,
+            // 0.0 at the 0c control. Inside the fade the DRY LEG starts at
+            // the wet's periodicity-equivalent offset (the drift REMAINDER,
+            // centred) and eases home following the fade's own amplitude
+            // curve — offset r0*g, so the two agree by construction: g=1
+            // matched to the wet, g=0 bit-exact true dry. Unvoiced samples
+            // (g<=0) are untouched: the sacred-dry contract covers content
+            // AND the mix paths (SlotWetBlend, master MIX) that sum this
+            // leg against a true-dry copy — which is also why the offset
+            // could not simply ride through the seam.
+            if (debugOn_)
+                dbgSpl_.push_back ({ g, methodMix_, (float) spliceR_,
+                                     (float) spliceDrift_, spliceT_ });
+
+            float dryLeg = dry;
+            if (g > 0.0f && g < 1.0f && spliceTf_ > 4.0 && methodMix_ < 1.0f)
+            {
+                double r0 = std::fmod (spliceDrift_, spliceTf_);
+                if (r0 >  spliceTf_ * 0.5) r0 -= spliceTf_;
+                if (r0 < -spliceTf_ * 0.5) r0 += spliceTf_;
+                dryLeg = readInterp ((double) p + r0 * (double) g);
+            }
+            float y = g <= 0.0f ? dry : (g >= 1.0f ? wet
+                                                   : dryLeg + g * (wet - dryLeg));
 
             // Blend against the delay-matched dry, then trim. Skipped entirely
             // at the defaults so nothing is multiplied that need not be.
@@ -671,6 +1012,26 @@ private:
         if (p >= write_) return 0.0f;
         return f0_[(size_t) ((uint32_t) p & mask_)];
     }
+    float tgtAt (uint64_t p) const noexcept
+    {
+        if (p >= write_ || tgt_.empty()) return 0.0f;
+        return tgt_[(size_t) ((uint32_t) p & mask_)];
+    }
+    float shAt (uint64_t p) const noexcept
+    {
+        if (p >= write_ || sh_.empty()) return kNoShift;
+        return sh_[(size_t) ((uint32_t) p & mask_)];
+    }
+public:
+    void setCoTimedTarget (bool on) noexcept { coTimed_ = on; }
+    bool getCoTimedTarget() const noexcept  { return coTimed_; }
+    void setPerHopLag (bool on, int W, int tauMax, int hop) noexcept
+    { perHopLag_ = on; lagW_ = W; lagTauMax_ = tauMax; lagHop_ = hop; }
+    bool getPerHopLag() const noexcept { return perHopLag_; }
+    void setTargetLookahead (int samples) noexcept { tgtLookahead_ = std::max (0, samples); }
+    void setDecisionLookahead (bool on, int samples) noexcept { decMode_ = on; decLookahead_ = std::max (0, samples); }
+    float decAt (uint64_t p) const noexcept { if (p >= write_ || dec_.empty()) return 0.0f; return dec_[(size_t) ((uint32_t) p & mask_)]; }
+private:
 
     // ---- analysis: find the next epoch -------------------------------------
     // Peak-pick inside [0.7T, 1.3T] past the previous epoch. Restricting the
@@ -845,7 +1206,12 @@ private:
 
             // The target period, with the ratio clamped so an absurd
             // source/target combination degrades rather than explodes.
-            float ratio = target / f0;
+            const float shG  = coTimed_ ? shAt (nextSynth_) : curShift_;
+            const float tgtG = decMode_ ? f0 * std::exp2 (decAt (nextSynth_) / 1200.0f)
+                             : ((coTimed_ && tgtAt (nextSynth_) > 0.0f) ? tgtAt (nextSynth_) : target);
+            float ratio = shG > kNoShift + 1.0f
+                              ? std::exp2 (shG / 1200.0f)
+                              : tgtG / f0;     // legacy (flag A off): crosses the latency
             ratio = std::clamp (ratio, 1.0f / kMaxRatio, kMaxRatio);
             const int Ts = std::max (4, (int) std::lround ((double) Ta / (double) ratio));
 
@@ -1280,6 +1646,56 @@ private:
     {
         spliceDrift_ += r - 1.0;
 
+        // DRIFT BLEED (5 Sep 2026 ruling): instead of anchoring each voiced
+        // span at its own entry and discharging the accumulated (r-1)*span
+        // as a content reset at the next gap - measured as the near-zero-
+        // shift period inversions in the field - bleed the drift back
+        // continuously as a small read-rate offset. The error goes into
+        // PITCH, where a few transient cents sit below notice, instead of
+        // into WAVEFORM CONTINUITY, where a period inversion is
+        // unambiguously audible. Proportional (drift/tau, tau 100 ms) so
+        // small drifts decay without overshoot, CAPPED at 3 cents of
+        // momentary detune so a heavily fragmented span can never turn the
+        // bleed into an audible glide - the cap, not the fragmentation,
+        // bounds the pitch excursion. The known cost, priced by the tuning
+        // gates: any sustained shift above the cap is undershot by up to
+        // the cap at equilibrium. Consonants stay bit-exact dry: this runs
+        // only inside spliceSample, which only voiced samples reach.
+        // (Bleed-to-nearest-multiple was built, measured IDENTICAL - the
+        // policies coincide wherever |drift| < T/2, which is everywhere
+        // that occurs - and REVERTED by ruling, 29 Aug 2026: extra
+        // machinery justified only by a regime the measurement says does
+        // not happen. See commit 1151b4b for the latch design and numbers.)
+        //
+        // SHIFT-GATED (29 Aug 2026 ruling): the bleed can bound drift only
+        // while |r-1| < kBleedMaxRate - below the cap an equilibrium
+        // exists; above it accumulation outruns the cap, splices do the
+        // bounding anyway, and a running bleed is pure convergence tax
+        // (measured on a noiseless steady tone at hard: 3.38c note-centre
+        // undershoot with the bleed on vs 0.42c off). The gate is a smooth
+        // TAPER of |r-1|/cap (1 below 0.7, 0 above 1.3) through a 100 ms
+        // one-pole. It cannot chatter: there is no feedback path - the
+        // gate depends only on the corrector-side ratio, which the bleed's
+        // output-side pitch effect never reaches - so it can only be
+        // DRIVEN, and a vibrato crossing the band at ~6 Hz is attenuated
+        // ~4x by the ~1.6 Hz pole on top of the near-equilibrium bleed
+        // already being small. Sustained correction runs untaxed; the
+        // near-zero-shift blink discharges the bleed was built for keep it.
+        double bleedApplied = 0.0;
+        if (driftBleed_)
+        {
+            const double x = std::fabs (r - 1.0) / kBleedMaxRate;
+            const double gT = x <= 0.7 ? 1.0 : x >= 1.3 ? 0.0 : (1.3 - x) / 0.6;
+            bleedGate_ += (gT - bleedGate_) * bleedGateK_;
+            const double b = std::clamp (spliceDrift_ / bleedTau_,
+                                         -kBleedMaxRate, kBleedMaxRate)
+                           * (dbgBleedUngated_ ? 1.0 : bleedGate_);
+            spliceDrift_ -= b;
+            bleedApplied = b;
+        }
+        if (dbgTapOn_ && ((uint32_t) p & 63u) == 0u)
+            dbgTapR_.push_back ({ p, (float) (r - bleedApplied) });
+
         // Trigger a period-aligned splice before the drift can outrun the
         // lookahead: jump one FRACTIONAL period (fs / f0, not the rounded T
         // - the integer round misaligned the two copies by up to half a
@@ -1357,6 +1773,7 @@ private:
     std::vector<uint64_t> dbgReseed_, dbgReset_;
     std::vector<DebugGrain> dbgGrain_;
     std::vector<DebugEmit>  dbgEmit_;
+    std::vector<DebugSpl>   dbgSpl_;
     std::vector<uint32_t>   dbgWinHist_;
     float dbgWinMin_ = 1.0e9f;
     int    maxPeriod_  = 2048;
@@ -1389,6 +1806,61 @@ private:
     // Splice-resampler state.
     float  curTarget_ = 0.0f;
     double spliceDrift_ = 0.0, spliceOldDrift_ = 0.0, spliceR_ = 0.0, spliceTf_ = 0.0;
+    // 3 cents as a read-rate offset: 2^(3/1200)-1. See spliceSample.
+    static constexpr double kBleedMaxRate = 0.00173465;
+    double bleedTau_  = 4800.0;    // set in prepare(): 100 ms at fs
+    double bleedGate_ = 1.0;       // smoothed shift gate (see spliceSample)
+    double bleedGateK_ = 1.0 / 4800.0;   // 100 ms pole, set in prepare()
+    bool   driftBleed_ = false;
+    bool   dbgBleedUngated_ = false;
+public:
+    // Ring-aligned fast vibrato term (2 Sep 2026 experiment; see the
+    // splice block). k in 0..2 (natural_vibrato/100).
+    void setFastRing (bool on, float k) noexcept
+    { fastRingOn_ = on; fastK_ = std::clamp (k, 0.0f, 3.0f); }   // upper bound 2 -> 3 (5 Sep 2026) so the legacy-path formulation (exponent k) can be scoped up to k = 2
+    void setFastRingSlowHz (float hz) noexcept { fastSlowHz_ = hz; }
+private:
+    bool   fastRingOn_ = false;
+    float  fastK_ = 1.0f;
+    double ringSlowHz_ = 0.0;      // (unused by the one-reference cut)
+    float  fastSlowHz_ = 0.0f;     // the corrector's slow track, per hop
+    std::vector<float> slowRing_;  // lag-compensated slow reference
+    // TIMING ALIGNMENT (5 Sep 2026, TIMING_ALIGNMENT_RECORD.md): every quantity
+    // that meets in the ratio carries the same audio timestamp, structurally.
+    // Flag A: the target and the shift are written into position-indexed rings
+    // at the SAME back-dated position as f0, and read beside it. Flag B: the
+    // back-dating is the per-hop YIN centroid (frameLen - (W + tau)/2) plus the
+    // two pipeline hops, not the constant frameLen/2 + hop.
+    std::vector<float> tgt_, sh_;
+    bool   coTimed_   = true;      // flag A - SHIPPED 5 Sep 2026 (the timing foundation)
+    bool   perHopLag_ = true;      // flag B - SHIPPED; effective once setPerHopLag supplies the geometry
+    int    lagW_ = 0, lagTauMax_ = 0, lagHop_ = 128;
+    int64_t lastRingAt_ = -1;      // last ring position written (contiguity under flag B)
+    int    tgtLookahead_ = 0;      // flag D, samples
+    // Flag E (round-29 ruling): SEPARATE THE MEASUREMENT CLOCK FROM THE DECISION
+    // CLOCK. The ring carries the DECISION - the correction in cents relative to
+    // the hop's own f0 - stamped decLookahead_ samples early; at the read
+    // pointer the target is f0Here * 2^(dec/1200), so f0Here cancels in the
+    // ratio (trivially co-timed) and only the decision is advanced. Depth 0
+    // (dec = 0) is identity at any lookahead.
+    std::vector<float> dec_;
+    bool   decMode_ = true;        // flag E - SHIPPED; lookahead set in prepare (6 ms)
+    int    decLookahead_ = 0;
+    double ringSlowK_ = 1.0 / (0.14 * 48000.0);   // set in prepare
+    float  carryMs_ = 0.0f;        // drift carry threshold; 0 = off
+    double carryLimit_ = 0.0;      // ...in samples, set with fs
+    int64_t uvRun_ = 0;            // unvoiced run length at the emit head
+    float  seamRampMs_ = 0.0f;     // 0 = off; see setSeamRampMs
+    double seamRampW_  = 1.0;      // 0 at a seam -> 1 over seamRampMs_
+    float  bridgeMaxMs_ = 0.0f;    // audio-verified bridge cap; 0 = off
+    float  bridgeThresh_ = 0.6f;   // periodicity bar for bridging
+    double bridgeSeedT_ = 0.0;     // last accepted period (samples); 0 = disarmed
+    double bridgeLen_ = 0.0;       // bridged samples in the current run
+    std::vector<DbgBridge> dbgBridge_;
+    bool  dbgTapOn_ = false;
+    float dbgTapF0_ = 0.0f, dbgTapTgt_ = 0.0f;
+    std::vector<DbgRingTap> dbgTap_;
+    std::vector<DbgEffR> dbgTapR_;
     int    spliceFadeLen_ = 0, spliceFadePos_ = 0, spliceT_ = 0;
     float  methodMix_ = 0.0f;      // 0 = splice, 1 = grains
 
@@ -1404,6 +1876,7 @@ private:
     double   synthFrac_ = 0.0;
 
     std::atomic<float> targetHz_ { 0.0f };
+    float curShift_ = -100000.0f;   // kNoShift; per-call, audio thread
     std::atomic<int>   formantMode_ { kFormantPreserve };
     std::atomic<float> formantShift_ { 0.0f };
     std::atomic<float> mix_     { 1.0f };

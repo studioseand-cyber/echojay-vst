@@ -1,0 +1,10 @@
+  median  4.49c  p75  8.09c  p90 15.59c  >25c  3.7%  mean  7.27c || surv 0.00 | centre 1.43c ||  all-voiced med  2.33 <5c 69.7% | improve-rate vs source 79.6%   || ev 1 ws 0   <- retune 6, k 0
+  median  4.70c  p75  9.77c  p90 19.78c  >25c  6.1%  mean  8.21c || surv 0.72 | centre 2.31c ||  all-voiced med  5.91 <5c 44.9% | improve-rate vs source 59.7%   || ev 3 ws 1   <- retune 6, k 0.5
+  median  6.14c  p75 12.77c  p90 34.84c  >25c 16.0%  mean 12.84c || surv 1.04 | centre 2.47c ||  all-voiced med  8.78 <5c 30.8% | improve-rate vs source 39.2%   || ev 11 ws 4   <- retune 6, k 1
+  median  6.14c  p75 12.77c  p90 34.84c  >25c 16.0%  mean 12.84c || surv 1.04 | centre 2.47c ||  all-voiced med  8.78 <5c 30.8% | improve-rate vs source 39.2%   || ev 11 ws 4   <- retune 6, k 1.5
+  median  6.14c  p75 12.77c  p90 34.84c  >25c 16.0%  mean 12.84c || surv 1.04 | centre 2.47c ||  all-voiced med  8.78 <5c 30.8% | improve-rate vs source 39.2%   || ev 11 ws 4   <- retune 6, k 2
+  median  6.09c  p75 14.58c  p90 30.16c  >25c 13.3%  mean 12.52c || surv 0.00 | centre 7.38c ||  all-voiced med  4.26 <5c 53.5% | improve-rate vs source 61.4%   || ev 7 ws 0   <- retune 44, k 0
+  median  3.58c  p75  8.22c  p90 15.76c  >25c  3.2%  mean  6.78c || surv 0.69 | centre 2.64c ||  all-voiced med  5.39 <5c 47.3% | improve-rate vs source 62.8%   || ev 1 ws 0   <- retune 44, k 0.5
+  median  3.28c  p75  7.35c  p90 16.04c  >25c  2.6%  mean  6.24c || surv 0.93 | centre 2.57c ||  all-voiced med  7.58 <5c 34.2% | improve-rate vs source 49.5%   || ev 4 ws 2   <- retune 44, k 1
+  median  3.28c  p75  7.35c  p90 16.04c  >25c  2.6%  mean  6.24c || surv 0.93 | centre 2.57c ||  all-voiced med  7.58 <5c 34.2% | improve-rate vs source 49.5%   || ev 4 ws 2   <- retune 44, k 1.5
+  median  3.28c  p75  7.35c  p90 16.04c  >25c  2.6%  mean  6.24c || surv 0.93 | centre 2.57c ||  all-voiced med  7.58 <5c 34.2% | improve-rate vs source 49.5%   || ev 4 ws 2   <- retune 44, k 2

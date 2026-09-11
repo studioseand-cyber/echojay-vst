@@ -1,0 +1,656 @@
+2026-09-06 19:07:28.124 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:07:28.124 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:07:28.125 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:07:28.133 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:07:28.138 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:07:28.139 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track A" (uid 15d027bc09)
+2026-09-06 19:07:28.150 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:07:28.151 cap_new[77438:1947435] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:07:28.151 cap_new[77438:1947435] EJLinkMeter: "Vox" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:07:28.151 cap_new[77438:1947435] EJLinkMeter: "Vox" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:28.185 cap_new[77438:1947435] EJLinkMeter: "Vox" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:28.223 cap_new[77438:1947435] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+2026-09-06 19:07:28.223 cap_new[77438:1947435] EJPrompt: session project "Nafe smallz Aitch Luxury" from previous host, ignoring, will prompt (file "Pro Tools" pid=55105 start=1788706358 vs current "Terminal" pid=496 start=1788433286.527607)
+2026-09-06 19:07:28.223 cap_new[77438:1947435] EJPrompt: session genre "Hip-Hop" from previous host, ignoring, will prompt (file "Pro Tools" pid=55105 start=1788706358 vs current "Terminal" pid=496 start=1788433286.527607)
+2026-09-06 19:07:28.257 cap_new[77438:1947435] EJLinkMeter: "Vox" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:29.113 cap_new[77438:1947435] EJLinkState: getState linkOn=1 name="Vox"
+2026-09-06 19:07:29.121 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:07:29.121 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:07:29.123 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:07:29.131 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:07:29.134 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:07:29.135 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:07:29.135 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track B" (uid 15d027bc09)
+2026-09-06 19:07:29.158 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:07:29.158 cap_new[77438:1947435] EJLinkState: host track name "Track B" (user name "Vox")
+2026-09-06 19:07:30.214 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 48f5b49e50
+2026-09-06 19:07:30.214 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 48f5b49e50: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-06 19:07:30.214 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:07:30.214 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:30.477 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:30.626 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+  P1 B: slot 1 host "Track B" typed "" published "Track B" -> PASS
+2026-09-06 19:07:33.034 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:07:33.034 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:07:33.035 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:07:33.044 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:07:33.047 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:07:33.048 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:07:33.074 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:07:33.074 cap_new[77438:1947435] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:07:34.125 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 21f6147a45
+2026-09-06 19:07:34.125 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 21f6147a45: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-06 19:07:34.125 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:07:34.125 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:34.810 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:34.848 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:36.692 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track C" (uid 21f6147a45)
+2026-09-06 19:07:36.703 cap_new[77438:1947435] EJLinkState: host track name "Track C" (user name "")
+  P2 C: after the clear published ""; after the host delivered: host "Track C" published "Track C" -> PASS
+2026-09-06 19:07:37.926 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:07:37.926 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:07:37.927 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:07:37.935 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:07:37.938 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:07:37.939 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:07:37.939 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track B" (uid 15d027bc09)
+2026-09-06 19:07:37.967 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:07:37.967 cap_new[77438:1947435] EJLinkState: host track name "Track B" (user name "Vox")
+2026-09-06 19:07:39.009 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 1948c612d2
+2026-09-06 19:07:39.010 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 1948c612d2: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-06 19:07:39.010 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:07:39.010 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:39.151 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:39.700 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:41.842 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:07:41.842 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:07:41.844 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:07:41.852 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:07:41.855 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:07:41.856 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:07:41.888 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:07:41.888 cap_new[77438:1947435] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:07:42.933 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated d4448ba937
+2026-09-06 19:07:42.933 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance d4448ba937: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-06 19:07:42.933 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:07:42.933 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:43.224 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:43.510 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:45.516 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track C" (uid d4448ba937)
+2026-09-06 19:07:45.516 cap_new[77438:1947435] EJLinkState: host track name "Track C" (user name "")
+2026-09-06 19:07:46.735 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:07:46.735 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:07:46.737 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:07:46.744 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:07:46.748 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:07:46.748 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:07:46.748 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track B" (uid 15d027bc09)
+2026-09-06 19:07:46.762 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:07:46.762 cap_new[77438:1947435] EJLinkState: host track name "Track B" (user name "Vox")
+2026-09-06 19:07:47.801 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 902e4228e8
+2026-09-06 19:07:47.801 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 902e4228e8: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-06 19:07:47.801 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:07:47.801 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:47.876 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:48.172 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:50.677 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:07:50.677 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:07:50.679 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:07:50.686 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:07:50.690 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:07:50.690 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:07:50.723 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:07:50.723 cap_new[77438:1947435] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:07:51.771 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 1069091972
+2026-09-06 19:07:51.771 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 1069091972: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-06 19:07:51.771 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:07:51.771 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:51.806 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:51.840 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:52.739 cap_new[77438:1947435] EJLinkMeter: "Vox" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:54.310 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track C" (uid 1069091972)
+2026-09-06 19:07:54.311 cap_new[77438:1947435] EJLinkState: host track name "Track C" (user name "")
+2026-09-06 19:07:55.367 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:55.535 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:07:55.535 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:07:55.536 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:07:55.544 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:07:55.547 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:07:55.547 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:07:55.547 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track B" (uid 15d027bc09)
+2026-09-06 19:07:55.563 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:07:55.563 cap_new[77438:1947435] EJLinkState: host track name "Track B" (user name "Vox")
+2026-09-06 19:07:56.611 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated d732271c18
+2026-09-06 19:07:56.611 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance d732271c18: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-06 19:07:56.611 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:07:56.611 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:56.649 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:56.683 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:07:59.537 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:07:59.537 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:07:59.538 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:07:59.546 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:07:59.550 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:07:59.550 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:07:59.563 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:07:59.563 cap_new[77438:1947435] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:08:00.615 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 46be48dcfb
+2026-09-06 19:08:00.615 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 46be48dcfb: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-06 19:08:00.615 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:08:00.615 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:00.650 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:00.687 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:03.180 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track C" (uid 46be48dcfb)
+2026-09-06 19:08:03.193 cap_new[77438:1947435] EJLinkState: host track name "Track C" (user name "")
+2026-09-06 19:08:04.207 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:04.414 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:08:04.414 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:08:04.416 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:08:04.429 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:08:04.434 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:08:04.435 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:08:04.435 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track B" (uid 15d027bc09)
+2026-09-06 19:08:04.454 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:08:04.454 cap_new[77438:1947435] EJLinkState: host track name "Track B" (user name "Vox")
+2026-09-06 19:08:05.502 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated e064693ca5
+2026-09-06 19:08:05.502 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance e064693ca5: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-06 19:08:05.502 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:08:05.502 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:05.651 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:05.687 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:08.455 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:08:08.455 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:08:08.457 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:08:08.470 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:08:08.475 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:08:08.475 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:08:08.476 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:08:08.476 cap_new[77438:1947435] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:08:09.526 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 8b5997817a
+2026-09-06 19:08:09.526 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 8b5997817a: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-06 19:08:09.526 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:08:09.526 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:09.784 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:09.820 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:12.040 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track C" (uid 8b5997817a)
+2026-09-06 19:08:12.061 cap_new[77438:1947435] EJLinkState: host track name "Track C" (user name "")
+2026-09-06 19:08:13.262 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:08:13.262 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:08:13.264 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:08:13.277 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:08:13.281 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:08:13.282 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:08:13.282 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track B" (uid 15d027bc09)
+2026-09-06 19:08:13.282 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:08:13.282 cap_new[77438:1947435] EJLinkState: host track name "Track B" (user name "Vox")
+2026-09-06 19:08:14.338 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 57e45cede4
+2026-09-06 19:08:14.338 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 57e45cede4: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-06 19:08:14.339 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:08:14.339 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:14.637 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:14.932 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:15.806 cap_new[77438:1947435] EJLinkMeter: "Vox" #200 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:17.194 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:08:17.194 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:08:17.196 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:08:17.205 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:08:17.208 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:08:17.208 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:08:17.220 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:08:17.220 cap_new[77438:1947435] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:08:18.267 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 8f30c63803
+2026-09-06 19:08:18.267 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 8f30c63803: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-06 19:08:18.267 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:08:18.267 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:18.303 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:18.339 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:20.838 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track C" (uid 8f30c63803)
+2026-09-06 19:08:20.869 cap_new[77438:1947435] EJLinkState: host track name "Track C" (user name "")
+2026-09-06 19:08:21.922 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:22.191 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:08:22.191 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:08:22.193 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:08:22.205 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:08:22.210 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:08:22.210 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:08:22.210 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track B" (uid 15d027bc09)
+2026-09-06 19:08:22.211 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:08:22.211 cap_new[77438:1947435] EJLinkState: host track name "Track B" (user name "Vox")
+2026-09-06 19:08:23.264 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 687d143475
+2026-09-06 19:08:23.264 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 687d143475: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-06 19:08:23.265 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:08:23.265 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:23.740 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:23.775 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:26.110 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:08:26.110 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:08:26.112 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:08:26.124 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:08:26.129 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:08:26.129 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:08:26.130 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:08:26.130 cap_new[77438:1947435] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:08:27.188 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 94fb8013c7
+2026-09-06 19:08:27.188 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 94fb8013c7: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-06 19:08:27.189 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:08:27.189 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:27.223 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:27.262 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:29.783 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track C" (uid 94fb8013c7)
+2026-09-06 19:08:29.795 cap_new[77438:1947435] EJLinkState: host track name "Track C" (user name "")
+2026-09-06 19:08:31.100 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:08:31.100 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:08:31.102 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:08:31.112 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:08:31.117 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:08:31.117 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:08:31.117 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track B" (uid 15d027bc09)
+2026-09-06 19:08:31.118 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:08:31.118 cap_new[77438:1947435] EJLinkState: host track name "Track B" (user name "Vox")
+2026-09-06 19:08:32.162 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated c92b01b03d
+2026-09-06 19:08:32.162 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance c92b01b03d: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-06 19:08:32.162 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:08:32.162 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:32.558 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:32.776 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:35.008 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:08:35.008 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:08:35.011 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:08:35.023 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:08:35.028 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:08:35.028 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:08:35.034 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:08:35.034 cap_new[77438:1947435] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:08:35.654 cap_new[77438:1947435] EJLinkMeter: "Vox" #300 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:36.122 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 2e5e879cb5
+2026-09-06 19:08:36.122 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 2e5e879cb5: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-06 19:08:36.122 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:08:36.122 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:36.266 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:36.301 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:38.740 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track C" (uid 2e5e879cb5)
+2026-09-06 19:08:38.740 cap_new[77438:1947435] EJLinkState: host track name "Track C" (user name "")
+2026-09-06 19:08:39.978 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:08:39.978 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:08:39.979 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:08:39.987 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:08:39.991 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:08:39.991 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:08:39.991 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track B" (uid 15d027bc09)
+2026-09-06 19:08:40.019 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:08:40.019 cap_new[77438:1947435] EJLinkState: host track name "Track B" (user name "Vox")
+2026-09-06 19:08:41.081 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 97cd2a597a
+2026-09-06 19:08:41.081 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 97cd2a597a: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-06 19:08:41.081 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:08:41.081 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:41.840 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:41.875 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:44.012 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:08:44.012 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:08:44.014 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:08:44.026 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:08:44.031 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:08:44.031 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:08:44.042 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:08:44.042 cap_new[77438:1947435] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:08:45.088 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated c69648fb8e
+2026-09-06 19:08:45.088 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance c69648fb8e: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-06 19:08:45.089 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:08:45.089 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:45.482 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:45.923 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:47.677 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track C" (uid c69648fb8e)
+2026-09-06 19:08:47.698 cap_new[77438:1947435] EJLinkState: host track name "Track C" (user name "")
+2026-09-06 19:08:48.916 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:08:48.916 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:08:48.918 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:08:48.928 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:08:48.932 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:08:48.932 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:08:48.932 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track B" (uid 15d027bc09)
+2026-09-06 19:08:48.944 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:08:48.944 cap_new[77438:1947435] EJLinkState: host track name "Track B" (user name "Vox")
+2026-09-06 19:08:48.944 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 323b54191e
+2026-09-06 19:08:48.944 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 323b54191e: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-06 19:08:48.944 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:08:48.944 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:49.051 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:49.421 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:52.853 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:08:52.853 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:08:52.854 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:08:52.863 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:08:52.867 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:08:52.867 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:08:52.904 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:08:52.904 cap_new[77438:1947435] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:08:53.955 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated be923c4fc8
+2026-09-06 19:08:53.955 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance be923c4fc8: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-06 19:08:53.955 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:08:53.955 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:54.346 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:54.634 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:56.522 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track C" (uid be923c4fc8)
+2026-09-06 19:08:56.536 cap_new[77438:1947435] EJLinkState: host track name "Track C" (user name "")
+2026-09-06 19:08:57.755 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:08:57.755 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:08:57.757 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:08:57.770 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:08:57.775 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:08:57.775 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:08:57.775 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track B" (uid 15d027bc09)
+2026-09-06 19:08:57.795 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:08:57.795 cap_new[77438:1947435] EJLinkState: host track name "Track B" (user name "Vox")
+2026-09-06 19:08:58.153 cap_new[77438:1947435] EJLinkMeter: "Vox" #400 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:58.853 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 7a4296610b
+2026-09-06 19:08:58.855 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 7a4296610b: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-06 19:08:58.855 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:08:58.855 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:59.006 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:08:59.044 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:01.781 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:09:01.781 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:09:01.783 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:09:01.795 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:09:01.799 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:09:01.799 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:09:01.826 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:09:01.826 cap_new[77438:1947435] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:09:02.879 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 3578d1f8e6
+2026-09-06 19:09:02.880 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 3578d1f8e6: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-06 19:09:02.880 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:09:02.880 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:03.167 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:03.273 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:05.634 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track C" (uid 3578d1f8e6)
+2026-09-06 19:09:05.634 cap_new[77438:1947435] EJLinkState: host track name "Track C" (user name "")
+2026-09-06 19:09:07.065 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:09:07.065 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:09:07.067 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:09:07.079 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:09:07.084 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:09:07.084 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:09:07.084 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track B" (uid 15d027bc09)
+2026-09-06 19:09:07.087 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:09:07.087 cap_new[77438:1947435] EJLinkState: host track name "Track B" (user name "Vox")
+2026-09-06 19:09:08.231 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated d4baf38ab7
+2026-09-06 19:09:08.231 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance d4baf38ab7: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-06 19:09:08.231 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:09:08.231 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:08.747 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:08.789 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:11.617 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:09:11.617 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:09:11.619 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:09:11.629 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:09:11.633 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:09:11.633 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:09:11.634 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:09:11.634 cap_new[77438:1947435] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:09:12.796 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated bb91fedaa1
+2026-09-06 19:09:12.796 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance bb91fedaa1: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-06 19:09:12.796 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:09:12.797 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:12.867 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:13.169 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:15.854 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track C" (uid bb91fedaa1)
+2026-09-06 19:09:15.878 cap_new[77438:1947435] EJLinkState: host track name "Track C" (user name "")
+2026-09-06 19:09:17.279 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:09:17.279 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:09:17.281 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:09:17.291 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:09:17.296 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:09:17.296 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:09:17.296 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track B" (uid 15d027bc09)
+2026-09-06 19:09:17.298 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:09:17.298 cap_new[77438:1947435] EJLinkState: host track name "Track B" (user name "Vox")
+2026-09-06 19:09:18.454 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated d14124bd23
+2026-09-06 19:09:18.454 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance d14124bd23: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-06 19:09:18.455 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:09:18.455 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:19.206 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:19.249 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:21.443 cap_new[77438:1947435] EJLinkMeter: "Vox" #500 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:21.801 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:09:21.801 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:09:21.803 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:09:21.815 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:09:21.820 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:09:21.820 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:09:21.840 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:09:21.840 cap_new[77438:1947435] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:09:22.967 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 7742f0a66e
+2026-09-06 19:09:22.967 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 7742f0a66e: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-06 19:09:22.967 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:09:22.967 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:23.005 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:23.046 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:26.004 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track C" (uid 7742f0a66e)
+2026-09-06 19:09:26.030 cap_new[77438:1947435] EJLinkState: host track name "Track C" (user name "")
+2026-09-06 19:09:26.942 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:27.411 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:09:27.411 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:09:27.412 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:09:27.423 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:09:27.427 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:09:27.427 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:09:27.427 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track B" (uid 15d027bc09)
+2026-09-06 19:09:27.431 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:09:27.431 cap_new[77438:1947435] EJLinkState: host track name "Track B" (user name "Vox")
+2026-09-06 19:09:28.618 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated d4635dbf50
+2026-09-06 19:09:28.618 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance d4635dbf50: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-06 19:09:28.622 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:09:28.622 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:28.653 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:28.693 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:31.937 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:09:31.937 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:09:31.939 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:09:31.950 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:09:31.956 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:09:31.956 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:09:31.982 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:09:31.982 cap_new[77438:1947435] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:09:33.132 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated dc9a013d4b
+2026-09-06 19:09:33.132 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance dc9a013d4b: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-06 19:09:33.132 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:09:33.132 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:33.293 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:33.557 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:35.863 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track C" (uid dc9a013d4b)
+2026-09-06 19:09:35.873 cap_new[77438:1947435] EJLinkState: host track name "Track C" (user name "")
+2026-09-06 19:09:37.099 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:09:37.099 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:09:37.101 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:09:37.109 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:09:37.113 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:09:37.113 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:09:37.113 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track B" (uid 15d027bc09)
+2026-09-06 19:09:37.120 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:09:37.120 cap_new[77438:1947435] EJLinkState: host track name "Track B" (user name "Vox")
+2026-09-06 19:09:38.167 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 9d3ef4b264
+2026-09-06 19:09:38.168 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 9d3ef4b264: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-06 19:09:38.168 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:09:38.168 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:38.866 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:38.901 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:41.041 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:09:41.041 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:09:41.043 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:09:41.056 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:09:41.060 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:09:41.061 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:09:41.073 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:09:41.073 cap_new[77438:1947435] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:09:42.129 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated c7ba669250
+2026-09-06 19:09:42.129 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance c7ba669250: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-06 19:09:42.129 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:09:42.129 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:42.525 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:42.630 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:43.497 cap_new[77438:1947435] EJLinkMeter: "Vox" #600 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:44.707 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track C" (uid c7ba669250)
+2026-09-06 19:09:44.742 cap_new[77438:1947435] EJLinkState: host track name "Track C" (user name "")
+2026-09-06 19:09:45.935 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:09:45.935 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:09:45.937 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:09:45.950 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:09:45.954 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:09:45.955 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:09:45.955 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track B" (uid 15d027bc09)
+2026-09-06 19:09:45.962 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:09:45.962 cap_new[77438:1947435] EJLinkState: host track name "Track B" (user name "Vox")
+2026-09-06 19:09:47.020 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated ada9781076
+2026-09-06 19:09:47.020 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance ada9781076: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-06 19:09:47.020 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:09:47.020 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:47.057 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:47.096 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:49.874 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:09:49.874 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:09:49.875 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:09:49.885 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:09:49.889 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:09:49.889 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:09:49.923 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:09:49.923 cap_new[77438:1947435] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:09:50.964 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 5f8cf4e6d3
+2026-09-06 19:09:50.965 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 5f8cf4e6d3: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-06 19:09:50.966 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:09:50.966 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:51.006 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:51.037 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:53.547 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track C" (uid 5f8cf4e6d3)
+2026-09-06 19:09:53.560 cap_new[77438:1947435] EJLinkState: host track name "Track C" (user name "")
+2026-09-06 19:09:54.553 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:54.789 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:09:54.789 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:09:54.791 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:09:54.803 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:09:54.808 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:09:54.809 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:09:54.809 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track B" (uid 15d027bc09)
+2026-09-06 19:09:54.810 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:09:54.810 cap_new[77438:1947435] EJLinkState: host track name "Track B" (user name "Vox")
+2026-09-06 19:09:56.945 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 3892e7708d
+2026-09-06 19:09:56.945 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 3892e7708d: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-06 19:09:56.945 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:09:56.945 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:56.979 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:57.015 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:58.733 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:09:58.733 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:09:58.734 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:09:58.746 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:09:58.751 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:09:58.751 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:09:58.758 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:09:58.759 cap_new[77438:1947435] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:09:59.811 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 3038c6b26d
+2026-09-06 19:09:59.811 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 3038c6b26d: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-06 19:09:59.811 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:09:59.811 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:59.845 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:09:59.879 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:02.494 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track C" (uid 3038c6b26d)
+2026-09-06 19:10:02.494 cap_new[77438:1947435] EJLinkState: host track name "Track C" (user name "")
+2026-09-06 19:10:03.508 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:03.737 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:10:03.737 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:10:03.739 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:10:03.751 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:10:03.756 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:10:03.756 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:10:03.756 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track B" (uid 15d027bc09)
+2026-09-06 19:10:03.757 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:10:03.757 cap_new[77438:1947435] EJLinkState: host track name "Track B" (user name "Vox")
+2026-09-06 19:10:04.816 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 95e80344ed
+2026-09-06 19:10:04.816 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 95e80344ed: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-06 19:10:04.816 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:10:04.816 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:05.224 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:05.328 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:06.189 cap_new[77438:1947435] EJLinkMeter: "Vox" #700 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:07.715 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:10:07.715 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:10:07.716 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:10:07.726 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:10:07.730 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:10:07.730 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:10:07.742 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:10:07.742 cap_new[77438:1947435] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:10:08.786 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 6bb27cbc72
+2026-09-06 19:10:08.786 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 6bb27cbc72: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-06 19:10:08.786 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:10:08.786 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:08.822 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:08.857 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:11.375 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track C" (uid 6bb27cbc72)
+2026-09-06 19:10:11.376 cap_new[77438:1947435] EJLinkState: host track name "Track C" (user name "")
+2026-09-06 19:10:12.338 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:12.600 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:10:12.600 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:10:12.602 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:10:12.614 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:10:12.617 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:10:12.618 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:10:12.618 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track B" (uid 15d027bc09)
+2026-09-06 19:10:12.619 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:10:12.619 cap_new[77438:1947435] EJLinkState: host track name "Track B" (user name "Vox")
+2026-09-06 19:10:13.674 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 804f1583f6
+2026-09-06 19:10:13.674 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 804f1583f6: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-06 19:10:13.675 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:10:13.675 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:13.712 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:13.750 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:16.611 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:10:16.611 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:10:16.613 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:10:16.625 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:10:16.630 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:10:16.630 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:10:16.655 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:10:16.655 cap_new[77438:1947435] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:10:17.720 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 8aaed9697a
+2026-09-06 19:10:17.720 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 8aaed9697a: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-06 19:10:17.720 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:10:17.720 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:17.759 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:17.796 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:20.305 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track C" (uid 8aaed9697a)
+2026-09-06 19:10:20.310 cap_new[77438:1947435] EJLinkState: host track name "Track C" (user name "")
+2026-09-06 19:10:21.322 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:21.541 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:10:21.541 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:10:21.543 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:10:21.555 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:10:21.560 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:10:21.560 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:10:21.560 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track B" (uid 15d027bc09)
+2026-09-06 19:10:21.573 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:10:21.573 cap_new[77438:1947435] EJLinkState: host track name "Track B" (user name "Vox")
+2026-09-06 19:10:22.622 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated 4e2ec3b6b6
+2026-09-06 19:10:22.622 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance 4e2ec3b6b6: seeded names dropped (typed "Vox", host ""); authoritative kept (host "Track B", typed none)
+2026-09-06 19:10:22.623 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:10:22.623 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:22.660 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:22.697 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:25.462 cap_new[77438:1947435] EJScan: cache loaded, 2328 entr(ies), scanned UNKNOWN (unstamped cache)
+2026-09-06 19:10:25.462 cap_new[77438:1947435] EJScan: 1 thin VST3 entr(ies) enriched from load-captured identities
+2026-09-06 19:10:25.463 cap_new[77438:1947435] EJScan: supersession 0 older-version row(s) marked across 604 multi-version plugin(s), 604 left alone (unparseable version)
+2026-09-06 19:10:25.473 cap_new[77438:1947435] EJParamMaps: cache loaded, 17 identities, 16 map(s), 0 fp skip marker(s)
+2026-09-06 19:10:25.477 cap_new[77438:1947435] EJLinkMeter: visual FFT gated out of this build; analysis FFT and bandRel unaffected
+2026-09-06 19:10:25.477 cap_new[77438:1947435] EJLinkState: setState linkOn=1 (hadProp=1) name="Vox"
+2026-09-06 19:10:25.494 cap_new[77438:1947435] EJLinkState: post-init linkOn=1 name="Vox" uid=15d027bc09
+2026-09-06 19:10:25.494 cap_new[77438:1947435] EJLinkState: host track name "Track A" (user name "Vox")
+2026-09-06 19:10:26.536 cap_new[77438:1947435] EJLinkState: uid 15d027bc09 held by a PROVEN-LIVE instance (duplicate) -> regenerated a5037c2279
+2026-09-06 19:10:26.536 cap_new[77438:1947435] EJLinkState: chunk uid 15d027bc09 != this instance a5037c2279: seeded names dropped (typed "Vox", host "Track A"); authoritative kept (host "", typed none)
+2026-09-06 19:10:26.537 cap_new[77438:1947435] EJLinkMeter: "(untitled)" audio stale (blocks frozen at 0) -> momentary group absent
+2026-09-06 19:10:26.537 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #1 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:26.573 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #2 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:26.606 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #3 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+2026-09-06 19:10:29.124 cap_new[77438:1947435] EJLinkState: host DELIVERED track name "Track C" (uid a5037c2279)
+2026-09-06 19:10:29.124 cap_new[77438:1947435] EJLinkState: host track name "Track C" (user name "")
+2026-09-06 19:10:30.129 cap_new[77438:1947435] EJLinkMeter: "(untitled)" #100 mom=-100.0 rms=-100.0/-100.0 blocks=0 tp=-100.0 tpCur=-100.0 corr=0.00 rel=[0.0 0.0]
+P20: host name BEFORE the clear kept 20/20   host name AFTER the clear kept 20/20   (invariant checked in every run)
+exit=0

@@ -1,4 +1,8 @@
 #include "PluginProcessor.h"
+#include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
+#include <signal.h>
+#include <unistd.h>
+#include "EedLatencyLog.h"
 #include "PluginEditor.h"
 #include "FaderTaper.h"   // shared mixer-fader mute taper (P17)
 #include "NativeClip.h"   // EchoJay_NSLog (memdiag)
@@ -237,7 +241,7 @@ static ChannelMeterData finalizeLinkChannel(EchoJayProcessor::LinkCaptureChannel
 void ejTeardownLog(const juce::String& msg)
 {
    #if ECHOJAY_TEARDOWN_LOGGING
-    auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
+    auto appData = echojay::userAppData();
    #if JUCE_MAC
     auto dir = appData.getChildFile("Application Support/EchoJay");
    #elif JUCE_WINDOWS
@@ -261,6 +265,12 @@ EchoJayProcessor::EchoJayProcessor()
         .withInput("Input", juce::AudioChannelSet::stereo(), true)
         .withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
+    // KeyFeed circularity guard (29 Aug 2026): builtins hosted here learn
+    // which instance hosts them, so a feed fact derived from THIS channel's
+    // own audio is recognisable by this instance's own consumers. Must match
+    // publishKeyFeed's publisherId stamp.
+    chainHost.setKeyFeedOwnerId ((uint64_t) (uintptr_t) this);
+
     // Session C: join the PROCESS-WIDE poller. Registered here rather than
     // from the editor, so the poll exists for the whole life of this instance
     // and does not depend on a window ever being opened, and so an editor
@@ -325,7 +335,7 @@ EchoJayProcessor::EchoJayProcessor()
         // setLatencySamples (RACK_BORROW_IMPLEMENTATION_SPEC §2.3). This
         // host is Primary, so the gate is structural, not behavioral.
         if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
-            setLatencySamples(lat + reportedBudgetFrames());
+            ejSetLatencyLogged (*this, lat + reportedBudgetFrames(), "PluginProcessor onChainChanged");
         // The chain now produces different audio, so the held true peak / peak /
         // overs describe a signal that no longer exists (they were contradicting
         // a capture taken seconds later). Drop those holds; integrated LUFS / LRA
@@ -432,7 +442,7 @@ EchoJayProcessor::EchoJayProcessor()
 void ejDashLog(const juce::String& msg)
 {
    #if ECHOJAY_DEV_TRANSPORT
-    auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
+    auto appData = echojay::userAppData();
    #if JUCE_MAC
     auto dir = appData.getChildFile("Application Support/EchoJay");
    #elif JUCE_WINDOWS
@@ -546,6 +556,7 @@ bool EchoJayProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 
 void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
+    EJ_LAT_LOG ("top: prepareToPlay fs %.0f block %d (reported latency before: %d)", sampleRate, samplesPerBlock, getLatencySamples());
     // Bus trim smoothing: the Link's 30ms ramp, same feel both sides
     busGainSmoothed_.reset(sampleRate, 0.030);
     busGainSmoothed_.setCurrentAndTargetValue(
@@ -576,8 +587,22 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     // (pre-sum alignment vs final pad) varies; the total never does.
     alignPre_.prepare(kBorrowAlignBudgetFrames + 1);
     alignPost_.prepare(kBorrowAlignBudgetFrames + 1);
+    soloBuf_.setSize(2, std::max(8192, samplesPerBlock), false, true, false);   // additive solo: X's ring per block, allocated here, never on audio
+    borrowProcessed_.setSize(2, std::max(8192, samplesPerBlock), false, true, false);   // the borrowed rack's processed ring, pre-alignment, for the solo crossfade
+    // Round 53: prepare is the guaranteed re-decision point - the pending
+    // budget becomes the committed one HERE, before the report below.
+    {
+        const bool wantedNow = borrowBudgetWanted_.load(std::memory_order_relaxed);
+        const bool wasActive = borrowBudgetActive_.exchange(wantedNow, std::memory_order_relaxed);
+        // 8 Sep 2026 ruling: the prepare-time store reaches the SYSTEM log (the
+        // latency log is compiled out of the release build). Every store, with
+        // the value, so a silent OFF can never again be inferred instead of read.
+        EchoJay_NSLog(("EJCtx: prepareToPlay stored borrow budget " + juce::String(wantedNow ? "ON" : "OFF")
+                       + " (was " + (wasActive ? "ON" : "OFF") + ")").toRawUTF8());
+    }
+    if (! borrowBudgetActive_.load(std::memory_order_relaxed)) borrowInContextOk_.store(false, std::memory_order_relaxed);
     if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
-        setLatencySamples(lat + reportedBudgetFrames());
+        ejSetLatencyLogged (*this, lat + reportedBudgetFrames(), "PluginProcessor prepareToPlay");
     if (borrowHost_ != nullptr)
         borrowHost_->prepare(sampleRate, samplesPerBlock);
 }
@@ -601,6 +626,27 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         if (auto pos = playHead->getPosition())
         {
             bool playing = pos->getIsPlaying();
+            // Round 53 (C1/C2): a block observed with the transport STOPPED is
+            // the second and last place the budget commits. Unknown transport
+            // state never reaches here (no play head / no position = playing).
+            if (! playing && borrowBudgetWanted_.load(std::memory_order_relaxed) != borrowBudgetActive_.load(std::memory_order_relaxed))
+                commitBorrowBudget("PluginProcessor commit at STOPPED block");
+#if EJ_LATENCY_LOG
+            {
+                // Round 49: the first 50 blocks after playback starts, with what
+                // the host was told and whether a chain rebuild is pending.
+                const bool was = transportPlaying.load(std::memory_order_relaxed);
+                if (playing && !was) { latLogBlocks_ = 50; EJ_LAT_LOG ("top: PLAY started at %.3f s (block %d samples, nonRealtime %d)", pos->getTimeInSeconds().orFallback(-1.0), buffer.getNumSamples(), isNonRealtime() ? 1 : 0); }
+                if (!playing && was) EJ_LAT_LOG ("top: STOP");
+                if (latLogBlocks_ > 0)
+                {
+                    --latLogBlocks_;
+                    EJ_LAT_LOG ("top: block %2d/50  reported %d  chainTotal %d  rebuildPending %d  pos %.3f s",
+                                50 - latLogBlocks_, getLatencySamples(), chainHost.hostReportableLatencySamples(),
+                                chainHost.latencyRebuildPending() ? 1 : 0, pos->getTimeInSeconds().orFallback(-1.0));
+                }
+            }
+#endif
             transportPlaying.store(playing);
 
             // Self key scheduler (§6.1/§5.4): a position landing far from
@@ -649,8 +695,11 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             }
             
             // Auto-stop capture when transport stops (spacebar)
+            // 8 Sep 2026 (AAE -9173): the audio thread must not run stopCapture - it
+            // built strings, moved vectors, allocated and CREATED A THREAD here. It
+            // now only raises a flag; serviceCaptureStop() runs it on the message thread.
             if (wasTransportPlaying && !playing && captureState.load() == CaptureState::Capturing)
-                stopCapture();
+                captureStopRequested_.store(true, std::memory_order_release);
 
             // Sync compare streams to DAW transport on state TRANSITIONS only.
             // Running every block was stomping user-initiated play/pause from the button.
@@ -714,7 +763,8 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     if (abActive.load() && abPlayingRef.load())
     {
         std::lock_guard<std::mutex> lock(abMutex);
-        if (abSampleCount > 0 && abPlaybackPos < abSampleCount)
+        const int abAvail = std::min(abSampleCount, abLoadedSamples_.load(std::memory_order_acquire));   // never past the loader
+        if (abAvail > 0 && abPlaybackPos < abAvail)
         {
             int numSamples = buffer.getNumSamples();
             int abChans = abBuffer.getNumChannels();
@@ -878,15 +928,18 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         const bool isCapturing = (captureState.load() == CaptureState::Capturing);
         const bool gotLccLock  = isCapturing && linkCaptureSpinLock.tryEnter();
 
-        // O(N) slot→lcc lookup on stack
-        LinkCaptureChannel* lccBySlot[kMaxLinkSlots] = {};
-        if (gotLccLock)
-            for (auto& c : linkCaptureChannels)
-                if (c->slotIdx >= 0 && c->slotIdx < kMaxLinkSlots)
-                    lccBySlot[c->slotIdx] = c.get();
+        // THE LIVE LIST (6 Sep 2026): walk the connected slots only, never the
+        // 256-slot ceiling; the capture-channel lookup scans the (short) live
+        // vector instead of a ceiling-sized stack array.
+        const int liveN = liveSlotCount_.load(std::memory_order_acquire);
+        auto lccFor = [&](int slot) -> LinkCaptureChannel* {
+            if (!gotLccLock) return nullptr;
+            for (auto& c : linkCaptureChannels) if (c->slotIdx == slot) return c.get();
+            return nullptr; };
 
-        for (int li = 0; li < kMaxLinkSlots; ++li)
+        for (int lk = 0; lk < liveN; ++lk)
         {
+            const int li = liveSlotIdx_[(size_t) lk];
             auto& ls = activeLinkSlots[li];
             if (!ls.lock.tryEnter()) continue;
             if (ls.map != nullptr)
@@ -1042,11 +1095,23 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                         for (int ch = 0; ch < 2; ++ch)
                             if ((int) n < want)
                                 borrowBuf_.clear(ch, (int) n, want - (int) n);
+                        borrowConsumePeakIn_ = borrowBuf_.getMagnitude(0, 0, want);   // BUILD E diagnostic
                         juce::MidiBuffer noMidi;
                         // The whole borrowed chain, in order, on the dry stream.
                         juce::AudioBuffer<float> view(borrowBuf_.getArrayOfWritePointers(),
                                                       2, 0, want);
                         borrowHost_->process(view, noMidi);
+                        // ADDITIVE SOLO of the borrowed rack (spec 6.1) reads the PROCESSED ring from THIS copy: the
+                        // injection block below runs its alignment delay on borrowBuf_ in place, which must not
+                        // reach the solo crossfade (solo is not aligned - it replaces).
+                        if (borrowProcessed_.getNumSamples() >= want)
+                            for (int ch = 0; ch < 2; ++ch) borrowProcessed_.copyFrom(ch, 0, borrowBuf_, ch, 0, want);
+                        if (++borrowConsumeDiagDivider_ >= 94)   // BUILD E diagnostic, 1 Hz: what the ring gave and what the rack returned
+                        {
+                            borrowConsumeDiagDivider_ = 0;
+                            EchoJay_NSLog(("EJCtx(ring): consumed " + juce::String((int) n) + "/" + juce::String(want)
+                                           + " peak-in=" + juce::String(borrowConsumePeakIn_, 3) + " peak-after-rack=" + juce::String(borrowBuf_.getMagnitude(0, 0, want), 3)).toRawUTF8());
+                        }
                     }
                     ls.lock.exit();
                     continue;
@@ -1090,7 +1155,24 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                     ls.lock.exit();
                     continue;
                 }
-                LinkCaptureChannel* lcc = gotLccLock ? lccBySlot[li] : nullptr;
+                // ADDITIVE SOLO: X's ring is consumed into soloBuf_ (it was being drained anyway).
+                // Seek to the cushion once at engage; re-seek if the backlog trips the threshold.
+                if (li == soloRingSlot_.load(std::memory_order_acquire))
+                {
+                    auto* shdr = LinkShm::ringHeader(ls.map);
+                    const int nS = buffer.getNumSamples();
+                    if (soloBuf_.getNumSamples() < nS) { ls.lock.exit(); continue; }   // allocated at prepare; never here
+                    if (soloSeekPending_.exchange(false, std::memory_order_acq_rel)
+                        || LinkShm::loadAcquire(&shdr->writeIdx) - LinkShm::loadRelaxed(&shdr->readIdx) > kEditReseekTrip)
+                        LinkShm::ringSeekForward(ls.map, kEditCushionFrames);
+                    const uint32_t n = LinkShm::ringConsume(ls.map, soloBuf_.getWritePointer(0), soloBuf_.getWritePointer(1), nS);
+                    ls.framesRead.fetch_add((int64_t) n, std::memory_order_relaxed);
+                    for (int ch = 0; ch < 2; ++ch) if ((int) n < nS) soloBuf_.clear(ch, (int) n, nS - (int) n);
+                    soloBufPeak_.store(soloBuf_.getMagnitude(0, 0, nS), std::memory_order_relaxed);
+                    ls.lock.exit();
+                    continue;
+                }
+                LinkCaptureChannel* lcc = gotLccLock ? lccFor(li) : nullptr;
                 if (lcc != nullptr)
                 {
                     int nReq = std::min(buffer.getNumSamples(), (int)lcc->tmpBufL.size());
@@ -1223,6 +1305,19 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             juce::AudioBuffer<float> inj(borrowBuf_.getArrayOfWritePointers(),
                                          2, 0, nS);
             if (have) alignPre_.process(inj, std::max(0, padKey));
+            // BUILD E diagnostic (1 Hz, system log): the injection path's terms, so a silent
+            // injection is read, not inferred. Rate-limited on the audio thread (a counter).
+            if (++borrowInjDiagDivider_ >= 94)
+            {
+                borrowInjDiagDivider_ = 0;
+                const float injPeak = have ? inj.getMagnitude(0, 0, nS) : -1.0f;
+                EchoJay_NSLog(("EJCtx(inj): ctxNow=" + juce::String((int) ctxNow) + " injPad=" + juce::String(injPad)
+                               + " padKey=" + juce::String(padKey) + " muteReady=" + juce::String((int) muteReady)
+                               + " soloSup=" + juce::String((int) soloSup) + " have=" + juce::String((int) have)
+                               + " mix=" + juce::String(borrowCtxMix_.getCurrentValue(), 3)
+                               + " injPeak=" + juce::String(injPeak, 3)
+                               + " ringAge=" + juce::String(borrowRingAgeMeasured_.load(std::memory_order_relaxed))).toRawUTF8());
+            }
             for (int i = 0; i < nS; ++i)
             {
                 const float g = borrowCtxMix_.getNextValue();
@@ -1238,7 +1333,15 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             borrowCtxMix_.skip(buffer.getNumSamples());
     }
     if (borrowThrough)
-        applyBorrowSoloMixOn(buffer, fallbackSolo);
+        // BUILD E (9 Sep 2026 ruling): NO SILENT SOLO ON RACK SELECTION - a refused in-context
+        // leaves the passthrough untouched (fallbackSolo drives no audio). The crossfade below
+        // runs ONLY behind the explicit user act it was reserved for: the solo press.
+        // ADDITIVE SOLO (9 Sep 2026 ruling): solo IS the explicit user act this crossfade was
+        // reserved for. Source: the PROCESSED ring when X is the borrowed rack (spec 6.1),
+        // otherwise X's own ring consumed above. Intentional: this runs BEFORE the main's
+        // own chain, so the soloed Link is heard through the mix-bus processing.
+        applyBorrowSoloMixOn(buffer, soloActive() && (soloSourceIsBorrowedRack() || soloRingSlot_.load(std::memory_order_acquire) >= 0));
+        (void) fallbackSolo;
 
     // CHAIN: pass audio through hosted plugin (graph handles passthrough if none loaded)
     {
@@ -1486,7 +1589,13 @@ void EchoJayProcessor::applyHostTrackNameIfDirty()
 void EchoJayProcessor::timerCallback()
 {
     applyHostTrackNameIfDirty();
+    serviceCaptureStop();   // 1 Hz backstop; the editor timer services it at 30 Hz when open
     scheduleSelfKeyPass();
+    // Round 53 (C5): THE EDITOR MUST NOT DECIDE AUDIO LATENCY. The Link
+    // registry pass - whose output is the WANTED borrow budget - runs on this
+    // processor-owned 1 Hz timer, window open or closed. The editor still
+    // calls it on its own user actions (a tab switch, an apply) for the list.
+    refreshLinkRegistry();
 
     // Keep the KeyFeed alive without an editor. EchoJay Pitch follows the
     // session key through KeyFeed; when the ONLY publisher was the editor's
@@ -1835,9 +1944,18 @@ void EchoJayProcessor::publishKeyFeed(const KeySources& sources)
         fact.ageMs      = p->ageMs;
         fact.fromBus    = p->kind == KeySourceReading::Kind::BusLink
                        || p->kind == KeySourceReading::Kind::SelfBus;
+        // Circularity provenance (29 Aug 2026): did this fact's primary come
+        // from THIS instance's own channel audio? Self analysis and the local
+        // chain trivially did; a capture did when the offline pass read this
+        // channel rather than a bus Link's.
+        fact.selfDerived = p->kind == KeySourceReading::Kind::SelfBus
+                        || p->kind == KeySourceReading::Kind::LocalChain
+                        || (p->kind == KeySourceReading::Kind::Capture
+                            && p->detail.contains ("(this channel)"));
         const auto nm = p->name.isNotEmpty() ? p->name : juce::String ("EchoJay");
         nm.copyToUTF8 (fact.sourceName, (int) sizeof (fact.sourceName));
     }
+    fact.publisherId = (uint64_t) (uintptr_t) this;
     echojay::KeyFeed::instance().publish (fact);
 }
 
@@ -1981,15 +2099,16 @@ void EchoJayProcessor::applyBorrowSoloMixOn(juce::AudioBuffer<float>& buffer,
     if (on || borrowSoloMix_.getCurrentValue() > 0.0001f)
     {
         const int nS = buffer.getNumSamples();
-        const bool have = borrowHost_ != nullptr
-                       && borrowBuf_.getNumSamples() >= nS;
+        const bool fromRack = soloSourceIsBorrowedRack() && borrowHost_ != nullptr && borrowProcessed_.getNumSamples() >= nS;
+        const bool have = fromRack || soloBuf_.getNumSamples() >= nS;
+        const juce::AudioBuffer<float>& src = fromRack ? borrowProcessed_ : soloBuf_;
         for (int i = 0; i < nS; ++i)
         {
             const float g = borrowSoloMix_.getNextValue();
             for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
             {
                 const float solo = have
-                    ? borrowBuf_.getSample(std::min(ch, 1), i) : 0.0f;
+                    ? src.getSample(std::min(ch, 1), i) : 0.0f;
                 float* out = buffer.getWritePointer(ch);
                 out[i] = out[i] * (1.0f - g) + solo * g;
             }
@@ -2095,8 +2214,36 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
     // §8 same rule: in-context OK = announced AND fits the budget, decided
     // the instant the session exists; the chain watcher re-checks live.
     borrowChainLat_.store(0, std::memory_order_relaxed);
-    borrowInContextOk_.store(inContextCapable && alignPad(0) >= 0,
-                             std::memory_order_relaxed);
+    // Round 53 (C1): in-context needs the COMMITTED budget - a pending one is
+    // inert here too; borrowing against an unreported budget is the defect.
+    borrowCtxCapable_ = inContextCapable;
+    {
+        const bool padOk   = alignPad(0) >= 0;
+        const bool budget  = borrowBudgetActive_.load(std::memory_order_relaxed);
+        const bool ok      = inContextCapable && padOk && budget;
+        borrowInContextOk_.store(ok, std::memory_order_relaxed);
+        // BUILD E: the held states are STATUS, not error. The budget term clears itself at
+        // the next STOPPED block (Build B re-evaluates); the others are real limitations.
+        if (! ok)
+        {
+            const juce::String nm = resolveLinkDisplayName(uid);
+            if (inContextCapable && padOk && ! budget)
+            { borrowBannerIsStatus_ = true;  borrowStickyBanner_ = "Waiting for the mix budget - " + nm + " blends at the next stop."; }
+            else if (! inContextCapable)
+            { borrowBannerIsStatus_ = false; borrowStickyBanner_ = "Cannot blend " + nm + " in context - its EchoJay Link predates in-context. Solo this rack to hear the edit."; }
+            else
+            { borrowBannerIsStatus_ = false; borrowStickyBanner_ = "Cannot blend " + nm + " in context - its rack needs more look-ahead than the mix budget. Solo this rack to hear the edit."; }
+        }
+        else { borrowBannerIsStatus_ = false; }
+        // 8 Sep 2026 ruling (standing rule): a decision that can refuse logs its
+        // refusal and the false term. Each term, then the verdict.
+        EchoJay_NSLog(("EJCtx: engage decision uid=" + uid + " capable=" + (inContextCapable ? "Y" : "N")
+                       + " pad=" + (padOk ? "Y" : "N") + " budget=" + (budget ? "Y" : "N")
+                       + " -> in-context " + (ok ? "OK" : "REFUSED")
+                       + (ok ? juce::String() : juce::String(", false term(s): ")
+                                 + juce::StringArray { inContextCapable ? "" : "capable", padOk ? "" : "pad", budget ? "" : "budget" }
+                                       .joinIntoString(",").trimCharactersAtStart(",").replace(",,", ",").trimCharactersAtEnd(","))).toRawUTF8());
+    }
 
     // Bind the ring, editBegin's idiom: seek to the cushion so the audition
     // starts near live rather than at the backlog.
@@ -2145,6 +2292,8 @@ void EchoJayProcessor::captureBorrowKept()
         }
         borrowKept_.names.add(borrowHost_->getSlotInfo(i).name);
         borrowKept_.states.add(b64);
+        borrowKept_.settings.add(borrowHost_->getSlotInfo(i).settings);   // the AI prose suggestion
+        borrowKept_.structured.add(borrowHost_->getSlotStructured(i));    // and the dialable structured settings
     }
     EchoJay_NSLog(("EJBorrow: kept " + juce::String(borrowKept_.states.size())
                    + " slot state(s) for uid=" + borrowKept_.uid).toRawUTF8());
@@ -2180,9 +2329,18 @@ void EchoJayProcessor::borrowRelease(bool keepEdits)
     borrowAlignReset_.store(true, std::memory_order_relaxed);
     borrowRingAgeMeasured_.store(-1, std::memory_order_relaxed);
     borrowMuteConfirmedOnce_.store(false, std::memory_order_relaxed);
-    if (borrowHost_) borrowHost_->releaseBorrowToPool();
+    if (borrowHost_)
+    {
+        borrowHost_->onNeedParamMaps    = nullptr;   // 10 Sep: a fetch firing after release is a no-op
+        borrowHost_->onNeedFallbackMaps = nullptr;
+        borrowHost_->onSlotSettingsChanged = nullptr;
+        borrowHost_->releaseBorrowToPool();
+    }
     EchoJay_NSLog(("EJBorrow: released uid=" + uid
                    + " (lease deleted; Link restores its own bypasses)").toRawUTF8());
+    // 9 Sep 2026: the lock belongs to the session; the session is over. Unless a switch has
+    // already pended the next engage (whose click requested its own lock), release it.
+    if (pendingAutoEngage_.isEmpty() || pendingAutoEngage_ == uid) setRackLockWant({});
 }
 
 // ============================================================================
@@ -2472,12 +2630,89 @@ juce::AudioProcessorEditor* EchoJayProcessor::createSlotEditorForView(
     return getChainHost().createEditorForSlot(slot);
 }
 
-void EchoJayProcessor::setBorrowBudgetActive(bool active)
+
+// ============================================================================
+//  SOLO AS A BROADCAST (8 Sep 2026 ruling)
+// ============================================================================
+void EchoJayProcessor::setLinkSolo(const juce::String& uid, bool on)
 {
-    if (borrowBudgetActive_.exchange(active, std::memory_order_relaxed) == active)
+    // ADDITIVE SOLO: nothing is sent to any Link. The press only chooses which ring the
+    // main's output becomes. Last press wins; pressing the soloed Link again clears.
+    if (uid.isEmpty()) return;
+    const juce::String prev = soloUid_;
+    if (! on) { if (soloUid_ != uid) return; soloUid_.clear(); }
+    else soloUid_ = uid;
+    int slot = -1;
+    if (soloUid_.isNotEmpty())
+        for (int i = 0; i < kMaxLinkSlots; ++i)
+            if (activeLinkSlots[i].map != nullptr && activeLinkSlots[i].uid == soloUid_) { slot = i; break; }
+    if (soloUid_.isNotEmpty() && slot < 0)
+        EchoJay_NSLog(("EJSolo: " + soloUid_ + " has no connected ring yet - the solo engages when its ring connects").toRawUTF8());
+    soloSeekPending_.store(true, std::memory_order_release);
+    soloRingSlot_.store(slot, std::memory_order_release);
+    if (soloUid_.isNotEmpty())
+    {
+        borrowBannerIsStatus_ = true;
+        borrowStickyBanner_ = "Solo (pre-fader listen): hearing " + resolveLinkDisplayName(soloUid_)
+            + " at its Link - fader and pan moves do not change what you hear.";
+    }
+    else if (borrowStickyBanner_.startsWith("Solo (pre-fader listen)"))
+        borrowStickyBanner_.clear();
+    EchoJay_NSLog(("EJSolo: " + juce::String(on ? "solo ON " : "solo OFF ") + uid
+                   + (prev.isNotEmpty() && on && prev != uid ? " (moved from " + prev + ")" : juce::String())
+                   + " -> output is " + (soloUid_.isEmpty() ? juce::String("the mix") : soloUid_ + " ring slot " + juce::String(slot))
+                   + (soloSourceIsBorrowedRack() ? " (the borrowed rack: processed ring, spec 6.1)" : "")).toRawUTF8());
+}
+
+bool EchoJayProcessor::soloIndicatorOn(const juce::String& uid) const
+{
+    if (linkSoloOn(uid)) return true;
+    if (auto it = muteSoloSnaps_.find(uid); it != muteSoloSnaps_.end()) return it->second.soloOn;
+    return false;
+}
+
+juce::String EchoJayProcessor::firstSoloName() const
+{
+    if (soloActive()) return resolveLinkDisplayName(soloUid_);
+    for (const auto& kv : muteSoloSnaps_) if (kv.second.soloOn) return resolveLinkDisplayName(kv.first);
+    return {};
+}
+
+void EchoJayProcessor::commitBorrowBudget(const char* where)
+{
+    // THE ONLY WRITER of borrowBudgetActive_. Called from prepareToPlay and
+    // from a processBlock that observed the transport STOPPED - nowhere else.
+    const bool wanted = borrowBudgetWanted_.load(std::memory_order_relaxed);
+    if (borrowBudgetActive_.exchange(wanted, std::memory_order_relaxed) == wanted)
         return;
+    // The delay line starts clean at the new value (it held nothing useful:
+    // the transport was stopped, or we are inside prepare). A session that
+    // was in-context against the OLD budget cannot keep it - its arithmetic
+    // assumed that passthrough delay; it drops to the solo fallback.
+    alignPost_.buf.clear(); alignPost_.w = 0;
+    if (! wanted) borrowInContextOk_.store(false, std::memory_order_relaxed);
+    // BUILD B (8 Sep 2026 ruling): RE-EVALUATE on every commit, not only at engage.
+    // A session refused during an OFF window recovers when the budget commits ON.
+    // This does not undo round 53: round 53 governs WHEN the budget commits, and
+    // that commit already re-runs PDC once (below); no PDC event is added that
+    // round 53 did not sanction. The pad is re-checked against the live chain
+    // latency, as the chain watcher does. Live evidence for the race: 12:46:51
+    // "REFUSED, false term(s): budget", commit ON at 12:47:06, every later engage OK.
+    if (wanted && borrowActive() && ! borrowInContextOk_.load(std::memory_order_relaxed))
+    {
+        const int  lat   = borrowChainLat_.load(std::memory_order_relaxed);
+        const bool padOk = alignPad(lat) >= 0;
+        const bool ok    = borrowCtxCapable_ && padOk;
+        if (ok) { borrowInContextOk_.store(true, std::memory_order_relaxed); borrowBannerIsStatus_ = true; borrowStickyBanner_ = "Blending " + resolveLinkDisplayName(borrowSession_.uid) + " in context."; }
+        EchoJay_NSLog(((juce::String) "EJCtx: budget committed ON with a live session - re-evaluated: capable="
+                       + (borrowCtxCapable_ ? "Y" : "N") + " pad=" + (padOk ? "Y" : "N") + " (chain latency "
+                       + juce::String(lat) + ") -> in-context " + (ok ? "RESTORED" : "still REFUSED")
+                       + (ok ? juce::String() : juce::String(", false term(s): ") + (! borrowCtxCapable_ ? "capable" : "pad"))).toRawUTF8());
+    }
     if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
-        setLatencySamples(lat + reportedBudgetFrames());
+        ejSetLatencyLogged (*this, lat + reportedBudgetFrames(), where);
+    EJ_LAT_LOG ("top: borrow budget COMMITTED %s at %s (passthrough delay and report move together)", wanted ? "ON" : "OFF", where);
+    const bool active = wanted;
     EchoJay_NSLog(("EJCtx: alignment budget "
                    + juce::String(active ? "ON" : "OFF")
                    + " (capable Link " + (active ? "present" : "gone")
@@ -2643,6 +2878,7 @@ void EchoJayProcessor::editBegin(const juce::String& uid, int slot0,
                         hostSamplesPerBlock_ > 0 ? hostSamplesPerBlock_ : 512);
     editBuf_.setSize(2, 8192);          // audio-thread capacity, allocated HERE
     editSession_.uid        = uid;
+    setRackLockWant(uid);   // 9 Sep: the lock belongs to the edit session
     editSession_.slot0      = slot0;
     editSession_.leaseId    = leaseId;
     editSession_.pluginName = name;
@@ -2729,6 +2965,7 @@ void EchoJayProcessor::editEnd(bool keepState)
     // audio path under the lock; destruction happens after the ramp is over.
     editSession_.audioOn.store(false, std::memory_order_release);
     editSession_.uid.clear();
+    if (! borrowActive() && pendingAutoEngage_.isEmpty()) setRackLockWant({});   // 9 Sep: edit session over, no lock
     editSession_.slot0 = -1;
     editSession_.ringSlot.store(-1, std::memory_order_relaxed);
 
@@ -2842,6 +3079,19 @@ void EchoJayProcessor::startCapture()
                 linkCaptureChannels.push_back(std::move(lcc));
             }
         }
+    }
+}
+
+void EchoJayProcessor::serviceCaptureStop()
+{
+    if (captureStopRequested_.exchange(false, std::memory_order_acq_rel)
+        && captureState.load() == CaptureState::Capturing)
+        stopCapture();
+    // grow-ahead for every live recorder (message thread; the vector is only mutated here)
+    if (captureState.load() == CaptureState::Capturing)
+    {
+        waveformRecorder.growAheadIfNeeded();
+        for (auto& c : linkCaptureChannels) if (c != nullptr) c->waveformRecorder.growAheadIfNeeded();
     }
 }
 
@@ -3095,9 +3345,15 @@ void EchoJayProcessor::stopCapture()
                 const int   n   = srcRec->getRecordedSampleCount();
                 if (buf != nullptr && n > (int) (2.0 * srcRec->getRecordedSampleRate()))
                 {
-                    echojay::KeyEngine eng;
-                    eng.prepare(srcRec->getRecordedSampleRate(), 512);
-                    const auto kr = eng.analyseBufferOffline(
+                    // 8 Sep 2026 (DEFECT_CAPTURE_SAVE_THREAD_STACK_OVERFLOW.md): the
+                    // KeyEngine is 2 MB (a 512 K-sample ring inline) and this thread has
+                    // the 512 KB default stack - as a local it hit the guard page in the
+                    // prologue and took Pro Tools down. Heap-allocated, scoped to run();
+                    // the thread is non-realtime, the allocation is free. NOT a bigger
+                    // stack: that is a number sized to today's object.
+                    auto eng = std::make_unique<echojay::KeyEngine>();
+                    eng->prepare(srcRec->getRecordedSampleRate(), 512);
+                    const auto kr = eng->analyseBufferOffline(
                         buf->getReadPointer(0),
                         buf->getNumChannels() > 1 ? buf->getReadPointer(1) : nullptr,
                         std::min(n, buf->getNumSamples()));
@@ -3806,22 +4062,27 @@ void EchoJayProcessor::loadABFile(const juce::String& wavPath, double startOffse
 {
     juce::File file(wavPath);
     if (!file.existsAsFile()) return;
-    
+
+    // Stop a previous loader before its buffer goes away.
+    if (abLoader_ != nullptr) { abLoader_->stopThread(2000); abLoader_.reset(); }
+
     juce::AudioFormatManager formatManager;
     formatManager.registerBasicFormats();
-    
     std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(file));
     if (!reader) return;
-    
-    // Read entire file into buffer
-    juce::AudioBuffer<float> newBuf((int)reader->numChannels, (int)reader->lengthInSamples);
-    reader->read(&newBuf, 0, (int)reader->lengthInSamples, 0, true, true);
-    
-    // Calculate start position from offset
+
+    const int total = (int) reader->lengthInSamples;
+    const int chans = (int) reader->numChannels;
+    juce::AudioBuffer<float> newBuf(chans, total);
+    newBuf.clear();                                       // unloaded tail reads as silence, never garbage
     int startPos = (int)(startOffsetSeconds * reader->sampleRate);
-    if (startPos >= (int)reader->lengthInSamples)
-        startPos = 0;
-    
+    if (startPos >= total) startPos = 0;
+    // The first second from the start position, synchronously (press-to-first-sample);
+    // everything else on the loader.
+    const int first = std::min(total - startPos, (int) reader->sampleRate);
+    if (first > 0) reader->read(&newBuf, startPos, first, startPos, true, true);
+    if (startPos > 0) { const int head = std::min(startPos, (int) reader->sampleRate); reader->read(&newBuf, 0, head, 0, true, true); }
+
     {
         std::lock_guard<std::mutex> lock(abMutex);
         abBuffer = std::move(newBuf);
@@ -3830,9 +4091,44 @@ void EchoJayProcessor::loadABFile(const juce::String& wavPath, double startOffse
         abPlaybackPos = startPos;
         abFilePath = wavPath;
     }
-    
+    abLoadedSamples_.store(startPos + first, std::memory_order_release);
     abActive.store(true);
     abPlayingRef.store(true);
+
+    // The loader: reads ahead of the play position in 1 s pieces into the SAME buffer's
+    // unread region (disjoint from what the audio thread may read), then publishes.
+    struct Loader : public juce::Thread
+    {
+        Loader(EchoJayProcessor& o, std::unique_ptr<juce::AudioFormatReader> r, int from, int tot, int sr)
+            : juce::Thread("EchoJay capture loader"), owner(o), reader(std::move(r)), pos(from), total(tot), rate(sr) {}
+        EchoJayProcessor& owner; std::unique_ptr<juce::AudioFormatReader> reader; int pos, total, rate;
+        void run() override
+        {
+            while (! threadShouldExit() && pos < total)
+            {
+                const int n = std::min(rate, total - pos);
+                {
+                    std::lock_guard<std::mutex> lock(owner.abMutex);   // the buffer object must not be swapped under us
+                    if (owner.abBuffer.getNumSamples() != total) return;
+                    reader->read(&owner.abBuffer, pos, n, pos, true, true);
+                }
+                pos += n;
+                owner.abLoadedSamples_.store(pos, std::memory_order_release);
+            }
+            // wrap-around region before the start position (if we started mid-file)
+        }
+    };
+    abLoader_ = std::make_unique<Loader>(*this, std::move(reader), startPos + first, total, (int) abSampleRate);
+    abLoader_->startThread();
+}
+
+void EchoJayProcessor::seekAB(double seconds)
+{
+    std::lock_guard<std::mutex> lock(abMutex);
+    int p = (int) (seconds * abSampleRate);
+    if (p < 0) p = 0;
+    if (p >= abSampleCount) p = 0;
+    abPlaybackPos = p;
 }
 
 void EchoJayProcessor::stopAB()
@@ -4530,6 +4826,8 @@ void EchoJayProcessor::ensureLinkRegistryOpen()
     consumerDiag.regKey = linkResolvedDir;
     int err = 0;
     linkRegMap = LinkShm::openRegistry(linkResolvedDir, linkRegFd, err);
+    if (linkRegMap == nullptr && err == EPROTO)   // 6 Sep 2026: a foreign layout is refused, and said so
+        EchoJay_NSLog(("EJLink: " + lastRegistryLayoutError()).toRawUTF8());
     consumerDiag.regOpened = (linkRegMap != nullptr);
     consumerDiag.regErrno  = err;
 }
@@ -4603,6 +4901,7 @@ void EchoJayProcessor::disconnectLinkAudioSlot(int i)
 
 void EchoJayProcessor::disconnectAllLinkSlotsNow()
 {
+    liveSlotCount_.store(0, std::memory_order_release);   // 6 Sep 2026: the audio thread walks nothing until the next walk
     for (int i = 0; i < kMaxLinkSlots; ++i)
     {
         void* old = nullptr;
@@ -4720,6 +5019,11 @@ void EchoJayProcessor::refreshLinkRegistry()
     }
 
     linkSlotInfos = std::move(newInfos);
+    publishLiveSlotList();
+    if (soloActive() && soloRingSlot_.load(std::memory_order_acquire) < 0)     // additive solo: X's ring connected after the press
+        for (int i = 0; i < kMaxLinkSlots; ++i)
+            if (activeLinkSlots[i].map != nullptr && activeLinkSlots[i].uid == soloUid_)
+            { soloSeekPending_.store(true, std::memory_order_release); soloRingSlot_.store(i, std::memory_order_release); break; }
 
     // §8.3 refinement: the budget follows CAPABLE-LINK PRESENCE. The
     // capability lives in the sidecar, read once per uid and cached; the
@@ -4731,32 +5035,61 @@ void EchoJayProcessor::refreshLinkRegistry()
         for (const auto& si : linkSlotInfos)
             if (si.uid.isNotEmpty()) listed.add(si.uid);
         listed.sort(false);
-        const juce::String key = listed.joinIntoString("|");
-        if (key != ctxCapSetKey_)
+        // ROUND 53 (C4): every pass, not only on a set change - liveness is
+        // not cacheable. A rack counts only if its sidecar announces
+        // in-context capability, was published from THIS host identity, and
+        // its publisher process is still alive (kill(pid, 0)). A cached row
+        // whose publisher died is re-read once (the Link may have restarted
+        // with a new pid); still dead = not counted. The result is the WANTED
+        // budget only - inert until prepareToPlay or a STOPPED block commits it.
+        bool anyCapable = false;
+        int wantedNoSidecar = 0, wantedDead = 0, wantedIncapable = 0, wantedForeignHost = 0;   // reasons for the WANTED log
         {
-            ctxCapSetKey_ = key;
-            bool anyCapable = false;
             int err2 = 0;
             const juce::String dir2 = LinkShm::resolveDir(err2);
+            const auto& me = ChainHost::getHostIdentity();
+            auto readRow = [&](const juce::String& u, BudgetRow& out) -> bool
+            {
+                const auto rc = dir2.isNotEmpty() ? LinkShm::readRackSidecar(dir2, u) : LinkShm::RackSidecar{};
+                if (rc.uid != u) return false;   // not published yet: retry next pass
+                out = BudgetRow{ rc.inContextCapable, rc.publisherPid, rc.hostPid, rc.hostStartSec, rc.hostStartUsec };
+                return true;
+            };
+            auto alive = [](int pid) { return pid > 0 && ::kill((pid_t) pid, 0) == 0; };
             for (const auto& u : listed)
             {
                 auto itc = ctxCapCache_.find(u);
                 if (itc == ctxCapCache_.end())
                 {
-                    // Cache only a sidecar that was actually PUBLISHED (uid
-                    // echoes back) — a just-launched Link's sidecar can lag
-                    // its registry row, and a cached false would stick. An
-                    // unpublished sidecar leaves the uid uncached; the next
-                    // set change (or this one re-keying) retries.
-                    const auto rc = dir2.isNotEmpty()
-                        ? LinkShm::readRackSidecar(dir2, u)
-                        : LinkShm::RackSidecar{};
-                    if (rc.uid != u) { ctxCapSetKey_.clear(); continue; }
-                    itc = ctxCapCache_.emplace(u, rc.inContextCapable).first;
+                    BudgetRow row;
+                    if (! readRow(u, row)) { ++wantedNoSidecar; continue; }
+                    itc = ctxCapCache_.emplace(u, row).first;
                 }
-                if (itc->second) { anyCapable = true; break; }
+                if (! alive(itc->second.publisherPid))
+                {
+                    BudgetRow row;
+                    if (! readRow(u, row)) { ++wantedNoSidecar; continue; }
+                    itc->second = row;
+                }
+                if (budgetRowCounts(itc->second, me, alive(itc->second.publisherPid))) { anyCapable = true; break; }
+                if (! alive(itc->second.publisherPid)) ++wantedDead;
+                else if (! itc->second.inContextCapable) ++wantedIncapable;
+                else ++wantedForeignHost;
             }
-            setBorrowBudgetActive(anyCapable);
+        }
+        if (borrowBudgetWanted_.exchange(anyCapable, std::memory_order_relaxed) != anyCapable)
+        {
+            EJ_LAT_LOG ("top: borrow budget WANTED %s (pending: inert until prepareToPlay or a STOPPED block)", anyCapable ? "ON" : "OFF");
+            // 8 Sep 2026 ruling: every WANTED transition reaches the system log
+            // with the value and the reason (what the pass saw).
+            EchoJay_NSLog(("EJCtx: borrow budget WANTED " + juce::String(anyCapable ? "ON" : "OFF")
+                           + " - listed " + juce::String(listed.size()) + " uid(s)"
+                           + (anyCapable ? juce::String(": a counted row exists")
+                                         : juce::String(": none counted (no sidecar yet ") + juce::String(wantedNoSidecar)
+                                           + ", publisher dead " + juce::String(wantedDead)
+                                           + ", not capable " + juce::String(wantedIncapable)
+                                           + ", foreign host " + juce::String(wantedForeignHost) + ")")
+                           + "; pending until prepareToPlay or a STOPPED block").toRawUTF8());
         }
     }
 
@@ -4793,7 +5126,7 @@ void EchoJayProcessor::refreshLinkRegistry()
                     }
                 }
             }
-            if (snap.soloOn && firstSoloName.isEmpty())
+            if ((snap.soloOn || linkSoloOn(si.uid)) && firstSoloName.isEmpty())   // Build D: the local solo set names the banner too
                 firstSoloName = resolveLinkDisplayName(si.uid);
             anySolo = anySolo || snap.soloOn;
             if (! snap.capable) ++incap;
@@ -4803,9 +5136,11 @@ void EchoJayProcessor::refreshLinkRegistry()
                                             : muteSoloSnaps_.erase(it);
         soloSetActive_     = anySolo;
         soloIncapableLive_ = incap;
+        anySolo = anySolo || soloActive();                   // the main's own solo counts
         const bool editedIn = borrowActive()
-            && muteSoloSnaps_.count(borrowSession_.uid)
-            && muteSoloSnaps_[borrowSession_.uid].soloOn;
+            && ((muteSoloSnaps_.count(borrowSession_.uid)
+                 && muteSoloSnaps_[borrowSession_.uid].soloOn)
+                || linkSoloOn(borrowSession_.uid));
         // THE HONORARY STRIP OBEYS EVERY SILENCE REASON (28 Aug 2026):
         // solo-awareness alone shipped half a strip — while a session is
         // live the Link's channel is session-muted and the audible copy
@@ -4879,12 +5214,20 @@ EchoJayProcessor::getLinkDisplayList() const
     // given instance keeps ONE label everywhere. Named first (alphabetical),
     // then untitled (stable by uid). Numbering runs over the full set.
     auto sorted = linkSlotInfos;   // copy, message thread
+    // ORDER (8 Sep 2026 ruling): a precedence chain, evaluated here and only here -
+    //   explicit user order (none exists yet)  >  registry slot index (claim order)  >  name.
+    // Name is the last resort. A row with no slot index sorts LAST, visibly, never
+    // alphabetised into the middle. Was: named-first alphabetical, which put 45
+    // channels on camera in dictionary order instead of the order Sean placed them.
     std::stable_sort(sorted.begin(), sorted.end(),
         [](const LinkSlotInfo& a, const LinkSlotInfo& b)
         {
+            const bool ai = a.regIdx >= 0, bi = b.regIdx >= 0;
+            if (ai != bi) return ai;                             // indexed rows first; unindexed last
+            if (ai) return a.regIdx < b.regIdx;                  // insertion (claim) order
             const bool au = a.name.isEmpty(), bu = b.name.isEmpty();
-            if (au != bu) return bu;                    // named first
-            if (au) return a.uid < b.uid;               // untitled: stable by uid
+            if (au != bu) return bu;                             // last resort: named before untitled
+            if (au) return a.uid < b.uid;
             return a.name.compareIgnoreCase(b.name) < 0;
         });
 
@@ -4908,4 +5251,17 @@ bool EchoJayProcessor::readLinkMeterFrame(int regIdx, LinkMeterFrame& out)
     // refreshLinkRegistry, which owns linkRegMap
     if (linkRegMap == nullptr) return false;
     return LinkShm::readMeterFrame(linkRegMap, regIdx, out);
+}
+
+
+// THE LIVE LIST (6 Sep 2026 ruling): indices of the slots that hold a mapped
+// ring, published for processBlock. Indices first, count last (release), so
+// the audio thread never reads an index that was not written.
+void EchoJayProcessor::publishLiveSlotList()
+{
+    int n = 0;
+    for (int i = 0; i < kMaxLinkSlots; ++i)
+        if (activeLinkSlots[(size_t) i].map != nullptr)
+            liveSlotIdx_[(size_t) n++] = i;
+    liveSlotCount_.store(n, std::memory_order_release);
 }

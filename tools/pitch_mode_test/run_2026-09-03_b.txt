@@ -1,0 +1,175 @@
+== a FRESHLY CONSTRUCTED device matches its advertised defaults ==
+  [PASS] every param constructs at its advertised default
+== correction_mode WRITES the visible params ==
+    applied: correction_mode hard; which set retune_speed_ms 0, flex 0, humanize 0, natural_vibrato 0, targeting_ignores_vibrato on, seam_attack_ms 60, formant_mode preserve
+  [PASS] hard wrote retune_speed_ms 0
+  [PASS] hard wrote flex 0
+  [PASS] hard wrote humanize 0
+  [PASS] hard wrote ignore_vibrato on
+  [PASS] the summary NAMES what it changed, not just the mode
+    applied: correction_mode natural; which set retune_speed_ms 120, flex 55, humanize 60, natural_vibrato 100, targeting_ignores_vibrato on, seam_attack_ms 60, formant_mode preserve
+  [PASS] natural wrote retune 120
+  [PASS] natural wrote flex 55
+  [PASS] natural wrote humanize 60
+  [PASS] natural wrote ignore_vibrato on
+  [PASS] balanced matches the spec table (40 / 25 / 30)
+  [PASS] tuned matches the spec table (8 / 0 / 0)
+== a manual move knocks the display to custom ==
+  [PASS] reads natural after selecting it
+  [PASS] moving flex by hand shows custom
+  [PASS] ...and the hand-set value stuck
+== pitch_scale: MERGE semantics keyed on semitone ==
+  [PASS] major enabled C, disabled C#
+    applied: pitch_scale B off (scale custom)
+  [PASS] the 7th was removed
+  [PASS] every OMITTED degree kept its state - merge, not replace
+  [PASS] editing a degree moves scale to custom
+== pitch_scale: bias_cents merges independently of enabled ==
+  [PASS] E biased -14 cents
+  [PASS] and `enabled` was untouched by an omitted field
+== an entry with no semitone is SKIPPED, not guessed ==
+  [PASS] keyless entry reported as skipped
+== P4: key_source auto FOLLOWS the detected key ==
+  [PASS] key_root followed to F#
+  [PASS] scale followed to minor
+  [PASS] the LIVE grid followed the detected tuning
+  [PASS] the manual FIELD stayed 440 - a detected value never enters it
+  [PASS] a self-derived fact from THIS instance is not followed - grid falls back to 440
+  [PASS] ...and the state says so (refSelfIgnored), for the readout
+  [PASS] the state names its source for the UI: Music Bus
+== KEY-SIDE CIRCULARITY GUARD (behind debugKeySelfGuard): a self-derived fact is not followed for key root/mode - chromatic, never the last key ==
+  [PASS] baseline: an external fact is followed (F# minor)
+  [PASS] flag OFF (today's build): the self-derived key IS followed - the defect
+  [PASS] ...while the reference guard already ignores it (440)
+  [PASS] flag ON: the self-derived key is NOT applied
+  [PASS] ...keySelfIgnored is set for the readout
+  [PASS] ...the scale reads chromatic
+  [PASS] ...reference stays 440
+  [PASS] ...the PREVIOUS key (F# minor) did not survive - chromatic, not the last key
+  [PASS] a self-derived fact from ANOTHER instance is followed (A major)
+  [PASS] an external fact restores key (F# minor) and reference (441.3)
+== KEY-SIDE GUARD, RENDER BIT-IDENTITY on the standing take (bar item 2) ==
+  [PASS] guard ON + self-derived self fact renders BIT-IDENTICAL to manual chromatic (0 samples differ)
+  [PASS] POSITIVE CONTROL: guard OFF applies the self-derived G major and differs from chromatic (378675 samples differ)
+  [PASS] guard ON vs OFF under an EXTERNAL fact: bit-identical (0 samples differ)
+== below the gate it falls to CHROMATIC, not to the last key ==
+  [PASS] a 0.31-confidence key falls back to chromatic
+  [PASS] the state reports the fallback so the UI can show it
+== no source at all is also chromatic, not a guess ==
+  [PASS] no key detected -> chromatic
+== setting key or scale BY HAND takes over from auto ==
+  [PASS] a hand-set scale flips key_source to manual
+  [PASS] the hand-set scale survives the next detected key
+== a live key change CROSS-FADES rather than switching on a sample ==
+  [PASS] settled after the first key
+  [PASS] a modulation starts a cross-fade instead of stepping
+  [PASS] ...and it is genuinely gradual
+== the P3-P4 safety rule is stated where the model reads it ==
+  [PASS] scale DEFAULTS to chromatic
+  [PASS] text forbids guessing a key outright
+  [PASS] text carries the measured cost of guessing (13 -> 29 cents)
+  [PASS] text names chromatic as the answer when the key is unknown
+== the two acceptance briefs are discriminable from the text ==
+  [PASS] spec 10.5's exact brief appears, attached to hard
+  [PASS] spec 10.6's brief appears, attached to natural
+  [PASS] 'obviously tuned' sits next to the word hard, not floating
+  [PASS] natural is described by what it SOUNDS like, not by its numbers
+== pitch_scale MERGE semantics are stated, since eq_bands replaces ==
+  [PASS] the advertisement mentions the pitch_scale move at all
+  [PASS] ...and states its MERGE semantics
+== the correction_mode table is COMPLETE: every param is either written by every mode, or exempted here with a reason ==
+  [PASS] exempt id still exists in the schema: correct
+  [PASS] exempt id still exists in the schema: correction_mode
+  [PASS] exempt id still exists in the schema: key_source
+  [PASS] exempt id still exists in the schema: key_root
+  [PASS] exempt id still exists in the schema: scale
+  [PASS] exempt id still exists in the schema: reference_source
+  [PASS] exempt id still exists in the schema: reference_hz
+  [PASS] exempt id still exists in the schema: ref_manual_by_user
+  [PASS] exempt id still exists in the schema: transpose
+  [PASS] exempt id still exists in the schema: voice_type
+  [PASS] exempt id still exists in the schema: tracking
+  [PASS] exempt id still exists in the schema: target_hz
+  [PASS] exempt id still exists in the schema: low_latency
+  [PASS] exempt id still exists in the schema: formant_shift
+  [PASS] exempt id still exists in the schema: mix
+  [PASS] exempt id still exists in the schema: output_db
+  [PASS] exempt id still exists in the schema: vib_depth_cents
+  [PASS] exempt id still exists in the schema: vib_rate_hz
+  [PASS] exempt id still exists in the schema: vib_shape
+  [PASS] exempt id still exists in the schema: vib_onset_ms
+  [PASS] exempt id still exists in the schema: reset_stats
+  [PASS] retune_speed_ms is character-bearing (not exempted), so every mode must WRITE it - if it was just added, either give it a column in applyMode's table or exempt it HERE with the reason
+  [PASS] seam_attack_ms is character-bearing (not exempted), so every mode must WRITE it - if it was just added, either give it a column in applyMode's table or exempt it HERE with the reason
+  [PASS] flex is character-bearing (not exempted), so every mode must WRITE it - if it was just added, either give it a column in applyMode's table or exempt it HERE with the reason
+  [PASS] humanize is character-bearing (not exempted), so every mode must WRITE it - if it was just added, either give it a column in applyMode's table or exempt it HERE with the reason
+  [PASS] targeting_ignores_vibrato is character-bearing (not exempted), so every mode must WRITE it - if it was just added, either give it a column in applyMode's table or exempt it HERE with the reason
+  [PASS] natural_vibrato is character-bearing (not exempted), so every mode must WRITE it - if it was just added, either give it a column in applyMode's table or exempt it HERE with the reason
+  [PASS] formant_mode is character-bearing (not exempted), so every mode must WRITE it - if it was just added, either give it a column in applyMode's table or exempt it HERE with the reason
+== UI coverage: every schema param has a hand control, or is exempted here with the reason ==
+  [PASS] UI-exempt id still exists in the schema: ref_manual_by_user
+  [PASS] UI-exempt id still exists in the schema: transpose
+  [PASS] UI-exempt id still exists in the schema: natural_vibrato
+  [PASS] UI-exempt id still exists in the schema: vib_depth_cents
+  [PASS] UI-exempt id still exists in the schema: vib_rate_hz
+  [PASS] UI-exempt id still exists in the schema: vib_shape
+  [PASS] UI-exempt id still exists in the schema: vib_onset_ms
+  [PASS] UI-exempt id still exists in the schema: formant_shift
+  [PASS] UI-exempt id still exists in the schema: mix
+  [PASS] UI-exempt id still exists in the schema: output_db
+  [PASS] UI-exempt id still exists in the schema: seam_attack_ms
+  [PASS] hand-controlled id still exists in the schema: voice_type
+  [PASS] hand-controlled id still exists in the schema: tracking
+  [PASS] hand-controlled id still exists in the schema: formant_mode
+  [PASS] hand-controlled id still exists in the schema: correction_mode
+  [PASS] hand-controlled id still exists in the schema: key_root
+  [PASS] hand-controlled id still exists in the schema: scale
+  [PASS] hand-controlled id still exists in the schema: key_source
+  [PASS] hand-controlled id still exists in the schema: correct
+  [PASS] hand-controlled id still exists in the schema: targeting_ignores_vibrato
+  [PASS] hand-controlled id still exists in the schema: low_latency
+  [PASS] hand-controlled id still exists in the schema: retune_speed_ms
+  [PASS] hand-controlled id still exists in the schema: flex
+  [PASS] hand-controlled id still exists in the schema: humanize
+  [PASS] hand-controlled id still exists in the schema: target_hz
+  [PASS] hand-controlled id still exists in the schema: reference_hz
+  [PASS] hand-controlled id still exists in the schema: reference_source
+  [PASS] hand-controlled id still exists in the schema: reset_stats
+  [PASS] correction_mode has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] correct has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] retune_speed_ms has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] seam_attack_ms has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] flex has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] humanize has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] targeting_ignores_vibrato has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] key_source has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] key_root has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] scale has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] reference_source has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] reference_hz has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] ref_manual_by_user has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] transpose has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] natural_vibrato has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] vib_depth_cents has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] vib_rate_hz has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] vib_shape has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] vib_onset_ms has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] voice_type has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] tracking has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] formant_mode has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] formant_shift has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] low_latency has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] mix has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] output_db has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] target_hz has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+  [PASS] reset_stats has no hand control and no exemption - add it to the editor's handControlledParams() with a control, or to the ledger HERE with its status
+
+reference provenance:
+  [PASS] laundered state (manual + value, no marker) reverts to AUTO on load
+  [PASS] marked manual state stays MANUAL on load
+  [PASS] manual field holds the entered 441
+  [PASS] a LIVE reference write takes manual control
+  [PASS] marked manual 442 survives a save/load round-trip
+  [PASS] auto survives a save/load round-trip (the field saved is the manual 440, never a detected grid)
+
+ALL PASS (0 failures)

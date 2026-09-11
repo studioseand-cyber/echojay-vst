@@ -48,28 +48,124 @@ auval -v aufx EjLk Ecjy   # EchoJay Link
 
 AAX must be PACE-signed or Pro Tools will refuse to load it. Requirements:
 
-- PACE Eden tools installed (wraptool)
+- PACE Eden tools installed (wraptool). AS OF 6 Sep 2026: Eden 6.0.1 GM,
+  and wraptool is NOT on PATH - its absolute path is
+  `/Applications/PACEAntiPiracy/Eden/Fusion/Versions/6/bin/wraptool`
+  (an earlier note said Versions/5; that is stale and cost time). The Eden
+  tools come from PACE Central, which is reached from a BUTTON INSIDE iLok
+  License Manager, not from a web portal - that is the thing nobody could find.
+- The AAX SDK: CMake looks at `~/AAX_SDK` (Interfaces/AAX.h); a differently
+  named unpack is passed as `-DAAX_SDK_PATH=<root>` instead of being moved
+  or reshaped. 6 Sep 2026: SDK 2.9.0 (`aax-sdk-2-9-0`, AAX.h at
+  Interfaces/AAX.h) configured with `-DAAX_SDK_PATH`; the configure line to
+  QUOTE is "AAX SDK found at <path>" - without it AAX is silently absent.
 - The iLok (physical) plugged in, holding the signing credential
 - PACE account: `seand123`
-- wcguid: `B4184F90-2F4F-11F1-A9B9-00505692C25A`
+- wcguid: `B4184F90-2F4F-11F1-A9B9-00505692C25A` - CONFIRMED FROM PACE CENTRAL
+  on 6 Sep 2026 (the button inside iLok License Manager; the authoritative
+  source, not this file): wrap configuration for product "Echojay", created
+  2026-04-03, SDK Version 5 (an EDEN 5 config), experience "Signing Only"
+  (digitally sign true, encrypt false, Fusion false, non-Beta wrapper). The
+  July 2026 bundles were wrapped by Eden 5.10.5 against it - the
+  demonstrated-good pairing. Eden 6 against this v5 config is UNTESTED as of
+  this note; any wraptool error naming an SDK, wrapper or Eden version is
+  that fork, resolved by a PACE support request for a v6 config or by Eden
+  5.10.5 alongside - never by guessing. The bundle itself does not record its
+  wcguid (its dsig carries the publisher and product GUIDs only), so this
+  value can only ever be re-checked in PACE Central.
 - Apple signing identity used by wraptool:
   `Developer ID Application: Sean Donoghue (8BT5F9B887)`
 
-Canonical wraptool invocation (adjust paths per PACE Eden docs if the tool
-version changes; wraptool prompts for the iLok password):
+Canonical wraptool invocation (wraptool prompts for the iLok password, so it
+is run from a Terminal with a TTY, by a person). Every flag below was checked
+against Eden 6.0.1's `sign --help` on 6 Sep 2026: --verbose (-V), --account,
+--wcguid (-G), --signid (-I), --in, --out all exist unchanged; no flag was
+renamed and none gained a required companion. Eden 6 also offers `verify`
+(`wraptool verify --in <bundle>`), used as the post-sign check together with
+`codesign -dv --verbose=4`.
 
 ```
-wraptool sign --verbose \
+/Applications/PACEAntiPiracy/Eden/Fusion/Versions/6/bin/wraptool sign --verbose \
   --account seand123 \
   --wcguid B4184F90-2F4F-11F1-A9B9-00505692C25A \
   --signid "Developer ID Application: Sean Donoghue (8BT5F9B887)" \
-  --in  "build/EchoJay_artefacts/Release/AAX/EchoJay V2.aaxplugin" \
-  --out "build/EchoJay_artefacts/Release/AAX/EchoJay V2.aaxplugin"
+  --in  "build-release/EchoJay_artefacts/Release/AAX/EchoJay V2.aaxplugin" \
+  --out "build-release/EchoJay_artefacts/Release/AAX/signed/EchoJay V2.aaxplugin"
 ```
+OUT-OF-PLACE, deliberately: --out is a different path from --in, so the
+unsigned original survives and a half-completed wrap costs a retry, not a
+rebuild. Then `wraptool verify --in <the signed bundle>` and
+`codesign -dv --verbose=4 <the signed bundle>`; only a bundle that passes
+both goes to /Library/Application Support/Avid/Audio/Plug-Ins/. Same for
+`EchoJayLink_artefacts/Release/AAX/EchoJay Link.aaxplugin` -> its own
+`signed/`. The build directory is whichever one built the bundle.
+--signid must match `security find-identity -v -p codesigning` on the
+signing Mac character for character.
 
 Without the iLok present this step fails; VST3/AU packaging can proceed
 without it (deselect AAX in the installer or accept the unsigned-AAX build
 for non-Pro-Tools betas).
+
+### THIS MAC CANNOT SIGN AAX (finding, 6 Sep 2026 - it cost most of an afternoon)
+wraptool 6.0.1 is installed on the MacBook, but the Eden Tools licence on
+iLok_1AC756 and the SDK-5 wrap config (above) are Eden 5 generation, and 6.0.1
+demands a Fusion Tools licence for its operations: every wraptool call here
+(info, verify, and sign would be the same) fails with
+`WrapToolException::MissingFusionToolsLicense: No valid license found in an
+iLok USB or iLok cloud`. There is also NO Developer ID Application certificate
+in this Mac's keychains (`security find-identity -v -p codesigning`: 0), and
+full Xcode is not installed (command line tools only). Eden 5 is NOT offered
+on the current PACE download page (only "PACE Code Signing for AAX SDK Mac
+v6.0.1"). SIGNING HAPPENS ON THE OTHER MAC - the one with a working Eden, the
+licence and the certificate, where the July 2026 bundles were signed:
+wraptool signs an already-built bundle, so that machine needs no SDK, no
+JUCE and no repo; the unsigned bundles travel as ditto archives with
+`ditto -c -k --sequesterRsrc --keepParent` (see the handoff note pattern in
+MERGE_2026-09-06.md). OPEN QUESTIONS FOR PACE, for whoever raises them: renew
+or confirm the Eden Tools licence, and obtain either Eden 5.10.5 (the
+demonstrated-good tool for the SDK-5 config) or a Fusion Tools licence for 6.
+
+### THE WORKING AAX PROCEDURE (6 Sep 2026): build HERE, sign THERE, install HERE
+Signing happens on admins-MacBook-Pro (Eden 5.10.4/5.10.5 generation, the
+Developer ID certificate, iLok_1AC756 attached - the Eden Tools licence lives
+on that iLok, so it must be attached there or moved to cloud in iLok License
+Manager with a session open on that machine). This Mac builds and installs.
+  1. BUILD here (build-release, -DAAX_SDK_PATH, quote "AAX SDK found at", -j 4,
+     targets EchoJay_AAX EchoJayLink_AAX). Record the arm64 UUIDs.
+  2. PACKAGE with ditto, NEVER cp or Finder zip - wraptool's v1 signature format
+     puts a SYMLINK inside the package (Contents/Resources/__Pace_Eden/Signatures/
+     codesign.dsig) and plain cp corrupts the signature:
+       ditto -c -k --sequesterRsrc --keepParent "<bundle>.aaxplugin" <name>_unsigned.zip
+  3. SIGN there: ditto -x -k the zip; `security find-identity -v -p codesigning`
+     on THAT machine for --signid; wraptool sign --verbose --account seand123
+     --wcguid B4184F90-2F4F-11F1-A9B9-00505692C25A --signid "<its string>"
+     --in <unpacked> --out <a different path>; wraptool verify; codesign -dv
+     --verbose=4. Package the SIGNED bundle with the same ditto line.
+  4. INSTALL here: ditto -x -k into a STAGING folder (never straight into Avid);
+     `xattr -dr com.apple.quarantine "<bundle>"` on each (they crossed machines
+     and are NOT notarised - Gatekeeper's `spctl` says "rejected, Unnotarized
+     Developer ID", expected; the strip is what lets Pro Tools load them);
+     verify on the arrived bundles (codesign chain to Apple Root CA, team
+     8BT5F9B887, today's timestamp, __Pace_Eden.bundle present, both slices,
+     arm64 UUID == the one built); back up the Avid folder with REVERT.command
+     beside it; then, with an admin password:
+       sudo ditto "<staging>/EchoJay V2.aaxplugin"   "/Library/Application Support/Avid/Audio/Plug-Ins/EchoJay V2.aaxplugin"
+       sudo ditto "<staging>/EchoJay Link.aaxplugin" "/Library/Application Support/Avid/Audio/Plug-Ins/EchoJay Link.aaxplugin"
+     (remove the old bundle directories first: ditto merges into an existing
+     directory). ditto for EVERY copy - the symlink again.
+  5. CLEAR the Pro Tools validation caches before launching Pro Tools:
+     ~/Library/Preferences/Avid/Pro Tools/InstalledAAXPlugIns(.xml) and
+     ~/Library/Caches/Avid - Pro Tools caches a rejection and keeps refusing a
+     plugin it once failed.
+  6. In Pro Tools, in this order so a failure is diagnosable: the plugin appears
+     and passes validation; it inserts; audio passes; its window shows the
+     current UI (6 Sep 2026: the simplified Settings panel and the 0-400 retune
+     dial mark 2.26.4 against the July 2.23.0).
+
+### THE REGISTRY LAYOUT (6 Sep 2026): registry_v3.bin, 256 slots, version-checked
+V2 and Link share ~/Library/Application Support/EchoJay/link/registry_v3.bin (layout v2, 256
+slots). A build refuses a file of another layout and logs it. Builds before 6 Sep 2026 use
+registry_v2.bin (16 slots) and cannot see v3 Links: SHIP V2 AND LINK TOGETHER, always.
 
 ## 3. Build the installer .pkg
 
@@ -214,3 +310,26 @@ Run it against the AU, the VST3 and the AAX. Last verified clean on 2.23.49.
 8. `./package-dmg.sh`
 9. Tag `v<VERSION>` and push for the Windows CI build
 10. Install from the DMG on a clean account; verify Settings shows the version
+
+### v7 AAX pair, built 6 Sep 2026 21:36-21:37 from merge/kathy-2026-09-06 (unsigned, on the Desktop for the signing trip)
+    EchoJay V2 2.26.4   arm64 0760FE10-E6F6-397B-B958-720D9B41235B   x86_64 7FBB47DE-2227-3B85-BC0C-E1B472111669
+    EchoJay Link 0.8.5  arm64 E66AEC93-2CE6-3CF5-9CF9-F811F1FB688A   x86_64 9E3A9B2A-BC2E-3570-8864-38D4CB59D997
+Carries: v7 own-chunk rule + sidecar-on-uid-move (the v6 regressions), capacity 256 / registry_v3, C1-C4, the ring
+fix, and the state root (EJStateRoot.h; unset env = the real locations). Installer: INSTALL_BOTH_AAX_v7_2026-09-06.command
+(refuses anything but these four UUIDs; --verify against the installed v4/v6 pair FAILS, as it must). The signed v6
+pair on the Desktop is renamed *_OLD_v6_* and must NOT be installed (it lacks the own-chunk fix).
+
+### v8 AAX pair, built 8 Sep 2026 10:20-10:21 from merge/kathy-2026-09-06 (unsigned, on the Desktop for the signing trip)
+    EchoJay V2 2.26.4   arm64 DF827752-6143-3641-A969-72F8E8DEF730   x86_64 4980F76F-1484-3F8D-A5B8-498AB89CD199
+    EchoJay Link 0.8.5  arm64 677CB825-8B60-38FE-BFD6-A1C774897916   x86_64 1000546C-F8E6-33AD-B752-35439E8A3970
+Carries everything in v7 plus: the Link name fix (a foreign chunk never overwrites a delivered or typed name;
+FOREIGN x20 20/20) and the dialability items C2/C2b/C1' (honest "waiting for its map" wording with close-out,
+failed fetches terminal, 6 s derived settle bound). The v7 pair is superseded (*_OLD_v7_*), do not sign or install it.
+
+### BUILD A - V2 only, built 8 Sep 2026 12:02 from merge/kathy-2026-09-06 @ f8d64bb (unsigned, on the Desktop for the signing trip)
+    EchoJay V2 2.26.4   arm64 B2C4CDE8-9B3A-3585-9D6D-CE07AC7569F4   x86_64 C35F1772-36E0-313A-9034-EB28047A2D60
+    Link stays v8 (arm64 677CB825 / x86_64 1000546C). Installer INSTALL_V2_AAX_BUILD_A_2026-09-08.command installs the V2
+    only and verifies the Link is unchanged; --verify against the installed pair FAILS today on the V2, as it must.
+Carries: the capture crash fix (KeyEngine heap-allocated on the WAV save thread), Link list in insertion order, and the
+three system-log lines (engage decision, prepareToPlay budget store, WANTED transitions). No re-evaluate-on-commit.
+~/Library AU/VST3 of Build A: AU arm64 458D603D-79BF-36D3-91C8-297B0332112C, VST3 arm64 4E72C2F9-3D33-3EF4-9381-AE920CD88096.

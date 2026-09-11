@@ -148,6 +148,20 @@ ChainHost::floatsByIdentity), never by measurement. Do not fold the
 identity rule into the poll as redundant; the poll cannot see this
 failure and never will.
 
+**STANDING HAZARD 4 — a scalar carrying an implicit reference frame is
+a silent unit error.** The pitch corrector's cents axis was zeroed at
+A440 while its scale quantiser subtracted a C-frame root index: two
+doubles nine semitones apart assigned and compared cleanly, rotating
+every requested key (D minor became the D-major pitch-class set) — and
+the unit test, written in the same frame as the bug, agreed with it.
+The test wasn't missing; it was COMPLICIT. The rule: when a scalar's
+meaning depends on a reference (frames, roots, offsets, epochs), the
+frame goes in the NAME — a converter function or wrapper type the
+compiler enforces (CentsC / centsCFromHz / hzFromCentsC) — and the
+gate that guards it must be written in the RAW unit (Hz in, pitch
+class out) across the full parameter grid, because symmetric cases
+(chromatic; some root offsets) hide rotations that other cases expose.
+
 **Licensing is not a concern.** iLok is per-machine; multi-instance is normal.
 Hardware-DSP plugins are the one real exception and are not worth designing
 around.

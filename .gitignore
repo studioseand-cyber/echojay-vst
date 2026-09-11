@@ -27,3 +27,7 @@ test/*.o
 test/movetest
 tools/pitch_click_test/material.local
 tools/pitch_ab_test/material.local
+
+# round 50: the latency log build and its log live here (connected folder); the log is read from the cloud side, the 45 MB bundles are not committed
+latency-logs/*.log
+latency-logs/build/

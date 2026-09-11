@@ -6,6 +6,10 @@
 #include "EedDeviceRegistry.h"
 #include "EedKeyFeed.h"
 #include <cstdio>
+#include <cstring>
+#include <functional>
+#include <algorithm>
+#include <vector>
 static int g_fail = 0;
 static void check (bool c, const juce::String& w)
 { std::printf ("  [%s] %s\n", c ? "PASS" : "FAIL", w.toRawUTF8()); if (! c) ++g_fail; }
@@ -51,7 +55,7 @@ int main()
     {
         juce::String s = p.applyStructured (params ({ { "correction_mode", "hard" } }), EedDeviceProcessor::ParamSource::Assistant);
         std::printf ("    applied: %s\n", s.toRawUTF8());
-        check (p.getParamValue ("retune_speed_ms") == 0.0, "hard wrote retune_speed_ms 0");
+        check (std::abs (p.getParamValue ("retune_speed_ms") - 6.0) < 1.0e-4, "hard wrote retune_speed_ms 6 (round 51: a mode is a dial position; hard = dial 0 = the curve's 6 ms floor, which is the effective floor anyway)");
         check (p.getParamValue ("flex") == 0.0, "hard wrote flex 0");
         check (p.getParamValue ("humanize") == 0.0, "hard wrote humanize 0");
         // ON in every mode since the §4 table correction: target selection
@@ -164,12 +168,641 @@ int main()
         check (p.getParamValue ("key_root") == 6.0, "key_root followed to F#");
         const auto* sp = EedPitchProcessor::schema().find ("scale");
         check (sp->choiceLabel (p.getParamValue ("scale")) == "minor", "scale followed to minor");
-        check (std::abs (p.getParamValue ("reference_hz") - 441.3) < 0.1,
-               "reference_hz followed the detected tuning, not dragged to 440");
+        // The LIVE grid follows; the PARAM is the manual FIELD and must not
+        // (29 Aug 2026: exporting the detected value through the param was
+        // the laundering path - this assertion used to demand it).
+        check (std::abs (p.autoKeyState().refApplied - 441.3) < 0.1,
+               "the LIVE grid followed the detected tuning");
+        check (std::abs (p.getParamValue ("reference_hz") - 440.0) < 0.1,
+               "the manual FIELD stayed 440 - a detected value never enters it");
+
+        // THE CIRCULARITY GUARD: a fact derived from this instance's own
+        // channel must not move the grid - fall back to 440, never to the
+        // channel itself.
+        p.setKeyFeedSelfId (77);
+        {
+            echojay::DetectedKeyFact f;
+            f.valid = true; f.root = 6; f.minor = true; f.confidence = 0.86f;
+            f.tuningHz = 438.0f; f.fromBus = true;
+            f.publisherId = 77; f.selfDerived = true;
+            std::strncpy (f.sourceName, "Self", sizeof (f.sourceName) - 1);
+            echojay::KeyFeed::instance().publish (f);
+        }
+        pump (4);
+        check (std::abs (p.autoKeyState().refApplied - 440.0) < 0.1,
+               "a self-derived fact from THIS instance is not followed - grid falls back to 440");
+        check (p.autoKeyState().refSelfIgnored,
+               "...and the state says so (refSelfIgnored), for the readout");
+        p.setKeyFeedSelfId (0);
+        // Restore the external fact so the downstream source-name check sees
+        // the state it always saw.
+        publish (6, true, 0.86f, 441.3f, "Music Bus");
+        pump (4);
 
         const auto st = p.autoKeyState();
         check (st.applied && st.sourceName == "Music Bus",
                "the state names its source for the UI: " + st.sourceName);
+    }
+
+    std::printf ("== KEY-SIDE CIRCULARITY GUARD (behind debugKeySelfGuard): a self-derived fact "
+                 "is not followed for key root/mode - chromatic, never the last key ==\n");
+    {
+        auto pump = [&] (int blocks)
+        {
+            juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m;
+            for (int i = 0; i < blocks; ++i) { b.clear(); p.processBlock (b, m); }
+        };
+        auto publishFact = [] (int root, bool minor, float conf, float tuning,
+                               const char* src, uint64_t publisher, bool selfDerived)
+        {
+            echojay::DetectedKeyFact f;
+            f.valid = true; f.root = root; f.minor = minor; f.confidence = conf;
+            f.tuningHz = tuning; f.fromBus = true;
+            f.publisherId = publisher; f.selfDerived = selfDerived;
+            std::strncpy (f.sourceName, src, sizeof (f.sourceName) - 1);
+            echojay::KeyFeed::instance().publish (f);
+        };
+        const auto* sp = EedPitchProcessor::schema().find (EedPitchProcessor::kScale);
+        auto allDegrees = [&]
+        { return sp != nullptr && sp->choiceLabel (p.getParamValue ("scale")) == "chromatic"; };
+
+        // Baseline: an EXTERNAL usable fact is followed (as before).
+        p.applyStructured (params ({ { "key_source", "auto" } }), EedDeviceProcessor::ParamSource::Assistant);
+        p.setKeyFeedSelfId (77);
+        publishFact (6, true, 0.86f, 441.3f, "Music Bus", 12345, false);
+        pump (4);
+        check (p.autoKeyState().applied && p.autoKeyState().root == 6 && p.autoKeyState().minor,
+               "baseline: an external fact is followed (F# minor)");
+
+        // THE DEFECT, documented with the flag OFF: the same fact stamped
+        // self-derived from THIS instance is still applied for key today.
+        p.debugKeySelfGuard (false);
+        publishFact (6, true, 0.86f, 438.0f, "this channel", 77, true);
+        pump (4);
+        check (p.autoKeyState().applied && ! p.autoKeyState().keySelfIgnored,
+               "flag OFF (today's build): the self-derived key IS followed - the defect");
+        check (std::abs (p.autoKeyState().refApplied - 440.0) < 0.1,
+               "...while the reference guard already ignores it (440)");
+
+        // THE GUARD, flag ON: chromatic, actively, and the state says why.
+        p.debugKeySelfGuard (true);
+        pump (4);
+        const auto st = p.autoKeyState();
+        check (! st.applied && st.fellBack, "flag ON: the self-derived key is NOT applied");
+        check (st.keySelfIgnored, "...keySelfIgnored is set for the readout");
+        check (allDegrees(), "...the scale reads chromatic");
+        check (std::abs (st.refApplied - 440.0) < 0.1, "...reference stays 440");
+        check (! (p.autoKeyState().root == 6 && p.autoKeyState().applied),
+               "...the PREVIOUS key (F# minor) did not survive - chromatic, not the last key");
+
+        // A self-derived fact from ANOTHER instance (a bus Link's own
+        // analysis) is legitimate and still followed.
+        publishFact (9, false, 0.9f, 441.0f, "Music Bus (Link)", 78, true);
+        pump (4);
+        check (p.autoKeyState().applied && p.autoKeyState().root == 9 && ! p.autoKeyState().minor
+               && ! p.autoKeyState().keySelfIgnored,
+               "a self-derived fact from ANOTHER instance is followed (A major)");
+
+        // An external fact restores key and reference.
+        publishFact (6, true, 0.86f, 441.3f, "Music Bus", 12345, false);
+        pump (4);
+        check (p.autoKeyState().applied && p.autoKeyState().root == 6 && p.autoKeyState().minor
+               && std::abs (p.autoKeyState().refApplied - 441.3) < 0.1,
+               "an external fact restores key (F# minor) and reference (441.3)");
+        p.debugKeySelfGuard (false);
+        p.setKeyFeedSelfId (0);
+        publishFact (6, true, 0.86f, 441.3f, "Music Bus", 12345, false);
+        pump (4);
+    }
+
+    std::printf ("== KEY-SIDE GUARD, RENDER BIT-IDENTITY on the standing take (bar item 2) ==\n");
+    {
+        // EJ_PITCH_SOURCE or the standing reference path; skipped, not
+        // failed, when the material is absent (the repo does not carry it).
+        const char* env = std::getenv ("EJ_PITCH_SOURCE");
+        juce::File src (env != nullptr ? juce::String (env)
+                                       : juce::String ("/Users/SeanD/Music/Logic/test/Bounces/sourceNEW.wav"));
+        juce::AudioBuffer<float> take;
+        double fs = 48000.0;
+        if (src.existsAsFile())
+        {
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::AudioFormatReader> r (wav.createReaderFor (src.createInputStream().release(), true));
+            if (r != nullptr)
+            {
+                fs = r->sampleRate;
+                take.setSize (1, (int) r->lengthInSamples);
+                r->read (&take, 0, (int) r->lengthInSamples, 0, true, false);
+            }
+        }
+        if (take.getNumSamples() == 0)
+            std::printf ("  [SKIP] material not found (%s) - render identity not measured\n", src.getFullPathName().toRawUTF8());
+        else
+        {
+            auto render = [&] (const std::function<void (EedPitchProcessor&)>& setup) -> std::vector<float>
+            {
+                EedPitchProcessor q;
+                q.prepareToPlay (fs, 512);
+                q.applyStructured (params ({ { "correction_mode", "hard" } }), EedDeviceProcessor::ParamSource::Assistant);
+                setup (q);
+                std::vector<float> out; out.reserve ((size_t) take.getNumSamples());
+                juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m;
+                for (int pos = 0; pos < take.getNumSamples(); pos += 512)
+                {
+                    const int n = juce::jmin (512, take.getNumSamples() - pos);
+                    b.clear();
+                    b.copyFrom (0, 0, take, 0, pos, n);
+                    b.copyFrom (1, 0, take, 0, pos, n);
+                    q.processBlock (b, m);
+                    for (int i = 0; i < n; ++i) out.push_back (b.getSample (0, i));
+                }
+                return out;
+            };
+            auto selfFact = [] (uint64_t publisher, bool selfDerived)
+            {
+                echojay::DetectedKeyFact f;
+                f.valid = true; f.root = 7; f.minor = false; f.confidence = 0.86f;   // G major: F -> F#, the damaging case
+                f.tuningHz = 440.0f; f.fromBus = true; f.publisherId = publisher; f.selfDerived = selfDerived;
+                std::strncpy (f.sourceName, "this channel", sizeof (f.sourceName) - 1);
+                echojay::KeyFeed::instance().publish (f);
+            };
+            auto identical = [] (const std::vector<float>& a, const std::vector<float>& b)
+            { return a.size() == b.size() && std::memcmp (a.data(), b.data(), a.size() * sizeof (float)) == 0; };
+            auto differing = [] (const std::vector<float>& a, const std::vector<float>& b)
+            { size_t n = 0; for (size_t i = 0; i < std::min (a.size(), b.size()); ++i) if (a[i] != b[i]) ++n; return n; };
+
+            // (a) guard ON + self-derived self fact  ==  manual chromatic
+            const auto guarded = render ([&] (EedPitchProcessor& q)
+            { q.setKeyFeedSelfId (77); q.debugKeySelfGuard (true); selfFact (77, true);
+              q.applyStructured (params ({ { "key_source", "auto" } }), EedDeviceProcessor::ParamSource::Assistant); });
+            const auto chromatic = render ([&] (EedPitchProcessor& q)
+            { q.setKeyFeedSelfId (0); echojay::KeyFeed::instance().publish (echojay::DetectedKeyFact {});
+              q.applyStructured (params ({ { "scale", "chromatic" } }), EedDeviceProcessor::ParamSource::Assistant); });
+            check (identical (guarded, chromatic),
+                   "guard ON + self-derived self fact renders BIT-IDENTICAL to manual chromatic ("
+                   + juce::String ((int) differing (guarded, chromatic)) + " samples differ)");
+            // The positive control: with the guard OFF the same self fact
+            // applies G major and the render MUST differ (F -> F#).
+            const auto unguarded = render ([&] (EedPitchProcessor& q)
+            { q.setKeyFeedSelfId (77); q.debugKeySelfGuard (false); selfFact (77, true);
+              q.applyStructured (params ({ { "key_source", "auto" } }), EedDeviceProcessor::ParamSource::Assistant); });
+            check (! identical (unguarded, chromatic),
+                   "POSITIVE CONTROL: guard OFF applies the self-derived G major and differs from chromatic ("
+                   + juce::String ((int) differing (unguarded, chromatic)) + " samples differ)");
+            // (b) guard ON vs OFF under an EXTERNAL fact: bit-identical (no change to the followed path)
+            const auto extOn = render ([&] (EedPitchProcessor& q)
+            { q.setKeyFeedSelfId (77); q.debugKeySelfGuard (true); selfFact (12345, false);
+              q.applyStructured (params ({ { "key_source", "auto" } }), EedDeviceProcessor::ParamSource::Assistant); });
+            const auto extOff = render ([&] (EedPitchProcessor& q)
+            { q.setKeyFeedSelfId (77); q.debugKeySelfGuard (false); selfFact (12345, false);
+              q.applyStructured (params ({ { "key_source", "auto" } }), EedDeviceProcessor::ParamSource::Assistant); });
+            check (identical (extOn, extOff),
+                   "guard ON vs OFF under an EXTERNAL fact: bit-identical ("
+                   + juce::String ((int) differing (extOn, extOff)) + " samples differ)");
+            echojay::KeyFeed::instance().publish (echojay::DetectedKeyFact {});
+        }
+    }
+
+    std::printf ("== SEAN'S SAVED STATE (3 Sep 2026): what is DISPLAYED vs what is APPLIED ==\n");
+    {
+        // The pitch device's slot state exactly as decoded from his Logic
+        // project (DEFECT_AUTOKEY_PROVENANCE.md §15): reference_source auto,
+        // reference_hz 439.19 persisted from the pre-guard era.
+        static const char* kSeanState =
+            "{\"v\": 1, \"bypassed\": false, \"params\": {\"correction_mode\": 4.0, \"correct\": 1.0, "
+            "\"retune_speed_ms\": 44.211582183837891, \"flex\": 0.0, \"humanize\": 0.0, "
+            "\"targeting_ignores_vibrato\": 0.0, \"key_source\": 1.0, \"key_root\": 2.0, \"scale\": 1.0, "
+            "\"reference_source\": 0.0, \"reference_hz\": 439.19219970703125, \"ref_manual_by_user\": 0.0, "
+            "\"transpose\": 0.0, \"natural_vibrato\": 0.0, \"vib_depth_cents\": 0.0, \"vib_rate_hz\": 5.5, "
+            "\"vib_shape\": 0.0, \"vib_onset_ms\": 300.0, \"voice_type\": 1.0, \"tracking\": 1.0, "
+            "\"formant_mode\": 1.0, \"formant_shift\": 0.0, \"low_latency\": 0.0, \"mix\": 100.0, "
+            "\"output_db\": 0.0, \"target_hz\": 0.0, \"reset_stats\": 0.0}}";
+        EedPitchProcessor q;
+        q.prepareToPlay (48000.0, 512);
+        q.setKeyFeedSelfId (77);
+        echojay::KeyFeed::instance().publish (echojay::DetectedKeyFact {});   // his topology: no external fact
+        q.setStateInformation (kSeanState, (int) std::strlen (kSeanState));
+        auto pump = [&] (int blocks)
+        { juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m; for (int i = 0; i < blocks; ++i) { b.clear(); q.processBlock (b, m); } };
+        pump (4);
+        auto st = q.autoKeyState();
+        std::printf ("    loaded: key_source %s, reference_source %s, reference_hz FIELD %.2f, APPLIED %.2f, seam_attack_ms %.0f, retune %.2f\n",
+                     q.getParamValue ("key_source") < 0.5 ? "auto" : "manual", st.refAuto ? "auto" : "manual",
+                     q.getParamValue ("reference_hz"), st.refApplied, q.getParamValue ("seam_attack_ms"), q.getParamValue ("retune_speed_ms"));
+        check (! st.active, "key is MANUAL (not on the auto path)");
+        check (st.refAuto, "reference is AUTO");
+        check (std::abs (st.refApplied - 440.0) < 0.05, "APPLIED reference under auto with no source is 440.0");
+        check (std::abs (q.getParamValue ("reference_hz") - 439.19) < 0.01,
+               "...while the reference_hz FIELD (the REF knob) still reads the persisted 439.19 - DORMANT contamination");
+        check (std::abs (q.getParamValue ("seam_attack_ms") - 60.0) < 0.01, "seam_attack_ms absent from the state -> schema default 60 applied");
+        // FullMix role on a vocal: his own KeyEngine publishes a self-derived fact
+        {
+            echojay::DetectedKeyFact f; f.valid = true; f.root = 0; f.minor = false; f.confidence = 0.86f;
+            f.tuningHz = 439.19f; f.fromBus = true; f.publisherId = 77; f.selfDerived = true;
+            std::strncpy (f.sourceName, "this channel", sizeof (f.sourceName) - 1);
+            echojay::KeyFeed::instance().publish (f);
+        }
+        pump (4); st = q.autoKeyState();
+        check (std::abs (st.refApplied - 440.0) < 0.05 && st.refSelfIgnored,
+               "a self-derived 439.19 fact from his own channel is refused: applied stays 440 (refSelfIgnored)");
+        check (! st.active, "...and his MANUAL key is untouched by the key guard (not on the auto path)");
+        // THE DORMANT VALUE WAKES UP: switching reference to manual applies the field.
+        echojay::KeyFeed::instance().publish (echojay::DetectedKeyFact {});
+        q.applyStructured (params ({ { "reference_source", "manual" } }), EedDeviceProcessor::ParamSource::Assistant);
+        pump (4); st = q.autoKeyState();
+        std::printf ("    after reference_source -> manual: APPLIED %.2f\n", st.refApplied);
+        check (std::abs (st.refApplied - 439.19) < 0.01,
+               "switching reference_source to manual APPLIES the persisted 439.19 - the guard never fires on a loaded value");
+        echojay::KeyFeed::instance().publish (echojay::DetectedKeyFact {});
+    }
+
+    std::printf ("== THE RETUNE DIAL (round 46): the curve, the default, off-curve, saved-state semantics ==\n");
+    {
+        // Bar leg 6: a fresh instance is at dial 0 = (6 ms, depth 100).
+        {
+            EedPitchProcessor q; q.prepareToPlay (48000.0, 512);
+            check (std::abs (q.getParamValue ("retune")) < 1.0e-6, "fresh instance: retune dial 0");
+            check (std::abs (q.getParamValue ("retune_speed_ms") - 6.0) < 1.0e-4 && std::abs (q.getParamValue ("depth") - 100.0) < 1.0e-4,
+                   "fresh instance: retune_speed_ms 6 / depth 100 (the round-40 default)");
+        }
+        // Bar leg 2 (the pairs): the shipped mapping equals the round-40 v3 rows
+        // (transfer_tf4_2026-09-05.txt) at the 18 measured positions, to the
+        // precision those rows were run at (retune %.1f ms, depth %.3f).
+        {
+            struct Row { double dial, ms, depth; };
+            static const Row kTf4[] = {
+                { 0, 6.0, 1.000 }, { 2, 6.1, 0.932 }, { 5, 6.7, 0.870 }, { 10, 9.0, 0.789 }, { 15, 12.7, 0.720 },
+                { 20, 17.8, 0.658 }, { 25, 24.5, 0.600 }, { 30, 32.6, 0.545 }, { 35, 42.3, 0.494 }, { 40, 53.4, 0.444 },
+                { 45, 65.9, 0.396 }, { 50, 80.0, 0.350 }, { 75, 115.0, 0.300 }, { 100, 150.0, 0.250 }, { 150, 150.0, 0.200 },
+                { 200, 150.0, 0.150 }, { 300, 150.0, 0.125 }, { 400, 150.0, 0.100 } };
+            EedPitchProcessor q; q.prepareToPlay (48000.0, 512);
+            bool all = true;
+            for (const auto& r : kTf4)
+            {
+                q.setParamValue ("retune", r.dial);
+                const double ms = q.getParamValue ("retune_speed_ms"), dp = q.getParamValue ("depth") * 0.01;
+                const bool ok = std::abs (ms - r.ms) <= 0.05 + 1.0e-9 && std::abs (dp - r.depth) <= 0.0005 + 1.0e-9;
+                std::printf ("    dial %3.0f -> retune %7.3f ms  depth %.4f   (tf4 row %5.1f / %.3f) %s\n", r.dial, ms, dp, r.ms, r.depth, ok ? "" : "MISMATCH");
+                all = all && ok;
+            }
+            check (all, "the shipped mapping reproduces the 18 round-40 (retune, depth) pairs within the rows' printed precision, on-curve at every one");
+        }
+        // Round 51: DEPTH / retune_speed_ms as a LIVE override (while the plugin is
+        // open), and a mode as a dial position. No off-curve state.
+        {
+            EedPitchProcessor q; q.prepareToPlay (48000.0, 512);
+            q.setParamValue ("retune", 100.0);
+            check (std::abs (q.getParamValue ("retune_speed_ms") - 150.0) < 1.0e-3 && std::abs (q.getParamValue ("depth") - 25.0) < 1.0e-2,
+                   "dial 100 -> 150 ms / depth 25");
+            q.setParamValue ("depth", 50.0);
+            check (std::abs (q.getParamValue ("retune") - 100.0) < 1.0e-6 && std::abs (q.getParamValue ("depth") - 50.0) < 1.0e-3,
+                   "DEPTH turned by hand to 50: applied live, the dial still reads 100 (no suffix, no state)");
+            q.setParamValue ("retune", 100.0);
+            check (std::abs (q.getParamValue ("depth") - 25.0) < 1.0e-2, "turning RETUNE puts depth back on the curve (25)");
+            q.setParamValue ("retune_speed_ms", 44.0);
+            check (std::abs (q.getParamValue ("retune_speed_ms") - 44.0) < 1.0e-4, "a direct retune_speed_ms write (the model's path) is honoured live");
+            q.applyStructured (params ({ { "correction_mode", "natural" } }), EedDeviceProcessor::ParamSource::Assistant);
+            check (std::abs (q.getParamValue ("retune") - 78.571) < 0.01 && std::abs (q.getParamValue ("retune_speed_ms") - 120.0) < 0.05 && std::abs (q.getParamValue ("depth") - 29.29) < 0.05,
+                   "mode natural is the DIAL POSITION of its 120 ms (78.6): 120 ms / depth 29 from the curve - the dial means what it says");
+            q.setParamValue ("retune", 0.0);
+            check ((int) std::lround (q.getParamValue ("correction_mode")) == 4, "turning the dial from a mode: custom");
+        }
+        // Round 51 (the round-46 leg-1 guarantee WITHDRAWN): a saved state that is
+        // not on the curve SNAPS to the nearest dial position on load.
+        {
+            const juce::String old44 =
+                "{\"v\": 1, \"bypassed\": false, \"params\": {\"correction_mode\": 4.0, \"correct\": 1.0, "
+                "\"retune_speed_ms\": 44.211582183837891, \"flex\": 0.0, \"humanize\": 0.0, \"key_source\": 1.0, \"key_root\": 2.0, \"scale\": 1.0}}";
+            EedPitchProcessor q; q.prepareToPlay (48000.0, 512);
+            q.setStateInformation (old44.toRawUTF8(), (int) old44.getNumBytesAsUTF8());
+            std::printf ("    Sean's 3 Sep file (retune 44.21 / depth 100) loads as dial %.2f = %.2f ms / depth %.0f %%  (distance snapped: %.1f ms in retune, %.0f points in depth)\n",
+                         q.getParamValue ("retune"), q.getParamValue ("retune_speed_ms"), q.getParamValue ("depth"),
+                         44.211582 - q.getParamValue ("retune_speed_ms"), 100.0 - q.getParamValue ("depth"));
+            check (std::abs (q.getParamValue ("retune")) < 1.0e-6 && std::abs (q.getParamValue ("retune_speed_ms") - 6.0) < 1.0e-4 && std::abs (q.getParamValue ("depth") - 100.0) < 1.0e-3,
+                   "Sean's 3 Sep file SNAPS to dial 0 = 6 ms / depth 100 (the nearest curve point, and the setting he chose by ear in round 40)");
+            const juce::String old6 = old44.replace ("44.211582183837891", "6.0");
+            q.setStateInformation (old6.toRawUTF8(), (int) old6.getNumBytesAsUTF8());
+            check (std::abs (q.getParamValue ("retune")) < 1.0e-6 && std::abs (q.getParamValue ("retune_speed_ms") - 6.0) < 1.0e-6, "his session at retune 6 / depth 100: dial 0, unchanged");
+            q.setParamValue ("retune", 200.0);
+            juce::MemoryBlock st; q.getStateInformation (st);
+            EedPitchProcessor r; r.prepareToPlay (48000.0, 512); r.setStateInformation (st.getData(), (int) st.getSize());
+            check (std::abs (r.getParamValue ("retune") - 200.0) < 1.0e-6 && std::abs (r.getParamValue ("retune_speed_ms") - 150.0) < 1.0e-3 && std::abs (r.getParamValue ("depth") - 15.0) < 1.0e-2,
+                   "save/load at dial 200: retune 200, 150 ms / depth 15");
+            q.setParamValue ("depth", 60.0);
+            q.getStateInformation (st);
+            EedPitchProcessor r2; r2.prepareToPlay (48000.0, 512); r2.setStateInformation (st.getData(), (int) st.getSize());
+            std::printf ("    dial 200 with DEPTH overridden to 60 saved -> reloads as dial %.2f = %.1f ms / depth %.1f %%\n", r2.getParamValue ("retune"), r2.getParamValue ("retune_speed_ms"), r2.getParamValue ("depth"));
+            float ms = 0.0f, dp = 1.0f; echojay::RetuneMap::dialTo ((float) r2.getParamValue ("retune"), ms, dp);
+            check (std::abs (r2.getParamValue ("retune_speed_ms") - ms) < 0.05 && std::abs (r2.getParamValue ("depth") - dp * 100.0) < 0.5,
+                   "...the override is NOT a loaded state: reloading returns to the curve (the nearest dial position to 150 ms / 60 %)");
+            int iR = -1, iMs = -1, iD = -1, n = 0;
+            for (const auto& sp : EedPitchProcessor::schema().params())
+            { if (sp.id == "retune") iR = n; if (sp.id == "retune_speed_ms") iMs = n; if (sp.id == "depth") iD = n; ++n; }
+            check (iR >= 0 && iR < iMs && iR < iD, "schema order: `retune` precedes retune_speed_ms and depth");
+        }
+    }
+
+    std::printf ("== THE DEPTH TRAP CANNOT EXIST (round 51): a saved low depth SNAPS to the curve on load ==\n");
+    {
+        const juce::String saved45 =
+            "{\"v\": 1, \"bypassed\": false, \"params\": {\"correction_mode\": 4.0, \"correct\": 1.0, "
+            "\"retune_speed_ms\": 6.0, \"seam_attack_ms\": 60.0, \"flex\": 0.0, \"humanize\": 0.0, \"depth\": 10.0, "
+            "\"targeting_ignores_vibrato\": 0.0, \"key_source\": 1.0, \"key_root\": 2.0, \"scale\": 1.0, "
+            "\"reference_source\": 0.0, \"reference_hz\": 440.0, \"natural_vibrato\": 0.0, \"voice_type\": 1.0, "
+            "\"tracking\": 1.0, \"formant_mode\": 1.0, \"formant_shift\": 0.0, \"low_latency\": 0.0, \"mix\": 100.0, \"output_db\": 0.0}}";
+        EedPitchProcessor q; q.prepareToPlay (48000.0, 512);
+        q.setStateInformation (saved45.toRawUTF8(), (int) saved45.getNumBytesAsUTF8());
+        float ms = 0.0f, dp = 1.0f; echojay::RetuneMap::dialTo ((float) q.getParamValue ("retune"), ms, dp);
+        std::printf ("    the round-45 file (6 ms / depth 10) loads as dial %.2f = %.1f ms / depth %.0f %%\n", q.getParamValue ("retune"), q.getParamValue ("retune_speed_ms"), q.getParamValue ("depth"));
+        check (std::abs (q.getParamValue ("retune_speed_ms") - ms) < 0.05 && std::abs (q.getParamValue ("depth") - dp * 100.0) < 0.5 && q.getParamValue ("depth") > 30.0,
+               "the file's depth 10 is NOT applied: the state snaps to the nearest curve point, and the dial means what it says");
+        const char* env = std::getenv ("EJ_PITCH_SOURCE");
+        juce::File src (env != nullptr ? juce::String (env) : juce::String ("/Users/SeanD/Music/Logic/test/Bounces/sourceNEW.wav"));
+        juce::AudioBuffer<float> take; double fs = 48000.0;
+        if (src.existsAsFile())
+        {
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::AudioFormatReader> r (wav.createReaderFor (src.createInputStream().release(), true));
+            if (r != nullptr) { fs = r->sampleRate; take.setSize (1, (int) r->lengthInSamples); r->read (&take, 0, (int) r->lengthInSamples, 0, true, false); }
+        }
+        if (take.getNumSamples() > 0)
+        {
+            auto render = [&] (const std::function<void (EedPitchProcessor&)>& setup) -> std::vector<float>
+            {
+                EedPitchProcessor p; p.prepareToPlay (fs, 512); setup (p);
+                std::vector<float> out; out.reserve ((size_t) take.getNumSamples());
+                juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m;
+                for (int pos = 0; pos < take.getNumSamples(); pos += 512)
+                {
+                    const int n = juce::jmin (512, take.getNumSamples() - pos);
+                    b.clear(); b.copyFrom (0, 0, take, 0, pos, n); b.copyFrom (1, 0, take, 0, pos, n);
+                    p.processBlock (b, m);
+                    for (int i = 0; i < n; ++i) out.push_back (b.getSample (0, i));
+                }
+                return out;
+            };
+            EedPitchProcessor probe; probe.prepareToPlay (fs, 512); const int lat = probe.getLatencySamples();
+            auto devFromSource = [&] (const std::vector<float>& out)
+            {
+                double e = 0, sref = 0; size_t n = 0;
+                for (size_t i = (size_t) lat; i < out.size(); ++i) { const double d = (double) out[i] - (double) take.getSample (0, (int) i - lat); e += d * d; sref += (double) take.getSample (0, (int) i - lat) * take.getSample (0, (int) i - lat); ++n; }
+                return n > 0 && sref > 0 ? 100.0 * std::sqrt (e / (double) n) / std::sqrt (sref / (double) n) : 0.0;
+            };
+            const juce::String saved45full = saved45.replace ("\"depth\": 10.0", "\"depth\": 100.0");
+            const auto dial0  = render ([&] (EedPitchProcessor& p) { p.setStateInformation (saved45full.toRawUTF8(), (int) saved45full.getNumBytesAsUTF8()); });
+            const auto loaded = render ([&] (EedPitchProcessor& p) { p.setStateInformation (saved45.toRawUTF8(), (int) saved45.getNumBytesAsUTF8()); });
+            const double dv0 = devFromSource (dial0), dvL = devFromSource (loaded);
+            std::printf ("    deviation from the latency-aligned SOURCE (RMS %% of source): dial 0 %.1f%%   the round-45 low-depth file as it now loads %.1f%%   (the trap rendered 11.4%% in round 50)\n", dv0, dvL);
+            check (dvL > 0.4 * dv0, "the loaded file corrects at the curve's depth - no longer nearly uncorrected");
+        }
+    }
+
+    std::printf ("== KEY_SOURCE SURVIVES A STATE LOAD (round 50: the key setters flipped auto to manual on load) ==\n");
+    {
+        const juce::String autoState =
+            "{\"v\": 1, \"bypassed\": false, \"params\": {\"key_source\": 0.0, \"key_root\": 2.0, \"scale\": 1.0}}";
+        EedPitchProcessor q; q.prepareToPlay (48000.0, 512);
+        q.setStateInformation (autoState.toRawUTF8(), (int) autoState.getNumBytesAsUTF8());
+        check (q.getParamValue ("key_source") < 0.5, "a session saved with key_source AUTO loads as AUTO (key_root/scale replayed from the file do not take manual)");
+        q.setParamValue ("key_root", 4.0);
+        check (q.getParamValue ("key_source") >= 0.5, "...while a LIVE key_root write still takes manual");
+    }
+
+    std::printf ("== LAYOUT AUDIT (round 50, the standing rule extended): every view, several sizes, no carry-over, everything inside its frame ==\n");
+    {
+        juce::ScopedJuceInitialiser_GUI gui;
+        const int sizes[][2] = { { 620, 400 }, { 620, 340 }, { 760, 480 }, { 560, 300 } };
+        for (const auto& sz : sizes)
+        {
+            EedPitchProcessor p; p.prepareToPlay (48000.0, 512);
+            std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
+            auto* pe = dynamic_cast<EedPitchEditor*> (ed.get());
+            if (pe == nullptr) { check (false, "editor"); break; }
+            ed->setSize (sz[0], sz[1]);
+            const char* views[] = { "front", "advanced", "front after advanced" };
+            for (int v = 0; v < 3; ++v)
+            {
+                pe->showAdvanced (v == 1);
+                const auto bad = pe->auditLayout();
+                for (const auto& b : bad) std::printf ("      %dx%d %s: %s\n", sz[0], sz[1], views[v], b.toRawUTF8());
+                check (bad.isEmpty(), juce::String (sz[0]) + "x" + juce::String (sz[1]) + " " + views[v] + ": layout clean (" + juce::String (bad.size()) + " violations)");
+            }
+        }
+    }
+
+    // ---- SAVED-STATE RENDER IDENTITY (5 Sep 2026, UI_SIMPLIFICATION round 46, bar leg 1):
+    // EJ_STATE_RENDER_OUT=<dir>: renders the standing take (EJ_PITCH_SOURCE
+    // overrides) through saved states exactly as a host would load them. The
+    // FIRST run (the pre-change binary) writes <dir>/<name>.wav; every later
+    // run COMPARES against those files bit for bit. This is how "nothing
+    // already saved is reinterpreted" is proved rather than asserted.
+    if (const char* sdir = std::getenv ("EJ_STATE_RENDER_OUT"))
+    {
+        std::printf ("== SAVED-STATE RENDER IDENTITY -> %s ==\n", sdir);
+        const char* env = std::getenv ("EJ_PITCH_SOURCE");
+        juce::File src (env != nullptr ? juce::String (env) : juce::String ("/Users/SeanD/Music/Logic/test/Bounces/sourceNEW.wav"));
+        juce::AudioBuffer<float> take; double fs = 48000.0;
+        if (src.existsAsFile())
+        {
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::AudioFormatReader> r (wav.createReaderFor (src.createInputStream().release(), true));
+            if (r != nullptr) { fs = r->sampleRate; take.setSize (1, (int) r->lengthInSamples); r->read (&take, 0, (int) r->lengthInSamples, 0, true, false); }
+        }
+        if (take.getNumSamples() == 0) std::printf ("  [SKIP] material not found\n");
+        else
+        {
+            juce::File out (sdir); out.createDirectory();
+            // Sean's slot state as decoded from his Logic project (3 Sep 2026), verbatim.
+            const juce::String sean44 =
+                "{\"v\": 1, \"bypassed\": false, \"params\": {\"correction_mode\": 4.0, \"correct\": 1.0, "
+                "\"retune_speed_ms\": 44.211582183837891, \"flex\": 0.0, \"humanize\": 0.0, "
+                "\"targeting_ignores_vibrato\": 0.0, \"key_source\": 1.0, \"key_root\": 2.0, \"scale\": 1.0, "
+                "\"reference_source\": 0.0, \"reference_hz\": 439.19219970703125, \"ref_manual_by_user\": 0.0, "
+                "\"transpose\": 0.0, \"natural_vibrato\": 0.0, \"vib_depth_cents\": 0.0, \"vib_rate_hz\": 5.5, "
+                "\"vib_shape\": 0.0, \"vib_onset_ms\": 300.0, \"voice_type\": 1.0, \"tracking\": 1.0, "
+                "\"formant_mode\": 1.0, \"formant_shift\": 0.0, \"low_latency\": 0.0, \"mix\": 100.0, "
+                "\"output_db\": 0.0, \"target_hz\": 0.0, \"reset_stats\": 0.0}}";
+            const juce::String sean6  = sean44.replace ("44.211582183837891", "6.0");   // his session at the round-40 default
+            const juce::String sean6d = sean6.replace ("\"flex\": 0.0", "\"depth\": 100.0, \"seam_attack_ms\": 60.0, \"flex\": 0.0");   // as today's build saves it
+            struct Case { const char* name; juce::String state; };
+            const Case cases[] = { { "sean_retune44", sean44 }, { "sean_retune6", sean6 }, { "sean_retune6_depth100", sean6d }, { "fresh_default", {} } };
+            for (const auto& c : cases)
+            {
+                EedPitchProcessor q; q.prepareToPlay (fs, 512);
+                q.setKeyFeedSelfId (77);
+                echojay::KeyFeed::instance().publish (echojay::DetectedKeyFact {});
+                if (c.state.isNotEmpty()) q.setStateInformation (c.state.toRawUTF8(), (int) c.state.getNumBytesAsUTF8());
+                juce::AudioBuffer<float> o (1, take.getNumSamples());
+                juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m;
+                for (int pos = 0; pos < take.getNumSamples(); pos += 512)
+                {
+                    const int n = juce::jmin (512, take.getNumSamples() - pos);
+                    b.clear(); b.copyFrom (0, 0, take, 0, pos, n); b.copyFrom (1, 0, take, 0, pos, n);
+                    q.processBlock (b, m);
+                    o.copyFrom (0, pos, b, 0, 0, n);
+                }
+                const juce::String applied = "retune_speed_ms " + juce::String (q.getParamValue ("retune_speed_ms"), 2)
+                                           + " depth " + juce::String (q.getParamValue ("depth"), 1);
+                juce::File f = out.getChildFile (juce::String (c.name) + ".wav");
+                juce::WavAudioFormat wav;
+                if (f.existsAsFile())
+                {
+                    std::unique_ptr<juce::AudioFormatReader> r (wav.createReaderFor (f.createInputStream().release(), true));
+                    juce::AudioBuffer<float> ref;
+                    if (r != nullptr) { ref.setSize (1, (int) r->lengthInSamples); r->read (&ref, 0, (int) r->lengthInSamples, 0, true, false); }
+                    size_t diff = 0;
+                    const int n = juce::jmin (ref.getNumSamples(), o.getNumSamples());
+                    for (int i = 0; i < n; ++i) if (ref.getSample (0, i) != o.getSample (0, i)) ++diff;
+                    const bool same = ref.getNumSamples() == o.getNumSamples() && diff == 0;
+                    check (same, juce::String (c.name) + " renders BIT-IDENTICAL to the reference render (" + juce::String ((int) diff)
+                                 + " samples differ, " + juce::String (ref.getNumSamples()) + " vs " + juce::String (o.getNumSamples()) + "); applied " + applied);
+                }
+                else
+                {
+                    std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (new juce::FileOutputStream (f), fs, 1, 32, {}, 0));
+                    if (w != nullptr) { w->writeFromAudioSampleBuffer (o, 0, o.getNumSamples()); w.reset(); }
+                    std::printf ("  wrote reference %s (%d samples); applied %s\n", f.getFileName().toRawUTF8(), o.getNumSamples(), applied.toRawUTF8());
+                }
+            }
+        }
+    }
+
+    std::printf ("== TRANSPORT RESET (round 48, DEFECT_PRESS_PLAY_PHASING): positive control, then the fix ==\n");
+    {
+        const char* env = std::getenv ("EJ_PITCH_SOURCE");
+        juce::File src (env != nullptr ? juce::String (env) : juce::String ("/Users/SeanD/Music/Logic/test/Bounces/sourceNEW.wav"));
+        juce::AudioBuffer<float> take; double fs = 48000.0;
+        if (src.existsAsFile())
+        {
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::AudioFormatReader> r (wav.createReaderFor (src.createInputStream().release(), true));
+            if (r != nullptr) { fs = r->sampleRate; take.setSize (1, (int) r->lengthInSamples); r->read (&take, 0, (int) r->lengthInSamples, 0, true, false); }
+        }
+        if (take.getNumSamples() == 0) std::printf ("  [SKIP] material not found - the reset legs are not measured\n");
+        else
+        {
+            // Block-aligned positions: play 0..P1, then LOCATE to P2 and render D.
+            const int blk = 512;
+            const int P1 = (int) (4.0 * fs) / blk * blk, P2 = (int) (5.8 * fs) / blk * blk, D = (int) (1.0 * fs) / blk * blk;
+            auto runFrom = [&] (EedPitchProcessor& q, int from, int len, std::vector<float>* out)
+            {
+                juce::AudioBuffer<float> b (2, blk); juce::MidiBuffer m;
+                for (int pos = from; pos < from + len && pos + blk <= take.getNumSamples(); pos += blk)
+                {
+                    b.clear(); b.copyFrom (0, 0, take, 0, pos, blk); b.copyFrom (1, 0, take, 0, pos, blk);
+                    q.processBlock (b, m);
+                    if (out != nullptr) for (int i = 0; i < blk; ++i) out->push_back (b.getSample (0, i));
+                }
+            };
+            auto make = [&] () { auto q = std::make_unique<EedPitchProcessor>(); q->prepareToPlay (fs, blk);
+                                 q->applyStructured (params ({ { "key_source", "manual" }, { "key_root", 2.0 }, { "scale", 1.0 } }), EedDeviceProcessor::ParamSource::Assistant); return q; };
+            std::vector<float> fresh, stale, cleared;
+            { auto q = make(); runFrom (*q, P2, D, &fresh); }                                   // FRESH: a fresh instance at P2
+            { auto q = make(); runFrom (*q, 0, P1, nullptr); runFrom (*q, P2, D, &stale); }   // LOCATE-STALE: what a host gets today
+            { auto q = make(); runFrom (*q, 0, P1, nullptr); static_cast<juce::AudioProcessor&> (*q).reset(); runFrom (*q, P2, D, &cleared); }   // LOCATE-RESET: the fix (the host's call, through the base class)
+            auto compare = [&] (const char* name, const std::vector<float>& a)
+            {
+                const int n150 = (int) (0.150 * fs);
+                size_t diff150 = 0, diffAll = 0; long lastDiff = -1; double e150 = 0, s150 = 0, eRest = 0, sRest = 0;
+                for (size_t i = 0; i < std::min (a.size(), fresh.size()); ++i)
+                {
+                    const double d = (double) a[i] - (double) fresh[i], f = (double) fresh[i];
+                    if (a[i] != fresh[i]) { ++diffAll; lastDiff = (long) i; if ((int) i < n150) ++diff150; }
+                    if ((int) i < n150) { e150 += d * d; s150 += f * f; } else { eRest += d * d; sRest += f * f; }
+                }
+                const double rms150 = std::sqrt (e150 / n150), rmsF150 = std::sqrt (s150 / n150);
+                const double rmsRest = std::sqrt (eRest / std::max<size_t> (1, a.size() - (size_t) n150)), rmsFRest = std::sqrt (sRest / std::max<size_t> (1, a.size() - (size_t) n150));
+                std::printf ("    %-13s vs FRESH: first 150 ms %6zu/%d samples differ, diff RMS %.5f (signal RMS %.5f, %.1f%%); after 150 ms diff RMS %.5f (%.1f%%); last differing sample at %.1f ms; %zu differ in all\n",
+                             name, diff150, n150, rms150, rmsF150, rmsF150 > 0 ? 100.0 * rms150 / rmsF150 : 0.0, rmsRest, rmsFRest > 0 ? 100.0 * rmsRest / rmsFRest : 0.0,
+                             lastDiff < 0 ? 0.0 : 1000.0 * lastDiff / fs, diffAll);
+                struct R { size_t diff150, diffAll; double pct150; } res { diff150, diffAll, rmsF150 > 0 ? 100.0 * rms150 / rmsF150 : 0.0 };
+                return res;
+            };
+            std::printf ("    P1 %.2f s -> locate -> P2 %.2f s, render %.2f s (%s)\n", P1 / fs, P2 / fs, D / fs, src.getFileName().toRawUTF8());
+            const auto rs = compare ("LOCATE-STALE", stale);
+            const auto rc = compare ("LOCATE-RESET", cleared);
+            // Bar leg 1, the positive control: without clearing, the first 150 ms
+            // after the locate are NOT the fresh render - the stale rings are
+            // audible in the numbers. If this fails the mechanism is unreachable
+            // here and the fix cannot be tested by this harness.
+            check (rs.diff150 > 0 && rs.pct150 > 1.0,
+                   "POSITIVE CONTROL: a locate WITHOUT clearing synthesises the first 150 ms from stale content (differs from FRESH by " + juce::String (rs.pct150, 1) + "% RMS)");
+            // Bar legs 2 and 4: after reset(), bit-identical to a fresh instance
+            // - not just in the first 150 ms but throughout, which is the
+            // "reset == fresh by construction" claim made measurable.
+            check (rc.diffAll == 0 && cleared.size() == fresh.size(),
+                   "THE FIX: a locate WITH reset() renders BIT-IDENTICAL to a fresh instance from the same position (" + juce::String ((int) rc.diffAll) + " samples differ)");
+        }
+    }
+
+    // ---- PARAMETER VERIFICATION RENDERS (5 Sep 2026, UI_SIMPLIFICATION ruling A):
+    // A PARAMETER'S DOCUMENTED BEHAVIOUR IS A CLAIM, NOT A FACT, UNTIL A RENDER
+    // SHOWS IT. Gated by EJ_VERIFY_OUT=<dir>: renders the standing take through
+    // a FRESH processor at the schema defaults, then once per (param, value) -
+    // min / mid / max / default for numerics, every choice for choice params,
+    // both states for booleans - through the REAL setParamValue path (the path
+    // a knob takes). Offline rulers then say whether the renders differ and in
+    // which direction. natural_vibrato was the param whose description was
+    // fiction; this is the method that caught it, applied to all of them.
+    if (const char* vdir = std::getenv ("EJ_VERIFY_OUT"))
+    {
+        std::printf ("== PARAMETER VERIFICATION RENDERS -> %s ==\n", vdir);
+        const char* env = std::getenv ("EJ_PITCH_SOURCE");
+        juce::File src (env != nullptr ? juce::String (env) : juce::String ("/Users/SeanD/Music/Logic/test/Bounces/sourceNEW.wav"));
+        juce::AudioBuffer<float> take; double fs = 48000.0;
+        if (src.existsAsFile())
+        {
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::AudioFormatReader> r (wav.createReaderFor (src.createInputStream().release(), true));
+            if (r != nullptr) { fs = r->sampleRate; take.setSize (1, (int) r->lengthInSamples); r->read (&take, 0, (int) r->lengthInSamples, 0, true, false); }
+        }
+        if (take.getNumSamples() == 0) std::printf ("  [SKIP] material not found\n");
+        else
+        {
+            juce::File out (vdir); out.createDirectory();
+            auto renderTo = [&] (const juce::String& name, const std::function<void (EedPitchProcessor&)>& setup)
+            {
+                EedPitchProcessor q; q.prepareToPlay (fs, 512);
+                q.applyStructured (params ({ { "key_source", "manual" }, { "key_root", 2.0 }, { "scale", 1.0 } }), EedDeviceProcessor::ParamSource::Assistant);   // D minor by hand: the take's key, so tuning params act
+                setup (q);
+                juce::AudioBuffer<float> o (1, take.getNumSamples());
+                juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m;
+                for (int pos = 0; pos < take.getNumSamples(); pos += 512)
+                {
+                    const int n = juce::jmin (512, take.getNumSamples() - pos);
+                    b.clear(); b.copyFrom (0, 0, take, 0, pos, n); b.copyFrom (1, 0, take, 0, pos, n);
+                    q.processBlock (b, m);
+                    o.copyFrom (0, pos, b, 0, 0, n);
+                }
+                juce::File f = out.getChildFile (name + ".wav"); f.deleteFile();
+                juce::WavAudioFormat wav;
+                std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (new juce::FileOutputStream (f), fs, 1, 32, {}, 0));
+                if (w != nullptr) { w->writeFromAudioSampleBuffer (o, 0, o.getNumSamples()); w.reset(); }
+                std::printf ("  wrote %s\n", f.getFileName().toRawUTF8());
+            };
+            renderTo ("default", [] (EedPitchProcessor&) {});
+            for (const auto& sp : EedPitchProcessor::schema().params())
+            {
+                const juce::String id (sp.id);
+                if (id == "reset_stats" || id == "ref_manual_by_user" || id == "target_hz") continue;   // momentary / provenance flag / P1 diagnostic
+                std::vector<double> values;
+                if (! sp.choices.empty()) { for (size_t i = 0; i < sp.choices.size(); ++i) values.push_back ((double) i); }
+                else if (sp.boolean) { values = { 0.0, 1.0 }; }
+                else { values = { sp.min, 0.5 * (sp.min + sp.max), sp.max }; if (std::find (values.begin(), values.end(), sp.def) == values.end()) values.push_back (sp.def); }
+                for (double v : values)
+                {
+                    juce::String label = sp.choices.empty() ? juce::String (v, 2) : juce::String (sp.choiceLabel (v));
+                    renderTo (id + "__" + label.replaceCharacter ('/', '-'), [&] (EedPitchProcessor& q)
+                    {
+                        if (id == "formant_shift") q.setParamValue ("formant_mode", 2.0);            // shift only audible in shift mode
+                        if (id == "vib_rate_hz" || id == "vib_shape" || id == "vib_onset_ms") q.setParamValue ("vib_depth_cents", 30.0);   // the generator needs a depth to show rate/shape/onset
+                        if (id == "key_source") { echojay::DetectedKeyFact f; f.valid = true; f.root = 7; f.minor = false; f.confidence = 0.9f; f.tuningHz = 440.0f; f.publisherId = 999; std::strncpy (f.sourceName, "Bus", 4); echojay::KeyFeed::instance().publish (f); }
+                        q.setParamValue (id, v);
+                    });
+                    if (id == "key_source") echojay::KeyFeed::instance().publish (echojay::DetectedKeyFact {});
+                }
+            }
+        }
     }
 
     std::printf ("== below the gate it falls to CHROMATIC, not to the last key ==\n");
@@ -317,6 +950,7 @@ int main()
             { "scale",            "WHAT to correct to" },
             { "reference_source", "WHAT tuning to correct to" },
             { "reference_hz",     "WHAT tuning to correct to" },
+            { "ref_manual_by_user", "internal provenance marker, not character" },
             { "transpose",        "a pitch offset on the result, orthogonal to character" },
             { "voice_type",       "detector fit to the material, not character" },
             { "tracking",         "detector strictness, not character" },
@@ -385,20 +1019,12 @@ int main()
         // list and fails the build.
         struct NoUi { const char* id; const char* why; };
         static const NoUi kNoUi[] = {
-            { "reference_source", "no UI yet. Same one-way SHAPE as key_source's closed "
-                                  "gap, but no hand control writes reference_hz, so only "
-                                  "the model can spring it - and the model can release it" },
-            { "reference_hz",     "no UI yet" },
-            { "transpose",        "no UI yet" },
-            { "natural_vibrato",  "no UI yet - character-relevant, worth a knob eventually" },
-            { "vib_depth_cents",  "no UI yet - added-vibrato block has no panel" },
-            { "vib_rate_hz",      "no UI yet - added-vibrato block has no panel" },
-            { "vib_shape",        "no UI yet - added-vibrato block has no panel" },
-            { "vib_onset_ms",     "no UI yet - added-vibrato block has no panel" },
-            { "formant_shift",    "no UI yet - and the shift path carries a measured "
-                                  "fidelity cost (schema text), so no knob until rebuilt" },
-            { "mix",              "no UI yet - the chain wet knob covers the common case" },
-            { "output_db",        "no UI yet" },
+            { "ref_manual_by_user", "internal provenance marker, deliberately "
+                                    "uncontrolled - see EedPitchProcessor::onStateApplied" },
+            { "transpose",        "INTERNAL, unexposed pending DEFECT_TRANSPOSE_OCTAVE (+12 gives 155c in one region; -12 loses 3.7 dB)" },
+            { "target_hz",        "INTERNAL: the P1 fixed-target diagnostic path (UI_SIMPLIFICATION inventory)" },
+            { "retune_speed_ms",  "INTERNAL since round 46: driven by the RETUNE dial (`retune`); a direct write is a LIVE override; a saved state off the curve snaps to it on load (round 51)" },
+            { "reset_stats",      "INTERNAL: a momentary readout reset (UI_SIMPLIFICATION inventory)" },
         };
         auto exemptUi = [&] (const std::string& id)
         {
@@ -424,6 +1050,93 @@ int main()
                      " handControlledParams() with a control, or to the ledger HERE"
                      " with its status");
         }
+    }
+
+    // ---- reference provenance (29 Aug 2026): the laundering defect --------
+    // A detected reference must never become a manual setting. The pre-fix
+    // machinery saved the corrector's LIVE (detected) reference and the load
+    // flipped the mode to manual - a grid nobody chose, with no control to
+    // change it. These four lock the repaired contract.
+    {
+        std::printf ("\nreference provenance:\n");
+        auto load = [] (EedPitchProcessor& p,
+                        std::initializer_list<std::pair<const char*, juce::var>> kv)
+        {
+            const juce::String js = juce::JSON::toString (params (kv), true);
+            p.setStateInformation (js.toRawUTF8(), (int) js.getNumBytesAsUTF8());
+        };
+        {
+            EedPitchProcessor p;
+            load (p, { { "reference_source", 1.0 }, { "reference_hz", 439.2 } });
+            check (p.getParamValue (EedPitchProcessor::kRefSource) < 0.5,
+                   "laundered state (manual + value, no marker) reverts to AUTO on load");
+        }
+        {
+            EedPitchProcessor p;
+            load (p, { { "reference_source", 1.0 }, { "reference_hz", 441.0 },
+                       { "ref_manual_by_user", 1.0 } });
+            check (p.getParamValue (EedPitchProcessor::kRefSource) >= 0.5,
+                   "marked manual state stays MANUAL on load");
+            check (std::abs (p.getParamValue (EedPitchProcessor::kReferenceHz) - 441.0) < 0.01,
+                   "manual field holds the entered 441");
+        }
+        {
+            EedPitchProcessor p;
+            p.setParamValue (EedPitchProcessor::kReferenceHz, 442.0);
+            check (p.getParamValue (EedPitchProcessor::kRefSource) >= 0.5,
+                   "a LIVE reference write takes manual control");
+            juce::MemoryBlock mb; p.getStateInformation (mb);
+            EedPitchProcessor q;
+            q.setStateInformation (mb.getData(), (int) mb.getSize());
+            check (q.getParamValue (EedPitchProcessor::kRefSource) >= 0.5
+                   && std::abs (q.getParamValue (EedPitchProcessor::kReferenceHz) - 442.0) < 0.01,
+                   "marked manual 442 survives a save/load round-trip");
+        }
+        {
+            EedPitchProcessor p;
+            juce::MemoryBlock mb; p.getStateInformation (mb);
+            EedPitchProcessor q;
+            q.setStateInformation (mb.getData(), (int) mb.getSize());
+            check (q.getParamValue (EedPitchProcessor::kRefSource) < 0.5,
+                   "auto survives a save/load round-trip (the field saved is the manual 440, never a detected grid)");
+        }
+    }
+
+    // ---- EDITOR SNAPSHOTS (5 Sep 2026, round 47; STANDING RULE round 48, the
+    // visual counterpart of ruling A, same wording): A LAYOUT'S CORRECTNESS IS A
+    // CLAIM, NOT A FACT, UNTIL A RENDER SHOWS IT. EVERY UI CHANGE IS RENDERED
+    // OFFLINE AND INSPECTED BEFORE THE USER SEES IT. EJ_EDITOR_SNAP=<dir> renders
+    // the panel offline to PNG - front, front off-curve, advanced - so a layout
+    // is LOOKED AT before Sean does (his screenshot found labels sitting under
+    // the wrong control). Offscreen: no window, no host.
+    if (const char* sdir = std::getenv ("EJ_EDITOR_SNAP"))
+    {
+        std::printf ("== EDITOR SNAPSHOTS -> %s ==\n", sdir);
+        juce::ScopedJuceInitialiser_GUI gui;
+        juce::File out (sdir); out.createDirectory();
+        auto snap = [&] (const char* name, const std::function<void (EedPitchProcessor&, EedPitchEditor&)>& setup)
+        {
+            EedPitchProcessor p; p.prepareToPlay (48000.0, 512);
+            std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
+            auto* pe = dynamic_cast<EedPitchEditor*> (ed.get());
+            if (pe == nullptr) { std::printf ("  no editor\n"); return; }
+            ed->setSize (620, 400);
+            setup (p, *pe);
+            { juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m; for (int i = 0; i < 4; ++i) { b.clear(); p.processBlock (b, m); } }   // a host runs audio: the auto-key state is a block-thread product
+            pe->syncNow();   // what the 30 Hz timer does in a host
+            juce::Image img = ed->createComponentSnapshot (ed->getLocalBounds(), false, 2.0f);
+            juce::File f = out.getChildFile (juce::String (name) + ".png"); f.deleteFile();
+            juce::FileOutputStream os (f);
+            juce::PNGImageFormat png; png.writeImageToStream (img, os);
+            std::printf ("  wrote %s (%dx%d)\n", f.getFileName().toRawUTF8(), img.getWidth(), img.getHeight());
+        };
+        snap ("front",          [] (EedPitchProcessor&, EedPitchEditor& e) { e.showAdvanced (false); });
+        snap ("front_offcurve", [] (EedPitchProcessor& p, EedPitchEditor& e) { p.setParamValue ("retune", 100.0); p.setParamValue ("depth", 50.0); e.showAdvanced (false); e.repaint(); });
+        snap ("advanced",       [] (EedPitchProcessor&, EedPitchEditor& e) { e.showAdvanced (true); });
+        snap ("front_manualkey", [] (EedPitchProcessor& p, EedPitchEditor& e) { p.applyStructured (params ({ { "key_source", "manual" }, { "key_root", 2.0 }, { "scale", 1.0 }, { "reference_source", "manual" } }), EedDeviceProcessor::ParamSource::Assistant); e.showAdvanced (false); });
+        snap ("front_after_advanced", [] (EedPitchProcessor&, EedPitchEditor& e) { e.showAdvanced (true); e.showAdvanced (false); });
+        snap ("front_depth_override", [] (EedPitchProcessor& p, EedPitchEditor& e) { p.setParamValue ("depth", 10.0); e.showAdvanced (false); });
+        snap ("advanced_340", [] (EedPitchProcessor&, EedPitchEditor& e) { e.setSize (620, 340); e.showAdvanced (true); });
     }
 
     std::printf ("\n%s (%d failure%s)\n", g_fail == 0 ? "ALL PASS" : "FAILURES",

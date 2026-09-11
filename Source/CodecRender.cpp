@@ -6,6 +6,7 @@
 #endif
 
 #include "CodecRender.h"
+#include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "MeterEngine.h"
 #include "NativeClip.h"   // EchoJay_NSLog
 
@@ -32,7 +33,7 @@ const std::vector<Preset>& presets()
 
 static juce::File cacheDir()
 {
-    auto d = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+    auto d = echojay::userAppData()
                  .getChildFile("EchoJay").getChildFile("codec_cache");
     d.createDirectory();
     return d;
