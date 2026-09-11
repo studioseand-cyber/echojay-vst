@@ -3096,9 +3096,20 @@ void EchoJayProcessor::stopCapture()
                 const int   n   = srcRec->getRecordedSampleCount();
                 if (buf != nullptr && n > (int) (2.0 * srcRec->getRecordedSampleRate()))
                 {
-                    echojay::KeyEngine eng;
-                    eng.prepare(srcRec->getRecordedSampleRate(), 512);
-                    const auto kr = eng.analyseBufferOffline(
+                    // HEAP, NOT THE STACK. sizeof(echojay::KeyEngine) is
+                    // 2,097,784 bytes, dominated by a fixed 1 << 19 float ring
+                    // held as a direct member (EedKeyEngine.h:239/257). This
+                    // thread is created with juce::Thread's default stack size
+                    // of 0, which never calls pthread_attr_setstacksize, so it
+                    // gets the pthread default of 512 KiB. As a local this
+                    // faulted in ___chkstk_darwin against the guard page in the
+                    // prologue, and took the host down. The thread is not
+                    // realtime, so the allocation costs nothing that matters.
+                    // NOT a bigger stack: that is a number sized to today's
+                    // object and wrong the next time the object grows.
+                    auto eng = std::make_unique<echojay::KeyEngine>();
+                    eng->prepare(srcRec->getRecordedSampleRate(), 512);
+                    const auto kr = eng->analyseBufferOffline(
                         buf->getReadPointer(0),
                         buf->getNumChannels() > 1 ? buf->getReadPointer(1) : nullptr,
                         std::min(n, buf->getNumSamples()));
