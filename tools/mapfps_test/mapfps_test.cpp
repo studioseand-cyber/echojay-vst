@@ -6752,6 +6752,144 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "se PIN7: the call site actually passes the evidence");
         }
 
+        // se PIN9 -- THE LIVE SLOT READS THE ROLLING RING, AND ITS STATISTIC IS
+        // NAMED FOR WHAT IT IS. MeterEngine already kept a 25 fps ring of heard
+        // audio and already fed it to the chat injection; Compare was the one
+        // consumer still taking the 150 ms ballistic tail, which no reference can
+        // ever be compared against.
+        {
+            check (! reductionIsAverage (SpectralReduction::RollingMeanOfMaxima),
+                   "se PIN9: a mean of 40 ms maxima is NOT an average");
+            const juce::String nm (reductionName (SpectralReduction::RollingMeanOfMaxima));
+            check (nm.containsIgnoreCase ("maxima") && ! nm.containsIgnoreCase ("average"),
+                   "se PIN9: and it is not NAMED one either", nm);
+            check (juce::String (reductionName (SpectralReduction::WholeWindowAverage))
+                     != nm,
+                   "se PIN9: the two statistics have different names");
+
+            // The provenance line must carry the window length AND say the thing
+            // that makes this statistic different from a capture's.
+            SpectralEvidence ev;
+            ev.reduction = SpectralReduction::RollingMeanOfMaxima;
+            ev.windowSeconds = 11.7f; ev.valid = true;
+            const auto line = spectralProvenanceLine ("the live signal", ev);
+            check (line.contains ("11.7"),
+                   "se PIN9: the provenance line carries the window length", line);
+            check (line.containsIgnoreCase ("not bit-comparable")
+                   && line.containsIgnoreCase ("40 ms maximum"),
+                   "se PIN9: and says it is not bit-comparable with a capture", line);
+            // A peak-hold live window is EXACT, so it must NOT carry that clause.
+            SpectralEvidence pk; pk.reduction = SpectralReduction::WholeWindowPeakHold;
+            pk.windowSeconds = 11.7f; pk.valid = true;
+            check (! spectralProvenanceLine ("the live signal", pk)
+                       .containsIgnoreCase ("not bit-comparable"),
+                   "se PIN9: a max of maxima IS a capture's peak hold, so it does not");
+        }
+
+        // se PIN10 -- THE MIXTURE IS DESCRIBED PER FIGURE, not stamped whole.
+        // getMeterData() carries a ballistic spectrum beside continuously
+        // integrated LUFS; labelling the struct with the spectrum's answer
+        // understated the loudness half.
+        {
+            SpectralEvidence live; live.reduction = SpectralReduction::RollingMeanOfMaxima;
+            live.valid = true; live.loudnessIsContinuous = true;
+            SpectralEvidence ref;  ref.reduction = SpectralReduction::WholeFileAverage;
+            ref.valid = true;
+
+            const auto n = mixedSpanNote (live, ref, "the live signal", "the reference");
+            check (n.contains ("the live signal") && ! n.contains ("the reference"),
+                   "se PIN10: the note names only the side it is true of", n);
+            check (n.containsIgnoreCase ("integrated") && n.containsIgnoreCase ("different span"),
+                   "se PIN10: and says the two figures cover different spans", n);
+            check (mixedSpanNote (ref, ref, "a", "b").isEmpty(),
+                   "se PIN10: two stored sides get no note");
+            SpectralEvidence live2 = live;
+            check (mixedSpanNote (live, live2, "A", "B").contains ("A and B"),
+                   "se PIN10: and both live sides are named when both apply");
+        }
+
+        // se PIN11 -- THE WIRING, because the vocabulary is worth nothing if the
+        // Live branch still reads the ballistic array.
+        {
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se3; se3 << fe.rdbuf();
+            const auto ec = codeOnly (juce::String (se3.str()));
+            check (ec.contains ("processorRef.getMeterEngine().reduceSpectrumWindow(useMean)"),
+                   "se PIN11: the Live branch reduces the ring");
+            check (! ec.contains ("ev.bins      = processorRef.getMeterEngine().getMeterData().spectrum;"),
+                   "se PIN11: and no longer reads the ballistic spectrum");
+            // WHICH ARRAY ACTUALLY LANDS, which is the whole point of the change
+            // and was the one thing unasserted. Mutation M1 kept the call to
+            // reduceSpectrumWindow and then overwrote w.bins with the ballistic
+            // spectrum; every check above still matched and the gate stayed
+            // green. A text pin can only forbid the evasions someone thought of,
+            // so this closes that one and not the class (see plan 4B.7).
+            check (ec.contains ("ev.bins          = w.bins;"),
+                   "se PIN11: and the RING's bins are what land in the evidence");
+            // THE RING RESULT IS CONST, which is the property that makes the
+            // evasion impossible rather than merely unwritten. Mutation M1 wrote
+            // w.bins = <ballistic> between the call and the assignment; every
+            // text check above still matched, INCLUDING the ev.bins = w.bins one
+            // added to catch it, because the corruption happens BEFORE the
+            // assignment and leaves its text intact. To do that at all the
+            // mutation must first strip this const, so pinning the const is the
+            // one thing in reach that the defect cannot route around.
+            //
+            // It is still a text pin. A sufficiently different evasion still
+            // passes, and the real fix is plan 4B.7: extract the selection into
+            // a pure function the gate can CALL.
+            check (ec.contains ("const auto w = processorRef.getMeterEngine().reduceSpectrumWindow(useMean);"),
+                   "se PIN11: and the ring result is const, so it cannot be overwritten");
+            check (ec.contains ("const bool useMean = processorRef.spectrumUsesAverage();"),
+                   "se PIN11: the statistic comes from the SAME predicate the capture uses");
+            check (ec.contains ("ev.reduction = useMean ? R::RollingMeanOfMaxima : R::WholeWindowPeakHold;"),
+                   "se PIN11: mean and peak are stamped differently, peak as the exact one");
+            check (ec.contains ("ev.windowSeconds = w.seconds;"),
+                   "se PIN11: the window length the ring reports is carried");
+            check (ec.contains ("ev.loudnessIsContinuous = true;"),
+                   "se PIN11: and a live side is marked as a mixture");
+
+            std::ifstream fp2 ("Source/PluginProcessor.cpp");
+            std::stringstream sp2; sp2 << fp2.rdbuf();
+            const auto pc2 = codeOnly (juce::String (sp2.str()));
+            check (pc2.contains ("echojay::mixedSpanNote(sa, sb, la, lb)"),
+                   "se PIN11: the note is emitted into the context, not just available");
+        }
+
+        // se PIN12 -- LIVE LRA IS SUPPRESSED, AND BOTH CONSUMERS SEE IT ABSENT.
+        //
+        // Not caveated. A session LRA measures spread across whatever was played,
+        // so across several songs it is inter-song variance wearing the LRA label,
+        // set beside a reference's whole-file LRA which means what it says. The
+        // rule the two opposite decisions share: caveat when something true
+        // survives (the tonal diff's direction does), suppress when nothing does.
+        {
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se4; se4 << fe.rdbuf();
+            const auto ec = codeOnly (juce::String (se4.str()));
+            // Zeroed at the ONE point that feeds the context and the card, before
+            // either sees it, so neither consumer needs teaching.
+            check (ec.contains ("if (slotA.kind == CompareSlotState::Kind::Live) da.loudnessRange = 0.0f;")
+                   && ec.contains ("if (slotB.kind == CompareSlotState::Kind::Live) db.loudnessRange = 0.0f;"),
+                   "se PIN12: a Live slot's lra is zeroed on BOTH sides at the feed point");
+            // The locals must be mutable for that to be possible at all.
+            check (ec.contains ("MeterData          da     = getSlotMeterData(slotA);"),
+                   "se PIN12: and the feed locals are the ones both consumers take");
+
+            std::ifstream fp3 ("Source/PluginProcessor.cpp");
+            std::stringstream sp3; sp3 << fp3.rdbuf();
+            const auto pc3 = codeOnly (juce::String (sp3.str()));
+            // The existing convention, unchanged, is what renders the absence.
+            check (pc3.contains ("f.lra > 0.0f ? juce::String(f.lra, 1) + \" LU\" : juce::String(\"N/A\")"),
+                   "se PIN12: the model's text table still renders 0 as N/A");
+            check (pc3.contains ("if (f.lra        >   0.0f) o->setProperty(\"lra\",   f.lra);"),
+                   "se PIN12: and the figure card still OMITS the key rather than sending 0");
+            // Integrated is NOT suppressed: it still answers its label, nudged.
+            check (! ec.contains ("da.integrated = -100.0f")
+                   && ! ec.contains ("db.integrated = -100.0f"),
+                   "se PIN12: integrated is left alone, because a gated mean survives");
+        }
+
         // se PIN8 -- THE SNAPSHOT DEFAULTS ARE THE SENTINEL, NOT {}. The header
         // comment was also wrong about when the flag is false, which is a
         // materially more serious claim than the one it made.

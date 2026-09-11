@@ -96,7 +96,20 @@ enum class SpectralReduction
     WholeWindowAverage, ///< mean of every block of a capture (avgSpectrum)
     WholeWindowPeakHold,///< per-bin max over a capture (peakSpectrum)
     BallisticTail,      ///< the meter's own reading: ~10 ms attack, ~150 ms release
-    LiveInstant         ///< the same ballistic reading, taken live, of no fixed window
+    LiveInstant,        ///< the same ballistic reading, taken live, of no fixed window
+
+    /** The rolling 25 fps frame ring reduced by its MEAN (MeterEngine's
+        reduceSpectrumWindow with useMean). It has its own name because it is
+        NOT the same statistic as a capture's whole-window average, and calling
+        it one would be the exact fault this vocabulary exists to prevent.
+
+        Each ring frame is already the MAX of the display bins across its 40 ms,
+        so a mean of frames is a mean of maxima and sits ABOVE a true per-block
+        average on transient material. MeterEngine.h states this at the
+        reduction itself. The peak case has no such gap: a max of per-frame
+        maxima IS exactly the capture's peak hold, so that one is stamped
+        WholeWindowPeakHold rather than given a name of its own. */
+    RollingMeanOfMaxima
 };
 
 /** One side's spectral evidence: the bins, what they are, and what they cover.
@@ -108,6 +121,15 @@ struct SpectralEvidence
     SpectralReduction     reduction = SpectralReduction::Unknown;
     float                 windowSeconds = 0.0f;
     bool                  valid = false;   ///< false = do not compare, say why
+
+    /** True when this side's LOUDNESS figures (integrated, LRA) are accumulated
+        continuously by the always-running meter rather than over the span the
+        bins above describe. A live source is a MIXTURE: its spectrum is bounded
+        (a ring window) or instantaneous (ballistic), while its LUFS has been
+        integrating since the meters were last reset. Stamping the whole struct
+        with the spectrum's answer would understate the loudness figures and
+        overstate nothing, which is still a wrong label. */
+    bool loudnessIsContinuous = false;
 };
 
 /** Only an average over a bounded window is a fair subject for a tonal delta.
@@ -126,6 +148,7 @@ inline const char* reductionName (SpectralReduction r) noexcept
         case SpectralReduction::WholeFileAverage:    return "average across the whole file";
         case SpectralReduction::WholeWindowAverage:  return "average across the whole capture";
         case SpectralReduction::WholeWindowPeakHold: return "peak hold across the whole capture";
+        case SpectralReduction::RollingMeanOfMaxima: return "mean of 40 ms maxima across the rolling window";
         case SpectralReduction::BallisticTail:       return "meter reading of roughly the last 150 ms";
         case SpectralReduction::LiveInstant:         return "live meter reading, no fixed window";
         case SpectralReduction::Unknown:             break;
@@ -145,6 +168,11 @@ inline juce::String spectralProvenanceLine (const juce::String& label,
     if (! ev.valid)
         s << " (NO SPECTRAL DATA)";
     s << "\n";
+    // The one statistic that is close enough to an average to be mistaken for
+    // one has to say that it is not, at the point it is named.
+    if (ev.reduction == SpectralReduction::RollingMeanOfMaxima)
+        s << "    (each frame is already a 40 ms maximum, so this sits above a true "
+             "average on transients and is NOT bit-comparable with a capture)\n";
     return s;
 }
 
@@ -177,6 +205,31 @@ inline juce::String tonalDiffCaveat (const SpectralEvidence& a,
       << "), so the DIRECTION of each band difference is meaningful and the size "
          "is not. Say which way the balance leans and do not quote or imply any "
          "dB amount.\n";
+    return s;
+}
+
+/** Says that a side's loudness figures and its spectrum describe different
+    spans, when that is true of either side. Empty otherwise.
+
+    SAYING WHAT IS TRUE OF EACH, rather than stamping the struct with the
+    pessimistic case. getMeterData() is a mixture: spectrum and macroBandDb are
+    ballistic, while integrated and loudnessRange come from integrators that
+    have been running since the meters were last reset. Labelling the whole
+    reading "live instant" understated the loudness half. */
+inline juce::String mixedSpanNote (const SpectralEvidence& a,
+                                   const SpectralEvidence& b,
+                                   const juce::String& labelA,
+                                   const juce::String& labelB)
+{
+    const bool ca = a.loudnessIsContinuous, cb = b.loudnessIsContinuous;
+    if (! ca && ! cb) return {};
+    juce::String who = ca && cb ? (labelA + " and " + labelB)
+                     : ca       ? labelA : labelB;
+    juce::String s;
+    s << "NOTE: on " << who << " the loudness figures (integrated, LRA) have been "
+         "accumulating continuously since the meters were last reset, which is a "
+         "different span from the spectrum described above. Do not read them as "
+         "covering the same stretch of audio.\n";
     return s;
 }
 

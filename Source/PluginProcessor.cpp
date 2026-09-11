@@ -3586,6 +3586,9 @@ juce::String EchoJayProcessor::buildCompareContext(const MeterData& da, const Me
     {
         const auto caveat = echojay::tonalDiffCaveat(sa, sb, la, lb);
         if (caveat.isNotEmpty()) ctx += caveat;
+        // A live side's loudness and its spectrum cover different spans.
+        const auto span = echojay::mixedSpanNote(sa, sb, la, lb);
+        if (span.isNotEmpty()) ctx += span;
     }
     ctx += "\n";
     // A side with no measurement contributes the unset sentinel, which

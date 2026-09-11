@@ -5436,9 +5436,37 @@ echojay::SpectralEvidence EchoJayEditor::getSlotSpectralEvidence(const CompareSl
     // if it were a window.
     if (slot.kind == CompareSlotState::Kind::Live)
     {
-        ev.bins      = processorRef.getMeterEngine().getMeterData().spectrum;
-        ev.reduction = R::LiveInstant;
-        ev.valid     = true;
+        // THE ROLLING WINDOW, NOT THE BALLISTIC READING (11 Sep 2026). The meter
+        // engine already keeps a 25 fps ring of HEARD audio and reduces it with
+        // the SAME predicate the capture path uses to pick its statistic, and it
+        // already feeds the chat injection. Compare was the one consumer still
+        // taking getMeterData().spectrum, which is a 150 ms tail and therefore
+        // permanently incomparable with a reference's whole-file average.
+        //
+        // The ring bounds itself by AUDIBILITY, not by transport: frames are
+        // written only while the input is audible, so a session that played 4 s
+        // and paused reports 4 s. No playhead is consulted, which is deliberate.
+        const bool useMean = processorRef.spectrumUsesAverage();
+        const auto w = processorRef.getMeterEngine().reduceSpectrumWindow(useMean);
+        if (w.valid)
+        {
+            ev.bins          = w.bins;
+            ev.windowSeconds = w.seconds;
+            // THE TWO STATISTICS ARE NOT EQUALLY HONEST, so they are not stamped
+            // alike. A max of per-frame maxima IS exactly a capture's peak hold.
+            // A mean of per-frame maxima is NOT a capture's average: each frame
+            // is already a 40 ms maximum, so it sits above a true per-block mean
+            // on transient material. It gets its own name.
+            ev.reduction = useMean ? R::RollingMeanOfMaxima : R::WholeWindowPeakHold;
+            ev.valid     = true;
+        }
+        else
+        {
+            // No frames yet: nothing audible has been heard. Absent, not floored.
+            ev.reduction = R::LiveInstant;
+        }
+        // Either way the LUFS figures beside it are continuously integrated.
+        ev.loudnessIsContinuous = true;
         return ev;
     }
     const int slotIdx = (&slot == &compareTop_) ? 0 : 1;
@@ -5447,6 +5475,7 @@ echojay::SpectralEvidence EchoJayEditor::getSlotSpectralEvidence(const CompareSl
         ev.bins      = processorRef.getCompareMeter(slotIdx).getMeterData().spectrum;
         ev.reduction = R::LiveInstant;
         ev.valid     = true;
+        ev.loudnessIsContinuous = true;   // same mixture, same note
         return ev;
     }
 
@@ -6323,8 +6352,36 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
 
     const juce::String labelA = slotDisplayName(slotA);
     const juce::String labelB = slotDisplayName(slotB);
-    const MeterData    da     = getSlotMeterData(slotA);
-    const MeterData    db     = getSlotMeterData(slotB);
+    MeterData          da     = getSlotMeterData(slotA);
+    MeterData          db     = getSlotMeterData(slotB);
+
+    // LIVE LRA IS SUPPRESSED FOR COMPARISON (11 Sep 2026).
+    //
+    // The meter engine's LUFS integrators are reset ONLY by releaseResources
+    // (PluginProcessor.cpp:589); resetHolds explicitly leaves them running
+    // (MeterEngine.cpp:994-997), and nothing user-facing resets them. So a Live
+    // loudness range spans everything audible since the plugin was activated.
+    //
+    // Integrated survives that and keeps its caveat: gated at -70 LUFS and -10 LU,
+    // it is still a loudness-weighted mean, nudged by whatever else was played.
+    // LOUDNESS RANGE DOES NOT. It measures SPREAD, so across several songs the
+    // spread is the difference BETWEEN songs, not the dynamics within this mix.
+    // It is a figure meaning something other than its label, set beside a
+    // reference's whole-file LRA which means exactly its label.
+    //
+    // THE RULE (plan section 1.5 item 2 and 4B.5d): caveat when something true
+    // survives, suppress when nothing does. The tonal diff keeps its caveat
+    // because the DIRECTION of a normalised band delta survives a reduction
+    // mismatch. A session LRA has no surviving component, in magnitude or in
+    // direction, so there is nothing for a caveat to preserve.
+    //
+    // Zeroed HERE, at the one point that feeds both consumers, using the
+    // existing "LRA 0 = unavailable" convention (PluginProcessor.cpp:3302-3307):
+    // the model's text table renders N/A and the figure card omits the key. No
+    // consumer learns anything new. Lifted by phase 4B, when one audibility
+    // window bounds every Live figure and LRA means its label again.
+    if (slotA.kind == CompareSlotState::Kind::Live) da.loudnessRange = 0.0f;
+    if (slotB.kind == CompareSlotState::Kind::Live) db.loudnessRange = 0.0f;
     // The spectra travel separately from the MeterData, because MeterData
     // carries whichever spectrum the source selected for display and that is
     // the wrong array for a reference. See getSlotSpectralEvidence.
