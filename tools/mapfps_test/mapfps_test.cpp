@@ -50,6 +50,9 @@
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
 #include <fstream>
+#include <thread>
+#include <atomic>
+#include <chrono>
 #include <sstream>
 #include <regex>
 
@@ -7070,6 +7073,347 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    && back.entries[0].measurements.hasEqCurve
                    && ! back.entries[0].measurements.hasMacroBands,
                    "ri PIN6: and it parses again identically");
+        }
+
+        // =================================================================
+        // COMMIT 2: WRITING. Every one of these drives the REAL load, merge and
+        // commit against a REAL temporary directory. None resolves its own path,
+        // which is why they are safe to run at all: ECHOJAY_STATE_HOME does not
+        // exist on this branch, so a path-resolving write would land in the
+        // user's live library.
+        // =================================================================
+        auto freshDir = [] (const char* tag)
+        {
+            auto d = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                        .getChildFile ("ejrefidx_" + juce::String (tag) + "_"
+                                       + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30)));
+            d.deleteRecursively();
+            d.createDirectory();
+            return d;
+        };
+        auto entryAt = [] (const char* id, const char* path, const char* added)
+        {
+            RefEntry e;
+            e.id = id; e.path = path; e.name = path; e.addedAt = added;
+            e.measurementEpoch = kRefMeasurementEpoch;
+            e.availability = RefAvailability::Present;
+            return e;
+        };
+
+        // ri PIN8 -- FIRST RUN CREATES NOTHING, and Absent is not Unreadable.
+        {
+            auto d = freshDir ("first");
+            const auto r = loadReferenceIndex (d);
+            check (r.state == RefLoadState::Absent && r.index.entries.empty()
+                   && r.message.isEmpty(),
+                   "ri PIN8: no file means Absent, empty, and nothing said");
+            check (! refIndexFile (d).existsAsFile(),
+                   "ri PIN8: and LOADING created no file");
+            check (refMayCommit (r), "ri PIN8: Absent is writable");
+
+            // Exists but empty: damage, NOT absence. A truncating write leaves
+            // exactly this, so it must never be written over.
+            refIndexFile (d).replaceWithText ("");
+            const auto e = loadReferenceIndex (d);
+            check (e.state == RefLoadState::Unreadable && ! refMayCommit (e)
+                   && e.message.isNotEmpty(),
+                   "ri PIN8: an EMPTY existing file is Unreadable and refuses writes");
+
+            refIndexFile (d).replaceWithText ("{ this is not json");
+            const auto b = loadReferenceIndex (d);
+            check (b.state == RefLoadState::Unreadable && ! refMayCommit (b),
+                   "ri PIN8: and so is unparseable content");
+            d.deleteRecursively();
+        }
+
+        // ri PIN9 -- AN UNREADABLE FILE SURVIVES A COMMIT ATTEMPT BYTE FOR BYTE.
+        // Treating damage as "empty and writable" would make a transient fault
+        // permanent on the next write.
+        {
+            auto d = freshDir ("preserve");
+            const juce::String damaged = "{ half a file";
+            refIndexFile (d).replaceWithText (damaged);
+
+            ReferenceIndex mine;
+            mine.entries.push_back (entryAt ("r_new", "/m/new.wav", "2026-01-01T00:00:00Z"));
+            const auto c = commitReferenceIndex (d, mine, "T", "2.26.4");
+            check (! c.ok && c.message.isNotEmpty(),
+                   "ri PIN9: committing over an unreadable index REFUSES and says so");
+            check (refIndexFile (d).loadFileAsString() == damaged,
+                   "ri PIN9: and the damaged file is byte identical afterwards");
+            check (! refIndexTempFile (d).existsAsFile(),
+                   "ri PIN9: no temp file is left behind");
+            d.deleteRecursively();
+        }
+
+        // ri PIN10 -- A NEWER SCHEMA IS NEVER WRITTEN OVER EITHER.
+        {
+            auto d = freshDir ("newer");
+            const juce::String newer = "{\"schema\":99,\"writtenBy\":\"9.9.9\",\"entries\":[]}";
+            refIndexFile (d).replaceWithText (newer);
+            ReferenceIndex mine;
+            mine.entries.push_back (entryAt ("r_x", "/m/x.wav", "2026-01-01T00:00:00Z"));
+            const auto c = commitReferenceIndex (d, mine, "T", "2.26.4");
+            check (! c.ok, "ri PIN10: a newer schema refuses the commit");
+            check (refIndexFile (d).loadFileAsString() == newer,
+                   "ri PIN10: and survives it unchanged");
+            d.deleteRecursively();
+        }
+
+        // ri PIN11 -- THE LOST UPDATE, MADE OBSERVABLE RATHER THAN ASSERTED.
+        //
+        // This replays the exact interleaving that loses an entry: two readers
+        // both see an empty index, the first commits, and the SECOND commits
+        // from its now-stale copy. A commit that simply wrote its caller's list
+        // would leave one entry and the first would be gone. Because
+        // commitReferenceIndex re-reads and merges inside the lock, both land.
+        //
+        // The mutation that reddens it is one line: make commit write `mine`
+        // instead of merging into a fresh read.
+        {
+            auto d = freshDir ("lost");
+            const auto a = loadReferenceIndex (d);       // A reads: empty
+            const auto b = loadReferenceIndex (d);       // B reads: empty, same
+            check (a.state == RefLoadState::Absent && b.state == RefLoadState::Absent,
+                   "ri PIN11: both readers start from the same empty state");
+
+            ReferenceIndex mineA = a.index;
+            mineA.entries.push_back (entryAt ("r_aaa", "/m/a.wav", "2026-01-01T00:00:00Z"));
+            check (commitReferenceIndex (d, mineA, "T1", "2.26.4").ok,
+                   "ri PIN11: A commits");
+
+            ReferenceIndex mineB = b.index;              // STALE: does not know about A
+            mineB.entries.push_back (entryAt ("r_bbb", "/m/b.wav", "2026-01-02T00:00:00Z"));
+            check (commitReferenceIndex (d, mineB, "T2", "2.26.4").ok,
+                   "ri PIN11: B commits from a stale copy");
+
+            const auto after = loadReferenceIndex (d);
+            check (after.state == RefLoadState::Loaded && after.index.entries.size() == 2,
+                   "ri PIN11: BOTH entries are on disk -- the stale write lost nothing",
+                   "entries=" + juce::String ((int) after.index.entries.size()));
+            check (refFindById (after.index, "r_aaa") >= 0
+                   && refFindById (after.index, "r_bbb") >= 0,
+                   "ri PIN11: and both by id");
+            d.deleteRecursively();
+        }
+
+        // ri PIN12 -- EIGHT THREADS RACING FOR REAL. Not a simulated
+        // interleaving: eight actual writers against one file, each adding one
+        // entry. All eight must survive. This is what would redden if the lock
+        // were removed, and it exercises the process mutex that the
+        // inter-process lock alone would not cover.
+        {
+            auto d = freshDir ("race");
+            constexpr int kThreads = 8;
+            std::vector<std::thread> ts;
+            for (int i = 0; i < kThreads; ++i)
+                ts.emplace_back ([&d, i]
+                {
+                    ReferenceIndex mine;
+                    RefEntry e;
+                    e.id   = "r_t" + juce::String (i);
+                    e.path = "/race/t" + juce::String (i) + ".wav";
+                    e.name = e.path;
+                    e.addedAt = "2026-01-01T00:00:0" + juce::String (i) + "Z";
+                    e.measurementEpoch = kRefMeasurementEpoch;
+                    e.availability = RefAvailability::Present;
+                    mine.entries.push_back (e);
+                    commitReferenceIndex (d, mine, "T", "2.26.4");
+                });
+            for (auto& t : ts) t.join();
+
+            const auto after = loadReferenceIndex (d);
+            check (after.index.entries.size() == (size_t) kThreads,
+                   "ri PIN12: all eight racing writers survive",
+                   "entries=" + juce::String ((int) after.index.entries.size())
+                     + " of " + juce::String (kThreads));
+            int found = 0;
+            for (int i = 0; i < kThreads; ++i)
+                if (refFindById (after.index, "r_t" + juce::String (i)) >= 0) ++found;
+            check (found == kThreads, "ri PIN12: and each one by id",
+                   "found=" + juce::String (found));
+            d.deleteRecursively();
+        }
+
+        // ri PIN13 -- SAME PATH, TWO IDS: the case union-by-id gets wrong alone.
+        // Two instances adding one file mint different ids, so a union would keep
+        // both and break dedupe-on-path. The earlier addedAt wins, deterministically,
+        // so two racing writers converge instead of alternating.
+        {
+            auto d = freshDir ("samepath");
+            ReferenceIndex first;
+            first.entries.push_back (entryAt ("r_zzz", "/m/same.wav", "2026-01-01T00:00:00Z"));
+            check (commitReferenceIndex (d, first, "T", "2.26.4").ok, "ri PIN13: first lands");
+
+            ReferenceIndex second;   // different id, SAME path, LATER addedAt
+            second.entries.push_back (entryAt ("r_aaa", "/m/same.wav", "2026-06-01T00:00:00Z"));
+            check (commitReferenceIndex (d, second, "T", "2.26.4").ok, "ri PIN13: second lands");
+
+            const auto after = loadReferenceIndex (d);
+            check (after.index.entries.size() == 1,
+                   "ri PIN13: one path is ONE entry, not two",
+                   "entries=" + juce::String ((int) after.index.entries.size()));
+            check (after.index.entries[0].id == "r_zzz",
+                   "ri PIN13: and the EARLIER addedAt wins, not the last writer",
+                   after.index.entries[0].id);
+            d.deleteRecursively();
+        }
+
+        // ri PIN14 -- A PEER'S ENTRY IS NOT DROPPED BY MY COMMIT, and my own
+        // entry is UPDATED rather than duplicated when I commit it twice.
+        {
+            auto d = freshDir ("merge");
+            ReferenceIndex peer;
+            peer.entries.push_back (entryAt ("r_peer", "/m/peer.wav", "2026-01-01T00:00:00Z"));
+            commitReferenceIndex (d, peer, "T", "2.26.4");
+
+            ReferenceIndex mine;
+            auto m = entryAt ("r_mine", "/m/mine.wav", "2026-02-01T00:00:00Z");
+            mine.entries.push_back (m);
+            commitReferenceIndex (d, mine, "T", "2.26.4");
+
+            m.name = "renamed";                    // same id, changed content
+            ReferenceIndex again; again.entries.push_back (m);
+            commitReferenceIndex (d, again, "T", "2.26.4");
+
+            const auto after = loadReferenceIndex (d);
+            check (after.index.entries.size() == 2,
+                   "ri PIN14: two entries, the peer's kept and mine updated in place",
+                   "entries=" + juce::String ((int) after.index.entries.size()));
+            const int mi = refFindById (after.index, "r_mine");
+            check (mi >= 0 && after.index.entries[(size_t) mi].name == "renamed",
+                   "ri PIN14: re-committing one id REPLACES it rather than duplicating");
+            check (refFindById (after.index, "r_peer") >= 0,
+                   "ri PIN14: and the peer's entry is still there");
+            d.deleteRecursively();
+        }
+
+        // ri PIN15 -- THE COALESCING NUMBER IS NAMED ONCE, so no caller invents
+        // its own, and it matches the workspace cache's debounce.
+        check (kRefIndexDebounceMs == 2000,
+               "ri PIN15: the debounce is 2000 ms, one answer not two");
+        check (kRefIndexLockTimeoutMs > 0,
+               "ri PIN15: and the lock wait is bounded, never indefinite");
+
+        // ri PIN16 -- LOCK FAILURE REFUSES, SAYS SO, AND WRITES NOTHING.
+        // Observable, not asserted: a second thread HOLDS the process mutex for
+        // longer than the timeout while the main thread tries to commit. POSIX
+        // fcntl locks are per-process, so the inter-process lock cannot be
+        // contended from inside one process; the process mutex is the only one a
+        // same-process pin can hold, and it is why that mutex had to become
+        // timed rather than plain.
+        {
+            auto d = freshDir ("lockfail");
+            std::atomic<bool> held { false }, release { false };
+            std::thread holder ([&]
+            {
+                std::unique_lock<std::timed_mutex> l (refIndexProcessMutex());
+                held = true;
+                while (! release) std::this_thread::sleep_for (std::chrono::milliseconds (10));
+            });
+            while (! held) std::this_thread::sleep_for (std::chrono::milliseconds (5));
+
+            ReferenceIndex mine;
+            mine.entries.push_back (entryAt ("r_blocked", "/m/blocked.wav", "2026-01-01T00:00:00Z"));
+            const auto c = commitReferenceIndex (d, mine, "T", "2.26.4");
+
+            check (! c.ok, "ri PIN16: a commit that cannot take the lock REFUSES");
+            check (c.message.isNotEmpty() && c.message.containsIgnoreCase ("saved shortly"),
+                   "ri PIN16: and is not silent, and says it will retry", c.message);
+            check (! refIndexFile (d).existsAsFile(),
+                   "ri PIN16: and wrote NOTHING, not even an empty index");
+            check (! refIndexTempFile (d).existsAsFile(),
+                   "ri PIN16: and left no temp file");
+
+            release = true; holder.join();
+            // And it succeeds once the lock is free, so the refusal was the lock
+            // and not something else failing.
+            check (commitReferenceIndex (d, mine, "T", "2.26.4").ok,
+                   "ri PIN16: the same commit succeeds once the lock is released");
+            d.deleteRecursively();
+        }
+
+        // ri PIN17 -- TOMBSTONES. Nothing EMITS one until commit 4; parse, write
+        // and merge all honour them now so the format is settled before the
+        // first real deletion exists.
+        {
+            auto d = freshDir ("tomb");
+            ReferenceIndex a;
+            a.entries.push_back (entryAt ("r_keep", "/m/keep.wav", "2026-01-01T00:00:00Z"));
+            a.entries.push_back (entryAt ("r_gone", "/m/gone.wav", "2026-01-01T00:00:00Z"));
+            check (commitReferenceIndex (d, a, "T", "2.26.4").ok, "ri PIN17: two entries land");
+
+            // A peer deletes one: entry removed from ITS list, id tombstoned.
+            ReferenceIndex del;
+            del.entries.push_back (entryAt ("r_keep", "/m/keep.wav", "2026-01-01T00:00:00Z"));
+            del.tombstones.push_back ({ "r_gone", "2026-02-01T00:00:00Z" });
+            check (commitReferenceIndex (d, del, "T", "2.26.4").ok, "ri PIN17: the deletion commits");
+
+            auto after = loadReferenceIndex (d);
+            check (after.index.entries.size() == 1
+                   && refFindById (after.index, "r_gone") < 0,
+                   "ri PIN17: the tombstoned entry is GONE from entries",
+                   "entries=" + juce::String ((int) after.index.entries.size()));
+            check (after.index.tombstones.size() == 1
+                   && after.index.tombstones[0].id == "r_gone",
+                   "ri PIN17: and its id is recorded at the document level");
+
+            // THE POINT: a STALE peer still holding the deleted entry must not
+            // resurrect it. This is what the tombstone exists for.
+            ReferenceIndex stale = a;            // the pre-deletion list
+            check (commitReferenceIndex (d, stale, "T", "2.26.4").ok,
+                   "ri PIN17: a stale peer commits");
+            after = loadReferenceIndex (d);
+            check (refFindById (after.index, "r_gone") < 0,
+                   "ri PIN17: and the deletion SURVIVES it -- no resurrection",
+                   "entries=" + juce::String ((int) after.index.entries.size()));
+            check (refFindById (after.index, "r_keep") >= 0,
+                   "ri PIN17: while the live entry is untouched");
+            d.deleteRecursively();
+        }
+
+        // ri PIN18 -- THE TWO TIMEOUTS ARE DIFFERENT NUMBERS AND BOTH ARE SHORT
+        // ENOUGH FOR THE MESSAGE THREAD. Bounded is not the property that
+        // matters; where it blocks is. Ten seconds is bounded and is a beachball.
+        {
+            check (kRefIndexProcessLockMs == 50 && kRefIndexIpcLockMs == 250,
+                   "ri PIN18: 50 ms in-process, 250 ms cross-process");
+            check (kRefIndexIpcLockMs > kRefIndexProcessLockMs,
+                   "ri PIN18: cross-process waits LONGER, because a peer may be slower");
+            check (kRefIndexProcessLockMs + kRefIndexIpcLockMs <= 300,
+                   "ri PIN18: worst case message-thread stall is at most 300 ms");
+        }
+
+        // ri PIN19 -- FAILING ONCE IS SILENT, FAILING REPEATEDLY IS NOT. The
+        // distinguishing property is CONSECUTIVE failure, and at escalation the
+        // message stops promising.
+        {
+            check (! refIndexShouldEscalate (1, 0) && ! refIndexShouldEscalate (4, 0),
+                   "ri PIN19: up to four consecutive failures stay silent");
+            check (refIndexShouldEscalate (5, 0),
+                   "ri PIN19: the fifth escalates");
+            check (refIndexShouldEscalate (1, 60000),
+                   "ri PIN19: and so does a starved debounce, on elapsed time alone");
+
+            const auto m = refIndexEscalatedMessage (180000);
+            check (m.contains ("3 minutes") && m.containsIgnoreCase ("session only"),
+                   "ri PIN19: the escalated message states a duration, not a promise", m);
+            check (! m.containsIgnoreCase ("shortly"),
+                   "ri PIN19: and stops saying shortly, which kept not coming true", m);
+
+            // Backoff: doubles, then caps. A stuck peer is not helped by being
+            // asked twice a second; the cap keeps recovery inside half a minute.
+            check (refIndexBackoffMs (0) == kRefIndexDebounceMs,
+                   "ri PIN19: no failures means the ordinary debounce");
+            check (refIndexBackoffMs (1) == 2000 && refIndexBackoffMs (2) == 4000
+                   && refIndexBackoffMs (3) == 8000,
+                   "ri PIN19: the backoff doubles",
+                   juce::String (refIndexBackoffMs (1)) + "/"
+                     + juce::String (refIndexBackoffMs (2)) + "/"
+                     + juce::String (refIndexBackoffMs (3)));
+            check (refIndexBackoffMs (99) == 30000,
+                   "ri PIN19: and caps at 30 s so recovery is still noticed",
+                   juce::String (refIndexBackoffMs (99)));
         }
 
         // ri PIN7 -- AVAILABILITY. An unknown state reads as Missing, never as

@@ -25,6 +25,9 @@
 
 #include <JuceHeader.h>
 #include <array>
+#include <mutex>
+#include <chrono>
+#include <vector>
 
 namespace echojay
 {
@@ -164,12 +167,53 @@ struct RefEntry
     juce::var raw;
 };
 
+/** A DELETION, RECORDED AT THE DOCUMENT LEVEL RATHER THAN ON THE ENTRY.
+
+    The obvious form, a "deletedAt" flag on the entry, is a silent resurrection
+    and OUR OWN RULE 6 IS THE MECHANISM: an older build preserves unknown keys,
+    so it keeps the flag, understands nothing by it, lists the entry as LIVE and
+    rewrites the file with the tombstone still attached. A field an old build
+    DROPPED would be safer than one it keeps.
+
+    Removing the entry from `entries` and recording its id here means an old
+    build sees it simply ABSENT and cannot resurrect it by ignorance, while
+    `tombstones` survives as an unknown document key. Its behaviour is correct by
+    accident, which is the property worth engineering for.
+
+    WHAT IT IS FOR: a peer whose in-memory list still holds the deleted entry
+    would union it straight back in. The merge drops any id named here.
+
+    RESIDUAL RISK, STATED: an OLD build merging does not know to drop tombstoned
+    ids, so a mixed-version pair can still resurrect one. Accepted rather than
+    bumping the schema, which would turn the library read-only for every older
+    build to protect a mixed-version case. */
+struct RefTombstone
+{
+    juce::String id;
+    juce::String at;          // ISO 8601 UTC
+};
+
+/** Collected at 90 days, or at 500 oldest-first. BOTH bounds, because each alone
+    fails: age alone lets a delete-and-re-add loop grow the file without limit,
+    and a count alone would collect a RECENT tombstone on a busy library, which
+    is the one case where it is still doing work. Never collected merely because
+    no entry matches the id: that is a tombstone's normal state, not evidence it
+    is spent. Collection runs inside the lock, so it never races. */
+inline constexpr int kRefTombstoneMaxDays = 90;
+inline constexpr int kRefTombstoneMaxCount = 500;
+
 struct ReferenceIndex
 {
     int          schema = kRefIndexSchema;
     int          measurementEpoch = kRefMeasurementEpoch;
     juce::String written, writtenBy;
     std::vector<RefEntry> entries;
+
+    /** Deletions. NOTHING EMITS ONE UNTIL COMMIT 4: parse reads them, write
+        emits them and merge honours them as of commit 2, so the format is
+        settled and exercised before the first real deletion exists. That is the
+        difference between a format change and a behaviour change. */
+    std::vector<RefTombstone> tombstones;
 
     /** Set when the file on disk was written by a NEWER build than this one.
         The document is used read only and NOTHING may write back to it: not a
@@ -380,6 +424,15 @@ inline ReferenceIndex parseReferenceIndex (const juce::String& json)
 
     if (auto* arr = detail::rdV (root, "entries").getArray())
         for (auto& ev : *arr) ix.entries.push_back (refEntryFromVar (ev));
+
+    if (auto* arr = detail::rdV (root, "tombstones").getArray())
+        for (auto& tv : *arr)
+        {
+            RefTombstone t;
+            t.id = detail::rdS (tv, "id");
+            t.at = detail::rdS (tv, "at");
+            if (t.id.isNotEmpty()) ix.tombstones.push_back (t);
+        }
     return ix;
 }
 
@@ -497,6 +550,16 @@ inline juce::String writeReferenceIndex (const ReferenceIndex& ix,
     for (const auto& e : ix.entries) arr.add (refEntryToVar (e));
     o->setProperty ("entries", arr);
 
+    juce::Array<juce::var> ts;
+    for (const auto& t : ix.tombstones)
+    {
+        juce::DynamicObject::Ptr d (new juce::DynamicObject());
+        d->setProperty ("id", t.id);
+        d->setProperty ("at", t.at);
+        ts.add (juce::var (d.get()));
+    }
+    o->setProperty ("tombstones", ts);
+
     return juce::JSON::toString (juce::var (o.get()), false);
 }
 
@@ -530,6 +593,317 @@ inline juce::File refIndexFile (const juce::File& appDataEchoJayDir)
 inline juce::File refIndexTempFile (const juce::File& appDataEchoJayDir)
 {
     return appDataEchoJayDir.getChildFile ("reference_index.json.tmp");
+}
+
+// ===========================================================================
+// LOAD, MERGE, COMMIT (commit 2 of Phase 1: writing only, nothing reads yet)
+//
+// THE DIRECTORY IS ALWAYS A PARAMETER AND IS NEVER RESOLVED HERE.
+// EJStateRoot.h and echojay::userAppData() are on the parked merge, not on this
+// branch, so ECHOJAY_STATE_HOME isolates nothing here. A function that resolved
+// its own path would make every behavioural pin write to the user's real
+// library. The shipping caller passes the real directory; the pins pass a
+// temporary one. That is what makes the concurrency pins safe to run, and it is
+// stronger than relying on an environment variable to keep tests off live data.
+// When the merge lands, ONE line at the caller changes and nothing here does.
+// ===========================================================================
+
+/** Absent and Unreadable must never collapse into each other. Absent is an
+    empty library and is writable. Unreadable means the file EXISTS and could not
+    be read or parsed, and it REFUSES to be written over: the cause is usually
+    recoverable (a permission, a half-restored backup, a failing disk) and
+    destroying it on the next write would make a transient fault permanent. */
+enum class RefLoadState { Absent = 0, Loaded, Unreadable };
+
+struct RefLoadResult
+{
+    RefLoadState   state = RefLoadState::Absent;
+    ReferenceIndex index;
+    juce::String   message;      // "" unless the user needs telling
+};
+
+/** True when a commit may proceed at all. Unreadable and newer-schema both say
+    no, for different reasons, and both preserve the file. */
+inline bool refMayCommit (const RefLoadResult& r) noexcept
+{
+    return r.state != RefLoadState::Unreadable && refIndexMayWrite (r.index);
+}
+
+inline RefLoadResult loadReferenceIndex (const juce::File& dir)
+{
+    RefLoadResult out;
+    const auto f = refIndexFile (dir);
+
+    if (! f.existsAsFile())
+        return out;                                    // Absent, writable, silent
+
+    const auto text = f.loadFileAsString();
+    if (text.trim().isEmpty())
+    {
+        // Exists and is empty: NOT the same as absent. A zero-length file is
+        // what a truncating write leaves behind, so it is treated as damage.
+        out.state   = RefLoadState::Unreadable;
+        out.message = "The reference library file is empty and will not be "
+                      "written over. Move it aside to start a new one.";
+        return out;
+    }
+
+    out.index = parseReferenceIndex (text);
+    if (out.index.raw.getDynamicObject() == nullptr)
+    {
+        out.state   = RefLoadState::Unreadable;
+        out.message = "The reference library could not be read. Nothing will be "
+                      "saved over it.";
+        return out;
+    }
+
+    out.state = RefLoadState::Loaded;
+    if (out.index.readOnly)
+        out.message = refReadOnlyNotice (out.index);
+    return out;
+}
+
+/** Union by id, then dedupe by path.
+
+    UNION BY id IS SOUND ONLY BECAUSE ids ARE MINTED ONCE AND NEVER DERIVED.
+    Reconciling two independently-read lists means deciding whether two entries
+    are the same entry; a path-derived id would answer that with mutable data, so
+    a file the user moved would read as a different entry and duplicate.
+
+    THE ONE CASE UNION GETS WRONG ALONE: two instances adding the SAME PATH mint
+    DIFFERENT ids, so a union keeps both and breaks the dedupe-on-path rule. The
+    second stage fixes it deterministically, keeping the earlier addedAt and
+    breaking a tie on the smaller id, so two writers racing converge on one file
+    instead of alternating.
+
+    IT CANNOT EXPRESS A DELETION, and that is why commit 2 writes on add and on
+    analysis but NOT on removal: a union has no way to say "I deleted this", so a
+    removal merged against a peer's copy would be resurrected. Tombstones belong
+    with the commit that makes the index authoritative, and until then a removal
+    is session-only, which is safe because nothing reads the file yet. */
+inline void mergeReferenceIndex (ReferenceIndex& onDisk, const ReferenceIndex& mine)
+{
+    for (const auto& m : mine.entries)
+    {
+        const int at = m.id.isNotEmpty() ? refFindById (onDisk, m.id) : -1;
+        if (at >= 0) onDisk.entries[(size_t) at] = m;   // mine is the later intent
+        else         onDisk.entries.push_back (m);
+    }
+
+    // Tombstones from BOTH sides, then the drop. Without this a peer holding a
+    // deleted entry in memory unions it straight back in, and the deletion
+    // survives only until the next peer writes.
+    for (const auto& t : mine.tombstones)
+    {
+        bool have = false;
+        for (const auto& e : onDisk.tombstones) if (e.id == t.id) { have = true; break; }
+        if (! have) onDisk.tombstones.push_back (t);
+    }
+    if (! onDisk.tombstones.empty())
+    {
+        std::vector<RefEntry> live;
+        for (const auto& e : onDisk.entries)
+        {
+            bool dead = false;
+            for (const auto& t : onDisk.tombstones) if (t.id == e.id) { dead = true; break; }
+            if (! dead) live.push_back (e);
+        }
+        onDisk.entries = std::move (live);
+    }
+
+    std::vector<RefEntry> kept;
+    for (const auto& e : onDisk.entries)
+    {
+        bool placed = false;
+        for (auto& k : kept)
+        {
+            if (refPathKey (k.path) != refPathKey (e.path)) continue;
+            // Same path, two ids: earlier addedAt wins, smaller id breaks a tie.
+            const bool eWins = e.addedAt.isNotEmpty() && k.addedAt.isNotEmpty()
+                                 ? (e.addedAt < k.addedAt
+                                      || (e.addedAt == k.addedAt && e.id < k.id))
+                                 : (e.id < k.id);
+            if (eWins) k = e;
+            placed = true;
+            break;
+        }
+        if (! placed) kept.push_back (e);
+    }
+    onDisk.entries = std::move (kept);
+}
+
+struct RefCommitResult
+{
+    bool         ok = false;
+    juce::String message;        // "" on success
+    int          entriesWritten = 0;
+};
+
+/** The process-wide half of the lock. Several plugin instances in one DAW
+    usually share ONE process, so the inter-process lock alone would not
+    serialise them. */
+/** TIMED, not a plain mutex. std::mutex has no bounded acquire, so the first
+    version of this could block the MESSAGE THREAD indefinitely behind a stuck
+    writer. The defect surfaced from asking how to pin lock failure: POSIX fcntl
+    locks are per-process, so two threads in one process do not contend through
+    the inter-process lock, and the only lock a same-process pin can hold is this
+    one. Making it observable made it correct. */
+inline std::timed_mutex& refIndexProcessMutex()
+{
+    static std::timed_mutex m;
+    return m;
+}
+
+// TWO TIMEOUTS, DIFFERENT NUMBERS, BECAUSE THEY GUARD DIFFERENT THINGS. Both are
+// taken ON THE MESSAGE THREAD, so the question is not "is it bounded" but "how
+// long does the UI stall". Ten seconds is bounded and is a beachball; 3000 ms was
+// bounded and is a three second freeze on a save the user did not ask for.
+//
+//   process mutex   contended only by another thread in THIS process doing the
+//                   same JSON serialise and file write, which is single-digit
+//                   milliseconds. 50 ms is an order of magnitude of headroom and
+//                   is below the threshold where a stall is perceived at all.
+//   IPC lock        contended by another PROCESS, which may be a separate DAW
+//                   with a cold page cache on a slower volume. Failing at 50 ms
+//                   would make contention the NORMAL outcome between instances;
+//                   a retry loop that usually fails is worse than a slightly
+//                   longer wait that usually succeeds.
+//
+// Worst case stall, once: 300 ms, then the debounce retries.
+inline constexpr int kRefIndexProcessLockMs = 50;
+inline constexpr int kRefIndexIpcLockMs     = 250;
+
+/** Kept for the bounded-ness pin, which asserts the property rather than the
+    values; it is the larger of the two. */
+inline constexpr int kRefIndexLockTimeoutMs = kRefIndexIpcLockMs;
+
+/** The coalescing rule, named so every caller uses one number. A change marks
+    dirty; one write follows however many changes arrived. Restoring a session
+    with forty references marks dirty forty times and writes once. 2 seconds
+    matches the workspace cache's debounce, so there is one answer to "why 2"
+    rather than two. A flush on teardown is required: a debounce that never
+    fires loses the last change. */
+inline constexpr int kRefIndexDebounceMs = 2000;
+
+// ---------------------------------------------------------------------------
+// REPEATED FAILURE IS A DIFFERENT EVENT FROM FAILURE.
+//
+// One refusal with a successful retry two seconds later is not worth telling
+// anyone. The same refusal every two seconds forever is a library that never
+// saves while nothing says so, which is precisely the shape of defect this
+// project keeps paying for: a feature declining to act, correctly, in silence.
+//
+// What distinguishes them is CONSECUTIVE failure. Five at a 2 second debounce is
+// about ten seconds of failing, far longer than healthy contention and short
+// enough that the user has not walked away. The elapsed clause catches the case
+// where the debounce itself is starved so the count never reaches five.
+// ---------------------------------------------------------------------------
+inline constexpr int kRefIndexEscalateAfterFailures = 5;
+inline constexpr int kRefIndexEscalateAfterMs       = 60000;
+
+/** The retry backoff: 2, 4, 8, 16, capped at 30 seconds. A genuinely stuck peer
+    is not helped by being asked twice a second, and the cap means recovery is
+    still noticed within half a minute. */
+inline int refIndexBackoffMs (int consecutiveFailures) noexcept
+{
+    if (consecutiveFailures <= 0) return kRefIndexDebounceMs;
+    int ms = kRefIndexDebounceMs;
+    for (int i = 1; i < consecutiveFailures && ms < 30000; ++i) ms *= 2;
+    return juce::jmin (ms, 30000);
+}
+
+/** True when the caller should stop promising and start stating. */
+inline bool refIndexShouldEscalate (int consecutiveFailures, int msSinceLastSuccess) noexcept
+{
+    return consecutiveFailures >= kRefIndexEscalateAfterFailures
+        || msSinceLastSuccess  >= kRefIndexEscalateAfterMs;
+}
+
+/** THE MESSAGE STOPS PROMISING. "Will be saved shortly" that keeps not coming
+    true is worse than a refusal, so at escalation it becomes a statement of fact
+    with a duration the user can act on. */
+inline juce::String refIndexEscalatedMessage (int msSinceLastSuccess)
+{
+    const int mins = juce::jmax (1, msSinceLastSuccess / 60000);
+    return "The reference library has not been saved for "
+         + juce::String (mins) + (mins == 1 ? " minute." : " minutes.")
+         + " Your references work for this session only.";
+}
+
+/** Serialise, re-read, merge, write temp, rename.
+
+    THE EXISTING FILE IS NEVER OPENED FOR WRITING, which is what guarantees it
+    survives a failure byte-identical. A failure at any step before the rename
+    leaves the original untouched and deletes the temp; a rename does not
+    truncate its destination, so a failed rename leaves it untouched too. Same
+    directory, so one volume, so the rename is atomic.
+
+    On failure the caller KEEPS its in-memory state: the reference the user just
+    added still works this session, only its persistence failed. */
+inline RefCommitResult commitReferenceIndex (const juce::File& dir,
+                                             const ReferenceIndex& mine,
+                                             const juce::String& nowIso,
+                                             const juce::String& version)
+{
+    RefCommitResult r;
+
+    std::unique_lock<std::timed_mutex> processLock (
+        refIndexProcessMutex(), std::chrono::milliseconds (kRefIndexProcessLockMs));
+    if (! processLock.owns_lock())
+    {
+        r.message = "Another part of EchoJay is saving the reference library. "
+                    "This change will be saved shortly.";
+        return r;                       // never falls through into a write
+    }
+
+    juce::InterProcessLock ipc ("EchoJayReferenceIndex");
+    if (! ipc.enter (kRefIndexIpcLockMs))
+    {
+        r.message = "Another EchoJay is saving the reference library. "
+                    "This change will be saved shortly.";
+        return r;                       // the debounce retries; nothing is lost
+    }
+    struct IpcExit { juce::InterProcessLock& l; ~IpcExit() { l.exit(); } } ipcExit { ipc };
+
+    if (! dir.createDirectory())
+    {
+        r.message = "The reference library folder could not be created, so the "
+                    "library was not saved. Your references work for this "
+                    "session only.";
+        return r;
+    }
+
+    auto fresh = loadReferenceIndex (dir);
+    if (! refMayCommit (fresh))
+    {
+        r.message = fresh.message.isNotEmpty() ? fresh.message
+                  : juce::String ("The reference library was not saved.");
+        return r;                       // Unreadable or newer schema: preserved
+    }
+
+    mergeReferenceIndex (fresh.index, mine);
+
+    const auto json = writeReferenceIndex (fresh.index, nowIso, version);
+    auto tmp = refIndexTempFile (dir);
+    tmp.deleteFile();
+    if (! tmp.replaceWithText (json))
+    {
+        tmp.deleteFile();
+        r.message = "The reference library could not be written, so it was not "
+                    "saved. Your references work for this session only.";
+        return r;
+    }
+    if (! tmp.moveFileTo (refIndexFile (dir)))
+    {
+        tmp.deleteFile();
+        r.message = "The reference library could not be replaced, so it was not "
+                    "saved. Your references work for this session only.";
+        return r;
+    }
+
+    r.ok = true;
+    r.entriesWritten = (int) fresh.index.entries.size();
+    return r;
 }
 
 } // namespace echojay
