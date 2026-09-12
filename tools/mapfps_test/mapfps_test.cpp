@@ -45,6 +45,7 @@
 #include "EJMisdialReport.h"   // misdial report: the shipped record assembly
 #include "EJCaptureGuard.h"    // capture guard: the shipped substitution predicate
 #include "EJSpectralEvidence.h" // spectral provenance + the shipped band reduction
+#include "EJReferenceIndex.h"   // the reference library index: the shipped parser
 #include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
@@ -6905,6 +6906,191 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "se PIN8: the 'older save files' claim is gone");
             check (hraw.contains ("FALSE ON EVERY RESTORED SNAPSHOT"),
                    "se PIN8: and replaced by what is actually true");
+        }
+    }
+
+
+    // =====================================================================
+    // THE REFERENCE INDEX -- Phase 1 commit 1, no shipping callers yet.
+    // The format is REFERENCE_INDEX_SCHEMA.md; these drive the shipped parser
+    // so the contract is executable before anything depends on it.
+    // =====================================================================
+    {
+        using namespace echojay;
+
+        // ri PIN1 -- EPOCH POLICY. An entry below the running epoch is
+        // re-analysed when its file is there and STALE BUT USABLE when it is
+        // not. Discarding an unreachable entry's numbers because the definition
+        // moved would lose the user a reference they can still compare against.
+        {
+            RefEntry old; old.measurementEpoch = 0;
+            old.measurements.valid = true; old.measurements.hasEqCurve = true;
+            old.measurements.reduction = "wholeFileAverage";
+
+            old.availability = RefAvailability::Present;
+            check (refNeedsReanalysis (old, 1) && ! refIsStale (old, 1),
+                   "ri PIN1: below-epoch and PRESENT is re-analysed, not stale");
+
+            old.availability = RefAvailability::Missing;
+            check (refIsStale (old, 1) && ! refNeedsReanalysis (old, 1),
+                   "ri PIN1: below-epoch and MISSING is stale, and not re-analysed");
+            check (! refIsUnmeasured (old),
+                   "ri PIN1: stale still HAS numbers -- it is usable");
+
+            RefEntry cur; cur.measurementEpoch = kRefMeasurementEpoch;
+            cur.measurements.valid = true; cur.availability = RefAvailability::Present;
+            check (! refNeedsReanalysis (cur) && ! refIsStale (cur),
+                   "ri PIN1: an entry at the running epoch is left alone");
+
+            // A path that resolved to nothing: no numbers at all, current epoch.
+            RefEntry none; none.measurementEpoch = kRefMeasurementEpoch;
+            none.availability = RefAvailability::Missing;
+            check (refIsUnmeasured (none) && ! refIsStale (none),
+                   "ri PIN1: UNMEASURED is distinct from stale");
+            check (kRefMeasurementEpoch == 1,
+                   "ri PIN1: the current epoch is 1 (Phase 1b bumps it)");
+        }
+
+        // ri PIN2 -- id IS NOT DERIVED FROM path. Under index-in-place a path is
+        // a thing the user changes with a drag, and an id that moved with it
+        // would break every slot holding one.
+        {
+            const auto a = newReferenceId(), b = newReferenceId();
+            check (a.startsWith ("r_") && a.length() == 18,
+                   "ri PIN2: an id is r_ plus 16 hex", a);
+            check (a != b, "ri PIN2: two ids differ");
+            check (! a.contains ("/") && ! a.containsIgnoreCase (".wav"),
+                   "ri PIN2: and carries nothing from any path");
+        }
+
+        // ri PIN3 -- DEDUPE ON PATH. The same audio from two locations is TWO
+        // entries, deliberately: two paths are two things the user can rename
+        // and lose independently, and collapsing them discards one silently.
+        {
+            ReferenceIndex ix;
+            RefEntry e1; e1.id = "r_aaaa"; e1.path = "/Music/a/master.wav";
+            RefEntry e2; e2.id = "r_bbbb"; e2.path = "/Backup/b/master.wav";
+            ix.entries.push_back (e1); ix.entries.push_back (e2);
+
+            check (refFindByPath (ix, "/Music/a/master.wav") == 0
+                   && refFindByPath (ix, "/Backup/b/master.wav") == 1,
+                   "ri PIN3: same basename at two paths stays two entries");
+            check (refFindByPath (ix, "/Music/a/other.wav") == -1,
+                   "ri PIN3: an unknown path is not found");
+            check (refFindById (ix, "r_bbbb") == 1 && refFindById (ix, "r_zzzz") == -1,
+                   "ri PIN3: and lookup by id works independently of path");
+        }
+
+        // ri PIN4 -- THE CAP REFUSES AND NAMES ITSELF. It never evicts, because
+        // an eviction is a thing the user put there disappearing without their
+        // deciding it should.
+        {
+            ReferenceIndex ix;
+            check (refAddRefusal (ix).isEmpty(), "ri PIN4: an empty library accepts");
+            for (int i = 0; i < kRefIndexMaxEntries; ++i) ix.entries.push_back (RefEntry{});
+            const auto r = refAddRefusal (ix);
+            check (r.isNotEmpty() && r.contains (juce::String (kRefIndexMaxEntries)),
+                   "ri PIN4: at the cap it refuses and names the number", r);
+            check (r.containsIgnoreCase ("remove") && r.containsIgnoreCase ("nothing is removed"),
+                   "ri PIN4: and says what to do, and that nothing goes automatically", r);
+            check ((int) ix.entries.size() == kRefIndexMaxEntries,
+                   "ri PIN4: refusing evicts nothing");
+        }
+
+        // ri PIN5 -- A NEWER SCHEMA DEGRADES TO READ ONLY. Not a refusal, which
+        // would strand a user who opened the newer build once; not a write,
+        // which would destroy fields this build cannot see.
+        {
+            const auto newer = parseReferenceIndex
+                ("{\"schema\":99,\"writtenBy\":\"9.9.9\",\"entries\":[]}");
+            check (newer.readOnly && newer.diskSchema == 99,
+                   "ri PIN5: a higher schema parses and is marked read only");
+            check (! refIndexMayWrite (newer),
+                   "ri PIN5: and nothing may write to it");
+            const auto n = refReadOnlyNotice (newer);
+            check (n.contains ("9.9.9") && n.containsIgnoreCase ("read only")
+                   && n.containsIgnoreCase ("will not be saved"),
+                   "ri PIN5: the user is told, and told what will NOT happen", n);
+
+            ReferenceIndex nix = newer;
+            migrateReferenceIndex (nix);
+            check (nix.schema == 99,
+                   "ri PIN5: migrate leaves a newer document untouched");
+
+            const auto ours = parseReferenceIndex ("{\"schema\":1,\"entries\":[]}");
+            check (! ours.readOnly && refIndexMayWrite (ours),
+                   "ri PIN5: our own schema is writable");
+            check (refReadOnlyNotice (ours).isEmpty(),
+                   "ri PIN5: and says nothing to the user");
+        }
+
+        // ri PIN6 -- ROUND TRIP, AND UNKNOWN KEYS SURVIVE IT. A newer build's
+        // extra field must not be destroyed by an older one rewriting the file.
+        {
+            juce::String src =
+              "{\"schema\":1,\"measurementEpoch\":1,\"writtenBy\":\"2.26.4\","
+              "\"futureDocKey\":\"keep me\",\"entries\":[{"
+              "\"id\":\"r_1234\",\"name\":\"Master\",\"path\":\"/m/x.wav\","
+              "\"measurementEpoch\":1,\"futureEntryKey\":42,"
+              "\"source\":{\"bytes\":100,\"sampleRate\":44100,\"channels\":2,"
+              "\"durationSeconds\":168.5},"
+              "\"measurements\":{\"reduction\":\"wholeFileAverage\","
+              "\"windowSeconds\":168.5,\"meters\":{\"integrated\":-9.4},"
+              "\"eqCurve\":[";
+            for (int i = 0; i < 64; ++i) src += (i ? "," : "") + juce::String (-50.0 - i);
+            src += "],\"macroBandDb\":null},"
+                   "\"availability\":{\"state\":\"present\",\"checkedAt\":\"T\"}}]}";
+
+            const auto ix = parseReferenceIndex (src);
+            check (ix.entries.size() == 1, "ri PIN6: one entry parses");
+            const auto& e = ix.entries[0];
+            check (e.id == "r_1234" && e.path == "/m/x.wav",
+                   "ri PIN6: identity survives");
+            check (e.measurements.valid && e.measurements.hasEqCurve
+                   && ! e.measurements.hasMacroBands,
+                   "ri PIN6: eqCurve is measured and macroBandDb is ABSENT at epoch 1");
+            check (std::abs (e.measurements.eqCurve[0] + 50.0f) < 0.01f
+                   && std::abs (e.measurements.eqCurve[63] + 113.0f) < 0.01f,
+                   "ri PIN6: all 64 bins land, first and last");
+            check (e.availability == RefAvailability::Present,
+                   "ri PIN6: availability parses");
+            check (std::abs (e.measurements.integrated + 9.4f) < 0.01f,
+                   "ri PIN6: a meter value survives");
+
+            const auto out = writeReferenceIndex (ix, "2026-09-12T00:00:00Z", "2.26.4");
+            check (out.contains ("futureDocKey") && out.contains ("keep me"),
+                   "ri PIN6: an unknown DOCUMENT key survives the rewrite");
+            check (out.contains ("futureEntryKey"),
+                   "ri PIN6: and an unknown ENTRY key survives it too");
+            check (out.contains ("\"schema\":1") || out.contains ("\"schema\": 1"),
+                   "ri PIN6: the rewrite stamps this build's schema");
+
+            const auto back = parseReferenceIndex (out);
+            check (back.entries.size() == 1 && back.entries[0].id == "r_1234"
+                   && back.entries[0].measurements.hasEqCurve
+                   && ! back.entries[0].measurements.hasMacroBands,
+                   "ri PIN6: and it parses again identically");
+        }
+
+        // ri PIN7 -- AVAILABILITY. An unknown state reads as Missing, never as
+        // Present: the safe direction is to decline playback, not to offer a
+        // file we cannot vouch for.
+        {
+            check (refAvailabilityFromKey ("present") == RefAvailability::Present
+                   && refAvailabilityFromKey ("missing") == RefAvailability::Missing
+                   && refAvailabilityFromKey ("unreadable") == RefAvailability::Unreadable,
+                   "ri PIN7: the three states round trip by key");
+            check (refAvailabilityFromKey ("banana") == RefAvailability::Missing
+                   && refAvailabilityFromKey ("") == RefAvailability::Missing,
+                   "ri PIN7: an unknown or empty state is Missing, never Present");
+            check (refIsPlayable (RefAvailability::Present)
+                   && ! refIsPlayable (RefAvailability::Missing)
+                   && ! refIsPlayable (RefAvailability::Unreadable),
+                   "ri PIN7: only Present may be played");
+            for (auto a : { RefAvailability::Present, RefAvailability::Missing,
+                            RefAvailability::Unreadable })
+                check (refAvailabilityFromKey (refAvailabilityKey (a)) == a,
+                       "ri PIN7: key and state are inverses");
         }
     }
 
