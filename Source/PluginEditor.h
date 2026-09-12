@@ -1637,6 +1637,15 @@ private:
     // chain to keep chain rows clear of it; if a row rect ever intersects
     // the shelf rect anyway, resized() logs it ONCE per editor instance.
     bool chainShelfOverlapLogged_ = false;
+    // DEVELOPMENT AID, NOT A GUARD. Same one-shot shape as
+    // chainShelfOverlapLogged_ above. The Compare controls are laid out to be
+    // disjoint, and since compareClickCatcher went to the back that
+    // disjointness is what keeps them all clickable. This reports ONCE per
+    // editor if two of them ever overlap. It goes to the system log, and open
+    // list item 138 records that nothing written there reaches a user, so it
+    // tells a developer running Console that a claim stopped holding; it
+    // protects nobody. See the commit message for the form that would.
+    bool compareOverlapLogged_ = false;
     std::vector<juce::Rectangle<int>>  chainRowStarRects_;
     // -1 = not a row (a group heading occupies the slot instead).
     std::vector<int>                   chainRowIsHeading_;

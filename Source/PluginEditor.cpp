@@ -20226,41 +20226,27 @@ void EchoJayEditor::resized()
             comparePlayBotBtn_.setBounds(cPad + rowW - kPlayBtnW, botHdrY, kPlayBtnW, kHdrH);
         }
 
-        // Click catcher covers the ENTIRE compare area for reliable drag-and-drop
+        // THE CATCHER GOES TO THE BACK, and the list of exceptions that used
+        // to dig twenty children back out of it is gone with it. Its job is
+        // to receive clicks on the PAINTED areas of Compare and forward them
+        // to the editor through addMouseListener; it does that from the back
+        // exactly as well as from the front, because z-order only decides
+        // who wins where components OVERLAP, and a painted area has no child
+        // over it by definition.
+        //
+        // WHY THE LIST HAD TO GO RATHER THAN GAIN A LINE. It was a register
+        // that someone had to remember to append to, and forgetting was
+        // silent: the control appeared, hovered, and never received a press.
+        // loadRefBtn was added one commit ago and forgotten, which is how a
+        // button written to fix an affordance-that-does-nothing became one.
+        // Real children now hit-test first because they are in front of the
+        // catcher by default, so the defect cannot be reintroduced by
+        // omission. Anything added to Compare from here needs no ceremony.
         int catcherTop = topH + 4;
         int catcherH = getHeight() - catcherTop - 10;
         compareClickCatcher.setBounds(0, catcherTop, mW, catcherH);
         compareClickCatcher.setVisible(true);
-        compareClickCatcher.toFront(false);
-
-        // Bring interactive elements in front of the catcher
-        for (int i = 0; i < 5; ++i) compareMeterBtns[(size_t)i].toFront(false);
-        cmpABtn_.toFront(false);
-        cmpBBtn_.toFront(false);
-        cmpPlayBtn_.toFront(false);
-        compareSyncBtn_.toFront(false);
-        compareTopSlotBtn_.toFront(false);
-        compareBotSlotBtn_.toFront(false);
-        comparePlayTopBtn_.toFront(false);
-        comparePlayBotBtn_.toFront(false);
-        aiCompareBtn.toFront(false);
-        codecsBtn_.toFront(false);
-        presetBox.toFront(false);
-        savePresetBtn.toFront(false);
-        deletePresetBtn.toFront(false);
-        refStatusLabel.toFront(false);
-        // WITHOUT THIS LINE THE ADD BUTTON IS INERT. compareClickCatcher
-        // covers the whole Compare area, intercepts clicks and is brought to
-        // front just above, so a control that is not raised past it paints
-        // normally, hovers normally, and never receives a press. That is the
-        // affordance-that-does-nothing this button was added to remove, one
-        // layer further down, and no gate can see it.
-        loadRefBtn.toFront(false);
-        for (auto& b : refRemoveBtns) b.toFront(false);
-        // Chat input overlaps the divider by 20px — keep it above the catcher
-        chatInput.toFront(false);
-        chatSendBtn.toFront(false);
-        chatScroll.toFront(false);
+        compareClickCatcher.toBack();
 
         // Transport bar at bottom: [A] [B] [▶] [SYNC] ... [AI Compare]
         {
@@ -20288,6 +20274,66 @@ void EchoJayEditor::resized()
             // Feature-launcher: right-aligned against the panel edge
             codecsBtn_.setBounds(mW - kCodecW - 10, btnY, kCodecW, 26);
         }
+        // ONE-SHOT OVERLAP REPORT. A DEVELOPMENT AID, NOT A GUARD.
+        //
+        // With the catcher at the back, every one of these is clickable
+        // BECAUSE they do not overlap each other. That was measured, not
+        // assumed: the two pairs that looked closest were checked and both
+        // clear comfortably. aiCompareBtn's right edge is (mW + totalW) / 2
+        // and codecsBtn_ starts at mW - 98, which meet only below mW 376,
+        // while the Compare column is never narrower than 585 (the 900px
+        // window minimum with chatW capped at 35 percent). And the chat trio
+        // begins at mW + sidebarOffsetX + 14, to the RIGHT of a catcher that
+        // spans [0, mW), so the comment claiming the input overlapped the
+        // divider by 20px and needed raising was simply wrong.
+        //
+        // Measurements go stale. This says so once per editor if they do.
+        // It writes to the system log, and open list item 138 records that
+        // nothing written there reaches a user, so it tells a developer with
+        // Console open that a claim stopped holding. It prevents nothing.
+        // refRemoveBtns are excluded on purpose: their bounds are authored in
+        // paintCompareView, not here, so resized() has no current value.
+        if (! compareOverlapLogged_)
+        {
+            struct Named { const char* name; juce::Rectangle<int> r; };
+            std::vector<Named> cs {
+                { "meter0", compareMeterBtns[0].getBounds() },
+                { "meter1", compareMeterBtns[1].getBounds() },
+                { "meter2", compareMeterBtns[2].getBounds() },
+                { "meter3", compareMeterBtns[3].getBounds() },
+                { "meter4", compareMeterBtns[4].getBounds() },
+                { "cmpA", cmpABtn_.getBounds() },
+                { "cmpB", cmpBBtn_.getBounds() },
+                { "cmpPlay", cmpPlayBtn_.getBounds() },
+                { "sync", compareSyncBtn_.getBounds() },
+                { "topSlot", compareTopSlotBtn_.getBounds() },
+                { "botSlot", compareBotSlotBtn_.getBounds() },
+                { "playTop", comparePlayTopBtn_.getBounds() },
+                { "playBot", comparePlayBotBtn_.getBounds() },
+                { "aiCompare", aiCompareBtn.getBounds() },
+                { "codecs", codecsBtn_.getBounds() },
+                { "presetBox", presetBox.getBounds() },
+                { "savePreset", savePresetBtn.getBounds() },
+                { "deletePreset", deletePresetBtn.getBounds() },
+                { "refStatus", refStatusLabel.getBounds() },
+                { "loadRef", loadRefBtn.getBounds() },
+            };
+            for (size_t i = 0; i < cs.size() && ! compareOverlapLogged_; ++i)
+                for (size_t j = i + 1; j < cs.size(); ++j)
+                    if (! cs[i].r.isEmpty() && ! cs[j].r.isEmpty()
+                        && cs[i].r.intersects(cs[j].r))
+                    {
+                        EchoJay_NSLog(("EJCmp: compare controls OVERLAP -- "
+                            + juce::String(cs[i].name) + " " + cs[i].r.toString()
+                            + " and " + juce::String(cs[j].name) + " " + cs[j].r.toString()
+                            + " at mW " + juce::String(mW)
+                            + ". One of them is now unclickable and the layout "
+                              "claim in resized() has stopped holding.").toRawUTF8());
+                        compareOverlapLogged_ = true;
+                        break;
+                    }
+        }
+
         // Codec panel is a full-bounds modal; keep it sized and on top
         codecPanel_.setBounds(getLocalBounds());
         if (codecPanel_.isVisible()) codecPanel_.toFront(false);
