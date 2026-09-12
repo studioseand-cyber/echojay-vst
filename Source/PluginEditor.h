@@ -147,6 +147,14 @@ private:
     void showCompareView();
     void hideCompareView();
     void loadReferenceFile();
+    // The ONE writer of refStatusLabel. Text and visibility move together,
+    // because thirteen setText calls against a label that was neither a child
+    // component nor given bounds is how the Compare view came to report
+    // nothing at all. See the comment at the definition.
+    void setRefStatus(const juce::String& msg);
+    // Which Compare slot a raw click landed in. The bottom panel starts at the
+    // bottom slot button, so this is live geometry rather than a guess.
+    bool compareClickIsTopSlot(juce::Point<int> pos) const;
     void runAICompare();
     void paintCompareView(juce::Graphics& g, juce::Rectangle<int> area);
     // Spectrum panel for Compare tab: independent per-panel state (avoids
@@ -843,17 +851,16 @@ private:
     void saveCustomChannels();
 
     // Compare
-    juce::TextButton loadRefBtn { "+ Add Mix" };
+    juce::TextButton loadRefBtn { "+ Add reference" };
     juce::TextButton aiCompareBtn { "AI Compare" };
-    // VESTIGIAL — NOT the source of truth. These boxes are never made visible
-    // and never given bounds; they are still populated on rebuild only to keep
-    // legacy code compiling. The Compare source of truth is compareTop_ /
-    // compareBot_ (the slot buttons), read via getSlotMeterData(). Do NOT wire
-    // AI Compare, audition, or any new logic to their getSelectedId(): from
-    // v2.9.31 (2 Jul 2026) until it was repaired, runAICompare read exactly
-    // this hidden selection and analysed the wrong audio. Read the slots.
-    juce::ComboBox compareSlotABox;
-    juce::ComboBox compareSlotBBox;
+    // compareSlotABox/BBox ARE GONE (12 Sep 2026). They were never visible,
+    // never given bounds, and their only readers were their own rebuild and a
+    // right-click path that picked a slot by distance to two boxes both
+    // centred on the origin, so distA always equalled distB and A always won.
+    // Their last stated justification, at showCompareView, was that AI Compare
+    // needed them; runAICompare records the opposite in its own comment, and
+    // has read compareTop_/compareBot_ via getSlotMeterData since the v2.9.31
+    // repair. The source of truth is the slots, and now it is the ONLY truth.
     juce::Label refStatusLabel;
     // Stage 1: meter-type selector (Waveform / Spectrum / Levels / Stereo Image / Loudness)
     std::array<juce::TextButton, 5> compareMeterBtns;

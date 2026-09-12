@@ -29,7 +29,26 @@
 // the reference ids; a selection restored by raw id after a capture then
 // pointed at nothing and the AI Compare button hit its empty-selection guard
 // silently. Captures can never reach this base within a session.
-static constexpr int kCompareRefIdBase = 1000;
+// THE MENU'S ID BANDS, AND WHY THE CAPS ARE LOAD-BEARING. openCompareSlotMenu
+// hands PopupMenu ids in 100-wide bands and the handler decodes by range:
+// 1 Live, 100..199 session captures, 200..299 chat captures, 300..399
+// references, 9000+ actions. A section that overruns its band does not fail
+// loudly; its items decode as the NEXT section's, so a click selects the wrong
+// thing. The 99 caps are what hold the bands apart.
+static constexpr int kCompareMenuBandSize   = 100;
+static constexpr int kCompareMenuRefCap     = kCompareMenuBandSize - 1;   // 300..398
+static constexpr int kCompareMenuRefNameLen = 44;
+static constexpr int kCompareMenuAddRefId   = 9200;
+
+// THE REFERENCE DROP ZONE, IN ONE PLACE. Its height was written as 82 in
+// paintCompareView, as "82 + 4" in the resized() accumulator, and folded into
+// the literal 140 of the panels accumulator with a comment calling it 86.
+// Three encodings of one number, none of which referred to the others. The
+// tag grid keeps exactly the 82px it had; the strip is new space below it,
+// holding the Add button and the status label.
+static constexpr int kRefDropTagsH  = 82;
+static constexpr int kRefDropStripH = 24;
+static constexpr int kRefDropH      = kRefDropTagsH + kRefDropStripH;
 
 // The fader filmstrip, decoded ONCE per process and shared by every editor
 // instance. juce::ImageCache, the drawLogo mechanism, and deliberately NOT
@@ -1342,12 +1361,17 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     loadUIScale();
     applyUIScale(uiScale_);
 
-    loadRefBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
+    // Styled as settingsScanBtn, the Settings primary action, rather than as a
+    // new look: bg4 ground with purple text. loadReferenceFile() has been
+    // complete and unreachable since the addAndMakeVisible below was commented
+    // out, which made this an affordance that did not exist rather than one
+    // that did nothing.
+    loadRefBtn.setColour(juce::TextButton::buttonColourId, C::bg4);
     loadRefBtn.setColour(juce::TextButton::textColourOnId, C::purple);
     loadRefBtn.setColour(juce::TextButton::textColourOffId, C::purple);
+    loadRefBtn.setTooltip("Add a reference track to compare against");
     loadRefBtn.onClick = [this] { loadReferenceFile(); };
-    loadRefBtn.setVisible(false); // removed from UI
-    // addAndMakeVisible(loadRefBtn);
+    addChildComponent(loadRefBtn);   // a child now; shown only in Compare
 
     aiCompareBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff06b6d4));
     aiCompareBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
@@ -1366,16 +1390,6 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     codecPanel_.setVisible(false);
     addChildComponent(codecPanel_);
 
-    compareSlotABox.setColour(juce::ComboBox::backgroundColourId, C::bg3);
-    compareSlotABox.setColour(juce::ComboBox::textColourId, C::text);
-    compareSlotABox.setColour(juce::ComboBox::outlineColourId, C::border2);
-    compareSlotABox.setVisible(false);
-    addAndMakeVisible(compareSlotABox);
-    compareSlotBBox.setColour(juce::ComboBox::backgroundColourId, C::bg3);
-    compareSlotBBox.setColour(juce::ComboBox::textColourId, C::text);
-    compareSlotBBox.setColour(juce::ComboBox::outlineColourId, C::border2);
-    compareSlotBBox.setVisible(false);
-    addAndMakeVisible(compareSlotBBox);
 
     // Meter-type selector buttons for Compare tab (stage 1)
     {
@@ -1505,8 +1519,12 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     refStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xffFF6B9D));
     refStatusLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
     refStatusLabel.setJustificationType(juce::Justification::centredLeft);
+    // A CHILD COMPONENT AT LAST. It had neither addAndMakeVisible nor
+    // addChildComponent, so it was not in the tree at all and setVisible(true)
+    // on it would have painted nothing. Starts hidden: setRefStatus shows it
+    // when there is something to say.
+    addChildComponent(refStatusLabel);
     refStatusLabel.setVisible(false);
-    // Removed from UI — no longer shown
 
     // Preset controls
     presetBox.setColour(juce::ComboBox::backgroundColourId, C::bg3);
@@ -1519,7 +1537,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             // "Clear All" selected
             processorRef.getReferenceAnalyser().clearAll();
             presetBox.setSelectedId(0, juce::dontSendNotification);
-            refStatusLabel.setText("References cleared", juce::dontSendNotification);
+            setRefStatus("References cleared");
             if (currentView == View::Compare)
                 showCompareView();
             repaint();
@@ -1535,7 +1553,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     savePresetBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
     savePresetBtn.onClick = [this] {
         auto refs = processorRef.getReferenceAnalyser().getReferences();
-        if (refs.empty()) { refStatusLabel.setText("No references to save", juce::dontSendNotification); return; }
+        if (refs.empty()) { setRefStatus("No references to save"); return; }
         
         // Simple name dialog using AlertWindow
         auto* aw = new juce::AlertWindow("Save Preset", "Name this reference preset:", juce::MessageBoxIconType::NoIcon);
@@ -1549,7 +1567,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 if (name.isNotEmpty()) {
                     saveCurrentPreset(name);
                     loadPresetList();
-                    refStatusLabel.setText("Preset saved: " + name, juce::dontSendNotification);
+                    setRefStatus("Preset saved: " + name);
                 }
             }
             delete aw;
@@ -1576,7 +1594,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 if (result == 1) {
                     deletePreset(filePath);
                     loadPresetList();
-                    refStatusLabel.setText("Deleted: " + displayName, juce::dontSendNotification);
+                    setRefStatus("Deleted: " + displayName);
                 }
                 delete aw;
             }));
@@ -2955,8 +2973,8 @@ void EchoJayEditor::showLoginScreen()
     aiCompareBtn.setVisible(false);
     codecsBtn_.setVisible(false);
     closeCodecPanel();   // also disengages codec preview if it was active
-    compareSlotABox.setVisible(false); compareSlotBBox.setVisible(false);
     refStatusLabel.setVisible(false);
+    loadRefBtn.setVisible(false);
     presetBox.setVisible(false); savePresetBtn.setVisible(false); deletePresetBtn.setVisible(false); for (auto& b : refRemoveBtns) b.setVisible(false); compareClickCatcher.setVisible(false);
 
     // Login screen: one shared pass (currentScreen != Main ⇒ all pages off,
@@ -4851,7 +4869,7 @@ void EchoJayEditor::filesDropped(const juce::StringArray& files, int, int)
         if (ext == ".wav" || ext == ".mp3" || ext == ".flac" || ext == ".aiff" ||
             ext == ".aif" || ext == ".ogg" || ext == ".m4a")
         {
-            refStatusLabel.setText("Analysing " + file.getFileName() + "...", juce::dontSendNotification);
+            setRefStatus("Analysing " + file.getFileName() + "...");
             
             // Copy file to EchoJay folder to avoid sandbox/permission issues.
             // Always overwrite — the source file may have changed.
@@ -4868,8 +4886,8 @@ void EchoJayEditor::filesDropped(const juce::StringArray& files, int, int)
             analyser.forceResetIfStuck();
             
             analyser.analyseFile(fileToAnalyse, [this, file](bool success, const juce::String& error) {
-                if (success) refStatusLabel.setText(juce::String(processorRef.getReferenceAnalyser().getReferenceCount()) + " reference(s) loaded", juce::dontSendNotification);
-                else refStatusLabel.setText("Error: " + error, juce::dontSendNotification);
+                if (success) setRefStatus(juce::String(processorRef.getReferenceAnalyser().getReferenceCount()) + " reference(s) loaded");
+                else setRefStatus("Error: " + error);
                 if (currentView == View::Compare) showCompareView();
                 repaint();
             });
@@ -4882,6 +4900,30 @@ void EchoJayEditor::filesDropped(const juce::StringArray& files, int, int)
 // Reference Loading
 // ============================================================================
 
+// THE ONE WRITER OF refStatusLabel. Before this, thirteen call sites set text
+// on a label that was never added to the component tree and never given
+// bounds, so every message the Compare view could produce, including
+// "Error: " + error from a failed analysis, was written and discarded. Text
+// and visibility move together here so that cannot come apart again.
+void EchoJayEditor::setRefStatus(const juce::String& msg)
+{
+    setRefStatus(msg);
+    // Compare is the only view that lays this label out, so it is the only
+    // view that may show it. Leaving the text set means re-entering Compare
+    // brings a standing message back rather than losing it.
+    refStatusLabel.setVisible(msg.isNotEmpty() && currentView == View::Compare);
+    refStatusLabel.toFront(false);
+    repaint();
+}
+
+// Which Compare panel a raw click landed in. The bottom panel begins at the
+// bottom slot button, which resized() positions from the live panel geometry,
+// so this answers from what is on screen rather than from a stored guess.
+bool EchoJayEditor::compareClickIsTopSlot(juce::Point<int> pos) const
+{
+    return pos.y < compareBotSlotBtn_.getY();
+}
+
 void EchoJayEditor::loadReferenceFile()
 {
     auto chooser = std::make_shared<juce::FileChooser>(
@@ -4890,10 +4932,10 @@ void EchoJayEditor::loadReferenceFile()
         [this, chooser](const juce::FileChooser& fc) {
             auto file = fc.getResult();
             if (file.existsAsFile()) {
-                refStatusLabel.setText("Analysing " + file.getFileName() + "...", juce::dontSendNotification);
+                setRefStatus("Analysing " + file.getFileName() + "...");
                 processorRef.getReferenceAnalyser().analyseFile(file, [this](bool success, const juce::String& error) {
-                    if (success) refStatusLabel.setText(juce::String(processorRef.getReferenceAnalyser().getReferenceCount()) + " reference(s) loaded", juce::dontSendNotification);
-                    else refStatusLabel.setText("Error: " + error, juce::dontSendNotification);
+                    if (success) setRefStatus(juce::String(processorRef.getReferenceAnalyser().getReferenceCount()) + " reference(s) loaded");
+                    else setRefStatus("Error: " + error);
                     repaint();
                 });
             }
@@ -4911,28 +4953,16 @@ void EchoJayEditor::showCompareView()
     compareBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     aiCompareBtn.setVisible(true);
     codecsBtn_.setVisible(true);
-    // Stage 1: slot boxes hidden — populated silently so AI Compare still works
-    compareSlotABox.setVisible(false); compareSlotBBox.setVisible(false);
-    refStatusLabel.setVisible(false);
+    // A STANDING MESSAGE SURVIVES RE-ENTRY. This used to hide the label
+    // unconditionally, which is why a failed drop or a failed analysis wrote
+    // "Error: ..." and showed nothing: the drop callback sets the text and
+    // then calls showCompareView, which hid it again on the same pass. The
+    // label now follows its text, so the one view with a layout for it is the
+    // one view that can report.
+    refStatusLabel.setVisible(refStatusLabel.getText().isNotEmpty());
+    loadRefBtn.setVisible(true);
     presetBox.setVisible(true); savePresetBtn.setVisible(true); deletePresetBtn.setVisible(true);
     loadPresetList();
-
-    compareSlotABox.clear(); compareSlotBBox.clear();
-    auto snaps = processorRef.getSnapshots();
-    for (int i = 0; i < (int)snaps.size(); ++i) {
-        compareSlotABox.addItem(snaps[i].name.substring(0, 30), i + 1);
-        compareSlotBBox.addItem(snaps[i].name.substring(0, 30), i + 1);
-    }
-    auto refs = processorRef.getReferenceAnalyser().getReferences();
-    int refOffset = kCompareRefIdBase;
-    for (int i = 0; i < (int)refs.size(); ++i) {
-        juce::String label = refs[i].name.substring(0, 25) + " (Ref)";
-        compareSlotABox.addItem(label, refOffset + i);
-        compareSlotBBox.addItem(label, refOffset + i);
-    }
-    if (snaps.size() > 0) compareSlotABox.setSelectedId(1);
-    if (snaps.size() > 1) compareSlotBBox.setSelectedId(2);
-    else if (refs.size() > 0) compareSlotBBox.setSelectedId(refOffset);
 
     // Show meter-type selector buttons, slot buttons, and play buttons
     for (int i = 0; i < 5; ++i) compareMeterBtns[(size_t)i].setVisible(true);
@@ -4964,8 +4994,10 @@ void EchoJayEditor::hideCompareView()
     codecsBtn_.setVisible(false);
     closeCodecPanel();   // also disengages codec preview if it was active
     // Don't stop AB playback — let ref keep playing through plugin when switching views
-    compareSlotABox.setVisible(false); compareSlotBBox.setVisible(false);
+    // The text is KEPT, only the label is hidden: re-entering Compare brings
+    // a standing message back rather than losing what the last drop said.
     refStatusLabel.setVisible(false);
+    loadRefBtn.setVisible(false);
     presetBox.setVisible(false); savePresetBtn.setVisible(false); deletePresetBtn.setVisible(false);
     for (auto& b : refRemoveBtns) b.setVisible(false);
     compareClickCatcher.setVisible(false);
@@ -5315,12 +5347,25 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
                      + (evictedCount == 1 ? "" : "s") + " no longer stored",
                      false, false);
 
-    if (!refs.empty())
+    // THE SECTION IS ALWAYS HERE, EVEN EMPTY. It used to be omitted entirely
+    // when there were no references, so a user who had never added one saw no
+    // REFERENCES header, no invitation, and no indication the feature existed.
+    // A feature discoverable only by already knowing about it is not
+    // discoverable. The empty state carries the invitation, and the
+    // invitation opens the same chooser as the Add button.
     {
         menu.addSeparator();
         menu.addSectionHeader("REFERENCES");
-        for (int i = 0; i < (int)refs.size() && i < 99; ++i)
-            menu.addItem(300 + i, refs[i].name.substring(0, 44));
+        if (refs.empty())
+        {
+            menu.addItem(kCompareMenuAddRefId, "Add a reference track...");
+        }
+        else
+        {
+            for (int i = 0; i < (int)refs.size() && i < kCompareMenuRefCap; ++i)
+                menu.addItem(300 + i, refs[i].name.substring(0, kCompareMenuRefNameLen));
+            menu.addItem(kCompareMenuAddRefId, "Add another reference...");
+        }
     }
 
     auto& btn = isTop ? compareTopSlotBtn_ : compareBotSlotBtn_;
@@ -5334,6 +5379,13 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
             if (safeThis == nullptr || result == 0) return;
 
             if (result == 9000) return;   // evicted-history row: disabled, no-op
+            if (result == kCompareMenuAddRefId)
+            {
+                // The same chooser the Add button opens. One function, so the
+                // two entry points cannot drift apart.
+                safeThis->loadReferenceFile();
+                return;
+            }
             if (result == 9100)
             {
                 // Item 4: purge orphaned reviews. PERMANENT (whole-blob
@@ -6317,8 +6369,9 @@ void EchoJayEditor::runAICompare()
     }
     // STEP 1: the compare context reads the VISIBLE slots (compareTop_/
     // compareBot_) via getSlotMeterData — the ONE source the buttons, audition,
-    // gate and labels already share — not the hidden compareSlotABox/B dropdown
-    // that no button ever synced. Unasked so a cross-scope pair triggers the
+    // gate and labels already share. The hidden compareSlotABox/B dropdowns
+    // this used to warn against are deleted (12 Sep 2026); the slots are now
+    // the only selection that exists. Unasked so a cross-scope pair triggers the
     // ASK (STEP 3); the chip re-enters with Anyway / NumbersOnly.
     runAICompareWith(compareTop_, compareBot_, CompareScope::Unasked);
 }
@@ -10769,7 +10822,10 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
     cy += 26;
 
     // --- Reference drop zone ---
-    const int dropH = 82;
+    // The tag grid and the empty-state prompt keep the 82px they had; the
+    // strip below carries the Add button and the status label, both real
+    // child components positioned by resized().
+    const int dropH = kRefDropH;
     g.setColour(C::bg3);
     g.fillRoundedRectangle((float)aX, (float)cy, (float)aW, (float)dropH, 8.0f);
     g.setColour(C::purple.withAlpha(0.3f));
@@ -10780,13 +10836,13 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
     if (refs.empty())
     {
         g.setColour(juce::Colour(0xffFF6B9D));
-        g.fillRoundedRectangle((float)aX + 10, (float)cy + (float)(dropH - 18) / 2, 64.0f, 18.0f, 4.0f);
+        g.fillRoundedRectangle((float)aX + 10, (float)cy + (float)(kRefDropTagsH - 18) / 2, 64.0f, 18.0f, 4.0f);
         g.setColour(juce::Colours::white);
         g.setFont(juce::Font(juce::FontOptions(8.0f, juce::Font::bold)));
-        g.drawText("REFERENCE", aX + 10, cy + (dropH - 18) / 2, 64, 18, juce::Justification::centred);
+        g.drawText("REFERENCE", aX + 10, cy + (kRefDropTagsH - 18) / 2, 64, 18, juce::Justification::centred);
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(10.0f)));
-        g.drawText("Drop a reference track to compare", aX + 82, cy, aW - 90, dropH, juce::Justification::centredLeft);
+        g.drawText("Drop a reference track to compare", aX + 82, cy, aW - 90, kRefDropTagsH, juce::Justification::centredLeft);
     }
     else
     {
@@ -10823,6 +10879,10 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
 
     for (int i = activeRefRemoveBtns; i < kMaxRefRemoveBtns; ++i)
         refRemoveBtns[(size_t)i].setVisible(false);
+
+    // Hairline between the tags and the action strip below them
+    g.setColour(C::purple.withAlpha(0.18f));
+    g.fillRect(aX + 8, cy + kRefDropTagsH, aW - 16, 1);
 
     cy += dropH + 4;
 
@@ -20106,7 +20166,16 @@ void EchoJayEditor::resized()
         deletePresetBtn.setBounds(cPad + cW - 84, cy2, 80, 22);
         cy2 += 26;
 
-        cy2 += 82 + 4; // reference drop zone
+        // Reference drop zone. The strip along its bottom is the only place
+        // in Compare where a failed drop or a failed analysis can be seen.
+        {
+            const int sX = cPad + 8;
+            const int sY = cy2 + kRefDropTagsH + 2;
+            const int kAddW = 104, kAddH = 20;
+            loadRefBtn.setBounds(cPad + cW - kAddW - 8, sY, kAddW, kAddH);
+            refStatusLabel.setBounds(sX, sY, juce::jmax(40, cW - kAddW - 24), kAddH);
+        }
+        cy2 += kRefDropH + 4;
 
         // rowW: content width from computeColumns, the single width source.
         // The comment that used to live here said "paint() and resized() use
@@ -20125,17 +20194,16 @@ void EchoJayEditor::resized()
         }
         cy2 += 28;
 
-        // Stage 2: slot dropdowns hidden — populated silently for AI Compare
-        compareSlotABox.setVisible(false);
-        compareSlotBBox.setVisible(false);
-
         // Position slot buttons in their panel header strips (same geometry as paintCompareView)
         {
             const int kHdrH = 20, kGap = 6, kBtnAreaH = 36;
             int aY2 = topH + 4;
             int aH2 = getHeight() - topH - 16 - (abBarShowing ? kAbBarH : 0);
-            // Accumulate to panels start (preset 26 + dropzone 86 + selector 28 = 140)
-            int panelsCy = aY2 + 140;
+            // Accumulate to panels start: preset row + drop zone + selector.
+            // DERIVED, not restated. This line used to read "aY2 + 140" with a
+            // comment spelling out 26 + 86 + 28, which is a fourth copy of a
+            // number changed in three other places.
+            int panelsCy = aY2 + 26 + (kRefDropH + 4) + 28;
             int panelsH = aY2 + aH2 - panelsCy - kBtnAreaH;
             int panelH = (panelsH - kHdrH * 2 - kGap) / 2;
             if (panelH < 40) panelH = 40;
@@ -21394,38 +21462,16 @@ void EchoJayEditor::timerCallback()
             requestAIFeedback(snap, currentChatId, reviewId, passName, version, prevReview,
                               activeChatLinkUid());
         
-            // Refresh compare dropdowns if we're on the compare view
+            // A new capture changes what the slot menus offer. The menus are
+            // built on demand in openCompareSlotMenu, so there is nothing to
+            // rebuild here; a repaint is enough to refresh what is drawn.
+            // WHAT THIS REPLACED, AND WHY NOTHING IS LOST: forty lines
+            // rebuilding two ComboBoxes that were never visible, then
+            // restoring a selection nothing read, then an "auto-select for
+            // one-click compare" fallback whose selection no button, meter,
+            // audition or AI Compare path ever consulted.
             if (currentView == View::Compare)
-            {
-                int prevSelA = compareSlotABox.getSelectedId();
-                int prevSelB = compareSlotBBox.getSelectedId();
-                compareSlotABox.clear(juce::dontSendNotification);
-                compareSlotBBox.clear(juce::dontSendNotification);
-                auto snaps2 = processorRef.getSnapshots();
-                for (int i = 0; i < (int)snaps2.size(); ++i) {
-                    compareSlotABox.addItem(snaps2[(size_t)i].name.substring(0, 30), i + 1);
-                    compareSlotBBox.addItem(snaps2[(size_t)i].name.substring(0, 30), i + 1);
-                }
-                auto refs2 = processorRef.getReferenceAnalyser().getReferences();
-                int refOff = kCompareRefIdBase;
-                for (int i = 0; i < (int)refs2.size(); ++i) {
-                    compareSlotABox.addItem(refs2[(size_t)i].name.substring(0, 25) + " (Ref)", refOff + i);
-                    compareSlotBBox.addItem(refs2[(size_t)i].name.substring(0, 25) + " (Ref)", refOff + i);
-                }
-                if (prevSelA > 0) compareSlotABox.setSelectedId(prevSelA, juce::dontSendNotification);
-                else if (snaps2.size() > 0) compareSlotABox.setSelectedId((int)snaps2.size(), juce::dontSendNotification);
-                if (prevSelB > 0) compareSlotBBox.setSelectedId(prevSelB, juce::dontSendNotification);
-                // B fallback (A had one, B didn't): previous capture if there
-                // is one, else the first reference — so compare is one click
-                // away right after a capture
-                if (compareSlotBBox.getSelectedId() == 0)
-                {
-                    if (snaps2.size() > 1)
-                        compareSlotBBox.setSelectedId((int)snaps2.size() - 1, juce::dontSendNotification);
-                    else if (refs2.size() > 0)
-                        compareSlotBBox.setSelectedId(kCompareRefIdBase, juce::dontSendNotification);
-                }
-            }
+                repaint();
         }
     }
 
@@ -21616,27 +21662,12 @@ void EchoJayEditor::timerCallback()
         if (curRefCount != lastRefCount)
         {
             lastRefCount = curRefCount;
-            // Refresh dropdowns
-            int prevA = compareSlotABox.getSelectedId();
-            int prevB = compareSlotBBox.getSelectedId();
-            compareSlotABox.clear(juce::dontSendNotification);
-            compareSlotBBox.clear(juce::dontSendNotification);
-            auto snaps2 = processorRef.getSnapshots();
-            for (int i = 0; i < (int)snaps2.size(); ++i) {
-                compareSlotABox.addItem(snaps2[(size_t)i].name.substring(0, 30), i + 1);
-                compareSlotBBox.addItem(snaps2[(size_t)i].name.substring(0, 30), i + 1);
-            }
-            auto refs2 = processorRef.getReferenceAnalyser().getReferences();
-            int refOff = kCompareRefIdBase;
-            for (int i = 0; i < (int)refs2.size(); ++i) {
-                compareSlotABox.addItem(refs2[(size_t)i].name.substring(0, 25) + " (Ref)", refOff + i);
-                compareSlotBBox.addItem(refs2[(size_t)i].name.substring(0, 25) + " (Ref)", refOff + i);
-            }
-            if (prevA > 0) compareSlotABox.setSelectedId(prevA, juce::dontSendNotification);
-            if (prevB > 0) compareSlotBBox.setSelectedId(prevB, juce::dontSendNotification);
-            // Auto-select new reference in slot B if nothing was selected
-            if (compareSlotBBox.getSelectedId() == 0 && refs2.size() > 0)
-                compareSlotBBox.setSelectedId(refOff + (int)refs2.size() - 1, juce::dontSendNotification);
+            // References changed: the drop zone draws its tags from the live
+            // list and the status strip may need re-laying out, so both a
+            // layout pass and a repaint. The dropdown rebuild that used to
+            // live here is gone with the dropdowns.
+            resized();
+            repaint();
         }
     }
 
@@ -33295,7 +33326,7 @@ void EchoJayEditor::saveCurrentPreset(const juce::String& name)
 void EchoJayEditor::loadPreset(const juce::String& filePath)
 {
     juce::File file(filePath);
-    if (!file.existsAsFile()) { refStatusLabel.setText("Preset file not found", juce::dontSendNotification); return; }
+    if (!file.existsAsFile()) { setRefStatus("Preset file not found"); return; }
     
     auto json = juce::JSON::parse(file.loadFileAsString());
     if (!json.isObject()) return;
@@ -33344,21 +33375,21 @@ void EchoJayEditor::loadPreset(const juce::String& filePath)
             {
                 processorRef.getReferenceAnalyser().analyseFile(refFile, [this, refName](bool success, const juce::String& err) {
                     if (success)
-                        refStatusLabel.setText("Loaded: " + refName, juce::dontSendNotification);
+                        setRefStatus("Loaded: " + refName);
                     else
-                        refStatusLabel.setText("Error: " + err, juce::dontSendNotification);
+                        setRefStatus("Error: " + err);
                     // Don't call showCompareView — the timer auto-refresh handles dropdown updates
                     repaint();
                 });
             }
             else
             {
-                refStatusLabel.setText("File not found: " + refName, juce::dontSendNotification);
+                setRefStatus("File not found: " + refName);
             }
         }
     }
     
-    refStatusLabel.setText("Loading preset: " + file.getFileNameWithoutExtension(), juce::dontSendNotification);
+    setRefStatus("Loading preset: " + file.getFileNameWithoutExtension());
     repaint();
 }
 
@@ -33894,43 +33925,33 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         if (e.mods.isPopupMenu())
         {
             auto snaps = processorRef.getSnapshots();
-            int refOffset = kCompareRefIdBase;
-            
-            // Determine which card (A or B) was clicked based on mouse position
-            struct SlotInfo { juce::ComboBox* box; int id; };
-            std::vector<SlotInfo> slotsToCheck;
-            
-            // Use card positions: nearer to slot A or slot B
-            // VESTIGIAL SELECTION — compareSlotABox/BBox have no bounds (both
-            // centre on the origin, so distA==distB and A always wins) and their
-            // getSelectedId() reflects a rebuild default nothing user-facing
-            // sets. This right-click rename/delete therefore acts on a stale
-            // selection, not the visible slots. Do NOT trust it; the source of
-            // truth is compareTop_/compareBot_ via getSlotMeterData (see the
-            // box declaration in PluginEditor.h). Left as-is only to avoid a
-            // wide removal in a shared tree; retarget to the slots when touched.
-            int distA = std::abs(pos.x - compareSlotABox.getBounds().getCentreX());
-            int distB = std::abs(pos.x - compareSlotBBox.getBounds().getCentreX());
-            if (distA <= distB)
-                slotsToCheck.push_back({ &compareSlotABox, compareSlotABox.getSelectedId() });
-            else
-                slotsToCheck.push_back({ &compareSlotBBox, compareSlotBBox.getSelectedId() });
-            
-            for (auto& slot : slotsToCheck)
+
+            // THE SLOT ACTUALLY CLICKED. This used to pick by distance to
+            // compareSlotABox and compareSlotBBox, two boxes that had no
+            // bounds, so both centred on the origin, distA always equalled
+            // distB, and slot A always won whichever panel was clicked. It
+            // then read a getSelectedId() that only its own rebuild ever set.
+            // Both boxes are gone; the panel under the pointer decides, and
+            // the capture it is showing is the one renamed or deleted.
+            const bool isTop = compareClickIsTopSlot(pos);
+            const auto& cslot = isTop ? compareTop_ : compareBot_;
+            auto* targetBtn = isTop ? &compareTopSlotBtn_ : &compareBotSlotBtn_;
+
+            // Only a session capture can be renamed or deleted here. Live
+            // signal, references and chat captures are not this menu's to
+            // edit, and saying nothing is better than offering an action that
+            // would land on the wrong object.
+            if (cslot.kind == CompareSlotState::Kind::Snapshot
+                && cslot.index >= 0 && cslot.index < (int)snaps.size())
             {
-                int sel = slot.id;
-                if (sel <= 0 || sel >= refOffset) continue;
-                if ((sel - 1) >= (int)snaps.size()) continue;
-                
-                int idx = sel - 1;
+                const int idx = cslot.index;
                 juce::PopupMenu menu;
                 menu.setLookAndFeel(&lnf);
                 menu.addItem(1, "Rename \"" + snaps[(size_t)idx].name + "\"");
                 menu.addItem(2, "Delete Pass");
-                auto* targetBox = slot.box;
-                menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(*targetBox)
+                menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(*targetBtn)
                                        .withParentComponent(this),
-                    [this, idx, targetBox](int result) {
+                    [this, idx, targetBtn](int result) {
                         if (result == 1) {
                             auto snaps2 = processorRef.getSnapshots();
                             if (idx < (int)snaps2.size()) {
@@ -33938,7 +33959,7 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
                                 te->setFont(juce::Font(juce::FontOptions(12.0f)));
                                 te->setText(snaps2[(size_t)idx].name);
                                 te->selectAll();
-                                te->setBounds(targetBox->getX(), targetBox->getBottom() + 4, targetBox->getWidth(), 24);
+                                te->setBounds(targetBtn->getX(), targetBtn->getBottom() + 4, targetBtn->getWidth(), 24);
                                 te->setColour(juce::TextEditor::backgroundColourId, C::bg3);
                                 te->setColour(juce::TextEditor::textColourId, C::text);
                                 te->setColour(juce::TextEditor::outlineColourId, C::purple);
@@ -34042,29 +34063,24 @@ void EchoJayEditor::mouseDoubleClick(const juce::MouseEvent& e)
     if (currentView != View::Compare) return;
     
     auto snaps = processorRef.getSnapshots();
-    int refOffset = kCompareRefIdBase;
-    
-    // Determine which card by checking if click is nearer to slot A or slot B
-    // VESTIGIAL SELECTION — see the compareSlotABox/BBox declaration in
-    // PluginEditor.h: these boxes have no bounds and their getSelectedId() is a
-    // rebuild default nothing user-facing sets, so this picks a stale entry, not
-    // the visible slot. Source of truth is compareTop_/compareBot_ via
-    // getSlotMeterData(). Do NOT wire new logic here; retarget to the slots.
-    int distA = std::abs(pos.x - compareSlotABox.getBounds().getCentreX());
-    int distB = std::abs(pos.x - compareSlotBBox.getBounds().getCentreX());
-    auto& box = (distA <= distB) ? compareSlotABox : compareSlotBBox;
-    int sel = box.getSelectedId();
-    
-    if (sel <= 0 || sel >= refOffset) return;
-    if ((sel - 1) >= (int)snaps.size()) return;
-    
-    int idx = sel - 1;
+
+    // THE SLOT ACTUALLY DOUBLE-CLICKED, for the same reason as the right-click
+    // path above: the two boxes this used to measure against had no bounds, so
+    // the nearer-of-the-two test always answered A.
+    const bool isTop = compareClickIsTopSlot(pos);
+    const auto& cslot = isTop ? compareTop_ : compareBot_;
+    auto* targetBtn = isTop ? &compareTopSlotBtn_ : &compareBotSlotBtn_;
+
+    if (cslot.kind != CompareSlotState::Kind::Snapshot) return;
+    if (cslot.index < 0 || cslot.index >= (int)snaps.size()) return;
+
+    const int idx = cslot.index;
     auto* te = new juce::TextEditor();
     te->setFont(juce::Font(juce::FontOptions(12.0f)));
     te->setText(snaps[(size_t)idx].name);
     te->selectAll();
-    // Position rename field directly below the clicked card's dropdown
-    te->setBounds(box.getX(), box.getBottom() + 4, box.getWidth(), 24);
+    // Rename field directly below the clicked panel's slot button
+    te->setBounds(targetBtn->getX(), targetBtn->getBottom() + 4, targetBtn->getWidth(), 24);
     te->setColour(juce::TextEditor::backgroundColourId, C::bg3);
     te->setColour(juce::TextEditor::textColourId, C::text);
     te->setColour(juce::TextEditor::outlineColourId, C::purple);
