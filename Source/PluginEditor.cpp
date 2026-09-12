@@ -20168,12 +20168,20 @@ void EchoJayEditor::resized()
 
         // Reference drop zone. The strip along its bottom is the only place
         // in Compare where a failed drop or a failed analysis can be seen.
+        //
+        // MEASURED AGAINST THE PAINTED ZONE, NOT AGAINST cW. paintCompareView
+        // is handed (pad, topH+4, mW - pad*2, ...), so the zone spans cPad to
+        // mW - cPad. cW is 24px narrower than that by design, for the preset
+        // row's right inset. Laying the strip out from cW put the Add button
+        // 32px shy of an edge it was described as sitting against.
         {
-            const int sX = cPad + 8;
-            const int sY = cy2 + kRefDropTagsH + 2;
+            const int zoneX = cPad;
+            const int zoneW = mW - cPad * 2;
+            const int sY    = cy2 + kRefDropTagsH + 2;
             const int kAddW = 104, kAddH = 20;
-            loadRefBtn.setBounds(cPad + cW - kAddW - 8, sY, kAddW, kAddH);
-            refStatusLabel.setBounds(sX, sY, juce::jmax(40, cW - kAddW - 24), kAddH);
+            loadRefBtn.setBounds(zoneX + zoneW - kAddW - 8, sY, kAddW, kAddH);
+            refStatusLabel.setBounds(zoneX + 8, sY,
+                                     juce::jmax(40, zoneW - kAddW - 24), kAddH);
         }
         cy2 += kRefDropH + 4;
 
@@ -20241,6 +20249,13 @@ void EchoJayEditor::resized()
         savePresetBtn.toFront(false);
         deletePresetBtn.toFront(false);
         refStatusLabel.toFront(false);
+        // WITHOUT THIS LINE THE ADD BUTTON IS INERT. compareClickCatcher
+        // covers the whole Compare area, intercepts clicks and is brought to
+        // front just above, so a control that is not raised past it paints
+        // normally, hovers normally, and never receives a press. That is the
+        // affordance-that-does-nothing this button was added to remove, one
+        // layer further down, and no gate can see it.
+        loadRefBtn.toFront(false);
         for (auto& b : refRemoveBtns) b.toFront(false);
         // Chat input overlaps the divider by 20px — keep it above the catcher
         chatInput.toFront(false);
