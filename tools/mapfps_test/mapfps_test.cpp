@@ -657,6 +657,59 @@ int main()
         // buildChatRequestBody through the one friend hook, never a
         // reimplementation. Case 1 is equality WITH length on purpose:
         // "contains" would pass on a truncated string.
+// ===========================================================================
+// EJ_ASAN_NO_NETWORK: SET BY tools/mapfps_test/build_and_run_asan.sh AND BY
+// NOTHING ELSE. The ordinary gate never defines it and therefore still runs
+// every check below.
+//
+// WHY IT EXISTS. This block constructs a real EchoJayAPI, which fetches remote
+// config, so an ORDINARY GATE RUN MAKES LIVE CALLS TO PRODUCTION. That is open
+// list 140 and it is the reason to exclude them from an instrumented build.
+//
+// IT IS NOT WHY THE SANITIZER CRASHES. Two earlier versions of this comment
+// said otherwise; here is what was actually measured, under lldb.
+//
+//   thread #1, main thread, EXC_BAD_ACCESS code=2 (KERN_PROTECTION_FAILURE)
+//   pc == the faulting address, inside IntentsCore's Objective-C metadata
+//     (the bytes there decode as ASCII: "BJC_" "OCOL" "_REF")
+//   x8 == pc, so the branch was through a register holding a plausible-looking
+//     pointer, not a small integer and not an obvious poison pattern
+//   lr == bx_blackdist2`___lldb_unnamed_symbol6576 + 3352
+//
+// lr is the return address of the call that branched, so THE CALL SITE IS
+// INSIDE bx_blackdist2: a third-party Brainworx plugin, installed at
+// /Library/Audio/Plug-Ins/Components. Not our code, not an ASan interceptor,
+// not the ObjC runtime. 6c PIN4 NAMES that plugin by a fully qualified AU
+// triplet and instantiates exactly one, so the input is reproducible on this
+// machine and absent on another, and the instance branches through a bad
+// pointer under instrumentation.
+//
+// SO IT IS NOT A STACK OVERFLOW either: a stack overflow faults on a DATA
+// access near sp with pc in real code, and here pc IS the fault. Raising the
+// main thread stack 8 MB to 64 MB changed nothing, which was consistent but
+// proved less than it appeared to. The three different Apple frameworks across
+// runs were ASLR moving whatever is mapped at a bad branch target; the
+// framework name was noise, but the location is NOT arbitrary, and calling it
+// arbitrary was inconsistent with the crash being deterministic at check ~192.
+//
+// WHY ASAN IS WHERE THIS SHOWS UP: it replaces the allocator, so memory that
+// natively still holds a usable pointer after a free is quarantined and
+// poisoned instead. And it reported no use-after-free because an instruction
+// fetch from a mapped non-executable page is not a shadowed access; had that
+// pointer been READ, ASan would have named it with an allocation and free
+// stack. It was CALLED.
+//
+// The 6c blocker is therefore third-party plugin loading, not this flag's job.
+//
+// SO THIS DOES NOT UNBLOCK THE ri PINS, and open list 140 MUST NOT be marked
+// solved by it. The gate still reaches production on every commit. What the
+// sanitizer says about EJReferenceIndex.h comes from asan_refindex.cpp beside
+// this file, which drives the header alone. The real fix for 140 is
+// parameterising the transport, because no environment lever works: HOME is
+// ignored by JUCE (see schema 16.1) and ECHOJAY_STATE_HOME covers files only
+// and is not on this branch.
+// ===========================================================================
+#if ! EJ_ASAN_NO_NETWORK
         {
             // THE COPY, NOT A MODEL (contract's own words): the real
             // proposal turn, verbatim from the saas suite's fixture
@@ -757,6 +810,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                        "the classify carrier composes priorAssistant at its own site");
             }
         }
+#endif // ! EJ_ASAN_NO_NETWORK
     }
 
     // ---- Channel-chat selection (EchoJayChannelChats.h, header-inline) ----
