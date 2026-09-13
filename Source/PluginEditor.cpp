@@ -38,7 +38,8 @@
 static constexpr int kCompareMenuBandSize   = 100;
 static constexpr int kCompareMenuRefCap     = kCompareMenuBandSize - 1;   // 300..398
 static constexpr int kCompareMenuRefNameLen = 44;
-static constexpr int kCompareMenuAddRefId   = 9200;
+static constexpr int kCompareMenuAddRefId    = 9200;
+static constexpr int kCompareMenuBrowseRefId = 9300;
 
 // THE REFERENCE DROP ZONE, IN ONE PLACE. Its height was written as 82 in
 // paintCompareView, as "82 + 4" in the resized() accumulator, and folded into
@@ -1389,6 +1390,34 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     codecPanel_.setWantsKeyboardFocus(true);
     codecPanel_.setVisible(false);
     addChildComponent(codecPanel_);
+
+    // Reference browser, CodecPanel's shell with real children inside it.
+    refBrowser_.owner = this;
+    refBrowser_.setWantsKeyboardFocus(true);
+    refBrowser_.setVisible(false);
+    addChildComponent(refBrowser_);
+    refBrowser_.leftView .setViewedComponent(&refBrowser_.leftList,  false);
+    refBrowser_.rightView.setViewedComponent(&refBrowser_.rightList, false);
+    refBrowser_.leftView .setScrollBarsShown(true, false);
+    refBrowser_.rightView.setScrollBarsShown(true, false);
+    refBrowser_.addAndMakeVisible(refBrowser_.leftView);
+    refBrowser_.addAndMakeVisible(refBrowser_.rightView);
+    // The left pane's one entry is the current scope already; clicking it is a
+    // no-op until folders exist, so it selects nothing and says nothing.
+    refBrowser_.leftList.onRowClicked = [](const echojay::RefBrowserRow&) {};
+    refBrowser_.rightList.onRowClicked = [this](const echojay::RefBrowserRow& row)
+    {
+        if (row.kind == echojay::RefBrowserRow::Kind::Invite)
+        {
+            // THE SAME FUNCTION THE MENU INVITATION CALLS, and the same words.
+            loadReferenceFile();
+            return;
+        }
+        if (row.kind != echojay::RefBrowserRow::Kind::Track) return;
+        refBrowserSelected_ = row.index;
+        applyReferenceToSlot(refBrowser_.forTopSlot, row.index);
+        refreshReferenceBrowser();
+    };
 
 
     // Meter-type selector buttons for Compare tab (stage 1)
@@ -2975,6 +3004,7 @@ void EchoJayEditor::showLoginScreen()
     closeCodecPanel();   // also disengages codec preview if it was active
     refStatusLabel.setVisible(false);
     loadRefBtn.setVisible(false);
+    refBrowser_.visibleState = false; refBrowser_.setVisible(false);
     presetBox.setVisible(false); savePresetBtn.setVisible(false); deletePresetBtn.setVisible(false); for (auto& b : refRemoveBtns) b.setVisible(false); compareClickCatcher.setVisible(false);
 
     // Login screen: one shared pass (currentScreen != Main ⇒ all pages off,
@@ -4994,6 +5024,9 @@ void EchoJayEditor::hideCompareView()
     codecsBtn_.setVisible(false);
     closeCodecPanel();   // also disengages codec preview if it was active
     // Don't stop AB playback — let ref keep playing through plugin when switching views
+    // The browser is a Compare surface and closes with the view. Closing
+    // rather than hiding, so visibleState and the component agree.
+    if (refBrowser_.visibleState) closeReferenceBrowser();
     // The text is KEPT, only the label is hidden: re-entering Compare brings
     // a standing message back rather than losing what the last drop said.
     refStatusLabel.setVisible(false);
@@ -5356,6 +5389,10 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
     {
         menu.addSeparator();
         menu.addSectionHeader("REFERENCES");
+        // BROWSE LEADS. The browser is the roomier version of this section,
+        // and opening it from here is what tells it which slot it was opened
+        // for: a route from the drop-zone strip would have to invent that.
+        menu.addItem(kCompareMenuBrowseRefId, "Browse all references...");
         if (refs.empty())
         {
             menu.addItem(kCompareMenuAddRefId, "Add a reference track...");
@@ -5379,6 +5416,11 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
             if (safeThis == nullptr || result == 0) return;
 
             if (result == 9000) return;   // evicted-history row: disabled, no-op
+            if (result == kCompareMenuBrowseRefId)
+            {
+                safeThis->openReferenceBrowser(isTop);
+                return;
+            }
             if (result == kCompareMenuAddRefId)
             {
                 // The same chooser the Add button opens. One function, so the
@@ -5442,14 +5484,12 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
             }
             else if (result >= 300 && result < 400)
             {
-                int idx = result - 300;
-                auto refs2 = safeThis->processorRef.getReferenceAnalyser().getReferences();
-                if (idx < (int)refs2.size())
-                {
-                    slot.kind  = CompareSlotState::Kind::Reference;
-                    slot.index = idx;
-                    slot.label = refs2[idx].name;
-                }
+                // THROUGH THE ONE WRITER, which the browser also calls, so the
+                // two routes cannot drift in what choosing a reference means.
+                // It does the stream restart and the button refresh itself, so
+                // this returns rather than falling into the tail below.
+                safeThis->applyReferenceToSlot(isTop, result - 300);
+                return;
             }
 
             // Manually choosing a slot leaves codec mode (chosen content wins;
@@ -5918,6 +5958,222 @@ void EchoJayEditor::resolveCodecSource()
             return;
         }
     }
+}
+
+// ============================================================================
+// Reference browser (commit one of three: shell + track list)
+// ============================================================================
+
+// EVERY RECT THE PANEL USES, COMPUTED ONCE. Both of today's layout defects had
+// the same cause: a number written in more than one place, and the copies
+// disagreeing. paint(), resized() and mouseUp() all read this and none of them
+// derives a rectangle of its own. It is a pure function of the bounds, which
+// also means it is in the shape a pin could exercise later; it is not pinned
+// here, because it is rendering and the gate opens no window.
+EchoJayEditor::RefBrowserPanel::Rects
+EchoJayEditor::RefBrowserPanel::layoutFor (juce::Rectangle<int> b)
+{
+    Rects r;
+    const int kTitleH = 34, kPad = 12, kLeftW = 190, kGap = 10, kCloseW = 34;
+
+    const int w = juce::jlimit (420, 760, b.getWidth()  - 80);
+    const int h = juce::jlimit (260, 520, b.getHeight() - 90);
+    r.card = { (b.getWidth() - w) / 2, (b.getHeight() - h) / 2, w, h };
+
+    r.titleBar = r.card.withHeight (kTitleH);
+    r.closeX   = { r.titleBar.getRight() - kCloseW, r.titleBar.getY(), kCloseW, kTitleH };
+    // The name sits between the two edges rather than centred on the card, so
+    // a long name cannot run under the X.
+    r.title    = { r.titleBar.getX() + kCloseW, r.titleBar.getY(),
+                   r.titleBar.getWidth() - kCloseW * 2, kTitleH };
+
+    auto body = r.card.withTrimmedTop (kTitleH).reduced (kPad);
+    r.leftPane  = body.withWidth (kLeftW);
+    r.rightPane = body.withTrimmedLeft (kLeftW + kGap);
+    return r;
+}
+
+void EchoJayEditor::RefBrowserList::paint (juce::Graphics& g)
+{
+    using C = EchoJayLookAndFeel::Colours;
+    for (int i = 0; i < (int) rows.size(); ++i)
+    {
+        const auto& row = rows[(size_t) i];
+        juce::Rectangle<int> rr (0, i * kRowH, getWidth(), kRowH);
+
+        if (row.kind == echojay::RefBrowserRow::Kind::Heading)
+        {
+            g.setColour (C::text3);
+            g.setFont (juce::Font (juce::FontOptions (8.5f, juce::Font::bold)));
+            g.drawText (row.text, rr.reduced (6, 0), juce::Justification::centredLeft);
+            continue;
+        }
+
+        // ONE ACCENT, BOTH PANES. The pink the reference tags already use, so
+        // a selected row here reads as the same object as a tag in the drop
+        // zone rather than as a new colour with its own meaning.
+        if (row.selected)
+        {
+            g.setColour (juce::Colour (0xffFF6B9D).withAlpha (0.18f));
+            g.fillRoundedRectangle (rr.reduced (2, 1).toFloat(), 4.0f);
+            g.setColour (juce::Colour (0xffFF6B9D).withAlpha (0.55f));
+            g.drawRoundedRectangle (rr.reduced (2, 1).toFloat(), 4.0f, 1.0f);
+        }
+
+        const bool invite = (row.kind == echojay::RefBrowserRow::Kind::Invite);
+        g.setColour (row.selected ? juce::Colour (0xffFF8FAB)
+                   : invite       ? C::purple
+                   : row.clickable ? C::text
+                                   : C::text3);
+        g.setFont (juce::Font (juce::FontOptions (11.0f)));
+        // drawText elides on overflow, which is why the rule does not truncate:
+        // a cut applied in the data would also cut what a later search sees.
+        g.drawText (row.text, rr.reduced (8, 0), juce::Justification::centredLeft, true);
+    }
+}
+
+void EchoJayEditor::RefBrowserPanel::resized()
+{
+    const auto r = layoutFor (getLocalBounds());
+    leftView .setBounds (r.leftPane);
+    rightView.setBounds (r.rightPane);
+    leftList .setSize (r.leftPane .getWidth(), juce::jmax (r.leftPane .getHeight(),
+                                                           leftList .preferredHeight()));
+    rightList.setSize (r.rightPane.getWidth(), juce::jmax (r.rightPane.getHeight(),
+                                                           rightList.preferredHeight()));
+}
+
+void EchoJayEditor::RefBrowserPanel::paint (juce::Graphics& g)
+{
+    using C = EchoJayLookAndFeel::Colours;
+    if (owner == nullptr) return;
+    const auto r = layoutFor (getLocalBounds());
+
+    g.fillAll (juce::Colour (0xcc000000));                     // scrim, CodecPanel's
+
+    g.setColour (C::bg2);
+    g.fillRoundedRectangle (r.card.toFloat(), 10.0f);
+    g.setColour (C::border);
+    g.drawRoundedRectangle (r.card.toFloat(), 10.0f, 1.0f);
+
+    // Title bar: the current selection NAMED, and a close X. No prev, next or
+    // play: those are commit three, and drawing them dead would be exactly the
+    // affordance-that-does-nothing the last three commits removed.
+    g.setColour (C::bg3);
+    g.fillRect (r.titleBar.withTrimmedTop (1).withTrimmedLeft (1).withTrimmedRight (1));
+    g.setColour (C::border2);
+    g.fillRect (r.titleBar.getX(), r.titleBar.getBottom() - 1, r.titleBar.getWidth(), 1);
+
+    g.setColour (C::text);
+    g.setFont (juce::Font (juce::FontOptions (12.0f, juce::Font::bold)));
+    g.drawText (owner->refBrowserTitleText(), r.title, juce::Justification::centred, true);
+
+    g.setColour (C::text3);
+    g.setFont (juce::Font (juce::FontOptions (15.0f)));
+    g.drawText ("X", r.closeX, juce::Justification::centred);
+
+    // bg, the darkest ground, so the panes read as wells inside the bg2 card.
+    g.setColour (C::bg);
+    g.fillRoundedRectangle (r.leftPane .toFloat(), 6.0f);
+    g.fillRoundedRectangle (r.rightPane.toFloat(), 6.0f);
+}
+
+void EchoJayEditor::RefBrowserPanel::mouseUp (const juce::MouseEvent& e)
+{
+    if (owner == nullptr) return;
+    const auto r = layoutFor (getLocalBounds());
+    if (r.closeX.contains (e.getPosition()))       { owner->closeReferenceBrowser(); return; }
+    // A click on the scrim, outside the card, closes. The card itself swallows,
+    // so a miss inside it does nothing rather than dismissing work.
+    if (! r.card.contains (e.getPosition()))       { owner->closeReferenceBrowser(); return; }
+}
+
+bool EchoJayEditor::RefBrowserPanel::keyPressed (const juce::KeyPress& k)
+{
+    if (k == juce::KeyPress::escapeKey && owner != nullptr)
+    {
+        owner->closeReferenceBrowser();
+        return true;
+    }
+    return false;
+}
+
+juce::String EchoJayEditor::refBrowserTitleText() const
+{
+    return echojay::refBrowserTitle (refBrowserEntries(), refBrowserSelected_);
+}
+
+std::vector<echojay::RefBrowserEntry> EchoJayEditor::refBrowserEntries() const
+{
+    std::vector<echojay::RefBrowserEntry> out;
+    for (auto& r : processorRef.getReferenceAnalyser().getReferences())
+        out.push_back ({ r.name, r.path });
+    return out;
+}
+
+void EchoJayEditor::refreshReferenceBrowser()
+{
+    const auto entries = refBrowserEntries();
+    const auto panes   = echojay::buildReferenceBrowserRows (entries, refBrowserSelected_);
+    refBrowser_.leftList .rows = panes.left;
+    refBrowser_.rightList.rows = panes.right;
+    refBrowser_.resized();
+    refBrowser_.leftList .repaint();
+    refBrowser_.rightList.repaint();
+    refBrowser_.repaint();
+}
+
+void EchoJayEditor::openReferenceBrowser (bool isTop)
+{
+    refBrowser_.forTopSlot  = isTop;
+    refBrowser_.visibleState = true;
+    // The slot already showing a reference is the selection the panel opens on,
+    // so the title bar names what the user is listening to rather than nothing.
+    const auto& slot = isTop ? compareTop_ : compareBot_;
+    refBrowserSelected_ = (slot.kind == CompareSlotState::Kind::Reference) ? slot.index : -1;
+
+    refreshReferenceBrowser();
+    refBrowser_.setBounds (getLocalBounds());
+    refBrowser_.setVisible (true);
+    // STILL NEEDED WITH THE CATCHER AT THE BACK. toBack fixed the CHILDREN of
+    // Compare; this panel must cover every sibling, including ones added after
+    // it, so it raises itself exactly as CodecPanel does.
+    refBrowser_.toFront (true);
+    refBrowser_.grabKeyboardFocus();
+    refBrowser_.repaint();
+}
+
+void EchoJayEditor::closeReferenceBrowser()
+{
+    refBrowser_.visibleState = false;
+    refBrowser_.setVisible (false);
+    repaint();
+}
+
+// THE ONE WRITER of a reference into a compare slot. Extracted from the slot
+// menu's 300-band handler so the menu and the browser cannot drift in what
+// choosing a reference means; the menu now calls this too.
+void EchoJayEditor::applyReferenceToSlot (bool isTop, int refIndex)
+{
+    auto refs = processorRef.getReferenceAnalyser().getReferences();
+    if (refIndex < 0 || refIndex >= (int) refs.size()) return;
+
+    auto& slot = isTop ? compareTop_ : compareBot_;
+    slot.kind  = CompareSlotState::Kind::Reference;
+    slot.index = refIndex;
+    slot.label = refs[(size_t) refIndex].name;
+
+    // Choosing content leaves codec mode, as the menu path does: the saved
+    // pre-codec slots are no longer what the user wants back.
+    codecModeActive_ = false;
+
+    const int slotIdx = isTop ? 0 : 1;
+    processorRef.stopCompareStream (slotIdx);
+    updateCompareSlotBtn (isTop);
+    startCompareStream (slotIdx);
+    processorRef.cmpBothCaptures.store (bothSlotsAreCaptures());
+    updateComparePlayBtns();
+    repaint();
 }
 
 void EchoJayEditor::openCodecPanel()
@@ -20337,6 +20593,11 @@ void EchoJayEditor::resized()
         // Codec panel is a full-bounds modal; keep it sized and on top
         codecPanel_.setBounds(getLocalBounds());
         if (codecPanel_.isVisible()) codecPanel_.toFront(false);
+        // Reference browser, the same treatment. visibleState rather than
+        // isVisible() is the flag a periodic pass should ask, per
+        // PluginReviewOverlay.
+        refBrowser_.setBounds(getLocalBounds());
+        if (refBrowser_.visibleState) refBrowser_.toFront(false);
     }
 
     // Settings layout — consistent Y tracking matching paintSettingsView.

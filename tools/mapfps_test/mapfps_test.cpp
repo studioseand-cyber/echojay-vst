@@ -46,6 +46,7 @@
 #include "EJCaptureGuard.h"    // capture guard: the shipped substitution predicate
 #include "EJSpectralEvidence.h" // spectral provenance + the shipped band reduction
 #include "EJReferenceIndex.h"   // the reference library index: the shipped parser
+#include "EJReferenceRows.h"    // the reference browser's pane rule: the shipped rows
 #include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
@@ -7489,6 +7490,202 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                             RefAvailability::Unreadable })
                 check (refAvailabilityFromKey (refAvailabilityKey (a)) == a,
                        "ri PIN7: key and state are inverses");
+        }
+    }
+
+    // ======================================================================
+    // rb -- THE REFERENCE BROWSER'S PANE RULE (EJReferenceRows.h)
+    //
+    // groupChainRows' bargain: the rule is a static pure function, so these
+    // pins exercise the code that SHIPS rather than a copy of it, and they do
+    // it with no window, no analyser and no editor. The rendering that
+    // consumes these rows is deliberately unpinned -- nothing in this gate
+    // opens a window, and a pin that cannot fail is worse than none.
+    // ======================================================================
+    {
+        using namespace echojay;
+        auto mk = [] (std::initializer_list<const char*> names)
+        {
+            std::vector<RefBrowserEntry> v;
+            for (auto* n : names) v.push_back ({ juce::String (n), juce::String ("/tmp/") + n });
+            return v;
+        };
+        auto countKind = [] (const std::vector<RefBrowserRow>& rows, RefBrowserRow::Kind k)
+        {
+            int n = 0; for (auto& r : rows) if (r.kind == k) ++n; return n;
+        };
+
+        // rb PIN1 -- EVERY REFERENCE APPEARS EXACTLY ONCE, IN LIBRARY ORDER.
+        // The property groupChainRows carries, for the same reason: a pane
+        // that drops or doubles an entry is the defect a grouping rule exists
+        // to prevent, and it is invisible by eye once the list is long.
+        {
+            const auto refs  = mk ({ "kick.wav", "mix_v2.wav", "master.aiff" });
+            const auto panes = buildReferenceBrowserRows (refs, -1);
+            check (countKind (panes.right, RefBrowserRow::Kind::Track) == 3,
+                   "rb PIN1: three references make three track rows");
+            int seen = 0;
+            for (auto& r : panes.right)
+                if (r.kind == RefBrowserRow::Kind::Track)
+                {
+                    check (r.index == seen, "rb PIN1: library order is preserved",
+                           "row " + juce::String (seen) + " carries index "
+                           + juce::String (r.index));
+                    check (r.text == refs[(size_t) seen].name,
+                           "rb PIN1: and the row names the reference at that index");
+                    ++seen;
+                }
+        }
+
+        // rb PIN2 -- A TRACK ROW'S index ADDRESSES ITS SOURCE. This is the
+        // field the browser hands straight to applyReferenceToSlot, so an
+        // index that does not round trip loads the wrong audio silently. The
+        // 300-band menu handler had exactly this shape and was correct only
+        // because its list and its ids were built in one loop.
+        {
+            const auto refs  = mk ({ "a.wav", "b.wav", "c.wav", "d.wav" });
+            const auto panes = buildReferenceBrowserRows (refs, 2);
+            for (auto& r : panes.right)
+                if (r.kind == RefBrowserRow::Kind::Track)
+                    check (r.index >= 0 && r.index < (int) refs.size()
+                           && refs[(size_t) r.index].name == r.text,
+                           "rb PIN2: index round trips to the named reference",
+                           "text \"" + r.text + "\" index " + juce::String (r.index));
+        }
+
+        // rb PIN3 -- EXACTLY ONE ROW IS SELECTED, AND IT IS THE ASKED-FOR ONE.
+        {
+            const auto refs  = mk ({ "a.wav", "b.wav", "c.wav" });
+            const auto panes = buildReferenceBrowserRows (refs, 1);
+            int sel = 0, selIdx = -1;
+            for (auto& r : panes.right) if (r.selected) { ++sel; selIdx = r.index; }
+            check (sel == 1, "rb PIN3: one selected row, not none and not two",
+                   "got " + juce::String (sel));
+            check (selIdx == 1, "rb PIN3: and it is the index that was asked for",
+                   "got " + juce::String (selIdx));
+        }
+
+        // rb PIN4 -- AN OUT-OF-RANGE SELECTION SELECTS NOTHING. A deleted
+        // reference must leave the panel showing no selection rather than a
+        // clamp quietly pointing at a neighbour, which would be the panel
+        // asserting a choice the user did not make.
+        {
+            const auto refs = mk ({ "a.wav", "b.wav" });
+            for (int bad : { -1, 2, 99, -7 })
+            {
+                const auto panes = buildReferenceBrowserRows (refs, bad);
+                int sel = 0; for (auto& r : panes.right) if (r.selected) ++sel;
+                check (sel == 0, "rb PIN4: an out-of-range selection selects nothing",
+                       "index " + juce::String (bad) + " selected "
+                       + juce::String (sel));
+            }
+            check (refBrowserTitle (refs, 5) == "Select a reference",
+                   "rb PIN4: and the title says so rather than naming a guess");
+        }
+
+        // rb PIN5 -- THE EMPTY LIBRARY INVITES, AND THE INVITATION IS THE ONLY
+        // THING THAT ACTS. A pane that is merely blank is the menu's old
+        // behaviour, which hid the feature from anyone who had not found it.
+        {
+            const auto panes = buildReferenceBrowserRows ({}, -1);
+            check (countKind (panes.right, RefBrowserRow::Kind::Track) == 0,
+                   "rb PIN5: no references, no track rows");
+            check (countKind (panes.right, RefBrowserRow::Kind::Invite) == 1,
+                   "rb PIN5: exactly one invitation");
+            int clickable = 0;
+            for (auto& r : panes.right) if (r.clickable) ++clickable;
+            check (clickable == 1,
+                   "rb PIN5: and it is the ONLY clickable row in an empty pane",
+                   "got " + juce::String (clickable));
+            for (auto& r : panes.right)
+                if (r.kind == RefBrowserRow::Kind::Invite)
+                    check (r.text == juce::String (kRefBrowserInviteText()),
+                           "rb PIN5: wording comes from the shared constant");
+        }
+
+        // rb PIN5b -- THE INVITATION MATCHES THE SLOT MENU, VERBATIM. 16ed1f4
+        // put these words in the menu's empty REFERENCES section. Two wordings
+        // for one action teaches a user they are two actions, so the string is
+        // asserted against the menu's own literal rather than against itself.
+        {
+            std::ifstream f ("Source/PluginEditor.cpp");
+            std::stringstream ss; ss << f.rdbuf();
+            const juce::String src (ss.str());
+            check (src.contains ("menu.addItem(kCompareMenuAddRefId, \"Add a reference track...\")"),
+                   "rb PIN5b: the slot menu still uses this exact wording");
+            check (juce::String (kRefBrowserInviteText()) == "Add a reference track...",
+                   "rb PIN5b: and the browser's shared constant is the same string");
+        }
+
+        // rb PIN6 -- NO ROW THAT CANNOT ACT IS CLICKABLE, and no Track row
+        // carries a heading's -1. Drawing a dead affordance is the defect the
+        // last four commits removed; this is that rule as a property.
+        {
+            const auto refs  = mk ({ "a.wav" });
+            const auto panes = buildReferenceBrowserRows (refs, 0);
+            for (const auto* pane : { &panes.left, &panes.right })
+                for (auto& r : *pane)
+                {
+                    if (r.kind == RefBrowserRow::Kind::Heading
+                        || r.kind == RefBrowserRow::Kind::Notice)
+                        check (! r.clickable,
+                               "rb PIN6: headings and notices are not clickable",
+                               "\"" + r.text + "\" was");
+                    if (r.kind == RefBrowserRow::Kind::Track)
+                        check (r.index >= 0,
+                               "rb PIN6: a track row carries a real index");
+                    else
+                        check (r.index == -1,
+                               "rb PIN6: every other kind carries -1",
+                               "\"" + r.text + "\" carried "
+                               + juce::String (r.index));
+                }
+        }
+
+        // rb PIN7 -- THE LEFT PANE IS ONE SCOPE, AND IT COUNTS HONESTLY.
+        // Folders are commit two. Until then the left pane must not imply a
+        // structure that does not exist, and its count must be the library's.
+        {
+            for (int n : { 0, 1, 5 })
+            {
+                std::vector<RefBrowserEntry> refs;
+                for (int i = 0; i < n; ++i)
+                    refs.push_back ({ "r" + juce::String (i), "/tmp/x" });
+                const auto panes = buildReferenceBrowserRows (refs, -1);
+                check (countKind (panes.left, RefBrowserRow::Kind::Category) == 1,
+                       "rb PIN7: exactly one scope until folders land");
+                bool named = false;
+                for (auto& r : panes.left)
+                    if (r.kind == RefBrowserRow::Kind::Category)
+                        named = r.text.contains ("(" + juce::String (n) + ")");
+                check (named, "rb PIN7: and it carries the real count",
+                       "n=" + juce::String (n));
+            }
+        }
+
+        // rb PIN8 -- THE TITLE NAMES THE SELECTION, so the bar and the list
+        // cannot disagree about what is chosen. Both read one function.
+        {
+            const auto refs = mk ({ "kick.wav", "master.aiff" });
+            check (refBrowserTitle (refs, 1) == "master.aiff",
+                   "rb PIN8: the title is the selected reference's name");
+            check (refBrowserTitle ({}, -1) == "No references",
+                   "rb PIN8: an empty library says so, and does not say Select");
+        }
+
+        // rb PIN9 -- NO CAP. The slot menu stops at 99 because its ids live in
+        // a 100-wide band and overrunning it decodes as another section. A
+        // scrolling pane has no band, so importing the cap would import a
+        // constraint along with the number that exists to satisfy it.
+        {
+            std::vector<RefBrowserEntry> many;
+            for (int i = 0; i < 250; ++i)
+                many.push_back ({ "ref" + juce::String (i), "/tmp/x" });
+            const auto panes = buildReferenceBrowserRows (many, 249);
+            check (countKind (panes.right, RefBrowserRow::Kind::Track) == 250,
+                   "rb PIN9: all 250 appear, no 99 cap carried over");
+            check (panes.right.back().index == 249 && panes.right.back().selected,
+                   "rb PIN9: and the 250th is reachable and selectable");
         }
     }
 

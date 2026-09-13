@@ -4,6 +4,7 @@
 #include <set>
 #include <map>
 #include "PluginProcessor.h"
+#include "EJReferenceRows.h"   // the browser's pane rule: header-inline, pinned
 #include "ChainHost.h"
 #include "EJMisdialReport.h"
 #include "ChainWetKnob.h"
@@ -978,6 +979,98 @@ private:
         int hoverIdx = -1;
     };
     CodecPanel codecPanel_;
+
+    // ======================= REFERENCE BROWSER ==========================
+    // Commit one of three: the shell and the track list. Folders are commit
+    // two, the transport is commit three.
+    //
+    // SHELL FROM CodecPanel: scrim, empty mouseDown to swallow, keyboard focus
+    // with Escape closing, and getLocalBounds() plus toFront in resized().
+    // INTERIOR FROM PluginReviewOverlay: a visibleState flag kept separate from
+    // setVisible so periodic passes test the flag, and REAL children inside the
+    // painted card, one Viewport per pane.
+    //
+    // NOT COPIED: applyReviewModalState. Compare has neither the GL particle
+    // visualiser (it needs currentView == View::Meters) nor a hosted native
+    // editor (those live on the Chain tab), so there is nothing here that
+    // composites over a lightweight component. Copying a defence for a problem
+    // that is not present is how cargo gets in.
+    //
+    // The children need no raising. Since compareClickCatcher went toBack, a
+    // real child is in front by default. The PANEL still calls toFront when it
+    // opens, because it must cover siblings that were added after it.
+
+    // One pane. Purpose built rather than PluginChecklistComponent, whose
+    // semantics are tick-many where this is select-one.
+    struct RefBrowserList : juce::Component
+    {
+        std::vector<echojay::RefBrowserRow> rows;
+        std::function<void(const echojay::RefBrowserRow&)> onRowClicked;
+        static constexpr int kRowH = 22;
+
+        int rowAtY (int y) const
+        {
+            const int i = y / kRowH;
+            return (i >= 0 && i < (int) rows.size()) ? i : -1;
+        }
+        int preferredHeight() const { return (int) rows.size() * kRowH; }
+
+        void paint (juce::Graphics& g) override;
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            const int i = rowAtY (e.y);
+            if (i >= 0 && rows[(size_t) i].clickable && onRowClicked)
+                onRowClicked (rows[(size_t) i]);
+        }
+    };
+
+    struct RefBrowserPanel : juce::Component
+    {
+        EchoJayEditor* owner = nullptr;
+        // PluginReviewOverlay's flag. setVisible alone is not enough: a
+        // periodic pass asks "is the browser up" and must not be answered by
+        // a component that happens to be mid-layout.
+        bool visibleState = false;
+        // WHICH SLOT THIS WAS OPENED FOR. The slot menu already knows, so a
+        // selection lands without asking. This is the reason the menu is the
+        // opening route and a button in the drop-zone strip is not.
+        bool forTopSlot = true;
+
+        juce::Viewport leftView, rightView;
+        RefBrowserList leftList, rightList;
+
+        void paint (juce::Graphics& g) override;
+        void resized() override;
+        void mouseDown (const juce::MouseEvent&) override {}   // swallow
+        void mouseUp (const juce::MouseEvent& e) override;
+        bool keyPressed (const juce::KeyPress& k) override;
+
+        // EVERY RECT IN ONE PLACE. Today produced two defects from the same
+        // cause, a drop-zone height written three ways and a strip measured
+        // against a box it was not drawn in. paint(), resized() and mouseUp()
+        // all consume this and none of them computes a rectangle of its own.
+        struct Rects
+        {
+            juce::Rectangle<int> card, titleBar, closeX, title, leftPane, rightPane;
+        };
+        static Rects layoutFor (juce::Rectangle<int> panelBounds);
+    };
+    RefBrowserPanel refBrowser_;
+    int refBrowserSelected_ = -1;    // index into the live reference vector
+
+    void openReferenceBrowser (bool isTop);
+    void closeReferenceBrowser();
+    void refreshReferenceBrowser();
+    /** THE ONE WRITER of a reference into a compare slot. The slot menu's
+        300-band handler and the browser both call it, so the two routes cannot
+        drift in what selecting a reference means. */
+    void applyReferenceToSlot (bool isTop, int refIndex);
+    /** The library as the browser's rule wants it: name and path only. Keeps
+        RefBrowserEntry free of MeterData so the rule stays exercisable. */
+    std::vector<echojay::RefBrowserEntry> refBrowserEntries() const;
+    /** Title-bar text. Shares echojay::refBrowserTitle with nothing else, so
+        the bar cannot disagree with the list about what is selected. */
+    juce::String refBrowserTitleText() const;
     // Feature-launcher button: right-aligned against the panel edge (NOT part
     // of the centred transport cluster). Custom-painted: codec glyph
     // (waveform between brackets) + label, subtle cyan 1px outline that
