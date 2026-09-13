@@ -47,6 +47,7 @@
 #include "EJSpectralEvidence.h" // spectral provenance + the shipped band reduction
 #include "EJReferenceIndex.h"   // the reference library index: the shipped parser
 #include "EJReferenceRows.h"    // the reference browser's pane rule: the shipped rows
+#include "EJReferenceBar.h"     // the reference bar's geometry and stepping: the shipped rects
 #include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
@@ -7663,12 +7664,22 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             }
         }
 
-        // rb PIN8 -- THE TITLE NAMES THE SELECTION, so the bar and the list
-        // cannot disagree about what is chosen. Both read one function.
+        // rb PIN8 -- THE TITLE NAMES SCOPE AND SELECTION, so the bar and the
+        // list cannot disagree about what is chosen OR about which library it
+        // came from. Both read one function.
+        //
+        // THIS ASSERTION CHANGED ON 13 Sep 2026 BECAUSE THE CONTRACT CHANGED,
+        // not because it failed. It read "master.aiff" alone; the title now
+        // carries the scope too. The EMPTY cases below are deliberately
+        // untouched, which is what makes this an edit to one property rather
+        // than a loosening of the pin.
         {
             const auto refs = mk ({ "kick.wav", "master.aiff" });
-            check (refBrowserTitle (refs, 1) == "master.aiff",
-                   "rb PIN8: the title is the selected reference's name");
+            check (refBrowserTitle (refs, 1) == "ALL REFERENCES - master.aiff",
+                   "rb PIN8: the title is scope then selection",
+                   "got \"" + refBrowserTitle (refs, 1) + "\"");
+            check (refBrowserTitle (refs, 1).contains (refs[1].name),
+                   "rb PIN8: and the selection's name survives the pairing");
             check (refBrowserTitle ({}, -1) == "No references",
                    "rb PIN8: an empty library says so, and does not say Select");
         }
@@ -7686,6 +7697,242 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "rb PIN9: all 250 appear, no 99 cap carried over");
             check (panes.right.back().index == 249 && panes.right.back().selected,
                    "rb PIN9: and the 250th is reachable and selectable");
+        }
+    }
+
+    // ======================================================================
+    // rf -- THE REFERENCE BAR (EJReferenceBar.h)
+    //
+    // THE FIRST PINNED GEOMETRY IN THIS EDITOR, and it is pinned because of
+    // what happened on 12 September: two defects in one day, a drop-zone
+    // height written three ways and a strip measured against a box it was not
+    // drawn in, neither visible to any gate. The bar's rects are computed once
+    // by a pure function, so a test can exercise every width with no window.
+    // ======================================================================
+    {
+        using namespace echojay;
+        // TWO DOMAINS, BECAUSE THE TWO PROPERTIES HAVE TWO DOMAINS, and
+        // conflating them produced a pin that could not see its own defect.
+        //
+        // NO-OVERLAP IS TOTAL: it holds at any width at all, including widths
+        // narrower than the parts, because the right group is placed as one
+        // block. INSIDE-THE-BAR cannot be: fixed control widths must escape a
+        // bar narrower than their sum, and that is arithmetic, not a bug. So
+        // one is tested at every width and the other only from kRefBarMinW up,
+        // each saying which it is.
+        //
+        // WHY THIS MATTERS, recorded because it nearly went the other way.
+        // When rf PIN2 first went red the fix was two changes: bound the right
+        // group, AND gate the status block at 508. Raising the tested floor to
+        // 324 then made the bound unreachable, so re-applying the original
+        // defect passed. The pin was green because of the OTHER fix. Widening
+        // the domain is what restores the pin's power; narrowing it to suit
+        // the parts is how a pin stops being able to fail.
+        auto anyWidth  = { 60, 100, 200, 300, kRefBarMinW, kRefBarMinW + 1, 400,
+                           kRefBarMinWithStatusW, 520, 565, 585, 700, 900, 1380, 1800 };
+        // 565 is the narrowest the shipping plugin produces: the window floor
+        // is 900 (setResizeLimits), chatW is jlimit(280, 420, width * 35/100)
+        // which takes 315 there, so mW is 585 and the bar is mW - 2 * cPad.
+        auto realWidths = { kRefBarMinW, kRefBarMinW + 1, 400, kRefBarMinWithStatusW,
+                            520, 565, 585, 700, 900, 1380, 1800 };
+
+        // rf PIN1 -- EVERY RECT IS INSIDE THE BAR, FROM kRefBarMinW UP. A
+        // control laid outside its own band is the defect that put the Add
+        // button 32px from the edge it was described as touching. Below the
+        // minimum the parts cannot fit and something must leave the bar; that
+        // region is the function's stated undefined domain and rf PIN5b pins
+        // that the product never reaches it.
+        for (int w : realWidths)
+            for (bool st : { false, true })
+            {
+                const juce::Rectangle<int> bar (10, 40, w, kRefBarH);
+                const auto r = refBarLayout (bar, st);
+                for (auto* q : { &r.prev, &r.next, &r.play, &r.name, &r.browse, &r.add })
+                    check (bar.contains (*q) || q->isEmpty(),
+                           "rf PIN1: every rect sits inside the bar",
+                           "w=" + juce::String (w) + " rect " + q->toString()
+                           + " bar " + bar.toString());
+            }
+
+        // rf PIN2 -- NO TWO CONTROLS OVERLAP, AT ANY WIDTH WHATSOEVER,
+        // including widths narrower than the controls themselves. Overlap
+        // means one of them is unclickable, which is precisely the failure the
+        // catcher commit removed and which no gate could see until this
+        // function existed. TOTAL, not threshold-bounded: the right group is
+        // placed as a single block, so its members cannot land on each other
+        // however little room there is. The first fix clamped them one at a
+        // time and at 100px Browse and Add both floored to x=154.
+        for (int w : anyWidth)
+            for (bool st : { false, true })
+            {
+                const auto r = refBarLayout ({ 10, 40, w, kRefBarH }, st);
+                std::vector<std::pair<const char*, juce::Rectangle<int>>> cs {
+                    { "prev", r.prev }, { "next", r.next }, { "play", r.play },
+                    { "name", r.name }, { "status", r.status },
+                    { "browse", r.browse }, { "add", r.add } };
+                for (size_t i = 0; i < cs.size(); ++i)
+                    for (size_t j = i + 1; j < cs.size(); ++j)
+                        if (! cs[i].second.isEmpty() && ! cs[j].second.isEmpty())
+                            check (! cs[i].second.intersects (cs[j].second),
+                                   "rf PIN2: no two bar controls overlap",
+                                   juce::String (cs[i].first) + " " + cs[i].second.toString()
+                                   + " meets " + cs[j].first + " " + cs[j].second.toString()
+                                   + " at w=" + juce::String (w));
+            }
+
+        // rf PIN3 -- LEFT TO RIGHT, THE ORDER IN THE SPEC.
+        // prev | next | play | name | status | Browse | + Add
+        for (int w : { 585, 900, 1380 })
+        {
+            const auto r = refBarLayout ({ 10, 40, w, kRefBarH }, true);
+            check (r.prev.getX() < r.next.getX()
+                   && r.next.getX() < r.play.getX()
+                   && r.play.getX() < r.name.getX()
+                   && r.name.getX() < r.status.getX()
+                   && r.status.getX() < r.browse.getX()
+                   && r.browse.getX() < r.add.getX(),
+                   "rf PIN3: prev next play name status browse add, in that order",
+                   "w=" + juce::String (w));
+        }
+
+        // rf PIN4 -- AN EMPTY STATUS GIVES ITS WIDTH BACK. A bar with nothing
+        // to report must not carry a blank 180px reservation while the name it
+        // exists to show is elided.
+        for (int w : anyWidth)
+        {
+            const auto with    = refBarLayout ({ 10, 40, w, kRefBarH }, true);
+            const auto without = refBarLayout ({ 10, 40, w, kRefBarH }, false);
+            check (without.status.isEmpty(),
+                   "rf PIN4: no status means no status rect");
+            check (without.name.getWidth() >= with.name.getWidth(),
+                   "rf PIN4: and the name is never narrower without it",
+                   "w=" + juce::String (w)
+                   + " with=" + juce::String (with.name.getWidth())
+                   + " without=" + juce::String (without.name.getWidth()));
+        }
+        {
+            // At a width where both fit, the name gains exactly the status
+            // block. Asserted at one width rather than as an inequality, so a
+            // change to the gap cannot pass by being "not narrower".
+            const auto with    = refBarLayout ({ 10, 40, 900, kRefBarH }, true);
+            const auto without = refBarLayout ({ 10, 40, 900, kRefBarH }, false);
+            check (without.name.getWidth() == with.name.getWidth()
+                                              + kRefBarStatusW + kRefBarGap,
+                   "rf PIN4: it gains exactly the status block and its gap",
+                   juce::String (without.name.getWidth()) + " vs "
+                   + juce::String (with.name.getWidth()));
+        }
+
+        // rf PIN5 -- THE NAME NEVER COLLAPSES. At widths too narrow for the
+        // sum, the name floors and the bar overflows rather than the buttons
+        // shrinking: a control too small to hit is worse than one pushed off
+        // the end, because it still looks clickable.
+        for (int w : { kRefBarMinW, 400, kRefBarMinWithStatusW, 565 })
+        {
+            const auto r = refBarLayout ({ 10, 40, w, kRefBarH }, true);
+            check (r.name.getWidth() >= kRefBarNameMinW,
+                   "rf PIN5: the name floors rather than vanishing",
+                   "w=" + juce::String (w) + " name=" + juce::String (r.name.getWidth()));
+            check (r.prev.getWidth() == kRefBarBtnW && r.play.getWidth() == kRefBarPlayW
+                   && r.browse.getWidth() == kRefBarBrowseW && r.add.getWidth() == kRefBarAddW,
+                   "rf PIN5: and the controls keep their widths, whatever the bar does",
+                   "w=" + juce::String (w));
+        }
+
+        // rf PIN5b -- THE STATED MINIMUM IS BELOW THE NARROWEST BAR THE APP
+        // CAN PRODUCE, so the degradation path is unreachable in the shipping
+        // plugin rather than merely unlikely. This is the assertion that stops
+        // the domain being chosen to suit the test: it is anchored to
+        // setResizeLimits(900) and the 35 percent chat column, which give a
+        // 585px Compare column and a 565px bar.
+        {
+            const int narrowestBar = 585 - 2 * 10;   // mW - 2 * cPad
+            check (narrowestBar >= kRefBarMinWithStatusW,
+                   "rf PIN5b: the real bar is always wide enough for the status",
+                   "bar " + juce::String (narrowestBar) + " vs needs "
+                   + juce::String (kRefBarMinWithStatusW));
+            check (refBarLayout ({ 10, 40, narrowestBar, kRefBarH }, true).status.getWidth()
+                   == kRefBarStatusW,
+                   "rf PIN5b: and at that width it is carried at full width");
+            check (refBarLayout ({ 10, 40, kRefBarMinW, kRefBarH }, true).status.isEmpty(),
+                   "rf PIN5b: while at the bare minimum the status is DROPPED, "
+                   "not drawn over the transport");
+        }
+
+        // rf PIN8 -- THE SUB-TAB ROW. Two tabs, laid out once, hit-tested from
+        // the same rects. Compare and Playback only: Match has no screen yet
+        // and a dead sub-tab is the same defect as a dead arrow.
+        {
+            for (int w : { 300, 565, 585, 900, 1800 })
+            {
+                const juce::Rectangle<int> row (10, 70, w, kRefSubTabH);
+                const auto r = refSubTabLayout (row);
+                check (! r.tab[0].intersects (r.tab[1]),
+                       "rf PIN8: the two sub-tabs do not overlap",
+                       "w=" + juce::String (w));
+                check (r.tab[0].getX() < r.tab[1].getX(),
+                       "rf PIN8: Compare is left of Playback");
+                // Left aligned and FIXED width, not the top strip's
+                // divide-the-window rule: two tabs stretched across 1800px
+                // would read as a header rather than as a choice.
+                check (r.tab[0].getWidth() == kRefSubTabW
+                       && r.tab[1].getWidth() == kRefSubTabW,
+                       "rf PIN8: fixed width, whatever the window does",
+                       "w=" + juce::String (w));
+                check (r.tab[0].getX() == row.getX(),
+                       "rf PIN8: and left aligned to the row");
+            }
+            // The hit test reads the same rects, so it cannot disagree with
+            // the paint about where a tab is.
+            const auto r = refSubTabLayout ({ 10, 70, 900, kRefSubTabH });
+            check (refSubTabAt (r, r.tab[0].getCentre()) == 0,
+                   "rf PIN8: a click in Compare's rect selects Compare");
+            check (refSubTabAt (r, r.tab[1].getCentre()) == 1,
+                   "rf PIN8: a click in Playback's rect selects Playback");
+            check (refSubTabAt (r, { r.tab[1].getRight() + 40, r.tab[1].getCentreY() }) == -1,
+                   "rf PIN8: and a click past the tabs selects nothing, "
+                   "rather than the nearest");
+            check (juce::String (refSubTabName (0)) == "COMPARE"
+                   && juce::String (refSubTabName (1)) == "PLAYBACK",
+                   "rf PIN8: the two names, and there is no third");
+            check (kRefSubTabCount == 2,
+                   "rf PIN8: MATCH IS NOT HERE until it has a screen");
+        }
+
+        // rf PIN6 -- WHICH SLOT THE BAR DRIVES. compareTop_ defaults to Live
+        // and compareBot_ to Empty, so the default must drive B. A bar that
+        // named one slot's reference and loaded another would be the worst
+        // kind of working control.
+        check (! refBarDrivesTopSlot (false, false),
+               "rf PIN6: neither slot holds a reference, so the bar drives B");
+        check (! refBarDrivesTopSlot (false, true),
+               "rf PIN6: B holds one, so the bar drives B");
+        check (refBarDrivesTopSlot (true, false),
+               "rf PIN6: A holds one and B does not, so the bar follows A");
+        check (! refBarDrivesTopSlot (true, true),
+               "rf PIN6: both hold one, so the bar stays on B rather than guessing");
+
+        // rf PIN7 -- STEPPING WRAPS, AND NEITHER ARROW IS EVER DEAD.
+        check (refBarStep (-1, 0, +1) == -1 && refBarStep (-1, 0, -1) == -1,
+               "rf PIN7: an empty library steps nowhere");
+        check (refBarStep (-1, 3, +1) == 0,
+               "rf PIN7: from no selection, next lands on the first");
+        check (refBarStep (-1, 3, -1) == 2,
+               "rf PIN7: and prev lands on the last, so both arrows act");
+        check (refBarStep (2, 3, +1) == 0,
+               "rf PIN7: next wraps past the end");
+        check (refBarStep (0, 3, -1) == 2,
+               "rf PIN7: prev wraps past the start");
+        check (refBarStep (1, 3, +1) == 2 && refBarStep (1, 3, -1) == 0,
+               "rf PIN7: and steps by one in the middle");
+        check (refBarStep (99, 3, +1) == 0 && refBarStep (-7, 3, -1) == 2,
+               "rf PIN7: an out-of-range current is treated as no selection");
+        {
+            // Stepping N times round a library of N returns where it started.
+            int at = 0;
+            for (int i = 0; i < 5; ++i) at = refBarStep (at, 5, +1);
+            check (at == 0, "rf PIN7: a full lap returns to the start",
+                   "ended at " + juce::String (at));
         }
     }
 

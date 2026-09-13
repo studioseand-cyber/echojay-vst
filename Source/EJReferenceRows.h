@@ -137,11 +137,21 @@ inline RefBrowserPanes buildReferenceBrowserRows (const std::vector<RefBrowserEn
 
 /** The name shown in the title bar. Pure, and separate from the panes so the
     bar cannot disagree with the list about what is selected. */
+inline const char* kRefBrowserScopeName () { return "ALL REFERENCES"; }
+
 inline juce::String refBrowserTitle (const std::vector<RefBrowserEntry>& refs,
                                      int selectedIndex)
 {
+    // BOTH PARTS, SCOPE THEN SELECTION. The scope is what the left pane is
+    // showing and the selection is what the right pane has chosen, and a title
+    // naming only the second cannot say which library it came out of. It
+    // becomes load-bearing the moment folders land: "Drums - kick.wav" and
+    // "ALL REFERENCES - kick.wav" are different answers to where you are.
     if (selectedIndex >= 0 && selectedIndex < (int) refs.size())
-        return refs[(size_t) selectedIndex].name;
+        return juce::String (kRefBrowserScopeName()) + " - "
+             + refs[(size_t) selectedIndex].name;
+    // THE EMPTY CASES ARE UNCHANGED. There is no selection to pair a scope
+    // with, and rb PIN8 and rb PIN4 pin both strings.
     return refs.empty() ? juce::String ("No references")
                         : juce::String ("Select a reference");
 }

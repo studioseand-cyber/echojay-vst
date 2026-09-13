@@ -41,15 +41,9 @@ static constexpr int kCompareMenuRefNameLen = 44;
 static constexpr int kCompareMenuAddRefId    = 9200;
 static constexpr int kCompareMenuBrowseRefId = 9300;
 
-// THE REFERENCE DROP ZONE, IN ONE PLACE. Its height was written as 82 in
-// paintCompareView, as "82 + 4" in the resized() accumulator, and folded into
-// the literal 140 of the panels accumulator with a comment calling it 86.
-// Three encodings of one number, none of which referred to the others. The
-// tag grid keeps exactly the 82px it had; the strip is new space below it,
-// holding the Add button and the status label.
-static constexpr int kRefDropTagsH  = 82;
-static constexpr int kRefDropStripH = 24;
-static constexpr int kRefDropH      = kRefDropTagsH + kRefDropStripH;
+// The drop zone's three height constants are GONE with the zone itself. They
+// are not replaced here: the bar's geometry lives in EJReferenceBar.h, where a
+// pin can exercise it, which is the whole reason that header exists.
 
 // The fader filmstrip, decoded ONCE per process and shared by every editor
 // instance. juce::ImageCache, the drawLogo mechanism, and deliberately NOT
@@ -1374,6 +1368,29 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     loadRefBtn.onClick = [this] { loadReferenceFile(); };
     addChildComponent(loadRefBtn);   // a child now; shown only in Compare
 
+    // THE REFERENCE BAR'S CONTROLS. Styled as the meter row directly below
+    // them, bg3 with text3, so the bar reads as part of Compare rather than as
+    // a visitor. Every one of them acts; none is drawn ahead of its function.
+    {
+        auto styleBar = [this](juce::TextButton& b, const juce::String& tip)
+        {
+            b.setColour(juce::TextButton::buttonColourId, C::bg3);
+            b.setColour(juce::TextButton::textColourOffId, C::text2);
+            b.setColour(juce::TextButton::textColourOnId,  C::blue);
+            b.setTooltip(tip);
+            addChildComponent(b);
+        };
+        styleBar(refPrevBtn,   "Previous reference");
+        styleBar(refNextBtn,   "Next reference");
+        styleBar(refPlayBtn,   "Audition this reference");
+        styleBar(refBrowseBtn, "Browse the reference library");
+        refPlayBtn.setButtonText(juce::String::fromUTF8("\xe2\x96\xb6"));
+        refPrevBtn  .onClick = [this] { refBarStepBy(-1); };
+        refNextBtn  .onClick = [this] { refBarStepBy(+1); };
+        refPlayBtn  .onClick = [this] { toggleComparePlay(refBarIsTop()); };
+        refBrowseBtn.onClick = [this] { openReferenceBrowser(refBarIsTop()); };
+    }
+
     aiCompareBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff06b6d4));
     aiCompareBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
     aiCompareBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
@@ -1381,11 +1398,11 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     aiCompareBtn.setVisible(false);
     addAndMakeVisible(aiCompareBtn);
 
-    // Codec Player: feature-launcher button (custom paint, see CodecLaunchBtn)
     // + modal panel
-    codecsBtn_.onClick = [this] { openCodecPanel(); };
-    codecsBtn_.setVisible(false);
-    addAndMakeVisible(codecsBtn_);
+    // codecsBtn_ IS GONE (13 Sep 2026). Playback Simulation is a sub-tab of
+    // REFERENCE, not a launcher on the Compare page: it is a peer of Compare,
+    // and a button made it read as an accessory to it. The panel it opened is
+    // the same panel, now drawn as a page. See MATCH_REFERENCE_PLAN.md 8A.1.
     codecPanel_.owner = this;
     codecPanel_.setWantsKeyboardFocus(true);
     codecPanel_.setVisible(false);
@@ -1574,8 +1591,11 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             loadPreset(presetNames[sel - 2]);
         }
     };
-    presetBox.setVisible(false);
-    addAndMakeVisible(presetBox);
+    // MOVED INTO THE BROWSER (13 Sep 2026). A named set of references belongs
+    // where the references are, not in a row above a page that no longer shows
+    // them. The handlers below are untouched: only the parent changed.
+    presetBox.setVisible(true);
+    refBrowser_.addAndMakeVisible(presetBox);
     
     savePresetBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     savePresetBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
@@ -1602,8 +1622,8 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             delete aw;
         }));
     };
-    savePresetBtn.setVisible(false);
-    addAndMakeVisible(savePresetBtn);
+    savePresetBtn.setVisible(true);
+    refBrowser_.addAndMakeVisible(savePresetBtn);
     
     deletePresetBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
     deletePresetBtn.setColour(juce::TextButton::textColourOnId, C::red);
@@ -1629,8 +1649,8 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             }));
         }
     };
-    deletePresetBtn.setVisible(false);
-    addAndMakeVisible(deletePresetBtn);
+    deletePresetBtn.setVisible(true);
+    refBrowser_.addAndMakeVisible(deletePresetBtn);
 
     // Compare click catcher — transparent component that catches clicks on waveform bars
     compareClickCatcher.setInterceptsMouseClicks(true, false);
@@ -3000,12 +3020,13 @@ void EchoJayEditor::showLoginScreen()
 
     // Also hide compare fields
     aiCompareBtn.setVisible(false);
-    codecsBtn_.setVisible(false);
     closeCodecPanel();   // also disengages codec preview if it was active
     refStatusLabel.setVisible(false);
     loadRefBtn.setVisible(false);
+    for (auto* b : { &refPrevBtn, &refNextBtn, &refPlayBtn, &refBrowseBtn })
+        b->setVisible(false);
     refBrowser_.visibleState = false; refBrowser_.setVisible(false);
-    presetBox.setVisible(false); savePresetBtn.setVisible(false); deletePresetBtn.setVisible(false); for (auto& b : refRemoveBtns) b.setVisible(false); compareClickCatcher.setVisible(false);
+    for (auto& b : refRemoveBtns) b.setVisible(false); compareClickCatcher.setVisible(false);
 
     // Login screen: one shared pass (currentScreen != Main ⇒ all pages off,
     // overlay hidden). No direct flag writes — updateOnboardingPrompts is
@@ -4982,7 +5003,6 @@ void EchoJayEditor::showCompareView()
     compareBtn.setButtonText("Back");
     compareBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     aiCompareBtn.setVisible(true);
-    codecsBtn_.setVisible(true);
     // A STANDING MESSAGE SURVIVES RE-ENTRY. This used to hide the label
     // unconditionally, which is why a failed drop or a failed analysis wrote
     // "Error: ..." and showed nothing: the drop callback sets the text and
@@ -4991,7 +5011,12 @@ void EchoJayEditor::showCompareView()
     // one view that can report.
     refStatusLabel.setVisible(refStatusLabel.getText().isNotEmpty());
     loadRefBtn.setVisible(true);
-    presetBox.setVisible(true); savePresetBtn.setVisible(true); deletePresetBtn.setVisible(true);
+    for (auto* b : { &refPrevBtn, &refNextBtn, &refPlayBtn, &refBrowseBtn })
+        b->setVisible(true);
+    // THE PRESET CONTROLS ARE NO LONGER ON THIS PAGE. They live inside the
+    // browser now, where a named set of references belongs. Not deleted:
+    // saveCurrentPreset, loadPreset and deletePreset write to
+    // ~/Documents/EchoJay/Presets/*.json and people may have used them.
     loadPresetList();
 
     // Show meter-type selector buttons, slot buttons, and play buttons
@@ -5021,17 +5046,22 @@ void EchoJayEditor::hideCompareView()
     compareBtn.setButtonText("Compare");
     compareBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     aiCompareBtn.setVisible(false);
-    codecsBtn_.setVisible(false);
     closeCodecPanel();   // also disengages codec preview if it was active
     // Don't stop AB playback — let ref keep playing through plugin when switching views
     // The browser is a Compare surface and closes with the view. Closing
     // rather than hiding, so visibleState and the component agree.
     if (refBrowser_.visibleState) closeReferenceBrowser();
+    // Back to the Compare sub-tab on the way out, so re-entering never lands
+    // on Playback with the Compare furniture hidden by a flag nobody set this
+    // session.
+    if (refSubTab_ != echojay::RefSubTab::Compare)
+        setRefSubTab (echojay::RefSubTab::Compare);
     // The text is KEPT, only the label is hidden: re-entering Compare brings
     // a standing message back rather than losing what the last drop said.
     refStatusLabel.setVisible(false);
     loadRefBtn.setVisible(false);
-    presetBox.setVisible(false); savePresetBtn.setVisible(false); deletePresetBtn.setVisible(false);
+    for (auto* b : { &refPrevBtn, &refNextBtn, &refPlayBtn, &refBrowseBtn })
+        b->setVisible(false);
     for (auto& b : refRemoveBtns) b.setVisible(false);
     compareClickCatcher.setVisible(false);
     for (int i = 0; i < 5; ++i) compareMeterBtns[(size_t)i].setVisible(false);
@@ -5975,9 +6005,12 @@ EchoJayEditor::RefBrowserPanel::layoutFor (juce::Rectangle<int> b)
 {
     Rects r;
     const int kTitleH = 34, kPad = 12, kLeftW = 190, kGap = 10, kCloseW = 34;
+    // The presets strip along the bottom. Moved here from the Compare page
+    // (13 Sep 2026): a named set of references belongs with the references.
+    const int kPresetH = 30;
 
     const int w = juce::jlimit (420, 760, b.getWidth()  - 80);
-    const int h = juce::jlimit (260, 520, b.getHeight() - 90);
+    const int h = juce::jlimit (300, 560, b.getHeight() - 90);
     r.card = { (b.getWidth() - w) / 2, (b.getHeight() - h) / 2, w, h };
 
     r.titleBar = r.card.withHeight (kTitleH);
@@ -5988,6 +6021,21 @@ EchoJayEditor::RefBrowserPanel::layoutFor (juce::Rectangle<int> b)
                    r.titleBar.getWidth() - kCloseW * 2, kTitleH };
 
     auto body = r.card.withTrimmedTop (kTitleH).reduced (kPad);
+
+    // The strip comes off the bottom FIRST, so the panes take what is left
+    // rather than the strip being laid over them. Same discipline as the
+    // Compare accumulator: one pass, no rect computed twice.
+    auto strip = body.removeFromBottom (kPresetH);
+    body.removeFromBottom (kGap);
+    {
+        const int sy = strip.getY() + (strip.getHeight() - 22) / 2;
+        const int kSaveW = 84, kDelW = 72, kSGap = 6;
+        r.presetDelete = { strip.getRight() - kDelW, sy, kDelW, 22 };
+        r.presetSave   = { r.presetDelete.getX() - kSGap - kSaveW, sy, kSaveW, 22 };
+        r.presetBox    = { strip.getX(), sy,
+                           juce::jmax (80, r.presetSave.getX() - kSGap - strip.getX()), 22 };
+    }
+
     r.leftPane  = body.withWidth (kLeftW);
     r.rightPane = body.withTrimmedLeft (kLeftW + kGap);
     return r;
@@ -6009,19 +6057,21 @@ void EchoJayEditor::RefBrowserList::paint (juce::Graphics& g)
             continue;
         }
 
-        // ONE ACCENT, BOTH PANES. The pink the reference tags already use, so
-        // a selected row here reads as the same object as a tag in the drop
-        // zone rather than as a new colour with its own meaning.
+        // ONE ACCENT, BOTH PANES, AND IT IS COMPARE'S OWN. This was the
+        // REFERENCE badge's pink, outlined, which reads as a warning: pink on
+        // a dark panel is what this editor uses for something needing
+        // attention, not for something chosen. The meter-type row one band
+        // below marks its selection with a 0xff1a2d4a fill and C::blue text,
+        // so a selected row here now reads as the same KIND of thing as a
+        // selected meter. Filled rather than outlined, for the same reason.
         if (row.selected)
         {
-            g.setColour (juce::Colour (0xffFF6B9D).withAlpha (0.18f));
+            g.setColour (juce::Colour (0xff1a2d4a));
             g.fillRoundedRectangle (rr.reduced (2, 1).toFloat(), 4.0f);
-            g.setColour (juce::Colour (0xffFF6B9D).withAlpha (0.55f));
-            g.drawRoundedRectangle (rr.reduced (2, 1).toFloat(), 4.0f, 1.0f);
         }
 
         const bool invite = (row.kind == echojay::RefBrowserRow::Kind::Invite);
-        g.setColour (row.selected ? juce::Colour (0xffFF8FAB)
+        g.setColour (row.selected ? C::blue
                    : invite       ? C::purple
                    : row.clickable ? C::text
                                    : C::text3);
@@ -6037,6 +6087,12 @@ void EchoJayEditor::RefBrowserPanel::resized()
     const auto r = layoutFor (getLocalBounds());
     leftView .setBounds (r.leftPane);
     rightView.setBounds (r.rightPane);
+    if (owner != nullptr)
+    {
+        owner->presetBox      .setBounds (r.presetBox);
+        owner->savePresetBtn  .setBounds (r.presetSave);
+        owner->deletePresetBtn.setBounds (r.presetDelete);
+    }
     leftList .setSize (r.leftPane .getWidth(), juce::jmax (r.leftPane .getHeight(),
                                                            leftList .preferredHeight()));
     rightList.setSize (r.rightPane.getWidth(), juce::jmax (r.rightPane.getHeight(),
@@ -6073,9 +6129,16 @@ void EchoJayEditor::RefBrowserPanel::paint (juce::Graphics& g)
     g.drawText ("X", r.closeX, juce::Justification::centred);
 
     // bg, the darkest ground, so the panes read as wells inside the bg2 card.
+    // bg, the darkest ground, so the panes read as wells inside the bg2 card.
     g.setColour (C::bg);
     g.fillRoundedRectangle (r.leftPane .toFloat(), 6.0f);
     g.fillRoundedRectangle (r.rightPane.toFloat(), 6.0f);
+
+    // Hairline above the presets strip, so the named-set controls read as a
+    // separate job from choosing a track rather than as a third pane.
+    g.setColour (C::border2);
+    g.fillRect (r.leftPane.getX(), r.presetBox.getY() - 8,
+                r.rightPane.getRight() - r.leftPane.getX(), 1);
 }
 
 void EchoJayEditor::RefBrowserPanel::mouseUp (const juce::MouseEvent& e)
@@ -6096,6 +6159,40 @@ bool EchoJayEditor::RefBrowserPanel::keyPressed (const juce::KeyPress& k)
         return true;
     }
     return false;
+}
+
+// WHICH SLOT THE BAR DRIVES. The rule is in EJReferenceBar.h and pinned; this
+// only supplies it with the live kinds. compareTop_ defaults to Live signal
+// and compareBot_ to Empty, so B is where a reference belongs and the bar
+// drives it unless the user deliberately put one in A.
+bool EchoJayEditor::refBarIsTop() const
+{
+    return echojay::refBarDrivesTopSlot (
+        compareTop_.kind == CompareSlotState::Kind::Reference,
+        compareBot_.kind == CompareSlotState::Kind::Reference);
+}
+
+int EchoJayEditor::refBarCurrentIndex() const
+{
+    const auto& slot = refBarIsTop() ? compareTop_ : compareBot_;
+    return slot.kind == CompareSlotState::Kind::Reference ? slot.index : -1;
+}
+
+void EchoJayEditor::refBarStepBy (int delta)
+{
+    const int count = (int) processorRef.getReferenceAnalyser().getReferences().size();
+    const int next  = echojay::refBarStep (refBarCurrentIndex(), count, delta);
+    if (next < 0)
+    {
+        // Nothing to step through. Say so where the user is looking rather
+        // than leaving a press that appears to do nothing.
+        setRefStatus ("No references to step through. Add one first.");
+        return;
+    }
+    // THROUGH THE ONE WRITER, the same call the slot menu and the browser make.
+    applyReferenceToSlot (refBarIsTop(), next);
+    refBrowserSelected_ = next;
+    if (refBrowser_.visibleState) refreshReferenceBrowser();
 }
 
 juce::String EchoJayEditor::refBrowserTitleText() const
@@ -6173,6 +6270,41 @@ void EchoJayEditor::applyReferenceToSlot (bool isTop, int refIndex)
     startCompareStream (slotIdx);
     processorRef.cmpBothCaptures.store (bothSlotsAreCaptures());
     updateComparePlayBtns();
+    repaint();
+}
+
+// THE SUB-TAB SWITCH. One writer for refSubTab_, so the panel's visibility and
+// the row's highlight cannot disagree about which page is showing.
+void EchoJayEditor::setRefSubTab (echojay::RefSubTab t)
+{
+    refSubTab_ = t;
+    const bool playback = (t == echojay::RefSubTab::Playback);
+    if (playback)
+    {
+        resolveCodecSource();
+        codecPanel_.inlinePage = true;
+        codecPanel_.hoverIdx   = -1;
+        codecPanel_.setVisible(true);
+    }
+    else
+    {
+        codecPanel_.setVisible(false);
+        codecPanel_.inlinePage = false;
+    }
+    // The Compare furniture belongs to the Compare sub-tab only. The reference
+    // bar is NOT in this list: it sits above the row and is shared by every
+    // sub-tab, which is the whole reason they are one section.
+    for (int i = 0; i < 5; ++i) compareMeterBtns[(size_t)i].setVisible(!playback);
+    compareTopSlotBtn_.setVisible(!playback);
+    compareBotSlotBtn_.setVisible(!playback);
+    comparePlayTopBtn_.setVisible(!playback);
+    comparePlayBotBtn_.setVisible(!playback);
+    cmpABtn_.setVisible(!playback);
+    cmpBBtn_.setVisible(!playback);
+    cmpPlayBtn_.setVisible(!playback);
+    compareSyncBtn_.setVisible(!playback);
+    aiCompareBtn.setVisible(!playback);
+    resized();
     repaint();
 }
 
@@ -6332,67 +6464,14 @@ void EchoJayEditor::exitCodecMode()
     EchoJay_NSLog("EJCodec: codec mode OFF (fading out, slots restore after ramp)");
 }
 
-// ---- CodecLaunchBtn: feature-launcher (outline doorway, not a toggle) ------
-
-void EchoJayEditor::CodecLaunchBtn::paintButton(juce::Graphics& g, bool over, bool)
-{
-    const auto cyan = juce::Colour(0xff22d3ee);
-    auto b = getLocalBounds().toFloat().reduced(0.5f);
-
-    // No solid fill; codec mode adds only a faint interior wash
-    if (active)
-    {
-        g.setColour(cyan.withAlpha(0.08f));
-        g.fillRoundedRectangle(b, 6.0f);
-    }
-    g.setColour(cyan.withAlpha(active ? 0.9f : (over ? 0.75f : 0.4f)));
-    g.drawRoundedRectangle(b, 6.0f, 1.0f);
-
-    juce::Font f(juce::FontOptions(11.0f, juce::Font::bold));
-    const int textW = juce::GlyphArrangement::getStringWidthInt(f, "CODECS");
-    const int iconW = 13, gap = 5;
-    const int x0 = (getWidth() - (iconW + gap + textW)) / 2;
-    // Optical centre of the ALL-CAPS label sits ~0.5px above the geometric
-    // centre (caps leave the descent unused); ride the glyph on that line
-    const float cy = (float) getHeight() * 0.5f - 0.5f;
-
-    // Codec glyph: ONE unit built from a shared centreline — every element
-    // is a mirrored offset from cx, so left/right bracket-to-bar gaps are
-    // identical by construction (the old version placed arc CENTRES
-    // symmetrically, but an arc's ink is offset from its centre, which left
-    // a visibly larger gap after the opening bracket)
-    g.setColour(cyan.withAlpha((over || active) ? 1.0f : 0.85f));
-    const float cx = (float) x0 + (float) iconW * 0.5f;
-    // Bars: centres at cx and cx ± 2.6, width 1.4
-    const float barH[3] = { 4.5f, 8.0f, 4.5f };
-    for (int i = 0; i < 3; ++i)
-    {
-        const float bcx = cx + ((float) i - 1.0f) * 2.6f;
-        g.fillRoundedRectangle(bcx - 0.7f, cy - barH[i] * 0.5f, 1.4f, barH[i], 0.7f);
-    }
-    // Brackets: arc centres at cx ± 4.0, rx 2.2 — nearest ink (the arc
-    // endpoints) lands at cx ± 5.0, a 1.7px gap off each outer bar edge
-    juce::Path p;
-    p.addCentredArc(cx - 4.0f, cy, 2.2f, 5.5f, 0.0f,
-                    juce::MathConstants<float>::pi * 1.15f,
-                    juce::MathConstants<float>::pi * 1.85f, true);
-    p.addCentredArc(cx + 4.0f, cy, 2.2f, 5.5f, 0.0f,
-                    juce::MathConstants<float>::pi * 0.15f,
-                    juce::MathConstants<float>::pi * 0.85f, true);
-    g.strokePath(p, juce::PathStrokeType(1.2f));
-
-    g.setFont(f);
-    g.drawText("CODECS", x0 + iconW + gap, 0, textW + 2, getHeight(),
-               juce::Justification::centredLeft);
-}
-
-// ---- CodecPanel: modal card (scrim + card painted by THIS component) -------
-
 void EchoJayEditor::CodecPanel::paint(juce::Graphics& g)
 {
     if (owner == nullptr) return;
 
-    g.fillAll(juce::Colour(0xcc000000));   // scrim
+    // Scrim only when this is a modal over something. As the Playback page it
+    // IS the content, and a scrim over the page you are on dims nothing.
+    if (! inlinePage)
+        g.fillAll(juce::Colour(0xcc000000));
 
     const auto& ps = CodecRender::presets();
     const int nRows = ((int) ps.size() + 1) / 2;
@@ -6410,13 +6489,18 @@ void EchoJayEditor::CodecPanel::paint(juce::Graphics& g)
 
     // Header + close X
     auto head = r.removeFromTop(22);
-    closeRect = { card.getRight() - 34, card.getY() + 10, 24, 24 };
+    // No close X on the page: a sub-tab is left by choosing another sub-tab,
+    // and an X that closes a page leaves nothing behind it. Empty rect rather
+    // than a hidden one, so mouseUp's contains() test cannot fire on it.
+    closeRect = inlinePage ? juce::Rectangle<int>()
+                           : juce::Rectangle<int> { card.getRight() - 34, card.getY() + 10, 24, 24 };
     g.setColour(C::text);
     g.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
     g.drawText("CODEC PLAYER", head, juce::Justification::centredLeft);
     g.setColour(C::text3);
     g.setFont(juce::Font(juce::FontOptions(14.0f)));
-    g.drawText("x", closeRect, juce::Justification::centred);
+    if (! closeRect.isEmpty())
+        g.drawText("x", closeRect, juce::Justification::centred);
 
     g.setColour(C::text3);
     g.setFont(juce::Font(juce::FontOptions(11.5f)));
@@ -6519,7 +6603,7 @@ void EchoJayEditor::CodecPanel::mouseUp(const juce::MouseEvent& e)
     if (owner == nullptr) return;
     const auto pos = e.getPosition();
 
-    if (closeRect.contains(pos)) { owner->closeCodecPanel(); return; }
+    if (! closeRect.isEmpty() && closeRect.contains(pos)) { owner->closeCodecPanel(); return; }
 
     if (owner->codecRendering_ >= 0) return;   // one render at a time
 
@@ -6604,13 +6688,9 @@ void EchoJayEditor::updateTransportBar()
     cmpPlayBtn_.setColour(juce::TextButton::textColourOffId,
                           anyPlaying ? C::green : C::text2);
 
-    // CODECS launcher stays outline-lit while codec mode is engaged (every
-    // enter/exit/slot-change path funnels through updateComparePlayBtns)
-    if (codecsBtn_.active != codecModeActive_)
-    {
-        codecsBtn_.active = codecModeActive_;
-        codecsBtn_.repaint();
-    }
+    // The CODECS launcher's lit-while-engaged state died with the launcher.
+    // Codec mode still announces itself: the chip at the right edge of the
+    // transport, and the PLAYBACK sub-tab it was entered from.
 }
 
 void EchoJayEditor::runAICompare()
@@ -11074,73 +11154,84 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
     int aX = area.getX(), aY = area.getY(), aW = area.getWidth();
     int cy = aY;
 
-    // --- Preset row (controls positioned by resized()) ---
-    cy += 26;
+    // --- THE REFERENCE BAR ---
+    // resized() authored refBarRects_ from echojay::refBarLayout; this paints
+    // it and computes NOTHING. The preset row and the 106px drop zone that
+    // used to be here are gone: the browser does what they were pretending to
+    // do, and the 164 pixels go to the waveforms.
+    //
+    // THE ZONE WAS NEVER THE DROP TARGET. EchoJayEditor is itself the
+    // FileDragAndDropTarget and its filesDropped discards both coordinates, so
+    // a drop anywhere on this window has always worked and still does. The big
+    // rectangle was a sign pointing at a target, not a target. The bar is the
+    // sign now, and it lights on hover so the sign is still true.
+    {
+        const auto& rb = refBarRects_;
+        const bool hot = dragHovering;
 
-    // --- Reference drop zone ---
-    // The tag grid and the empty-state prompt keep the 82px they had; the
-    // strip below carries the Add button and the status label, both real
-    // child components positioned by resized().
-    const int dropH = kRefDropH;
-    g.setColour(C::bg3);
-    g.fillRoundedRectangle((float)aX, (float)cy, (float)aW, (float)dropH, 8.0f);
-    g.setColour(C::purple.withAlpha(0.3f));
-    g.drawRoundedRectangle((float)aX + 0.5f, (float)cy + 0.5f, (float)aW - 1.0f, (float)dropH - 1.0f, 8.0f, 1.0f);
+        g.setColour (hot ? juce::Colour (0xff1a2d4a) : C::bg3);
+        g.fillRoundedRectangle (rb.bar.toFloat(), 8.0f);
+        g.setColour (hot ? C::blue : C::border2);
+        g.drawRoundedRectangle (rb.bar.toFloat().reduced (0.5f), 8.0f, 1.0f);
 
+        // The name of the reference the bar drives, or the invitation. One
+        // string, so an empty library is told what to do in the place it would
+        // otherwise be told nothing.
+        const auto refsNow = processorRef.getReferenceAnalyser().getReferences();
+        const int  cur     = refBarCurrentIndex();
+        juce::String barName;
+        if (hot)                                   barName = "Drop to add a reference";
+        else if (refsNow.empty())                  barName = "No references yet. Drop a track here, or use Add.";
+        else if (cur >= 0 && cur < (int) refsNow.size()) barName = refsNow[(size_t) cur].name;
+        else                                       barName = "No reference in " + juce::String (refBarIsTop() ? "A" : "B");
+
+        g.setColour (hot ? C::blue : (cur >= 0 ? C::text : C::text3));
+        g.setFont (juce::Font (juce::FontOptions (12.0f,
+                    cur >= 0 && ! hot ? juce::Font::bold : juce::Font::plain)));
+        g.drawText (barName, rb.name, juce::Justification::centredLeft, true);
+
+        // Which slot the bar is driving, stated rather than assumed. Without
+        // it the arrows change something the user cannot see they aimed at.
+        g.setColour (C::text3);
+        g.setFont (juce::Font (juce::FontOptions (8.5f, juce::Font::bold)));
+        g.drawText (refBarIsTop() ? "A" : "B",
+                    rb.play.getRight() + 2, rb.bar.getY(), 12, rb.bar.getHeight(),
+                    juce::Justification::centred);
+    }
+
+    // refRemoveBtns went with the tag grid: the browser is where a reference
+    // is removed now, and eight buttons laid out by paint() were the last
+    // place in this file where painting authored geometry.
+    for (int i = 0; i < kMaxRefRemoveBtns; ++i)
+        refRemoveBtns[(size_t)i].setVisible(false);
     activeRefRemoveBtns = 0;
 
-    if (refs.empty())
-    {
-        g.setColour(juce::Colour(0xffFF6B9D));
-        g.fillRoundedRectangle((float)aX + 10, (float)cy + (float)(kRefDropTagsH - 18) / 2, 64.0f, 18.0f, 4.0f);
-        g.setColour(juce::Colours::white);
-        g.setFont(juce::Font(juce::FontOptions(8.0f, juce::Font::bold)));
-        g.drawText("REFERENCE", aX + 10, cy + (kRefDropTagsH - 18) / 2, 64, 18, juce::Justification::centred);
-        g.setColour(C::text3);
-        g.setFont(juce::Font(juce::FontOptions(10.0f)));
-        g.drawText("Drop a reference track to compare", aX + 82, cy, aW - 90, kRefDropTagsH, juce::Justification::centredLeft);
-    }
-    else
-    {
-        const int tagPad = 6, tagGap = 4, tagsPerRow = 4;
-        int tagW = (aW - tagPad * 2 - tagGap * (tagsPerRow - 1)) / tagsPerRow;
-        const int tagH = 20, tagRowGap = 4;
+    cy += echojay::kRefBarBandH;
 
-        for (int i = 0; i < (int)refs.size() && i < 12; ++i)
+    // --- THE SUB-TAB ROW ---
+    // Compare and Playback. Match is NOT here: it has no screen, and a dead
+    // sub-tab is the same defect as a dead arrow. It joins when it acts.
+    {
+        const auto& sr = refSubTabRects_;
+        for (int i = 0; i < echojay::kRefSubTabCount; ++i)
         {
-            int col = i % tagsPerRow, row = i / tagsPerRow;
-            int tagX = aX + tagPad + col * (tagW + tagGap);
-            int tagY2 = cy + tagPad + row * (tagH + tagRowGap);
-
-            g.setColour(juce::Colour(0xffFF6B9D).withAlpha(0.15f));
-            g.fillRoundedRectangle((float)tagX, (float)tagY2, (float)tagW, (float)tagH, 6.0f);
-            g.setColour(juce::Colour(0xffFF6B9D).withAlpha(0.4f));
-            g.drawRoundedRectangle((float)tagX + 0.5f, (float)tagY2 + 0.5f, (float)tagW - 1.0f, (float)tagH - 1.0f, 6.0f, 1.0f);
-            g.setColour(juce::Colour(0xffFF8FAB));
-            g.setFont(juce::Font(juce::FontOptions(8.0f)));
-            g.drawText(refs[(size_t)i].name, tagX + 4, tagY2, tagW - 18, tagH, juce::Justification::centredLeft);
-            g.setColour(C::text3);
-            g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
-            g.drawText("x", tagX + tagW - 14, tagY2, 12, tagH, juce::Justification::centred);
-
-            if (activeRefRemoveBtns < kMaxRefRemoveBtns)
-            {
-                int idx = activeRefRemoveBtns++;
-                refRemoveBtns[(size_t)idx].setBounds(tagX + tagW - 16, tagY2, 16, tagH);
-                refRemoveBtns[(size_t)idx].setVisible(true);
-                refRemoveBtns[(size_t)idx].toFront(false);
-            }
+            const bool on = (i == (int) refSubTab_);
+            auto tr = sr.tab[i];
+            // Compare's own selection idiom, the meter row's: filled
+            // 0xff1a2d4a with C::blue, not a new colour for a new control.
+            g.setColour (on ? juce::Colour (0xff1a2d4a) : C::bg3);
+            g.fillRoundedRectangle (tr.toFloat(), 5.0f);
+            g.setColour (on ? C::blue : C::text3);
+            g.setFont (juce::Font (juce::FontOptions (9.5f, juce::Font::bold)));
+            g.drawText (echojay::refSubTabName (i), tr, juce::Justification::centred);
         }
     }
+    cy += echojay::kRefSubTabBandH;
 
-    for (int i = activeRefRemoveBtns; i < kMaxRefRemoveBtns; ++i)
-        refRemoveBtns[(size_t)i].setVisible(false);
-
-    // Hairline between the tags and the action strip below them
-    g.setColour(C::purple.withAlpha(0.18f));
-    g.fillRect(aX + 8, cy + kRefDropTagsH, aW - 16, 1);
-
-    cy += dropH + 4;
+    // EVERYTHING BELOW BELONGS TO THE COMPARE SUB-TAB. Playback draws itself,
+    // as codecPanel_, which resized() has given the rest of the area.
+    if (refSubTab_ != echojay::RefSubTab::Compare)
+        return;
 
     // --- Meter-type selector row (buttons positioned by resized()) ---
     cy += 28; // 24px button height + 4px gap
@@ -17874,14 +17965,19 @@ void EchoJayEditor::paint(juce::Graphics& g)
                    juce::Justification::centredLeft);
     }
 
-    // Codec-mode chip: status lives BESIDE the CODECS launcher at the right
-    // edge (chip grows leftward from the button, clamped so it never touches
-    // the centred transport cluster; label ellipsises when clamped)
-    if (currentView == View::Compare && codecModeActive_ && codecsBtn_.isVisible())
+    // Codec-mode chip: it grew leftward from the CODECS launcher at the right
+    // edge. The launcher is gone, so the chip anchors to the right edge
+    // ITSELF, which is where the launcher stood. Same geometry, one fewer
+    // dependency, and it no longer disappears when a button it does not belong
+    // to is hidden.
+    if (currentView == View::Compare && codecModeActive_
+        && refSubTab_ == echojay::RefSubTab::Compare)
     {
         juce::Font chipFont(juce::FontOptions(11.0f));
         int natural = juce::GlyphArrangement::getStringWidthInt(chipFont, codecChipLabel_) + 36;
-        auto cb = codecsBtn_.getBounds();
+        const juce::Rectangle<int> cb (mW - 88 - 10,
+                                       getHeight() - 36 - (abBarShowing ? kAbBarH : 0),
+                                       88, 26);
         int minX = aiCompareBtn.isVisible() ? aiCompareBtn.getRight() + 8 : 8;
         int w = juce::jmin(natural, cb.getX() - 8 - minX);
         if (w > 44)
@@ -20416,30 +20512,43 @@ void EchoJayEditor::resized()
         int cW = mW - cPad * 2 - 24; // 24px less on right
         int cy2 = topH + 4;
 
-        // Preset row
-        presetBox.setBounds(cPad, cy2, cW - 180, 22);
-        savePresetBtn.setBounds(cPad + cW - 174, cy2, 84, 22);
-        deletePresetBtn.setBounds(cPad + cW - 84, cy2, 80, 22);
-        cy2 += 26;
-
-        // Reference drop zone. The strip along its bottom is the only place
-        // in Compare where a failed drop or a failed analysis can be seen.
+        // THE REFERENCE BAR, replacing the preset row and the 106px drop
+        // zone: 164 pixels of chrome returned to the waveforms. Every rect on
+        // it comes from ONE pure function, which paint() then consumes without
+        // computing anything. The drop zone's height was written three ways
+        // and its strip measured against a box it was not drawn in; both were
+        // defects and both came from a second computation.
         //
-        // MEASURED AGAINST THE PAINTED ZONE, NOT AGAINST cW. paintCompareView
-        // is handed (pad, topH+4, mW - pad*2, ...), so the zone spans cPad to
-        // mW - cPad. cW is 24px narrower than that by design, for the preset
-        // row's right inset. Laying the strip out from cW put the Add button
-        // 32px shy of an edge it was described as sitting against.
+        // SPANS THE PAINTED WIDTH (cPad to mW - cPad), not cW, which is 24px
+        // narrower for the old preset row's right inset.
+        refBarRects_ = echojay::refBarLayout (
+            { cPad, cy2, mW - cPad * 2, echojay::kRefBarH },
+            refStatusLabel.getText().isNotEmpty());
+        refPrevBtn  .setBounds (refBarRects_.prev);
+        refNextBtn  .setBounds (refBarRects_.next);
+        refPlayBtn  .setBounds (refBarRects_.play);
+        refBrowseBtn.setBounds (refBarRects_.browse);
+        loadRefBtn  .setBounds (refBarRects_.add);
+        refStatusLabel.setBounds (refBarRects_.status);
+        cy2 += echojay::kRefBarBandH;
+
+        // THE SUB-TAB ROW, below the shared bar. Its rects come from the same
+        // kind of pure function as the bar's, and it is the ONE author of
+        // them; paint() and mouseDown() read refSubTabRects_ and compute
+        // nothing.
+        refSubTabRects_ = echojay::refSubTabLayout (
+            { cPad, cy2, mW - cPad * 2, echojay::kRefSubTabH });
+        cy2 += echojay::kRefSubTabBandH;
+
+        // PLAYBACK OWNS THE WHOLE CONTENT AREA BELOW THE ROW. The codec panel
+        // is the same component that used to be a modal; inlinePage suppresses
+        // its scrim and its close X, so what it DOES cannot drift between the
+        // two presentations.
+        if (refSubTab_ == echojay::RefSubTab::Playback)
         {
-            const int zoneX = cPad;
-            const int zoneW = mW - cPad * 2;
-            const int sY    = cy2 + kRefDropTagsH + 2;
-            const int kAddW = 104, kAddH = 20;
-            loadRefBtn.setBounds(zoneX + zoneW - kAddW - 8, sY, kAddW, kAddH);
-            refStatusLabel.setBounds(zoneX + 8, sY,
-                                     juce::jmax(40, zoneW - kAddW - 24), kAddH);
+            codecPanel_.setBounds (cPad, cy2, mW - cPad * 2,
+                                   getHeight() - cy2 - 10 - (abBarShowing ? kAbBarH : 0));
         }
-        cy2 += kRefDropH + 4;
 
         // rowW: content width from computeColumns, the single width source.
         // The comment that used to live here said "paint() and resized() use
@@ -20463,11 +20572,11 @@ void EchoJayEditor::resized()
             const int kHdrH = 20, kGap = 6, kBtnAreaH = 36;
             int aY2 = topH + 4;
             int aH2 = getHeight() - topH - 16 - (abBarShowing ? kAbBarH : 0);
-            // Accumulate to panels start: preset row + drop zone + selector.
-            // DERIVED, not restated. This line used to read "aY2 + 140" with a
-            // comment spelling out 26 + 86 + 28, which is a fourth copy of a
-            // number changed in three other places.
-            int panelsCy = aY2 + 26 + (kRefDropH + 4) + 28;
+            // Accumulate to panels start: reference bar + selector. DERIVED,
+            // not restated. This line once read "aY2 + 140" with a comment
+            // spelling out 26 + 86 + 28, a fourth copy of a number changed in
+            // three other places.
+            int panelsCy = aY2 + echojay::kRefBarBandH + 28;
             int panelsH = aY2 + aH2 - panelsCy - kBtnAreaH;
             int panelH = (panelsH - kHdrH * 2 - kGap) / 2;
             if (panelH < 40) panelH = 40;
@@ -20518,8 +20627,8 @@ void EchoJayEditor::resized()
             aiCompareBtn.setButtonText(tightBar ? "AI" : "AI Compare");
             aiCompareBtn.setTooltip(tightBar ? "AI Compare" : juce::String());
             const int kAiW = tightBar ? 36 : 100;
-            const int kCodecW = 88;
-            // Centre the transport cluster (CODECS is NOT part of it)
+            // Centre the transport cluster. CODECS sat right-aligned beside it
+            // and is gone: Playback is a sub-tab now.
             int totalW = kAbW + kTGap + kAbW + kTGap + kPlayW + kTGap + kSyncW + kTGap + kAiW;
             int tx = (mW - totalW) / 2;
             cmpABtn_.setBounds(tx, btnY, kAbW, 26);              tx += kAbW + kTGap;
@@ -20527,8 +20636,6 @@ void EchoJayEditor::resized()
             cmpPlayBtn_.setBounds(tx, btnY, kPlayW, 26);         tx += kPlayW + kTGap;
             compareSyncBtn_.setBounds(tx, btnY, kSyncW, 26);     tx += kSyncW + kTGap;
             aiCompareBtn.setBounds(tx, btnY, kAiW, 26);
-            // Feature-launcher: right-aligned against the panel edge
-            codecsBtn_.setBounds(mW - kCodecW - 10, btnY, kCodecW, 26);
         }
         // ONE-SHOT OVERLAP REPORT. A DEVELOPMENT AID, NOT A GUARD.
         //
@@ -20536,7 +20643,7 @@ void EchoJayEditor::resized()
         // BECAUSE they do not overlap each other. That was measured, not
         // assumed: the two pairs that looked closest were checked and both
         // clear comfortably. aiCompareBtn's right edge is (mW + totalW) / 2
-        // and codecsBtn_ starts at mW - 98, which meet only below mW 376,
+        // and the right edge, which met only below mW 376,
         // while the Compare column is never narrower than 585 (the 900px
         // window minimum with chatW capped at 35 percent). And the chat trio
         // begins at mW + sidebarOffsetX + 14, to the RIGHT of a catcher that
@@ -20567,7 +20674,6 @@ void EchoJayEditor::resized()
                 { "playTop", comparePlayTopBtn_.getBounds() },
                 { "playBot", comparePlayBotBtn_.getBounds() },
                 { "aiCompare", aiCompareBtn.getBounds() },
-                { "codecs", codecsBtn_.getBounds() },
                 { "presetBox", presetBox.getBounds() },
                 { "savePreset", savePresetBtn.getBounds() },
                 { "deletePreset", deletePresetBtn.getBounds() },
@@ -34242,7 +34348,20 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
 
     if (currentView == View::Compare)
     {
-        
+        // THE SUB-TAB ROW, hit-tested from the rects resized() authored via
+        // echojay::refSubTabAt. Before the rename/delete pass, because a click
+        // on the row is a navigation and must not also be read as a click on
+        // whatever the row happens to sit above.
+        if (! e.mods.isPopupMenu())
+        {
+            const int st = echojay::refSubTabAt (refSubTabRects_, pos);
+            if (st >= 0)
+            {
+                setRefSubTab ((echojay::RefSubTab) st);
+                return;
+            }
+        }
+
         // Right-click on card area — rename/delete pass
         if (e.mods.isPopupMenu())
         {

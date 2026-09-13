@@ -5,6 +5,7 @@
 #include <map>
 #include "PluginProcessor.h"
 #include "EJReferenceRows.h"   // the browser's pane rule: header-inline, pinned
+#include "EJReferenceBar.h"    // the reference bar's geometry and stepping: pinned
 #include "ChainHost.h"
 #include "EJMisdialReport.h"
 #include "ChainWetKnob.h"
@@ -227,7 +228,13 @@ private:
     // 29 Jul 2026. Compact mode draws no strip at all, so there is no narrow
     // case to design for, and no icon-only or overflow mode is wanted.
     static constexpr const char* kTabNames[] = {
-        "DASHBOARD", "VISUALISATION", "METERS", "CHAT", "COMPARE", "LINK", "CHAIN", "SETTINGS"
+        // COMPARE became REFERENCE on 13 Sep 2026: the tab holds Compare,
+        // Match and Playback sub-tabs sharing one reference selection, so
+        // naming it after one of them was naming the section after a part.
+        // Free to rename today (two machines run v2, vst-config points the
+        // world at 1.6.3) and not free after beta. Shorter than
+        // VISUALISATION, so the 81px width measurement still governs.
+        "DASHBOARD", "VISUALISATION", "METERS", "CHAT", "REFERENCE", "LINK", "CHAIN", "SETTINGS"
     };
     static constexpr int kTabCount = (int) (sizeof (kTabNames) / sizeof (kTabNames[0]));
     // Ties the label array to the enum. Adding a tab to one and not the other
@@ -969,6 +976,13 @@ private:
     struct CodecPanel : juce::Component
     {
         EchoJayEditor* owner = nullptr;
+        // PLAYBACK IS A SUB-TAB NOW, NOT A MODAL (13 Sep 2026). The same
+        // component serves both: inlinePage suppresses the scrim and the close
+        // X, because a page is left by choosing another sub-tab and an X that
+        // closes a page leaves nothing behind it. The card, the preset rows
+        // and every hit rect are unchanged, so the two presentations cannot
+        // drift in what Playback DOES.
+        bool inlinePage = false;
         void paint(juce::Graphics& g) override;
         void mouseUp(const juce::MouseEvent& e) override;
         void mouseMove(const juce::MouseEvent& e) override;
@@ -1052,11 +1066,31 @@ private:
         struct Rects
         {
             juce::Rectangle<int> card, titleBar, closeX, title, leftPane, rightPane;
+            // The presets strip, moved off the Compare page 13 Sep 2026.
+            juce::Rectangle<int> presetBox, presetSave, presetDelete;
         };
         static Rects layoutFor (juce::Rectangle<int> panelBounds);
     };
     RefBrowserPanel refBrowser_;
     int refBrowserSelected_ = -1;    // index into the live reference vector
+
+    // ---- The reference bar (replaces the preset row and the drop zone) ----
+    juce::TextButton refPrevBtn { "<" }, refNextBtn { ">" }, refPlayBtn;
+    juce::TextButton refBrowseBtn { "Browse" };
+    // refBarRects_ is authored by resized() from echojay::refBarLayout and
+    // CONSUMED by paint() and by nothing else. One author, one computation.
+    echojay::RefBarRects refBarRects_;
+    /** The slot the bar drives, from the live slot kinds. */
+    bool refBarIsTop() const;
+    /** Step the library and load the result into that slot. */
+    void refBarStepBy (int delta);
+    /** The index the bar is naming: the driven slot's reference, or -1. */
+    int  refBarCurrentIndex() const;
+
+    // ---- REFERENCE sub-tabs: Compare and Playback ----
+    echojay::RefSubTab refSubTab_ { echojay::RefSubTab::Compare };
+    echojay::RefSubTabRects refSubTabRects_;
+    void setRefSubTab (echojay::RefSubTab t);
 
     void openReferenceBrowser (bool isTop);
     void closeReferenceBrowser();
@@ -1071,19 +1105,11 @@ private:
     /** Title-bar text. Shares echojay::refBrowserTitle with nothing else, so
         the bar cannot disagree with the list about what is selected. */
     juce::String refBrowserTitleText() const;
-    // Feature-launcher button: right-aligned against the panel edge (NOT part
-    // of the centred transport cluster). Custom-painted: codec glyph
-    // (waveform between brackets) + label, subtle cyan 1px outline that
-    // brightens on hover and stays lit while codec mode is engaged. No solid
-    // fill — it must read as a doorway, not a toggle, and must not compete
-    // with Send/Upgrade.
-    struct CodecLaunchBtn : juce::Button
-    {
-        CodecLaunchBtn() : juce::Button("CODECS") {}
-        bool active = false;   // codec mode engaged (written by updateTransportBar)
-        void paintButton(juce::Graphics& g, bool over, bool down) override;
-    };
-    CodecLaunchBtn codecsBtn_;
+    // THE CODECS LAUNCHER IS DELETED (13 Sep 2026), button and LookAndFeel
+    // both. Playback Simulation is a sub-tab of REFERENCE. CodecLaunchBtn's
+    // custom paint went with it rather than being left as an unreferenced
+    // class: an unused widget that still compiles is how ChainPluginListModel
+    // survived for a month looking like a live list.
     bool codecNormalise_ = true;                 // panel toggle, default ON
     int  codecRendering_ = -1;                   // preset index while rendering
     juce::String codecStatus_;                   // error line on the card
