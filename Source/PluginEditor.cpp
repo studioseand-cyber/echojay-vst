@@ -4958,7 +4958,7 @@ void EchoJayEditor::filesDropped(const juce::StringArray& files, int, int)
 // and visibility move together here so that cannot come apart again.
 void EchoJayEditor::setRefStatus(const juce::String& msg)
 {
-    setRefStatus(msg);
+    refStatusLabel.setText(msg, juce::dontSendNotification);
     // Compare is the only view that lays this label out, so it is the only
     // view that may show it. Leaving the text set means re-entering Compare
     // brings a standing message back rather than losing it.
