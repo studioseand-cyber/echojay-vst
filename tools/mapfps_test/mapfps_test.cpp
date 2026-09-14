@@ -48,6 +48,7 @@
 #include "EJReferenceIndex.h"   // the reference library index: the shipped parser
 #include "EJReferenceRows.h"    // the reference browser's pane rule: the shipped rows
 #include "EJReferenceBar.h"     // the reference bar's geometry and stepping: the shipped rects
+#include "EJCodecPage.h"        // the Playback page's geometry: the shipped rects
 #include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
@@ -7934,6 +7935,117 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (at == 0, "rf PIN7: a full lap returns to the start",
                    "ended at " + juce::String (at));
         }
+    }
+
+    // ======================================================================
+    // cp -- THE PLAYBACK PAGE (EJCodecPage.h)
+    //
+    // Pinned because of what it fixed: the page was laid out by TWO authors in
+    // one resized(), the second unconditionally setting getLocalBounds(). It
+    // won, so the page covered the tab strip and the sub-tab row, and with the
+    // modal click-swallow still in place NOTHING on the window was clickable,
+    // Escape included. A pure function is what lets a headless test say the
+    // page cannot cover the row that selects it.
+    // ======================================================================
+    {
+        using namespace echojay;
+        // Content areas as the Compare accumulator produces them: offset down
+        // by the bar and the row, never at the window origin.
+        struct Area { const char* name; juce::Rectangle<int> r; };
+        std::vector<Area> areas {
+            { "min 900x580",   { 10, 130, 565,  380 } },
+            { "wide",          { 10, 130, 1380, 700 } },
+            { "short",         { 10, 130, 565,  120 } },
+            { "very short",    { 10, 130, 565,   40 } },
+            { "narrow",        { 10, 130, 300,  380 } },
+        };
+
+        // cp PIN1 -- THE PAGE IS THE CONTENT AREA IT WAS HANDED, byte for byte.
+        // Not getLocalBounds(), which is the whole defect: a sub-tab that can
+        // cover the row selecting it has no way out.
+        for (auto& a : areas)
+            for (int n : { 0, 4, 9 })
+                check (codecPageLayout (a.r, n).page == a.r,
+                       "cp PIN1: the page is exactly the content area given",
+                       juce::String (a.name) + " got "
+                       + codecPageLayout (a.r, n).page.toString());
+
+        // cp PIN2 -- THE CARD IS INSIDE THE PAGE, at every size and count. The
+        // card used to centre on getWidth()/getHeight(), correct only while
+        // those were the whole window.
+        for (auto& a : areas)
+            for (int n : { 0, 1, 4, 9, 20 })
+            {
+                const auto r = codecPageLayout (a.r, n);
+                check (a.r.contains (r.card) || r.card.isEmpty(),
+                       "cp PIN2: the card never escapes the page",
+                       juce::String (a.name) + " n=" + juce::String (n)
+                       + " card " + r.card.toString() + " page " + a.r.toString());
+            }
+
+        // cp PIN3 -- THE CARD'S TOP IS NEVER ABOVE THE PAGE'S TOP. This is the
+        // one that matters on a short window: centring a too-tall card would
+        // put its header, and the close-behaviour notice, off the top where
+        // they cannot be read or reached.
+        for (auto& a : areas)
+            for (int n : { 9, 20, 40 })
+            {
+                const auto r = codecPageLayout (a.r, n);
+                check (r.card.getY() >= a.r.getY(),
+                       "cp PIN3: a tall card crops downward, never off the top",
+                       juce::String (a.name) + " n=" + juce::String (n)
+                       + " cardY " + juce::String (r.card.getY())
+                       + " pageY " + juce::String (a.r.getY()));
+            }
+
+        // cp PIN4 -- THE CARD IS HORIZONTALLY CENTRED AND WIDTH-BOUNDED.
+        for (auto& a : areas)
+        {
+            const auto r = codecPageLayout (a.r, 9);
+            const int left  = r.card.getX() - a.r.getX();
+            const int right = a.r.getRight() - r.card.getRight();
+            check (std::abs (left - right) <= 1,
+                   "cp PIN4: centred within a pixel of rounding",
+                   juce::String (a.name) + " left " + juce::String (left)
+                   + " right " + juce::String (right));
+            check (r.card.getWidth() <= kCodecCardMaxW,
+                   "cp PIN4: and never wider than the cap");
+            check (r.card.getWidth() >= juce::jmin (kCodecCardMinW, a.r.getWidth()),
+                   "cp PIN4: nor squeezed below the floor while the page has room");
+        }
+
+        // cp PIN5 -- HEIGHT GROWS WITH THE PRESET COUNT, two per row, and an
+        // empty preset list still yields the chrome rather than a negative.
+        check (codecCardHeight (0) == kCodecChromeH,
+               "cp PIN5: no presets is chrome only",
+               juce::String (codecCardHeight (0)));
+        check (codecCardHeight (1) == codecCardHeight (2),
+               "cp PIN5: one and two presets share a row");
+        check (codecCardHeight (3) == codecCardHeight (4),
+               "cp PIN5: three and four share two rows");
+        check (codecCardHeight (3) > codecCardHeight (2),
+               "cp PIN5: and a third preset adds a row");
+        check (codecCardHeight (-5) == kCodecChromeH,
+               "cp PIN5: a negative count is floored, not wrapped");
+        // The row count paint() advances by is the SAME function the height was
+        // computed from. Two copies of "+ 1) / 2" is how the drop zone's height
+        // came to be written three ways, and paint() consumed the wrong one.
+        check (codecCardRows (0) == 0 && codecCardRows (1) == 1
+               && codecCardRows (2) == 1 && codecCardRows (3) == 2
+               && codecCardRows (9) == 5,
+               "cp PIN5: two presets per row, and paint reads this same count");
+        check (codecCardHeight (9)
+               == kCodecChromeH + codecCardRows (9) * (kCodecRowH + kCodecRowGap),
+               "cp PIN5: the height is derived from that count, not a second copy");
+
+        // cp PIN6 -- THE PAGE'S GEOMETRY DOES NOT DEPEND ON CodecRender. The
+        // count is an int, so this rule is exercisable with no encoder, no
+        // AudioToolbox and no mac-only preset table. AAC entries are absent off
+        // mac, so a function that asked CodecRender for its own count would
+        // have a different contract on two platforms.
+        check (codecPageLayout ({ 10, 130, 565, 380 }, 9).card
+               == codecPageLayout ({ 10, 130, 565, 380 }, 9).card,
+               "cp PIN6: pure, and the count is a parameter rather than a lookup");
     }
 
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";

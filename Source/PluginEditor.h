@@ -6,6 +6,7 @@
 #include "PluginProcessor.h"
 #include "EJReferenceRows.h"   // the browser's pane rule: header-inline, pinned
 #include "EJReferenceBar.h"    // the reference bar's geometry and stepping: pinned
+#include "EJCodecPage.h"       // the Playback page's geometry: pinned
 #include "ChainHost.h"
 #include "EJMisdialReport.h"
 #include "ChainWetKnob.h"
@@ -976,20 +977,32 @@ private:
     struct CodecPanel : juce::Component
     {
         EchoJayEditor* owner = nullptr;
-        // PLAYBACK IS A SUB-TAB NOW, NOT A MODAL (13 Sep 2026). The same
-        // component serves both: inlinePage suppresses the scrim and the close
-        // X, because a page is left by choosing another sub-tab and an X that
-        // closes a page leaves nothing behind it. The card, the preset rows
-        // and every hit rect are unchanged, so the two presentations cannot
-        // drift in what Playback DOES.
-        bool inlinePage = false;
+        // PLAYBACK IS A PAGE, AND ONLY A PAGE (13 Sep 2026).
+        //
+        // It was a modal behind the CODECS launcher. When it became a sub-tab
+        // it kept every modal behaviour and trapped the UI: full-window bounds
+        // over the tab strip, an empty mouseDown swallowing every click, and a
+        // close X suppressed with no replacement. Escape was not an escape
+        // either, because the sub-tab path never grabbed keyboard focus.
+        //
+        // THE inlinePage FLAG IS GONE rather than being honoured properly.
+        // openCodecPanel had ZERO callers once the launcher was deleted, so the
+        // modal presentation was unreachable and a flag choosing between two
+        // presentations would have had one dead branch and a pin asserting a
+        // contract nothing could reach. One presentation, no flag.
+        //
+        // NO mouseDown OVERRIDE. The swallow existed to stop a modal leaking
+        // clicks to what it covered. A page covers nothing, and swallowing is
+        // exactly what made the sub-tab row unreachable.
+        //
+        // NO closeRect. A page is left by choosing another sub-tab. Escape is a
+        // shortcut to the same thing, not a second mechanism.
         void paint(juce::Graphics& g) override;
         void mouseUp(const juce::MouseEvent& e) override;
         void mouseMove(const juce::MouseEvent& e) override;
-        void mouseDown(const juce::MouseEvent&) override {}   // swallow
         bool keyPressed(const juce::KeyPress& k) override;
         std::vector<juce::Rectangle<int>> cardRects;
-        juce::Rectangle<int> normRect, closeRect;
+        juce::Rectangle<int> normRect;
         int hoverIdx = -1;
     };
     CodecPanel codecPanel_;
@@ -1119,7 +1132,11 @@ private:
     CompareSlotState codecSavedTop_, codecSavedBot_;  // restored on chip X
     juce::String codecChipLabel_;
     juce::Rectangle<int> codecChipX_;            // painted chip close zone
-    void openCodecPanel();
+    // openCodecPanel DELETED (13 Sep 2026): zero callers once the CODECS
+    // launcher went. Playback is entered by selecting its sub-tab.
+    /** THE ONE ENFORCEMENT POINT for disengaging codec preview. Every route out
+        of Playback goes through here, which is what keeps the 25 Jul safety
+        comment true. */
     void closeCodecPanel();
     void resolveCodecSource();
     void startCodecRender(int presetIdx);

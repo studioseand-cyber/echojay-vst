@@ -5052,10 +5052,11 @@ void EchoJayEditor::hideCompareView()
     // rather than hiding, so visibleState and the component agree.
     if (refBrowser_.visibleState) closeReferenceBrowser();
     // Back to the Compare sub-tab on the way out, so re-entering never lands
-    // on Playback with the Compare furniture hidden by a flag nobody set this
-    // session.
-    if (refSubTab_ != echojay::RefSubTab::Compare)
-        setRefSubTab (echojay::RefSubTab::Compare);
+    // on Playback. The FIELD is reset directly rather than through
+    // setRefSubTab: that would re-show the Compare furniture and call resized()
+    // in the middle of a teardown that is about to hide all of it. The
+    // disengage is already done, by closeCodecPanel above.
+    refSubTab_ = echojay::RefSubTab::Compare;
     // The text is KEPT, only the label is hidden: re-entering Compare brings
     // a standing message back rather than losing what the last drop said.
     refStatusLabel.setVisible(false);
@@ -6281,15 +6282,29 @@ void EchoJayEditor::setRefSubTab (echojay::RefSubTab t)
     const bool playback = (t == echojay::RefSubTab::Playback);
     if (playback)
     {
+        // ONE resolve, and the label and the path come out of it TOGETHER:
+        // resolveCodecSource sets codecSrcPath_ and codecSrcLabel_ in the same
+        // branch on every return path, so the page cannot name one capture
+        // while rendering another.
         resolveCodecSource();
-        codecPanel_.inlinePage = true;
-        codecPanel_.hoverIdx   = -1;
+        codecStatus_ = {};              // from the deleted openCodecPanel
+        codecPanel_.hoverIdx = -1;
         codecPanel_.setVisible(true);
+        EchoJay_NSLog(("EJCodec: playback page src=" + (codecSrcPath_.isEmpty()
+                        ? juce::String("NONE") : codecSrcLabel_)).toRawUTF8());
+        // WITHOUT THIS, ESCAPE WAS NOT AN ESCAPE. setWantsKeyboardFocus only
+        // makes focus possible; nothing was giving it, so CodecPanel::keyPressed
+        // never ran and the page had no exit at all.
+        codecPanel_.grabKeyboardFocus();
     }
     else
     {
-        codecPanel_.setVisible(false);
-        codecPanel_.inlinePage = false;
+        // THROUGH THE ONE ENFORCEMENT POINT, not around it. This used to call
+        // setVisible(false) directly, which skipped the codec-preview disengage
+        // entirely: selecting COMPARE left the user's audio on the lossy render
+        // with nothing on screen saying so. The 25 Jul comment says "by ANY
+        // route" and routing around it added a route.
+        closeCodecPanel();
     }
     // The Compare furniture belongs to the Compare sub-tab only. The reference
     // bar is NOT in this list: it sits above the row and is shared by every
@@ -6306,20 +6321,6 @@ void EchoJayEditor::setRefSubTab (echojay::RefSubTab t)
     aiCompareBtn.setVisible(!playback);
     resized();
     repaint();
-}
-
-void EchoJayEditor::openCodecPanel()
-{
-    resolveCodecSource();
-    codecStatus_ = {};
-    codecPanel_.hoverIdx = -1;
-    codecPanel_.setBounds(getLocalBounds());
-    codecPanel_.setVisible(true);
-    codecPanel_.toFront(true);
-    codecPanel_.grabKeyboardFocus();
-    codecPanel_.repaint();
-    EchoJay_NSLog(("EJCodec: panel open src=" + (codecSrcPath_.isEmpty()
-                    ? juce::String("NONE") : codecSrcLabel_)).toRawUTF8());
 }
 
 void EchoJayEditor::closeCodecPanel()
@@ -6468,17 +6469,15 @@ void EchoJayEditor::CodecPanel::paint(juce::Graphics& g)
 {
     if (owner == nullptr) return;
 
-    // Scrim only when this is a modal over something. As the Playback page it
-    // IS the content, and a scrim over the page you are on dims nothing.
-    if (! inlinePage)
-        g.fillAll(juce::Colour(0xcc000000));
-
+    // NO SCRIM. This is the page, not something laid over it, and a scrim over
+    // the page you are on dims nothing.
     const auto& ps = CodecRender::presets();
-    const int nRows = ((int) ps.size() + 1) / 2;
     const int cardH = 58, cardGap = 8;
-    const int w = juce::jmin(500, getWidth() - 60);
-    const int h = 96 + nRows * (cardH + cardGap) + 108;   // +20: close-behaviour notice
-    juce::Rectangle<int> card((getWidth() - w) / 2, (getHeight() - h) / 2, w, h);
+    // THE CARD COMES FROM echojay::codecPageLayout, the one author. It used to
+    // be centred here from getWidth()/getHeight(), which was only correct while
+    // those were the whole window.
+    const juce::Rectangle<int> card =
+        echojay::codecPageLayout (getLocalBounds(), (int) ps.size()).card;
 
     g.setColour(C::bg2);
     g.fillRoundedRectangle(card.toFloat(), 10.0f);
@@ -6489,19 +6488,9 @@ void EchoJayEditor::CodecPanel::paint(juce::Graphics& g)
 
     // Header + close X
     auto head = r.removeFromTop(22);
-    // No close X on the page: a sub-tab is left by choosing another sub-tab,
-    // and an X that closes a page leaves nothing behind it. Empty rect rather
-    // than a hidden one, so mouseUp's contains() test cannot fire on it.
-    closeRect = inlinePage ? juce::Rectangle<int>()
-                           : juce::Rectangle<int> { card.getRight() - 34, card.getY() + 10, 24, 24 };
     g.setColour(C::text);
     g.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
     g.drawText("CODEC PLAYER", head, juce::Justification::centredLeft);
-    g.setColour(C::text3);
-    g.setFont(juce::Font(juce::FontOptions(14.0f)));
-    if (! closeRect.isEmpty())
-        g.drawText("x", closeRect, juce::Justification::centred);
-
     g.setColour(C::text3);
     g.setFont(juce::Font(juce::FontOptions(11.5f)));
     g.drawText("Hear this material the way streaming platforms deliver it.",
@@ -6555,7 +6544,9 @@ void EchoJayEditor::CodecPanel::paint(juce::Graphics& g)
                                + ps[(size_t) i].sub,
                    inner, juce::Justification::centredLeft, true);
     }
-    r.removeFromTop(nRows * (cardH + cardGap) + 6);
+    // Same row count the card height was computed from, read from the one
+    // place that expresses it rather than recomputed here.
+    r.removeFromTop(echojay::codecCardRows ((int) ps.size()) * (cardH + cardGap) + 6);
 
     // Normalise toggle
     auto tRow = r.removeFromTop(20);
@@ -6603,7 +6594,8 @@ void EchoJayEditor::CodecPanel::mouseUp(const juce::MouseEvent& e)
     if (owner == nullptr) return;
     const auto pos = e.getPosition();
 
-    if (! closeRect.isEmpty() && closeRect.contains(pos)) { owner->closeCodecPanel(); return; }
+    // No close X: leaving is selecting another sub-tab, and Escape below is a
+    // shortcut to that rather than a second way out.
 
     if (owner->codecRendering_ >= 0) return;   // one render at a time
 
@@ -6633,7 +6625,10 @@ bool EchoJayEditor::CodecPanel::keyPressed(const juce::KeyPress& k)
 {
     if (k == juce::KeyPress::escapeKey && owner != nullptr)
     {
-        owner->closeCodecPanel();
+        // BACK TO COMPARE, not a bare hide. closeCodecPanel alone would leave
+        // refSubTab_ saying PLAYBACK with the page gone and the Compare
+        // furniture still hidden: an empty screen under a lying tab row.
+        owner->setRefSubTab (echojay::RefSubTab::Compare);
         return true;
     }
     return false;
@@ -20540,14 +20535,18 @@ void EchoJayEditor::resized()
             { cPad, cy2, mW - cPad * 2, echojay::kRefSubTabH });
         cy2 += echojay::kRefSubTabBandH;
 
-        // PLAYBACK OWNS THE WHOLE CONTENT AREA BELOW THE ROW. The codec panel
-        // is the same component that used to be a modal; inlinePage suppresses
-        // its scrim and its close X, so what it DOES cannot drift between the
-        // two presentations.
+        // PLAYBACK OWNS THE CONTENT AREA BELOW THE ROW, AND NOTHING ABOVE IT.
+        // THE ONLY AUTHOR of this component's bounds. There used to be a second
+        // one 151 lines below setting getLocalBounds() unconditionally, which
+        // won and put the page over the tab strip and over the row that selects
+        // it. Deleted, not guarded: a flag choosing between two authors is two
+        // authors with extra steps.
         if (refSubTab_ == echojay::RefSubTab::Playback)
         {
-            codecPanel_.setBounds (cPad, cy2, mW - cPad * 2,
-                                   getHeight() - cy2 - 10 - (abBarShowing ? kAbBarH : 0));
+            codecPanel_.setBounds (echojay::codecPageLayout (
+                { cPad, cy2, mW - cPad * 2,
+                  getHeight() - cy2 - 10 - (abBarShowing ? kAbBarH : 0) },
+                (int) CodecRender::presets().size()).page);
         }
 
         // rowW: content width from computeColumns, the single width source.
@@ -20696,9 +20695,11 @@ void EchoJayEditor::resized()
                     }
         }
 
-        // Codec panel is a full-bounds modal; keep it sized and on top
-        codecPanel_.setBounds(getLocalBounds());
-        if (codecPanel_.isVisible()) codecPanel_.toFront(false);
+        // The codec panel's full-bounds setBounds and its unconditional
+        // toFront lived here and are DELETED. It is a page: its bounds come
+        // from the Playback branch above, and it needs no raising because
+        // compareClickCatcher is at the back, so any real child is already in
+        // front of it.
         // Reference browser, the same treatment. visibleState rather than
         // isVisible() is the flag a periodic pass should ask, per
         // PluginReviewOverlay.
