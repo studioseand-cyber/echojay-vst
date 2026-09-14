@@ -20571,11 +20571,19 @@ void EchoJayEditor::resized()
             const int kHdrH = 20, kGap = 6, kBtnAreaH = 36;
             int aY2 = topH + 4;
             int aH2 = getHeight() - topH - 16 - (abBarShowing ? kAbBarH : 0);
-            // Accumulate to panels start: reference bar + selector. DERIVED,
-            // not restated. This line once read "aY2 + 140" with a comment
-            // spelling out 26 + 86 + 28, a fourth copy of a number changed in
-            // three other places.
-            int panelsCy = aY2 + echojay::kRefBarBandH + 28;
+            // Accumulate to panels start: reference bar + SUB-TAB ROW +
+            // selector. All THREE bands, in the order paintCompareView walks
+            // them. DERIVED, not restated: this line once read "aY2 + 140" with
+            // a comment spelling out 26 + 86 + 28, a fourth copy of a number
+            // changed in three other places.
+            //
+            // THE SUB-TAB ROW WAS MISSING HERE FOR A DAY, and the comment said
+            // "reference bar + selector", so the comment and the code agreed
+            // with each other and were both wrong. The slot buttons carry their
+            // own text, so "Live signal" painted 28px high, inside the
+            // meter-type row, while its header strip sat one band below.
+            int panelsCy = aY2 + echojay::kRefBarBandH
+                               + echojay::kRefSubTabBandH + 28;
             int panelsH = aY2 + aH2 - panelsCy - kBtnAreaH;
             int panelH = (panelsH - kHdrH * 2 - kGap) / 2;
             if (panelH < 40) panelH = 40;
