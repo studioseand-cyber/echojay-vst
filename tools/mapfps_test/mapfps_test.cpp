@@ -7523,7 +7523,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // to prevent, and it is invisible by eye once the list is long.
         {
             const auto refs  = mk ({ "kick.wav", "mix_v2.wav", "master.aiff" });
-            const auto panes = buildReferenceBrowserRows (refs, -1);
+            const auto panes = buildReferenceBrowserRows (refs, {}, {}, -1);
             check (countKind (panes.right, RefBrowserRow::Kind::Track) == 3,
                    "rb PIN1: three references make three track rows");
             int seen = 0;
@@ -7546,7 +7546,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // because its list and its ids were built in one loop.
         {
             const auto refs  = mk ({ "a.wav", "b.wav", "c.wav", "d.wav" });
-            const auto panes = buildReferenceBrowserRows (refs, 2);
+            const auto panes = buildReferenceBrowserRows (refs, {}, {}, 2);
             for (auto& r : panes.right)
                 if (r.kind == RefBrowserRow::Kind::Track)
                     check (r.index >= 0 && r.index < (int) refs.size()
@@ -7558,7 +7558,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // rb PIN3 -- EXACTLY ONE ROW IS SELECTED, AND IT IS THE ASKED-FOR ONE.
         {
             const auto refs  = mk ({ "a.wav", "b.wav", "c.wav" });
-            const auto panes = buildReferenceBrowserRows (refs, 1);
+            const auto panes = buildReferenceBrowserRows (refs, {}, {}, 1);
             int sel = 0, selIdx = -1;
             for (auto& r : panes.right) if (r.selected) { ++sel; selIdx = r.index; }
             check (sel == 1, "rb PIN3: one selected row, not none and not two",
@@ -7575,13 +7575,13 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             const auto refs = mk ({ "a.wav", "b.wav" });
             for (int bad : { -1, 2, 99, -7 })
             {
-                const auto panes = buildReferenceBrowserRows (refs, bad);
+                const auto panes = buildReferenceBrowserRows (refs, {}, {}, bad);
                 int sel = 0; for (auto& r : panes.right) if (r.selected) ++sel;
                 check (sel == 0, "rb PIN4: an out-of-range selection selects nothing",
                        "index " + juce::String (bad) + " selected "
                        + juce::String (sel));
             }
-            check (refBrowserTitle (refs, 5) == "Select a reference",
+            check (refBrowserTitle (refs, {}, 5) == "Select a reference",
                    "rb PIN4: and the title says so rather than naming a guess");
         }
 
@@ -7589,7 +7589,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // THING THAT ACTS. A pane that is merely blank is the menu's old
         // behaviour, which hid the feature from anyone who had not found it.
         {
-            const auto panes = buildReferenceBrowserRows ({}, -1);
+            const auto panes = buildReferenceBrowserRows ({}, {}, {}, -1);
             check (countKind (panes.right, RefBrowserRow::Kind::Track) == 0,
                    "rb PIN5: no references, no track rows");
             check (countKind (panes.right, RefBrowserRow::Kind::Invite) == 1,
@@ -7624,7 +7624,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // last four commits removed; this is that rule as a property.
         {
             const auto refs  = mk ({ "a.wav" });
-            const auto panes = buildReferenceBrowserRows (refs, 0);
+            const auto panes = buildReferenceBrowserRows (refs, {}, {}, 0);
             for (const auto* pane : { &panes.left, &panes.right })
                 for (auto& r : *pane)
                 {
@@ -7644,25 +7644,178 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 }
         }
 
-        // rb PIN7 -- THE LEFT PANE IS ONE SCOPE, AND IT COUNTS HONESTLY.
-        // Folders are commit two. Until then the left pane must not imply a
-        // structure that does not exist, and its count must be the library's.
+        // rb PIN7 -- THE LEFT PANE'S SCOPES, AND THEIR COUNTS.
+        //
+        // THIS ASSERTION CHANGED BECAUSE THE CONTRACT CHANGED, not because it
+        // failed. It read "exactly one scope until folders land", and folders
+        // have landed. It is NOT a loosening: the old pin said the pane must
+        // not imply a structure that did not exist, and the replacement says
+        // what the structure IS. ALL REFERENCES is always present and always
+        // shows everything; folders appear in creation order; UNFILED appears
+        // only when something is unfiled; every count is real.
         {
             for (int n : { 0, 1, 5 })
             {
                 std::vector<RefBrowserEntry> refs;
                 for (int i = 0; i < n; ++i)
-                    refs.push_back ({ "r" + juce::String (i), "/tmp/x" });
-                const auto panes = buildReferenceBrowserRows (refs, -1);
+                    refs.push_back ({ "r" + juce::String (i), "/tmp/p" + juce::String (i) });
+                const auto panes = buildReferenceBrowserRows (refs, {}, {}, -1);
                 check (countKind (panes.left, RefBrowserRow::Kind::Category) == 1,
-                       "rb PIN7: exactly one scope until folders land");
+                       "rb PIN7: with no folders, ALL REFERENCES is the only scope");
                 bool named = false;
                 for (auto& r : panes.left)
                     if (r.kind == RefBrowserRow::Kind::Category)
                         named = r.text.contains ("(" + juce::String (n) + ")");
                 check (named, "rb PIN7: and it carries the real count",
                        "n=" + juce::String (n));
+                check (countKind (panes.left, RefBrowserRow::Kind::Category) == 1
+                       && countKind (panes.left, RefBrowserRow::Kind::NewFolder) == 1,
+                       "rb PIN7: and the + row is always there to make one");
             }
+
+            // ALL REFERENCES ALWAYS SHOWS EVERYTHING, however it is filed.
+            const auto refs = mk ({ "a.wav", "b.wav", "c.wav" });
+            std::vector<RefFolder> fs { { "Drums", { "/tmp/a.wav" } },
+                                        { "Vox",   { "/tmp/b.wav" } } };
+            const auto all = buildReferenceBrowserRows (refs, fs, {}, -1);
+            check (countKind (all.right, RefBrowserRow::Kind::Track) == 3,
+                   "rb PIN7: ALL REFERENCES shows filed and unfiled alike");
+            check (countKind (all.left, RefBrowserRow::Kind::Category) == 4,
+                   "rb PIN7: ALL, two folders, and UNFILED because one is",
+                   juce::String (countKind (all.left, RefBrowserRow::Kind::Category)));
+
+            // UNFILED IS ABSENT WHEN NOTHING IS UNFILED.
+            std::vector<RefFolder> fs2 { { "Drums", { "/tmp/a.wav", "/tmp/b.wav",
+                                                      "/tmp/c.wav" } } };
+            const auto none = buildReferenceBrowserRows (refs, fs2, {}, -1);
+            check (countKind (none.left, RefBrowserRow::Kind::Category) == 2,
+                   "rb PIN7: no UNFILED row when everything is filed",
+                   juce::String (countKind (none.left, RefBrowserRow::Kind::Category)));
+        }
+
+        // rb PIN10 -- FOLDER MEMBERSHIP AND THE SCOPED PANE.
+        {
+            const auto refs = mk ({ "kick.wav", "snare.wav", "vox.wav" });
+            std::vector<RefFolder> fs { { "Drums", { "/tmp/kick.wav", "/tmp/snare.wav" } } };
+            RefScope drums; drums.kind = RefScope::Kind::Folder; drums.folder = "Drums";
+            RefScope unf;   unf.kind   = RefScope::Kind::Unfiled;
+
+            check (refScopeCount (refs, fs, {}) == 3,
+                   "rb PIN10: ALL counts the whole library");
+            check (refScopeCount (refs, fs, drums) == 2,
+                   "rb PIN10: a folder counts its members");
+            check (refScopeCount (refs, fs, unf) == 1,
+                   "rb PIN10: UNFILED counts what no folder claims");
+
+            const auto inDrums = buildReferenceBrowserRows (refs, fs, drums, -1);
+            check (countKind (inDrums.right, RefBrowserRow::Kind::Track) == 2,
+                   "rb PIN10: the pane shows only the folder's references");
+            for (auto& r : inDrums.right)
+                if (r.kind == RefBrowserRow::Kind::Track)
+                    check (r.text != "vox.wav",
+                           "rb PIN10: and nothing from outside it");
+
+            // ONE FOLDER EACH. A path claimed by two folders shows in the
+            // earlier one, never in both: a reference appearing twice is worse
+            // than it appearing in the wrong place.
+            std::vector<RefFolder> two { { "A", { "/tmp/kick.wav" } },
+                                         { "B", { "/tmp/kick.wav" } } };
+            RefScope sa; sa.kind = RefScope::Kind::Folder; sa.folder = "A";
+            RefScope sb; sb.kind = RefScope::Kind::Folder; sb.folder = "B";
+            check (refScopeCount (refs, two, sa) == 1 && refScopeCount (refs, two, sb) == 0,
+                   "rb PIN10: a doubly-claimed path lands in one folder only");
+
+            // INDEX TRANSLATION ROUND TRIPS, which is what stops the arrows
+            // loading a reference the pane is not showing.
+            for (int nth = 0; nth < refScopeCount (refs, fs, drums); ++nth)
+            {
+                const int lib = refScopeIndexToLibrary (refs, fs, drums, nth);
+                check (lib >= 0 && refLibraryIndexToScope (refs, fs, drums, lib) == nth,
+                       "rb PIN10: scope index to library and back is the identity",
+                       "nth=" + juce::String (nth) + " lib=" + juce::String (lib));
+                check (refScopeAdmits (drums, fs, refs[(size_t) lib].path),
+                       "rb PIN10: and it only ever lands on a member");
+            }
+            check (refScopeIndexToLibrary (refs, fs, drums, 99) == -1
+                   && refScopeIndexToLibrary (refs, fs, drums, -1) == -1,
+                   "rb PIN10: out of range translates to nothing, not to a clamp");
+            check (refLibraryIndexToScope (refs, fs, drums, 2) == -1,
+                   "rb PIN10: a library index outside the scope has no scope position");
+        }
+
+        // rb PIN11 -- A MEMBER WHOSE FILE IS GONE IS LISTED, NOT FORGOTTEN.
+        // The restore path drops a reference whose file no longer resolves, so
+        // a folder outlives its reference. Same direction as the index
+        // schema's RefAvailability: say it is unavailable rather than pretend
+        // it was never there.
+        {
+            const auto refs = mk ({ "kick.wav" });
+            std::vector<RefFolder> fs { { "Drums", { "/tmp/kick.wav", "/tmp/gone.wav" } } };
+            RefScope drums; drums.kind = RefScope::Kind::Folder; drums.folder = "Drums";
+            const auto p = buildReferenceBrowserRows (refs, fs, drums, -1);
+
+            check (countKind (p.right, RefBrowserRow::Kind::Track) == 1,
+                   "rb PIN11: the live member is a track row");
+            check (countKind (p.right, RefBrowserRow::Kind::Missing) == 1,
+                   "rb PIN11: and the vanished one is still listed");
+            for (auto& r : p.right)
+                if (r.kind == RefBrowserRow::Kind::Missing)
+                {
+                    check (! r.clickable,
+                           "rb PIN11: an unavailable row cannot be selected");
+                    check (r.index == -1,
+                           "rb PIN11: and carries no library index, because it has none");
+                    check (r.text.contains ("unavailable"),
+                           "rb PIN11: and says so in words");
+                }
+            // NOT COUNTED: the arrows must not step onto something absent.
+            check (refScopeCount (refs, fs, drums) == 1,
+                   "rb PIN11: and it is NOT counted, so the arrows skip it");
+        }
+
+        // rb PIN12 -- A SCOPE NAMING A FOLDER THAT IS GONE FALLS BACK TO ALL.
+        // Deleting a folder while it is selected is the ordinary way this
+        // happens, and an empty pane the user cannot account for is the
+        // alternative.
+        {
+            const auto refs = mk ({ "a.wav", "b.wav" });
+            RefScope ghost; ghost.kind = RefScope::Kind::Folder; ghost.folder = "Deleted";
+            check (refScopeOrAll (ghost, {}).kind == RefScope::Kind::All,
+                   "rb PIN12: a scope with no folder behind it becomes ALL");
+            const auto p = buildReferenceBrowserRows (refs, {}, ghost, -1);
+            check (countKind (p.right, RefBrowserRow::Kind::Track) == 2,
+                   "rb PIN12: so the pane shows the library, not nothing");
+            // DELETING A FOLDER NEVER DELETES REFERENCES.
+            std::vector<RefFolder> fs { { "Drums", { "/tmp/a.wav" } } };
+            const auto before = refScopeCount (refs, fs, {});
+            const auto after  = refScopeCount (refs, {}, {});
+            check (before == after && after == 2,
+                   "rb PIN12: and losing the folder loses no references");
+        }
+
+        // rb PIN13 -- AN EMPTY FOLDER NAMES ITSELF, and does not claim the
+        // library is empty, because it is not.
+        {
+            const auto refs = mk ({ "a.wav" });
+            std::vector<RefFolder> fs { { "Empty", {} } };
+            RefScope e; e.kind = RefScope::Kind::Folder; e.folder = "Empty";
+            const auto p = buildReferenceBrowserRows (refs, fs, e, -1);
+            bool named = false, claimedEmptyLibrary = false;
+            for (auto& r : p.right)
+                if (r.kind == RefBrowserRow::Kind::Notice)
+                {
+                    named = r.text.contains ("Empty");
+                    claimedEmptyLibrary = r.text.contains ("No references yet");
+                }
+            check (named, "rb PIN13: the notice names the folder");
+            check (! claimedEmptyLibrary,
+                   "rb PIN13: and does NOT say there are no references, because there are");
+            check (countKind (p.right, RefBrowserRow::Kind::Invite) == 0,
+                   "rb PIN13: no Add invitation inside a folder: it would not file it there");
+            // The invitation DOES belong to an empty library.
+            const auto lib = buildReferenceBrowserRows ({}, {}, {}, -1);
+            check (countKind (lib.right, RefBrowserRow::Kind::Invite) == 1,
+                   "rb PIN13: an empty LIBRARY still invites");
         }
 
         // rb PIN8 -- THE TITLE NAMES SCOPE AND SELECTION, so the bar and the
@@ -7676,12 +7829,24 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // than a loosening of the pin.
         {
             const auto refs = mk ({ "kick.wav", "master.aiff" });
-            check (refBrowserTitle (refs, 1) == "ALL REFERENCES - master.aiff",
+            check (refBrowserTitle (refs, {}, 1) == "ALL REFERENCES - master.aiff",
                    "rb PIN8: the title is scope then selection",
-                   "got \"" + refBrowserTitle (refs, 1) + "\"");
-            check (refBrowserTitle (refs, 1).contains (refs[1].name),
+                   "got \"" + refBrowserTitle (refs, {}, 1) + "\"");
+            check (refBrowserTitle (refs, {}, 1).contains (refs[1].name),
                    "rb PIN8: and the selection's name survives the pairing");
-            check (refBrowserTitle ({}, -1) == "No references",
+            // THE SCOPE HALF IS REAL NOW. It was the constant "ALL REFERENCES"
+            // while one scope existed; with folders it is whichever scope the
+            // panes show, which is what makes the pairing load-bearing.
+            {
+                RefScope d; d.kind = RefScope::Kind::Folder; d.folder = "Drums";
+                check (refBrowserTitle (refs, d, 1) == "DRUMS - master.aiff",
+                       "rb PIN8: a folder scope names the folder, not ALL REFERENCES",
+                       "got \"" + refBrowserTitle (refs, d, 1) + "\"");
+                RefScope u; u.kind = RefScope::Kind::Unfiled;
+                check (refBrowserTitle (refs, u, 0) == "UNFILED - kick.wav",
+                       "rb PIN8: and UNFILED names itself");
+            }
+            check (refBrowserTitle ({}, {}, -1) == "No references",
                    "rb PIN8: an empty library says so, and does not say Select");
         }
 
@@ -7693,7 +7858,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             std::vector<RefBrowserEntry> many;
             for (int i = 0; i < 250; ++i)
                 many.push_back ({ "ref" + juce::String (i), "/tmp/x" });
-            const auto panes = buildReferenceBrowserRows (many, 249);
+            const auto panes = buildReferenceBrowserRows (many, {}, {}, 249);
             check (countKind (panes.right, RefBrowserRow::Kind::Track) == 250,
                    "rb PIN9: all 250 appear, no 99 cap carried over");
             check (panes.right.back().index == 249 && panes.right.back().selected,
@@ -7745,10 +7910,12 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // that the product never reaches it.
         for (int w : realWidths)
             for (bool st : { false, true })
+            for (bool sc : { false, true })
             {
                 const juce::Rectangle<int> bar (10, 40, w, kRefBarH);
-                const auto r = refBarLayout (bar, st);
-                for (auto* q : { &r.prev, &r.next, &r.play, &r.name, &r.browse, &r.add })
+                const auto r = refBarLayout (bar, st, sc);
+                for (auto* q : { &r.prev, &r.next, &r.play, &r.slot, &r.scope,
+                                 &r.name, &r.browse, &r.add })
                     check (bar.contains (*q) || q->isEmpty(),
                            "rf PIN1: every rect sits inside the bar",
                            "w=" + juce::String (w) + " rect " + q->toString()
@@ -7765,10 +7932,12 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // time and at 100px Browse and Add both floored to x=154.
         for (int w : anyWidth)
             for (bool st : { false, true })
+            for (bool sc : { false, true })
             {
-                const auto r = refBarLayout ({ 10, 40, w, kRefBarH }, st);
+                const auto r = refBarLayout ({ 10, 40, w, kRefBarH }, st, sc);
                 std::vector<std::pair<const char*, juce::Rectangle<int>>> cs {
                     { "prev", r.prev }, { "next", r.next }, { "play", r.play },
+                    { "slot", r.slot }, { "scope", r.scope },
                     { "name", r.name }, { "status", r.status },
                     { "browse", r.browse }, { "add", r.add } };
                 for (size_t i = 0; i < cs.size(); ++i)
@@ -7785,10 +7954,11 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // prev | next | play | name | status | Browse | + Add
         for (int w : { 585, 900, 1380 })
         {
-            const auto r = refBarLayout ({ 10, 40, w, kRefBarH }, true);
+            const auto r = refBarLayout ({ 10, 40, w, kRefBarH }, true, false);
             check (r.prev.getX() < r.next.getX()
                    && r.next.getX() < r.play.getX()
-                   && r.play.getX() < r.name.getX()
+                   && r.play.getX() < r.slot.getX()
+                   && r.slot.getX() < r.name.getX()
                    && r.name.getX() < r.status.getX()
                    && r.status.getX() < r.browse.getX()
                    && r.browse.getX() < r.add.getX(),
@@ -7801,8 +7971,8 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // exists to show is elided.
         for (int w : anyWidth)
         {
-            const auto with    = refBarLayout ({ 10, 40, w, kRefBarH }, true);
-            const auto without = refBarLayout ({ 10, 40, w, kRefBarH }, false);
+            const auto with    = refBarLayout ({ 10, 40, w, kRefBarH }, true, false);
+            const auto without = refBarLayout ({ 10, 40, w, kRefBarH }, false, false);
             check (without.status.isEmpty(),
                    "rf PIN4: no status means no status rect");
             check (without.name.getWidth() >= with.name.getWidth(),
@@ -7815,8 +7985,8 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             // At a width where both fit, the name gains exactly the status
             // block. Asserted at one width rather than as an inequality, so a
             // change to the gap cannot pass by being "not narrower".
-            const auto with    = refBarLayout ({ 10, 40, 900, kRefBarH }, true);
-            const auto without = refBarLayout ({ 10, 40, 900, kRefBarH }, false);
+            const auto with    = refBarLayout ({ 10, 40, 900, kRefBarH }, true, false);
+            const auto without = refBarLayout ({ 10, 40, 900, kRefBarH }, false, false);
             check (without.name.getWidth() == with.name.getWidth()
                                               + kRefBarStatusW + kRefBarGap,
                    "rf PIN4: it gains exactly the status block and its gap",
@@ -7830,7 +8000,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // the end, because it still looks clickable.
         for (int w : { kRefBarMinW, 400, kRefBarMinWithStatusW, 565 })
         {
-            const auto r = refBarLayout ({ 10, 40, w, kRefBarH }, true);
+            const auto r = refBarLayout ({ 10, 40, w, kRefBarH }, true, false);
             check (r.name.getWidth() >= kRefBarNameMinW,
                    "rf PIN5: the name floors rather than vanishing",
                    "w=" + juce::String (w) + " name=" + juce::String (r.name.getWidth()));
@@ -7852,12 +8022,117 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "rf PIN5b: the real bar is always wide enough for the status",
                    "bar " + juce::String (narrowestBar) + " vs needs "
                    + juce::String (kRefBarMinWithStatusW));
-            check (refBarLayout ({ 10, 40, narrowestBar, kRefBarH }, true).status.getWidth()
+            check (refBarLayout ({ 10, 40, narrowestBar, kRefBarH }, true, false).status.getWidth()
                    == kRefBarStatusW,
                    "rf PIN5b: and at that width it is carried at full width");
-            check (refBarLayout ({ 10, 40, kRefBarMinW, kRefBarH }, true).status.isEmpty(),
+            check (refBarLayout ({ 10, 40, kRefBarMinW, kRefBarH }, true, false).status.isEmpty(),
                    "rf PIN5b: while at the bare minimum the status is DROPPED, "
                    "not drawn over the transport");
+        }
+
+        // rf PIN9 -- THE STATUS PRESENCE TRANSITION, the rule that couples the
+        // setter to the bar's layout.
+        //
+        // WHAT THESE PINS COVER AND WHAT THEY DO NOT. They cover the DECISION:
+        // which pairs of before/after count as a transition. They do NOT cover
+        // the relayout actually happening. That is one `if` and a resized()
+        // call inside setRefStatus, which is wiring in an editor method no
+        // headless test can reach, and no assertion here should be read as
+        // saying otherwise.
+        {
+            const juce::String none, a ("Analysing kick.wav..."), b ("Error: unsupported");
+
+            check (refStatusPresenceChanged (none, a),
+                   "rf PIN9: empty to a message is a transition");
+            check (refStatusPresenceChanged (a, none),
+                   "rf PIN9: and CLEARING is a transition too, not just setting");
+            check (! refStatusPresenceChanged (a, b),
+                   "rf PIN9: one message replacing another changes no rectangle");
+            check (! refStatusPresenceChanged (none, none),
+                   "rf PIN9: empty to empty is not a transition");
+            check (! refStatusPresenceChanged (a, a),
+                   "rf PIN9: nor is the same message set twice");
+
+            // SYMMETRY. The bar must reclaim its 184px on the way out exactly
+            // as it gives it up on the way in; a rule true in one direction
+            // only leaves the name permanently short after the first message.
+            check (refStatusPresenceChanged (none, a) == refStatusPresenceChanged (a, none),
+                   "rf PIN9: the rule is symmetric in the two directions");
+
+            // IT IS PRESENCE, NOT LENGTH OR CONTENT. Whitespace is a message:
+            // juce::String::isNotEmpty is what refBarLayout's caller passes, so
+            // this must agree with THAT predicate and not with a trimmed one.
+            const juce::String space (" ");
+            check (refStatusPresenceChanged (none, space),
+                   "rf PIN9: a space is a message, matching isNotEmpty");
+            check (! refStatusPresenceChanged (space, a),
+                   "rf PIN9: and going from a space to real text is no transition");
+
+            // THE COUPLING ITSELF: when this says nothing changed, the bar's
+            // rects must be identical. Asserted against refBarLayout rather
+            // than restated, so the two cannot drift apart.
+            const auto l1 = refBarLayout ({ 10, 40, 900, kRefBarH }, a.isNotEmpty(), false);
+            const auto l2 = refBarLayout ({ 10, 40, 900, kRefBarH }, b.isNotEmpty(), false);
+            check (! refStatusPresenceChanged (a, b)
+                   && l1.name == l2.name && l1.status == l2.status,
+                   "rf PIN9: no transition means the bar's rects really are the same");
+            const auto l0 = refBarLayout ({ 10, 40, 900, kRefBarH }, none.isNotEmpty(), false);
+            check (refStatusPresenceChanged (none, a) && l0.name != l1.name,
+                   "rf PIN9: and a transition means they really are not");
+        }
+
+        // rf PIN10 -- THE SLOT LETTER AND THE SCOPE CHIP.
+        //
+        // The slot letter is a RECT now. It was painted from
+        // rb.play.getRight() + 2 with a hardcoded width, spanning 108..120
+        // while the name began at 110, so it sat on top of the first
+        // characters of every reference name. rf PIN2 was blind to it because
+        // it was not in RefBarRects; bringing it in is what makes the overlap
+        // pin cover it.
+        {
+            for (int w : realWidths)
+                for (bool st : { false, true })
+                    for (bool sc : { false, true })
+                    {
+                        const auto r = refBarLayout ({ 10, 40, w, kRefBarH }, st, sc);
+                        check (! r.slot.isEmpty(),
+                               "rf PIN10: the slot letter always has a rect");
+                        check (! r.slot.intersects (r.name),
+                               "rf PIN10: and it never overlaps the name",
+                               "w=" + juce::String (w) + " slot " + r.slot.toString()
+                               + " name " + r.name.toString());
+                        check (r.slot.getX() >= r.play.getRight(),
+                               "rf PIN10: it sits after play, not over it");
+                    }
+
+            // NO SCOPE, NO CHIP: ALL REFERENCES is the default and a chip
+            // saying so would be noise on every bar.
+            const auto noScope = refBarLayout ({ 10, 40, 900, kRefBarH }, false, false);
+            check (noScope.scope.isEmpty(),
+                   "rf PIN10: no scope means no chip rect");
+            const auto withScope = refBarLayout ({ 10, 40, 900, kRefBarH }, false, true);
+            check (withScope.scope.getWidth() == kRefBarScopeW,
+                   "rf PIN10: a scope gets the chip at its full width");
+            check (noScope.name.getWidth()
+                   == withScope.name.getWidth() + kRefBarScopeW + kRefBarGap,
+                   "rf PIN10: and the name pays exactly the chip and its gap",
+                   juce::String (noScope.name.getWidth()) + " vs "
+                   + juce::String (withScope.name.getWidth()));
+
+            // PRIORITY: name, then status, then scope. Measured, not asserted:
+            // the narrowest real bar is 565, which carries name+status (526)
+            // and name+scope (430) but not all three (614). The status is the
+            // only thing that reports a failed drop and it is transient; the
+            // chip is context and comes back when the message clears.
+            check (kRefBarMinWithBothW > 565 && kRefBarMinWithStatusW <= 565
+                   && kRefBarMinWithScopeW <= 565,
+                   "rf PIN10: at the narrowest real bar, status fits and both do not");
+            const auto squeezed = refBarLayout ({ 10, 40, 565, kRefBarH }, true, true);
+            check (! squeezed.status.isEmpty() && squeezed.scope.isEmpty(),
+                   "rf PIN10: so the CHIP drops and the status stays, not the other way");
+            const auto roomy = refBarLayout ({ 10, 40, 741, kRefBarH }, true, true);
+            check (! roomy.status.isEmpty() && ! roomy.scope.isEmpty(),
+                   "rf PIN10: and at the default window both are carried");
         }
 
         // rf PIN8 -- THE SUB-TAB ROW. Two tabs, laid out once, hit-tested from
@@ -7914,8 +8189,12 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                "rf PIN6: both hold one, so the bar stays on B rather than guessing");
 
         // rf PIN7 -- STEPPING WRAPS, AND NEITHER ARROW IS EVER DEAD.
+        // REWORDED 14 Sep WHEN THE COUNT BECAME THE SCOPE'S. The function is
+        // unchanged and so is this assertion; what changed is what `count`
+        // MEANS at the call site. "An empty library" would now describe
+        // something false: the library may be full and the folder empty.
         check (refBarStep (-1, 0, +1) == -1 && refBarStep (-1, 0, -1) == -1,
-               "rf PIN7: an empty library steps nowhere");
+               "rf PIN7: an empty SCOPE steps nowhere, whatever the library holds");
         check (refBarStep (-1, 3, +1) == 0,
                "rf PIN7: from no selection, next lands on the first");
         check (refBarStep (-1, 3, -1) == 2,
@@ -7929,7 +8208,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         check (refBarStep (99, 3, +1) == 0 && refBarStep (-7, 3, -1) == 2,
                "rf PIN7: an out-of-range current is treated as no selection");
         {
-            // Stepping N times round a library of N returns where it started.
+            // Stepping N times round a SCOPE of N returns where it started.
             int at = 0;
             for (int i = 0; i < 5; ++i) at = refBarStep (at, 5, +1);
             check (at == 0, "rf PIN7: a full lap returns to the start",

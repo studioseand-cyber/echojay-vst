@@ -21,7 +21,15 @@ namespace echojay {
 
 struct RefBarRects
 {
-    juce::Rectangle<int> bar, prev, next, play, name, status, browse, add;
+    // slot is the A/B letter. IT IS A RECT NOW, and it was not: paint drew it
+    // from rb.play.getRight() + 2, spanning 108..120 while the name began at
+    // 110, so the letter sat on top of the first characters of every reference
+    // name. rf PIN2 could not see it because it was not in this struct, which
+    // is open list 152's family committed inside the bar that pin guards.
+    //
+    // scope names the folder the arrows step within. Empty for ALL REFERENCES:
+    // that is the default and a chip saying so would be noise on every bar.
+    juce::Rectangle<int> bar, prev, next, play, slot, scope, name, status, browse, add;
 };
 
 inline constexpr int kRefBarH        = 30;
@@ -34,6 +42,8 @@ inline constexpr int kRefBarPlayW    = 30;
 inline constexpr int kRefBarBrowseW  = 74;
 inline constexpr int kRefBarAddW     = 96;
 inline constexpr int kRefBarStatusW  = 180;
+inline constexpr int kRefBarSlotW    = 14;   // the A/B letter
+inline constexpr int kRefBarScopeW   = 84;   // the folder chip
 inline constexpr int kRefBarPad      = 6;
 inline constexpr int kRefBarNameMinW = 40;
 
@@ -48,12 +58,25 @@ inline constexpr int kRefBarMinW =
     + kRefBarBtnW  + kRefBarGap
     + kRefBarBtnW  + kRefBarGap
     + kRefBarPlayW + kRefBarGap
+    + kRefBarSlotW + kRefBarGap
     + kRefBarNameMinW + kRefBarGap
     + kRefBarBrowseW + kRefBarGap
     + kRefBarAddW;
 
 /** And the narrowest that can also carry the status block. */
 inline constexpr int kRefBarMinWithStatusW = kRefBarMinW + kRefBarStatusW + kRefBarGap;
+
+/** And with the scope chip on top of that.
+
+    PRIORITY WHEN THE WIDTH WILL NOT TAKE EVERYTHING: name, then status, then
+    scope. The status is the only thing that reports a failed drop and it is
+    transient; the chip is persistent context and returns the moment the
+    message clears. Measured: the narrowest bar the product can produce is 565
+    (900px window floor), which carries name + status at 526 and name + scope
+    at 430, but not all three at 614. So the chip drops only while a message is
+    showing at close to the minimum window, and it comes back by itself. */
+inline constexpr int kRefBarMinWithScopeW = kRefBarMinW + kRefBarScopeW + kRefBarGap;
+inline constexpr int kRefBarMinWithBothW  = kRefBarMinWithStatusW + kRefBarScopeW + kRefBarGap;
 
 /** Every rect on the bar, from the bar's own bounds.
 
@@ -77,7 +100,7 @@ inline constexpr int kRefBarMinWithStatusW = kRefBarMinW + kRefBarStatusW + kRef
     so controls run past the bar's end rather than shrinking to an unhittable
     size or landing on each other.
 */
-inline RefBarRects refBarLayout (juce::Rectangle<int> bar, bool hasStatus)
+inline RefBarRects refBarLayout (juce::Rectangle<int> bar, bool hasStatus, bool hasScope)
 {
     RefBarRects r;
     r.bar = bar;
@@ -90,13 +113,22 @@ inline RefBarRects refBarLayout (juce::Rectangle<int> bar, bool hasStatus)
     r.prev = place (x, kRefBarBtnW);
     r.next = place (x, kRefBarBtnW);
     r.play = place (x, kRefBarPlayW);
+    r.slot = place (x, kRefBarSlotW);      // the A/B letter, a rect at last
 
-    // The floor the right group may never cross: the end of the buttons plus
-    // the name's minimum plus its gap.
+    // THE SCOPE CHIP SITS BESIDE THE SLOT LETTER, at the head of the bar where
+    // the arrows are, because it says what the arrows step THROUGH. Dropped
+    // before the status is, per the priority above.
+    const bool carryStatus = hasStatus && bar.getWidth() >= kRefBarMinWithStatusW;
+    const bool carryScope  = hasScope
+                          && bar.getWidth() >= (carryStatus ? kRefBarMinWithBothW
+                                                            : kRefBarMinWithScopeW);
+    if (carryScope) r.scope = place (x, kRefBarScopeW);
+    else            r.scope = {};
+
+    // The floor the right group may never cross: the end of the head group
+    // plus the name's minimum plus its gap.
     const int nameLeft  = x;
     const int rightFloor = nameLeft + kRefBarNameMinW + kRefBarGap;
-
-    const bool carryStatus = hasStatus && bar.getWidth() >= kRefBarMinWithStatusW;
 
     // THE RIGHT GROUP IS PLACED AS ONE BLOCK, not as three independently
     // clamped rects. Clamping them one at a time was wrong in a way that
@@ -117,6 +149,34 @@ inline RefBarRects refBarLayout (juce::Rectangle<int> bar, bool hasStatus)
     r.name = { nameLeft, y,
                juce::jmax (kRefBarNameMinW, blockX - kRefBarGap - nameLeft), 22 };
     return r;
+}
+
+/** DOES THE BAR NEED LAYING OUT AGAIN?
+
+    refBarLayout takes hasStatus and gives the name region 184px more when there
+    is no message, so the ONE thing the bar's geometry depends on is whether a
+    status is PRESENT. Not what it says: a message replaced by another message
+    changes no rectangle.
+
+    WHY THIS IS A FUNCTION AND NOT TWO INLINE `isNotEmpty()` CALLS. It is the
+    rule that couples a setter to a layout, and a rule that lives only inside
+    the setter is true on the day it is written and unchecked afterwards. As a
+    pure function a pin can state it: transitions relayout, same-presence
+    changes do not, and clearing is a transition as much as setting is. The
+    relayout ACTUALLY HAPPENING is wiring in the setter and no pin here reaches
+    it.
+
+    SAFE TO ACT ON FROM THE SETTER, and that was established before it was
+    written rather than assumed: setRefStatus is reached from eight entry points
+    (the preset onChange lambda, two preset buttons, filesDropped,
+    loadReferenceFile, saveCurrentPreset, loadPreset, refBarStepBy) and
+    resized()'s entire 1532-line body calls none of them. resized() only READS
+    the label's text. So there is no write-from-layout edge and no re-entrancy.
+*/
+inline bool refStatusPresenceChanged (const juce::String& before,
+                                      const juce::String& after)
+{
+    return before.isNotEmpty() != after.isNotEmpty();
 }
 
 /** WHICH SLOT THE BAR DRIVES.

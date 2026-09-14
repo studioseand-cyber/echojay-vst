@@ -1033,6 +1033,10 @@ private:
     {
         std::vector<echojay::RefBrowserRow> rows;
         std::function<void(const echojay::RefBrowserRow&)> onRowClicked;
+        // Right-click is a SEPARATE signal, not a flag on the click: a menu
+        // and a selection are different actions and must not share a handler
+        // that has to remember which it is.
+        std::function<void(const echojay::RefBrowserRow&, juce::Point<int>)> onRowMenu;
         static constexpr int kRowH = 22;
 
         int rowAtY (int y) const
@@ -1046,8 +1050,14 @@ private:
         void mouseDown (const juce::MouseEvent& e) override
         {
             const int i = rowAtY (e.y);
-            if (i >= 0 && rows[(size_t) i].clickable && onRowClicked)
-                onRowClicked (rows[(size_t) i]);
+            if (i < 0) return;
+            const auto& row = rows[(size_t) i];
+            if (e.mods.isPopupMenu())
+            {
+                if (onRowMenu) onRowMenu (row, e.getScreenPosition());
+                return;
+            }
+            if (row.clickable && onRowClicked) onRowClicked (row);
         }
     };
 
@@ -1104,6 +1114,23 @@ private:
     echojay::RefSubTab refSubTab_ { echojay::RefSubTab::Compare };
     echojay::RefSubTabRects refSubTabRects_;
     void setRefSubTab (echojay::RefSubTab t);
+
+    // ---- Folders (browser commit two) ----
+    /** Inline folder naming. A TextEditor over the left pane rather than a
+        dialog: the browser is already a modal and a modal over a modal is a
+        stack the Escape key cannot describe. */
+    std::unique_ptr<juce::TextEditor> folderNameEditor_;
+    void beginNewFolder();
+    void beginRenameFolder (const juce::String& folder);
+    void commitFolderName (const juce::String& oldName, const juce::String& typed);
+    void deleteFolder (const juce::String& folder);
+    void setReferenceScope (const echojay::RefScope& s);
+    void showFolderRowMenu (const echojay::RefBrowserRow& row, juce::Point<int> screenPos);
+    void showReferenceRowMenu (const echojay::RefBrowserRow& row, juce::Point<int> screenPos);
+    /** Move a path into a folder, or out of every folder when target is empty.
+        ONE FOLDER EACH: it is removed from every other folder first, so the
+        model cannot drift into a path claimed twice. */
+    void assignReferenceToFolder (const juce::String& path, const juce::String& folder);
 
     void openReferenceBrowser (bool isTop);
     void closeReferenceBrowser();

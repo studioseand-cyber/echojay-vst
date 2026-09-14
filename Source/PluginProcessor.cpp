@@ -4065,6 +4065,26 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     for (auto& ref : refs)
         refsArr.add(ref.path);
     state->setProperty("referencePaths", refsArr);
+
+    // FOLDERS AND THE SELECTED SCOPE, beside the paths they key on. Written
+    // whether or not any exist, so a blob that has had folders and lost them
+    // says so rather than falling back to whatever was there before.
+    juce::Array<juce::var> foldersArr;
+    for (auto& f : referenceFolders)
+    {
+        auto* fo = new juce::DynamicObject();
+        fo->setProperty("name", f.name);
+        juce::Array<juce::var> ps;
+        for (auto& p : f.paths) ps.add(p);
+        fo->setProperty("paths", ps);
+        foldersArr.add(juce::var(fo));
+    }
+    state->setProperty("referenceFolders", foldersArr);
+    state->setProperty("referenceScopeKind",
+                       referenceScope.kind == echojay::RefScope::Kind::Folder  ? "folder"
+                     : referenceScope.kind == echojay::RefScope::Kind::Unfiled ? "unfiled"
+                                                                               : "all");
+    state->setProperty("referenceScopeFolder", referenceScope.folder);
     
     // Visual mode state
     state->setProperty("visualPreset", visualPreset);
@@ -4349,6 +4369,35 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
                 refAnalyser.analyseFiles(refFiles, [](bool, const juce::String&) {});
         }
         
+        // Restore folders and the scope. ABSENT IS NOT EMPTY on the scope: a
+        // blob written before folders existed has no key, and that must read
+        // as ALL rather than as a folder named "".
+        referenceFolders.clear();
+        if (auto* fArr = obj->getProperty("referenceFolders").getArray())
+            for (auto& fv : *fArr)
+                if (auto* fo = fv.getDynamicObject())
+                {
+                    echojay::RefFolder f;
+                    f.name = fo->getProperty("name").toString();
+                    if (auto* ps = fo->getProperty("paths").getArray())
+                        for (auto& pv : *ps) f.paths.push_back(pv.toString());
+                    if (f.name.isNotEmpty()) referenceFolders.push_back(f);
+                }
+        {
+            const auto k = obj->getProperty("referenceScopeKind").toString();
+            referenceScope = {};
+            if (k == "folder")
+            {
+                referenceScope.kind   = echojay::RefScope::Kind::Folder;
+                referenceScope.folder = obj->getProperty("referenceScopeFolder").toString();
+            }
+            else if (k == "unfiled")
+                referenceScope.kind = echojay::RefScope::Kind::Unfiled;
+            // A scope naming a folder that is no longer there falls back to
+            // ALL, which is the same rule the rows function applies.
+            referenceScope = echojay::refScopeOrAll(referenceScope, referenceFolders);
+        }
+
         // Restore visual mode state
         if (obj->hasProperty("visualPreset"))
             visualPreset = (int)obj->getProperty("visualPreset");

@@ -5,6 +5,7 @@
 #include "MeterEngine.h"
 #include "PluginScanner.h"
 #include "ReferenceAnalyser.h"
+#include "EJReferenceRows.h"   // reference folders and the selected scope
 #include "WaveformRecorder.h"
 #include "ChainHost.h"
 #include "EchoJayAPI.h"
@@ -861,6 +862,18 @@ public:
         me back where I was in this session", and a fresh instance starting at
         0 is what makes Dashboard the default on first launch after update. */
     int lastTabIndex = 0;
+    // REFERENCE FOLDERS, and the scope the ARROWS step within.
+    //
+    // On the processor rather than the editor because the scope is not browser
+    // state: the reference bar's prev and next use it with the panel closed,
+    // and an editor recreate (every Logic Link window switch) must not silently
+    // widen it back to the whole library.
+    //
+    // MEMBERSHIP KEYS ON PATH because references have no ids yet. Item 137 owns
+    // the migration when they do, and this is one of the places it has to
+    // touch: a folder full of paths outlives a blob that has moved to ids.
+    std::vector<echojay::RefFolder> referenceFolders;
+    echojay::RefScope               referenceScope;
 
     // ===== Session C: the community poll ==================================
     //
@@ -1108,6 +1121,7 @@ private:
     MeterEngine cmpMeter[2];       // Compare stream meters (one per slot)
     PluginScanner pluginScanner;
     ReferenceAnalyser refAnalyser;
+
     WaveformRecorder waveformRecorder; // Audio recording + waveform thumbnail
     ChainHost chainHost;           // Plugin chain hosting (CHAIN tab)
     // Declared AFTER chainHost and before nothing that uses it at

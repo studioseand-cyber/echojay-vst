@@ -1,6 +1,7 @@
 #include "EJDialWrites.h"
 #include "EJCaptureChannels.h"
 #include "PluginEditor.h"
+#include <algorithm>   // std::remove / std::remove_if, folder membership
 #include "DashboardWeb.h"        // stage 2: the lazy webview Dashboard surface
 #include "ChainPluginPicker.h"   // P13: the searchable "+" picker (shared with the Link)
 #include "EJStreamBlockParser.h" // incremental block parser (spec step 3/4)
@@ -1419,9 +1420,17 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     refBrowser_.rightView.setScrollBarsShown(true, false);
     refBrowser_.addAndMakeVisible(refBrowser_.leftView);
     refBrowser_.addAndMakeVisible(refBrowser_.rightView);
-    // The left pane's one entry is the current scope already; clicking it is a
-    // no-op until folders exist, so it selects nothing and says nothing.
-    refBrowser_.leftList.onRowClicked = [](const echojay::RefBrowserRow&) {};
+    refBrowser_.leftList.onRowClicked = [this](const echojay::RefBrowserRow& row)
+    {
+        if (row.kind == echojay::RefBrowserRow::Kind::NewFolder) { beginNewFolder(); return; }
+        if (row.kind == echojay::RefBrowserRow::Kind::Category)  setReferenceScope (row.scope);
+    };
+    refBrowser_.leftList.onRowMenu = [this](const echojay::RefBrowserRow& row,
+                                            juce::Point<int> p)
+    { showFolderRowMenu (row, p); };
+    refBrowser_.rightList.onRowMenu = [this](const echojay::RefBrowserRow& row,
+                                             juce::Point<int> p)
+    { showReferenceRowMenu (row, p); };
     refBrowser_.rightList.onRowClicked = [this](const echojay::RefBrowserRow& row)
     {
         if (row.kind == echojay::RefBrowserRow::Kind::Invite)
@@ -4958,12 +4967,37 @@ void EchoJayEditor::filesDropped(const juce::StringArray& files, int, int)
 // and visibility move together here so that cannot come apart again.
 void EchoJayEditor::setRefStatus(const juce::String& msg)
 {
+    // Read BEFORE the write: the layout decision below compares presence
+    // across this call, and setText is what changes it.
+    const juce::String before = refStatusLabel.getText();
+
     refStatusLabel.setText(msg, juce::dontSendNotification);
     // Compare is the only view that lays this label out, so it is the only
     // view that may show it. Leaving the text set means re-entering Compare
     // brings a standing message back rather than losing it.
     refStatusLabel.setVisible(msg.isNotEmpty() && currentView == View::Compare);
     refStatusLabel.toFront(false);
+
+    // THE BAR'S GEOMETRY DEPENDS ON WHETHER A STATUS IS PRESENT, and on
+    // nothing else about it: refBarLayout hands the name region 184px more
+    // when there is none. So the name must give up or reclaim that space AT
+    // THE MOMENT the message appears or disappears, not on the next unrelated
+    // layout, which until now was whenever the window happened to move.
+    //
+    // ONLY ON A TRANSITION. A message replaced by another message changes no
+    // rectangle, so sixteen call sites do not each pay for a layout pass.
+    //
+    // THIS IS A SETTER DRIVING LAYOUT, WHICH IS NORMALLY WRONG, and it is done
+    // here deliberately rather than in the callers. The alternative was a
+    // resized() call at each site that can change presence, which is an audit
+    // sixteen sites wide where getting it wrong is silent. What makes it safe
+    // is not a guard: resized() is reached from nowhere that writes this label
+    // (checked across its whole body against all eight entry points), so there
+    // is no cycle to re-enter. A re-entrancy guard would have stopped a crash
+    // and left the cycle; there is no cycle.
+    if (echojay::refStatusPresenceChanged (before, msg))
+        resized();
+
     repaint();
 }
 
@@ -6181,15 +6215,34 @@ int EchoJayEditor::refBarCurrentIndex() const
 
 void EchoJayEditor::refBarStepBy (int delta)
 {
-    const int count = (int) processorRef.getReferenceAnalyser().getReferences().size();
-    const int next  = echojay::refBarStep (refBarCurrentIndex(), count, delta);
-    if (next < 0)
+    const auto entries = refBrowserEntries();
+    const auto& folders = processorRef.referenceFolders;
+    const auto  scope   = echojay::refScopeOrAll (processorRef.referenceScope, folders);
+
+    // THE COUNT IS THE SCOPE'S, NOT THE LIBRARY'S. refBarStep already took a
+    // count, so stepping within a folder needed no change to the rule, only a
+    // different number handed to it.
+    const int count = echojay::refScopeCount (entries, folders, scope);
+    if (count <= 0)
     {
-        // Nothing to step through. Say so where the user is looking rather
-        // than leaving a press that appears to do nothing.
-        setRefStatus ("No references to step through. Add one first.");
+        // AN EMPTY FOLDER NAMES ITSELF. "No references" would be false: there
+        // are references, just not in here, and a message that contradicts the
+        // left pane is worse than no message.
+        const auto chip = echojay::refScopeChipText (scope);
+        setRefStatus (chip.isEmpty()
+                        ? juce::String ("No references to step through. Add one first.")
+                        : "Nothing in " + chip + " to step through.");
         return;
     }
+
+    // Current position is translated INTO the scope and the answer back OUT of
+    // it, so a library index never leaks into the stepping arithmetic.
+    const int here = echojay::refLibraryIndexToScope (entries, folders, scope,
+                                                      refBarCurrentIndex());
+    const int nth  = echojay::refBarStep (here, count, delta);
+    const int next = echojay::refScopeIndexToLibrary (entries, folders, scope, nth);
+    if (next < 0) return;
+
     // THROUGH THE ONE WRITER, the same call the slot menu and the browser make.
     applyReferenceToSlot (refBarIsTop(), next);
     refBrowserSelected_ = next;
@@ -6198,7 +6251,9 @@ void EchoJayEditor::refBarStepBy (int delta)
 
 juce::String EchoJayEditor::refBrowserTitleText() const
 {
-    return echojay::refBrowserTitle (refBrowserEntries(), refBrowserSelected_);
+    return echojay::refBrowserTitle (refBrowserEntries(),
+                                     processorRef.referenceScope,
+                                     refBrowserSelected_);
 }
 
 std::vector<echojay::RefBrowserEntry> EchoJayEditor::refBrowserEntries() const
@@ -6212,13 +6267,200 @@ std::vector<echojay::RefBrowserEntry> EchoJayEditor::refBrowserEntries() const
 void EchoJayEditor::refreshReferenceBrowser()
 {
     const auto entries = refBrowserEntries();
-    const auto panes   = echojay::buildReferenceBrowserRows (entries, refBrowserSelected_);
+    const auto panes   = echojay::buildReferenceBrowserRows (
+                             entries, processorRef.referenceFolders,
+                             processorRef.referenceScope, refBrowserSelected_);
     refBrowser_.leftList .rows = panes.left;
     refBrowser_.rightList.rows = panes.right;
     refBrowser_.resized();
     refBrowser_.leftList .repaint();
     refBrowser_.rightList.repaint();
     refBrowser_.repaint();
+}
+
+// ============================================================================
+// Reference folders (browser commit two)
+// ============================================================================
+//
+// ONE FOLDER EACH. Every one of these goes through the same rule: a path is
+// removed from every folder before it is added to one, so the model cannot
+// drift into a path claimed twice. The rows function tolerates it (the earlier
+// folder wins, pinned) but tolerating is not the same as allowing.
+
+void EchoJayEditor::setReferenceScope (const echojay::RefScope& s)
+{
+    processorRef.referenceScope = echojay::refScopeOrAll (s, processorRef.referenceFolders);
+    // The bar's chip appears or disappears with this, and the chip changes the
+    // bar's geometry, so the layout has to run.
+    resized();
+    refreshReferenceBrowser();
+    repaint();
+}
+
+void EchoJayEditor::assignReferenceToFolder (const juce::String& path,
+                                             const juce::String& folder)
+{
+    for (auto& f : processorRef.referenceFolders)
+        f.paths.erase (std::remove (f.paths.begin(), f.paths.end(), path), f.paths.end());
+    if (folder.isNotEmpty())
+        for (auto& f : processorRef.referenceFolders)
+            if (f.name == folder) { f.paths.push_back (path); break; }
+    refreshReferenceBrowser();
+    repaint();
+}
+
+void EchoJayEditor::deleteFolder (const juce::String& folder)
+{
+    // DELETING A FOLDER NEVER DELETES REFERENCES. Its members become unfiled,
+    // which is what dropping the folder record does by itself: membership
+    // lives here, not on the reference.
+    auto& fs = processorRef.referenceFolders;
+    fs.erase (std::remove_if (fs.begin(), fs.end(),
+                              [&] (const echojay::RefFolder& f) { return f.name == folder; }),
+              fs.end());
+    // If it was the selected scope, refScopeOrAll drops us back to ALL rather
+    // than leaving an empty pane nobody can account for.
+    setReferenceScope (processorRef.referenceScope);
+}
+
+void EchoJayEditor::commitFolderName (const juce::String& oldName, const juce::String& typed)
+{
+    const auto name = typed.trim();
+    if (folderNameEditor_ != nullptr)
+    {
+        auto* te = folderNameEditor_.release();
+        juce::MessageManager::callAsync ([te] { delete te; });
+    }
+    if (name.isEmpty()) { refreshReferenceBrowser(); repaint(); return; }
+
+    // A NAME ALREADY IN USE IS REFUSED, and says so, rather than silently
+    // merging two folders or making two rows that look identical.
+    for (auto& f : processorRef.referenceFolders)
+        if (f.name == name && f.name != oldName)
+        {
+            setRefStatus ("There is already a folder called " + name);
+            refreshReferenceBrowser(); repaint();
+            return;
+        }
+
+    if (oldName.isEmpty())
+    {
+        processorRef.referenceFolders.push_back ({ name, {} });
+    }
+    else
+    {
+        for (auto& f : processorRef.referenceFolders)
+            if (f.name == oldName) { f.name = name; break; }
+        // The selected scope names a folder by name, so a rename has to carry
+        // it or the scope falls back to ALL the moment the user renames the
+        // folder they are looking at.
+        if (processorRef.referenceScope.kind == echojay::RefScope::Kind::Folder
+            && processorRef.referenceScope.folder == oldName)
+            processorRef.referenceScope.folder = name;
+    }
+    setReferenceScope (processorRef.referenceScope);
+}
+
+void EchoJayEditor::beginNewFolder()      { beginRenameFolder ({}); }
+
+void EchoJayEditor::beginRenameFolder (const juce::String& folder)
+{
+    if (folderNameEditor_ != nullptr) return;   // one at a time
+
+    // Positioned over the left pane, which is where the row is. The browser is
+    // already a modal; a dialog on top of it would be a second modal whose
+    // relationship to Escape nobody could state.
+    const auto r = RefBrowserPanel::layoutFor (refBrowser_.getLocalBounds());
+    folderNameEditor_ = std::make_unique<juce::TextEditor>();
+    auto* te = folderNameEditor_.get();
+    te->setFont (juce::Font (juce::FontOptions (11.0f)));
+    te->setText (folder, juce::dontSendNotification);
+    te->selectAll();
+    te->setBounds (r.leftPane.getX() + 4, r.leftPane.getY() + 4,
+                   r.leftPane.getWidth() - 8, 22);
+    te->setColour (juce::TextEditor::backgroundColourId, C::bg3);
+    te->setColour (juce::TextEditor::textColourId, C::text);
+    te->setColour (juce::TextEditor::outlineColourId, C::blue);
+    te->setColour (juce::TextEditor::focusedOutlineColourId, C::blue);
+    refBrowser_.addAndMakeVisible (te);
+    te->grabKeyboardFocus();
+
+    auto safe = juce::Component::SafePointer<EchoJayEditor> (this);
+    te->onReturnKey  = [safe, folder] { if (safe) safe->commitFolderName (folder, safe->folderNameEditor_ != nullptr ? safe->folderNameEditor_->getText() : juce::String()); };
+    te->onEscapeKey  = [safe, folder] { if (safe) safe->commitFolderName (folder, {}); };
+    te->onFocusLost  = [safe, folder] { if (safe) safe->commitFolderName (folder, safe->folderNameEditor_ != nullptr ? safe->folderNameEditor_->getText() : juce::String()); };
+}
+
+void EchoJayEditor::showFolderRowMenu (const echojay::RefBrowserRow& row, juce::Point<int> screenPos)
+{
+    if (row.scope.kind != echojay::RefScope::Kind::Folder) return;   // ALL and UNFILED are not editable
+    const auto folder = row.scope.folder;
+    juce::PopupMenu m;
+    m.setLookAndFeel (&lnf);
+    m.addItem (1, "Rename \"" + folder + "\"");
+    m.addItem (2, "Delete \"" + folder + "\"");
+    auto safe = juce::Component::SafePointer<EchoJayEditor> (this);
+    m.showMenuAsync (juce::PopupMenu::Options()
+                       .withTargetScreenArea ({ screenPos.x, screenPos.y, 1, 1 }),
+        [safe, folder] (int r)
+        {
+            if (safe == nullptr) return;
+            if (r == 1) safe->beginRenameFolder (folder);
+            else if (r == 2)
+            {
+                // PERMANENT for the folder, and harmless for the references.
+                // Said in the confirmation because "delete" on a container is
+                // the word people expect to take the contents with it.
+                juce::AlertWindow::showOkCancelBox (
+                    juce::MessageBoxIconType::QuestionIcon,
+                    "Delete folder",
+                    "Delete the folder \"" + folder + "\"?\n\n"
+                    "The references in it are NOT deleted. They become unfiled.",
+                    "Delete", "Cancel", nullptr,
+                    juce::ModalCallbackFunction::create ([safe, folder] (int ok)
+                    {
+                        if (safe != nullptr && ok == 1) safe->deleteFolder (folder);
+                    }));
+            }
+        });
+}
+
+void EchoJayEditor::showReferenceRowMenu (const echojay::RefBrowserRow& row, juce::Point<int> screenPos)
+{
+    if (row.path.isEmpty()) return;
+    const auto path = row.path;
+    const auto here = echojay::refFolderOf (processorRef.referenceFolders, path);
+
+    juce::PopupMenu moveTo;
+    int id = 100;
+    std::vector<juce::String> targets;
+    for (auto& f : processorRef.referenceFolders)
+    {
+        // The folder it is already in is ticked rather than hidden, so the
+        // menu says where the reference IS as well as where it can go.
+        moveTo.addItem (id++, f.name, true, f.name == here);
+        targets.push_back (f.name);
+    }
+    if (targets.empty())
+        moveTo.addItem (99, "No folders yet", false, false);
+    else
+        moveTo.addItem (98, juce::String (echojay::kRefBrowserUnfiledName()),
+                        here.isNotEmpty(), here.isEmpty());
+
+    juce::PopupMenu m;
+    m.setLookAndFeel (&lnf);
+    m.addSubMenu ("Move to", moveTo);
+    auto safe = juce::Component::SafePointer<EchoJayEditor> (this);
+    m.showMenuAsync (juce::PopupMenu::Options()
+                       .withTargetScreenArea ({ screenPos.x, screenPos.y, 1, 1 }),
+        [safe, path, targets] (int r)
+        {
+            if (safe == nullptr || r == 0 || r == 99) return;
+            if (r == 98) { safe->assignReferenceToFolder (path, {}); return; }
+            const int idx = r - 100;
+            if (idx >= 0 && idx < (int) targets.size())
+                safe->assignReferenceToFolder (path, targets[(size_t) idx]);
+        });
 }
 
 void EchoJayEditor::openReferenceBrowser (bool isTop)
@@ -11187,11 +11429,29 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
 
         // Which slot the bar is driving, stated rather than assumed. Without
         // it the arrows change something the user cannot see they aimed at.
+        //
+        // FROM ITS OWN RECT NOW. This used to be drawn at rb.play.getRight()+2
+        // with a hardcoded 12px width, spanning 108..120 while the name began
+        // at 110, so the letter was painted ON TOP of the first characters of
+        // every reference name. A rect computed in paint, invisible to rf PIN2
+        // because it was not in RefBarRects. Open list 152's family, inside the
+        // bar that pin exists to guard.
         g.setColour (C::text3);
         g.setFont (juce::Font (juce::FontOptions (8.5f, juce::Font::bold)));
-        g.drawText (refBarIsTop() ? "A" : "B",
-                    rb.play.getRight() + 2, rb.bar.getY(), 12, rb.bar.getHeight(),
-                    juce::Justification::centred);
+        g.drawText (refBarIsTop() ? "A" : "B", rb.slot, juce::Justification::centred);
+
+        // THE SCOPE CHIP: what the arrows step through, beside the arrows.
+        // Empty rect when the scope is ALL REFERENCES or when the bar is too
+        // narrow to carry it alongside a message.
+        if (! rb.scope.isEmpty())
+        {
+            const auto chip = echojay::refScopeChipText (processorRef.referenceScope);
+            g.setColour (C::blue.withAlpha (0.18f));
+            g.fillRoundedRectangle (rb.scope.toFloat().reduced (0.0f, 3.0f), 4.0f);
+            g.setColour (C::blue);
+            g.setFont (juce::Font (juce::FontOptions (8.5f, juce::Font::bold)));
+            g.drawText (chip, rb.scope.reduced (4, 0), juce::Justification::centred, true);
+        }
     }
 
     // refRemoveBtns went with the tag grid: the browser is where a reference
@@ -20518,7 +20778,8 @@ void EchoJayEditor::resized()
         // narrower for the old preset row's right inset.
         refBarRects_ = echojay::refBarLayout (
             { cPad, cy2, mW - cPad * 2, echojay::kRefBarH },
-            refStatusLabel.getText().isNotEmpty());
+            refStatusLabel.getText().isNotEmpty(),
+            processorRef.referenceScope.kind != echojay::RefScope::Kind::All);
         refPrevBtn  .setBounds (refBarRects_.prev);
         refNextBtn  .setBounds (refBarRects_.next);
         refPlayBtn  .setBounds (refBarRects_.play);
