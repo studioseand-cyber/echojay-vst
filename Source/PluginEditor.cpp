@@ -33914,6 +33914,719 @@ void EchoJayEditor::saveChatTextScale()
 // Reference Presets
 // ============================================================================
 
+bool EchoJayEditor::keyPressed(const juce::KeyPress& key)
+{
+    // Don't handle keys when typing in text editors
+    if (chatInput.hasKeyboardFocus(false) || emailInput.hasKeyboardFocus(false) ||
+        passwordInput.hasKeyboardFocus(false) || settingsName.hasKeyboardFocus(false) ||
+        settingsMonitors.hasKeyboardFocus(false) || settingsHeadphones.hasKeyboardFocus(false) ||
+        settingsGenres.hasKeyboardFocus(false) || settingsPlugins.hasKeyboardFocus(false) ||
+        reviewSearchBox.hasKeyboardFocus(false))
+        return false;
+
+
+    // Spacebar — stop capture or toggle AB playback
+    if (key == juce::KeyPress::spaceKey && currentScreen == Screen::Main
+        && !channelPromptVisible && !genrePromptVisible
+        // Stage 2, keyboard: the guard above only covers named JUCE TextEditors;
+        // the webview is a native WKWebView, not one. Determined from the code
+        // (WebBrowserComponent::focusGainedWithDirection makes the WKWebView the
+        // macOS first responder, and this editor gets keys via component focus
+        // with no global listener), keyPressed should NOT fire while the user
+        // types in the page — the native view consumes the key. This gate is the
+        // defensive belt for the residual case where JUCE focus and the native
+        // first responder are momentarily out of sync: while the webview holds
+        // keyboard focus, space is the page's, never the transport's. The
+        // reliable long-term signal is the §8 focusChanged bridge, out of scope
+        // until messaging. Manual matrix (Part D) confirms empirically.
+        && !(dashWeb_ != nullptr && dashWeb_->hasKeyboardFocus(true)))
+    {
+        auto s = processorRef.getCaptureState();
+        if (s == CaptureState::Capturing)
+        {
+            processorRef.stopCapture();
+            return true;
+        }
+        
+        // Toggle AB playback with spacebar
+        if (processorRef.abActive.load())
+        {
+            if (processorRef.abPlayingRef.load()) {
+                processorRef.pauseAB();
+                currentlyPlayingChatWav.clear();
+            } else {
+                processorRef.resumeAB();
+                currentlyPlayingChatWav = processorRef.abFilePath;
+            }
+            repaint();
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void EchoJayEditor::mouseDrag(const juce::MouseEvent& e)
+{
+    // Only the bus fader drags at editor level; everything else keeps its
+    // component-local streams. Incremental, re-anchored per event, the
+    // channel faders' exact model including the shift fine ratio; applied
+    // to the processor immediately (atomic store + smoother, no throttle
+    // needed for a local value).
+    if (!busFaderDragging_) return;
+    const int y = e.getPosition().y;
+    const bool pre = linkFaderModeIsPre();
+    const float span = pre ? 48.0f : 36.0f;
+    const float lo = -24.0f, hi = pre ? 24.0f : 12.0f;
+    const float rate = gainPerPixelRanged(linkBusGeom_.faderImg, span)
+                     * (e.mods.isShiftDown() ? kFaderFineRatio : 1.0f);
+    if (pre)
+    {
+        auto& ch = processorRef.getChainHost();
+        ch.setPreGainDb(juce::jlimit(lo, hi,
+            std::round((ch.getPreGainDb() + (float)(busFaderLastY_ - y) * rate) * 10.0f) / 10.0f), true);
+        processorRef.markStateDirty();
+    }
+    else
+    {
+        processorRef.setBusGainDb(juce::jlimit(lo, hi,
+            std::round((processorRef.getBusGainDb()
+                        + (float)(busFaderLastY_ - y) * rate) * 10.0f) / 10.0f));
+    }
+    busFaderLastY_ = y;
+    repaint();
+}
+
+void EchoJayEditor::mouseUp(const juce::MouseEvent&)
+{
+    busFaderDragging_ = false;
+}
+
+void EchoJayEditor::mouseWheelMove(const juce::MouseEvent& e,
+                                   const juce::MouseWheelDetails& w)
+{
+    // The pinned bus strip is painted by the editor, not by LinkMixerView,
+    // so its wheel events land here. Same rule as the Link strips: consume
+    // only when that rack list can actually scroll, otherwise leave the
+    // event exactly as it behaved before this existed.
+    if (currentTab == Tab::Link && linkMixerViewport_.isVisible()
+        && !linkBusGeom_.full.isEmpty())
+    {
+        const auto p = e.getEventRelativeTo(this).getPosition();
+        if (linkBusGeom_.full.contains(p) && linkChainWheel(linkBusGeom_, p, w.deltaY))
+            return;
+    }
+    juce::AudioProcessorEditor::mouseWheelMove(e, w);
+}
+
+void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
+{
+    auto pos = e.getEventRelativeTo(this).getPosition();
+
+    // Project prompt scrim blocks everything painted beneath it. This
+    // handler only fires for clicks NOT on child components, so the
+    // prompt's own input/buttons still work.
+    if (projectPromptVisible)
+        return;
+
+    // ---- Chain sidebar: AI | Chains ----
+    // CONSUMES the rects resized() stored. An empty rect (wrong tab, wrong
+    // mode, scrolled off the bottom) cannot contain a point, so no click can
+    // reach something that is not on screen.
+    if (chainModeAiRect_.contains(pos))     { setChainSidebarMode(false); return; }
+    if (chainModeChainsRect_.contains(pos)) { setChainSidebarMode(true);  return; }
+
+    for (int i = 0; i < (int)chainRowRects_.size(); ++i)
+    {
+        if (!chainRowRects_[(size_t)i].contains(pos)) continue;
+        if (chainRowIsHeading_[(size_t)i] != 0) return;      // heading, not a row
+        // isPopupMenu(), NOT "is right button": on a Mac trackpad the gesture
+        // is ctrl-click, and testing the button directly would leave every
+        // trackpad user with no context menu at all.
+        if (e.mods.isPopupMenu()) { showChainRowMenu(i); return; }
+        // The star is checked FIRST: it sits inside the row rect, so a row
+        // hit test that ran first would swallow every favourite click. It
+        // stays alongside the menu: one click to favourite is worth keeping,
+        // the menu is for discovery.
+        if (chainRowStarRects_[(size_t)i].contains(pos)) { toggleChainFavourite(i); return; }
+        const auto& row = chainDisplayRows_[(size_t)i];
+        // MERGE (21 Aug): the trunk's beginRecall supersedes the direct
+        // openSavedChain call this branch had here — the row click now gets
+        // the recall replace ask AND recallLoadChain's full reporting hooks.
+        if (row.id.isNotEmpty()) beginRecall(row.id, row.name);   // Item 4: guarded + active-view target
+        return;
+    }
+
+    // Channel banner = THE channel selector (painted control; the rect is
+    // authored in resized, so this hit test measures nothing).
+    if (currentScreen == Screen::Main && !channelBannerRect_.isEmpty()
+        && chatInput.isVisible() && channelBannerRect_.contains(pos))
+    {
+        showChannelBannerMenu();
+        return;
+    }
+
+    // Update overlay clicks are handled by the UpdateOverlay child component itself.
+
+    // SPECTRUM / SPECTROGRAM header toggle (SPECTRUM panel on METERS).
+    // Rects are cached during paint; only live while the meter panels show.
+    if (currentScreen == Screen::Main && currentView == View::Meters && !visualMode)
+    {
+        if (!spectrogramMode_ && spectrogramToggleRect_.contains(pos))
+        { spectrogramMode_ = true;  saveSpectrogramMode(); repaint(); return; }
+        if (spectrogramMode_ && spectrumToggleRect_.contains(pos))
+        { spectrogramMode_ = false; saveSpectrogramMode(); repaint(); return; }
+        // KEY panel RE-ANALYSE (rect cached during paint, empty when no source)
+        if (!keyReanalyseRect_.isEmpty() && keyReanalyseRect_.contains(pos))
+        { triggerKeyReanalyse(); repaint(); return; }
+        // KEY panel SOURCE selector (§7) — one menu, both panel forms
+        if (!keySourceMenuRect_.isEmpty() && keySourceMenuRect_.contains(pos))
+        { showKeySourceMenu(); return; }
+    }
+
+    // Tab bar click. CONSUMES tabRects_ via tabIndexAt, MEASURES NOTHING.
+    // This used to declare its own kTabCount = 7 and divide getWidth() itself,
+    // eleven thousand lines from the identical division in paint(). The hit
+    // test now literally cannot disagree with what was drawn, because it reads
+    // the same rects.
+    if (currentScreen == Screen::Main && !visualOnlyMode && !compactMode)
+    {
+        const int idx = tabIndexAt (pos);
+        if (idx >= 0)
+        {
+            switchToTab(static_cast<Tab>(idx));
+            return;
+        }
+    }
+
+    // usage-v2 banner dismiss (per session)
+    if (chatBannerVisible_ && chatBannerCloseRect_.contains(pos))
+    {
+        fastModelBannerDismissed_ = true;
+        chatBannerVisible_ = false;
+        resized(); repaint();
+        return;
+    }
+
+    // LINK tab: the pinned Mix Bus strip is painted by the editor, so its
+    // presses arrive HERE rather than in LinkMixerView. It consumes the stored
+    // linkBusGeom_ rects and routes through the SAME stripHitAt precedence the
+    // Link strips use; there is one hit-test contract, not one per surface.
+    // Gated on the viewport's visibility so a stale rect cannot be clicked on
+    // another tab, which is the same predicate discipline the assistant zones
+    // below use.
+    if (currentTab == Tab::Link && linkMixerViewport_.isVisible())
+    {
+        // View controls first (they sit above the band, so the rects are
+        // disjoint from the strips; the order is tidiness, not load-bearing).
+        // Same stored zones the panel painter consumes.
+        for (const auto& z : linkCtrlZones_)
+            if (z.rect.contains(e.getPosition()))
+            {
+                linkCtrlClicked(z.id);
+                return;
+            }
+        if (!linkBusGeom_.full.isEmpty()
+            && linkBusGeom_.full.contains(e.getPosition()))
+        {
+            linkStripMouseDown(linkBusGeom_, e.getPosition(),
+                               e.getNumberOfClicks());
+            return;
+        }
+    }
+
+    // Assistant-drawn hit-zones (gain cards, wave cards) — gated on the SAME
+    // predicate as the paint block, so a stale zone can never be clicked on a
+    // tab without the sidebar even if a repaint hasn't cleared it yet.
+    const bool assistantHit = assistantSidebarVisible();
+
+    // AI gain-proposal Apply/Undo cards — direct hit testing in the editor's
+    // OWN mouseDown (the path that actually fires; the viewport's onClickCheck
+    // does not reliably run for these, same class as the centred-input bug —
+    // the cards are editor-painted, so they need the editor-level hit test).
+    if (!gainCardZones_.empty())
+    {
+        // Route log: with zones live, every click says where it landed and
+        // whether the gate passed, so a dead press points at its branch.
+        EchoJay_NSLog(("EJGainCard: editor click pos=" + juce::String(pos.x)
+                       + "," + juce::String(pos.y)
+                       + " zones=" + juce::String((int)gainCardZones_.size())
+                       + " gate=" + juce::String((int)assistantHit)).toRawUTF8());
+    }
+    if (assistantHit && !gainCardZones_.empty())
+    {
+        for (auto& gz : gainCardZones_)
+            if (gz.rect.contains(pos))
+            {
+                EchoJay_NSLog("EJGainCard: editor route hit");
+                applyGainProposal(gz);
+                return;
+            }
+    }
+
+    // Chat wave card click — direct hit testing (works on Windows where overlays fail)
+    if (assistantHit && !chatWavePositions.empty())
+    {
+        for (int i = 0; i < (int)chatWavePositions.size(); ++i)
+        {
+            auto& wp = chatWavePositions[(size_t)i];
+            if (wp.bounds.contains(pos))
+            {
+                int localX = pos.x - wp.bounds.getX();
+                int playBtnArea = 30;
+                if (localX <= playBtnArea)
+                {
+                    // Find matching index in wavePlayPaths
+                    for (int j = 0; j < activeWavePlayBtns; ++j)
+                    {
+                        if (wavePlayPaths[(size_t)j] == wp.wavPath)
+                        {
+                            onWavePlayClick(j);
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    // Seek
+                    int wfStart = playBtnArea;
+                    int wfWidth = wp.bounds.getWidth() - wfStart - 6;
+                    if (wfWidth > 0)
+                    {
+                        float frac = juce::jlimit(0.0f, 1.0f, (float)(localX - wfStart) / (float)wfWidth);
+                        for (int j = 0; j < activeWavePlayBtns; ++j)
+                        {
+                            if (wavePlayPaths[(size_t)j] == wp.wavPath)
+                            {
+                                onWaveSeekClick(j, frac);
+                                break;
+                            }
+                        }
+                    }
+                }
+                repaint();
+                return;
+            }
+        }
+    }
+    
+    // Visual-only mode — click expand icon to exit
+    if (visualOnlyMode && currentScreen == Screen::Main && pos.y < kTopBarH && pos.x > getLocalBounds().getWidth() - 30)
+    {
+        toggleVisualOnlyMode();
+        return;
+    }
+    
+    // Visual-only mode — single toggle button + preset/theme arrows
+    if (visualOnlyMode && currentScreen == Screen::Main)
+    {
+        int stripH = 28;
+        int toggleH = 32;
+        int toggleY = getHeight() - stripH - toggleH;
+        if (!visualMode) toggleY = getHeight() - toggleH;
+        int fullW = getWidth();
+        
+        if (pos.y >= toggleY && pos.y < toggleY + toggleH)
+        {
+            if (visualMode) {
+                // METERS button at left (x=8, w=70)
+                if (pos.x < 78) {
+                    visualMode = false;
+                    resized();
+                    repaint();
+                    return;
+                }
+                // Preset/theme — generous split zones
+                int arrowsX = 86;
+                int arrowsW = fullW - arrowsX - 4;
+                int midX = arrowsX + arrowsW / 2;
+                
+                if (pos.x >= arrowsX && pos.x < fullW) {
+                    if (pos.x < midX) {
+                        // Preset: left half = prev, right half = next
+                        int presetMid = arrowsX + (midX - arrowsX) / 2;
+                        if (pos.x < presetMid)
+                            particleVisual->prevPreset();
+                        else
+                            particleVisual->nextPreset();
+                        processorRef.visualPreset = (int)particleVisual->currentPreset;
+                    } else {
+                        // Theme: left half = prev, right half = next
+                        int themeMid = midX + (arrowsX + arrowsW - midX) / 2;
+                        if (pos.x < themeMid)
+                            particleVisual->prevTheme();
+                        else
+                            particleVisual->nextTheme();
+                        processorRef.visualTheme = (int)particleVisual->currentTheme;
+                    }
+                    repaint();
+                    return;
+                }
+                return;
+            } else {
+                // Single VISUALISATION button — click anywhere toggles
+                visualMode = true;
+                resized();
+                repaint();
+                return;
+            }
+        }
+    }
+    
+    // Compact/expand toggle — top right of top bar
+    if (currentScreen == Screen::Main && !visualOnlyMode && pos.y < kTopBarH && pos.x > getLocalBounds().getWidth() - 30)
+    {
+        toggleCompactMode();
+        return;
+    }
+    
+    // Visual-only mode toggle — diamond icon, second from right in top bar
+    if (currentScreen == Screen::Main && !compactMode && !visualOnlyMode
+        && pos.y < kTopBarH && pos.x > getLocalBounds().getWidth() - 54 && pos.x <= getLocalBounds().getWidth() - 30)
+    {
+        toggleVisualOnlyMode();
+        return;
+    }
+    
+    // A/B transport bar clicks (bottom bar — hidden on Compare tab)
+    if (processorRef.abActive.load() && !compactMode && !visualOnlyMode
+        && currentView != View::Compare)
+    {
+        int abBarH = 32;
+        int abBarY = getHeight() - abBarH;
+        int fullW = getWidth();
+        
+        if (pos.y >= abBarY && pos.y < abBarY + abBarH)
+        {
+            // X button to stop
+            if (pos.x >= fullW - 24) {
+                processorRef.stopAB();
+                repaint();
+                return;
+            }
+            // Play/pause button area
+            if (pos.x < 32) {
+                bool wasRef = processorRef.abPlayingRef.load();
+                if (wasRef) {
+                    processorRef.pauseAB();
+                    currentlyPlayingChatWav.clear();
+                } else {
+                    processorRef.resumeAB();
+                    currentlyPlayingChatWav = processorRef.abFilePath;
+                }
+                repaint();
+                return;
+            }
+            // Sync button area (right after play button)
+            if (pos.x >= 32 && pos.x < 68) {
+                processorRef.abSyncToDAW.store(!processorRef.abSyncToDAW.load());
+                repaint();
+                return;
+            }
+            // Waveform click — seek to position
+            int wfX = 170;
+            int wfW = fullW - wfX - 28;
+            if (pos.x >= wfX && pos.x < wfX + wfW && wfW > 0 && processorRef.abSampleCount > 0) {
+                float seekFrac = (float)(pos.x - wfX) / (float)wfW;
+                int seekPos = (int)(seekFrac * (float)processorRef.abSampleCount);
+                processorRef.abPlaybackPos = juce::jlimit(0, processorRef.abSampleCount - 1, seekPos);
+                if (!processorRef.abPlayingRef.load())
+                    processorRef.resumeAB();
+                repaint();
+                return;
+            }
+        }
+    }
+    
+    // Preset/theme selector strip click — VISUALISATION tab only
+    if (currentScreen == Screen::Main && currentTab == Tab::Visualisation
+        && visualMode && !compactMode && !visualOnlyMode
+        && !channelPromptVisible && !genrePromptVisible)
+    {
+        // A HIT TEST THAT MEASURED. It re-derived the sidebar width instead
+        // of consuming it, so with the sidebar collapsed the painted strip
+        // reached the full width while the click test still stopped 280 to
+        // 420px short. Same shape as the tab strip's two geometry
+        // authorities, in a smaller place.
+        int mW2 = computeColumns(getWidth()).mW;
+        int numStripH = 28;
+        int stripH = 30;
+        int abOff5 = abBarShowing ? kAbBarH : 0;
+        int stripY = getHeight() - numStripH - stripH - abOff5;
+
+        if (pos.x < mW2 && pos.y >= stripY && pos.y < stripY + stripH)
+        {
+            int arrowsX = 4;
+            int arrowsW = mW2 - arrowsX - 4;
+            int midX = arrowsX + arrowsW / 2;
+
+            if (pos.x < midX) {
+                // Preset: left of centre = prev, right of centre = next
+                int presetMid = arrowsX + (midX - arrowsX) / 2;
+                if (pos.x < presetMid) particleVisual->prevPreset();
+                else                   particleVisual->nextPreset();
+                processorRef.visualPreset = (int)particleVisual->currentPreset;
+            } else {
+                // Theme: left of centre = prev, right of centre = next
+                int themeMid = midX + (arrowsX + arrowsW - midX) / 2;
+                if (pos.x < themeMid) particleVisual->prevTheme();
+                else                  particleVisual->nextTheme();
+                processorRef.visualTheme = (int)particleVisual->currentTheme;
+            }
+            repaint();
+            return;
+        }
+    }
+
+    // Click on loudness panel — reset integrated LUFS
+    if (currentScreen == Screen::Main && currentView == View::Meters && !compactMode
+        && !channelPromptVisible && !genrePromptVisible
+        && loudnessPanelBounds.contains(pos))
+    {
+        processorRef.getMeterEngine().resetIntegrated();
+        repaint();
+        return;
+    }
+    
+    // Logo click — open landing page
+    if (currentScreen == Screen::Main && pos.x < 120 && pos.y < kTopBarH)
+    {
+        if (e.mods.isPopupMenu())
+        {
+            // Right-click on logo/top bar — UI size menu
+            juce::PopupMenu sizeMenu;
+            sizeMenu.setLookAndFeel(&lnf);
+            
+            sizeMenu.addItem(2, "Small (900 x 580)");
+            sizeMenu.addItem(3, "Default (1170 x 696)");
+            sizeMenu.addItem(4, "Large (1400 x 860)");
+            sizeMenu.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
+                [this](int result) {
+                    if (result == 2) setSize(900, 580);
+                    else if (result == 3) setSize(1170, 696);
+                    else if (result == 4) setSize(1400, 860);
+                });
+            return;
+        }
+        juce::URL("https://www.echojay.ai/?noredirect").launchInDefaultBrowser();
+        return;
+    }
+    
+    // Right-click anywhere on top bar — also show size menu
+    if (currentScreen == Screen::Main && pos.y < kTopBarH && e.mods.isPopupMenu())
+    {
+        juce::PopupMenu sizeMenu;
+        sizeMenu.setLookAndFeel(&lnf);
+        
+        sizeMenu.addItem(2, "Default (900 x 580)");
+        sizeMenu.addItem(3, "Large (1080 x 696)");
+        sizeMenu.addItem(4, "Extra Large (1260 x 812)");
+        sizeMenu.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
+            [this](int result) {
+                if (result == 2) setSize(900, 580);
+                else if (result == 3) setSize(1080, 696);
+                else if (result == 4) setSize(1260, 812);
+            });
+        return;
+    }
+
+    if (currentView == View::Compare)
+    {
+        // THE SUB-TAB ROW, hit-tested from the rects resized() authored via
+        // echojay::refSubTabAt. Before the rename/delete pass, because a click
+        // on the row is a navigation and must not also be read as a click on
+        // whatever the row happens to sit above.
+        if (! e.mods.isPopupMenu())
+        {
+            const int st = echojay::refSubTabAt (refSubTabRects_, pos);
+            if (st >= 0)
+            {
+                setRefSubTab ((echojay::RefSubTab) st);
+                return;
+            }
+        }
+
+        // Right-click on card area — rename/delete pass
+        if (e.mods.isPopupMenu())
+        {
+            auto snaps = processorRef.getSnapshots();
+
+            // THE SLOT ACTUALLY CLICKED. This used to pick by distance to
+            // compareSlotABox and compareSlotBBox, two boxes that had no
+            // bounds, so both centred on the origin, distA always equalled
+            // distB, and slot A always won whichever panel was clicked. It
+            // then read a getSelectedId() that only its own rebuild ever set.
+            // Both boxes are gone; the panel under the pointer decides, and
+            // the capture it is showing is the one renamed or deleted.
+            const bool isTop = compareClickIsTopSlot(pos);
+            const auto& cslot = isTop ? compareTop_ : compareBot_;
+            auto* targetBtn = isTop ? &compareTopSlotBtn_ : &compareBotSlotBtn_;
+
+            // Only a session capture can be renamed or deleted here. Live
+            // signal, references and chat captures are not this menu's to
+            // edit, and saying nothing is better than offering an action that
+            // would land on the wrong object.
+            if (cslot.kind == CompareSlotState::Kind::Snapshot
+                && cslot.index >= 0 && cslot.index < (int)snaps.size())
+            {
+                const int idx = cslot.index;
+                juce::PopupMenu menu;
+                menu.setLookAndFeel(&lnf);
+                menu.addItem(1, "Rename \"" + snaps[(size_t)idx].name + "\"");
+                menu.addItem(2, "Delete Pass");
+                menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(*targetBtn)
+                                       .withParentComponent(this),
+                    [this, idx, targetBtn](int result) {
+                        if (result == 1) {
+                            auto snaps2 = processorRef.getSnapshots();
+                            if (idx < (int)snaps2.size()) {
+                                auto* te = new juce::TextEditor();
+                                te->setFont(juce::Font(juce::FontOptions(12.0f)));
+                                te->setText(snaps2[(size_t)idx].name);
+                                te->selectAll();
+                                te->setBounds(targetBtn->getX(), targetBtn->getBottom() + 4, targetBtn->getWidth(), 24);
+                                te->setColour(juce::TextEditor::backgroundColourId, C::bg3);
+                                te->setColour(juce::TextEditor::textColourId, C::text);
+                                te->setColour(juce::TextEditor::outlineColourId, C::purple);
+                                te->setColour(juce::TextEditor::focusedOutlineColourId, C::purple);
+                                addAndMakeVisible(te);
+                                te->grabKeyboardFocus();
+                                te->onReturnKey = [this, te, idx]() {
+                                    auto newName = te->getText().trim();
+                                    if (newName.isNotEmpty())
+                                        processorRef.renameSnapshot(idx, newName);
+                                    juce::MessageManager::callAsync([te]() { delete te; });
+                                    if (currentView == View::Compare)
+                                        showCompareView();
+                                    repaint();
+                                };
+                                te->onFocusLost = [this, te]() {
+                                    juce::MessageManager::callAsync([te]() { delete te; });
+                                    repaint();
+                                };
+                            }
+                        } else if (result == 2) {
+                            processorRef.deleteSnapshot(idx);
+                            if (currentView == View::Compare)
+                                showCompareView();
+                            repaint();
+                        }
+                    });
+            }
+            return;
+        }
+        
+        // Codec-mode chip X: exit codec mode and restore the prior slots
+        if (codecModeActive_ && !codecChipX_.isEmpty() && codecChipX_.contains(pos))
+        {
+            exitCodecMode();
+            return;
+        }
+
+        // Click-to-seek on static compare waveform panels
+        for (auto& sa : cmpWaveSeekAreas_)
+        {
+            if (sa.slotIdx >= 0 && sa.inner.contains(pos))
+            {
+                float fraction = juce::jlimit(0.0f, 1.0f,
+                    (float)(pos.x - sa.inner.getX()) / (float)sa.inner.getWidth());
+                auto& s = processorRef.cmpStream[sa.slotIdx];
+                if (!s.loaded.load())
+                    startCompareStream(sa.slotIdx);
+                if (s.loaded.load() && s.sampleCount > 0)
+                {
+                    std::lock_guard<std::mutex> lock(processorRef.cmpMutex);
+                    s.playbackPos = (int)(fraction * s.sampleCount);
+                    // Click-seek on a reference during SYNC: capture the
+                    // host->reference offset at this moment and keep it
+                    // (lining a drop up against a different arrangement)
+                    if (processorRef.cmpSyncToTransport.load()
+                        && processorRef.cmpSlotIsRef[sa.slotIdx].load()
+                        && s.sampleRate > 0)
+                    {
+                        const double host = processorRef.cmpLastHostTimeSec.load();
+                        if (host >= 0.0)
+                        {
+                            const double refSec = (double) s.playbackPos / s.sampleRate;
+                            processorRef.cmpSyncOffsetSec.store(refSec - host);
+                            EchoJay_NSLog(("EJCmp: sync offset captured "
+                                           + juce::String(refSec - host, 2) + "s"
+                                           + " (host " + juce::String(host, 1)
+                                           + "s -> ref " + juce::String(refSec, 1) + "s)").toRawUTF8());
+                        }
+                    }
+                    // Start playing + make audible on seek
+                    s.playing.store(true);
+                    processorRef.cmpAudible.store(sa.slotIdx);
+                    // SYNC: mirror seek position to the other capture slot
+                    if (processorRef.cmpSyncToTransport.load() && bothSlotsAreCaptures())
+                    {
+                        int otherIdx = 1 - sa.slotIdx;
+                        auto& other = processorRef.cmpStream[otherIdx];
+                        if (!other.loaded.load())
+                            startCompareStream(otherIdx);
+                        if (other.loaded.load() && other.sampleCount > 0)
+                        {
+                            other.playbackPos = (int)(fraction * other.sampleCount);
+                            other.playing.store(true);
+                        }
+                    }
+                    updateComparePlayBtns();
+                }
+                repaint();
+                return;
+            }
+        }
+
+    }
+}
+
+void EchoJayEditor::mouseDoubleClick(const juce::MouseEvent& e)
+{
+    auto pos = e.getEventRelativeTo(this).getPosition();
+    
+    if (currentView != View::Compare) return;
+    
+    auto snaps = processorRef.getSnapshots();
+
+    // THE SLOT ACTUALLY DOUBLE-CLICKED, for the same reason as the right-click
+    // path above: the two boxes this used to measure against had no bounds, so
+    // the nearer-of-the-two test always answered A.
+    const bool isTop = compareClickIsTopSlot(pos);
+    const auto& cslot = isTop ? compareTop_ : compareBot_;
+    auto* targetBtn = isTop ? &compareTopSlotBtn_ : &compareBotSlotBtn_;
+
+    if (cslot.kind != CompareSlotState::Kind::Snapshot) return;
+    if (cslot.index < 0 || cslot.index >= (int)snaps.size()) return;
+
+    const int idx = cslot.index;
+    auto* te = new juce::TextEditor();
+    te->setFont(juce::Font(juce::FontOptions(12.0f)));
+    te->setText(snaps[(size_t)idx].name);
+    te->selectAll();
+    // Rename field directly below the clicked panel's slot button
+    te->setBounds(targetBtn->getX(), targetBtn->getBottom() + 4, targetBtn->getWidth(), 24);
+    te->setColour(juce::TextEditor::backgroundColourId, C::bg3);
+    te->setColour(juce::TextEditor::textColourId, C::text);
+    te->setColour(juce::TextEditor::outlineColourId, C::purple);
+    te->setColour(juce::TextEditor::focusedOutlineColourId, C::purple);
+    addAndMakeVisible(te);
+    te->grabKeyboardFocus();
+    te->onReturnKey = [this, te, idx]() {
+        auto newName = te->getText().trim();
+        if (newName.isNotEmpty())
+            processorRef.renameSnapshot(idx, newName);
+        juce::MessageManager::callAsync([te]() { delete te; });
+        if (currentView == View::Compare)
+            showCompareView();
+        repaint();
+    };
+    te->onFocusLost = [this, te]() {
+        juce::MessageManager::callAsync([te]() { delete te; });
+        repaint();
+    };
+}
+
 void EchoJayEditor::stopChatPlayback()
 {
     if (chatPlaybackProcess != nullptr)
