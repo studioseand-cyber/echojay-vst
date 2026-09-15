@@ -8175,6 +8175,70 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "rf PIN8: MATCH IS NOT HERE until it has a screen");
         }
 
+        // rf PIN11 -- RESOLVING A DROPPED FILE BY PATH.
+        //
+        // The drop path needs the index of the entry analyseFile just created,
+        // and position cannot give it: the analyser appends on a worker thread
+        // under a mutex while the callback arrives separately through
+        // callAsync, so getReferenceCount() - 1 can move under a concurrent
+        // analysis. Path is the only stable handle the analyser exposes.
+        {
+            std::vector<RefBrowserEntry> refs {
+                { "kick.wav",   "/refs/kick.wav" },
+                { "snare.wav",  "/refs/snare.wav" },
+                { "vox.wav",    "/refs/vox.wav" } };
+
+            check (refIndexOfPath (refs, "/refs/snare.wav") == 1,
+                   "rf PIN11: a path that is present resolves to its index",
+                   juce::String (refIndexOfPath (refs, "/refs/snare.wav")));
+            check (refIndexOfPath (refs, "/refs/kick.wav") == 0,
+                   "rf PIN11: including the first");
+            check (refIndexOfPath (refs, "/refs/vox.wav") == 2,
+                   "rf PIN11: and the last");
+
+            check (refIndexOfPath (refs, "/refs/absent.wav") == -1,
+                   "rf PIN11: a path that is absent resolves to -1, not to a guess");
+            check (refIndexOfPath (refs, "") == -1,
+                   "rf PIN11: and so does an empty path");
+            check (refIndexOfPath ({}, "/refs/kick.wav") == -1,
+                   "rf PIN11: an empty library resolves to -1");
+
+            // TWO ENTRIES SHARING A PATH. This is an ordinary state, not a
+            // corrupt one: the analyser appends unconditionally and never
+            // de-duplicates, and filesDropped copies into References with
+            // overwrite, so dropping the same file twice produces it.
+            //
+            // FIRST MATCH WINS, and the reason is STABILITY rather than
+            // preference. The two entries are identical in path and name, so
+            // either would play the same audio; but returning the LAST would
+            // make the resolved index depend on how many times the file had
+            // been dropped before, so the same drop would load a different
+            // index each time while looking identical on screen. The first
+            // match is the one that does not move as duplicates accumulate.
+            std::vector<RefBrowserEntry> dupes {
+                { "kick.wav",  "/refs/kick.wav" },
+                { "snare.wav", "/refs/snare.wav" },
+                { "kick.wav",  "/refs/kick.wav" } };
+            check (refIndexOfPath (dupes, "/refs/kick.wav") == 0,
+                   "rf PIN11: duplicates resolve to the FIRST match, which is "
+                   "the index that does not move",
+                   juce::String (refIndexOfPath (dupes, "/refs/kick.wav")));
+            // And adding another duplicate must not change the answer.
+            auto more = dupes;
+            more.push_back ({ "kick.wav", "/refs/kick.wav" });
+            check (refIndexOfPath (more, "/refs/kick.wav")
+                   == refIndexOfPath (dupes, "/refs/kick.wav"),
+                   "rf PIN11: and a further duplicate does not move it");
+
+            // Exact match, not prefix or filename: two files of the same name
+            // in different folders are different references.
+            std::vector<RefBrowserEntry> samename {
+                { "kick.wav", "/a/kick.wav" },
+                { "kick.wav", "/b/kick.wav" } };
+            check (refIndexOfPath (samename, "/b/kick.wav") == 1,
+                   "rf PIN11: the whole path is matched, not the file name");
+        }
+
         // rf PIN6 -- WHICH SLOT THE BAR DRIVES. compareTop_ defaults to Live
         // and compareBot_ to Empty, so the default must drive B. A bar that
         // named one slot's reference and loaded another would be the worst

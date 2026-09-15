@@ -135,6 +135,38 @@ inline bool refScopeAdmits (const RefScope& scope,
     return true;
 }
 
+/** The library index of the entry with this path, or -1.
+
+    THE ANALYSER APPENDS UNCONDITIONALLY and never de-duplicates
+    (ReferenceAnalyser.cpp:259-262 is a bare push_back; there is no path
+    comparison anywhere in that file), and filesDropped copies into
+    ~/Documents/EchoJay/References with overwrite. So dropping the same file
+    twice is an ordinary thing to do and it yields TWO entries with the same
+    path. There is no find-by-path on the analyser, which is why this exists
+    rather than being reused.
+
+    NOT BY POSITION. getReferenceCount() - 1 is not exact: analyseFile queues
+    when busy, the push happens on the worker thread under refMutex, and the
+    callback arrives separately through MessageManager::callAsync, so a second
+    analysis completing in between moves the last index.
+
+    DUPLICATES RESOLVE TO THE FIRST MATCH. The entries are identical in path
+    and name, so the two are interchangeable to the user and either would play
+    the same audio; what matters is that the answer is STABLE. Returning the
+    last would make the resolved index depend on how many times the file had
+    been dropped before, so the same drop would load a different index each
+    time while looking identical on screen. First match is the one that does
+    not move.
+*/
+inline int refIndexOfPath (const std::vector<RefBrowserEntry>& refs,
+                           const juce::String& path)
+{
+    if (path.isEmpty()) return -1;
+    for (int i = 0; i < (int) refs.size(); ++i)
+        if (refs[(size_t) i].path == path) return i;
+    return -1;
+}
+
 /** How many references a scope holds. THIS IS THE COUNT THE ARROWS STEP
     THROUGH, so it is defined here beside the rule that filters the pane rather
     than recounted at the bar, where it could disagree with what is shown.
