@@ -1423,6 +1423,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     refBrowser_.leftList.onRowClicked = [this](const echojay::RefBrowserRow& row)
     {
         if (row.kind == echojay::RefBrowserRow::Kind::NewFolder) { beginNewFolder(); return; }
+        if (row.kind == echojay::RefBrowserRow::Kind::ImportPresets) { importPresetsAsFolders(); return; }
         if (row.kind == echojay::RefBrowserRow::Kind::Category)  setReferenceScope (row.scope);
     };
     refBrowser_.leftList.onRowMenu = [this](const echojay::RefBrowserRow& row,
@@ -6269,6 +6270,7 @@ void EchoJayEditor::refreshReferenceBrowser()
     const auto entries = refBrowserEntries();
     const auto panes   = echojay::buildReferenceBrowserRows (
                              entries, processorRef.referenceFolders,
+                             presetFilesOnDisk(),
                              processorRef.referenceScope, refBrowserSelected_);
     refBrowser_.leftList .rows = panes.left;
     refBrowser_.rightList.rows = panes.right;
@@ -6358,6 +6360,107 @@ void EchoJayEditor::commitFolderName (const juce::String& oldName, const juce::S
             && processorRef.referenceScope.folder == oldName)
             processorRef.referenceScope.folder = name;
     }
+    setReferenceScope (processorRef.referenceScope);
+}
+
+std::vector<echojay::RefPresetFile> EchoJayEditor::presetFilesOnDisk() const
+{
+    std::vector<echojay::RefPresetFile> out;
+    auto folder = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+                      .getChildFile ("EchoJay").getChildFile ("Presets");
+    if (! folder.isDirectory()) return out;          // never created here: read only
+    auto files = folder.findChildFiles (juce::File::findFiles, false, "*.json");
+    files.sort();
+    for (auto& f : files)
+        out.push_back ({ f.getFileNameWithoutExtension(), f.getFullPathName() });
+    return out;
+}
+
+// ONE FOLDER PER PRESET, and nothing written to the user's data.
+//
+// IDEMPOTENT BY NAME. Every preset whose folder already exists is skipped, so a
+// second press creates nothing and a user who deleted a folder and pressed
+// again gets it back. There is no marker in the preset file and none beside it:
+// presets are global to the machine and folders are per instance, so a
+// per-instance marker would not prevent a re-import in the next instance, and a
+// machine-global one is a second source of truth that can desynchronise. The
+// folders themselves are the record.
+//
+// NON-DESTRUCTIVE. It adds folders and analyses references the library does not
+// have. It never calls clearAll(), which is what loadPreset did and what made
+// loading a preset replace your library rather than add to it.
+void EchoJayEditor::importPresetsAsFolders()
+{
+    const auto files = presetFilesOnDisk();
+    const auto refsFolder = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+                                .getChildFile ("EchoJay").getChildFile ("References")
+                                .getFullPathName();
+    auto existsOnDisk = [] (const juce::String& p) { return juce::File (p).existsAsFile(); };
+
+    int madeFolders = 0, queued = 0, unresolved = 0;
+    std::vector<juce::File> toAnalyse;
+
+    for (auto& pf : files)
+    {
+        if (! echojay::refPresetNeedsImport (pf.stem, processorRef.referenceFolders)) continue;
+
+        auto json = juce::JSON::parse (juce::File (pf.path).loadFileAsString());
+        auto* root = json.getDynamicObject();
+        if (root == nullptr) continue;               // unparseable: left entirely alone
+        auto refsVar = root->getProperty ("references");
+        auto* arr = refsVar.getArray();
+        if (arr == nullptr) continue;
+
+        echojay::RefFolder folder;
+        folder.name = echojay::refPresetFolderName (pf.stem);
+
+        for (auto& rv : *arr)
+        {
+            auto* ro = rv.getDynamicObject();
+            if (ro == nullptr) continue;
+            // THE LADDER RUNS ONCE, HERE, and the RESOLVED path is what the
+            // folder stores. Storing the preset's original path would file a
+            // moved track as unavailable for ever, which is the import's only
+            // real loss and the one thing worth spending a disk read on.
+            const auto resolved = echojay::refResolvePresetPath (
+                                      ro->getProperty ("path").toString(),
+                                      ro->getProperty ("name").toString(),
+                                      refsFolder, existsOnDisk);
+            if (resolved.isEmpty()) { ++unresolved; continue; }
+            folder.paths.push_back (resolved);
+
+            bool known = false;
+            for (auto& e : processorRef.getReferenceAnalyser().getReferences())
+                if (e.path == resolved) { known = true; break; }
+            if (! known)
+            {
+                bool already = false;
+                for (auto& q : toAnalyse) if (q.getFullPathName() == resolved) { already = true; break; }
+                if (! already) { toAnalyse.push_back (juce::File (resolved)); ++queued; }
+            }
+        }
+
+        processorRef.referenceFolders.push_back (folder);
+        ++madeFolders;
+    }
+
+    if (madeFolders == 0) { setRefStatus ("Every preset already has a folder."); return; }
+
+    if (! toAnalyse.empty())
+        processorRef.getReferenceAnalyser().analyseFiles (toAnalyse,
+            [safe = juce::Component::SafePointer<EchoJayEditor> (this)] (bool, const juce::String&)
+            { if (safe) { safe->refreshReferenceBrowser(); safe->repaint(); } });
+
+    // THE COUNT THAT DID NOT ARRIVE IS STATED. A folder listing fewer tracks
+    // than the preset did, with nothing said, is the silent loss this whole
+    // feature exists to avoid.
+    juce::String msg = "Imported " + juce::String (madeFolders) + " preset"
+                     + (madeFolders == 1 ? "" : "s");
+    if (queued > 0)     msg += ", analysing " + juce::String (queued) + " new";
+    if (unresolved > 0) msg += ". " + juce::String (unresolved) + " track"
+                             + (unresolved == 1 ? " was" : "s were") + " not found";
+    setRefStatus (msg + ".");
+
     setReferenceScope (processorRef.referenceScope);
 }
 

@@ -1120,6 +1120,12 @@ private:
         dialog: the browser is already a modal and a modal over a modal is a
         stack the Escape key cannot describe. */
     std::unique_ptr<juce::TextEditor> folderNameEditor_;
+    /** The preset files on disk, stem and path. Disk I/O, so the editor
+        gathers it and the pure rules take it as a parameter. */
+    std::vector<echojay::RefPresetFile> presetFilesOnDisk() const;
+    /** One folder per preset that does not already have one. Idempotent,
+        non-destructive, and writes NOTHING to the user's preset files. */
+    void importPresetsAsFolders();
     void beginNewFolder();
     void beginRenameFolder (const juce::String& folder);
     void commitFolderName (const juce::String& oldName, const juce::String& typed);

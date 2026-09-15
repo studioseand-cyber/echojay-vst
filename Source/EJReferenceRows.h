@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include <vector>
+#include <functional>
 
 // THE REFERENCE BROWSER'S ROWS, AS A PURE FUNCTION OF THE LIBRARY.
 //
@@ -64,7 +65,9 @@ struct RefBrowserRow
                      // Missing rather than Present.
         Notice,      // a statement of fact, e.g. that the library is empty.
         Invite,      // the ONE actionable row in an empty pane: add a reference.
-        NewFolder    // left pane: the + row that creates one.
+        NewFolder,   // left pane: the + row that creates one.
+        ImportPresets// left pane: one folder per preset file. Present only
+                     // while a preset would create something.
     };
 
     Kind         kind      = Kind::Notice;
@@ -97,6 +100,7 @@ inline const char* kRefBrowserInviteText () { return "Add a reference track...";
 inline const char* kRefBrowserAllName   () { return "All references"; }
 inline const char* kRefBrowserUnfiledName () { return "Unfiled"; }
 inline const char* kRefBrowserNewFolderText () { return "+ New folder"; }
+inline const char* kRefBrowserImportText    () { return "Import presets"; }
 
 /** Is this path in any folder? */
 inline bool refPathIsFiled (const std::vector<RefFolder>& folders, const juce::String& path)
@@ -209,6 +213,125 @@ inline RefScope refScopeOrAll (const RefScope& scope, const std::vector<RefFolde
 
 /** The name shown in the title bar. Pure, and separate from the panes so the
     bar cannot disagree with the list about what is selected. */
+// ---------------------------------------------------------------------------
+// IMPORTING THE PRESET LIBRARY.
+//
+// Presets shipped in v1.1.0 and are in v1.6.3, so users have files in
+// ~/Documents/EchoJay/Presets/. A preset is a name plus reference paths and so
+// is a folder, which is why folders supersede them; this is how the ones people
+// already made come across before the feature is removed.
+//
+// IDEMPOTENT BY NAME, WITH NO MARKER ANYWHERE. Nothing is written to the user's
+// data, there is no marker to desynchronise, and importing twice produces the
+// same folders. A user who deleted a folder and then pressed Import presets is
+// asking for it back, so it comes back.
+//
+// THE FOLDER TAKES THE FILENAME STEM, NOT THE PRESET'S INTERNAL name FIELD.
+// loadPresetList put f.getFileNameWithoutExtension() in the dropdown, so the
+// stem is the name users have actually seen for months; the internal name is
+// written by saveCurrentPreset and read by nothing, like the meters and the
+// waveform beside it. Stems are unique per directory by construction, so two
+// presets cannot collide with each other.
+// ---------------------------------------------------------------------------
+
+struct RefPresetFile
+{
+    juce::String stem;   // file name without .json: the name the user has seen
+    juce::String path;   // full path, for reading it
+};
+
+/** The folder a preset would become. */
+inline juce::String refPresetFolderName (const juce::String& stem)
+{
+    return stem.trim();
+}
+
+/** Would importing this preset create anything?
+
+    NO, IF A FOLDER OF THAT NAME ALREADY EXISTS, whether it came from an earlier
+    import or the user made it by hand. That is the skip rule and it is the
+    whole of the idempotence: a second press finds every folder present and
+    creates none. It also means a hand-made folder BLOCKS a preset of the same
+    name, which is a real consequence and the honest one: silently importing
+    into someone's existing folder would merge two things they kept apart.
+*/
+inline bool refPresetNeedsImport (const juce::String& stem,
+                                  const std::vector<RefFolder>& folders)
+{
+    const auto want = refPresetFolderName (stem);
+    if (want.isEmpty()) return false;
+    for (auto& f : folders)
+        if (f.name == want) return false;
+    return true;
+}
+
+/** How many presets the row would import. THE ROW'S COUNT, and it is what makes
+    the row disappear: zero means every preset already has its folder. */
+inline int refPresetImportCount (const std::vector<RefPresetFile>& files,
+                                 const std::vector<RefFolder>& folders)
+{
+    int n = 0;
+    for (auto& f : files)
+        if (refPresetNeedsImport (f.stem, folders)) ++n;
+    return n;
+}
+
+/** The extensions loadPreset guesses when a stored path has moved.
+    EXACTLY ITS FIVE, replicated rather than widened. The drop path accepts
+    .aif and .ogg as well, so a preset referencing one of those and since moved
+    will not resolve by name; that gap is loadPreset's and is carried across
+    deliberately rather than fixed inside an import. */
+inline const char* const* refPresetFallbackExts (int& count)
+{
+    static const char* kExts[] = { ".wav", ".mp3", ".flac", ".aiff", ".m4a" };
+    count = 5;
+    return kExts;
+}
+
+/** loadPreset's resolution ladder, run ONCE at import so the folder stores a
+    path that resolves rather than one that shows as unavailable.
+
+    The order is loadPreset's: the stored path, then the References folder copy
+    under the same file name, then the References folder under the reference's
+    NAME with each known extension. Returns empty when none of them exists,
+    which is an honest unavailable rather than a guess.
+
+    `exists` is injected so the ladder can be exercised with no disk. That is
+    not a convenience: the ladder is the import's only real loss if it is wrong,
+    and a rule that can only be tested against one machine's filesystem is a
+    rule nobody can check.
+*/
+inline juce::String refResolvePresetPath (const juce::String& storedPath,
+                                          const juce::String& refName,
+                                          const juce::String& referencesFolder,
+                                          const std::function<bool (const juce::String&)>& exists)
+{
+    if (storedPath.isNotEmpty() && exists (storedPath)) return storedPath;
+
+    const auto sep = juce::File::getSeparatorString();
+    if (storedPath.isNotEmpty() && referencesFolder.isNotEmpty())
+    {
+        const auto leaf = storedPath.fromLastOccurrenceOf (sep, false, false);
+        if (leaf.isNotEmpty())
+        {
+            const auto alt = referencesFolder + sep + leaf;
+            if (exists (alt)) return alt;
+        }
+    }
+
+    if (refName.isNotEmpty() && referencesFolder.isNotEmpty())
+    {
+        int n = 0;
+        auto* exts = refPresetFallbackExts (n);
+        for (int i = 0; i < n; ++i)
+        {
+            const auto guess = referencesFolder + sep + refName + exts[i];
+            if (exists (guess)) return guess;
+        }
+    }
+    return {};
+}
+
 /** Builds both panes.
 
     selectedIndex is a LIBRARY index, not a scope index: it is what the slots
@@ -218,6 +341,7 @@ inline RefScope refScopeOrAll (const RefScope& scope, const std::vector<RefFolde
 */
 inline RefBrowserPanes buildReferenceBrowserRows (const std::vector<RefBrowserEntry>& refs,
                                                   const std::vector<RefFolder>& folders,
+                                                  const std::vector<RefPresetFile>& presets,
                                                   const RefScope& scopeIn,
                                                   int selectedIndex)
 {
@@ -276,6 +400,21 @@ inline RefBrowserPanes buildReferenceBrowserRows (const std::vector<RefBrowserEn
         nf.text      = kRefBrowserNewFolderText();
         nf.clickable = true;
         out.left.push_back (nf);
+
+        // PRESENT ONLY WHILE IT WOULD CREATE SOMETHING. Not "while preset files
+        // exist": a row offering an import that produces nothing is the
+        // affordance-that-does-nothing this project keeps removing, and the
+        // count is what makes the difference visible.
+        const int toImport = refPresetImportCount (presets, folders);
+        if (toImport > 0)
+        {
+            RefBrowserRow im;
+            im.kind      = RefBrowserRow::Kind::ImportPresets;
+            im.text      = juce::String (kRefBrowserImportText())
+                         + " (" + juce::String (toImport) + ")";
+            im.clickable = true;
+            out.left.push_back (im);
+        }
     }
 
     // ---- RIGHT: the tracks in the selected scope. ------------------------
