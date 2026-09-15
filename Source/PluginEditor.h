@@ -1089,8 +1089,6 @@ private:
         struct Rects
         {
             juce::Rectangle<int> card, titleBar, closeX, title, leftPane, rightPane;
-            // The presets strip, moved off the Compare page 13 Sep 2026.
-            juce::Rectangle<int> presetBox, presetSave, presetDelete;
         };
         static Rects layoutFor (juce::Rectangle<int> panelBounds);
     };
@@ -1176,16 +1174,10 @@ private:
     void enterCodecMode(int presetIdx, bool normalised, const CodecRender::Result& res);
     void exitCodecMode();
 
-    // Reference Presets
-    juce::ComboBox presetBox;
-    juce::TextButton savePresetBtn { "Save Preset" };
-    juce::TextButton deletePresetBtn { "Delete" };
-    void loadPresetList();
-    void saveCurrentPreset(const juce::String& name);
-    void loadPreset(const juce::String& name);
-    void deletePreset(const juce::String& name);
-    juce::File getPresetsFolder();
-    juce::StringArray presetNames;
+    // REFERENCE PRESETS ARE DELETED (15 Sep 2026). Folders supersede them: a
+    // preset was a name plus reference paths and so is a folder. The browser's
+    // Import presets row brings the old ones across, and ~/Documents/EchoJay/
+    // Presets/*.json is left exactly where it is.
     
     // Loudness panel bounds for click-to-reset
     juce::Rectangle<int> loudnessPanelBounds;
