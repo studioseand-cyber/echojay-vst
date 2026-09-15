@@ -210,8 +210,7 @@ public:
         // alpha by 0.5 when !isEnabled (juce_LookAndFeel_V2.cpp:278), and it
         // dropped that without replacing it. Neither this nor
         // drawButtonBackground consulted isEnabled() at all, so every disabled
-        // button in the plugin was PIXEL-IDENTICAL to an enabled one, across
-        // all 23 setEnabled sites.
+        // button in the plugin was PIXEL-IDENTICAL to an enabled one.
         //
         // Colours::text3 rather than an alpha multiply or a new hex: it is
         // already this UI's inactive-text colour, used for the unselected
