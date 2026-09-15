@@ -1118,12 +1118,6 @@ private:
         dialog: the browser is already a modal and a modal over a modal is a
         stack the Escape key cannot describe. */
     std::unique_ptr<juce::TextEditor> folderNameEditor_;
-    /** The preset files on disk, stem and path. Disk I/O, so the editor
-        gathers it and the pure rules take it as a parameter. */
-    std::vector<echojay::RefPresetFile> presetFilesOnDisk() const;
-    /** One folder per preset that does not already have one. Idempotent,
-        non-destructive, and writes NOTHING to the user's preset files. */
-    void importPresetsAsFolders();
     void beginNewFolder();
     void beginRenameFolder (const juce::String& folder);
     void commitFolderName (const juce::String& oldName, const juce::String& typed);
@@ -1174,10 +1168,10 @@ private:
     void enterCodecMode(int presetIdx, bool normalised, const CodecRender::Result& res);
     void exitCodecMode();
 
-    // REFERENCE PRESETS ARE DELETED (15 Sep 2026). Folders supersede them: a
-    // preset was a name plus reference paths and so is a folder. The browser's
-    // Import presets row brings the old ones across, and ~/Documents/EchoJay/
-    // Presets/*.json is left exactly where it is.
+    // THE REFERENCE PRESET SYSTEM IS GONE (15 Sep 2026), and so is the import
+    // that briefly carried it across. Folders replace it outright. Nothing on
+    // disk was deleted: ~/Documents/EchoJay/Presets/*.json is left where it is,
+    // now with no reader.
     
     // Loudness panel bounds for click-to-reset
     juce::Rectangle<int> loudnessPanelBounds;

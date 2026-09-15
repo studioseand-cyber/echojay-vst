@@ -7523,7 +7523,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // to prevent, and it is invisible by eye once the list is long.
         {
             const auto refs  = mk ({ "kick.wav", "mix_v2.wav", "master.aiff" });
-            const auto panes = buildReferenceBrowserRows (refs, {}, {}, {}, -1);
+            const auto panes = buildReferenceBrowserRows (refs, {}, {}, -1);
             check (countKind (panes.right, RefBrowserRow::Kind::Track) == 3,
                    "rb PIN1: three references make three track rows");
             int seen = 0;
@@ -7546,7 +7546,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // because its list and its ids were built in one loop.
         {
             const auto refs  = mk ({ "a.wav", "b.wav", "c.wav", "d.wav" });
-            const auto panes = buildReferenceBrowserRows (refs, {}, {}, {}, 2);
+            const auto panes = buildReferenceBrowserRows (refs, {}, {}, 2);
             for (auto& r : panes.right)
                 if (r.kind == RefBrowserRow::Kind::Track)
                     check (r.index >= 0 && r.index < (int) refs.size()
@@ -7558,7 +7558,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // rb PIN3 -- EXACTLY ONE ROW IS SELECTED, AND IT IS THE ASKED-FOR ONE.
         {
             const auto refs  = mk ({ "a.wav", "b.wav", "c.wav" });
-            const auto panes = buildReferenceBrowserRows (refs, {}, {}, {}, 1);
+            const auto panes = buildReferenceBrowserRows (refs, {}, {}, 1);
             int sel = 0, selIdx = -1;
             for (auto& r : panes.right) if (r.selected) { ++sel; selIdx = r.index; }
             check (sel == 1, "rb PIN3: one selected row, not none and not two",
@@ -7575,7 +7575,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             const auto refs = mk ({ "a.wav", "b.wav" });
             for (int bad : { -1, 2, 99, -7 })
             {
-                const auto panes = buildReferenceBrowserRows (refs, {}, {}, {}, bad);
+                const auto panes = buildReferenceBrowserRows (refs, {}, {}, bad);
                 int sel = 0; for (auto& r : panes.right) if (r.selected) ++sel;
                 check (sel == 0, "rb PIN4: an out-of-range selection selects nothing",
                        "index " + juce::String (bad) + " selected "
@@ -7589,7 +7589,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // THING THAT ACTS. A pane that is merely blank is the menu's old
         // behaviour, which hid the feature from anyone who had not found it.
         {
-            const auto panes = buildReferenceBrowserRows ({}, {}, {}, {}, -1);
+            const auto panes = buildReferenceBrowserRows ({}, {}, {}, -1);
             check (countKind (panes.right, RefBrowserRow::Kind::Track) == 0,
                    "rb PIN5: no references, no track rows");
             check (countKind (panes.right, RefBrowserRow::Kind::Invite) == 1,
@@ -7624,7 +7624,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // last four commits removed; this is that rule as a property.
         {
             const auto refs  = mk ({ "a.wav" });
-            const auto panes = buildReferenceBrowserRows (refs, {}, {}, {}, 0);
+            const auto panes = buildReferenceBrowserRows (refs, {}, {}, 0);
             for (const auto* pane : { &panes.left, &panes.right })
                 for (auto& r : *pane)
                 {
@@ -7659,7 +7659,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 std::vector<RefBrowserEntry> refs;
                 for (int i = 0; i < n; ++i)
                     refs.push_back ({ "r" + juce::String (i), "/tmp/p" + juce::String (i) });
-                const auto panes = buildReferenceBrowserRows (refs, {}, {}, {}, -1);
+                const auto panes = buildReferenceBrowserRows (refs, {}, {}, -1);
                 check (countKind (panes.left, RefBrowserRow::Kind::Category) == 1,
                        "rb PIN7: with no folders, ALL REFERENCES is the only scope");
                 bool named = false;
@@ -7677,7 +7677,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             const auto refs = mk ({ "a.wav", "b.wav", "c.wav" });
             std::vector<RefFolder> fs { { "Drums", { "/tmp/a.wav" } },
                                         { "Vox",   { "/tmp/b.wav" } } };
-            const auto all = buildReferenceBrowserRows (refs, fs, {}, {}, -1);
+            const auto all = buildReferenceBrowserRows (refs, fs, {}, -1);
             check (countKind (all.right, RefBrowserRow::Kind::Track) == 3,
                    "rb PIN7: ALL REFERENCES shows filed and unfiled alike");
             check (countKind (all.left, RefBrowserRow::Kind::Category) == 4,
@@ -7687,7 +7687,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             // UNFILED IS ABSENT WHEN NOTHING IS UNFILED.
             std::vector<RefFolder> fs2 { { "Drums", { "/tmp/a.wav", "/tmp/b.wav",
                                                       "/tmp/c.wav" } } };
-            const auto none = buildReferenceBrowserRows (refs, fs2, {}, {}, -1);
+            const auto none = buildReferenceBrowserRows (refs, fs2, {}, -1);
             check (countKind (none.left, RefBrowserRow::Kind::Category) == 2,
                    "rb PIN7: no UNFILED row when everything is filed",
                    juce::String (countKind (none.left, RefBrowserRow::Kind::Category)));
@@ -7707,7 +7707,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (refScopeCount (refs, fs, unf) == 1,
                    "rb PIN10: UNFILED counts what no folder claims");
 
-            const auto inDrums = buildReferenceBrowserRows (refs, fs, {}, drums, -1);
+            const auto inDrums = buildReferenceBrowserRows (refs, fs, drums, -1);
             check (countKind (inDrums.right, RefBrowserRow::Kind::Track) == 2,
                    "rb PIN10: the pane shows only the folder's references");
             for (auto& r : inDrums.right)
@@ -7752,7 +7752,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             const auto refs = mk ({ "kick.wav" });
             std::vector<RefFolder> fs { { "Drums", { "/tmp/kick.wav", "/tmp/gone.wav" } } };
             RefScope drums; drums.kind = RefScope::Kind::Folder; drums.folder = "Drums";
-            const auto p = buildReferenceBrowserRows (refs, fs, {}, drums, -1);
+            const auto p = buildReferenceBrowserRows (refs, fs, drums, -1);
 
             check (countKind (p.right, RefBrowserRow::Kind::Track) == 1,
                    "rb PIN11: the live member is a track row");
@@ -7782,7 +7782,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             RefScope ghost; ghost.kind = RefScope::Kind::Folder; ghost.folder = "Deleted";
             check (refScopeOrAll (ghost, {}).kind == RefScope::Kind::All,
                    "rb PIN12: a scope with no folder behind it becomes ALL");
-            const auto p = buildReferenceBrowserRows (refs, {}, {}, ghost, -1);
+            const auto p = buildReferenceBrowserRows (refs, {}, ghost, -1);
             check (countKind (p.right, RefBrowserRow::Kind::Track) == 2,
                    "rb PIN12: so the pane shows the library, not nothing");
             // DELETING A FOLDER NEVER DELETES REFERENCES.
@@ -7799,7 +7799,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             const auto refs = mk ({ "a.wav" });
             std::vector<RefFolder> fs { { "Empty", {} } };
             RefScope e; e.kind = RefScope::Kind::Folder; e.folder = "Empty";
-            const auto p = buildReferenceBrowserRows (refs, fs, {}, e, -1);
+            const auto p = buildReferenceBrowserRows (refs, fs, e, -1);
             bool named = false, claimedEmptyLibrary = false;
             for (auto& r : p.right)
                 if (r.kind == RefBrowserRow::Kind::Notice)
@@ -7813,136 +7813,9 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (countKind (p.right, RefBrowserRow::Kind::Invite) == 0,
                    "rb PIN13: no Add invitation inside a folder: it would not file it there");
             // The invitation DOES belong to an empty library.
-            const auto lib = buildReferenceBrowserRows ({}, {}, {}, {}, -1);
+            const auto lib = buildReferenceBrowserRows ({}, {}, {}, -1);
             check (countKind (lib.right, RefBrowserRow::Kind::Invite) == 1,
                    "rb PIN13: an empty LIBRARY still invites");
-        }
-
-        // rb PIN14 -- IMPORTING PRESETS: the count, the skip rule and the row.
-        //
-        // WHAT THESE PINS COVER: which presets would import, how many, and
-        // whether the row is offered. WHAT THEY DO NOT COVER, said here rather
-        // than implied: whether the row APPEARS on screen and whether pressing
-        // it does anything. That is wiring in an editor method, and nothing in
-        // this gate builds a component or dispatches a click.
-        {
-            std::vector<RefPresetFile> presets {
-                { "Commerical References", "/tmp/a.json" },
-                { "Mastering refs",        "/tmp/b.json" } };
-
-            check (refPresetImportCount (presets, {}) == 2,
-                   "rb PIN14: with no folders, every preset would import");
-            check (refPresetFolderName ("Commerical References") == "Commerical References",
-                   "rb PIN14: the folder takes the FILENAME STEM, which is the "
-                   "name the dropdown showed");
-
-            // IDEMPOTENT. A folder of that name, however it got there, skips it.
-            std::vector<RefFolder> after { { "Commerical References", {} },
-                                           { "Mastering refs", {} } };
-            check (refPresetImportCount (presets, after) == 0,
-                   "rb PIN14: a second import creates nothing");
-            check (! refPresetNeedsImport ("Mastering refs", after),
-                   "rb PIN14: and each one individually is skipped");
-
-            // DELETE ONE, AND IT COMES BACK. A user who deleted a folder and
-            // pressed Import presets is asking for it back.
-            std::vector<RefFolder> oneGone { { "Mastering refs", {} } };
-            check (refPresetImportCount (presets, oneGone) == 1,
-                   "rb PIN14: deleting a folder makes its preset importable again");
-            check (refPresetNeedsImport ("Commerical References", oneGone),
-                   "rb PIN14: and it is the deleted one, not the other");
-
-            // A HAND-MADE FOLDER BLOCKS A PRESET OF THE SAME NAME. Stated as a
-            // property because it is a real consequence: merging into someone's
-            // existing folder would join two things they kept apart.
-            std::vector<RefFolder> byHand { { "Mastering refs", { "/tmp/x.wav" } } };
-            check (! refPresetNeedsImport ("Mastering refs", byHand),
-                   "rb PIN14: a hand-made folder blocks the preset of that name");
-
-            check (! refPresetNeedsImport ("   ", {}),
-                   "rb PIN14: a blank stem imports nothing, rather than an unnamed folder");
-
-            // THE ROW IS OFFERED ONLY WHEN IT WOULD CREATE SOMETHING.
-            const auto offered = buildReferenceBrowserRows ({}, {}, presets, {}, -1);
-            check (countKind (offered.left, RefBrowserRow::Kind::ImportPresets) == 1,
-                   "rb PIN14: the row appears while presets would import");
-            const auto notOffered = buildReferenceBrowserRows ({}, after, presets, {}, -1);
-            check (countKind (notOffered.left, RefBrowserRow::Kind::ImportPresets) == 0,
-                   "rb PIN14: and is gone once they all have folders");
-            const auto noPresets = buildReferenceBrowserRows ({}, {}, {}, {}, -1);
-            check (countKind (noPresets.left, RefBrowserRow::Kind::ImportPresets) == 0,
-                   "rb PIN14: and never appears with no preset files at all");
-            for (auto& r : offered.left)
-                if (r.kind == RefBrowserRow::Kind::ImportPresets)
-                    check (r.text.contains ("(2)") && r.clickable,
-                           "rb PIN14: it carries the real count and acts",
-                           "got \"" + r.text + "\"");
-        }
-
-        // rb PIN15 -- THE FALLBACK LADDER, run once at import so a moved file
-        // lands in the folder rather than as unavailable. loadPreset's order
-        // exactly: the stored path, the References copy by file name, then the
-        // References folder under the reference's NAME with each extension.
-        // `exists` is injected, so the ladder is checkable without a disk.
-        {
-            const juce::String refs ("/Users/x/Documents/EchoJay/References");
-            auto only = [] (std::initializer_list<const char*> live)
-            {
-                std::vector<juce::String> v (live.begin(), live.end());
-                return [v] (const juce::String& p)
-                { for (auto& q : v) if (q == p) return true; return false; };
-            };
-
-            check (refResolvePresetPath ("/old/kick.wav", "kick", refs,
-                                         only ({ "/old/kick.wav" })) == "/old/kick.wav",
-                   "rb PIN15: a stored path that still resolves is used as it is");
-
-            check (refResolvePresetPath ("/old/kick.wav", "kick", refs,
-                       only ({ "/Users/x/Documents/EchoJay/References/kick.wav" }))
-                   == "/Users/x/Documents/EchoJay/References/kick.wav",
-                   "rb PIN15: a moved file is found by file name in References");
-
-            check (refResolvePresetPath ("/old/Reference song 1.aiff", "Reference song 1", refs,
-                       only ({ "/Users/x/Documents/EchoJay/References/Reference song 1.wav" }))
-                   == "/Users/x/Documents/EchoJay/References/Reference song 1.wav",
-                   "rb PIN15: and by NAME plus a guessed extension when that fails");
-
-            check (refResolvePresetPath ("/old/kick.wav", "kick", refs, only ({})).isEmpty(),
-                   "rb PIN15: nothing found resolves to EMPTY, not to a guess");
-
-            // ORDER MATTERS: the stored path wins over a same-named copy, or an
-            // import would silently repoint a reference at a different file.
-            check (refResolvePresetPath ("/old/kick.wav", "kick", refs,
-                       only ({ "/old/kick.wav",
-                               "/Users/x/Documents/EchoJay/References/kick.wav" }))
-                   == "/old/kick.wav",
-                   "rb PIN15: the stored path wins over the References copy");
-
-            // THE EXTENSION LIST IS loadPreset's FIVE, carried across rather
-            // than widened. .aif and .ogg are accepted by the drop path and are
-            // NOT guessed here, which is loadPreset's gap and is deliberate.
-            {
-                int n = 0; refPresetFallbackExts (n);
-                check (n == 5, "rb PIN15: five extensions, loadPreset's exactly",
-                       juce::String (n));
-                // THE FIXTURE HAS TO DEFEAT STEP 2 FIRST. The first version of
-                // this assertion stored "/old/x.aif" and put "x.aif" in
-                // References, so the ladder resolved by FILE NAME at step 2 and
-                // never reached the extension guessing at step 3. It went red,
-                // and the pin was wrong rather than the code. The stored leaf
-                // must differ from what is on disk for step 3 to be the thing
-                // under test.
-                check (refResolvePresetPath ("/old/WasCalledThis.aif", "x", refs,
-                           only ({ "/Users/x/Documents/EchoJay/References/x.aif" })).isEmpty(),
-                       "rb PIN15: .aif is NOT guessed by name, the gap carried across");
-                check (refResolvePresetPath ("/old/WasCalledThis.aiff", "x", refs,
-                           only ({ "/Users/x/Documents/EchoJay/References/x.aiff" }))
-                       == "/Users/x/Documents/EchoJay/References/x.aiff",
-                       "rb PIN15: while .aiff IS, which is the pair that shows it is a gap");
-            }
-
-            check (refResolvePresetPath ("", "", refs, only ({})).isEmpty(),
-                   "rb PIN15: empty inputs resolve to empty rather than to the folder");
         }
 
         // rb PIN8 -- THE TITLE NAMES SCOPE AND SELECTION, so the bar and the
@@ -7985,7 +7858,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             std::vector<RefBrowserEntry> many;
             for (int i = 0; i < 250; ++i)
                 many.push_back ({ "ref" + juce::String (i), "/tmp/x" });
-            const auto panes = buildReferenceBrowserRows (many, {}, {}, {}, 249);
+            const auto panes = buildReferenceBrowserRows (many, {}, {}, 249);
             check (countKind (panes.right, RefBrowserRow::Kind::Track) == 250,
                    "rb PIN9: all 250 appear, no 99 cap carried over");
             check (panes.right.back().index == 249 && panes.right.back().selected,
