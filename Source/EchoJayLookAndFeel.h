@@ -204,7 +204,23 @@ public:
         g.setFont(font);
         auto textCol = button.findColour(isButtonDown ? juce::TextButton::textColourOnId 
                                                       : juce::TextButton::textColourOffId);
-        if (isMouseOver)
+
+        // A DISABLED BUTTON MUST LOOK DISABLED. This override replaces
+        // LookAndFeel_V2::drawButtonText, which multiplies the text colour's
+        // alpha by 0.5 when !isEnabled (juce_LookAndFeel_V2.cpp:278), and it
+        // dropped that without replacing it. Neither this nor
+        // drawButtonBackground consulted isEnabled() at all, so every disabled
+        // button in the plugin was PIXEL-IDENTICAL to an enabled one, across
+        // all 23 setEnabled sites.
+        //
+        // Colours::text3 rather than an alpha multiply or a new hex: it is
+        // already this UI's inactive-text colour, used for the unselected
+        // meter-type buttons and the unselected REFERENCE sub-tab, so a
+        // disabled control now reads the same way as every other thing here
+        // that is present but not active.
+        if (! button.isEnabled())
+            textCol = Colours::text3;
+        else if (isMouseOver)
             textCol = textCol.brighter(0.15f);
         g.setColour(textCol);
         
