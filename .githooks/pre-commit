@@ -109,4 +109,46 @@ for T in workspace_roundtrip_test mapfps_test; do
   fi
   echo "  ok  $T: $(echo "$out" | tail -1)"
 done
-echo "pre-commit gate: all suites green"
+# ---------------------------------------------------------------------------
+# THE FORMAT LINK. The only step here that proves a plugin can be built.
+#
+# 6a5efb6 IS THE INSTANCE: committed, pushed, three suites green, and no plugin
+# could be built from it. A swept deletion took six editor handlers (keyPressed,
+# mouseDrag, mouseUp, mouseWheelMove, mouseDown, mouseDoubleClick) and every
+# step above passed, because the gate compiles translation units and links TEST
+# HARNESSES. The AU and VST3 targets are the only things that link
+# EchoJayEditor, and until now they were not in it.
+#
+# WHY A CHEAPER HARNESS WAS REJECTED, ON EVIDENCE RATHER THAN ARGUMENT.
+# tabstrip_test calls EchoJayEditor::computeTabRects, so it genuinely does pull
+# PluginEditor.cpp.o out of the archive. It LINKS CLEAN ANYWAY, measured at 56s
+# on the broken tree, because nothing makes the vtable live and the linker
+# dead-strips it. The undefined symbols are referenced FROM the vtable. So a
+# harness that merely references the class is NOT SUFFICIENT: the gate has to
+# link something that forces the vtable, and the format target is the thing
+# that already does.
+#
+# MEASURED COST: EchoJay_VST3 is 63s against a current archive, against
+# tabstrip_test's 56s in the same state. The marginal cost is comparable to a
+# suite this gate already runs.
+#
+# VST3 ONLY, NOT BOTH. The undefined-symbol class this exists to catch is
+# format-independent: it is the editor's vtable, shared by both wrappers, and
+# VST3 failed on exactly the same six symbols AU did. Adding AU would double
+# the cost to catch the same thing twice. A format-SPECIFIC break would still
+# escape, and that is a real gap, stated here rather than left implied.
+if [ -f "$REPO/build/compile_commands.json" ]; then
+  echo "  linking EchoJay_VST3 (the only step that proves a plugin builds)..."
+  out=$(cmake --build "$REPO/build" --target EchoJay_VST3 -j 4 2>&1)
+  if [ $? -ne 0 ]; then
+    echo "GATE FAIL: EchoJay_VST3 did not link"
+    echo "$out" | grep -E 'Undefined symbols|referenced from|^  \"' | head -12
+    echo "  (the suites above can be green while this fails: see open list 158)"
+    exit 1
+  fi
+  echo "  ok  EchoJay_VST3 links"
+else
+  echo "  SKIP  EchoJay_VST3 (tree not configured)"
+fi
+
+echo "pre-commit gate: all suites green and the plugin links"
