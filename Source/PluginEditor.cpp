@@ -1596,6 +1596,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         refRemoveBtns[(size_t)i].setVisible(false);
         refRemoveBtns[(size_t)i].onClick = [this, i]() {
             processorRef.getReferenceAnalyser().removeReference(i);
+            refreshRefBarEnablement();   // the library just changed
             if (currentView == View::Compare) showCompareView();
             repaint();
         };
@@ -4849,7 +4850,7 @@ void EchoJayEditor::filesDropped(const juce::StringArray& files, int, int)
         if (ext == ".wav" || ext == ".mp3" || ext == ".flac" || ext == ".aiff" ||
             ext == ".aif" || ext == ".ogg" || ext == ".m4a")
         {
-            setRefStatus("Analysing " + file.getFileName() + "...");
+            setRefStatus("Analysing " + file.getFileName() + "...", RefStatusKind::Info);
             
             // Copy file to EchoJay folder to avoid sandbox/permission issues.
             // Always overwrite — the source file may have changed.
@@ -4866,8 +4867,9 @@ void EchoJayEditor::filesDropped(const juce::StringArray& files, int, int)
             analyser.forceResetIfStuck();
             
             analyser.analyseFile(fileToAnalyse, [this, file](bool success, const juce::String& error) {
-                if (success) setRefStatus(juce::String(processorRef.getReferenceAnalyser().getReferenceCount()) + " reference(s) loaded");
-                else setRefStatus("Error: " + error);
+                if (success) setRefStatus(juce::String(processorRef.getReferenceAnalyser().getReferenceCount()) + " reference(s) loaded", RefStatusKind::Info);
+                else setRefStatus("Error: " + error, RefStatusKind::Problem);
+                refreshRefBarEnablement();   // the library just changed
                 if (currentView == View::Compare) showCompareView();
                 repaint();
             });
@@ -4885,8 +4887,23 @@ void EchoJayEditor::filesDropped(const juce::StringArray& files, int, int)
 // bounds, so every message the Compare view could produce, including
 // "Error: " + error from a failed analysis, was written and discarded. Text
 // and visibility move together here so that cannot come apart again.
-void EchoJayEditor::setRefStatus(const juce::String& msg)
+void EchoJayEditor::setRefStatus(const juce::String& msg, RefStatusKind kind)
 {
+    // THE COLOUR FOLLOWS THE REGISTER, and it is set HERE rather than once at
+    // construction. It used to be one pink for everything, so "Analysing
+    // kick.wav..." and "3 reference(s) loaded" arrived in the same colour as
+    // "Error: unsupported sample rate". Four of the six strings this function
+    // could carry were not failures and one was a success.
+    //
+    // INFO IS C::text2, WHICH IS THE BAR'S OWN SECONDARY TEXT: every control on
+    // the reference bar sets textColourOffId to it (the styleBar helper), so an
+    // informational line reads as part of the bar rather than as an event. Not
+    // a new hex.
+    refStatusLabel.setColour (juce::Label::textColourId,
+                              kind == RefStatusKind::Problem
+                                  ? juce::Colour (0xffFF6B9D)   // unchanged
+                                  : C::text2);
+
     // Read BEFORE the write: the layout decision below compares presence
     // across this call, and setText is what changes it.
     const juce::String before = refStatusLabel.getText();
@@ -4937,10 +4954,11 @@ void EchoJayEditor::loadReferenceFile()
         [this, chooser](const juce::FileChooser& fc) {
             auto file = fc.getResult();
             if (file.existsAsFile()) {
-                setRefStatus("Analysing " + file.getFileName() + "...");
+                setRefStatus("Analysing " + file.getFileName() + "...", RefStatusKind::Info);
                 processorRef.getReferenceAnalyser().analyseFile(file, [this](bool success, const juce::String& error) {
-                    if (success) setRefStatus(juce::String(processorRef.getReferenceAnalyser().getReferenceCount()) + " reference(s) loaded");
-                    else setRefStatus("Error: " + error);
+                    if (success) setRefStatus(juce::String(processorRef.getReferenceAnalyser().getReferenceCount()) + " reference(s) loaded", RefStatusKind::Info);
+                    else setRefStatus("Error: " + error, RefStatusKind::Problem);
+                    refreshRefBarEnablement();   // the library just changed
                     repaint();
                 });
             }
@@ -4967,6 +4985,7 @@ void EchoJayEditor::showCompareView()
     loadRefBtn.setVisible(true);
     for (auto* b : { &refPrevBtn, &refNextBtn, &refPlayBtn, &refBrowseBtn })
         b->setVisible(true);
+    refreshRefBarEnablement();
     // The reference-preset controls that used to be rebuilt here are gone with
     // the feature.
 
@@ -6105,6 +6124,24 @@ int EchoJayEditor::refBarCurrentIndex() const
     return slot.kind == CompareSlotState::Kind::Reference ? slot.index : -1;
 }
 
+// THE ARROWS SAY IT INSTEAD OF THE STATUS LINE.
+//
+// Computes the scope count THE SAME WAY refBarStepBy does, through
+// echojay::refScopeCount with the same three arguments, rather than caching a
+// number or counting inline. Two ways of counting the same thing is how a
+// control comes to disagree with the pane beside it.
+void EchoJayEditor::refreshRefBarEnablement()
+{
+    const auto entries  = refBrowserEntries();
+    const auto& folders = processorRef.referenceFolders;
+    const auto  scope   = echojay::refScopeOrAll (processorRef.referenceScope, folders);
+    const int   count   = echojay::refScopeCount (entries, folders, scope);
+
+    const bool on = echojay::refBarArrowsEnabled (count);
+    refPrevBtn.setEnabled (on);
+    refNextBtn.setEnabled (on);
+}
+
 void EchoJayEditor::refBarStepBy (int delta)
 {
     const auto entries = refBrowserEntries();
@@ -6115,17 +6152,12 @@ void EchoJayEditor::refBarStepBy (int delta)
     // count, so stepping within a folder needed no change to the rule, only a
     // different number handed to it.
     const int count = echojay::refScopeCount (entries, folders, scope);
-    if (count <= 0)
-    {
-        // AN EMPTY FOLDER NAMES ITSELF. "No references" would be false: there
-        // are references, just not in here, and a message that contradicts the
-        // left pane is worse than no message.
-        const auto chip = echojay::refScopeChipText (scope);
-        setRefStatus (chip.isEmpty()
-                        ? juce::String ("No references to step through. Add one first.")
-                        : "Nothing in " + chip + " to step through.");
-        return;
-    }
+    // SAYS NOTHING. An arrow pressed with nothing to step through is not an
+    // error, and this used to report one in the same pink as a failed
+    // analysis. The arrows are disabled in that state by
+    // refreshRefBarEnablement, so reaching here means the enablement is stale,
+    // not that the user did something wrong. Defence, not a message.
+    if (count <= 0) return;
 
     // Current position is translated INTO the scope and the answer back OUT of
     // it, so a library index never leaks into the stepping arithmetic.
@@ -6182,6 +6214,10 @@ void EchoJayEditor::refreshReferenceBrowser()
 void EchoJayEditor::setReferenceScope (const echojay::RefScope& s)
 {
     processorRef.referenceScope = echojay::refScopeOrAll (s, processorRef.referenceFolders);
+    // A different scope is a different count, so the arrows may go live or
+    // dead. Before resized(), which also calls it, because this function is
+    // reached from paths that do not all end in a layout.
+    refreshRefBarEnablement();
     // The bar's chip appears or disappears with this, and the chip changes the
     // bar's geometry, so the layout has to run.
     resized();
@@ -6197,6 +6233,10 @@ void EchoJayEditor::assignReferenceToFolder (const juce::String& path,
     if (folder.isNotEmpty())
         for (auto& f : processorRef.referenceFolders)
             if (f.name == folder) { f.paths.push_back (path); break; }
+    // MEMBERSHIP IS THE SCOPE'S COUNT. Moving the last reference out of the
+    // folder you are looking at empties it, and this is the one mutator that
+    // does NOT route through setReferenceScope, so it needs its own call.
+    refreshRefBarEnablement();
     refreshReferenceBrowser();
     repaint();
 }
@@ -6230,7 +6270,8 @@ void EchoJayEditor::commitFolderName (const juce::String& oldName, const juce::S
     for (auto& f : processorRef.referenceFolders)
         if (f.name == name && f.name != oldName)
         {
-            setRefStatus ("There is already a folder called " + name);
+            setRefStatus ("There is already a folder called " + name,
+                          RefStatusKind::Problem);
             refreshReferenceBrowser(); repaint();
             return;
         }
@@ -20863,6 +20904,9 @@ void EchoJayEditor::resized()
         // PluginReviewOverlay.
         refBrowser_.setBounds(getLocalBounds());
         if (refBrowser_.visibleState) refBrowser_.toFront(false);
+        // The arrows' enablement is bar state like their bounds are, so it is
+        // refreshed by the same pass that positions them.
+        refreshRefBarEnablement();
     }
 
     // Settings layout — consistent Y tracking matching paintSettingsView.

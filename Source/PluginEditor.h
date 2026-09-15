@@ -150,11 +150,25 @@ private:
     void showCompareView();
     void hideCompareView();
     void loadReferenceFile();
+
+    /** What a status line IS, so its colour follows its register rather than
+        its wording. PROBLEM is the default so that adding a call site cannot
+        silently downgrade a failure by forgetting the argument; every existing
+        site passes its kind explicitly regardless, because inferring register
+        from the text of a message is how "Analysing..." came to be the same
+        pink as "Error:". */
+    enum class RefStatusKind { Problem, Info };
+
+    /** Recomputes whether the reference bar's arrows can act, from the scope
+        count, and enables or disables them. Called from resized() and from
+        every site that can change the library or the scope. */
+    void refreshRefBarEnablement();
+
     // The ONE writer of refStatusLabel. Text and visibility move together,
     // because thirteen setText calls against a label that was neither a child
     // component nor given bounds is how the Compare view came to report
     // nothing at all. See the comment at the definition.
-    void setRefStatus(const juce::String& msg);
+    void setRefStatus(const juce::String& msg, RefStatusKind kind = RefStatusKind::Problem);
     // Which Compare slot a raw click landed in. The bottom panel starts at the
     // bottom slot button, so this is live geometry rather than a guess.
     bool compareClickIsTopSlot(juce::Point<int> pos) const;

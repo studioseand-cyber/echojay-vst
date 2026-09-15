@@ -179,6 +179,20 @@ inline bool refStatusPresenceChanged (const juce::String& before,
     return before.isNotEmpty() != after.isNotEmpty();
 }
 
+/** ARE THE ARROWS LIVE?
+
+    Pressing an arrow with nothing to step through is not an error, so it must
+    not produce a message: the control says it instead. This is the predicate
+    that decides, kept beside refBarStep because the two answer the same
+    question from opposite sides, and pure so the rule is checkable rather than
+    a condition buried in a handler.
+
+    THE COUNT IS THE SCOPE'S, not the library's, for the same reason
+    refBarStep's is: a full library and an empty folder must disable the
+    arrows exactly alike.
+*/
+inline bool refBarArrowsEnabled (int scopeCount) { return scopeCount > 0; }
+
 /** WHICH SLOT THE BAR DRIVES.
 
     compareTop_ defaults to Live signal and compareBot_ to Empty, so B is the
