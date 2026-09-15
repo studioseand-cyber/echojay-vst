@@ -4844,6 +4844,24 @@ void EchoJayEditor::fileDragExit(const juce::StringArray&) { dragHovering = fals
 void EchoJayEditor::filesDropped(const juce::StringArray& files, int, int)
 {
     dragHovering = false;
+
+    // EXACTLY ONE ACCEPTED FILE AUTO LOADS. Two or more add and load none.
+    //
+    // The OS hands the dropped paths in an arbitrary order, so first and last
+    // are equally arbitrary and picking either would be inventing an intent
+    // the user did not express. A SINGLE drop is an unambiguous choice; a
+    // multi drop is an import. Counted over the ACCEPTED files, not the
+    // dropped ones, so dragging one wav and two PDFs still auto loads the wav.
+    int accepted = 0;
+    for (auto& f : files)
+    {
+        const auto e = juce::File(f).getFileExtension().toLowerCase();
+        if (e == ".wav" || e == ".mp3" || e == ".flac" || e == ".aiff" ||
+            e == ".aif" || e == ".ogg" || e == ".m4a")
+            ++accepted;
+    }
+    const bool autoLoad = (accepted == 1);
+
     for (auto& f : files) {
         juce::File file(f);
         auto ext = file.getFileExtension().toLowerCase();
@@ -4866,9 +4884,52 @@ void EchoJayEditor::filesDropped(const juce::StringArray& files, int, int)
             auto& analyser = processorRef.getReferenceAnalyser();
             analyser.forceResetIfStuck();
             
-            analyser.analyseFile(fileToAnalyse, [this, file](bool success, const juce::String& error) {
-                if (success) setRefStatus(juce::String(processorRef.getReferenceAnalyser().getReferenceCount()) + " reference(s) loaded", RefStatusKind::Info);
-                else setRefStatus("Error: " + error, RefStatusKind::Problem);
+            // The RESOLVED path is what the entry will carry, not the dropped
+            // one: filesDropped analyses the copy in References when the copy
+            // succeeded, so resolving by the original path would miss.
+            const auto analysedPath = fileToAnalyse.getFullPathName();
+            analyser.analyseFile(fileToAnalyse, [this, file, analysedPath, autoLoad, accepted]
+                                                (bool success, const juce::String& error) {
+                if (! success)
+                {
+                    setRefStatus("Error: " + error, RefStatusKind::Problem);
+                    refreshRefBarEnablement();
+                    if (currentView == View::Compare) showCompareView();
+                    repaint();
+                    return;
+                }
+
+                if (autoLoad)
+                {
+                    // BY PATH, NEVER BY POSITION. See refIndexOfPath.
+                    const int idx = echojay::refIndexOfPath (refBrowserEntries(), analysedPath);
+                    if (idx >= 0)
+                    {
+                        // refBarIsTop(), NOT a fresh decision, so the drop and
+                        // the arrows always agree about which slot they drive.
+                        const bool isTop = refBarIsTop();
+                        applyReferenceToSlot (isTop, idx);
+                        refBrowserSelected_ = idx;
+                        if (refBrowser_.visibleState) refreshReferenceBrowser();
+                        setRefStatus (file.getFileName() + " loaded into "
+                                        + juce::String (isTop ? "A" : "B"),
+                                      RefStatusKind::Info);
+                    }
+                    else
+                    {
+                        // Analysed but not findable: say what is true rather
+                        // than claiming a load that did not happen.
+                        setRefStatus (file.getFileName() + " added", RefStatusKind::Info);
+                    }
+                }
+                else
+                {
+                    // NO CLAIM THAT ANYTHING LOADED, and the count is of what
+                    // this drop added, not of the library.
+                    setRefStatus (juce::String (accepted) + " references added",
+                                  RefStatusKind::Info);
+                }
+
                 refreshRefBarEnablement();   // the library just changed
                 if (currentView == View::Compare) showCompareView();
                 repaint();
@@ -4955,9 +5016,35 @@ void EchoJayEditor::loadReferenceFile()
             auto file = fc.getResult();
             if (file.existsAsFile()) {
                 setRefStatus("Analysing " + file.getFileName() + "...", RefStatusKind::Info);
-                processorRef.getReferenceAnalyser().analyseFile(file, [this](bool success, const juce::String& error) {
-                    if (success) setRefStatus(juce::String(processorRef.getReferenceAnalyser().getReferenceCount()) + " reference(s) loaded", RefStatusKind::Info);
-                    else setRefStatus("Error: " + error, RefStatusKind::Problem);
+                // THE CHOOSER IS SINGLE SELECT, so this is always the one-file
+                // case and needs no count: launchAsync passes openMode |
+                // canSelectFiles with no canSelectMultipleItems, and the
+                // callback reads getResult(), not getResults().
+                const auto analysedPath = file.getFullPathName();
+                processorRef.getReferenceAnalyser().analyseFile(file, [this, file, analysedPath]
+                                                                     (bool success, const juce::String& error) {
+                    if (! success)
+                    {
+                        setRefStatus("Error: " + error, RefStatusKind::Problem);
+                        refreshRefBarEnablement();
+                        repaint();
+                        return;
+                    }
+
+                    const int idx = echojay::refIndexOfPath (refBrowserEntries(), analysedPath);
+                    if (idx >= 0)
+                    {
+                        const bool isTop = refBarIsTop();
+                        applyReferenceToSlot (isTop, idx);
+                        refBrowserSelected_ = idx;
+                        if (refBrowser_.visibleState) refreshReferenceBrowser();
+                        setRefStatus (file.getFileName() + " loaded into "
+                                        + juce::String (isTop ? "A" : "B"),
+                                      RefStatusKind::Info);
+                    }
+                    else
+                        setRefStatus (file.getFileName() + " added", RefStatusKind::Info);
+
                     refreshRefBarEnablement();   // the library just changed
                     repaint();
                 });
