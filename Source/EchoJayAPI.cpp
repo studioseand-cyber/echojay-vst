@@ -3549,8 +3549,12 @@ juce::String EchoJayAPI::buildMeterSnapshotInjection(const juce::String& meterJs
     // windows in one block: a 12 second spectrum beside a 150 ms macro band,
     // with only one of them saying so. It now comes from the macro ring, over
     // the same frames as the spectrum, and states its own window. The capture
-    // payload still carries the instantaneous one, which is correct there: a
-    // capture already has its own window and its own averaging.
+    // payload still carries the instantaneous one, and that is NOT because a
+    // capture has re-aggregated it: stopCapture rebuilds the spectrum, the
+    // peaks, the RMS and the crest over the whole capture and leaves
+    // macroBandDb as the meter's ballistic reading at the moment of stopping.
+    // So the capture path carries a tail wearing a whole-capture label. Phase
+    // 1b is where that is fixed; this comment used to assert the opposite.
     // v3 edge-encoded names, see HANDOVER/meter-snapshot-v3.md. The required
     // set moves with the writer in MeterEngine::meterDataToJSON; if the two
     // ever disagree the object is dropped, which is the safe direction.

@@ -1,4 +1,5 @@
 #include "MeterEngine.h"
+#include "EJBandScheme.h"   // the band edges, the bin axis and the ballistics
 #include <cmath>
 #include <algorithm>
 #include <numeric>
@@ -270,8 +271,8 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
     
     for (int b = 0; b < N; ++b)
     {
-        double fLo = std::pow(2.0, logMin + (logMax - logMin) * (double)b / (double)N);
-        double fHi = std::pow(2.0, logMin + (logMax - logMin) * (double)(b + 1) / (double)N);
+        double fLo = echojay::specBinEdgeHzFromLogs(b,     N, logMin, logMax);
+        double fHi = echojay::specBinEdgeHzFromLogs(b + 1, N, logMin, logMax);
         double fCentre = (fLo + fHi) * 0.5;
         double exactBin = fCentre / binHz;
         int binLo2 = std::max(1, std::min((int)std::floor(exactBin), usableBins - 1));
@@ -310,8 +311,8 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
     }
     // Time-based smoothing — consistent across buffer sizes and platforms
     double bufDur = (currentSampleRate > 0) ? (double)numSamples / currentSampleRate : 0.01;
-    float attackCoeff = 1.0f - (float)std::exp(-bufDur / 0.01);  // ~10ms attack
-    float releaseCoeff = 1.0f - (float)std::exp(-bufDur / 0.15); // ~150ms release
+    float attackCoeff  = echojay::ballisticCoeff(bufDur, echojay::kMeterAttackTauSec);
+    float releaseCoeff = echojay::ballisticCoeff(bufDur, echojay::kMeterReleaseTauSec);
     for (int b = 0; b < N; ++b)
     {
         float coeff = (rawBins[(size_t)b] > smoothedSpectrum[(size_t)b]) ? attackCoeff : releaseCoeff;
@@ -325,15 +326,11 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
     // above, which carry visual shaping (low-end attenuation, span-peak
     // sampling) that must NOT leak into the serialised macroBands data.
     {
-        struct BandEdge { double lo, hi; };
-        const BandEdge edges[6] = {
-            {   20.0,    60.0 },   // sub
-            {   60.0,   250.0 },   // low
-            {  250.0,   500.0 },   // lowMid
-            {  500.0,  2000.0 },   // mid
-            { 2000.0,  6000.0 },   // highMid
-            { 6000.0, maxFreq },   // air
-        };
+        // ONE DEFINITION, in EJBandScheme.h, so a boundary cannot move without
+        // a pin objecting. The values are unchanged and the air band still ends
+        // at maxFreq, which is sample-rate dependent and therefore an argument
+        // rather than a constant.
+        const auto edges = echojay::macroBandEdges(maxFreq);
         double bandPower[6] = {};
         for (int k = 1; k < usableBins; ++k)
         {
@@ -341,12 +338,12 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
             if (f < 20.0 || f >= maxFreq) continue;
             double m = (double)fftData[(size_t)k] * normFactor;
             for (int bi = 0; bi < 6; ++bi)
-                if (f >= edges[bi].lo && f < edges[bi].hi)
+                if (f >= edges[(size_t)bi].lo && f < edges[(size_t)bi].hi)
                 { bandPower[bi] += m * m; break; }
         }
         for (int bi = 0; bi < 6; ++bi)
         {
-            double octaves = std::log2(std::max(1.01, edges[bi].hi / edges[bi].lo));
+            double octaves = std::log2(std::max(1.01, edges[(size_t)bi].hi / edges[(size_t)bi].lo));
             double perOct  = bandPower[bi] / octaves;
             float dbv = perOct > 1e-12 ? (float)(10.0 * std::log10(perOct)) : -120.0f;
             float coeff = (dbv > smoothedMacroBands[(size_t)bi]) ? attackCoeff : releaseCoeff;

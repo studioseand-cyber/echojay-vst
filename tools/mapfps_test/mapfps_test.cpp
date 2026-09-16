@@ -50,6 +50,7 @@
 #include "EJReferenceBar.h"     // the reference bar's geometry and stepping: the shipped rects
 #include "EJCodecPage.h"        // the Playback page's geometry: the shipped rects
 #include "EJTooltipPlace.h"     // the tooltip placement rule: the shipped origin
+#include "EJBandScheme.h"      // the band edges, the bin axis and the ballistics
 #include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
@@ -8293,6 +8294,158 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (refIndexAfterRemoval (3, 3) != 2,
                    "rf PIN12: the removed index does not slide down to its "
                    "predecessor, it clears");
+        }
+
+        // bd PIN1 -- THE SIX MACRO BAND EDGES, AS NUMBERS.
+        // These are the boundaries of the pink-referenced scheme that every
+        // band relative, the figure card and the tonal-balance curve are
+        // computed against. Until this pin existed, changing 250.0 to 200.0
+        // reddened NOTHING in any suite: the edges were six literals inside one
+        // function, named by no constant and asserted by no test. Phase 1b is a
+        // sequence of measurements against these bands, and a baseline that can
+        // move silently is not a baseline. A boundary may still be changed --
+        // decision 8 will change one scheme or the other -- but it cannot be
+        // changed WITHOUT this saying so.
+        {
+            const auto e = echojay::macroBandEdges (20000.0);
+
+            check (e[0].lo ==    20.0 && e[0].hi ==   60.0, "bd PIN1: sub is 20 to 60 Hz");
+            check (e[1].lo ==    60.0 && e[1].hi ==  250.0, "bd PIN1: low is 60 to 250 Hz");
+            check (e[2].lo ==   250.0 && e[2].hi ==  500.0, "bd PIN1: lowMid is 250 to 500 Hz");
+            check (e[3].lo ==   500.0 && e[3].hi == 2000.0, "bd PIN1: mid is 500 Hz to 2 kHz");
+            check (e[4].lo ==  2000.0 && e[4].hi == 6000.0, "bd PIN1: highMid is 2 to 6 kHz");
+            check (e[5].lo ==  6000.0, "bd PIN1: air starts at 6 kHz");
+
+            // THE AIR BAND'S CEILING IS NOT A CONSTANT. It is maxFreq,
+            // min(sampleRate * 0.5, 20000), so at 32 kHz the air band ends at
+            // 16 kHz and the serialised air figure covers a different span.
+            // Pinned as a pass-through so a future "tidy" cannot hard-code it.
+            check (e[5].hi == 20000.0,
+                   "bd PIN1: and ends at the ceiling it was given, not at a constant");
+            const auto e32 = echojay::macroBandEdges (16000.0);
+            check (e32[5].hi == 16000.0,
+                   "bd PIN1: so a 32 kHz run's air band ends at 16 kHz");
+            check (e32[0].lo == 20.0 && e32[4].hi == 6000.0,
+                   "bd PIN1: and the five fixed boundaries do not move with it");
+
+            // A PARTITION, not a set of ranges: each band ends exactly where
+            // the next begins, so no frequency is counted twice and none is
+            // dropped. The integration loop breaks on first match, so an
+            // overlap would silently bias the lower band.
+            // VACUOUS AGAINST THE CURRENT TABLE, AND KEPT ANYWAY. macroBandEdges
+            // DERIVES each band's hi from the next band's lo, so this walk
+            // compares a value with the value it was built from: it cannot fail
+            // however the numbers move, and it did not redden under the 250 to
+            // 200 mutation that reddened the two checks above. It is not
+            // evidence about the edges and must not be read as any.
+            //
+            // It becomes a REAL check the moment the six pairs are written out
+            // explicitly, which is exactly what the scheme unification is most
+            // likely to do: two schemes collapsing into one is the edit where a
+            // hand-typed table appears and a gap or an overlap becomes possible.
+            // Deleting it now would mean noticing that and re-deriving it then.
+            bool contiguous = true;
+            for (int i = 0; i < 5; ++i)
+                if (e[(size_t) i].hi != e[(size_t) i + 1].lo) contiguous = false;
+            check (contiguous, "bd PIN1: the six bands are contiguous, so the "
+                               "scheme partitions the spectrum");
+
+            check (juce::String (echojay::macroBandName (0)) == "sub"
+                   && juce::String (echojay::macroBandName (5)) == "air",
+                   "bd PIN1: and the names are in band order, lowest first");
+        }
+
+        // bd PIN2 -- THE BIN SCHEME'S REAL EDGES, IN Hz.
+        // EJSpectralEvidence::computeBands groups the 64 log-spaced analysis
+        // bins by INDEX, so its Hz boundaries appear nowhere in the source:
+        // they are implied by the bin axis and can only be computed. That is
+        // why they are pinned as COMPUTED values rather than read from a table.
+        //
+        // NOTHING HERE ASSERTS THAT THE TWO SCHEMES AGREE. They do not, at
+        // three of six boundaries, and the unification commit will move one of
+        // them. This pin reddening is how we will know that was deliberate.
+        //
+        // AT 44.1 kHz, where maxFreq is min(22050, 20000) = 20000. Every edge
+        // moves below a 40 kHz rate, which the last two checks hold down.
+        {
+            auto edge = [] (int b) { return echojay::specBinEdgeHz (b, 64, 20.0, 20000.0); };
+            auto near1dp = [] (double a, double b) { return std::abs (a - b) < 0.05; };
+
+            check (near1dp (edge (0),     20.0), "bd PIN2: bin group 0-9 starts at 20.0 Hz");
+            check (near1dp (edge (10),    58.9), "bd PIN2: and ends at 58.9 Hz, where 10-20 starts");
+            check (near1dp (edge (21),   192.9), "bd PIN2: group 10-20 ends at 192.9 Hz");
+            check (near1dp (edge (31),   567.7), "bd PIN2: group 21-30 ends at 567.7 Hz");
+            check (near1dp (edge (42),  1861.1), "bd PIN2: group 31-41 ends at 1861.1 Hz");
+            check (near1dp (edge (53),  6101.1), "bd PIN2: group 42-52 ends at 6101.1 Hz");
+            check (near1dp (edge (64), 20000.0), "bd PIN2: and group 53-63 ends at 20000.0 Hz");
+
+            // The axis is logarithmic, so every bin spans the same RATIO. This
+            // is what makes the group boundaries computable at all.
+            const double r1 = edge (1) / edge (0);
+            const double r2 = edge (33) / edge (32);
+            check (std::abs (r1 - r2) < 1e-9,
+                   "bd PIN2: every bin spans the same frequency ratio, so the axis is "
+                   "logarithmic and not linear");
+
+            // THE CEILING IS THE SAMPLE RATE'S, NOT 20 kHz. At 32 kHz maxFreq
+            // is 16000, and the whole ladder compresses: the bin scheme's bands
+            // are NOT fixed frequencies.
+            const double lowRate = echojay::specBinEdgeHz (10, 64, 20.0, 16000.0);
+            check (lowRate < 58.9,
+                   "bd PIN2: at a 32 kHz ceiling the same bin index sits lower, so the "
+                   "bin scheme's edges follow the sample rate");
+        }
+
+        // bd PIN3 -- THE ONE-POLE COEFFICIENTS.
+        // The TIME CONSTANTS are the contract, 10 ms up and 150 ms down, and
+        // the coefficient is derived from the block duration so the span does
+        // not move with the host's buffer size. These four cases are the ones
+        // the Phase 1b survey computed, pinned to six decimal places so a
+        // change to either constant, or to the order or the TYPES of the
+        // arithmetic, is visible. The subtraction is in float and the exp in
+        // double; widening it would move these digits.
+        {
+            auto c = [] (double sr, double bs, double tau)
+            { return echojay::ballisticCoeff (bs / sr, tau); };
+            auto near6 = [] (float a, double b) { return std::abs ((double) a - b) < 5e-7; };
+
+            const double A = echojay::kMeterAttackTauSec;
+            const double R = echojay::kMeterReleaseTauSec;
+
+            check (A == 0.01,  "bd PIN3: the attack time constant is 10 ms");
+            check (R == 0.15,  "bd PIN3: the release time constant is 150 ms");
+
+            check (near6 (c (44100.0, 2048.0, A), 0.990381),
+                   "bd PIN3: 44.1 kHz, 2048 (the reference analyser) attack = 0.990381");
+            check (near6 (c (44100.0, 2048.0, R), 0.266259),
+                   "bd PIN3: 44.1 kHz, 2048 release = 0.266259");
+
+            check (near6 (c (48000.0, 2048.0, A), 0.985972),
+                   "bd PIN3: 48 kHz, 2048 attack = 0.985972");
+            check (near6 (c (48000.0, 2048.0, R), 0.247568),
+                   "bd PIN3: 48 kHz, 2048 release = 0.247568");
+
+            check (near6 (c (48000.0, 512.0, A), 0.655846),
+                   "bd PIN3: 48 kHz, 512 attack = 0.655846");
+            check (near6 (c (48000.0, 512.0, R), 0.068642),
+                   "bd PIN3: 48 kHz, 512 release = 0.068642");
+
+            check (near6 (c (44100.0, 128.0, A), 0.251923),
+                   "bd PIN3: 44.1 kHz, 128 attack = 0.251923");
+            check (near6 (c (44100.0, 128.0, R), 0.019164),
+                   "bd PIN3: 44.1 kHz, 128 release = 0.019164");
+
+            // THE SPAN DOES NOT MOVE WITH THE BLOCK SIZE, which is the whole
+            // reason the coefficient is derived rather than written down. One
+            // block of 2048 and sixteen blocks of 128 at the same rate cover
+            // the same time, so they must decay by the same factor.
+            float sixteenSmall = 1.0f;
+            for (int i = 0; i < 16; ++i)
+                sixteenSmall *= (1.0f - c (44100.0, 128.0, R));
+            const float oneBig = 1.0f - c (44100.0, 2048.0, R);
+            check (std::abs ((double) sixteenSmall - (double) oneBig) < 1e-6,
+                   "bd PIN3: sixteen 128-sample blocks decay by the same factor as one "
+                   "2048-sample block, so the time constant is the contract");
         }
 
         // tt PIN1 -- WHERE A TOOLTIP GOES. The rule was "which half of the
