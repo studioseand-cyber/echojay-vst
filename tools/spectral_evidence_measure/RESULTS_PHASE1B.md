@@ -453,6 +453,156 @@ it. Control B is twelve independent draws and a number.
 
 ---
 
+## 10. The silence distortion, and a claim of mine that the real material cut down
+
+This section is in the BEFORE part because it describes the code as it stands
+today, not the change.
+
+### The claim, and the reading being tested
+
+Not skipping silent blocks compresses the band relatives toward zero. The reading
+under test: this holds for a **dB mean** and not for a **power mean**.
+
+- **Power mean.** Silence adds zero power, so the sum is unchanged and only the
+  divisor grows: every band's mean power becomes `P x (1-f)`, which in dB is the
+  **same constant** added to all six. The six-band mean shifts by that same
+  constant and it cancels out of the relatives entirely.
+- **dB mean.** A silent block contributes the floor F, so
+  `dB' = (1-f)*dB + f*F` and the mean moves the same way. Subtracting gives
+  `rel' = (1-f) * rel`: the relatives are scaled by the audible fraction.
+
+Predicted before running: power-mean relatives exactly unchanged, absolutes
+shifted together by `10*log10(1-f)`; dB-mean relatives scaled by 0.90 / 0.75 /
+0.50 at f = 0.10 / 0.25 / 0.50.
+
+### The synthetic experiment: the mechanism, confirmed
+
+`Print_50 1.wav`, 204.3 s, 4399 blocks, **zero all-floor blocks at f=0**, so it
+genuinely has no long silence to begin with. Silence prepended AND appended in
+memory. Nothing written to the library.
+
+**Power mean, change in the relatives from f=0:**
+
+| f | per band |
+|---|---|
+| 0.10 | -0.01, -0.06, +0.04, -0.01, +0.01, +0.03 |
+| 0.25 | +0.00, -0.01, +0.01, -0.01, +0.02, -0.01 |
+| 0.50 | -0.02, -0.07, +0.04, +0.00, +0.00, +0.04 |
+
+Within **0.07 dB** at every fraction, including half the file being silence. The
+absolutes move together and by the predicted amount: -0.46 / -1.25 / -3.01 dB
+predicted, -0.41 to -0.51 / -1.23 to -1.27 / -2.97 to -3.08 measured.
+
+**dB mean, the compression ratio:**
+
+| f | predicted | measured, six bands |
+|---|---|---|
+| 0.10 | 0.900 | 0.896, 0.888, 0.904, 0.893, 0.877, 0.897 |
+| 0.25 | 0.750 | 0.747, 0.749, 0.751, 0.746, 0.739, 0.750 |
+| 0.50 | 0.500 | 0.495, 0.492, 0.501, 0.496, 0.491, 0.498 |
+
+Confirmed to about one percent on every band at every fraction.
+
+**The `eqCurve` path, which is what the tonal comparison actually reads, is worse
+than the clean model.** Its spectrum floors at -100 rather than -120 and its
+bands carry the display tilt, so the silence does not land equally on every band:
+
+```
+  dB mean REL (eqCurve bins)  f=0.00   +1.22   +5.99   +8.34   +6.14   -3.69  -18.00
+                              f=0.10   +0.69   +5.46   +7.74   +5.61   -3.19  -16.31
+                              f=0.25   -0.23   +4.72   +6.78   +4.95   -2.43  -13.77
+                              f=0.50   -1.80   +3.38   +5.09   +3.75   -1.18   -9.24
+```
+
+The sub relative **changes sign** at f=0.25 with no change whatever to the audio.
+
+### A prediction of mine that was wrong, and why the sign was backwards
+
+I predicted that the 150 ms ballistic release would make the measured compression
+come in **slightly less** than (1-f), so the ratio should sit slightly **above**
+0.900 / 0.750 / 0.500. It sits slightly **below** in most bands, mean about 0.893
+at f=0.10.
+
+The reasoning had the sign backwards. A block in the decay ramp is neither signal
+nor floor, but it is **below** the signal level, so it pulls the mean down and
+therefore **adds** compression rather than sparing it. The all-floor block counts
+confirm the mechanism rather than the alternative: 483 of 4888 blocks at f=0.10
+is 9.9 percent, so the extra compression comes from the ramp and not from more
+silence than was asked for.
+
+### The real material: the mechanism holds, the magnitude does not
+
+Digital silence floors the meter harder than anything real, so the synthetic
+result is an upper bound rather than a measurement of what ships. Every reference
+in the library, read only, no synthetic input: the `eqCurve` relatives over every
+block, against the same relatives over the **audible** blocks only, where audible
+is the engine's own `MeterData::isSilent` (peak below threshold for 500 ms)
+rather than a second definition invented for the measurement.
+
+**Largest per-file change in any band, dB:**
+
+| | min | p25 | med | p75 | p90 | max |
+|---|---|---|---|---|---|---|
+| eqCurve | 0.00 | 0.00 | 0.00 | 0.10 | 3.36 | **16.86** |
+| power accumulator | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | **0.01** |
+
+**Files with any band changing sign: eqCurve 5 of 45, power 0 of 45.**
+
+| silent fraction | files | worst eqCurve change |
+|---|---|---|
+| exactly 0 | 27 | 0.01 dB |
+| under 1 percent | 7 | 0.10 dB |
+| 1 to 10 percent | 6 | 0.57 dB |
+| 10 to 50 percent | 0 | n/a |
+| over 50 percent | 5 | 16.86 dB |
+
+The five that move are all mostly silence: `house 001 intro.wav` and its
+duplicate at 52 percent (16.86 dB), `aritst - its the way V1.aif` at 90 percent
+(9.49 dB), and the two `VITO ... Stems` files at 84.6 and 96 percent (8.75 and
+3.36 dB). Those five are the five sign changes. No full-length master moves by
+more than **0.57 dB**.
+
+**It tracks the silent fraction almost exactly.** Correlation across all 45 files
+is r = 0.751; across the 40 files under 50 percent silent it is **r = 0.981**.
+The arithmetic is confirmed on real audio. What the real audio also says is that
+the inputs to it are small.
+
+### A claim of mine to strike
+
+While reporting the synthetic result I wrote that the census already tells us
+silence is common in the library, and used it to argue the distortion is
+widespread. **That inference was wrong and it is withdrawn.** The census measures
+DEAD TAILS, meaning the ballistic meter decaying to the floor over a fade. That
+is not the same thing as SILENT BLOCKS: a fade-out is still above the silence
+threshold for most of its length, and the two counts disagree badly. 14 of 45
+references have a dead tail; only **18 of 45 contain a single silent block, 11
+are above 1 percent, and 5 above 10 percent**.
+
+So the silence argument for decision 8 is real in mechanism and **much weaker in
+magnitude than I claimed**. It is worth one sentence about edge material, not a
+second pillar.
+
+### The two caveats, kept
+
+1. **Digital silence floors harder than room tone.** The synthetic experiment
+   pads with true zeros. A real intro carries room tone, preamp hiss and a noise
+   floor that still contributes power, which is a large part of why the real
+   material moves so much less.
+2. **The mechanism is arithmetic; the magnitude is what the real measurement
+   settles.** The compression by (1-f) follows from the definition of a dB mean
+   and will hold anywhere. Whether it matters depends entirely on f, and on this
+   library f is zero for 27 of 45 files.
+
+### What survives for the accumulation
+
+The power accumulator this commit adds moves by at most **0.01 dB across all 45
+references** and changes no sign on any of them. That is the property worth
+carrying forward: whatever the silent fraction turns out to be on a user's
+library, the accumulated macro bands do not care, and the figure the model reads
+does not move because a track has an intro.
+
+---
+
 ## AFTER
 
 *Empty by design. The next run fills this section in place, so the diff of this file is

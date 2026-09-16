@@ -21,8 +21,15 @@ for a in args[1:]:
     if a in ('-c', '-o'): skip = (a == '-o'); continue
     if a.endswith('PluginProcessor.cpp') or a.endswith('.o'): continue
     out.append(a)
+# MeterEngine.cpp IS COMPILED HERE, NOT TAKEN FROM THE ARCHIVE. The archive is
+# the PREVIOUS build's, so a method added to MeterEngine since then is simply
+# absent from it and the link fails with an undefined symbol; worse, a method
+# whose BEHAVIOUR changed would link fine and the harness would measure the old
+# code while reporting on the new source. Listing the .o first means the linker
+# resolves MeterEngine from it and never pulls the archive's copy.
 cmd = (['clang++'] + out + ['-I', os.path.abspath('Source'),
         'tools/spectral_evidence_measure/measure.cpp',
+        'Source/MeterEngine.cpp',
         'build/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a',
         '-framework','Cocoa','-framework','CoreAudio','-framework','CoreMIDI',
         '-framework','AudioToolbox','-framework','Accelerate','-framework','QuartzCore',

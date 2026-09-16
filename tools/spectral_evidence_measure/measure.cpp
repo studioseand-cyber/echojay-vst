@@ -139,6 +139,13 @@ struct MacroRow
     std::array<float, 6> meanPow {};   // whole file, mean of per-block power
 
     std::array<float, 64> eqCurve {};  // accumulated exactly as ReferenceAnalyser does
+
+    // Phase 1b commit 3: the engine's OWN whole-run accumulator, a mean of
+    // POWER, read through the shipped getAccumulatedBands().
+    std::array<float, 6> accumDb {};
+    bool  accumValid = false;
+    int   accumBlocks = 0;
+    int   silentBlocks = 0;            // blocks whose six bands are all on the floor
 };
 
 /** rel = band minus the mean of the six in the SAME row. Recomputed from the
@@ -234,9 +241,16 @@ static bool macroPassBuffer (const juce::AudioBuffer<float>& buf, double sr,
         const float* L = buf.getReadPointer (0, read);
         const float* R = nch >= 2 ? buf.getReadPointer (1, read) : L;
         engine.processBlock (L, R, want);
-        acc.push (engine.getMeterData());
+        const auto md = engine.getMeterData();
+        acc.push (md);
+        bool allFloor = true;
+        for (int i = 0; i < 6; ++i) if (md.macroBandDb[(size_t) i] > -110.0f) allFloor = false;
+        if (allFloor) ++out.silentBlocks;
     }
-    return acc.finish (out, sr, blockSize);
+    if (! acc.finish (out, sr, blockSize)) return false;
+    const auto a = engine.getAccumulatedBands();
+    out.accumValid = a.valid; out.accumBlocks = a.blocks; out.accumDb = a.db;
+    return true;
 }
 
 /** Run the SHIPPED MeterEngine over a whole file at ReferenceAnalyser's block
@@ -539,6 +553,344 @@ static juce::AudioBuffer<float> makeMultiTone (double sr, int blocks)
         buf.setSample (1, i, (float) v);
     }
     return buf;
+}
+
+// ---------------------------------------------------------------------------
+// THE SILENCE EXPERIMENT (Phase 1b commit 3)
+// ---------------------------------------------------------------------------
+// THE CLAIM UNDER TEST: not skipping silent blocks compresses the band
+// relatives toward zero. The reading being checked is that this holds for a dB
+// mean and NOT for a power mean.
+//
+//   POWER MEAN. Silence adds zero power, so the sum is unchanged and only the
+//   divisor grows: every band's mean power becomes P*(1-f), which in dB is the
+//   SAME constant added to all six. The six-band mean shifts by that same
+//   constant and it cancels out of the relatives entirely.
+//     predicted: relatives EXACTLY unchanged; absolutes all shift by
+//     10*log10(1-f) = -0.46 dB at f=0.10, -1.25 at 0.25, -3.01 at 0.50.
+//
+//   dB MEAN. A silent block contributes the FLOOR, so dB' = (1-f)*dB + f*F and
+//   the mean moves the same way; subtracting gives rel' = (1-f)*rel.
+//     predicted: relatives scaled by 0.90 / 0.75 / 0.50.
+//
+// The numbers are free to contradict both. READ ONLY: the file is loaded, the
+// silence is prepended and appended IN MEMORY, and nothing is written anywhere.
+static juce::AudioBuffer<float> padWithSilence (const juce::AudioBuffer<float>& src,
+                                                double fraction)
+{
+    // f of the RESULT is silence, split evenly before and after, so the test is
+    // an intro and an outro rather than one or the other.
+    const int n = src.getNumSamples();
+    if (fraction <= 0.0) return src;
+    const int total = (int) std::llround ((double) n / (1.0 - fraction));
+    const int pad   = (total - n) / 2;
+    juce::AudioBuffer<float> out (src.getNumChannels(), pad + n + pad);
+    out.clear();
+    for (int ch = 0; ch < src.getNumChannels(); ++ch)
+        out.copyFrom (ch, pad, src, ch, 0, n);
+    return out;
+}
+
+static int runSilence (const juce::File& f)
+{
+    std::cout << "=== THE SILENCE EXPERIMENT ===\n\n";
+    std::cout << "  file: " << f.getFileName() << "   (READ ONLY, padded in memory only)\n\n";
+    std::cout << "  PREDICTED, stated before the run:\n"
+                 "    power mean : relatives EXACTLY unchanged at every fraction;\n"
+                 "                 absolutes all shift together by 10*log10(1-f),\n"
+                 "                 -0.46 / -1.25 / -3.01 dB at f = 0.10 / 0.25 / 0.50\n"
+                 "    dB mean    : relatives scaled by (1-f), so 0.90 / 0.75 / 0.50\n"
+                 "                 absolutes dragged toward the floor by f*(F - dB)\n"
+                 "    the ballistic release is 150 ms, so blocks near the boundary are\n"
+                 "    decaying rather than at the floor: the dB-mean compression should\n"
+                 "    come in slightly LESS than (1-f) exactly.\n\n";
+
+    juce::AudioFormatManager fm; fm.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> rd (fm.createReaderFor (f));
+    if (rd == nullptr) { std::cout << "  cannot read\n"; return 2; }
+    juce::AudioBuffer<float> src ((int) juce::jmax (1u, rd->numChannels),
+                                  (int) rd->lengthInSamples);
+    rd->read (&src, 0, (int) rd->lengthInSamples, 0, true, true);
+    const double sr = rd->sampleRate;
+
+    const double fractions[4] { 0.0, 0.10, 0.25, 0.50 };
+    std::array<float, 6> basePowRel {}, baseDbRel {}, baseEqRel {};
+    std::array<float, 6> basePowAbs {};
+
+    for (int fi = 0; fi < 4; ++fi)
+    {
+        const auto buf = padWithSilence (src, fractions[fi]);
+        MacroRow m;
+        if (! macroPassBuffer (buf, sr, f.getFileName(), m))
+        { std::cout << "  pass failed\n"; return 1; }
+
+        // Scheme 1: the ENGINE's power mean, through the shipped read-out.
+        const auto powAbs = m.accumDb;
+        const auto powRel = relsOf (powAbs);
+        // Scheme 2: a dB mean of the same six bands (mean of macroBandDb).
+        const auto dbRel  = relsOf (m.meanDb);
+        // Scheme 3: the dB mean eqCurve actually computes, through the shipped
+        // computeBands, which is what the tonal comparison reads today.
+        const auto cb = echojay::computeBands (m.eqCurve);
+        const float cbv[6] { cb.sub, cb.low, cb.lowMid, cb.mid, cb.highMid, cb.high };
+        float cbMean = 0.0f; for (int i = 0; i < 6; ++i) cbMean += cbv[i];
+        cbMean /= 6.0f;
+        std::array<float, 6> eqRel {};
+        for (int i = 0; i < 6; ++i) eqRel[(size_t) i] = cbv[i] - cbMean;
+
+        if (fi == 0)
+        { basePowRel = powRel; baseDbRel = dbRel; baseEqRel = eqRel; basePowAbs = powAbs; }
+
+        std::cout << "  ---- silent fraction " << juce::String (fractions[fi], 2)
+                  << "   (" << m.frames << " blocks, " << m.silentBlocks
+                  << " all-floor, " << juce::String (m.seconds, 1) << " s) ----\n";
+        std::cout << kBandHdr << "\n";
+        printRow       ("  POWER mean ABS", powAbs);
+        printRowSigned ("  POWER mean REL", powRel);
+        printRow       ("  dB mean ABS (macro)", m.meanDb);
+        printRowSigned ("  dB mean REL (macro)", dbRel);
+        printRowSigned ("  dB mean REL (eqCurve bins)", eqRel);
+
+        if (fi > 0)
+        {
+            printRowSigned ("  POWER ABS shift from f=0", diffOf (powAbs, basePowAbs));
+            printRowSigned ("  POWER REL change from f=0", diffOf (powRel, basePowRel));
+            // The compression ratio, band by band, for both dB schemes. Only
+            // meaningful where the base relative is big enough to divide by.
+            auto ratios = [] (const char* lbl, const std::array<float, 6>& now,
+                              const std::array<float, 6>& base)
+            {
+                std::cout << "  " << std::left << std::setw (34) << lbl;
+                for (int i = 0; i < 6; ++i)
+                {
+                    if (std::abs (base[(size_t) i]) < 0.5f)
+                        std::cout << std::right << std::setw (9) << "  n/a";
+                    else
+                        std::cout << std::right << std::setw (9) << std::fixed
+                                  << std::setprecision (3)
+                                  << (now[(size_t) i] / base[(size_t) i]);
+                }
+                std::cout << "\n";
+            };
+            ratios ("  dB REL ratio (macro)",   dbRel, baseDbRel);
+            ratios ("  dB REL ratio (eqCurve)", eqRel, baseEqRel);
+            std::cout << "    predicted dB REL ratio at this fraction: "
+                      << juce::String (1.0 - fractions[fi], 3) << "\n";
+            std::cout << "    predicted POWER ABS shift: "
+                      << juce::String (10.0 * std::log10 (1.0 - fractions[fi]), 3) << " dB\n";
+        }
+        std::cout << "\n"; std::cout.flush();
+    }
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// THE SILENCE DISTORTION, ON REAL MATERIAL (Phase 1b commit 3)
+// ---------------------------------------------------------------------------
+// The synthetic experiment pads a file with DIGITAL silence, which floors the
+// meter harder than anything real: a genuine intro has room tone, preamp hiss
+// and a noise floor that still carries power. The library already contains real
+// silence with real room tone in it, so this measures the distortion that is
+// actually shipping rather than one built to demonstrate the mechanism.
+//
+// For every file: the eqCurve band relatives as they ship today, over EVERY
+// block, against the same relatives over the AUDIBLE blocks only. The gap is
+// what the silence is doing to the advice the model reads.
+//
+// AUDIBLE IS THE ENGINE'S OWN DEFINITION, not a new one: MeterData::isSilent,
+// which is peak below kSilenceThreshold for 500 ms. Inventing a second
+// definition of silence for the measurement would make it unattributable.
+//
+// The power-accumulated macro bands are measured on the same files in the same
+// pass, because the prediction is that they barely move and a prediction that
+// is not measured beside its alternative is not a comparison.
+struct SilenceRow
+{
+    juce::String name;
+    int   frames = 0, audible = 0;
+    float silentFraction = 0.0f;
+    std::array<float, 6> relAll {}, relAudible {}, relDiff {};
+    std::array<float, 6> powRelAll {}, powRelAudible {}, powRelDiff {};
+    bool  anySignChange = false, powSignChange = false;
+    float worstAbs = 0.0f, powWorstAbs = 0.0f;
+    bool  ok = false;
+};
+
+static bool silencePass (const juce::File& f, SilenceRow& out)
+{
+    juce::AudioFormatManager fm; fm.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> rd (fm.createReaderFor (f));
+    if (rd == nullptr) return false;
+    const double sr = rd->sampleRate;
+    const juce::int64 total = rd->lengthInSamples;
+    const int nch = (int) rd->numChannels;
+    if (sr <= 0.0 || total <= 0) return false;
+
+    const int blockSize = 2048;
+    MeterEngine engine;
+    engine.prepare (sr, blockSize);
+
+    std::array<double, 64> sumAll {}, sumAud {};
+    sumAll.fill (0.0); sumAud.fill (0.0);
+    std::array<double, 6> powAll {}, powAud {};
+    powAll.fill (0.0); powAud.fill (0.0);
+    int nAll = 0, nAud = 0;
+    double prevPow[6] = {};
+
+    juce::AudioBuffer<float> buf (juce::jmax (1, nch), blockSize);
+    juce::int64 read = 0;
+    while (read < total)
+    {
+        const int want = (int) juce::jmin ((juce::int64) blockSize, total - read);
+        buf.clear();
+        rd->read (&buf, 0, want, read, true, true);
+        const float* L = buf.getReadPointer (0);
+        const float* R = nch >= 2 ? buf.getReadPointer (1) : L;
+        engine.processBlock (L, R, want);
+        const auto md = engine.getMeterData();
+
+        // The POWER accumulator is cumulative inside the engine, so the
+        // per-block power is its increment. Read it as a delta rather than
+        // re-deriving it, so both columns come from the shipped accumulation.
+        const auto acc = engine.getAccumulatedBands();
+        double curPow[6] = {};
+        for (int i = 0; i < 6; ++i)
+            curPow[i] = acc.valid ? std::pow (10.0, (double) acc.db[(size_t) i] / 10.0)
+                                    * (double) acc.blocks : 0.0;
+
+        for (int i = 0; i < 64; ++i) sumAll[(size_t) i] += (double) md.spectrum[(size_t) i];
+        for (int i = 0; i < 6; ++i) powAll[(size_t) i] = curPow[i];
+        ++nAll;
+        if (! md.isSilent)
+        {
+            for (int i = 0; i < 64; ++i) sumAud[(size_t) i] += (double) md.spectrum[(size_t) i];
+            for (int i = 0; i < 6; ++i) powAud[(size_t) i] += (curPow[i] - prevPow[i]);
+            ++nAud;
+        }
+        for (int i = 0; i < 6; ++i) prevPow[i] = curPow[i];
+        read += want;
+    }
+    if (nAll == 0 || nAud == 0) return false;
+
+    out.name = f.getFileName();
+    out.frames = nAll; out.audible = nAud;
+    out.silentFraction = 1.0f - (float) nAud / (float) nAll;
+
+    auto relsOfSpec = [] (const std::array<double, 64>& sum, int n)
+    {
+        std::array<float, 64> avg {};
+        for (int i = 0; i < 64; ++i) avg[(size_t) i] = (float) (sum[(size_t) i] / (double) n);
+        const auto b = echojay::computeBands (avg);
+        const float v[6] { b.sub, b.low, b.lowMid, b.mid, b.highMid, b.high };
+        float m = 0.0f; for (int i = 0; i < 6; ++i) m += v[i]; m /= 6.0f;
+        std::array<float, 6> r {};
+        for (int i = 0; i < 6; ++i) r[(size_t) i] = v[i] - m;
+        return r;
+    };
+    out.relAll     = relsOfSpec (sumAll, nAll);
+    out.relAudible = relsOfSpec (sumAud, nAud);
+
+    auto relsOfPow = [] (const std::array<double, 6>& p, int n)
+    {
+        std::array<float, 6> db {};
+        for (int i = 0; i < 6; ++i)
+            db[(size_t) i] = echojay::bandMeanFromSum (p[(size_t) i], n).db;
+        return relsOf (db);
+    };
+    out.powRelAll     = relsOfPow (powAll, nAll);
+    out.powRelAudible = relsOfPow (powAud, nAud);
+
+    for (int i = 0; i < 6; ++i)
+    {
+        out.relDiff[(size_t) i]    = out.relAudible[(size_t) i] - out.relAll[(size_t) i];
+        out.powRelDiff[(size_t) i] = out.powRelAudible[(size_t) i] - out.powRelAll[(size_t) i];
+        out.worstAbs    = juce::jmax (out.worstAbs,    std::abs (out.relDiff[(size_t) i]));
+        out.powWorstAbs = juce::jmax (out.powWorstAbs, std::abs (out.powRelDiff[(size_t) i]));
+        if ((out.relAll[(size_t) i] > 0.0f) != (out.relAudible[(size_t) i] > 0.0f))
+            out.anySignChange = true;
+        if ((out.powRelAll[(size_t) i] > 0.0f) != (out.powRelAudible[(size_t) i] > 0.0f))
+            out.powSignChange = true;
+    }
+    out.ok = true;
+    return true;
+}
+
+static int runSilenceReal (const juce::File& folder)
+{
+    std::cout << "=== THE SILENCE DISTORTION, ON REAL MATERIAL ===\n\n";
+    std::cout << "  folder: " << folder.getFullPathName() << "  (READ ONLY)\n";
+    std::cout << "  No synthetic silence anywhere. Audible = the engine's own\n"
+                 "  MeterData::isSilent, peak below threshold for 500 ms.\n\n";
+
+    juce::Array<juce::File> files;
+    folder.findChildFiles (files, juce::File::findFiles, false);
+    files.sort();
+
+    std::vector<SilenceRow> rows;
+    std::cout << "  " << std::left << std::setw (46) << "FILE" << std::right
+              << std::setw (9) << "silent%" << std::setw (11) << "eqC worst"
+              << std::setw (8) << "sign" << std::setw (11) << "pow worst"
+              << std::setw (8) << "sign" << "\n";
+    for (auto& f : files)
+    {
+        const auto ext = f.getFileExtension().toLowerCase();
+        if (ext != ".wav" && ext != ".mp3" && ext != ".flac" && ext != ".aiff"
+            && ext != ".aif" && ext != ".ogg" && ext != ".m4a") continue;
+        SilenceRow r;
+        if (! silencePass (f, r)) continue;
+        rows.push_back (r);
+        std::cout << "  " << std::left << std::setw (46)
+                  << r.name.substring (0, 45).toStdString() << std::right
+                  << std::setw (8) << std::fixed << std::setprecision (1)
+                  << (r.silentFraction * 100.0f) << "%"
+                  << std::setw (11) << std::setprecision (2) << r.worstAbs
+                  << std::setw (8) << (r.anySignChange ? "YES" : "-")
+                  << std::setw (11) << r.powWorstAbs
+                  << std::setw (8) << (r.powSignChange ? "YES" : "-") << "\n";
+        std::cout.flush();
+    }
+    if (rows.empty()) { std::cout << "  no files\n"; return 1; }
+
+    std::vector<float> w, pw; int signs = 0, powSigns = 0;
+    for (auto& r : rows)
+    { w.push_back (r.worstAbs); pw.push_back (r.powWorstAbs);
+      if (r.anySignChange) ++signs; if (r.powSignChange) ++powSigns; }
+    std::sort (w.begin(), w.end()); std::sort (pw.begin(), pw.end());
+    auto pct = [] (std::vector<float>& v, double p)
+    { return v[(size_t) juce::jlimit (0, (int) v.size() - 1,
+                                      (int) std::llround (p * (double) (v.size() - 1)))]; };
+
+    std::cout << "\n  " << rows.size() << " files measured\n\n";
+    std::cout << "  DISTRIBUTION of the largest per-file relative change, dB:\n";
+    std::cout << "               min    p25    med    p75    p90    max\n";
+    std::cout << "  eqCurve  " << std::setw (7) << std::setprecision (2) << pct (w, 0.0)
+              << std::setw (7) << pct (w, 0.25) << std::setw (7) << pct (w, 0.5)
+              << std::setw (7) << pct (w, 0.75) << std::setw (7) << pct (w, 0.90)
+              << std::setw (7) << pct (w, 1.0) << "\n";
+    std::cout << "  power    " << std::setw (7) << pct (pw, 0.0)
+              << std::setw (7) << pct (pw, 0.25) << std::setw (7) << pct (pw, 0.5)
+              << std::setw (7) << pct (pw, 0.75) << std::setw (7) << pct (pw, 0.90)
+              << std::setw (7) << pct (pw, 1.0) << "\n";
+    std::cout << "\n  files with ANY band changing sign:  eqCurve " << signs
+              << " of " << rows.size() << ",  power " << powSigns
+              << " of " << rows.size() << "\n";
+
+    // Does the size of the change track the silent fraction? Pearson r, and the
+    // ratio test: the clean model says rel_audible = rel_all / (1 - f), so the
+    // change should scale with f/(1-f) times the size of the relative.
+    double mx = 0, my = 0;
+    for (auto& r : rows) { mx += r.silentFraction; my += r.worstAbs; }
+    mx /= (double) rows.size(); my /= (double) rows.size();
+    double sxy = 0, sxx = 0, syy = 0;
+    for (auto& r : rows)
+    { const double dx = r.silentFraction - mx, dy = r.worstAbs - my;
+      sxy += dx*dy; sxx += dx*dx; syy += dy*dy; }
+    const double rr = (sxx > 0 && syy > 0) ? sxy / std::sqrt (sxx * syy) : 0.0;
+    std::cout << "\n  correlation between silent fraction and eqCurve change: r = "
+              << juce::String (rr, 3) << "   (mean silent fraction "
+              << juce::String (mx * 100.0, 1) << "%, mean change "
+              << juce::String (my, 2) << " dB)\n";
+    return 0;
 }
 
 static int runControlA()
@@ -856,6 +1208,18 @@ int main (int argc, char** argv)
         return runControlB (juce::jmax (2, seeds));
     }
     if (argc > 1 && juce::String (argv[1]) == "--controlA") return runControlA();
+    if (argc > 2 && juce::String (argv[1]) == "--silence-real")
+    {
+        const juce::File folder { juce::String (argv[2]) };
+        if (! folder.isDirectory()) { std::cout << "not a folder\n"; return 2; }
+        return runSilenceReal (folder);
+    }
+    if (argc > 2 && juce::String (argv[1]) == "--silence")
+    {
+        const juce::File one { juce::String (argv[2]) };
+        if (! one.existsAsFile()) { std::cout << "no such file\n"; return 2; }
+        return runSilence (one);
+    }
 
     if (argc > 2 && juce::String (argv[1]) == "--census")
     {
