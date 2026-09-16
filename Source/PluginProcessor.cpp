@@ -2280,8 +2280,8 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
 void EchoJayProcessor::captureBorrowKept()
 {
     if (!borrowActive() || borrowHost_ == nullptr) return;
-    borrowKept_ = {};
-    borrowKept_.uid = borrowSession_.uid;
+    BorrowKept kept;
+    kept.uid = borrowSession_.uid;
     for (int i = 0; i < borrowHost_->getNumSlots(); ++i)
     {
         juce::String b64;
@@ -2291,13 +2291,87 @@ void EchoJayProcessor::captureBorrowKept()
             try { p->getStateInformation(mb); } catch (...) { mb.reset(); }
             if (mb.getSize() > 0) b64 = LinkShm::stateToB64(mb);
         }
-        borrowKept_.names.add(borrowHost_->getSlotInfo(i).name);
-        borrowKept_.states.add(b64);
-        borrowKept_.settings.add(borrowHost_->getSlotInfo(i).settings);   // the AI prose suggestion
-        borrowKept_.structured.add(borrowHost_->getSlotStructured(i));    // and the dialable structured settings
+        kept.names.add(borrowHost_->getSlotInfo(i).name);
+        kept.states.add(b64);
+        kept.settings.add(borrowHost_->getSlotInfo(i).settings);   // the AI prose suggestion
+        kept.structured.add(borrowHost_->getSlotStructured(i));    // and the dialable structured settings
     }
-    EchoJay_NSLog(("EJBorrow: kept " + juce::String(borrowKept_.states.size())
-                   + " slot state(s) for uid=" + borrowKept_.uid).toRawUTF8());
+    // COMMIT 1: per-uid. A re-kept uid moves to the back (most recently kept);
+    // beyond kBorrowKeptMax the LEAST recently kept uid is evicted.
+    borrowKeptOrder_.erase(std::remove(borrowKeptOrder_.begin(), borrowKeptOrder_.end(), kept.uid),
+                           borrowKeptOrder_.end());
+    borrowKeptOrder_.push_back(kept.uid);
+    borrowKeptByUid_[kept.uid] = std::move(kept);
+    while ((int) borrowKeptOrder_.size() > kBorrowKeptMax)
+    {
+        const auto oldest = borrowKeptOrder_.front();
+        borrowKeptOrder_.erase(borrowKeptOrder_.begin());
+        borrowKeptByUid_.erase(oldest);
+        EchoJay_NSLog(("EJBorrow: kept-map full - evicted oldest uid=" + oldest).toRawUTF8());
+    }
+    EchoJay_NSLog(("EJBorrow: kept " + juce::String(borrowKeptByUid_[borrowSession_.uid].states.size())
+                   + " slot state(s) for uid=" + borrowSession_.uid
+                   + " (" + juce::String((int) borrowKeptByUid_.size()) + " rack(s) kept)").toRawUTF8());
+}
+
+void EchoJayProcessor::clearBorrowKept(const juce::String& uid)
+{
+    if (uid.isEmpty()) return;
+    borrowKeptByUid_.erase(uid);
+    borrowKeptOrder_.erase(std::remove(borrowKeptOrder_.begin(), borrowKeptOrder_.end(), uid),
+                           borrowKeptOrder_.end());
+}
+
+const EchoJayProcessor::BorrowKept* EchoJayProcessor::borrowKeptFor(const juce::String& uid) const
+{
+    auto it = borrowKeptByUid_.find(uid);
+    return it == borrowKeptByUid_.end() ? nullptr : &it->second;
+}
+
+// Moved VERBATIM from the editor's engage path (17 Sep 2026): the AI
+// SUGGESTIONS (prose + dialable structured) restored over the sidecar's older
+// text. Name-checked per index so a changed rack cannot receive the wrong text.
+bool EchoJayProcessor::applyBorrowKeptSettings(const juce::String& uid, ChainHost& bh, int want)
+{
+    const auto* k = borrowKeptFor(uid);
+    if (k == nullptr) return false;
+    bool any = false;
+    for (int i = 0; i < want && i < k->settings.size(); ++i)
+        if (i < k->names.size() && k->names[i].trim() == bh.getSlotInfo(i).name.trim())
+        {
+            if (k->settings[i].isNotEmpty())
+            { bh.setSlotSettings(i, k->settings[i]); any = true; }
+            if (i < k->structured.size()
+                && k->structured[i].getDynamicObject() != nullptr)
+            { bh.setSlotStructuredSettings(i, k->structured[i]); any = true; }   // re-dials via applyStructuredIfReady
+        }
+    return any;
+}
+
+// Moved VERBATIM from the editor's engage path: CONTINUOUS KEEP, the restore
+// half - an interrupted session's uncommitted plugin states come back, then
+// the uid's kept block is CONSUMED (as before).
+bool EchoJayProcessor::applyBorrowKeptStates(const juce::String& uid, ChainHost& bh, int want)
+{
+    const auto* k = borrowKeptFor(uid);
+    if (k == nullptr) return false;
+    bool restoredKept = false;
+    for (int i = 0; i < want && i < k->states.size(); ++i)
+    {
+        if (i >= k->names.size()
+            || k->names[i].trim() != bh.getSlotInfo(i).name.trim()
+            || k->states[i].isEmpty()) continue;
+        juce::MemoryBlock mb;
+        if (! LinkShm::stateFromB64(k->states[i], mb) || mb.getSize() == 0) continue;
+        if (auto* pr = bh.getSlotProcessor(i))
+        {
+            try { pr->setStateInformation(mb.getData(), (int) mb.getSize());
+                  restoredKept = true; }
+            catch (...) {}
+        }
+    }
+    clearBorrowKept(uid);
+    return restoredKept;
 }
 
 void EchoJayProcessor::borrowRelease(bool keepEdits)
@@ -5253,6 +5327,21 @@ void EchoJayProcessor::updateLinkAudioRecency()
     for (auto it = linkLastGoodFrame_.begin(); it != linkLastGoodFrame_.end();)
         if (seen.find(it->first) == seen.end()) it = linkLastGoodFrame_.erase(it);
         else ++it;
+    // COMMIT 1 (17 Sep 2026): a Link that has DISAPPEARED from the registry
+    // takes its kept suggestions with it - same drop-on-disappear test as the
+    // meter latch above, so a future rack under a reused uid cannot inherit a
+    // predecessor's suggestions.
+    for (auto it = borrowKeptByUid_.begin(); it != borrowKeptByUid_.end();)
+    {
+        if (seen.find(it->first) == seen.end())
+        {
+            EchoJay_NSLog(("EJBorrow: kept block dropped - Link disappeared uid=" + it->first).toRawUTF8());
+            borrowKeptOrder_.erase(std::remove(borrowKeptOrder_.begin(), borrowKeptOrder_.end(), it->first),
+                                   borrowKeptOrder_.end());
+            it = borrowKeptByUid_.erase(it);
+        }
+        else ++it;
+    }
 }
 
 juce::uint32 EchoJayProcessor::linkLastFlowingMs(const juce::String& uid) const

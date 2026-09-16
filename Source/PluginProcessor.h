@@ -700,9 +700,28 @@ public:
     // so switching racks and back does not lose the last suggestions - they are
     // kept per Link uid and restored on re-borrow, parallel to the plugin state.
     struct BorrowKept { juce::String uid; juce::StringArray names, states, settings; juce::Array<juce::var> structured; };
-    BorrowKept borrowKept_;
+    // COMMIT 1 (17 Sep 2026): PER-UID, not one slot. The single borrowKept_ was
+    // replaced on every release, so select A -> keep -> select B -> keep ->
+    // select A found B and dropped A's suggestions. Now a session-scoped map
+    // keyed by the Link's rack uid, bounded to kBorrowKeptMax (the LEAST
+    // RECENTLY KEPT uid is evicted), cleared for a uid when: its kept block is
+    // consumed on re-borrow (as before), the session ends clean / applied /
+    // committed (as before), its chain is (re)built (sendChainToLink), or its
+    // Link disappears from the registry. What is kept is unchanged.
+    static constexpr int kBorrowKeptMax = 16;
+    std::map<juce::String, BorrowKept> borrowKeptByUid_;
+    std::vector<juce::String>          borrowKeptOrder_;   // oldest first
     void captureBorrowKept();
-    void clearBorrowKept() { borrowKept_ = {}; }
+    void clearBorrowKept(const juce::String& uid);
+    void clearBorrowKept() { clearBorrowKept(borrowSession_.uid); }   // this session's rack
+    const BorrowKept* borrowKeptFor(const juce::String& uid) const;
+    int  borrowKeptCount() const noexcept { return (int) borrowKeptByUid_.size(); }
+    // The restore halves, moved out of the editor verbatim so the editor and
+    // a headless harness call ONE implementation against the borrowed host
+    // (the object that processes audio). Settings = prose + structured;
+    // States = plugin state, and it CONSUMES the uid's block (as before).
+    bool applyBorrowKeptSettings(const juce::String& uid, ChainHost& bh, int want);
+    bool applyBorrowKeptStates  (const juce::String& uid, ChainHost& bh, int want);
 
     // ---- Phase 3: structure-edit session state (message thread only) ------
     // Per CURRENT borrowed slot: which base slot it came from (-1 = created

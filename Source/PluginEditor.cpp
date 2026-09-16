@@ -8014,7 +8014,7 @@ void EchoJayEditor::runBorrowApply()
     {
         if (safeThis == nullptr) return;
         auto& p2 = safeThis->processorRef;
-        p2.clearBorrowKept();          // committed (or named as failed) — not kept
+        p2.clearBorrowKept(st->uid);   // committed (or named as failed) — not kept (this rack's uid)
         p2.borrowRelease(false);
         safeThis->chainListPanel.statusText =
             "Applied " + juce::String(st->ok) + " plugin"
@@ -8329,16 +8329,9 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
             // the prose AND the dialable structured settings now, over the
             // sidecar's older text, so switching away and back does not lose
             // them. Name-checked per index like the state restore below.
-            if (p2.borrowKept_.uid == st->uid)
-                for (int i = 0; i < want && i < p2.borrowKept_.settings.size(); ++i)
-                    if (p2.borrowKept_.names[i].trim() == bh2->getSlotInfo(i).name.trim())
-                    {
-                        if (p2.borrowKept_.settings[i].isNotEmpty())
-                            bh2->setSlotSettings(i, p2.borrowKept_.settings[i]);
-                        if (i < p2.borrowKept_.structured.size()
-                            && p2.borrowKept_.structured[i].getDynamicObject() != nullptr)
-                            bh2->setSlotStructuredSettings(i, p2.borrowKept_.structured[i]);   // re-dials via applyStructuredIfReady
-                    }
+            // COMMIT 1 (17 Sep 2026): per-uid lookup; the loop itself moved
+            // verbatim into the processor so the harness drives the same code.
+            p2.applyBorrowKeptSettings(st->uid, *bh2, want);
             // STEP 3 BOOKKEEPING: the saved identity triplet (Apply re-runs
             // the same stateFitsPlugin verdict that withheld the pull) and
             // the post-seed BASELINE — captured NOW, before any kept-edit
@@ -8364,27 +8357,10 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
             // CONTINUOUS KEEP, the restore half: an interrupted session's
             // uncommitted edits come back, and it says so. Name-checked per
             // index so a changed rack cannot receive the wrong state.
-            bool restoredKept = false;
-            if (p2.borrowKept_.uid == st->uid)
-            {
-                for (int i = 0; i < want
-                                && i < p2.borrowKept_.states.size(); ++i)
-                {
-                    if (p2.borrowKept_.names[i].trim()
-                            != bh2->getSlotInfo(i).name.trim()
-                        || p2.borrowKept_.states[i].isEmpty()) continue;
-                    juce::MemoryBlock mb;
-                    if (! LinkShm::stateFromB64(p2.borrowKept_.states[i], mb)
-                        || mb.getSize() == 0) continue;
-                    if (auto* pr = bh2->getSlotProcessor(i))
-                    {
-                        try { pr->setStateInformation(mb.getData(), (int) mb.getSize());
-                              restoredKept = true; }
-                        catch (...) {}
-                    }
-                }
-                p2.clearBorrowKept();
-            }
+            // COMMIT 1 (17 Sep 2026): per-uid lookup; the loop moved verbatim
+            // into the processor (applyBorrowKeptStates), which CONSUMES this
+            // uid's block afterwards exactly as the clear here used to.
+            const bool restoredKept = p2.applyBorrowKeptStates(st->uid, *bh2, want);
             // §5a-R: the session engages SILENT — listening is its own
             // control now. No borrowAudioOn here; LISTEN turns it on.
             // A new session supersedes the previous session's surfaces:
@@ -28365,6 +28341,10 @@ void EchoJayEditor::showChainPluginPicker()
 void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
                                     const juce::String& chainJson)
 {
+    // COMMIT 1 (17 Sep 2026): a (re)build for this uid supersedes any kept
+    // suggestions for it - cleared for BOTH arms below (session build and
+    // Link build), since either replaces the rack the kept block described.
+    processorRef.clearBorrowKept(linkUid);
     // §5a-R + §3f (26 Aug): while THIS uid's rack IS the live session, a
     // chain build lands in the SESSION (the borrowed host), never on the
     // Link — the Link refuses chain-cmds while leased, and the ping-pong
