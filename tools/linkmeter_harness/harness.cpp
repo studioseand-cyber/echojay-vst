@@ -8,6 +8,18 @@
 // On the CURRENT binary (meter emission sits in the else-of-targetLinkUid branch,
 // unreachable for a Link target) this MUST FAIL - that is the red the guard has
 // to be observed producing before it is trusted. After the wiring it must pass.
+//
+// REPAIRED 17 Sep 2026 (ruling: harness stale, product unchanged - RED at 078b130
+// and HEAD identically, Link injection byte-identical): (1) the integrated token
+// follows the 15 Sep CATCH D/E wording ("Input -20.0 LUFS ... overall since
+// playback began"), matched case-insensitively; the latch is driven the way the
+// plugin does (updateLinkAudioRecency after every seed). (2) the applied pre-gain
+// is read from the ctrl-cmd file the Build site writes {preGainDb, preGainUserSet:
+// false} (16 Sep: V2-only pre-gain to the LINK's ChainHost), not the main
+// ChainHost. (3) the Lapse marker is "[LINK NEVER HEARD" (CATCH E rename).
+// THREE WAYS on one binary via EJ_LM_MODE: healthy (default) -> GREEN;
+// silent (decayed seed: audioStale=1, momentary floor, no bands -> no latch) ->
+// RED with Lapse; absent (no frame, nothing claimed) -> RED with NoTarget.
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
@@ -19,6 +31,7 @@ using namespace juce;
 
 static const char* kUid   = "TLINK01";   // short: fits RegistrySlot.instanceUid without truncation
 static const char* kName  = "Nafe Lead Vocal";
+static String mode() { const char* m = std::getenv("EJ_LM_MODE"); return m ? String(m) : String("healthy"); }
 
 static void* g_rmap = nullptr;   // seeded registry, kept open to bump the heartbeat
 static int   g_slot = -1;
@@ -56,12 +69,15 @@ static void reseedIntegrated(float integ)
     f.truePeakMax = -1.3f; f.truePeakCur = -1.6f; f.crest = 8.4f;
     f.correlation = 0.55f; f.width = 0.72f; f.lra = 6.1f; f.shortTermTP = -2.4f;
     f.bandRel[0]=1.4f; f.bandRel[5]=3.4f; f.audioBlocks = 2000; f.audioStale = 0;
+    if (mode() == "silent")   // the decayed shape persists across the gain-path reseeds (never latched)
+    { f.audioStale = 1; f.momentary = -100.0f; f.shortTerm = -100.0f; f.bandRel[0] = 0.0f; f.bandRel[5] = 0.0f; }
     writeFrame(g_rmap, g_slot, f);
 }
 
 // Seed one live Link with a fresh, real-programme frame into the isolated registry.
 static bool seedLink()
 {
+    if (mode() == "absent") { std::fprintf(stderr, "seed: MODE absent - no frame, nothing claimed (NoTarget expected)\n"); return true; }
     int err = 0;
     const String dir = LinkShm::resolveDir(err);
     if (dir.isEmpty()) { std::fprintf(stderr, "seed: resolveDir failed err=%d\n", err); return false; }
@@ -92,6 +108,12 @@ static bool seedLink()
     f.audioBlocks = 1000; f.audioStale = 0;
     f.peakFastL = -6.0f; f.peakFastR = -6.0f;
     f.fieldsMask = 0;   // loudness suite carries no mask bit; -100 sentinels gate the rest
+    if (mode() == "silent")
+    {   // a DECAYED post-playback frame: stale, momentary at the floor, no bands -> never latched
+        f.audioStale = 1; f.momentary = -100.0f; f.shortTerm = -100.0f;
+        for (int i = 0; i < 6; ++i) f.bandRel[i] = 0.0f;
+        std::fprintf(stderr, "seed: MODE silent - decayed frame (audioStale=1, momentary -100, no bands): Lapse expected\n");
+    }
 
     LinkMeterFrame* dst = LinkShm::meterFrames(rmap) + slot;
     const uint32_t s0 = LinkShm::loadRelaxed(&dst->seq) & ~1u;
@@ -178,7 +200,7 @@ int main()
     // so a constant or a dropped field turns the column red.
     struct Field { const char* name; const char* ownKey; const char* linkValue; bool declared; };
     const Field FIELDS[] = {
-        { "integrated LUFS", "input ",        "input -20.0 LUFS", false },
+        { "integrated LUFS", "input ",        "Input -20.0 LUFS", false },   // 15 Sep wording: "Input -20.0 LUFS and peak ... overall since playback began"
         { "momentary",       "momentary",     "momentary -18.5",  false },
         { "short-term",      "short-term",    "short-term -19.2", false },
         { "true peak",       "peak ",         "peak -1.3 dBFS",   false },
@@ -200,7 +222,7 @@ int main()
     for (const auto& F : FIELDS)
     {
         const bool inOwn  = ownOut.contains(F.ownKey);        // KEY presence (own carries its own values)
-        const bool inLink = linkOut.contains(F.linkValue);    // VALUE presence (seeded value landed)
+        const bool inLink = linkOut.containsIgnoreCase(F.linkValue);    // VALUE presence (seeded value landed); case-insensitive (CATCH D/E capitalised "Input")
         const char* status;
         if (F.declared)        status = inLink ? "FILLED(?!)" : "DECLARED";
         else if (inLink)       status = "FILLED";
@@ -215,24 +237,39 @@ int main()
     // ===== GAIN-PATH ASSERTIONS (a-d) - applied == stated, from the frame =====
     const float stored   = ed->testPendingLinkPreGainDb();                      // the ONE stored value (int=-20)
     const float expected = juce::jlimit(-24.0f, 24.0f, -18.0f - (-20.0f));      // clamp(-18 - integrated) = +2
-    const bool  statedTxt = linkOut.contains("pre-gain +2.0 dB");              // printed in [CHAIN LEVELS]
+    const bool  statedTxt = linkOut.contains("pre-gain to +2.0 dB");   // 15 Sep wording: "Set the chain's pre-gain to +2.0 dB"              // printed in [CHAIN LEVELS]
+    // 16 Sep 2026: the Build site sends the pre-gain to the LINK as ctrl-cmd {preGainDb, preGainUserSet:false};
+    // "applied" is what that file carries (the pregain_readback harness proves the same send half).
+    auto sentPreGain = [&](bool* userSetOut) -> float
+    {
+        int e = 0; const String d = LinkShm::resolveDir(e);
+        const File f(d + "ctrl-cmd-" + String(kUid) + ".json");
+        if (! f.existsAsFile()) { if (userSetOut) *userSetOut = true; return 0.0f; }
+        auto v = JSON::parse(f.loadFileAsString()); auto* o = v.getDynamicObject();
+        if (o == nullptr || ! o->hasProperty("preGainDb")) { if (userSetOut) *userSetOut = true; return 0.0f; }
+        if (userSetOut) *userSetOut = o->hasProperty("preGainUserSet") ? (bool) o->getProperty("preGainUserSet") : true;
+        f.deleteFile();   // consumed, like the Link does
+        return (float)(double) o->getProperty("preGainDb");
+    };
     ed->applyPendingLinkPreGain();
-    const float applied = proc.getChainHost().getPreGainDb();
-    const bool a = (applied == stored) && statedTxt;
+    bool userSet1 = true;
+    const float applied = sentPreGain(&userSet1);
+    const bool a = (std::abs(applied - stored) < 0.001f) && statedTxt && ! userSet1;   // sent == stored == stated, AUTO (userSet=false)
     const bool b = (std::abs(stored - expected) < 0.001f) && (std::abs(applied - 2.0f) < 0.001f);
     reseedIntegrated(-8.0f); proc.updateLinkAudioRecency();
     StringArray mfd; const String linkOut2 = ed->testAssembleChainInjections("build me a mastering chain", String(kUid), &mfd);
     const float stored2 = ed->testPendingLinkPreGainDb();
     const float expected2 = juce::jlimit(-24.0f, 24.0f, -18.0f - (-8.0f));      // = -10
     ed->applyPendingLinkPreGain();
-    const float applied2 = proc.getChainHost().getPreGainDb();
+    bool userSet2 = true;
+    const float applied2 = sentPreGain(&userSet2);
     const bool d = (std::abs(stored2 - expected2) < 0.001f) && (std::abs(applied2 - stored2) < 0.001f)
-                 && (std::abs(applied2 - applied) > 1.0f) && linkOut2.contains("pre-gain -10.0 dB");
+                 && (std::abs(applied2 - applied) > 1.0f) && linkOut2.contains("pre-gain to -10.0 dB");
     std::fprintf(stderr, "\n==== GAIN-PATH (a-d) ====\n");
-    std::fprintf(stderr, "  (a) applied == stated (same var): %s  applied=%.2f stored=%.2f stated-in-text=%s\n", a?"PASS":"FAIL", applied, stored, statedTxt?"yes":"no");
+    std::fprintf(stderr, "  (a) sent(ctrl-cmd preGainDb) == stored == stated, userSet=false: %s  sent=%.2f stored=%.2f stated-in-text=%s userSet=%s\n", a?"PASS":"FAIL", applied, stored, statedTxt?"yes":"no", userSet1?"true":"false");
     std::fprintf(stderr, "  (b) == clamp(-18 - integrated)  : %s  stored=%.2f expected=%.2f\n", b?"PASS":"FAIL", stored, expected);
     std::fprintf(stderr, "  (c) clamp bounds                : [-24.0, +24.0] dB (ChainHost::kPreGainMin/MaxDb)\n");
-    std::fprintf(stderr, "  (d) int=-8 -> gain %.2f (was %.2f), stated -10.0 : %s\n", applied2, applied, d?"PASS":"FAIL");
+    std::fprintf(stderr, "  (d) int=-8 -> sent %.2f (was %.2f), stated -10.0 : %s\n", applied2, applied, d?"PASS":"FAIL");
     reseedIntegrated(-20.0f); proc.updateLinkAudioRecency();
 
     // ===== FOUR OUTCOMES, never silence =====
@@ -247,7 +284,12 @@ int main()
     const String outNoTgt = ed->testAssembleChainInjections("build me a mastering chain", String("NOSUCHLINK"),&mm);
     std::fprintf(stderr, "\n==== FOUR OUTCOMES, never silence ====\n");
     std::fprintf(stderr, "  Measurements : %s\n", (outMeas.contains("[METER SNAPSHOT v2") && outMeas.contains("[CHAIN LEVELS")) ? "meter + levels" : "MISSING");
-    std::fprintf(stderr, "  Lapse        : %s\n", outLapse.contains("[LINK NOT HEARD RECENTLY") ? "prompt-to-play note" : "MISSING");
+    std::fprintf(stderr, "  Lapse        : %s\n", (outLapse.contains("[LINK NEVER HEARD") || outLapse.contains("[LINK NOT HEARD RECENTLY")) ? "prompt-to-play note" : "MISSING");
+    const String tgtOutcome = outMeas.contains("[METER SNAPSHOT v2") ? "Measurements"
+                            : outMeas.contains("[LINK NEVER HEARD") ? "Lapse (never heard)"
+                            : (outMeas.contains("[LINK NOT ADDRESSABLE") || outMeas.contains("[LINK TARGET UNRESOLVED")) ? "NoTarget"
+                            : "SILENT (?!)";
+    std::fprintf(stderr, "  TARGET %s (mode %s): %s\n", kUid, mode().toRawUTF8(), tgtOutcome.toRawUTF8());
     std::fprintf(stderr, "  NoTarget     : %s\n", (outNoTgt.contains("[LINK NOT ADDRESSABLE") || outNoTgt.contains("[LINK TARGET UNRESOLVED")) ? "stated no-target note" : "MISSING");
     std::fprintf(stderr, "  OwnEmpty     : %s\n", ownOut.contains("[CHAIN LEVELS") ? "[CHAIN LEVELS] present (never silent)" : "SILENT");
 
