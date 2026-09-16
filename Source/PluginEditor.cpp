@@ -5627,6 +5627,19 @@ echojay::SpectralEvidence EchoJayEditor::getSlotSpectralEvidence(const CompareSl
             // No frames yet: nothing audible has been heard. Absent, not floored.
             ev.reduction = R::LiveInstant;
         }
+        // THE MACRO BANDS DO NOT FOLLOW THE BINS HERE, and the stamp says so
+        // rather than letting one label cover both. A reference has a whole-file
+        // power accumulation and a capture has a whole-capture one; a Live slot
+        // has neither. reduceMacroWindow exists and reduces the same 12 s ring,
+        // but it is a mean of per-frame MAXIMA of the SMOOTHED bands, which is
+        // neither the power mean the accumulator computes nor bounded by the
+        // same span. Routing Live through it would put a third statistic in a
+        // field the other two sides fill with one, so Live keeps the ballistic
+        // reading and is labelled BallisticTail until that is decided.
+        ev.macro          = processorRef.getMeterEngine().getMeterData().macroBandDb;
+        ev.hasMacro       = true;
+        ev.macroReduction = R::BallisticTail;
+        ev.macroWindowSeconds = 0.0f;     // a tail has no window, and says 0
         // Either way the LUFS figures beside it are continuously integrated.
         ev.loudnessIsContinuous = true;
         return ev;
@@ -5652,10 +5665,26 @@ echojay::SpectralEvidence EchoJayEditor::getSlotSpectralEvidence(const CompareSl
             auto refs = processorRef.getReferenceAnalyser().getReferences();
             if (slot.index >= 0 && slot.index < (int) refs.size())
             {
+                // The line below is PINNED BY TEXT (se PIN7). It is written out
+                // rather than through a local because a structural pin guards
+                // that the reference side reads eqCurve and not the ballistic
+                // spectrum, and a cosmetic rename would silence it.
                 ev.bins          = refs[(size_t) slot.index].eqCurve;
                 ev.reduction     = R::WholeFileAverage;
                 ev.windowSeconds = refs[(size_t) slot.index].durationSeconds;
                 ev.valid         = true;
+                // PHASE 1b: the ACCUMULATED macro bands, not data.macroBandDb.
+                // The latter is the meter's reading after the final block, which
+                // on 14 of a 45 file library is entirely the floor. hasMacro
+                // stays false when the accumulation never ran, so the consumer
+                // refuses rather than rendering a floor as a level.
+                if (refs[(size_t) slot.index].hasMacroBandAccum)
+                {
+                    ev.macro              = refs[(size_t) slot.index].macroBandAccum;
+                    ev.hasMacro           = true;
+                    ev.macroReduction     = refs[(size_t) slot.index].macroAccumReduction;
+                    ev.macroWindowSeconds = refs[(size_t) slot.index].macroAccumSeconds;
+                }
             }
             break;
         }
@@ -5668,6 +5697,18 @@ echojay::SpectralEvidence EchoJayEditor::getSlotSpectralEvidence(const CompareSl
                 const auto& sn   = snaps[(size_t) slot.index];
                 ev.windowSeconds = sn.durationSeconds;
                 ev.valid         = true;
+                // PHASE 1b: a capture taken by THIS build carries the whole
+                // capture power accumulation. One restored from the session blob
+                // does not, because the accumulation is not persisted, and it
+                // reports unavailable rather than falling back to the tail that
+                // averagedData still holds.
+                if (sn.hasMacroBandAccum)
+                {
+                    ev.macro              = sn.macroBandAccum;
+                    ev.hasMacro           = true;
+                    ev.macroReduction     = sn.macroAccumReduction;
+                    ev.macroWindowSeconds = sn.macroAccumSeconds;
+                }
                 if (sn.hasDualSpectrum)
                 {
                     // A capture made THIS SESSION holds both whole-window
@@ -7107,7 +7148,7 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
     // matters because the prose no longer restates the numbers.
     const bool isCross = crossScope(slotA, slotB);
     const juce::String figuresJson =
-        processorRef.buildCompareFiguresJson(da, db, labelA, labelB, isCross);
+        processorRef.buildCompareFiguresJson(da, db, labelA, labelB, isCross, sa, sb);
 
     if (compareCtx.isEmpty()) {
         chatMessages.push_back({"assistant", "Select two different items to compare."});

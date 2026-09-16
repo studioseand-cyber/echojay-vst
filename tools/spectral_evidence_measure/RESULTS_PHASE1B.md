@@ -605,26 +605,133 @@ does not move because a track has an intro.
 
 ## AFTER
 
-*Empty by design. The next run fills this section in place, so the diff of this file is
-the result. Do not delete the BEFORE sections: the comparison is the point.*
+Taken on 16 September 2026, after Phase 1b commit 4 pointed the comparisons at the
+accumulated field. The BEFORE sections above are unchanged: the diff of this file
+is the result.
+
+**What these numbers are and are not.** They are produced by the same harness,
+driving the same shipped `MeterEngine` and the same `getAccumulatedBands()` the
+plugin now calls. They prove the accumulation produces these figures. They do NOT
+prove the card and the prose render them: the harness reaches the accumulator
+directly off an engine, while the plugin reaches it through `ReferenceAnalyser`
+into `SpectralEvidence` into `computeCompareFig`. That wiring rests on the code
+path and on `se PIN7`, not on this table.
 
 ### A1. Control A after the accumulation
 
-*(to be filled)*
+| | BEFORE | AFTER |
+|---|---|---|
+| worst absolute disagreement | 0.00071 dB (lowMid) | **0.00071 dB (lowMid)** |
+| worst relative disagreement | 0.00003 dB (sub) | **0.00003 dB (sub)** |
+| verdict | PASSES at 0.05 dB | **PASSES at 0.05 dB** |
+| measured against modelled bound | 0.7x | **0.7x** |
 
-### A2. Control B after the accumulation, same twelve seeds
+Identical to the digit, which is the right answer. This commit repoints consumers
+and does not touch the ballistic path Control A exercises. A gate that moved here
+would mean something had changed that should not have.
 
-*(to be filled: per band spread, and the fall factor against the 17x to 36x expectation
-recorded in section 9)*
+### A2. Control B, the same twelve seeds, against the pre-registered range
 
-### A3. The pair after the accumulation
+The pre-registered test from section 9: the spread of the REPORTED band value
+must fall by roughly 17x to 36x. The reported value is now the power
+accumulation, so that is what is measured.
 
-*(to be filled: both tables, with the same noise floor quoted beside every difference)*
+| band | BEFORE sd (the tail) | AFTER sd (what ships) | fall | against 17x to 36x |
+|---|---|---|---|---|
+| sub | 2.261 | 0.124 | 18.2x | IN RANGE |
+| low | 1.383 | 0.038 | **36.4x** | **ABOVE, outside the range** |
+| lowMid | 1.255 | 0.044 | 28.8x | IN RANGE |
+| mid | 0.423 | 0.018 | 23.6x | IN RANGE |
+| highMid | 0.298 | 0.015 | 19.4x | IN RANGE |
+| air | 0.176 | 0.006 | 30.7x | IN RANGE |
 
-### A4. The four falsifiers after the accumulation
+**Five of six landed inside the range. `low` came in at 36.4x, just above the
+upper edge.** Stated as outside before it is explained, because a test with a
+stated range that quietly accepts a result outside it is not a test.
 
-*(to be filled)*
+The explanation, offered after the fact and therefore worth less than the
+prediction: the range's upper edge came from the harness's own achievable spread
+sitting 1.0x to 2.1x above the sqrt(1292) = 35.9x ideal, and 36.4x means `low`'s
+frames were closer to independent than that worst case assumed. Nothing here is
+troubling. The honest summary is five in range and one above, not six passes.
+
+**The pre-registration earned its keep.** An unbounded "the spread should fall a
+lot" would have been satisfied by anything, and the two bands nearest the edges,
+sub at 18.2x and low at 36.4x, are exactly where a vaguer test would have said
+nothing at all.
+
+### A3. The pair, both references, against the BEFORE tables
+
+**Live tail: Reference song 1.wav, 3543 blocks over 151.2 s at 48 kHz**
+
+```
+                            sub      low   lowMid      mid  highMid     high
+  ACCUM ABS (ships now)  -16.52   -21.68   -24.20   -26.56   -28.22   -28.58
+  tail ABS (was)         -47.81   -60.27   -94.52   -91.97   -94.22   -95.04
+
+  ACCUM REL (ships now)   +7.77    +2.61    +0.09    -2.26    -3.93    -4.28
+  tail REL (was)         +32.83   +20.37   -13.88   -11.33   -13.58   -14.40
+
+  noise floor, 1 sd REL    1.90     1.34     1.15     0.53     0.54     0.40
+```
+
+The relatives went from a **47 dB span to a 12 dB span**. The figure the model
+reads about this record changed from "33 dB more sub than its own average" to
+**7.8 dB more**, and every band moved by many multiples of the measured noise.
+
+**Dead tail: 02 CHIP FT NAFE SMALLZ, 3279 blocks over 152.2 s at 44.1 kHz**
+
+```
+                            sub      low   lowMid      mid  highMid     high
+  ACCUM ABS (ships now)  -19.23   -16.94   -23.92   -22.66   -26.26   -29.84
+  tail ABS (was)        -120.00  -120.00  -120.00  -120.00  -120.00  -120.00
+
+  ACCUM REL (ships now)   +3.92    +6.20    -0.78    +0.48    -3.12    -6.70
+  tail REL (was)           0.00     0.00     0.00     0.00     0.00     0.00
+```
+
+**This is the case that changed from nothing to something.** Before, all six bands
+sat on the floor, `bandValid` was false, and the card and the prose rendered N/A:
+a mastered record with a fade-out contributed no band information to a comparison
+at all. It now contributes a measured six-band balance.
+
+**The accumulated figure is not the dB mean either.** On the dead reference the
+two disagree by up to 10 dB in `sub` (+3.92 against -6.25) and they disagree in
+SIGN on three of six bands. The choice of power over dB is not cosmetic on real
+material, which is what `bd PIN4` and its mutation exist to hold in place.
+
+### A4. The four falsifiers as rewritten
+
+| # | falsifier | live | dead |
+|---|---|---|---|
+| 1 | all six absolute differences within 0.5 dB | does not hold | does not hold |
+| 2 | sub or air moves less than mid, in relatives | FIRES: sub 24.34, mid 9.14, air 8.46 | does not hold |
+| 3 | the two schemes disagree in sign on the same file | 0 of 6 | 0 of 6 |
+| 4 | macro relatives against computeBands(eqCurve) | gap to 7.27 dB in air | gap to 6.68 dB in air |
+
+Unchanged from BEFORE, and that is expected: falsifiers 1, 2 and 4 are computed
+from the tail-versus-whole comparison the harness reports, which this commit did
+not alter. Falsifier 3 is the one that speaks to this commit, and **the two band
+schemes still agree in sign on both references**, so pointing the comparisons at
+the macro scheme did not flip the direction of any advice.
 
 ### A5. Did the pre-registered prediction hold
 
-*(to be filled)*
+The prediction, written before any pair number existed:
+
+> a fade out tail is quieter and duller than the whole file average, so the whole
+> file figures should show less extreme relatives than the tail, with the largest
+> corrections in sub and air
+
+**First clause: HELD.** 47 dB of relative span became 12 dB on the live reference.
+
+**Second clause: FAILED, and it stays failed.** The largest correction is sub;
+air is among the smallest. Measured on the shipped accumulation rather than the
+dB mean the BEFORE table used, the ranking is sub, low, lowMid, air, highMid,
+mid, so air moves up one place but is still nowhere near the largest.
+
+**The conclusion drawn in the BEFORE section stands:** the shape of the
+correction is material dependent and cannot be claimed from one file. What can be
+claimed is the direction and the magnitude of the first clause, which held on
+both references and on twelve independent seeds.
+

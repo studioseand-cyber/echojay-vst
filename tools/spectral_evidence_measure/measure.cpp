@@ -317,6 +317,14 @@ static bool macroPass (const juce::File& f, MacroRow& out)
     }
     if (n == 0) return false;
 
+    // THE SHIPPED ACCUMULATION. Added to this path as well as the buffer path:
+    // without it the pair tables silently omitted the one row the change is
+    // about, and an absent row reads like a value of zero to nobody's benefit.
+    {
+        const auto a = engine.getAccumulatedBands();
+        out.accumValid = a.valid; out.accumBlocks = a.blocks; out.accumDb = a.db;
+    }
+
     out.frames      = n;
     out.tail        = last;
     out.tailFrames  = (int) lastBlocks.size();
@@ -495,6 +503,10 @@ static void reportMacro (const MacroRow& m, bool verbose)
               << m.frames << " blocks\n";
     std::cout << kBandHdr << "\n";
 
+    // AFTER Phase 1b commit 4 the comparisons read accumDb, not tail. Both rows
+    // are printed so the BEFORE tables in RESULTS_PHASE1B.md stay comparable
+    // line for line and the change is visible rather than asserted.
+    if (m.accumValid) printRow ("ACCUM ABS (what ships now)", m.accumDb);
     printRow ("tail  ABS  (last block, ~450ms)", m.tail);
     printRow ("last500 ABS", m.last500);
     printRow ("whole meanDb ABS", m.meanDb);
@@ -502,6 +514,7 @@ static void reportMacro (const MacroRow& m, bool verbose)
     printRowSigned ("DIFF  whole meanDb - tail", diffOf (m.meanDb, m.tail));
 
     std::cout << "\n";
+    if (m.accumValid) printRowSigned ("ACCUM REL (what ships now)", relsOf (m.accumDb));
     printRowSigned ("tail  REL", relsOf (m.tail));
     printRowSigned ("last500 REL", relsOf (m.last500));
     printRowSigned ("whole meanDb REL", relsOf (m.meanDb));
@@ -975,7 +988,7 @@ static int runControlB (int seeds)
                  "  SMALLEST at 0.19 dB. If the seeds put sub at the top, that run was\n"
                  "  lucky. If they do not, the hypothesis is WRONG and says so.\n\n";
 
-    std::vector<std::array<double, 6>> absD, relD, tailV, wholeV;
+    std::vector<std::array<double, 6>> absD, relD, tailV, wholeV, accumV;
     int framesSeen = 0;
     for (int s = 0; s < seeds; ++s)
     {
@@ -995,6 +1008,12 @@ static int runControlB (int seeds)
             for (int i = 0; i < 6; ++i)
             { t[(size_t) i] = m.tail[(size_t) i]; w[(size_t) i] = m.meanDb[(size_t) i]; }
             tailV.push_back (t); wholeV.push_back (w);
+            // THE VALUE THAT NOW SHIPS. The pre-registered AFTER test is about
+            // the spread of the REPORTED band figure, and since commit 4 that
+            // is the power accumulation, not the tail and not the dB mean.
+            std::array<double, 6> ac {};
+            for (int i = 0; i < 6; ++i) ac[(size_t) i] = m.accumDb[(size_t) i];
+            accumV.push_back (ac);
             framesSeen = m.frames;
         }
         std::cout << "  seed " << std::setw (2) << s << "  abs";
@@ -1086,6 +1105,25 @@ static int runControlB (int seeds)
                       << sdOf (tailV, i)
                       << std::setw (16) << (sdOf (tailV, i) / f)
                       << std::setw (18) << sdOf (wholeV, i) << "\n";
+
+        // ===== THE AFTER RESULT: the spread of the SHIPPED figure =====
+        std::cout << "\n  AFTER: the spread of the value the comparisons now read\n";
+        std::cout << "  " << std::left << std::setw (10) << "band" << std::right
+                  << std::setw (14) << "BEFORE sd" << std::setw (14) << "AFTER sd"
+                  << std::setw (12) << "fall" << std::setw (26) << "against 17x to 36x" << "\n";
+        for (int i = 0; i < 6; ++i)
+        {
+            const double b = sdOf (tailV, i), a = sdOf (accumV, i);
+            const double fall = (a > 0.0) ? b / a : 0.0;
+            const bool inRange = (fall >= 17.0 && fall <= 36.0);
+            std::cout << "  " << std::left << std::setw (10) << echojay::macroBandName (i)
+                      << std::right << std::setw (14) << std::fixed << std::setprecision (3) << b
+                      << std::setw (14) << a
+                      << std::setw (11) << std::setprecision (1) << fall << "x"
+                      << std::setw (26) << (inRange ? "IN RANGE"
+                                          : (fall > 36.0 ? "ABOVE (better than asked)"
+                                                         : "BELOW (short of the test)")) << "\n";
+        }
         std::cout << "\n  The third column is this harness computing the accumulation NOW.\n"
                      "  It is not the test: the test is whether the SHIPPED accumulation\n"
                      "  lands on the same figures. It is printed so the prediction and the\n"

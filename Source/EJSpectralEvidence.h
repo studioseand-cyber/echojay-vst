@@ -130,6 +130,25 @@ struct SpectralEvidence
         with the spectrum's answer would understate the loudness figures and
         overstate nothing, which is still a wrong label. */
     bool loudnessIsContinuous = false;
+
+    // ===== THE MACRO BANDS, TRAVELLING WITH THEIR PROVENANCE =====
+    // They ride here for the same reason the bins do: MeterData carries
+    // whichever macro reading the SOURCE happened to leave in it, which for a
+    // reference is the meter's state after the final block of the file. The
+    // accumulated whole-run figure lives on ReferenceResult and CaptureSnapshot,
+    // so it has to reach the comparison by a route that is not MeterData.
+    //
+    // hasMacro FALSE MEANS NOT MEASURED, not silent. A consumer renders that as
+    // unavailable; a -120 would read like a measurement of nothing.
+    //
+    // macroReduction is stated separately from `reduction` above because the two
+    // can legitimately differ: a Live slot's bins are a rolling ring window while
+    // its macro bands are still the ballistic reading, and one label for both
+    // would be wrong about one of them.
+    std::array<float, 6> macro { -120, -120, -120, -120, -120, -120 };
+    bool                 hasMacro = false;
+    SpectralReduction    macroReduction = SpectralReduction::Unknown;
+    float                macroWindowSeconds = 0.0f;
 };
 
 /** Only an average over a bounded window is a fair subject for a tonal delta.

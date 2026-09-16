@@ -3347,6 +3347,36 @@ namespace {
         std::array<float, 6> bandRel = { -999, -999, -999, -999, -999, -999 };
         bool  bandValid = false;
     };
+    /** THE BAND RELATIVES, WITH THEIR DENOMINATOR FIXED.
+
+        The old rule counted only bands above the floor and took the mean over
+        THOSE, so four surviving bands produced a four-band mean rendered under a
+        six-band label. That is not a refusal and not a correct figure: a real
+        number against the wrong denominator, carrying the same confidence as a
+        good one, and it shipped on 15 of a 45 file library while the input was a
+        ballistic tail.
+
+        THE MEAN IS OVER THE BANDS THE SCHEME HAS, OR THE FIGURE REFUSES. Six or
+        nothing. A band genuinely on the floor across a whole run is rare and
+        real: a bandpassed stem, a mono sub file, a track with nothing above
+        6 kHz. Those must read as unavailable rather than being renormalised into
+        a plausible-looking answer, and they become MORE dangerous once the input
+        is a whole-run accumulation, because the figure looks more trustworthy
+        than it did when everything was a tail.
+    */
+    static void fillBandRel (CompareFig& f, const std::array<float, 6>& db)
+    {
+        for (int i = 0; i < 6; ++i)
+            if (db[(size_t) i] <= -119.0f) return;   // six or nothing
+
+        float sum = 0.0f;
+        for (int i = 0; i < 6; ++i) sum += db[(size_t) i];
+        const float mean = sum / 6.0f;
+        f.bandValid = true;
+        for (int i = 0; i < 6; ++i)
+            f.bandRel[(size_t) i] = db[(size_t) i] - mean;
+    }
+
     CompareFig computeCompareFig(const MeterData& m)
     {
         CompareFig f;
@@ -3363,16 +3393,21 @@ namespace {
         f.width = m.width;
         f.corr  = m.correlation;
         f.overs = m.oversCount;
-        float sum = 0.0f; int n = 0;
-        for (float v : m.macroBandDb) if (v > -119.0f) { sum += v; ++n; }
-        if (n > 0)
-        {
-            const float mean = sum / (float)n;
-            f.bandValid = true;
-            for (int i = 0; i < 6; ++i)
-                f.bandRel[(size_t)i] = m.macroBandDb[(size_t)i] > -119.0f
-                    ? m.macroBandDb[(size_t)i] - mean : -999.0f;
-        }
+        // NO BANDS FROM MeterData. The ballistic field this used to read is the
+        // meter's state at whatever moment the source stopped, and the overload
+        // below takes the accumulated figure instead. This one leaves bandValid
+        // false so a caller that has no evidence renders N/A rather than a tail.
+        return f;
+    }
+
+    /** The same figures, with the band relatives taken from the side's own
+        spectral evidence rather than from its MeterData. Every comparison path
+        uses this one; the MeterData-only overload above exists for callers that
+        have no evidence to offer and must then show no bands at all. */
+    CompareFig computeCompareFig(const MeterData& m, const echojay::SpectralEvidence& ev)
+    {
+        CompareFig f = computeCompareFig(m);
+        if (ev.hasMacro) fillBandRel (f, ev.macro);
         return f;
     }
 
@@ -3531,9 +3566,10 @@ juce::String EchoJayProcessor::buildCompareContext(const MeterData& da, const Me
     // meter convention; band crest / overs / PSR / PLR / macro bands carry
     // their own -1 / -999 / -120 sentinels.)
     auto na1 = [](float v) { return v > -99.0f ? juce::String(v, 1) : juce::String("N/A"); };
-    auto figBlock = [&](const juce::String& label, const MeterData& m)
+    auto figBlock = [&](const juce::String& label, const MeterData& m,
+                        const echojay::SpectralEvidence& ev)
     {
-        const CompareFig f = computeCompareFig(m);   // SAME values the card renders
+        const CompareFig f = computeCompareFig(m, ev);   // SAME values the card renders
         auto bc = [](float v) { return v >= 0.0f ? juce::String(v, 1) : juce::String("N/A"); };
         juce::String s;
         s += label + ":\n";
@@ -3559,17 +3595,24 @@ juce::String EchoJayProcessor::buildCompareContext(const MeterData& da, const Me
             };
             s += "  Band relatives vs avg (sub/low/low-mid/mid/high-mid/air): "
                + rel(0) + " / " + rel(1) + " / " + rel(2) + " / " + rel(3) + " / "
-               + rel(4) + " / " + rel(5) + " dB\n";
+               + rel(4) + " / " + rel(5) + " dB";
+            // THE FIGURE SAYS WHAT IT DESCRIBES. A band relative from a whole
+            // file average and one from a 150 ms tail are different claims, and
+            // before this they arrived in the same sentence looking alike.
+            s += juce::String (" [") + echojay::reductionName (ev.macroReduction);
+            if (ev.macroWindowSeconds > 0.0f)
+                s += ", " + juce::String (ev.macroWindowSeconds, 1) + " s";
+            s += "]\n";
         }
         else
-            s += "  Band relatives vs avg: N/A\n";
+            s += "  Band relatives vs avg: N/A (no six-band measurement for this side)\n";
         return s;
     };
 
     ctx += "METER FIGURES (these are ALREADY displayed to the user in a figure card - "
            "here for YOUR reference; do NOT restate them):\n";
-    ctx += figBlock(la, da);
-    ctx += figBlock(lb, db);
+    ctx += figBlock(la, da, sa);
+    ctx += figBlock(lb, db, sb);
 
     if (numbersOnly)
     {
@@ -3656,7 +3699,9 @@ juce::String EchoJayProcessor::buildCompareContext(const MeterData& da, const Me
 
 juce::String EchoJayProcessor::buildCompareFiguresJson(const MeterData& da, const MeterData& db,
                                                        const juce::String& la, const juce::String& lb,
-                                                       bool crossScope) const
+                                                       bool crossScope,
+                                                       const echojay::SpectralEvidence& sa,
+                                                       const echojay::SpectralEvidence& sb) const
 {
     // The figure CARD's data - built client-side at compose time from the two
     // MeterData structs, NOT from anything the model returns (a visual that
@@ -3665,7 +3710,8 @@ juce::String EchoJayProcessor::buildCompareFiguresJson(const MeterData& da, cons
     // written ONLY when present, so an unavailable reading is ABSENT in the JSON
     // and the card draws N/A - never a fabricated zero. cross:true marks a
     // cross-scope pairing (different sources) so the card draws no delta.
-    auto src = [](const juce::String& label, const CompareFig& f)
+    auto src = [](const juce::String& label, const CompareFig& f,
+                  const echojay::SpectralEvidence& ev)
     {
         auto* o = new juce::DynamicObject();
         o->setProperty("label", label);
@@ -3681,14 +3727,21 @@ juce::String EchoJayProcessor::buildCompareFiguresJson(const MeterData& da, cons
         if (f.bandValid)
         {
             juce::Array<juce::var> b;
-            for (int i = 0; i < 6; ++i) b.add(f.bandRel[(size_t)i]);   // -999 = that band N/A
+            for (int i = 0; i < 6; ++i) b.add(f.bandRel[(size_t)i]);
             o->setProperty("bands", b);
+            // THE CARD CARRIES THE WINDOW AND THE REDUCTION, so a reader can
+            // tell a whole-file average from a tail instead of inferring it.
+            // Written only when the bands are, so a side with no bands carries
+            // no orphan provenance either.
+            o->setProperty("bandsReduction", juce::String (echojay::reductionName (ev.macroReduction)));
+            if (ev.macroWindowSeconds > 0.0f)
+                o->setProperty("bandsWindowSeconds", ev.macroWindowSeconds);
         }
         return juce::var(o);
     };
     auto* root = new juce::DynamicObject();
-    root->setProperty("a", src(la, computeCompareFig(da)));
-    root->setProperty("b", src(lb, computeCompareFig(db)));
+    root->setProperty("a", src(la, computeCompareFig(da, sa), sa));
+    root->setProperty("b", src(lb, computeCompareFig(db, sb), sb));
     if (crossScope) root->setProperty("cross", true);
     return juce::JSON::toString(juce::var(root), true);
 }
