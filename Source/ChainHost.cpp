@@ -2290,6 +2290,12 @@ float ChainHost::getSlotWet(int i) const
     return slots_[(size_t)i].wet;
 }
 
+juce::String ChainHost::slotIdentityHex(int i) const
+{
+    if (i < 0 || i >= (int)slots_.size()) return {};
+    return juce::String::toHexString(descUid(slots_[(size_t)i].desc));
+}
+
 ChainHost::SlotLevels ChainHost::getSlotLevels(int i) const
 {
     SlotLevels out;
@@ -5066,6 +5072,12 @@ ChainHost::PlanResult ChainHost::applyStructurePlan(
                 // reads it into the remapped priors, then re-bypasses.
                 setSlotBypassed(juce::jmin(op.to, (int) slots_.size() - 1),
                                 op.bypassed);
+                // COMMIT 3 (17 Sep 2026): the per-slot wet the user gave the
+                // created slot in the main. A pure value write (atomic, no
+                // graph mutation); absent (-1) leaves the default alone.
+                if (op.wet >= 0.0f)
+                    setSlotWet(juce::jmin(op.to, (int) slots_.size() - 1),
+                               op.wet, WetSource::User);
                 break;
             }
             case OpType::Commit:
@@ -5080,6 +5092,9 @@ ChainHost::PlanResult ChainHost::applyStructurePlan(
                 try { p->setStateInformation(mb.getData(), (int) mb.getSize()); }
                 catch (...) { ok = false; why = op.name + " refused the settings"; }
                 popDeathMark(mark);
+                // COMMIT 3: an edited survivor's wet rides its Commit.
+                if (ok && op.wet >= 0.0f)
+                    setSlotWet(op.from, op.wet, WetSource::User);
                 break;
             }
         }

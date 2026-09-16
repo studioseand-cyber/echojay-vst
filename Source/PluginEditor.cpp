@@ -2099,7 +2099,17 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         // local-editable: wet writes go to the borrowed host.
         const juce::String uid = chainViewUid();
         if (auto* bh = processorRef.borrowHostIfActiveFor(uid))
-        { bh->setSlotWet(i, v, ChainHost::WetSource::User); return; }
+        {
+            bh->setSlotWet(i, v, ChainHost::WetSource::User);
+            // COMMIT 3 (17 Sep 2026): the Link's ChainHost slot wet is the
+            // single source, so the knob also writes it there, live — the
+            // deselect plan carries wet only on Create/Commit ops, and a
+            // wet-only change on an untouched slot would otherwise never
+            // reach the rack. Keyed on the slot's identity: a stale index
+            // is REJECTED by the Link, never remapped.
+            sendLinkSlotWetCommand(uid, i, bh->slotIdentityHex(i), v);
+            return;
+        }
         if (uid.isNotEmpty()) return;
         // USER: the hand on the knob. Do-not-dial must never block this.
         processorRef.getChainHost().setSlotWet(i, v, ChainHost::WetSource::User);
@@ -29054,6 +29064,35 @@ void EchoJayEditor::sendLinkPreGainCommand(const juce::String& linkAddr, float p
 
     pollLinkCtrlAck(linkAddr, seq, 12);
     repaint();
+}
+
+// COMMIT 3 (17 Sep 2026): ctrl-cmd verb slotWet { idx, pluginId, wet } — a
+// live knob drag on a HELD Link rack. FIRE-AND-FORGET: no pending entry, no
+// ack poll — the next drag write supersedes this one on the same file, the
+// Link consumes the latest, and the deselect plan carries wet on any slot it
+// creates or commits. The Link applies it only if slots[idx] carries
+// pluginId (it logs EJCtrl: slotWet REJECTED otherwise).
+void EchoJayEditor::sendLinkSlotWetCommand(const juce::String& uid, int idx,
+                                           const juce::String& pluginId, float wet)
+{
+    if (uid.isEmpty() || idx < 0) return;
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty()) return;
+    int seq = LinkShm::nextCtrlSeq();
+    for (auto& p : linkCtrlPending_)
+        if (p.addr == uid && p.seq >= seq) seq = p.seq + 1;
+    auto* sw = new juce::DynamicObject();
+    sw->setProperty("idx",      idx);
+    sw->setProperty("pluginId", pluginId);
+    sw->setProperty("wet",      (double) juce::jlimit(0.0f, 1.0f, wet));
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",       1);
+    cmd->setProperty("seq",     seq);
+    cmd->setProperty("slotWet", juce::var(sw));
+    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();
+    juce::File(dir + "ctrl-cmd-" + uid + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
 }
 
 void EchoJayEditor::sendLinkPreGainResetCommand(const juce::String& linkAddr)

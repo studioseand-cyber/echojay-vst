@@ -1363,6 +1363,11 @@ namespace StructureEdit
                                    // SUBSTITUTE build) — state is format-
                                    // specific, and the applier seeds only on a
                                    // match; empty = no opinion (seed)
+        float wet = -1.0f;         // COMMIT 3 (17 Sep 2026): the slot's per-slot
+                                   // wet as the user left it in the main; rides
+                                   // Create and Commit. -1 = absent (an older
+                                   // main wrote no wet: leave the slot's alone).
+                                   // Field added LAST: positional inits stay valid.
     };
 
     // What the plan computation is TOLD about each current slot. originIndex
@@ -1381,6 +1386,8 @@ namespace StructureEdit
         juce::String stateFormat;  // the live instance's format — rides the
                                    // Create op so a substitute's blob can
                                    // never seed a different format's build
+        float wet = -1.0f;         // COMMIT 3: live per-slot wet in the borrowed
+                                   // host (-1 = not reported). Added LAST.
     };
 
     struct Plan
@@ -1451,7 +1458,8 @@ namespace StructureEdit
                                    current[(size_t) i].stateB64,
                                    current[(size_t) i].identity,
                                    current[(size_t) i].bypassedNow,
-                                   current[(size_t) i].stateFormat });
+                                   current[(size_t) i].stateFormat,
+                                   current[(size_t) i].wet });
                 ++p.creating;
             }
 
@@ -1464,7 +1472,8 @@ namespace StructureEdit
             if (! c.edited) { ++p.untouched; continue; }
             if (c.withheld) { ++p.withheldEdited; continue; }
             p.ops.push_back ({ OpType::Commit, i, -1,
-                               c.identity.name, c.stateB64, c.identity });
+                               c.identity.name, c.stateB64, c.identity,
+                               false, {}, c.wet });
             ++p.committing;
         }
         return p;
@@ -1525,6 +1534,7 @@ namespace StructureEdit
             o->setProperty ("byp", op.bypassed);
             if (op.stateFormat.isNotEmpty())
                 o->setProperty ("stateFmt", op.stateFormat);
+            if (op.wet >= 0.0f) o->setProperty ("wet", (double) op.wet);   // COMMIT 3: absent = -1
             opsArr.add (juce::var (o));
         }
         root->setProperty ("ops", opsArr);
@@ -1555,7 +1565,9 @@ namespace StructureEdit
                                           oo->getProperty ("state").toString(),
                                           identityFromVar (oo->getProperty ("identity")),
                                           (bool) oo->getProperty ("byp"),
-                                          oo->getProperty ("stateFmt").toString() });
+                                          oo->getProperty ("stateFmt").toString(),
+                                          oo->hasProperty ("wet")
+                                              ? (float)(double) oo->getProperty ("wet") : -1.0f });
         if (auto* arr = o->getProperty ("preShape").getArray())
             for (auto& e : *arr) preOut.shape.push_back (identityFromVar (e));
         if (auto* arr = o->getProperty ("preStates").getArray())

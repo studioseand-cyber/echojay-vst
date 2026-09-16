@@ -2787,7 +2787,11 @@ private:
                 // protocol, so on a remote rack they are disabled and their
                 // tooltip says why. Bypass and remove stay live because those
                 // ops exist and the mixer already sends them.
-                bl->wetKnob.setVisible(!remote && !slotInfos[(size_t)i].bypassed);
+                // COMMIT 3 (17 Sep 2026): on a Link rack the knob is live once
+                // the rack is HELD (editBlocked false: the same gate that
+                // lifts the overlay) — it writes the borrowed host AND the
+                // slotWet verb to the Link. Still hidden while loading.
+                bl->wetKnob.setVisible((!remote || !editBlocked) && !slotInfos[(size_t)i].bypassed);
                 bl->onWet    = [this, ci](float v) { if (onSlotWet) onSlotWet(ci, v); };
                 bl->prevBtn.setEnabled(!remote && i > 0);
                 bl->nextBtn.setEnabled(!remote && i < (int)slotInfos.size() - 1);
@@ -4608,6 +4612,8 @@ private:
     // Pre-chain gain (mixer Pre mode). A fader move is a HAND set (userSet).
     void sendLinkPreGainCommand(const juce::String& linkAddr, float preGainDb);
     void sendLinkPreGainResetCommand(const juce::String& linkAddr);
+    void sendLinkSlotWetCommand(const juce::String& uid, int idx,
+                                const juce::String& pluginId, float wet);   // COMMIT 3
     float linkRowDisplayPreGain(const juce::String& linkAddr) const;
     // True when the mixer faders are repointed to the pre-chain gain.
     bool  linkFaderModeIsPre() const;

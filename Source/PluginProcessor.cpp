@@ -2493,7 +2493,8 @@ LinkShm::StructureEdit::Plan EchoJayProcessor::buildStructurePlan()
             o, verdicts[(size_t) i].second, verdicts[(size_t) i].first,
             nowB64,
             bh->getSlotInfo(i).bypassed,
-            bh->getSlotInfo(i).format });
+            bh->getSlotInfo(i).format,
+            bh->getSlotInfo(i).wet });          // COMMIT 3: rides Create/Commit
     }
     return LinkShm::StructureEdit::computePlan(borrowUid(), base, current);
 }

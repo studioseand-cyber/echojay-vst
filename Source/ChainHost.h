@@ -1019,6 +1019,12 @@ public:
     // then quietly not work. A missing source is now a BUILD error.
     void  setSlotWet(int i, float wet01, WetSource src);
     float getSlotWet(int i) const;
+    // COMMIT 3 (17 Sep 2026): the identity a remote slotWet verb is keyed on —
+    // hex of descUid (the 25 Aug idiom, so a deprecatedUid-only AU still has
+    // one). The main sends its borrowed slot's; the Link compares its own
+    // slot's; both come from THIS function, so they can only differ when the
+    // slots differ. Empty out of range.
+    juce::String slotIdentityHex(int i) const;
 
     // ---- Running level (LevelTally, 17 Aug 2026) --------------------------
     // The chain input (pre-graph, even with an empty rack, so a build on an

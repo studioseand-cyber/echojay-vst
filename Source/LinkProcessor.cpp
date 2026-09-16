@@ -844,6 +844,43 @@ void LinkProcessor::pollControlCommand()
         chainHost.setPreGainDb(g, userSet);
         updateShmState();
     }
+    // Per-slot wet from the main's mix knob on a HELD rack (COMMIT 3, 17 Sep
+    // 2026). idx is the ChainHost slot index — the index space the sidecar
+    // publishes — and pluginId is that slot's identity (ChainHost::
+    // slotIdentityHex, the same function on both ends), so a knob turned
+    // against a rack that has since changed shape can never land on the
+    // wrong plugin: any mismatch is REJECTED and logged, never remapped.
+    // A pure value write into the object that processes audio: no addNode,
+    // no removeNode, no prepare, no suspend (tools/slotwet_nomutation pins
+    // it). The model copy is mirrored because it is the SESSION-SAVE source
+    // (chainModelToVar). NOT rackLockGuard'ed — the sender IS the rack's lock
+    // holder; NOT stampLocalRackEdit'ed — a remote edit, like preGainDb.
+    if (auto* sw = obj->getProperty("slotWet").getDynamicObject())
+    {
+        const int          idx  = (int) sw->getProperty("idx");
+        const juce::String want = sw->getProperty("pluginId").toString();
+        const float        wet  = juce::jlimit(0.0f, 1.0f,
+                                               (float)(double) sw->getProperty("wet"));
+        const juce::String have = chainHost.slotIdentityHex(idx);   // "" out of range
+        if (idx < 0 || idx >= chainHost.getNumSlots() || want.isEmpty() || want != have)
+        {
+            EchoJay_NSLog(("EJCtrl: slotWet REJECTED idx=" + juce::String(idx)
+                           + " want=" + want + " have=" + have
+                           + " slots=" + juce::String(chainHost.getNumSlots())
+                           + " (seq " + juce::String(seq) + ")").toRawUTF8());
+        }
+        else
+        {
+            chainHost.setSlotWet(idx, wet, ChainHost::WetSource::User);
+            for (auto& s : chainModel)
+                if (s.hostIdx == idx) s.wet = wet;   // model copy = serialisation source
+            EchoJay_NSLog(("EJCtrl: slotWet applied idx=" + juce::String(idx)
+                           + " id=" + want + " wet=" + juce::String(wet, 3)
+                           + " (seq " + juce::String(seq) + ")").toRawUTF8());
+            updateShmState();      // dirty-mark for save; the sidecar republishes on the revision bump
+            notifyChainModel();    // an open Link editor's knob follows
+        }
+    }
     // Mute/solo layer (27 Aug 2026), additive fields on the same cmd
     // transport. muteUser is a MIX decision: dirty-marks via
     // updateShmState so the host saves it. soloOn is monitoring state:
