@@ -167,6 +167,38 @@ inline int refIndexOfPath (const std::vector<RefBrowserEntry>& refs,
     return -1;
 }
 
+/** WHERE A HELD INDEX GOES WHEN ONE REFERENCE IS REMOVED.
+
+    Every piece of state that remembers a reference by POSITION is wrong the
+    moment the vector shrinks, and it is wrong silently: erase() slides
+    everything after the hole down by one, so an index that used to name
+    "kick.wav" now names whatever followed it. The slot keeps playing, the
+    browser keeps a row highlighted, and nothing is out of bounds. That is the
+    failure this exists to prevent, and it is why the answer is computed in one
+    place rather than at each of the three sites that hold such an index.
+
+    -1 MEANS NO SELECTION, both in and out. A caller holding nothing still
+    holds nothing afterwards, and the removed entry's own holders are told they
+    now hold nothing rather than being pointed at its neighbour. Silently
+    inheriting the next reference would be the worst of the three outcomes:
+    the user removes one track and the slot starts playing a different one
+    under the old name.
+
+    EQUAL IS CHECKED FIRST, so the removed index cannot fall through to the
+    shift even if the comparison below is ever loosened. The three cases are
+    disjoint by trichotomy, so the order changes no answer; it is written this
+    way because the -1 is the case a reader most needs to see stated, not
+    inferred from what the tests above it did not catch.
+*/
+inline int refIndexAfterRemoval (int heldIndex, int removedIndex)
+{
+    if (heldIndex < 0)             return -1;  // held nothing, still holds nothing
+    if (heldIndex == removedIndex) return -1;  // the thing it named is gone
+    if (heldIndex > removedIndex)  return heldIndex - 1;  // slid down by one
+    return heldIndex;                          // below the hole, unmoved
+}
+
+
 /** How many references a scope holds. THIS IS THE COUNT THE ARROWS STEP
     THROUGH, so it is defined here beside the rule that filters the pane rather
     than recounted at the bar, where it could disagree with what is shown.

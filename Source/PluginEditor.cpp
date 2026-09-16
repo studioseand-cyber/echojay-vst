@@ -1587,21 +1587,6 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     compareClickCatcher.setVisible(false);
     addAndMakeVisible(compareClickCatcher);
 
-    // Reference remove buttons (X on each tag in the drop zone)
-    for (int i = 0; i < kMaxRefRemoveBtns; ++i)
-    {
-        refRemoveBtns[(size_t)i].setButtonText("x");
-        refRemoveBtns[(size_t)i].setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-        refRemoveBtns[(size_t)i].setColour(juce::TextButton::textColourOffId, C::text3);
-        refRemoveBtns[(size_t)i].setVisible(false);
-        refRemoveBtns[(size_t)i].onClick = [this, i]() {
-            processorRef.getReferenceAnalyser().removeReference(i);
-            refreshRefBarEnablement();   // the library just changed
-            if (currentView == View::Compare) showCompareView();
-            repaint();
-        };
-        addAndMakeVisible(refRemoveBtns[(size_t)i]);
-    }
 
     // --- Login screen components ---
     // The "EchoJay" wordmark used to live here as a 32pt label. It's now
@@ -2956,7 +2941,7 @@ void EchoJayEditor::showLoginScreen()
     for (auto* b : { &refPrevBtn, &refNextBtn, &refPlayBtn, &refBrowseBtn })
         b->setVisible(false);
     refBrowser_.visibleState = false; refBrowser_.setVisible(false);
-    for (auto& b : refRemoveBtns) b.setVisible(false); compareClickCatcher.setVisible(false);
+    compareClickCatcher.setVisible(false);
 
     // Login screen: one shared pass (currentScreen != Main ⇒ all pages off,
     // overlay hidden). No direct flag writes — updateOnboardingPrompts is
@@ -4911,16 +4896,16 @@ void EchoJayEditor::filesDropped(const juce::StringArray& files, int, int)
                         applyReferenceToSlot (isTop, idx);
                         refBrowserSelected_ = idx;
                         if (refBrowser_.visibleState) refreshReferenceBrowser();
-                        setRefStatus (file.getFileName() + " loaded into "
-                                        + juce::String (isTop ? "A" : "B"),
-                                      RefStatusKind::Info);
                     }
-                    else
-                    {
-                        // Analysed but not findable: say what is true rather
-                        // than claiming a load that did not happen.
-                        setRefStatus (file.getFileName() + " added", RefStatusKind::Info);
-                    }
+
+                    // THE SUCCESS IS THE BAR, NOT A SENTENCE. The bar already
+                    // carries the file name and the slot letter, so a status
+                    // line saying both put the name on screen twice and told
+                    // the user nothing the thing in front of them did not.
+                    // The EMPTY STRING IS LOAD-BEARING: it clears "Analysing
+                    // <file>...", which would otherwise stand for the rest of
+                    // the session as a claim about work that had finished.
+                    setRefStatus ({}, RefStatusKind::Info);
                 }
                 else
                 {
@@ -5038,12 +5023,10 @@ void EchoJayEditor::loadReferenceFile()
                         applyReferenceToSlot (isTop, idx);
                         refBrowserSelected_ = idx;
                         if (refBrowser_.visibleState) refreshReferenceBrowser();
-                        setRefStatus (file.getFileName() + " loaded into "
-                                        + juce::String (isTop ? "A" : "B"),
-                                      RefStatusKind::Info);
                     }
-                    else
-                        setRefStatus (file.getFileName() + " added", RefStatusKind::Info);
+                    // Silent on success, and clearing the Analysing line as it
+                    // goes. Same rule as the drop path, written the same way.
+                    setRefStatus ({}, RefStatusKind::Info);
 
                     refreshRefBarEnablement();   // the library just changed
                     repaint();
@@ -5120,7 +5103,6 @@ void EchoJayEditor::hideCompareView()
     loadRefBtn.setVisible(false);
     for (auto* b : { &refPrevBtn, &refNextBtn, &refPlayBtn, &refBrowseBtn })
         b->setVisible(false);
-    for (auto& b : refRemoveBtns) b.setVisible(false);
     compareClickCatcher.setVisible(false);
     for (int i = 0; i < 5; ++i) compareMeterBtns[(size_t)i].setVisible(false);
     compareTopSlotBtn_.setVisible(false);
@@ -6470,17 +6452,96 @@ void EchoJayEditor::showReferenceRowMenu (const echojay::RefBrowserRow& row, juc
     juce::PopupMenu m;
     m.setLookAndFeel (&lnf);
     m.addSubMenu ("Move to", moveTo);
+    m.addSeparator();
+    // "REMOVE FROM LIBRARY", NOT "DELETE". The entry goes and the audio file
+    // stays where it is: removeReference erases from the vector and touches no
+    // File at all, and the library is rebuilt from the saved paths rather than
+    // by scanning the folder, so this is exactly and only a forgetting.
+    // "Delete" on a row whose file survives would be the more alarming word
+    // for the smaller act.
+    m.addItem (1, "Remove from library");
+    const auto name = row.text;
     auto safe = juce::Component::SafePointer<EchoJayEditor> (this);
     m.showMenuAsync (juce::PopupMenu::Options()
                        .withTargetScreenArea ({ screenPos.x, screenPos.y, 1, 1 }),
-        [safe, path, targets] (int r)
+        [safe, path, name, targets] (int r)
         {
             if (safe == nullptr || r == 0 || r == 99) return;
+            if (r == 1)
+            {
+                // CONFIRMED like the folder delete, and for the same reason:
+                // it is the one item here that loses something. It says where
+                // the file stays, because the row is the only trace of it the
+                // user has seen and removing it looks like removing the track.
+                juce::AlertWindow::showOkCancelBox (
+                    juce::MessageBoxIconType::QuestionIcon,
+                    "Remove from library",
+                    "Remove \"" + name + "\" from the reference library?\n\n"
+                    "The audio file is NOT deleted. It stays where it is.",
+                    "Remove", "Cancel", nullptr,
+                    juce::ModalCallbackFunction::create ([safe, path] (int ok)
+                    {
+                        if (safe != nullptr && ok == 1) safe->removeReferenceFromLibrary (path);
+                    }));
+                return;
+            }
             if (r == 98) { safe->assignReferenceToFolder (path, {}); return; }
             const int idx = r - 100;
             if (idx >= 0 && idx < (int) targets.size())
                 safe->assignReferenceToFolder (path, targets[(size_t) idx]);
         });
+}
+
+
+// THE ONE WRITER of a removal from the library, addressed BY PATH because the
+// menu was built from a row and the vector can have moved under it since.
+void EchoJayEditor::removeReferenceFromLibrary (const juce::String& path)
+{
+    const int removed = echojay::refIndexOfPath (refBrowserEntries(), path);
+    if (removed < 0) return;          // already gone: nothing to say, nothing to do
+
+    processorRef.getReferenceAnalyser().removeReference (removed);
+
+    // MEMBERSHIP IS BY PATH AND LIVES ON THE FOLDER, so dropping the entry
+    // leaves a dangling path in referenceFolders unless it is cleared here.
+    // It would be invisible until the same file was added again, and then it
+    // would reappear inside a folder the user never put it in.
+    for (auto& f : processorRef.referenceFolders)
+        f.paths.erase (std::remove (f.paths.begin(), f.paths.end(), path), f.paths.end());
+
+    // EVERY HOLDER OF A POSITION GOES THROUGH THE ONE RULE. erase() slides
+    // everything after the hole down by one, so a held index that is not
+    // updated keeps naming a valid entry: the wrong one, silently, with
+    // nothing out of bounds to catch it.
+    refBrowserSelected_ = echojay::refIndexAfterRemoval (refBrowserSelected_, removed);
+
+    for (const bool isTop : { true, false })
+    {
+        auto& slot = isTop ? compareTop_ : compareBot_;
+        // KIND-GUARDED: CompareSlotState::index is the Snapshot index too, and
+        // shifting a snapshot slot because a reference was removed would be a
+        // defect of exactly the kind this function exists to prevent.
+        if (slot.kind != CompareSlotState::Kind::Reference) continue;
+
+        const int next = echojay::refIndexAfterRemoval (slot.index, removed);
+        if (next >= 0) { slot.index = next; continue; }
+
+        // The slot was holding the reference that just left. It is emptied
+        // rather than repointed: inheriting the neighbour would leave the slot
+        // playing different audio with no visible change.
+        processorRef.stopCompareStream (isTop ? 0 : 1);
+        slot.kind  = CompareSlotState::Kind::Empty;
+        slot.index = -1;
+        slot.label = "Select slot...";
+        updateCompareSlotBtn (isTop);
+    }
+    processorRef.cmpBothCaptures.store (bothSlotsAreCaptures());
+    updateComparePlayBtns();
+
+    refreshRefBarEnablement();   // the library just changed
+    refreshReferenceBrowser();
+    if (currentView == View::Compare) showCompareView();
+    repaint();
 }
 
 void EchoJayEditor::openReferenceBrowser (bool isTop)
@@ -11474,12 +11535,11 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
         }
     }
 
-    // refRemoveBtns went with the tag grid: the browser is where a reference
-    // is removed now, and eight buttons laid out by paint() were the last
-    // place in this file where painting authored geometry.
-    for (int i = 0; i < kMaxRefRemoveBtns; ++i)
-        refRemoveBtns[(size_t)i].setVisible(false);
-    activeRefRemoveBtns = 0;
+    // refRemoveBtns went with the tag grid, and now they are gone entirely:
+    // "Remove from library" on the browser row is the one way to remove a
+    // reference, so eight hidden buttons whose bounds were authored by paint()
+    // had nothing left to become. Nothing here hides them any more because
+    // there is nothing to hide.
 
     cy += echojay::kRefBarBandH;
 
@@ -20942,8 +21002,6 @@ void EchoJayEditor::resized()
         // It writes to the system log, and open list item 138 records that
         // nothing written there reaches a user, so it tells a developer with
         // Console open that a claim stopped holding. It prevents nothing.
-        // refRemoveBtns are excluded on purpose: their bounds are authored in
-        // paintCompareView, not here, so resized() has no current value.
         if (! compareOverlapLogged_)
         {
             struct Named { const char* name; juce::Rectangle<int> r; };

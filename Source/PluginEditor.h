@@ -1143,6 +1143,10 @@ private:
         ONE FOLDER EACH: it is removed from every other folder first, so the
         model cannot drift into a path claimed twice. */
     void assignReferenceToFolder (const juce::String& path, const juce::String& folder);
+    /** Remove one reference from the library, BY PATH. The audio file on disk
+        is untouched: this erases the entry, clears its folder membership, and
+        repoints every held index through refIndexAfterRemoval. */
+    void removeReferenceFromLibrary (const juce::String& path);
 
     void openReferenceBrowser (bool isTop);
     void closeReferenceBrowser();
@@ -1225,9 +1229,7 @@ private:
                 p->fileDragExit(files);
         }
     };
-    DragForwardingComponent compareClickCatcher;    static constexpr int kMaxRefRemoveBtns = 8;
-    std::array<juce::TextButton, kMaxRefRemoveBtns> refRemoveBtns;
-    int activeRefRemoveBtns = 0;
+    DragForwardingComponent compareClickCatcher;
     int lastRefCount = 0; // track ref changes for auto-refresh
     
     // Settings

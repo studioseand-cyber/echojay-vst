@@ -8239,6 +8239,61 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "rf PIN11: the whole path is matched, not the file name");
         }
 
+        // rf PIN12 -- WHERE A HELD INDEX GOES WHEN ONE REFERENCE IS REMOVED.
+        // Three pieces of editor state remember a reference by position:
+        // refBrowserSelected_ and the two compare slots. erase() slides
+        // everything after the hole down by one, so an index that is not
+        // repointed still addresses a live entry -- the WRONG one, with
+        // nothing out of bounds to catch it. These pin the whole table.
+        {
+            // Below the hole: unmoved. Nothing before the removal shifts.
+            check (refIndexAfterRemoval (0, 3) == 0,
+                   "rf PIN12: an index below the removed one does not move");
+            check (refIndexAfterRemoval (2, 3) == 2,
+                   "rf PIN12: and the one immediately below it does not either");
+
+            // Equal: the thing it named is gone, so it names nothing. NOT the
+            // neighbour, which would leave a slot playing different audio
+            // under the same name.
+            check (refIndexAfterRemoval (3, 3) == -1,
+                   "rf PIN12: the removed index itself becomes no selection");
+            check (refIndexAfterRemoval (0, 0) == -1,
+                   "rf PIN12: including when it is the first");
+
+            // Above the hole: down by exactly one.
+            check (refIndexAfterRemoval (4, 3) == 3,
+                   "rf PIN12: an index above the removed one slides down by one");
+            check (refIndexAfterRemoval (9, 3) == 8,
+                   "rf PIN12: by one, not to the removed position");
+
+            // Removing index 0, which is the case a naive shift gets wrong.
+            check (refIndexAfterRemoval (1, 0) == 0,
+                   "rf PIN12: removing the first slides the second into its place");
+            check (refIndexAfterRemoval (7, 0) == 6,
+                   "rf PIN12: and every later index with it");
+
+            // Removing the last: only the last index is affected, and only
+            // because it IS the removed one.
+            check (refIndexAfterRemoval (5, 5) == -1,
+                   "rf PIN12: removing the last clears a hold on the last");
+            check (refIndexAfterRemoval (4, 5) == 4,
+                   "rf PIN12: and leaves everything before it alone");
+
+            // No selection stays no selection, whatever is removed. -1 must
+            // never be arithmetic: -1 - 1 would be a silent out-of-range.
+            check (refIndexAfterRemoval (-1, 0) == -1,
+                   "rf PIN12: holding nothing still holds nothing");
+            check (refIndexAfterRemoval (-1, 7) == -1,
+                   "rf PIN12: whichever index was removed");
+
+            // THE BOUNDARY, stated as its own assertion because it is the one
+            // a > / >= slip moves: held == removed must take the -1 branch and
+            // not the shift.
+            check (refIndexAfterRemoval (3, 3) != 2,
+                   "rf PIN12: the removed index does not slide down to its "
+                   "predecessor, it clears");
+        }
+
         // rf PIN6 -- WHICH SLOT THE BAR DRIVES. compareTop_ defaults to Live
         // and compareBot_ to Empty, so the default must drive B. A bar that
         // named one slot's reference and loaded another would be the worst
